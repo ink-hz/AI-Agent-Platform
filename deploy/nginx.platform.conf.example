@@ -1,0 +1,33 @@
+# Orbbec AI Agent Platform route planning sample.
+#
+# v1 deployment:
+# platform-api can directly serve Portal (/) and API (/api/*) on port 80.
+# This file is not required for v1. Agent cards link directly to each agent's
+# external entry_url from registry.yaml.
+#
+# Stage 2 route A (recommended, no Agent rebuild): host-based routing.
+#
+# server {
+#     listen 80;
+#     server_name portal.orbbec.internal;
+#     location / { proxy_pass http://127.0.0.1:80; }
+# }
+# server {
+#     listen 80;
+#     server_name fae.orbbec.internal;
+#     location / { proxy_pass http://<fae-host>:8000; }
+# }
+# server {
+#     listen 80;
+#     server_name admin.orbbec.internal;
+#     location / { proxy_pass http://<admin-host>:8000; }
+# }
+#
+# Stage 2 route B (path routing, requires Agent Vite base rebuild):
+#
+# server {
+#     listen 80;
+#     location /      { proxy_pass http://127.0.0.1:80; }
+#     location /fae/  { proxy_pass http://<fae-host>:8000/; }
+#     location /admin/ { proxy_pass http://<admin-host>:8000/; }
+# }

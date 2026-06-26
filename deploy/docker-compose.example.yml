@@ -1,0 +1,16 @@
+# Orbbec AI Agent Platform container sample.
+# Only the platform itself is composed here. FAE/ADMIN remain independently deployed.
+services:
+  platform-api:
+    build: ../backend
+    image: orbbec-agent-platform:dev
+    ports:
+      - "80:80"
+    environment:
+      PLATFORM_REGISTRY_PATH: /app/registry.yaml
+      PLATFORM_PORT: "80"
+      PLATFORM_POLL_INTERVAL: "30"
+      PLATFORM_STATIC_DIR: /app/static
+    volumes:
+      - ../registry.yaml:/app/registry.yaml:ro
+      - ../webui/dist:/app/static:ro
