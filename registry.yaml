@@ -1,0 +1,33 @@
+version: 1
+agents:
+  - id: fae
+    name: "AI FAE Agent"
+    domain: "技术支持"
+    description: "FAE 技术问答 / 产品规格 / SDK / 排障 / 经验库"
+    icon: "🛠️"
+    owner: "<负责人>"
+    env: "prod"
+    status: "active"
+    entry_url: "http://<fae-host>/app/"
+    health:
+      url: "http://<fae-host>/health"
+      type: "fae"
+    api_base: "http://<fae-host>"
+    version: ""
+    tags: ["pg-flywheel", "review-center"]
+
+  - id: admin
+    name: "AI ADMIN Agent"
+    domain: "行政"
+    description: "行政制度 / 办公流程 / 会议室 / 差旅 / 办公用品 / 停车 / 快递"
+    icon: "🏢"
+    owner: "<负责人>"
+    env: "prod"
+    status: "active"
+    entry_url: "http://<admin-host>/app/"
+    health:
+      url: "http://<admin-host>/health"
+      type: "admin"
+    api_base: "http://<admin-host>"
+    version: ""
+    tags: ["in-memory-session"]
