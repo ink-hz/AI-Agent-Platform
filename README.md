@@ -1,63 +1,102 @@
-# Orbbec AI Agent Platform
+# Orbbec MetaBot Cluster Monitor
 
-企业内部 AI Agent 统一门面与平台底座。平台采用联邦模型：把各业务 Agent（FAE / ADMIN / ...）当作独立外部产品登记、展示、路由和治理，不合并其知识库、session 或业务逻辑。
+本机 MetaBot / Agent Bot 集群的只读状态仪表盘。Platform 从 `Orbbec-Agent-Team` 的运行契约自动发现实例，定时探测各实例公开的 `/api/health`，不提供 Agent 入口，也不执行重启或其他控制操作。
 
-- 设计文档：`docs/2026-06-24-orbbec-ai-agent-platform-v1-design.md`
-- 实现计划：`docs/2026-06-24-orbbec-ai-agent-platform-v1-plan.md`
+## 当前能力
 
-## v1 能力
+- 自动读取 `deploy/metabot.runtime-contract.json` 中的业务 Bot 和 test-bot。
+- 每 10 秒并发探测全部 MetaBot 实例。
+- 展示健康、异常、离线、检测中四种状态。
+- 展示运行时长、响应延迟、API 端口和最后检测时间。
+- 契约读取失败时保留最后一次有效实例列表。
+- Platform API 暂时失败时，页面保留最后一次成功快照并提示数据可能过期。
 
-- Agent Registry：`registry.yaml` 作为唯一真相源。
-- Portal 卡片门户：React / Vite。
-- 服务端健康检查：轮询各 Agent `/health`，归一化并缓存。
-- 点击卡片跳转各 Agent 外部入口。
+首版只使用无需鉴权的 `GET /api/health`。不会读取 MetaBot API 密钥、访问 `/api/status`、读取 PM2 或控制任何 Bot。
 
-## 本地运行
+## 数据源
 
-后端：
+默认运行契约：
+
+```text
+/Users/neo/Developer/work/Orbbec-Agent-Team/deploy/metabot.runtime-contract.json
+```
+
+可通过 `PLATFORM_METABOT_CONTRACT_PATH` 指定其他契约文件。后端会在轮询时重新读取契约，新增、删除或修改实例不需要重启 Platform。
+
+## 本地开发
+
+后端要求 Python 3.11+：
 
 ```bash
 cd backend
-python3 -m venv .venv
+python3.11 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
-PLATFORM_REGISTRY_PATH=../registry.yaml PLATFORM_PORT=8000 \
-  uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000
+PLATFORM_REGISTRY_PATH=../registry.local.yaml \
+PLATFORM_METABOT_CONTRACT_PATH=/Users/neo/Developer/work/Orbbec-Agent-Team/deploy/metabot.runtime-contract.json \
+PLATFORM_CLUSTER_POLL_INTERVAL=10 \
+uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-前端开发态：
+前端：
 
 ```bash
 cd webui
-npm install
+npm ci
 npm run dev
 ```
 
-前端开发服务器默认在 `http://localhost:5173`，`/api` 代理到 `http://localhost:8000`。
+开发入口为 `http://127.0.0.1:5173/`，Vite 将 `/api` 代理到 `http://127.0.0.1:8000`。
 
-如果本机设置了 `http_proxy` / `https_proxy`，本地 smoke curl 建议加 `--noproxy '*'`，避免请求 `127.0.0.1` 时被代理拦截。
+## 本机生产运行
 
-生产部署时，先执行：
+构建前端：
 
 ```bash
 cd webui
 npm run build
 ```
 
-然后把 `webui/dist` 作为 `PLATFORM_STATIC_DIR`，由 platform-api 同时服务 Portal 与 API。
+LaunchAgent 配置位于：
 
-## 接入新 Agent
+```text
+deploy/com.orbbec.ai-agent-platform.plist
+```
 
-在 `registry.yaml` 增加一段：
+安装后，FastAPI 同源提供仪表盘与 API：
 
-- `id`
-- `name`
-- `domain`
-- `entry_url`
-- `health.url`
-- `health.type`
+- 仪表盘：`http://127.0.0.1:8000/`
+- Platform 健康：`http://127.0.0.1:8000/api/health`
+- 集群快照：`http://127.0.0.1:8000/api/cluster/status`
 
-`health.type` 可选 `fae`、`admin`、`generic`，也可以在 `backend/app/health/normalizer.py` 增加新的解析器。
+查看服务状态：
+
+```bash
+launchctl print gui/$(id -u)/com.orbbec.ai-agent-platform
+```
+
+只重启 Platform：
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.orbbec.ai-agent-platform
+```
+
+日志位置：
+
+```text
+/Users/neo/Library/Logs/OrbbecAI-Agent-Platform.stdout.log
+/Users/neo/Library/Logs/OrbbecAI-Agent-Platform.stderr.log
+```
+
+## API
+
+### `GET /api/cluster/status`
+
+返回集群摘要、运行契约状态和实例快照。实例固定按离线、异常、检测中、健康排序，同状态按端口升序。
+
+### `GET /api/health`
+
+仅表示 Platform 自身进程可用，不代表全部 MetaBot 健康。
 
 ## 测试
 
@@ -65,8 +104,7 @@ npm run build
 
 ```bash
 cd backend
-. .venv/bin/activate
-pytest
+.venv/bin/python -m pytest
 ```
 
 前端：
