@@ -1,3 +1,4 @@
+import json
 import textwrap
 
 import pytest
@@ -29,7 +30,26 @@ REGISTRY = textwrap.dedent(
 def client(tmp_path):
     path = tmp_path / "registry.yaml"
     path.write_text(REGISTRY, encoding="utf-8")
-    app = create_app(registry_path=str(path), start_poller=False)
+    contract_path = tmp_path / "contract.json"
+    contract_path.write_text(
+        json.dumps(
+            {
+                "bots": [
+                    {
+                        "name": "hr-bot",
+                        "workdir": "/runtime/hr-bot",
+                        "instance": {"pm2Name": "metabot-hr", "apiPort": 9101},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    app = create_app(
+        registry_path=str(path),
+        cluster_contract_path=str(contract_path),
+        start_poller=False,
+    )
     return TestClient(app)
 
 
@@ -67,3 +87,15 @@ def test_batch_health_returns_list_not_single_agent(client):
 def test_per_agent_health_and_404(client):
     assert client.get("/api/agents/fae/health").json()["id"] == "fae"
     assert client.get("/api/agents/missing/health").status_code == 404
+
+
+def test_cluster_status_returns_snapshot_without_workdir(client):
+    response = client.get("/api/cluster/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"summary", "source", "instances"}
+    assert body["summary"]["total"] == 1
+    assert body["instances"][0]["id"] == "hr-bot"
+    assert body["instances"][0]["status"] == "checking"
+    assert "workdir" not in body["instances"][0]
