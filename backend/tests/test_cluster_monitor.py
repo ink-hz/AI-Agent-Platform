@@ -5,7 +5,12 @@ import pytest
 import respx
 
 from app.cluster.models import InstanceStatus, MonitorTarget, SourceStatus
-from app.cluster.monitor import ClusterMonitor, build_snapshot, probe_target
+from app.cluster.monitor import (
+    ClusterMonitor,
+    build_snapshot,
+    create_cluster_client,
+    probe_target,
+)
 
 
 def _target(port: int, name: str | None = None) -> MonitorTarget:
@@ -40,6 +45,20 @@ def _bot(name: str, port: int) -> dict:
 
 def _write_contract(path, bots: list[dict]) -> None:
     path.write_text(json.dumps({"bots": bots}), encoding="utf-8")
+
+
+def test_cluster_client_ignores_host_proxy_settings(monkeypatch):
+    captured = {}
+    sentinel = object()
+
+    def fake_client(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(httpx, "AsyncClient", fake_client)
+
+    assert create_cluster_client() is sentinel
+    assert captured == {"trust_env": False}
 
 
 @pytest.mark.asyncio

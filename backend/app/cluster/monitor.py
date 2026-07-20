@@ -146,10 +146,14 @@ class ClusterMonitor:
         return build_snapshot(list(self._statuses.values()), self._source)
 
 
+def create_cluster_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(trust_env=False)
+
+
 async def cluster_poll_loop(
     monitor: ClusterMonitor, interval: float
 ) -> None:
-    async with httpx.AsyncClient() as client:
+    async with create_cluster_client() as client:
         while True:
             await monitor.poll_once(client)
             await asyncio.sleep(interval)
