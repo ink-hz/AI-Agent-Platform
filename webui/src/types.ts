@@ -1,27 +1,33 @@
-export interface Agent {
+export type InstanceState = "healthy" | "degraded" | "offline" | "checking";
+
+export interface ClusterSummary {
+  total: number;
+  healthy: number;
+  degraded: number;
+  offline: number;
+  checking: number;
+}
+
+export interface SourceStatus {
+  healthy: boolean;
+  checked_at: string | null;
+  error: string | null;
+}
+
+export interface InstanceStatus {
   id: string;
   name: string;
-  domain: string;
-  description: string;
-  icon: string;
-  owner: string;
-  env: string;
-  status: string;
-  entry_url: string;
-  version: string;
-  tags: string[];
-}
-
-export interface Metric {
-  label: string;
-  value: string | number;
-}
-
-export interface Health {
-  id: string;
-  online: boolean | null;
-  checked_at: string | null;
+  pm2_name: string;
+  port: number;
+  status: InstanceState;
+  uptime_seconds: number | null;
   latency_ms: number | null;
-  version: string | null;
-  metrics: Metric[];
+  checked_at: string | null;
+  error: string | null;
+}
+
+export interface ClusterSnapshot {
+  summary: ClusterSummary;
+  source: SourceStatus;
+  instances: InstanceStatus[];
 }

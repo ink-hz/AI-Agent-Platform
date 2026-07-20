@@ -1,13 +1,8 @@
-import type { Agent, Health } from "./types";
+import type { ClusterSnapshot } from "./types";
 
-export async function fetchAgents(): Promise<Agent[]> {
-  const response = await fetch("/api/agents");
-  if (!response.ok) throw new Error(`agents ${response.status}`);
-  return response.json();
-}
 
-export async function fetchHealth(): Promise<Health[]> {
-  const response = await fetch("/api/agents/health");
-  if (!response.ok) throw new Error(`health ${response.status}`);
+export async function fetchClusterStatus(): Promise<ClusterSnapshot> {
+  const response = await fetch("/api/cluster/status");
+  if (!response.ok) throw new Error(`cluster ${response.status}`);
   return response.json();
 }
