@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { applyFailure, applySuccess, initialDashboardState } from "./dashboard";
+import {
+  applyFailure,
+  applySuccess,
+  initialDashboardState,
+  startPolling,
+} from "./dashboard";
 import type { ClusterSnapshot } from "./types";
 
 
@@ -40,5 +45,36 @@ describe("dashboard state", () => {
 
   it("starts without a fabricated snapshot", () => {
     expect(initialDashboardState).toEqual({ snapshot: null, degraded: false });
+  });
+});
+
+
+describe("startPolling", () => {
+  it("schedules the next run only after the current run settles", async () => {
+    let release: (() => void) | undefined;
+    let scheduled: (() => void) | undefined;
+    let calls = 0;
+    const task = () => {
+      calls += 1;
+      return new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    };
+    const schedule = (callback: () => void) => {
+      scheduled = callback;
+      return 1;
+    };
+
+    const stop = startPolling(task, 10_000, schedule, () => undefined);
+    await Promise.resolve();
+    expect(calls).toBe(1);
+    expect(scheduled).toBeUndefined();
+
+    release?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(scheduled).toBeTypeOf("function");
+
+    stop();
   });
 });

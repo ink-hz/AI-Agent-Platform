@@ -22,7 +22,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PLATFORM_REGISTRY_PATH</key>
-    <string>/Users/neo/Developer/work/AI-Agent-Platform/registry.local.yaml</string>
+    <string>/Users/neo/Developer/work/AI-Agent-Platform/registry.yaml</string>
     <key>PLATFORM_METABOT_CONTRACT_PATH</key>
     <string>/Users/neo/Developer/work/Orbbec-Agent-Team/deploy/metabot.runtime-contract.json</string>
     <key>PLATFORM_CLUSTER_POLL_INTERVAL</key>

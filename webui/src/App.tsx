@@ -5,6 +5,7 @@ import {
   applyFailure,
   applySuccess,
   initialDashboardState,
+  startPolling,
 } from "./dashboard";
 import {
   errorLabel,
@@ -32,26 +33,39 @@ const SUMMARY_ITEMS: Array<{
 
 export default function App() {
   const [state, setState] = useState(initialDashboardState);
+  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    let stopped = false;
+    let disposed = false;
+    let activeController: AbortController | null = null;
     const refresh = async () => {
+      const controller = new AbortController();
+      activeController = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 5_000);
       try {
-        const snapshot = await fetchClusterStatus();
-        if (!stopped) {
+        const snapshot = await fetchClusterStatus(controller.signal);
+        if (!disposed) {
           setState((current) => applySuccess(current, snapshot));
         }
       } catch {
-        if (!stopped) setState(applyFailure);
+        if (!disposed) setState(applyFailure);
+      } finally {
+        window.clearTimeout(timeout);
+        if (activeController === controller) activeController = null;
       }
     };
 
-    refresh();
-    const timer = window.setInterval(refresh, 10_000);
+    const stopPolling = startPolling(refresh, 10_000);
     return () => {
-      stopped = true;
-      window.clearInterval(timer);
+      disposed = true;
+      activeController?.abort();
+      stopPolling();
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 5_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const { snapshot, degraded } = state;
@@ -131,7 +145,7 @@ export default function App() {
               <div className="instance-grid">
                 {snapshot.instances.map((instance) => {
                   const meta = statusMeta(instance.status);
-                  const stale = isStale(instance.checked_at);
+                  const stale = isStale(instance.checked_at, now);
                   const probeError = errorLabel(instance.error);
                   return (
                     <article

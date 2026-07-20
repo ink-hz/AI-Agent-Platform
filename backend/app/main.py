@@ -14,6 +14,13 @@ from .registry import routes as registry_routes
 from .registry.repository import YamlRepository
 
 
+async def cancel_tasks(tasks: list[asyncio.Task]) -> None:
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 def create_app(
     registry_path: str | None = None,
     cluster_contract_path: str | None = None,
@@ -53,8 +60,7 @@ def create_app(
         try:
             yield
         finally:
-            for task in tasks:
-                task.cancel()
+            await cancel_tasks(tasks)
 
     app = FastAPI(title="Orbbec AI Agent Platform", version="0.1.0", lifespan=lifespan)
     app.state.repo = repo

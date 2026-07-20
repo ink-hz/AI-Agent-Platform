@@ -1,9 +1,11 @@
 import json
+import inspect
 import textwrap
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.cluster.routes import cluster_status
 from app.main import create_app
 
 
@@ -99,3 +101,7 @@ def test_cluster_status_returns_snapshot_without_workdir(client):
     assert body["instances"][0]["id"] == "hr-bot"
     assert body["instances"][0]["status"] == "checking"
     assert "workdir" not in body["instances"][0]
+
+
+def test_cluster_status_route_runs_on_the_event_loop():
+    assert inspect.iscoroutinefunction(cluster_status)

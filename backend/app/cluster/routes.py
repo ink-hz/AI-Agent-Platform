@@ -11,5 +11,5 @@ def _monitor(request: Request) -> ClusterMonitor:
 
 
 @router.get("/status")
-def cluster_status(request: Request) -> dict:
+async def cluster_status(request: Request) -> dict:
     return _monitor(request).snapshot().model_dump()
