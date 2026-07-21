@@ -19,6 +19,12 @@ from .fleet.repository import (
 from .fleet.service import FleetReadService
 from .health import routes as health_routes
 from .health.poller import HealthCache, poll_loop
+from .observability import routes as observability_routes
+from .observability.repository import (
+    PsycopgObservabilityRepository,
+    UnavailableObservabilityRepository,
+)
+from .observability.service import ObservabilityService
 from .registry import routes as registry_routes
 from .registry.repository import YamlRepository
 
@@ -36,6 +42,7 @@ def create_app(
     *,
     start_poller: bool = True,
     fleet_service: FleetReadService | None = None,
+    observability_service: ObservabilityService | None = None,
 ) -> FastAPI:
     config = load_config()
     path = registry_path or config.registry_path
@@ -46,10 +53,8 @@ def create_app(
         cluster_contract_path or config.metabot_contract_path,
         timeout=config.probe_timeout_seconds,
     )
+    database_url = resolve_flywheel_database_url(config) if start_poller else None
     if fleet_service is None:
-        database_url = (
-            resolve_flywheel_database_url(config) if start_poller else None
-        )
         repository = (
             PsycopgFlywheelRepository(database_url)
             if database_url
@@ -61,6 +66,13 @@ def create_app(
             UsageCache(repository, ttl_seconds=config.usage_cache_seconds),
             active_window_minutes=config.active_window_minutes,
         )
+    if observability_service is None:
+        observability_repository = (
+            PsycopgObservabilityRepository(database_url)
+            if database_url
+            else UnavailableObservabilityRepository()
+        )
+        observability_service = ObservabilityService(observability_repository)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -92,6 +104,7 @@ def create_app(
     app.state.health_cache = cache
     app.state.cluster_monitor = cluster_monitor
     app.state.fleet_service = fleet_service
+    app.state.observability_service = observability_service
 
     @app.get("/api/health")
     def platform_health() -> dict:
@@ -101,6 +114,7 @@ def create_app(
     app.include_router(registry_routes.router)
     app.include_router(cluster_routes.router)
     app.include_router(fleet_routes.router)
+    app.include_router(observability_routes.router)
 
     if os.path.isdir(config.static_dir):
         app.mount("/", StaticFiles(directory=config.static_dir, html=True), name="portal")

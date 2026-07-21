@@ -48,3 +48,8 @@ def test_sync_runs_capture_validation_and_last_good_state() -> None:
     assert "validation jsonb not null default '{}'::jsonb" in sql
     assert "error_summary text" in sql
 
+
+def test_metabot_views_apply_current_catalog_aliases_and_exclusions() -> None:
+    sql = migration_sql()
+    assert "when c.bot_id = 'marketing-bot' then 'marketing-prospecting-bot'" in sql
+    assert "c.bot_id not in ('pc-bot', 'quality-bot')" in sql

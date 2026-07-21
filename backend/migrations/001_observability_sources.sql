@@ -284,7 +284,8 @@ create or replace view platform_read.sessions as
 with metabot as (
   select
     'metabot:' || c.bot_id || ':' || c.id::text as session_key,
-    c.bot_id as agent_id,
+    case when c.bot_id = 'marketing-bot' then 'marketing-prospecting-bot'
+         else c.bot_id end as agent_id,
     'metabot'::text as source_kind,
     c.id::text as native_id,
     c.platform as channel,
@@ -308,6 +309,7 @@ with metabot as (
   left join flywheel_analytics.messages m on m.conversation_id = c.id
   left join flywheel_core.feedback f on f.conversation_id = c.id
   where not c.is_synthetic
+    and c.bot_id not in ('pc-bot', 'quality-bot')
   group by c.id, c.bot_id, c.platform, c.platform_conversation_id,
            c.created_at, c.updated_at, c.business_domain, c.conversation_type
 ), fae as (
@@ -378,7 +380,8 @@ with metabot_messages as (
   select
     'metabot:' || c.bot_id || ':' || mm.turn_id::text as turn_key,
     'metabot:' || c.bot_id || ':' || c.id::text as session_key,
-    c.bot_id as agent_id,
+    case when c.bot_id = 'marketing-bot' then 'marketing-prospecting-bot'
+         else c.bot_id end as agent_id,
     'metabot'::text as source_kind,
     mm.turn_id::text as native_id,
     row_number() over (partition by c.id order by mm.created_at)::integer - 1 as turn_index,
@@ -397,6 +400,7 @@ with metabot_messages as (
   from metabot_messages mm
   join flywheel_analytics.conversations c on c.id = mm.conversation_id
   left join flywheel_analytics.runs r on r.turn_id = mm.turn_id
+  where c.bot_id not in ('pc-bot', 'quality-bot')
 ), fae as (
   select
     'fae:' || t.id::text,
@@ -457,7 +461,8 @@ create or replace view platform_read.traces as
 select
   'metabot:' || r.bot_id || ':' || r.id::text as trace_key,
   'metabot:' || r.bot_id || ':' || r.turn_id::text as turn_key,
-  r.bot_id as agent_id,
+  case when r.bot_id = 'marketing-bot' then 'marketing-prospecting-bot'
+       else r.bot_id end as agent_id,
   'metabot'::text as source_kind,
   r.id::text as native_id,
   r.status,
@@ -480,6 +485,7 @@ select
                      'knowledge_version', r.knowledge_version) as details
 from flywheel_analytics.runs r
 where not r.is_synthetic
+  and r.bot_id not in ('pc-bot', 'quality-bot')
 union all
 select
   'fae:' || t.trace_id,
@@ -534,7 +540,8 @@ create or replace view platform_read.trace_steps as
 select
   'metabot:' || e.bot_id || ':' || e.id::text as step_key,
   'metabot:' || e.bot_id || ':' || e.run_id::text as trace_key,
-  e.bot_id as agent_id,
+  case when e.bot_id = 'marketing-bot' then 'marketing-prospecting-bot'
+       else e.bot_id end as agent_id,
   'metabot'::text as source_kind,
   case when e.event_type = 'tool_call' then 'tool_call' else 'event' end as kind,
   coalesce(e.payload->>'tool_name', e.event_type) as name,
@@ -550,6 +557,7 @@ select
   null::timestamptz as source_synced_at
 from flywheel_analytics.events e
 where e.run_id is not null and not e.is_synthetic
+  and e.bot_id not in ('pc-bot', 'quality-bot')
 union all
 select
   'fae:stage:' || t.id::text || ':' || stage.ordinality::text,
@@ -615,7 +623,8 @@ create or replace view platform_read.feedback as
 select
   'metabot:' || f.id::text as feedback_key,
   'metabot:' || f.bot_id || ':' || f.turn_id::text as turn_key,
-  f.bot_id as agent_id,
+  case when f.bot_id = 'marketing-bot' then 'marketing-prospecting-bot'
+       else f.bot_id end as agent_id,
   'metabot'::text as source_kind,
   case when lower(f.kind) in ('good', 'like', 'positive') then 'positive'
        when lower(f.kind) in ('bad', 'dislike', 'negative') then 'negative'
@@ -628,6 +637,7 @@ select
   f.payload as details
 from flywheel_core.feedback f
 where not f.is_synthetic
+  and f.bot_id not in ('pc-bot', 'quality-bot')
 union all
 select
   'fae:' || f.id::text,
