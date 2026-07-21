@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  FLEET_STATE_META,
   applyFleetFailure,
   applyFleetSuccess,
   formatChange,
@@ -72,5 +73,11 @@ describe("fleet presentation formatting", () => {
     expect(runtimeNeedsAttention({ healthy: true, checked_at: null, stale: false, error: null })).toBe(false);
     expect(runtimeNeedsAttention({ healthy: true, checked_at: null, stale: true, error: null })).toBe(true);
     expect(runtimeNeedsAttention({ healthy: false, checked_at: null, stale: false, error: "contract_unavailable" })).toBe(true);
+  });
+
+  it("uses the approved English state vocabulary", () => {
+    expect(Object.values(FLEET_STATE_META).map((state) => state.label)).toEqual([
+      "Active", "Online", "Degraded", "Offline", "Checking",
+    ]);
   });
 });

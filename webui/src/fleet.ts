@@ -1,3 +1,4 @@
+import { UI_COPY } from "./copy";
 import type { DataSourceStatus, FleetOverview, FleetState } from "./types";
 
 
@@ -69,9 +70,9 @@ export const FLEET_STATE_META: Record<
   FleetState,
   { label: string; tone: string }
 > = {
-  active: { label: "活跃", tone: "active" },
-  online: { label: "在线", tone: "online" },
-  degraded: { label: "异常", tone: "degraded" },
-  offline: { label: "离线", tone: "offline" },
-  checking: { label: "检测中", tone: "checking" },
+  active: { label: UI_COPY.states.active, tone: "active" },
+  online: { label: UI_COPY.states.online, tone: "online" },
+  degraded: { label: UI_COPY.states.degraded, tone: "degraded" },
+  offline: { label: UI_COPY.states.offline, tone: "offline" },
+  checking: { label: UI_COPY.states.checking, tone: "checking" },
 };

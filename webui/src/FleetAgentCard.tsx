@@ -3,6 +3,7 @@ import {
   formatCount,
   formatRelativeActivity,
 } from "./fleet";
+import { UI_COPY } from "./copy";
 import { formatUptime } from "./status";
 import type { FleetAgent } from "./types";
 
@@ -15,6 +16,7 @@ interface FleetAgentCardProps {
 
 export function FleetAgentCard({ agent, now }: FleetAgentCardProps) {
   const state = FLEET_STATE_META[agent.state];
+  const [total, weekly, uptime, activity, recent] = UI_COPY.agent.fields;
   return (
     <article className={`fleet-agent-card agent-${agent.accent} ${state.tone}`}>
       <div className="fleet-agent-head">
@@ -32,26 +34,26 @@ export function FleetAgentCard({ agent, now }: FleetAgentCardProps) {
 
       <div className="fleet-usage">
         <div>
-          <span>累计对话</span>
+          <span>{total}</span>
           <strong>{formatCount(agent.total_conversations)}</strong>
         </div>
         <div className="weekly-usage">
-          <span>近 7 天</span>
+          <span>{weekly}</span>
           <b>{formatCount(agent.conversations_last_7d)}</b>
         </div>
       </div>
 
       <dl className="fleet-agent-meta">
-        <div><dt>运行时长</dt><dd>{formatUptime(agent.uptime_seconds)}</dd></div>
+        <div><dt>{uptime}</dt><dd>{formatUptime(agent.uptime_seconds)}</dd></div>
         <div>
-          <dt>最近活动</dt>
+          <dt>{activity}</dt>
           <dd>{formatRelativeActivity(agent.last_activity_at, now)}</dd>
         </div>
       </dl>
 
       <div className="fleet-recent">
-        <span>最近</span>
-        <p>{agent.recent_summary ?? "尚无真实对话记录"}</p>
+        <span>{recent}</span>
+        <p>{agent.recent_summary ?? UI_COPY.agent.emptyRecent}</p>
       </div>
     </article>
   );

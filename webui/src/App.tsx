@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FleetAgentCard } from "./FleetAgentCard";
 import { UsageTrend } from "./UsageTrend";
 import { fetchFleetOverview } from "./api";
+import { UI_COPY } from "./copy";
 import { startPolling } from "./dashboard";
 import {
   applyFleetFailure,
@@ -34,10 +35,10 @@ function ActiveRanking({ agents }: { agents: FleetAgent[] }) {
     <article className="insight-card ranking-card">
       <div className="insight-heading">
         <div>
-          <p>本周表现</p>
-          <h2>活跃 Agent</h2>
+          <p>{UI_COPY.insights.eyebrow}</p>
+          <h2>{UI_COPY.insights.ranking}</h2>
         </div>
-        <span>按真实对话排序</span>
+        <span>{UI_COPY.insights.rankingHint}</span>
       </div>
       {hasWeeklyActivity ? <ol className="ranking-list">
         {leaders.map((agent, index) => {
@@ -47,13 +48,16 @@ function ActiveRanking({ agents }: { agents: FleetAgent[] }) {
               <span className="ranking-index">{String(index + 1).padStart(2, "0")}</span>
               <div className={`ranking-avatar agent-${agent.accent}`}>{agent.glyph}</div>
               <div className="ranking-main">
-                <div><strong>{agent.name}</strong><span>{formatCount(agent.conversations_last_7d)} 次</span></div>
+                <div>
+                  <strong>{agent.name}</strong>
+                  <span>{UI_COPY.insights.conversations(formatCount(agent.conversations_last_7d))}</span>
+                </div>
                 <i><b style={{ width: `${(weekly / maximum) * 100}%` }} /></i>
               </div>
             </li>
           );
         })}
-      </ol> : <p className="ranking-empty">近 7 天还没有真实对话</p>}
+      </ol> : <p className="ranking-empty">{UI_COPY.insights.emptyRanking}</p>}
     </article>
   );
 }
@@ -108,81 +112,78 @@ export default function App() {
             <img className="brand-mark" src="/platform-logo.svg" alt="" aria-hidden="true" />
             <span className="brand-name"><strong>Orbbec</strong> Agent Platform</span>
           </div>
-          <nav className="product-nav" aria-label="产品导航">
-            <span className="is-current">总览</span>
-            <span>Agents</span>
-            <span>任务与会话</span>
-            <span>数据飞轮</span>
+          <nav className="product-nav" aria-label={UI_COPY.navigationLabel}>
+            {UI_COPY.navigation.map((item, index) => (
+              <span className={index === 0 ? "is-current" : undefined} key={item}>{item}</span>
+            ))}
           </nav>
-          <span className="readonly-tag">只读观察</span>
+          <span className="readonly-tag">{UI_COPY.readOnly}</span>
         </div>
       </header>
 
       <main className="page">
         <section className="hero">
           <div>
-            <p className="eyebrow">AI TEAM COCKPIT</p>
-            <h1>AI 团队总览</h1>
-            <p className="hero-sub">
-              一览已经投入工作的 Agent、真实使用情况和最新活动，了解这支 AI 团队此刻如何运转。
-            </p>
+            <p className="eyebrow">{UI_COPY.hero.eyebrow}</p>
+            <h1>{UI_COPY.hero.title}</h1>
+            <p className="hero-sub">{UI_COPY.hero.description}</p>
           </div>
           <div className={`team-light ${hasIncident ? "incident" : "nominal"}`}>
             <span aria-hidden="true" />
             {overview
               ? hasIncident
-                ? `${overview.summary.degraded_agents + overview.summary.offline_agents} 个 Agent 需要关注`
-                : `${overview.summary.running_agents} 个 Agent 正在运行`
-              : "正在读取团队状态"}
+                ? UI_COPY.hero.attention(overview.summary.degraded_agents + overview.summary.offline_agents)
+                : UI_COPY.hero.running(overview.summary.running_agents)
+              : UI_COPY.hero.loading}
           </div>
         </section>
 
         {degraded && (
           <div className="banner error-banner" role="status">
-            Platform 接口暂不可用，当前保留最后一次成功读取的团队数据并继续重试。
+            {UI_COPY.failures.platform}
           </div>
         )}
         {overview && runtimeNeedsAttention(overview.runtime_source) && (
           <div className="banner source-banner" role="status">
             {overview.runtime_source.stale
-              ? "Agent 运行状态已超过 30 秒未更新，当前显示最后一次成功状态。"
-              : "Agent 运行状态暂时无法更新，使用数据仍可正常查看。"}
+              ? UI_COPY.failures.runtimeStale
+              : UI_COPY.failures.runtime}
           </div>
         )}
         {overview && (!overview.usage_source.healthy || overview.usage_source.stale) && (
           <div className="banner source-banner" role="status">
-            对话数据暂时无法更新，当前显示最后一次成功读取的真实数据，不会用模拟数据补齐。
+            {UI_COPY.failures.usage}
           </div>
         )}
 
         {overview ? (
           <>
-            <section className="summary-section" aria-label="AI 团队摘要">
+            <section className="summary-section" aria-label="Fleet summary">
               <div className="section-heading">
                 <div>
-                  <p>团队规模与使用</p>
-                  <h2>今天的 AI 团队</h2>
+                  <p>{UI_COPY.summary.eyebrow}</p>
+                  <h2>{UI_COPY.summary.title}</h2>
                 </div>
-                <span>最后更新 {formatCheckedAt(overview.runtime_source.checked_at)}</span>
+                <span>{UI_COPY.summary.updated} {formatCheckedAt(overview.runtime_source.checked_at)}</span>
               </div>
               <div className="fleet-summary-grid">
                 <article className="fleet-summary-card">
-                  <span>已开发 Agent</span>
+                  <span>{UI_COPY.summary.metrics[0]}</span>
                   <strong>{formatCount(overview.summary.total_agents)}</strong>
-                  <p>已纳入平台观察</p>
+                  <p>{UI_COPY.summary.agentsHint}</p>
                 </article>
                 <article className="fleet-summary-card summary-running">
-                  <span>运行中</span>
+                  <span>{UI_COPY.summary.metrics[1]}</span>
                   <strong>{formatCount(overview.summary.running_agents)}</strong>
-                  <p>{overview.summary.active_agents} 个最近有真实活动</p>
+                  <p>{UI_COPY.summary.activeHint(overview.summary.active_agents)}</p>
                 </article>
                 <article className="fleet-summary-card summary-total">
-                  <span>累计对话</span>
+                  <span>{UI_COPY.summary.metrics[2]}</span>
                   <strong>{formatCount(overview.summary.total_conversations)}</strong>
-                  <p>来自已接入的数据飞轮</p>
+                  <p>{UI_COPY.summary.totalHint}</p>
                 </article>
                 <article className="fleet-summary-card summary-weekly">
-                  <span>近 7 天对话</span>
+                  <span>{UI_COPY.summary.metrics[3]}</span>
                   <strong>{formatCount(overview.summary.conversations_last_7d)}</strong>
                   <p>{formatChange(overview.summary.change_percent)}</p>
                 </article>
@@ -190,24 +191,24 @@ export default function App() {
             </section>
 
             {usageReadable ? (
-              <section className="insight-grid" aria-label="团队使用洞察">
+              <section className="insight-grid" aria-label="Usage insights">
                 <UsageTrend trend={overview.trend} />
                 <ActiveRanking agents={overview.agents} />
               </section>
             ) : (
-              <section className="usage-unavailable-card" aria-label="团队使用洞察">
+              <section className="usage-unavailable-card" aria-label="Usage insights">
                 <span aria-hidden="true">◎</span>
-                <div><h2>对话数据暂不可用</h2><p>运行状态仍在正常更新，Platform 会继续尝试读取数据飞轮。</p></div>
+                <div><h2>{UI_COPY.failures.usageTitle}</h2><p>{UI_COPY.failures.usageDescription}</p></div>
               </section>
             )}
 
-            <section className="agents-section" aria-label="Agent 团队">
+            <section className="agents-section" aria-label="Agents">
               <div className="section-heading">
                 <div>
-                  <p>团队成员</p>
-                  <h2>所有 Agent</h2>
+                  <p>{UI_COPY.agent.sectionEyebrow}</p>
+                  <h2>{UI_COPY.agent.sectionTitle}</h2>
                 </div>
-                <span>{overview.agents.length} 个 Agent · 每 10 秒自动刷新</span>
+                <span>{UI_COPY.agent.refresh(overview.agents.length)}</span>
               </div>
               <div className="fleet-agent-grid">
                 {overview.agents.map((agent) => (
@@ -219,14 +220,14 @@ export default function App() {
         ) : (
           <section className="empty-state" aria-live="polite">
             <span className="empty-pulse" aria-hidden="true" />
-            <h2>{degraded ? "暂时无法读取 AI 团队" : "正在建立团队视图"}</h2>
-            <p>{degraded ? "Platform 会继续自动重试。" : "正在汇总 Agent 状态和真实对话数据。"}</p>
+            <h2>{degraded ? UI_COPY.loading.failedTitle : UI_COPY.loading.title}</h2>
+            <p>{degraded ? UI_COPY.loading.retry : UI_COPY.loading.description}</p>
           </section>
         )}
       </main>
 
       <footer className="site-foot">
-        <span>Orbbec Agent Platform</span><span className="dot">·</span><span>只读展示，不控制 Agent</span>
+        <span>Orbbec Agent Platform</span><span className="dot">·</span><span>{UI_COPY.footer}</span>
       </footer>
     </div>
   );

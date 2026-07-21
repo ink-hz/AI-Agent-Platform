@@ -7,9 +7,9 @@ import type { FleetAgent } from "./types";
 
 const AGENT: FleetAgent = {
   id: "hr-bot",
-  name: "HR 助手",
-  domain: "人力资源",
-  description: "支持招聘、人事与员工服务流程。",
+  name: "HR",
+  domain: "HR",
+  description: "处理招聘、人事与员工服务相关工作。",
   glyph: "HR",
   accent: "people",
   state: "active",
@@ -28,18 +28,19 @@ describe("FleetAgentCard", () => {
     );
 
     for (const text of [
-      "HR 助手",
-      "人力资源",
-      "支持招聘、人事与员工服务流程。",
-      "累计对话",
+      "HR",
+      "处理招聘、人事与员工服务相关工作。",
+      "Total Conversations",
       "826",
-      "近 7 天",
+      "Last 7 Days",
       "214",
-      "运行时长",
+      "Uptime",
       "1小时 0分钟",
+      "Last Activity",
       "2分钟前",
+      "Recent",
       "新员工入职需要准备哪些材料？",
-      "活跃",
+      "Active",
     ]) {
       expect(html).toContain(text);
     }

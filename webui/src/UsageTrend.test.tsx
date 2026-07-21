@@ -20,7 +20,8 @@ describe("UsageTrend", () => {
       />,
     );
 
-    expect(html).toContain("近 7 天对话趋势");
+    expect(html).toContain("USAGE");
+    expect(html).toContain("7-Day Trend");
     expect(html).toContain("07/21");
     expect(html).toContain("12 次对话");
     expect(html).toContain("aria-label=\"2026-07-21，7 次对话\"");

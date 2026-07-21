@@ -1,4 +1,5 @@
 import { formatCount } from "./fleet";
+import { UI_COPY } from "./copy";
 import type { TrendPoint } from "./types";
 
 
@@ -21,10 +22,10 @@ export function UsageTrend({ trend }: UsageTrendProps) {
     <article className="insight-card trend-card">
       <div className="insight-heading">
         <div>
-          <p>团队使用情况</p>
-          <h2>近 7 天对话趋势</h2>
+          <p>{UI_COPY.insights.eyebrow}</p>
+          <h2>{UI_COPY.insights.trend}</h2>
         </div>
-        <span>{formatCount(total)} 次对话</span>
+        <span>{UI_COPY.insights.conversations(formatCount(total))}</span>
       </div>
 
       <div className={`trend-chart ${maximum === 0 ? "is-empty" : ""}`}>
@@ -34,7 +35,7 @@ export function UsageTrend({ trend }: UsageTrendProps) {
             <div
               className="trend-column"
               key={point.date}
-              aria-label={`${point.date}，${point.conversations} 次对话`}
+              aria-label={`${point.date}，${UI_COPY.insights.conversations(String(point.conversations))}`}
             >
               <span className="trend-value">{formatCount(point.conversations)}</span>
               <span className="trend-track" aria-hidden="true">
@@ -45,7 +46,7 @@ export function UsageTrend({ trend }: UsageTrendProps) {
           );
         })}
         {maximum === 0 && (
-          <p className="trend-empty">等待新的真实对话数据</p>
+          <p className="trend-empty">{UI_COPY.insights.emptyTrend}</p>
         )}
       </div>
     </article>
