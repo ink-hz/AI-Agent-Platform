@@ -65,4 +65,3 @@ def default_sources(ssh_host: str, ssh_key_path: str) -> dict[SourceKind, SyncSo
             ),
         ),
     }
-

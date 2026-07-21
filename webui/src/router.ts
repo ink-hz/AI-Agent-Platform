@@ -81,4 +81,3 @@ export function useRoute(): Route {
   }, []);
   return route;
 }
-

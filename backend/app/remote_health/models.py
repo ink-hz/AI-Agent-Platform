@@ -31,4 +31,3 @@ class RemoteOpsResult(BaseModel):
     units: dict[str, str] = Field(default_factory=dict)
     admin_started_at: datetime | None = None
     fae_started_at: datetime | None = None
-

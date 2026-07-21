@@ -125,4 +125,3 @@ export function OverviewPage() {
     </> : <section className="empty-state" aria-live="polite"><span className="empty-pulse" aria-hidden="true" /><h2>{degraded ? UI_COPY.loading.failedTitle : UI_COPY.loading.title}</h2><p>{degraded ? UI_COPY.loading.retry : UI_COPY.loading.description}</p></section>}
   </>;
 }
-

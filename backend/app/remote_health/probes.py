@@ -154,4 +154,3 @@ async def probe_remote_ops(
         return RemoteOpsResult.model_validate(payload), None
     except Exception:
         return None, "invalid_response"
-

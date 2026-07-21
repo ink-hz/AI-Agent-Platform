@@ -50,4 +50,3 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
     </div>
   );
 }
-

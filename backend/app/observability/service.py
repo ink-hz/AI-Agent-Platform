@@ -33,4 +33,3 @@ class ObservabilityService:
 
     async def sync_status(self):
         return await asyncio.to_thread(self._repository.get_sync_status)
-
