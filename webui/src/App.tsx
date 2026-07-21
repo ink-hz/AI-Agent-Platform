@@ -1,32 +1,63 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { AgentCard } from "./AgentCard";
-import { fetchClusterStatus } from "./api";
+import { FleetAgentCard } from "./FleetAgentCard";
+import { UsageTrend } from "./UsageTrend";
+import { fetchFleetOverview } from "./api";
+import { startPolling } from "./dashboard";
 import {
-  applyFailure,
-  applySuccess,
-  initialDashboardState,
-  startPolling,
-} from "./dashboard";
+  applyFleetFailure,
+  applyFleetSuccess,
+  formatChange,
+  formatCount,
+  initialFleetState,
+} from "./fleet";
 import { formatCheckedAt } from "./status";
-import type { ClusterSummary } from "./types";
+import type { FleetAgent } from "./types";
 
 
-const SUMMARY_ITEMS: Array<{
-  key: keyof ClusterSummary;
-  label: string;
-  tone: string;
-}> = [
-  { key: "total", label: "实例总数", tone: "neutral" },
-  { key: "healthy", label: "健康", tone: "healthy" },
-  { key: "degraded", label: "异常", tone: "degraded" },
-  { key: "offline", label: "离线", tone: "offline" },
-  { key: "checking", label: "检测中", tone: "checking" },
-];
+function ActiveRanking({ agents }: { agents: FleetAgent[] }) {
+  const leaders = useMemo(
+    () => [...agents]
+      .sort((a, b) =>
+        (b.conversations_last_7d ?? -1) - (a.conversations_last_7d ?? -1)
+        || (b.total_conversations ?? -1) - (a.total_conversations ?? -1),
+      )
+      .slice(0, 3),
+    [agents],
+  );
+  const maximum = Math.max(1, ...leaders.map((agent) => agent.conversations_last_7d ?? 0));
+
+  return (
+    <article className="insight-card ranking-card">
+      <div className="insight-heading">
+        <div>
+          <p>本周表现</p>
+          <h2>活跃 Agent</h2>
+        </div>
+        <span>按真实对话排序</span>
+      </div>
+      <ol className="ranking-list">
+        {leaders.map((agent, index) => {
+          const weekly = agent.conversations_last_7d ?? 0;
+          return (
+            <li key={agent.id}>
+              <span className="ranking-index">{String(index + 1).padStart(2, "0")}</span>
+              <div className={`ranking-avatar agent-${agent.accent}`}>{agent.glyph}</div>
+              <div className="ranking-main">
+                <div><strong>{agent.name}</strong><span>{formatCount(agent.conversations_last_7d)} 次</span></div>
+                <i><b style={{ width: `${(weekly / maximum) * 100}%` }} /></i>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </article>
+  );
+}
 
 
 export default function App() {
-  const [state, setState] = useState(initialDashboardState);
+  const [state, setState] = useState(initialFleetState);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -37,12 +68,10 @@ export default function App() {
       activeController = controller;
       const timeout = window.setTimeout(() => controller.abort(), 5_000);
       try {
-        const snapshot = await fetchClusterStatus(controller.signal);
-        if (!disposed) {
-          setState((current) => applySuccess(current, snapshot));
-        }
+        const overview = await fetchFleetOverview(controller.signal);
+        if (!disposed) setState((current) => applyFleetSuccess(current, overview));
       } catch {
-        if (!disposed) setState(applyFailure);
+        if (!disposed) setState(applyFleetFailure);
       } finally {
         window.clearTimeout(timeout);
         if (activeController === controller) activeController = null;
@@ -58,13 +87,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 5_000);
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  const { snapshot, degraded } = state;
+  const { overview, degraded } = state;
   const hasIncident = Boolean(
-    snapshot && (snapshot.summary.degraded > 0 || snapshot.summary.offline > 0),
+    overview && (overview.summary.degraded_agents > 0 || overview.summary.offline_agents > 0),
   );
 
   return (
@@ -72,91 +101,104 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-inner">
           <div className="brand">
-            <img
-              className="brand-mark"
-              src="/platform-logo.svg"
-              alt=""
-              aria-hidden="true"
-            />
-            <span className="brand-name">
-              <strong>Orbbec</strong> MetaBot Cluster Monitor
-            </span>
+            <img className="brand-mark" src="/platform-logo.svg" alt="" aria-hidden="true" />
+            <span className="brand-name"><strong>Orbbec</strong> Agent Platform</span>
           </div>
-          <span className="topbar-tag">只读监控 · 10 秒刷新</span>
+          <nav className="product-nav" aria-label="产品导航">
+            <span className="is-current">总览</span>
+            <span>Agents</span>
+            <span>任务与会话</span>
+            <span>数据飞轮</span>
+          </nav>
+          <span className="readonly-tag">只读观察</span>
         </div>
       </header>
 
       <main className="page">
         <section className="hero">
           <div>
-            <p className="eyebrow">AGENT OPERATIONS</p>
-            <h1>MetaBot 集群状态</h1>
+            <p className="eyebrow">AI TEAM COCKPIT</p>
+            <h1>AI 团队总览</h1>
             <p className="hero-sub">
-              实时观察本机 Agent Bot 实例的存活状态、运行时长与响应延迟。
+              一览已经投入工作的 Agent、真实使用情况和最新活动，了解这支 AI 团队此刻如何运转。
             </p>
           </div>
-          <div className={`cluster-light ${hasIncident ? "incident" : "nominal"}`}>
-            <span className="cluster-light-dot" aria-hidden="true" />
-            {snapshot ? (hasIncident ? "集群存在异常" : "集群运行正常") : "正在读取状态"}
+          <div className={`team-light ${hasIncident ? "incident" : "nominal"}`}>
+            <span aria-hidden="true" />
+            {overview
+              ? hasIncident
+                ? `${overview.summary.degraded_agents + overview.summary.offline_agents} 个 Agent 需要关注`
+                : `${overview.summary.running_agents} 个 Agent 正在运行`
+              : "正在读取团队状态"}
           </div>
         </section>
 
         {degraded && (
           <div className="banner error-banner" role="status">
-            监控接口暂不可用，正在显示最后一次成功状态。
+            Platform 接口暂不可用，当前保留最后一次成功读取的团队数据并继续重试。
           </div>
         )}
-        {snapshot && !snapshot.source.healthy && (
+        {overview && !overview.runtime_source.healthy && (
           <div className="banner source-banner" role="status">
-            运行契约读取异常，实例列表来自最后一次有效快照。
+            Agent 运行状态暂时无法更新，使用数据仍可正常查看。
+          </div>
+        )}
+        {overview && (!overview.usage_source.healthy || overview.usage_source.stale) && (
+          <div className="banner source-banner" role="status">
+            对话数据暂时无法更新，当前显示最后一次成功读取的真实数据，不会用模拟数据补齐。
           </div>
         )}
 
-        <section className="monitor-intro" aria-labelledby="monitor-intro-title">
-          <div className="intro-copy">
-            <span className="intro-mark" aria-hidden="true">◎</span>
-            <div>
-              <p className="intro-label">看板说明</p>
-              <h2 id="monitor-intro-title">专注观察每一个 Agent Bot</h2>
-              <p>
-                看板从本机运行契约自动发现 MetaBot 实例，持续呈现它们的存活状态、运行时长和响应速度。
-              </p>
-            </div>
-          </div>
-          <div className="intro-facts" aria-label="监控规则">
-            <span><i aria-hidden="true" />10 秒自动刷新</span>
-            <span><i aria-hidden="true" />健康接口探测</span>
-            <span><i aria-hidden="true" />只读，不控制 Agent</span>
-          </div>
-        </section>
-
-        {snapshot ? (
+        {overview ? (
           <>
-            <section className="summary-section" aria-label="集群摘要">
+            <section className="summary-section" aria-label="AI 团队摘要">
               <div className="section-heading">
-                <h2>集群概览</h2>
-                <span>
-                  最后刷新 {formatCheckedAt(snapshot.source.checked_at)}
-                </span>
+                <div>
+                  <p>团队规模与使用</p>
+                  <h2>今天的 AI 团队</h2>
+                </div>
+                <span>最后更新 {formatCheckedAt(overview.runtime_source.checked_at)}</span>
               </div>
-              <div className="summary-grid">
-                {SUMMARY_ITEMS.map((item) => (
-                  <article className={`summary-card ${item.tone}`} key={item.key}>
-                    <span>{item.label}</span>
-                    <strong>{snapshot.summary[item.key]}</strong>
-                  </article>
-                ))}
+              <div className="fleet-summary-grid">
+                <article className="fleet-summary-card">
+                  <span>已开发 Agent</span>
+                  <strong>{formatCount(overview.summary.total_agents)}</strong>
+                  <p>已纳入平台观察</p>
+                </article>
+                <article className="fleet-summary-card summary-running">
+                  <span>运行中</span>
+                  <strong>{formatCount(overview.summary.running_agents)}</strong>
+                  <p>{overview.summary.active_agents} 个最近有真实活动</p>
+                </article>
+                <article className="fleet-summary-card summary-total">
+                  <span>累计对话</span>
+                  <strong>{formatCount(overview.summary.total_conversations)}</strong>
+                  <p>来自已接入的数据飞轮</p>
+                </article>
+                <article className="fleet-summary-card summary-weekly">
+                  <span>近 7 天对话</span>
+                  <strong>{formatCount(overview.summary.conversations_last_7d)}</strong>
+                  <p>{formatChange(overview.summary.change_percent)}</p>
+                </article>
               </div>
             </section>
 
-            <section className="instances-section" aria-label="MetaBot 实例">
+            <section className="insight-grid" aria-label="团队使用洞察">
+              <UsageTrend trend={overview.trend} />
+              <ActiveRanking agents={overview.agents} />
+            </section>
+
+            <section className="agents-section" aria-label="Agent 团队">
               <div className="section-heading">
-                <h2>实例状态</h2>
-                <span>{snapshot.instances.length} 个监控目标</span>
+                <div>
+                  <p>团队成员</p>
+                  <h2>所有 Agent</h2>
+                </div>
+                <span>{overview.agents.length} 个 Agent · 每 10 秒自动刷新</span>
               </div>
-              <div className="instance-grid">
-                {snapshot.instances.map((instance) => (
-                  <AgentCard instance={instance} key={instance.id} now={now} />
+              <div className="fleet-agent-grid">
+                {overview.agents.map((agent) => (
+                  <FleetAgentCard agent={agent} key={agent.id} now={now} />
                 ))}
               </div>
             </section>
@@ -164,16 +206,14 @@ export default function App() {
         ) : (
           <section className="empty-state" aria-live="polite">
             <span className="empty-pulse" aria-hidden="true" />
-            <h2>{degraded ? "无法连接监控服务" : "正在加载集群状态"}</h2>
-            <p>{degraded ? "Platform 会继续自动重试。" : "首次探测最多需要几秒钟。"}</p>
+            <h2>{degraded ? "暂时无法读取 AI 团队" : "正在建立团队视图"}</h2>
+            <p>{degraded ? "Platform 会继续自动重试。" : "正在汇总 Agent 状态和真实对话数据。"}</p>
           </section>
         )}
       </main>
 
       <footer className="site-foot">
-        <span>Orbbec MetaBot Cluster Monitor</span>
-        <span className="dot">·</span>
-        <span>只读探测，不控制 Agent</span>
+        <span>Orbbec Agent Platform</span><span className="dot">·</span><span>只读展示，不控制 Agent</span>
       </footer>
     </div>
   );

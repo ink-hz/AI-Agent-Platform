@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchClusterStatus } from "./api";
+import { fetchClusterStatus, fetchFleetOverview } from "./api";
 
 
 describe("fetchClusterStatus", () => {
@@ -24,6 +24,43 @@ describe("fetchClusterStatus", () => {
     await fetchClusterStatus(controller.signal);
 
     expect(fetchMock).toHaveBeenCalledWith("/api/cluster/status", {
+      signal: controller.signal,
+    });
+  });
+});
+
+
+describe("fetchFleetOverview", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("requests the read-only fleet product endpoint", async () => {
+    const controller = new AbortController();
+    const overview = {
+      summary: {
+        total_agents: 0,
+        running_agents: 0,
+        active_agents: 0,
+        degraded_agents: 0,
+        offline_agents: 0,
+        checking_agents: 0,
+        total_conversations: 0,
+        conversations_last_7d: 0,
+        conversations_previous_7d: 0,
+        change_percent: null,
+      },
+      trend: [],
+      agents: [],
+      runtime_source: { healthy: true, checked_at: null, stale: false, error: null },
+      usage_source: { healthy: true, checked_at: null, stale: false, error: null },
+    };
+    const response = { ok: true, json: vi.fn().mockResolvedValue(overview) };
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchFleetOverview(controller.signal)).resolves.toEqual(overview);
+    expect(fetchMock).toHaveBeenCalledWith("/api/fleet/overview", {
       signal: controller.signal,
     });
   });
