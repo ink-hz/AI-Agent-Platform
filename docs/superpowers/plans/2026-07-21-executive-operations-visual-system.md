@@ -4,7 +4,7 @@
 
 **Goal:** Upgrade Agent Overview to the approved Executive Operations visual weight with larger readable type, stronger contrast, and substantial cards while preserving all product behavior.
 
-**Architecture:** Keep the existing React structure and data flow. Express the new system in the existing stylesheet, add a raw-CSS Vitest contract that locks critical color, typography, card, long-name, and responsive requirements, and make no backend or API changes.
+**Architecture:** Keep the existing React structure and data flow. Express the new system in the existing stylesheet, add a source-CSS Vitest contract that locks critical color, typography, card, long-name, and responsive requirements, and make no backend or API changes.
 
 **Tech Stack:** React 19, TypeScript, CSS, Vitest, Vite
 
@@ -29,7 +29,7 @@
 - Modify: `webui/src/styles.css`
 
 **Interfaces:**
-- Consumes: Vite raw CSS import `./styles.css?raw`
+- Consumes: the source stylesheet loaded with Node `readFileSync`
 - Produces: tested Executive Operations color tokens, minimum type scale, summary surfaces, insight surfaces, trend values, and ranking scale
 
 - [ ] **Step 1: Write the failing base visual contract**
@@ -37,10 +37,11 @@
 Create `webui/src/styles.test.ts`:
 
 ```typescript
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
-import styles from "./styles.css?raw";
-
+const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
 function rule(selector: string): string {
   const start = styles.indexOf(`${selector} {`);
