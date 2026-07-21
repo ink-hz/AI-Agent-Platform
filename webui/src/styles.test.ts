@@ -66,6 +66,10 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".ranking-main > i")).toContain("height: 7px");
   });
 
+  it("gives percentage-height trend bars a definite containing block", () => {
+    expect(rule(".trend-track")).toMatch(/(?:\{|;)\s*height:\s*132px\s*;/);
+  });
+
   it("gives every Agent card substantial resting weight", () => {
     expect(rule(".fleet-agent-card")).toContain("padding: 24px");
     expect(rule(".fleet-agent-card")).toContain("border: 1px solid #c8d4e2");
