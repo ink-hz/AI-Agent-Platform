@@ -10,6 +10,7 @@ import {
   formatChange,
   formatCount,
   initialFleetState,
+  usageIsReadable,
 } from "./fleet";
 import { formatCheckedAt } from "./status";
 import type { FleetAgent } from "./types";
@@ -26,6 +27,7 @@ function ActiveRanking({ agents }: { agents: FleetAgent[] }) {
     [agents],
   );
   const maximum = Math.max(1, ...leaders.map((agent) => agent.conversations_last_7d ?? 0));
+  const hasWeeklyActivity = leaders.some((agent) => (agent.conversations_last_7d ?? 0) > 0);
 
   return (
     <article className="insight-card ranking-card">
@@ -36,7 +38,7 @@ function ActiveRanking({ agents }: { agents: FleetAgent[] }) {
         </div>
         <span>按真实对话排序</span>
       </div>
-      <ol className="ranking-list">
+      {hasWeeklyActivity ? <ol className="ranking-list">
         {leaders.map((agent, index) => {
           const weekly = agent.conversations_last_7d ?? 0;
           return (
@@ -50,7 +52,7 @@ function ActiveRanking({ agents }: { agents: FleetAgent[] }) {
             </li>
           );
         })}
-      </ol>
+      </ol> : <p className="ranking-empty">近 7 天还没有真实对话</p>}
     </article>
   );
 }
@@ -95,6 +97,7 @@ export default function App() {
   const hasIncident = Boolean(
     overview && (overview.summary.degraded_agents > 0 || overview.summary.offline_agents > 0),
   );
+  const usageReadable = Boolean(overview && usageIsReadable(overview.usage_source));
 
   return (
     <div className="app">
@@ -183,10 +186,17 @@ export default function App() {
               </div>
             </section>
 
-            <section className="insight-grid" aria-label="团队使用洞察">
-              <UsageTrend trend={overview.trend} />
-              <ActiveRanking agents={overview.agents} />
-            </section>
+            {usageReadable ? (
+              <section className="insight-grid" aria-label="团队使用洞察">
+                <UsageTrend trend={overview.trend} />
+                <ActiveRanking agents={overview.agents} />
+              </section>
+            ) : (
+              <section className="usage-unavailable-card" aria-label="团队使用洞察">
+                <span aria-hidden="true">◎</span>
+                <div><h2>对话数据暂不可用</h2><p>运行状态仍在正常更新，Platform 会继续尝试读取数据飞轮。</p></div>
+              </section>
+            )}
 
             <section className="agents-section" aria-label="Agent 团队">
               <div className="section-heading">

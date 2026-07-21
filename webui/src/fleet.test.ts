@@ -7,6 +7,7 @@ import {
   formatCount,
   formatRelativeActivity,
   initialFleetState,
+  usageIsReadable,
 } from "./fleet";
 import type { FleetOverview } from "./types";
 
@@ -58,5 +59,11 @@ describe("fleet presentation formatting", () => {
     expect(formatChange(18)).toBe("较上期 +18%");
     expect(formatChange(-6.5)).toBe("较上期 -6.5%");
     expect(formatChange(null)).toBe("暂无对比");
+  });
+
+  it("only treats current or preserved real usage as readable", () => {
+    expect(usageIsReadable({ healthy: true, checked_at: null, stale: false, error: null })).toBe(true);
+    expect(usageIsReadable({ healthy: false, checked_at: "2026-07-21T02:00:00Z", stale: true, error: "usage_unavailable" })).toBe(true);
+    expect(usageIsReadable({ healthy: false, checked_at: null, stale: false, error: "usage_unavailable" })).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import type { FleetOverview, FleetState } from "./types";
+import type { DataSourceStatus, FleetOverview, FleetState } from "./types";
 
 
 export interface FleetDashboardState {
@@ -52,6 +52,11 @@ export function formatChange(value: number | null): string {
   if (value === null) return "暂无对比";
   const sign = value > 0 ? "+" : "";
   return `较上期 ${sign}${value}%`;
+}
+
+
+export function usageIsReadable(source: DataSourceStatus): boolean {
+  return source.healthy || source.stale;
 }
 
 

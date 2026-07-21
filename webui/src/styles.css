@@ -169,6 +169,7 @@ body {
 .trend-empty { position: absolute; z-index: 2; top: 48%; left: 50%; margin: 0; color: var(--ink-faint); font-size: 12px; transform: translate(-50%, -50%); white-space: nowrap; }
 
 .ranking-list { margin: 22px 0 0; padding: 0; list-style: none; }
+.ranking-empty { display: grid; min-height: 205px; place-items: center; margin: 18px 0 0; border-radius: 12px; background: var(--surface-soft); color: var(--ink-faint); font-size: 12px; }
 .ranking-list li { display: flex; align-items: center; gap: 11px; padding: 12px 0; border-top: 1px solid var(--line-soft); }
 .ranking-list li:first-child { border-top: 0; }
 .ranking-index { color: #a2acb9; font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; }
@@ -196,6 +197,10 @@ body {
 .ranking-main > i b { display: block; height: 100%; border-radius: inherit; background: #5b89c7; }
 
 .fleet-agent-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; }
+.usage-unavailable-card { display: flex; min-height: 140px; align-items: center; gap: 14px; margin-top: 16px; padding: 22px; border: 1px dashed #cbd6e3; border-radius: 18px; background: rgba(255,255,255,.72); }
+.usage-unavailable-card > span { display: grid; width: 39px; height: 39px; place-items: center; border-radius: 11px; background: var(--brand-wash); color: var(--brand); font-size: 18px; font-weight: 800; }
+.usage-unavailable-card h2 { margin: 0; font-size: 15px; }
+.usage-unavailable-card p { margin: 6px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
 .fleet-agent-card {
   --agent-accent: #3478d0;
   --agent-text: #174f96;
