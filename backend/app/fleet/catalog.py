@@ -12,6 +12,10 @@ class AgentProfile:
     description: str
     glyph: str
     accent: str
+    live_since: str | None = None
+    live_since_basis: str = "not_recorded"
+    last_updated_at: str | None = None
+    last_updated_basis: str = "not_recorded"
 
 
 class AgentCatalog:
@@ -47,6 +51,10 @@ class AgentCatalog:
             description="由运行契约动态发现的 Agent Bot 实例。",
             glyph="AI",
             accent="default",
+            live_since=None,
+            live_since_basis="not_recorded",
+            last_updated_at=None,
+            last_updated_basis="not_recorded",
         )
 
     def canonical_id(self, bot_id: str) -> str | None:

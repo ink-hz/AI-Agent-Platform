@@ -4,6 +4,12 @@ from pydantic import BaseModel
 
 
 FleetState = Literal["active", "online", "degraded", "offline", "checking", "unknown"]
+LifecycleBasis = Literal[
+    "release_artifact",
+    "repository_history",
+    "earliest_session",
+    "not_recorded",
+]
 
 
 class TrendPoint(BaseModel):
@@ -19,7 +25,11 @@ class FleetAgent(BaseModel):
     glyph: str
     accent: str
     state: FleetState
-    uptime_seconds: int | None
+    live_since: str | None
+    live_since_basis: LifecycleBasis
+    last_updated_at: str | None
+    last_updated_basis: LifecycleBasis
+    current_runtime_seconds: int | None
     total_conversations: int | None
     conversations_last_7d: int | None
     last_activity_at: str | None

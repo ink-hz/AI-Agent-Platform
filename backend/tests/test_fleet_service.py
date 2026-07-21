@@ -139,6 +139,19 @@ async def test_recent_healthy_agent_is_active_and_idle_agent_is_online():
 
 
 @pytest.mark.asyncio
+async def test_agent_lifecycle_is_stable_catalog_data_not_process_uptime():
+    overview = await make_service().overview(now=NOW)
+
+    agent = get_agent(overview, "hr-bot")
+    assert agent.live_since == "2026-07-14T09:36:54.254859+08:00"
+    assert agent.live_since_basis == "earliest_session"
+    assert agent.last_updated_at == "2026-07-17T10:38:57+08:00"
+    assert agent.last_updated_basis == "repository_history"
+    assert agent.current_runtime_seconds == 3600
+    assert "uptime_seconds" not in agent.model_dump()
+
+
+@pytest.mark.asyncio
 async def test_offline_runtime_state_wins_over_recent_usage():
     overview = await make_service(
         UsageRecord("hr-bot", 14, 4, 2, NOW - timedelta(minutes=1), "recent"),

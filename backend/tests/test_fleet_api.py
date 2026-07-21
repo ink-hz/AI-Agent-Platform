@@ -38,7 +38,11 @@ class StaticFleetService:
                     glyph="HR",
                     accent="people",
                     state="active",
-                    uptime_seconds=3600,
+                    live_since="2026-07-14T09:36:54.254859+08:00",
+                    live_since_basis="earliest_session",
+                    last_updated_at="2026-07-17T10:38:57+08:00",
+                    last_updated_basis="repository_history",
+                    current_runtime_seconds=3600,
                     total_conversations=14,
                     conversations_last_7d=4,
                     last_activity_at="2026-07-21T02:00:00+00:00",
@@ -80,6 +84,9 @@ def test_fleet_overview_returns_product_fields_without_technical_details(tmp_pat
         "usage_source",
     }
     assert body["agents"][0]["name"] == "HR 助手"
+    assert body["agents"][0]["live_since"] == "2026-07-14T09:36:54.254859+08:00"
+    assert body["agents"][0]["current_runtime_seconds"] == 3600
+    assert "uptime_seconds" not in body["agents"][0]
     for forbidden in ("pm2_name", "port", "latency_ms", "health_url", "workdir"):
         assert forbidden not in response.text
 
