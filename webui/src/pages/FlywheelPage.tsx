@@ -1,37 +1,57 @@
 import { useEffect, useState } from "react";
 
-import { fetchFlywheelItems, fetchFlywheelOverview, fetchSyncStatus } from "../api";
+import { fetchAgents, fetchSessions } from "../api";
+import { AgentDataSwitcher } from "../components/AgentDataSwitcher";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
-import { PlatformLink } from "../components/PlatformLink";
-import type { FlywheelOverview, ImprovementItem, Page, SyncStatus } from "../types";
+import { SessionListItem } from "../components/SessionListItem";
+import type { AgentSummary, Page, SessionSummary } from "../types";
 
 
 export function FlywheelPage() {
-  const [overview, setOverview] = useState<FlywheelOverview | null>(null);
-  const [items, setItems] = useState<Page<ImprovementItem> | null>(null);
-  const [sync, setSync] = useState<SyncStatus[]>([]);
+  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
+  const [selectedId, setSelectedId] = useState("");
+  const [sessions, setSessions] = useState<Page<SessionSummary> | null>(null);
   const [error, setError] = useState(false);
+
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([fetchFlywheelOverview(controller.signal), fetchFlywheelItems(controller.signal), fetchSyncStatus(controller.signal)])
-      .then(([nextOverview, nextItems, nextSync]) => { setOverview(nextOverview); setItems(nextItems); setSync(nextSync); })
+    fetchAgents(controller.signal)
+      .then((nextAgents) => {
+        setAgents(nextAgents);
+        setSelectedId((current) => current || nextAgents[0]?.id || "");
+      })
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, []);
-  if (error) return <ErrorState />;
-  if (!overview || !items) return <LoadingState label="Loading Flywheel" />;
-  const metrics = [
-    ["Feedback", overview.feedback_total], ["Negative", overview.negative_feedback],
-    ["Pending Review", overview.pending_reviews], ["Eval Candidates", overview.evaluation_candidates],
-    ["Knowledge Tasks", overview.knowledge_tasks], ["QA Candidates", overview.qa_candidates],
-  ] as const;
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const controller = new AbortController();
+    setSessions(null);
+    setError(false);
+    fetchSessions({ agent_id: selectedId, limit: 50 }, controller.signal)
+      .then(setSessions)
+      .catch(() => { if (!controller.signal.aborted) setError(true); });
+    return () => controller.abort();
+  }, [selectedId]);
+
+  if (error && agents === null) return <ErrorState />;
+  if (agents === null) return <LoadingState label="Loading Agent data" />;
+  if (agents.length === 0) return <EmptyState title="No Agents found" description="The Agent catalog is currently empty." />;
+  const selected = agents.find((agent) => agent.id === selectedId) || agents[0];
+
   return <>
-    <section className="page-intro"><div><p className="eyebrow">DATA FLYWHEEL</p><h1>Flywheel</h1><p>Read-only view of captured Feedback, human Review, and improvement candidates across MetaBot, FAE, and Admin.</p></div></section>
-    <section className="flywheel-metrics">{metrics.map(([label, value]) => <article key={label}><span>{label}</span><strong>{value.toLocaleString("en-US")}</strong></article>)}</section>
-    <section className="sync-strip"><div><p>REMOTE MIRROR</p><h2>Daily sync</h2></div>{sync.map((source) => <article key={source.source_kind}><span>{source.source_kind.toUpperCase()}</span><strong className={`sync-${source.status}`}>{source.status}</strong><time>{source.completed_at ? new Date(source.completed_at).toLocaleString() : "In progress"}</time></article>)}</section>
-    <section className="detail-section"><div className="section-heading"><div><p>IMPROVEMENT QUEUE</p><h2>Candidates and tasks</h2></div><span>{items.total} items</span></div>
-      {items.items.length ? <div className="improvement-list">{items.items.map((item) => <article key={item.item_key}><div><span>{item.item_type}</span><b>{item.status}</b>{item.priority && <b>{item.priority}</b>}</div><h3>{item.title || "Untitled improvement"}</h3><p>{item.summary || "No summary provided."}</p><footer><PlatformLink href={`/agents/${encodeURIComponent(item.agent_id)}`}>{item.agent_id}</PlatformLink><time>{new Date(item.updated_at).toLocaleString()}</time></footer></article>)}</div>
-        : <EmptyState title="No improvement items yet" description="Feedback is being captured; Review can promote it into evaluation, knowledge, or QA work." />}
+    <section className="page-intro"><div><p className="eyebrow">CAPTURED DATA</p><h1>Agent Data</h1><p>Select an Agent and inspect the data it has actually captured. Open any Session for the original Questions, Answers, Evidence, and Trace.</p></div></section>
+    <section className="agent-data-select"><div className="section-heading"><div><p>AGENT</p><h2>Select data source</h2></div><span>{agents.length} Agents</span></div><AgentDataSwitcher agents={agents} selectedId={selected.id} onSelect={setSelectedId} /></section>
+    <section className={`agent-data-context agent-${selected.accent}`}>
+      <div className="profile-identity"><span className="fleet-avatar">{selected.glyph}</span><div><p>{selected.domain}</p><h2>{selected.name}</h2><span>{selected.description}</span></div></div>
+      <div className="profile-badges"><span>{selected.source_kind.toUpperCase()}</span><span>{selected.deployment}</span><span className={`freshness freshness-${selected.freshness}`}>{selected.freshness}</span></div>
+    </section>
+    <section className="detail-section"><div className="section-heading"><div><p>CAPTURED SESSIONS</p><h2>Conversation data</h2></div>{sessions && <span>{sessions.total} Sessions</span>}</div>
+      {error ? <ErrorState />
+        : sessions === null ? <LoadingState label={`Loading ${selected.name} data`} />
+        : sessions.items.length ? <div className="session-list">{sessions.items.map((session) => <SessionListItem key={session.session_key} session={session} showSignals={false} />)}</div>
+        : <EmptyState title="No captured Sessions" description="This Agent has no recorded conversation data yet." />}
     </section>
   </>;
 }
