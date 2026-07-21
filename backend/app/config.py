@@ -18,6 +18,10 @@ class Config:
     flywheel_keychain_account: str
     usage_cache_seconds: float
     active_window_minutes: int
+    sync_keychain_service: str
+    sync_keychain_account: str
+    remote_ssh_host: str
+    remote_ssh_key_path: str
 
 
 def load_config() -> Config:
@@ -51,4 +55,20 @@ def load_config() -> Config:
         ),
         usage_cache_seconds=float(os.getenv("PLATFORM_USAGE_CACHE_SECONDS", "60")),
         active_window_minutes=int(os.getenv("PLATFORM_ACTIVE_WINDOW_MINUTES", "15")),
+        sync_keychain_service=os.getenv(
+            "PLATFORM_SYNC_KEYCHAIN_SERVICE",
+            "platform-sync-database-url",
+        ),
+        sync_keychain_account=os.getenv(
+            "PLATFORM_SYNC_KEYCHAIN_ACCOUNT",
+            "neo",
+        ),
+        remote_ssh_host=os.getenv(
+            "PLATFORM_REMOTE_SSH_HOST",
+            "root@47.106.112.69",
+        ),
+        remote_ssh_key_path=os.getenv(
+            "PLATFORM_REMOTE_SSH_KEY_PATH",
+            "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+        ),
     )
