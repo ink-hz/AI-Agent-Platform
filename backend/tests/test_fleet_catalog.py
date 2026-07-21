@@ -31,6 +31,7 @@ def test_catalog_maps_only_confirmed_legacy_aliases():
     assert catalog.canonical_id("pc-bot") is None
     assert catalog.canonical_id("quality-bot") is None
     assert catalog.canonical_id("hr-bot") == "hr-bot"
+    assert catalog.canonical_id("new-runtime-bot") == "new-runtime-bot"
 
 
 def test_unknown_runtime_bot_gets_generic_profile():

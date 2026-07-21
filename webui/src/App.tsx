@@ -10,6 +10,7 @@ import {
   formatChange,
   formatCount,
   initialFleetState,
+  runtimeNeedsAttention,
   usageIsReadable,
 } from "./fleet";
 import { formatCheckedAt } from "./status";
@@ -141,9 +142,11 @@ export default function App() {
             Platform 接口暂不可用，当前保留最后一次成功读取的团队数据并继续重试。
           </div>
         )}
-        {overview && !overview.runtime_source.healthy && (
+        {overview && runtimeNeedsAttention(overview.runtime_source) && (
           <div className="banner source-banner" role="status">
-            Agent 运行状态暂时无法更新，使用数据仍可正常查看。
+            {overview.runtime_source.stale
+              ? "Agent 运行状态已超过 30 秒未更新，当前显示最后一次成功状态。"
+              : "Agent 运行状态暂时无法更新，使用数据仍可正常查看。"}
           </div>
         )}
         {overview && (!overview.usage_source.healthy || overview.usage_source.stale) && (

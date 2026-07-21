@@ -62,6 +62,10 @@ def test_usage_query_counts_distinct_assistant_turns_and_maps_rows():
     assert "flywheel_analytics.conversations" in sql
     assert "role = 'assistant'" in sql
     assert "count(distinct" in sql
+    assert "at time zone 'asia/shanghai'" in sql
+    assert "interval '7 days'" not in sql
+    assert "::date - 6" in sql
+    assert "::date - 13" in sql
     assert "flywheel_core" not in sql
     assert snapshot.checked_at == checked_at
     assert snapshot.records[0].bot_id == "hr-bot"
@@ -86,3 +90,16 @@ def test_repository_wraps_driver_errors_without_secret():
 
     assert "password" not in str(error.value)
     assert "postgresql" not in str(error.value)
+
+
+def test_repository_wraps_invalid_rows_for_cache_degradation():
+    fake = FakeConnect(
+        [
+            [{"bot_id": "hr-bot", "total_conversations": "not-a-number"}],
+            [],
+        ]
+    )
+    repository = PsycopgFlywheelRepository("postgresql://unused", connect=fake)
+
+    with pytest.raises(FlywheelReadError, match="flywheel query failed"):
+        repository.fetch_usage()

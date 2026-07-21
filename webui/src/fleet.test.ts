@@ -7,6 +7,7 @@ import {
   formatCount,
   formatRelativeActivity,
   initialFleetState,
+  runtimeNeedsAttention,
   usageIsReadable,
 } from "./fleet";
 import type { FleetOverview } from "./types";
@@ -65,5 +66,11 @@ describe("fleet presentation formatting", () => {
     expect(usageIsReadable({ healthy: true, checked_at: null, stale: false, error: null })).toBe(true);
     expect(usageIsReadable({ healthy: false, checked_at: "2026-07-21T02:00:00Z", stale: true, error: "usage_unavailable" })).toBe(true);
     expect(usageIsReadable({ healthy: false, checked_at: null, stale: false, error: "usage_unavailable" })).toBe(false);
+  });
+
+  it("marks unhealthy or stale runtime snapshots for explicit attention", () => {
+    expect(runtimeNeedsAttention({ healthy: true, checked_at: null, stale: false, error: null })).toBe(false);
+    expect(runtimeNeedsAttention({ healthy: true, checked_at: null, stale: true, error: null })).toBe(true);
+    expect(runtimeNeedsAttention({ healthy: false, checked_at: null, stale: false, error: "contract_unavailable" })).toBe(true);
   });
 });

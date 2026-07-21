@@ -57,8 +57,15 @@ class StaticCache:
         return self._value
 
 
-def make_service(*records, trend=(), healthy=True, status_overrides=None):
+def make_service(
+    *records,
+    trend=(),
+    healthy=True,
+    status_overrides=None,
+    bot_ids=None,
+):
     status_overrides = status_overrides or {}
+    bot_ids = bot_ids or CURRENT_BOT_IDS
     statuses = [
         InstanceStatus(
             id=bot_id,
@@ -69,7 +76,7 @@ def make_service(*records, trend=(), healthy=True, status_overrides=None):
             uptime_seconds=3600,
             checked_at=NOW.isoformat(),
         )
-        for index, bot_id in enumerate(CURRENT_BOT_IDS)
+        for index, bot_id in enumerate(bot_ids)
     ]
     monitor = StaticMonitor(
         build_snapshot(
@@ -148,6 +155,28 @@ async def test_missing_usage_is_unknown_not_zero():
     assert all(agent.total_conversations is None for agent in overview.agents)
     assert overview.summary.running_agents == 9
     assert overview.usage_source.error == "usage_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_healthy_empty_usage_is_zero_for_summary_and_every_agent():
+    overview = await make_service().overview(now=NOW)
+
+    assert overview.summary.total_conversations == 0
+    assert overview.summary.conversations_last_7d == 0
+    assert all(agent.total_conversations == 0 for agent in overview.agents)
+    assert all(agent.conversations_last_7d == 0 for agent in overview.agents)
+
+
+@pytest.mark.asyncio
+async def test_unknown_current_runtime_bot_keeps_its_real_usage():
+    overview = await make_service(
+        UsageRecord("new-runtime-bot", 7, 3, 1, NOW, "new work"),
+        bot_ids=["new-runtime-bot"],
+    ).overview(now=NOW)
+
+    assert overview.agents[0].id == "new-runtime-bot"
+    assert overview.agents[0].total_conversations == 7
+    assert overview.summary.total_conversations == 7
 
 
 @pytest.mark.asyncio

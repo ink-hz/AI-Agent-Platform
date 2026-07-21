@@ -145,7 +145,11 @@ class FleetReadService:
 
     def _build_agent(self, instance, usage_by_id, now: datetime) -> FleetAgent:
         profile = self._catalog.profile(instance.id, instance.name)
-        usage = usage_by_id.get(instance.id, _UsageTotal()) if usage_by_id else None
+        usage = (
+            usage_by_id.get(instance.id, _UsageTotal())
+            if usage_by_id is not None
+            else None
+        )
         last_activity = usage.last_activity_at if usage else None
         state = self._state(instance.status, last_activity, now)
         return FleetAgent(

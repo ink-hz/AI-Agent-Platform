@@ -24,11 +24,14 @@ with answer_turns as (
 select a.bot_id,
   count(distinct a.turn_id)::bigint as total_conversations,
   count(distinct a.turn_id) filter (
-    where a.answered_at >= now() - interval '7 days')::bigint
+    where (a.answered_at at time zone 'Asia/Shanghai')::date
+      >= (now() at time zone 'Asia/Shanghai')::date - 6)::bigint
     as conversations_last_7d,
   count(distinct a.turn_id) filter (
-    where a.answered_at >= now() - interval '14 days'
-      and a.answered_at < now() - interval '7 days')::bigint
+    where (a.answered_at at time zone 'Asia/Shanghai')::date
+      >= (now() at time zone 'Asia/Shanghai')::date - 13
+      and (a.answered_at at time zone 'Asia/Shanghai')::date
+        < (now() at time zone 'Asia/Shanghai')::date - 6)::bigint
     as conversations_previous_7d,
   max(a.answered_at) as last_activity_at,
   left(max(u.content), 120) as recent_summary
@@ -112,33 +115,34 @@ class PsycopgFlywheelRepository:
                 with connection.cursor() as cursor:
                     usage_rows = cursor.execute(USAGE_SQL).fetchall()
                     trend_rows = cursor.execute(TREND_SQL).fetchall()
+            return UsageSnapshot(
+                records=tuple(
+                    UsageRecord(
+                        bot_id=row["bot_id"],
+                        total_conversations=int(row["total_conversations"]),
+                        conversations_last_7d=int(
+                            row["conversations_last_7d"]
+                        ),
+                        conversations_previous_7d=int(
+                            row["conversations_previous_7d"]
+                        ),
+                        last_activity_at=row["last_activity_at"],
+                        recent_summary=row["recent_summary"],
+                    )
+                    for row in usage_rows
+                ),
+                trend=tuple(
+                    DailyUsage(
+                        bot_id=row["bot_id"],
+                        date=row["date"],
+                        conversations=int(row["conversations"]),
+                    )
+                    for row in trend_rows
+                ),
+                checked_at=self._now(),
+            )
         except Exception as error:
             raise FlywheelReadError("flywheel query failed") from error
-
-        return UsageSnapshot(
-            records=tuple(
-                UsageRecord(
-                    bot_id=row["bot_id"],
-                    total_conversations=int(row["total_conversations"]),
-                    conversations_last_7d=int(row["conversations_last_7d"]),
-                    conversations_previous_7d=int(
-                        row["conversations_previous_7d"]
-                    ),
-                    last_activity_at=row["last_activity_at"],
-                    recent_summary=row["recent_summary"],
-                )
-                for row in usage_rows
-            ),
-            trend=tuple(
-                DailyUsage(
-                    bot_id=row["bot_id"],
-                    date=row["date"],
-                    conversations=int(row["conversations"]),
-                )
-                for row in trend_rows
-            ),
-            checked_at=self._now(),
-        )
 
 
 class UnavailableFlywheelRepository:

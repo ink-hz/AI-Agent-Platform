@@ -54,4 +54,4 @@ class AgentCatalog:
             return bot_id
         if bot_id in self._unresolved_aliases:
             return None
-        return self._aliases.get(bot_id)
+        return self._aliases.get(bot_id, bot_id)
