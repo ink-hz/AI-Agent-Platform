@@ -75,4 +75,5 @@ export const FLEET_STATE_META: Record<
   degraded: { label: UI_COPY.states.degraded, tone: "degraded" },
   offline: { label: UI_COPY.states.offline, tone: "offline" },
   checking: { label: UI_COPY.states.checking, tone: "checking" },
+  unknown: { label: "Unknown", tone: "checking" },
 };

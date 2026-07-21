@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.observability.models import SessionFilters
 from app.observability.repository import PsycopgObservabilityRepository
+from app.fleet.catalog import AgentCatalog, AgentProfile
 
 
 NOW = datetime(2026, 7, 21, 9, 0, tzinfo=timezone.utc)
@@ -35,6 +36,30 @@ class FakeConnect:
 
     def fetchone(self):
         return self.current[0] if self.current else None
+
+
+def test_list_agents_includes_catalog_agents_without_conversations() -> None:
+    fake = FakeConnect([[]])
+    catalog = AgentCatalog(
+        {
+            "quiet-agent": AgentProfile(
+                id="quiet-agent", name="Quiet Agent", domain="Operations",
+                description="Ready for its first conversation", glyph="QA", accent="blue",
+            )
+        },
+        {},
+        set(),
+    )
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, catalog=catalog,
+    )
+
+    agents = repository.list_agents()
+
+    assert len(agents) == 1
+    assert agents[0].id == "quiet-agent"
+    assert agents[0].session_count == 0
+    assert agents[0].total_turns == 0
 
 
 def test_list_sessions_uses_canonical_view_filters_and_pagination() -> None:

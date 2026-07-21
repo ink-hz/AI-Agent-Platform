@@ -98,10 +98,12 @@ class PsycopgObservabilityRepository:
             with self._connection() as connection, connection.cursor() as cursor:
                 rows = cursor.execute(statement).fetchall()
             now = self._now()
-            result = []
+            result: list[AgentSummary] = []
+            seen: set[str] = set()
             for row in rows:
                 profile = self._catalog.profile(row["agent_id"], row["agent_id"])
                 source = row["source_kind"]
+                seen.add(row["agent_id"])
                 result.append(AgentSummary(
                     id=row["agent_id"],
                     name=profile.name,
@@ -117,7 +119,28 @@ class PsycopgObservabilityRepository:
                     last_synced_at=row["last_synced_at"],
                     freshness=_freshness(source, row["last_synced_at"], now),
                 ))
-            return tuple(result)
+            for profile in self._catalog.all_profiles():
+                if profile.id in seen:
+                    continue
+                source = (
+                    "fae" if profile.id == "ai-fae-agent"
+                    else "admin" if profile.id == "ai-admin-agent"
+                    else "metabot"
+                )
+                result.append(AgentSummary(
+                    id=profile.id,
+                    name=profile.name,
+                    domain=profile.domain,
+                    description=profile.description,
+                    glyph=profile.glyph,
+                    accent=profile.accent,
+                    source_kind=source,
+                    deployment="Local" if source == "metabot" else "Alibaba Cloud",
+                    session_count=0,
+                    total_turns=0,
+                    freshness=_freshness(source, None, now),
+                ))
+            return tuple(sorted(result, key=lambda item: (-item.total_turns, item.id)))
         except Exception as error:
             raise ObservabilityReadError("observability query failed") from error
 

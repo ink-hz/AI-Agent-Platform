@@ -125,10 +125,10 @@ def create_app(
         return {"status": "ok"}
 
     app.include_router(health_routes.router)
-    app.include_router(registry_routes.router)
     app.include_router(cluster_routes.router)
     app.include_router(fleet_routes.router)
     app.include_router(observability_routes.router)
+    app.include_router(registry_routes.router)
 
     if os.path.isdir(config.static_dir):
         app.mount("/", StaticFiles(directory=config.static_dir, html=True), name="portal")

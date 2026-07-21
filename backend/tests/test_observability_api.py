@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.observability.models import (
+    AgentSummary,
     Page,
     SessionDetail,
     SessionSummary,
@@ -17,7 +18,12 @@ NOW = datetime(2026, 7, 21, 9, 0, tzinfo=timezone.utc)
 
 class StaticObservabilityService:
     async def list_agents(self):
-        return []
+        return [AgentSummary(
+            id="ai-fae-agent", name="AI FAE", domain="Field Application Engineering",
+            description="Production engineering Agent", glyph="FAE", accent="cyan",
+            source_kind="fae", deployment="Alibaba Cloud", session_count=168,
+            total_turns=236, last_activity_at=NOW, last_synced_at=NOW, freshness="fresh",
+        )]
 
     async def get_agent(self, agent_id):
         return None
@@ -109,6 +115,14 @@ def test_sessions_api_preserves_original_language_and_pagination(tmp_path) -> No
     assert body["items"][0]["title"] == "请保留这段中文原文"
     assert body["limit"] == 25
     assert body["total"] == 1
+
+
+def test_agents_api_uses_unified_observability_model(tmp_path) -> None:
+    response = make_client(tmp_path).get("/api/agents")
+
+    assert response.status_code == 200
+    assert response.json()[0]["source_kind"] == "fae"
+    assert response.json()[0]["session_count"] == 168
 
 
 def test_session_and_trace_missing_return_404(tmp_path) -> None:

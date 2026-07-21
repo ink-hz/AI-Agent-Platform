@@ -1,4 +1,14 @@
-import type { ClusterSnapshot, FleetOverview } from "./types";
+import type {
+  AgentSummary, ClusterSnapshot, FleetOverview, FlywheelOverview,
+  ImprovementItem, Page, SessionDetail, SessionSummary, SyncStatus, TraceDetail,
+} from "./types";
+
+
+async function read<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, { signal });
+  if (!response.ok) throw new Error(`${path} ${response.status}`);
+  return response.json();
+}
 
 
 export async function fetchClusterStatus(
@@ -17,3 +27,37 @@ export async function fetchFleetOverview(
   if (!response.ok) throw new Error(`fleet ${response.status}`);
   return response.json();
 }
+
+export const fetchAgents = (signal?: AbortSignal) => read<AgentSummary[]>("/api/agents", signal);
+export const fetchAgent = (id: string, signal?: AbortSignal) =>
+  read<AgentSummary>(`/api/agents/${encodeURIComponent(id)}`, signal);
+
+export interface SessionQuery {
+  agent_id?: string;
+  source_kind?: string;
+  q?: string;
+  sentiment?: string;
+  review_status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function fetchSessions(query: SessionQuery = {}, signal?: AbortSignal) {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  });
+  const suffix = params.size ? `?${params}` : "";
+  return read<Page<SessionSummary>>(`/api/sessions${suffix}`, signal);
+}
+
+export const fetchSession = (key: string, signal?: AbortSignal) =>
+  read<SessionDetail>(`/api/sessions/${encodeURIComponent(key)}`, signal);
+export const fetchTrace = (turnKey: string, signal?: AbortSignal) =>
+  read<TraceDetail>(`/api/turns/${encodeURIComponent(turnKey)}/trace`, signal);
+export const fetchFlywheelOverview = (signal?: AbortSignal) =>
+  read<FlywheelOverview>("/api/flywheel/overview", signal);
+export const fetchFlywheelItems = (signal?: AbortSignal) =>
+  read<Page<ImprovementItem>>("/api/flywheel/items?limit=100", signal);
+export const fetchSyncStatus = (signal?: AbortSignal) =>
+  read<SyncStatus[]>("/api/sync/status", signal);

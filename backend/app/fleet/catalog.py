@@ -55,3 +55,6 @@ class AgentCatalog:
         if bot_id in self._unresolved_aliases:
             return None
         return self._aliases.get(bot_id, bot_id)
+
+    def all_profiles(self) -> tuple[AgentProfile, ...]:
+        return tuple(self._profiles.values())

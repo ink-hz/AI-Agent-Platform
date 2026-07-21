@@ -32,7 +32,7 @@ export interface ClusterSnapshot {
   instances: InstanceStatus[];
 }
 
-export type FleetState = "active" | "online" | "degraded" | "offline" | "checking";
+export type FleetState = "active" | "online" | "degraded" | "offline" | "checking" | "unknown";
 
 export interface FleetSummary {
   total_agents: number;
@@ -65,6 +65,9 @@ export interface FleetAgent {
   conversations_last_7d: number | null;
   last_activity_at: string | null;
   recent_summary: string | null;
+  session_count?: number | null;
+  last_synced_at?: string | null;
+  data_freshness?: Freshness;
 }
 
 export interface DataSourceStatus {
@@ -80,4 +83,182 @@ export interface FleetOverview {
   agents: FleetAgent[];
   runtime_source: DataSourceStatus;
   usage_source: DataSourceStatus;
+}
+
+export type SourceKind = "metabot" | "fae" | "admin";
+export type Freshness = "live" | "fresh" | "stale";
+export type Availability = "available" | "missing" | "unavailable" | "restricted";
+
+export interface AgentSummary {
+  id: string;
+  name: string;
+  domain: string;
+  description: string;
+  glyph: string;
+  accent: string;
+  source_kind: SourceKind;
+  deployment: string;
+  session_count: number;
+  total_turns: number;
+  last_activity_at: string | null;
+  last_synced_at: string | null;
+  freshness: Freshness;
+}
+
+export interface SessionSummary {
+  session_key: string;
+  agent_id: string;
+  source_kind: SourceKind;
+  channel: string;
+  title: string | null;
+  created_at: string;
+  last_active_at: string;
+  turn_count: number;
+  feedback_count: number;
+  review_count: number;
+  latest_outcome: string | null;
+  source_synced_at: string | null;
+  freshness: Freshness;
+}
+
+export interface Page<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface EvidenceSummary {
+  kind: string;
+  title: string;
+  reference: string | null;
+  classification: string | null;
+  availability: Availability;
+  metadata: Record<string, unknown>;
+}
+
+export interface FeedbackItem {
+  feedback_key: string;
+  sentiment: "positive" | "negative" | "other";
+  raw_rating: string;
+  reason_code: string | null;
+  comment: string;
+  created_at: string;
+  details: Record<string, unknown>;
+}
+
+export interface ReviewItem {
+  review_key: string;
+  status: string;
+  native_priority: string;
+  normalized_priority: string;
+  failure_layer: string | null;
+  notes: string;
+  corrected_answer: string;
+  reviewer: string;
+  created_at: string;
+  updated_at: string;
+  details: Record<string, unknown>;
+}
+
+export interface ImprovementItem {
+  item_key: string;
+  turn_key: string | null;
+  agent_id: string;
+  source_kind: SourceKind;
+  item_type: "evaluation" | "knowledge" | "qa";
+  status: string;
+  priority: string | null;
+  title: string;
+  summary: string;
+  created_at: string;
+  updated_at: string;
+  source_synced_at: string | null;
+  details: Record<string, unknown>;
+}
+
+export interface TurnDetail {
+  turn_key: string;
+  session_key: string;
+  agent_id: string;
+  source_kind: SourceKind;
+  turn_index: number;
+  question: string;
+  answer: string;
+  created_at: string;
+  trace_key: string | null;
+  outcome: string | null;
+  fallback_used: boolean;
+  duration_ms: number | null;
+  sources: Record<string, unknown>[];
+  evidence: EvidenceSummary[];
+  evidence_availability: Availability;
+  feedback: FeedbackItem[];
+  reviews: ReviewItem[];
+  improvements: ImprovementItem[];
+  details: Record<string, unknown>;
+}
+
+export interface SessionDetail extends SessionSummary {
+  turns: TurnDetail[];
+}
+
+export interface TraceStep {
+  step_key: string;
+  trace_key: string;
+  kind: "stage" | "span" | "tool_call" | "event";
+  name: string;
+  status: string | null;
+  parent_step_key: string | null;
+  seq: number | null;
+  started_at: string | null;
+  duration_ms: number | null;
+  input_summary: Record<string, unknown>;
+  output_summary: Record<string, unknown>;
+  safe_metadata: Record<string, unknown>;
+  error_summary: string | null;
+}
+
+export interface TraceDetail {
+  trace_key: string;
+  turn_key: string;
+  agent_id: string;
+  source_kind: SourceKind;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  engine: string | null;
+  backend: string | null;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number | null;
+  error_class: string | null;
+  error_message: string | null;
+  detail_availability: Availability;
+  source_synced_at: string | null;
+  details: Record<string, unknown>;
+  steps: TraceStep[];
+}
+
+export interface FlywheelOverview {
+  feedback_total: number;
+  negative_feedback: number;
+  pending_reviews: number;
+  evaluation_candidates: number;
+  knowledge_tasks: number;
+  qa_candidates: number;
+}
+
+export interface SyncStatus {
+  source_kind: "fae" | "admin";
+  status: "running" | "succeeded" | "failed";
+  started_at: string;
+  completed_at: string | null;
+  source_counts: Record<string, number>;
+  applied_counts: Record<string, number>;
+  validation: Record<string, unknown>;
+  error_summary: string | null;
+  freshness: Freshness;
 }

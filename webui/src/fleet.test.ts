@@ -77,7 +77,7 @@ describe("fleet presentation formatting", () => {
 
   it("uses the approved English state vocabulary", () => {
     expect(Object.values(FLEET_STATE_META).map((state) => state.label)).toEqual([
-      "Active", "Online", "Degraded", "Offline", "Checking",
+      "Active", "Online", "Degraded", "Offline", "Checking", "Unknown",
     ]);
   });
 });
