@@ -244,3 +244,19 @@ async def test_overview_combines_nine_local_and_two_remote_agents():
     assert overview.summary.running_agents == 11
     assert get_agent(overview, "ai-fae-agent").session_count == 168
     assert get_agent(overview, "ai-admin-agent").session_count == 118
+
+
+@pytest.mark.asyncio
+async def test_minute_level_remote_health_is_not_stale_between_poll_cycles():
+    service = make_service()
+    checked_at = NOW - timedelta(seconds=70)
+    service._remote_monitor = StaticRemoteMonitor(RemoteHealthSnapshot(
+        healthy=True,
+        checked_at=checked_at,
+        error=None,
+        agents=[],
+    ))
+
+    overview = await service.overview(now=NOW)
+
+    assert overview.runtime_source.stale is False

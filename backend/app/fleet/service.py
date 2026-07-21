@@ -18,6 +18,7 @@ from .repository import UsageRecord
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+RUNTIME_STALE_AFTER = timedelta(seconds=120)
 
 
 @dataclass
@@ -151,7 +152,7 @@ class FleetReadService:
                 checked_at=runtime_checked_at,
                 stale=(
                     source_checked_at is None
-                    or now - source_checked_at > timedelta(seconds=30)
+                    or now - source_checked_at > RUNTIME_STALE_AFTER
                 ),
                 error=cluster.source.error or (remote.error if remote else None),
             ),
