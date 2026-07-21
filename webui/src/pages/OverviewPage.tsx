@@ -11,7 +11,6 @@ import {
   formatChange,
   formatCount,
   initialFleetState,
-  runtimeNeedsAttention,
   usageIsReadable,
 } from "../fleet";
 import { formatCheckedAt } from "../status";
@@ -103,7 +102,6 @@ export function OverviewPage() {
       </div>
     </section>
     {degraded && <div className="banner error-banner" role="status">{UI_COPY.failures.platform}</div>}
-    {overview && runtimeNeedsAttention(overview.runtime_source) && <div className="banner source-banner" role="status">{overview.runtime_source.stale ? UI_COPY.failures.runtimeStale : UI_COPY.failures.runtime}</div>}
     {overview && (!overview.usage_source.healthy || overview.usage_source.stale) && <div className="banner source-banner" role="status">{UI_COPY.failures.usage}</div>}
 
     {overview ? <>

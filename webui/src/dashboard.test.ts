@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import {
   applyFailure,
@@ -76,5 +77,15 @@ describe("startPolling", () => {
     expect(scheduled).toBeTypeOf("function");
 
     stop();
+  });
+});
+
+
+describe("Overview status messaging", () => {
+  it("does not render a runtime availability banner", () => {
+    const source = readFileSync(new URL("./pages/OverviewPage.tsx", import.meta.url), "utf8");
+
+    expect(source).not.toContain("runtimeNeedsAttention");
+    expect(source).not.toContain("UI_COPY.failures.runtime");
   });
 });

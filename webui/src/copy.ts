@@ -50,8 +50,6 @@ export const UI_COPY = {
   },
   failures: {
     platform: "Platform 接口暂不可用，显示最后一次成功数据并继续重试。",
-    runtime: "Agent 状态暂不可用，使用数据仍可查看。",
-    runtimeStale: "Agent status missed two refresh cycles. Showing the last successful snapshot.",
     usage: "Flywheel 暂不可用，显示最后一次成功数据；不使用模拟数据。",
     usageTitle: "对话数据暂不可用",
     usageDescription: "Agent 状态仍在更新，Platform 会继续尝试读取 Flywheel。",

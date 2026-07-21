@@ -61,11 +61,6 @@ export function usageIsReadable(source: DataSourceStatus): boolean {
 }
 
 
-export function runtimeNeedsAttention(source: DataSourceStatus): boolean {
-  return !source.healthy || source.stale;
-}
-
-
 export const FLEET_STATE_META: Record<
   FleetState,
   { label: string; tone: string }
