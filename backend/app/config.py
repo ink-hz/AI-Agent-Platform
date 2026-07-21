@@ -22,6 +22,7 @@ class Config:
     sync_keychain_account: str
     remote_ssh_host: str
     remote_ssh_key_path: str
+    remote_poll_interval_seconds: float
 
 
 def load_config() -> Config:
@@ -70,5 +71,8 @@ def load_config() -> Config:
         remote_ssh_key_path=os.getenv(
             "PLATFORM_REMOTE_SSH_KEY_PATH",
             "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+        ),
+        remote_poll_interval_seconds=float(
+            os.getenv("PLATFORM_REMOTE_POLL_INTERVAL", "60")
         ),
     )

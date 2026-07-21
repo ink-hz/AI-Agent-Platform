@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-FleetState = Literal["active", "online", "degraded", "offline", "checking"]
+FleetState = Literal["active", "online", "degraded", "offline", "checking", "unknown"]
 
 
 class TrendPoint(BaseModel):
@@ -24,6 +24,9 @@ class FleetAgent(BaseModel):
     conversations_last_7d: int | None
     last_activity_at: str | None
     recent_summary: str | None
+    session_count: int | None = None
+    last_synced_at: str | None = None
+    data_freshness: Literal["live", "fresh", "stale", "unavailable"] = "live"
 
 
 class FleetSummary(BaseModel):

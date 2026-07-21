@@ -53,6 +53,18 @@ profiles:
     description: 收集并整理市场动态与竞争信息。
     glyph: INT
     accent: intelligence
+  ai-fae-agent:
+    name: AI FAE Agent
+    domain: Technical Support
+    description: Product specifications, SDK guidance, troubleshooting, and field application support.
+    glyph: FAE
+    accent: support
+  ai-admin-agent:
+    name: AI ADMIN Agent
+    domain: Administration
+    description: DingTalk-backed Agent for policies, office processes, forms, contacts, and administrative knowledge.
+    glyph: ADM
+    accent: administration
 
 aliases:
   marketing-bot: marketing-prospecting-bot

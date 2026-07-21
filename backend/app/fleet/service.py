@@ -27,11 +27,18 @@ class _UsageTotal:
     previous_7d: int = 0
     last_activity_at: datetime | None = None
     recent_summary: str | None = None
+    sessions: int = 0
+    last_synced_at: datetime | None = None
 
     def add(self, record: UsageRecord) -> None:
         self.total += record.total_conversations
         self.last_7d += record.conversations_last_7d
         self.previous_7d += record.conversations_previous_7d
+        self.sessions += record.session_count
+        if record.last_synced_at is not None and (
+            self.last_synced_at is None or record.last_synced_at > self.last_synced_at
+        ):
+            self.last_synced_at = record.last_synced_at
         if record.last_activity_at is not None and (
             self.last_activity_at is None
             or record.last_activity_at > self.last_activity_at
@@ -60,17 +67,21 @@ class FleetReadService:
         usage_cache: UsageCache,
         *,
         active_window_minutes: int = 15,
+        remote_monitor=None,
     ) -> None:
         self._monitor = monitor
         self._catalog = catalog
         self._usage_cache = usage_cache
         self._active_window = timedelta(minutes=active_window_minutes)
+        self._remote_monitor = remote_monitor
 
     async def overview(self, now: datetime | None = None) -> FleetOverview:
         now = now or datetime.now(timezone.utc)
         cluster = self._monitor.snapshot()
+        remote = self._remote_monitor.snapshot() if self._remote_monitor else None
         cached = await self._usage_cache.get()
-        current_ids = {instance.id for instance in cluster.instances}
+        instances = list(cluster.instances) + (list(remote.agents) if remote else [])
+        current_ids = {instance.id for instance in instances}
 
         usage_by_id: dict[str, _UsageTotal] | None = None
         trend: list[TrendPoint] = []
@@ -85,12 +96,13 @@ class FleetReadService:
 
         agents = [
             self._build_agent(instance, usage_by_id, now)
-            for instance in cluster.instances
+            for instance in instances
         ]
         state_rank = {
             "offline": 0,
             "degraded": 1,
             "checking": 2,
+            "unknown": 2,
             "active": 3,
             "online": 3,
         }
@@ -126,19 +138,22 @@ class FleetReadService:
             ),
         )
 
-        source_checked_at = _parse_time(cluster.source.checked_at)
+        remote_checked_at = remote.checked_at.isoformat() if remote and remote.checked_at else None
+        runtime_checked_at = remote_checked_at or cluster.source.checked_at
+        source_checked_at = _parse_time(runtime_checked_at)
+        runtime_healthy = cluster.source.healthy and (remote.healthy if remote else True)
         return FleetOverview(
             summary=summary,
             trend=trend,
             agents=agents,
             runtime_source=DataSourceStatus(
-                healthy=cluster.source.healthy,
-                checked_at=cluster.source.checked_at,
+                healthy=runtime_healthy,
+                checked_at=runtime_checked_at,
                 stale=(
                     source_checked_at is None
                     or now - source_checked_at > timedelta(seconds=30)
                 ),
-                error=cluster.source.error,
+                error=cluster.source.error or (remote.error if remote else None),
             ),
             usage_source=cached.source,
         )
@@ -165,7 +180,22 @@ class FleetReadService:
             conversations_last_7d=usage.last_7d if usage else None,
             last_activity_at=(last_activity.isoformat() if last_activity else None),
             recent_summary=usage.recent_summary if usage else None,
+            session_count=usage.sessions if usage else None,
+            last_synced_at=(
+                usage.last_synced_at.isoformat()
+                if usage and usage.last_synced_at else None
+            ),
+            data_freshness=self._data_freshness(instance.id, usage, now),
         )
+
+    def _data_freshness(self, agent_id: str, usage, now: datetime) -> str:
+        if usage is None:
+            return "unavailable"
+        if agent_id not in {"ai-fae-agent", "ai-admin-agent"}:
+            return "live"
+        if usage.last_synced_at is None or now - usage.last_synced_at > timedelta(hours=36):
+            return "stale"
+        return "fresh"
 
     def _state(
         self,
@@ -173,7 +203,7 @@ class FleetReadService:
         last_activity: datetime | None,
         now: datetime,
     ) -> FleetState:
-        if runtime_state in {"offline", "degraded", "checking"}:
+        if runtime_state in {"offline", "degraded", "checking", "unknown"}:
             return runtime_state
         if last_activity is not None and now - last_activity <= self._active_window:
             return "active"

@@ -27,6 +27,7 @@ from .observability.repository import (
 from .observability.service import ObservabilityService
 from .registry import routes as registry_routes
 from .registry.repository import YamlRepository
+from .remote_health.monitor import RemoteHealthMonitor, remote_poll_loop
 
 
 async def cancel_tasks(tasks: list[asyncio.Task]) -> None:
@@ -53,6 +54,11 @@ def create_app(
         cluster_contract_path or config.metabot_contract_path,
         timeout=config.probe_timeout_seconds,
     )
+    remote_monitor = RemoteHealthMonitor(
+        config.remote_ssh_host,
+        config.remote_ssh_key_path,
+        timeout=config.probe_timeout_seconds,
+    )
     database_url = resolve_flywheel_database_url(config) if start_poller else None
     if fleet_service is None:
         repository = (
@@ -65,6 +71,7 @@ def create_app(
             AgentCatalog.default(),
             UsageCache(repository, ttl_seconds=config.usage_cache_seconds),
             active_window_minutes=config.active_window_minutes,
+            remote_monitor=remote_monitor,
         )
     if observability_service is None:
         observability_repository = (
@@ -93,6 +100,12 @@ def create_app(
                         config.cluster_poll_interval_seconds,
                     )
                 ),
+                asyncio.create_task(
+                    remote_poll_loop(
+                        remote_monitor,
+                        config.remote_poll_interval_seconds,
+                    )
+                ),
             ]
         try:
             yield
@@ -105,6 +118,7 @@ def create_app(
     app.state.cluster_monitor = cluster_monitor
     app.state.fleet_service = fleet_service
     app.state.observability_service = observability_service
+    app.state.remote_health_monitor = remote_monitor
 
     @app.get("/api/health")
     def platform_health() -> dict:

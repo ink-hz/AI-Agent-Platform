@@ -9,6 +9,7 @@ from app.fleet.catalog import AgentCatalog
 from app.fleet.models import DataSourceStatus
 from app.fleet.repository import DailyUsage, UsageRecord, UsageSnapshot
 from app.fleet.service import FleetReadService
+from app.remote_health.models import RemoteAgentStatus, RemoteHealthSnapshot
 
 
 NOW = datetime(2026, 7, 21, 2, 0, tzinfo=timezone.utc)
@@ -31,6 +32,10 @@ class StaticMonitor:
 
     def snapshot(self):
         return self._snapshot
+
+
+class StaticRemoteMonitor(StaticMonitor):
+    pass
 
 
 class StaticCache:
@@ -203,3 +208,39 @@ async def test_healthy_usage_fills_seven_calendar_days_and_ignores_unresolved_bo
     assert [point.conversations for point in overview.trend] == [0, 0, 1, 0, 0, 0, 3]
     assert overview.summary.total_conversations == 4
     assert overview.summary.change_percent is None
+
+
+@pytest.mark.asyncio
+async def test_overview_combines_nine_local_and_two_remote_agents():
+    service = make_service(
+        UsageRecord(
+            "ai-fae-agent", 236, 20, 10, NOW, "FAE question",
+            session_count=168, last_synced_at=NOW,
+        ),
+        UsageRecord(
+            "ai-admin-agent", 210, 10, 5, NOW, "ADMIN question",
+            session_count=118, last_synced_at=NOW,
+        ),
+    )
+    service._remote_monitor = StaticRemoteMonitor(RemoteHealthSnapshot(
+        healthy=True,
+        checked_at=NOW,
+        error=None,
+        agents=[
+            RemoteAgentStatus(
+                id="ai-fae-agent", name="AI FAE Agent", status="healthy",
+                uptime_seconds=7200, checked_at=NOW,
+            ),
+            RemoteAgentStatus(
+                id="ai-admin-agent", name="AI ADMIN Agent", status="healthy",
+                uptime_seconds=3600, checked_at=NOW,
+            ),
+        ],
+    ))
+
+    overview = await service.overview(now=NOW)
+
+    assert overview.summary.total_agents == 11
+    assert overview.summary.running_agents == 11
+    assert get_agent(overview, "ai-fae-agent").session_count == 168
+    assert get_agent(overview, "ai-admin-agent").session_count == 118

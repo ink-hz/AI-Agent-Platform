@@ -7,6 +7,7 @@ def test_remote_sync_config_defaults(monkeypatch) -> None:
         "PLATFORM_SYNC_KEYCHAIN_ACCOUNT",
         "PLATFORM_REMOTE_SSH_HOST",
         "PLATFORM_REMOTE_SSH_KEY_PATH",
+        "PLATFORM_REMOTE_POLL_INTERVAL",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -16,6 +17,7 @@ def test_remote_sync_config_defaults(monkeypatch) -> None:
     assert config.sync_keychain_account == "neo"
     assert config.remote_ssh_host == "root@47.106.112.69"
     assert config.remote_ssh_key_path == "/Users/neo/.ssh/orbbec_aliyun_ed25519"
+    assert config.remote_poll_interval_seconds == 60
 
 
 def test_remote_sync_config_accepts_environment_overrides(monkeypatch) -> None:
@@ -23,6 +25,7 @@ def test_remote_sync_config_accepts_environment_overrides(monkeypatch) -> None:
     monkeypatch.setenv("PLATFORM_SYNC_KEYCHAIN_ACCOUNT", "operator")
     monkeypatch.setenv("PLATFORM_REMOTE_SSH_HOST", "agent@example.test")
     monkeypatch.setenv("PLATFORM_REMOTE_SSH_KEY_PATH", "/tmp/test-key")
+    monkeypatch.setenv("PLATFORM_REMOTE_POLL_INTERVAL", "90")
 
     config = load_config()
 
@@ -30,3 +33,4 @@ def test_remote_sync_config_accepts_environment_overrides(monkeypatch) -> None:
     assert config.sync_keychain_account == "operator"
     assert config.remote_ssh_host == "agent@example.test"
     assert config.remote_ssh_key_path == "/tmp/test-key"
+    assert config.remote_poll_interval_seconds == 90

@@ -44,6 +44,8 @@ def test_usage_query_counts_distinct_assistant_turns_and_maps_rows():
                     "conversations_previous_7d": 2,
                     "last_activity_at": checked_at,
                     "recent_summary": "入职需要哪些材料？",
+                    "session_count": 4,
+                    "last_synced_at": checked_at,
                 }
             ],
             [{"bot_id": "hr-bot", "date": date(2026, 7, 21), "conversations": 4}],
@@ -58,9 +60,9 @@ def test_usage_query_counts_distinct_assistant_turns_and_maps_rows():
     snapshot = repository.fetch_usage()
 
     sql = " ".join(fake.executed_sql).lower()
-    assert "flywheel_analytics.messages" in sql
-    assert "flywheel_analytics.conversations" in sql
-    assert "role = 'assistant'" in sql
+    assert "platform_read.turns" in sql
+    assert "platform_read.sessions" in sql
+    assert "answer <> ''" in sql
     assert "count(distinct" in sql
     assert "at time zone 'asia/shanghai'" in sql
     assert "interval '7 days'" not in sql
@@ -71,6 +73,8 @@ def test_usage_query_counts_distinct_assistant_turns_and_maps_rows():
     assert snapshot.records[0].bot_id == "hr-bot"
     assert snapshot.records[0].total_conversations == 14
     assert snapshot.records[0].last_activity_at == checked_at
+    assert snapshot.records[0].session_count == 4
+    assert snapshot.records[0].last_synced_at == checked_at
     assert snapshot.trend[0].date == date(2026, 7, 21)
     assert snapshot.trend[0].bot_id == "hr-bot"
     assert snapshot.trend[0].conversations == 4

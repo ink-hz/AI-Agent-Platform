@@ -9,17 +9,18 @@ from psycopg.rows import dict_row
 
 USAGE_SQL = """
 with answer_turns as (
-  select c.bot_id, m.turn_id, min(m.occurred_at) as answered_at
-  from flywheel_analytics.messages m
-  join flywheel_analytics.conversations c on c.id = m.conversation_id
-  where m.role = 'assistant'
-  group by c.bot_id, m.turn_id
+  select agent_id as bot_id, turn_key as turn_id, created_at as answered_at, question
+  from platform_read.turns
+  where answer <> ''
 ), latest_user as (
-  select distinct on (c.bot_id) c.bot_id, m.content
-  from flywheel_analytics.messages m
-  join flywheel_analytics.conversations c on c.id = m.conversation_id
-  where m.role = 'user'
-  order by c.bot_id, m.occurred_at desc
+  select distinct on (bot_id) bot_id, question as content
+  from answer_turns
+  order by bot_id, answered_at desc
+), session_totals as (
+  select agent_id as bot_id, count(*)::bigint as session_count,
+    max(source_synced_at) as last_synced_at
+  from platform_read.sessions
+  group by agent_id
 )
 select a.bot_id,
   count(distinct a.turn_id)::bigint as total_conversations,
@@ -34,9 +35,12 @@ select a.bot_id,
         < (now() at time zone 'Asia/Shanghai')::date - 6)::bigint
     as conversations_previous_7d,
   max(a.answered_at) as last_activity_at,
-  left(max(u.content), 120) as recent_summary
+  left(max(u.content), 120) as recent_summary,
+  coalesce(max(s.session_count), 0)::bigint as session_count,
+  max(s.last_synced_at) as last_synced_at
 from answer_turns a
 left join latest_user u using (bot_id)
+left join session_totals s using (bot_id)
 group by a.bot_id
 order by a.bot_id
 """
@@ -44,11 +48,9 @@ order by a.bot_id
 
 TREND_SQL = """
 with answer_turns as (
-  select c.bot_id, m.turn_id, min(m.occurred_at) as answered_at
-  from flywheel_analytics.messages m
-  join flywheel_analytics.conversations c on c.id = m.conversation_id
-  where m.role = 'assistant'
-  group by c.bot_id, m.turn_id
+  select agent_id as bot_id, turn_key as turn_id, created_at as answered_at
+  from platform_read.turns
+  where answer <> ''
 )
 select bot_id, (answered_at at time zone 'Asia/Shanghai')::date as date,
   count(distinct (bot_id, turn_id))::bigint as conversations
@@ -72,6 +74,8 @@ class UsageRecord:
     conversations_previous_7d: int
     last_activity_at: datetime | None
     recent_summary: str | None
+    session_count: int = 0
+    last_synced_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +132,8 @@ class PsycopgFlywheelRepository:
                         ),
                         last_activity_at=row["last_activity_at"],
                         recent_summary=row["recent_summary"],
+                        session_count=int(row.get("session_count") or 0),
+                        last_synced_at=row.get("last_synced_at"),
                     )
                     for row in usage_rows
                 ),
