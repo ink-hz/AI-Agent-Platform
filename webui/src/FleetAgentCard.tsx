@@ -1,6 +1,7 @@
 import {
   FLEET_STATE_META,
   formatCount,
+  formatDaysInProduction,
   formatExactLifecycleTime,
   formatLastUpdated,
   formatLifecycleDate,
@@ -17,7 +18,9 @@ interface FleetAgentCardProps {
 
 export function FleetAgentCard({ agent, now }: FleetAgentCardProps) {
   const state = FLEET_STATE_META[agent.state];
-  const [total, weekly, liveSince, lastUpdated, recent] = UI_COPY.agent.fields;
+  const [total, weekly, inProduction, lastUpdated, recent] = UI_COPY.agent.fields;
+  const liveSinceDate = formatLifecycleDate(agent.live_since);
+  const lastUpdatedDate = formatLifecycleDate(agent.last_updated_at);
   return (
     <article className={`fleet-agent-card agent-${agent.accent} ${state.tone}`}>
       <div className="fleet-agent-head">
@@ -46,15 +49,17 @@ export function FleetAgentCard({ agent, now }: FleetAgentCardProps) {
 
       <dl className="fleet-agent-meta">
         <div>
-          <dt>{liveSince}</dt>
+          <dt>{inProduction}</dt>
           <dd title={formatExactLifecycleTime(agent.live_since)}>
-            {formatLifecycleDate(agent.live_since)}
+            <strong>{formatDaysInProduction(agent.live_since, now)}</strong>
+            {liveSinceDate !== "Not recorded" && <small>Since {liveSinceDate}</small>}
           </dd>
         </div>
         <div>
           <dt>{lastUpdated}</dt>
           <dd title={formatExactLifecycleTime(agent.last_updated_at)}>
-            {formatLastUpdated(agent.last_updated_at, now)}
+            <strong>{formatLastUpdated(agent.last_updated_at, now)}</strong>
+            {lastUpdatedDate !== "Not recorded" && <small>{lastUpdatedDate}</small>}
           </dd>
         </div>
       </dl>

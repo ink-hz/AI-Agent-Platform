@@ -34,7 +34,7 @@ export const UI_COPY = {
     fields: [
       "Total Conversations",
       "Last 7 Days",
-      "Live Since",
+      "In Production",
       "Last Updated",
       "Recent",
     ],

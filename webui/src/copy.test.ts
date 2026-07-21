@@ -23,7 +23,7 @@ describe("reviewed UI copy", () => {
       "Agents", "Online", "Total Conversations", "Last 7 Days",
     ]);
     expect(UI_COPY.agent.fields).toEqual([
-      "Total Conversations", "Last 7 Days", "Live Since", "Last Updated", "Recent",
+      "Total Conversations", "Last 7 Days", "In Production", "Last Updated", "Recent",
     ]);
   });
 

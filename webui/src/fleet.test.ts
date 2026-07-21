@@ -69,6 +69,7 @@ describe("fleet presentation formatting", () => {
 
   it("explains lifecycle evidence and formats diagnostic runtime in English", () => {
     const formatting = fleetFormatting as unknown as {
+      formatDaysInProduction: (value: string | null, now: Date) => string;
       formatLifecycleBasis: (basis: string) => string;
       formatRuntimeDuration: (seconds: number | null) => string;
     };
@@ -76,6 +77,18 @@ describe("fleet presentation formatting", () => {
     expect(formatting.formatLifecycleBasis("release_artifact")).toBe("Based on production release record");
     expect(formatting.formatRuntimeDuration(90_061)).toBe("1 day 1 hour");
     expect(formatting.formatRuntimeDuration(null)).toBe("Not available");
+  });
+
+  it("formats elapsed full days in production from durable lifecycle data", () => {
+    const formatting = fleetFormatting as unknown as {
+      formatDaysInProduction: (value: string | null, now: Date) => string;
+    };
+    const now = new Date("2026-07-21T02:00:00Z");
+    expect(formatting.formatDaysInProduction("2026-07-21T01:00:00Z", now)).toBe("Today");
+    expect(formatting.formatDaysInProduction("2026-07-20T02:00:00Z", now)).toBe("1 day");
+    expect(formatting.formatDaysInProduction("2026-06-17T02:00:00Z", now)).toBe("34 days");
+    expect(formatting.formatDaysInProduction(null, now)).toBe("Not recorded");
+    expect(formatting.formatDaysInProduction("invalid", now)).toBe("Not recorded");
   });
 
   it("formats period change without implying a comparison when none exists", () => {

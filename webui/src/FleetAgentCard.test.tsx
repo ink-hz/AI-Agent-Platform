@@ -38,10 +38,12 @@ describe("FleetAgentCard", () => {
       "826",
       "Last 7 Days",
       "214",
-      "Live Since",
-      "Jun 17, 2026",
+      "In Production",
+      "33 days",
+      "Since Jun 17, 2026",
       "Last Updated",
       "3 hours ago",
+      "Jul 21, 2026",
       "Recent",
       "新员工入职需要准备哪些材料？",
       "Active",
@@ -55,7 +57,7 @@ describe("FleetAgentCard", () => {
       <FleetAgentCard agent={AGENT} now={new Date("2026-07-21T02:00:00Z")} />,
     );
 
-    for (const forbidden of ["Uptime", "Current Runtime", "端口", "延迟", "pm2", "<button", "href="]) {
+    for (const forbidden of ["Live Since", "Running Days", "Uptime", "Current Runtime", "端口", "延迟", "pm2", "<button", "href="]) {
       expect(html).not.toContain(forbidden);
     }
   });
@@ -69,5 +71,6 @@ describe("FleetAgentCard", () => {
     );
 
     expect(html.match(/Not recorded/g)).toHaveLength(2);
+    expect(html).not.toContain("Since Not recorded");
   });
 });

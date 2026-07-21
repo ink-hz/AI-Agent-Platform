@@ -61,6 +61,16 @@ export function formatLifecycleDate(value: string | null): string {
 }
 
 
+export function formatDaysInProduction(value: string | null, now = new Date()): string {
+  if (value === null) return "Not recorded";
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) return "Not recorded";
+  const days = Math.floor(Math.max(0, now.getTime() - timestamp) / 86_400_000);
+  if (days === 0) return "Today";
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+
 export function formatExactLifecycleTime(value: string | null): string | undefined {
   if (value === null) return undefined;
   const date = new Date(value);
