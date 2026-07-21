@@ -49,4 +49,32 @@ describe("AgentCard", () => {
     expect(html).not.toContain("<button");
     expect(html).not.toContain("href=");
   });
+
+  it("shows explicit freshness for a current snapshot", () => {
+    const html = renderToStaticMarkup(
+      <AgentCard
+        instance={HEALTHY_HR_BOT}
+        now={new Date("2026-07-21T01:00:05Z")}
+      />,
+    );
+
+    expect(html).toContain("数据新鲜");
+    expect(html).not.toContain("数据已过期");
+  });
+
+  it("shows stale data and the previous probe error independently", () => {
+    const html = renderToStaticMarkup(
+      <AgentCard
+        instance={{
+          ...HEALTHY_HR_BOT,
+          status: "offline",
+          error: "connection_failed",
+        }}
+        now={new Date("2026-07-21T01:00:31Z")}
+      />,
+    );
+
+    expect(html).toContain("数据已过期");
+    expect(html).toContain("连接失败");
+  });
 });

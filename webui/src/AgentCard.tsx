@@ -63,14 +63,19 @@ export function AgentCard({ instance, now }: AgentCardProps) {
           <strong>{instance.pm2_name}</strong>
         </div>
         <div className="probe-meta">
-          <span className="readonly-label">只读监控</span>
-          <span>{formatCheckedAt(instance.checked_at)}</span>
+          <div className="probe-line">
+            <span className="readonly-label">只读监控</span>
+            <span>{formatCheckedAt(instance.checked_at)}</span>
+          </div>
+          <span className={`freshness-label ${stale ? "stale" : "fresh"}`}>
+            {stale ? "数据已过期" : "数据新鲜"}
+          </span>
         </div>
       </footer>
 
-      {(stale || probeError) && (
+      {probeError && (
         <div className="agent-alert" role="status">
-          {probeError ?? "监控数据已过期，等待下一次探测。"}
+          {probeError}
         </div>
       )}
     </article>
