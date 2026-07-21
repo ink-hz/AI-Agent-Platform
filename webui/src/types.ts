@@ -33,6 +33,7 @@ export interface ClusterSnapshot {
 }
 
 export type FleetState = "active" | "online" | "degraded" | "offline" | "checking" | "unknown";
+export type LifecycleBasis = "release_artifact" | "repository_history" | "earliest_session" | "not_recorded";
 
 export interface FleetSummary {
   total_agents: number;
@@ -60,7 +61,11 @@ export interface FleetAgent {
   glyph: string;
   accent: string;
   state: FleetState;
-  uptime_seconds: number | null;
+  live_since: string | null;
+  live_since_basis: LifecycleBasis;
+  last_updated_at: string | null;
+  last_updated_basis: LifecycleBasis;
+  current_runtime_seconds: number | null;
   total_conversations: number | null;
   conversations_last_7d: number | null;
   last_activity_at: string | null;

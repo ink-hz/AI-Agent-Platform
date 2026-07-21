@@ -331,6 +331,11 @@ body {
 .profile-metrics div { padding: 19px; background: #f7f9fc; }
 .profile-metrics dt { color: var(--ink-faint); font-size: 11.5px; font-weight: 750; text-transform: uppercase; }
 .profile-metrics dd { margin: 7px 0 0; color: var(--ink); font-size: 20px; font-weight: 760; }
+.profile-lifecycle { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0 0; }
+.profile-lifecycle div { min-width: 0; padding: 17px 18px; border: 1px solid #cbd7e4; border-radius: 12px; background: #fff; }
+.profile-lifecycle dt { color: var(--ink-faint); font-size: 11.5px; font-weight: 760; letter-spacing: .035em; text-transform: uppercase; }
+.profile-lifecycle dd { overflow: hidden; margin: 7px 0 0; color: var(--ink); font-size: 15px; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; }
+.profile-lifecycle small { display: block; margin-top: 6px; color: var(--ink-faint); font-size: 11.5px; line-height: 1.4; }
 .detail-section { margin-top: 34px; }
 .section-heading a { color: var(--brand); font-size: 12px; font-weight: 750; text-decoration: none; }
 
@@ -452,6 +457,7 @@ body {
   .session-counts, .session-row time { display: none; }
   .session-row > .freshness { grid-column: 3; grid-row: 1; }
   .profile-metrics { grid-template-columns: 1fr; }
+  .profile-lifecycle { grid-template-columns: 1fr; }
   .session-detail-head { grid-template-columns: 1fr; padding: 21px; }
   .session-detail-source { align-items: flex-start; }
   .session-detail-head > dl { grid-template-columns: 1fr 1fr; }

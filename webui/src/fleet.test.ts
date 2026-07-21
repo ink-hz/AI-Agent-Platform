@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as fleetFormatting from "./fleet";
 
 import {
   FLEET_STATE_META,
@@ -6,6 +7,8 @@ import {
   applyFleetSuccess,
   formatChange,
   formatCount,
+  formatLastUpdated,
+  formatLifecycleDate,
   formatRelativeActivity,
   initialFleetState,
   usageIsReadable,
@@ -54,6 +57,25 @@ describe("fleet presentation formatting", () => {
     const now = new Date("2026-07-21T01:02:00Z");
     expect(formatRelativeActivity("2026-07-21T01:00:00Z", now)).toBe("2分钟前");
     expect(formatRelativeActivity(null, now)).toBe("暂无活动");
+  });
+
+  it("formats durable lifecycle dates without inventing missing evidence", () => {
+    const now = new Date("2026-07-21T02:00:00Z");
+    expect(formatLifecycleDate("2026-06-17T16:34:33+08:00")).toBe("Jun 17, 2026");
+    expect(formatLifecycleDate(null)).toBe("Not recorded");
+    expect(formatLastUpdated("2026-07-20T23:00:00Z", now)).toBe("3 hours ago");
+    expect(formatLastUpdated(null, now)).toBe("Not recorded");
+  });
+
+  it("explains lifecycle evidence and formats diagnostic runtime in English", () => {
+    const formatting = fleetFormatting as unknown as {
+      formatLifecycleBasis: (basis: string) => string;
+      formatRuntimeDuration: (seconds: number | null) => string;
+    };
+    expect(formatting.formatLifecycleBasis("earliest_session")).toBe("Based on earliest captured Session");
+    expect(formatting.formatLifecycleBasis("release_artifact")).toBe("Based on production release record");
+    expect(formatting.formatRuntimeDuration(90_061)).toBe("1 day 1 hour");
+    expect(formatting.formatRuntimeDuration(null)).toBe("Not available");
   });
 
   it("formats period change without implying a comparison when none exists", () => {

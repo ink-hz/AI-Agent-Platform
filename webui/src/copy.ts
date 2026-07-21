@@ -34,8 +34,8 @@ export const UI_COPY = {
     fields: [
       "Total Conversations",
       "Last 7 Days",
-      "Uptime",
-      "Last Activity",
+      "Live Since",
+      "Last Updated",
       "Recent",
     ],
     refresh: (count: number) => `${count} Agents · 每 10 秒自动刷新`,

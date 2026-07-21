@@ -1,10 +1,11 @@
 import {
   FLEET_STATE_META,
   formatCount,
-  formatRelativeActivity,
+  formatExactLifecycleTime,
+  formatLastUpdated,
+  formatLifecycleDate,
 } from "./fleet";
 import { UI_COPY } from "./copy";
-import { formatUptime } from "./status";
 import type { FleetAgent } from "./types";
 
 
@@ -16,7 +17,7 @@ interface FleetAgentCardProps {
 
 export function FleetAgentCard({ agent, now }: FleetAgentCardProps) {
   const state = FLEET_STATE_META[agent.state];
-  const [total, weekly, uptime, activity, recent] = UI_COPY.agent.fields;
+  const [total, weekly, liveSince, lastUpdated, recent] = UI_COPY.agent.fields;
   return (
     <article className={`fleet-agent-card agent-${agent.accent} ${state.tone}`}>
       <div className="fleet-agent-head">
@@ -44,10 +45,17 @@ export function FleetAgentCard({ agent, now }: FleetAgentCardProps) {
       </div>
 
       <dl className="fleet-agent-meta">
-        <div><dt>{uptime}</dt><dd>{formatUptime(agent.uptime_seconds)}</dd></div>
         <div>
-          <dt>{activity}</dt>
-          <dd>{formatRelativeActivity(agent.last_activity_at, now)}</dd>
+          <dt>{liveSince}</dt>
+          <dd title={formatExactLifecycleTime(agent.live_since)}>
+            {formatLifecycleDate(agent.live_since)}
+          </dd>
+        </div>
+        <div>
+          <dt>{lastUpdated}</dt>
+          <dd title={formatExactLifecycleTime(agent.last_updated_at)}>
+            {formatLastUpdated(agent.last_updated_at, now)}
+          </dd>
         </div>
       </dl>
 
