@@ -5,6 +5,7 @@ import { UI_COPY } from "./copy";
 
 function allStrings(value: unknown): string[] {
   if (typeof value === "string") return [value];
+  if (typeof value === "function") return [String(value(1))];
   if (Array.isArray(value)) return value.flatMap(allStrings);
   if (value && typeof value === "object") {
     return Object.values(value).flatMap(allStrings);
