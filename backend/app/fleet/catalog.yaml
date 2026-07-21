@@ -1,57 +1,57 @@
 profiles:
   feishu-default:
-    name: 飞书默认助手
-    domain: 通用协作
+    name: Feishu Default
+    domain: Feishu
     description: 承接飞书默认会话与日常协作任务。
-    glyph: 飞
+    glyph: FS
     accent: collaboration
   hr-bot:
-    name: HR 助手
-    domain: 人力资源
-    description: 支持招聘、人事与员工服务流程。
+    name: HR
+    domain: HR
+    description: 处理招聘、人事与员工服务相关工作。
     glyph: HR
     accent: people
   marketing-prospecting-bot:
-    name: 营销拓客助手
-    domain: Marketing · Prospecting
+    name: Marketing Prospecting
+    domain: Marketing
     description: 发现、筛选并跟进潜在客户线索。
-    glyph: 拓
+    glyph: PRO
     accent: prospecting
   marketing-inbound-bot:
-    name: 营销获客助手
-    domain: Marketing · Inbound
-    description: 承接入站线索、内容触达与客户咨询。
-    glyph: 入
+    name: Marketing Inbound
+    domain: Marketing
+    description: 处理入站线索、内容触达与客户咨询。
+    glyph: IN
     accent: inbound
   marketing-voice-bot:
-    name: 营销语音助手
-    domain: Marketing · Voice
-    description: 支持语音触达、通话沟通与结果整理。
-    glyph: 声
+    name: Marketing Voice
+    domain: Marketing
+    description: 处理语音触达、通话沟通与结果整理。
+    glyph: VO
     accent: voice
   fae-bot:
-    name: FAE 技术助手
-    domain: 技术支持
-    description: 支持产品咨询、问题诊断与现场应用。
+    name: FAE
+    domain: FAE
+    description: 处理产品咨询、问题诊断与现场应用。
     glyph: FAE
     accent: support
   test-bot:
-    name: 测试助手
-    domain: 开发验证
+    name: Test
+    domain: System
     description: 用于接口联调、集成测试与运行验证。
-    glyph: 测
+    glyph: T
     accent: testing
   marketing-gtm-bot:
-    name: GTM 策略助手
-    domain: Marketing · GTM
-    description: 支持市场进入策略、节奏规划与执行协同。
+    name: Marketing GTM
+    domain: Marketing
+    description: 负责市场进入策略、节奏规划与执行协同。
     glyph: GTM
     accent: strategy
   marketing-intelligence-bot:
-    name: 市场情报助手
-    domain: Marketing · Intelligence
-    description: 收集并整理市场动态与竞争情报。
-    glyph: 情
+    name: Marketing Intelligence
+    domain: Marketing
+    description: 收集并整理市场动态与竞争信息。
+    glyph: INT
     accent: intelligence
 
 aliases:
