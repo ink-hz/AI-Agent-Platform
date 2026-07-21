@@ -85,14 +85,15 @@ class PsycopgObservabilityRepository:
 
     def list_agents(self) -> tuple[AgentSummary, ...]:
         statement = """
-        select agent_id, min(source_kind) as source_kind,
+        select s.agent_id, min(s.source_kind) as source_kind,
           count(*)::bigint as session_count,
-          coalesce(sum(turn_count), 0)::bigint as total_turns,
+          (select count(*) from platform_read.turns t
+             where t.agent_id=s.agent_id and nullif(btrim(t.answer), '') is not null)::bigint as total_turns,
           max(last_active_at) as last_activity_at,
           max(source_synced_at) as last_synced_at
-        from platform_read.sessions
-        group by agent_id
-        order by total_turns desc, agent_id
+        from platform_read.sessions s
+        group by s.agent_id
+        order by total_turns desc, s.agent_id
         """
         try:
             with self._connection() as connection, connection.cursor() as cursor:
@@ -440,7 +441,7 @@ class PsycopgObservabilityRepository:
 
 
 class UnavailableObservabilityRepository:
-    def _raise(self):
+    def _raise(self, *_args, **_kwargs):
         raise ObservabilityReadError("observability query failed")
 
     def __getattr__(self, _name):

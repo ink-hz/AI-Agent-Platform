@@ -298,7 +298,9 @@ with metabot as (
     null::text as user_identity,
     c.created_at,
     coalesce(max(m.occurred_at), c.updated_at) as last_active_at,
-    count(distinct m.turn_id) filter (where m.role = 'assistant')::bigint as turn_count,
+    count(distinct m.turn_id) filter (
+      where m.role = 'assistant' and nullif(btrim(m.content), '') is not null
+    )::bigint as turn_count,
     count(distinct f.id)::bigint as feedback_count,
     0::bigint as review_count,
     null::text as latest_outcome,
@@ -326,7 +328,8 @@ with metabot as (
          else '***' || right(coalesce(s.external_user_id, s.user_id), 4) end,
     s.created_at,
     s.last_active_at,
-    (select count(*) from platform_source_fae.chat_turns t where t.session_id = s.id),
+    (select count(*) from platform_source_fae.chat_turns t
+     where t.session_id = s.id and nullif(btrim(t.answer), '') is not null),
     (select count(*) from platform_source_fae.turn_feedback f
      where f.external_session_id = s.external_session_id),
     (select count(*) from platform_source_fae.turn_reviews r
@@ -350,7 +353,8 @@ with metabot as (
          else '***' || right(coalesce(s.external_user_id, s.user_id), 4) end,
     s.created_at,
     s.last_active_at,
-    (select count(*) from platform_source_admin.chat_turns t where t.session_id = s.id),
+    (select count(*) from platform_source_admin.chat_turns t
+     where t.session_id = s.id and nullif(btrim(t.answer), '') is not null),
     (select count(*) from platform_source_admin.turn_feedback f
      where f.external_session_id = s.external_session_id),
     (select count(*) from platform_source_admin.turn_reviews r

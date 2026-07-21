@@ -24,16 +24,19 @@ def _unavailable(error: ObservabilityReadError):
 async def list_agents(request: Request):
     try:
         return await _service(request).list_agents()
-    except ObservabilityReadError as error:
-        _unavailable(error)
+    except ObservabilityReadError:
+        return [agent.public_dict() for agent in request.app.state.repo.list_agents()]
 
 
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: str, request: Request):
     try:
         result = await _service(request).get_agent(agent_id)
-    except ObservabilityReadError as error:
-        _unavailable(error)
+    except ObservabilityReadError:
+        agent = request.app.state.repo.get_agent(agent_id)
+        if agent is None:
+            raise HTTPException(status_code=404, detail="agent not found")
+        return agent.public_dict()
     if result is None:
         raise HTTPException(status_code=404, detail="agent not found")
     return result

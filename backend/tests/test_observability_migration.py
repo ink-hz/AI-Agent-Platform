@@ -53,3 +53,9 @@ def test_metabot_views_apply_current_catalog_aliases_and_exclusions() -> None:
     sql = migration_sql()
     assert "when c.bot_id = 'marketing-bot' then 'marketing-prospecting-bot'" in sql
     assert "c.bot_id not in ('pc-bot', 'quality-bot')" in sql
+
+
+def test_conversation_counts_require_a_non_empty_answer() -> None:
+    sql = migration_sql()
+    assert "m.role = 'assistant' and nullif(btrim(m.content), '') is not null" in sql
+    assert "where t.session_id = s.id and nullif(btrim(t.answer), '') is not null" in sql

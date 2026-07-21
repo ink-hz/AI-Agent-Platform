@@ -3,7 +3,6 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 
 from .cluster import routes as cluster_routes
 from .cluster.monitor import ClusterMonitor, cluster_poll_loop
@@ -28,6 +27,7 @@ from .observability.service import ObservabilityService
 from .registry import routes as registry_routes
 from .registry.repository import YamlRepository
 from .remote_health.monitor import RemoteHealthMonitor, remote_poll_loop
+from .spa import SpaStaticFiles
 
 
 async def cancel_tasks(tasks: list[asyncio.Task]) -> None:
@@ -131,7 +131,7 @@ def create_app(
     app.include_router(registry_routes.router)
 
     if os.path.isdir(config.static_dir):
-        app.mount("/", StaticFiles(directory=config.static_dir, html=True), name="portal")
+        app.mount("/", SpaStaticFiles(directory=config.static_dir, html=True), name="portal")
 
     return app
 

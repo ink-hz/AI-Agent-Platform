@@ -48,7 +48,8 @@ describe("Session Trace presentation", () => {
   });
 
   it("explains when engineering Trace detail is unavailable", () => {
-    const html = renderToStaticMarkup(<TraceTimeline trace={{ ...trace, detail_availability: "unavailable", steps: [] }} />);
+    const html = renderToStaticMarkup(<TraceTimeline trace={{ ...trace, detail_availability: "unavailable" }} />);
     expect(html).toContain("Engineering Trace is not captured by this source");
+    expect(html).toContain("Evidence Retrieval");
   });
 });
