@@ -12,6 +12,12 @@ class Config:
     static_dir: str
     host: str
     port: int
+    flywheel_enabled: bool
+    flywheel_database_url: str | None
+    flywheel_keychain_service: str
+    flywheel_keychain_account: str
+    usage_cache_seconds: float
+    active_window_minutes: int
 
 
 def load_config() -> Config:
@@ -29,4 +35,20 @@ def load_config() -> Config:
         static_dir=os.getenv("PLATFORM_STATIC_DIR", "app/static"),
         host=os.getenv("PLATFORM_HOST", "0.0.0.0"),
         port=int(os.getenv("PLATFORM_PORT", "80")),
+        flywheel_enabled=os.getenv("PLATFORM_FLYWHEEL_ENABLED", "1") not in {
+            "0",
+            "false",
+            "False",
+        },
+        flywheel_database_url=os.getenv("PLATFORM_FLYWHEEL_DATABASE_URL"),
+        flywheel_keychain_service=os.getenv(
+            "PLATFORM_FLYWHEEL_KEYCHAIN_SERVICE",
+            "flywheel-analyst-database-url",
+        ),
+        flywheel_keychain_account=os.getenv(
+            "PLATFORM_FLYWHEEL_KEYCHAIN_ACCOUNT",
+            "neo",
+        ),
+        usage_cache_seconds=float(os.getenv("PLATFORM_USAGE_CACHE_SECONDS", "60")),
+        active_window_minutes=int(os.getenv("PLATFORM_ACTIVE_WINDOW_MINUTES", "15")),
     )
