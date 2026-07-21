@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { AgentCard } from "./AgentCard";
 import { fetchClusterStatus } from "./api";
 import {
   applyFailure,
@@ -7,14 +8,7 @@ import {
   initialDashboardState,
   startPolling,
 } from "./dashboard";
-import {
-  errorLabel,
-  formatCheckedAt,
-  formatLatency,
-  formatUptime,
-  isStale,
-  statusMeta,
-} from "./status";
+import { formatCheckedAt } from "./status";
 import type { ClusterSummary } from "./types";
 
 
@@ -118,6 +112,24 @@ export default function App() {
           </div>
         )}
 
+        <section className="monitor-intro" aria-labelledby="monitor-intro-title">
+          <div className="intro-copy">
+            <span className="intro-mark" aria-hidden="true">◎</span>
+            <div>
+              <p className="intro-label">看板说明</p>
+              <h2 id="monitor-intro-title">专注观察每一个 Agent Bot</h2>
+              <p>
+                看板从本机运行契约自动发现 MetaBot 实例，持续呈现它们的存活状态、运行时长和响应速度。
+              </p>
+            </div>
+          </div>
+          <div className="intro-facts" aria-label="监控规则">
+            <span><i aria-hidden="true" />10 秒自动刷新</span>
+            <span><i aria-hidden="true" />健康接口探测</span>
+            <span><i aria-hidden="true" />只读，不控制 Agent</span>
+          </div>
+        </section>
+
         {snapshot ? (
           <>
             <section className="summary-section" aria-label="集群摘要">
@@ -143,56 +155,9 @@ export default function App() {
                 <span>{snapshot.instances.length} 个监控目标</span>
               </div>
               <div className="instance-grid">
-                {snapshot.instances.map((instance) => {
-                  const meta = statusMeta(instance.status);
-                  const stale = isStale(instance.checked_at, now);
-                  const probeError = errorLabel(instance.error);
-                  return (
-                    <article
-                      className={`instance-card ${meta.tone}${stale ? " stale" : ""}`}
-                      key={instance.id}
-                    >
-                      <div className="instance-head">
-                        <div>
-                          <h3>{instance.name}</h3>
-                          <p>{instance.pm2_name}</p>
-                        </div>
-                        <span className={`status-badge ${meta.tone}`}>
-                          <i aria-hidden="true" />
-                          {meta.label}
-                        </span>
-                      </div>
-
-                      <dl className="instance-metrics">
-                        <div>
-                          <dt>API 端口</dt>
-                          <dd>{instance.port}</dd>
-                        </div>
-                        <div>
-                          <dt>运行时长</dt>
-                          <dd>{formatUptime(instance.uptime_seconds)}</dd>
-                        </div>
-                        <div>
-                          <dt>响应延迟</dt>
-                          <dd>{formatLatency(instance.latency_ms)}</dd>
-                        </div>
-                        <div>
-                          <dt>最后检测</dt>
-                          <dd>{formatCheckedAt(instance.checked_at)}</dd>
-                        </div>
-                      </dl>
-
-                      <div className="instance-foot">
-                        {stale ? (
-                          <span className="stale-label">数据已过期</span>
-                        ) : (
-                          <span className="fresh-label">数据新鲜</span>
-                        )}
-                        {probeError && <span className="probe-error">{probeError}</span>}
-                      </div>
-                    </article>
-                  );
-                })}
+                {snapshot.instances.map((instance) => (
+                  <AgentCard instance={instance} key={instance.id} now={now} />
+                ))}
               </div>
             </section>
           </>
