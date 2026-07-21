@@ -83,7 +83,8 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".fleet-agent-identity h3")).toContain("white-space: normal");
     expect(rule(".fleet-agent-description")).toContain("font-size: 14px");
     expect(rule(".fleet-usage strong")).toContain("font-size: 34px");
-    expect(rule(".fleet-agent-meta dd")).toContain("font-size: 13px");
+    expect(rule(".fleet-agent-meta dd strong")).toContain("font-size: 14px");
+    expect(rule(".fleet-agent-meta dd small")).toContain("font-size: 11.5px");
     expect(rule(".fleet-recent p")).toContain("font-size: 13px");
   });
 
