@@ -8,6 +8,15 @@ from fastapi.staticfiles import StaticFiles
 from .cluster import routes as cluster_routes
 from .cluster.monitor import ClusterMonitor, cluster_poll_loop
 from .config import load_config
+from .fleet import routes as fleet_routes
+from .fleet.cache import UsageCache
+from .fleet.catalog import AgentCatalog
+from .fleet.database import resolve_flywheel_database_url
+from .fleet.repository import (
+    PsycopgFlywheelRepository,
+    UnavailableFlywheelRepository,
+)
+from .fleet.service import FleetReadService
 from .health import routes as health_routes
 from .health.poller import HealthCache, poll_loop
 from .registry import routes as registry_routes
@@ -26,6 +35,7 @@ def create_app(
     cluster_contract_path: str | None = None,
     *,
     start_poller: bool = True,
+    fleet_service: FleetReadService | None = None,
 ) -> FastAPI:
     config = load_config()
     path = registry_path or config.registry_path
@@ -36,6 +46,21 @@ def create_app(
         cluster_contract_path or config.metabot_contract_path,
         timeout=config.probe_timeout_seconds,
     )
+    if fleet_service is None:
+        database_url = (
+            resolve_flywheel_database_url(config) if start_poller else None
+        )
+        repository = (
+            PsycopgFlywheelRepository(database_url)
+            if database_url
+            else UnavailableFlywheelRepository()
+        )
+        fleet_service = FleetReadService(
+            cluster_monitor,
+            AgentCatalog.default(),
+            UsageCache(repository, ttl_seconds=config.usage_cache_seconds),
+            active_window_minutes=config.active_window_minutes,
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -66,6 +91,7 @@ def create_app(
     app.state.repo = repo
     app.state.health_cache = cache
     app.state.cluster_monitor = cluster_monitor
+    app.state.fleet_service = fleet_service
 
     @app.get("/api/health")
     def platform_health() -> dict:
@@ -74,6 +100,7 @@ def create_app(
     app.include_router(health_routes.router)
     app.include_router(registry_routes.router)
     app.include_router(cluster_routes.router)
+    app.include_router(fleet_routes.router)
 
     if os.path.isdir(config.static_dir):
         app.mount("/", StaticFiles(directory=config.static_dir, html=True), name="portal")
