@@ -50,13 +50,6 @@ function rule(selector: string): string {
   return styles.slice(start, end + 1);
 }
 
-function lastRule(selector: string): string {
-  const start = styles.lastIndexOf(`${selector} {`);
-  if (start < 0) throw new Error(`missing CSS rule: ${selector}`);
-  const end = styles.indexOf("}", start);
-  return styles.slice(start, end + 1);
-}
-
 function block(header: string): string {
   const start = styles.indexOf(header);
   if (start < 0) throw new Error(`missing CSS block: ${header}`);
@@ -86,9 +79,13 @@ describe("Executive Operations visual contract", () => {
   });
 
   it("never renders visible text below the approved minimum", () => {
-    const sizes = [...styles.matchAll(/font-size:\s*([\d.]+)px/g)].map((match) => Number(match[1]));
-    expect(sizes.length).toBeGreaterThan(0);
-    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(11.5);
+    const declarations = [...styles.matchAll(/font-size:\s*([^;}]+)/g)].map((match) => match[1].trim());
+    expect(declarations.length).toBeGreaterThan(0);
+    for (const declaration of declarations) {
+      expect(declaration).toMatch(/^(?:[\d.]+px|clamp\([\d.]+px,\s*[\d.]+vw,\s*[\d.]+px\))$/);
+      const sizes = [...declaration.matchAll(/([\d.]+)px/g)].map((match) => Number(match[1]));
+      expect(Math.min(...sizes)).toBeGreaterThanOrEqual(11.5);
+    }
   });
 
   it("gives summary and insight cards visible resting weight", () => {
@@ -229,8 +226,7 @@ it("gives every Agent card substantial resting weight", () => {
   expect(rule(".fleet-agent-card")).toContain("border: 1px solid #c8d4e2");
   expect(rule(".fleet-agent-card")).toContain("box-shadow: 0 14px 34px rgba(20, 51, 89, .11)");
   expect(rule(".fleet-agent-card::before")).toContain("height: 6px");
-  expect(lastRule(".fleet-avatar")).toContain("width: 52px");
-  expect(lastRule(".fleet-avatar")).toContain("height: 52px");
+  expect(styles).toContain(".fleet-avatar { width: 52px; height: 52px;");
 });
 
 it("keeps Agent names and detail rows readable", () => {
@@ -246,6 +242,13 @@ it("uses one-column summary and Agent layouts on small screens", () => {
   const mobile = block("@media (max-width: 720px)");
   expect(mobile).toContain(".fleet-summary-grid { grid-template-columns: 1fr; }");
   expect(mobile).toContain(".fleet-agent-grid { grid-template-columns: 1fr; }");
+});
+
+it("protects long Agent names beside wide status labels at 320px", () => {
+  const mobile = block("@media (max-width: 720px)");
+  expect(rule(".fleet-agent-identity h3")).toContain("overflow-wrap: anywhere");
+  expect(mobile).toContain(".fleet-agent-head { display: grid; grid-template-columns: 52px minmax(0, 1fr);");
+  expect(mobile).toContain(".fleet-state { grid-column: 2; grid-row: 2; justify-self: start; }");
 });
 ```
 
@@ -275,6 +278,7 @@ Apply these exact values:
 .fleet-agent-identity p { font-size: 11.5px; }
 .fleet-agent-identity h3 {
   overflow: visible;
+  overflow-wrap: anywhere;
   font-size: 19px;
   line-height: 1.3;
   white-space: normal;
@@ -297,6 +301,10 @@ Apply these exact values:
   .fleet-agent-grid { grid-template-columns: 1fr; }
   .fleet-summary-card { min-height: 132px; padding: 20px; }
   .fleet-summary-card strong { font-size: 36px; }
+  .fleet-agent-head { display: grid; grid-template-columns: 52px minmax(0, 1fr); column-gap: 13px; row-gap: 8px; }
+  .fleet-avatar { grid-column: 1; grid-row: 1 / span 2; }
+  .fleet-agent-identity { grid-column: 2; grid-row: 1; }
+  .fleet-state { grid-column: 2; grid-row: 2; justify-self: start; }
 }
 ```
 
@@ -382,8 +390,8 @@ Expected: nine running Agents, real usage source healthy, source-language names 
 - [ ] **Step 6: Verify the visual contract in production output**
 
 ```bash
-rg -q -- '--bg:#edf2f7' webui/dist/assets/*.css
-rg -q 'box-shadow:0 14px 34px rgba(20,51,89,.11)' webui/dist/assets/*.css
+rg -q -- '--bg: #edf2f7' webui/dist/assets/*.css
+rg -q 'box-shadow:0 14px 34px #1433591c' webui/dist/assets/*.css
 rg -q 'font-size:19px' webui/dist/assets/*.css
 ```
 

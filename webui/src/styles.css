@@ -222,7 +222,7 @@ body {
 .fleet-avatar { width: 52px; height: 52px; border: 1px solid rgba(23, 79, 150, .08); border-radius: 13px; font-size: 13px; }
 .fleet-agent-identity { min-width: 0; flex: 1; }
 .fleet-agent-identity p { overflow: hidden; margin: 0 0 4px; color: var(--agent-text); font-size: 11.5px; font-weight: 800; letter-spacing: .045em; text-overflow: ellipsis; white-space: nowrap; }
-.fleet-agent-identity h3 { overflow: visible; margin: 0; font-size: 19px; line-height: 1.3; letter-spacing: -.015em; white-space: normal; }
+.fleet-agent-identity h3 { overflow: visible; margin: 0; overflow-wrap: anywhere; font-size: 19px; line-height: 1.3; letter-spacing: -.015em; white-space: normal; }
 .fleet-state { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 750; }
 .fleet-state i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .fleet-state.active { background: var(--ok-wash); color: var(--ok); }
@@ -281,6 +281,10 @@ body {
   .insight-card { padding: 18px; }
   .trend-chart { gap: 7px; }
   .fleet-agent-grid { grid-template-columns: 1fr; }
+  .fleet-agent-head { display: grid; grid-template-columns: 52px minmax(0, 1fr); column-gap: 13px; row-gap: 8px; }
+  .fleet-avatar { grid-column: 1; grid-row: 1 / span 2; }
+  .fleet-agent-identity { grid-column: 2; grid-row: 1; }
+  .fleet-state { grid-column: 2; grid-row: 2; justify-self: start; }
   .section-heading { align-items: flex-start; flex-direction: column; gap: 7px; }
   .site-foot { align-items: flex-start; flex-direction: column; }
   .site-foot .dot { display: none; }
