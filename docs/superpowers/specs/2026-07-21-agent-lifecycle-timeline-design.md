@@ -54,12 +54,14 @@ Unknown dates use `null` with the `not_recorded` basis. The old Fleet field `upt
 
 ## Overview presentation
 
-Each Agent card replaces `Uptime` and `Last Activity` in its two-column metadata row with:
+Each Agent card presents lifecycle age as the primary signal and the underlying dates as supporting evidence:
 
-- `Live Since`: stable calendar date such as `Jun 17, 2026`.
-- `Last Updated`: relative time such as `3 hours ago`, with an exact timestamp in the element title.
+- `In Production`: elapsed full days since `live_since`, such as `34 days`, with `Since Jun 17, 2026` beneath it.
+- `Last Updated`: relative time such as `3 hours ago`, with `Jul 21, 2026` beneath it and the exact timestamp in the element title.
 
-Conversation totals, recent activity, and health state remain unchanged. Missing lifecycle dates render as `Not recorded`.
+Elapsed age is calculated from the persistent `live_since` timestamp at render time. Durations shorter than 24 hours render as `Today`; one full day renders as `1 day`; later values use plural `days`. The label must not use `Running Days`, `Uptime`, or wording that implies an uninterrupted process lifetime.
+
+Conversation totals, recent activity, and health state remain unchanged. Missing or invalid lifecycle dates render as `Not recorded` without a fabricated supporting date.
 
 ## Agent Detail presentation
 
