@@ -46,7 +46,7 @@ def test_usage_query_counts_distinct_assistant_turns_and_maps_rows():
                     "recent_summary": "入职需要哪些材料？",
                 }
             ],
-            [{"date": date(2026, 7, 21), "conversations": 4}],
+            [{"bot_id": "hr-bot", "date": date(2026, 7, 21), "conversations": 4}],
         ]
     )
     repository = PsycopgFlywheelRepository(
@@ -68,6 +68,7 @@ def test_usage_query_counts_distinct_assistant_turns_and_maps_rows():
     assert snapshot.records[0].total_conversations == 14
     assert snapshot.records[0].last_activity_at == checked_at
     assert snapshot.trend[0].date == date(2026, 7, 21)
+    assert snapshot.trend[0].bot_id == "hr-bot"
     assert snapshot.trend[0].conversations == 4
 
 

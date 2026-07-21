@@ -47,13 +47,13 @@ with answer_turns as (
   where m.role = 'assistant'
   group by c.bot_id, m.turn_id
 )
-select (answered_at at time zone 'Asia/Shanghai')::date as date,
+select bot_id, (answered_at at time zone 'Asia/Shanghai')::date as date,
   count(distinct (bot_id, turn_id))::bigint as conversations
 from answer_turns
 where (answered_at at time zone 'Asia/Shanghai')::date
   >= (now() at time zone 'Asia/Shanghai')::date - 6
-group by date
-order by date
+group by bot_id, date
+order by date, bot_id
 """
 
 
@@ -73,6 +73,7 @@ class UsageRecord:
 
 @dataclass(frozen=True)
 class DailyUsage:
+    bot_id: str
     date: date
     conversations: int
 
@@ -130,6 +131,7 @@ class PsycopgFlywheelRepository:
             ),
             trend=tuple(
                 DailyUsage(
+                    bot_id=row["bot_id"],
                     date=row["date"],
                     conversations=int(row["conversations"]),
                 )
