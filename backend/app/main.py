@@ -1,12 +1,14 @@
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
 from .cluster import routes as cluster_routes
 from .cluster.monitor import ClusterMonitor, cluster_poll_loop
-from .config import load_config
+from .config import Config, load_config
 from .fleet import routes as fleet_routes
 from .fleet.cache import UsageCache
 from .fleet.catalog import AgentCatalog
@@ -24,10 +26,17 @@ from .observability.repository import (
     UnavailableObservabilityRepository,
 )
 from .observability.service import ObservabilityService
+from .operations.repository import OperationsRepository
+from .operations.rules import OperationsRuleEngine
+from .operations.scheduler import OperationsScheduler, operations_poll_loop
+from .operations.source import PsycopgOperationsSource
 from .registry import routes as registry_routes
 from .registry.repository import YamlRepository
 from .remote_health.monitor import RemoteHealthMonitor, remote_poll_loop
 from .spa import SpaStaticFiles
+
+
+logger = logging.getLogger(__name__)
 
 
 async def cancel_tasks(tasks: list[asyncio.Task]) -> None:
@@ -37,6 +46,41 @@ async def cancel_tasks(tasks: list[asyncio.Task]) -> None:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
+def build_operations(
+    config: Config,
+    fleet_service: FleetReadService | None,
+    observability_service: ObservabilityService | None,
+    database_url: str | None,
+) -> tuple[OperationsRepository | None, OperationsScheduler | None]:
+    try:
+        database_path = Path(config.operations_database_path)
+        database_path.parent.mkdir(parents=True, exist_ok=True)
+        repository = OperationsRepository(str(database_path))
+        repository.migrate()
+        source = (
+            PsycopgOperationsSource(database_url) if database_url else None
+        )
+        scheduler = OperationsScheduler(
+            repository=repository,
+            fleet_service=fleet_service,
+            observability_service=observability_service,
+            operations_source=source,
+            rule_engine=OperationsRuleEngine(repository),
+            intervals={
+                "runtime": config.cluster_poll_interval_seconds,
+                "sync": config.remote_poll_interval_seconds,
+                "data_access": config.usage_cache_seconds,
+                "usage": config.operations_usage_interval_seconds,
+                "execution": config.operations_execution_interval_seconds,
+                "lifecycle": config.operations_lifecycle_interval_seconds,
+            },
+        )
+        return repository, scheduler
+    except Exception:
+        logger.exception("operations initialization failed")
+        return None, None
+
+
 def create_app(
     registry_path: str | None = None,
     cluster_contract_path: str | None = None,
@@ -44,6 +88,8 @@ def create_app(
     start_poller: bool = True,
     fleet_service: FleetReadService | None = None,
     observability_service: ObservabilityService | None = None,
+    operations_service=None,
+    operations_scheduler: OperationsScheduler | None = None,
 ) -> FastAPI:
     config = load_config()
     path = registry_path or config.registry_path
@@ -80,11 +126,27 @@ def create_app(
             else UnavailableObservabilityRepository()
         )
         observability_service = ObservabilityService(observability_repository)
+    if (
+        start_poller
+        and operations_service is None
+        and operations_scheduler is None
+    ):
+        operations_service, operations_scheduler = build_operations(
+            config,
+            fleet_service,
+            observability_service,
+            database_url,
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         tasks = []
         if start_poller:
+            if operations_scheduler is not None:
+                try:
+                    await operations_scheduler.startup()
+                except Exception:
+                    logger.exception("operations startup failed")
             tasks = [
                 asyncio.create_task(
                     poll_loop(
@@ -107,6 +169,12 @@ def create_app(
                     )
                 ),
             ]
+            if operations_scheduler is not None:
+                tasks.append(
+                    asyncio.create_task(
+                        operations_poll_loop(operations_scheduler)
+                    )
+                )
         try:
             yield
         finally:
@@ -118,6 +186,8 @@ def create_app(
     app.state.cluster_monitor = cluster_monitor
     app.state.fleet_service = fleet_service
     app.state.observability_service = observability_service
+    app.state.operations_service = operations_service
+    app.state.operations_scheduler = operations_scheduler
     app.state.remote_health_monitor = remote_monitor
 
     @app.get("/api/health")
