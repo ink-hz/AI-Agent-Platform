@@ -128,8 +128,9 @@ function response<T>(body: T): Response {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((next) => { resolve = next; });
-  return { promise, resolve };
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((next, fail) => { resolve = next; reject = fail; });
+  return { promise, reject, resolve };
 }
 
 function setInput(input: HTMLInputElement, value: string) {
@@ -273,6 +274,122 @@ describe("ActivityPage", () => {
     expect(activityCall[1]?.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("writes canonical filters to history and sends Shanghai wall times with an explicit offset", async () => {
+    const eventPaths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/agents") return Promise.resolve(response(agents));
+      eventPaths.push(path);
+      return Promise.resolve(response<Page<OperationalEvent>>({ items: [], total: 0, limit: 50, offset: 0 }));
+    }));
+    await renderActivity();
+
+    await act(async () => {
+      setInput(container.querySelector<HTMLInputElement>("input[name=event_type]")!, " runtime_offline ");
+      setSelect(container.querySelector<HTMLSelectElement>("select[name=severity]")!, "critical");
+      setInput(container.querySelector<HTMLInputElement>("input[name=date_from]")!, "2026-07-22T09:30");
+      setInput(container.querySelector<HTMLInputElement>("input[name=date_to]")!, "2026-07-22T10:45");
+    });
+    await act(async () => {
+      container.querySelector<HTMLFormElement>("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(window.location.pathname).toBe("/activity");
+    expect(window.location.search).toContain("date_from=2026-07-22T09%3A30%3A00%2B08%3A00");
+    expect(new URLSearchParams(window.location.search).get("date_from")).toBe("2026-07-22T09:30:00+08:00");
+    expect(eventPaths[eventPaths.length - 1]).toBe(
+      "/api/operations/events?event_type=runtime_offline&severity=critical&date_from=2026-07-22T09%3A30%3A00%2B08%3A00&date_to=2026-07-22T10%3A45%3A00%2B08%3A00&limit=50&offset=0",
+    );
+  });
+
+  it("restores query-only history navigation into controls and fetches each entry once", async () => {
+    const eventPaths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/agents") return Promise.resolve(response(agents));
+      eventPaths.push(path);
+      return Promise.resolve(response<Page<OperationalEvent>>({ items: [], total: 0, limit: 50, offset: 0 }));
+    }));
+    await act(async () => root?.render(createElement(App)));
+    expect(eventPaths).toHaveLength(1);
+
+    await act(async () => {
+      window.history.pushState({}, "", "/activity?event_type=runtime_offline&date_from=2026-07-22T09%3A30%3A00%2B08%3A00");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(container.querySelector<HTMLInputElement>("input[name=event_type]")?.value).toBe("runtime_offline");
+    expect(container.querySelector<HTMLInputElement>("input[name=date_from]")?.value).toBe("2026-07-22T09:30");
+    expect(eventPaths).toHaveLength(2);
+    expect(eventPaths[1]).toContain("date_from=2026-07-22T09%3A30%3A00%2B08%3A00");
+
+    await act(async () => {
+      window.history.replaceState({}, "", "/activity?severity=attention");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(container.querySelector<HTMLSelectElement>("select[name=severity]")?.value).toBe("attention");
+    expect(container.querySelector<HTMLInputElement>("input[name=event_type]")?.value).toBe("");
+    expect(container.querySelector<HTMLInputElement>("input[name=date_from]")?.value).toBe("");
+    expect(eventPaths).toHaveLength(3);
+    expect(eventPaths[2]).toBe("/api/operations/events?severity=attention&limit=50&offset=0");
+  });
+
+  it("leaves pathname navigation to the application router", async () => {
+    const eventPaths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/agents") return Promise.resolve(response(agents));
+      eventPaths.push(path);
+      return Promise.resolve(response<Page<OperationalEvent>>({ items: [], total: 0, limit: 50, offset: 0 }));
+    }));
+    await renderActivity();
+
+    await act(async () => {
+      window.history.pushState({}, "", "/agents");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(window.location.pathname).toBe("/agents");
+    expect(eventPaths).toHaveLength(1);
+  });
+
+  it("converts an instant deep link to a Shanghai datetime control and canonical request", async () => {
+    window.history.replaceState({}, "", "/activity?date_from=2026-07-22T01%3A30%3A00Z");
+    const eventPaths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/agents") return Promise.resolve(response(agents));
+      eventPaths.push(path);
+      return Promise.resolve(response<Page<OperationalEvent>>({ items: [], total: 0, limit: 50, offset: 0 }));
+    }));
+
+    await renderActivity();
+
+    expect(container.querySelector<HTMLInputElement>("input[name=date_from]")?.value).toBe("2026-07-22T09:30");
+    expect(eventPaths).toEqual([
+      "/api/operations/events?date_from=2026-07-22T09%3A30%3A00%2B08%3A00&limit=50&offset=0",
+    ]);
+  });
+
+  it("omits an impossible timestamp from controls, history, and the API request", async () => {
+    window.history.replaceState({}, "", "/activity?date_from=2026-02-30T09%3A30%3A00%2B08%3A00");
+    const eventPaths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/agents") return Promise.resolve(response(agents));
+      eventPaths.push(path);
+      return Promise.resolve(response<Page<OperationalEvent>>({ items: [], total: 0, limit: 50, offset: 0 }));
+    }));
+
+    await renderActivity();
+
+    expect(container.querySelector<HTMLInputElement>("input[name=date_from]")?.value).toBe("");
+    expect(window.location.search).toBe("");
+    expect(eventPaths).toEqual(["/api/operations/events?limit=50&offset=0"]);
+  });
+
   it("loads the next offset, de-duplicates in server order, and resets on filter submit", async () => {
     const first = eventFixture("first", "First event", "2026-07-22T16:10:00Z");
     const second = eventFixture("second", "Second event", "2026-07-22T16:00:00Z");
@@ -311,6 +428,174 @@ describe("ActivityPage", () => {
     expect(eventPaths[2]).toBe("/api/operations/events?event_type=runtime_offline&severity=critical&limit=50&offset=0");
     expect(Array.from(container.querySelectorAll(".operational-event-title"), (node) => node.textContent))
       .toEqual(["Filtered event"]);
+  });
+
+  it("advances the server cursor across a duplicate-only page", async () => {
+    const first = eventFixture("first", "First event", "2026-07-22T16:10:00Z");
+    const second = eventFixture("second", "Second event", "2026-07-22T16:00:00Z");
+    const fifth = eventFixture("fifth", "Fifth event", "2026-07-22T15:40:00Z");
+    const eventPaths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/agents") return Promise.resolve(response(agents));
+      eventPaths.push(path);
+      if (path.includes("offset=4")) {
+        return Promise.resolve(response<Page<OperationalEvent>>({ items: [fifth], total: 5, limit: 50, offset: 4 }));
+      }
+      if (path.includes("offset=2")) {
+        return Promise.resolve(response<Page<OperationalEvent>>({ items: [first, second], total: 5, limit: 50, offset: 2 }));
+      }
+      return Promise.resolve(response<Page<OperationalEvent>>({ items: [first, second], total: 5, limit: 50, offset: 0 }));
+    }));
+    await renderActivity();
+
+    await act(async () => container.querySelector<HTMLButtonElement>("button[type=button]")!.click());
+    expect(Array.from(container.querySelectorAll(".operational-event-title"), (node) => node.textContent))
+      .toEqual(["First event", "Second event"]);
+    await act(async () => container.querySelector<HTMLButtonElement>("button[type=button]")!.click());
+
+    expect(eventPaths).toEqual([
+      "/api/operations/events?limit=50&offset=0",
+      "/api/operations/events?limit=50&offset=2",
+      "/api/operations/events?limit=50&offset=4",
+    ]);
+    expect(Array.from(container.querySelectorAll(".operational-event-title"), (node) => node.textContent))
+      .toEqual(["First event", "Second event", "Fifth event"]);
+  });
+
+  it("retains events and retries the same server offset after load-more failure", async () => {
+    const first = eventFixture("first", "First event", "2026-07-22T16:10:00Z");
+    const second = eventFixture("second", "Second event", "2026-07-22T16:00:00Z");
+    const third = eventFixture("third", "Third event", "2026-07-22T15:50:00Z");
+    let offsetTwoAttempts = 0;
+    const eventPaths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/agents") return Promise.resolve(response(agents));
+      eventPaths.push(path);
+      if (path.includes("offset=2") && offsetTwoAttempts++ === 0) {
+        return Promise.reject(new Error("temporary failure"));
+      }
+      if (path.includes("offset=2")) {
+        return Promise.resolve(response<Page<OperationalEvent>>({ items: [third], total: 3, limit: 50, offset: 2 }));
+      }
+      return Promise.resolve(response<Page<OperationalEvent>>({ items: [first, second], total: 3, limit: 50, offset: 0 }));
+    }));
+    await renderActivity();
+
+    await act(async () => container.querySelector<HTMLButtonElement>("button[type=button]")!.click());
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("Activity unavailable");
+    expect(Array.from(container.querySelectorAll(".operational-event-title"), (node) => node.textContent))
+      .toEqual(["First event", "Second event"]);
+    await act(async () => container.querySelector<HTMLButtonElement>("button[type=button]")!.click());
+
+    expect(eventPaths.filter((path) => path.includes("offset=2"))).toHaveLength(2);
+    expect(Array.from(container.querySelectorAll(".operational-event-title"), (node) => node.textContent))
+      .toEqual(["First event", "Second event", "Third event"]);
+  });
+
+  it("does not issue duplicate load-more requests while one is pending", async () => {
+    const first = eventFixture("first", "First event", "2026-07-22T16:10:00Z");
+    const pendingPage = deferred<Response>();
+    const eventPaths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/agents") return Promise.resolve(response(agents));
+      eventPaths.push(path);
+      if (path.includes("offset=1")) return pendingPage.promise;
+      return Promise.resolve(response<Page<OperationalEvent>>({ items: [first], total: 2, limit: 50, offset: 0 }));
+    }));
+    await renderActivity();
+
+    const loadMore = container.querySelector<HTMLButtonElement>("button[type=button]")!;
+    await act(async () => {
+      loadMore.click();
+      loadMore.click();
+    });
+
+    expect(eventPaths.filter((path) => path.includes("offset=1"))).toHaveLength(1);
+    expect(container.querySelector<HTMLButtonElement>("button[type=button]")?.disabled).toBe(true);
+  });
+
+  it("aborts and ignores a late page after filters change", async () => {
+    const first = eventFixture("first", "First event", "2026-07-22T16:10:00Z");
+    const nextPage = deferred<Response>();
+    const filtered = eventFixture("filtered", "Filtered event", "2026-07-22T16:20:00Z");
+    const stale = eventFixture("stale", "Stale event", "2026-07-22T16:25:00Z");
+    let nextPageSignal: AbortSignal | undefined;
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/agents") return Promise.resolve(response(agents));
+      if (path.includes("event_type=runtime_offline")) {
+        return Promise.resolve(response<Page<OperationalEvent>>({ items: [filtered], total: 1, limit: 50, offset: 0 }));
+      }
+      if (path.includes("offset=1")) {
+        nextPageSignal = init?.signal as AbortSignal;
+        return nextPage.promise;
+      }
+      return Promise.resolve(response<Page<OperationalEvent>>({ items: [first], total: 2, limit: 50, offset: 0 }));
+    }));
+    await renderActivity();
+    await act(async () => container.querySelector<HTMLButtonElement>("button[type=button]")!.click());
+
+    await act(async () => setInput(
+      container.querySelector<HTMLInputElement>("input[name=event_type]")!,
+      "runtime_offline",
+    ));
+    await act(async () => {
+      container.querySelector<HTMLFormElement>("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(nextPageSignal?.aborted).toBe(true);
+    expect(container.textContent).toContain("Filtered event");
+
+    await act(async () => {
+      nextPage.resolve(response<Page<OperationalEvent>>({ items: [stale], total: 2, limit: 50, offset: 1 }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("Filtered event");
+    expect(container.textContent).not.toContain("Stale event");
+  });
+
+  it("keeps an explicit System Agent selected while Agent metadata is pending or unavailable", async () => {
+    window.history.replaceState({}, "", "/activity?agent_id=test-bot");
+    const agentRequest = deferred<Response>();
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      if (String(input) === "/api/agents") return agentRequest.promise;
+      return Promise.resolve(response<Page<OperationalEvent>>({ items: [], total: 0, limit: 50, offset: 0 }));
+    }));
+    await renderActivity();
+
+    const selector = container.querySelector<HTMLSelectElement>("select[name=agent_id]")!;
+    expect(selector.value).toBe("test-bot");
+    expect(Array.from(selector.options, (option) => option.textContent))
+      .toEqual(["All Business Agents", "test-bot"]);
+
+    await act(async () => {
+      agentRequest.reject(new Error("agents unavailable"));
+      await Promise.resolve();
+    });
+    expect(selector.value).toBe("test-bot");
+    expect(Array.from(selector.options, (option) => option.textContent))
+      .toEqual(["All Business Agents", "test-bot"]);
+  });
+
+  it("rolls Today and Yesterday headings at Shanghai midnight", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-22T15:59:30Z"));
+    const item = eventFixture("boundary", "Boundary event", "2026-07-22T15:59:00Z");
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      if (String(input) === "/api/agents") return Promise.resolve(response(agents));
+      return Promise.resolve(response<Page<OperationalEvent>>({ items: [item], total: 1, limit: 50, offset: 0 }));
+    }));
+    await renderActivity();
+    expect(container.querySelector(".activity-group h2")?.textContent).toBe("Today");
+
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+
+    expect(container.querySelector(".activity-group h2")?.textContent).toBe("Yesterday");
   });
 
   it("contains Activity unavailability inside the application shell", async () => {
