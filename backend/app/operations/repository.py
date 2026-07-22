@@ -9,7 +9,14 @@ from uuid import uuid4
 
 from app.observability.models import Page
 
-from .models import EventFilters, NewOperationalEvent, OperationalEvent, RuleState, RunHealth
+from .models import (
+    EventFilters,
+    NewOperationalEvent,
+    OperationalEvent,
+    RuleState,
+    RunHealth,
+    UsageObservation,
+)
 
 
 MIGRATION_VERSION_1 = """
@@ -60,6 +67,19 @@ create table if not exists operational_runs (
 );
 create index if not exists ix_operational_runs_name_time
   on operational_runs(run_name, started_at desc);
+"""
+
+
+MIGRATION_VERSION_2 = """
+create table if not exists operational_usage_occurrences (
+  occurrence_key text primary key,
+  agent_id text not null,
+  bucket_start text not null,
+  occurred_at text not null,
+  processed_at text not null
+);
+create index if not exists ix_operational_usage_agent_bucket
+  on operational_usage_occurrences(agent_id, bucket_start);
 """
 
 
@@ -139,6 +159,78 @@ insert into operational_events (
 """
 
 
+def _put_state(connection: sqlite3.Connection, state: RuleState) -> None:
+    connection.execute(
+        """
+        insert into operational_rule_state(rule_key, value_json, updated_at)
+        values (?, ?, ?)
+        on conflict(rule_key) do update set
+          value_json=excluded.value_json,
+          updated_at=excluded.updated_at
+        """,
+        (state.rule_key, _json(state.value), _timestamp(state.updated_at)),
+    )
+
+
+def _upsert_occurrence(
+    connection: sqlite3.Connection,
+    event: NewOperationalEvent,
+    status: Literal["active", "historical"],
+) -> str:
+    occurred_at = _timestamp(event.occurred_at)
+    row = connection.execute(
+        """
+        select * from operational_events
+        where fingerprint=? and occurred_at=?
+        order by case status when 'active' then 0 else 1 end
+        limit 1
+        """,
+        (event.fingerprint, occurred_at),
+    ).fetchone()
+    if row is None:
+        event_id = str(uuid4())
+        connection.execute(
+            INSERT_EVENT,
+            _event_values(event, event_id=event_id, status=status),
+        )
+        return event_id
+
+    event_id = row["event_id"]
+    final_status = (
+        "historical"
+        if status == "historical" or row["status"] == "historical"
+        else "active"
+    )
+    connection.execute(
+        """
+        update operational_events
+        set agent_id=?, agent_visibility=?, event_type=?, event_family=?,
+            severity=?, status=?, title=?, summary=?, source_kind=?,
+            facts_json=?, target_kind=?, target_id=?, target_path=?,
+            last_observed_at=?
+        where event_id=?
+        """,
+        (
+            event.agent_id,
+            event.agent_visibility,
+            event.event_type,
+            event.event_family,
+            event.severity,
+            final_status,
+            event.title,
+            event.summary,
+            event.source_kind,
+            _json(event.facts),
+            event.target_kind,
+            event.target_id,
+            event.target_path,
+            occurred_at,
+            event_id,
+        ),
+    )
+    return event_id
+
+
 class OperationsRepository:
     def __init__(self, path: str) -> None:
         self._path = path
@@ -156,6 +248,11 @@ class OperationsRepository:
             connection.execute(
                 "insert or ignore into operations_schema_version(version, applied_at) values (?, ?)",
                 (1, _timestamp(datetime.now(timezone.utc))),
+            )
+            connection.executescript(MIGRATION_VERSION_2)
+            connection.execute(
+                "insert or ignore into operations_schema_version(version, applied_at) values (?, ?)",
+                (2, _timestamp(datetime.now(timezone.utc))),
             )
 
     def schema_version(self) -> int:
@@ -271,72 +368,12 @@ class OperationsRepository:
             connection.execute("begin immediate")
             event_ids: list[str] = []
             for event, event_status in zip(events, statuses, strict=True):
-                occurred_at = _timestamp(event.occurred_at)
-                row = connection.execute(
-                    """
-                    select * from operational_events
-                    where fingerprint=? and occurred_at=?
-                    order by case status when 'active' then 0 else 1 end
-                    limit 1
-                    """,
-                    (event.fingerprint, occurred_at),
-                ).fetchone()
-                if row is None:
-                    event_id = str(uuid4())
-                    connection.execute(
-                        INSERT_EVENT,
-                        _event_values(
-                            event, event_id=event_id, status=event_status
-                        ),
-                    )
-                else:
-                    event_id = row["event_id"]
-                    final_status = (
-                        "historical"
-                        if event_status == "historical"
-                        or row["status"] == "historical"
-                        else "active"
-                    )
-                    connection.execute(
-                        """
-                        update operational_events
-                        set agent_id=?, agent_visibility=?, event_type=?, event_family=?,
-                            severity=?, status=?, title=?, summary=?, source_kind=?,
-                            facts_json=?, target_kind=?, target_id=?, target_path=?,
-                            last_observed_at=?
-                        where event_id=?
-                        """,
-                        (
-                            event.agent_id,
-                            event.agent_visibility,
-                            event.event_type,
-                            event.event_family,
-                            event.severity,
-                            final_status,
-                            event.title,
-                            event.summary,
-                            event.source_kind,
-                            _json(event.facts),
-                            event.target_kind,
-                            event.target_id,
-                            event.target_path,
-                            occurred_at,
-                            event_id,
-                        ),
-                    )
-                event_ids.append(event_id)
+                event_ids.append(
+                    _upsert_occurrence(connection, event, event_status)
+                )
 
             for state in states:
-                connection.execute(
-                    """
-                    insert into operational_rule_state(rule_key, value_json, updated_at)
-                    values (?, ?, ?)
-                    on conflict(rule_key) do update set
-                      value_json=excluded.value_json,
-                      updated_at=excluded.updated_at
-                    """,
-                    (state.rule_key, _json(state.value), _timestamp(state.updated_at)),
-                )
+                _put_state(connection, state)
 
             results = tuple(
                 _event(
@@ -353,6 +390,109 @@ class OperationsRepository:
             raise
         finally:
             connection.close()
+
+    def record_usage(
+        self,
+        observation: UsageObservation,
+        event: NewOperationalEvent | None,
+        *,
+        status: Literal["active", "historical"],
+        milestone_events: Sequence[NewOperationalEvent],
+        usage_state: RuleState,
+        milestone_state: RuleState,
+        processed_at: datetime,
+    ) -> OperationalEvent | None:
+        connection = self._connection()
+        try:
+            connection.execute("begin immediate")
+            bucket_start = _timestamp(observation.bucket_start)
+            for occurrence in observation.occurrences:
+                occurred_at = _timestamp(occurrence.occurred_at)
+                connection.execute(
+                    """
+                    insert or ignore into operational_usage_occurrences(
+                      occurrence_key, agent_id, bucket_start, occurred_at, processed_at
+                    ) values (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        occurrence.turn_key,
+                        observation.agent_id,
+                        bucket_start,
+                        occurred_at,
+                        _timestamp(processed_at),
+                    ),
+                )
+                stored = connection.execute(
+                    """
+                    select agent_id, bucket_start, occurred_at
+                    from operational_usage_occurrences
+                    where occurrence_key=?
+                    """,
+                    (occurrence.turn_key,),
+                ).fetchone()
+                if (
+                    stored["agent_id"] != observation.agent_id
+                    or stored["bucket_start"] != bucket_start
+                    or stored["occurred_at"] != occurred_at
+                ):
+                    raise ValueError("usage occurrence identity conflict")
+
+            stored_event: OperationalEvent | None = None
+            if event is not None:
+                bucket_count = int(
+                    connection.execute(
+                        """
+                        select count(*) as count
+                        from operational_usage_occurrences
+                        where agent_id=? and bucket_start=?
+                        """,
+                        (observation.agent_id, bucket_start),
+                    ).fetchone()["count"]
+                )
+                event = event.model_copy(
+                    update={
+                        "facts": {
+                            **event.facts,
+                            "conversations": bucket_count,
+                        }
+                    }
+                )
+                event_id = _upsert_occurrence(connection, event, status)
+                stored_event = _event(
+                    connection.execute(
+                        "select * from operational_events where event_id=?", (event_id,)
+                    ).fetchone()
+                )
+                _put_state(
+                    connection,
+                    RuleState(
+                        rule_key=(
+                            f"usage:{observation.agent_id}:"
+                            f"{observation.bucket_start.isoformat()}"
+                        ),
+                        value={"conversations": bucket_count},
+                        updated_at=processed_at,
+                    ),
+                )
+
+            for milestone_event in milestone_events:
+                _upsert_occurrence(connection, milestone_event, "historical")
+            _put_state(connection, usage_state)
+            _put_state(connection, milestone_state)
+            connection.commit()
+            return stored_event
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def usage_occurrence_count(self) -> int:
+        with self._connection() as connection:
+            row = connection.execute(
+                "select count(*) as count from operational_usage_occurrences"
+            ).fetchone()
+        return int(row["count"])
 
     def get_occurrence(
         self, fingerprint: str, occurred_at: datetime

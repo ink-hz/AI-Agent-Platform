@@ -209,22 +209,50 @@ class OperationsRuleEngine:
         *,
         initializing: bool,
     ) -> None:
-        grouped: dict[str, list[UsageObservation]] = {}
-        for observation in observations:
-            grouped.setdefault(observation.agent_id, []).append(observation)
-        for agent_observations in grouped.values():
-            self._record_usage_batch(agent_observations, now, initializing)
-            latest = max(
-                agent_observations,
-                key=lambda item: (
-                    item.cumulative_conversations,
-                    item.bucket_start,
-                ),
+        current_hour = self._local_hour(now)
+        for observation in sorted(observations, key=lambda item: item.bucket_start):
+            bucket_start = self._local_hour(observation.bucket_start)
+            self._validate_usage_occurrences(observation, bucket_start)
+            observation = observation.model_copy(
+                update={"bucket_start": bucket_start}
             )
-            self._evaluate_milestones(latest, now, initializing)
-        self._repository.expire_active_occurrences(
-            "usage", self._local_hour(now)
-        )
+            milestone_events, milestone_state = self._milestone_mutations(
+                observation, now, initializing
+            )
+            usage_current = self._repository.get_rule_state(
+                f"usage:{observation.agent_id}"
+            )
+            prior_cumulative = (
+                int(usage_current.value.get("cumulative_conversations", 0))
+                if usage_current is not None
+                else 0
+            )
+            usage_state = RuleState(
+                rule_key=f"usage:{observation.agent_id}",
+                value={
+                    "cumulative_conversations": max(
+                        prior_cumulative,
+                        observation.cumulative_conversations,
+                    )
+                },
+                updated_at=now,
+            )
+            self._repository.record_usage(
+                observation,
+                (
+                    self._usage_event(observation, bucket_start)
+                    if observation.occurrences
+                    else None
+                ),
+                status=(
+                    "historical" if bucket_start < current_hour else "active"
+                ),
+                milestone_events=milestone_events,
+                usage_state=usage_state,
+                milestone_state=milestone_state,
+                processed_at=now,
+            )
+        self._repository.expire_active_occurrences("usage", current_hour)
 
     def evaluate_lifecycle(
         self,
@@ -362,94 +390,10 @@ class OperationsRuleEngine:
 
         self._repository.expire_active_occurrences("execution", current_hour)
 
-    def _record_usage_batch(
-        self,
-        observations: list[UsageObservation],
-        now: datetime,
-        initializing: bool,
-    ) -> None:
-        observations = sorted(observations, key=lambda item: item.bucket_start)
-        latest_cumulative = max(
-            item.cumulative_conversations for item in observations
-        )
-        agent_id = observations[0].agent_id
-        global_key = f"usage:{agent_id}"
-        global_state = self._repository.get_rule_state(global_key)
-        prior_cumulative = (
-            int(global_state.value.get("cumulative_conversations", 0))
-            if global_state is not None
-            else latest_cumulative - sum(item.conversations for item in observations)
-        )
-        unseen_total = max(0, latest_cumulative - prior_cumulative)
-        duplicate_budget = max(
-            0,
-            sum(item.conversations for item in observations) - unseen_total,
-        )
-        events: list[NewOperationalEvent] = []
-        statuses: list[Literal["active", "historical"]] = []
-        states: list[RuleState] = []
-        if not initializing:
-            for observation in observations:
-                bucket_start = self._local_hour(observation.bucket_start)
-                bucket_key = (
-                    f"usage:{observation.agent_id}:{bucket_start.isoformat()}"
-                )
-                bucket_state = self._repository.get_rule_state(bucket_key)
-                previous_count = (
-                    int(bucket_state.value.get("conversations", 0))
-                    if bucket_state is not None
-                    else 0
-                )
-                duplicates = min(
-                    observation.conversations,
-                    previous_count,
-                    duplicate_budget,
-                )
-                duplicate_budget -= duplicates
-                new_conversations = observation.conversations - duplicates
-                if new_conversations <= 0:
-                    continue
-                conversations = previous_count + new_conversations
-                events.append(
-                    self._usage_event(
-                        observation, bucket_start, conversations
-                    )
-                )
-                statuses.append(
-                    "historical"
-                    if bucket_start < self._local_hour(now)
-                    else "active"
-                )
-                states.append(
-                    RuleState(
-                        rule_key=bucket_key,
-                        value={"conversations": conversations},
-                        updated_at=now,
-                    )
-                )
-
-        states.append(
-            RuleState(
-                rule_key=global_key,
-                value={
-                    "cumulative_conversations": max(
-                        prior_cumulative, latest_cumulative
-                    )
-                },
-                updated_at=now,
-            )
-        )
-        self._repository.record_occurrences(
-            events,
-            status=statuses,
-            states=states,
-        )
-
     @staticmethod
     def _usage_event(
         observation: UsageObservation,
         bucket_start: datetime,
-        conversations: int,
     ) -> NewOperationalEvent:
         return NewOperationalEvent(
             agent_id=observation.agent_id,
@@ -458,14 +402,10 @@ class OperationsRuleEngine:
             event_family="usage",
             severity="info",
             title=f"{observation.agent_name} received new conversations",
-            summary=(
-                f"{conversations} answered conversation(s) "
-                "were recorded during this hour."
-            ),
+            summary="Answered conversations were recorded during this hour.",
             source_kind=observation.source_kind,
             occurred_at=bucket_start,
             facts={
-                "conversations": conversations,
                 "cumulative_conversations": observation.cumulative_conversations,
             },
             target_kind="agent",
@@ -477,9 +417,9 @@ class OperationsRuleEngine:
             ),
         )
 
-    def _evaluate_milestones(
+    def _milestone_mutations(
         self, observation: UsageObservation, now: datetime, initializing: bool
-    ) -> None:
+    ) -> tuple[list[NewOperationalEvent], RuleState]:
         rule_key = f"milestone:{observation.agent_id}"
         current = self._repository.get_rule_state(rule_key)
         prior = int(current.value.get("reached", 0)) if current is not None else 0
@@ -513,15 +453,25 @@ class OperationsRuleEngine:
                         fingerprint=f"milestone:{observation.agent_id}:{milestone}",
                     )
                 )
-        self._repository.record_occurrences(
-            events,
-            status="historical",
-            states=(RuleState(
+        return events, RuleState(
                 rule_key=rule_key,
                 value={"reached": max(prior, reached)},
                 updated_at=now,
-            ),),
-        )
+            )
+
+    @classmethod
+    def _validate_usage_occurrences(
+        cls, observation: UsageObservation, bucket_start: datetime
+    ) -> None:
+        if observation.conversations != len(observation.occurrences):
+            raise ValueError("usage conversations must match occurrence identities")
+        for occurrence in observation.occurrences:
+            if occurrence.agent_id != observation.agent_id:
+                raise ValueError("usage occurrence agent does not match its bucket")
+            if occurrence.source_kind != observation.source_kind:
+                raise ValueError("usage occurrence source does not match its bucket")
+            if cls._local_hour(occurrence.occurred_at) != bucket_start:
+                raise ValueError("usage occurrence time does not match its bucket")
 
     def _initial_lifecycle_events(
         self, observation: LifecycleObservation

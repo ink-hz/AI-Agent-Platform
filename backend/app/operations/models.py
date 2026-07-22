@@ -58,6 +58,13 @@ class EventFilters(BaseModel):
     date_to: datetime | None = None
 
 
+class UsageOccurrence(BaseModel):
+    turn_key: str
+    agent_id: str
+    source_kind: str
+    occurred_at: datetime
+
+
 class UsageObservation(BaseModel):
     agent_id: str
     agent_name: str
@@ -66,13 +73,7 @@ class UsageObservation(BaseModel):
     bucket_start: datetime
     conversations: int
     cumulative_conversations: int
-
-
-class UsageOccurrence(BaseModel):
-    turn_key: str
-    agent_id: str
-    source_kind: str
-    occurred_at: datetime
+    occurrences: tuple[UsageOccurrence, ...]
 
 
 class LifecycleObservation(BaseModel):

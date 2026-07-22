@@ -215,6 +215,8 @@ The implementation is divided into independent units:
 
 `operational_rule_state` stores the last normalized value and cursor for each rule and Agent. It supports transition detection, incremental Session processing, milestone detection, and idempotency.
 
+`operational_usage_occurrences` is the exact usage replay ledger. It stores one row per stable source Turn key with `occurrence_key`, canonical `agent_id`, Asia/Shanghai `bucket_start`, source `occurred_at`, and local `processed_at`. It stores identifiers and timestamps only; it never stores question text, answer text, or other source payloads.
+
 `operational_runs` stores scheduler run name, start and finish time, status, cursor, and sanitized error. It provides the evaluation freshness shown by the UI.
 
 The ledger does not copy question text, answer text, Trace payloads, credentials, or Knowledge content. It stores identifiers, counts, normalized facts, and links back to the canonical data.
@@ -230,7 +232,7 @@ An active-condition fingerprint is derived from rule, Agent, normalized conditio
 - A database transaction updates event and rule state together.
 - Re-running a cursor or scheduler interval produces no duplicate event.
 
-Usage activity is recorded in hourly Asia/Shanghai buckets. Its fingerprint includes Agent, usage event type, and bucket start. The Brief aggregates those buckets over the rolling 24-hour interval; empty buckets are not stored.
+Usage activity is recorded in hourly Asia/Shanghai buckets. Its fingerprint includes Agent, usage event type, and bucket start. Each `UsageObservation` carries the exact typed `UsageOccurrence` rows represented by that Agent/hour aggregation. In one SQLite transaction, the repository inserts unseen occurrence keys, ignores replayed keys, recomputes the bucket count from the ledger, creates or updates and finalizes the hourly Event, and persists cumulative, bucket, and milestone state plus any crossed milestone Events. Late unseen keys increment only the hour derived from their source occurrence timestamps. The Brief aggregates those buckets over the rolling 24-hour interval; empty buckets are not stored.
 
 ## 7. Evaluation Schedule
 
@@ -251,7 +253,7 @@ The first successful engine run seeds rule state before emitting change events. 
 During initialization:
 
 - currently active runtime and data-freshness problems may enter Attention after satisfying their normal debounce or threshold;
-- real usage during the preceding 24 hours is backfilled into hourly buckets;
+- real usage during the preceding 24 hours is backfilled into hourly buckets and the exact occurrence ledger;
 - durable lifecycle dates may be imported as historical events using their actual dates, but dates older than 24 hours never appear in `Last 24 Hours`;
 - milestone state advances to the highest milestone already reached without emitting old milestones.
 

@@ -508,7 +508,9 @@ git commit -m "feat: detect operational state transitions"
 - Create: `backend/app/operations/source.py`
 - Create: `backend/tests/test_operations_source.py`
 - Modify: `backend/app/operations/models.py`
+- Modify: `backend/app/operations/repository.py`
 - Modify: `backend/app/operations/rules.py`
+- Modify: `backend/tests/test_operations_repository.py`
 - Modify: `backend/tests/test_operations_rules.py`
 
 **Interfaces:**
@@ -516,6 +518,7 @@ git commit -m "feat: detect operational state transitions"
 - Produces: `UsageOccurrence`, `UsageObservation`, `LifecycleObservation`, `ExecutionObservation`.
 - Produces: `PsycopgOperationsSource.fetch_usage(after, through)`, `fetch_execution(after, through)`.
 - Produces: `evaluate_usage()`, `evaluate_lifecycle()`, and `evaluate_execution()`.
+- Produces migration version 2 with `operational_usage_occurrences` and an atomic exact-usage unit of work.
 
 - [ ] **Step 1: Write failing source-query and rule tests**
 
@@ -565,15 +568,25 @@ def fake_source(*, usage_rows=(), execution_rows=()):
     return source, cursor
 
 
-def usage(agent_id: str, cumulative: int, bucket_start: datetime):
+def usage(agent_id: str, cumulative: int, bucket_start: datetime, turn_keys: tuple[str, ...]):
+    source_kind = "fae" if agent_id == "ai-fae-agent" else "metabot"
     return UsageObservation(
         agent_id=agent_id,
         agent_name=agent_id,
         agent_visibility="business",
-        source_kind="fae" if agent_id == "ai-fae-agent" else "metabot",
+        source_kind=source_kind,
         bucket_start=bucket_start,
-        conversations=1,
+        conversations=len(turn_keys),
         cumulative_conversations=cumulative,
+        occurrences=tuple(
+            UsageOccurrence(
+                turn_key=turn_key,
+                agent_id=agent_id,
+                source_kind=source_kind,
+                occurred_at=bucket_start,
+            )
+            for turn_key in turn_keys
+        ),
     )
 
 
@@ -610,18 +623,24 @@ def test_execution_query_emits_only_supported_explicit_signals():
     assert [item.signal_type for item in signals] == ["fallback"]
 
 
-def test_initial_baseline_does_not_emit_old_milestones(tmp_path):
+def test_initial_baseline_backfills_usage_but_not_old_milestones(tmp_path):
     engine, repo = make_engine(tmp_path)
-    engine.evaluate_usage([usage("ai-fae-agent", 237, NOW)], NOW, initializing=True)
-    assert event_types(repo) == []
+    engine.evaluate_usage(
+        [usage("ai-fae-agent", 237, NOW - timedelta(hours=1), ("fae:turn-1",))],
+        NOW,
+        initializing=True,
+    )
+    assert event_types(repo) == ["new_conversations"]
+    assert repo.usage_occurrence_count() == 1
     assert repo.get_rule_state("milestone:ai-fae-agent").value["reached"] == 100
 
 
 def test_usage_is_bucketed_and_milestone_is_emitted_once(tmp_path):
     engine, repo = make_engine(tmp_path)
-    engine.evaluate_usage([usage("hr-bot", 99, NOW)], NOW, initializing=True)
-    engine.evaluate_usage([usage("hr-bot", 100, NOW + timedelta(minutes=1))], NOW, initializing=False)
-    engine.evaluate_usage([usage("hr-bot", 100, NOW + timedelta(minutes=2))], NOW, initializing=False)
+    engine.evaluate_usage([usage("hr-bot", 99, NOW, ())], NOW, initializing=True)
+    answered = usage("hr-bot", 100, NOW + timedelta(minutes=1), ("turn-100",))
+    engine.evaluate_usage([answered], NOW, initializing=False)
+    engine.evaluate_usage([answered], NOW + timedelta(minutes=1), initializing=False)
     assert event_types(repo).count("conversation_milestone") == 1
 
 
@@ -696,6 +715,13 @@ Deduplicate identical `(turn_key, signal_type)` rows in Python before returning 
 Define exact observation fields:
 
 ```python
+class UsageOccurrence(BaseModel):
+    turn_key: str
+    agent_id: str
+    source_kind: str
+    occurred_at: datetime
+
+
 class UsageObservation(BaseModel):
     agent_id: str
     agent_name: str
@@ -704,13 +730,7 @@ class UsageObservation(BaseModel):
     bucket_start: datetime
     conversations: int
     cumulative_conversations: int
-
-
-class UsageOccurrence(BaseModel):
-    turn_key: str
-    agent_id: str
-    source_kind: str
-    occurred_at: datetime
+    occurrences: tuple[UsageOccurrence, ...]
 
 
 class LifecycleObservation(BaseModel):
@@ -734,7 +754,7 @@ class ExecutionObservation(BaseModel):
     occurred_at: datetime
 ```
 
-The scheduler groups `UsageOccurrence` rows by Agent and local hour, then combines each group with the matching Fleet Agent cumulative total to create `UsageObservation`. Use `ZoneInfo("Asia/Shanghai")` and floor usage and execution fingerprints to the local hour. Milestones are `100, 250, 500, 1000`, then every additional 1,000. Initialization stores the highest reached milestone without emitting it. Lifecycle initialization writes old dates as historical events using their actual occurrence time; only a later value change emits a new `deployment_updated` event.
+The scheduler groups `UsageOccurrence` rows by Agent and local hour, then combines each group and its exact typed occurrence tuple with the matching Fleet Agent cumulative total to create `UsageObservation`. Migration version 2 adds `operational_usage_occurrences(occurrence_key primary key, agent_id, bucket_start, occurred_at, processed_at)`. It stores source Turn identifiers and timestamps only, never question or answer payloads. One repository transaction inserts unseen keys, ignores replayed keys, recomputes the exact hourly count, creates/updates/finalizes the hourly Event, and persists bucket, cumulative, and milestone state plus milestone Events. Late unseen keys update only their actual source hour; count-based duplicate budgets are prohibited. Use `ZoneInfo("Asia/Shanghai")` and floor usage and execution fingerprints to the local hour. Milestones are `100, 250, 500, 1000`, then every additional 1,000. Initialization backfills the preceding 24 hours of hourly usage Events, bucket state, and occurrence keys while storing the highest reached milestone without emitting old milestones. Lifecycle initialization writes old dates as historical events using their actual occurrence time; only a later value change emits a new `deployment_updated` event.
 
 Execution Events remain active through their one-hour bucket. A later scheduler pass after the bucket closes marks them `historical` without creating Recovery.
 
@@ -750,7 +770,7 @@ cd backend
 Expected: all selected tests pass.
 
 ```bash
-git add backend/app/operations/models.py backend/app/operations/rules.py backend/app/operations/source.py backend/tests/test_operations_rules.py backend/tests/test_operations_source.py
+git add backend/app/operations/models.py backend/app/operations/repository.py backend/app/operations/rules.py backend/app/operations/source.py backend/tests/test_operations_repository.py backend/tests/test_operations_rules.py backend/tests/test_operations_source.py
 git commit -m "feat: derive operational usage and execution events"
 ```
 
@@ -837,7 +857,7 @@ Expected: failures for missing scheduler and app state.
 
 The constructor accepts `repository`, optional production dependencies, and optional `group_runners` plus `intervals` maps. Tests inject the maps shown above. Production constructs the default runner map for `runtime`, `sync`, `data_access`, `usage`, `execution`, and `lifecycle` from the scheduler's bound methods and Config intervals.
 
-`run_runtime()`, `run_data_access()`, and `run_lifecycle()` reuse one current `FleetReadService.overview()` result within a scheduler pass. `run_data_access()` creates `DataAccessObservation(source_name="flywheel", available=overview.usage_source.healthy, observed_at=now)`. Usage and execution cursors advance only after their event and rule-state transaction succeeds.
+`run_runtime()`, `run_data_access()`, and `run_lifecycle()` reuse one current `FleetReadService.overview()` result within a scheduler pass. `run_data_access()` creates `DataAccessObservation(source_name="flywheel", available=overview.usage_source.healthy, observed_at=now)`. `run_usage()` preserves every grouped `UsageOccurrence` in `UsageObservation.occurrences`; it must not reduce replay identity to counts. Usage and execution cursors advance only after their event and rule-state transaction succeeds.
 
 The poll loop wakes every ten seconds, checks due timestamps, and never sleeps for an entire five-minute rule interval:
 

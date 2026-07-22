@@ -1,6 +1,9 @@
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
-from app.operations.models import EventFilters
+import pytest
+
+from app.operations.models import EventFilters, UsageOccurrence
 from app.operations.repository import OperationsRepository
 from app.operations.rules import (
     DataAccessObservation,
@@ -33,15 +36,33 @@ def runtime(agent_id: str, visibility: str, state: str, observed_at: datetime):
     )
 
 
-def usage(agent_id: str, cumulative: int, bucket_start: datetime):
+def usage(
+    agent_id: str,
+    cumulative: int,
+    bucket_start: datetime,
+    occurrence_keys: tuple[str, ...] | None = None,
+):
+    source_kind = "fae" if agent_id == "ai-fae-agent" else "metabot"
+    keys = occurrence_keys
+    if keys is None:
+        keys = (f"{source_kind}:{agent_id}:{cumulative}:{bucket_start.isoformat()}",)
     return UsageObservation(
         agent_id=agent_id,
         agent_name=agent_id,
         agent_visibility="business",
-        source_kind="fae" if agent_id == "ai-fae-agent" else "metabot",
+        source_kind=source_kind,
         bucket_start=bucket_start,
-        conversations=1,
+        conversations=len(keys),
         cumulative_conversations=cumulative,
+        occurrences=tuple(
+            UsageOccurrence(
+                turn_key=key,
+                agent_id=agent_id,
+                source_kind=source_kind,
+                occurred_at=bucket_start + timedelta(seconds=index),
+            )
+            for index, key in enumerate(keys)
+        ),
     )
 
 
@@ -344,25 +365,45 @@ def test_data_access_is_fleet_level_and_only_flywheel_links_to_sessions(tmp_path
     assert local_cache.target_path is None
 
 
-def test_initial_baseline_does_not_emit_old_milestones(tmp_path):
+def test_initial_baseline_backfills_usage_but_not_old_milestones(tmp_path):
     engine, repo = make_engine(tmp_path)
+    first_hour = NOW - timedelta(hours=23)
+    second_hour = NOW - timedelta(hours=1)
 
-    engine.evaluate_usage([usage("ai-fae-agent", 237, NOW)], NOW, initializing=True)
+    engine.evaluate_usage(
+        [
+            usage(
+                "ai-fae-agent",
+                237,
+                first_hour,
+                ("fae:turn-1", "fae:turn-2"),
+            ),
+            usage("ai-fae-agent", 237, second_hour, ("fae:turn-3",)),
+        ],
+        NOW,
+        initializing=True,
+    )
 
-    assert event_types(repo) == []
+    assert event_types(repo) == ["new_conversations", "new_conversations"]
+    assert repo.usage_occurrence_count() == 3
     assert repo.get_rule_state("milestone:ai-fae-agent").value["reached"] == 100
 
 
 def test_usage_is_bucketed_and_milestone_is_emitted_once(tmp_path):
     engine, repo = make_engine(tmp_path)
-    engine.evaluate_usage([usage("hr-bot", 99, NOW)], NOW, initializing=True)
     engine.evaluate_usage(
-        [usage("hr-bot", 100, NOW + timedelta(minutes=1))],
+        [usage("hr-bot", 99, NOW, ())], NOW, initializing=True
+    )
+    answered = usage(
+        "hr-bot", 100, NOW + timedelta(minutes=1), ("turn-100",)
+    )
+    engine.evaluate_usage(
+        [answered],
         NOW,
         initializing=False,
     )
     engine.evaluate_usage(
-        [usage("hr-bot", 100, NOW + timedelta(minutes=2))],
+        [answered],
         NOW,
         initializing=False,
     )
@@ -380,7 +421,7 @@ def test_usage_is_bucketed_and_milestone_is_emitted_once(tmp_path):
 
 def test_usage_records_each_new_milestone_after_initialization(tmp_path):
     engine, repo = make_engine(tmp_path)
-    engine.evaluate_usage([usage("hr-bot", 99, NOW)], NOW, initializing=True)
+    engine.evaluate_usage([usage("hr-bot", 99, NOW, ())], NOW, initializing=True)
 
     for total in (100, 250, 500, 1000, 2000):
         engine.evaluate_usage(
@@ -398,14 +439,12 @@ def test_usage_records_each_new_milestone_after_initialization(tmp_path):
 def test_usage_accumulates_separate_passes_into_one_hourly_bucket(tmp_path):
     engine, repo = make_engine(tmp_path)
 
-    engine.evaluate_usage([usage("hr-bot", 99, NOW)], NOW, initializing=True)
-    engine.evaluate_usage([usage("hr-bot", 100, NOW)], NOW, initializing=False)
+    engine.evaluate_usage([usage("hr-bot", 99, NOW, ())], NOW, initializing=True)
     engine.evaluate_usage(
-        [
-            usage("hr-bot", 102, NOW + timedelta(minutes=5)).model_copy(
-                update={"conversations": 2}
-            )
-        ],
+        [usage("hr-bot", 100, NOW, ("turn-a",))], NOW, initializing=False
+    )
+    engine.evaluate_usage(
+        [usage("hr-bot", 102, NOW + timedelta(minutes=5), ("turn-b", "turn-c"))],
         NOW + timedelta(minutes=5),
         initializing=False,
     )
@@ -419,13 +458,26 @@ def test_usage_accumulates_separate_passes_into_one_hourly_bucket(tmp_path):
     assert hourly[0].facts["conversations"] == 3
 
 
-def test_usage_retry_adds_only_the_unseen_cumulative_delta(tmp_path):
+def test_usage_retry_ignores_old_keys_and_adds_late_keys(tmp_path):
     engine, repo = make_engine(tmp_path)
-    engine.evaluate_usage([usage("hr-bot", 99, NOW)], NOW, initializing=True)
-    engine.evaluate_usage([usage("hr-bot", 100, NOW)], NOW, initializing=False)
+    engine.evaluate_usage([usage("hr-bot", 99, NOW, ())], NOW, initializing=True)
+    original = usage("hr-bot", 100, NOW, ("turn-a",))
+    engine.evaluate_usage([original], NOW, initializing=False)
 
-    replay = usage("hr-bot", 102, NOW + timedelta(minutes=5)).model_copy(
-        update={"conversations": 3}
+    replay_batch = usage(
+        "hr-bot",
+        102,
+        NOW + timedelta(minutes=5),
+        ("turn-b", "turn-c"),
+    )
+    replay = replay_batch.model_copy(
+        update={
+            "conversations": 3,
+            "occurrences": (
+                original.occurrences[0],
+                *replay_batch.occurrences,
+            ),
+        }
     )
     engine.evaluate_usage(
         [replay], NOW + timedelta(minutes=5), initializing=False
@@ -441,11 +493,16 @@ def test_usage_retry_adds_only_the_unseen_cumulative_delta(tmp_path):
 
 def test_usage_tail_observation_updates_bucket_as_the_hour_closes(tmp_path):
     engine, repo = make_engine(tmp_path)
-    engine.evaluate_usage([usage("hr-bot", 99, NOW)], NOW, initializing=True)
-    engine.evaluate_usage([usage("hr-bot", 100, NOW)], NOW, initializing=False)
+    engine.evaluate_usage([usage("hr-bot", 99, NOW, ())], NOW, initializing=True)
+    engine.evaluate_usage(
+        [usage("hr-bot", 100, NOW, ("turn-a",))], NOW, initializing=False
+    )
 
-    tail = usage("hr-bot", 102, NOW + timedelta(minutes=59)).model_copy(
-        update={"conversations": 2}
+    tail = usage(
+        "hr-bot",
+        102,
+        NOW + timedelta(minutes=59),
+        ("turn-b", "turn-c"),
     )
     engine.evaluate_usage(
         [tail], NOW + timedelta(hours=1), initializing=False
@@ -460,17 +517,19 @@ def test_usage_tail_observation_updates_bucket_as_the_hour_closes(tmp_path):
     assert hourly.facts["conversations"] == 3
 
 
-def test_usage_multi_bucket_retry_allocates_only_global_unseen_total(tmp_path):
+def test_usage_mixed_replay_and_late_keys_update_their_actual_hours(tmp_path):
     engine, repo = make_engine(tmp_path)
-    engine.evaluate_usage([usage("hr-bot", 98, NOW)], NOW, initializing=True)
-    engine.evaluate_usage([usage("hr-bot", 99, NOW)], NOW, initializing=False)
+    engine.evaluate_usage([usage("hr-bot", 98, NOW, ())], NOW, initializing=True)
+    engine.evaluate_usage(
+        [usage("hr-bot", 99, NOW, ("turn-a",))], NOW, initializing=False
+    )
 
     next_hour = NOW + timedelta(hours=1)
-    replayed_first = usage("hr-bot", 101, NOW).model_copy(
-        update={"conversations": 1}
+    replayed_first = usage(
+        "hr-bot", 102, NOW, ("turn-a", "turn-late-first-hour")
     )
-    new_second = usage("hr-bot", 101, next_hour).model_copy(
-        update={"conversations": 2}
+    new_second = usage(
+        "hr-bot", 102, next_hour, ("turn-new-second-hour",)
     )
     engine.evaluate_usage(
         [replayed_first, new_second], next_hour, initializing=False
@@ -485,7 +544,76 @@ def test_usage_multi_bucket_retry_allocates_only_global_unseen_total(tmp_path):
     assert sum(event.facts["conversations"] for event in hourly) == 3
     assert next(
         event for event in hourly if event.occurred_at == NOW
-    ).facts["conversations"] == 1
+    ).facts["conversations"] == 2
+    assert repo.usage_occurrence_count() == 3
+
+
+def test_usage_unit_of_work_rolls_back_occurrences_events_and_state(tmp_path):
+    database_path = tmp_path / "operations.db"
+    repo = OperationsRepository(str(database_path))
+    repo.migrate()
+    engine = OperationsRuleEngine(repo)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            create trigger reject_usage_state before insert on operational_rule_state
+            begin
+              select raise(abort, 'forced usage state failure');
+            end
+            """
+        )
+
+    with pytest.raises(sqlite3.IntegrityError, match="forced usage state failure"):
+        engine.evaluate_usage(
+            [usage("hr-bot", 100, NOW, ("turn-atomic",))],
+            NOW,
+            initializing=False,
+        )
+
+    assert repo.usage_occurrence_count() == 0
+    assert repo.list_events(EventFilters(), 100, 0).total == 0
+
+
+def test_usage_occurrence_key_cannot_move_between_agents(tmp_path):
+    engine, repo = make_engine(tmp_path)
+    engine.evaluate_usage(
+        [usage("hr-bot", 1, NOW, ("shared-turn-key",))],
+        NOW,
+        initializing=False,
+    )
+
+    with pytest.raises(ValueError, match="usage occurrence identity conflict"):
+        engine.evaluate_usage(
+            [usage("sales-bot", 1, NOW, ("shared-turn-key",))],
+            NOW,
+            initializing=False,
+        )
+
+    assert repo.usage_occurrence_count() == 1
+    assert {
+        event.agent_id
+        for event in repo.list_events(EventFilters(), 100, 0).items
+        if event.event_type == "new_conversations"
+    } == {"hr-bot"}
+
+
+def test_usage_occurrence_source_must_match_bucket_source(tmp_path):
+    engine, repo = make_engine(tmp_path)
+    observation = usage("hr-bot", 1, NOW, ("source-mismatch",))
+    mismatched = observation.model_copy(
+        update={
+            "occurrences": (
+                observation.occurrences[0].model_copy(
+                    update={"source_kind": "fae"}
+                ),
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match="usage occurrence source does not match"):
+        engine.evaluate_usage([mismatched], NOW, initializing=False)
+
+    assert repo.usage_occurrence_count() == 0
 
 
 def test_lifecycle_initialization_imports_actual_dates_and_replays_cleanly(tmp_path):

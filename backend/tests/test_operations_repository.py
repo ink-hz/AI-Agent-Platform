@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.operations.models import EventFilters, NewOperationalEvent, RuleState, RunHealth
-from app.operations.repository import OperationsRepository
+from app.operations.repository import MIGRATION_VERSION_1, OperationsRepository
 
 
 NOW = datetime(2026, 7, 22, 3, 0, tzinfo=timezone.utc)
@@ -41,13 +41,53 @@ def test_migrate_creates_versioned_operations_schema(tmp_path):
     repo = OperationsRepository(str(tmp_path / "operations.db"))
     repo.migrate()
 
-    assert repo.schema_version() == 1
+    assert repo.schema_version() == 2
+    with sqlite3.connect(tmp_path / "operations.db") as connection:
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "pragma table_info(operational_usage_occurrences)"
+            ).fetchall()
+        }
+    assert columns == {
+        "occurrence_key",
+        "agent_id",
+        "bucket_start",
+        "occurred_at",
+        "processed_at",
+    }
 
 
 def test_schema_version_returns_zero_before_migration(tmp_path):
     repo = OperationsRepository(str(tmp_path / "operations.db"))
 
     assert repo.schema_version() == 0
+
+
+def test_migrate_upgrades_v1_without_losing_existing_state(tmp_path):
+    database_path = tmp_path / "operations.db"
+    with sqlite3.connect(database_path) as connection:
+        connection.executescript(MIGRATION_VERSION_1)
+        connection.execute(
+            "insert into operations_schema_version(version, applied_at) values (1, ?)",
+            (NOW.isoformat(),),
+        )
+    repo = OperationsRepository(str(database_path))
+    event = repo.upsert_active(runtime_event())
+    state = repo.put_rule_state(
+        RuleState(rule_key="runtime:ai-fae-agent", value={"count": 2}, updated_at=NOW)
+    )
+    run = repo.record_run(
+        RunHealth(run_name="runtime", status="succeeded", started_at=NOW)
+    )
+
+    repo.migrate()
+
+    assert repo.schema_version() == 2
+    assert repo.list_events(EventFilters(), 20, 0).items[0].event_id == event.event_id
+    assert repo.get_rule_state(state.rule_key) == state
+    assert repo.latest_run(run.run_name) == run
+    assert repo.usage_occurrence_count() == 0
 
 
 def test_schema_version_propagates_non_missing_table_operational_error(tmp_path):
