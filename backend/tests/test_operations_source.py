@@ -74,12 +74,34 @@ def test_usage_query_returns_answered_turns_only():
 
     assert occurrences[0].turn_key == "metabot:turn-1"
     assert occurrences[0].agent_id == "hr-bot"
-    assert "nullif(btrim(answer), '') is not null" in cursor.statements[0]
+    assert "nullif(btrim(t.answer), '') is not null" in cursor.statements[0]
     assert cursor.params == [(NOW - timedelta(minutes=5), NOW)]
     assert "default_transaction_read_only=on" in cursor.connection_kwargs["options"]
     assert "statement_timeout=5000" in cursor.connection_kwargs["options"]
     assert cursor.connection_kwargs["connect_timeout"] == 3
     assert cursor.connection_kwargs["row_factory"] is not None
+
+
+def test_usage_query_uses_ingestion_watermark_but_preserves_event_time():
+    occurred_at = NOW - timedelta(days=2)
+    source, cursor = fake_source(
+        usage_rows=[
+            {
+                "turn_key": "fae:late-turn",
+                "agent_id": "ai-fae-agent",
+                "source_kind": "fae",
+                "created_at": occurred_at,
+                "source_synced_at": NOW,
+            }
+        ]
+    )
+
+    occurrences = source.fetch_usage(NOW - timedelta(hours=1), NOW)
+
+    statement = cursor.statements[0].lower()
+    assert "coalesce(t.source_synced_at, t.created_at) > %s" in statement
+    assert "coalesce(t.source_synced_at, t.created_at) <= %s" in statement
+    assert occurrences[0].occurred_at == occurred_at
 
 
 def test_execution_query_emits_only_supported_explicit_signals():
@@ -106,6 +128,32 @@ def test_execution_query_emits_only_supported_explicit_signals():
     assert cursor.params == [
         (NOW - timedelta(minutes=5), NOW) * 4,
     ]
+
+
+def test_execution_query_uses_ingestion_watermark_but_preserves_event_time():
+    occurred_at = NOW - timedelta(days=2)
+    source, cursor = fake_source(
+        execution_rows=[
+            {
+                "turn_key": "fae:late-turn",
+                "session_key": "fae:session-1",
+                "agent_id": "ai-fae-agent",
+                "source_kind": "fae",
+                "created_at": occurred_at,
+                "source_synced_at": NOW,
+                "signal_type": "fallback",
+            }
+        ]
+    )
+
+    signals = source.fetch_execution(NOW - timedelta(hours=1), NOW)
+
+    statement = cursor.statements[0].lower()
+    after_clause = "coalesce(t.source_synced_at, t.created_at) > %s"
+    through_clause = "coalesce(t.source_synced_at, t.created_at) <= %s"
+    assert statement.count(after_clause) == 4
+    assert statement.count(through_clause) == 4
+    assert signals[0].occurred_at == occurred_at
 
 
 def test_source_deduplicates_signals_and_discards_unknown_agents():

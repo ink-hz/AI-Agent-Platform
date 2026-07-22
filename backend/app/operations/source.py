@@ -12,34 +12,44 @@ from .models import ExecutionObservation, UsageOccurrence
 
 
 USAGE_SQL = """
-select turn_key, agent_id, source_kind, created_at
-from platform_read.turns
-where created_at > %s and created_at <= %s
-  and nullif(btrim(answer), '') is not null
-order by created_at, turn_key
+select t.turn_key, t.agent_id, t.source_kind, t.created_at
+from platform_read.turns t
+where coalesce(t.source_synced_at, t.created_at) > %s
+  and coalesce(t.source_synced_at, t.created_at) <= %s
+  and nullif(btrim(t.answer), '') is not null
+order by coalesce(t.source_synced_at, t.created_at), t.created_at, t.turn_key
 """
 
 
 EXECUTION_SQL = """
-select turn_key, session_key, agent_id, source_kind, created_at, 'empty_answer' as signal_type
-from platform_read.turns
-where created_at > %s and created_at <= %s and nullif(btrim(answer), '') is null
+select t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at,
+  'empty_answer' as signal_type
+from platform_read.turns t
+where coalesce(t.source_synced_at, t.created_at) > %s
+  and coalesce(t.source_synced_at, t.created_at) <= %s
+  and nullif(btrim(t.answer), '') is null
 union all
-select turn_key, session_key, agent_id, source_kind, created_at, 'fallback' as signal_type
-from platform_read.turns
-where created_at > %s and created_at <= %s and fallback_used is true
+select t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at,
+  'fallback' as signal_type
+from platform_read.turns t
+where coalesce(t.source_synced_at, t.created_at) > %s
+  and coalesce(t.source_synced_at, t.created_at) <= %s
+  and t.fallback_used is true
 union all
-select turn_key, session_key, agent_id, source_kind, created_at, 'incomplete' as signal_type
-from platform_read.turns
-where created_at > %s and created_at <= %s
-  and lower(coalesce(outcome, '')) in ('failed', 'error', 'incomplete')
+select t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at,
+  'incomplete' as signal_type
+from platform_read.turns t
+where coalesce(t.source_synced_at, t.created_at) > %s
+  and coalesce(t.source_synced_at, t.created_at) <= %s
+  and lower(coalesce(t.outcome, '')) in ('failed', 'error', 'incomplete')
 union all
 select distinct t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at,
   'tool_error' as signal_type
 from platform_read.turns t
 join platform_read.traces r on r.turn_key=t.turn_key
 join platform_read.trace_steps s on s.trace_key=r.trace_key
-where t.created_at > %s and t.created_at <= %s
+where coalesce(t.source_synced_at, t.created_at) > %s
+  and coalesce(t.source_synced_at, t.created_at) <= %s
   and r.detail_availability='available'
   and s.kind='tool_call'
   and (s.error_summary is not null or lower(coalesce(s.status, '')) in ('failed', 'error'))

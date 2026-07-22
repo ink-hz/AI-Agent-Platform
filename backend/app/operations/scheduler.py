@@ -27,6 +27,7 @@ from .source import PsycopgOperationsSource
 
 GroupRunner = Callable[[datetime], Awaitable[dict | None]]
 _LOCAL_ZONE = ZoneInfo("Asia/Shanghai")
+_REPLAY_OVERLAP = timedelta(hours=1)
 _DEFAULT_INTERVALS = {
     "runtime": 10.0,
     "sync": 60.0,
@@ -258,6 +259,28 @@ class OperationsScheduler:
                     occurrences=ordered,
                 )
             )
+        if "usage" not in self._initialized_groups:
+            represented_agents = {
+                observation.agent_id for observation in observations
+            }
+            for agent in overview.agents:
+                if (
+                    agent.total_conversations is None
+                    or agent.id in represented_agents
+                ):
+                    continue
+                observations.append(
+                    UsageObservation(
+                        agent_id=agent.id,
+                        agent_name=agent.name,
+                        agent_visibility=agent.visibility,
+                        source_kind=self._source_kind(agent.id),
+                        bucket_start=self._local_hour(now),
+                        conversations=0,
+                        cumulative_conversations=agent.total_conversations,
+                        occurrences=(),
+                    )
+                )
         await asyncio.to_thread(
             self._rule_engine.evaluate_usage,
             observations,
@@ -310,7 +333,11 @@ class OperationsScheduler:
         if latest is None:
             return default
         value = latest.cursor.get("through")
-        return datetime.fromisoformat(value) if value else default
+        return (
+            datetime.fromisoformat(value) - _REPLAY_OVERLAP
+            if value
+            else default
+        )
 
     @staticmethod
     def _source_kind(agent_id: str) -> str:

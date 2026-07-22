@@ -8,8 +8,14 @@ from app.fleet.models import (
     FleetOverview,
     FleetSummary,
 )
-from app.operations.models import ExecutionObservation, RunHealth, UsageOccurrence
+from app.operations.models import (
+    EventFilters,
+    ExecutionObservation,
+    RunHealth,
+    UsageOccurrence,
+)
 from app.operations.repository import OperationsRepository
+from app.operations.rules import OperationsRuleEngine
 from app.operations.scheduler import OperationsScheduler
 
 
@@ -58,12 +64,18 @@ def overview() -> FleetOverview:
 
 
 class FleetStub:
-    def __init__(self) -> None:
+    def __init__(self, totals: tuple[int, ...] = (237,)) -> None:
         self.calls = 0
+        self.totals = totals
 
     async def overview(self, _now):
         self.calls += 1
-        return overview()
+        result = overview()
+        total = self.totals[min(self.calls - 1, len(self.totals) - 1)]
+        result.agents[0] = result.agents[0].model_copy(
+            update={"total_conversations": total}
+        )
+        return result
 
 
 class RuleEngineStub:
@@ -269,8 +281,190 @@ async def test_restart_continues_from_cursor_without_reinitializing_usage(tmp_pa
 
     await scheduler.startup(NOW)
 
-    assert source.usage_ranges == [(previous, NOW)]
+    assert source.usage_ranges == [(previous - timedelta(hours=1), NOW)]
     assert engine.calls["usage"][2] is False
+
+
+class ReplaySource:
+    def __init__(self, occurrence: UsageOccurrence | None = None):
+        self.occurrence = occurrence
+        self.usage_ranges: list[tuple[datetime, datetime]] = []
+
+    def fetch_usage(self, after, through):
+        self.usage_ranges.append((after, through))
+        return (self.occurrence,) if self.occurrence is not None else ()
+
+    def fetch_execution(self, _after, _through):
+        return ()
+
+
+@pytest.mark.asyncio
+async def test_late_usage_replay_uses_overlap_and_records_true_hour_once(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    previous = NOW - timedelta(minutes=5)
+    repository.record_run(
+        RunHealth(
+            run_name="usage",
+            status="succeeded",
+            started_at=previous,
+            finished_at=previous,
+            cursor={"through": previous.isoformat()},
+        )
+    )
+    late_time = NOW - timedelta(days=2, minutes=20)
+    source = ReplaySource(
+        UsageOccurrence(
+            turn_key="fae:late-turn",
+            agent_id="ai-fae-agent",
+            source_kind="fae",
+            occurred_at=late_time,
+        )
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FleetStub(),
+        operations_source=source,
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"usage": 0},
+    )
+
+    await scheduler.run_due(NOW)
+    await scheduler.run_due(NOW + timedelta(minutes=5))
+
+    assert source.usage_ranges == [
+        (previous - timedelta(hours=1), NOW),
+        (NOW - timedelta(hours=1), NOW + timedelta(minutes=5)),
+    ]
+    assert repository.usage_occurrence_count() == 1
+    events = repository.list_events(EventFilters(), 100, 0).items
+    usage_events = [
+        event for event in events if event.event_type == "new_conversations"
+    ]
+    assert len(usage_events) == 1
+    event_hour = usage_events[0].occurred_at.astimezone(
+        timezone(timedelta(hours=8))
+    )
+    expected_hour = late_time.astimezone(timezone(timedelta(hours=8))).replace(
+        minute=0, second=0, microsecond=0
+    )
+    assert event_hour == expected_hour
+
+
+class EmptyThenTurnSource:
+    def __init__(self):
+        self.calls = 0
+
+    def fetch_usage(self, _after, through):
+        self.calls += 1
+        if self.calls == 1:
+            return ()
+        return (
+            UsageOccurrence(
+                turn_key="fae:turn-238",
+                agent_id="ai-fae-agent",
+                source_kind="fae",
+                occurred_at=through,
+            ),
+        )
+
+    def fetch_execution(self, _after, _through):
+        return ()
+
+
+@pytest.mark.asyncio
+async def test_zero_occurrence_baseline_seeds_cumulative_and_milestone_state(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    source = EmptyThenTurnSource()
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FleetStub((237, 238)),
+        operations_source=source,
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"usage": 0},
+    )
+
+    await scheduler.startup(NOW)
+
+    assert repository.get_rule_state("usage:ai-fae-agent").value == {
+        "cumulative_conversations": 237
+    }
+    assert repository.get_rule_state("milestone:ai-fae-agent").value == {
+        "reached": 100
+    }
+    assert repository.list_events(EventFilters(), 100, 0).items == []
+
+    await scheduler.run_due(NOW + timedelta(minutes=5))
+
+    event_types = [
+        event.event_type
+        for event in repository.list_events(EventFilters(), 100, 0).items
+    ]
+    assert event_types == ["new_conversations"]
+    assert repository.get_rule_state("usage:ai-fae-agent").value == {
+        "cumulative_conversations": 238
+    }
+
+
+class ExecutionReplaySource:
+    def __init__(self, observation: ExecutionObservation):
+        self.observation = observation
+        self.execution_ranges: list[tuple[datetime, datetime]] = []
+
+    def fetch_usage(self, _after, _through):
+        return ()
+
+    def fetch_execution(self, after, through):
+        self.execution_ranges.append((after, through))
+        return (self.observation,)
+
+
+@pytest.mark.asyncio
+async def test_late_execution_replay_uses_overlap_and_records_signal_once(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    previous = NOW - timedelta(minutes=5)
+    repository.record_run(
+        RunHealth(
+            run_name="execution",
+            status="succeeded",
+            started_at=previous,
+            finished_at=previous,
+            cursor={"through": previous.isoformat()},
+        )
+    )
+    late_time = NOW - timedelta(days=2, minutes=20)
+    source = ExecutionReplaySource(
+        ExecutionObservation(
+            turn_key="fae:late-turn",
+            session_key="fae:late-session",
+            agent_id="ai-fae-agent",
+            agent_name="FAE",
+            agent_visibility="business",
+            source_kind="fae",
+            signal_type="fallback",
+            occurred_at=late_time,
+        )
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        operations_source=source,
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"execution": 0},
+    )
+
+    await scheduler.run_due(NOW)
+    await scheduler.run_due(NOW + timedelta(minutes=5))
+
+    assert source.execution_ranges == [
+        (previous - timedelta(hours=1), NOW),
+        (NOW - timedelta(hours=1), NOW + timedelta(minutes=5)),
+    ]
+    events = repository.list_events(EventFilters(), 100, 0).items
+    assert len(events) == 1
+    assert events[0].event_type == "fallback"
+    assert events[0].facts["turn_keys"] == ["fae:late-turn"]
 
 
 @pytest.mark.asyncio
