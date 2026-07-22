@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchClusterStatus, fetchFleetOverview, fetchOperationsBrief } from "./api";
+import {
+  fetchClusterStatus,
+  fetchFleetOverview,
+  fetchOperationalEvents,
+  fetchOperationsBrief,
+} from "./api";
 
 
 describe("fetchClusterStatus", () => {
@@ -91,5 +96,35 @@ describe("fetchOperationsBrief", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/operations/brief", {
       signal: controller.signal,
     });
+  });
+});
+
+
+describe("fetchOperationalEvents", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("serializes non-empty filters and forwards the abort signal", async () => {
+    const controller = new AbortController();
+    const page = { items: [], total: 0, limit: 50, offset: 0 };
+    const response = { ok: true, json: vi.fn().mockResolvedValue(page) };
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchOperationalEvents({
+      agent_id: "ai-fae-agent",
+      event_type: "runtime_offline",
+      severity: "critical",
+      date_from: "2026-07-21T00:00:00+08:00",
+      date_to: "2026-07-22T23:59:59+08:00",
+      limit: 50,
+      offset: 0,
+    }, controller.signal)).resolves.toEqual(page);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/operations/events?agent_id=ai-fae-agent&event_type=runtime_offline&severity=critical&date_from=2026-07-21T00%3A00%3A00%2B08%3A00&date_to=2026-07-22T23%3A59%3A59%2B08%3A00&limit=50&offset=0",
+      { signal: controller.signal },
+    );
   });
 });

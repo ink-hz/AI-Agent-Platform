@@ -23,4 +23,10 @@ describe("Platform router", () => {
     expect(routeSection({ name: "agent", agentId: "ai-fae-agent" })).toBe("agents");
     expect(routeSection({ name: "session", sessionKey: "fae:abc" })).toBe("sessions");
   });
+
+  it("routes Activity without assigning it a primary navigation section", () => {
+    expect(parseRoute("/activity")).toEqual({ name: "activity" });
+    expect(routePath({ name: "activity" })).toBe("/activity");
+    expect(routeSection({ name: "activity" })).toBeNull();
+  });
 });

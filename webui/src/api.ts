@@ -1,7 +1,7 @@
 import type {
   AgentSummary, ClusterSnapshot, FleetOverview, FlywheelOverview,
   ImprovementItem, Page, SessionDetail, SessionSummary, SyncStatus, TraceDetail,
-  OperationsBrief,
+  EventSeverity, OperationalEvent, OperationsBrief,
 } from "./types";
 
 
@@ -31,6 +31,28 @@ export async function fetchFleetOverview(
 
 export const fetchOperationsBrief = (signal?: AbortSignal) =>
   read<OperationsBrief>("/api/operations/brief", signal);
+
+export interface OperationsEventQuery {
+  agent_id?: string;
+  event_type?: string;
+  severity?: EventSeverity;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function fetchOperationalEvents(
+  query: OperationsEventQuery = {},
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  });
+  const suffix = params.size ? `?${params}` : "";
+  return read<Page<OperationalEvent>>(`/api/operations/events${suffix}`, signal);
+}
 
 export const fetchAgents = (signal?: AbortSignal) => read<AgentSummary[]>("/api/agents", signal);
 export const fetchAgent = (id: string, signal?: AbortSignal) =>

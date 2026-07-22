@@ -5,6 +5,7 @@ import { AgentDetailPage } from "./pages/AgentDetailPage";
 import { SessionsPage } from "./pages/SessionsPage";
 import { SessionDetailPage } from "./pages/SessionDetailPage";
 import { FlywheelPage } from "./pages/FlywheelPage";
+import { ActivityPage } from "./pages/ActivityPage";
 import { useRoute } from "./router";
 
 
@@ -29,6 +30,7 @@ export default function App() {
     case "sessions": page = <SessionsPage />; break;
     case "session": page = <SessionDetailPage sessionKey={route.sessionKey} />; break;
     case "flywheel": page = <FlywheelPage />; break;
+    case "activity": page = <ActivityPage />; break;
     default: page = <PendingPage title="Page not found" description="Return to Agent Overview." />;
   }
   return <AppShell route={route}>{page}</AppShell>;
