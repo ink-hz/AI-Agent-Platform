@@ -77,7 +77,7 @@ export function OverviewPage() {
       const timeout = window.setTimeout(() => controller.abort(), 5_000);
       try {
         const overview = await fetchFleetOverview(controller.signal);
-        if (!disposed) setState((current) => applyFleetSuccess(current, overview));
+        if (!disposed && !controller.signal.aborted) setState((current) => applyFleetSuccess(current, overview));
       } catch {
         if (!disposed) setState(applyFleetFailure);
       } finally {
@@ -98,7 +98,7 @@ export function OverviewPage() {
       const timeout = window.setTimeout(() => controller.abort(), 5_000);
       try {
         const brief = await fetchOperationsBrief(controller.signal);
-        if (!disposed) setOperationsState((current) => applyOperationsSuccess(current, brief));
+        if (!disposed && !controller.signal.aborted) setOperationsState((current) => applyOperationsSuccess(current, brief));
       } catch {
         if (!disposed) setOperationsState(applyOperationsFailure);
       } finally {
