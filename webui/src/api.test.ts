@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchClusterStatus, fetchFleetOverview } from "./api";
+import { fetchClusterStatus, fetchFleetOverview, fetchOperationsBrief } from "./api";
 
 
 describe("fetchClusterStatus", () => {
@@ -61,6 +61,34 @@ describe("fetchFleetOverview", () => {
 
     await expect(fetchFleetOverview(controller.signal)).resolves.toEqual(overview);
     expect(fetchMock).toHaveBeenCalledWith("/api/fleet/overview", {
+      signal: controller.signal,
+    });
+  });
+});
+
+
+describe("fetchOperationsBrief", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("requests the Operations Brief endpoint and forwards the abort signal", async () => {
+    const controller = new AbortController();
+    const brief = {
+      period_start: "2026-07-21T10:00:00Z",
+      period_end: "2026-07-22T10:00:00Z",
+      freshness: { status: "current", evaluated_at: "2026-07-22T10:00:00Z", failed_groups: [] },
+      can_claim_healthy: true,
+      attention: [],
+      usage: { conversations: 0, active_agents: 0, leaders: [] },
+      changes: [],
+    };
+    const response = { ok: true, json: vi.fn().mockResolvedValue(brief) };
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchOperationsBrief(controller.signal)).resolves.toEqual(brief);
+    expect(fetchMock).toHaveBeenCalledWith("/api/operations/brief", {
       signal: controller.signal,
     });
   });

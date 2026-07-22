@@ -97,4 +97,14 @@ describe("Overview status messaging", () => {
     expect(source).not.toContain('agent.id !== "test-bot"');
     expect(source).not.toContain('agent.id !== "feishu-default"');
   });
+
+  it("loads Fleet and Operations independently and inserts the Brief before insights", () => {
+    const source = readFileSync(new URL("./pages/OverviewPage.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("fetchFleetOverview(controller.signal)");
+    expect(source).toContain("fetchOperationsBrief(controller.signal)");
+    expect(source).toContain("applyOperationsFailure");
+    expect(source.indexOf("<DailyBrief")).toBeGreaterThan(source.indexOf('className="summary-section"'));
+    expect(source.indexOf("<DailyBrief")).toBeLessThan(source.indexOf('className="insight-grid"'));
+  });
 });

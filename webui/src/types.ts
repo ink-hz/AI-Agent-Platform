@@ -92,6 +92,42 @@ export interface FleetOverview {
   usage_source: DataSourceStatus;
 }
 
+export type EventSeverity = "info" | "attention" | "critical";
+export type EventStatus = "active" | "resolved" | "historical";
+export type EventFamily = "runtime" | "data" | "execution" | "usage" | "lifecycle" | "recovery";
+
+export interface OperationalEvent {
+  event_id: string;
+  agent_id: string | null;
+  agent_visibility: AgentVisibility;
+  event_type: string;
+  event_family: EventFamily;
+  severity: EventSeverity;
+  status: EventStatus;
+  title: string;
+  summary: string;
+  source_kind: string;
+  occurred_at: string;
+  first_observed_at: string;
+  last_observed_at: string;
+  resolved_at: string | null;
+  facts: Record<string, unknown>;
+  target_kind: string | null;
+  target_id: string | null;
+  target_path: string | null;
+  fingerprint: string;
+}
+
+export interface OperationsBrief {
+  period_start: string;
+  period_end: string;
+  freshness: { status: "current" | "partial" | "stale" | "unavailable"; evaluated_at: string | null; failed_groups: string[] };
+  can_claim_healthy: boolean;
+  attention: OperationalEvent[];
+  usage: { conversations: number; active_agents: number; leaders: { agent_id: string; agent_name: string; conversations: number }[] };
+  changes: OperationalEvent[];
+}
+
 export type SourceKind = "metabot" | "fae" | "admin";
 export type Freshness = "live" | "fresh" | "stale";
 export type Availability = "available" | "missing" | "unavailable" | "restricted";

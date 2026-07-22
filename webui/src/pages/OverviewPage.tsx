@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { FleetAgentCard } from "../FleetAgentCard";
 import { UsageTrend } from "../UsageTrend";
 import { businessAgents } from "../agentVisibility";
-import { fetchFleetOverview } from "../api";
+import { fetchFleetOverview, fetchOperationsBrief } from "../api";
+import { DailyBrief } from "../components/DailyBrief";
 import { UI_COPY } from "../copy";
 import { startPolling } from "../dashboard";
 import {
@@ -15,6 +16,11 @@ import {
   usageIsReadable,
 } from "../fleet";
 import { formatCheckedAt } from "../status";
+import {
+  applyOperationsFailure,
+  applyOperationsSuccess,
+  initialOperationsState,
+} from "../operations";
 import type { FleetAgent } from "../types";
 
 
@@ -59,6 +65,7 @@ function ActiveRanking({ agents }: { agents: FleetAgent[] }) {
 
 export function OverviewPage() {
   const [state, setState] = useState(initialFleetState);
+  const [operationsState, setOperationsState] = useState(initialOperationsState);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -73,6 +80,27 @@ export function OverviewPage() {
         if (!disposed) setState((current) => applyFleetSuccess(current, overview));
       } catch {
         if (!disposed) setState(applyFleetFailure);
+      } finally {
+        window.clearTimeout(timeout);
+        if (activeController === controller) activeController = null;
+      }
+    };
+    const stopPolling = startPolling(refresh, 10_000);
+    return () => { disposed = true; activeController?.abort(); stopPolling(); };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let activeController: AbortController | null = null;
+    const refresh = async () => {
+      const controller = new AbortController();
+      activeController = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 5_000);
+      try {
+        const brief = await fetchOperationsBrief(controller.signal);
+        if (!disposed) setOperationsState((current) => applyOperationsSuccess(current, brief));
+      } catch {
+        if (!disposed) setOperationsState(applyOperationsFailure);
       } finally {
         window.clearTimeout(timeout);
         if (activeController === controller) activeController = null;
@@ -116,6 +144,7 @@ export function OverviewPage() {
           <article className="fleet-summary-card summary-weekly"><span>{UI_COPY.summary.metrics[3]}</span><strong>{formatCount(overview.summary.conversations_last_7d)}</strong><p>{formatChange(overview.summary.change_percent)}</p></article>
         </div>
       </section>
+      {operationsState.brief && <DailyBrief brief={operationsState.brief} stale={operationsState.stale} />}
       {usageReadable ? <section className="insight-grid" aria-label="Usage insights"><UsageTrend trend={overview.trend} /><ActiveRanking agents={visibleAgents} /></section>
         : <section className="usage-unavailable-card" aria-label="Usage insights"><span aria-hidden="true">◎</span><div><h2>{UI_COPY.failures.usageTitle}</h2><p>{UI_COPY.failures.usageDescription}</p></div></section>}
       <section className="agents-section" aria-label="Agents">

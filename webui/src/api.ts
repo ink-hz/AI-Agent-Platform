@@ -1,6 +1,7 @@
 import type {
   AgentSummary, ClusterSnapshot, FleetOverview, FlywheelOverview,
   ImprovementItem, Page, SessionDetail, SessionSummary, SyncStatus, TraceDetail,
+  OperationsBrief,
 } from "./types";
 
 
@@ -27,6 +28,9 @@ export async function fetchFleetOverview(
   if (!response.ok) throw new Error(`fleet ${response.status}`);
   return response.json();
 }
+
+export const fetchOperationsBrief = (signal?: AbortSignal) =>
+  read<OperationsBrief>("/api/operations/brief", signal);
 
 export const fetchAgents = (signal?: AbortSignal) => read<AgentSummary[]>("/api/agents", signal);
 export const fetchAgent = (id: string, signal?: AbortSignal) =>
