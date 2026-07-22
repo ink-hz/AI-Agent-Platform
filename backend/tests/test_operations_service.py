@@ -1,7 +1,14 @@
 from datetime import datetime, timedelta, timezone
 
-from app.operations.models import EventFilters, NewOperationalEvent, RunHealth
+from app.operations.models import (
+    EventFilters,
+    NewOperationalEvent,
+    RunHealth,
+    UsageObservation,
+    UsageOccurrence,
+)
 from app.operations.repository import OperationsRepository
+from app.operations.rules import OperationsRuleEngine
 from app.operations.service import OperationsService
 
 
@@ -188,6 +195,65 @@ def test_partial_or_stale_brief_cannot_claim_healthy(tmp_path):
     assert brief.can_claim_healthy is False
 
 
+def test_newer_failure_keeps_complete_successful_baseline_and_is_partial(tmp_path):
+    repo = repository(tmp_path)
+    baseline_times = {}
+    for index, group in enumerate(INTERVALS):
+        at = NOW - timedelta(minutes=index + 1)
+        baseline_times[group] = at
+        repo.record_run(
+            RunHealth(
+                run_name=group,
+                status="succeeded",
+                started_at=at,
+                finished_at=at,
+            )
+        )
+    repo.record_run(
+        RunHealth(
+            run_name="lifecycle",
+            status="failed",
+            started_at=NOW,
+            finished_at=NOW,
+            error_summary="lifecycle unavailable",
+        )
+    )
+
+    freshness = OperationsService(repo, intervals=INTERVALS).brief(NOW).freshness
+
+    assert freshness.status == "partial"
+    assert freshness.failed_groups == ["lifecycle"]
+    assert freshness.evaluated_at == min(baseline_times.values())
+
+
+def test_all_groups_success_then_failure_is_partial_not_unavailable(tmp_path):
+    repo = repository(tmp_path)
+    for group in INTERVALS:
+        repo.record_run(
+            RunHealth(
+                run_name=group,
+                status="succeeded",
+                started_at=NOW - timedelta(minutes=1),
+                finished_at=NOW - timedelta(minutes=1),
+            )
+        )
+        repo.record_run(
+            RunHealth(
+                run_name=group,
+                status="failed",
+                started_at=NOW,
+                finished_at=NOW,
+                error_summary=f"{group} unavailable",
+            )
+        )
+
+    freshness = OperationsService(repo, intervals=INTERVALS).brief(NOW).freshness
+
+    assert freshness.status == "partial"
+    assert freshness.failed_groups == list(INTERVALS)
+    assert freshness.evaluated_at == NOW - timedelta(minutes=1)
+
+
 def test_freshness_boundary_is_current_then_stale_and_no_baseline_is_unavailable(
     tmp_path,
 ):
@@ -231,51 +297,86 @@ def test_freshness_boundary_is_current_then_stale_and_no_baseline_is_unavailable
     assert unavailable.can_claim_healthy is False
 
 
-def test_usage_uses_inclusive_rolling_window_and_local_hour_names(tmp_path):
+def test_usage_uses_exact_occurrences_across_non_hour_aligned_cutoff_without_replay(
+    tmp_path,
+):
     repo = repository(tmp_path)
-    period_start = NOW - timedelta(hours=24)
-    repo.record_historical(
-        event(
-            agent_id="hr-bot",
-            agent_name="HR Bot",
-            event_type="new_conversations",
-            family="usage",
-            occurred_at=period_start,
-            conversations=3,
-            fingerprint="usage:hr:boundary",
-        )
+    engine = OperationsRuleEngine(repo)
+    period_end = NOW + timedelta(minutes=30)
+    period_start = period_end - timedelta(hours=24)
+    bucket_start = period_start.replace(minute=0)
+    old_bucket = UsageObservation(
+        agent_id="hr-bot",
+        agent_name="HR Bot",
+        agent_visibility="business",
+        source_kind="metabot",
+        bucket_start=bucket_start,
+        conversations=2,
+        cumulative_conversations=2,
+        occurrences=(
+            UsageOccurrence(
+                turn_key="metabot:excluded",
+                agent_id="hr-bot",
+                source_kind="metabot",
+                occurred_at=period_start - timedelta(microseconds=1),
+            ),
+            UsageOccurrence(
+                turn_key="metabot:included",
+                agent_id="hr-bot",
+                source_kind="metabot",
+                occurred_at=period_start + timedelta(minutes=5),
+            ),
+        ),
     )
-    repo.record_historical(
-        event(
-            agent_id="sales-bot",
-            agent_name="Sales Bot",
-            event_type="new_conversations",
-            family="usage",
-            occurred_at=NOW - timedelta(hours=1),
-            conversations=5,
-            fingerprint="usage:sales:recent",
-        )
+    current_bucket = UsageObservation(
+        agent_id="hr-bot",
+        agent_name="HR Bot",
+        agent_visibility="business",
+        source_kind="metabot",
+        bucket_start=period_end.replace(minute=0),
+        conversations=1,
+        cumulative_conversations=3,
+        occurrences=(
+            UsageOccurrence(
+                turn_key="metabot:current",
+                agent_id="hr-bot",
+                source_kind="metabot",
+                occurred_at=period_end - timedelta(minutes=5),
+            ),
+        ),
     )
-    repo.record_historical(
-        event(
-            agent_id="hr-bot",
-            agent_name="HR Bot",
-            event_type="new_conversations",
-            family="usage",
-            occurred_at=period_start - timedelta(microseconds=1),
-            conversations=100,
-            fingerprint="usage:hr:old",
-        )
+    system_bucket = UsageObservation(
+        agent_id="test-bot",
+        agent_name="Test Bot",
+        agent_visibility="system",
+        source_kind="metabot",
+        bucket_start=period_end.replace(minute=0),
+        conversations=1,
+        cumulative_conversations=1,
+        occurrences=(
+            UsageOccurrence(
+                turn_key="metabot:system",
+                agent_id="test-bot",
+                source_kind="metabot",
+                occurred_at=period_end - timedelta(minutes=1),
+            ),
+        ),
     )
-    record_group_runs(repo)
+    observations = [old_bucket, current_bucket, system_bucket]
+    engine.evaluate_usage(observations, period_end, initializing=True)
+    engine.evaluate_usage(observations, period_end, initializing=False)
+    record_group_runs(repo, at=period_end)
 
-    usage = OperationsService(repo, intervals=INTERVALS).brief(NOW).usage
+    usage = OperationsService(repo, intervals=INTERVALS).brief(period_end).usage
 
-    assert usage.conversations == 8
-    assert usage.active_agents == 2
-    assert [(item.agent_id, item.agent_name, item.conversations) for item in usage.leaders] == [
-        ("sales-bot", "Sales Bot", 5),
-        ("hr-bot", "HR Bot", 3),
+    assert repo.usage_occurrence_count() == 4
+    assert usage.conversations == 2
+    assert usage.active_agents == 1
+    assert [
+        (item.agent_id, item.agent_name, item.conversations)
+        for item in usage.leaders
+    ] == [
+        ("hr-bot", "HR Bot", 2),
     ]
 
 

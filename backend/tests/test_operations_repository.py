@@ -340,6 +340,29 @@ def test_rule_state_and_run_health_round_trip_json_and_datetimes(tmp_path):
     assert repo.latest_run(run.run_name) == run
 
 
+def test_latest_successful_run_survives_a_newer_failure(tmp_path):
+    repo = migrated_repository(tmp_path)
+    succeeded = RunHealth(
+        run_name="runtime",
+        status="succeeded",
+        started_at=NOW,
+        finished_at=NOW + timedelta(seconds=1),
+    )
+    failed = RunHealth(
+        run_name="runtime",
+        status="failed",
+        started_at=NOW + timedelta(seconds=10),
+        finished_at=NOW + timedelta(seconds=11),
+        error_summary="runtime unavailable",
+    )
+
+    repo.record_run(succeeded)
+    repo.record_run(failed)
+
+    assert repo.latest_run("runtime") == failed
+    assert repo.latest_successful_run("runtime") == succeeded
+
+
 def test_event_filters_attention_visibility_and_expiration(tmp_path):
     repo = migrated_repository(tmp_path)
     repo.upsert_active(runtime_event())

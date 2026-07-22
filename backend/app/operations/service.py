@@ -11,7 +11,6 @@ from .models import (
     OperationsBrief,
     OperationalEvent,
     UsageBrief,
-    UsageLeader,
 )
 from .repository import OperationsRepository
 
@@ -25,7 +24,6 @@ DEFAULT_INTERVALS: dict[str, float] = {
     "lifecycle": 600.0,
 }
 _MAX_SQLITE_LIMIT = 2_147_483_647
-_USAGE_TITLE_SUFFIX = " received new conversations"
 
 
 class OperationsService:
@@ -45,6 +43,16 @@ class OperationsService:
         events = self.list_events(filters, _MAX_SQLITE_LIMIT, 0).items
         attention = list(self._repository.list_active_attention("business"))
         freshness = self._freshness(period_end)
+        leaders = list(
+            self._repository.usage_leaders(
+                period_start,
+                period_end,
+                "business",
+            )
+        )
+        leaders.sort(
+            key=lambda item: (-item.conversations, item.agent_name, item.agent_id)
+        )
         return OperationsBrief(
             period_start=period_start,
             period_end=period_end,
@@ -53,7 +61,11 @@ class OperationsService:
                 freshness.status == "current" and not attention
             ),
             attention=attention,
-            usage=self._usage(events),
+            usage=UsageBrief(
+                conversations=sum(item.conversations for item in leaders),
+                active_agents=len(leaders),
+                leaders=leaders,
+            ),
             changes=events[:5],
         )
 
@@ -86,27 +98,33 @@ class OperationsService:
             group: self._repository.latest_run(group)
             for group in self._intervals
         }
+        baselines = {
+            group: self._repository.latest_successful_run(group)
+            for group in self._intervals
+        }
         failed_groups = [
             group
             for group, run in runs.items()
             if run is not None and run.status == "failed"
         ]
-        successful = {
-            group: run
-            for group, run in runs.items()
-            if run is not None and run.status == "succeeded"
-        }
         evaluated_at = (
-            min(self._run_time(run) for run in successful.values())
-            if successful
+            min(self._run_time(run) for run in baselines.values() if run is not None)
+            if all(run is not None for run in baselines.values())
             else None
         )
-        if not successful:
+        has_successful_baseline = any(
+            run is not None for run in baselines.values()
+        )
+        all_latest_succeeded = all(
+            run is not None and run.status == "succeeded"
+            for run in runs.values()
+        )
+        if not has_successful_baseline:
             status = "unavailable"
-        elif len(successful) != len(runs):
+        elif not all_latest_succeeded:
             status = "partial"
         elif any(
-            now - self._run_time(successful[group])
+            now - self._run_time(runs[group])
             > timedelta(seconds=interval * 2)
             for group, interval in self._intervals.items()
         ):
@@ -128,42 +146,3 @@ class OperationsService:
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value
-
-    @classmethod
-    def _usage(cls, events: list[OperationalEvent]) -> UsageBrief:
-        totals: dict[str, int] = {}
-        names: dict[str, str] = {}
-        for item in events:
-            if item.event_type != "new_conversations" or item.agent_id is None:
-                continue
-            count = item.facts.get("conversations")
-            if not isinstance(count, int) or isinstance(count, bool) or count < 0:
-                continue
-            totals[item.agent_id] = totals.get(item.agent_id, 0) + count
-            names[item.agent_id] = cls._agent_name(item)
-        leaders = [
-            UsageLeader(
-                agent_id=agent_id,
-                agent_name=names[agent_id],
-                conversations=conversations,
-            )
-            for agent_id, conversations in totals.items()
-            if conversations > 0
-        ]
-        leaders.sort(
-            key=lambda item: (-item.conversations, item.agent_name, item.agent_id)
-        )
-        return UsageBrief(
-            conversations=sum(totals.values()),
-            active_agents=len(leaders),
-            leaders=leaders,
-        )
-
-    @staticmethod
-    def _agent_name(event: OperationalEvent) -> str:
-        name = event.facts.get("agent_name")
-        if isinstance(name, str) and name:
-            return name
-        if event.title.endswith(_USAGE_TITLE_SUFFIX):
-            return event.title[: -len(_USAGE_TITLE_SUFFIX)]
-        return event.agent_id or "Unknown Agent"

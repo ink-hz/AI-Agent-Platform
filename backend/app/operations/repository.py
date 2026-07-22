@@ -16,6 +16,7 @@ from .models import (
     OperationalEvent,
     RuleState,
     RunHealth,
+    UsageLeader,
     UsageObservation,
 )
 
@@ -128,6 +129,21 @@ def _event(row: sqlite3.Row) -> OperationalEvent:
         target_id=row["target_id"],
         target_path=row["target_path"],
         fingerprint=row["fingerprint"],
+    )
+
+
+def _run(row: sqlite3.Row) -> RunHealth:
+    return RunHealth(
+        run_name=row["run_name"],
+        status=row["status"],
+        started_at=datetime.fromisoformat(row["started_at"]),
+        finished_at=(
+            datetime.fromisoformat(row["finished_at"])
+            if row["finished_at"]
+            else None
+        ),
+        cursor=json.loads(row["cursor_json"]),
+        error_summary=row["error_summary"],
     )
 
 
@@ -576,6 +592,60 @@ class OperationsRepository:
             ).fetchone()
         return int(row["count"])
 
+    def usage_leaders(
+        self,
+        date_from: datetime,
+        date_to: datetime,
+        agent_visibility: str,
+    ) -> tuple[UsageLeader, ...]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                with counts as (
+                  select u.agent_id,
+                         count(distinct u.occurrence_key) as conversations
+                  from operational_usage_occurrences u
+                  join operational_events e
+                    on e.agent_id=u.agent_id
+                   and e.event_type='new_conversations'
+                   and e.occurred_at=u.bucket_start
+                  where e.agent_visibility=?
+                    and u.occurred_at>=?
+                    and u.occurred_at<=?
+                  group by u.agent_id
+                )
+                select counts.agent_id, counts.conversations,
+                       (
+                         select e.title
+                         from operational_events e
+                         where e.agent_id=counts.agent_id
+                           and e.event_type='new_conversations'
+                         order by e.occurred_at desc, e.event_id
+                         limit 1
+                       ) as title
+                from counts
+                order by counts.conversations desc, counts.agent_id
+                """,
+                (
+                    agent_visibility,
+                    _timestamp(date_from),
+                    _timestamp(date_to),
+                ),
+            ).fetchall()
+        suffix = " received new conversations"
+        return tuple(
+            UsageLeader(
+                agent_id=row["agent_id"],
+                agent_name=(
+                    row["title"][: -len(suffix)]
+                    if row["title"].endswith(suffix)
+                    else row["agent_id"]
+                ),
+                conversations=int(row["conversations"]),
+            )
+            for row in rows
+        )
+
     def get_occurrence(
         self, fingerprint: str, occurred_at: datetime
     ) -> OperationalEvent | None:
@@ -717,16 +787,19 @@ class OperationsRepository:
             ).fetchone()
         if row is None:
             return None
-        return RunHealth(
-            run_name=row["run_name"],
-            status=row["status"],
-            started_at=datetime.fromisoformat(row["started_at"]),
-            finished_at=(
-                datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None
-            ),
-            cursor=json.loads(row["cursor_json"]),
-            error_summary=row["error_summary"],
-        )
+        return _run(row)
+
+    def latest_successful_run(self, run_name: str) -> RunHealth | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                select * from operational_runs
+                where run_name=? and status='succeeded'
+                order by started_at desc, rowid desc limit 1
+                """,
+                (run_name,),
+            ).fetchone()
+        return _run(row) if row is not None else None
 
     def list_events(
         self,
