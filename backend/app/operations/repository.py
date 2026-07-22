@@ -184,6 +184,26 @@ def _put_state(connection: sqlite3.Connection, state: RuleState) -> None:
     )
 
 
+def _insert_run(connection: sqlite3.Connection, run: RunHealth) -> None:
+    connection.execute(
+        """
+        insert into operational_runs(
+          run_id, run_name, status, started_at, finished_at,
+          cursor_json, error_summary
+        ) values (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(uuid4()),
+            run.run_name,
+            run.status,
+            _timestamp(run.started_at),
+            _timestamp(run.finished_at) if run.finished_at else None,
+            _json(run.cursor),
+            run.error_summary,
+        ),
+    )
+
+
 def _upsert_occurrence(
     connection: sqlite3.Connection,
     event: NewOperationalEvent,
@@ -434,7 +454,13 @@ class OperationsRepository:
         mutations: Sequence[UsageMutation],
         *,
         expire_before: datetime | None,
+        successful_run: RunHealth | None = None,
     ) -> tuple[OperationalEvent | None, ...]:
+        if successful_run is not None and (
+            successful_run.run_name != "usage"
+            or successful_run.status != "succeeded"
+        ):
+            raise ValueError("atomic usage run must be a succeeded usage run")
         connection = self._connection()
         try:
             connection.execute("begin immediate")
@@ -451,6 +477,8 @@ class OperationsRepository:
                     """,
                     (_timestamp(expire_before),),
                 )
+            if successful_run is not None:
+                _insert_run(connection, successful_run)
             connection.commit()
             return stored_events
         except Exception:
@@ -675,23 +703,7 @@ class OperationsRepository:
 
     def record_run(self, run: RunHealth) -> RunHealth:
         with self._connection() as connection:
-            connection.execute(
-                """
-                insert into operational_runs(
-                  run_id, run_name, status, started_at, finished_at,
-                  cursor_json, error_summary
-                ) values (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(uuid4()),
-                    run.run_name,
-                    run.status,
-                    _timestamp(run.started_at),
-                    _timestamp(run.finished_at) if run.finished_at else None,
-                    _json(run.cursor),
-                    run.error_summary,
-                ),
-            )
+            _insert_run(connection, run)
         return run
 
     def latest_run(self, run_name: str) -> RunHealth | None:

@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -18,7 +19,7 @@ from app.operations.models import (
 )
 from app.operations.repository import OperationsRepository
 from app.operations.rules import OperationsRuleEngine
-from app.operations.scheduler import OperationsScheduler
+from app.operations.scheduler import CommittedGroupRun, OperationsScheduler
 
 
 NOW = datetime(2026, 7, 22, 3, 0, tzinfo=timezone.utc)
@@ -95,10 +96,13 @@ class RuleEngineStub:
     def evaluate_lifecycle(self, observations, now, *, initializing):
         self.calls["lifecycle"] = (observations, now, initializing)
 
-    def evaluate_usage(self, observations, now, *, initializing):
+    def evaluate_usage(
+        self, observations, now, *, initializing, successful_run=None
+    ):
         self.calls["usage"] = (observations, now, initializing)
         if self.fail_usage:
             raise RuntimeError("usage transaction failed")
+        return None
 
     def evaluate_execution(self, observations, now):
         self.calls["execution"] = (observations, now)
@@ -165,6 +169,35 @@ class SourceStub:
         return ()
 
 
+def seed_active_usage(repository, observed_at):
+    OperationsRuleEngine(repository).evaluate_usage(
+        [
+            operation_models.UsageObservation(
+                agent_id="ai-fae-agent",
+                agent_name="FAE",
+                agent_visibility="business",
+                source_kind="metabot",
+                bucket_start=observed_at,
+                conversations=1,
+                cumulative_conversations=99,
+                occurrences=(
+                    UsageOccurrence(
+                        turn_key="metabot:seed-99",
+                        agent_id="ai-fae-agent",
+                        source_kind="metabot",
+                        occurred_at=observed_at,
+                    ),
+                ),
+            )
+        ],
+        observed_at,
+        initializing=True,
+    )
+    event = repository.list_events(EventFilters(), 100, 0).items[0]
+    assert event.status == "active"
+    return event
+
+
 @pytest.mark.asyncio
 async def test_failed_rule_group_does_not_block_other_groups(tmp_path):
     calls: list[str] = []
@@ -192,6 +225,26 @@ async def test_failed_rule_group_does_not_block_other_groups(tmp_path):
     assert repository.latest_run("runtime").error_summary == "RuntimeError: runtime failed"
     assert repository.latest_run("usage").status == "succeeded"
     assert repository.latest_run("usage").cursor == {"cursor": "complete"}
+
+
+@pytest.mark.asyncio
+async def test_non_usage_committed_outcome_keeps_normal_run_bookkeeping(tmp_path):
+    async def runtime(_now):
+        return CommittedGroupRun(cursor={"cursor": "runtime"})
+
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    scheduler = OperationsScheduler(
+        repository=repository,
+        group_runners={"runtime": runtime},
+        intervals={"runtime": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    latest = repository.latest_run("runtime")
+    assert latest.status == "succeeded"
+    assert latest.cursor == {"cursor": "runtime"}
 
 
 @pytest.mark.asyncio
@@ -579,6 +632,123 @@ async def test_incremental_cursor_does_not_advance_when_rule_transaction_fails(
     latest = repository.latest_run(group)
     assert latest.status == "failed"
     assert latest.cursor == {"through": (NOW - timedelta(minutes=10)).isoformat()}
+
+
+@pytest.mark.asyncio
+async def test_usage_success_cursor_insert_failure_rolls_back_full_batch(tmp_path):
+    database_path = tmp_path / "operations.db"
+    repository = OperationsRepository(str(database_path))
+    repository.migrate()
+    seeded_event = seed_active_usage(repository, NOW - timedelta(hours=2))
+    previous = NOW - timedelta(minutes=10)
+    previous_cursor = {
+        "local_through": previous.isoformat(),
+        "remote_generations": {},
+    }
+    repository.record_run(
+        RunHealth(
+            run_name="usage",
+            status="succeeded",
+            started_at=previous,
+            finished_at=previous,
+            cursor=previous_cursor,
+        )
+    )
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            create trigger reject_usage_success_run
+            before insert on operational_runs
+            when new.run_name='usage' and new.status='succeeded'
+            begin
+              select raise(abort, 'forced usage success cursor failure');
+            end
+            """
+        )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FleetStub(),
+        operations_source=SourceStub(),
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"usage": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    assert repository.usage_occurrence_count() == 1
+    events = repository.list_events(EventFilters(), 100, 0).items
+    assert len(events) == 1
+    assert events[0].event_id == seeded_event.event_id
+    assert events[0].status == "active"
+    assert repository.get_rule_state("usage:ai-fae-agent").value == {
+        "cumulative_conversations": 99
+    }
+    assert repository.get_rule_state("milestone:ai-fae-agent").value == {
+        "reached": 0
+    }
+    latest = repository.latest_run("usage")
+    assert latest.status == "failed"
+    assert latest.cursor == previous_cursor
+    assert "forced usage success cursor failure" in latest.error_summary
+
+
+@pytest.mark.asyncio
+async def test_usage_success_cursor_and_full_batch_commit_together(tmp_path):
+    database_path = tmp_path / "operations.db"
+    repository = OperationsRepository(str(database_path))
+    repository.migrate()
+    seeded_event = seed_active_usage(repository, NOW - timedelta(hours=2))
+    previous = NOW - timedelta(minutes=10)
+    repository.record_run(
+        RunHealth(
+            run_name="usage",
+            status="succeeded",
+            started_at=previous,
+            finished_at=previous,
+            cursor={
+                "local_through": previous.isoformat(),
+                "remote_generations": {},
+            },
+        )
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FleetStub(),
+        operations_source=SourceStub(),
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"usage": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    latest = repository.latest_run("usage")
+    assert latest.status == "succeeded"
+    assert latest.cursor == {
+        "local_through": NOW.isoformat(),
+        "remote_generations": {},
+    }
+    assert repository.usage_occurrence_count() == 3
+    assert repository.get_rule_state("usage:ai-fae-agent").value == {
+        "cumulative_conversations": 237
+    }
+    assert repository.get_rule_state("milestone:ai-fae-agent").value == {
+        "reached": 100
+    }
+    events = repository.list_events(EventFilters(), 100, 0).items
+    expired_seed = next(
+        event for event in events if event.event_id == seeded_event.event_id
+    )
+    assert expired_seed.status == "historical"
+    assert any(event.event_type == "new_conversations" for event in events)
+    assert any(event.event_type == "conversation_milestone" for event in events)
+    with sqlite3.connect(database_path) as connection:
+        succeeded_runs = connection.execute(
+            """
+            select count(*) from operational_runs
+            where run_name='usage' and status='succeeded'
+            """
+        ).fetchone()[0]
+    assert succeeded_runs == 2
 
 
 def sync_status(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -27,7 +28,14 @@ from .rules import (
 from .source import PsycopgOperationsSource
 
 
-GroupRunner = Callable[[datetime], Awaitable[dict | None]]
+@dataclass(frozen=True)
+class CommittedGroupRun:
+    cursor: dict
+
+
+GroupRunner = Callable[
+    [datetime], Awaitable[dict | CommittedGroupRun | None]
+]
 _LOCAL_ZONE = ZoneInfo("Asia/Shanghai")
 _REPLAY_OVERLAP = timedelta(hours=1)
 _DEFAULT_INTERVALS = {
@@ -108,7 +116,7 @@ class OperationsScheduler:
                     ):
                         self._initialized_groups.add(name)
                     try:
-                        cursor = await runner(now)
+                        outcome = await runner(now)
                     except Exception as error:
                         run = RunHealth(
                             run_name=name,
@@ -119,12 +127,17 @@ class OperationsScheduler:
                             error_summary=self._sanitized_error(error),
                         )
                     else:
+                        if isinstance(outcome, CommittedGroupRun):
+                            if name == "usage":
+                                self._initialized_groups.add(name)
+                                continue
+                            outcome = outcome.cursor
                         run = RunHealth(
                             run_name=name,
                             status="succeeded",
                             started_at=now,
                             finished_at=now,
-                            cursor=cursor or {},
+                            cursor=outcome or {},
                         )
                         self._initialized_groups.add(name)
                     await asyncio.to_thread(self._repository.record_run, run)
@@ -216,7 +229,7 @@ class OperationsScheduler:
         )
         return {"observed_at": now.isoformat()}
 
-    async def run_usage(self, now: datetime) -> dict:
+    async def run_usage(self, now: datetime) -> dict | CommittedGroupRun:
         if self._source is None:
             raise RuntimeError("operations source unavailable")
         cursor = await self._latest_cursor("usage")
@@ -295,16 +308,29 @@ class OperationsScheduler:
                     occurrences=(),
                 )
             )
-        await asyncio.to_thread(
+        candidate_cursor = {
+            "local_through": now.isoformat(),
+            "remote_generations": remote_generations,
+        }
+        successful_run = RunHealth(
+            run_name="usage",
+            status="succeeded",
+            started_at=now,
+            finished_at=now,
+            cursor=candidate_cursor,
+        )
+        committed_run = await asyncio.to_thread(
             self._rule_engine.evaluate_usage,
             observations,
             now,
             initializing=initializing,
+            successful_run=successful_run,
         )
-        return {
-            "local_through": now.isoformat(),
-            "remote_generations": remote_generations,
-        }
+        return (
+            CommittedGroupRun(cursor=committed_run.cursor)
+            if committed_run is not None
+            else candidate_cursor
+        )
 
     async def run_execution(self, now: datetime) -> dict:
         if self._source is None:

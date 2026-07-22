@@ -13,6 +13,7 @@ from .models import (
     LifecycleObservation,
     NewOperationalEvent,
     RuleState,
+    RunHealth,
     UsageObservation,
 )
 from .repository import OperationsRepository, UsageMutation
@@ -208,7 +209,8 @@ class OperationsRuleEngine:
         now: datetime,
         *,
         initializing: bool,
-    ) -> None:
+        successful_run: RunHealth | None = None,
+    ) -> RunHealth | None:
         current_hour = self._local_hour(now)
         normalized: list[UsageObservation] = []
         for observation in sorted(observations, key=lambda item: item.bucket_start):
@@ -323,7 +325,9 @@ class OperationsRuleEngine:
         self._repository.record_usage_batch(
             mutations,
             expire_before=current_hour,
+            successful_run=successful_run,
         )
+        return successful_run
 
     def evaluate_lifecycle(
         self,
