@@ -228,6 +228,60 @@ def test_record_historical_reuses_event_during_replay(tmp_path):
     assert repo.list_events(EventFilters(), 20, 0).total == 1
 
 
+def test_record_occurrences_updates_and_finalizes_one_hourly_event(tmp_path):
+    repo = migrated_repository(tmp_path)
+    state = RuleState(rule_key="usage:ai-fae-agent", value={"count": 1}, updated_at=NOW)
+    event = runtime_event(
+        event_type="new_conversations",
+        event_family="usage",
+        severity="info",
+        facts={"count": 1},
+        fingerprint="usage:ai-fae-agent:2026-07-22T11:00:00+08:00",
+    )
+
+    first = repo.record_occurrences((event,), status="active", states=(state,))[0]
+    final_state = state.model_copy(
+        update={"value": {"count": 2}, "updated_at": NOW + timedelta(hours=1)}
+    )
+    finalized = repo.record_occurrences(
+        (event.model_copy(update={"facts": {"count": 2}}),),
+        status="historical",
+        states=(final_state,),
+    )[0]
+
+    assert finalized.event_id == first.event_id
+    assert finalized.status == "historical"
+    assert finalized.facts == {"count": 2}
+    assert repo.list_events(EventFilters(), 20, 0).total == 1
+    assert repo.get_rule_state(state.rule_key) == final_state
+
+
+def test_record_occurrences_rolls_back_events_when_rule_state_fails(tmp_path):
+    database_path = tmp_path / "operations.db"
+    repo = OperationsRepository(str(database_path))
+    repo.migrate()
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            create trigger reject_occurrence_state before insert on operational_rule_state
+            begin
+              select raise(abort, 'forced occurrence state failure');
+            end
+            """
+        )
+    state = RuleState(rule_key="usage:ai-fae-agent", value={"count": 1}, updated_at=NOW)
+
+    with pytest.raises(sqlite3.IntegrityError, match="forced occurrence state failure"):
+        repo.record_occurrences(
+            (runtime_event(event_family="usage"),),
+            status="active",
+            states=(state,),
+        )
+
+    assert repo.list_events(EventFilters(), 20, 0).total == 0
+    assert repo.get_rule_state(state.rule_key) is None
+
+
 def test_rule_state_and_run_health_round_trip_json_and_datetimes(tmp_path):
     repo = migrated_repository(tmp_path)
     state = RuleState(rule_key="runtime:ai-fae-agent", value={"count": 2}, updated_at=NOW)

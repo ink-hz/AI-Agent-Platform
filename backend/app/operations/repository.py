@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Sequence
 from datetime import datetime, timezone
+from typing import Literal
 from uuid import uuid4
 
 from app.observability.models import Page
@@ -248,6 +250,124 @@ class OperationsRepository:
             raise
         finally:
             connection.close()
+
+    def record_occurrences(
+        self,
+        events: Sequence[NewOperationalEvent],
+        *,
+        status: (
+            Literal["active", "historical"]
+            | Sequence[Literal["active", "historical"]]
+        ),
+        states: Sequence[RuleState] = (),
+    ) -> tuple[OperationalEvent, ...]:
+        statuses = (
+            (status,) * len(events) if isinstance(status, str) else tuple(status)
+        )
+        if len(statuses) != len(events):
+            raise ValueError("one occurrence status is required for each event")
+        connection = self._connection()
+        try:
+            connection.execute("begin immediate")
+            event_ids: list[str] = []
+            for event, event_status in zip(events, statuses, strict=True):
+                occurred_at = _timestamp(event.occurred_at)
+                row = connection.execute(
+                    """
+                    select * from operational_events
+                    where fingerprint=? and occurred_at=?
+                    order by case status when 'active' then 0 else 1 end
+                    limit 1
+                    """,
+                    (event.fingerprint, occurred_at),
+                ).fetchone()
+                if row is None:
+                    event_id = str(uuid4())
+                    connection.execute(
+                        INSERT_EVENT,
+                        _event_values(
+                            event, event_id=event_id, status=event_status
+                        ),
+                    )
+                else:
+                    event_id = row["event_id"]
+                    final_status = (
+                        "historical"
+                        if event_status == "historical"
+                        or row["status"] == "historical"
+                        else "active"
+                    )
+                    connection.execute(
+                        """
+                        update operational_events
+                        set agent_id=?, agent_visibility=?, event_type=?, event_family=?,
+                            severity=?, status=?, title=?, summary=?, source_kind=?,
+                            facts_json=?, target_kind=?, target_id=?, target_path=?,
+                            last_observed_at=?
+                        where event_id=?
+                        """,
+                        (
+                            event.agent_id,
+                            event.agent_visibility,
+                            event.event_type,
+                            event.event_family,
+                            event.severity,
+                            final_status,
+                            event.title,
+                            event.summary,
+                            event.source_kind,
+                            _json(event.facts),
+                            event.target_kind,
+                            event.target_id,
+                            event.target_path,
+                            occurred_at,
+                            event_id,
+                        ),
+                    )
+                event_ids.append(event_id)
+
+            for state in states:
+                connection.execute(
+                    """
+                    insert into operational_rule_state(rule_key, value_json, updated_at)
+                    values (?, ?, ?)
+                    on conflict(rule_key) do update set
+                      value_json=excluded.value_json,
+                      updated_at=excluded.updated_at
+                    """,
+                    (state.rule_key, _json(state.value), _timestamp(state.updated_at)),
+                )
+
+            results = tuple(
+                _event(
+                    connection.execute(
+                        "select * from operational_events where event_id=?", (event_id,)
+                    ).fetchone()
+                )
+                for event_id in event_ids
+            )
+            connection.commit()
+            return results
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def get_occurrence(
+        self, fingerprint: str, occurred_at: datetime
+    ) -> OperationalEvent | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                select * from operational_events
+                where fingerprint=? and occurred_at=?
+                order by case status when 'active' then 0 else 1 end
+                limit 1
+                """,
+                (fingerprint, _timestamp(occurred_at)),
+            ).fetchone()
+        return _event(row) if row is not None else None
 
     def resolve_active(
         self,

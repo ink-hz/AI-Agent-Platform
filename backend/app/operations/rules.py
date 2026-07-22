@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
+from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
-from .models import AgentVisibility, NewOperationalEvent, RuleState
+from .models import (
+    AgentVisibility,
+    ExecutionObservation,
+    LifecycleObservation,
+    NewOperationalEvent,
+    RuleState,
+    UsageObservation,
+)
 from .repository import OperationsRepository
 
 
@@ -39,6 +48,7 @@ _SYNC_AGENTS = {
     "admin": "ai-admin-agent",
 }
 _SYNC_STALE_AFTER = timedelta(hours=36)
+_LOCAL_ZONE = ZoneInfo("Asia/Shanghai")
 
 
 class OperationsRuleEngine:
@@ -191,6 +201,418 @@ class OperationsRuleEngine:
                         fingerprint=fingerprint,
                     )
                 )
+
+    def evaluate_usage(
+        self,
+        observations: list[UsageObservation],
+        now: datetime,
+        *,
+        initializing: bool,
+    ) -> None:
+        grouped: dict[str, list[UsageObservation]] = {}
+        for observation in observations:
+            grouped.setdefault(observation.agent_id, []).append(observation)
+        for agent_observations in grouped.values():
+            self._record_usage_batch(agent_observations, now, initializing)
+            latest = max(
+                agent_observations,
+                key=lambda item: (
+                    item.cumulative_conversations,
+                    item.bucket_start,
+                ),
+            )
+            self._evaluate_milestones(latest, now, initializing)
+        self._repository.expire_active_occurrences(
+            "usage", self._local_hour(now)
+        )
+
+    def evaluate_lifecycle(
+        self,
+        observations: list[LifecycleObservation],
+        now: datetime,
+        *,
+        initializing: bool,
+    ) -> None:
+        for observation in observations:
+            rule_key = f"lifecycle:{observation.agent_id}"
+            current = self._repository.get_rule_state(rule_key)
+            events: list[NewOperationalEvent] = []
+            if current is None:
+                events.extend(self._initial_lifecycle_events(observation))
+                live_since = observation.live_since
+                last_updated_at = observation.last_updated_at
+            else:
+                live_since = self._stored_datetime(current, "live_since")
+                last_updated_at = self._stored_datetime(current, "last_updated_at")
+                if live_since is None:
+                    live_since = observation.live_since
+                candidate = observation.last_updated_at
+                if candidate is not None and (
+                    last_updated_at is None or candidate > last_updated_at
+                ):
+                    if not initializing:
+                        events.append(
+                            self._lifecycle_event(
+                                observation,
+                                event_type="deployment_updated",
+                                occurred_at=candidate,
+                            )
+                        )
+                    last_updated_at = candidate
+
+            self._repository.record_occurrences(
+                events,
+                status="historical",
+                states=(RuleState(
+                    rule_key=rule_key,
+                    value={
+                        "live_since": self._optional_timestamp(live_since),
+                        "last_updated_at": self._optional_timestamp(last_updated_at),
+                    },
+                    updated_at=now,
+                ),),
+            )
+
+    def evaluate_execution(
+        self, observations: list[ExecutionObservation], now: datetime
+    ) -> None:
+        grouped: dict[
+            tuple[str, str, datetime], list[ExecutionObservation]
+        ] = {}
+        for observation in observations:
+            key = (
+                observation.agent_id,
+                observation.signal_type,
+                self._local_hour(observation.occurred_at),
+            )
+            grouped.setdefault(key, []).append(observation)
+
+        active = {
+            event.fingerprint: event
+            for visibility in ("business", "system")
+            for event in self._repository.list_active_attention(visibility)
+            if event.event_family == "execution"
+        }
+        current_hour = self._local_hour(now)
+        for (agent_id, signal_type, bucket_start), items in sorted(
+            grouped.items(), key=lambda item: item[0]
+        ):
+            fingerprint = (
+                f"execution:{agent_id}:{signal_type}:{bucket_start.isoformat()}"
+            )
+            previous = active.get(fingerprint) or self._repository.get_occurrence(
+                fingerprint, bucket_start
+            )
+            turn_keys = {item.turn_key for item in items}
+            if previous is not None:
+                turn_keys.update(previous.facts.get("turn_keys", []))
+            latest = max(items, key=lambda item: (item.occurred_at, item.turn_key))
+            previous_occurred_at = (
+                datetime.fromisoformat(previous.facts["last_occurred_at"])
+                if previous is not None
+                and previous.facts.get("last_occurred_at") is not None
+                else None
+            )
+            previous_latest_key = (
+                (previous_occurred_at, previous.facts.get("latest_turn_key", ""))
+                if previous_occurred_at is not None
+                else None
+            )
+            latest_key = (latest.occurred_at, latest.turn_key)
+            if previous_latest_key is not None and previous_latest_key >= latest_key:
+                latest_session_key = previous.facts["latest_session_key"]
+                latest_turn_key = previous.facts.get("latest_turn_key", "")
+                last_occurred_at = previous_occurred_at
+            else:
+                latest_session_key = latest.session_key
+                latest_turn_key = latest.turn_key
+                last_occurred_at = latest.occurred_at
+            event = NewOperationalEvent(
+                agent_id=agent_id,
+                agent_visibility=latest.agent_visibility,
+                event_type=signal_type,
+                event_family="execution",
+                severity="attention",
+                title=self._execution_title(latest.agent_name, signal_type),
+                summary=(
+                    f"{len(turn_keys)} supported {signal_type.replace('_', ' ')} "
+                    "signal(s) occurred during this hour."
+                ),
+                source_kind=latest.source_kind,
+                occurred_at=bucket_start,
+                facts={
+                    "signal_type": signal_type,
+                    "count": len(turn_keys),
+                    "turn_keys": sorted(turn_keys),
+                    "latest_session_key": latest_session_key,
+                    "latest_turn_key": latest_turn_key,
+                    "last_occurred_at": last_occurred_at.isoformat(),
+                },
+                target_kind="session",
+                target_id=latest_session_key,
+                target_path=f"/sessions/{quote(latest_session_key, safe='')}",
+                fingerprint=fingerprint,
+            )
+            self._repository.record_occurrences(
+                (event,),
+                status=(
+                    "historical" if bucket_start < current_hour else "active"
+                ),
+            )
+
+        self._repository.expire_active_occurrences("execution", current_hour)
+
+    def _record_usage_batch(
+        self,
+        observations: list[UsageObservation],
+        now: datetime,
+        initializing: bool,
+    ) -> None:
+        observations = sorted(observations, key=lambda item: item.bucket_start)
+        latest_cumulative = max(
+            item.cumulative_conversations for item in observations
+        )
+        agent_id = observations[0].agent_id
+        global_key = f"usage:{agent_id}"
+        global_state = self._repository.get_rule_state(global_key)
+        prior_cumulative = (
+            int(global_state.value.get("cumulative_conversations", 0))
+            if global_state is not None
+            else latest_cumulative - sum(item.conversations for item in observations)
+        )
+        unseen_total = max(0, latest_cumulative - prior_cumulative)
+        duplicate_budget = max(
+            0,
+            sum(item.conversations for item in observations) - unseen_total,
+        )
+        events: list[NewOperationalEvent] = []
+        statuses: list[Literal["active", "historical"]] = []
+        states: list[RuleState] = []
+        if not initializing:
+            for observation in observations:
+                bucket_start = self._local_hour(observation.bucket_start)
+                bucket_key = (
+                    f"usage:{observation.agent_id}:{bucket_start.isoformat()}"
+                )
+                bucket_state = self._repository.get_rule_state(bucket_key)
+                previous_count = (
+                    int(bucket_state.value.get("conversations", 0))
+                    if bucket_state is not None
+                    else 0
+                )
+                duplicates = min(
+                    observation.conversations,
+                    previous_count,
+                    duplicate_budget,
+                )
+                duplicate_budget -= duplicates
+                new_conversations = observation.conversations - duplicates
+                if new_conversations <= 0:
+                    continue
+                conversations = previous_count + new_conversations
+                events.append(
+                    self._usage_event(
+                        observation, bucket_start, conversations
+                    )
+                )
+                statuses.append(
+                    "historical"
+                    if bucket_start < self._local_hour(now)
+                    else "active"
+                )
+                states.append(
+                    RuleState(
+                        rule_key=bucket_key,
+                        value={"conversations": conversations},
+                        updated_at=now,
+                    )
+                )
+
+        states.append(
+            RuleState(
+                rule_key=global_key,
+                value={
+                    "cumulative_conversations": max(
+                        prior_cumulative, latest_cumulative
+                    )
+                },
+                updated_at=now,
+            )
+        )
+        self._repository.record_occurrences(
+            events,
+            status=statuses,
+            states=states,
+        )
+
+    @staticmethod
+    def _usage_event(
+        observation: UsageObservation,
+        bucket_start: datetime,
+        conversations: int,
+    ) -> NewOperationalEvent:
+        return NewOperationalEvent(
+            agent_id=observation.agent_id,
+            agent_visibility=observation.agent_visibility,
+            event_type="new_conversations",
+            event_family="usage",
+            severity="info",
+            title=f"{observation.agent_name} received new conversations",
+            summary=(
+                f"{conversations} answered conversation(s) "
+                "were recorded during this hour."
+            ),
+            source_kind=observation.source_kind,
+            occurred_at=bucket_start,
+            facts={
+                "conversations": conversations,
+                "cumulative_conversations": observation.cumulative_conversations,
+            },
+            target_kind="agent",
+            target_id=observation.agent_id,
+            target_path=f"/agents/{observation.agent_id}",
+            fingerprint=(
+                f"usage:{observation.agent_id}:conversations:"
+                f"{bucket_start.isoformat()}"
+            ),
+        )
+
+    def _evaluate_milestones(
+        self, observation: UsageObservation, now: datetime, initializing: bool
+    ) -> None:
+        rule_key = f"milestone:{observation.agent_id}"
+        current = self._repository.get_rule_state(rule_key)
+        prior = int(current.value.get("reached", 0)) if current is not None else 0
+        reached = self._highest_milestone(observation.cumulative_conversations)
+        events: list[NewOperationalEvent] = []
+        if not initializing:
+            for milestone in self._milestones_through(
+                observation.cumulative_conversations
+            ):
+                if milestone <= prior:
+                    continue
+                events.append(
+                    NewOperationalEvent(
+                        agent_id=observation.agent_id,
+                        agent_visibility=observation.agent_visibility,
+                        event_type="conversation_milestone",
+                        event_family="usage",
+                        severity="info",
+                        title=(
+                            f"{observation.agent_name} reached {milestone} conversations"
+                        ),
+                        summary=(
+                            f"Cumulative answered conversations reached {milestone}."
+                        ),
+                        source_kind=observation.source_kind,
+                        occurred_at=observation.bucket_start,
+                        facts={"milestone": milestone},
+                        target_kind="agent",
+                        target_id=observation.agent_id,
+                        target_path=f"/agents/{observation.agent_id}",
+                        fingerprint=f"milestone:{observation.agent_id}:{milestone}",
+                    )
+                )
+        self._repository.record_occurrences(
+            events,
+            status="historical",
+            states=(RuleState(
+                rule_key=rule_key,
+                value={"reached": max(prior, reached)},
+                updated_at=now,
+            ),),
+        )
+
+    def _initial_lifecycle_events(
+        self, observation: LifecycleObservation
+    ) -> list[NewOperationalEvent]:
+        events: list[NewOperationalEvent] = []
+        if observation.live_since is not None:
+            events.append(
+                self._lifecycle_event(
+                    observation,
+                    event_type="agent_launched",
+                    occurred_at=observation.live_since,
+                )
+            )
+        if observation.last_updated_at is not None:
+            events.append(
+                self._lifecycle_event(
+                    observation,
+                    event_type="deployment_updated",
+                    occurred_at=observation.last_updated_at,
+                )
+            )
+        return events
+
+    def _lifecycle_event(
+        self,
+        observation: LifecycleObservation,
+        *,
+        event_type: str,
+        occurred_at: datetime,
+    ) -> NewOperationalEvent:
+        launched = event_type == "agent_launched"
+        return NewOperationalEvent(
+                agent_id=observation.agent_id,
+                agent_visibility=observation.agent_visibility,
+                event_type=event_type,
+                event_family="lifecycle",
+                severity="info",
+                title=(
+                    f"{observation.agent_name} entered production"
+                    if launched
+                    else f"{observation.agent_name} deployment was updated"
+                ),
+                summary=(
+                    "The durable production start date was recorded."
+                    if launched
+                    else "A later durable deployment update was detected."
+                ),
+                source_kind=observation.source_kind,
+                occurred_at=occurred_at,
+                facts={"occurred_at": occurred_at.isoformat()},
+                target_kind="agent",
+                target_id=observation.agent_id,
+                target_path=f"/agents/{observation.agent_id}",
+                fingerprint=(
+                    f"lifecycle:{observation.agent_id}:{event_type}:"
+                    f"{occurred_at.isoformat()}"
+                ),
+            )
+
+    @staticmethod
+    def _milestones_through(total: int) -> tuple[int, ...]:
+        fixed = [milestone for milestone in (100, 250, 500, 1000) if total >= milestone]
+        return tuple(fixed + list(range(2000, total + 1, 1000)))
+
+    @classmethod
+    def _highest_milestone(cls, total: int) -> int:
+        milestones = cls._milestones_through(total)
+        return milestones[-1] if milestones else 0
+
+    @staticmethod
+    def _local_hour(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(_LOCAL_ZONE).replace(
+            minute=0, second=0, microsecond=0
+        )
+
+    @staticmethod
+    def _stored_datetime(state: RuleState, field: str) -> datetime | None:
+        value = state.value.get(field)
+        return datetime.fromisoformat(value) if value is not None else None
+
+    @staticmethod
+    def _execution_title(agent_name: str, signal_type: str) -> str:
+        labels = {
+            "tool_error": "tool errors",
+            "fallback": "fallback responses",
+            "empty_answer": "empty answers",
+            "incomplete": "incomplete executions",
+        }
+        return f"{agent_name} produced {labels[signal_type]}"
 
     @staticmethod
     def _normalize_runtime(state: str) -> str | None:

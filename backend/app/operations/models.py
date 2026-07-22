@@ -56,3 +56,41 @@ class EventFilters(BaseModel):
     severity: EventSeverity | None = None
     date_from: datetime | None = None
     date_to: datetime | None = None
+
+
+class UsageObservation(BaseModel):
+    agent_id: str
+    agent_name: str
+    agent_visibility: AgentVisibility
+    source_kind: str
+    bucket_start: datetime
+    conversations: int
+    cumulative_conversations: int
+
+
+class UsageOccurrence(BaseModel):
+    turn_key: str
+    agent_id: str
+    source_kind: str
+    occurred_at: datetime
+
+
+class LifecycleObservation(BaseModel):
+    agent_id: str
+    agent_name: str
+    agent_visibility: AgentVisibility
+    source_kind: str
+    live_since: datetime | None
+    last_updated_at: datetime | None
+    observed_at: datetime
+
+
+class ExecutionObservation(BaseModel):
+    turn_key: str
+    session_key: str
+    agent_id: str
+    agent_name: str
+    agent_visibility: AgentVisibility
+    source_kind: str
+    signal_type: Literal["tool_error", "fallback", "empty_answer", "incomplete"]
+    occurred_at: datetime
