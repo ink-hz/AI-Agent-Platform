@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
@@ -17,6 +18,17 @@ from .models import (
     RunHealth,
     UsageObservation,
 )
+
+
+@dataclass(frozen=True)
+class UsageMutation:
+    observation: UsageObservation
+    event: NewOperationalEvent | None
+    status: Literal["active", "historical"]
+    milestone_events: tuple[NewOperationalEvent, ...]
+    usage_state: RuleState
+    milestone_state: RuleState
+    processed_at: datetime
 
 
 MIGRATION_VERSION_1 = """
@@ -402,90 +414,132 @@ class OperationsRepository:
         milestone_state: RuleState,
         processed_at: datetime,
     ) -> OperationalEvent | None:
+        return self.record_usage_batch(
+            (
+                UsageMutation(
+                    observation=observation,
+                    event=event,
+                    status=status,
+                    milestone_events=tuple(milestone_events),
+                    usage_state=usage_state,
+                    milestone_state=milestone_state,
+                    processed_at=processed_at,
+                ),
+            ),
+            expire_before=None,
+        )[0]
+
+    def record_usage_batch(
+        self,
+        mutations: Sequence[UsageMutation],
+        *,
+        expire_before: datetime | None,
+    ) -> tuple[OperationalEvent | None, ...]:
         connection = self._connection()
         try:
             connection.execute("begin immediate")
-            bucket_start = _timestamp(observation.bucket_start)
-            for occurrence in observation.occurrences:
-                occurred_at = _timestamp(occurrence.occurred_at)
+            stored_events = tuple(
+                self._record_usage_mutation(connection, mutation)
+                for mutation in mutations
+            )
+            if expire_before is not None:
                 connection.execute(
                     """
-                    insert or ignore into operational_usage_occurrences(
-                      occurrence_key, agent_id, bucket_start, occurred_at, processed_at
-                    ) values (?, ?, ?, ?, ?)
+                    update operational_events set status='historical'
+                    where event_family='usage' and status='active'
+                      and occurred_at < ?
                     """,
-                    (
-                        occurrence.turn_key,
-                        observation.agent_id,
-                        bucket_start,
-                        occurred_at,
-                        _timestamp(processed_at),
-                    ),
+                    (_timestamp(expire_before),),
                 )
-                stored = connection.execute(
-                    """
-                    select agent_id, bucket_start, occurred_at
-                    from operational_usage_occurrences
-                    where occurrence_key=?
-                    """,
-                    (occurrence.turn_key,),
-                ).fetchone()
-                if (
-                    stored["agent_id"] != observation.agent_id
-                    or stored["bucket_start"] != bucket_start
-                    or stored["occurred_at"] != occurred_at
-                ):
-                    raise ValueError("usage occurrence identity conflict")
-
-            stored_event: OperationalEvent | None = None
-            if event is not None:
-                bucket_count = int(
-                    connection.execute(
-                        """
-                        select count(*) as count
-                        from operational_usage_occurrences
-                        where agent_id=? and bucket_start=?
-                        """,
-                        (observation.agent_id, bucket_start),
-                    ).fetchone()["count"]
-                )
-                event = event.model_copy(
-                    update={
-                        "facts": {
-                            **event.facts,
-                            "conversations": bucket_count,
-                        }
-                    }
-                )
-                event_id = _upsert_occurrence(connection, event, status)
-                stored_event = _event(
-                    connection.execute(
-                        "select * from operational_events where event_id=?", (event_id,)
-                    ).fetchone()
-                )
-                _put_state(
-                    connection,
-                    RuleState(
-                        rule_key=(
-                            f"usage:{observation.agent_id}:"
-                            f"{observation.bucket_start.isoformat()}"
-                        ),
-                        value={"conversations": bucket_count},
-                        updated_at=processed_at,
-                    ),
-                )
-
-            for milestone_event in milestone_events:
-                _upsert_occurrence(connection, milestone_event, "historical")
-            _put_state(connection, usage_state)
-            _put_state(connection, milestone_state)
             connection.commit()
-            return stored_event
+            return stored_events
         except Exception:
             connection.rollback()
             raise
         finally:
             connection.close()
+
+    @staticmethod
+    def _record_usage_mutation(
+        connection: sqlite3.Connection,
+        mutation: UsageMutation,
+    ) -> OperationalEvent | None:
+        observation = mutation.observation
+        bucket_start = _timestamp(observation.bucket_start)
+        for occurrence in observation.occurrences:
+            occurred_at = _timestamp(occurrence.occurred_at)
+            connection.execute(
+                """
+                insert or ignore into operational_usage_occurrences(
+                  occurrence_key, agent_id, bucket_start, occurred_at, processed_at
+                ) values (?, ?, ?, ?, ?)
+                """,
+                (
+                    occurrence.turn_key,
+                    observation.agent_id,
+                    bucket_start,
+                    occurred_at,
+                    _timestamp(mutation.processed_at),
+                ),
+            )
+            stored = connection.execute(
+                """
+                select agent_id, bucket_start, occurred_at
+                from operational_usage_occurrences
+                where occurrence_key=?
+                """,
+                (occurrence.turn_key,),
+            ).fetchone()
+            if (
+                stored["agent_id"] != observation.agent_id
+                or stored["bucket_start"] != bucket_start
+                or stored["occurred_at"] != occurred_at
+            ):
+                raise ValueError("usage occurrence identity conflict")
+
+        stored_event: OperationalEvent | None = None
+        if mutation.event is not None:
+            bucket_count = int(
+                connection.execute(
+                    """
+                    select count(*) as count
+                    from operational_usage_occurrences
+                    where agent_id=? and bucket_start=?
+                    """,
+                    (observation.agent_id, bucket_start),
+                ).fetchone()["count"]
+            )
+            event = mutation.event.model_copy(
+                update={
+                    "facts": {
+                        **mutation.event.facts,
+                        "conversations": bucket_count,
+                    }
+                }
+            )
+            event_id = _upsert_occurrence(connection, event, mutation.status)
+            stored_event = _event(
+                connection.execute(
+                    "select * from operational_events where event_id=?", (event_id,)
+                ).fetchone()
+            )
+            _put_state(
+                connection,
+                RuleState(
+                    rule_key=(
+                        f"usage:{observation.agent_id}:"
+                        f"{observation.bucket_start.isoformat()}"
+                    ),
+                    value={"conversations": bucket_count},
+                    updated_at=mutation.processed_at,
+                ),
+            )
+
+        for milestone_event in mutation.milestone_events:
+            _upsert_occurrence(connection, milestone_event, "historical")
+        _put_state(connection, mutation.usage_state)
+        _put_state(connection, mutation.milestone_state)
+        return stored_event
 
     def usage_occurrence_count(self) -> int:
         with self._connection() as connection:

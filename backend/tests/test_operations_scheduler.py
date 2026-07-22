@@ -9,6 +9,7 @@ from app.fleet.models import (
     FleetSummary,
 )
 from app.observability.models import SyncStatus
+from app.operations import models as operation_models
 from app.operations.models import (
     EventFilters,
     ExecutionObservation,
@@ -116,21 +117,32 @@ class SourceStub:
             UsageOccurrence(
                 turn_key="fae:turn-1",
                 agent_id="ai-fae-agent",
-                source_kind="fae",
+                source_kind="metabot",
                 occurred_at=NOW - timedelta(hours=23, minutes=15),
             ),
             UsageOccurrence(
                 turn_key="fae:turn-2",
                 agent_id="ai-fae-agent",
-                source_kind="fae",
+                source_kind="metabot",
                 occurred_at=NOW - timedelta(hours=23, minutes=5),
             ),
         )
 
     fetch_local_usage = fetch_usage
 
+    def fetch_local_usage_batch(self, after, through):
+        return operation_models.UsageBatch(
+            occurrences=self.fetch_usage(after, through),
+            cumulative_totals={"ai-fae-agent": 237},
+        )
+
     def fetch_remote_usage(self, _source_kind, **_filters):
         return ()
+
+    def fetch_remote_usage_batch(self, _source_kind, **_filters):
+        return operation_models.UsageBatch(
+            occurrences=(), cumulative_totals={}
+        )
 
     def fetch_execution(self, after, through):
         self.execution_ranges.append((after, through))
@@ -141,7 +153,7 @@ class SourceStub:
                 agent_id="ai-fae-agent",
                 agent_name="FAE",
                 agent_visibility="business",
-                source_kind="fae",
+                source_kind="metabot",
                 signal_type="fallback",
                 occurred_at=through,
             ),
@@ -310,8 +322,19 @@ class ReplaySource:
 
     fetch_local_usage = fetch_usage
 
+    def fetch_local_usage_batch(self, after, through):
+        return operation_models.UsageBatch(
+            occurrences=self.fetch_usage(after, through),
+            cumulative_totals={"ai-fae-agent": 237},
+        )
+
     def fetch_remote_usage(self, _source_kind, **_filters):
         return ()
+
+    def fetch_remote_usage_batch(self, _source_kind, **_filters):
+        return operation_models.UsageBatch(
+            occurrences=(), cumulative_totals={}
+        )
 
     def fetch_execution(self, _after, _through):
         return ()
@@ -387,15 +410,28 @@ class EmptyThenTurnSource:
             UsageOccurrence(
                 turn_key="fae:turn-238",
                 agent_id="ai-fae-agent",
-                source_kind="fae",
+                source_kind="metabot",
                 occurred_at=through,
             ),
         )
 
     fetch_local_usage = fetch_usage
 
+    def fetch_local_usage_batch(self, after, through):
+        occurrences = self.fetch_usage(after, through)
+        total = 237 if self.calls == 1 else 238
+        return operation_models.UsageBatch(
+            occurrences=occurrences,
+            cumulative_totals={"ai-fae-agent": total},
+        )
+
     def fetch_remote_usage(self, _source_kind, **_filters):
         return ()
+
+    def fetch_remote_usage_batch(self, _source_kind, **_filters):
+        return operation_models.UsageBatch(
+            occurrences=(), cumulative_totals={}
+        )
 
     def fetch_execution(self, _after, _through):
         return ()
@@ -585,6 +621,12 @@ class SplitSource:
         self.local_usage_ranges.append((after, through))
         return ()
 
+    def fetch_local_usage_batch(self, after, through):
+        return operation_models.UsageBatch(
+            occurrences=self.fetch_local_usage(after, through),
+            cumulative_totals={},
+        )
+
     def fetch_remote_usage(
         self, source_kind, *, created_after=None, created_through=None
     ):
@@ -592,6 +634,24 @@ class SplitSource:
             (source_kind, created_after, created_through)
         )
         return self.usage_batches.pop(0) if self.usage_batches else ()
+
+    def fetch_remote_usage_batch(
+        self, source_kind, *, created_after=None, created_through=None
+    ):
+        value = self.fetch_remote_usage(
+            source_kind,
+            created_after=created_after,
+            created_through=created_through,
+        )
+        if isinstance(value, Exception):
+            raise value
+        if isinstance(value, operation_models.UsageBatch):
+            return value
+        totals = {item.agent_id: 237 for item in value}
+        return operation_models.UsageBatch(
+            occurrences=value,
+            cumulative_totals=totals,
+        )
 
     def fetch_local_execution(self, after, through):
         self.local_execution_ranges.append((after, through))
@@ -793,3 +853,237 @@ async def test_remote_execution_scans_new_generation_once_and_keeps_true_hour(
     assert late_event.occurred_at == late_time.replace(
         minute=0, second=0, microsecond=0
     )
+
+
+class AlignedUsageSource:
+    def __init__(self, *, local_batches=(), remote_batches=()):
+        self.local_batches = list(local_batches)
+        self.remote_batches = list(remote_batches)
+
+    def fetch_local_usage_batch(self, _after, _through):
+        if not self.local_batches:
+            return operation_models.UsageBatch(
+                occurrences=(), cumulative_totals={}
+            )
+        value = self.local_batches.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    def fetch_remote_usage_batch(self, _source_kind, **_filters):
+        value = self.remote_batches.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    def fetch_local_execution(self, _after, _through):
+        return ()
+
+    def fetch_remote_execution(self, _source_kind, **_filters):
+        return ()
+
+
+@pytest.mark.asyncio
+async def test_remote_milestone_uses_aligned_batch_total_not_stale_fleet_cache(
+    tmp_path,
+):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    first_generation = NOW - timedelta(minutes=1)
+    next_generation = NOW + timedelta(minutes=4)
+    turn = UsageOccurrence(
+        turn_key="fae:turn-100",
+        agent_id="ai-fae-agent",
+        source_kind="fae",
+        occurred_at=NOW + timedelta(minutes=5),
+    )
+    source = AlignedUsageSource(
+        remote_batches=[
+            operation_models.UsageBatch(
+                occurrences=(),
+                cumulative_totals={"ai-fae-agent": 99},
+            ),
+            operation_models.UsageBatch(
+                occurrences=(turn,),
+                cumulative_totals={"ai-fae-agent": 100},
+            ),
+        ]
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FleetStub((99, 99)),
+        observability_service=SyncSequence(
+            [
+                (sync_status("fae", "succeeded", first_generation),),
+                (sync_status("fae", "succeeded", next_generation),),
+            ]
+        ),
+        operations_source=source,
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"usage": 0},
+    )
+
+    await scheduler.startup(NOW)
+    await scheduler.run_due(NOW + timedelta(minutes=5))
+
+    event_types = [
+        event.event_type
+        for event in repository.list_events(EventFilters(), 100, 0).items
+    ]
+    assert "conversation_milestone" in event_types
+    assert repository.get_rule_state("usage:ai-fae-agent").value == {
+        "cumulative_conversations": 100
+    }
+    assert repository.latest_run("usage").cursor["remote_generations"] == {
+        "fae": next_generation.isoformat()
+    }
+
+
+@pytest.mark.asyncio
+async def test_remote_snapshot_dates_milestone_at_current_crossing_turn(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    first_generation = NOW - timedelta(minutes=1)
+    next_generation = NOW + timedelta(minutes=4)
+    old_time = NOW - timedelta(days=40)
+    old_turns = tuple(
+        UsageOccurrence(
+            turn_key=f"fae:historical-{index}",
+            agent_id="ai-fae-agent",
+            source_kind="fae",
+            occurred_at=old_time + timedelta(seconds=index),
+        )
+        for index in range(99)
+    )
+    crossing_turn = UsageOccurrence(
+        turn_key="fae:turn-100",
+        agent_id="ai-fae-agent",
+        source_kind="fae",
+        occurred_at=NOW + timedelta(minutes=5),
+    )
+    source = AlignedUsageSource(
+        remote_batches=[
+            operation_models.UsageBatch(
+                occurrences=(),
+                cumulative_totals={"ai-fae-agent": 99},
+            ),
+            operation_models.UsageBatch(
+                occurrences=(*old_turns, crossing_turn),
+                cumulative_totals={"ai-fae-agent": 100},
+            ),
+        ]
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FleetStub((99, 99)),
+        observability_service=SyncSequence(
+            [
+                (sync_status("fae", "succeeded", first_generation),),
+                (sync_status("fae", "succeeded", next_generation),),
+            ]
+        ),
+        operations_source=source,
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"usage": 0},
+    )
+
+    await scheduler.startup(NOW)
+    await scheduler.run_due(crossing_turn.occurred_at)
+
+    milestone = next(
+        event
+        for event in repository.list_events(EventFilters(), 200, 0).items
+        if event.event_type == "conversation_milestone"
+    )
+    assert milestone.occurred_at == crossing_turn.occurred_at
+    historical_usage = next(
+        event
+        for event in repository.list_events(EventFilters(), 200, 0).items
+        if event.event_type == "new_conversations"
+        and event.occurred_at < NOW - timedelta(days=1)
+    )
+    assert historical_usage.facts["cumulative_conversations"] == 99
+
+
+@pytest.mark.asyncio
+async def test_remote_batch_total_failure_retains_generation_cursor(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    first_generation = NOW - timedelta(minutes=1)
+    next_generation = NOW + timedelta(minutes=4)
+    source = AlignedUsageSource(
+        remote_batches=[
+            operation_models.UsageBatch(
+                occurrences=(),
+                cumulative_totals={"ai-fae-agent": 99},
+            ),
+            RuntimeError("aligned total query failed"),
+        ]
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FleetStub((99, 99)),
+        observability_service=SyncSequence(
+            [
+                (sync_status("fae", "succeeded", first_generation),),
+                (sync_status("fae", "succeeded", next_generation),),
+            ]
+        ),
+        operations_source=source,
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"usage": 0},
+    )
+
+    await scheduler.startup(NOW)
+    await scheduler.run_due(NOW + timedelta(minutes=5))
+
+    latest = repository.latest_run("usage")
+    assert latest.status == "failed"
+    assert latest.cursor["remote_generations"] == {
+        "fae": first_generation.isoformat()
+    }
+
+
+@pytest.mark.asyncio
+async def test_local_milestone_uses_aligned_batch_total_not_stale_fleet_cache(
+    tmp_path,
+):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    turn = UsageOccurrence(
+        turn_key="metabot:turn-100",
+        agent_id="ai-fae-agent",
+        source_kind="metabot",
+        occurred_at=NOW + timedelta(minutes=5),
+    )
+    source = AlignedUsageSource(
+        local_batches=[
+            operation_models.UsageBatch(
+                occurrences=(),
+                cumulative_totals={"ai-fae-agent": 99},
+            ),
+            operation_models.UsageBatch(
+                occurrences=(turn,),
+                cumulative_totals={"ai-fae-agent": 100},
+            ),
+        ]
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FleetStub((99, 99)),
+        operations_source=source,
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"usage": 0},
+    )
+
+    await scheduler.startup(NOW)
+    await scheduler.run_due(NOW + timedelta(minutes=5))
+
+    event_types = [
+        event.event_type
+        for event in repository.list_events(EventFilters(), 100, 0).items
+    ]
+    assert "conversation_milestone" in event_types
+    assert repository.get_rule_state("usage:ai-fae-agent").value == {
+        "cumulative_conversations": 100
+    }

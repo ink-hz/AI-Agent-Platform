@@ -13,6 +13,7 @@ from app.observability.service import ObservabilityService
 from .models import (
     LifecycleObservation,
     RunHealth,
+    UsageBatch,
     UsageObservation,
     UsageOccurrence,
 )
@@ -220,16 +221,15 @@ class OperationsScheduler:
             raise RuntimeError("operations source unavailable")
         cursor = await self._latest_cursor("usage")
         after = self._local_after(cursor, now - timedelta(hours=24))
-        occurrences = list(
-            await asyncio.to_thread(
-                self._source.fetch_local_usage, after, now
-            )
+        local_batch = await asyncio.to_thread(
+            self._source.fetch_local_usage_batch, after, now
         )
         initializing = "usage" not in self._initialized_groups
-        remote_occurrences, remote_generations = await self._remote_usage(
+        remote_batches, remote_generations = await self._remote_usage(
             cursor, now, initializing=initializing
         )
-        occurrences.extend(remote_occurrences)
+        batches = [("metabot", local_batch), *remote_batches]
+        occurrences, cumulative_totals = self._aligned_usage_inputs(batches)
         overview = await self._fleet_overview(now)
         agents = {agent.id: agent for agent in overview.agents}
         grouped: dict[
@@ -250,6 +250,12 @@ class OperationsScheduler:
             agent = agents.get(agent_id)
             if agent is None:
                 raise ValueError(f"fleet agent unavailable: {agent_id}")
+            total_key = (agent_id, source_kind)
+            if total_key not in cumulative_totals:
+                raise ValueError(
+                    "aligned cumulative usage total unavailable: "
+                    f"{source_kind}/{agent_id}"
+                )
             ordered = tuple(
                 sorted(items, key=lambda item: (item.occurred_at, item.turn_key))
             )
@@ -261,35 +267,34 @@ class OperationsScheduler:
                     source_kind=source_kind,
                     bucket_start=bucket_start,
                     conversations=len(ordered),
-                    cumulative_conversations=max(
-                        agent.total_conversations or 0,
-                        len(ordered),
-                    ),
+                    cumulative_conversations=cumulative_totals[total_key],
                     occurrences=ordered,
                 )
             )
-        if initializing:
-            represented_agents = {
-                observation.agent_id for observation in observations
-            }
-            for agent in overview.agents:
-                if (
-                    agent.total_conversations is None
-                    or agent.id in represented_agents
-                ):
-                    continue
-                observations.append(
-                    UsageObservation(
-                        agent_id=agent.id,
-                        agent_name=agent.name,
-                        agent_visibility=agent.visibility,
-                        source_kind=self._source_kind(agent.id),
-                        bucket_start=self._local_hour(now),
-                        conversations=0,
-                        cumulative_conversations=agent.total_conversations,
-                        occurrences=(),
-                    )
+        represented = {
+            (observation.agent_id, observation.source_kind)
+            for observation in observations
+        }
+        for (agent_id, source_kind), cumulative_total in sorted(
+            cumulative_totals.items()
+        ):
+            if (agent_id, source_kind) in represented:
+                continue
+            agent = agents.get(agent_id)
+            if agent is None:
+                raise ValueError(f"fleet agent unavailable: {agent_id}")
+            observations.append(
+                UsageObservation(
+                    agent_id=agent.id,
+                    agent_name=agent.name,
+                    agent_visibility=agent.visibility,
+                    source_kind=source_kind,
+                    bucket_start=self._local_hour(now),
+                    conversations=0,
+                    cumulative_conversations=cumulative_total,
+                    occurrences=(),
                 )
+            )
         await asyncio.to_thread(
             self._rule_engine.evaluate_usage,
             observations,
@@ -380,9 +385,9 @@ class OperationsScheduler:
         now: datetime,
         *,
         initializing: bool,
-    ) -> tuple[list[UsageOccurrence], dict[str, str]]:
+    ) -> tuple[list[tuple[str, UsageBatch]], dict[str, str]]:
         generations = dict(cursor.get("remote_generations", {}))
-        occurrences: list[UsageOccurrence] = []
+        batches: list[tuple[str, UsageBatch]] = []
         for status in await self._sync_statuses():
             if status.status != "succeeded" or status.completed_at is None:
                 continue
@@ -397,15 +402,39 @@ class OperationsScheduler:
                 if initializing
                 else {}
             )
-            occurrences.extend(
-                await asyncio.to_thread(
-                    self._source.fetch_remote_usage,
-                    status.source_kind,
-                    **filters,
-                )
+            batch = await asyncio.to_thread(
+                self._source.fetch_remote_usage_batch,
+                status.source_kind,
+                **filters,
             )
+            batches.append((status.source_kind, batch))
             generations[status.source_kind] = generation
-        return occurrences, generations
+        return batches, generations
+
+    @staticmethod
+    def _aligned_usage_inputs(
+        batches: list[tuple[str, UsageBatch]],
+    ) -> tuple[list[UsageOccurrence], dict[tuple[str, str], int]]:
+        occurrences: list[UsageOccurrence] = []
+        cumulative_totals: dict[tuple[str, str], int] = {}
+        for batch_source, batch in batches:
+            for occurrence in batch.occurrences:
+                if occurrence.source_kind != batch_source:
+                    raise ValueError(
+                        "usage occurrence source does not match its batch: "
+                        f"{batch_source}/{occurrence.source_kind}"
+                    )
+            occurrences.extend(batch.occurrences)
+            for agent_id, total in batch.cumulative_totals.items():
+                key = (agent_id, batch_source)
+                existing = cumulative_totals.get(key)
+                if existing is not None and existing != total:
+                    raise ValueError(
+                        "conflicting aligned cumulative usage totals: "
+                        f"{batch_source}/{agent_id}"
+                    )
+                cumulative_totals[key] = total
+        return occurrences, cumulative_totals
 
     async def _remote_execution(
         self,

@@ -239,8 +239,17 @@ An active-condition fingerprint is derived from rule, Agent, normalized conditio
   bucketing uses the true source `created_at`; usage occurrence keys and
   execution turn/signal keys make local overlap and remote snapshot replay
   idempotent.
+- Each filtered usage scan returns a typed `UsageBatch`: its exact answered-Turn
+  occurrences and the per-Agent cumulative answered-Turn totals for that same
+  source. Both queries execute on one PostgreSQL connection in one read-only,
+  repeatable-read transaction, so an occurrence cannot be paired with an older
+  cumulative total. Occurrences and totals count distinct stable Turn keys, so
+  duplicate joined run rows cannot inflate usage. Fleet Overview supplies Agent
+  name and visibility metadata only; its cached conversation totals are never
+  rule inputs. A missing or failed occurrence/total read fails the usage group
+  without advancing either the local cursor or the affected remote generation.
 
-Usage activity is recorded in hourly Asia/Shanghai buckets. Its fingerprint includes Agent, usage event type, and bucket start. Each `UsageObservation` carries the exact typed `UsageOccurrence` rows represented by that Agent/hour aggregation. In one SQLite transaction, the repository inserts unseen occurrence keys, ignores replayed keys, recomputes the bucket count from the ledger, creates or updates and finalizes the hourly Event, and persists cumulative, bucket, and milestone state plus any crossed milestone Events. Late unseen keys increment only the hour derived from their source occurrence timestamps. The Brief aggregates those buckets over the rolling 24-hour interval; empty buckets are not stored.
+Usage activity is recorded in hourly Asia/Shanghai buckets. Its fingerprint includes Agent, usage event type, and bucket start. Each `UsageObservation` carries the exact typed `UsageOccurrence` rows represented by that Agent/hour aggregation. One SQLite transaction applies the complete evaluation batch: it inserts unseen occurrence keys, ignores replayed keys, recomputes every affected bucket count from the ledger, creates or updates and finalizes hourly Events, persists cumulative, bucket, and milestone state, writes crossed milestone Events, and expires closed buckets. If any observation fails, none of the batch is visible. Replay buckets retain their historical cumulative state; only the newest source observation carries the aligned final total into milestone evaluation, and a crossed milestone uses that carrier's latest exact occurrence time. Late unseen keys increment only the hour derived from their source occurrence timestamps. The Brief aggregates those buckets over the rolling 24-hour interval; empty buckets are not stored.
 
 ## 7. Evaluation Schedule
 
@@ -263,8 +272,9 @@ During initialization:
 - currently active runtime and data-freshness problems may enter Attention after satisfying their normal debounce or threshold;
 - real usage during the preceding 24 hours is backfilled into hourly buckets and the exact occurrence ledger;
 - successful remote generations are seeded as processed after scanning only
-  rows whose true `created_at` is within the preceding 24 hours;
-- every Fleet Agent with a known cumulative conversation total seeds usage and
+  rows whose true `created_at` is within the preceding 24 hours and atomically
+  applying the source-aligned cumulative totals from that scan;
+- every Agent represented by a source-aligned cumulative total seeds usage and
   milestone state even when the preceding 24 hours contain no occurrences;
 - durable lifecycle dates may be imported as historical events using their actual dates, but dates older than 24 hours never appear in `Last 24 Hours`;
 - milestone state advances to the highest milestone already reached without emitting old milestones.

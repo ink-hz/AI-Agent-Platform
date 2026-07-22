@@ -65,6 +65,11 @@ class UsageOccurrence(BaseModel):
     occurred_at: datetime
 
 
+class UsageBatch(BaseModel):
+    occurrences: tuple[UsageOccurrence, ...]
+    cumulative_totals: dict[str, int] = Field(default_factory=dict)
+
+
 class UsageObservation(BaseModel):
     agent_id: str
     agent_name: str

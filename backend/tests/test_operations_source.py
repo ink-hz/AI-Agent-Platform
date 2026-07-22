@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.fleet.catalog import AgentCatalog, AgentProfile
+from app.operations import models as operation_models
 from app.operations.source import PsycopgOperationsSource
 
 
@@ -58,6 +59,30 @@ def fake_source(*, usage_rows=(), execution_rows=(), catalog=None):
     return source, cursor
 
 
+class BatchCursor:
+    def __init__(self, result_sets):
+        self.result_sets = list(result_sets)
+        self.current = []
+        self.statements: list[str] = []
+        self.params: list[tuple] = []
+
+    def execute(self, statement, params=()):
+        self.statements.append(statement)
+        self.params.append(tuple(params))
+        if statement.lstrip().lower().startswith("select"):
+            self.current = self.result_sets.pop(0)
+        return self
+
+    def fetchall(self):
+        return self.current
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
 def test_usage_query_returns_answered_turns_only():
     source, cursor = fake_source(
         usage_rows=[
@@ -111,6 +136,59 @@ def test_remote_usage_snapshot_filters_source_and_optional_true_time():
     assert "source_synced_at" not in statement
     assert cursor.params == [("fae", NOW - timedelta(hours=24), NOW)]
     assert occurrences[0].occurred_at == occurred_at
+
+
+def test_usage_batch_reads_occurrences_and_totals_in_one_repeatable_read_snapshot():
+    cursor = BatchCursor(
+        [
+            [
+                {
+                    "turn_key": "fae:turn-100",
+                    "agent_id": "ai-fae-agent",
+                    "source_kind": "fae",
+                    "created_at": NOW,
+                },
+                {
+                    "turn_key": "fae:turn-100",
+                    "agent_id": "ai-fae-agent",
+                    "source_kind": "fae",
+                    "created_at": NOW,
+                },
+            ],
+            [{"agent_id": "ai-fae-agent", "cumulative_conversations": 100}],
+        ]
+    )
+    connection = RecordingConnection(cursor)
+    connections = 0
+
+    def connect(*_args, **_kwargs):
+        nonlocal connections
+        connections += 1
+        return connection
+
+    source = PsycopgOperationsSource(
+        "postgresql://unused",
+        connect=connect,
+    )
+
+    batch = source.fetch_remote_usage_batch(
+        "fae",
+        created_after=NOW - timedelta(hours=24),
+        created_through=NOW,
+    )
+
+    assert isinstance(batch, operation_models.UsageBatch)
+    assert [item.turn_key for item in batch.occurrences] == ["fae:turn-100"]
+    assert batch.cumulative_totals == {"ai-fae-agent": 100}
+    assert connections == 1
+    assert cursor.statements[0].lower() == (
+        "set transaction isolation level repeatable read read only"
+    )
+    assert "select distinct t.turn_key" in cursor.statements[1].lower()
+    assert "t.created_at > %s" in cursor.statements[1]
+    assert "count(distinct t.turn_key)" in cursor.statements[2].lower()
+    assert cursor.params[1] == ("fae", NOW - timedelta(hours=24), NOW)
+    assert cursor.params[2] == ("fae",)
 
 
 def test_execution_query_emits_only_supported_explicit_signals():

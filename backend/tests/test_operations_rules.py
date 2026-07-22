@@ -574,6 +574,39 @@ def test_usage_unit_of_work_rolls_back_occurrences_events_and_state(tmp_path):
     assert repo.list_events(EventFilters(), 100, 0).total == 0
 
 
+def test_usage_evaluation_rolls_back_all_observations_when_later_write_fails(
+    tmp_path,
+):
+    database_path = tmp_path / "operations.db"
+    repo = OperationsRepository(str(database_path))
+    repo.migrate()
+    engine = OperationsRuleEngine(repo)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            create trigger reject_second_usage before insert on operational_events
+            when new.agent_id='sales-bot' and new.event_family='usage'
+            begin
+              select raise(abort, 'forced second usage failure');
+            end
+            """
+        )
+
+    with pytest.raises(sqlite3.IntegrityError, match="forced second usage failure"):
+        engine.evaluate_usage(
+            [
+                usage("hr-bot", 1, NOW, ("hr-turn",)),
+                usage("sales-bot", 1, NOW, ("sales-turn",)),
+            ],
+            NOW,
+            initializing=False,
+        )
+
+    assert repo.usage_occurrence_count() == 0
+    assert repo.list_events(EventFilters(), 100, 0).total == 0
+    assert repo.get_rule_state("usage:hr-bot") is None
+
+
 def test_usage_occurrence_key_cannot_move_between_agents(tmp_path):
     engine, repo = make_engine(tmp_path)
     engine.evaluate_usage(

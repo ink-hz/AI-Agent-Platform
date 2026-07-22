@@ -515,8 +515,8 @@ git commit -m "feat: detect operational state transitions"
 
 **Interfaces:**
 - Consumes: local Flywheel PostgreSQL URL and `OperationsRepository` rule cursors.
-- Produces: `UsageOccurrence`, `UsageObservation`, `LifecycleObservation`, `ExecutionObservation`.
-- Produces: `PsycopgOperationsSource.fetch_usage(after, through)`, `fetch_execution(after, through)`.
+- Produces: `UsageOccurrence`, `UsageBatch`, `UsageObservation`, `LifecycleObservation`, `ExecutionObservation`.
+- Produces: source-filtered local/remote usage batch and execution reads.
 - Produces: `evaluate_usage()`, `evaluate_lifecycle()`, and `evaluate_execution()`.
 - Produces migration version 2 with `operational_usage_occurrences` and an atomic exact-usage unit of work.
 
@@ -720,6 +720,11 @@ class UsageOccurrence(BaseModel):
     occurred_at: datetime
 
 
+class UsageBatch(BaseModel):
+    occurrences: tuple[UsageOccurrence, ...]
+    cumulative_totals: dict[str, int]
+
+
 class UsageObservation(BaseModel):
     agent_id: str
     agent_name: str
@@ -754,7 +759,9 @@ class ExecutionObservation(BaseModel):
 
 Source ingestion is split. Local MetaBot queries use true `created_at` with a one-hour overlap before `local_through`. Remote FAE/ADMIN queries treat each new successful synchronization `completed_at` as a snapshot generation. Initialization scans only the generation's rows from the preceding 24 hours and seeds that generation as processed. A later successful generation performs one read-only full scan of that source's retained snapshot (currently 90 days and small); repeated polls of the same generation do not rescan, and a failed synchronization does not advance generation state. Recovery success therefore triggers the next generation scan. The per-group cursor containing `local_through` and `remote_generations` advances only after the complete rule application succeeds.
 
-The scheduler groups `UsageOccurrence` rows by Agent and local hour, then combines each group and its exact typed occurrence tuple with the matching Fleet Agent cumulative total to create `UsageObservation`. Migration version 2 adds `operational_usage_occurrences(occurrence_key primary key, agent_id, bucket_start, occurred_at, processed_at)`. It stores source Turn identifiers and timestamps only, never question or answer payloads. One repository transaction inserts unseen keys, ignores replayed keys, recomputes the bucket count from the ledger, creates/updates/finalizes the hourly Event, and persists bucket, cumulative, and milestone state plus milestone Events. Late unseen keys update only their actual source hour; overlap replays are idempotent through exact occurrence keys, and count-based duplicate budgets are prohibited. Execution overlap replays are idempotent through the stable Turn/signal grouping keys. Use `ZoneInfo("Asia/Shanghai")` and floor usage and execution fingerprints to the local hour. Milestones are `100, 250, 500, 1000`, then every additional 1,000. Initialization backfills the preceding 24 hours of hourly usage Events, bucket state, and occurrence keys while storing the highest reached milestone without emitting old milestones. It also creates an empty initializing `UsageObservation` for every Fleet Agent with a known cumulative total but no baseline occurrences, seeding cumulative and milestone state without creating a usage bucket or old milestone. Lifecycle initialization writes old dates as historical events using their actual occurrence time; only a later value change emits a new `deployment_updated` event.
+Each local or remote usage read is a typed `UsageBatch`. The source executes the exact occurrence query and the per-Agent cumulative answered-Turn total query for the same source filter on one PostgreSQL connection in one read-only, repeatable-read transaction. Both queries count distinct stable Turn keys, preventing duplicate joined run rows from inflating activity or cumulative totals. The scheduler groups those occurrences by Agent and local hour, then combines each exact typed occurrence tuple with its batch's source-aligned total to create `UsageObservation`. Fleet Overview is used only for Agent name and visibility metadata; `FleetAgent.total_conversations` and UsageCache are never usage-rule inputs. A missing or failed total fails the group, so neither `local_through` nor a remote generation can advance.
+
+Migration version 2 adds `operational_usage_occurrences(occurrence_key primary key, agent_id, bucket_start, occurred_at, processed_at)`. It stores source Turn identifiers and timestamps only, never question or answer payloads. One repository transaction applies the complete observation batch and closed-bucket expiration: it inserts unseen keys, ignores replayed keys, recomputes all affected bucket counts from the ledger, creates/updates/finalizes hourly Events, and persists bucket, cumulative, and milestone state plus milestone Events. A failure in any later observation rolls back every earlier observation. Replay buckets retain the prior cumulative state; only the newest observation for an Agent/source carries the batch's final aligned total, and a newly crossed milestone uses that carrier's latest exact occurrence time rather than an old replay hour. Late unseen keys update only their actual source hour; overlap replays are idempotent through exact occurrence keys, and count-based duplicate budgets are prohibited. Execution overlap replays are idempotent through the stable Turn/signal grouping keys. Use `ZoneInfo("Asia/Shanghai")` and floor usage and execution fingerprints to the local hour. Milestones are `100, 250, 500, 1000`, then every additional 1,000. Initialization backfills the preceding 24 hours of hourly usage Events, bucket state, and occurrence keys while storing the highest reached milestone without emitting old milestones. It also creates an empty initializing `UsageObservation` for every Agent with a source-aligned cumulative total but no baseline occurrences, seeding cumulative and milestone state without creating a usage bucket or old milestone. Lifecycle initialization writes old dates as historical events using their actual occurrence time; only a later value change emits a new `deployment_updated` event.
 
 Execution Events remain active through their one-hour bucket. A later scheduler pass after the bucket closes marks them `historical` without creating Recovery.
 
@@ -786,7 +793,7 @@ git commit -m "feat: derive operational usage and execution events"
 - Modify: `backend/tests/test_main.py`
 
 **Interfaces:**
-- Consumes: `FleetReadService`, `ObservabilityService`, `PsycopgOperationsSource`, `OperationsRuleEngine`, Config intervals.
+- Consumes: `FleetReadService` metadata, `ObservabilityService`, typed source-filtered `UsageBatch` reads from `PsycopgOperationsSource`, `OperationsRuleEngine`, Config intervals.
 - Produces: `OperationsScheduler.startup()`, `run_runtime()`, `run_sync()`, `run_data_access()`, `run_usage()`, `run_execution()`, `run_lifecycle()`, and `operations_poll_loop()`.
 - Produces app state: `operations_service` and `operations_scheduler`, each nullable when initialization fails.
 
@@ -857,7 +864,11 @@ Expected: failures for missing scheduler and app state.
 
 The constructor accepts `repository`, optional production dependencies, and optional `group_runners` plus `intervals` maps. Tests inject the maps shown above. Production constructs the default runner map for `runtime`, `sync`, `data_access`, `usage`, `execution`, and `lifecycle` from the scheduler's bound methods and Config intervals.
 
-`run_runtime()`, `run_data_access()`, and `run_lifecycle()` reuse one current `FleetReadService.overview()` result within a scheduler pass. `run_data_access()` creates `DataAccessObservation(source_name="flywheel", available=overview.usage_source.healthy, observed_at=now)`. `run_usage()` preserves every grouped `UsageOccurrence` in `UsageObservation.occurrences`; it must not reduce replay identity to counts. Usage and execution use the split local-overlap/remote-generation cursor described above. Cursor state advances only after event and rule-state application succeeds, so failures replay safely on the next pass.
+`run_runtime()`, `run_data_access()`, and `run_lifecycle()` reuse one current `FleetReadService.overview()` result within a scheduler pass. `run_data_access()` creates `DataAccessObservation(source_name="flywheel", available=overview.usage_source.healthy, observed_at=now)`.
+
+`run_usage()` is self-contained around two ingestion paths. Local MetaBot evaluation requests one `fetch_local_usage_batch(after, through)` using the one-hour overlap before `local_through`. Each newly completed FAE/ADMIN synchronization generation requests exactly one `fetch_remote_usage_batch(source_kind, ...)`; initialization constrains true `created_at` to the preceding 24 hours, while later generations read the full retained source snapshot. Every batch contains distinct exact `UsageOccurrence` identities plus per-Agent cumulative answered-Turn totals read from the same source filter, PostgreSQL connection, and read-only repeatable-read snapshot. The scheduler rejects source mismatches or missing totals, uses Fleet Overview only for Agent metadata, and never reads Fleet/UsageCache cumulative totals for rule evaluation. It groups occurrences by Agent/source/local hour without reducing replay identity to counts. The rule engine applies the aligned final total only to the newest observation for that Agent/source and dates a crossing milestone at its latest exact occurrence; old full-snapshot buckets cannot absorb a current crossing.
+
+The candidate `local_through` and `remote_generations` cursor is recorded only after all required batches are read and the rule engine commits the complete usage observation list, its Events and rule states, and bucket expiration in one SQLite transaction. Any source query, cumulative-total query, validation, metadata, or rule-application failure rolls back that complete batch and records the group as failed with the prior cursor, so the same local overlap or remote generation is replayed safely. Failed synchronization statuses never advance a generation. Execution follows the same local-overlap/remote-generation selection and advances only after successful application.
 
 The poll loop wakes every ten seconds, checks due timestamps, and never sleeps for an entire five-minute rule interval:
 

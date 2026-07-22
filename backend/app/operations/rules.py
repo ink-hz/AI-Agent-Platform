@@ -15,7 +15,7 @@ from .models import (
     RuleState,
     UsageObservation,
 )
-from .repository import OperationsRepository
+from .repository import OperationsRepository, UsageMutation
 
 
 class RuntimeObservation(BaseModel):
@@ -210,49 +210,120 @@ class OperationsRuleEngine:
         initializing: bool,
     ) -> None:
         current_hour = self._local_hour(now)
+        normalized: list[UsageObservation] = []
         for observation in sorted(observations, key=lambda item: item.bucket_start):
             bucket_start = self._local_hour(observation.bucket_start)
             self._validate_usage_occurrences(observation, bucket_start)
-            observation = observation.model_copy(
-                update={"bucket_start": bucket_start}
+            normalized.append(
+                observation.model_copy(update={"bucket_start": bucket_start})
             )
-            milestone_events, milestone_state = self._milestone_mutations(
-                observation, now, initializing
+
+        carriers: dict[tuple[str, str], int] = {}
+        for index, observation in enumerate(normalized):
+            carriers[(observation.agent_id, observation.source_kind)] = index
+
+        cumulative_by_agent: dict[str, int] = {}
+        milestone_by_agent: dict[str, int] = {}
+        mutations: list[UsageMutation] = []
+        for index, observation in enumerate(normalized):
+            bucket_start = observation.bucket_start
+            if observation.agent_id not in cumulative_by_agent:
+                usage_current = self._repository.get_rule_state(
+                    f"usage:{observation.agent_id}"
+                )
+                cumulative_by_agent[observation.agent_id] = (
+                    int(
+                        usage_current.value.get(
+                            "cumulative_conversations", 0
+                        )
+                    )
+                    if usage_current is not None
+                    else 0
+                )
+            if observation.agent_id not in milestone_by_agent:
+                milestone_current = self._repository.get_rule_state(
+                    f"milestone:{observation.agent_id}"
+                )
+                milestone_by_agent[observation.agent_id] = (
+                    int(milestone_current.value.get("reached", 0))
+                    if milestone_current is not None
+                    else 0
+                )
+
+            prior_cumulative = cumulative_by_agent[observation.agent_id]
+            prior_milestone = milestone_by_agent[observation.agent_id]
+            is_carrier = carriers[
+                (observation.agent_id, observation.source_kind)
+            ] == index
+            effective_cumulative = (
+                observation.cumulative_conversations
+                if is_carrier
+                else prior_cumulative
             )
-            usage_current = self._repository.get_rule_state(
-                f"usage:{observation.agent_id}"
+            effective_observation = observation.model_copy(
+                update={"cumulative_conversations": effective_cumulative}
             )
-            prior_cumulative = (
-                int(usage_current.value.get("cumulative_conversations", 0))
-                if usage_current is not None
-                else 0
-            )
+            if is_carrier:
+                milestone_at = max(
+                    (
+                        occurrence.occurred_at
+                        for occurrence in observation.occurrences
+                    ),
+                    default=now,
+                )
+                milestone_events, milestone_state = self._milestone_mutations(
+                    effective_observation,
+                    now,
+                    initializing,
+                    prior=prior_milestone,
+                    occurred_at=milestone_at,
+                )
+            else:
+                milestone_events = []
+                milestone_state = RuleState(
+                    rule_key=f"milestone:{observation.agent_id}",
+                    value={"reached": prior_milestone},
+                    updated_at=now,
+                )
             usage_state = RuleState(
                 rule_key=f"usage:{observation.agent_id}",
                 value={
                     "cumulative_conversations": max(
                         prior_cumulative,
-                        observation.cumulative_conversations,
+                        effective_cumulative,
                     )
                 },
                 updated_at=now,
             )
-            self._repository.record_usage(
-                observation,
-                (
-                    self._usage_event(observation, bucket_start)
-                    if observation.occurrences
-                    else None
-                ),
-                status=(
-                    "historical" if bucket_start < current_hour else "active"
-                ),
-                milestone_events=milestone_events,
-                usage_state=usage_state,
-                milestone_state=milestone_state,
-                processed_at=now,
+            cumulative_by_agent[observation.agent_id] = int(
+                usage_state.value["cumulative_conversations"]
             )
-        self._repository.expire_active_occurrences("usage", current_hour)
+            milestone_by_agent[observation.agent_id] = int(
+                milestone_state.value["reached"]
+            )
+            mutations.append(
+                UsageMutation(
+                    observation=effective_observation,
+                    event=(
+                        self._usage_event(effective_observation, bucket_start)
+                        if observation.occurrences
+                        else None
+                    ),
+                    status=(
+                        "historical"
+                        if bucket_start < current_hour
+                        else "active"
+                    ),
+                    milestone_events=tuple(milestone_events),
+                    usage_state=usage_state,
+                    milestone_state=milestone_state,
+                    processed_at=now,
+                )
+            )
+        self._repository.record_usage_batch(
+            mutations,
+            expire_before=current_hour,
+        )
 
     def evaluate_lifecycle(
         self,
@@ -418,11 +489,15 @@ class OperationsRuleEngine:
         )
 
     def _milestone_mutations(
-        self, observation: UsageObservation, now: datetime, initializing: bool
+        self,
+        observation: UsageObservation,
+        now: datetime,
+        initializing: bool,
+        *,
+        prior: int,
+        occurred_at: datetime,
     ) -> tuple[list[NewOperationalEvent], RuleState]:
         rule_key = f"milestone:{observation.agent_id}"
-        current = self._repository.get_rule_state(rule_key)
-        prior = int(current.value.get("reached", 0)) if current is not None else 0
         reached = self._highest_milestone(observation.cumulative_conversations)
         events: list[NewOperationalEvent] = []
         if not initializing:
@@ -445,7 +520,7 @@ class OperationsRuleEngine:
                             f"Cumulative answered conversations reached {milestone}."
                         ),
                         source_kind=observation.source_kind,
-                        occurred_at=observation.bucket_start,
+                        occurred_at=occurred_at,
                         facts={"milestone": milestone},
                         target_kind="agent",
                         target_id=observation.agent_id,

@@ -8,11 +8,11 @@ from psycopg.rows import dict_row
 
 from app.fleet.catalog import AgentCatalog, AgentProfile
 
-from .models import ExecutionObservation, UsageOccurrence
+from .models import ExecutionObservation, UsageBatch, UsageOccurrence
 
 
 LOCAL_USAGE_SQL = """
-select t.turn_key, t.agent_id, t.source_kind, t.created_at
+select distinct t.turn_key, t.agent_id, t.source_kind, t.created_at
 from platform_read.turns t
 where t.source_kind='metabot'
   and t.created_at > %s and t.created_at <= %s
@@ -22,10 +22,30 @@ order by t.created_at, t.turn_key
 
 
 REMOTE_USAGE_SQL = """
-select t.turn_key, t.agent_id, t.source_kind, t.created_at
+select distinct t.turn_key, t.agent_id, t.source_kind, t.created_at
 from platform_read.turns t
 where t.source_kind=%s
   and nullif(btrim(t.answer), '') is not null
+"""
+
+
+LOCAL_USAGE_TOTALS_SQL = """
+select t.agent_id, count(distinct t.turn_key)::bigint as cumulative_conversations
+from platform_read.turns t
+where t.source_kind='metabot'
+  and nullif(btrim(t.answer), '') is not null
+group by t.agent_id
+order by t.agent_id
+"""
+
+
+REMOTE_USAGE_TOTALS_SQL = """
+select t.agent_id, count(distinct t.turn_key)::bigint as cumulative_conversations
+from platform_read.turns t
+where t.source_kind=%s
+  and nullif(btrim(t.answer), '') is not null
+group by t.agent_id
+order by t.agent_id
 """
 
 
@@ -90,6 +110,16 @@ class PsycopgOperationsSource:
     ) -> tuple[UsageOccurrence, ...]:
         return self._usage_rows(LOCAL_USAGE_SQL, (after, through))
 
+    def fetch_local_usage_batch(
+        self, after: datetime, through: datetime
+    ) -> UsageBatch:
+        return self._usage_batch(
+            LOCAL_USAGE_SQL,
+            (after, through),
+            LOCAL_USAGE_TOTALS_SQL,
+            (),
+        )
+
     def fetch_remote_usage(
         self,
         source_kind: str,
@@ -97,6 +127,39 @@ class PsycopgOperationsSource:
         created_after: datetime | None = None,
         created_through: datetime | None = None,
     ) -> tuple[UsageOccurrence, ...]:
+        statement, params = self._remote_usage_query(
+            source_kind,
+            created_after=created_after,
+            created_through=created_through,
+        )
+        return self._usage_rows(statement, params)
+
+    def fetch_remote_usage_batch(
+        self,
+        source_kind: str,
+        *,
+        created_after: datetime | None = None,
+        created_through: datetime | None = None,
+    ) -> UsageBatch:
+        statement, params = self._remote_usage_query(
+            source_kind,
+            created_after=created_after,
+            created_through=created_through,
+        )
+        return self._usage_batch(
+            statement,
+            params,
+            REMOTE_USAGE_TOTALS_SQL,
+            (source_kind,),
+        )
+
+    def _remote_usage_query(
+        self,
+        source_kind: str,
+        *,
+        created_after: datetime | None,
+        created_through: datetime | None,
+    ) -> tuple[str, tuple]:
         self._validate_remote_source(source_kind)
         statement = REMOTE_USAGE_SQL
         params: list[object] = [source_kind]
@@ -107,7 +170,7 @@ class PsycopgOperationsSource:
             statement += "  and t.created_at <= %s\n"
             params.append(created_through)
         statement += "order by t.created_at, t.turn_key\n"
-        return self._usage_rows(statement, tuple(params))
+        return statement, tuple(params)
 
     def fetch_usage(
         self, after: datetime, through: datetime
@@ -118,12 +181,60 @@ class PsycopgOperationsSource:
         self, statement: str, params: tuple
     ) -> tuple[UsageOccurrence, ...]:
         rows = self._fetchall(statement, params)
-        occurrences: list[UsageOccurrence] = []
-        for row in rows:
+        return self._usage_occurrences(rows)
+
+    def _usage_batch(
+        self,
+        occurrence_statement: str,
+        occurrence_params: tuple,
+        totals_statement: str,
+        totals_params: tuple,
+    ) -> UsageBatch:
+        with self._connect(
+            self._database_url,
+            connect_timeout=3,
+            options="-c default_transaction_read_only=on -c statement_timeout=5000",
+            row_factory=dict_row,
+        ) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "set transaction isolation level repeatable read read only"
+                )
+                occurrence_rows = list(
+                    cursor.execute(
+                        occurrence_statement, occurrence_params
+                    ).fetchall()
+                )
+                total_rows = list(
+                    cursor.execute(totals_statement, totals_params).fetchall()
+                )
+        totals: dict[str, int] = {}
+        for row in total_rows:
             resolved = self._profile(row["agent_id"])
             if resolved is None:
                 continue
             agent_id, _profile = resolved
+            totals[agent_id] = totals.get(agent_id, 0) + int(
+                row["cumulative_conversations"]
+            )
+        return UsageBatch(
+            occurrences=self._usage_occurrences(occurrence_rows),
+            cumulative_totals=totals,
+        )
+
+    def _usage_occurrences(
+        self, rows: list[dict]
+    ) -> tuple[UsageOccurrence, ...]:
+        occurrences: list[UsageOccurrence] = []
+        seen: set[str] = set()
+        for row in rows:
+            if row["turn_key"] in seen:
+                continue
+            resolved = self._profile(row["agent_id"])
+            if resolved is None:
+                continue
+            agent_id, _profile = resolved
+            seen.add(row["turn_key"])
             occurrences.append(
                 UsageOccurrence(
                     turn_key=row["turn_key"],
