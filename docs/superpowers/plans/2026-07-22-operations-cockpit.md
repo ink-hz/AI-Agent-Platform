@@ -866,6 +866,18 @@ The constructor accepts `repository`, optional production dependencies, and opti
 
 `run_runtime()`, `run_data_access()`, and `run_lifecycle()` reuse one current `FleetReadService.overview()` result within a scheduler pass. `run_data_access()` creates `DataAccessObservation(source_name="flywheel", available=overview.usage_source.healthy, observed_at=now)`.
 
+`FleetOverview` carries an internal, response-excluded `expected_agent_ids`
+snapshot from `AgentCatalog.all_profiles()`. Before runtime rule mutation,
+`run_runtime()` requires a healthy/current source, a non-empty Agent list, every
+expected ID to be present, and every returned Agent to be `active`, `online`,
+`degraded`, or `offline`. Any missing, `checking`, or `unknown` evidence fails
+the group with a stable sanitized error and retains the prior cursor.
+
+`run_sync()` requires exactly `{fae, admin}` and trustworthy success history for
+every row. A latest successful row may use its own `completed_at`; a latest
+`running` or `failed` row must carry `last_success_at`. Missing history fails the
+group before rule mutation and cannot create a locally invented 36-hour clock.
+
 `run_usage()` is self-contained around two ingestion paths. Local MetaBot evaluation requests one `fetch_local_usage_batch(after, through)` using the one-hour overlap before `local_through`. Each newly completed FAE/ADMIN synchronization generation requests exactly one `fetch_remote_usage_batch(source_kind, ...)`; initialization constrains true `created_at` to the preceding 24 hours, while later generations read the full retained source snapshot. Every batch contains distinct exact `UsageOccurrence` identities plus per-Agent cumulative answered-Turn totals read from the same source filter, PostgreSQL connection, and read-only repeatable-read snapshot. The scheduler rejects source mismatches or missing totals, uses Fleet Overview only for Agent metadata, and never reads Fleet/UsageCache cumulative totals for rule evaluation. It groups occurrences by Agent/source/local hour without reducing replay identity to counts. The rule engine applies the aligned final total only to the newest observation for that Agent/source and dates a crossing milestone at its latest exact occurrence; old full-snapshot buckets cannot absorb a current crossing.
 
 After all required batches are read, `run_usage()` constructs the candidate successful `RunHealth` containing `local_through` and `remote_generations` and passes it through `OperationsRuleEngine.evaluate_usage()` to `OperationsRepository.record_usage_batch()`. That repository method inserts the successful run/cursor on the same SQLite connection and inside the same transaction as the complete usage observation list, Events, rule states, and bucket expiration. `run_usage()` returns a typed committed outcome, and `_run_groups()` skips only its normal second successful-run write. Any source query, cumulative-total query, validation, metadata, rule-application, or successful-run insertion failure rolls back the complete usage batch. The scheduler then separately attempts to record a failed run with the prior cursor and continues other groups. Failed synchronization statuses never advance a generation. Execution follows the same local-overlap/remote-generation selection and advances only after successful application; its success cursor is outside this Task 4 usage-specific atomic contract.
@@ -1421,7 +1433,21 @@ git commit -m "feat: finish Operations Cockpit experience"
 
 - [ ] **Step 8: Deploy only the Platform**
 
-Build has already completed in Step 6. Validate and install the updated Platform plist, then reload only this LaunchAgent so the new environment value is active:
+Build has already completed in Step 6. Before installing or reloading the
+LaunchAgent, use the Platform PostgreSQL database owner to apply the canonical
+view migration and verify its required column. Application startup migrates
+only Operations SQLite and does not apply this PostgreSQL migration:
+
+```bash
+psql '<Platform owner PostgreSQL URL>' -v ON_ERROR_STOP=1 \
+  -f backend/migrations/001_observability_sources.sql
+psql '<Platform owner PostgreSQL URL>' -Atc \
+  "select column_name from information_schema.columns where table_schema='platform_read' and table_name='sync_status' and column_name='last_success_at'"
+```
+
+The verification command must print `last_success_at`. Then validate and
+install the updated Platform plist and reload only this LaunchAgent so the new
+environment value is active:
 
 ```bash
 plutil -lint deploy/com.orbbec.ai-agent-platform.plist

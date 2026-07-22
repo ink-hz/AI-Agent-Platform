@@ -158,6 +158,9 @@ class FleetReadService:
             summary=summary,
             trend=trend,
             agents=agents,
+            expected_agent_ids=[
+                profile.id for profile in self._catalog.all_profiles()
+            ],
             runtime_source=DataSourceStatus(
                 healthy=runtime_healthy,
                 checked_at=runtime_checked_at,

@@ -282,6 +282,21 @@ async def test_overview_combines_nine_local_and_two_remote_agents():
     assert overview.summary.running_agents == 9
     assert get_agent(overview, "ai-fae-agent").session_count == 168
     assert get_agent(overview, "ai-admin-agent").session_count == 118
+    assert set(overview.expected_agent_ids) == {
+        *CURRENT_BOT_IDS,
+        "ai-fae-agent",
+        "ai-admin-agent",
+    }
+
+
+@pytest.mark.asyncio
+async def test_overview_expected_roster_retains_missing_catalog_agents():
+    overview = await make_service(bot_ids=["hr-bot"]).overview(now=NOW)
+
+    assert [agent.id for agent in overview.agents] == ["hr-bot"]
+    assert "ai-fae-agent" in overview.expected_agent_ids
+    assert "ai-admin-agent" in overview.expected_agent_ids
+    assert "marketing-intelligence-bot" in overview.expected_agent_ids
 
 
 @pytest.mark.asyncio

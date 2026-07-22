@@ -519,7 +519,7 @@ async def test_runtime_group_fails_when_required_evidence_is_incomplete(
     assert latest.cursor == {}
     assert latest.error_summary in {
         "RuntimeError: required runtime source unavailable",
-        "RuntimeError: required runtime evidence unavailable",
+        "RuntimeError: required runtime evidence incomplete",
     }
 
 
@@ -537,6 +537,111 @@ async def test_complete_runtime_evidence_records_success(tmp_path):
 
     assert repository.latest_run("runtime").status == "succeeded"
     assert repository.get_rule_state("runtime:ai-fae-agent") is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("incomplete_state", ["checking", "unknown"])
+async def test_runtime_group_requires_every_returned_agent_to_be_usable(
+    tmp_path, incomplete_state
+):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    prior_cursor = {"observed_at": (NOW - timedelta(minutes=1)).isoformat()}
+    repository.record_run(
+        RunHealth(
+            run_name="runtime",
+            status="succeeded",
+            started_at=NOW - timedelta(minutes=1),
+            finished_at=NOW - timedelta(minutes=1),
+            cursor=prior_cursor,
+        )
+    )
+    fleet_overview = overview().model_copy(
+        update={
+            "agents": [
+                overview().agents[0],
+                overview().agents[0].model_copy(
+                    update={"id": "second-agent", "state": incomplete_state}
+                ),
+            ]
+        }
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FixedFleetStub(fleet_overview),
+        intervals={"runtime": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    latest = repository.latest_run("runtime")
+    assert latest.status == "failed"
+    assert latest.cursor == prior_cursor
+    assert latest.error_summary == (
+        "RuntimeError: required runtime evidence incomplete"
+    )
+    assert repository.get_rule_state("runtime:ai-fae-agent") is None
+    assert repository.get_rule_state("runtime:second-agent") is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_group_fails_when_expected_catalog_agent_is_missing(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    fleet_overview = overview().model_copy(
+        update={
+            "expected_agent_ids": ["ai-fae-agent", "ai-admin-agent"],
+        }
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FixedFleetStub(fleet_overview),
+        intervals={"runtime": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    latest = repository.latest_run("runtime")
+    assert latest.status == "failed"
+    assert latest.error_summary == (
+        "RuntimeError: required runtime evidence incomplete"
+    )
+    assert repository.get_rule_state("runtime:ai-fae-agent") is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_group_accepts_all_usable_states_including_degraded_offline(
+    tmp_path,
+):
+    states = ("active", "online", "degraded", "offline")
+    agents = [
+        overview().agents[0].model_copy(
+            update={"id": f"agent-{index}", "state": state}
+        )
+        for index, state in enumerate(states)
+    ]
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FixedFleetStub(
+            overview().model_copy(
+                update={
+                    "agents": agents,
+                    "expected_agent_ids": [agent.id for agent in agents],
+                }
+            )
+        ),
+        intervals={"runtime": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    assert repository.latest_run("runtime").status == "succeeded"
+    assert all(
+        repository.get_rule_state(f"runtime:{agent.id}") is not None
+        for agent in agents
+    )
 
 
 @pytest.mark.asyncio
@@ -616,6 +721,36 @@ async def test_complete_failed_sync_observations_are_successfully_evaluated(
 
 
 @pytest.mark.asyncio
+async def test_complete_running_sync_with_stale_history_is_evaluated(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    last_success = NOW - timedelta(hours=36, microseconds=1)
+    scheduler = OperationsScheduler(
+        repository=repository,
+        observability_service=SyncSequence(
+            [
+                (
+                    sync_status(
+                        "fae", "running", None, last_success_at=last_success
+                    ),
+                    sync_status("admin", "succeeded", NOW),
+                )
+            ]
+        ),
+        intervals={"sync": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    assert repository.latest_run("sync").status == "succeeded"
+    attention = repository.list_active_attention("business")
+    assert len(attention) == 1
+    assert attention[0].agent_id == "ai-fae-agent"
+    assert attention[0].facts["status"] == "running"
+    assert attention[0].facts["stale"] is True
+
+
+@pytest.mark.asyncio
 async def test_complete_fresh_sync_coverage_records_success_without_attention(
     tmp_path,
 ):
@@ -638,6 +773,86 @@ async def test_complete_fresh_sync_coverage_records_success_without_attention(
 
     assert repository.latest_run("sync").status == "succeeded"
     assert repository.list_active_attention("business") == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["running", "failed"])
+async def test_old_sync_view_non_success_without_history_fails_closed(
+    tmp_path, status
+):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    prior_cursor = {"observed_at": (NOW - timedelta(minutes=1)).isoformat()}
+    repository.record_run(
+        RunHealth(
+            run_name="sync",
+            status="succeeded",
+            started_at=NOW - timedelta(minutes=1),
+            finished_at=NOW - timedelta(minutes=1),
+            cursor=prior_cursor,
+        )
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        observability_service=SyncSequence(
+            [
+                (
+                    SyncStatus(
+                        source_kind="fae",
+                        status=status,
+                        started_at=NOW - timedelta(minutes=1),
+                        completed_at=NOW if status == "failed" else None,
+                        freshness="stale",
+                    ),
+                    sync_status("admin", "succeeded", NOW),
+                )
+            ]
+        ),
+        intervals={"sync": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    latest = repository.latest_run("sync")
+    assert latest.status == "failed"
+    assert latest.cursor == prior_cursor
+    assert latest.error_summary == (
+        "RuntimeError: required sync success history unavailable"
+    )
+    assert repository.get_rule_state("sync:fae") is None
+    assert repository.get_rule_state("sync:admin") is None
+    assert repository.list_active_attention("business") == ()
+
+
+@pytest.mark.asyncio
+async def test_old_sync_view_latest_success_uses_completed_at_fallback(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    statuses = tuple(
+        SyncStatus(
+            source_kind=source,
+            status="succeeded",
+            started_at=NOW - timedelta(minutes=1),
+            completed_at=NOW,
+            freshness="fresh",
+        )
+        for source in ("fae", "admin")
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        observability_service=SyncSequence([statuses]),
+        intervals={"sync": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    assert repository.latest_run("sync").status == "succeeded"
+    assert {
+        source: repository.get_rule_state(f"sync:{source}").value[
+            "last_success_at"
+        ]
+        for source in ("fae", "admin")
+    } == {"fae": NOW.isoformat(), "admin": NOW.isoformat()}
 
 
 @pytest.mark.asyncio

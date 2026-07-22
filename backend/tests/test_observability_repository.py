@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.observability.models import SessionFilters
 from app.observability.repository import PsycopgObservabilityRepository
 from app.fleet.catalog import AgentCatalog, AgentProfile
@@ -136,6 +138,36 @@ def test_sync_status_remains_compatible_before_view_upgrade() -> None:
 
     assert status.last_success_at == status.completed_at
     assert status.freshness == "fresh"
+
+
+@pytest.mark.parametrize("run_status", ["running", "failed"])
+def test_old_sync_view_non_success_exposes_missing_history(run_status) -> None:
+    fake = FakeConnect(
+        [[
+            {
+                "source_kind": "fae",
+                "status": run_status,
+                "started_at": NOW - timedelta(minutes=2),
+                "completed_at": (
+                    NOW - timedelta(minutes=1)
+                    if run_status == "failed"
+                    else None
+                ),
+                "source_counts": {},
+                "applied_counts": {},
+                "validation": {},
+                "error_summary": None,
+            }
+        ]]
+    )
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, now=lambda: NOW
+    )
+
+    status = repository.get_sync_status()[0]
+
+    assert status.last_success_at is None
+    assert status.freshness == "stale"
 
 
 def test_default_session_list_uses_business_agent_allowlist() -> None:

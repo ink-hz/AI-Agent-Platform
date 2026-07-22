@@ -2,6 +2,7 @@ import inspect
 import json
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -110,18 +111,25 @@ def test_brief_api_excludes_newer_attention_families_before_change_limit(tmp_pat
     ]
 
 
-def test_brief_api_cannot_claim_healthy_after_incomplete_sync_evaluation(tmp_path):
+@pytest.mark.parametrize(
+    ("group", "error"),
+    [
+        ("runtime", "RuntimeError: required runtime evidence incomplete"),
+        ("sync", "RuntimeError: required sync source coverage incomplete"),
+    ],
+)
+def test_brief_api_cannot_claim_healthy_after_incomplete_required_evaluation(
+    tmp_path, group, error
+):
     def configure(repo, now):
         repo.record_run(
             RunHealth(
-                run_name="sync",
+                run_name=group,
                 status="failed",
                 started_at=now + timedelta(microseconds=1),
                 finished_at=now + timedelta(microseconds=1),
                 cursor={"observed_at": now.isoformat()},
-                error_summary=(
-                    "RuntimeError: required sync source coverage incomplete"
-                ),
+                error_summary=error,
             )
         )
 
@@ -132,6 +140,7 @@ def test_brief_api_cannot_claim_healthy_after_incomplete_sync_evaluation(tmp_pat
     assert response.status_code == 200
     payload = response.json()
     assert payload["freshness"]["status"] == "partial"
+    assert payload["freshness"]["failed_groups"] == [group]
     assert payload["can_claim_healthy"] is False
 
 

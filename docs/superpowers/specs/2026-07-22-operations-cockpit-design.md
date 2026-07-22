@@ -127,7 +127,9 @@ Synchronization freshness is measured from the actual last successful
 completion exposed by `platform_read.sync_status.last_success_at`; the latest
 run's `completed_at` is used only when that latest run itself succeeded. Exactly
 36 hours is fresh, and one microsecond beyond the boundary is stale. A stale
-latest successful row does not clear Attention.
+latest successful row does not clear Attention. A latest non-successful row
+without `last_success_at` is incomplete evidence and fails the synchronization
+rule group; it does not start a local replacement freshness clock.
 
 When no active item exists and the engine has evaluated all required sources successfully, the module displays `No critical issues` with the evaluation timestamp. If evaluation is incomplete or stale, it displays the last successful evaluation time and does not make a healthy claim.
 
@@ -270,6 +272,11 @@ Usage activity is recorded in hourly Asia/Shanghai buckets. Its fingerprint incl
 Slow or failed evaluation of one rule group must not block another group.
 Due groups execute concurrently while sharing one Fleet snapshot and one sync
 status snapshot for the scheduler pass. Scheduler passes do not overlap.
+The runtime group succeeds only when the runtime source is current, every ID in
+the authoritative Agent catalog is present in that Fleet snapshot, and every
+returned Agent has usable `active`, `online`, `degraded`, or `offline` evidence.
+An empty snapshot or any `checking`/`unknown` Agent makes the group partial
+without mutating runtime rule state.
 
 ### 7.1 Initial baseline
 

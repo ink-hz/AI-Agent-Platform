@@ -198,10 +198,17 @@ class OperationsScheduler:
             or overview.runtime_source.checked_at is None
         ):
             raise RuntimeError("required runtime source unavailable")
-        if not any(
-            agent.state in _USABLE_RUNTIME_STATES for agent in overview.agents
+        observed_ids = {agent.id for agent in overview.agents}
+        expected_ids = set(overview.expected_agent_ids)
+        if (
+            not overview.agents
+            or (expected_ids and not expected_ids.issubset(observed_ids))
+            or any(
+                agent.state not in _USABLE_RUNTIME_STATES
+                for agent in overview.agents
+            )
         ):
-            raise RuntimeError("required runtime evidence unavailable")
+            raise RuntimeError("required runtime evidence incomplete")
         observations = [
             RuntimeObservation(
                 agent_id=agent.id,
@@ -234,14 +241,7 @@ class OperationsScheduler:
             if last_success_at is None and status.status == "succeeded":
                 last_success_at = status.completed_at
             if last_success_at is None:
-                state = await asyncio.to_thread(
-                    self._repository.get_rule_state,
-                    f"sync:{status.source_kind}",
-                )
-                if state is not None and state.value.get("last_success_at"):
-                    last_success_at = datetime.fromisoformat(
-                        state.value["last_success_at"]
-                    )
+                raise RuntimeError("required sync success history unavailable")
             observations.append(
                 SyncObservation(
                     source_kind=status.source_kind,

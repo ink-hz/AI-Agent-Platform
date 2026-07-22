@@ -68,6 +68,21 @@ LaunchAgent 配置位于：
 deploy/com.orbbec.ai-agent-platform.plist
 ```
 
+首次部署本次 Operations 同步新鲜度变更时，必须在重载 Platform
+LaunchAgent **之前**，使用 Platform PostgreSQL 数据库 owner 连接显式应用
+只读视图迁移；应用启动只迁移自己的 SQLite，绝不会代替这一步：
+
+```bash
+psql '<Platform owner PostgreSQL URL>' -v ON_ERROR_STOP=1 \
+  -f backend/migrations/001_observability_sources.sql
+psql '<Platform owner PostgreSQL URL>' -Atc \
+  "select column_name from information_schema.columns where table_schema='platform_read' and table_name='sync_status' and column_name='last_success_at'"
+```
+
+第二条命令必须输出 `last_success_at`。在该列可见前不要重载 Platform；旧
+view 遇到最新 `running`/`failed` 行时，Operations 会主动标记同步评估不完整，
+不会生成健康结论。
+
 安装后，FastAPI 同源提供仪表盘与 API：
 
 - 仪表盘：`http://127.0.0.1:8000/`
@@ -163,7 +178,7 @@ ssh -i ~/.ssh/orbbec_aliyun_ed25519 -L 3001:127.0.0.1:3001 root@47.106.112.69
 
 `/activity` 使用同一组筛选条件，并将筛选状态保存在 URL 中，便于直接链接和浏览器前进/后退。
 
-Operations 初始化、迁移、数据源或轮询失败均隔离在该功能边界内：现有 Platform 健康、Fleet、Agents、Sessions 等只读视图继续可用。Operations 采集只读取既有数据源并写入上述独立 SQLite，不修改、不重启也不控制任何 Agent 服务。
+Operations 初始化、SQLite 迁移、数据源或轮询失败均隔离在该功能边界内：现有 Platform 健康、Fleet、Agents、Sessions 等只读视图继续可用。PostgreSQL `platform_read` view 迁移必须按上面的部署前置步骤由数据库 owner 显式应用，应用启动不会执行它。Operations 采集只读取既有数据源并写入上述独立 SQLite，不修改、不重启也不控制任何 Agent 服务。
 
 ### Observability API
 

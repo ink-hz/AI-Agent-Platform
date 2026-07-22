@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 FleetState = Literal["active", "online", "degraded", "offline", "checking", "unknown"]
@@ -65,5 +65,6 @@ class FleetOverview(BaseModel):
     summary: FleetSummary
     trend: list[TrendPoint]
     agents: list[FleetAgent]
+    expected_agent_ids: list[str] = Field(default_factory=list, exclude=True)
     runtime_source: DataSourceStatus
     usage_source: DataSourceStatus
