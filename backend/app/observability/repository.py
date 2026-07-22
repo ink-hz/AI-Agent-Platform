@@ -112,6 +112,7 @@ class PsycopgObservabilityRepository:
                     description=profile.description,
                     glyph=profile.glyph,
                     accent=profile.accent,
+                    visibility=profile.visibility,
                     source_kind=source,
                     deployment="Local" if source == "metabot" else "Alibaba Cloud",
                     session_count=int(row["session_count"]),
@@ -135,6 +136,7 @@ class PsycopgObservabilityRepository:
                     description=profile.description,
                     glyph=profile.glyph,
                     accent=profile.accent,
+                    visibility=profile.visibility,
                     source_kind=source,
                     deployment="Local" if source == "metabot" else "Alibaba Cloud",
                     session_count=0,
@@ -151,6 +153,13 @@ class PsycopgObservabilityRepository:
     def _session_conditions(self, filters: SessionFilters) -> tuple[str, list]:
         conditions = ["true"]
         params: list = []
+        if not filters.agent_id:
+            business_ids = list(self._catalog.ids_for_visibility("business"))
+            if business_ids:
+                conditions.append("s.agent_id = any(%s)")
+                params.append(business_ids)
+            else:
+                conditions.append("false")
         for column, value in (
             ("s.agent_id", filters.agent_id),
             ("s.source_kind", filters.source_kind),

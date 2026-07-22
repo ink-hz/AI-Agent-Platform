@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 
 SourceKind = Literal["metabot", "fae", "admin"]
+AgentVisibility = Literal["business", "system"]
 Availability = Literal["available", "missing", "unavailable", "restricted"]
 Freshness = Literal["live", "fresh", "stale"]
 
@@ -36,6 +37,7 @@ class AgentSummary(BaseModel):
     description: str
     glyph: str
     accent: str
+    visibility: AgentVisibility
     source_kind: SourceKind
     deployment: str
     session_count: int

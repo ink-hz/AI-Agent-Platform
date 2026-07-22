@@ -21,6 +21,7 @@ class StaticObservabilityService:
         return [AgentSummary(
             id="ai-fae-agent", name="AI FAE", domain="Field Application Engineering",
             description="Production engineering Agent", glyph="FAE", accent="cyan",
+            visibility="business",
             source_kind="fae", deployment="Alibaba Cloud", session_count=168,
             total_turns=236, last_activity_at=NOW, last_synced_at=NOW, freshness="fresh",
         )]
@@ -123,6 +124,7 @@ def test_agents_api_uses_unified_observability_model(tmp_path) -> None:
     assert response.status_code == 200
     assert response.json()[0]["source_kind"] == "fae"
     assert response.json()[0]["session_count"] == 168
+    assert response.json()[0]["visibility"] == "business"
 
 
 def test_session_and_trace_missing_return_404(tmp_path) -> None:

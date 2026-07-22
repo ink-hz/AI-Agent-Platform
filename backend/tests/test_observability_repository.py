@@ -8,6 +8,25 @@ from app.fleet.catalog import AgentCatalog, AgentProfile
 NOW = datetime(2026, 7, 21, 9, 0, tzinfo=timezone.utc)
 
 
+def visibility_catalog() -> AgentCatalog:
+    return AgentCatalog(
+        {
+            "business-agent": AgentProfile(
+                id="business-agent", name="Business Agent", domain="Operations",
+                description="Business work", glyph="BA", accent="blue",
+                visibility="business",
+            ),
+            "test-bot": AgentProfile(
+                id="test-bot", name="Test", domain="System",
+                description="Integration testing", glyph="T", accent="testing",
+                visibility="system",
+            ),
+        },
+        {},
+        set(),
+    )
+
+
 class FakeConnect:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -45,6 +64,7 @@ def test_list_agents_includes_catalog_agents_without_conversations() -> None:
             "quiet-agent": AgentProfile(
                 id="quiet-agent", name="Quiet Agent", domain="Operations",
                 description="Ready for its first conversation", glyph="QA", accent="blue",
+                visibility="business",
             )
         },
         {},
@@ -60,6 +80,38 @@ def test_list_agents_includes_catalog_agents_without_conversations() -> None:
     assert agents[0].id == "quiet-agent"
     assert agents[0].session_count == 0
     assert agents[0].total_turns == 0
+    assert agents[0].visibility == "business"
+
+
+def test_default_session_list_uses_business_agent_allowlist() -> None:
+    fake = FakeConnect([[{"count": 0}], []])
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, catalog=visibility_catalog(),
+    )
+
+    repository.list_sessions(SessionFilters(), limit=25, offset=0)
+
+    sql_text = " ".join(statement for statement, _ in fake.executed).lower()
+    assert "s.agent_id = any(%s)" in sql_text
+    assert fake.executed[0][1] == (["business-agent"],)
+    assert fake.executed[1][1] == (["business-agent"], 25, 0)
+
+
+def test_explicit_system_agent_session_list_bypasses_business_allowlist() -> None:
+    fake = FakeConnect([[{"count": 0}], []])
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, catalog=visibility_catalog(),
+    )
+
+    repository.list_sessions(
+        SessionFilters(agent_id="test-bot"), limit=25, offset=0,
+    )
+
+    sql_text = " ".join(statement for statement, _ in fake.executed).lower()
+    assert "s.agent_id = %s" in sql_text
+    assert "any(%s)" not in sql_text
+    assert fake.executed[0][1] == ("test-bot",)
+    assert fake.executed[1][1] == ("test-bot", 25, 0)
 
 
 def test_list_sessions_uses_canonical_view_filters_and_pagination() -> None:
