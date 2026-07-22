@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 
 FleetState = Literal["active", "online", "degraded", "offline", "checking", "unknown"]
+AgentVisibility = Literal["business", "system"]
 LifecycleBasis = Literal[
     "release_artifact",
     "repository_history",
@@ -24,6 +25,7 @@ class FleetAgent(BaseModel):
     description: str
     glyph: str
     accent: str
+    visibility: AgentVisibility
     state: FleetState
     live_since: str | None
     live_since_basis: LifecycleBasis

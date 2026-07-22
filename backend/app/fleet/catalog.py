@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import yaml
+
+
+AgentVisibility = Literal["business", "system"]
 
 
 @dataclass(frozen=True)
@@ -12,6 +16,7 @@ class AgentProfile:
     description: str
     glyph: str
     accent: str
+    visibility: AgentVisibility = "system"
     live_since: str | None = None
     live_since_basis: str = "not_recorded"
     last_updated_at: str | None = None
@@ -51,6 +56,7 @@ class AgentCatalog:
             description="由运行契约动态发现的 Agent Bot 实例。",
             glyph="AI",
             accent="default",
+            visibility="system",
             live_since=None,
             live_since_basis="not_recorded",
             last_updated_at=None,
@@ -66,3 +72,10 @@ class AgentCatalog:
 
     def all_profiles(self) -> tuple[AgentProfile, ...]:
         return tuple(self._profiles.values())
+
+    def ids_for_visibility(self, visibility: AgentVisibility) -> tuple[str, ...]:
+        return tuple(
+            profile.id
+            for profile in self._profiles.values()
+            if profile.visibility == visibility
+        )

@@ -5,6 +5,7 @@ profiles:
     description: 承接飞书默认会话与日常协作任务。
     glyph: FS
     accent: collaboration
+    visibility: system
     live_since: "2026-07-14T20:09:08+08:00"
     live_since_basis: repository_history
     last_updated_at: "2026-07-16T17:02:17+08:00"
@@ -15,6 +16,7 @@ profiles:
     description: 处理招聘、人事与员工服务相关工作。
     glyph: HR
     accent: people
+    visibility: business
     live_since: "2026-07-14T09:36:54.254859+08:00"
     live_since_basis: earliest_session
     last_updated_at: "2026-07-17T10:38:57+08:00"
@@ -25,6 +27,7 @@ profiles:
     description: 发现、筛选并跟进潜在客户线索。
     glyph: PRO
     accent: prospecting
+    visibility: business
     live_since: "2026-07-14T10:42:43.521210+08:00"
     live_since_basis: earliest_session
     last_updated_at: "2026-07-17T12:09:51+08:00"
@@ -35,6 +38,7 @@ profiles:
     description: 处理入站线索、内容触达与客户咨询。
     glyph: IN
     accent: inbound
+    visibility: business
     live_since: "2026-07-16T16:09:46.384700+08:00"
     live_since_basis: earliest_session
     last_updated_at: "2026-07-17T11:09:41+08:00"
@@ -45,6 +49,7 @@ profiles:
     description: 处理语音触达、通话沟通与结果整理。
     glyph: VO
     accent: voice
+    visibility: business
     live_since: "2026-07-16T16:09:46.409677+08:00"
     live_since_basis: earliest_session
     last_updated_at: "2026-07-17T11:11:34+08:00"
@@ -55,6 +60,7 @@ profiles:
     description: 处理产品咨询、问题诊断与现场应用。
     glyph: FAE
     accent: support
+    visibility: business
     live_since: "2026-07-17T11:15:55.450006+08:00"
     live_since_basis: earliest_session
     last_updated_at: "2026-07-17T11:11:34+08:00"
@@ -65,6 +71,7 @@ profiles:
     description: 用于接口联调、集成测试与运行验证。
     glyph: T
     accent: testing
+    visibility: system
     live_since: "2026-07-15T10:08:14.921049+08:00"
     live_since_basis: earliest_session
     last_updated_at: "2026-07-16T17:02:17+08:00"
@@ -75,6 +82,7 @@ profiles:
     description: 负责市场进入策略、节奏规划与执行协同。
     glyph: GTM
     accent: strategy
+    visibility: business
     live_since: "2026-07-20T15:27:51.344384+08:00"
     live_since_basis: earliest_session
     last_updated_at: "2026-07-20T15:13:22+08:00"
@@ -85,6 +93,7 @@ profiles:
     description: 收集并整理市场动态与竞争信息。
     glyph: INT
     accent: intelligence
+    visibility: business
     live_since: "2026-07-21T17:23:36.664128+08:00"
     live_since_basis: earliest_session
     last_updated_at: "2026-07-21T17:07:09+08:00"
@@ -95,6 +104,7 @@ profiles:
     description: Product specifications, SDK guidance, troubleshooting, and field application support.
     glyph: FAE
     accent: support
+    visibility: business
     live_since: "2026-06-17T16:34:33+08:00"
     live_since_basis: release_artifact
     last_updated_at: "2026-07-21T18:20:27+08:00"
@@ -105,6 +115,7 @@ profiles:
     description: DingTalk-backed Agent for policies, office processes, forms, contacts, and administrative knowledge.
     glyph: ADM
     accent: administration
+    visibility: business
     live_since: "2026-07-13T10:40:09.404948+08:00"
     live_since_basis: release_artifact
     last_updated_at: "2026-07-20T11:23:00.467696+08:00"

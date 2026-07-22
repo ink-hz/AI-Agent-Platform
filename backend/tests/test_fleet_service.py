@@ -135,7 +135,7 @@ async def test_recent_healthy_agent_is_active_and_idle_agent_is_online():
     assert get_agent(overview, "hr-bot").state == "active"
     assert get_agent(overview, "fae-bot").state == "online"
     assert overview.summary.active_agents == 1
-    assert overview.summary.running_agents == 9
+    assert overview.summary.running_agents == 7
 
 
 @pytest.mark.asyncio
@@ -148,7 +148,29 @@ async def test_agent_lifecycle_is_stable_catalog_data_not_process_uptime():
     assert agent.last_updated_at == "2026-07-17T10:38:57+08:00"
     assert agent.last_updated_basis == "repository_history"
     assert agent.current_runtime_seconds == 3600
+    assert agent.visibility == "business"
     assert "uptime_seconds" not in agent.model_dump()
+
+
+@pytest.mark.asyncio
+async def test_system_agents_remain_diagnostic_but_do_not_enter_business_reporting():
+    overview = await make_service(
+        UsageRecord("hr-bot", 14, 4, 2, NOW, "business"),
+        UsageRecord("test-bot", 1, 0, 0, NOW, "TEST_BOT_FEISHU_OK"),
+        trend=[
+            DailyUsage("hr-bot", date(2026, 7, 21), 4),
+            DailyUsage("test-bot", date(2026, 7, 21), 1),
+        ],
+    ).overview(now=NOW)
+
+    assert len(overview.agents) == 9
+    assert get_agent(overview, "test-bot").visibility == "system"
+    assert get_agent(overview, "feishu-default").visibility == "system"
+    assert get_agent(overview, "test-bot").total_conversations == 1
+    assert overview.summary.total_agents == 7
+    assert overview.summary.total_conversations == 14
+    assert overview.summary.conversations_last_7d == 4
+    assert overview.trend[-1].conversations == 4
 
 
 @pytest.mark.asyncio
@@ -160,7 +182,7 @@ async def test_offline_runtime_state_wins_over_recent_usage():
 
     assert get_agent(overview, "hr-bot").state == "offline"
     assert overview.summary.offline_agents == 1
-    assert overview.summary.running_agents == 8
+    assert overview.summary.running_agents == 6
 
 
 @pytest.mark.asyncio
@@ -171,7 +193,7 @@ async def test_missing_usage_is_unknown_not_zero():
     assert overview.summary.conversations_last_7d is None
     assert overview.trend == []
     assert all(agent.total_conversations is None for agent in overview.agents)
-    assert overview.summary.running_agents == 9
+    assert overview.summary.running_agents == 7
     assert overview.usage_source.error == "usage_unavailable"
 
 
@@ -194,7 +216,9 @@ async def test_unknown_current_runtime_bot_keeps_its_real_usage():
 
     assert overview.agents[0].id == "new-runtime-bot"
     assert overview.agents[0].total_conversations == 7
-    assert overview.summary.total_conversations == 7
+    assert overview.agents[0].visibility == "system"
+    assert overview.summary.total_agents == 0
+    assert overview.summary.total_conversations == 0
 
 
 @pytest.mark.asyncio
@@ -253,8 +277,9 @@ async def test_overview_combines_nine_local_and_two_remote_agents():
 
     overview = await service.overview(now=NOW)
 
-    assert overview.summary.total_agents == 11
-    assert overview.summary.running_agents == 11
+    assert len(overview.agents) == 11
+    assert overview.summary.total_agents == 9
+    assert overview.summary.running_agents == 9
     assert get_agent(overview, "ai-fae-agent").session_count == 168
     assert get_agent(overview, "ai-admin-agent").session_count == 118
 

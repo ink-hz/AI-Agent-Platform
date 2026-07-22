@@ -85,7 +85,6 @@ class FleetReadService:
         current_ids = {instance.id for instance in instances}
 
         usage_by_id: dict[str, _UsageTotal] | None = None
-        trend: list[TrendPoint] = []
         if cached.snapshot is not None:
             usage_by_id = {}
             for record in cached.snapshot.records:
@@ -93,12 +92,20 @@ class FleetReadService:
                 if canonical_id is None or canonical_id not in current_ids:
                     continue
                 usage_by_id.setdefault(canonical_id, _UsageTotal()).add(record)
-            trend = self._build_trend(cached.snapshot.trend, current_ids, now)
 
         agents = [
             self._build_agent(instance, usage_by_id, now)
             for instance in instances
         ]
+        business_agents = [
+            agent for agent in agents if agent.visibility == "business"
+        ]
+        business_ids = {agent.id for agent in business_agents}
+        trend = (
+            self._build_trend(cached.snapshot.trend, business_ids, now)
+            if cached.snapshot is not None
+            else []
+        )
         state_rank = {
             "offline": 0,
             "degraded": 1,
@@ -115,15 +122,19 @@ class FleetReadService:
             )
         )
 
-        total = sum(item.total for item in (usage_by_id or {}).values())
-        last_7d = sum(item.last_7d for item in (usage_by_id or {}).values())
+        business_usage = [
+            (usage_by_id or {}).get(agent_id, _UsageTotal())
+            for agent_id in business_ids
+        ]
+        total = sum(item.total for item in business_usage)
+        last_7d = sum(item.last_7d for item in business_usage)
         previous_7d = sum(
-            item.previous_7d for item in (usage_by_id or {}).values()
+            item.previous_7d for item in business_usage
         )
         usage_available = usage_by_id is not None
-        states = [agent.state for agent in agents]
+        states = [agent.state for agent in business_agents]
         summary = FleetSummary(
-            total_agents=len(agents),
+            total_agents=len(business_agents),
             running_agents=sum(state in {"active", "online"} for state in states),
             active_agents=states.count("active"),
             degraded_agents=states.count("degraded"),
@@ -175,6 +186,7 @@ class FleetReadService:
             description=profile.description,
             glyph=profile.glyph,
             accent=profile.accent,
+            visibility=profile.visibility,
             state=state,
             live_since=profile.live_since,
             live_since_basis=profile.live_since_basis,

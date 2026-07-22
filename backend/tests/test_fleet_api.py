@@ -37,6 +37,7 @@ class StaticFleetService:
                     description="支持招聘、人事与员工服务流程。",
                     glyph="HR",
                     accent="people",
+                    visibility="business",
                     state="active",
                     live_since="2026-07-14T09:36:54.254859+08:00",
                     live_since_basis="earliest_session",
@@ -84,6 +85,7 @@ def test_fleet_overview_returns_product_fields_without_technical_details(tmp_pat
         "usage_source",
     }
     assert body["agents"][0]["name"] == "HR 助手"
+    assert body["agents"][0]["visibility"] == "business"
     assert body["agents"][0]["live_since"] == "2026-07-14T09:36:54.254859+08:00"
     assert body["agents"][0]["current_runtime_seconds"] == 3600
     assert "uptime_seconds" not in body["agents"][0]
