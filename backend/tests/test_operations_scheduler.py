@@ -8,6 +8,7 @@ from app.fleet.models import (
     FleetOverview,
     FleetSummary,
 )
+from app.observability.models import SyncStatus
 from app.operations.models import (
     EventFilters,
     ExecutionObservation,
@@ -126,6 +127,11 @@ class SourceStub:
             ),
         )
 
+    fetch_local_usage = fetch_usage
+
+    def fetch_remote_usage(self, _source_kind, **_filters):
+        return ()
+
     def fetch_execution(self, after, through):
         self.execution_ranges.append((after, through))
         return (
@@ -140,6 +146,11 @@ class SourceStub:
                 occurred_at=through,
             ),
         )
+
+    fetch_local_execution = fetch_execution
+
+    def fetch_remote_execution(self, _source_kind, **_filters):
+        return ()
 
 
 @pytest.mark.asyncio
@@ -252,7 +263,10 @@ async def test_startup_usage_baseline_is_exact_preceding_day_and_keeps_occurrenc
         "fae:turn-2",
     ]
     assert observations[0].conversations == 2
-    assert repository.latest_run("usage").cursor == {"through": NOW.isoformat()}
+    assert repository.latest_run("usage").cursor == {
+        "local_through": NOW.isoformat(),
+        "remote_generations": {},
+    }
 
 
 @pytest.mark.asyncio
@@ -294,7 +308,17 @@ class ReplaySource:
         self.usage_ranges.append((after, through))
         return (self.occurrence,) if self.occurrence is not None else ()
 
+    fetch_local_usage = fetch_usage
+
+    def fetch_remote_usage(self, _source_kind, **_filters):
+        return ()
+
     def fetch_execution(self, _after, _through):
+        return ()
+
+    fetch_local_execution = fetch_execution
+
+    def fetch_remote_execution(self, _source_kind, **_filters):
         return ()
 
 
@@ -317,7 +341,7 @@ async def test_late_usage_replay_uses_overlap_and_records_true_hour_once(tmp_pat
         UsageOccurrence(
             turn_key="fae:late-turn",
             agent_id="ai-fae-agent",
-            source_kind="fae",
+            source_kind="metabot",
             occurred_at=late_time,
         )
     )
@@ -368,7 +392,17 @@ class EmptyThenTurnSource:
             ),
         )
 
+    fetch_local_usage = fetch_usage
+
+    def fetch_remote_usage(self, _source_kind, **_filters):
+        return ()
+
     def fetch_execution(self, _after, _through):
+        return ()
+
+    fetch_local_execution = fetch_execution
+
+    def fetch_remote_execution(self, _source_kind, **_filters):
         return ()
 
 
@@ -415,9 +449,19 @@ class ExecutionReplaySource:
     def fetch_usage(self, _after, _through):
         return ()
 
+    fetch_local_usage = fetch_usage
+
+    def fetch_remote_usage(self, _source_kind, **_filters):
+        return ()
+
     def fetch_execution(self, after, through):
         self.execution_ranges.append((after, through))
         return (self.observation,)
+
+    fetch_local_execution = fetch_execution
+
+    def fetch_remote_execution(self, _source_kind, **_filters):
+        return ()
 
 
 @pytest.mark.asyncio
@@ -442,7 +486,7 @@ async def test_late_execution_replay_uses_overlap_and_records_signal_once(tmp_pa
             agent_id="ai-fae-agent",
             agent_name="FAE",
             agent_visibility="business",
-            source_kind="fae",
+            source_kind="metabot",
             signal_type="fallback",
             occurred_at=late_time,
         )
@@ -499,3 +543,253 @@ async def test_incremental_cursor_does_not_advance_when_rule_transaction_fails(
     latest = repository.latest_run(group)
     assert latest.status == "failed"
     assert latest.cursor == {"through": (NOW - timedelta(minutes=10)).isoformat()}
+
+
+def sync_status(
+    source_kind: str,
+    status: str,
+    completed_at: datetime | None,
+) -> SyncStatus:
+    return SyncStatus(
+        source_kind=source_kind,
+        status=status,
+        started_at=(completed_at or NOW) - timedelta(minutes=1),
+        completed_at=completed_at,
+        freshness="fresh",
+    )
+
+
+class SyncSequence:
+    def __init__(self, generations):
+        self.generations = list(generations)
+        self.calls = 0
+
+    async def sync_status(self):
+        value = self.generations[min(self.calls, len(self.generations) - 1)]
+        self.calls += 1
+        return value
+
+
+class SplitSource:
+    def __init__(self, *, usage_batches=(), execution_batches=()):
+        self.usage_batches = list(usage_batches)
+        self.execution_batches = list(execution_batches)
+        self.local_usage_ranges: list[tuple[datetime, datetime]] = []
+        self.local_execution_ranges: list[tuple[datetime, datetime]] = []
+        self.remote_usage_scans: list[tuple[str, datetime | None, datetime | None]] = []
+        self.remote_execution_scans: list[
+            tuple[str, datetime | None, datetime | None]
+        ] = []
+
+    def fetch_local_usage(self, after, through):
+        self.local_usage_ranges.append((after, through))
+        return ()
+
+    def fetch_remote_usage(
+        self, source_kind, *, created_after=None, created_through=None
+    ):
+        self.remote_usage_scans.append(
+            (source_kind, created_after, created_through)
+        )
+        return self.usage_batches.pop(0) if self.usage_batches else ()
+
+    def fetch_local_execution(self, after, through):
+        self.local_execution_ranges.append((after, through))
+        return ()
+
+    def fetch_remote_execution(
+        self, source_kind, *, created_after=None, created_through=None
+    ):
+        self.remote_execution_scans.append(
+            (source_kind, created_after, created_through)
+        )
+        return self.execution_batches.pop(0) if self.execution_batches else ()
+
+
+@pytest.mark.asyncio
+async def test_remote_usage_initialization_scans_only_true_preceding_day(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    generation = NOW - timedelta(minutes=1)
+    source = SplitSource(usage_batches=[()])
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FleetStub(),
+        observability_service=SyncSequence(
+            [(sync_status("fae", "succeeded", generation),)]
+        ),
+        operations_source=source,
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"usage": 0},
+    )
+
+    await scheduler.startup(NOW)
+
+    assert source.remote_usage_scans == [
+        ("fae", NOW - timedelta(hours=24), NOW)
+    ]
+    assert repository.latest_run("usage").cursor["remote_generations"] == {
+        "fae": generation.isoformat()
+    }
+
+
+@pytest.mark.asyncio
+async def test_remote_usage_scans_each_successful_generation_once(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    first_generation = NOW - timedelta(minutes=1)
+    next_generation = NOW + timedelta(minutes=9)
+    late_time = NOW - timedelta(days=40, minutes=20)
+    baseline = UsageOccurrence(
+        turn_key="fae:baseline-turn",
+        agent_id="ai-fae-agent",
+        source_kind="fae",
+        occurred_at=NOW - timedelta(minutes=20),
+    )
+    late = UsageOccurrence(
+        turn_key="fae:late-generation-turn",
+        agent_id="ai-fae-agent",
+        source_kind="fae",
+        occurred_at=late_time,
+    )
+    source = SplitSource(usage_batches=[(baseline,), (baseline, late)])
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FleetStub(),
+        observability_service=SyncSequence(
+            [
+                (sync_status("fae", "succeeded", first_generation),),
+                (sync_status("fae", "succeeded", first_generation),),
+                (sync_status("fae", "succeeded", next_generation),),
+                (sync_status("fae", "succeeded", next_generation),),
+            ]
+        ),
+        operations_source=source,
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"usage": 0},
+    )
+
+    await scheduler.startup(NOW)
+    await scheduler.run_due(NOW + timedelta(minutes=5))
+    await scheduler.run_due(NOW + timedelta(minutes=10))
+    await scheduler.run_due(NOW + timedelta(minutes=15))
+
+    assert source.remote_usage_scans == [
+        ("fae", NOW - timedelta(hours=24), NOW),
+        ("fae", None, None),
+    ]
+    assert repository.usage_occurrence_count() == 2
+    usage_events = [
+        event
+        for event in repository.list_events(EventFilters(), 100, 0).items
+        if event.event_type == "new_conversations"
+    ]
+    assert len(usage_events) == 2
+    late_event = next(
+        event for event in usage_events if event.occurred_at < NOW - timedelta(days=1)
+    )
+    assert late_event.occurred_at == late_time.replace(
+        minute=0, second=0, microsecond=0
+    )
+
+
+@pytest.mark.asyncio
+async def test_failed_remote_sync_is_not_marked_processed_and_recovery_scans(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    first_generation = NOW - timedelta(minutes=1)
+    recovery_generation = NOW + timedelta(minutes=9)
+    source = SplitSource(usage_batches=[(), ()])
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FleetStub(),
+        observability_service=SyncSequence(
+            [
+                (sync_status("fae", "succeeded", first_generation),),
+                (sync_status("fae", "failed", NOW + timedelta(minutes=4)),),
+                (sync_status("fae", "succeeded", recovery_generation),),
+            ]
+        ),
+        operations_source=source,
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"usage": 0},
+    )
+
+    await scheduler.startup(NOW)
+    await scheduler.run_due(NOW + timedelta(minutes=5))
+    failed_cursor = repository.latest_run("usage").cursor
+    await scheduler.run_due(NOW + timedelta(minutes=10))
+
+    assert failed_cursor["remote_generations"] == {
+        "fae": first_generation.isoformat()
+    }
+    assert source.remote_usage_scans == [
+        ("fae", NOW - timedelta(hours=24), NOW),
+        ("fae", None, None),
+    ]
+    assert repository.latest_run("usage").cursor["remote_generations"] == {
+        "fae": recovery_generation.isoformat()
+    }
+
+
+@pytest.mark.asyncio
+async def test_remote_execution_scans_new_generation_once_and_keeps_true_hour(
+    tmp_path,
+):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    first_generation = NOW - timedelta(minutes=1)
+    next_generation = NOW + timedelta(minutes=9)
+    late_time = NOW - timedelta(days=40, minutes=20)
+    baseline = ExecutionObservation(
+        turn_key="fae:baseline-turn",
+        session_key="fae:baseline-session",
+        agent_id="ai-fae-agent",
+        agent_name="FAE",
+        agent_visibility="business",
+        source_kind="fae",
+        signal_type="fallback",
+        occurred_at=NOW - timedelta(minutes=20),
+    )
+    late = ExecutionObservation(
+        turn_key="fae:late-generation-turn",
+        session_key="fae:late-session",
+        agent_id="ai-fae-agent",
+        agent_name="FAE",
+        agent_visibility="business",
+        source_kind="fae",
+        signal_type="fallback",
+        occurred_at=late_time,
+    )
+    source = SplitSource(execution_batches=[(baseline,), (baseline, late)])
+    scheduler = OperationsScheduler(
+        repository=repository,
+        observability_service=SyncSequence(
+            [
+                (sync_status("fae", "succeeded", first_generation),),
+                (sync_status("fae", "succeeded", next_generation),),
+                (sync_status("fae", "succeeded", next_generation),),
+            ]
+        ),
+        operations_source=source,
+        rule_engine=OperationsRuleEngine(repository),
+        intervals={"execution": 0},
+    )
+
+    await scheduler.startup(NOW)
+    await scheduler.run_due(NOW + timedelta(minutes=10))
+    await scheduler.run_due(NOW + timedelta(minutes=15))
+
+    assert source.remote_execution_scans == [
+        ("fae", NOW - timedelta(hours=24), NOW),
+        ("fae", None, None),
+    ]
+    events = repository.list_events(EventFilters(), 100, 0).items
+    assert len(events) == 2
+    late_event = next(
+        event for event in events if event.occurred_at < NOW - timedelta(days=1)
+    )
+    assert late_event.facts["turn_keys"] == ["fae:late-generation-turn"]
+    assert late_event.occurred_at == late_time.replace(
+        minute=0, second=0, microsecond=0
+    )

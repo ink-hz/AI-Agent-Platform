@@ -230,14 +230,15 @@ An active-condition fingerprint is derived from rule, Agent, normalized conditio
 - An occurrence-based Execution Event becomes `historical` after its aggregation window and does not create a synthetic Recovery Event.
 - Reappearing after resolution creates a new event.
 - A database transaction updates event and rule state together.
-- Usage and execution use an ingestion watermark of
-  `coalesce(source_synced_at, created_at)`, replaying the hour before the
-  persisted watermark on every incremental pass. This catches late daily
-  FAE/ADMIN imports and local rows committed around the prior snapshot. Event
-  bucketing still uses the source `created_at`, so late rows are assigned to
-  their true occurrence hour. Replaying a cursor or scheduler interval produces
-  no duplicate event because usage occurrence keys and execution turn/signal
-  keys remain idempotent.
+- Local MetaBot usage and execution scan by `created_at`, replaying the hour
+  before the persisted local cursor to cover rows committed around the prior
+  snapshot. Remote FAE/ADMIN data is scanned by successful synchronization
+  generation: each new `completed_at` triggers one read-only full snapshot scan
+  for that source, while repeated polls of the same generation do not rescan.
+  Failed synchronizations never mark a generation processed. All event
+  bucketing uses the true source `created_at`; usage occurrence keys and
+  execution turn/signal keys make local overlap and remote snapshot replay
+  idempotent.
 
 Usage activity is recorded in hourly Asia/Shanghai buckets. Its fingerprint includes Agent, usage event type, and bucket start. Each `UsageObservation` carries the exact typed `UsageOccurrence` rows represented by that Agent/hour aggregation. In one SQLite transaction, the repository inserts unseen occurrence keys, ignores replayed keys, recomputes the bucket count from the ledger, creates or updates and finalizes the hourly Event, and persists cumulative, bucket, and milestone state plus any crossed milestone Events. Late unseen keys increment only the hour derived from their source occurrence timestamps. The Brief aggregates those buckets over the rolling 24-hour interval; empty buckets are not stored.
 
@@ -246,8 +247,8 @@ Usage activity is recorded in hourly Asia/Shanghai buckets. Its fingerprint incl
 | Rule group | Schedule | Input |
 |---|---|---|
 | Runtime transitions | Existing health/cluster polling cycle | Normalized Business and System Agent states |
-| Usage and adoption | Every 5 minutes | Conversation timestamps and cumulative counts |
-| Execution signals | Every 5 minutes | Turns in the ingestion-watermark window, including a one-hour replay overlap |
+| Usage and adoption | Every 5 minutes | Local created-time overlap plus new successful remote snapshot generations |
+| Execution signals | Every 5 minutes | Local created-time overlap plus new successful remote snapshot generations |
 | Remote data freshness | Every minute | Existing sync status and snapshot timestamps |
 | Lifecycle changes | Startup and every 10 minutes | Catalog, runtime contract, deployment and update metadata |
 
@@ -261,6 +262,8 @@ During initialization:
 
 - currently active runtime and data-freshness problems may enter Attention after satisfying their normal debounce or threshold;
 - real usage during the preceding 24 hours is backfilled into hourly buckets and the exact occurrence ledger;
+- successful remote generations are seeded as processed after scanning only
+  rows whose true `created_at` is within the preceding 24 hours;
 - every Fleet Agent with a known cumulative conversation total seeds usage and
   milestone state even when the preceding 24 hours contain no occurrences;
 - durable lifecycle dates may be imported as historical events using their actual dates, but dates older than 24 hours never appear in `Last 24 Hours`;

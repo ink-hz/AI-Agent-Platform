@@ -70,11 +70,13 @@ def test_usage_query_returns_answered_turns_only():
         ]
     )
 
-    occurrences = source.fetch_usage(NOW - timedelta(minutes=5), NOW)
+    occurrences = source.fetch_local_usage(NOW - timedelta(minutes=5), NOW)
 
     assert occurrences[0].turn_key == "metabot:turn-1"
     assert occurrences[0].agent_id == "hr-bot"
     assert "nullif(btrim(t.answer), '') is not null" in cursor.statements[0]
+    assert "t.source_kind='metabot'" in cursor.statements[0]
+    assert "t.created_at > %s" in cursor.statements[0]
     assert cursor.params == [(NOW - timedelta(minutes=5), NOW)]
     assert "default_transaction_read_only=on" in cursor.connection_kwargs["options"]
     assert "statement_timeout=5000" in cursor.connection_kwargs["options"]
@@ -82,7 +84,7 @@ def test_usage_query_returns_answered_turns_only():
     assert cursor.connection_kwargs["row_factory"] is not None
 
 
-def test_usage_query_uses_ingestion_watermark_but_preserves_event_time():
+def test_remote_usage_snapshot_filters_source_and_optional_true_time():
     occurred_at = NOW - timedelta(days=2)
     source, cursor = fake_source(
         usage_rows=[
@@ -96,11 +98,18 @@ def test_usage_query_uses_ingestion_watermark_but_preserves_event_time():
         ]
     )
 
-    occurrences = source.fetch_usage(NOW - timedelta(hours=1), NOW)
+    occurrences = source.fetch_remote_usage(
+        "fae",
+        created_after=NOW - timedelta(hours=24),
+        created_through=NOW,
+    )
 
     statement = cursor.statements[0].lower()
-    assert "coalesce(t.source_synced_at, t.created_at) > %s" in statement
-    assert "coalesce(t.source_synced_at, t.created_at) <= %s" in statement
+    assert "t.source_kind=%s" in statement
+    assert "t.created_at > %s" in statement
+    assert "t.created_at <= %s" in statement
+    assert "source_synced_at" not in statement
+    assert cursor.params == [("fae", NOW - timedelta(hours=24), NOW)]
     assert occurrences[0].occurred_at == occurred_at
 
 
@@ -118,7 +127,7 @@ def test_execution_query_emits_only_supported_explicit_signals():
         ]
     )
 
-    signals = source.fetch_execution(NOW - timedelta(minutes=5), NOW)
+    signals = source.fetch_local_execution(NOW - timedelta(minutes=5), NOW)
 
     assert [item.signal_type for item in signals] == ["fallback"]
     statement = cursor.statements[0].lower()
@@ -130,7 +139,7 @@ def test_execution_query_emits_only_supported_explicit_signals():
     ]
 
 
-def test_execution_query_uses_ingestion_watermark_but_preserves_event_time():
+def test_remote_execution_snapshot_filters_source_without_mutable_watermark():
     occurred_at = NOW - timedelta(days=2)
     source, cursor = fake_source(
         execution_rows=[
@@ -146,13 +155,12 @@ def test_execution_query_uses_ingestion_watermark_but_preserves_event_time():
         ]
     )
 
-    signals = source.fetch_execution(NOW - timedelta(hours=1), NOW)
+    signals = source.fetch_remote_execution("fae")
 
     statement = cursor.statements[0].lower()
-    after_clause = "coalesce(t.source_synced_at, t.created_at) > %s"
-    through_clause = "coalesce(t.source_synced_at, t.created_at) <= %s"
-    assert statement.count(after_clause) == 4
-    assert statement.count(through_clause) == 4
+    assert statement.count("t.source_kind=%s") == 4
+    assert "source_synced_at" not in statement
+    assert cursor.params == [("fae",) * 4]
     assert signals[0].occurred_at == occurred_at
 
 
@@ -193,7 +201,7 @@ def test_source_deduplicates_signals_and_discards_unknown_agents():
         catalog=catalog,
     )
 
-    signals = source.fetch_execution(NOW - timedelta(minutes=5), NOW)
+    signals = source.fetch_local_execution(NOW - timedelta(minutes=5), NOW)
 
     assert len(signals) == 1
     assert signals[0].agent_id == "known-agent"
@@ -215,4 +223,4 @@ def test_usage_source_discards_unknown_agents():
         catalog=catalog,
     )
 
-    assert source.fetch_usage(NOW - timedelta(minutes=5), NOW) == ()
+    assert source.fetch_local_usage(NOW - timedelta(minutes=5), NOW) == ()

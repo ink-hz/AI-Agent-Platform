@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from app.fleet.models import FleetOverview
 from app.fleet.service import FleetReadService
+from app.observability.models import SyncStatus
 from app.observability.service import ObservabilityService
 
 from .models import (
@@ -56,6 +57,7 @@ class OperationsScheduler:
         self._source = operations_source
         self._rule_engine = rule_engine or OperationsRuleEngine(repository)
         self._overview: FleetOverview | None = None
+        self._sync_status_cache: tuple[SyncStatus, ...] | None = None
         self._initialized_groups: set[str] = set()
 
         default_runners: dict[str, GroupRunner] = {
@@ -90,6 +92,7 @@ class OperationsScheduler:
 
     async def _run_groups(self, now: datetime, *, force: bool) -> None:
         self._overview = None
+        self._sync_status_cache = None
         try:
             for name, runner in self._group_runners.items():
                 try:
@@ -129,6 +132,7 @@ class OperationsScheduler:
                     continue
         finally:
             self._overview = None
+            self._sync_status_cache = None
 
     def _is_due(self, name: str, latest: RunHealth | None, now: datetime) -> bool:
         if latest is None:
@@ -168,7 +172,7 @@ class OperationsScheduler:
     async def run_sync(self, now: datetime) -> dict:
         if self._observability_service is None:
             raise RuntimeError("observability service unavailable")
-        statuses = await self._observability_service.sync_status()
+        statuses = await self._sync_statuses()
         observations: list[SyncObservation] = []
         for status in statuses:
             last_success_at = (
@@ -214,13 +218,18 @@ class OperationsScheduler:
     async def run_usage(self, now: datetime) -> dict:
         if self._source is None:
             raise RuntimeError("operations source unavailable")
-        after = await self._cursor_after(
-            "usage",
-            now - timedelta(hours=24),
+        cursor = await self._latest_cursor("usage")
+        after = self._local_after(cursor, now - timedelta(hours=24))
+        occurrences = list(
+            await asyncio.to_thread(
+                self._source.fetch_local_usage, after, now
+            )
         )
-        occurrences = await asyncio.to_thread(
-            self._source.fetch_usage, after, now
+        initializing = "usage" not in self._initialized_groups
+        remote_occurrences, remote_generations = await self._remote_usage(
+            cursor, now, initializing=initializing
         )
+        occurrences.extend(remote_occurrences)
         overview = await self._fleet_overview(now)
         agents = {agent.id: agent for agent in overview.agents}
         grouped: dict[
@@ -259,7 +268,7 @@ class OperationsScheduler:
                     occurrences=ordered,
                 )
             )
-        if "usage" not in self._initialized_groups:
+        if initializing:
             represented_agents = {
                 observation.agent_id for observation in observations
             }
@@ -285,26 +294,40 @@ class OperationsScheduler:
             self._rule_engine.evaluate_usage,
             observations,
             now,
-            initializing="usage" not in self._initialized_groups,
+            initializing=initializing,
         )
-        return {"through": now.isoformat()}
+        return {
+            "local_through": now.isoformat(),
+            "remote_generations": remote_generations,
+        }
 
     async def run_execution(self, now: datetime) -> dict:
         if self._source is None:
             raise RuntimeError("operations source unavailable")
+        cursor = await self._latest_cursor("execution")
+        initializing = "execution" not in self._initialized_groups
         default_after = (
             now
-            if "execution" not in self._initialized_groups
+            if initializing
             else now - timedelta(seconds=self._intervals["execution"])
         )
-        after = await self._cursor_after("execution", default_after)
-        observations = await asyncio.to_thread(
-            self._source.fetch_execution, after, now
+        after = self._local_after(cursor, default_after)
+        observations = list(
+            await asyncio.to_thread(
+                self._source.fetch_local_execution, after, now
+            )
         )
+        remote_observations, remote_generations = await self._remote_execution(
+            cursor, now, initializing=initializing
+        )
+        observations.extend(remote_observations)
         await asyncio.to_thread(
-            self._rule_engine.evaluate_execution, list(observations), now
+            self._rule_engine.evaluate_execution, observations, now
         )
-        return {"through": now.isoformat()}
+        return {
+            "local_through": now.isoformat(),
+            "remote_generations": remote_generations,
+        }
 
     async def run_lifecycle(self, now: datetime) -> dict:
         overview = await self._fleet_overview(now)
@@ -328,16 +351,94 @@ class OperationsScheduler:
         )
         return {"observed_at": now.isoformat()}
 
-    async def _cursor_after(self, name: str, default: datetime) -> datetime:
+    async def _latest_cursor(self, name: str) -> dict:
         latest = await asyncio.to_thread(self._repository.latest_run, name)
-        if latest is None:
-            return default
-        value = latest.cursor.get("through")
+        return latest.cursor if latest is not None else {}
+
+    @staticmethod
+    def _local_after(cursor: dict, default: datetime) -> datetime:
+        value = cursor.get("local_through") or cursor.get("through")
         return (
             datetime.fromisoformat(value) - _REPLAY_OVERLAP
             if value
             else default
         )
+
+    async def _sync_statuses(self) -> tuple[SyncStatus, ...]:
+        if self._sync_status_cache is None:
+            if self._observability_service is None:
+                self._sync_status_cache = ()
+            else:
+                self._sync_status_cache = tuple(
+                    await self._observability_service.sync_status()
+                )
+        return self._sync_status_cache
+
+    async def _remote_usage(
+        self,
+        cursor: dict,
+        now: datetime,
+        *,
+        initializing: bool,
+    ) -> tuple[list[UsageOccurrence], dict[str, str]]:
+        generations = dict(cursor.get("remote_generations", {}))
+        occurrences: list[UsageOccurrence] = []
+        for status in await self._sync_statuses():
+            if status.status != "succeeded" or status.completed_at is None:
+                continue
+            generation = status.completed_at.isoformat()
+            if generations.get(status.source_kind) == generation:
+                continue
+            filters = (
+                {
+                    "created_after": now - timedelta(hours=24),
+                    "created_through": now,
+                }
+                if initializing
+                else {}
+            )
+            occurrences.extend(
+                await asyncio.to_thread(
+                    self._source.fetch_remote_usage,
+                    status.source_kind,
+                    **filters,
+                )
+            )
+            generations[status.source_kind] = generation
+        return occurrences, generations
+
+    async def _remote_execution(
+        self,
+        cursor: dict,
+        now: datetime,
+        *,
+        initializing: bool,
+    ) -> tuple[list[ExecutionObservation], dict[str, str]]:
+        generations = dict(cursor.get("remote_generations", {}))
+        observations: list[ExecutionObservation] = []
+        for status in await self._sync_statuses():
+            if status.status != "succeeded" or status.completed_at is None:
+                continue
+            generation = status.completed_at.isoformat()
+            if generations.get(status.source_kind) == generation:
+                continue
+            filters = (
+                {
+                    "created_after": now - timedelta(hours=24),
+                    "created_through": now,
+                }
+                if initializing
+                else {}
+            )
+            observations.extend(
+                await asyncio.to_thread(
+                    self._source.fetch_remote_execution,
+                    status.source_kind,
+                    **filters,
+                )
+            )
+            generations[status.source_kind] = generation
+        return observations, generations
 
     @staticmethod
     def _source_kind(agent_id: str) -> str:

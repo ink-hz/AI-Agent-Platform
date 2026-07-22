@@ -11,36 +11,42 @@ from app.fleet.catalog import AgentCatalog, AgentProfile
 from .models import ExecutionObservation, UsageOccurrence
 
 
-USAGE_SQL = """
+LOCAL_USAGE_SQL = """
 select t.turn_key, t.agent_id, t.source_kind, t.created_at
 from platform_read.turns t
-where coalesce(t.source_synced_at, t.created_at) > %s
-  and coalesce(t.source_synced_at, t.created_at) <= %s
+where t.source_kind='metabot'
+  and t.created_at > %s and t.created_at <= %s
   and nullif(btrim(t.answer), '') is not null
-order by coalesce(t.source_synced_at, t.created_at), t.created_at, t.turn_key
+order by t.created_at, t.turn_key
 """
 
 
-EXECUTION_SQL = """
+REMOTE_USAGE_SQL = """
+select t.turn_key, t.agent_id, t.source_kind, t.created_at
+from platform_read.turns t
+where t.source_kind=%s
+  and nullif(btrim(t.answer), '') is not null
+"""
+
+
+def _execution_sql(filters: str) -> str:
+    return f"""
 select t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at,
   'empty_answer' as signal_type
 from platform_read.turns t
-where coalesce(t.source_synced_at, t.created_at) > %s
-  and coalesce(t.source_synced_at, t.created_at) <= %s
+where {filters}
   and nullif(btrim(t.answer), '') is null
 union all
 select t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at,
   'fallback' as signal_type
 from platform_read.turns t
-where coalesce(t.source_synced_at, t.created_at) > %s
-  and coalesce(t.source_synced_at, t.created_at) <= %s
+where {filters}
   and t.fallback_used is true
 union all
 select t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at,
   'incomplete' as signal_type
 from platform_read.turns t
-where coalesce(t.source_synced_at, t.created_at) > %s
-  and coalesce(t.source_synced_at, t.created_at) <= %s
+where {filters}
   and lower(coalesce(t.outcome, '')) in ('failed', 'error', 'incomplete')
 union all
 select distinct t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at,
@@ -48,13 +54,17 @@ select distinct t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_
 from platform_read.turns t
 join platform_read.traces r on r.turn_key=t.turn_key
 join platform_read.trace_steps s on s.trace_key=r.trace_key
-where coalesce(t.source_synced_at, t.created_at) > %s
-  and coalesce(t.source_synced_at, t.created_at) <= %s
+where {filters}
   and r.detail_availability='available'
   and s.kind='tool_call'
   and (s.error_summary is not null or lower(coalesce(s.status, '')) in ('failed', 'error'))
 order by created_at, turn_key, signal_type
 """
+
+
+LOCAL_EXECUTION_SQL = _execution_sql(
+    "t.source_kind='metabot' and t.created_at > %s and t.created_at <= %s"
+)
 
 
 _SUPPORTED_SIGNALS = {"tool_error", "fallback", "empty_answer", "incomplete"}
@@ -75,10 +85,39 @@ class PsycopgOperationsSource:
             profile.id: profile for profile in self._catalog.all_profiles()
         }
 
+    def fetch_local_usage(
+        self, after: datetime, through: datetime
+    ) -> tuple[UsageOccurrence, ...]:
+        return self._usage_rows(LOCAL_USAGE_SQL, (after, through))
+
+    def fetch_remote_usage(
+        self,
+        source_kind: str,
+        *,
+        created_after: datetime | None = None,
+        created_through: datetime | None = None,
+    ) -> tuple[UsageOccurrence, ...]:
+        self._validate_remote_source(source_kind)
+        statement = REMOTE_USAGE_SQL
+        params: list[object] = [source_kind]
+        if created_after is not None:
+            statement += "  and t.created_at > %s\n"
+            params.append(created_after)
+        if created_through is not None:
+            statement += "  and t.created_at <= %s\n"
+            params.append(created_through)
+        statement += "order by t.created_at, t.turn_key\n"
+        return self._usage_rows(statement, tuple(params))
+
     def fetch_usage(
         self, after: datetime, through: datetime
     ) -> tuple[UsageOccurrence, ...]:
-        rows = self._fetchall(USAGE_SQL, (after, through))
+        return self.fetch_local_usage(after, through)
+
+    def _usage_rows(
+        self, statement: str, params: tuple
+    ) -> tuple[UsageOccurrence, ...]:
+        rows = self._fetchall(statement, params)
         occurrences: list[UsageOccurrence] = []
         for row in rows:
             resolved = self._profile(row["agent_id"])
@@ -95,11 +134,43 @@ class PsycopgOperationsSource:
             )
         return tuple(occurrences)
 
-    def fetch_execution(
+    def fetch_local_execution(
         self, after: datetime, through: datetime
     ) -> tuple[ExecutionObservation, ...]:
         params = (after, through) * 4
-        rows = self._fetchall(EXECUTION_SQL, params)
+        return self._execution_rows(LOCAL_EXECUTION_SQL, params)
+
+    def fetch_remote_execution(
+        self,
+        source_kind: str,
+        *,
+        created_after: datetime | None = None,
+        created_through: datetime | None = None,
+    ) -> tuple[ExecutionObservation, ...]:
+        self._validate_remote_source(source_kind)
+        filters = ["t.source_kind=%s"]
+        values: list[object] = [source_kind]
+        if created_after is not None:
+            filters.append("t.created_at > %s")
+            values.append(created_after)
+        if created_through is not None:
+            filters.append("t.created_at <= %s")
+            values.append(created_through)
+        branch_params = tuple(values)
+        return self._execution_rows(
+            _execution_sql(" and ".join(filters)),
+            branch_params * 4,
+        )
+
+    def fetch_execution(
+        self, after: datetime, through: datetime
+    ) -> tuple[ExecutionObservation, ...]:
+        return self.fetch_local_execution(after, through)
+
+    def _execution_rows(
+        self, statement: str, params: tuple
+    ) -> tuple[ExecutionObservation, ...]:
+        rows = self._fetchall(statement, params)
         observations: list[ExecutionObservation] = []
         seen: set[tuple[str, str]] = set()
         for row in rows:
@@ -125,6 +196,11 @@ class PsycopgOperationsSource:
                 )
             )
         return tuple(observations)
+
+    @staticmethod
+    def _validate_remote_source(source_kind: str) -> None:
+        if source_kind not in {"fae", "admin"}:
+            raise ValueError("remote Operations source must be fae or admin")
 
     def _fetchall(self, statement: str, params: tuple) -> list[dict]:
         with self._connect(

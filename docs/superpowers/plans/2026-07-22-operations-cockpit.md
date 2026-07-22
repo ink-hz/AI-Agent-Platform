@@ -609,9 +609,10 @@ def test_usage_query_returns_answered_turns_only():
         "turn_key": "metabot:turn-1", "agent_id": "hr-bot",
         "source_kind": "metabot", "created_at": NOW,
     }])
-    assert source.fetch_usage(NOW - timedelta(minutes=5), NOW)[0].turn_key == "metabot:turn-1"
+    assert source.fetch_local_usage(NOW - timedelta(minutes=5), NOW)[0].turn_key == "metabot:turn-1"
     assert "nullif(btrim(t.answer), '') is not null" in cursor.statements[0]
-    assert "coalesce(t.source_synced_at, t.created_at) > %s" in cursor.statements[0]
+    assert "t.source_kind='metabot'" in cursor.statements[0]
+    assert "t.created_at > %s" in cursor.statements[0]
 
 
 def test_execution_query_emits_only_supported_explicit_signals():
@@ -620,7 +621,7 @@ def test_execution_query_emits_only_supported_explicit_signals():
         "agent_id": "ai-fae-agent", "source_kind": "fae",
         "created_at": NOW, "signal_type": "fallback",
     }])
-    signals = source.fetch_execution(NOW - timedelta(minutes=5), NOW)
+    signals = source.fetch_remote_execution("fae")
     assert [item.signal_type for item in signals] == ["fallback"]
 
 
@@ -671,49 +672,39 @@ Expected: failures for missing source repository and rule methods.
 
 - [ ] **Step 3: Implement read-only source queries**
 
-`fetch_usage()` must query:
+`fetch_local_usage()` queries MetaBot rows by true creation time:
 
 ```sql
 select t.turn_key, t.agent_id, t.source_kind, t.created_at
 from platform_read.turns t
-where coalesce(t.source_synced_at, t.created_at) > %s
-  and coalesce(t.source_synced_at, t.created_at) <= %s
+where t.source_kind='metabot'
+  and t.created_at > %s and t.created_at <= %s
   and nullif(btrim(t.answer), '') is not null
-order by coalesce(t.source_synced_at, t.created_at), t.created_at, t.turn_key
+order by t.created_at, t.turn_key
 ```
 
-`fetch_execution()` must use `union all` to return normalized signals:
+`fetch_remote_usage(source_kind, created_after=None, created_through=None)`
+filters one FAE or ADMIN snapshot by `source_kind`. Initialization supplies both
+true `created_at` bounds for the preceding 24 hours; later generations omit the
+bounds and scan the complete retained source snapshot.
+
+Local and remote execution methods use the same split filters with `union all`
+to return normalized signals. Each execution branch uses either the local
+filter:
 
 ```sql
-select t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at, 'empty_answer' as signal_type
-from platform_read.turns t
-where coalesce(t.source_synced_at, t.created_at) > %s
-  and coalesce(t.source_synced_at, t.created_at) <= %s
-  and nullif(btrim(t.answer), '') is null
-union all
-select t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at, 'fallback' as signal_type
-from platform_read.turns t
-where coalesce(t.source_synced_at, t.created_at) > %s
-  and coalesce(t.source_synced_at, t.created_at) <= %s and t.fallback_used is true
-union all
-select t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at, 'incomplete' as signal_type
-from platform_read.turns t
-where coalesce(t.source_synced_at, t.created_at) > %s
-  and coalesce(t.source_synced_at, t.created_at) <= %s
-  and lower(coalesce(t.outcome, '')) in ('failed', 'error', 'incomplete')
-union all
-select distinct t.turn_key, t.session_key, t.agent_id, t.source_kind, t.created_at,
-  'tool_error' as signal_type
-from platform_read.turns t
-join platform_read.traces r on r.turn_key=t.turn_key
-join platform_read.trace_steps s on s.trace_key=r.trace_key
-where coalesce(t.source_synced_at, t.created_at) > %s
-  and coalesce(t.source_synced_at, t.created_at) <= %s
-  and r.detail_availability='available'
-  and s.kind='tool_call'
-  and (s.error_summary is not null or lower(coalesce(s.status, '')) in ('failed', 'error'))
-order by created_at, turn_key, signal_type
+t.source_kind='metabot' and t.created_at > %s and t.created_at <= %s
 ```
+
+or the remote snapshot filter:
+
+```sql
+t.source_kind=%s
+```
+
+Remote initialization adds `t.created_at > %s and t.created_at <= %s`; later
+successful generations do not. All queries remain read-only and continue to
+select `t.created_at` as the observation occurrence time.
 
 Deduplicate identical `(turn_key, signal_type)` rows in Python before returning observations. Resolve Agent visibility through `AgentCatalog`; discard unknown Agent IDs rather than reporting them under Business.
 
@@ -761,7 +752,7 @@ class ExecutionObservation(BaseModel):
     occurred_at: datetime
 ```
 
-The source queries use `coalesce(source_synced_at, created_at)` as their ingestion watermark and retain `created_at` as the occurrence timestamp. Each incremental usage and execution query starts one hour before the persisted ingestion cursor. This deterministic overlap catches late daily FAE/ADMIN imports and local rows committed around the previous snapshot; the cursor advances to the pass `through` timestamp only after the complete rule application succeeds.
+Source ingestion is split. Local MetaBot queries use true `created_at` with a one-hour overlap before `local_through`. Remote FAE/ADMIN queries treat each new successful synchronization `completed_at` as a snapshot generation. Initialization scans only the generation's rows from the preceding 24 hours and seeds that generation as processed. A later successful generation performs one read-only full scan of that source's retained snapshot (currently 90 days and small); repeated polls of the same generation do not rescan, and a failed synchronization does not advance generation state. Recovery success therefore triggers the next generation scan. The per-group cursor containing `local_through` and `remote_generations` advances only after the complete rule application succeeds.
 
 The scheduler groups `UsageOccurrence` rows by Agent and local hour, then combines each group and its exact typed occurrence tuple with the matching Fleet Agent cumulative total to create `UsageObservation`. Migration version 2 adds `operational_usage_occurrences(occurrence_key primary key, agent_id, bucket_start, occurred_at, processed_at)`. It stores source Turn identifiers and timestamps only, never question or answer payloads. One repository transaction inserts unseen keys, ignores replayed keys, recomputes the bucket count from the ledger, creates/updates/finalizes the hourly Event, and persists bucket, cumulative, and milestone state plus milestone Events. Late unseen keys update only their actual source hour; overlap replays are idempotent through exact occurrence keys, and count-based duplicate budgets are prohibited. Execution overlap replays are idempotent through the stable Turn/signal grouping keys. Use `ZoneInfo("Asia/Shanghai")` and floor usage and execution fingerprints to the local hour. Milestones are `100, 250, 500, 1000`, then every additional 1,000. Initialization backfills the preceding 24 hours of hourly usage Events, bucket state, and occurrence keys while storing the highest reached milestone without emitting old milestones. It also creates an empty initializing `UsageObservation` for every Fleet Agent with a known cumulative total but no baseline occurrences, seeding cumulative and milestone state without creating a usage bucket or old milestone. Lifecycle initialization writes old dates as historical events using their actual occurrence time; only a later value change emits a new `deployment_updated` event.
 
@@ -866,7 +857,7 @@ Expected: failures for missing scheduler and app state.
 
 The constructor accepts `repository`, optional production dependencies, and optional `group_runners` plus `intervals` maps. Tests inject the maps shown above. Production constructs the default runner map for `runtime`, `sync`, `data_access`, `usage`, `execution`, and `lifecycle` from the scheduler's bound methods and Config intervals.
 
-`run_runtime()`, `run_data_access()`, and `run_lifecycle()` reuse one current `FleetReadService.overview()` result within a scheduler pass. `run_data_access()` creates `DataAccessObservation(source_name="flywheel", available=overview.usage_source.healthy, observed_at=now)`. `run_usage()` preserves every grouped `UsageOccurrence` in `UsageObservation.occurrences`; it must not reduce replay identity to counts. Usage and execution queries use a one-hour overlap before their persisted ingestion cursor. Their cursor advances to `through` only after event and rule-state application succeeds, so failures replay safely on the next pass.
+`run_runtime()`, `run_data_access()`, and `run_lifecycle()` reuse one current `FleetReadService.overview()` result within a scheduler pass. `run_data_access()` creates `DataAccessObservation(source_name="flywheel", available=overview.usage_source.healthy, observed_at=now)`. `run_usage()` preserves every grouped `UsageOccurrence` in `UsageObservation.occurrences`; it must not reduce replay identity to counts. Usage and execution use the split local-overlap/remote-generation cursor described above. Cursor state advances only after event and rule-state application succeeds, so failures replay safely on the next pass.
 
 The poll loop wakes every ten seconds, checks due timestamps, and never sleeps for an entire five-minute rule interval:
 
