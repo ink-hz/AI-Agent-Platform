@@ -190,10 +190,27 @@ class OperationsRepository:
                 connection.execute(
                     """
                     update operational_events
-                    set facts_json=?, last_observed_at=?
+                    set agent_id=?, agent_visibility=?, event_type=?, event_family=?,
+                        severity=?, title=?, summary=?, source_kind=?, facts_json=?,
+                        target_kind=?, target_id=?, target_path=?, last_observed_at=?
                     where event_id=?
                     """,
-                    (_json(event.facts), _timestamp(event.occurred_at), event_id),
+                    (
+                        event.agent_id,
+                        event.agent_visibility,
+                        event.event_type,
+                        event.event_family,
+                        event.severity,
+                        event.title,
+                        event.summary,
+                        event.source_kind,
+                        _json(event.facts),
+                        event.target_kind,
+                        event.target_id,
+                        event.target_path,
+                        _timestamp(event.occurred_at),
+                        event_id,
+                    ),
                 )
             result = connection.execute(
                 "select * from operational_events where event_id=?", (event_id,)

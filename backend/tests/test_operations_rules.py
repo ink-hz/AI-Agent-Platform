@@ -87,6 +87,56 @@ def test_runtime_candidate_must_be_consecutive_and_unknown_is_ignored(tmp_path):
     assert event_types(repo) == ["runtime_degraded"]
 
 
+def test_runtime_reclassifies_degraded_as_offline_without_duplicate_or_recovery(
+    tmp_path,
+):
+    engine, repo = make_engine(tmp_path)
+    degraded = runtime("hr-bot", "business", "degraded", NOW)
+    offline = runtime("hr-bot", "business", "offline", NOW + timedelta(seconds=20))
+
+    engine.evaluate_runtime([degraded], NOW)
+    engine.evaluate_runtime([degraded], NOW + timedelta(seconds=10))
+    original = repo.list_active_attention("business")[0]
+    engine.evaluate_runtime([offline], NOW + timedelta(seconds=20))
+    engine.evaluate_runtime([offline], NOW + timedelta(seconds=30))
+
+    active = repo.list_active_attention("business")
+    assert len(active) == 1
+    assert active[0].event_id == original.event_id
+    assert active[0].event_type == "runtime_offline"
+    assert active[0].severity == "critical"
+    assert active[0].title == "hr-bot is offline"
+    assert active[0].summary == "Two consecutive runtime observations reported offline."
+    assert active[0].facts == {"state": "offline", "observations": 2}
+    assert event_types(repo) == ["runtime_offline"]
+
+
+def test_runtime_reclassifies_offline_as_degraded_without_duplicate_or_recovery(
+    tmp_path,
+):
+    engine, repo = make_engine(tmp_path)
+    offline = runtime("hr-bot", "business", "offline", NOW)
+    degraded = runtime(
+        "hr-bot", "business", "degraded", NOW + timedelta(seconds=20)
+    )
+
+    engine.evaluate_runtime([offline], NOW)
+    engine.evaluate_runtime([offline], NOW + timedelta(seconds=10))
+    original = repo.list_active_attention("business")[0]
+    engine.evaluate_runtime([degraded], NOW + timedelta(seconds=20))
+    engine.evaluate_runtime([degraded], NOW + timedelta(seconds=30))
+
+    active = repo.list_active_attention("business")
+    assert len(active) == 1
+    assert active[0].event_id == original.event_id
+    assert active[0].event_type == "runtime_degraded"
+    assert active[0].severity == "attention"
+    assert active[0].title == "hr-bot is degraded"
+    assert active[0].summary == "Two consecutive runtime observations reported degraded."
+    assert active[0].facts == {"state": "degraded", "observations": 2}
+    assert event_types(repo) == ["runtime_degraded"]
+
+
 def test_sync_failure_and_staleness_share_one_active_event(tmp_path):
     engine, repo = make_engine(tmp_path)
     failed = SyncObservation(
@@ -158,6 +208,37 @@ def test_successful_sync_without_active_condition_does_not_emit_event(tmp_path):
     )
 
     assert event_types(repo) == []
+
+
+def test_sync_without_success_becomes_stale_after_persisted_interval(tmp_path):
+    engine, repo = make_engine(tmp_path)
+    running = SyncObservation(
+        source_kind="fae",
+        status="running",
+        completed_at=None,
+        observed_at=NOW,
+        last_success_at=None,
+    )
+
+    engine.evaluate_sync([running], NOW)
+    engine.evaluate_sync(
+        [running.model_copy(update={"observed_at": NOW + timedelta(hours=36)})],
+        NOW + timedelta(hours=36),
+    )
+    assert repo.list_active_attention("business") == ()
+    state = repo.get_rule_state("sync:fae")
+    assert state is not None
+    assert state.value["no_success_since"] == NOW.isoformat()
+
+    stale_at = NOW + timedelta(hours=36, seconds=1)
+    engine.evaluate_sync(
+        [running.model_copy(update={"observed_at": stale_at})], stale_at
+    )
+
+    active = repo.list_active_attention("business")
+    assert len(active) == 1
+    assert active[0].event_type == "remote_sync_unavailable"
+    assert active[0].facts["stale"] is True
 
 
 def test_system_runtime_event_is_not_business_attention(tmp_path):

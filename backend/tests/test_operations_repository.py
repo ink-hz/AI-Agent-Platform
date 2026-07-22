@@ -83,6 +83,58 @@ def test_upsert_active_is_idempotent_and_resolve_is_transactional(tmp_path):
     ]
 
 
+def test_upsert_active_refreshes_classification_and_presentation(tmp_path):
+    repo = migrated_repository(tmp_path)
+    first = repo.upsert_active(
+        runtime_event(
+            event_type="runtime_degraded",
+            severity="attention",
+            title="AI FAE Agent is degraded",
+            summary="Runtime is degraded.",
+            facts={"state": "degraded"},
+            target_kind=None,
+            target_id=None,
+            target_path=None,
+        )
+    )
+    refreshed_at = NOW + timedelta(minutes=1)
+
+    refreshed = repo.upsert_active(
+        runtime_event(
+            agent_id="replacement-agent",
+            agent_visibility="system",
+            event_type="runtime_offline",
+            event_family="data",
+            severity="critical",
+            title="Replacement Agent is offline",
+            summary="Runtime is offline.",
+            source_kind="replacement-source",
+            occurred_at=refreshed_at,
+            facts={"state": "offline"},
+            target_kind="agent",
+            target_id="replacement-agent",
+            target_path="/agents/replacement-agent",
+        )
+    )
+
+    assert refreshed.event_id == first.event_id
+    assert refreshed.occurred_at == first.occurred_at
+    assert refreshed.first_observed_at == first.first_observed_at
+    assert refreshed.last_observed_at == refreshed_at
+    assert refreshed.agent_id == "replacement-agent"
+    assert refreshed.agent_visibility == "system"
+    assert refreshed.event_type == "runtime_offline"
+    assert refreshed.event_family == "data"
+    assert refreshed.severity == "critical"
+    assert refreshed.title == "Replacement Agent is offline"
+    assert refreshed.summary == "Runtime is offline."
+    assert refreshed.source_kind == "replacement-source"
+    assert refreshed.facts == {"state": "offline"}
+    assert refreshed.target_kind == "agent"
+    assert refreshed.target_id == "replacement-agent"
+    assert refreshed.target_path == "/agents/replacement-agent"
+
+
 def test_resolve_active_rolls_back_when_recovery_insert_fails(tmp_path):
     database_path = tmp_path / "operations.db"
     repo = OperationsRepository(str(database_path))

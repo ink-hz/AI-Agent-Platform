@@ -82,13 +82,19 @@ class OperationsRuleEngine:
         self, observations: list[SyncObservation], now: datetime
     ) -> None:
         for observation in observations:
-            stale = (
-                observation.last_success_at is not None
-                and now - observation.last_success_at > _SYNC_STALE_AFTER
-            )
+            rule_key = f"sync:{observation.source_kind}"
+            current = self._repository.get_rule_state(rule_key)
+            no_success_since = self._no_success_since(observation, current)
+            if observation.status == "succeeded":
+                stale = False
+            elif observation.last_success_at is not None:
+                stale = now - observation.last_success_at > _SYNC_STALE_AFTER
+            else:
+                assert no_success_since is not None
+                stale = now - no_success_since > _SYNC_STALE_AFTER
             self._repository.put_rule_state(
                 RuleState(
-                    rule_key=f"sync:{observation.source_kind}",
+                    rule_key=rule_key,
                     value={
                         "status": observation.status,
                         "completed_at": self._optional_timestamp(
@@ -96,6 +102,9 @@ class OperationsRuleEngine:
                         ),
                         "last_success_at": self._optional_timestamp(
                             observation.last_success_at
+                        ),
+                        "no_success_since": self._optional_timestamp(
+                            no_success_since
                         ),
                         "stale": stale,
                     },
@@ -234,6 +243,21 @@ class OperationsRuleEngine:
     @staticmethod
     def _optional_timestamp(value: datetime | None) -> str | None:
         return value.isoformat() if value is not None else None
+
+    @staticmethod
+    def _no_success_since(
+        observation: SyncObservation, current: RuleState | None
+    ) -> datetime | None:
+        if (
+            observation.status == "succeeded"
+            or observation.last_success_at is not None
+        ):
+            return None
+        if current is not None:
+            stored = current.value.get("no_success_since")
+            if stored is not None:
+                return datetime.fromisoformat(stored)
+        return observation.observed_at
 
     @staticmethod
     def _sync_summary(status: str, stale: bool) -> str:
