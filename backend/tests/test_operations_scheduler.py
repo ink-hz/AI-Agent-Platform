@@ -1,3 +1,4 @@
+import asyncio
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
@@ -19,7 +20,11 @@ from app.operations.models import (
 )
 from app.operations.repository import OperationsRepository
 from app.operations.rules import OperationsRuleEngine
-from app.operations.scheduler import CommittedGroupRun, OperationsScheduler
+from app.operations.scheduler import (
+    CommittedGroupRun,
+    OperationsScheduler,
+    operations_poll_loop,
+)
 
 
 NOW = datetime(2026, 7, 22, 3, 0, tzinfo=timezone.utc)
@@ -79,6 +84,16 @@ class FleetStub:
             update={"total_conversations": total}
         )
         return result
+
+
+class FixedFleetStub:
+    def __init__(self, value: FleetOverview) -> None:
+        self.value = value
+        self.calls = 0
+
+    async def overview(self, _now):
+        self.calls += 1
+        return self.value
 
 
 class RuleEngineStub:
@@ -220,11 +235,147 @@ async def test_failed_rule_group_does_not_block_other_groups(tmp_path):
 
     await scheduler.run_due(NOW)
 
-    assert calls == ["runtime", "usage"]
+    assert sorted(calls) == ["runtime", "usage"]
     assert repository.latest_run("runtime").status == "failed"
     assert repository.latest_run("runtime").error_summary == "RuntimeError: runtime failed"
     assert repository.latest_run("usage").status == "succeeded"
     assert repository.latest_run("usage").cursor == {"cursor": "complete"}
+
+
+@pytest.mark.asyncio
+async def test_slow_runtime_does_not_delay_usage_and_each_group_runs_once(tmp_path):
+    runtime_started = asyncio.Event()
+    release_runtime = asyncio.Event()
+    usage_finished = asyncio.Event()
+    calls = {"runtime": 0, "usage": 0}
+
+    async def runtime(_now):
+        calls["runtime"] += 1
+        runtime_started.set()
+        await release_runtime.wait()
+
+    async def usage(_now):
+        calls["usage"] += 1
+        usage_finished.set()
+
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    scheduler = OperationsScheduler(
+        repository=repository,
+        group_runners={"runtime": runtime, "usage": usage},
+        intervals={"runtime": 60, "usage": 60},
+    )
+
+    run = asyncio.create_task(scheduler.run_due(NOW))
+    await asyncio.wait_for(runtime_started.wait(), timeout=1)
+    try:
+        await asyncio.wait_for(usage_finished.wait(), timeout=0.1)
+        assert not run.done()
+    finally:
+        release_runtime.set()
+        await asyncio.gather(run, return_exceptions=True)
+
+    assert calls == {"runtime": 1, "usage": 1}
+    assert repository.latest_run("runtime").status == "succeeded"
+    assert repository.latest_run("usage").status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_scheduler_passes_do_not_overlap_or_duplicate_a_group(
+    tmp_path,
+):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def runtime(_now):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    scheduler = OperationsScheduler(
+        repository=repository,
+        group_runners={"runtime": runtime},
+        intervals={"runtime": 60},
+    )
+
+    first = asyncio.create_task(scheduler.run_due(NOW))
+    await asyncio.wait_for(started.wait(), timeout=1)
+    second = asyncio.create_task(scheduler.run_due(NOW))
+    try:
+        await asyncio.sleep(0)
+        assert calls == 1
+    finally:
+        release.set()
+        await asyncio.gather(first, second, return_exceptions=True)
+
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_scheduler_cancellation_cleans_up_all_group_tasks(tmp_path):
+    started = {name: asyncio.Event() for name in ("runtime", "usage")}
+    cleaned = {name: asyncio.Event() for name in started}
+
+    def runner(name):
+        async def wait_forever(_now):
+            started[name].set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cleaned[name].set()
+
+        return wait_forever
+
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    scheduler = OperationsScheduler(
+        repository=repository,
+        group_runners={name: runner(name) for name in started},
+        intervals={name: 0 for name in started},
+    )
+
+    task = asyncio.create_task(scheduler.run_due(NOW))
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*(event.wait() for event in started.values())),
+            timeout=0.1,
+        )
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert all(event.is_set() for event in cleaned.values())
+
+
+@pytest.mark.asyncio
+async def test_poll_loop_completes_baseline_before_periodic_evaluation():
+    baseline_started = asyncio.Event()
+    release_baseline = asyncio.Event()
+
+    class SchedulerStub:
+        def __init__(self):
+            self.run_due_calls = 0
+
+        async def startup(self):
+            baseline_started.set()
+            await release_baseline.wait()
+
+        async def run_due(self, _now):
+            self.run_due_calls += 1
+
+    scheduler = SchedulerStub()
+    task = asyncio.create_task(operations_poll_loop(scheduler))
+    try:
+        await asyncio.wait_for(baseline_started.wait(), timeout=0.1)
+        await asyncio.sleep(0)
+        assert scheduler.run_due_calls == 0
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -298,6 +449,195 @@ async def test_fleet_groups_reuse_one_overview_per_scheduler_pass(tmp_path):
     assert data_access.available is False
     lifecycle = engine.calls["lifecycle"][0][0]
     assert lifecycle.live_since == datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fleet_overview",
+    [
+        overview().model_copy(
+            update={
+                "runtime_source": DataSourceStatus(
+                    healthy=False,
+                    checked_at=NOW.isoformat(),
+                    error="source unavailable",
+                )
+            }
+        ),
+        overview().model_copy(
+            update={
+                "runtime_source": DataSourceStatus(
+                    healthy=True,
+                    stale=True,
+                    checked_at=NOW.isoformat(),
+                )
+            }
+        ),
+        overview().model_copy(
+            update={
+                "runtime_source": DataSourceStatus(
+                    healthy=True,
+                    checked_at=None,
+                )
+            }
+        ),
+        overview().model_copy(update={"agents": []}),
+        overview().model_copy(
+            update={
+                "agents": [
+                    overview().agents[0].model_copy(update={"state": "checking"}),
+                    overview().agents[0].model_copy(
+                        update={"id": "unknown-bot", "state": "unknown"}
+                    ),
+                ]
+            }
+        ),
+    ],
+    ids=(
+        "unhealthy-source",
+        "stale-source",
+        "unchecked-source",
+        "empty-fleet",
+        "no-usable-state",
+    ),
+)
+async def test_runtime_group_fails_when_required_evidence_is_incomplete(
+    tmp_path, fleet_overview
+):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FixedFleetStub(fleet_overview),
+        intervals={"runtime": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    latest = repository.latest_run("runtime")
+    assert latest.status == "failed"
+    assert latest.cursor == {}
+    assert latest.error_summary in {
+        "RuntimeError: required runtime source unavailable",
+        "RuntimeError: required runtime evidence unavailable",
+    }
+
+
+@pytest.mark.asyncio
+async def test_complete_runtime_evidence_records_success(tmp_path):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    scheduler = OperationsScheduler(
+        repository=repository,
+        fleet_service=FixedFleetStub(overview()),
+        intervals={"runtime": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    assert repository.latest_run("runtime").status == "succeeded"
+    assert repository.get_rule_state("runtime:ai-fae-agent") is not None
+
+
+@pytest.mark.asyncio
+async def test_sync_group_requires_exact_remote_source_coverage_and_keeps_cursor(
+    tmp_path,
+):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    prior_cursor = {"observed_at": (NOW - timedelta(minutes=1)).isoformat()}
+    repository.record_run(
+        RunHealth(
+            run_name="sync",
+            status="succeeded",
+            started_at=NOW - timedelta(minutes=1),
+            finished_at=NOW - timedelta(minutes=1),
+            cursor=prior_cursor,
+        )
+    )
+    scheduler = OperationsScheduler(
+        repository=repository,
+        observability_service=SyncSequence(
+            [(sync_status("fae", "succeeded", NOW),)]
+        ),
+        intervals={"sync": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    latest = repository.latest_run("sync")
+    assert latest.status == "failed"
+    assert latest.cursor == prior_cursor
+    assert latest.error_summary == (
+        "RuntimeError: required sync source coverage incomplete"
+    )
+    assert repository.get_rule_state("sync:fae") is None
+
+
+@pytest.mark.asyncio
+async def test_complete_failed_sync_observations_are_successfully_evaluated(
+    tmp_path,
+):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    last_success = NOW - timedelta(hours=35)
+    scheduler = OperationsScheduler(
+        repository=repository,
+        observability_service=SyncSequence(
+            [
+                (
+                    sync_status(
+                        "fae", "failed", NOW, last_success_at=last_success
+                    ),
+                    sync_status(
+                        "admin", "failed", NOW, last_success_at=last_success
+                    ),
+                )
+            ]
+        ),
+        intervals={"sync": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    assert repository.latest_run("sync").status == "succeeded"
+    attention = repository.list_active_attention("business")
+    assert {item.agent_id for item in attention} == {
+        "ai-fae-agent",
+        "ai-admin-agent",
+    }
+    assert all(item.facts["stale"] is False for item in attention)
+    assert {
+        source: repository.get_rule_state(f"sync:{source}").value[
+            "last_success_at"
+        ]
+        for source in ("fae", "admin")
+    } == {"fae": last_success.isoformat(), "admin": last_success.isoformat()}
+
+
+@pytest.mark.asyncio
+async def test_complete_fresh_sync_coverage_records_success_without_attention(
+    tmp_path,
+):
+    repository = OperationsRepository(str(tmp_path / "operations.db"))
+    repository.migrate()
+    scheduler = OperationsScheduler(
+        repository=repository,
+        observability_service=SyncSequence(
+            [
+                (
+                    sync_status("fae", "succeeded", NOW),
+                    sync_status("admin", "succeeded", NOW),
+                )
+            ]
+        ),
+        intervals={"sync": 0},
+    )
+
+    await scheduler.run_due(NOW)
+
+    assert repository.latest_run("sync").status == "succeeded"
+    assert repository.list_active_attention("business") == ()
 
 
 @pytest.mark.asyncio
@@ -755,12 +1095,19 @@ def sync_status(
     source_kind: str,
     status: str,
     completed_at: datetime | None,
+    *,
+    last_success_at: datetime | None = None,
 ) -> SyncStatus:
     return SyncStatus(
         source_kind=source_kind,
         status=status,
         started_at=(completed_at or NOW) - timedelta(minutes=1),
         completed_at=completed_at,
+        last_success_at=(
+            completed_at
+            if last_success_at is None and status == "succeeded"
+            else last_success_at
+        ),
         freshness="fresh",
     )
 

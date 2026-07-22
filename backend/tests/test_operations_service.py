@@ -149,6 +149,60 @@ def test_brief_contains_business_attention_and_five_changes(tmp_path):
     assert brief.period_start == NOW - timedelta(hours=24)
 
 
+def test_brief_filters_attention_and_execution_before_five_change_limit(tmp_path):
+    repo = repository(tmp_path)
+    approved = [
+        ("usage-1", "usage", NOW - timedelta(minutes=10)),
+        ("lifecycle-1", "lifecycle", NOW - timedelta(minutes=11)),
+        ("recovery-1", "recovery", NOW - timedelta(minutes=12)),
+        ("usage-2", "usage", NOW - timedelta(minutes=13)),
+        ("lifecycle-2", "lifecycle", NOW - timedelta(minutes=14)),
+        ("usage-older", "usage", NOW - timedelta(minutes=15)),
+    ]
+    for event_type, family, occurred_at in approved:
+        repo.record_historical(
+            event(
+                event_type=event_type,
+                family=family,
+                occurred_at=occurred_at,
+                fingerprint=event_type,
+            )
+        )
+    repo.upsert_active(
+        event(
+            event_type="runtime_offline",
+            family="runtime",
+            severity="critical",
+            occurred_at=NOW - timedelta(minutes=1),
+            fingerprint="runtime:hr-bot:unavailable",
+        )
+    )
+    repo.record_historical(
+        event(
+            event_type="fallback",
+            family="execution",
+            severity="attention",
+            occurred_at=NOW - timedelta(minutes=2),
+            fingerprint="execution:hr-bot:fallback",
+        )
+    )
+    record_group_runs(repo)
+
+    brief = OperationsService(repo, intervals=INTERVALS).brief(NOW)
+
+    assert [item.event_type for item in brief.changes] == [
+        "usage-1",
+        "lifecycle-1",
+        "recovery-1",
+        "usage-2",
+        "lifecycle-2",
+    ]
+    assert [item.event_type for item in brief.attention] == ["runtime_offline"]
+    assert not {
+        item.event_id for item in brief.attention
+    }.intersection(item.event_id for item in brief.changes)
+
+
 def test_attention_orders_critical_then_attention_and_newest_occurrence(tmp_path):
     repo = repository(tmp_path)
     repo.upsert_active(
@@ -192,6 +246,30 @@ def test_partial_or_stale_brief_cannot_claim_healthy(tmp_path):
     brief = service.brief(NOW)
     assert brief.freshness.status == "partial"
     assert brief.freshness.failed_groups == ["execution"]
+    assert brief.can_claim_healthy is False
+
+
+def test_incomplete_required_source_runs_cannot_claim_healthy(tmp_path):
+    repo = repository(tmp_path)
+    record_group_runs(repo, at=NOW - timedelta(minutes=1))
+    for group, error in (
+        ("runtime", "RuntimeError: required runtime evidence unavailable"),
+        ("sync", "RuntimeError: required sync source coverage incomplete"),
+    ):
+        repo.record_run(
+            RunHealth(
+                run_name=group,
+                status="failed",
+                started_at=NOW,
+                finished_at=NOW,
+                error_summary=error,
+            )
+        )
+
+    brief = OperationsService(repo, intervals=INTERVALS).brief(NOW)
+
+    assert brief.freshness.status == "partial"
+    assert brief.freshness.failed_groups == ["runtime", "sync"]
     assert brief.can_claim_healthy is False
 
 

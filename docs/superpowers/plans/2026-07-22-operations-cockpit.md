@@ -480,7 +480,7 @@ Store runtime debounce state under `runtime:{agent_id}`:
 
 Normalize `active` and `online` to `healthy`, preserve `degraded` and `offline`, and treat `checking` or `unknown` as insufficient evidence. Open `runtime_offline` as `critical`; open `runtime_degraded` as `attention`. Resolve after two consecutive `healthy` observations.
 
-Store synchronization state under `sync:{source_kind}`. Use fingerprint `sync:{source_kind}:unavailable` for both failure and staleness. A successful observation resolves the condition and creates one `sync_recovered` event. The Agent mapping is `fae → ai-fae-agent`, `admin → ai-admin-agent`, both Business visibility.
+Store synchronization state under `sync:{source_kind}`. Use fingerprint `sync:{source_kind}:unavailable` for both failure and staleness. Resolve the condition and create one `sync_recovered` event only when the actual last successful completion is no more than 36 hours old; exactly 36 hours is fresh. A stale latest `succeeded` row retains the condition. The Agent mapping is `fae → ai-fae-agent`, `admin → ai-admin-agent`, both Business visibility.
 
 Store local data access under `data:{source_name}`. An unavailable observation immediately opens one fleet-level Business `business_data_unavailable` Attention item; a later available observation resolves it and inserts one `data_access_recovered` event. The event has `agent_id=None` and links to `/sessions` only when the source is the Flywheel read model.
 
@@ -860,7 +860,7 @@ Expected: failures for missing scheduler and app state.
 
 - [ ] **Step 3: Implement independent run groups**
 
-`OperationsScheduler.run_due(now)` must evaluate each due group inside its own `try/except`, record a sanitized error containing only exception class and stable message, and continue. Use `asyncio.to_thread` for SQLite and psycopg work. `startup()` performs baseline initialization before periodic change emission.
+`OperationsScheduler.run_due(now)` must evaluate due groups concurrently, each inside its own `try/except`, record a sanitized error containing only exception class and stable message, and continue. Concurrent scheduler passes are serialized so the same group cannot overlap. Use `asyncio.to_thread` for SQLite and psycopg work. `startup()` performs baseline initialization inside the owned Operations background task before periodic change emission; application lifespan does not await the baseline.
 
 The constructor accepts `repository`, optional production dependencies, and optional `group_runners` plus `intervals` maps. Tests inject the maps shown above. Production constructs the default runner map for `runtime`, `sync`, `data_access`, `usage`, `execution`, and `lifecycle` from the scheduler's bound methods and Config intervals.
 
@@ -998,7 +998,7 @@ class OperationsBrief(BaseModel):
     changes: list[OperationalEvent]
 ```
 
-Ordering is critical severity first, then attention severity, then newest occurrence. Changes are newest first after fleet usage summary assembly and are capped at five. Freshness is `current` only when every required group has a recent successful run; `partial` when at least one group failed but another succeeded; `stale` when the last successful full evaluation is older than twice its scheduled interval; and `unavailable` when there is no successful baseline.
+Ordering is critical severity first, then attention severity, then newest occurrence. Changes include only Usage/Adoption, Lifecycle, and Recovery families, are newest first after filtering, and are capped at five. Runtime, data, and execution Attention remains only in Needs Attention. Freshness is `current` only when every required group has a recent successful run; `partial` when at least one group failed but another succeeded; `stale` when the last successful full evaluation is older than twice its scheduled interval; and `unavailable` when there is no successful baseline.
 
 - [ ] **Step 4: Add read-only routes and unavailable behavior**
 

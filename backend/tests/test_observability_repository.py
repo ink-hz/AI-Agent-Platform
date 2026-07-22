@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.observability.models import SessionFilters
 from app.observability.repository import PsycopgObservabilityRepository
@@ -81,6 +81,61 @@ def test_list_agents_includes_catalog_agents_without_conversations() -> None:
     assert agents[0].session_count == 0
     assert agents[0].total_turns == 0
     assert agents[0].visibility == "business"
+
+
+def test_sync_status_preserves_latest_run_and_true_last_success() -> None:
+    last_success_at = NOW - timedelta(hours=35)
+    failed_at = NOW - timedelta(minutes=1)
+    fake = FakeConnect(
+        [[
+            {
+                "source_kind": "fae",
+                "status": "failed",
+                "started_at": failed_at - timedelta(minutes=1),
+                "completed_at": failed_at,
+                "last_success_at": last_success_at,
+                "source_counts": {},
+                "applied_counts": {},
+                "validation": {},
+                "error_summary": "remote unavailable",
+            }
+        ]]
+    )
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, now=lambda: NOW
+    )
+
+    status = repository.get_sync_status()[0]
+
+    assert status.status == "failed"
+    assert status.completed_at == failed_at
+    assert status.last_success_at == last_success_at
+    assert status.freshness == "fresh"
+
+
+def test_sync_status_remains_compatible_before_view_upgrade() -> None:
+    fake = FakeConnect(
+        [[
+            {
+                "source_kind": "admin",
+                "status": "succeeded",
+                "started_at": NOW - timedelta(minutes=2),
+                "completed_at": NOW - timedelta(minutes=1),
+                "source_counts": {},
+                "applied_counts": {},
+                "validation": {},
+                "error_summary": None,
+            }
+        ]]
+    )
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, now=lambda: NOW
+    )
+
+    status = repository.get_sync_status()[0]
+
+    assert status.last_success_at == status.completed_at
+    assert status.freshness == "fresh"
 
 
 def test_default_session_list_uses_business_agent_allowlist() -> None:

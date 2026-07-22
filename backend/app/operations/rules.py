@@ -95,14 +95,21 @@ class OperationsRuleEngine:
         for observation in observations:
             rule_key = f"sync:{observation.source_kind}"
             current = self._repository.get_rule_state(rule_key)
-            no_success_since = self._no_success_since(observation, current)
-            if observation.status == "succeeded":
-                stale = False
-            elif observation.last_success_at is not None:
-                stale = now - observation.last_success_at > _SYNC_STALE_AFTER
+            last_success_at = self._last_success_at(observation)
+            no_success_since = self._no_success_since(
+                observation, current, last_success_at
+            )
+            if last_success_at is not None:
+                stale = (
+                    self._aware(now) - self._aware(last_success_at)
+                    > _SYNC_STALE_AFTER
+                )
             else:
                 assert no_success_since is not None
-                stale = now - no_success_since > _SYNC_STALE_AFTER
+                stale = (
+                    self._aware(now) - self._aware(no_success_since)
+                    > _SYNC_STALE_AFTER
+                )
             self._repository.put_rule_state(
                 RuleState(
                     rule_key=rule_key,
@@ -112,7 +119,7 @@ class OperationsRuleEngine:
                             observation.completed_at
                         ),
                         "last_success_at": self._optional_timestamp(
-                            observation.last_success_at
+                            last_success_at
                         ),
                         "no_success_since": self._optional_timestamp(
                             no_success_since
@@ -130,10 +137,10 @@ class OperationsRuleEngine:
                 "stale": stale,
                 "completed_at": self._optional_timestamp(observation.completed_at),
                 "last_success_at": self._optional_timestamp(
-                    observation.last_success_at
+                    last_success_at
                 ),
             }
-            if observation.status == "succeeded":
+            if observation.status == "succeeded" and not stale:
                 self._repository.resolve_active(
                     fingerprint=fingerprint,
                     resolved_at=now,
@@ -697,18 +704,31 @@ class OperationsRuleEngine:
 
     @staticmethod
     def _no_success_since(
-        observation: SyncObservation, current: RuleState | None
+        observation: SyncObservation,
+        current: RuleState | None,
+        last_success_at: datetime | None,
     ) -> datetime | None:
-        if (
-            observation.status == "succeeded"
-            or observation.last_success_at is not None
-        ):
+        if last_success_at is not None:
             return None
         if current is not None:
             stored = current.value.get("no_success_since")
             if stored is not None:
                 return datetime.fromisoformat(stored)
         return observation.observed_at
+
+    @staticmethod
+    def _last_success_at(observation: SyncObservation) -> datetime | None:
+        if observation.last_success_at is not None:
+            return observation.last_success_at
+        if observation.status == "succeeded":
+            return observation.completed_at
+        return None
+
+    @staticmethod
+    def _aware(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
     @staticmethod
     def _sync_summary(status: str, stale: bool) -> str:

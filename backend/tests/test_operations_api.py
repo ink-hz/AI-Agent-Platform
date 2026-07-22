@@ -1,11 +1,11 @@
 import inspect
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.operations.models import EventFilters
+from app.operations.models import EventFilters, RunHealth
 from app.operations.repository import OperationsRepository
 from app.operations.routes import brief, events
 from app.operations.service import OperationsService
@@ -13,7 +13,9 @@ from app.operations.service import OperationsService
 from test_operations_service import INTERVALS, event, record_group_runs
 
 
-def make_client(tmp_path, *, available: bool = True) -> TestClient:
+def make_client(
+    tmp_path, *, available: bool = True, configure_repository=None
+) -> TestClient:
     registry = tmp_path / "registry.yaml"
     registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
     contract = tmp_path / "contract.json"
@@ -23,16 +25,19 @@ def make_client(tmp_path, *, available: bool = True) -> TestClient:
         now = datetime.now(timezone.utc)
         repository = OperationsRepository(str(tmp_path / "operations.db"))
         repository.migrate()
-        repository.record_historical(event(occurred_at=now))
-        repository.record_historical(
-            event(
-                agent_id="test-bot",
-                agent_name="Test Bot",
-                visibility="system",
-                occurred_at=now,
-                fingerprint="system:test-bot",
+        if configure_repository is None:
+            repository.record_historical(event(occurred_at=now))
+            repository.record_historical(
+                event(
+                    agent_id="test-bot",
+                    agent_name="Test Bot",
+                    visibility="system",
+                    occurred_at=now,
+                    fingerprint="system:test-bot",
+                )
             )
-        )
+        else:
+            configure_repository(repository, now)
         record_group_runs(repository, at=now)
         service = OperationsService(repository, intervals=INTERVALS)
     app = create_app(
@@ -57,6 +62,77 @@ def test_operations_brief_and_events_use_real_service_and_repository(tmp_path):
     assert events_response.json()["total"] == 1
     assert events_response.json()["items"][0]["agent_visibility"] == "business"
     assert system_response.json()["items"][0]["agent_id"] == "test-bot"
+
+
+def test_brief_api_excludes_newer_attention_families_before_change_limit(tmp_path):
+    def configure(repo, now):
+        for index, family in enumerate(
+            ("usage", "lifecycle", "recovery", "usage", "lifecycle", "usage")
+        ):
+            repo.record_historical(
+                event(
+                    event_type=f"approved-{index}",
+                    family=family,
+                    occurred_at=now - timedelta(minutes=index + 10),
+                    fingerprint=f"approved:{index}",
+                )
+            )
+        repo.upsert_active(
+            event(
+                event_type="runtime_offline",
+                family="runtime",
+                severity="critical",
+                occurred_at=now - timedelta(minutes=1),
+                fingerprint="runtime:hr-bot:unavailable",
+            )
+        )
+        repo.record_historical(
+            event(
+                event_type="fallback",
+                family="execution",
+                severity="attention",
+                occurred_at=now - timedelta(minutes=2),
+                fingerprint="execution:hr-bot:fallback",
+            )
+        )
+
+    response = make_client(
+        tmp_path, configure_repository=configure
+    ).get("/api/operations/brief")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["event_type"] for item in payload["changes"]] == [
+        f"approved-{index}" for index in range(5)
+    ]
+    assert [item["event_type"] for item in payload["attention"]] == [
+        "runtime_offline"
+    ]
+
+
+def test_brief_api_cannot_claim_healthy_after_incomplete_sync_evaluation(tmp_path):
+    def configure(repo, now):
+        repo.record_run(
+            RunHealth(
+                run_name="sync",
+                status="failed",
+                started_at=now + timedelta(microseconds=1),
+                finished_at=now + timedelta(microseconds=1),
+                cursor={"observed_at": now.isoformat()},
+                error_summary=(
+                    "RuntimeError: required sync source coverage incomplete"
+                ),
+            )
+        )
+
+    response = make_client(
+        tmp_path, configure_repository=configure
+    ).get("/api/operations/brief")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["freshness"]["status"] == "partial"
+    assert payload["can_claim_healthy"] is False
 
 
 def test_operations_event_query_validation_is_owned_by_fastapi(tmp_path):

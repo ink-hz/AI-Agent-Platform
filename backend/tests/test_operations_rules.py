@@ -253,7 +253,11 @@ def test_sync_staleness_opens_and_success_resolves_mapped_agent(tmp_path):
     engine.evaluate_sync(
         [
             stale.model_copy(
-                update={"status": "succeeded", "completed_at": recovered_at}
+                update={
+                    "status": "succeeded",
+                    "completed_at": recovered_at,
+                    "last_success_at": recovered_at,
+                }
             )
         ],
         recovered_at,
@@ -278,6 +282,90 @@ def test_successful_sync_without_active_condition_does_not_emit_event(tmp_path):
     )
 
     assert event_types(repo) == []
+
+
+@pytest.mark.parametrize(
+    ("age", "expected_stale"),
+    [
+        (timedelta(hours=36), False),
+        (timedelta(hours=36, microseconds=1), True),
+    ],
+)
+def test_succeeded_sync_uses_true_last_success_at_for_36_hour_boundary(
+    tmp_path, age, expected_stale
+):
+    engine, repo = make_engine(tmp_path)
+    local_now = NOW.astimezone(timezone(timedelta(hours=8)))
+
+    engine.evaluate_sync(
+        [
+            SyncObservation(
+                source_kind="fae",
+                status="succeeded",
+                completed_at=local_now - age,
+                observed_at=local_now,
+                last_success_at=local_now - age,
+            )
+        ],
+        local_now,
+    )
+
+    active = repo.list_active_attention("business")
+    assert bool(active) is expected_stale
+    state = repo.get_rule_state("sync:fae")
+    assert state is not None
+    assert state.value["stale"] is expected_stale
+
+
+def test_stale_succeeded_sync_survives_replay_and_only_fresh_success_recovers(
+    tmp_path,
+):
+    engine, repo = make_engine(tmp_path)
+    stale_success = SyncObservation(
+        source_kind="admin",
+        status="succeeded",
+        completed_at=NOW - timedelta(hours=36, microseconds=1),
+        observed_at=NOW,
+        last_success_at=NOW - timedelta(hours=36, microseconds=1),
+    )
+
+    engine.evaluate_sync([stale_success], NOW)
+    first = repo.list_active_attention("business")[0]
+    OperationsRuleEngine(repo).evaluate_sync([stale_success], NOW)
+
+    replayed = repo.list_active_attention("business")
+    assert len(replayed) == 1
+    assert replayed[0].event_id == first.event_id
+    assert replayed[0].facts["stale"] is True
+
+    fresh_at = NOW + timedelta(minutes=1)
+    OperationsRuleEngine(repo).evaluate_sync(
+        [
+            stale_success.model_copy(
+                update={
+                    "completed_at": fresh_at,
+                    "observed_at": fresh_at,
+                    "last_success_at": fresh_at,
+                }
+            )
+        ],
+        fresh_at,
+    )
+    OperationsRuleEngine(repo).evaluate_sync(
+        [
+            stale_success.model_copy(
+                update={
+                    "completed_at": fresh_at,
+                    "observed_at": fresh_at,
+                    "last_success_at": fresh_at,
+                }
+            )
+        ],
+        fresh_at,
+    )
+
+    assert repo.list_active_attention("business") == ()
+    assert event_types(repo) == ["sync_recovered", "remote_sync_unavailable"]
 
 
 def test_sync_without_success_becomes_stale_after_persisted_interval(tmp_path):

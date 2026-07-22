@@ -804,17 +804,29 @@ select
 from platform_source_admin.knowledge_improvement_tasks k;
 
 create or replace view platform_read.sync_status as
-select distinct on (source_kind)
-  source_kind,
-  status,
-  started_at,
-  completed_at,
-  source_counts,
-  applied_counts,
-  validation,
-  error_summary
-from platform_sync.runs
-order by source_kind, started_at desc;
+with latest as (
+  select distinct on (source_kind)
+    source_kind,
+    status,
+    started_at,
+    completed_at,
+    source_counts,
+    applied_counts,
+    validation,
+    error_summary
+  from platform_sync.runs
+  order by source_kind, started_at desc
+)
+select
+  latest.*,
+  (
+    select max(success.completed_at)
+    from platform_sync.runs success
+    where success.source_kind = latest.source_kind
+      and success.status = 'succeeded'
+  ) as last_success_at
+from latest
+order by latest.source_kind;
 
 do $$
 declare

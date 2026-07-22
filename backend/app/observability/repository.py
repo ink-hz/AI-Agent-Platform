@@ -438,13 +438,22 @@ class PsycopgObservabilityRepository:
             with self._connection() as connection, connection.cursor() as cursor:
                 rows = cursor.execute("select * from platform_read.sync_status order by source_kind").fetchall()
             now = self._now()
-            return tuple(SyncStatus(
-                source_kind=row["source_kind"], status=row["status"], started_at=row["started_at"],
-                completed_at=row["completed_at"], source_counts=_dict(row["source_counts"]),
-                applied_counts=_dict(row["applied_counts"]), validation=_dict(row["validation"]),
-                error_summary=row["error_summary"],
-                freshness=_freshness(row["source_kind"], row["completed_at"], now),
-            ) for row in rows)
+            statuses = []
+            for row in rows:
+                last_success_at = row.get("last_success_at")
+                if last_success_at is None and row["status"] == "succeeded":
+                    last_success_at = row["completed_at"]
+                statuses.append(SyncStatus(
+                    source_kind=row["source_kind"], status=row["status"],
+                    started_at=row["started_at"], completed_at=row["completed_at"],
+                    last_success_at=last_success_at,
+                    source_counts=_dict(row["source_counts"]),
+                    applied_counts=_dict(row["applied_counts"]),
+                    validation=_dict(row["validation"]),
+                    error_summary=row["error_summary"],
+                    freshness=_freshness(row["source_kind"], last_success_at, now),
+                ))
+            return tuple(statuses)
         except Exception as error:
             raise ObservabilityReadError("observability query failed") from error
 

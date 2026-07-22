@@ -113,7 +113,7 @@ The module shows active, evidence-backed conditions. It does not show a numeric 
 |---|---|---|---|
 | Runtime | Business Agent is `offline` after two consecutive observations | Critical | Two consecutive healthy observations |
 | Runtime | Business Agent is `degraded` after two consecutive observations | Attention | Two consecutive non-degraded observations |
-| Data freshness | Latest FAE or ADMIN synchronization failed, or the last successful synchronization is more than 36 hours old | Attention | A later synchronization succeeds |
+| Data freshness | Latest FAE or ADMIN synchronization failed, or the last successful synchronization is more than 36 hours old | Attention | A genuinely fresh successful synchronization is observed |
 | Data access | A required local business-data source cannot be read | Attention | A later evaluation reads it successfully |
 | Execution | A supported source records Tool Error, Fallback, Empty Answer, or an explicitly incomplete task | Attention | The occurrence remains historical; the active grouped item clears after its aggregation window ends |
 
@@ -122,6 +122,12 @@ Rules must honor source capability. For example, an Agent without engineering Tr
 Execution occurrences are grouped by Agent, signal type, and rolling one-hour window so repeated failures do not flood the Brief. A grouped item shows its count and links to the filtered Sessions or the most recent supporting Session.
 
 Synchronization failure and staleness are two states of one active condition per remote source. A failed source may become stale after 36 hours by updating the same event's facts; it must not create a second active Attention item.
+
+Synchronization freshness is measured from the actual last successful
+completion exposed by `platform_read.sync_status.last_success_at`; the latest
+run's `completed_at` is used only when that latest run itself succeeded. Exactly
+36 hours is fresh, and one microsecond beyond the boundary is stale. A stale
+latest successful row does not clear Attention.
 
 When no active item exists and the engine has evaluated all required sources successfully, the module displays `No critical issues` with the evaluation timestamp. If evaluation is incomplete or stale, it displays the last successful evaluation time and does not make a healthy claim.
 
@@ -262,10 +268,12 @@ Usage activity is recorded in hourly Asia/Shanghai buckets. Its fingerprint incl
 | Lifecycle changes | Startup and every 10 minutes | Catalog, runtime contract, deployment and update metadata |
 
 Slow or failed evaluation of one rule group must not block another group.
+Due groups execute concurrently while sharing one Fleet snapshot and one sync
+status snapshot for the scheduler pass. Scheduler passes do not overlap.
 
 ### 7.1 Initial baseline
 
-The first successful engine run seeds rule state before emitting change events. Existing Agents, deployments, counts, and healthy runtime states must not appear as newly discovered changes merely because Operations was enabled.
+The first successful engine run seeds rule state before emitting change events. Existing Agents, deployments, counts, and healthy runtime states must not appear as newly discovered changes merely because Operations was enabled. This baseline runs inside the owned Operations background task, so application lifespan and existing APIs become available after lightweight construction and migration; periodic change evaluation begins only after the baseline completes.
 
 During initialization:
 

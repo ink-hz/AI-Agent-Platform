@@ -47,6 +47,7 @@ def test_sync_runs_capture_validation_and_last_good_state() -> None:
     assert "create table if not exists platform_sync.runs" in sql
     assert "validation jsonb not null default '{}'::jsonb" in sql
     assert "error_summary text" in sql
+    assert "last_success_at" in sql
 
 
 def test_metabot_views_apply_current_catalog_aliases_and_exclusions() -> None:

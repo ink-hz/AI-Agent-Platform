@@ -24,6 +24,7 @@ DEFAULT_INTERVALS: dict[str, float] = {
     "lifecycle": 600.0,
 }
 _MAX_SQLITE_LIMIT = 2_147_483_647
+_BRIEF_CHANGE_FAMILIES = frozenset({"usage", "lifecycle", "recovery"})
 
 
 class OperationsService:
@@ -41,6 +42,11 @@ class OperationsService:
         period_start = period_end - timedelta(hours=24)
         filters = EventFilters(date_from=period_start, date_to=period_end)
         events = self.list_events(filters, _MAX_SQLITE_LIMIT, 0).items
+        changes = [
+            event
+            for event in events
+            if event.event_family in _BRIEF_CHANGE_FAMILIES
+        ]
         attention = list(self._repository.list_active_attention("business"))
         freshness = self._freshness(period_end)
         leaders = list(
@@ -66,7 +72,7 @@ class OperationsService:
                 active_agents=len(leaders),
                 leaders=leaders,
             ),
-            changes=events[:5],
+            changes=changes[:5],
         )
 
     def list_events(

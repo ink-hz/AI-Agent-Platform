@@ -191,6 +191,7 @@ class SyncStatus(BaseModel):
     status: Literal["running", "succeeded", "failed"]
     started_at: datetime
     completed_at: datetime | None = None
+    last_success_at: datetime | None = None
     source_counts: dict = Field(default_factory=dict)
     applied_counts: dict = Field(default_factory=dict)
     validation: dict = Field(default_factory=dict)

@@ -38,6 +38,8 @@ GroupRunner = Callable[
 ]
 _LOCAL_ZONE = ZoneInfo("Asia/Shanghai")
 _REPLAY_OVERLAP = timedelta(hours=1)
+_REQUIRED_SYNC_SOURCES = frozenset({"fae", "admin"})
+_USABLE_RUNTIME_STATES = frozenset({"active", "online", "degraded", "offline"})
 _DEFAULT_INTERVALS = {
     "runtime": 10.0,
     "sync": 60.0,
@@ -65,8 +67,9 @@ class OperationsScheduler:
         self._observability_service = observability_service
         self._source = operations_source
         self._rule_engine = rule_engine or OperationsRuleEngine(repository)
-        self._overview: FleetOverview | None = None
-        self._sync_status_cache: tuple[SyncStatus, ...] | None = None
+        self._overview_task: asyncio.Task[FleetOverview] | None = None
+        self._sync_status_task: asyncio.Task[tuple[SyncStatus, ...]] | None = None
+        self._pass_lock = asyncio.Lock()
         self._initialized_groups: set[str] = set()
 
         default_runners: dict[str, GroupRunner] = {
@@ -100,53 +103,73 @@ class OperationsScheduler:
         await self._run_groups(now, force=False)
 
     async def _run_groups(self, now: datetime, *, force: bool) -> None:
-        self._overview = None
-        self._sync_status_cache = None
+        async with self._pass_lock:
+            self._overview_task = None
+            self._sync_status_task = None
+            tasks = [
+                asyncio.create_task(
+                    self._run_group(name, runner, now, force=force),
+                    name=f"operations:{name}",
+                )
+                for name, runner in self._group_runners.items()
+            ]
+            try:
+                await asyncio.gather(*tasks)
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                self._overview_task = None
+                self._sync_status_task = None
+
+    async def _run_group(
+        self,
+        name: str,
+        runner: GroupRunner,
+        now: datetime,
+        *,
+        force: bool,
+    ) -> None:
         try:
-            for name, runner in self._group_runners.items():
-                try:
-                    latest = await asyncio.to_thread(
-                        self._repository.latest_run, name
-                    )
-                    if not force and not self._is_due(name, latest, now):
-                        continue
-                    previous_cursor = latest.cursor if latest is not None else {}
-                    if latest is not None and (
-                        latest.status == "succeeded" or previous_cursor
-                    ):
+            latest = await asyncio.to_thread(self._repository.latest_run, name)
+            if not force and not self._is_due(name, latest, now):
+                return
+            previous_cursor = latest.cursor if latest is not None else {}
+            if latest is not None and (
+                latest.status == "succeeded" or previous_cursor
+            ):
+                self._initialized_groups.add(name)
+            try:
+                outcome = await runner(now)
+            except Exception as error:
+                run = RunHealth(
+                    run_name=name,
+                    status="failed",
+                    started_at=now,
+                    finished_at=now,
+                    cursor=previous_cursor,
+                    error_summary=self._sanitized_error(error),
+                )
+            else:
+                if isinstance(outcome, CommittedGroupRun):
+                    if name == "usage":
                         self._initialized_groups.add(name)
-                    try:
-                        outcome = await runner(now)
-                    except Exception as error:
-                        run = RunHealth(
-                            run_name=name,
-                            status="failed",
-                            started_at=now,
-                            finished_at=now,
-                            cursor=previous_cursor,
-                            error_summary=self._sanitized_error(error),
-                        )
-                    else:
-                        if isinstance(outcome, CommittedGroupRun):
-                            if name == "usage":
-                                self._initialized_groups.add(name)
-                                continue
-                            outcome = outcome.cursor
-                        run = RunHealth(
-                            run_name=name,
-                            status="succeeded",
-                            started_at=now,
-                            finished_at=now,
-                            cursor=outcome or {},
-                        )
-                        self._initialized_groups.add(name)
-                    await asyncio.to_thread(self._repository.record_run, run)
-                except Exception:
-                    # Scheduler bookkeeping failure must not prevent another group.
-                    continue
-        finally:
-            self._overview = None
-            self._sync_status_cache = None
+                        return
+                    outcome = outcome.cursor
+                run = RunHealth(
+                    run_name=name,
+                    status="succeeded",
+                    started_at=now,
+                    finished_at=now,
+                    cursor=outcome or {},
+                )
+                self._initialized_groups.add(name)
+            await asyncio.to_thread(self._repository.record_run, run)
+        except Exception:
+            # Scheduler bookkeeping failure must not prevent another group.
+            return
 
     def _is_due(self, name: str, latest: RunHealth | None, now: datetime) -> bool:
         if latest is None:
@@ -159,14 +182,26 @@ class OperationsScheduler:
         return f"{type(error).__name__}: {message[:240]}"
 
     async def _fleet_overview(self, now: datetime):
-        if self._overview is None:
+        if self._overview_task is None:
             if self._fleet_service is None:
                 raise RuntimeError("fleet service unavailable")
-            self._overview = await self._fleet_service.overview(now)
-        return self._overview
+            self._overview_task = asyncio.create_task(
+                self._fleet_service.overview(now)
+            )
+        return await self._overview_task
 
     async def run_runtime(self, now: datetime) -> dict:
         overview = await self._fleet_overview(now)
+        if (
+            not overview.runtime_source.healthy
+            or overview.runtime_source.stale
+            or overview.runtime_source.checked_at is None
+        ):
+            raise RuntimeError("required runtime source unavailable")
+        if not any(
+            agent.state in _USABLE_RUNTIME_STATES for agent in overview.agents
+        ):
+            raise RuntimeError("required runtime evidence unavailable")
         observations = [
             RuntimeObservation(
                 agent_id=agent.id,
@@ -187,11 +222,17 @@ class OperationsScheduler:
         if self._observability_service is None:
             raise RuntimeError("observability service unavailable")
         statuses = await self._sync_statuses()
+        source_kinds = [status.source_kind for status in statuses]
+        if (
+            len(source_kinds) != len(_REQUIRED_SYNC_SOURCES)
+            or set(source_kinds) != _REQUIRED_SYNC_SOURCES
+        ):
+            raise RuntimeError("required sync source coverage incomplete")
         observations: list[SyncObservation] = []
         for status in statuses:
-            last_success_at = (
-                status.completed_at if status.status == "succeeded" else None
-            )
+            last_success_at = status.last_success_at
+            if last_success_at is None and status.status == "succeeded":
+                last_success_at = status.completed_at
             if last_success_at is None:
                 state = await asyncio.to_thread(
                     self._repository.get_rule_state,
@@ -396,14 +437,20 @@ class OperationsScheduler:
         )
 
     async def _sync_statuses(self) -> tuple[SyncStatus, ...]:
-        if self._sync_status_cache is None:
+        if self._sync_status_task is None:
             if self._observability_service is None:
-                self._sync_status_cache = ()
+                async def unavailable() -> tuple[SyncStatus, ...]:
+                    return ()
+
+                self._sync_status_task = asyncio.create_task(unavailable())
             else:
-                self._sync_status_cache = tuple(
-                    await self._observability_service.sync_status()
+                async def load() -> tuple[SyncStatus, ...]:
+                    return tuple(await self._observability_service.sync_status())
+
+                self._sync_status_task = asyncio.create_task(
+                    load()
                 )
-        return self._sync_status_cache
+        return await self._sync_status_task
 
     async def _remote_usage(
         self,
@@ -524,6 +571,7 @@ class OperationsScheduler:
 
 
 async def operations_poll_loop(scheduler: OperationsScheduler) -> None:
+    await scheduler.startup()
     while True:
-        await scheduler.run_due(datetime.now(timezone.utc))
         await asyncio.sleep(10)
+        await scheduler.run_due(datetime.now(timezone.utc))

@@ -155,11 +155,6 @@ def create_app(
     async def lifespan(app: FastAPI):
         tasks = []
         if start_poller:
-            if operations_scheduler is not None:
-                try:
-                    await operations_scheduler.startup()
-                except Exception:
-                    logger.exception("operations startup failed")
             tasks = [
                 asyncio.create_task(
                     poll_loop(

@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from app.config import load_config
 from app.main import build_operations, cancel_tasks, create_app
@@ -99,8 +100,6 @@ def test_operations_startup_failure_does_not_break_platform_lifespan(
     monkeypatch.setattr("app.main.poll_loop", idle)
     monkeypatch.setattr("app.main.cluster_poll_loop", idle)
     monkeypatch.setattr("app.main.remote_poll_loop", idle)
-    monkeypatch.setattr("app.main.operations_poll_loop", idle)
-
     class BrokenScheduler:
         async def startup(self):
             raise RuntimeError("scheduler unavailable")
@@ -115,3 +114,60 @@ def test_operations_startup_failure_does_not_break_platform_lifespan(
 
     with TestClient(app) as client:
         assert client.get("/api/health").json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_platform_lifespan_and_health_start_while_operations_baseline_blocks(
+    tmp_path, monkeypatch
+):
+    registry = tmp_path / "registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "contract.json"
+    contract.write_text('{"bots": []}', encoding="utf-8")
+    baseline_started = asyncio.Event()
+    baseline_cleaned = asyncio.Event()
+
+    async def idle(*_args, **_kwargs):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr("app.main.poll_loop", idle)
+    monkeypatch.setattr("app.main.cluster_poll_loop", idle)
+    monkeypatch.setattr("app.main.remote_poll_loop", idle)
+
+    class BlockingScheduler:
+        async def startup(self):
+            baseline_started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                baseline_cleaned.set()
+
+        async def run_due(self, _now):
+            raise AssertionError("periodic evaluation ran before baseline")
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=True,
+        operations_service=object(),
+        operations_scheduler=BlockingScheduler(),
+    )
+    lifespan = app.router.lifespan_context(app)
+    entering = asyncio.create_task(lifespan.__aenter__())
+    try:
+        await asyncio.wait_for(baseline_started.wait(), timeout=1)
+        await asyncio.sleep(0)
+        assert entering.done()
+        await entering
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            assert (await client.get("/api/health")).json() == {"status": "ok"}
+    finally:
+        if not entering.done():
+            entering.cancel()
+            await asyncio.gather(entering, return_exceptions=True)
+        else:
+            await lifespan.__aexit__(None, None, None)
+
+    assert baseline_cleaned.is_set()
