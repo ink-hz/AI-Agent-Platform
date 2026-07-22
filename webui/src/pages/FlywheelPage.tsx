@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { businessAgents } from "../agentVisibility";
 import { fetchAgents, fetchSessions } from "../api";
 import { AgentDataSwitcher } from "../components/AgentDataSwitcher";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
@@ -17,8 +18,9 @@ export function FlywheelPage() {
     const controller = new AbortController();
     fetchAgents(controller.signal)
       .then((nextAgents) => {
-        setAgents(nextAgents);
-        setSelectedId((current) => current || nextAgents[0]?.id || "");
+        const visibleAgents = businessAgents(nextAgents);
+        setAgents(visibleAgents);
+        setSelectedId((current) => current || visibleAgents[0]?.id || "");
       })
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();

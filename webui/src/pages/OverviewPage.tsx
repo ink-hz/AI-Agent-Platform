@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { FleetAgentCard } from "../FleetAgentCard";
 import { UsageTrend } from "../UsageTrend";
+import { businessAgents } from "../agentVisibility";
 import { fetchFleetOverview } from "../api";
 import { UI_COPY } from "../copy";
 import { startPolling } from "../dashboard";
@@ -87,6 +88,7 @@ export function OverviewPage() {
   }, []);
 
   const { overview, degraded } = state;
+  const visibleAgents = overview ? businessAgents(overview.agents) : [];
   const hasIncident = Boolean(overview && (overview.summary.degraded_agents > 0 || overview.summary.offline_agents > 0));
   const usageReadable = Boolean(overview && usageIsReadable(overview.usage_source));
 
@@ -114,11 +116,11 @@ export function OverviewPage() {
           <article className="fleet-summary-card summary-weekly"><span>{UI_COPY.summary.metrics[3]}</span><strong>{formatCount(overview.summary.conversations_last_7d)}</strong><p>{formatChange(overview.summary.change_percent)}</p></article>
         </div>
       </section>
-      {usageReadable ? <section className="insight-grid" aria-label="Usage insights"><UsageTrend trend={overview.trend} /><ActiveRanking agents={overview.agents} /></section>
+      {usageReadable ? <section className="insight-grid" aria-label="Usage insights"><UsageTrend trend={overview.trend} /><ActiveRanking agents={visibleAgents} /></section>
         : <section className="usage-unavailable-card" aria-label="Usage insights"><span aria-hidden="true">◎</span><div><h2>{UI_COPY.failures.usageTitle}</h2><p>{UI_COPY.failures.usageDescription}</p></div></section>}
       <section className="agents-section" aria-label="Agents">
-        <div className="section-heading"><div><p>{UI_COPY.agent.sectionEyebrow}</p><h2>{UI_COPY.agent.sectionTitle}</h2></div><span>{UI_COPY.agent.refresh(overview.agents.length)}</span></div>
-        <div className="fleet-agent-grid">{overview.agents.map((agent) => <FleetAgentCard agent={agent} key={agent.id} now={now} />)}</div>
+        <div className="section-heading"><div><p>{UI_COPY.agent.sectionEyebrow}</p><h2>{UI_COPY.agent.sectionTitle}</h2></div><span>{UI_COPY.agent.refresh(visibleAgents.length)}</span></div>
+        <div className="fleet-agent-grid">{visibleAgents.map((agent) => <FleetAgentCard agent={agent} key={agent.id} now={now} />)}</div>
       </section>
     </> : <section className="empty-state" aria-live="polite"><span className="empty-pulse" aria-hidden="true" /><h2>{degraded ? UI_COPY.loading.failedTitle : UI_COPY.loading.title}</h2><p>{degraded ? UI_COPY.loading.retry : UI_COPY.loading.description}</p></section>}
   </>;

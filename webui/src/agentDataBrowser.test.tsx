@@ -11,12 +11,14 @@ const agents: AgentSummary[] = [
   {
     id: "hr-bot", name: "HR", domain: "HR", description: "People operations",
     glyph: "HR", accent: "people", source_kind: "metabot", deployment: "Local",
+    visibility: "business",
     session_count: 10, total_turns: 20, last_activity_at: null,
     last_synced_at: null, freshness: "live",
   },
   {
     id: "ai-fae-agent", name: "AI FAE Agent", domain: "Technical Support",
     description: "Field application support", glyph: "FAE", accent: "support",
+    visibility: "business",
     source_kind: "fae", deployment: "Alibaba Cloud", session_count: 168,
     total_turns: 236, last_activity_at: null, last_synced_at: null, freshness: "fresh",
   },
@@ -50,6 +52,7 @@ describe("Agent data browser", () => {
 
     expect(source).toContain("AgentDataSwitcher");
     expect(source).toContain("fetchSessions");
+    expect(source).toContain("businessAgents");
     for (const rejected of [
       "fetchFlywheelOverview", "fetchFlywheelItems", "Feedback", "Pending Review",
       "Eval Candidates", "Daily sync",

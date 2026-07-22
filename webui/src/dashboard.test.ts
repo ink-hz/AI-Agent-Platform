@@ -88,4 +88,13 @@ describe("Overview status messaging", () => {
     expect(source).not.toContain("runtimeNeedsAttention");
     expect(source).not.toContain("UI_COPY.failures.runtime");
   });
+
+  it("renders only Business Agents from the diagnostic Fleet payload", () => {
+    const source = readFileSync(new URL("./pages/OverviewPage.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("businessAgents");
+    expect(source).toContain("businessAgents(overview.agents)");
+    expect(source).not.toContain('agent.id !== "test-bot"');
+    expect(source).not.toContain('agent.id !== "feishu-default"');
+  });
 });

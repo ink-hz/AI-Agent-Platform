@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { agentsForSelector } from "../agentVisibility";
 import { fetchAgents, fetchSessions } from "../api";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
 import { SessionListItem } from "../components/SessionListItem";
@@ -24,12 +25,13 @@ export function SessionsPage() {
       .then(setPage).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [agentId, source, search, version]);
+  const selectableAgents = agentsForSelector(agents, agentId);
 
   return <>
     <section className="page-intro"><div><p className="eyebrow">CONVERSATION RECORD</p><h1>Sessions</h1><p>Inspect questions, answers, Evidence, Feedback, Review, and execution Trace in one place.</p></div>{page && <strong>{page.total}<span> Sessions</span></strong>}</section>
     <form className="filter-bar" onSubmit={(event) => { event.preventDefault(); setSearch(query.trim()); }}>
       <label><span>Search</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Question or answer" /></label>
-      <label><span>Agent</span><select value={agentId} onChange={(event) => setAgentId(event.target.value)}><option value="">All Agents</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
+      <label><span>Agent</span><select value={agentId} onChange={(event) => setAgentId(event.target.value)}><option value="">All Agents</option>{selectableAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
       <label><span>Source</span><select value={source} onChange={(event) => setSource(event.target.value)}><option value="">All sources</option><option value="metabot">MetaBot</option><option value="fae">FAE</option><option value="admin">Admin</option></select></label>
       <button type="submit">Search</button>
     </form>

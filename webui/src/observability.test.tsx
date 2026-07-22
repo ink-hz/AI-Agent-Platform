@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { AgentDirectoryCard } from "./components/AgentDirectoryCard";
+import { AgentDirectorySections } from "./components/AgentDirectorySections";
 import { SessionListItem } from "./components/SessionListItem";
 import type { AgentSummary, SessionSummary } from "./types";
 
@@ -13,6 +15,7 @@ const agent: AgentSummary = {
   description: "Production engineering Agent",
   glyph: "FAE",
   accent: "cyan",
+  visibility: "business",
   source_kind: "fae",
   deployment: "Alibaba Cloud",
   session_count: 168,
@@ -20,6 +23,23 @@ const agent: AgentSummary = {
   last_activity_at: "2026-07-21T09:00:00Z",
   last_synced_at: "2026-07-21T09:10:00Z",
   freshness: "fresh",
+};
+
+
+const systemAgent: AgentSummary = {
+  ...agent,
+  id: "test-bot",
+  name: "Test",
+  domain: "System",
+  description: "Integration testing identity",
+  glyph: "T",
+  accent: "testing",
+  visibility: "system",
+  source_kind: "metabot",
+  deployment: "Local",
+  session_count: 1,
+  total_turns: 1,
+  freshness: "live",
 };
 
 
@@ -58,5 +78,25 @@ describe("observability directory components", () => {
     expect(html).toContain("DingTalk");
     expect(html).toContain("3 turns");
     expect(html).toContain("/sessions/fae%3Asession-1");
+  });
+
+  it("groups System Agents separately in the complete directory", () => {
+    const source = readFileSync(new URL("./pages/AgentsPage.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("partitionAgents");
+    expect(source).toContain("AgentDirectorySections");
+    expect(source).toContain("business.length");
+
+    const html = renderToStaticMarkup(
+      <AgentDirectorySections business={[agent]} system={[systemAgent]} />,
+    );
+    expect(html.indexOf("AI FAE")).toBeLessThan(html.indexOf("System Agents"));
+    expect(html).toContain("/agents/test-bot");
+  });
+
+  it("keeps System Agents out of the default Sessions selector", () => {
+    const source = readFileSync(new URL("./pages/SessionsPage.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("agentsForSelector");
   });
 });

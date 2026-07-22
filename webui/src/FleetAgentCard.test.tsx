@@ -12,6 +12,7 @@ const AGENT = {
   description: "处理招聘、人事与员工服务相关工作。",
   glyph: "HR",
   accent: "people",
+  visibility: "business",
   state: "active",
   live_since: "2026-06-17T16:34:33+08:00",
   live_since_basis: "release_artifact",

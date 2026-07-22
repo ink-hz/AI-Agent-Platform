@@ -33,6 +33,7 @@ export interface ClusterSnapshot {
 }
 
 export type FleetState = "active" | "online" | "degraded" | "offline" | "checking" | "unknown";
+export type AgentVisibility = "business" | "system";
 export type LifecycleBasis = "release_artifact" | "repository_history" | "earliest_session" | "not_recorded";
 
 export interface FleetSummary {
@@ -60,6 +61,7 @@ export interface FleetAgent {
   description: string;
   glyph: string;
   accent: string;
+  visibility: AgentVisibility;
   state: FleetState;
   live_since: string | null;
   live_since_basis: LifecycleBasis;
@@ -101,6 +103,7 @@ export interface AgentSummary {
   description: string;
   glyph: string;
   accent: string;
+  visibility: AgentVisibility;
   source_kind: SourceKind;
   deployment: string;
   session_count: number;

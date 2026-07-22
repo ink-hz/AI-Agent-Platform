@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
+import { partitionAgents } from "../agentVisibility";
 import { fetchAgents } from "../api";
-import { AgentDirectoryCard } from "../components/AgentDirectoryCard";
+import { AgentDirectorySections } from "../components/AgentDirectorySections";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
 import type { AgentSummary } from "../types";
 
@@ -18,12 +19,13 @@ export function AgentsPage() {
     });
     return () => controller.abort();
   }, [version]);
+  const { business, system } = partitionAgents(agents ?? []);
 
   return <>
-    <section className="page-intro"><div><p className="eyebrow">FLEET DIRECTORY</p><h1>Agents</h1><p>Every Agent in the fleet, with its role, data source, and real conversation history.</p></div>{agents && <strong>{agents.length}<span> Agents</span></strong>}</section>
+    <section className="page-intro"><div><p className="eyebrow">FLEET DIRECTORY</p><h1>Agents</h1><p>Every Agent in the fleet, with its role, data source, and real conversation history.</p></div>{agents && <strong>{business.length}<span> Agents</span></strong>}</section>
     {error ? <ErrorState onRetry={() => setVersion((value) => value + 1)} />
       : agents === null ? <LoadingState label="Loading Agent directory" />
       : agents.length === 0 ? <EmptyState title="No Agents found" description="The Agent catalog is currently empty." />
-      : <section className="directory-grid">{agents.map((agent) => <AgentDirectoryCard agent={agent} key={agent.id} />)}</section>}
+      : <AgentDirectorySections business={business} system={system} />}
   </>;
 }
