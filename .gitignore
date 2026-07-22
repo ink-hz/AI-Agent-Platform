@@ -9,5 +9,8 @@ build/
 *.tsbuildinfo
 .DS_Store
 *.db
+data/platform-operations.db
+data/platform-operations.db-shm
+data/platform-operations.db-wal
 .superpowers/
 .worktrees/

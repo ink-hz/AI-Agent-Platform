@@ -23,6 +23,10 @@ class Config:
     remote_ssh_host: str
     remote_ssh_key_path: str
     remote_poll_interval_seconds: float
+    operations_database_path: str
+    operations_usage_interval_seconds: float
+    operations_execution_interval_seconds: float
+    operations_lifecycle_interval_seconds: float
 
 
 def load_config() -> Config:
@@ -74,5 +78,17 @@ def load_config() -> Config:
         ),
         remote_poll_interval_seconds=float(
             os.getenv("PLATFORM_REMOTE_POLL_INTERVAL", "60")
+        ),
+        operations_database_path=os.getenv(
+            "PLATFORM_OPERATIONS_DATABASE_PATH", "../data/platform-operations.db"
+        ),
+        operations_usage_interval_seconds=float(
+            os.getenv("PLATFORM_OPERATIONS_USAGE_INTERVAL", "300")
+        ),
+        operations_execution_interval_seconds=float(
+            os.getenv("PLATFORM_OPERATIONS_EXECUTION_INTERVAL", "300")
+        ),
+        operations_lifecycle_interval_seconds=float(
+            os.getenv("PLATFORM_OPERATIONS_LIFECYCLE_INTERVAL", "600")
         ),
     )

@@ -34,3 +34,20 @@ def test_remote_sync_config_accepts_environment_overrides(monkeypatch) -> None:
     assert config.remote_ssh_host == "agent@example.test"
     assert config.remote_ssh_key_path == "/tmp/test-key"
     assert config.remote_poll_interval_seconds == 90
+
+
+def test_config_has_stable_operations_defaults(monkeypatch) -> None:
+    for name in (
+        "PLATFORM_OPERATIONS_DATABASE_PATH",
+        "PLATFORM_OPERATIONS_USAGE_INTERVAL",
+        "PLATFORM_OPERATIONS_EXECUTION_INTERVAL",
+        "PLATFORM_OPERATIONS_LIFECYCLE_INTERVAL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    config = load_config()
+
+    assert config.operations_database_path == "../data/platform-operations.db"
+    assert config.operations_usage_interval_seconds == 300
+    assert config.operations_execution_interval_seconds == 300
+    assert config.operations_lifecycle_interval_seconds == 600
