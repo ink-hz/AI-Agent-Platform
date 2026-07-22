@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
-import { fetchAgent, fetchFleetOverview, fetchSessions } from "../api";
+import { fetchAgent, fetchFleetOverview, fetchOperationalEvents, fetchSessions } from "../api";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
+import { OperationalEventItem } from "../components/OperationalEventItem";
 import { PlatformLink } from "../components/PlatformLink";
 import { SessionListItem } from "../components/SessionListItem";
 import {
@@ -11,7 +12,7 @@ import {
   formatLifecycleDate,
   formatRuntimeDuration,
 } from "../fleet";
-import type { AgentSummary, FleetAgent, Page, SessionSummary } from "../types";
+import type { AgentSummary, FleetAgent, OperationalEvent, Page, SessionSummary } from "../types";
 
 
 export function AgentDetailPage({ agentId }: { agentId: string }) {
@@ -19,6 +20,8 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
   const [sessions, setSessions] = useState<Page<SessionSummary> | null>(null);
   const [fleetAgent, setFleetAgent] = useState<FleetAgent | null | undefined>(undefined);
   const [error, setError] = useState(false);
+  const [activity, setActivity] = useState<Page<OperationalEvent> | null>(null);
+  const [activityUnavailable, setActivityUnavailable] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
@@ -34,8 +37,28 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
     return () => controller.abort();
   }, [agentId]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    let disposed = false;
+    setActivity(null);
+    setActivityUnavailable(false);
+    fetchOperationalEvents({ agent_id: agentId, limit: 8 }, controller.signal)
+      .then((nextActivity) => {
+        if (!disposed) setActivity(nextActivity);
+      })
+      .catch(() => {
+        if (!disposed) setActivityUnavailable(true);
+      });
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [agentId]);
+
   if (error) return <ErrorState />;
-  if (!agent || !sessions || fleetAgent === undefined) return <LoadingState label="Loading Agent profile" />;
+  if (!agent || agent.id !== agentId || !sessions || fleetAgent === undefined) {
+    return <LoadingState label="Loading Agent profile" />;
+  }
   const liveSinceBasis = fleetAgent?.live_since_basis ?? "not_recorded";
   const lastUpdatedBasis = fleetAgent?.last_updated_basis ?? "not_recorded";
   return <>
@@ -61,6 +84,19 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
           <small>Current process only</small>
         </div>
       </dl>
+    </section>
+    <section className="detail-section agent-activity-section">
+      <div className="section-heading">
+        <div><p>OPERATIONS HISTORY</p><h2>Recent Activity</h2></div>
+        <PlatformLink href={`/activity?agent_id=${encodeURIComponent(agent.id)}`}>View all activity →</PlatformLink>
+      </div>
+      {activityUnavailable
+        ? <div className="agent-activity-status" role="alert"><strong>Activity unavailable</strong><p>Operational history could not be loaded.</p></div>
+        : activity === null
+          ? <p className="agent-activity-status">Loading activity</p>
+          : activity.items.length === 0
+            ? <p className="agent-activity-status">No operational changes recorded yet.</p>
+            : <div className="operational-event-list">{activity.items.slice(0, 8).map((event) => <OperationalEventItem event={event} key={event.event_id} />)}</div>}
     </section>
     <section className="detail-section"><div className="section-heading"><div><p>CONVERSATION HISTORY</p><h2>Recent Sessions</h2></div><PlatformLink href={`/sessions?agent_id=${encodeURIComponent(agent.id)}`}>View all {sessions.total} →</PlatformLink></div>
       {sessions.items.length ? <div className="session-list">{sessions.items.map((session) => <SessionListItem key={session.session_key} session={session} />)}</div> : <EmptyState title="No Sessions yet" description="This Agent is running but has no recorded conversation history." />}

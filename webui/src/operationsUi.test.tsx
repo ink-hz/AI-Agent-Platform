@@ -640,3 +640,69 @@ describe("ActivityPage", () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 });
+
+
+describe("Agent detail activity route", () => {
+  let container: HTMLDivElement;
+  let root: Root | null;
+
+  beforeEach(() => {
+    window.history.replaceState({}, "", "/agents/hr-bot");
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  });
+
+  afterEach(async () => {
+    if (root !== null) await act(async () => root?.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("loads explicitly filtered recent activity for a Business Agent route", async () => {
+    const agent = agents[0];
+    const item = eventFixture("business-event", "Business Agent recovered", "2026-07-22T16:05:00Z", {
+      agent_id: agent.id,
+      target_id: agent.id,
+      target_path: `/agents/${agent.id}`,
+    });
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === `/api/agents/${agent.id}`) return Promise.resolve(response(agent));
+      if (path.startsWith("/api/sessions?")) {
+        return Promise.resolve(response<Page<never>>({ items: [], total: 0, limit: 50, offset: 0 }));
+      }
+      if (path === "/api/fleet/overview") {
+        return Promise.resolve(response({
+          summary: {
+            total_agents: 1, running_agents: 1, active_agents: 1, degraded_agents: 0,
+            offline_agents: 0, checking_agents: 0, total_conversations: 0,
+            conversations_last_7d: 0, conversations_previous_7d: 0, change_percent: null,
+          },
+          trend: [],
+          agents: [],
+          runtime_source: { healthy: true, checked_at: null, stale: false, error: null },
+          usage_source: { healthy: true, checked_at: null, stale: false, error: null },
+        }));
+      }
+      if (path.startsWith("/api/operations/events")) {
+        return Promise.resolve(response<Page<OperationalEvent>>({ items: [item], total: 1, limit: 8, offset: 0 }));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root?.render(createElement(App)));
+
+    expect(container.querySelector(".topbar")).not.toBeNull();
+    expect(container.querySelector(".agent-activity-section")?.textContent).toContain("Business Agent recovered");
+    expect(fetchMock.mock.calls.filter(([path]) => String(path).startsWith("/api/operations/events")))
+      .toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/operations/events?agent_id=hr-bot&limit=8",
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+});
