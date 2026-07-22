@@ -44,6 +44,19 @@ def test_migrate_creates_versioned_operations_schema(tmp_path):
     assert repo.schema_version() == 1
 
 
+def test_schema_version_returns_zero_before_migration(tmp_path):
+    repo = OperationsRepository(str(tmp_path / "operations.db"))
+
+    assert repo.schema_version() == 0
+
+
+def test_schema_version_propagates_non_missing_table_operational_error(tmp_path):
+    repo = OperationsRepository(str(tmp_path))
+
+    with pytest.raises(sqlite3.OperationalError, match="unable to open database file"):
+        repo.schema_version()
+
+
 def test_upsert_active_is_idempotent_and_resolve_is_transactional(tmp_path):
     repo = migrated_repository(tmp_path)
     event = runtime_event()

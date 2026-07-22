@@ -157,13 +157,18 @@ class OperationsRepository:
             )
 
     def schema_version(self) -> int:
-        try:
-            with self._connection() as connection:
-                row = connection.execute(
-                    "select max(version) as version from operations_schema_version"
-                ).fetchone()
-        except sqlite3.OperationalError:
-            return 0
+        with self._connection() as connection:
+            table = connection.execute(
+                """
+                select 1 from sqlite_master
+                where type='table' and name='operations_schema_version'
+                """
+            ).fetchone()
+            if table is None:
+                return 0
+            row = connection.execute(
+                "select max(version) as version from operations_schema_version"
+            ).fetchone()
         return int(row["version"] or 0)
 
     def upsert_active(self, event: NewOperationalEvent) -> OperationalEvent:
