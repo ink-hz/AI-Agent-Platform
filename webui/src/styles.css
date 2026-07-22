@@ -502,12 +502,15 @@ body {
 .agent-data-context::before { position: absolute; inset: 0 0 auto; height: 6px; background: var(--agent-accent); content: ""; }
 .agent-data-context .profile-identity h2 { margin: 0; font-size: 25px; letter-spacing: -.03em; }
 
+@media (max-width: 1080px) {
+  .activity-filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .activity-filter-bar button { width: 100%; }
+}
+
 @media (max-width: 1000px) {
   .product-nav { gap: 18px; }
   .fleet-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .insight-grid { grid-template-columns: 1fr; }
-  .activity-filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .activity-filter-bar button { width: 100%; }
   .fleet-agent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .directory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .session-row { grid-template-columns: 95px minmax(220px, 1fr) 170px 70px; }

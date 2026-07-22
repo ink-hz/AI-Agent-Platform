@@ -131,6 +131,12 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".agent-activity-status")).toContain("min-height: 112px");
   });
 
+  it("contains all six Activity filter tracks through the intermediate desktop range", () => {
+    const activityCompact = block("@media (max-width: 1080px)");
+    expect(activityCompact).toContain(".activity-filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }");
+    expect(activityCompact).toContain(".activity-filter-bar button { width: 100%; }");
+  });
+
   it("stacks the Brief and Activity controls at the approved Operations breakpoint", () => {
     const operationsMobile = block("@media (max-width: 760px)");
     expect(operationsMobile).toContain(".daily-brief-grid { grid-template-columns: 1fr; }");
