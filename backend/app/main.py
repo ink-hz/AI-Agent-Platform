@@ -26,9 +26,11 @@ from .observability.repository import (
     UnavailableObservabilityRepository,
 )
 from .observability.service import ObservabilityService
+from .operations import routes as operations_routes
 from .operations.repository import OperationsRepository
 from .operations.rules import OperationsRuleEngine
 from .operations.scheduler import OperationsScheduler, operations_poll_loop
+from .operations.service import OperationsService
 from .operations.source import PsycopgOperationsSource
 from .registry import routes as registry_routes
 from .registry.repository import YamlRepository
@@ -51,7 +53,7 @@ def build_operations(
     fleet_service: FleetReadService | None,
     observability_service: ObservabilityService | None,
     database_url: str | None,
-) -> tuple[OperationsRepository | None, OperationsScheduler | None]:
+) -> tuple[OperationsService | None, OperationsScheduler | None]:
     try:
         database_path = Path(config.operations_database_path)
         database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -75,7 +77,18 @@ def build_operations(
                 "lifecycle": config.operations_lifecycle_interval_seconds,
             },
         )
-        return repository, scheduler
+        service = OperationsService(
+            repository,
+            intervals={
+                "runtime": config.cluster_poll_interval_seconds,
+                "sync": config.remote_poll_interval_seconds,
+                "data_access": config.usage_cache_seconds,
+                "usage": config.operations_usage_interval_seconds,
+                "execution": config.operations_execution_interval_seconds,
+                "lifecycle": config.operations_lifecycle_interval_seconds,
+            },
+        )
+        return service, scheduler
     except Exception:
         logger.exception("operations initialization failed")
         return None, None
@@ -198,6 +211,7 @@ def create_app(
     app.include_router(cluster_routes.router)
     app.include_router(fleet_routes.router)
     app.include_router(observability_routes.router)
+    app.include_router(operations_routes.router)
     app.include_router(registry_routes.router)
 
     if os.path.isdir(config.static_dir):

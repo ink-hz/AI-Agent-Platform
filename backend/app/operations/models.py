@@ -58,6 +58,34 @@ class EventFilters(BaseModel):
     date_to: datetime | None = None
 
 
+class BriefFreshness(BaseModel):
+    status: Literal["current", "partial", "stale", "unavailable"]
+    evaluated_at: datetime | None
+    failed_groups: list[str] = Field(default_factory=list)
+
+
+class UsageLeader(BaseModel):
+    agent_id: str
+    agent_name: str
+    conversations: int
+
+
+class UsageBrief(BaseModel):
+    conversations: int
+    active_agents: int
+    leaders: list[UsageLeader] = Field(default_factory=list)
+
+
+class OperationsBrief(BaseModel):
+    period_start: datetime
+    period_end: datetime
+    freshness: BriefFreshness
+    can_claim_healthy: bool
+    attention: list[OperationalEvent]
+    usage: UsageBrief
+    changes: list[OperationalEvent]
+
+
 class UsageOccurrence(BaseModel):
     turn_key: str
     agent_id: str
