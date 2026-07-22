@@ -93,9 +93,9 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
       {activityUnavailable
         ? <div className="agent-activity-status" role="alert"><strong>Activity unavailable</strong><p>Operational history could not be loaded.</p></div>
         : activity === null
-          ? <p className="agent-activity-status">Loading activity</p>
+          ? <p className="agent-activity-status" role="status" aria-live="polite">Loading activity</p>
           : activity.items.length === 0
-            ? <p className="agent-activity-status">No operational changes recorded yet.</p>
+            ? <p className="agent-activity-status" role="status" aria-live="polite">No operational changes recorded yet.</p>
             : <div className="operational-event-list">{activity.items.slice(0, 8).map((event) => <OperationalEventItem event={event} key={event.event_id} />)}</div>}
     </section>
     <section className="detail-section"><div className="section-heading"><div><p>CONVERSATION HISTORY</p><h2>Recent Sessions</h2></div><PlatformLink href={`/sessions?agent_id=${encodeURIComponent(agent.id)}`}>View all {sessions.total} →</PlatformLink></div>

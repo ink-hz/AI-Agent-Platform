@@ -5,10 +5,13 @@ import type { EventSeverity, OperationalEvent } from "../types";
 import { PlatformLink } from "./PlatformLink";
 
 
-const SEVERITY: Record<EventSeverity, { icon: string; label: string }> = {
+type EventTone = EventSeverity | "recovery";
+
+const SEVERITY: Record<EventTone, { icon: string; label: string }> = {
   critical: { icon: "!", label: "Critical" },
   attention: { icon: "△", label: "Attention" },
   info: { icon: "i", label: "Info" },
+  recovery: { icon: "✓", label: "Recovery" },
 };
 
 function sourceLabel(source: string): string {
@@ -16,10 +19,11 @@ function sourceLabel(source: string): string {
 }
 
 function EventContent({ event }: { event: OperationalEvent }) {
-  const severity = SEVERITY[event.severity];
+  const tone: EventTone = event.event_family === "recovery" ? "recovery" : event.severity;
+  const severity = SEVERITY[tone];
   return <>
     <div className="operational-event-head">
-      <span className={`event-severity severity-${event.severity}`}>
+      <span className={`event-severity event-severity-${tone}`}>
         <i aria-hidden="true">{severity.icon}</i>{severity.label}
       </span>
       <time dateTime={event.occurred_at}>{eventTimeLabel(event)}</time>
@@ -35,9 +39,11 @@ function EventContent({ event }: { event: OperationalEvent }) {
 
 export function OperationalEventItem({ event }: { event: OperationalEvent }) {
   const target = eventTargetPath(event);
+  const tone: EventTone = event.event_family === "recovery" ? "recovery" : event.severity;
+  const className = `operational-event-item event-severity-${tone} event-visibility-${event.agent_visibility}`;
   const content: ReactNode = <EventContent event={event} />;
   if (target) {
-    return <PlatformLink className="operational-event-item is-linked" href={target}>{content}</PlatformLink>;
+    return <PlatformLink className={`${className} is-linked`} href={target}>{content}</PlatformLink>;
   }
-  return <article className="operational-event-item">{content}</article>;
+  return <article className={className}>{content}</article>;
 }

@@ -29,6 +29,8 @@
     <string>10</string>
     <key>PLATFORM_PROBE_TIMEOUT</key>
     <string>3</string>
+    <key>PLATFORM_OPERATIONS_DATABASE_PATH</key>
+    <string>/Users/neo/Developer/work/AI-Agent-Platform/data/platform-operations.db</string>
     <key>PLATFORM_STATIC_DIR</key>
     <string>/Users/neo/Developer/work/AI-Agent-Platform/webui/dist</string>
   </dict>

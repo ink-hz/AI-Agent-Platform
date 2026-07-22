@@ -20,7 +20,7 @@ export function DailyBrief({ brief, stale = false }: { brief: OperationsBrief; s
     <section className="daily-brief" aria-labelledby="daily-brief-title">
       <header className="daily-brief-heading">
         <div><p>OPERATIONS</p><h2 id="daily-brief-title">Daily Brief</h2></div>
-        <div className={`brief-freshness brief-status-${status}`} role={status === "current" ? undefined : "status"}>
+        <div className={`brief-freshness brief-freshness-${status}`} role={status === "current" ? undefined : "status"}>
           <span aria-hidden="true" />{briefStatusLabel(brief.freshness, stale)}
         </div>
       </header>

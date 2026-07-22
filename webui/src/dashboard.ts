@@ -39,6 +39,10 @@ interface TimedPollingCycle<T> {
 }
 
 
+/**
+ * Runs one deadline-bound request. The request must cooperate with AbortSignal;
+ * otherwise the returned promise cannot settle until the underlying work does.
+ */
 export async function runTimedPollingCycle<T>({
   controller,
   request,

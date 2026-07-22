@@ -219,6 +219,8 @@ describe("AgentDetailPage recent activity", () => {
     expect(container.textContent).toContain(sessionFixture.title);
     expect(container.querySelector(".agent-activity-section")?.textContent).toContain("Recent Activity");
     expect(container.querySelector(".agent-activity-section")?.textContent).toContain("Loading activity");
+    expect(container.querySelector(".agent-activity-status")?.getAttribute("role")).toBe("status");
+    expect(container.querySelector(".agent-activity-status")?.getAttribute("aria-live")).toBe("polite");
   });
 
   it("contains activity failure without replacing the Agent profile or Sessions", async () => {
@@ -259,6 +261,8 @@ describe("AgentDetailPage recent activity", () => {
 
     expect(container.querySelector(".agent-activity-section")?.textContent)
       .toContain("No operational changes recorded yet.");
+    expect(container.querySelector(".agent-activity-status")?.getAttribute("role")).toBe("status");
+    expect(container.querySelector(".agent-activity-status")?.getAttribute("aria-live")).toBe("polite");
   });
 
   it("renders at most eight events, encodes the activity link, and requests activity once", async () => {

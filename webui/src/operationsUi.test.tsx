@@ -168,6 +168,7 @@ describe("DailyBrief", () => {
     );
     expect(html).not.toContain("No critical issues");
     expect(html).toContain("Brief data is stale");
+    expect(html).toContain("brief-freshness-stale");
   });
 
   it("does not present resolved events as active Attention", () => {
@@ -201,7 +202,24 @@ describe("DailyBrief", () => {
 
     expect(html).toContain('aria-hidden="true"');
     expect(html).toContain("Critical");
+    expect(html).toContain("event-severity-critical");
+    expect(html).toContain("event-visibility-business");
     expect(html).toContain('href="/agents/ai-fae-agent"');
+  });
+
+  it("renders recovery and System events with semantic visual hooks", () => {
+    const recovery = renderToStaticMarkup(<OperationalEventItem event={briefFixture.changes[0]} />);
+    const system = renderToStaticMarkup(<OperationalEventItem event={{
+      ...briefFixture.attention[0],
+      agent_id: "test-bot",
+      agent_visibility: "system",
+      target_id: "test-bot",
+      target_path: "/agents/test-bot",
+    }} />);
+
+    expect(recovery).toContain("Recovery");
+    expect(recovery).toContain("event-severity-recovery");
+    expect(system).toContain("event-visibility-system");
   });
 });
 
@@ -245,6 +263,7 @@ describe("ActivityPage", () => {
 
     await renderActivity();
 
+    expect(container.querySelector(".activity-filter-bar")).not.toBeNull();
     expect(Array.from(container.querySelectorAll(".filter-bar label > span"), (node) => node.textContent))
       .toEqual(["Agent", "Event type", "Severity", "From", "To"]);
     const options = Array.from(container.querySelectorAll("select[name=agent_id] option"), (node) => node.textContent);

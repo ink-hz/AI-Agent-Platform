@@ -100,4 +100,43 @@ describe("Executive Operations visual contract", () => {
     expect(mobile).toContain(".fleet-agent-head { display: grid; grid-template-columns: 52px minmax(0, 1fr);");
     expect(mobile).toContain(".fleet-state { grid-column: 2; grid-row: 2; justify-self: start; }");
   });
+
+  it("gives the Daily Brief two equal, substantial desktop columns", () => {
+    expect(rule(".daily-brief-grid")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+    expect(rule(".brief-panel")).toContain("min-height: 330px");
+    expect(rule(".attention-panel")).toContain("border-top: 4px solid var(--down)");
+  });
+
+  it("uses rendered severity hooks for label, icon, border, and color treatments", () => {
+    for (const tone of ["critical", "attention", "info", "recovery"]) {
+      expect(styles).toContain(`.event-severity-${tone}`);
+      expect(rule(`.operational-event-item.event-severity-${tone}`)).toContain("border-left: 4px solid");
+      expect(rule(`.event-severity.event-severity-${tone}`)).toContain("color:");
+      expect(rule(`.event-severity.event-severity-${tone} i`)).toContain("background:");
+    }
+    expect(rule(".operational-event-item.is-linked:hover")).not.toContain("border-color:");
+  });
+
+  it("distinguishes stale Briefs and quiet System Agent infrastructure", () => {
+    expect(rule(".brief-freshness-stale")).toContain("color: var(--warn)");
+    expect(rule(".operational-event-item.event-visibility-system")).toContain("box-shadow: none");
+    expect(rule(".operational-event-item.event-visibility-system")).toContain("background: #f7f9fc");
+  });
+
+  it("finishes Activity groups, pagination, and Recent Activity cards", () => {
+    expect(rule(".activity-history")).toContain("margin-top: 28px");
+    expect(rule(".activity-group")).toContain("padding: 24px");
+    expect(rule(".activity-load-more")).toContain("min-height: 44px");
+    expect(rule(".agent-activity-section")).toContain("padding: 24px");
+    expect(rule(".agent-activity-status")).toContain("min-height: 112px");
+  });
+
+  it("stacks the Brief and Activity controls at the approved Operations breakpoint", () => {
+    const operationsMobile = block("@media (max-width: 760px)");
+    expect(operationsMobile).toContain(".daily-brief-grid { grid-template-columns: 1fr; }");
+    expect(operationsMobile).toContain(".attention-panel { order: -1; }");
+    expect(operationsMobile).toContain(".activity-filter-bar { grid-template-columns: 1fr; }");
+    expect(operationsMobile).toContain(".activity-group { padding: 18px; }");
+    expect(operationsMobile).toContain(".agent-activity-section { padding: 18px; }");
+  });
 });

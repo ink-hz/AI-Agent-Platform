@@ -270,7 +270,7 @@ export function ActivityPage() {
         <p>Review evidence-backed changes across Business Agents and explicitly selected System Agents.</p>
       </div>
     </section>
-    <form className="filter-bar" onSubmit={(event) => {
+    <form className="filter-bar activity-filter-bar" onSubmit={(event) => {
       event.preventDefault();
       const next = cleanFilters(draft);
       const path = canonicalActivityPath(next);
@@ -290,7 +290,7 @@ export function ActivityPage() {
     {loading ? <LoadingState label="Loading Activity" />
       : events.length === 0 && !unavailable ? <EmptyState title="No matching activity" description="Adjust the filters or wait for new evidence-backed operational changes." />
       : <div className="activity-history">{groups.map((group) => <section className="activity-group" key={group.heading}><h2>{group.heading}</h2><div className="operational-event-list">{group.items.map((event) => <OperationalEventItem event={event} key={event.event_id} />)}</div></section>)}</div>}
-    {hasMore && <button type="button" disabled={loadingMore} onClick={() => {
+    {hasMore && <button className="activity-load-more" type="button" disabled={loadingMore} onClick={() => {
       if (loadingMore) return;
       setApplied((current) => ({ ...current, offset: consumed, revision: current.revision + 1 }));
     }}>{loadingMore ? "Loading more" : "Load more"}</button>}
