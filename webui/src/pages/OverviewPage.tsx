@@ -6,7 +6,7 @@ import { businessAgents } from "../agentVisibility";
 import { fetchFleetOverview, fetchOperationsBrief } from "../api";
 import { DailyBrief } from "../components/DailyBrief";
 import { UI_COPY } from "../copy";
-import { startPolling } from "../dashboard";
+import { runTimedPollingCycle, startPolling } from "../dashboard";
 import {
   applyFleetFailure,
   applyFleetSuccess,
@@ -74,16 +74,15 @@ export function OverviewPage() {
     const refresh = async () => {
       const controller = new AbortController();
       activeController = controller;
-      const timeout = window.setTimeout(() => controller.abort(), 5_000);
-      try {
-        const overview = await fetchFleetOverview(controller.signal);
-        if (!disposed && !controller.signal.aborted) setState((current) => applyFleetSuccess(current, overview));
-      } catch {
-        if (!disposed) setState(applyFleetFailure);
-      } finally {
-        window.clearTimeout(timeout);
-        if (activeController === controller) activeController = null;
-      }
+      await runTimedPollingCycle({
+        controller,
+        request: fetchFleetOverview,
+        isDisposed: () => disposed,
+        onSuccess: (overview) => setState((current) => applyFleetSuccess(current, overview)),
+        onFailure: () => setState(applyFleetFailure),
+        timeoutMs: 5_000,
+      });
+      if (activeController === controller) activeController = null;
     };
     const stopPolling = startPolling(refresh, 10_000);
     return () => { disposed = true; activeController?.abort(); stopPolling(); };
@@ -95,16 +94,15 @@ export function OverviewPage() {
     const refresh = async () => {
       const controller = new AbortController();
       activeController = controller;
-      const timeout = window.setTimeout(() => controller.abort(), 5_000);
-      try {
-        const brief = await fetchOperationsBrief(controller.signal);
-        if (!disposed && !controller.signal.aborted) setOperationsState((current) => applyOperationsSuccess(current, brief));
-      } catch {
-        if (!disposed) setOperationsState(applyOperationsFailure);
-      } finally {
-        window.clearTimeout(timeout);
-        if (activeController === controller) activeController = null;
-      }
+      await runTimedPollingCycle({
+        controller,
+        request: fetchOperationsBrief,
+        isDisposed: () => disposed,
+        onSuccess: (brief) => setOperationsState((current) => applyOperationsSuccess(current, brief)),
+        onFailure: () => setOperationsState(applyOperationsFailure),
+        timeoutMs: 5_000,
+      });
+      if (activeController === controller) activeController = null;
     };
     const stopPolling = startPolling(refresh, 10_000);
     return () => { disposed = true; activeController?.abort(); stopPolling(); };

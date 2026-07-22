@@ -29,6 +29,50 @@ export function applyFailure(state: DashboardState): DashboardState {
 type Schedule = (callback: () => void, delay: number) => number;
 type Cancel = (handle: number) => void;
 
+interface TimedPollingCycle<T> {
+  controller: AbortController;
+  request: (signal: AbortSignal) => Promise<T>;
+  isDisposed: () => boolean;
+  onSuccess: (value: T) => void;
+  onFailure: () => void;
+  timeoutMs: number;
+}
+
+
+export async function runTimedPollingCycle<T>({
+  controller,
+  request,
+  isDisposed,
+  onSuccess,
+  onFailure,
+  timeoutMs,
+}: TimedPollingCycle<T>): Promise<void> {
+  let failureApplied = false;
+  const failOnce = () => {
+    if (failureApplied || isDisposed()) return;
+    failureApplied = true;
+    onFailure();
+  };
+  const timeout = window.setTimeout(() => {
+    controller.abort();
+    failOnce();
+  }, timeoutMs);
+
+  try {
+    const value = await request(controller.signal);
+    if (isDisposed()) return;
+    if (controller.signal.aborted) {
+      failOnce();
+      return;
+    }
+    onSuccess(value);
+  } catch {
+    failOnce();
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 
 export function startPolling(
   task: () => Promise<void>,

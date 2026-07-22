@@ -276,6 +276,78 @@ describe("Overview Fleet and Daily Brief integration", () => {
     expect(container.querySelector(".daily-brief")).toBeNull();
   });
 
+  it("marks the last Fleet result degraded when a next-cycle timeout later resolves", async () => {
+    const lateFleet = deferred<FleetOverview>();
+    const replacementFleet: FleetOverview = {
+      ...fleetOverview,
+      summary: { ...fleetOverview.summary, total_agents: 999, total_conversations: 999 },
+    };
+    vi.mocked(fetchFleetOverview)
+      .mockResolvedValueOnce(fleetOverview)
+      .mockReturnValueOnce(lateFleet.promise);
+    vi.mocked(fetchOperationsBrief).mockResolvedValue(operationsBrief);
+
+    await renderOverview();
+    expect(container.querySelector(".summary-section")?.textContent).toContain("42");
+
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    const signal = vi.mocked(fetchFleetOverview).mock.calls[1][0]!;
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+
+    expect(signal.aborted).toBe(true);
+    expect(container.querySelector(".error-banner")).not.toBeNull();
+    expect(container.querySelector(".summary-section")?.textContent).toContain("42");
+    expect(fetchFleetOverview).toHaveBeenCalledTimes(2);
+
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(fetchFleetOverview).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      lateFleet.resolve(replacementFleet);
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector(".error-banner")).not.toBeNull();
+    expect(container.querySelector(".summary-section")?.textContent).toContain("42");
+    expect(container.textContent).not.toContain("999");
+    expect(fetchFleetOverview).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks the last Brief stale when a next-cycle timeout later resolves", async () => {
+    const lateBrief = deferred<OperationsBrief>();
+    const replacementBrief: OperationsBrief = {
+      ...operationsBrief,
+      attention: [{ ...operationsBrief.attention[0], event_id: "late", title: "Late Operations payload" }],
+    };
+    vi.mocked(fetchFleetOverview).mockResolvedValue(fleetOverview);
+    vi.mocked(fetchOperationsBrief)
+      .mockResolvedValueOnce(operationsBrief)
+      .mockReturnValueOnce(lateBrief.promise);
+
+    await renderOverview();
+    expect(container.querySelector(".daily-brief")?.textContent).toContain("AI FAE Agent is offline");
+
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    const signal = vi.mocked(fetchOperationsBrief).mock.calls[1][0]!;
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+
+    expect(signal.aborted).toBe(true);
+    expect(container.querySelector(".daily-brief")?.textContent).toContain("Brief data is stale");
+    expect(container.querySelector(".daily-brief")?.textContent).toContain("AI FAE Agent is offline");
+    expect(fetchOperationsBrief).toHaveBeenCalledTimes(2);
+
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(fetchOperationsBrief).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      lateBrief.resolve(replacementBrief);
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector(".daily-brief")?.textContent).toContain("Brief data is stale");
+    expect(container.querySelector(".daily-brief")?.textContent).toContain("AI FAE Agent is offline");
+    expect(container.textContent).not.toContain("Late Operations payload");
+    expect(fetchOperationsBrief).toHaveBeenCalledTimes(2);
+  });
+
   it("does not overlap or duplicate Operations requests within a polling cycle", async () => {
     const first = deferred<OperationsBrief>();
     const second = deferred<OperationsBrief>();
