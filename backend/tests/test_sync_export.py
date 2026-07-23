@@ -4,6 +4,7 @@ import subprocess
 import pytest
 
 from app.sync_remote.config import SyncSource, TableExport
+from app.sync_remote.config import default_sources
 from app.sync_remote.export import (
     ExportError,
     build_remote_program,
@@ -89,3 +90,10 @@ def test_export_reports_zero_rows_for_expected_tables() -> None:
 
     assert bundle.tables == {"chat_sessions": ()}
     assert bundle.source_counts["chat_sessions"] == 0
+
+
+def test_admin_export_includes_only_the_minimal_directory_snapshot_table() -> None:
+    source = default_sources("root@example.test", "/tmp/key")["admin"]
+    names = {table.remote_name for table in source.tables}
+
+    assert "admin_directory_members" in names

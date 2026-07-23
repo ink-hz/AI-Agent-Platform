@@ -62,6 +62,7 @@ def default_sources(ssh_host: str, ssh_key_path: str) -> dict[SourceKind, SyncSo
                     "admin_knowledge_improvement_tasks",
                     "admin_knowledge_improvement_tasks",
                 ),
+                TableExport("admin_directory_members", "admin_directory_members"),
             ),
         ),
     }

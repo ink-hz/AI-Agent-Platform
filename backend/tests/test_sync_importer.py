@@ -9,6 +9,7 @@ from app.sync_remote.importer import (
     normalize_trace_span,
     validate_bundle,
 )
+from app.sync_remote.identity_matcher import match_directory_entries
 
 
 SYNCED_AT = datetime(2026, 7, 21, 3, 20, tzinfo=timezone.utc)
@@ -62,6 +63,48 @@ def test_admin_prefix_is_removed_only_for_target_table() -> None:
     assert normalized.target_schema == "platform_source_admin"
     assert normalized.target_table == "chat_sessions"
     assert normalized.values["external_session_id"] == "ding-session"
+
+
+def test_admin_directory_row_is_normalized_into_protected_identity_schema() -> None:
+    normalized = normalize_row(
+        "admin",
+        "admin_directory_members",
+        {
+            "staff_id": "staff-1",
+            "display_name": "  Ｌina  ",
+            "departments": [" Marketing ", ""],
+            "active": True,
+            "source_updated_at": None,
+            "source_synced_at": "2026-07-23T03:00:00+00:00",
+            "mobile": "must-not-cross-boundary",
+        },
+        SYNCED_AT,
+    )
+
+    assert normalized.target_schema == "platform_identity"
+    assert normalized.target_table == "dingtalk_directory_members"
+    assert normalized.conflict_columns == ("staff_id",)
+    assert normalized.values["display_name"] == "Lina"
+    assert normalized.values["normalized_name"] == "Lina"
+    assert normalized.values["departments"] == ["Marketing"]
+    assert "mobile" not in normalized.values
+
+
+def test_directory_matching_requires_one_exact_active_unicode_normalized_name() -> None:
+    directory = [
+        {"staff_id": "1", "display_name": "Ｌina", "departments": ["Marketing"], "active": True},
+        {"staff_id": "2", "display_name": "Noah", "departments": ["Sales"], "active": False},
+        {"staff_id": "3", "display_name": "Alex", "departments": ["Finance"], "active": True},
+        {"staff_id": "4", "display_name": "Alex", "departments": ["Legal"], "active": True},
+    ]
+
+    matches = match_directory_entries([" Lina ", "Noah", "Alex", "Unknown"], directory)
+
+    assert matches[" Lina "].department == "Marketing"
+    assert matches[" Lina "].status == "resolved"
+    assert matches["Noah"].status == "unmatched"
+    assert matches["Alex"].status == "ambiguous"
+    assert matches["Unknown"].status == "unmatched"
 
 
 def test_trace_span_uses_trace_and_span_as_conflict_key() -> None:

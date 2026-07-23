@@ -9,6 +9,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .export import ExportBundle
+from .identity_matcher import normalize_display_name
 
 
 class ImportValidationError(RuntimeError):
@@ -93,6 +94,10 @@ ADMIN_COLUMNS: dict[str, tuple[str, ...]] = {
         "failure_layer", "title", "description", "status", "priority",
         "source_refs", "created_at", "updated_at",
     ),
+    "admin_directory_members": (
+        "staff_id", "display_name", "departments", "active",
+        "source_updated_at", "source_synced_at",
+    ),
 }
 
 
@@ -101,6 +106,8 @@ def _target_table(source_kind: str, source_table: str) -> tuple[str, str]:
         if source_table not in FAE_COLUMNS:
             raise ImportValidationError("unknown_source_table")
         return "platform_source_fae", source_table
+    if source_kind == "admin" and source_table == "admin_directory_members":
+        return "platform_identity", "dingtalk_directory_members"
     if source_kind == "admin" and source_table in ADMIN_COLUMNS:
         return "platform_source_admin", source_table.removeprefix("admin_")
     raise ImportValidationError("unknown_source_table")
@@ -113,6 +120,30 @@ def normalize_row(
     synced_at: datetime,
 ) -> NormalizedRow:
     schema, table = _target_table(source_kind, source_table)
+    if source_kind == "admin" and source_table == "admin_directory_members":
+        staff_id = str(row.get("staff_id") or "").strip()
+        display_name = normalize_display_name(row.get("display_name"))
+        if not staff_id or not display_name:
+            raise ImportValidationError("missing_required_key")
+        departments = [
+            normalized
+            for value in row.get("departments") or ()
+            if (normalized := normalize_display_name(value))
+        ]
+        return NormalizedRow(
+            schema,
+            table,
+            {
+                "staff_id": staff_id,
+                "display_name": display_name,
+                "normalized_name": display_name,
+                "departments": list(dict.fromkeys(departments)),
+                "active": bool(row.get("active", True)),
+                "source_updated_at": row.get("source_updated_at"),
+                "source_synced_at": synced_at,
+            },
+            ("staff_id",),
+        )
     columns = (
         FAE_COLUMNS[source_table]
         if source_kind == "fae"
@@ -167,7 +198,8 @@ def validate_bundle(bundle: ExportBundle) -> dict[str, int]:
     }
     for table, rows in bundle.tables.items():
         for row in rows:
-            if not row.get("id"):
+            identity_key = "staff_id" if table == "admin_directory_members" else "id"
+            if not row.get(identity_key):
                 raise ImportValidationError("missing_required_key")
             for key in required.get(table, ()):
                 if not row.get(key):
@@ -251,6 +283,8 @@ def import_bundle(
                                 normalize_row(bundle.source_kind, table, source_row, synced_at),
                             )
                         applied[table] = len(rows)
+                    if bundle.source_kind == "admin" and "admin_directory_members" in bundle.tables:
+                        cursor.execute("select platform_identity.refresh_dingtalk_matches()")
                     if bundle.source_kind == "fae":
                         for span in bundle.trace_spans:
                             _upsert(cursor, normalize_trace_span(span, synced_at))
