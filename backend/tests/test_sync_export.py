@@ -94,6 +94,7 @@ def test_export_reports_zero_rows_for_expected_tables() -> None:
 
 def test_admin_export_includes_only_the_minimal_directory_snapshot_table() -> None:
     source = default_sources("root@example.test", "/tmp/key")["admin"]
-    names = {table.remote_name for table in source.tables}
+    tables = {table.remote_name: table for table in source.tables}
 
-    assert "admin_directory_members" in names
+    assert tables["admin_directory_members"].order_by == "staff_id"
+    assert "('admin_directory_members', 'staff_id')" in build_remote_program(source)

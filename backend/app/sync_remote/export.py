@@ -59,7 +59,7 @@ database_url = environment[b"DATABASE_URL"].decode()
 
 
 def build_remote_program(source: SyncSource) -> str:
-    table_names = [table.remote_name for table in source.tables]
+    table_specs = [(table.remote_name, table.order_by) for table in source.tables]
     trace_path = source.trace_jsonl_path
     return f"""
 import json
@@ -70,12 +70,12 @@ from psycopg.rows import dict_row
 
 {_connection_program(source.kind)}
 
-tables = {table_names!r}
+tables = {table_specs!r}
 trace_jsonl_path = {trace_path!r}
 with psycopg.connect(database_url, row_factory=dict_row, autocommit=True) as connection:
     with connection.cursor() as cursor:
-        for table in tables:
-            cursor.execute("select * from " + table + " order by id")
+        for table, order_by in tables:
+            cursor.execute("select * from " + table + " order by " + order_by)
             for row in cursor.fetchall():
                 print(json.dumps(
                     {{"record_type": "table_row", "table": table, "row": row}},
