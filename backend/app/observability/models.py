@@ -10,6 +10,7 @@ SourceKind = Literal["metabot", "fae", "admin"]
 AgentVisibility = Literal["business", "system"]
 Availability = Literal["available", "missing", "unavailable", "restricted"]
 Freshness = Literal["live", "fresh", "stale"]
+SenderIdentityStatus = Literal["resolved", "name_only", "unavailable"]
 
 
 class SessionFilters(BaseModel):
@@ -60,6 +61,10 @@ class SessionSummary(BaseModel):
     review_count: int
     latest_outcome: str | None = None
     source_synced_at: datetime | None = None
+    participant_count: int | None = None
+    primary_sender_name: str | None = None
+    primary_sender_department: str | None = None
+    sender_identity_status: SenderIdentityStatus = "unavailable"
     freshness: Freshness
 
 
@@ -131,6 +136,9 @@ class TurnDetail(BaseModel):
     feedback: list[FeedbackItem] = Field(default_factory=list)
     reviews: list[ReviewItem] = Field(default_factory=list)
     improvements: list[ImprovementItem] = Field(default_factory=list)
+    sender_name: str | None = None
+    sender_department: str | None = None
+    sender_identity_status: SenderIdentityStatus = "unavailable"
     details: dict = Field(default_factory=dict)
 
 

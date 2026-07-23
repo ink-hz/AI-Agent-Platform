@@ -214,6 +214,10 @@ class PsycopgObservabilityRepository:
             review_count=int(row["review_count"]),
             latest_outcome=row["latest_outcome"],
             source_synced_at=row["source_synced_at"],
+            participant_count=row.get("participant_count"),
+            primary_sender_name=row.get("primary_sender_name"),
+            primary_sender_department=row.get("primary_sender_department"),
+            sender_identity_status=row.get("sender_identity_status") or "unavailable",
             freshness=_freshness(row["source_kind"], row["source_synced_at"], self._now()),
         )
 
@@ -349,7 +353,10 @@ class PsycopgObservabilityRepository:
             trace_key=row["trace_key"], outcome=row["outcome"], fallback_used=row["fallback_used"],
             duration_ms=row["duration_ms"], sources=sources, evidence=evidence,
             evidence_availability=availability, feedback=feedback, reviews=reviews,
-            improvements=improvements, details=_dict(row.get("details")),
+            improvements=improvements, sender_name=row.get("sender_name"),
+            sender_department=row.get("sender_department"),
+            sender_identity_status=row.get("sender_identity_status") or "unavailable",
+            details=_dict(row.get("details")),
         )
 
     def get_trace(self, turn_key: str) -> TraceDetail | None:

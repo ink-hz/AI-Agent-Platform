@@ -219,6 +219,10 @@ def test_list_sessions_uses_canonical_view_filters_and_pagination() -> None:
                     "review_count": 1,
                     "latest_outcome": "resolved",
                     "source_synced_at": NOW,
+                    "participant_count": None,
+                    "primary_sender_name": None,
+                    "primary_sender_department": None,
+                    "sender_identity_status": "unavailable",
                 }
             ],
         ]
@@ -240,6 +244,62 @@ def test_list_sessions_uses_canonical_view_filters_and_pagination() -> None:
     assert page.total == 1
     assert page.items[0].title == "Gemini 335L 如何排查？"
     assert page.items[0].freshness == "fresh"
+    assert page.items[0].sender_identity_status == "unavailable"
+
+
+def test_metabot_session_and_turn_map_safe_sender_presentation_fields() -> None:
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=FakeConnect([]), now=lambda: NOW,
+    )
+    session = repository._session_summary({
+        "session_key": "metabot:hr-bot:session-1",
+        "agent_id": "hr-bot",
+        "source_kind": "metabot",
+        "channel": "feishu",
+        "title": "Question",
+        "created_at": NOW,
+        "last_active_at": NOW,
+        "turn_count": 1,
+        "feedback_count": 0,
+        "review_count": 0,
+        "latest_outcome": None,
+        "source_synced_at": None,
+        "participant_count": 3,
+        "primary_sender_name": "Lina",
+        "primary_sender_department": "Marketing",
+        "sender_identity_status": "resolved",
+    })
+    turn = repository._turn_detail({
+        "turn_key": "metabot:hr-bot:turn-1",
+        "session_key": session.session_key,
+        "agent_id": "hr-bot",
+        "source_kind": "metabot",
+        "turn_index": 0,
+        "question": "Question",
+        "answer": "Answer",
+        "created_at": NOW,
+        "trace_key": None,
+        "outcome": None,
+        "fallback_used": False,
+        "duration_ms": None,
+        "sources": [],
+        "sender_name": "Lina",
+        "sender_department": None,
+        "sender_identity_status": "name_only",
+        "details": {},
+    }, [], [], [])
+
+    assert session.participant_count == 3
+    assert session.primary_sender_name == "Lina"
+    assert session.primary_sender_department == "Marketing"
+    assert session.sender_identity_status == "resolved"
+    assert turn.sender_name == "Lina"
+    assert turn.sender_department is None
+    assert turn.sender_identity_status == "name_only"
+    dumped = {**session.model_dump(), **turn.model_dump()}
+    assert "open_id" not in dumped
+    assert "union_id" not in dumped
+    assert "staff_id" not in dumped
 
 
 def test_get_fae_trace_maps_stage_and_span_without_losing_hierarchy() -> None:
