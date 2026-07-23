@@ -27,7 +27,8 @@ const turn: TurnDetail = {
   answer: "请先确认 USB 枚举状态。", created_at: "2026-07-21T09:00:00Z",
   trace_key: "fae:trace-1", outcome: "resolved", fallback_used: false,
   duration_ms: 1250, sources: [], evidence: [], evidence_availability: "available",
-  feedback: [], reviews: [], improvements: [], details: {},
+  feedback: [], reviews: [], improvements: [], details: {}, sender_name: null,
+  sender_department: null, sender_identity_status: "unavailable",
 };
 
 

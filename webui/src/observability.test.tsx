@@ -57,6 +57,10 @@ const session: SessionSummary = {
   latest_outcome: "resolved",
   source_synced_at: "2026-07-21T09:10:00Z",
   freshness: "fresh",
+  participant_count: null,
+  primary_sender_name: null,
+  primary_sender_department: null,
+  sender_identity_status: "unavailable",
 };
 
 

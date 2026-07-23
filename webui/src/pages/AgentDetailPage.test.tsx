@@ -45,6 +45,10 @@ const sessionFixture: SessionSummary = {
   latest_outcome: null,
   source_synced_at: "2026-07-22T16:05:00Z",
   freshness: "live",
+  participant_count: null,
+  primary_sender_name: null,
+  primary_sender_department: null,
+  sender_identity_status: "unavailable",
 };
 
 function fleetFixture(agent: AgentSummary): FleetOverview {

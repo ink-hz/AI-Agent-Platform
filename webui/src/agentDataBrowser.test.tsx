@@ -29,7 +29,8 @@ const session: SessionSummary = {
   channel: "fae", title: "Original question", created_at: "2026-07-21T08:00:00Z",
   last_active_at: "2026-07-21T09:00:00Z", turn_count: 2, feedback_count: 4,
   review_count: 1, latest_outcome: null, source_synced_at: "2026-07-21T09:10:00Z",
-  freshness: "fresh",
+  freshness: "fresh", participant_count: null, primary_sender_name: null,
+  primary_sender_department: null, sender_identity_status: "unavailable",
 };
 
 

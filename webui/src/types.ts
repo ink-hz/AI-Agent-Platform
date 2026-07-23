@@ -131,6 +131,7 @@ export interface OperationsBrief {
 export type SourceKind = "metabot" | "fae" | "admin";
 export type Freshness = "live" | "fresh" | "stale";
 export type Availability = "available" | "missing" | "unavailable" | "restricted";
+export type SenderIdentityStatus = "resolved" | "name_only" | "unavailable";
 
 export interface AgentSummary {
   id: string;
@@ -163,6 +164,10 @@ export interface SessionSummary {
   latest_outcome: string | null;
   source_synced_at: string | null;
   freshness: Freshness;
+  participant_count: number | null;
+  primary_sender_name: string | null;
+  primary_sender_department: string | null;
+  sender_identity_status: SenderIdentityStatus;
 }
 
 export interface Page<T> {
@@ -241,6 +246,9 @@ export interface TurnDetail {
   reviews: ReviewItem[];
   improvements: ImprovementItem[];
   details: Record<string, unknown>;
+  sender_name: string | null;
+  sender_department: string | null;
+  sender_identity_status: SenderIdentityStatus;
 }
 
 export interface SessionDetail extends SessionSummary {

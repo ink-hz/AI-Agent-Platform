@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { fetchTrace } from "../api";
+import { formatSenderIdentity } from "../senderIdentity";
 import type { TraceDetail, TurnDetail } from "../types";
 import { TraceTimeline } from "./TraceTimeline";
 
@@ -25,7 +26,7 @@ export function TurnCard({ turn }: { turn: TurnDetail }) {
   };
   return <article className="turn-card">
     <header className="turn-head"><span>TURN {String(turn.turn_index).padStart(2, "0")}</span><div>{turn.outcome && <b>{turn.outcome}</b>}{turn.fallback_used && <b className="turn-fallback">fallback</b>}{duration(turn.duration_ms) && <time>{duration(turn.duration_ms)}</time>}</div></header>
-    <section className="message-block question-block"><span>Question</span><p>{turn.question || "No question captured"}</p></section>
+    <section className="message-block question-block"><span>Question</span><div>{turn.source_kind === "metabot" && <small className="question-sender">{formatSenderIdentity(turn.sender_name, turn.sender_department)}</small>}<p>{turn.question || "No question captured"}</p></div></section>
     <section className="message-block answer-block"><span>Answer</span><p>{turn.answer || "No answer captured"}</p></section>
     {turn.evidence.length > 0 && <section className="turn-evidence"><h3>Evidence</h3><div>{turn.evidence.map((item, index) => <article key={`${item.title}-${index}`}><span>{item.kind}</span><strong>{item.title}</strong>{item.reference && <p>{item.reference}</p>}</article>)}</div></section>}
     {turn.evidence.length === 0 && turn.evidence_availability !== "available" && <p className="availability-note">Evidence detail: {turn.evidence_availability}</p>}
