@@ -11,6 +11,7 @@ CURRENT_BOT_IDS = {
     "test-bot",
     "marketing-gtm-bot",
     "marketing-intelligence-bot",
+    "codex-assistant",
 }
 
 
@@ -59,6 +60,12 @@ EXPECTED_IDENTITIES = {
         "INT",
         "收集并整理市场动态与竞争信息。",
     ),
+    "codex-assistant": (
+        "Iris Codex",
+        "Personal Workspace",
+        "IC",
+        "Private Codex workspace for Iris's development and operational work.",
+    ),
 }
 
 
@@ -97,3 +104,14 @@ def test_unknown_runtime_bot_gets_generic_profile():
     assert profile.glyph == "AI"
     assert profile.domain == "MetaBot 实例"
     assert profile.accent == "default"
+
+
+def test_iris_codex_has_business_visibility_and_release_lifecycle():
+    profile = AgentCatalog.default().profile("codex-assistant", "codex-assistant")
+
+    assert profile.accent == "intelligence"
+    assert profile.visibility == "business"
+    assert profile.live_since == "2026-07-21T18:01:18+08:00"
+    assert profile.live_since_basis == "release_artifact"
+    assert profile.last_updated_at == "2026-07-21T18:01:18+08:00"
+    assert profile.last_updated_basis == "release_artifact"
