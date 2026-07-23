@@ -223,7 +223,9 @@ def test_list_sessions_uses_canonical_view_filters_and_pagination() -> None:
             ],
         ]
     )
-    repository = PsycopgObservabilityRepository("postgresql://unused", connect=fake)
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, now=lambda: NOW
+    )
 
     page = repository.list_sessions(
         SessionFilters(agent_id="ai-fae-agent", query="Gemini"),
