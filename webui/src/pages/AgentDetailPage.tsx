@@ -1,26 +1,33 @@
 import { useEffect, useState } from "react";
 
-import { fetchAgent, fetchFleetOverview, fetchOperationalEvents, fetchSessions } from "../api";
+import { fetchAgent, fetchAgentRuntime, fetchOperationalEvents, fetchSessions } from "../api";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
 import { OperationalEventItem } from "../components/OperationalEventItem";
 import { PlatformLink } from "../components/PlatformLink";
 import { SessionListItem } from "../components/SessionListItem";
 import { PLATFORM_TITLE, useDocumentTitle } from "../documentTitle";
 import { useHistoryScrollRestoration } from "../navigationContext";
-import {
-  formatCount,
-  formatExactLifecycleTime,
-  formatLifecycleBasis,
-  formatLifecycleDate,
-  formatRuntimeDuration,
-} from "../fleet";
-import type { AgentSummary, FleetAgent, OperationalEvent, Page, SessionSummary } from "../types";
+import type { AgentRuntimeView, AgentSummary, OperationalEvent, Page, SessionSummary } from "../types";
+
+
+function productionRuntime(seconds: number | null): string {
+  if (seconds === null) return "Runtime not recorded";
+  const days = Math.floor(seconds / 86_400);
+  if (days === 0) return "Running since today";
+  return `Running for ${days} day${days === 1 ? "" : "s"}`;
+}
+
+
+function displayChannelState(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
 
 
 export function AgentDetailPage({ agentId }: { agentId: string }) {
   const [agent, setAgent] = useState<AgentSummary | null>(null);
   const [sessions, setSessions] = useState<Page<SessionSummary> | null>(null);
-  const [fleetAgent, setFleetAgent] = useState<FleetAgent | null | undefined>(undefined);
+  const [runtime, setRuntime] = useState<AgentRuntimeView | null>(null);
+  const [runtimeUnavailable, setRuntimeUnavailable] = useState(false);
   const [error, setError] = useState(false);
   const [activity, setActivity] = useState<Page<OperationalEvent> | null>(null);
   const [activityUnavailable, setActivityUnavailable] = useState(false);
@@ -29,14 +36,26 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
     Promise.all([
       fetchAgent(agentId, controller.signal),
       fetchSessions({ agent_id: agentId, limit: 50 }, controller.signal),
-      fetchFleetOverview(controller.signal),
-    ]).then(([nextAgent, nextSessions, fleet]) => {
+    ]).then(([nextAgent, nextSessions]) => {
       setAgent(nextAgent);
       setSessions(nextSessions);
-      setFleetAgent(fleet.agents.find((item) => item.id === agentId) ?? null);
     })
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
+  }, [agentId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let disposed = false;
+    setRuntime(null);
+    setRuntimeUnavailable(false);
+    fetchAgentRuntime(agentId, controller.signal)
+      .then((nextRuntime) => { if (!disposed) setRuntime(nextRuntime); })
+      .catch(() => { if (!disposed) setRuntimeUnavailable(true); });
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
   }, [agentId]);
 
   useEffect(() => {
@@ -57,38 +76,36 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
     };
   }, [agentId]);
 
-  useHistoryScrollRestoration(Boolean(!error && agent && sessions && fleetAgent !== undefined));
+  useHistoryScrollRestoration(Boolean(!error && agent && sessions));
   useDocumentTitle(agent ? `${agent.name} · ${PLATFORM_TITLE}` : `Agent · ${PLATFORM_TITLE}`);
 
   if (error) return <ErrorState />;
-  if (!agent || agent.id !== agentId || !sessions || fleetAgent === undefined) {
+  if (!agent || agent.id !== agentId || !sessions) {
     return <LoadingState label="Loading Agent profile" />;
   }
-  const liveSinceBasis = fleetAgent?.live_since_basis ?? "not_recorded";
-  const lastUpdatedBasis = fleetAgent?.last_updated_basis ?? "not_recorded";
   return <>
     <PlatformLink className="back-link" href="/agents">← All Agents</PlatformLink>
     <section className={`agent-profile agent-${agent.accent}`}>
       <div className="profile-identity"><span className="fleet-avatar">{agent.glyph}</span><div><p>{agent.domain}</p><h1>{agent.name}</h1><span>{agent.description}</span></div></div>
       <div className="profile-badges"><span>{agent.source_kind.toUpperCase()}</span><span>{agent.deployment}</span><span className={`freshness freshness-${agent.freshness}`}>{agent.freshness}</span></div>
-      <dl className="profile-metrics"><div><dt>Sessions</dt><dd>{formatCount(agent.session_count)}</dd></div><div><dt>Conversations</dt><dd>{formatCount(agent.total_turns)}</dd></div><div><dt>Last sync</dt><dd>{agent.last_synced_at ? new Date(agent.last_synced_at).toLocaleString() : "Live source"}</dd></div></dl>
-      <dl className="profile-lifecycle">
-        <div>
-          <dt>Live Since</dt>
-          <dd>{formatLifecycleDate(fleetAgent?.live_since ?? null)}</dd>
-          <small>{formatLifecycleBasis(liveSinceBasis)}</small>
-        </div>
-        <div>
-          <dt>Last Updated</dt>
-          <dd>{formatExactLifecycleTime(fleetAgent?.last_updated_at ?? null) ?? "Not recorded"}</dd>
-          <small>{formatLifecycleBasis(lastUpdatedBasis)}</small>
-        </div>
-        <div>
-          <dt>Current Runtime</dt>
-          <dd>{formatRuntimeDuration(fleetAgent?.current_runtime_seconds ?? null)}</dd>
-          <small>Current process only</small>
-        </div>
-      </dl>
+    </section>
+    <section className="agent-runtime-summary" aria-labelledby="runtime-heading">
+      <div className="runtime-summary-head">
+        <div><p>RUNTIME</p><h2 id="runtime-heading">Runtime</h2></div>
+        {runtime && <span className={`readiness readiness-${runtime.readiness.status.toLowerCase()}`}>{runtime.readiness.status}</span>}
+      </div>
+      {runtimeUnavailable
+        ? <p className="runtime-summary-status" role="status">Runtime evidence is unavailable.</p>
+        : runtime === null
+          ? <p className="runtime-summary-status" role="status" aria-live="polite">Loading Runtime</p>
+          : <>
+            <div className="runtime-primary-facts">
+              <strong>{runtime.runtime.model}{runtime.runtime.backend ? ` · ${runtime.runtime.backend.toUpperCase()}` : ""}</strong>
+              <span>{runtime.runtime.channel ?? "Channel not observed"}{runtime.runtime.channel ? ` ${displayChannelState(runtime.runtime.channel_status)}` : ""}</span>
+              <span>{productionRuntime(runtime.lifecycle.production_runtime_seconds)}</span>
+            </div>
+            <PlatformLink href={`/agents/${encodeURIComponent(agent.id)}/runtime`}>View Runtime detail →</PlatformLink>
+          </>}
     </section>
     <section className="detail-section agent-activity-section">
       <div className="section-heading">

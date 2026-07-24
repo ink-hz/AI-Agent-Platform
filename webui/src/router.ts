@@ -5,6 +5,7 @@ export type Route =
   | { name: "overview" }
   | { name: "agents" }
   | { name: "agent"; agentId: string }
+  | { name: "agent-runtime"; agentId: string }
   | { name: "sessions" }
   | { name: "session"; sessionKey: string }
   | { name: "flywheel" }
@@ -33,6 +34,11 @@ export function parseRoute(pathname: string): Route {
   if (clean === "/sessions") return { name: "sessions" };
   if (clean === "/flywheel") return { name: "flywheel" };
   if (clean === "/activity") return { name: "activity" };
+  const agentRuntime = /^\/agents\/([^/]+)\/runtime$/.exec(clean);
+  if (agentRuntime) {
+    const agentId = decode(agentRuntime[1]);
+    return agentId ? { name: "agent-runtime", agentId } : { name: "not-found" };
+  }
   const agent = /^\/agents\/([^/]+)$/.exec(clean);
   if (agent) {
     const agentId = decode(agent[1]);
@@ -52,6 +58,7 @@ export function routePath(route: Route): string {
     case "overview": return "/";
     case "agents": return "/agents";
     case "agent": return `/agents/${encodeURIComponent(route.agentId)}`;
+    case "agent-runtime": return `/agents/${encodeURIComponent(route.agentId)}/runtime`;
     case "sessions": return "/sessions";
     case "session": return `/sessions/${encodeURIComponent(route.sessionKey)}`;
     case "flywheel": return "/flywheel";
@@ -62,7 +69,7 @@ export function routePath(route: Route): string {
 
 
 export function routeSection(route: Route): "overview" | "agents" | "sessions" | null {
-  if (route.name === "agent") return "agents";
+  if (route.name === "agent" || route.name === "agent-runtime") return "agents";
   if (route.name === "session") return "sessions";
   if (route.name === "activity" || route.name === "flywheel" || route.name === "not-found") return null;
   return route.name;

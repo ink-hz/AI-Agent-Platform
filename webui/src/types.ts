@@ -150,6 +150,45 @@ export interface AgentSummary {
   freshness: Freshness;
 }
 
+export type ReadinessStatus = "Ready" | "Busy" | "Limited" | "Offline" | "Unknown";
+export type RuntimeFreshness = "live" | "stale" | "unavailable";
+export type RuntimeModelSource = "runtime" | "trace" | "configured" | "unavailable";
+export type RuntimeChannelStatus = "connected" | "connecting" | "reconnecting" | "failed" | "unknown";
+
+export interface RuntimeEvidence {
+  kind: string;
+  source: string;
+  status: string;
+  observed_at: string | null;
+  summary: string;
+}
+
+export interface AgentRuntimeView {
+  agent_id: string;
+  readiness: {
+    status: ReadinessStatus;
+    reason: string;
+    observed_at: string | null;
+    freshness: RuntimeFreshness;
+  };
+  runtime: {
+    engine: string | null;
+    model: string;
+    model_source: RuntimeModelSource;
+    backend: string | null;
+    channel: string | null;
+    channel_status: RuntimeChannelStatus;
+    active_turns: number | null;
+    process_uptime_seconds: number | null;
+  };
+  lifecycle: {
+    live_since: string | null;
+    last_updated_at: string | null;
+    production_runtime_seconds: number | null;
+  };
+  evidence: RuntimeEvidence[];
+}
+
 export interface SessionSummary {
   session_key: string;
   agent_id: string;

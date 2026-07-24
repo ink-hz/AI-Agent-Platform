@@ -10,6 +10,7 @@ export function routeDocumentTitle(route: Route): string {
   switch (route.name) {
     case "agents": return `Agents · ${PLATFORM_TITLE}`;
     case "agent": return `Agent · ${PLATFORM_TITLE}`;
+    case "agent-runtime": return `Runtime · ${PLATFORM_TITLE}`;
     case "sessions": return `Sessions · ${PLATFORM_TITLE}`;
     case "session": return `Session Replay · ${PLATFORM_TITLE}`;
     case "activity": return `Activity History · ${PLATFORM_TITLE}`;

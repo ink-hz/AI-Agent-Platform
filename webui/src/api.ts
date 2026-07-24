@@ -1,5 +1,5 @@
 import type {
-  AgentSummary, ClusterSnapshot, FleetOverview, FlywheelOverview,
+  AgentRuntimeView, AgentSummary, ClusterSnapshot, FleetOverview, FlywheelOverview,
   ImprovementItem, Page, SessionDetail, SessionSummary, SyncStatus, TraceDetail,
   EventSeverity, OperationalEvent, OperationsBrief,
 } from "./types";
@@ -57,6 +57,8 @@ export function fetchOperationalEvents(
 export const fetchAgents = (signal?: AbortSignal) => read<AgentSummary[]>("/api/agents", signal);
 export const fetchAgent = (id: string, signal?: AbortSignal) =>
   read<AgentSummary>(`/api/agents/${encodeURIComponent(id)}`, signal);
+export const fetchAgentRuntime = (id: string, signal?: AbortSignal) =>
+  read<AgentRuntimeView>(`/api/agents/${encodeURIComponent(id)}/runtime`, signal);
 
 export interface SessionQuery {
   agent_id?: string;

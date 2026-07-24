@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  AgentRuntimeView,
   AgentSummary,
   FleetOverview,
   OperationalEvent,
@@ -50,6 +51,34 @@ const sessionFixture: SessionSummary = {
   primary_sender_department: null,
   sender_identity_status: "unavailable",
 };
+
+function runtimeFixture(agentId = agentFixture.id): AgentRuntimeView {
+  return {
+    agent_id: agentId,
+    readiness: {
+      status: "Ready",
+      reason: "Runtime and primary channel are available",
+      observed_at: "2026-07-24T08:00:00Z",
+      freshness: "live",
+    },
+    runtime: {
+      engine: "claude",
+      model: "claude-opus-4-8",
+      model_source: "runtime",
+      backend: "pty",
+      channel: "Feishu",
+      channel_status: "connected",
+      active_turns: 0,
+      process_uptime_seconds: 60,
+    },
+    lifecycle: {
+      live_since: "2026-07-16T08:00:00Z",
+      last_updated_at: "2026-07-23T08:00:00Z",
+      production_runtime_seconds: 8 * 24 * 60 * 60,
+    },
+    evidence: [],
+  };
+}
 
 function fleetFixture(agent: AgentSummary): FleetOverview {
   return {
@@ -138,6 +167,7 @@ function settledFetch(agent: AgentSummary, events: OperationalEvent[] = []) {
   return vi.fn((input: string | URL | Request) => {
     const path = String(input);
     if (path.startsWith("/api/operations/events")) return Promise.resolve(response(activityPage(events)));
+    if (path.endsWith("/runtime")) return Promise.resolve(response(runtimeFixture(agent.id)));
     if (path === "/api/fleet/overview") return Promise.resolve(response(fleetFixture(agent)));
     if (path.startsWith("/api/sessions?")) return Promise.resolve(response(sessionsPage(agent)));
     if (path.startsWith("/api/agents/")) return Promise.resolve(response(agent));
@@ -180,9 +210,15 @@ describe("AgentDetailPage recent activity", () => {
     expect(activity.querySelector("h2")?.textContent).toBe("Recent Activity");
     expect(activity.querySelector(".operational-event-title")?.textContent).toBe(event.title);
     expect(activity.querySelector("a[href='/activity?agent_id=test-bot']")?.textContent).toBe("View all activity →");
-    expect(container.textContent).toContain("Live Since");
-    expect(container.textContent).toContain("Last Updated");
-    expect(container.textContent).toContain("Current Runtime");
+    const runtime = container.querySelector(".agent-runtime-summary")!;
+    expect(runtime.textContent).toContain("Ready");
+    expect(runtime.textContent).toContain("claude-opus-4-8 · PTY");
+    expect(runtime.textContent).toContain("Feishu Connected");
+    expect(runtime.textContent).toContain("Running for 8 days");
+    expect(runtime.textContent).not.toContain("Current process");
+    expect(runtime.querySelector("a[href='/agents/test-bot/runtime']")).not.toBeNull();
+    expect(container.textContent!.indexOf("Runtime")).toBeLessThan(container.textContent!.indexOf("Recent Activity"));
+    expect(container.textContent!.indexOf("Recent Activity")).toBeLessThan(container.textContent!.indexOf("Recent Sessions"));
     expect(fetchMock.mock.calls.filter(([path]) => String(path).startsWith("/api/operations/events")))
       .toEqual([["/api/operations/events?agent_id=test-bot&limit=8", expect.any(Object)]]);
   });
@@ -200,7 +236,7 @@ describe("AgentDetailPage recent activity", () => {
     const event = eventFixture(1);
     const fetchMock = settledFetch(agentFixture, [event]);
     fetchMock.mockImplementation((input: string | URL | Request) => {
-      if (String(input).startsWith("/api/agents/")) return agentRequest.promise;
+      if (String(input) === "/api/agents/test-bot") return agentRequest.promise;
       return settledFetch(agentFixture, [event])(input);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -335,6 +371,7 @@ describe("AgentDetailPage recent activity", () => {
       }
       const currentAgent = path.includes("next-bot") ? nextAgent : agentFixture;
       if (path.startsWith("/api/operations/events")) return Promise.resolve(response(activityPage([nextEvent])));
+      if (path.endsWith("/runtime")) return Promise.resolve(response(runtimeFixture(currentAgent.id)));
       if (path === "/api/fleet/overview") return Promise.resolve(response(fleetFixture(currentAgent)));
       if (path.startsWith("/api/sessions?")) return Promise.resolve(response(sessionsPage(currentAgent)));
       if (path.startsWith("/api/agents/")) return Promise.resolve(response(currentAgent));
@@ -369,6 +406,8 @@ describe("AgentDetailPage recent activity", () => {
       }
       if (path === "/api/sessions?agent_id=next-bot&limit=50") return nextSessions.promise;
       if (path.startsWith("/api/sessions?")) return Promise.resolve(response(sessionsPage(agentFixture)));
+      if (path === "/api/agents/next-bot/runtime") return Promise.resolve(response(runtimeFixture(nextAgent.id)));
+      if (path === "/api/agents/test-bot/runtime") return Promise.resolve(response(runtimeFixture(agentFixture.id)));
       if (path === "/api/agents/next-bot") return Promise.resolve(response(nextAgent));
       if (path.startsWith("/api/agents/")) return Promise.resolve(response(agentFixture));
       if (path === "/api/fleet/overview") {

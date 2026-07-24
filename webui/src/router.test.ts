@@ -16,6 +16,7 @@ describe("Platform router", () => {
     expect(parseRoute("/")).toEqual({ name: "overview" });
     expect(parseRoute("/agents")).toEqual({ name: "agents" });
     expect(parseRoute("/agents/ai-fae-agent")).toEqual({ name: "agent", agentId: "ai-fae-agent" });
+    expect(parseRoute("/agents/ai-fae-agent/runtime")).toEqual({ name: "agent-runtime", agentId: "ai-fae-agent" });
     expect(parseRoute("/sessions")).toEqual({ name: "sessions" });
     expect(parseRoute("/sessions/fae%3Aabc")).toEqual({ name: "session", sessionKey: "fae:abc" });
     expect(parseRoute("/flywheel")).toEqual({ name: "flywheel" });
@@ -25,10 +26,12 @@ describe("Platform router", () => {
   it("creates encoded detail paths", () => {
     expect(routePath({ name: "session", sessionKey: "fae:a/b" })).toBe("/sessions/fae%3Aa%2Fb");
     expect(routePath({ name: "agent", agentId: "ai-fae-agent" })).toBe("/agents/ai-fae-agent");
+    expect(routePath({ name: "agent-runtime", agentId: "fae/a" })).toBe("/agents/fae%2Fa/runtime");
   });
 
   it("keeps detail pages in their parent navigation section", () => {
     expect(routeSection({ name: "agent", agentId: "ai-fae-agent" })).toBe("agents");
+    expect(routeSection({ name: "agent-runtime", agentId: "ai-fae-agent" })).toBe("agents");
     expect(routeSection({ name: "session", sessionKey: "fae:abc" })).toBe("sessions");
   });
 
