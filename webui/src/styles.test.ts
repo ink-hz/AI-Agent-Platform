@@ -26,6 +26,21 @@ function block(header: string): string {
 
 
 describe("Executive Operations visual contract", () => {
+  it("uses a Chinese-first product typeface and removes template-era chrome", () => {
+    expect(rule(":root")).toContain('font-family: "PingFang SC", "Microsoft YaHei", Inter, "Segoe UI", system-ui, sans-serif');
+    expect(styles).not.toContain(".readonly-tag");
+    expect(styles).not.toContain(".eyebrow");
+  });
+
+  it("presents runtime facts as one structured panel instead of floating cards", () => {
+    expect(rule(".runtime-detail-grid")).toContain("gap: 1px");
+    expect(rule(".runtime-detail-grid")).toContain("border: 1px solid var(--line)");
+    expect(rule(".runtime-detail-grid")).toContain("background: var(--line-soft)");
+    expect(rule(".runtime-fact")).toContain("border: 0");
+    expect(rule(".runtime-fact")).toContain("border-radius: 0");
+    expect(rule(".runtime-fact")).toContain("box-shadow: none");
+  });
+
   it("uses the approved high-contrast foundation", () => {
     for (const token of [
       "--bg: #edf2f7",
