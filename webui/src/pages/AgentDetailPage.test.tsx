@@ -388,4 +388,22 @@ describe("AgentDetailPage recent activity", () => {
     expect(container.querySelector(".agent-activity-section")?.textContent).toContain(nextEvent.title);
     expect(container.querySelector("a[href='/activity?agent_id=next-bot']")).not.toBeNull();
   });
+
+  it("restores the originating Recent Sessions position after Agent content renders", async () => {
+    window.history.replaceState({
+      sessionOrigin: { path: "/agents/test-bot", scrollY: 500 },
+    }, "", "/agents/test-bot");
+    Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 2200 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal("fetch", settledFetch(agentFixture));
+
+    await renderAgent();
+
+    expect(scrollTo).toHaveBeenCalledWith(0, 500);
+  });
 });

@@ -4,6 +4,7 @@ import { agentsForSelector } from "../agentVisibility";
 import { fetchAgents, fetchSessions } from "../api";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
 import { SessionListItem } from "../components/SessionListItem";
+import { useHistoryScrollRestoration } from "../navigationContext";
 import { currentLocationPath, navigate } from "../router";
 import {
   sessionFiltersFromSearch,
@@ -50,6 +51,7 @@ export function SessionsPage() {
     return () => controller.abort();
   }, [applied, version]);
   const selectableAgents = agentsForSelector(agents, draft.agent_id);
+  useHistoryScrollRestoration(page !== null && !error);
 
   const apply = (next: SessionFilters) => {
     const path = sessionsPath(next);

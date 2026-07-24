@@ -5,6 +5,7 @@ import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
 import { OperationalEventItem } from "../components/OperationalEventItem";
 import { PlatformLink } from "../components/PlatformLink";
 import { SessionListItem } from "../components/SessionListItem";
+import { useHistoryScrollRestoration } from "../navigationContext";
 import {
   formatCount,
   formatExactLifecycleTime,
@@ -54,6 +55,8 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
       controller.abort();
     };
   }, [agentId]);
+
+  useHistoryScrollRestoration(Boolean(!error && agent && sessions && fleetAgent !== undefined));
 
   if (error) return <ErrorState />;
   if (!agent || agent.id !== agentId || !sessions || fleetAgent === undefined) {

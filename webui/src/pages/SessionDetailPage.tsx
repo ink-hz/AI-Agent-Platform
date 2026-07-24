@@ -4,6 +4,7 @@ import { fetchSession } from "../api";
 import { ErrorState, LoadingState } from "../components/DataState";
 import { PlatformLink } from "../components/PlatformLink";
 import { TurnCard } from "../components/TurnCard";
+import { sessionReturnTarget } from "../navigationContext";
 import type { SessionDetail } from "../types";
 
 
@@ -17,8 +18,13 @@ export function SessionDetailPage({ sessionKey }: { sessionKey: string }) {
   }, [sessionKey]);
   if (error) return <ErrorState />;
   if (!session) return <LoadingState label="Loading Session" />;
+  const returnTarget = sessionReturnTarget(window.history.state);
   return <>
-    <PlatformLink className="back-link" href="/sessions">← All Sessions</PlatformLink>
+    <PlatformLink className="back-link" href={returnTarget ?? "/sessions"} onClick={(event) => {
+      if (!returnTarget || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      window.history.back();
+    }}>{returnTarget ? "← Back" : "← All Sessions"}</PlatformLink>
     <section className="session-detail-head">
       <div><p className="eyebrow">SESSION REPLAY</p><h1>{session.title || "Untitled Session"}</h1><code>{session.session_key}</code></div>
       <div className="session-detail-source"><span>{session.source_kind.toUpperCase()}</span><strong>{session.channel}</strong><small className={`freshness freshness-${session.freshness}`}>{session.freshness}</small></div>

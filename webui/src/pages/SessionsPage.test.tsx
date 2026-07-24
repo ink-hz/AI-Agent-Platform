@@ -108,7 +108,7 @@ describe("SessionsPage URL state", () => {
     expect(`${window.location.pathname}${window.location.search}`).toBe(
       "/sessions?agent_id=ai-fae-agent&source_kind=fae&q=Gemini+335L",
     );
-    expect(sessionPaths.at(-1)).toBe(
+    expect(sessionPaths[sessionPaths.length - 1]).toBe(
       "/api/sessions?agent_id=ai-fae-agent&source_kind=fae&q=Gemini+335L&limit=50",
     );
   });
@@ -122,7 +122,7 @@ describe("SessionsPage URL state", () => {
     expect(container.querySelector<HTMLSelectElement>('select[name="agent_id"]')?.value).toBe("ai-fae-agent");
     expect(container.querySelector<HTMLSelectElement>('select[name="source_kind"]')?.value).toBe("fae");
     expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe("restored");
-    expect(sessionPaths.at(-1)).toBe(
+    expect(sessionPaths[sessionPaths.length - 1]).toBe(
       "/api/sessions?agent_id=ai-fae-agent&source_kind=fae&q=restored&limit=50",
     );
   });
