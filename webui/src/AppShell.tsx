@@ -8,7 +8,6 @@ const NAVIGATION = [
   { label: "Overview", path: "/", section: "overview" },
   { label: "Agents", path: "/agents", section: "agents" },
   { label: "Sessions", path: "/sessions", section: "sessions" },
-  { label: "Flywheel", path: "/flywheel", section: "flywheel" },
 ] as const;
 
 

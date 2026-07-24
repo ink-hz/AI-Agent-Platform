@@ -187,6 +187,14 @@ describe("AgentDetailPage recent activity", () => {
       .toEqual([["/api/operations/events?agent_id=test-bot&limit=8", expect.any(Object)]]);
   });
 
+  it("uses the canonical Agent name in the browser title", async () => {
+    vi.stubGlobal("fetch", settledFetch(agentFixture));
+
+    await renderAgent();
+
+    expect(document.title).toBe("测试机器人 · Orbbec Agent Platform");
+  });
+
   it("retains activity that resolves before the profile request", async () => {
     const agentRequest = deferred<Response>();
     const event = eventFixture(1);

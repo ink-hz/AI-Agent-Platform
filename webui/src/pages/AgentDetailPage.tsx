@@ -5,6 +5,7 @@ import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
 import { OperationalEventItem } from "../components/OperationalEventItem";
 import { PlatformLink } from "../components/PlatformLink";
 import { SessionListItem } from "../components/SessionListItem";
+import { PLATFORM_TITLE, useDocumentTitle } from "../documentTitle";
 import { useHistoryScrollRestoration } from "../navigationContext";
 import {
   formatCount,
@@ -57,6 +58,7 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
   }, [agentId]);
 
   useHistoryScrollRestoration(Boolean(!error && agent && sessions && fleetAgent !== undefined));
+  useDocumentTitle(agent ? `${agent.name} · ${PLATFORM_TITLE}` : `Agent · ${PLATFORM_TITLE}`);
 
   if (error) return <ErrorState />;
   if (!agent || agent.id !== agentId || !sessions || fleetAgent === undefined) {

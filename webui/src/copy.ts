@@ -1,5 +1,5 @@
 export const UI_COPY = {
-  navigation: ["Overview", "Agents", "Sessions", "Flywheel"],
+  navigation: ["Overview", "Agents", "Sessions"],
   navigationLabel: "Product navigation",
   readOnly: "Read-only",
   hero: {

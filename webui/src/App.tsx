@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { AppShell } from "./AppShell";
 import { LoadingState } from "./components/DataState";
+import { routeDocumentTitle, useDocumentTitle } from "./documentTitle";
 import { OverviewPage } from "./pages/OverviewPage";
 import { AgentsPage } from "./pages/AgentsPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
@@ -30,6 +31,7 @@ function LegacyFlywheelRedirect() {
 
 export default function App() {
   const route = useRoute();
+  useDocumentTitle(routeDocumentTitle(route));
   let page;
   switch (route.name) {
     case "overview": page = <OverviewPage />; break;

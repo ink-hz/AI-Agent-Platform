@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { UI_COPY } from "./copy";
@@ -16,7 +17,7 @@ function allStrings(value: unknown): string[] {
 
 describe("reviewed UI copy", () => {
   it("uses the approved source-language product vocabulary", () => {
-    expect(UI_COPY.navigation).toEqual(["Overview", "Agents", "Sessions", "Flywheel"]);
+    expect(UI_COPY.navigation).toEqual(["Overview", "Agents", "Sessions"]);
     expect(UI_COPY.navigationLabel).toBe("Product navigation");
     expect(UI_COPY.hero.title).toBe("Agent Overview");
     expect(UI_COPY.summary.metrics).toEqual([
@@ -32,5 +33,12 @@ describe("reviewed UI copy", () => {
     for (const rejected of ["助手", "AI 团队", "团队成员", "今天的 AI 团队", "数字员工"]) {
       expect(copy).not.toContain(rejected);
     }
+  });
+
+  it("uses the Orbbec product name as the static browser-title fallback", () => {
+    const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+
+    expect(html).toContain("<title>Orbbec Agent Platform</title>");
+    expect(html).not.toContain("MetaBot Cluster Monitor");
   });
 });
