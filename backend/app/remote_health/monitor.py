@@ -35,8 +35,13 @@ class RemoteHealthMonitor:
             healthy=False,
             error="not_checked",
             agents=[
-                RemoteAgentStatus(id="ai-fae-agent", name="AI FAE Agent"),
-                RemoteAgentStatus(id="ai-admin-agent", name="AI ADMIN Agent"),
+                RemoteAgentStatus(
+                    id="ai-fae-agent", name="AI FAE Agent", channel="WebUI"
+                ),
+                RemoteAgentStatus(
+                    id="ai-admin-agent", name="AI ADMIN Agent",
+                    channel="DingTalk",
+                ),
             ],
         )
 
@@ -67,6 +72,8 @@ class RemoteHealthMonitor:
             fae.uptime_seconds = _uptime(checked_at, ops.fae_started_at)
             units_active = all(value == "active" for value in ops.units.values())
             admin_ok = ops.admin_health.get("status") == "ok"
+            dingtalk_ok = ops.units.get("ai-admin-dingtalk-bot") == "active"
+            admin_model = ops.admin_health.get("llm_model")
             admin = RemoteAgentStatus(
                 id="ai-admin-agent",
                 name="AI ADMIN Agent",
@@ -75,6 +82,9 @@ class RemoteHealthMonitor:
                 checked_at=checked_at,
                 error=None if admin_ok and units_active else "service_inactive",
                 details={"health": ops.admin_health, "units": ops.units},
+                model=admin_model if isinstance(admin_model, str) else None,
+                channel="DingTalk",
+                channel_status="connected" if dingtalk_ok else "failed",
             )
         else:
             old_admin = previous["ai-admin-agent"]
@@ -86,6 +96,11 @@ class RemoteHealthMonitor:
                 checked_at=checked_at,
                 error=ops_error,
                 details=old_admin.details,
+                engine=old_admin.engine,
+                backend=old_admin.backend,
+                model=old_admin.model,
+                channel=old_admin.channel or "DingTalk",
+                channel_status="unknown",
             )
             if fae.uptime_seconds is None:
                 fae.uptime_seconds = previous["ai-fae-agent"].uptime_seconds

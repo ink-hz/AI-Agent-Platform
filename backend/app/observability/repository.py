@@ -20,6 +20,7 @@ from .models import (
     ImprovementItem,
     Page,
     ReviewItem,
+    RuntimeObservation,
     SessionDetail,
     SessionFilters,
     SessionSummary,
@@ -40,6 +41,9 @@ class ObservabilityRepository(Protocol):
     def list_sessions(self, filters: SessionFilters, limit: int, offset: int) -> Page[SessionSummary]: ...
     def get_session(self, session_key: str) -> SessionDetail | None: ...
     def get_trace(self, turn_key: str) -> TraceDetail | None: ...
+    def get_latest_runtime_observation(
+        self, agent_id: str
+    ) -> RuntimeObservation | None: ...
     def get_flywheel_overview(self) -> FlywheelOverview: ...
     def list_improvement_items(self, filters: FlywheelFilters, limit: int, offset: int) -> Page[ImprovementItem]: ...
     def get_sync_status(self) -> tuple[SyncStatus, ...]: ...
@@ -395,6 +399,26 @@ class PsycopgObservabilityRepository:
                 source_synced_at=trace["source_synced_at"],
                 details=_dict(trace.get("details")), steps=steps,
             )
+        except Exception as error:
+            raise ObservabilityReadError("observability query failed") from error
+
+    def get_latest_runtime_observation(
+        self, agent_id: str
+    ) -> RuntimeObservation | None:
+        statement = """
+          select agent_id, source_kind, engine, backend, model,
+            coalesce(completed_at, started_at) as observed_at
+          from platform_read.traces
+          where agent_id=%s
+            and coalesce(completed_at, started_at) is not null
+            and (engine is not null or backend is not null or model is not null)
+          order by coalesce(completed_at, started_at) desc
+          limit 1
+        """
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(statement, (agent_id,)).fetchone()
+            return RuntimeObservation(**row) if row is not None else None
         except Exception as error:
             raise ObservabilityReadError("observability query failed") from error
 

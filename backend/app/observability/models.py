@@ -48,6 +48,15 @@ class AgentSummary(BaseModel):
     freshness: Freshness
 
 
+class RuntimeObservation(BaseModel):
+    agent_id: str
+    source_kind: SourceKind
+    engine: str | None = None
+    backend: str | None = None
+    model: str | None = None
+    observed_at: datetime
+
+
 class SessionSummary(BaseModel):
     session_key: str
     agent_id: str

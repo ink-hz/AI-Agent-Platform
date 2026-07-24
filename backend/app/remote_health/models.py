@@ -17,6 +17,13 @@ class RemoteAgentStatus(BaseModel):
     checked_at: datetime | None = None
     error: str | None = None
     details: dict = Field(default_factory=dict)
+    engine: str | None = None
+    backend: str | None = None
+    model: str | None = None
+    channel: str | None = None
+    channel_status: Literal[
+        "connected", "connecting", "reconnecting", "failed", "unknown"
+    ] = "unknown"
 
 
 class RemoteHealthSnapshot(BaseModel):

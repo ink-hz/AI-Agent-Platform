@@ -108,17 +108,18 @@ async def probe_fae(
     except httpx.TimeoutException:
         return RemoteAgentStatus(
             id="ai-fae-agent", name="AI FAE Agent", status="unknown",
-            checked_at=checked_at, error="timeout",
+            checked_at=checked_at, error="timeout", channel="WebUI",
         )
     except Exception:
         return RemoteAgentStatus(
             id="ai-fae-agent", name="AI FAE Agent", status="unknown",
-            checked_at=checked_at, error="transport",
+            checked_at=checked_at, error="transport", channel="WebUI",
         )
     if response.status_code != 200:
         return RemoteAgentStatus(
             id="ai-fae-agent", name="AI FAE Agent", status="degraded",
-            checked_at=checked_at, error="http_status",
+            checked_at=checked_at, error="http_status", channel="WebUI",
+            channel_status="failed",
         )
     try:
         payload = response.json()
@@ -127,15 +128,21 @@ async def probe_fae(
     if not isinstance(payload, dict):
         return RemoteAgentStatus(
             id="ai-fae-agent", name="AI FAE Agent", status="degraded",
-            checked_at=checked_at, error="invalid_response",
+            checked_at=checked_at, error="invalid_response", channel="WebUI",
+            channel_status="failed",
         )
+    healthy = payload.get("status") == "ok"
+    model = payload.get("llm_model")
     return RemoteAgentStatus(
         id="ai-fae-agent",
         name="AI FAE Agent",
-        status="healthy" if payload.get("status") == "ok" else "degraded",
+        status="healthy" if healthy else "degraded",
         checked_at=checked_at,
-        error=None if payload.get("status") == "ok" else "service_status",
+        error=None if healthy else "service_status",
         details=payload,
+        model=model if isinstance(model, str) else None,
+        channel="WebUI",
+        channel_status="connected" if healthy else "failed",
     )
 
 

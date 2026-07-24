@@ -25,6 +25,11 @@ class ObservabilityService:
     async def get_trace(self, turn_key: str):
         return await asyncio.to_thread(self._repository.get_trace, turn_key)
 
+    async def latest_runtime_observation(self, agent_id: str):
+        return await asyncio.to_thread(
+            self._repository.get_latest_runtime_observation, agent_id
+        )
+
     async def flywheel_overview(self):
         return await asyncio.to_thread(self._repository.get_flywheel_overview)
 

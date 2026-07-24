@@ -410,6 +410,47 @@ def test_get_admin_trace_marks_engineering_detail_unavailable() -> None:
     assert trace.steps == []
 
 
+def test_latest_runtime_observation_reads_only_bounded_trace_facts() -> None:
+    fake = FakeConnect([[
+        {
+            "agent_id": "marketing-inbound-bot",
+            "source_kind": "metabot",
+            "engine": "claude",
+            "backend": "pty",
+            "model": "claude-opus-4-8",
+            "observed_at": NOW,
+        }
+    ]])
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, now=lambda: NOW,
+    )
+
+    observation = repository.get_latest_runtime_observation(
+        "marketing-inbound-bot"
+    )
+
+    assert observation is not None
+    assert observation.model == "claude-opus-4-8"
+    assert observation.backend == "pty"
+    assert observation.observed_at == NOW
+    statement, params = fake.executed[0]
+    normalized = " ".join(statement.lower().split())
+    assert "from platform_read.traces" in normalized
+    assert "coalesce(completed_at, started_at) desc" in normalized
+    assert "limit 1" in normalized
+    assert "question" not in normalized
+    assert "answer" not in normalized
+    assert params == ("marketing-inbound-bot",)
+
+
+def test_latest_runtime_observation_is_none_without_usable_trace() -> None:
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=FakeConnect([[]]), now=lambda: NOW,
+    )
+
+    assert repository.get_latest_runtime_observation("quiet-agent") is None
+
+
 def test_flywheel_pending_review_counts_unreviewed_negative_feedback() -> None:
     fake = FakeConnect(
         [[{

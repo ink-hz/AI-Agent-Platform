@@ -28,6 +28,9 @@ async def test_fae_probe_normalizes_public_health() -> None:
     assert status.id == "ai-fae-agent"
     assert status.status == "healthy"
     assert status.details["llm_model"] == "claude-opus-4-8"
+    assert status.model == "claude-opus-4-8"
+    assert status.channel == "WebUI"
+    assert status.channel_status == "connected"
 
 
 def test_admin_probe_program_checks_api_units_and_fae_start_time() -> None:
@@ -75,6 +78,12 @@ async def test_monitor_combines_fae_http_and_one_admin_ssh_command() -> None:
     assert all(status.status == "healthy" for status in snapshot.agents)
     assert snapshot.agents[0].uptime_seconds == 115200
     assert snapshot.agents[1].uptime_seconds == 28800
+    assert snapshot.agents[0].model == "claude-opus-4-8"
+    assert snapshot.agents[0].channel == "WebUI"
+    assert snapshot.agents[0].channel_status == "connected"
+    assert snapshot.agents[1].model == "glm-5.2"
+    assert snapshot.agents[1].channel == "DingTalk"
+    assert snapshot.agents[1].channel_status == "connected"
 
 
 @pytest.mark.asyncio
@@ -110,3 +119,4 @@ async def test_transport_failure_is_unknown_and_keeps_last_uptime() -> None:
     assert after.status == "unknown"
     assert after.error == "transport"
     assert after.uptime_seconds == before.uptime_seconds
+    assert after.channel_status == "unknown"
