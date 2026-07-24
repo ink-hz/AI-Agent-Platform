@@ -9,7 +9,7 @@ const AGENT = {
   id: "hr-bot",
   name: "HR",
   domain: "HR",
-  description: "处理招聘、人事与员工服务相关工作。",
+  description: "Handles recruiting and employee services.",
   glyph: "HR",
   accent: "people",
   visibility: "business",
@@ -34,20 +34,20 @@ describe("FleetAgentCard", () => {
 
     for (const text of [
       "HR",
-      "处理招聘、人事与员工服务相关工作。",
-      "Total Conversations",
+      "Handles recruiting and employee services.",
+      "累计对话",
       "826",
-      "Last 7 Days",
+      "近 7 天",
       "214",
-      "In Production",
-      "33 days",
-      "Since Jun 17, 2026",
-      "Last Updated",
-      "3 hours ago",
-      "Jul 21, 2026",
-      "Recent",
+      "已上线",
+      "已运行 33 天",
+      "上线于 2026年6月17日",
+      "最近更新",
+      "3小时前",
+      "2026年7月21日",
+      "最近工作",
       "新员工入职需要准备哪些材料？",
-      "Active",
+      "活跃",
     ]) {
       expect(html).toContain(text);
     }
@@ -71,7 +71,7 @@ describe("FleetAgentCard", () => {
       />,
     );
 
-    expect(html.match(/Not recorded/g)).toHaveLength(2);
-    expect(html).not.toContain("Since Not recorded");
+    expect(html.match(/未记录/g)).toHaveLength(2);
+    expect(html).not.toContain("上线于 未记录");
   });
 });

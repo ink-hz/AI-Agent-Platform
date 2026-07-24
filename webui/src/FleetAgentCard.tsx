@@ -52,14 +52,14 @@ export function FleetAgentCard({ agent, now }: FleetAgentCardProps) {
           <dt>{inProduction}</dt>
           <dd title={formatExactLifecycleTime(agent.live_since)}>
             <strong>{formatDaysInProduction(agent.live_since, now)}</strong>
-            {liveSinceDate !== "Not recorded" && <small>Since {liveSinceDate}</small>}
+            {liveSinceDate !== "未记录" && <small>上线于 {liveSinceDate}</small>}
           </dd>
         </div>
         <div>
           <dt>{lastUpdated}</dt>
           <dd title={formatExactLifecycleTime(agent.last_updated_at)}>
             <strong>{formatLastUpdated(agent.last_updated_at, now)}</strong>
-            {lastUpdatedDate !== "Not recorded" && <small>{lastUpdatedDate}</small>}
+            {lastUpdatedDate !== "未记录" && <small>{lastUpdatedDate}</small>}
           </dd>
         </div>
       </dl>

@@ -147,27 +147,27 @@ function setSelect(select: HTMLSelectElement, value: string) {
 describe("DailyBrief", () => {
   it("renders evidence-backed Attention and Last 24 Hours", () => {
     const html = renderToStaticMarkup(<DailyBrief brief={briefFixture} />);
-    expect(html).toContain("Needs Attention");
-    expect(html).toContain("Last 24 Hours");
+    expect(html).toContain("需要关注");
+    expect(html).toContain("近 24 小时");
     expect(html).toContain("AI FAE Agent is offline");
     expect(html).toContain("Two consecutive runtime observations");
-    expect(html).toContain("View all activity");
+    expect(html).toContain("查看全部运行记录");
   });
 
   it("does not claim health for partial evaluation", () => {
     const html = renderToStaticMarkup(
       <DailyBrief brief={{ ...briefFixture, freshness: partialFreshness, can_claim_healthy: false, attention: [] }} />,
     );
-    expect(html).not.toContain("No critical issues");
-    expect(html).toContain("Brief partially evaluated");
+    expect(html).not.toContain("暂无严重问题");
+    expect(html).toContain("部分数据已计算");
   });
 
   it("does not claim health when last-known data is locally stale", () => {
     const html = renderToStaticMarkup(
       <DailyBrief brief={{ ...briefFixture, can_claim_healthy: true, attention: [] }} stale />,
     );
-    expect(html).not.toContain("No critical issues");
-    expect(html).toContain("Brief data is stale");
+    expect(html).not.toContain("暂无严重问题");
+    expect(html).toContain("运行摘要数据已过期");
     expect(html).toContain("brief-freshness-stale");
   });
 
@@ -181,7 +181,7 @@ describe("DailyBrief", () => {
     );
 
     expect(html).not.toContain("AI FAE Agent is offline");
-    expect(html).toContain("No critical issues");
+    expect(html).toContain("暂无严重问题");
   });
 
   it("limits Overview changes to five and summarizes fleet usage", () => {
@@ -192,7 +192,7 @@ describe("DailyBrief", () => {
     }));
     const html = renderToStaticMarkup(<DailyBrief brief={{ ...briefFixture, changes }} />);
 
-    expect(html).toContain("33 new conversations across 6 Business Agents");
+    expect(html).toContain("6 个业务 Agent 新增 33 次对话");
     expect(html).toContain("Change 5");
     expect(html).not.toContain("Change 6");
   });
@@ -626,10 +626,10 @@ describe("ActivityPage", () => {
     await act(async () => root?.render(createElement(App)));
 
     expect(container.querySelector(".topbar")).not.toBeNull();
-    expect(container.querySelector(".readonly-tag")?.textContent).toContain("Read-only");
-    expect(container.querySelector("h1")?.textContent).toBe("Activity History");
+    expect(container.querySelector(".readonly-tag")).toBeNull();
+    expect(container.querySelector(".product-nav")?.textContent).toBe("总览AgentSession运行记录");
     expect(container.querySelector("[role=alert]")?.textContent).toContain("Activity unavailable");
-    expect(container.querySelector(".product-nav [aria-current=page]")).toBeNull();
+    expect(container.querySelector(".product-nav [aria-current=page]")?.textContent).toBe("运行记录");
   });
 
   it("aborts Agent and Activity requests on cleanup and ignores late results", async () => {

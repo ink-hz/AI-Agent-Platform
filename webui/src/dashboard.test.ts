@@ -201,6 +201,11 @@ describe("Overview Fleet and Daily Brief integration", () => {
     await renderOverview();
 
     expect(container.querySelector(".summary-section")).not.toBeNull();
+    expect(container.querySelector("h1")?.textContent).toBe("Agent 集群总览");
+    expect(container.textContent).toContain("集群概况");
+    expect(container.textContent).toContain("近 7 天使用趋势");
+    expect(container.textContent).toContain("Agent 运行情况");
+    expect(container.textContent).not.toMatch(/Fleet Snapshot|Active Agents|Read-only/);
     expect(container.textContent).toContain("42");
     expect(container.querySelector(".daily-brief")).toBeNull();
     expect(container.querySelector(".insight-grid")).not.toBeNull();
@@ -227,7 +232,7 @@ describe("Overview Fleet and Daily Brief integration", () => {
 
     expect(container.querySelector(".summary-section")).not.toBeNull();
     expect(container.querySelector(".daily-brief")?.textContent).toContain("AI FAE Agent is offline");
-    expect(container.querySelector(".daily-brief")?.textContent).toContain("Brief data is stale");
+    expect(container.querySelector(".daily-brief")?.textContent).toContain("运行摘要数据已过期");
     expect(fetchOperationsBrief).toHaveBeenCalledTimes(2);
   });
 
@@ -331,7 +336,7 @@ describe("Overview Fleet and Daily Brief integration", () => {
     await act(async () => vi.advanceTimersByTimeAsync(5_000));
 
     expect(signal.aborted).toBe(true);
-    expect(container.querySelector(".daily-brief")?.textContent).toContain("Brief data is stale");
+    expect(container.querySelector(".daily-brief")?.textContent).toContain("运行摘要数据已过期");
     expect(container.querySelector(".daily-brief")?.textContent).toContain("AI FAE Agent is offline");
     expect(fetchOperationsBrief).toHaveBeenCalledTimes(2);
 
@@ -342,7 +347,7 @@ describe("Overview Fleet and Daily Brief integration", () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector(".daily-brief")?.textContent).toContain("Brief data is stale");
+    expect(container.querySelector(".daily-brief")?.textContent).toContain("运行摘要数据已过期");
     expect(container.querySelector(".daily-brief")?.textContent).toContain("AI FAE Agent is offline");
     expect(container.textContent).not.toContain("Late Operations payload");
     expect(fetchOperationsBrief).toHaveBeenCalledTimes(2);

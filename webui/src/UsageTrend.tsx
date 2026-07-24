@@ -21,10 +21,7 @@ export function UsageTrend({ trend }: UsageTrendProps) {
   return (
     <article className="insight-card trend-card">
       <div className="insight-heading">
-        <div>
-          <p>{UI_COPY.insights.eyebrow}</p>
-          <h2>{UI_COPY.insights.trend}</h2>
-        </div>
+        <div><h2>{UI_COPY.insights.trend}</h2></div>
         <span>{UI_COPY.insights.conversations(formatCount(total))}</span>
       </div>
 

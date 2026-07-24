@@ -40,7 +40,7 @@ function ActiveRanking({ agents }: { agents: FleetAgent[] }) {
   return (
     <article className="insight-card ranking-card">
       <div className="insight-heading">
-        <div><p>{UI_COPY.insights.eyebrow}</p><h2>{UI_COPY.insights.ranking}</h2></div>
+        <div><h2>{UI_COPY.insights.ranking}</h2></div>
         <span>{UI_COPY.insights.rankingHint}</span>
       </div>
       {hasWeeklyActivity ? <ol className="ranking-list">
@@ -120,7 +120,7 @@ export function OverviewPage() {
 
   return <>
     <section className="hero">
-      <div><p className="eyebrow">{UI_COPY.hero.eyebrow}</p><h1>{UI_COPY.hero.title}</h1><p className="hero-sub">{UI_COPY.hero.description}</p></div>
+      <div><h1>{UI_COPY.hero.title}</h1><p className="hero-sub">{UI_COPY.hero.description}</p></div>
       <div className={`team-light ${hasIncident ? "incident" : "nominal"}`}>
         <span aria-hidden="true" />
         {overview ? hasIncident
@@ -134,7 +134,7 @@ export function OverviewPage() {
 
     {overview ? <>
       <section className="summary-section" aria-label="Fleet summary">
-        <div className="section-heading"><div><p>{UI_COPY.summary.eyebrow}</p><h2>{UI_COPY.summary.title}</h2></div><span>{UI_COPY.summary.updated} {formatCheckedAt(overview.runtime_source.checked_at)}</span></div>
+        <div className="section-heading"><div><h2>{UI_COPY.summary.title}</h2></div><span>{UI_COPY.summary.updated} {formatCheckedAt(overview.runtime_source.checked_at)}</span></div>
         <div className="fleet-summary-grid">
           <article className="fleet-summary-card"><span>{UI_COPY.summary.metrics[0]}</span><strong>{formatCount(overview.summary.total_agents)}</strong><p>{UI_COPY.summary.agentsHint}</p></article>
           <article className="fleet-summary-card summary-running"><span>{UI_COPY.summary.metrics[1]}</span><strong>{formatCount(overview.summary.running_agents)}</strong><p>{UI_COPY.summary.activeHint(overview.summary.active_agents)}</p></article>
@@ -146,7 +146,7 @@ export function OverviewPage() {
       {usageReadable ? <section className="insight-grid" aria-label="Usage insights"><UsageTrend trend={overview.trend} /><ActiveRanking agents={visibleAgents} /></section>
         : <section className="usage-unavailable-card" aria-label="Usage insights"><span aria-hidden="true">◎</span><div><h2>{UI_COPY.failures.usageTitle}</h2><p>{UI_COPY.failures.usageDescription}</p></div></section>}
       <section className="agents-section" aria-label="Agents">
-        <div className="section-heading"><div><p>{UI_COPY.agent.sectionEyebrow}</p><h2>{UI_COPY.agent.sectionTitle}</h2></div><span>{UI_COPY.agent.refresh(visibleAgents.length)}</span></div>
+        <div className="section-heading"><div><h2>{UI_COPY.agent.sectionTitle}</h2></div><span>{UI_COPY.agent.refresh(visibleAgents.length)}</span></div>
         <div className="fleet-agent-grid">{visibleAgents.map((agent) => <FleetAgentCard agent={agent} key={agent.id} now={now} />)}</div>
       </section>
     </> : <section className="empty-state" aria-live="polite"><span className="empty-pulse" aria-hidden="true" /><h2>{degraded ? UI_COPY.loading.failedTitle : UI_COPY.loading.title}</h2><p>{degraded ? UI_COPY.loading.retry : UI_COPY.loading.description}</p></section>}

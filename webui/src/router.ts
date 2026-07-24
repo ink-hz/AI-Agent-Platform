@@ -68,10 +68,10 @@ export function routePath(route: Route): string {
 }
 
 
-export function routeSection(route: Route): "overview" | "agents" | "sessions" | null {
+export function routeSection(route: Route): "overview" | "agents" | "sessions" | "activity" | null {
   if (route.name === "agent" || route.name === "agent-runtime") return "agents";
   if (route.name === "session") return "sessions";
-  if (route.name === "activity" || route.name === "flywheel" || route.name === "not-found") return null;
+  if (route.name === "flywheel" || route.name === "not-found") return null;
   return route.name;
 }
 

@@ -26,7 +26,7 @@ function PendingPage({ title, description }: { title: string; description: strin
 
 function LegacyFlywheelRedirect() {
   useEffect(() => navigate("/sessions", { replace: true }), []);
-  return <LoadingState label="Opening Sessions" />;
+  return <LoadingState label="正在打开 Session" />;
 }
 
 
@@ -43,7 +43,7 @@ export default function App() {
     case "session": page = <SessionDetailPage sessionKey={route.sessionKey} />; break;
     case "flywheel": page = <LegacyFlywheelRedirect />; break;
     case "activity": page = <ActivityPage />; break;
-    default: page = <PendingPage title="Page not found" description="Return to Agent Overview." />;
+    default: page = <PendingPage title="页面不存在" description="请返回 Agent 集群总览。" />;
   }
   return <AppShell route={route}>{page}</AppShell>;
 }

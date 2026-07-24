@@ -5,9 +5,10 @@ import { navigate, routeSection, type Route } from "./router";
 
 
 const NAVIGATION = [
-  { label: "Overview", path: "/", section: "overview" },
-  { label: "Agents", path: "/agents", section: "agents" },
-  { label: "Sessions", path: "/sessions", section: "sessions" },
+  { label: "总览", path: "/", section: "overview" },
+  { label: "Agent", path: "/agents", section: "agents" },
+  { label: "Session", path: "/sessions", section: "sessions" },
+  { label: "运行记录", path: "/activity", section: "activity" },
 ] as const;
 
 
@@ -39,13 +40,10 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
               >{item.label}</a>
             ))}
           </nav>
-          <span className="readonly-tag">{UI_COPY.readOnly}</span>
         </div>
       </header>
       <main className="page">{children}</main>
-      <footer className="site-foot">
-        <span>Orbbec Agent Platform</span><span className="dot">·</span><span>{UI_COPY.footer}</span>
-      </footer>
+      <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>
     </div>
   );
 }
