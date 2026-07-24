@@ -130,12 +130,12 @@ function localDateKey(date: Date): string | null {
 function activityDateHeading(value: string, now: Date): string {
   const date = new Date(value);
   const key = localDateKey(date);
-  if (key === null) return "Date unavailable";
-  if (key === localDateKey(now)) return "Today";
-  if (key === localDateKey(new Date(now.getTime() - 86_400_000))) return "Yesterday";
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
+  if (key === null) return "日期不可用";
+  if (key === localDateKey(now)) return "今天";
+  if (key === localDateKey(new Date(now.getTime() - 86_400_000))) return "昨天";
+  return new Intl.DateTimeFormat("zh-CN", {
+    day: "numeric",
+    month: "long",
     year: "numeric",
     timeZone: ACTIVITY_TIME_ZONE,
   }).format(date);
@@ -265,9 +265,8 @@ export function ActivityPage() {
   return <>
     <section className="page-intro">
       <div>
-        <p className="eyebrow">OPERATIONAL RECORD</p>
-        <h1>Activity History</h1>
-        <p>Review evidence-backed changes across Business Agents and explicitly selected System Agents.</p>
+        <h1>运行记录</h1>
+        <p>筛选 Agent 的部署、配置、运行状态和数据同步记录</p>
       </div>
     </section>
     <form className="filter-bar activity-filter-bar" onSubmit={(event) => {
@@ -279,20 +278,20 @@ export function ActivityPage() {
       }
       applyFilters(next);
     }}>
-      <label><span>Agent</span><select name="agent_id" value={draft.agent_id} onChange={(event) => setDraft((current) => ({ ...current, agent_id: event.target.value }))}><option value="">All Business Agents</option>{selectableAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}{needsSelectedPlaceholder && <option value={draft.agent_id}>{draft.agent_id}</option>}</select></label>
-      <label><span>Event type</span><input name="event_type" value={draft.event_type} onChange={(event) => setDraft((current) => ({ ...current, event_type: event.target.value }))} placeholder="e.g. runtime_offline" /></label>
-      <label><span>Severity</span><select name="severity" value={draft.severity} onChange={(event) => setDraft((current) => ({ ...current, severity: event.target.value as ActivityFilters["severity"] }))}><option value="">All severities</option><option value="critical">Critical</option><option value="attention">Attention</option><option value="info">Info</option></select></label>
-      <label><span>From</span><input name="date_from" type="datetime-local" value={draft.date_from} onChange={(event) => setDraft((current) => ({ ...current, date_from: event.target.value }))} /></label>
-      <label><span>To</span><input name="date_to" type="datetime-local" value={draft.date_to} onChange={(event) => setDraft((current) => ({ ...current, date_to: event.target.value }))} /></label>
-      <button type="submit">Apply filters</button>
+      <label><span>Agent</span><select name="agent_id" value={draft.agent_id} onChange={(event) => setDraft((current) => ({ ...current, agent_id: event.target.value }))}><option value="">全部业务 Agent</option>{selectableAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}{needsSelectedPlaceholder && <option value={draft.agent_id}>{draft.agent_id}</option>}</select></label>
+      <label><span>事件类型</span><input name="event_type" value={draft.event_type} onChange={(event) => setDraft((current) => ({ ...current, event_type: event.target.value }))} placeholder="例如 runtime_offline" /></label>
+      <label><span>级别</span><select name="severity" value={draft.severity} onChange={(event) => setDraft((current) => ({ ...current, severity: event.target.value as ActivityFilters["severity"] }))}><option value="">全部级别</option><option value="critical">严重</option><option value="attention">需关注</option><option value="info">信息</option></select></label>
+      <label><span>开始时间</span><input name="date_from" type="datetime-local" value={draft.date_from} onChange={(event) => setDraft((current) => ({ ...current, date_from: event.target.value }))} /></label>
+      <label><span>结束时间</span><input name="date_to" type="datetime-local" value={draft.date_to} onChange={(event) => setDraft((current) => ({ ...current, date_to: event.target.value }))} /></label>
+      <button type="submit">应用筛选</button>
     </form>
-    {unavailable && <section className="data-state data-error" role="alert"><strong>Activity unavailable</strong><p>The Platform could not read operational history. Existing Agent services are not affected.</p></section>}
-    {loading ? <LoadingState label="Loading Activity" />
-      : events.length === 0 && !unavailable ? <EmptyState title="No matching activity" description="Adjust the filters or wait for new evidence-backed operational changes." />
+    {unavailable && <section className="data-state data-error" role="alert"><strong>运行记录暂不可用</strong><p>Platform 暂时无法读取运行记录，Agent 服务不受影响。</p></section>}
+    {loading ? <LoadingState label="正在加载运行记录" />
+      : events.length === 0 && !unavailable ? <EmptyState title="没有匹配的运行记录" description="可调整筛选条件，或等待新的部署、配置和运行状态记录。" />
       : <div className="activity-history">{groups.map((group) => <section className="activity-group" key={group.heading}><h2>{group.heading}</h2><div className="operational-event-list">{group.items.map((event) => <OperationalEventItem event={event} key={event.event_id} />)}</div></section>)}</div>}
     {hasMore && <button className="activity-load-more" type="button" disabled={loadingMore} onClick={() => {
       if (loadingMore) return;
       setApplied((current) => ({ ...current, offset: consumed, revision: current.revision + 1 }));
-    }}>{loadingMore ? "Loading more" : "Load more"}</button>}
+    }}>{loadingMore ? "正在加载" : "加载更多"}</button>}
   </>;
 }

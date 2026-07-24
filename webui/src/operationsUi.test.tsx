@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import { DailyBrief } from "./components/DailyBrief";
+import { ErrorState, LoadingState } from "./components/DataState";
 import { OperationalEventItem } from "./components/OperationalEventItem";
 import { ActivityPage } from "./pages/ActivityPage";
 import type { AgentSummary, OperationalEvent, OperationsBrief, Page } from "./types";
@@ -201,7 +202,7 @@ describe("DailyBrief", () => {
     const html = renderToStaticMarkup(<OperationalEventItem event={briefFixture.attention[0]} />);
 
     expect(html).toContain('aria-hidden="true"');
-    expect(html).toContain("Critical");
+    expect(html).toContain("严重");
     expect(html).toContain("event-severity-critical");
     expect(html).toContain("event-visibility-business");
     expect(html).toContain('href="/agents/ai-fae-agent"');
@@ -217,9 +218,22 @@ describe("DailyBrief", () => {
       target_path: "/agents/test-bot",
     }} />);
 
-    expect(recovery).toContain("Recovery");
+    expect(recovery).toContain("已恢复");
     expect(recovery).toContain("event-severity-recovery");
     expect(system).toContain("event-visibility-system");
+  });
+});
+
+
+describe("shared data states", () => {
+  it("uses Chinese system copy while keeping Agent as a technical term", () => {
+    const loading = renderToStaticMarkup(<LoadingState />);
+    const error = renderToStaticMarkup(<ErrorState onRetry={() => undefined} />);
+
+    expect(loading).toContain("正在加载数据");
+    expect(error).toContain("数据暂不可用");
+    expect(error).toContain("Platform 暂时无法读取当前页面，Agent 服务不受影响。");
+    expect(error).toContain("重试");
   });
 });
 
@@ -265,12 +279,14 @@ describe("ActivityPage", () => {
 
     expect(container.querySelector(".activity-filter-bar")).not.toBeNull();
     expect(Array.from(container.querySelectorAll(".filter-bar label > span"), (node) => node.textContent))
-      .toEqual(["Agent", "Event type", "Severity", "From", "To"]);
+      .toEqual(["Agent", "事件类型", "级别", "开始时间", "结束时间"]);
     const options = Array.from(container.querySelectorAll("select[name=agent_id] option"), (node) => node.textContent);
-    expect(options).toEqual(["All Business Agents", "招聘助手"]);
+    expect(options).toEqual(["全部业务 Agent", "招聘助手"]);
     expect(options).not.toContain("测试机器人");
     expect(Array.from(container.querySelectorAll(".activity-group h2"), (node) => node.textContent))
-      .toEqual(["Today", "Yesterday", "21 Jul 2026"]);
+      .toEqual(["今天", "昨天", "2026年7月21日"]);
+    expect(container.textContent).toContain("运行记录");
+    expect(container.textContent).toContain("筛选 Agent 的部署、配置、运行状态和数据同步记录");
   });
 
   it("keeps an explicitly deep-linked System Agent selectable", async () => {
@@ -287,7 +303,7 @@ describe("ActivityPage", () => {
     const selector = container.querySelector<HTMLSelectElement>("select[name=agent_id]")!;
     expect(selector.value).toBe("test-bot");
     expect(Array.from(selector.options, (option) => option.textContent))
-      .toEqual(["All Business Agents", "招聘助手", "测试机器人"]);
+      .toEqual(["全部业务 Agent", "招聘助手", "测试机器人"]);
     const activityCall = fetchMock.mock.calls.find(([path]) => String(path).startsWith("/api/operations/events"))!;
     expect(activityCall[0]).toBe("/api/operations/events?agent_id=test-bot&limit=50&offset=0");
     expect(activityCall[1]?.signal).toBeInstanceOf(AbortSignal);
@@ -503,7 +519,7 @@ describe("ActivityPage", () => {
     await renderActivity();
 
     await act(async () => container.querySelector<HTMLButtonElement>("button[type=button]")!.click());
-    expect(container.querySelector("[role=alert]")?.textContent).toContain("Activity unavailable");
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("运行记录暂不可用");
     expect(Array.from(container.querySelectorAll(".operational-event-title"), (node) => node.textContent))
       .toEqual(["First event", "Second event"]);
     await act(async () => container.querySelector<HTMLButtonElement>("button[type=button]")!.click());
@@ -589,7 +605,7 @@ describe("ActivityPage", () => {
     const selector = container.querySelector<HTMLSelectElement>("select[name=agent_id]")!;
     expect(selector.value).toBe("test-bot");
     expect(Array.from(selector.options, (option) => option.textContent))
-      .toEqual(["All Business Agents", "test-bot"]);
+      .toEqual(["全部业务 Agent", "test-bot"]);
 
     await act(async () => {
       agentRequest.reject(new Error("agents unavailable"));
@@ -597,7 +613,7 @@ describe("ActivityPage", () => {
     });
     expect(selector.value).toBe("test-bot");
     expect(Array.from(selector.options, (option) => option.textContent))
-      .toEqual(["All Business Agents", "test-bot"]);
+      .toEqual(["全部业务 Agent", "test-bot"]);
   });
 
   it("rolls Today and Yesterday headings at Shanghai midnight", async () => {
@@ -610,11 +626,11 @@ describe("ActivityPage", () => {
       return Promise.resolve(response<Page<OperationalEvent>>({ items: [item], total: 1, limit: 50, offset: 0 }));
     }));
     await renderActivity();
-    expect(container.querySelector(".activity-group h2")?.textContent).toBe("Today");
+    expect(container.querySelector(".activity-group h2")?.textContent).toBe("今天");
 
     await act(async () => vi.advanceTimersByTimeAsync(30_000));
 
-    expect(container.querySelector(".activity-group h2")?.textContent).toBe("Yesterday");
+    expect(container.querySelector(".activity-group h2")?.textContent).toBe("昨天");
   });
 
   it("contains Activity unavailability inside the application shell", async () => {
@@ -628,7 +644,7 @@ describe("ActivityPage", () => {
     expect(container.querySelector(".topbar")).not.toBeNull();
     expect(container.querySelector(".readonly-tag")).toBeNull();
     expect(container.querySelector(".product-nav")?.textContent).toBe("总览AgentSession运行记录");
-    expect(container.querySelector("[role=alert]")?.textContent).toContain("Activity unavailable");
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("运行记录暂不可用");
     expect(container.querySelector(".product-nav [aria-current=page]")?.textContent).toBe("运行记录");
   });
 

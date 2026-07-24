@@ -8,15 +8,11 @@ import { PlatformLink } from "./PlatformLink";
 type EventTone = EventSeverity | "recovery";
 
 const SEVERITY: Record<EventTone, { icon: string; label: string }> = {
-  critical: { icon: "!", label: "Critical" },
-  attention: { icon: "△", label: "Attention" },
-  info: { icon: "i", label: "Info" },
-  recovery: { icon: "✓", label: "Recovery" },
+  critical: { icon: "!", label: "严重" },
+  attention: { icon: "△", label: "需关注" },
+  info: { icon: "i", label: "信息" },
+  recovery: { icon: "✓", label: "已恢复" },
 };
-
-function sourceLabel(source: string): string {
-  return source.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
 
 function EventContent({ event }: { event: OperationalEvent }) {
   const tone: EventTone = event.event_family === "recovery" ? "recovery" : event.severity;
@@ -32,7 +28,7 @@ function EventContent({ event }: { event: OperationalEvent }) {
     <p>{event.summary}</p>
     <div className="operational-event-meta">
       {event.agent_id && <span>Agent · {event.agent_id}</span>}
-      <span>Source · {sourceLabel(event.source_kind)}</span>
+      <span>来源 · {event.source_kind}</span>
     </div>
   </>;
 }

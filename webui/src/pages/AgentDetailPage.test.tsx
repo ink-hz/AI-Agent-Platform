@@ -299,7 +299,7 @@ describe("AgentDetailPage recent activity", () => {
 
     await renderAgent();
 
-    expect(container.querySelector(":scope > [role=alert]")?.textContent).toContain("Data unavailable");
+    expect(container.querySelector(":scope > [role=alert]")?.textContent).toContain("数据暂不可用");
     expect(container.querySelector(".agent-profile")).toBeNull();
   });
 
