@@ -21,6 +21,11 @@ def _target(port: int, name: str | None = None) -> MonitorTarget:
         pm2_name=f"metabot-{bot_name}",
         port=port,
         health_url=f"http://127.0.0.1:{port}/api/health",
+        runtime_url=f"http://127.0.0.1:{port}/api/observability/runtime",
+        engine="claude",
+        declared_model="claude-opus-4-8",
+        backend="pty",
+        channel="Feishu",
     )
 
 
@@ -68,6 +73,7 @@ async def test_probe_healthy_includes_uptime_and_latency():
     respx.get(target.health_url).mock(
         return_value=httpx.Response(200, json={"status": "ok", "uptime": 42})
     )
+    respx.get(target.runtime_url).mock(return_value=httpx.Response(404))
 
     async with httpx.AsyncClient() as client:
         status = await probe_target(client, target, 3.0)
@@ -77,6 +83,78 @@ async def test_probe_healthy_includes_uptime_and_latency():
     assert status.latency_ms is not None
     assert status.checked_at is not None
     assert status.error is None
+    assert status.declared_model == "claude-opus-4-8"
+    assert status.channel_status == "unknown"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_probe_observes_exact_bot_runtime_and_active_turns():
+    target = _target(9103, "marketing-inbound-bot")
+    respx.get(target.health_url).mock(
+        return_value=httpx.Response(200, json={"status": "ok", "uptime": 42})
+    )
+    respx.get(target.runtime_url).mock(return_value=httpx.Response(200, json={
+        "releaseSha": "release-123",
+        "bots": [
+            {
+                "name": "another-bot",
+                "platform": "feishu",
+                "engine": "claude",
+                "model": "wrong-model",
+                "backend": "sdk",
+                "activeTurns": 0,
+                "channel": {"state": "connected"},
+            },
+            {
+                "name": target.id,
+                "platform": "feishu",
+                "engine": "claude",
+                "model": "claude-opus-4-8",
+                "backend": "pty",
+                "activeTurns": 1,
+                "channel": {"state": "connected"},
+            },
+        ],
+    }))
+
+    async with httpx.AsyncClient() as client:
+        status = await probe_target(client, target, 3.0)
+
+    assert status.observed_model == "claude-opus-4-8"
+    assert status.backend == "pty"
+    assert status.channel_status == "connected"
+    assert status.active_turns == 1
+    assert status.runtime_observed_at is not None
+    serialized = status.model_dump_json()
+    assert "another-bot" not in serialized
+    assert "workdir" not in serialized.lower()
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    "runtime_response",
+    [
+        httpx.Response(503),
+        httpx.Response(200, text="not-json"),
+        httpx.Response(200, json={"bots": []}),
+    ],
+)
+async def test_runtime_observation_failure_does_not_forge_process_failure(runtime_response):
+    target = _target(9103, "marketing-inbound-bot")
+    respx.get(target.health_url).mock(
+        return_value=httpx.Response(200, json={"status": "ok", "uptime": 42})
+    )
+    respx.get(target.runtime_url).mock(return_value=runtime_response)
+
+    async with httpx.AsyncClient() as client:
+        status = await probe_target(client, target, 3.0)
+
+    assert status.status == "healthy"
+    assert status.observed_model is None
+    assert status.channel_status == "unknown"
+    assert status.active_turns is None
 
 
 @pytest.mark.asyncio

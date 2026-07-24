@@ -20,6 +20,9 @@ def _target_from_entry(entry: object) -> MonitorTarget:
     pm2_name = instance.get("pm2Name")
     port = instance.get("apiPort")
     workdir = entry.get("workdir", "")
+    engine = entry.get("engine")
+    declared_model = entry.get("model")
+    backend = entry.get("backend")
     if not isinstance(name, str) or not name.strip():
         raise ContractLoadError("invalid bot entry")
     if not isinstance(pm2_name, str) or not pm2_name.strip():
@@ -33,7 +36,14 @@ def _target_from_entry(entry: object) -> MonitorTarget:
             pm2_name=pm2_name,
             port=port,
             health_url=f"http://127.0.0.1:{port}/api/health",
+            runtime_url=f"http://127.0.0.1:{port}/api/observability/runtime",
             workdir=workdir,
+            engine=engine if isinstance(engine, str) else None,
+            declared_model=(
+                declared_model if isinstance(declared_model, str) else None
+            ),
+            backend=backend if isinstance(backend, str) else None,
+            channel="Feishu" if isinstance(entry.get("appId"), str) else None,
         )
     except ValidationError as error:
         raise ContractLoadError("invalid bot entry") from error

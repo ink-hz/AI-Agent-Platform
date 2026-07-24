@@ -8,6 +8,10 @@ from app.cluster.contract import ContractLoadError, load_targets
 def _bot(name: str, pm2_name: str, port: int, *, enabled: bool | None = None) -> dict:
     value = {
         "name": name,
+        "appId": "cli_sensitive_identifier",
+        "engine": "claude",
+        "model": "claude-opus-4-8",
+        "backend": "pty",
         "workdir": f"/runtime/{name}",
         "instance": {"pm2Name": pm2_name, "apiPort": port},
     }
@@ -39,7 +43,13 @@ def test_load_targets_includes_bots_and_enabled_test_bot(tmp_path):
         ("test-bot", "metabot-test", 9106),
     ]
     assert targets[0].health_url == "http://127.0.0.1:9101/api/health"
+    assert targets[0].runtime_url == "http://127.0.0.1:9101/api/observability/runtime"
+    assert targets[0].engine == "claude"
+    assert targets[0].declared_model == "claude-opus-4-8"
+    assert targets[0].backend == "pty"
+    assert targets[0].channel == "Feishu"
     assert targets[0].workdir == "/runtime/hr-bot"
+    assert "cli_sensitive_identifier" not in targets[0].model_dump_json()
 
 
 def test_disabled_test_bot_is_ignored(tmp_path):

@@ -24,6 +24,10 @@ def _identity(target: MonitorTarget) -> dict:
         "name": target.name,
         "pm2_name": target.pm2_name,
         "port": target.port,
+        "engine": target.engine,
+        "declared_model": target.declared_model,
+        "backend": target.backend,
+        "channel": target.channel,
     }
 
 
@@ -75,11 +79,55 @@ async def probe_target(
         if isinstance(uptime, int) and not isinstance(uptime, bool) and uptime >= 0
         else None
     )
-    return InstanceStatus(
+    observed = await _probe_runtime(client, target, timeout)
+    return InstanceStatus(**{
         **base,
-        status="healthy",
-        uptime_seconds=uptime_seconds,
+        "status": "healthy",
+        "uptime_seconds": uptime_seconds,
+        **observed,
+    })
+
+
+async def _probe_runtime(
+    client: httpx.AsyncClient, target: MonitorTarget, timeout: float
+) -> dict:
+    try:
+        response = await client.get(target.runtime_url, timeout=timeout)
+        if response.status_code != 200:
+            return {}
+        payload = response.json()
+    except Exception:
+        return {}
+    if not isinstance(payload, dict) or not isinstance(payload.get("bots"), list):
+        return {}
+    bot = next(
+        (
+            item for item in payload["bots"]
+            if isinstance(item, dict) and item.get("name") == target.id
+        ),
+        None,
     )
+    if bot is None:
+        return {}
+
+    channel = bot.get("channel")
+    raw_channel_state = channel.get("state") if isinstance(channel, dict) else None
+    channel_status = (
+        raw_channel_state
+        if raw_channel_state in {"connected", "connecting", "reconnecting", "failed"}
+        else "unknown"
+    )
+    active_turns = bot.get("activeTurns")
+    if not isinstance(active_turns, int) or isinstance(active_turns, bool) or active_turns < 0:
+        active_turns = None
+    return {
+        "engine": bot.get("engine") if isinstance(bot.get("engine"), str) else target.engine,
+        "observed_model": bot.get("model") if isinstance(bot.get("model"), str) else None,
+        "backend": bot.get("backend") if isinstance(bot.get("backend"), str) else target.backend,
+        "channel_status": channel_status,
+        "active_turns": active_turns,
+        "runtime_observed_at": _now_iso(),
+    }
 
 
 def build_snapshot(
