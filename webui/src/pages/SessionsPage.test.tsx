@@ -91,6 +91,11 @@ describe("SessionsPage URL state", () => {
     expect(container.querySelector<HTMLSelectElement>('select[name="source_kind"]')?.value).toBe("fae");
     expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe("Gemini");
     expect(sessionPaths).toContain("/api/sessions?agent_id=ai-fae-agent&source_kind=fae&q=Gemini&limit=50");
+    expect(container.querySelector("h1")?.textContent).toBe("Session");
+    expect(container.textContent).toContain("查看各 Agent 的真实 Session 和对话记录");
+    expect(container.querySelector('option[value=""]')?.textContent).toBe("全部业务 Agent");
+    expect(container.querySelector('button[type="submit"]')?.textContent).toBe("搜索");
+    expect(container.textContent).not.toContain("CONVERSATION RECORD");
   });
 
   it("replaces the URL when filters are applied", async () => {

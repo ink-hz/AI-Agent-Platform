@@ -56,22 +56,22 @@ const turn: TurnDetail = {
 describe("sender identity presentation", () => {
   it("formats only safe presentation fields", () => {
     expect(formatSenderIdentity("Lina", "Marketing")).toBe("Lina · Marketing");
-    expect(formatSenderIdentity("Lina", null)).toBe("Lina · Department unavailable");
-    expect(formatSenderIdentity(null, null)).toBe("Feishu User");
+    expect(formatSenderIdentity("Lina", null)).toBe("Lina · 部门未记录");
+    expect(formatSenderIdentity(null, null)).toBe("Feishu 用户");
   });
 
   it("shows the primary sender and group participation on MetaBot Sessions", () => {
     const html = renderToStaticMarkup(<SessionListItem session={session} />);
 
     expect(html).toContain("Lina · Marketing");
-    expect(html).toContain("+ 2 people");
+    expect(html).toContain("另有 2 人");
     expect(html).not.toMatch(/open_id|union_id|staff_id/i);
   });
 
   it("shows the sender next to each captured question", () => {
     const html = renderToStaticMarkup(<TurnCard turn={turn} />);
 
-    expect(html).toContain("Lina · Department unavailable");
+    expect(html).toContain("Lina · 部门未记录");
     expect(html).toContain("Draft a campaign plan");
   });
 
@@ -85,7 +85,7 @@ describe("sender identity presentation", () => {
       sender_identity_status: "unavailable",
     }} />);
 
-    expect(html).not.toContain("Feishu User");
-    expect(html).not.toContain("Department unavailable");
+    expect(html).not.toContain("Feishu 用户");
+    expect(html).not.toContain("部门未记录");
   });
 });

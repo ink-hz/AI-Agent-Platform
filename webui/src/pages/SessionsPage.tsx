@@ -64,16 +64,16 @@ export function SessionsPage() {
   };
 
   return <>
-    <section className="page-intro"><div><p className="eyebrow">CONVERSATION RECORD</p><h1>Sessions</h1><p>Inspect questions, answers, Evidence, Feedback, Review, and execution Trace in one place.</p></div>{page && <strong>{page.total}<span> Sessions</span></strong>}</section>
+    <section className="page-intro"><div><h1>Session</h1><p>查看各 Agent 的真实 Session 和对话记录。</p></div>{page && <strong>{page.total}<span> 个 Session</span></strong>}</section>
     <form className="filter-bar" onSubmit={(event) => { event.preventDefault(); apply({ ...applied, q: draft.q.trim() }); }}>
-      <label><span>Search</span><input name="q" value={draft.q} onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))} placeholder="Question or answer" /></label>
-      <label><span>Agent</span><select name="agent_id" value={draft.agent_id} onChange={(event) => { const agent_id = event.target.value; setDraft((current) => ({ ...current, agent_id })); apply({ ...applied, agent_id }); }}><option value="">All Agents</option>{selectableAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
-      <label><span>Source</span><select name="source_kind" value={draft.source_kind} onChange={(event) => { const source_kind = event.target.value as SessionSource; setDraft((current) => ({ ...current, source_kind })); apply({ ...applied, source_kind }); }}><option value="">All sources</option><option value="metabot">MetaBot</option><option value="fae">FAE</option><option value="admin">Admin</option></select></label>
-      <button type="submit">Search</button>
+      <label><span>搜索</span><input name="q" value={draft.q} onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))} placeholder="用户提问或 Agent 回答" /></label>
+      <label><span>Agent</span><select name="agent_id" value={draft.agent_id} onChange={(event) => { const agent_id = event.target.value; setDraft((current) => ({ ...current, agent_id })); apply({ ...applied, agent_id }); }}><option value="">全部业务 Agent</option>{selectableAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
+      <label><span>来源</span><select name="source_kind" value={draft.source_kind} onChange={(event) => { const source_kind = event.target.value as SessionSource; setDraft((current) => ({ ...current, source_kind })); apply({ ...applied, source_kind }); }}><option value="">全部来源</option><option value="metabot">MetaBot</option><option value="fae">FAE</option><option value="admin">Admin</option></select></label>
+      <button type="submit">搜索</button>
     </form>
     {error ? <ErrorState onRetry={() => setVersion((value) => value + 1)} />
-      : page === null ? <LoadingState label="Loading Sessions" />
-      : page.items.length === 0 ? <EmptyState title="No matching Sessions" description="Adjust the filters or wait for the next daily remote sync." />
+      : page === null ? <LoadingState label="正在加载 Session" />
+      : page.items.length === 0 ? <EmptyState title="没有符合条件的 Session" description="请调整筛选条件，或等待下一次数据同步。" />
       : <div className="session-list">{page.items.map((session) => <SessionListItem key={session.session_key} session={session} />)}</div>}
   </>;
 }

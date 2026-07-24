@@ -38,19 +38,27 @@ describe("Session Trace presentation", () => {
     expect(html).toContain("Claude Opus 4.8");
     expect(html).toContain("1.25s");
     expect(html).toContain("Evidence Retrieval");
-    expect(html).toContain("1,200 input");
+    expect(html).toContain("1,200 输入");
   });
 
   it("preserves original question and answer text", () => {
     const html = renderToStaticMarkup(<TurnCard turn={turn} />);
     expect(html).toContain("如何排查设备连接？");
     expect(html).toContain("请先确认 USB 枚举状态。");
-    expect(html).toContain("View Trace");
+    expect(html).toContain("用户提问");
+    expect(html).toContain("Agent 回答");
+    expect(html).toContain("查看 Trace");
+    expect(html).not.toMatch(/>Question<|>Answer<|View Trace/);
   });
 
   it("explains when engineering Trace detail is unavailable", () => {
     const html = renderToStaticMarkup(<TraceTimeline trace={{ ...trace, detail_availability: "unavailable" }} />);
-    expect(html).toContain("Engineering Trace is not captured by this source");
+    expect(html).toContain("当前数据源未采集工程 Trace");
     expect(html).toContain("Evidence Retrieval");
+  });
+
+  it("uses a Chinese fallback when the trace model is not reported", () => {
+    const html = renderToStaticMarkup(<TraceTimeline trace={{ ...trace, model: null, engine: null }} />);
+    expect(html).toContain("未报告");
   });
 });

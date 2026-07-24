@@ -67,7 +67,7 @@ describe("SessionDetailPage return navigation", () => {
     await renderPage();
 
     const link = container.querySelector<HTMLAnchorElement>(".back-link")!;
-    expect(link.textContent).toBe("← Back");
+    expect(link.textContent).toBe("← 返回");
     expect(link.getAttribute("href")).toBe("/agents/ai-fae-agent");
     await act(async () => link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
     expect(back).toHaveBeenCalledOnce();
@@ -77,7 +77,10 @@ describe("SessionDetailPage return navigation", () => {
     await renderPage();
 
     const link = container.querySelector<HTMLAnchorElement>(".back-link")!;
-    expect(link.textContent).toBe("← All Sessions");
+    expect(link.textContent).toBe("← 返回 Session 列表");
     expect(link.getAttribute("href")).toBe("/sessions");
+    expect(container.textContent).toContain("Session 回放");
+    expect(container.textContent).toContain("Gemini 335L troubleshooting");
+    expect(container.textContent).not.toContain("SESSION REPLAY");
   });
 });

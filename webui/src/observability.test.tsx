@@ -84,7 +84,7 @@ describe("observability directory components", () => {
 
     expect(html).toContain("Gemini 335L 如何排查？");
     expect(html).toContain("DingTalk");
-    expect(html).toContain("3 turns");
+    expect(html).toContain("3 轮");
     expect(html).toContain("/sessions/fae%3Asession-1");
   });
 
