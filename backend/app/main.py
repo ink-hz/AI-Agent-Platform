@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from .cluster import routes as cluster_routes
 from .cluster.monitor import ClusterMonitor, cluster_poll_loop
 from .config import Config, load_config
+from .control_room import routes as control_room_routes
+from .control_room.service import ControlRoomService
 from .fleet import routes as fleet_routes
 from .fleet.cache import UsageCache
 from .fleet.catalog import AgentCatalog
@@ -103,6 +105,7 @@ def create_app(
     observability_service: ObservabilityService | None = None,
     operations_service=None,
     operations_scheduler: OperationsScheduler | None = None,
+    control_room_service: ControlRoomService | None = None,
 ) -> FastAPI:
     config = load_config()
     path = registry_path or config.registry_path
@@ -119,6 +122,7 @@ def create_app(
         timeout=config.probe_timeout_seconds,
     )
     database_url = resolve_flywheel_database_url(config) if start_poller else None
+    catalog = AgentCatalog.default()
     if fleet_service is None:
         repository = (
             PsycopgFlywheelRepository(database_url)
@@ -127,7 +131,7 @@ def create_app(
         )
         fleet_service = FleetReadService(
             cluster_monitor,
-            AgentCatalog.default(),
+            catalog,
             UsageCache(repository, ttl_seconds=config.usage_cache_seconds),
             active_window_minutes=config.active_window_minutes,
             remote_monitor=remote_monitor,
@@ -139,6 +143,13 @@ def create_app(
             else UnavailableObservabilityRepository()
         )
         observability_service = ObservabilityService(observability_repository)
+    if control_room_service is None:
+        control_room_service = ControlRoomService(
+            catalog,
+            cluster_monitor,
+            remote_monitor,
+            observability_service,
+        )
     if (
         start_poller
         and operations_service is None
@@ -197,6 +208,7 @@ def create_app(
     app.state.operations_service = operations_service
     app.state.operations_scheduler = operations_scheduler
     app.state.remote_health_monitor = remote_monitor
+    app.state.control_room_service = control_room_service
 
     @app.get("/api/health")
     def platform_health() -> dict:
@@ -206,6 +218,7 @@ def create_app(
     app.include_router(cluster_routes.router)
     app.include_router(fleet_routes.router)
     app.include_router(observability_routes.router)
+    app.include_router(control_room_routes.router)
     app.include_router(operations_routes.router)
     app.include_router(registry_routes.router)
 
