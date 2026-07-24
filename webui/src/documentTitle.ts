@@ -8,12 +8,12 @@ export const PLATFORM_TITLE = "Orbbec Agent Platform";
 
 export function routeDocumentTitle(route: Route): string {
   switch (route.name) {
-    case "agents": return `Agents · ${PLATFORM_TITLE}`;
-    case "agent": return `Agent · ${PLATFORM_TITLE}`;
-    case "agent-runtime": return `Runtime · ${PLATFORM_TITLE}`;
-    case "sessions": return `Sessions · ${PLATFORM_TITLE}`;
-    case "session": return `Session Replay · ${PLATFORM_TITLE}`;
-    case "activity": return `Activity History · ${PLATFORM_TITLE}`;
+    case "agents": return `Agent · ${PLATFORM_TITLE}`;
+    case "agent": return `Agent 详情 · ${PLATFORM_TITLE}`;
+    case "agent-runtime": return `运行详情 · ${PLATFORM_TITLE}`;
+    case "sessions": return `Session · ${PLATFORM_TITLE}`;
+    case "session": return `Session 回放 · ${PLATFORM_TITLE}`;
+    case "activity": return `运行记录 · ${PLATFORM_TITLE}`;
     default: return PLATFORM_TITLE;
   }
 }

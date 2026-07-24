@@ -61,22 +61,22 @@ describe("fleet presentation formatting", () => {
 
   it("formats durable lifecycle dates without inventing missing evidence", () => {
     const now = new Date("2026-07-21T02:00:00Z");
-    expect(formatLifecycleDate("2026-06-17T16:34:33+08:00")).toBe("Jun 17, 2026");
-    expect(formatLifecycleDate(null)).toBe("Not recorded");
-    expect(formatLastUpdated("2026-07-20T23:00:00Z", now)).toBe("3 hours ago");
-    expect(formatLastUpdated(null, now)).toBe("Not recorded");
+    expect(formatLifecycleDate("2026-06-17T16:34:33+08:00")).toBe("2026年6月17日");
+    expect(formatLifecycleDate(null)).toBe("未记录");
+    expect(formatLastUpdated("2026-07-20T23:00:00Z", now)).toBe("3小时前");
+    expect(formatLastUpdated(null, now)).toBe("未记录");
   });
 
-  it("explains lifecycle evidence and formats diagnostic runtime in English", () => {
+  it("explains lifecycle evidence and formats diagnostic runtime in Chinese", () => {
     const formatting = fleetFormatting as unknown as {
       formatDaysInProduction: (value: string | null, now: Date) => string;
       formatLifecycleBasis: (basis: string) => string;
       formatRuntimeDuration: (seconds: number | null) => string;
     };
-    expect(formatting.formatLifecycleBasis("earliest_session")).toBe("Based on earliest captured Session");
-    expect(formatting.formatLifecycleBasis("release_artifact")).toBe("Based on production release record");
-    expect(formatting.formatRuntimeDuration(90_061)).toBe("1 day 1 hour");
-    expect(formatting.formatRuntimeDuration(null)).toBe("Not available");
+    expect(formatting.formatLifecycleBasis("earliest_session")).toBe("依据最早采集的 Session");
+    expect(formatting.formatLifecycleBasis("release_artifact")).toBe("依据生产发布记录");
+    expect(formatting.formatRuntimeDuration(90_061)).toBe("1天 1小时");
+    expect(formatting.formatRuntimeDuration(null)).toBe("暂不可用");
   });
 
   it("formats elapsed full days in production from durable lifecycle data", () => {
@@ -84,11 +84,11 @@ describe("fleet presentation formatting", () => {
       formatDaysInProduction: (value: string | null, now: Date) => string;
     };
     const now = new Date("2026-07-21T02:00:00Z");
-    expect(formatting.formatDaysInProduction("2026-07-21T01:00:00Z", now)).toBe("Today");
-    expect(formatting.formatDaysInProduction("2026-07-20T02:00:00Z", now)).toBe("1 day");
-    expect(formatting.formatDaysInProduction("2026-06-17T02:00:00Z", now)).toBe("34 days");
-    expect(formatting.formatDaysInProduction(null, now)).toBe("Not recorded");
-    expect(formatting.formatDaysInProduction("invalid", now)).toBe("Not recorded");
+    expect(formatting.formatDaysInProduction("2026-07-21T01:00:00Z", now)).toBe("今天上线");
+    expect(formatting.formatDaysInProduction("2026-07-20T02:00:00Z", now)).toBe("已运行 1 天");
+    expect(formatting.formatDaysInProduction("2026-06-17T02:00:00Z", now)).toBe("已运行 34 天");
+    expect(formatting.formatDaysInProduction(null, now)).toBe("未记录");
+    expect(formatting.formatDaysInProduction("invalid", now)).toBe("未记录");
   });
 
   it("formats period change without implying a comparison when none exists", () => {
@@ -103,9 +103,9 @@ describe("fleet presentation formatting", () => {
     expect(usageIsReadable({ healthy: false, checked_at: null, stale: false, error: "usage_unavailable" })).toBe(false);
   });
 
-  it("uses the approved English state vocabulary", () => {
+  it("uses Chinese system state vocabulary", () => {
     expect(Object.values(FLEET_STATE_META).map((state) => state.label)).toEqual([
-      "Active", "Online", "Degraded", "Offline", "Checking", "Unknown",
+      "活跃", "在线", "异常", "离线", "检查中", "未知",
     ]);
   });
 });

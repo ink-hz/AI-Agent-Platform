@@ -46,14 +46,14 @@ const brief: OperationsBrief = {
 
 describe("Operations Brief presentation helpers", () => {
   it("labels evaluation freshness without claiming health", () => {
-    expect(briefStatusLabel(brief.freshness)).toBe("Evaluated 18:00");
-    expect(briefStatusLabel({ ...brief.freshness, status: "partial" })).toBe("Brief partially evaluated · 18:00");
-    expect(briefStatusLabel(brief.freshness, true)).toBe("Brief data is stale · Last evaluated 18:00");
-    expect(briefStatusLabel({ status: "unavailable", evaluated_at: null, failed_groups: [] })).toBe("Brief unavailable");
+    expect(briefStatusLabel(brief.freshness)).toBe("计算于 18:00");
+    expect(briefStatusLabel({ ...brief.freshness, status: "partial" })).toBe("部分数据已计算 · 18:00");
+    expect(briefStatusLabel(brief.freshness, true)).toBe("运行摘要数据已过期 · 最近计算于 18:00");
+    expect(briefStatusLabel({ status: "unavailable", evaluated_at: null, failed_groups: [] })).toBe("运行摘要暂不可用");
   });
 
   it("formats event times in the product timezone", () => {
-    expect(eventTimeLabel(event)).toBe("22 Jul, 18:30");
+    expect(eventTimeLabel(event)).toBe("7月22日 18:30");
   });
 
   it("allows only target paths handled by the existing SPA", () => {

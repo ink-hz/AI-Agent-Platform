@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { UI_COPY } from "./copy";
+import {
+  UI_COPY,
+  channelStatusLabel,
+  readinessLabel,
+  readinessReasonLabel,
+  runtimeFreshnessLabel,
+} from "./copy";
 
 
 function allStrings(value: unknown): string[] {
@@ -16,16 +22,29 @@ function allStrings(value: unknown): string[] {
 
 
 describe("reviewed UI copy", () => {
-  it("uses the approved source-language product vocabulary", () => {
-    expect(UI_COPY.navigation).toEqual(["Overview", "Agents", "Sessions"]);
-    expect(UI_COPY.navigationLabel).toBe("Product navigation");
-    expect(UI_COPY.hero.title).toBe("Agent Overview");
+  it("uses Chinese system copy while preserving agreed technical nouns", () => {
+    expect(UI_COPY.navigation).toEqual(["总览", "Agent", "Session", "运行记录"]);
+    expect(UI_COPY.navigationLabel).toBe("主导航");
+    expect(UI_COPY.hero.title).toBe("Agent 集群总览");
     expect(UI_COPY.summary.metrics).toEqual([
-      "Agents", "Online", "Total Conversations", "Last 7 Days",
+      "Agent 数量", "正常运行", "累计对话", "近 7 天对话",
     ]);
     expect(UI_COPY.agent.fields).toEqual([
-      "Total Conversations", "Last 7 Days", "In Production", "Last Updated", "Recent",
+      "累计对话", "近 7 天", "已上线", "最近更新", "最近工作",
     ]);
+    expect(JSON.stringify(UI_COPY)).not.toMatch(/FLEET DIRECTORY|AGENT OPERATIONS|Read-only/);
+    expect(JSON.stringify(UI_COPY)).toMatch(/Agent|Session|Trace|Backend/);
+  });
+
+  it("maps runtime enums for display without changing their source values", () => {
+    expect(readinessLabel("Ready")).toBe("正常");
+    expect(readinessLabel("Busy")).toBe("忙碌");
+    expect(readinessLabel("Limited")).toBe("受限");
+    expect(readinessLabel("Offline")).toBe("离线");
+    expect(readinessLabel("Unknown")).toBe("未知");
+    expect(readinessReasonLabel("Ready")).toBe("运行环境和主要 Channel 均正常");
+    expect(channelStatusLabel("connected")).toBe("已连接");
+    expect(runtimeFreshnessLabel("stale")).toBe("数据已过期");
   });
 
   it("contains no rejected translated or marketing-heavy labels", () => {
