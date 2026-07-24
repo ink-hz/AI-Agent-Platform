@@ -1,5 +1,6 @@
 import type {
   ReadinessStatus,
+  Freshness,
   RuntimeChannelStatus,
   RuntimeFreshness,
 } from "./types";
@@ -97,8 +98,15 @@ const CHANNEL_LABELS: Record<RuntimeChannelStatus, string> = {
   unknown: "未知",
 };
 
+const SOURCE_FRESHNESS_LABELS: Record<Freshness, string> = {
+  live: "实时",
+  fresh: "最新",
+  stale: "数据已过期",
+};
+
 
 export const readinessLabel = (value: ReadinessStatus) => READINESS_LABELS[value];
 export const readinessReasonLabel = (value: ReadinessStatus) => READINESS_REASONS[value];
 export const runtimeFreshnessLabel = (value: RuntimeFreshness) => FRESHNESS_LABELS[value];
 export const channelStatusLabel = (value: RuntimeChannelStatus) => CHANNEL_LABELS[value];
+export const sourceFreshnessLabel = (value: Freshness) => SOURCE_FRESHNESS_LABELS[value];

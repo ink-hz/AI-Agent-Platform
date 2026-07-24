@@ -10,13 +10,13 @@ interface AgentDirectorySectionsProps {
 
 export function AgentDirectorySections({ business, system }: AgentDirectorySectionsProps) {
   return <>
-    <section className="directory-grid" aria-label="Business Agents">
+    <section className="directory-grid" aria-label="业务 Agent">
       {business.map((agent) => <AgentDirectoryCard agent={agent} key={agent.id} />)}
     </section>
-    {system.length > 0 && <section className="system-agent-section" aria-label="System Agents">
+    {system.length > 0 && <section className="system-agent-section" aria-label="系统 Agent">
       <div className="section-heading">
-        <div><p>INFRASTRUCTURE</p><h2>System Agents</h2></div>
-        <span>{system.length} monitored identities</span>
+        <div><h2>系统 Agent</h2></div>
+        <span>{system.length} 个监控对象</span>
       </div>
       <div className="directory-grid system-agent-grid">
         {system.map((agent) => <AgentDirectoryCard agent={agent} key={agent.id} />)}

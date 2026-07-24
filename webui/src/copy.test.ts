@@ -6,6 +6,7 @@ import {
   channelStatusLabel,
   readinessLabel,
   readinessReasonLabel,
+  sourceFreshnessLabel,
   runtimeFreshnessLabel,
 } from "./copy";
 
@@ -45,6 +46,7 @@ describe("reviewed UI copy", () => {
     expect(readinessReasonLabel("Ready")).toBe("运行环境和主要 Channel 均正常");
     expect(channelStatusLabel("connected")).toBe("已连接");
     expect(runtimeFreshnessLabel("stale")).toBe("数据已过期");
+    expect(sourceFreshnessLabel("fresh")).toBe("最新");
   });
 
   it("contains no rejected translated or marketing-heavy labels", () => {

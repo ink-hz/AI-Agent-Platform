@@ -67,14 +67,22 @@ describe("AgentRuntimePage", () => {
 
     await act(async () => root.render(<AgentRuntimePage agentId={agent.id} />));
 
-    expect(container.querySelector("h1")?.textContent).toContain("Marketing Inbound Runtime");
-    expect(container.textContent).toContain("Current process");
-    expect(container.textContent).toContain("1h 1m");
-    expect(container.textContent).toContain("Running for 8 days");
-    expect(container.textContent).toContain("Observed active model");
+    expect(container.querySelector("h1")?.textContent).toContain("Marketing Inbound 运行详情");
+    expect(container.textContent).toContain("当前运行状态");
+    expect(container.textContent).toContain("运行环境");
+    expect(container.textContent).toContain("当前进程");
+    expect(container.textContent).toContain("1小时 1分钟");
+    expect(container.textContent).toContain("已运行 8 天");
+    expect(container.textContent).toContain("运行时观测");
+    expect(container.textContent).toContain("进程重启后重新计时");
+    expect(container.textContent).toContain("运行周期");
+    expect(container.textContent).toContain("观测依据");
+    expect(container.textContent).toContain("实时运行观测");
+    expect(container.textContent).not.toContain("Model, backend, and channel observation");
+    expect(container.textContent).not.toContain("Runtime and primary channel are available");
     expect(container.textContent).toContain("runtime_observation");
     expect(container.querySelector("a[href='/agents/marketing-inbound-bot']")).not.toBeNull();
-    expect(document.title).toBe("Runtime · Marketing Inbound · Orbbec Agent Platform");
+    expect(document.title).toBe("运行详情 · Marketing Inbound · Orbbec Agent Platform");
   });
 
   it("renders unknown evidence as information rather than a page error", async () => {
@@ -90,8 +98,9 @@ describe("AgentRuntimePage", () => {
 
     await act(async () => root.render(<AgentRuntimePage agentId={agent.id} />));
 
-    expect(container.textContent).toContain("Unknown");
-    expect(container.textContent).toContain("Model not observed");
+    expect(container.textContent).toContain("未知");
+    expect(container.textContent).toContain("尚未观测到 Model");
+    expect(container.textContent).not.toContain("Current channel readiness has not been observed");
     expect(container.querySelector("[role=alert]")).toBeNull();
   });
 });

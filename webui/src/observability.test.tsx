@@ -72,6 +72,10 @@ describe("observability directory components", () => {
     expect(html).toContain("Alibaba Cloud");
     expect(html).toContain("168");
     expect(html).toContain("236");
+    expect(html).toContain("累计 Session");
+    expect(html).toContain("累计对话");
+    expect(html).toContain("Production engineering Agent");
+    expect(html).toContain("最新");
     expect(html).toContain("/agents/ai-fae-agent");
   });
 
@@ -94,7 +98,9 @@ describe("observability directory components", () => {
     const html = renderToStaticMarkup(
       <AgentDirectorySections business={[agent]} system={[systemAgent]} />,
     );
-    expect(html.indexOf("AI FAE")).toBeLessThan(html.indexOf("System Agents"));
+    expect(html.indexOf("AI FAE")).toBeLessThan(html.indexOf("系统 Agent"));
+    expect(html).toContain("1 个监控对象");
+    expect(html).not.toContain("INFRASTRUCTURE");
     expect(html).toContain("/agents/test-bot");
   });
 

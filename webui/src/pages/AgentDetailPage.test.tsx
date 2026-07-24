@@ -206,19 +206,20 @@ describe("AgentDetailPage recent activity", () => {
     await renderAgent();
 
     const activity = container.querySelector(".agent-activity-section")!;
-    expect(activity.querySelector(".section-heading p")?.textContent).toBe("OPERATIONS HISTORY");
-    expect(activity.querySelector("h2")?.textContent).toBe("Recent Activity");
+    expect(activity.querySelector(".section-heading p")).toBeNull();
+    expect(activity.querySelector("h2")?.textContent).toBe("最近运行记录");
     expect(activity.querySelector(".operational-event-title")?.textContent).toBe(event.title);
-    expect(activity.querySelector("a[href='/activity?agent_id=test-bot']")?.textContent).toBe("View all activity →");
+    expect(activity.querySelector("a[href='/activity?agent_id=test-bot']")?.textContent).toBe("查看全部运行记录 →");
     const runtime = container.querySelector(".agent-runtime-summary")!;
-    expect(runtime.textContent).toContain("Ready");
+    expect(runtime.textContent).toContain("正常");
     expect(runtime.textContent).toContain("claude-opus-4-8 · PTY");
-    expect(runtime.textContent).toContain("Feishu Connected");
-    expect(runtime.textContent).toContain("Running for 8 days");
-    expect(runtime.textContent).not.toContain("Current process");
+    expect(runtime.textContent).toContain("Feishu 已连接");
+    expect(runtime.textContent).toContain("已运行 8 天");
+    expect(runtime.textContent).not.toContain("当前进程");
     expect(runtime.querySelector("a[href='/agents/test-bot/runtime']")).not.toBeNull();
-    expect(container.textContent!.indexOf("Runtime")).toBeLessThan(container.textContent!.indexOf("Recent Activity"));
-    expect(container.textContent!.indexOf("Recent Activity")).toBeLessThan(container.textContent!.indexOf("Recent Sessions"));
+    expect(runtime.querySelector("a")?.textContent).toBe("查看运行详情 →");
+    expect(container.textContent!.indexOf("运行状态")).toBeLessThan(container.textContent!.indexOf("最近运行记录"));
+    expect(container.textContent!.indexOf("最近运行记录")).toBeLessThan(container.textContent!.indexOf("最近 Session"));
     expect(fetchMock.mock.calls.filter(([path]) => String(path).startsWith("/api/operations/events")))
       .toEqual([["/api/operations/events?agent_id=test-bot&limit=8", expect.any(Object)]]);
   });
@@ -242,7 +243,7 @@ describe("AgentDetailPage recent activity", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await renderAgent();
-    expect(container.textContent).toContain("Loading Agent profile");
+    expect(container.textContent).toContain("正在加载 Agent 详情");
 
     await act(async () => {
       agentRequest.resolve(response(agentFixture));
@@ -265,8 +266,8 @@ describe("AgentDetailPage recent activity", () => {
 
     expect(container.querySelector(".agent-profile h1")?.textContent).toBe(agentFixture.name);
     expect(container.textContent).toContain(sessionFixture.title);
-    expect(container.querySelector(".agent-activity-section")?.textContent).toContain("Recent Activity");
-    expect(container.querySelector(".agent-activity-section")?.textContent).toContain("Loading activity");
+    expect(container.querySelector(".agent-activity-section")?.textContent).toContain("最近运行记录");
+    expect(container.querySelector(".agent-activity-section")?.textContent).toContain("正在加载运行记录");
     expect(container.querySelector(".agent-activity-status")?.getAttribute("role")).toBe("status");
     expect(container.querySelector(".agent-activity-status")?.getAttribute("aria-live")).toBe("polite");
   });
@@ -284,7 +285,7 @@ describe("AgentDetailPage recent activity", () => {
     expect(container.querySelector(".agent-profile h1")?.textContent).toBe(agentFixture.name);
     expect(container.textContent).toContain(sessionFixture.title);
     const alert = container.querySelector(".agent-activity-section [role=alert]");
-    expect(alert?.textContent).toContain("Activity unavailable");
+    expect(alert?.textContent).toContain("运行记录暂不可用");
     expect(container.querySelector(":scope > [role=alert]")).toBeNull();
   });
 
@@ -308,7 +309,7 @@ describe("AgentDetailPage recent activity", () => {
     await renderAgent();
 
     expect(container.querySelector(".agent-activity-section")?.textContent)
-      .toContain("No operational changes recorded yet.");
+      .toContain("暂无运行记录。");
     expect(container.querySelector(".agent-activity-status")?.getAttribute("role")).toBe("status");
     expect(container.querySelector(".agent-activity-status")?.getAttribute("aria-live")).toBe("polite");
   });
@@ -421,7 +422,7 @@ describe("AgentDetailPage recent activity", () => {
     await renderAgent();
     await renderAgent(nextAgent.id);
 
-    expect(container.textContent).toContain("Loading Agent profile");
+    expect(container.textContent).toContain("正在加载 Agent 详情");
     expect(container.textContent).not.toContain(agentFixture.name);
     expect(container.textContent).not.toContain(nextEvent.title);
     expect(container.querySelector("a[href='/activity?agent_id=test-bot']")).toBeNull();
