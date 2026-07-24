@@ -11,6 +11,11 @@ export type Route =
   | { name: "activity" }
   | { name: "not-found" };
 
+export type NavigateOptions = {
+  replace?: boolean;
+  state?: unknown;
+};
+
 
 function decode(value: string): string | null {
   try {
@@ -56,18 +61,28 @@ export function routePath(route: Route): string {
 }
 
 
-export function routeSection(route: Route): "overview" | "agents" | "sessions" | "flywheel" | null {
+export function routeSection(route: Route): "overview" | "agents" | "sessions" | null {
   if (route.name === "agent") return "agents";
   if (route.name === "session") return "sessions";
-  if (route.name === "activity" || route.name === "not-found") return null;
+  if (route.name === "activity" || route.name === "flywheel" || route.name === "not-found") return null;
   return route.name;
 }
 
 
-export function navigate(path: string): void {
-  if (window.location.pathname === path) return;
-  window.history.pushState({}, "", path);
+export function currentLocationPath(): string {
+  return `${window.location.pathname}${window.location.search}`;
+}
+
+
+export function navigate(path: string, options: NavigateOptions = {}): void {
+  if (currentLocationPath() === path) return;
+  if (options.replace) {
+    window.history.replaceState(options.state ?? {}, "", path);
+  } else {
+    window.history.pushState(options.state ?? {}, "", path);
+  }
   window.dispatchEvent(new Event("platform:navigate"));
+  if (!options.replace) window.requestAnimationFrame(() => window.scrollTo(0, 0));
 }
 
 

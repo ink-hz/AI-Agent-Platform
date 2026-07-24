@@ -1,12 +1,14 @@
+import { useEffect } from "react";
+
 import { AppShell } from "./AppShell";
+import { LoadingState } from "./components/DataState";
 import { OverviewPage } from "./pages/OverviewPage";
 import { AgentsPage } from "./pages/AgentsPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
 import { SessionsPage } from "./pages/SessionsPage";
 import { SessionDetailPage } from "./pages/SessionDetailPage";
-import { FlywheelPage } from "./pages/FlywheelPage";
 import { ActivityPage } from "./pages/ActivityPage";
-import { useRoute } from "./router";
+import { navigate, useRoute } from "./router";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -20,6 +22,12 @@ function PendingPage({ title, description }: { title: string; description: strin
 }
 
 
+function LegacyFlywheelRedirect() {
+  useEffect(() => navigate("/sessions", { replace: true }), []);
+  return <LoadingState label="Opening Sessions" />;
+}
+
+
 export default function App() {
   const route = useRoute();
   let page;
@@ -29,7 +37,7 @@ export default function App() {
     case "agent": page = <AgentDetailPage agentId={route.agentId} />; break;
     case "sessions": page = <SessionsPage />; break;
     case "session": page = <SessionDetailPage sessionKey={route.sessionKey} />; break;
-    case "flywheel": page = <FlywheelPage />; break;
+    case "flywheel": page = <LegacyFlywheelRedirect />; break;
     case "activity": page = <ActivityPage />; break;
     default: page = <PendingPage title="Page not found" description="Return to Agent Overview." />;
   }

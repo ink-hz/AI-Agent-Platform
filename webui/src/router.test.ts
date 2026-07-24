@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vitest";
+/** @vitest-environment jsdom */
 
-import { parseRoute, routePath, routeSection } from "./router";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { currentLocationPath, navigate, parseRoute, routePath, routeSection } from "./router";
+
+
+afterEach(() => {
+  window.history.replaceState({}, "", "/");
+  vi.restoreAllMocks();
+});
 
 
 describe("Platform router", () => {
@@ -28,5 +36,25 @@ describe("Platform router", () => {
     expect(parseRoute("/activity")).toEqual({ name: "activity" });
     expect(routePath({ name: "activity" })).toBe("/activity");
     expect(routeSection({ name: "activity" })).toBeNull();
+  });
+
+  it("treats search changes as navigation", () => {
+    window.history.replaceState({}, "", "/sessions?agent_id=one");
+
+    navigate("/sessions?agent_id=two", { replace: true });
+
+    expect(currentLocationPath()).toBe("/sessions?agent_id=two");
+  });
+
+  it("preserves caller state in a new history entry", () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 1);
+
+    navigate("/sessions/fae%3Aone", { state: { returnTo: "/sessions" } });
+
+    expect(window.history.state).toEqual({ returnTo: "/sessions" });
+  });
+
+  it("does not assign the legacy Flywheel route to primary navigation", () => {
+    expect(routeSection({ name: "flywheel" })).toBeNull();
   });
 });
