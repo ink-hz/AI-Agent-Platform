@@ -1,7 +1,7 @@
 # Agent Control Room Design
 
 **Date:** 2026-07-24<br>
-**Status:** Approved direction, pending written-spec review
+**Status:** Approved
 
 ## Purpose
 
