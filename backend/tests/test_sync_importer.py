@@ -65,6 +65,30 @@ def test_admin_prefix_is_removed_only_for_target_table() -> None:
     assert normalized.values["external_session_id"] == "ding-session"
 
 
+def test_turn_message_timestamps_are_compatible_with_legacy_exports() -> None:
+    exact = normalize_row(
+        "fae",
+        "chat_turns",
+        {
+            "id": "00000000-0000-0000-0000-000000000010",
+            "question_at": "2026-07-30T08:00:00+00:00",
+            "answer_at": "2026-07-30T08:00:05+00:00",
+        },
+        SYNCED_AT,
+    )
+    legacy = normalize_row(
+        "admin",
+        "admin_chat_turns",
+        {"id": "00000000-0000-0000-0000-000000000011"},
+        SYNCED_AT,
+    )
+
+    assert exact.values["question_at"] == "2026-07-30T08:00:00+00:00"
+    assert exact.values["answer_at"] == "2026-07-30T08:00:05+00:00"
+    assert legacy.values["question_at"] is None
+    assert legacy.values["answer_at"] is None
+
+
 def test_admin_directory_row_is_normalized_into_protected_identity_schema() -> None:
     normalized = normalize_row(
         "admin",

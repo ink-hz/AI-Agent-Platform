@@ -43,6 +43,7 @@ FAE_COLUMNS: dict[str, tuple[str, ...]] = {
         "channel", "question", "answer", "sources", "stages", "done",
         "planned_capabilities", "capability_coverage", "fallback_used",
         "fallback_reason", "outcome", "duration_ms", "created_at",
+        "question_at", "answer_at",
     ),
     "turn_feedback": (
         "id", "turn_id", "external_session_id", "trace_id", "rating",
@@ -76,7 +77,7 @@ ADMIN_COLUMNS: dict[str, tuple[str, ...]] = {
         "id", "session_id", "external_session_id", "turn_index", "trace_id",
         "channel", "question", "answer", "sources", "source_groups", "stages",
         "done", "fallback_used", "fallback_reason", "outcome", "duration_ms",
-        "created_at",
+        "created_at", "question_at", "answer_at",
     ),
     "admin_turn_feedback": FAE_COLUMNS["turn_feedback"],
     "admin_turn_reviews": (
