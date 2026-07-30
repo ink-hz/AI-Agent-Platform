@@ -22,6 +22,7 @@ class NormalizedRow:
     target_table: str
     values: dict[str, Any]
     conflict_columns: tuple[str, ...]
+    preserve_on_null_columns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,12 @@ ADMIN_COLUMNS: dict[str, tuple[str, ...]] = {
 }
 
 
+PRESERVE_ON_NULL_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
+    ("fae", "chat_turns"): ("question_at", "answer_at"),
+    ("admin", "admin_chat_turns"): ("question_at", "answer_at"),
+}
+
+
 def _target_table(source_kind: str, source_table: str) -> tuple[str, str]:
     if source_kind == "fae":
         if source_table not in FAE_COLUMNS:
@@ -159,7 +166,13 @@ def normalize_row(
     details.update({key: value for key, value in row.items() if key not in known})
     values["details"] = details
     values["source_synced_at"] = synced_at
-    return NormalizedRow(schema, table, values, ("id",))
+    return NormalizedRow(
+        schema,
+        table,
+        values,
+        ("id",),
+        PRESERVE_ON_NULL_COLUMNS.get((source_kind, source_table), ()),
+    )
 
 
 def normalize_trace_span(row: dict, synced_at: datetime) -> NormalizedRow:
@@ -246,7 +259,19 @@ def _upsert(cursor, row: NormalizedRow) -> None:
         sql.SQL(", ").join(sql.Placeholder() for _ in columns),
         sql.SQL(", ").join(map(sql.Identifier, row.conflict_columns)),
         sql.SQL(", ").join(
-            sql.SQL("{} = excluded.{}").format(sql.Identifier(column), sql.Identifier(column))
+            (
+                sql.SQL("{} = COALESCE(EXCLUDED.{}, {}.{})").format(
+                    sql.Identifier(column),
+                    sql.Identifier(column),
+                    sql.Identifier(row.target_table),
+                    sql.Identifier(column),
+                )
+                if column in row.preserve_on_null_columns
+                else sql.SQL("{} = EXCLUDED.{}").format(
+                    sql.Identifier(column),
+                    sql.Identifier(column),
+                )
+            )
             for column in updates
         ),
     )
