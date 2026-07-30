@@ -25,6 +25,8 @@ const turn: TurnDetail = {
   turn_key: "fae:turn-1", session_key: "fae:session-1", agent_id: "ai-fae-agent",
   source_kind: "fae", turn_index: 1, question: "如何排查设备连接？",
   answer: "请先确认 USB 枚举状态。", created_at: "2026-07-21T09:00:00Z",
+  question_at: null, answer_at: null,
+  question_time_status: "unavailable", answer_time_status: "unavailable",
   trace_key: "fae:trace-1", outcome: "resolved", fallback_used: false,
   duration_ms: 1250, sources: [], evidence: [], evidence_availability: "available",
   feedback: [], reviews: [], improvements: [], details: {}, sender_name: null,

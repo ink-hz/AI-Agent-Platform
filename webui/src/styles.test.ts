@@ -160,4 +160,32 @@ describe("Executive Operations visual contract", () => {
     expect(operationsMobile).toContain(".activity-group { padding: 18px; }");
     expect(operationsMobile).toContain(".agent-activity-section { padding: 18px; }");
   });
+
+  it("contains rich message content with message-scoped overflow rules", () => {
+    expect(rule(".message-markdown")).toContain("min-width: 0");
+    expect(rule(".message-markdown")).toContain("overflow-wrap: anywhere");
+    expect(rule(".message-markdown pre,\n.message-markdown .table-scroll")).toContain("max-width: 100%");
+    expect(rule(".message-markdown pre,\n.message-markdown .table-scroll")).toContain("overflow-x: auto");
+    expect(rule(".message-markdown > :first-child")).toContain("margin-top: 0");
+    expect(rule(".message-markdown > :last-child")).toContain("margin-bottom: 0");
+  });
+
+  it("scopes Markdown typography and tables to Session messages", () => {
+    for (const selector of [
+      ".message-markdown h1",
+      ".message-markdown p",
+      ".message-markdown ul",
+      ".message-markdown blockquote",
+      ".message-markdown table",
+      ".message-markdown a",
+      ".message-markdown code",
+      ".message-markdown pre",
+    ]) expect(styles).toContain(selector);
+  });
+
+  it("stacks messages while keeping labels and times readable on mobile", () => {
+    const mobile = block("@media (max-width: 720px)");
+    expect(mobile).toContain(".message-block { grid-template-columns: 1fr; gap: 8px; padding: 19px; }");
+    expect(mobile).toContain(".message-label { align-items: center; flex-direction: row; justify-content: space-between; }");
+  });
 });
