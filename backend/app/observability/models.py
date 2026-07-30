@@ -11,6 +11,7 @@ AgentVisibility = Literal["business", "system"]
 Availability = Literal["available", "missing", "unavailable", "restricted"]
 Freshness = Literal["live", "fresh", "stale"]
 SenderIdentityStatus = Literal["resolved", "name_only", "unavailable"]
+MessageTimeStatus = Literal["exact", "estimated", "unavailable"]
 
 
 class SessionFilters(BaseModel):
@@ -135,6 +136,10 @@ class TurnDetail(BaseModel):
     question: str
     answer: str
     created_at: datetime
+    question_at: datetime | None = None
+    answer_at: datetime | None = None
+    question_time_status: MessageTimeStatus = "unavailable"
+    answer_time_status: MessageTimeStatus = "unavailable"
     trace_key: str | None = None
     outcome: str | None = None
     fallback_used: bool = False
