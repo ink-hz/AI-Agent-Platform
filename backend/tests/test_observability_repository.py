@@ -59,6 +59,95 @@ class FakeConnect:
         return self.current[0] if self.current else None
 
 
+@pytest.fixture
+def get_session_rows() -> list[list[dict]]:
+    return [
+        [{
+            "session_key": "fae:session-1",
+            "agent_id": "ai-fae-agent",
+            "source_kind": "fae",
+            "channel": "fae",
+            "title": "Message timing",
+            "created_at": NOW,
+            "last_active_at": NOW,
+            "turn_count": 1,
+            "feedback_count": 0,
+            "review_count": 0,
+            "latest_outcome": "resolved",
+            "source_synced_at": NOW,
+        }],
+        [{
+            "turn_key": "fae:turn-1",
+            "session_key": "fae:session-1",
+            "agent_id": "ai-fae-agent",
+            "source_kind": "fae",
+            "turn_index": 0,
+            "question": "When was this asked?",
+            "answer": "At the normalized message time.",
+            "created_at": NOW,
+            "question_at": NOW - timedelta(seconds=2),
+            "answer_at": NOW - timedelta(seconds=1),
+            "question_time_status": "exact",
+            "answer_time_status": "exact",
+            "trace_key": None,
+            "outcome": "resolved",
+            "fallback_used": False,
+            "duration_ms": 1000,
+            "sources": [],
+            "details": {},
+        }],
+        [],
+        [],
+        [],
+    ]
+
+
+def test_get_session_preserves_exact_message_times(get_session_rows) -> None:
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=FakeConnect(get_session_rows), now=lambda: NOW,
+    )
+
+    session = repository.get_session("fae:session-1")
+
+    assert session is not None
+    turn = session.turns[0]
+    assert turn.question_at == NOW - timedelta(seconds=2)
+    assert turn.answer_at == NOW - timedelta(seconds=1)
+    assert turn.question_time_status == "exact"
+    assert turn.answer_time_status == "exact"
+
+
+@pytest.mark.parametrize(
+    ("question_at", "answer_at", "time_status"),
+    [
+        (NOW - timedelta(seconds=2), NOW - timedelta(seconds=1), "estimated"),
+        (None, None, "unavailable"),
+    ],
+)
+def test_get_session_preserves_non_exact_message_times(
+    get_session_rows, question_at, answer_at, time_status,
+) -> None:
+    turn_row = get_session_rows[1][0]
+    turn_row.update({
+        "question_at": question_at,
+        "answer_at": answer_at,
+        "question_time_status": time_status,
+        "answer_time_status": time_status,
+    })
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=FakeConnect(get_session_rows), now=lambda: NOW,
+    )
+
+    session = repository.get_session("fae:session-1")
+
+    assert session is not None
+    turn = session.turns[0]
+    assert turn.question_at == question_at
+    assert turn.answer_at == answer_at
+    assert turn.question_time_status == time_status
+    assert turn.answer_time_status == time_status
+
+
 def test_list_agents_includes_catalog_agents_without_conversations() -> None:
     fake = FakeConnect([[]])
     catalog = AgentCatalog(
