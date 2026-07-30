@@ -132,6 +132,7 @@ export type SourceKind = "metabot" | "fae" | "admin";
 export type Freshness = "live" | "fresh" | "stale";
 export type Availability = "available" | "missing" | "unavailable" | "restricted";
 export type SenderIdentityStatus = "resolved" | "name_only" | "unavailable";
+export type MessageTimeStatus = "exact" | "estimated" | "unavailable";
 
 export interface AgentSummary {
   id: string;
@@ -274,6 +275,10 @@ export interface TurnDetail {
   question: string;
   answer: string;
   created_at: string;
+  question_at: string | null;
+  answer_at: string | null;
+  question_time_status: MessageTimeStatus;
+  answer_time_status: MessageTimeStatus;
   trace_key: string | null;
   outcome: string | null;
   fallback_used: boolean;

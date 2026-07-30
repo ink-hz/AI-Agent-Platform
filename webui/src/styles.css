@@ -467,12 +467,49 @@ body {
 .turn-head time { background: var(--surface); color: var(--ink-faint); }
 .message-block { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 18px; padding: 23px 25px; }
 .message-block + .message-block { border-top: 1px solid var(--line-soft); }
-.message-block > span { color: var(--ink-faint); font-size: 11.5px; font-weight: 820; }
-.message-block p { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.78; white-space: pre-wrap; }
+.message-label { display: flex; min-width: 0; align-items: flex-start; flex-direction: column; gap: 6px; }
+.message-label > span { color: var(--ink-faint); font-size: 11.5px; font-weight: 820; }
+.message-time { color: var(--ink-faint); font-size: 11.5px; line-height: 1.45; white-space: nowrap; }
+.message-block > p,
+.question-block > div:last-child > p { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.78; white-space: pre-wrap; }
 .question-block > div { min-width: 0; }
 .question-sender { display: block; margin: 0 0 8px; color: var(--brand); font-size: 11.5px; font-weight: 760; }
 .answer-block { background: #f8fafc; }
-.answer-block p { color: #17263a; }
+.answer-block > p,
+.answer-block .message-markdown p { color: #17263a; }
+.message-markdown { min-width: 0; overflow-wrap: anywhere; }
+.message-markdown > :first-child { margin-top: 0; }
+.message-markdown > :last-child { margin-bottom: 0; }
+.message-markdown h1,
+.message-markdown h2,
+.message-markdown h3,
+.message-markdown h4,
+.message-markdown h5,
+.message-markdown h6 { margin: 1.35em 0 .55em; color: var(--ink); line-height: 1.35; }
+.message-markdown h1 { font-size: 22px; }
+.message-markdown h2 { font-size: 19px; }
+.message-markdown h3 { font-size: 16px; }
+.message-markdown h4,
+.message-markdown h5,
+.message-markdown h6 { font-size: 14px; }
+.message-markdown p { margin: .75em 0; color: var(--ink); font-size: 14px; line-height: 1.78; }
+.message-markdown ul,
+.message-markdown ol { margin: .75em 0; padding-left: 1.6em; color: var(--ink); font-size: 14px; line-height: 1.75; }
+.message-markdown li + li { margin-top: .3em; }
+.message-markdown blockquote { margin: .9em 0; padding: .15em 0 .15em 15px; border-left: 4px solid var(--line); color: var(--ink-soft); }
+.message-markdown blockquote p { color: inherit; }
+.message-markdown a { color: var(--brand-bright); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.message-markdown code { padding: .12em .35em; border-radius: 4px; background: #e9eef5; color: #24405f; font-family: "SFMono-Regular", Consolas, monospace; font-size: 12.5px; }
+.message-markdown pre,
+.message-markdown .table-scroll { max-width: 100%; overflow-x: auto; }
+.message-markdown pre { margin: .9em 0; padding: 15px; border-radius: 9px; background: #101b2a; color: #e5edf6; }
+.message-markdown pre code { padding: 0; background: transparent; color: inherit; font-size: 12.5px; line-height: 1.65; white-space: pre; }
+.message-markdown .table-scroll { margin: .9em 0; }
+.message-markdown table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
+.message-markdown th,
+.message-markdown td { padding: 9px 11px; border: 1px solid var(--line); text-align: left; }
+.message-markdown th { background: #edf3f9; color: var(--ink); font-weight: 760; }
+.message-markdown tr:nth-child(even) td { background: rgba(237, 243, 249, .55); }
 .turn-evidence, .turn-signals { padding: 20px 25px; border-top: 1px solid var(--line-soft); }
 .turn-evidence h3 { margin: 0 0 12px; font-size: 13px; }
 .turn-evidence > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -589,6 +626,7 @@ body {
   .session-detail-source { align-items: flex-start; }
   .session-detail-head > dl { grid-template-columns: 1fr 1fr; }
   .message-block { grid-template-columns: 1fr; gap: 8px; padding: 19px; }
+  .message-label { align-items: center; flex-direction: row; justify-content: space-between; }
   .turn-evidence > div { grid-template-columns: 1fr; }
   .trace-summary { grid-template-columns: 1fr 1fr; }
   .agent-data-option { min-width: 178px; flex-basis: 178px; }
