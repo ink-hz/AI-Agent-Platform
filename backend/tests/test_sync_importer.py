@@ -5,6 +5,7 @@ import pytest
 from app.sync_remote.export import ExportBundle
 from app.sync_remote.importer import (
     ImportValidationError,
+    _upsert,
     normalize_row,
     normalize_trace_span,
     validate_bundle,
@@ -13,6 +14,16 @@ from app.sync_remote.identity_matcher import match_directory_entries
 
 
 SYNCED_AT = datetime(2026, 7, 21, 3, 20, tzinfo=timezone.utc)
+
+
+class RecordingCursor:
+    def __init__(self) -> None:
+        self.statement = ""
+        self.params: tuple = ()
+
+    def execute(self, statement, params) -> None:
+        self.statement = statement.as_string()
+        self.params = tuple(params)
 
 
 def test_fae_review_preserves_corrected_answer() -> None:
@@ -87,6 +98,62 @@ def test_turn_message_timestamps_are_compatible_with_legacy_exports() -> None:
     assert exact.values["answer_at"] == "2026-07-30T08:00:05+00:00"
     assert legacy.values["question_at"] is None
     assert legacy.values["answer_at"] is None
+
+
+def test_only_turn_rows_preserve_existing_message_timestamps_on_null() -> None:
+    exact_turn = normalize_row(
+        "fae",
+        "chat_turns",
+        {
+            "id": "00000000-0000-0000-0000-000000000010",
+            "question_at": "2026-07-30T08:00:00+00:00",
+            "answer_at": "2026-07-30T08:00:05+00:00",
+        },
+        SYNCED_AT,
+    )
+    legacy_turn = normalize_row(
+        "admin",
+        "admin_chat_turns",
+        {"id": "00000000-0000-0000-0000-000000000011"},
+        SYNCED_AT,
+    )
+    non_turn = normalize_row(
+        "fae",
+        "chat_sessions",
+        {"id": "00000000-0000-0000-0000-000000000012"},
+        SYNCED_AT,
+    )
+
+    assert exact_turn.preserve_on_null_columns == ("question_at", "answer_at")
+    assert legacy_turn.preserve_on_null_columns == ("question_at", "answer_at")
+    assert non_turn.preserve_on_null_columns == ()
+
+
+def test_upsert_coalesces_preserved_columns_against_target_table() -> None:
+    normalized = normalize_row(
+        "fae",
+        "chat_turns",
+        {
+            "id": "00000000-0000-0000-0000-000000000010",
+            "question": "When was this asked?",
+            "question_at": None,
+            "answer_at": None,
+        },
+        SYNCED_AT,
+    )
+    cursor = RecordingCursor()
+
+    _upsert(cursor, normalized)
+
+    assert (
+        '"question_at" = COALESCE(EXCLUDED."question_at", "chat_turns"."question_at")'
+        in cursor.statement
+    )
+    assert (
+        '"answer_at" = COALESCE(EXCLUDED."answer_at", "chat_turns"."answer_at")'
+        in cursor.statement
+    )
+    assert '"question" = EXCLUDED."question"' in cursor.statement
 
 
 def test_admin_directory_row_is_normalized_into_protected_identity_schema() -> None:
