@@ -342,9 +342,15 @@ class PsycopgObservabilityRepository:
         sources = _list(row.get("sources"))
         evidence = [
             EvidenceSummary(
-                kind=str(item.get("kind") or "source"),
-                title=str(item.get("title") or item.get("name") or item.get("source") or "Source"),
-                reference=item.get("url") or item.get("ref") or item.get("path"),
+                kind=str(item.get("kind") or item.get("type") or "source"),
+                title=str(
+                    item.get("title") or item.get("name")
+                    or item.get("section") or item.get("source") or "Source"
+                ),
+                reference=(
+                    item.get("url") or item.get("ref") or item.get("path")
+                    or item.get("source_ref")
+                ),
                 metadata={key: value for key, value in item.items() if key not in {"title", "name", "url", "ref", "path"}},
             )
             for item in sources if isinstance(item, dict)

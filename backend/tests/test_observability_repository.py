@@ -117,6 +117,75 @@ def test_get_session_preserves_exact_message_times(get_session_rows) -> None:
     assert turn.answer_time_status == "exact"
 
 
+def test_fae_turn_maps_native_source_fields_to_evidence() -> None:
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=FakeConnect([]), now=lambda: NOW,
+    )
+    source = {
+        "type": "loop",
+        "section": "型号身份",
+        "source_ref": "Knowledge/Femto_Bolt/facts.yaml#lifecycle_status",
+    }
+
+    turn = repository._turn_detail({
+        "turn_key": "fae:turn-1",
+        "session_key": "fae:session-1",
+        "agent_id": "ai-fae-agent",
+        "source_kind": "fae",
+        "turn_index": 0,
+        "question": "Femto Bolt 的生命周期状态是什么？",
+        "answer": "Active",
+        "created_at": NOW,
+        "trace_key": None,
+        "outcome": "resolved",
+        "fallback_used": False,
+        "duration_ms": 1000,
+        "sources": [source],
+        "details": {},
+    }, [], [], [])
+
+    assert turn.sources == [source]
+    assert turn.evidence[0].kind == "loop"
+    assert turn.evidence[0].title == "型号身份"
+    assert turn.evidence[0].reference == (
+        "Knowledge/Femto_Bolt/facts.yaml#lifecycle_status"
+    )
+
+
+def test_existing_evidence_fields_take_precedence_over_fae_aliases() -> None:
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=FakeConnect([]), now=lambda: NOW,
+    )
+    turn = repository._turn_detail({
+        "turn_key": "admin:turn-1",
+        "session_key": "admin:session-1",
+        "agent_id": "ai-admin-agent",
+        "source_kind": "admin",
+        "turn_index": 0,
+        "question": "Question",
+        "answer": "Answer",
+        "created_at": NOW,
+        "trace_key": None,
+        "outcome": "resolved",
+        "fallback_used": False,
+        "duration_ms": 1000,
+        "sources": [{
+            "kind": "document",
+            "type": "loop",
+            "title": "Canonical title",
+            "section": "FAE section",
+            "url": "https://example.test/canonical",
+            "source_ref": "Knowledge/fallback.md",
+        }],
+        "details": {},
+    }, [], [], [])
+
+    evidence = turn.evidence[0]
+    assert evidence.kind == "document"
+    assert evidence.title == "Canonical title"
+    assert evidence.reference == "https://example.test/canonical"
+
+
 @pytest.mark.parametrize(
     ("question_at", "answer_at", "time_status"),
     [
