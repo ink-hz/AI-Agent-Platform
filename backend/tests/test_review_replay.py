@@ -195,6 +195,7 @@ def test_production_equivalent_target_is_blocked_without_network(
 
     assert run.execution_status == "blocked"
     assert run.runtime_failure_reason == "unsafe_replay_target"
+    assert run.done["safety_stage"] == "static_target"
     client.get.assert_not_called()
     client.post.assert_not_called()
 
@@ -252,6 +253,22 @@ def test_credential_resolver_supports_env_without_serializing_secret(monkeypatch
 
     assert credential.headers() == {"Authorization": "Bearer secret"}
     assert "secret" not in repr(credential)
+
+
+def test_missing_credential_records_safe_diagnostic_stage(monkeypatch):
+    monkeypatch.delenv("FAE_DEV_KEY", raising=False)
+    repository = FakeRepository()
+    client = Mock()
+
+    run = ReplayRunner(
+        repository,
+        _registry("http://dev.example"),
+        http_client=client,
+    ).run(LINK_ID, idempotency_key="req-no-credential", actor="codex")
+
+    assert run.runtime_failure_reason == "unsafe_replay_target"
+    assert run.done == {"safety_stage": "credential"}
+    client.get.assert_not_called()
 
 
 def test_credential_resolver_uses_exact_keychain_reference():

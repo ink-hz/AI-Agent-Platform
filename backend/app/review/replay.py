@@ -263,6 +263,7 @@ class ReplayRunner:
         actor: str,
         health: dict | None = None,
         expected: dict | None = None,
+        safety_stage: str = "",
     ) -> ReplayRun:
         health = health or {}
         expected = expected or {}
@@ -275,7 +276,7 @@ class ReplayRunner:
             "actual_model_source": "",
             "answer": "",
             "sources": [],
-            "done": {},
+            "done": {"safety_stage": safety_stage} if safety_stage else {},
             "trace_id": "",
             "duration_ms": 0,
             "execution_status": "blocked",
@@ -441,6 +442,7 @@ class ReplayRunner:
                 reason="missing_replay_input",
                 actor=actor,
                 expected=expected,
+                safety_stage="replay_input",
             )
         if not self._static_target_safe(
             target,
@@ -452,6 +454,7 @@ class ReplayRunner:
                 reason="unsafe_replay_target",
                 actor=actor,
                 expected=expected,
+                safety_stage="static_target",
             )
         try:
             credential = self.credential_resolver.resolve(target.credential_ref)
@@ -461,6 +464,7 @@ class ReplayRunner:
                 reason="unsafe_replay_target",
                 actor=actor,
                 expected=expected,
+                safety_stage="credential",
             )
         target_safe, health = self._health_safe(
             target,
@@ -473,6 +477,7 @@ class ReplayRunner:
                 reason="unsafe_replay_target",
                 actor=actor,
                 expected=expected,
+                safety_stage="health_identity",
             )
         attachment_ids = self._upload_attachments(
             target,
@@ -486,6 +491,7 @@ class ReplayRunner:
                 actor=actor,
                 health=health,
                 expected=expected,
+                safety_stage="attachment_input",
             )
 
         started = monotonic()
