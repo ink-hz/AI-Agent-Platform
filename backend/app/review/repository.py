@@ -1219,13 +1219,20 @@ class PsycopgReviewRepository:
                         """,
                         (group.agent_id, group.turn_key),
                     ).fetchone()
+                link_issue_id = (
+                    issue["canonical_issue_id"]
+                    if issue["disposition"] == "duplicate"
+                    and issue["canonical_issue_id"] is not None
+                    else issue["id"]
+                )
                 existing_link = cursor.execute(
                     """
                     select * from platform_review.feedback_issue_links
-                    where issue_id=%s and agent_id=%s and source_turn_key=%s and active
+                    where agent_id=%s and source_turn_key=%s and active
+                      and link_role='primary'
                     for update
                     """,
-                    (issue["id"], group.agent_id, group.turn_key),
+                    (group.agent_id, group.turn_key),
                 ).fetchone()
                 link_created = False
                 if existing_link is None:
@@ -1237,7 +1244,7 @@ class PsycopgReviewRepository:
                         values (%s, %s, %s, %s, 'primary', %s, 'negative feedback backfill')
                         """,
                         (
-                            issue["id"],
+                            link_issue_id,
                             group.agent_id,
                             group.turn_key,
                             sorted(set(group.feedback_keys)),

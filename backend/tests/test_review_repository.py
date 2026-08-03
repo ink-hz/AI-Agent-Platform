@@ -61,3 +61,11 @@ def test_progress_recalculation_reads_gates_and_writes_event_in_one_transaction(
     assert source.count("self._connection()") == 1
     assert "lock_issue=True" in source
     assert "self._event(" in source
+
+
+def test_backfill_reuses_canonical_primary_after_duplicate_merge():
+    source = inspect.getsource(PsycopgReviewRepository.backfill_negative_group)
+
+    assert 'issue["canonical_issue_id"]' in source
+    assert "where agent_id=%s and source_turn_key=%s and active" in source
+    assert "link_role='primary'" in source
