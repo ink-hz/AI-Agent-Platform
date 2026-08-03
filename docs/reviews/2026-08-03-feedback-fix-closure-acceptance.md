@@ -156,8 +156,8 @@ HTTP client 已设置 `trust_env=False`，确保 dev 目标和 Authorization 不
 
 ## 运维说明
 
-数据库角色密码已轮换，当前通过用户 launchd 环境的
-`PLATFORM_FLYWHEEL_DATABASE_URL`、`PLATFORM_REVIEW_DATABASE_URL`、
-`PLATFORM_SYNC_DATABASE_URL` 注入；值不在仓库、plist、飞轮、日志或页面。macOS login
-Keychain 当前要求一次人工交互解锁，完成重新封存前，登出/重启后缺少这些环境变量会让
-相关能力 fail-closed，而不会使用 owner DSN 或静默降级。
+数据库角色密码已轮换，三种最小权限 DSN 与 FAE dev replay token 后续统一迁移到
+`~/Library/Application Support/OrbbecAI-Agent-Platform/secrets/` 下的当前用户私有
+文件。凭据值不进入仓库、plist、飞轮、日志或页面；文件缺失或权限不合格时相关能力
+fail-closed，不会使用 owner DSN 或静默降级。迁移设计与验收标准见
+`docs/superpowers/specs/2026-08-03-local-secret-files-design.md`。

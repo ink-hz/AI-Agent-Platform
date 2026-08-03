@@ -18,7 +18,7 @@ agents:
       - environment: "dev"
         api_base: "http://127.0.0.1:18080"
         health_url: "http://127.0.0.1:18080/health"
-        credential_ref: "env:AI_FAE_DEV_REPLAY_TOKEN"
+        credential_ref: "file:/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/secrets/ai-fae-dev-replay-token"
     review_evidence:
       repository_path: "/Users/neo/Developer/work/AI-FAE-Agent"
       release_manifest_dir: "/Users/neo/Developer/work/AI-FAE-Agent/dist/release/manifests"

@@ -34,7 +34,7 @@ REGISTRY_WITH_REPLAY = textwrap.dedent(
           - environment: dev
             api_base: "http://127.0.0.1:18000"
             health_url: "http://127.0.0.1:18000/health"
-            credential_ref: "keychain:fae-dev-api/neo"
+            credential_ref: "file:/private/fae-dev-api"
     """
 )
 
@@ -107,7 +107,7 @@ def test_registry_resolves_unique_flywheel_id_and_dev_target(tmp_path):
     assert agent is not None
     assert agent.id == "fae"
     assert agent.replay_targets[0].environment == "dev"
-    assert agent.replay_targets[0].credential_ref == "keychain:fae-dev-api/neo"
+    assert agent.replay_targets[0].credential_ref == "file:/private/fae-dev-api"
 
 
 @pytest.mark.parametrize(
