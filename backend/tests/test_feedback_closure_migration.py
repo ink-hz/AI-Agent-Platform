@@ -93,3 +93,5 @@ def test_progress_view_requires_runtime_and_semantic_evidence():
         "trace_id",
     ):
         assert required in sql
+    assert "deployment.verification_details->>'deployment_sha'" in sql
+    assert "replay, deployment.commit_sha" not in sql

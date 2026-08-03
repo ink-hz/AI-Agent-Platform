@@ -5,6 +5,7 @@ import { formatMessageTime } from "../messageTime";
 import { formatSenderIdentity } from "../senderIdentity";
 import type { TraceDetail, TurnDetail } from "../types";
 import { MessageMarkdown } from "./MessageMarkdown";
+import { PlatformLink } from "./PlatformLink";
 import { TraceTimeline } from "./TraceTimeline";
 
 
@@ -36,6 +37,7 @@ export function TurnCard({ turn }: { turn: TurnDetail }) {
   };
   const questionTime = formatMessageTime(turn.question_at, turn.question_time_status);
   const answerTime = formatMessageTime(turn.answer_at, turn.answer_time_status);
+  const hasNegativeFeedback = turn.feedback.some((item) => item.sentiment === "negative");
   return <article className="turn-card">
     <header className="turn-head"><span>第 {String(turn.turn_index).padStart(2, "0")} 轮</span><div>{turn.outcome && <b>{turn.outcome}</b>}{turn.fallback_used && <b className="turn-fallback">fallback</b>}{duration(turn.duration_ms) && <time>{duration(turn.duration_ms)}</time>}</div></header>
     <section className="message-block question-block"><div className="message-label"><span>用户提问</span><time className="message-time" {...(questionTime.dateTime ? { dateTime: questionTime.dateTime } : {})}>{questionTime.label}</time></div><div>{turn.source_kind === "metabot" && <small className="question-sender">{formatSenderIdentity(turn.sender_name, turn.sender_department)}</small>}{turn.question ? <MessageMarkdown content={turn.question} /> : <p>未记录用户提问</p>}</div></section>
@@ -47,6 +49,7 @@ export function TurnCard({ turn }: { turn: TurnDetail }) {
       {turn.reviews.map((item) => <div className="signal signal-review" key={item.review_key}><span>复审 · {item.normalized_priority}</span><p>{item.notes || item.corrected_answer || item.status}</p></div>)}
       {turn.improvements.map((item) => <div className="signal signal-improvement" key={item.item_key}><span>{item.item_type} · {item.status}</span><p>{item.title || item.summary}</p></div>)}
     </section>}
+    {hasNegativeFeedback && <div className="review-entry"><PlatformLink href={`/review?turn_key=${encodeURIComponent(turn.turn_key)}`}>进入修复闭环</PlatformLink></div>}
     {turn.trace_key && <div className="trace-action"><button aria-expanded={open} onClick={toggleTrace}>{open ? "收起 Trace" : "查看 Trace"}</button><span>{turn.trace_key}</span></div>}
     {open && (trace ? <TraceTimeline trace={trace} /> : <div className="trace-loading">{traceState === "loading" ? "正在加载 Trace…" : "该轮暂无 Trace 详情。"}</div>)}
   </article>;

@@ -1,0 +1,58 @@
+/** @vitest-environment jsdom */
+
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+import { ReviewPage } from "./ReviewPage";
+
+
+const issue = {
+  issue: { id: "issue-1", agent_id: "ai-fae-agent", title: "型号事实错误", priority: "P1", failure_layer: "capability_evidence", secondary_layers: [], root_cause: "结构化事实压过直接证据", impact_scope: "330 系列", owner: "fae:alice", disposition: "actionable", row_version: 2 },
+  progress: { issue_id: "issue-1", status: "awaiting_review", missing_gates: ["semantic_review"], replay_passed_turns: 1, replay_required_turns: 1, reopened: false },
+  links: [{ id: "link-1", active: true, link_role: "primary", agent_id: "ai-fae-agent", source_turn_key: "fae:turn-1", source_feedback_keys: ["fae:feedback-1"], source_question: "330 系列支持被动双目吗", source_answer: "旧的错误答案" }],
+  evidence: [],
+  replays: [{ id: "replay-1", issue_link_id: "link-1", attempt_no: 1, execution_status: "succeeded", runtime_gate: "passed", runtime_failure_reason: "", answer: "最新复测答案：335 系列存在主动与被动双目融合。", sources: [{ title: "官方产品页" }], trace_id: "trace-1", actual_version: "release-1", actual_git_sha: "a".repeat(40), configured_model: "claude-opus-4-8", actual_model: "claude-opus-4-8", semantic_verdict: "pending", review_method: null, reviewer: null, review_reason: "", started_at: "2026-08-03T00:00:00Z", completed_at: "2026-08-03T00:01:00Z" }],
+  events: [],
+};
+
+
+function response(body: unknown): Response {
+  return { ok: true, json: vi.fn().mockResolvedValue(body) } as unknown as Response;
+}
+
+
+let container: HTMLDivElement;
+let root: Root;
+
+beforeEach(() => {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  window.history.replaceState({}, "", "/review?issue=issue-1");
+  vi.stubGlobal("fetch", vi.fn((path: string) => {
+    if (path === "/api/review/overview") return Promise.resolve(response({ feedback_rows: 79, negative_rows: 51, negative_turns: 50, positive_rows: 28, statuses: { awaiting_review: 1 } }));
+    if (path === "/api/review/inbox?limit=200") return Promise.resolve(response([]));
+    if (path === "/api/review/issues?limit=200") return Promise.resolve(response([{ ...issue.issue, progress: issue.progress }]));
+    return Promise.resolve(response(issue));
+  }));
+  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
+
+
+it("shows the original and latest replay answer without force close", async () => {
+  await act(async () => root.render(<ReviewPage />));
+  await act(async () => await Promise.resolve());
+
+  expect(container.textContent).toContain("旧的错误答案");
+  expect(container.textContent).toContain("最新复测答案");
+  expect(container.textContent).toContain("待语义复审");
+  expect(container.textContent).not.toContain("强制关闭");
+  expect([...container.querySelectorAll("button")].some((button) => /关闭事项/.test(button.textContent || ""))).toBe(false);
+});

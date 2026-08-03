@@ -10,6 +10,7 @@ import { AgentRuntimePage } from "./pages/AgentRuntimePage";
 import { SessionsPage } from "./pages/SessionsPage";
 import { SessionDetailPage } from "./pages/SessionDetailPage";
 import { ActivityPage } from "./pages/ActivityPage";
+import { ReviewPage } from "./pages/ReviewPage";
 import { navigate, useRoute } from "./router";
 
 
@@ -43,6 +44,7 @@ export default function App() {
     case "session": page = <SessionDetailPage sessionKey={route.sessionKey} />; break;
     case "flywheel": page = <LegacyFlywheelRedirect />; break;
     case "activity": page = <ActivityPage />; break;
+    case "review": page = <ReviewPage />; break;
     default: page = <PendingPage title="页面不存在" description="请返回 Agent 集群总览。" />;
   }
   return <AppShell route={route}>{page}</AppShell>;

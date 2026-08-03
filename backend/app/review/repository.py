@@ -911,11 +911,29 @@ class PsycopgReviewRepository:
                    turn.turn_index as source_turn_index,
                    turn.session_key as source_session_key,
                    turn.created_at as source_created_at,
-                   turn.details as source_details
+                   turn.details as source_details,
+                   turn.sources as source_sources,
+                   turn.trace_key as source_trace_key,
+                   turn.outcome as source_outcome,
+                   turn.fallback_used as source_fallback_used,
+                   context.turns as source_context
             from platform_review.feedback_issue_links link
             left join platform_read.turns turn
               on turn.agent_id=link.agent_id
              and turn.turn_key=link.source_turn_key
+            left join lateral (
+              select jsonb_agg(
+                jsonb_build_object(
+                  'turn_index', prior.turn_index,
+                  'question', prior.question,
+                  'answer', prior.answer
+                ) order by prior.turn_index, prior.created_at
+              ) as turns
+              from platform_read.turns prior
+              where prior.agent_id=turn.agent_id
+                and prior.session_key=turn.session_key
+                and prior.turn_index < turn.turn_index
+            ) context on true
             where link.issue_id=%s order by link.linked_at, link.id
             """,
             (issue_id,),
@@ -973,6 +991,14 @@ class PsycopgReviewRepository:
             and item["verification_status"] == "verified"
             and bool((item.get("verification_details") or {}).get("contains_merge"))
         ]
+        latest_deployment = deployments[-1] if deployments else None
+        deployment_details = (
+            latest_deployment.get("verification_details") or {}
+            if latest_deployment
+            else {}
+        )
+        deployment_sha = deployment_details.get("deployment_sha", "")
+        deployment_at = latest_deployment.get("observed_at") if latest_deployment else None
         previous_status = None
         for event in reversed(detail["events"]):
             status = (event.get("after") or {}).get("status")
@@ -1003,6 +1029,13 @@ class PsycopgReviewRepository:
         links: list[LinkGate] = []
         for raw_link in detail["links"]:
             replay = latest_by_link.get(raw_link["id"])
+            deployed_replay = bool(
+                replay
+                and deployment_sha
+                and replay["actual_git_sha"] == deployment_sha
+                and deployment_at is not None
+                and replay["started_at"] >= deployment_at
+            )
             echo = ((replay or {}).get("done") or {}).get("loop", {}).get(
                 "provider_model_echo", {}
             )
@@ -1010,11 +1043,15 @@ class PsycopgReviewRepository:
                 id=raw_link["id"],
                 active=bool(raw_link["active"]),
                 link_role=raw_link["link_role"],
-                runtime_gate_passed=bool(replay and replay["runtime_gate"] == "passed"),
+                runtime_gate_passed=bool(
+                    replay
+                    and replay["runtime_gate"] == "passed"
+                    and deployed_replay
+                ),
                 runtime_failure_reason=(replay or {}).get("runtime_failure_reason", ""),
                 build_identity_matches=(
                     None if replay is None
-                    else replay["actual_git_sha"] == replay["expected_git_sha"]
+                    else replay["actual_git_sha"] == deployment_sha
                 ),
                 model_echo_available=(
                     None if replay is None
@@ -1219,7 +1256,13 @@ class PsycopgReviewRepository:
                 """,
                 (limit, offset),
             ).fetchall()
-        return [dict(row) for row in rows]
+            results = []
+            for row in rows:
+                detail = self._load_issue_detail(cursor, row["id"])
+                item = dict(row)
+                item["progress"] = detail["progress"]
+                results.append(item)
+        return results
 
     def overview(self) -> dict:
         with self._connection() as connection, connection.cursor() as cursor:
@@ -1238,7 +1281,17 @@ class PsycopgReviewRepository:
                 from platform_review.feedback_issues group by disposition
                 """
             ).fetchall()
+            issue_ids = cursor.execute(
+                "select id from platform_review.feedback_issues"
+            ).fetchall()
+            statuses: dict[str, int] = {}
+            for row in issue_ids:
+                detail = self._load_issue_detail(cursor, row["id"])
+                status = detail["progress"].status
+                statuses[status] = statuses.get(status, 0) + 1
         return {
             **dict(source),
             "dispositions": {row["disposition"]: int(row["count"]) for row in issues},
+            "statuses": statuses,
+            "issue_total": len(issue_ids),
         }

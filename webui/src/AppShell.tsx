@@ -8,6 +8,7 @@ const NAVIGATION = [
   { label: "总览", path: "/", section: "overview" },
   { label: "Agent", path: "/agents", section: "agents" },
   { label: "Session", path: "/sessions", section: "sessions" },
+  { label: "复审闭环", path: "/review", section: "review" },
   { label: "运行记录", path: "/activity", section: "activity" },
 ] as const;
 

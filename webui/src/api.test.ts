@@ -5,6 +5,7 @@ import {
   fetchFleetOverview,
   fetchOperationalEvents,
   fetchOperationsBrief,
+  updateReviewIssue,
 } from "./api";
 
 
@@ -126,5 +127,26 @@ describe("fetchOperationalEvents", () => {
       "/api/operations/events?agent_id=ai-fae-agent&event_type=runtime_offline&severity=critical&date_from=2026-07-21T00%3A00%3A00%2B08%3A00&date_to=2026-07-22T23%3A59%3A59%2B08%3A00&limit=50&offset=0",
       { signal: controller.signal },
     );
+  });
+});
+
+
+describe("Review writes", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("requires and sends an accountable actor", async () => {
+    await expect(updateReviewIssue("issue-1", { row_version: 1 }, "web-reviewer"))
+      .rejects.toThrow("需要可追责的复审身份");
+
+    const response = { ok: true, json: vi.fn().mockResolvedValue({}) };
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await updateReviewIssue("issue-1", { row_version: 1, owner: "fae:alice" }, "fae:alice");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/review/issues/issue-1", expect.objectContaining({
+      method: "PATCH",
+      headers: expect.objectContaining({ "X-Review-Actor": "fae:alice" }),
+    }));
   });
 });

@@ -329,7 +329,7 @@ select
       and evidence.verification_details->'contains_merge' = 'true'::jsonb
   )::bigint as verified_deployment_count,
   (
-    select evidence.commit_sha
+    select evidence.verification_details->>'deployment_sha'
     from platform_review.feedback_fix_evidence evidence
     where evidence.issue_id = issue.id
       and evidence.evidence_type = 'deployment'
@@ -353,7 +353,9 @@ select
          and deployment.verification_details->'contains_merge' = 'true'::jsonb
         where replay.issue_link_id = link.id
           and platform_review.replay_runtime_qualified(
-            replay, deployment.commit_sha, deployment.observed_at
+            replay,
+            deployment.verification_details->>'deployment_sha',
+            deployment.observed_at
           )
       )
   )::bigint as qualified_replay_link_count,
@@ -372,7 +374,9 @@ select
          and deployment.verification_details->'contains_merge' = 'true'::jsonb
         where replay.issue_link_id = link.id
           and platform_review.replay_runtime_qualified(
-            replay, deployment.commit_sha, deployment.observed_at
+            replay,
+            deployment.verification_details->>'deployment_sha',
+            deployment.observed_at
           )
           and replay.semantic_verdict = 'passed'
           and replay.review_method in ('codex', 'human_fae')
