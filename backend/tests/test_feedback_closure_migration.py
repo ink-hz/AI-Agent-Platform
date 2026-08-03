@@ -68,6 +68,11 @@ def test_review_permissions_are_isolated_and_events_are_append_only():
     assert "revoke all on schema platform_review from platform_sync_writer" in sql
     assert "revoke all on schema platform_source_fae from platform_review_writer" in sql
     assert "revoke all on schema platform_source_admin from platform_review_writer" in sql
+    assert "grant usage on schema platform_read to platform_review_writer" in sql
+    assert (
+        "grant select on platform_read.feedback, platform_read.turns "
+        "to platform_review_writer"
+    ) in sql
     assert (
         "revoke update, delete on platform_review.feedback_issue_events "
         "from platform_review_writer"

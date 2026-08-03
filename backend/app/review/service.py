@@ -257,12 +257,27 @@ class ReviewService:
     async def start_replay(self, issue_id: UUID, payload, *, actor: str) -> dict:
         if self.replay_runner is None:
             raise ReviewUnavailable("replay runner unavailable")
-        return await self.replay_runner.run(
-            issue_id=issue_id,
+        detail = await self._detail(issue_id)
+        if not any(
+            str(link["id"]) == str(payload.issue_link_id) and link["active"]
+            for link in detail["links"]
+        ):
+            from .repository import InvalidReviewMutation
+
+            raise InvalidReviewMutation("replay link does not belong to issue")
+        result = await asyncio.to_thread(
+            self.replay_runner.run,
             issue_link_id=payload.issue_link_id,
             idempotency_key=payload.idempotency_key,
             actor=actor,
         )
+        await self._run(
+            self.repository.recalculate_and_record_transition,
+            issue_id,
+            actor=actor,
+            reason="replay completed",
+        )
+        return result
 
     async def semantic_review(self, replay_id: UUID, payload, *, actor: str) -> dict:
         row = await self._run(

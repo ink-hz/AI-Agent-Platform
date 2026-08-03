@@ -40,6 +40,7 @@ from .remote_health.monitor import RemoteHealthMonitor, remote_poll_loop
 from .review import routes as review_routes
 from .review.database import resolve_review_database_url
 from .review.repository import PsycopgReviewRepository
+from .review.replay import ReplayRunner
 from .review.service import ReviewService, UnavailableReviewService
 from .spa import SpaStaticFiles
 
@@ -170,11 +171,19 @@ def create_app(
         review_database_url = (
             resolve_review_database_url(config) if start_poller else None
         )
-        review_service = (
-            ReviewService(PsycopgReviewRepository(review_database_url), registry=repo)
-            if review_database_url
-            else UnavailableReviewService()
-        )
+        if review_database_url:
+            review_repository = PsycopgReviewRepository(review_database_url)
+            review_service = ReviewService(
+                review_repository,
+                registry=repo,
+                replay_runner=ReplayRunner(
+                    review_repository,
+                    repo,
+                    request_timeout=config.review_request_timeout_seconds,
+                ),
+            )
+        else:
+            review_service = UnavailableReviewService()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

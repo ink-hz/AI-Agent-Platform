@@ -441,6 +441,124 @@ class PsycopgReviewRepository:
         except Exception as error:
             raise ReviewRepositoryError("get evidence failed") from error
 
+    def load_replay_input(self, issue_link_id: UUID):
+        from .replay import ReplayInput
+
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                target = cursor.execute(
+                    """
+                    select link.issue_id, link.id as issue_link_id, link.agent_id,
+                           turn.session_key, turn.turn_index, turn.question,
+                           turn.details
+                    from platform_review.feedback_issue_links link
+                    join platform_read.turns turn
+                      on turn.agent_id=link.agent_id
+                     and turn.turn_key=link.source_turn_key
+                    where link.id=%s and link.active
+                    """,
+                    (issue_link_id,),
+                ).fetchone()
+                if target is None:
+                    return None
+                prior = cursor.execute(
+                    """
+                    select turn_index, question, answer, details
+                    from platform_read.turns
+                    where agent_id=%s and session_key=%s and turn_index < %s
+                    order by turn_index, created_at
+                    """,
+                    (
+                        target["agent_id"],
+                        target["session_key"],
+                        target["turn_index"],
+                    ),
+                ).fetchall()
+        except Exception as error:
+            raise ReviewRepositoryError("load replay input failed") from error
+
+        details = target.get("details") or {}
+        done = details.get("done") if isinstance(details.get("done"), dict) else {}
+        manifest = details.get("attachment_manifest")
+        if not isinstance(manifest, list):
+            manifest = done.get("attachment_manifest")
+        if not isinstance(manifest, list):
+            manifest = []
+        else:
+            manifest = list(manifest)
+        try:
+            target_attachment_count = int(
+                done.get("active_attachment_count") or 0
+            )
+        except (TypeError, ValueError):
+            target_attachment_count = 1
+        if not manifest and target_attachment_count > 0:
+            source_ids = done.get("active_attachment_source_ids") or []
+            manifest = [
+                {"source_id": source_id, "available": False}
+                for source_id in source_ids
+            ] or [{"available": False}]
+        for row in prior:
+            prior_details = row.get("details") or {}
+            prior_done = (
+                prior_details.get("done")
+                if isinstance(prior_details.get("done"), dict)
+                else {}
+            )
+            try:
+                prior_attachment_count = int(
+                    prior_done.get("active_attachment_count") or 0
+                )
+            except (TypeError, ValueError):
+                prior_attachment_count = 1
+            if prior_attachment_count > 0:
+                manifest.append(
+                    {
+                        "available": False,
+                        "context_turn_index": row["turn_index"],
+                    }
+                )
+        prior_turns = [
+            {
+                "turn_index": row["turn_index"],
+                "question": row["question"],
+                "original_answer": row["answer"],
+            }
+            for row in prior
+        ]
+        return ReplayInput(
+            issue_id=target["issue_id"],
+            issue_link_id=target["issue_link_id"],
+            agent_id=target["agent_id"],
+            question=target["question"],
+            prior_turns=prior_turns,
+            attachment_manifest=[dict(item) for item in manifest if isinstance(item, dict)],
+        )
+
+    def get_verified_deployment(self, issue_id: UUID) -> dict | None:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    """
+                    select version, verification_details
+                    from platform_review.feedback_fix_evidence
+                    where issue_id=%s and evidence_type='deployment'
+                      and verification_status='verified'
+                      and (verification_details->>'contains_merge')::boolean is true
+                    order by observed_at desc, id desc limit 1
+                    """,
+                    (issue_id,),
+                ).fetchone()
+        except Exception as error:
+            raise ReviewRepositoryError("get verified deployment failed") from error
+        if row is None:
+            return None
+        details = row["verification_details"] or {}
+        return {
+            "version": details.get("manifest_release_name", ""),
+            "git_sha": details.get("deployment_sha", ""),
+        }
+
     def create_or_get_replay(
         self,
         issue_link_id: UUID,
@@ -787,8 +905,18 @@ class PsycopgReviewRepository:
             return None
         links = cursor.execute(
             """
-            select * from platform_review.feedback_issue_links
-            where issue_id=%s order by linked_at, id
+            select link.*,
+                   turn.question as source_question,
+                   turn.answer as source_answer,
+                   turn.turn_index as source_turn_index,
+                   turn.session_key as source_session_key,
+                   turn.created_at as source_created_at,
+                   turn.details as source_details
+            from platform_review.feedback_issue_links link
+            left join platform_read.turns turn
+              on turn.agent_id=link.agent_id
+             and turn.turn_key=link.source_turn_key
+            where link.issue_id=%s order by link.linked_at, link.id
             """,
             (issue_id,),
         ).fetchall()
