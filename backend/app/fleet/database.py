@@ -16,19 +16,23 @@ def resolve_flywheel_database_url(
     if config.flywheel_database_url:
         return config.flywheel_database_url
 
-    result = runner(
-        [
-            "/usr/bin/security",
-            "find-generic-password",
-            "-a",
-            config.flywheel_keychain_account,
-            "-s",
-            config.flywheel_keychain_service,
-            "-w",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = runner(
+            [
+                "/usr/bin/security",
+                "find-generic-password",
+                "-a",
+                config.flywheel_keychain_account,
+                "-s",
+                config.flywheel_keychain_service,
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return None
     value = result.stdout.strip() if result.returncode == 0 else ""
     return value or None

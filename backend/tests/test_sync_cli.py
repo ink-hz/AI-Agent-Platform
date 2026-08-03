@@ -1,4 +1,5 @@
 import json
+import subprocess
 from types import SimpleNamespace
 
 from app.review.models import BackfillReport
@@ -96,3 +97,11 @@ def test_cli_prefers_environment_sync_writer_dsn(monkeypatch):
 
     assert cli.main(["--source", "fae"]) == 0
     assert seen["database_url"] == "env-sync-dsn"
+
+
+def test_keychain_timeout_is_reported_as_sync_database_unavailable():
+    def timed_out(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired("security", 5)
+
+    with __import__("pytest").raises(RuntimeError, match="sync_database_unavailable"):
+        cli._keychain_value("neo", "sync", runner=timed_out)

@@ -1,4 +1,4 @@
-from subprocess import CompletedProcess
+from subprocess import CompletedProcess, TimeoutExpired
 
 from app.config import load_config
 from app.fleet.database import resolve_flywheel_database_url
@@ -52,3 +52,13 @@ def test_disabled_flywheel_does_not_read_keychain(monkeypatch):
         raise AssertionError("disabled flywheel must not read Keychain")
 
     assert resolve_flywheel_database_url(config, runner=must_not_run) is None
+
+
+def test_flywheel_keychain_timeout_is_fail_closed(monkeypatch):
+    monkeypatch.delenv("PLATFORM_FLYWHEEL_DATABASE_URL", raising=False)
+    config = load_config()
+
+    def timed_out(*_args, **_kwargs):
+        raise TimeoutExpired("security", 5)
+
+    assert resolve_flywheel_database_url(config, runner=timed_out) is None

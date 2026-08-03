@@ -1,5 +1,5 @@
 from dataclasses import replace
-from subprocess import CompletedProcess
+from subprocess import CompletedProcess, TimeoutExpired
 
 from app.config import load_config
 from app.review.database import resolve_review_database_url
@@ -36,3 +36,13 @@ def test_review_database_url_uses_explicit_writer_dsn(monkeypatch):
     assert resolve_review_database_url(config, runner=must_not_run) == (
         "postgresql://review-writer"
     )
+
+
+def test_review_database_keychain_timeout_is_fail_closed(monkeypatch):
+    monkeypatch.delenv("PLATFORM_REVIEW_DATABASE_URL", raising=False)
+    config = replace(load_config(), review_database_url=None)
+
+    def timed_out(*_args, **_kwargs):
+        raise TimeoutExpired("security", 5)
+
+    assert resolve_review_database_url(config, runner=timed_out) is None

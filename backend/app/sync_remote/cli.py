@@ -15,21 +15,30 @@ from .export import ExportError, export_source
 from .importer import ReviewBackfillError, import_bundle, import_bundle_with_review
 
 
-def _keychain_value(account: str, service: str) -> str:
-    result = subprocess.run(
-        [
-            "/usr/bin/security",
-            "find-generic-password",
-            "-a",
-            account,
-            "-s",
-            service,
-            "-w",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def _keychain_value(
+    account: str,
+    service: str,
+    *,
+    runner=subprocess.run,
+) -> str:
+    try:
+        result = runner(
+            [
+                "/usr/bin/security",
+                "find-generic-password",
+                "-a",
+                account,
+                "-s",
+                service,
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("sync_database_unavailable") from error
     if result.returncode != 0 or not result.stdout.strip():
         raise RuntimeError("sync_database_unavailable")
     return result.stdout.strip()

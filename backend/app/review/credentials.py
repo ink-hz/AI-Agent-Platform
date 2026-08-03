@@ -42,20 +42,26 @@ class CredentialResolver:
             service, separator, account = value.rpartition("/")
             if not separator or not service or not account:
                 raise CredentialUnavailable("invalid keychain credential reference")
-            result = self.runner(
-                [
-                    "/usr/bin/security",
-                    "find-generic-password",
-                    "-a",
-                    account,
-                    "-s",
-                    service,
-                    "-w",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            try:
+                result = self.runner(
+                    [
+                        "/usr/bin/security",
+                        "find-generic-password",
+                        "-a",
+                        account,
+                        "-s",
+                        service,
+                        "-w",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=5,
+                )
+            except subprocess.TimeoutExpired as error:
+                raise CredentialUnavailable(
+                    "keychain credential unavailable"
+                ) from error
             token = result.stdout.strip() if result.returncode == 0 else ""
             if not token:
                 raise CredentialUnavailable("keychain credential unavailable")

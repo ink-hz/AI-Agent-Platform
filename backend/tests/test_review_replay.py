@@ -6,7 +6,7 @@ from uuid import UUID
 
 import pytest
 
-from app.review.credentials import CredentialResolver
+from app.review.credentials import CredentialResolver, CredentialUnavailable
 from app.review.replay import (
     ReplayInput,
     ReplayRunner,
@@ -331,6 +331,16 @@ def test_credential_resolver_uses_exact_keychain_reference():
         "ai-fae-dev-api",
         "-w",
     ]
+
+
+def test_credential_keychain_timeout_is_unavailable():
+    def timed_out(*_args, **_kwargs):
+        raise __import__("subprocess").TimeoutExpired("security", 5)
+
+    with pytest.raises(CredentialUnavailable):
+        CredentialResolver(runner=timed_out).resolve(
+            "keychain:ai-fae-dev-api/neo"
+        )
 
 
 def test_parse_sse_collects_named_json_events():

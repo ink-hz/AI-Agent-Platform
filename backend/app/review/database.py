@@ -17,19 +17,23 @@ def resolve_review_database_url(
     if config.review_database_url:
         return config.review_database_url
 
-    result = runner(
-        [
-            "/usr/bin/security",
-            "find-generic-password",
-            "-a",
-            config.review_keychain_account,
-            "-s",
-            config.review_keychain_service,
-            "-w",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = runner(
+            [
+                "/usr/bin/security",
+                "find-generic-password",
+                "-a",
+                config.review_keychain_account,
+                "-s",
+                config.review_keychain_service,
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return None
     value = result.stdout.strip() if result.returncode == 0 else ""
     return value or None
