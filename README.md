@@ -84,6 +84,20 @@ psql '<Platform owner PostgreSQL URL>' -Atc \
 view 遇到最新 `running`/`failed` 行时，Operations 会主动标记同步评估不完整，
 不会生成健康结论。
 
+反馈修复闭环使用独立的 `platform_review` schema 和最小权限 writer，不写
+`platform_source_*` 镜像。部署闭环功能前须由 owner 显式、可重复地应用迁移：
+
+```bash
+psql '<Platform owner PostgreSQL URL>' -v ON_ERROR_STOP=1 \
+  -f backend/migrations/005_feedback_fix_closure.sql
+```
+
+Review API 只接受 `PLATFORM_REVIEW_DATABASE_URL` 或 Keychain service
+`platform-review-writer-database-url` 中的专用 writer DSN；它不会回退到
+`PLATFORM_FLYWHEEL_DATABASE_URL` 的 analyst DSN。`platform_review_writer`
+可以追加和更新闭环记录但不能删除审计事件，也不能修改 FAE/ADMIN 源镜像；
+`platform_sync_writer` 没有 review schema 写权限。
+
 安装后，FastAPI 同源提供仪表盘与 API：
 
 - 仪表盘：`http://127.0.0.1:8000/`
