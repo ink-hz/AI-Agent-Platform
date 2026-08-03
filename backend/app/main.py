@@ -37,6 +37,10 @@ from .operations.source import PsycopgOperationsSource
 from .registry import routes as registry_routes
 from .registry.repository import YamlRepository
 from .remote_health.monitor import RemoteHealthMonitor, remote_poll_loop
+from .review import routes as review_routes
+from .review.database import resolve_review_database_url
+from .review.repository import PsycopgReviewRepository
+from .review.service import ReviewService, UnavailableReviewService
 from .spa import SpaStaticFiles
 
 
@@ -106,6 +110,7 @@ def create_app(
     operations_service=None,
     operations_scheduler: OperationsScheduler | None = None,
     control_room_service: ControlRoomService | None = None,
+    review_service=None,
 ) -> FastAPI:
     config = load_config()
     path = registry_path or config.registry_path
@@ -161,6 +166,15 @@ def create_app(
             observability_service,
             database_url,
         )
+    if review_service is None:
+        review_database_url = (
+            resolve_review_database_url(config) if start_poller else None
+        )
+        review_service = (
+            ReviewService(PsycopgReviewRepository(review_database_url))
+            if review_database_url
+            else UnavailableReviewService()
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -209,6 +223,7 @@ def create_app(
     app.state.operations_scheduler = operations_scheduler
     app.state.remote_health_monitor = remote_monitor
     app.state.control_room_service = control_room_service
+    app.state.review_service = review_service
 
     @app.get("/api/health")
     def platform_health() -> dict:
@@ -221,6 +236,7 @@ def create_app(
     app.include_router(control_room_routes.router)
     app.include_router(operations_routes.router)
     app.include_router(registry_routes.router)
+    app.include_router(review_routes.router)
 
     if os.path.isdir(config.static_dir):
         app.mount("/", SpaStaticFiles(directory=config.static_dir, html=True), name="portal")

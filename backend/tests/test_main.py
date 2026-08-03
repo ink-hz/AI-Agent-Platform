@@ -116,6 +116,23 @@ def test_operations_startup_failure_does_not_break_platform_lifespan(
         assert client.get("/api/health").json() == {"status": "ok"}
 
 
+def test_review_writer_unavailable_isolated_from_platform_health(tmp_path):
+    registry = tmp_path / "registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "contract.json"
+    contract.write_text('{"bots": []}', encoding="utf-8")
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+    )
+
+    with TestClient(app) as client:
+        assert client.get("/api/health").json() == {"status": "ok"}
+        assert client.get("/api/review/overview").status_code == 503
+
+
 @pytest.mark.asyncio
 async def test_platform_lifespan_and_health_start_while_operations_baseline_blocks(
     tmp_path, monkeypatch
