@@ -20,6 +20,24 @@ GOOD = textwrap.dedent(
     """
 )
 
+REGISTRY_WITH_REPLAY = textwrap.dedent(
+    """
+    version: 1
+    agents:
+      - id: fae
+        name: "AI FAE Agent"
+        entry_url: "http://prod.example/app/"
+        api_base: "http://prod.example"
+        health: {url: "http://prod.example/health", type: "fae"}
+        flywheel_agent_id: "ai-fae-agent"
+        replay_targets:
+          - environment: dev
+            api_base: "http://127.0.0.1:18000"
+            health_url: "http://127.0.0.1:18000/health"
+            credential_ref: "keychain:fae-dev-api/neo"
+    """
+)
+
 
 def _write(tmp_path, content):
     path = tmp_path / "registry.yaml"
@@ -79,3 +97,89 @@ def test_duplicate_ids_fail_fast(tmp_path):
     )
     with pytest.raises(RegistryError, match="duplicate"):
         YamlRepository(_write(tmp_path, duplicate))
+
+
+def test_registry_resolves_unique_flywheel_id_and_dev_target(tmp_path):
+    repo = YamlRepository(_write(tmp_path, REGISTRY_WITH_REPLAY))
+
+    agent = repo.get_agent_by_flywheel_id("ai-fae-agent")
+
+    assert agent is not None
+    assert agent.id == "fae"
+    assert agent.replay_targets[0].environment == "dev"
+    assert agent.replay_targets[0].credential_ref == "keychain:fae-dev-api/neo"
+
+
+@pytest.mark.parametrize(
+    "agents",
+    [
+        [
+            {
+                "id": "fae",
+                "flywheel_agent_id": "same-agent",
+                "api_base": "http://prod-a.example",
+                "replay_targets": [
+                    {
+                        "environment": "dev",
+                        "api_base": "http://dev-a.example",
+                        "health_url": "http://dev-a.example/health",
+                        "credential_ref": "env:FAE_KEY",
+                    }
+                ],
+            },
+            {
+                "id": "admin",
+                "flywheel_agent_id": "same-agent",
+                "api_base": "http://prod-b.example",
+                "replay_targets": [
+                    {
+                        "environment": "dev",
+                        "api_base": "http://dev-b.example",
+                        "health_url": "http://dev-b.example/health",
+                        "credential_ref": "env:ADMIN_KEY",
+                    }
+                ],
+            },
+        ],
+        [
+            {
+                "id": "fae",
+                "flywheel_agent_id": "ai-fae-agent",
+                "api_base": "http://same.example",
+                "replay_targets": [
+                    {
+                        "environment": "dev",
+                        "api_base": "http://same.example:80/dev",
+                        "health_url": "http://same.example/health",
+                        "credential_ref": "env:FAE_KEY",
+                    }
+                ],
+            }
+        ],
+        [
+            {
+                "id": "fae",
+                "flywheel_agent_id": "ai-fae-agent",
+                "api_base": "http://prod.example",
+                "replay_targets": [],
+            }
+        ],
+    ],
+)
+def test_invalid_replay_registry_fails_fast(tmp_path, agents):
+    rows = []
+    for agent in agents:
+        rows.append(
+            {
+                "name": agent["id"],
+                "entry_url": f"http://{agent['id']}.example/app/",
+                "health": {"url": f"http://{agent['id']}.example/health"},
+                **agent,
+            }
+        )
+    import yaml
+
+    payload = yaml.safe_dump({"version": 1, "agents": rows}, sort_keys=False)
+
+    with pytest.raises(RegistryError):
+        YamlRepository(_write(tmp_path, payload))

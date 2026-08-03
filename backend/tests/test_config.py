@@ -51,3 +51,22 @@ def test_config_has_stable_operations_defaults(monkeypatch) -> None:
     assert config.operations_usage_interval_seconds == 300
     assert config.operations_execution_interval_seconds == 300
     assert config.operations_lifecycle_interval_seconds == 600
+
+
+def test_review_writer_config_defaults(monkeypatch) -> None:
+    for name in (
+        "PLATFORM_REVIEW_ENABLED",
+        "PLATFORM_REVIEW_DATABASE_URL",
+        "PLATFORM_REVIEW_KEYCHAIN_SERVICE",
+        "PLATFORM_REVIEW_KEYCHAIN_ACCOUNT",
+        "PLATFORM_REVIEW_REQUEST_TIMEOUT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    config = load_config()
+
+    assert config.review_enabled is True
+    assert config.review_database_url is None
+    assert config.review_keychain_service == "platform-review-writer-database-url"
+    assert config.review_keychain_account == "neo"
+    assert config.review_request_timeout_seconds == 1200

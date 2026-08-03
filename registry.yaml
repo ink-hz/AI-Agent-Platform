@@ -13,6 +13,15 @@ agents:
       url: "http://<fae-host>/health"
       type: "fae"
     api_base: "http://<fae-host>"
+    flywheel_agent_id: "ai-fae-agent"
+    replay_targets:
+      - environment: "dev"
+        api_base: "http://127.0.0.1:18000"
+        health_url: "http://127.0.0.1:18000/health"
+        credential_ref: "keychain:ai-fae-dev-api/neo"
+    review_evidence:
+      repository_path: "/Users/neo/Developer/work/AI-FAE-Agent"
+      release_manifest_dir: "/Users/neo/Developer/work/AI-FAE-Agent/dist/release/manifests"
     version: ""
     tags: ["pg-flywheel", "review-center"]
 

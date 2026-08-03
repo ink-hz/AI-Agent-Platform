@@ -1,9 +1,23 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
 class HealthSpec(BaseModel):
     url: str
     type: str = "generic"
+
+
+class ReplayTarget(BaseModel):
+    environment: Literal["dev"]
+    api_base: str
+    health_url: str
+    credential_ref: str
+
+
+class ReviewEvidenceConfig(BaseModel):
+    repository_path: str
+    release_manifest_dir: str
 
 
 class AgentEntry(BaseModel):
@@ -20,6 +34,9 @@ class AgentEntry(BaseModel):
     api_base: str | None = None
     version: str = ""
     tags: list[str] = Field(default_factory=list)
+    flywheel_agent_id: str | None = None
+    replay_targets: list[ReplayTarget] = Field(default_factory=list)
+    review_evidence: ReviewEvidenceConfig | None = None
 
     def public_dict(self) -> dict:
         return {
