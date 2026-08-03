@@ -43,9 +43,9 @@ class ReviewService:
         if self.replay_runner is not None and hasattr(self.replay_runner, "close"):
             await asyncio.to_thread(self.replay_runner.close)
 
-    async def _run(self, method, *args, **kwargs):
+    async def _run(self, operation, *args, **kwargs):
         try:
-            return await asyncio.to_thread(method, *args, **kwargs)
+            return await asyncio.to_thread(operation, *args, **kwargs)
         except ReviewRepositoryError:
             raise
         except Exception as error:
