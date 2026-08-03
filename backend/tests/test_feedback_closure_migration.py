@@ -95,3 +95,6 @@ def test_progress_view_requires_runtime_and_semantic_evidence():
         assert required in sql
     assert "deployment.verification_details->>'deployment_sha'" in sql
     assert "replay, deployment.commit_sha" not in sql
+    assert "replay.done->'fallback_used' = 'false'::jsonb" in sql
+    assert "coalesce(replay.done->>'fallback_used', 'false')" not in sql
+    assert "replay.actual_model_source = 'provider_message_start'" in sql

@@ -297,10 +297,14 @@ as $$
     and nullif(btrim(replay.actual_model), '') is not null
     and replay.actual_model = replay.configured_model
     and nullif(btrim(replay.actual_model_source), '') is not null
-    and coalesce(replay.done->>'fallback_used', 'false') = 'false'
+    and replay.done->'fallback_used' = 'false'::jsonb
     and coalesce(replay.done#>>'{loop,truncation_rounds}', '0') = '0'
+    and coalesce(replay.done->>'protocol_error', '') = ''
+    and coalesce(replay.done#>>'{loop,protocol_error}', '') = ''
+    and coalesce(replay.done->>'request_error', '') = ''
     and replay.done#>'{loop,provider_model_echo,complete}' = 'true'::jsonb
     and replay.done#>'{loop,provider_model_echo,consistent}' = 'true'::jsonb
+    and replay.actual_model_source = 'provider_message_start'
     and coalesce(replay.done->>'error', '') = ''
     and replay.runtime_failure_reason = ''
 $$;

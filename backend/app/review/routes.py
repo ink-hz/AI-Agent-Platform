@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -81,8 +80,18 @@ class AddEvidence(StrictModel):
     commit_sha: str = ""
     release_manifest_ref: str = ""
     environment: str = ""
-    observed_at: datetime | None = None
     reason: str = "evidence added"
+
+    @model_validator(mode="after")
+    def deployment_is_production_artifact(self):
+        if self.evidence_type == "deployment" and (
+            self.environment != "production"
+            or not self.release_manifest_ref.strip()
+        ):
+            raise ValueError(
+                "deployment evidence requires a production release manifest"
+            )
+        return self
 
 
 class VerifyEvidence(StrictModel):

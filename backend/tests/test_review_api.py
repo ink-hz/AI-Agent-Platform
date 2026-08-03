@@ -102,6 +102,30 @@ def test_machine_verification_result_cannot_be_supplied_by_client(client):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"environment": "dev"},
+        {"environment": "production", "observed_at": "2020-01-01T00:00:00Z"},
+    ],
+)
+def test_deployment_evidence_time_and_environment_cannot_weaken_gate(
+    client, override
+):
+    response = client.post(
+        f"/api/review/issues/{ISSUE_ID}/evidence",
+        json={
+            "evidence_type": "deployment",
+            "reference": "deployment artifact",
+            "release_manifest_ref": "release.json",
+            **override,
+        },
+        headers={"X-Review-Actor": "codex"},
+    )
+
+    assert response.status_code == 422
+
+
 def test_api_has_no_close_operation(app):
     paths = {route.path for route in app.routes if hasattr(route, "path")}
 
