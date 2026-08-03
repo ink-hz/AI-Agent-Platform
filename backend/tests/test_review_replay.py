@@ -271,6 +271,41 @@ def test_missing_credential_records_safe_diagnostic_stage(monkeypatch):
     client.get.assert_not_called()
 
 
+def test_health_identity_failure_records_only_sanitized_diagnostics(monkeypatch):
+    monkeypatch.setenv("FAE_DEV_KEY", "secret")
+    repository = FakeRepository()
+    client = Mock()
+    client.get.side_effect = [
+        SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: {"status": "ok", "environment": "production"},
+        ),
+        SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: {"status": "ok", "environment": "production"},
+        ),
+    ]
+
+    run = ReplayRunner(
+        repository,
+        _registry("http://dev.example"),
+        http_client=client,
+    ).run(LINK_ID, idempotency_key="req-health-mismatch", actor="codex")
+
+    assert run.runtime_failure_reason == "unsafe_replay_target"
+    assert run.done == {
+        "safety_stage": "health_identity",
+        "safety_details": {
+            "category": "identity_mismatch",
+            "dev_status": "ok",
+            "dev_environment": "production",
+            "prod_status": "ok",
+            "prod_environment": "production",
+        },
+    }
+    assert "secret" not in str(run.done)
+
+
 def test_credential_resolver_uses_exact_keychain_reference():
     runner = Mock(return_value=SimpleNamespace(returncode=0, stdout="token\n"))
 

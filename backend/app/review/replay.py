@@ -225,7 +225,7 @@ class ReplayRunner:
         target,
         production_health_url: str,
         credential: Credential,
-    ) -> tuple[bool, dict]:
+    ) -> tuple[bool, dict, dict]:
         try:
             dev_response = self.http_client.get(
                 target.health_url,
@@ -240,10 +240,13 @@ class ReplayRunner:
             prod_response.raise_for_status()
             dev_health = dev_response.json()
             prod_health = prod_response.json()
-        except Exception:
-            return False, {}
+        except Exception as error:
+            return False, {}, {
+                "category": "request_failed",
+                "error_type": type(error).__name__,
+            }
         if not isinstance(dev_health, dict) or not isinstance(prod_health, dict):
-            return False, {}
+            return False, {}, {"category": "invalid_health_payload"}
         dev_environment = str(dev_health.get("environment", "")).casefold()
         prod_environment = str(prod_health.get("environment", "")).casefold()
         safe = (
@@ -253,7 +256,14 @@ class ReplayRunner:
             and prod_environment == "production"
             and dev_environment != prod_environment
         )
-        return safe, dev_health if safe else {}
+        details = {
+            "category": "verified" if safe else "identity_mismatch",
+            "dev_status": str(dev_health.get("status", "")),
+            "dev_environment": dev_environment,
+            "prod_status": str(prod_health.get("status", "")),
+            "prod_environment": prod_environment,
+        }
+        return safe, dev_health if safe else {}, details
 
     def _finish_blocked(
         self,
@@ -264,10 +274,14 @@ class ReplayRunner:
         health: dict | None = None,
         expected: dict | None = None,
         safety_stage: str = "",
+        safety_details: dict | None = None,
     ) -> ReplayRun:
         health = health or {}
         expected = expected or {}
         build = health.get("build") if isinstance(health.get("build"), dict) else {}
+        done = {"safety_stage": safety_stage} if safety_stage else {}
+        if safety_details:
+            done["safety_details"] = safety_details
         result = {
             "actual_version": build.get("release_name", ""),
             "actual_git_sha": build.get("git_sha", ""),
@@ -276,7 +290,7 @@ class ReplayRunner:
             "actual_model_source": "",
             "answer": "",
             "sources": [],
-            "done": {"safety_stage": safety_stage} if safety_stage else {},
+            "done": done,
             "trace_id": "",
             "duration_ms": 0,
             "execution_status": "blocked",
@@ -466,7 +480,7 @@ class ReplayRunner:
                 expected=expected,
                 safety_stage="credential",
             )
-        target_safe, health = self._health_safe(
+        target_safe, health, safety_details = self._health_safe(
             target,
             agent.health.url,
             credential,
@@ -478,6 +492,7 @@ class ReplayRunner:
                 actor=actor,
                 expected=expected,
                 safety_stage="health_identity",
+                safety_details=safety_details,
             )
         attachment_ids = self._upload_attachments(
             target,
