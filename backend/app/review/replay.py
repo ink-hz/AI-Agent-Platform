@@ -166,7 +166,7 @@ class ReplayRunner:
     ) -> None:
         self.repository = repository
         self.registry = registry
-        self.http_client = http_client or httpx.Client()
+        self.http_client = http_client or httpx.Client(trust_env=False)
         self._owns_http_client = http_client is None
         self.credential_resolver = credential_resolver or CredentialResolver()
         self.request_timeout = request_timeout

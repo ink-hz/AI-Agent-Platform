@@ -171,6 +171,14 @@ def _registry(dev_url, prod_url="http://prod.example"):
     )
 
 
+def test_default_replay_http_client_never_uses_environment_proxy():
+    runner = ReplayRunner(None, None)
+    try:
+        assert runner.http_client._trust_env is False
+    finally:
+        runner.close()
+
+
 @pytest.mark.parametrize(
     ("dev_url", "prod_url"),
     [
