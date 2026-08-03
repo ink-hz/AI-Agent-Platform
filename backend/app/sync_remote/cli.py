@@ -46,14 +46,16 @@ def main(argv: list[str] | None = None) -> int:
     database_url: str | None = None
     review_database_url: str | None = None
     if not args.export_only:
-        try:
-            database_url = _keychain_value(
-                config.sync_keychain_account,
-                config.sync_keychain_service,
-            )
-        except RuntimeError as error:
-            print(str(error), file=sys.stderr)
-            return 1
+        database_url = config.sync_database_url
+        if not database_url:
+            try:
+                database_url = _keychain_value(
+                    config.sync_keychain_account,
+                    config.sync_keychain_service,
+                )
+            except RuntimeError as error:
+                print(str(error), file=sys.stderr)
+                return 1
         review_database_url = resolve_review_database_url(config)
 
     failed = False

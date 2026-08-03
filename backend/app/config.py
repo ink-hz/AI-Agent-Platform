@@ -25,6 +25,7 @@ class Config:
     active_window_minutes: int
     sync_keychain_service: str
     sync_keychain_account: str
+    sync_database_url: str | None
     remote_ssh_host: str
     remote_ssh_key_path: str
     remote_poll_interval_seconds: float
@@ -90,6 +91,7 @@ def load_config() -> Config:
             "PLATFORM_SYNC_KEYCHAIN_ACCOUNT",
             "neo",
         ),
+        sync_database_url=os.getenv("PLATFORM_SYNC_DATABASE_URL"),
         remote_ssh_host=os.getenv(
             "PLATFORM_REMOTE_SSH_HOST",
             "root@47.106.112.69",

@@ -109,6 +109,12 @@ launchctl setenv AI_FAE_DEV_REPLAY_TOKEN "$(security find-generic-password \
   -s ai-fae-dev-api -a neo -w)"
 ```
 
+同理，Platform API 与定时同步分别接受
+`PLATFORM_FLYWHEEL_DATABASE_URL`、`PLATFORM_REVIEW_DATABASE_URL` 和
+`PLATFORM_SYNC_DATABASE_URL` 的进程环境注入；变量只应进入受控进程环境，
+不得写入 plist、仓库、日志或前端。未配置环境变量时才读取各自的 Keychain
+条目，三种数据库角色的既有最小权限边界不变。
+
 安装后，FastAPI 同源提供仪表盘与 API：
 
 - 仪表盘：`http://127.0.0.1:8000/`

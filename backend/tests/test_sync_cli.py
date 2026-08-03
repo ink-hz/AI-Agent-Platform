@@ -35,6 +35,7 @@ def prepare(monkeypatch, review_url):
         remote_ssh_key_path="key",
         sync_keychain_account="neo",
         sync_keychain_service="sync",
+        sync_database_url=None,
     )
     monkeypatch.setattr(cli, "load_config", lambda: config)
     monkeypatch.setattr(cli, "default_sources", lambda *_args: {"fae": object()})
@@ -78,3 +79,20 @@ def test_cli_does_not_misreport_source_when_review_writer_is_unavailable(
         "status": "failed",
         "reason": "review_database_unavailable",
     }
+
+
+def test_cli_prefers_environment_sync_writer_dsn(monkeypatch):
+    prepare(monkeypatch, "review-dsn")
+    config = cli.load_config()
+    config.sync_database_url = "env-sync-dsn"
+    monkeypatch.setattr(cli, "_keychain_value", lambda *_args: (_ for _ in ()).throw(AssertionError("keychain must not be read")))
+    seen = {}
+
+    def import_coordinated(database_url, *_args, **_kwargs):
+        seen["database_url"] = database_url
+        return CoordinatedSyncResult(SOURCE, BACKFILL)
+
+    monkeypatch.setattr(cli, "import_bundle_with_review", import_coordinated)
+
+    assert cli.main(["--source", "fae"]) == 0
+    assert seen["database_url"] == "env-sync-dsn"
