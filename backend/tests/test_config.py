@@ -3,8 +3,7 @@ from app.config import load_config
 
 def test_remote_sync_config_defaults(monkeypatch) -> None:
     for name in (
-        "PLATFORM_SYNC_KEYCHAIN_SERVICE",
-        "PLATFORM_SYNC_KEYCHAIN_ACCOUNT",
+        "PLATFORM_SYNC_DATABASE_URL_FILE",
         "PLATFORM_SYNC_DATABASE_URL",
         "PLATFORM_REMOTE_SSH_HOST",
         "PLATFORM_REMOTE_SSH_KEY_PATH",
@@ -14,8 +13,10 @@ def test_remote_sync_config_defaults(monkeypatch) -> None:
 
     config = load_config()
 
-    assert config.sync_keychain_service == "platform-sync-database-url"
-    assert config.sync_keychain_account == "neo"
+    assert config.sync_database_url_file.endswith(
+        "/Library/Application Support/OrbbecAI-Agent-Platform/"
+        "secrets/platform-sync-writer-database-url"
+    )
     assert config.sync_database_url is None
     assert config.remote_ssh_host == "root@47.106.112.69"
     assert config.remote_ssh_key_path == "/Users/neo/.ssh/orbbec_aliyun_ed25519"
@@ -23,8 +24,7 @@ def test_remote_sync_config_defaults(monkeypatch) -> None:
 
 
 def test_remote_sync_config_accepts_environment_overrides(monkeypatch) -> None:
-    monkeypatch.setenv("PLATFORM_SYNC_KEYCHAIN_SERVICE", "sync-test")
-    monkeypatch.setenv("PLATFORM_SYNC_KEYCHAIN_ACCOUNT", "operator")
+    monkeypatch.setenv("PLATFORM_SYNC_DATABASE_URL_FILE", "/tmp/sync-secret")
     monkeypatch.setenv("PLATFORM_SYNC_DATABASE_URL", "postgresql://sync")
     monkeypatch.setenv("PLATFORM_REMOTE_SSH_HOST", "agent@example.test")
     monkeypatch.setenv("PLATFORM_REMOTE_SSH_KEY_PATH", "/tmp/test-key")
@@ -32,8 +32,7 @@ def test_remote_sync_config_accepts_environment_overrides(monkeypatch) -> None:
 
     config = load_config()
 
-    assert config.sync_keychain_service == "sync-test"
-    assert config.sync_keychain_account == "operator"
+    assert config.sync_database_url_file == "/tmp/sync-secret"
     assert config.sync_database_url == "postgresql://sync"
     assert config.remote_ssh_host == "agent@example.test"
     assert config.remote_ssh_key_path == "/tmp/test-key"
@@ -61,8 +60,7 @@ def test_review_writer_config_defaults(monkeypatch) -> None:
     for name in (
         "PLATFORM_REVIEW_ENABLED",
         "PLATFORM_REVIEW_DATABASE_URL",
-        "PLATFORM_REVIEW_KEYCHAIN_SERVICE",
-        "PLATFORM_REVIEW_KEYCHAIN_ACCOUNT",
+        "PLATFORM_REVIEW_DATABASE_URL_FILE",
         "PLATFORM_REVIEW_REQUEST_TIMEOUT",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -71,6 +69,8 @@ def test_review_writer_config_defaults(monkeypatch) -> None:
 
     assert config.review_enabled is True
     assert config.review_database_url is None
-    assert config.review_keychain_service == "platform-review-writer-database-url"
-    assert config.review_keychain_account == "neo"
+    assert config.review_database_url_file.endswith(
+        "/Library/Application Support/OrbbecAI-Agent-Platform/"
+        "secrets/platform-review-writer-database-url"
+    )
     assert config.review_request_timeout_seconds == 1200

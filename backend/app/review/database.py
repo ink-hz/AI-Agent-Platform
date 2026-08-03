@@ -1,15 +1,15 @@
-import subprocess
 from collections.abc import Callable
 
 from app.config import Config
+from app.local_secrets import SecretFileUnavailable, read_secret_file
 
 
-Runner = Callable[..., subprocess.CompletedProcess[str]]
+SecretReader = Callable[[str], str]
 
 
 def resolve_review_database_url(
     config: Config,
-    runner: Runner = subprocess.run,
+    reader: SecretReader = read_secret_file,
 ) -> str | None:
     """Resolve only the dedicated review-writer credential."""
     if not config.review_enabled:
@@ -18,22 +18,6 @@ def resolve_review_database_url(
         return config.review_database_url
 
     try:
-        result = runner(
-            [
-                "/usr/bin/security",
-                "find-generic-password",
-                "-a",
-                config.review_keychain_account,
-                "-s",
-                config.review_keychain_service,
-                "-w",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
-    except subprocess.TimeoutExpired:
+        return reader(config.review_database_url_file)
+    except SecretFileUnavailable:
         return None
-    value = result.stdout.strip() if result.returncode == 0 else ""
-    return value or None
