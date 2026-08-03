@@ -241,10 +241,25 @@ class ReplayRunner:
             dev_health = dev_response.json()
             prod_health = prod_response.json()
         except Exception as error:
-            return False, {}, {
+            response = getattr(error, "response", None)
+            request = getattr(error, "request", None)
+            request_url = str(getattr(request, "url", ""))
+            request_role = (
+                "dev"
+                if request_url.startswith(target.health_url)
+                else "production"
+                if request_url.startswith(production_health_url)
+                else "unknown"
+            )
+            details = {
                 "category": "request_failed",
                 "error_type": type(error).__name__,
+                "request_role": request_role,
             }
+            status_code = getattr(response, "status_code", None)
+            if isinstance(status_code, int):
+                details["status_code"] = status_code
+            return False, {}, details
         if not isinstance(dev_health, dict) or not isinstance(prod_health, dict):
             return False, {}, {"category": "invalid_health_payload"}
         dev_environment = str(dev_health.get("environment", "")).casefold()
