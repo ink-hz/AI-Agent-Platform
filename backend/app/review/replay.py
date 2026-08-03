@@ -167,8 +167,13 @@ class ReplayRunner:
         self.repository = repository
         self.registry = registry
         self.http_client = http_client or httpx.Client()
+        self._owns_http_client = http_client is None
         self.credential_resolver = credential_resolver or CredentialResolver()
         self.request_timeout = request_timeout
+
+    def close(self) -> None:
+        if self._owns_http_client:
+            self.http_client.close()
 
     @staticmethod
     def validate_attachment(manifest: dict) -> bool:
@@ -412,6 +417,11 @@ class ReplayRunner:
             "context_snapshot": replay_input.prior_turns,
             "attachment_manifest": replay_input.attachment_manifest,
         }
+        self.repository.expire_stale_replays(
+            issue_link_id,
+            timeout_seconds=self.request_timeout,
+            actor=actor,
+        )
         record, created = self.repository.create_or_get_replay(
             issue_link_id,
             idempotency_key=idempotency_key,

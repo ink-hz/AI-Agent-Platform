@@ -16,6 +16,15 @@ const issue = {
   events: [],
 };
 
+const inboxItem = {
+  agent_id: "ai-fae-agent",
+  turn_key: "fae:turn-2",
+  question: "另一条相同根因的负反馈",
+  answer: "旧回答",
+  feedback_keys: ["fae:feedback-2"],
+  first_feedback_at: "2026-08-03T00:00:00Z",
+};
+
 
 function response(body: unknown): Response {
   return { ok: true, json: vi.fn().mockResolvedValue(body) } as unknown as Response;
@@ -32,7 +41,7 @@ beforeEach(() => {
   window.history.replaceState({}, "", "/review?issue=issue-1");
   vi.stubGlobal("fetch", vi.fn((path: string) => {
     if (path === "/api/review/overview") return Promise.resolve(response({ feedback_rows: 79, negative_rows: 51, negative_turns: 50, positive_rows: 28, statuses: { awaiting_review: 1 } }));
-    if (path === "/api/review/inbox?limit=200") return Promise.resolve(response([]));
+    if (path === "/api/review/inbox?limit=200") return Promise.resolve(response([inboxItem]));
     if (path === "/api/review/issues?limit=200") return Promise.resolve(response([{ ...issue.issue, progress: issue.progress }]));
     return Promise.resolve(response(issue));
   }));
@@ -52,7 +61,21 @@ it("shows the original and latest replay answer without force close", async () =
 
   expect(container.textContent).toContain("旧的错误答案");
   expect(container.textContent).toContain("最新复测答案");
+  expect(container.textContent).toContain("移动回答归属");
   expect(container.textContent).toContain("待语义复审");
   expect(container.textContent).not.toContain("强制关闭");
   expect([...container.querySelectorAll("button")].some((button) => /关闭事项/.test(button.textContent || ""))).toBe(false);
+});
+
+
+it("can attach an inbox answer to an existing canonical issue", async () => {
+  window.history.replaceState({}, "", "/review?turn_key=fae%3Aturn-2");
+
+  await act(async () => root.render(<ReviewPage />));
+  await act(async () => await Promise.resolve());
+
+  expect(container.textContent).toContain("关联到已有事项");
+  const select = container.querySelector('select[aria-label="已有事项"]');
+  expect(select).not.toBeNull();
+  expect(select?.textContent).toContain("型号事实错误");
 });

@@ -11,6 +11,7 @@ import {
   linkReviewTurn,
   markFixReady,
   mergeReviewIssue,
+  moveReviewLink,
   reviewReplay,
   setIssueDisposition,
   startReplay,
@@ -60,6 +61,7 @@ export function ReviewPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
+  const [existingIssueId, setExistingIssueId] = useState("");
 
   const loadLists = async (signal?: AbortSignal) => {
     const [nextOverview, nextInbox, nextIssues] = await Promise.all([
@@ -86,6 +88,7 @@ export function ReviewPage() {
     loadDetail(selectedId, controller.signal).catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
   }, [selectedId]);
+  useEffect(() => setExistingIssueId(""), [selectedTurnKey]);
 
   const chooseIssue = (id: string) => {
     setSelectedId(id);
@@ -138,11 +141,13 @@ export function ReviewPage() {
     <section className="review-overview"><article><span>反馈总行数</span><strong>{overview.feedback_rows}</strong></article><article><span>负反馈回答</span><strong>{overview.negative_turns}</strong><small>{overview.negative_rows} 条负反馈记录</small></article>{STATUS_ORDER.map((status) => <article key={status}><span>{STATUS_LABELS[status]}</span><strong>{overview.statuses[status] || 0}</strong></article>)}</section>
     <section className="review-workspace"><IssueList issues={issues} inbox={inbox} selectedId={selectedId} selectedTurnKey={selectedTurnKey} onSelect={chooseIssue} onSelectInbox={chooseInbox} /><main className="review-main-panel">
       {detail && <IssueDetail detail={detail} busy={busy}
+        issues={issues}
         onSave={(owner, failureLayer, priority, rootCause, impactScope) => perform((identity) => updateReviewIssue(detail.issue.id, { row_version: detail.issue.row_version, owner: owner || null, failure_layer: failureLayer || null, priority, root_cause: rootCause, impact_scope: impactScope, reason: "update triage" }, identity), "归因已保存，状态已重新计算。")}
         onFixReady={() => perform((identity) => markFixReady(detail.issue.id, { row_version: detail.issue.row_version, reason: "implementation and tests ready" }, identity), "修复准备证据已记录。")}
         onEvidence={(payload) => perform((identity) => addFixEvidence(detail.issue.id, payload, identity), "工程证据已添加，等待机器验证。")}
         onVerify={(id) => perform((identity) => verifyFixEvidence(id, identity), "机器验证完成，状态已重新计算。")}
         onReplay={(link: IssueLink) => perform((identity) => startReplay(detail.issue.id, { issue_link_id: link.id, idempotency_key: `${link.id}-${Date.now()}` }, identity), "真实复跑完成，请查看最新答案与 runtime gate。")}
+        onMove={(link: IssueLink, targetIssueId: string) => perform((identity) => moveReviewLink(detail.issue.id, link.id, { target_issue_id: targetIssueId, reason: "correct feedback issue grouping" }, identity), "回答归属已移动，源事项和目标事项状态均已重新计算。")}
         onReview={(replay: ReplayRun, verdict, reason) => perform((identity) => {
           if (!reason.trim()) throw new Error("语义复审必须填写理由");
           return reviewReplay(replay.id, { verdict, method: identity === "codex" ? "codex" : "human_fae", reviewer: identity, reason }, identity);
@@ -151,7 +156,10 @@ export function ReviewPage() {
           ? mergeReviewIssue(detail.issue.id, { target_issue_id: target, row_version: detail.issue.row_version, reason }, identity)
           : setIssueDisposition(detail.issue.id, { disposition: value, canonical_issue_id: null, owner: detail.issue.owner, row_version: detail.issue.row_version, reason }, identity), "处置结果已记录并单列统计。")}
       />}
-      {!detail && selectedInbox && <section className="review-empty-detail"><p>待纳管负反馈</p><h2>{selectedInbox.question || "未记录问题"}</h2><div><strong>原回答</strong><p>{selectedInbox.answer || "未记录原回答"}</p></div><button disabled={busy} onClick={() => perform(async (identity) => {
+      {!detail && selectedInbox && <section className="review-empty-detail"><p>待纳管负反馈</p><h2>{selectedInbox.question || "未记录问题"}</h2><div><strong>原回答</strong><p>{selectedInbox.answer || "未记录原回答"}</p></div><div className="review-inbox-actions"><label>关联到已有事项<select aria-label="已有事项" value={existingIssueId} onChange={(event) => setExistingIssueId(event.target.value)}><option value="">选择 canonical issue</option>{issues.filter((item) => item.disposition === "actionable").map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><button disabled={busy || !existingIssueId} onClick={() => perform(async (identity) => {
+        await linkReviewTurn(existingIssueId, { agent_id: selectedInbox.agent_id, source_turn_key: selectedInbox.turn_key, source_feedback_keys: selectedInbox.feedback_keys, link_role: "primary", reason: "link negative feedback turn to existing canonical issue" }, identity);
+        chooseIssue(existingIssueId);
+      }, "负反馈回答已关联到已有事项。")}>关联到已有事项</button><span>或</span></div><button disabled={busy} onClick={() => perform(async (identity) => {
         const created = await createReviewIssue({ agent_id: selectedInbox.agent_id, origin_turn_key: selectedInbox.turn_key, title: (selectedInbox.question || selectedInbox.turn_key).slice(0, 80), priority: "P2", reason: "create from negative feedback inbox" }, identity);
         await linkReviewTurn(created.issue.id, { agent_id: selectedInbox.agent_id, source_turn_key: selectedInbox.turn_key, source_feedback_keys: selectedInbox.feedback_keys, link_role: "primary", reason: "link negative feedback turn" }, identity);
         chooseIssue(created.issue.id);

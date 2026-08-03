@@ -56,6 +56,11 @@ class LinkTurn(StrictModel):
     reason: str = "turn linked"
 
 
+class MoveLink(StrictModel):
+    target_issue_id: UUID
+    reason: str = Field(min_length=1)
+
+
 class MergeIssue(StrictModel):
     target_issue_id: UUID
     row_version: int = Field(ge=1)
@@ -198,6 +203,24 @@ async def update_issue(
 @router.post("/issues/{issue_id}/links", status_code=201)
 async def link_turn(issue_id: UUID, payload: LinkTurn, request: Request, actor: Actor):
     return await _invoke(_service(request).link_turn(issue_id, payload, actor=actor))
+
+
+@router.post("/issues/{issue_id}/links/{link_id}/move")
+async def move_link(
+    issue_id: UUID,
+    link_id: UUID,
+    payload: MoveLink,
+    request: Request,
+    actor: Actor,
+):
+    return await _invoke(
+        _service(request).move_link(
+            issue_id,
+            link_id,
+            payload,
+            actor=actor,
+        )
+    )
 
 
 @router.post("/issues/{issue_id}/merge")

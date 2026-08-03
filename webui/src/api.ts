@@ -152,6 +152,11 @@ export const linkReviewTurn = (
 ) => writeReview<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(id)}/links`, actor, {
   method: "POST", body: JSON.stringify(payload),
 });
+export const moveReviewLink = (
+  issueId: string, linkId: string, payload: Record<string, unknown>, actor: string,
+) => writeReview<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(issueId)}/links/${encodeURIComponent(linkId)}/move`, actor, {
+  method: "POST", body: JSON.stringify(payload),
+});
 export const markFixReady = (
   id: string, payload: Record<string, unknown>, actor: string,
 ) => writeReview<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(id)}/fix-ready`, actor, {

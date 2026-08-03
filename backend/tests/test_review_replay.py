@@ -107,6 +107,7 @@ def test_runtime_gate_ignores_empty_planner_observability(valid_exchange):
 class FakeRepository:
     def __init__(self, attachment_manifest=None):
         self.finished = []
+        self.expired = []
         self.input = ReplayInput(
             issue_id=ISSUE_ID,
             issue_link_id=LINK_ID,
@@ -138,6 +139,10 @@ class FakeRepository:
             },
             True,
         )
+
+    def expire_stale_replays(self, issue_link_id, *, timeout_seconds, actor):
+        self.expired.append((issue_link_id, timeout_seconds, actor))
+        return 0
 
     def finish_replay(self, replay_id, result, *, actor):
         row = {"id": replay_id, "issue_id": ISSUE_ID, **result}
@@ -238,6 +243,7 @@ def test_idempotent_replay_returns_existing_row_without_network(monkeypatch):
     assert run.runtime_gate == "passed"
     client.get.assert_not_called()
     client.post.assert_not_called()
+    assert repository.expired == [(LINK_ID, 1200, "codex")]
 
 
 def test_credential_resolver_supports_env_without_serializing_secret(monkeypatch):

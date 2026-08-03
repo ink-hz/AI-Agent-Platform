@@ -9,9 +9,14 @@ from app.review.routes import router
 
 
 ISSUE_ID = UUID("00000000-0000-0000-0000-000000000001")
+LINK_ID = UUID("00000000-0000-0000-0000-000000000002")
+TARGET_ID = UUID("00000000-0000-0000-0000-000000000003")
 
 
 class FakeService:
+    def __init__(self):
+        self.move = None
+
     async def create_issue(self, payload, *, actor):
         return {"issue": {"id": str(ISSUE_ID), **payload.model_dump()}}
 
@@ -22,6 +27,10 @@ class FakeService:
 
     async def overview(self):
         return {"negative_turns": 50}
+
+    async def move_link(self, issue_id, link_id, payload, *, actor):
+        self.move = (issue_id, link_id, payload.target_issue_id, actor)
+        return {"issue": {"id": str(payload.target_issue_id)}}
 
 
 @pytest.fixture
@@ -102,3 +111,19 @@ def test_api_has_no_close_operation(app):
 
 def test_read_endpoint_does_not_require_actor(client):
     assert client.get("/api/review/overview").json() == {"negative_turns": 50}
+
+
+def test_link_can_be_moved_to_correct_canonical_issue(client, app):
+    response = client.post(
+        f"/api/review/issues/{ISSUE_ID}/links/{LINK_ID}/move",
+        json={"target_issue_id": str(TARGET_ID), "reason": "correct grouping"},
+        headers={"X-Review-Actor": "codex"},
+    )
+
+    assert response.status_code == 200
+    assert app.state.review_service.move == (
+        ISSUE_ID,
+        LINK_ID,
+        TARGET_ID,
+        "codex",
+    )

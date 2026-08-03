@@ -21,6 +21,9 @@ class UnavailableReviewService:
 
         return unavailable
 
+    async def close(self) -> None:
+        return None
+
 
 class ReviewService:
     def __init__(
@@ -35,6 +38,10 @@ class ReviewService:
         self.registry = registry
         self.evidence_verifier = evidence_verifier
         self.replay_runner = replay_runner
+
+    async def close(self) -> None:
+        if self.replay_runner is not None and hasattr(self.replay_runner, "close"):
+            await asyncio.to_thread(self.replay_runner.close)
 
     async def _run(self, method, *args, **kwargs):
         try:
@@ -134,6 +141,46 @@ class ReviewService:
         )
         return await self._recalculate(
             issue_id,
+            actor=actor,
+            reason=payload.reason,
+        )
+
+    async def move_link(
+        self,
+        issue_id: UUID,
+        link_id: UUID,
+        payload,
+        *,
+        actor: str,
+    ) -> dict:
+        detail = await self._detail(issue_id)
+        if not any(
+            str(link["id"]) == str(link_id) and link["active"]
+            for link in detail["links"]
+        ):
+            from .repository import InvalidReviewMutation
+
+            raise InvalidReviewMutation("active link does not belong to source issue")
+        if issue_id == payload.target_issue_id:
+            from .repository import InvalidReviewMutation
+
+            raise InvalidReviewMutation("target issue must differ from source issue")
+        await self._detail(payload.target_issue_id)
+        await self._run(
+            self.repository.move_link,
+            link_id,
+            payload.target_issue_id,
+            actor=actor,
+            reason=payload.reason,
+        )
+        await self._run(
+            self.repository.recalculate_and_record_transition,
+            issue_id,
+            actor=actor,
+            reason=payload.reason,
+        )
+        return await self._recalculate(
+            payload.target_issue_id,
             actor=actor,
             reason=payload.reason,
         )

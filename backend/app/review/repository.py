@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -558,6 +558,56 @@ class PsycopgReviewRepository:
             "version": details.get("manifest_release_name", ""),
             "git_sha": details.get("deployment_sha", ""),
         }
+
+    def expire_stale_replays(
+        self,
+        issue_link_id: UUID,
+        *,
+        timeout_seconds: float,
+        actor: str,
+    ) -> int:
+        cutoff = self._now() - timedelta(seconds=max(float(timeout_seconds), 1.0))
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                rows = cursor.execute(
+                    """
+                    select * from platform_review.feedback_replay_runs
+                    where issue_link_id=%s and execution_status='running'
+                      and started_at < %s
+                    for update
+                    """,
+                    (issue_link_id, cutoff),
+                ).fetchall()
+                for before in rows:
+                    after = cursor.execute(
+                        """
+                        update platform_review.feedback_replay_runs
+                        set execution_status='failed', runtime_gate='failed',
+                            runtime_failure_reason='protocol_error',
+                            done=%s, completed_at=now()
+                        where id=%s returning *
+                        """,
+                        (
+                            Jsonb({"protocol_error": "replay_timeout"}),
+                            before["id"],
+                        ),
+                    ).fetchone()
+                    self._event(
+                        cursor,
+                        issue_id=before["issue_id"],
+                        event_type="replay_timed_out",
+                        actor=actor,
+                        reason="replay exceeded configured timeout",
+                        before={"replay_id": before["id"], "execution_status": "running"},
+                        after={
+                            "replay_id": after["id"],
+                            "execution_status": "failed",
+                            "runtime_failure_reason": "protocol_error",
+                        },
+                    )
+            return len(rows)
+        except Exception as error:
+            raise ReviewRepositoryError("expire stale replay failed") from error
 
     def create_or_get_replay(
         self,

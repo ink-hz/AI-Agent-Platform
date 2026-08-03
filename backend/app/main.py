@@ -113,6 +113,7 @@ def create_app(
     control_room_service: ControlRoomService | None = None,
     review_service=None,
 ) -> FastAPI:
+    owns_review_service = review_service is None
     config = load_config()
     path = registry_path or config.registry_path
     repo = YamlRepository(path)
@@ -221,6 +222,8 @@ def create_app(
             yield
         finally:
             await cancel_tasks(tasks)
+            if owns_review_service:
+                await review_service.close()
 
     app = FastAPI(title="Orbbec AI Agent Platform", version="0.1.0", lifespan=lifespan)
     app.state.repo = repo

@@ -40,6 +40,7 @@ def test_repository_exposes_transactional_closure_inputs():
         "get_evidence",
         "load_replay_input",
         "get_verified_deployment",
+        "expire_stale_replays",
         "create_or_get_replay",
         "finish_replay",
         "review_replay",
