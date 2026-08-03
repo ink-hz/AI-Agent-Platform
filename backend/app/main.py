@@ -171,7 +171,7 @@ def create_app(
             resolve_review_database_url(config) if start_poller else None
         )
         review_service = (
-            ReviewService(PsycopgReviewRepository(review_database_url))
+            ReviewService(PsycopgReviewRepository(review_database_url), registry=repo)
             if review_database_url
             else UnavailableReviewService()
         )

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Mapping
+import inspect
 from uuid import UUID
 
+from .evidence import GitEvidenceVerifier
 from .repository import PsycopgReviewRepository, ReviewRepositoryError
 
 
@@ -26,10 +27,12 @@ class ReviewService:
         self,
         repository: PsycopgReviewRepository,
         *,
+        registry=None,
         evidence_verifier=None,
         replay_runner=None,
     ) -> None:
         self.repository = repository
+        self.registry = registry
         self.evidence_verifier = evidence_verifier
         self.replay_runner = replay_runner
 
@@ -186,9 +189,57 @@ class ReviewService:
         )
 
     async def verify_evidence(self, evidence_id: UUID, payload, *, actor: str) -> dict:
-        if self.evidence_verifier is None:
-            raise ReviewUnavailable("evidence verifier unavailable")
-        result = await self.evidence_verifier.verify(evidence_id)
+        evidence = await self._run(self.repository.get_evidence, evidence_id)
+        if evidence is None:
+            from .repository import ReviewNotFound
+
+            raise ReviewNotFound("evidence not found")
+        detail = await self._detail(evidence["issue_id"])
+        verifier = self.evidence_verifier
+        if verifier is None:
+            if self.registry is None:
+                raise ReviewUnavailable("evidence verifier unavailable")
+            agent = self.registry.get_agent_by_flywheel_id(
+                detail["issue"]["agent_id"]
+            )
+            config = agent.review_evidence if agent is not None else None
+            if config is None:
+                raise ReviewUnavailable("evidence verifier unavailable")
+            verifier = GitEvidenceVerifier(
+                config.repository_path,
+                config.release_manifest_dir,
+            )
+        if evidence["evidence_type"] == "merge":
+            method = verifier.verify_merge
+            arguments = (evidence["commit_sha"],)
+            keyword_arguments = {}
+        elif evidence["evidence_type"] == "deployment":
+            merges = [
+                row
+                for row in detail["evidence"]
+                if row["evidence_type"] == "merge"
+                and row["verification_status"] == "verified"
+            ]
+            if not merges:
+                from .repository import InvalidReviewMutation
+
+                raise InvalidReviewMutation("verified merge evidence required")
+            merge_sha = merges[-1]["commit_sha"]
+            method = verifier.verify_deployment
+            arguments = (evidence["release_manifest_ref"],)
+            keyword_arguments = {"merge_sha": merge_sha}
+        else:
+            from .repository import InvalidReviewMutation
+
+            raise InvalidReviewMutation("evidence type has no machine verifier")
+        if inspect.iscoroutinefunction(method):
+            result = await method(*arguments, **keyword_arguments)
+        else:
+            result = await asyncio.to_thread(
+                method,
+                *arguments,
+                **keyword_arguments,
+            )
         row = await self._run(
             self.repository.record_evidence_verification,
             evidence_id,

@@ -78,6 +78,21 @@ def test_status_cannot_be_written(client):
     assert response.status_code == 422
 
 
+def test_machine_verification_result_cannot_be_supplied_by_client(client):
+    response = client.post(
+        f"/api/review/issues/{ISSUE_ID}/evidence",
+        json={
+            "evidence_type": "merge",
+            "reference": "merge commit",
+            "commit_sha": "a" * 40,
+            "verification_status": "verified",
+        },
+        headers={"X-Review-Actor": "codex"},
+    )
+
+    assert response.status_code == 422
+
+
 def test_api_has_no_close_operation(app):
     paths = {route.path for route in app.routes if hasattr(route, "path")}
 

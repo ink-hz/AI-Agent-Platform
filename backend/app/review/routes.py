@@ -68,7 +68,7 @@ class FixReady(StrictModel):
 
 
 class AddEvidence(StrictModel):
-    evidence_type: Literal["merge", "deployment", "test", "document"]
+    evidence_type: Literal["commit", "pull_request", "merge", "deployment"]
     repository: str = ""
     reference: str = Field(min_length=1)
     url: str = ""

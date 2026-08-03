@@ -427,6 +427,20 @@ class PsycopgReviewRepository:
         except Exception as error:
             raise ReviewRepositoryError("verify evidence failed") from error
 
+    def get_evidence(self, evidence_id: UUID) -> dict | None:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    """
+                    select * from platform_review.feedback_fix_evidence
+                    where id=%s
+                    """,
+                    (evidence_id,),
+                ).fetchone()
+            return dict(row) if row is not None else None
+        except Exception as error:
+            raise ReviewRepositoryError("get evidence failed") from error
+
     def create_or_get_replay(
         self,
         issue_link_id: UUID,
