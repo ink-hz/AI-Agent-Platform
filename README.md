@@ -9,6 +9,7 @@
 - 默认总览展示 9 个 Business Agents；Agents 目录另列 Feishu Default 与 Test 两个 System Agents。
 - Overview 的 Daily Brief 汇总当前待处理事项、过去 24 小时用量和最多 5 条最新变化；评估不完整或本地刷新失败时不会给出错误的健康结论。
 - `/activity` 按日期查看 Operations 历史，支持 Agent、事件类型、严重度和起止时间筛选；未显式选择 Agent 时只返回 Business Agent 事件。
+- `/review` 提供反馈修复闭环：按回答去重纳管负反馈，展示工程证据、真实复跑答案与审计历史，状态只能由硬门自动计算。
 - `Sessions` 是统一的会话数据入口，支持按 Agent、数据源和问答内容筛选；进入 Session Replay 后返回会恢复原筛选条件和滚动位置。
 - 本机 MetaBot 业务数据直接读取；FAE 与 ADMIN 业务数据每天只读同步一次。
 - 统一查看 Session、Question、Answer、Evidence、Feedback、Review 和改进候选。
@@ -106,6 +107,7 @@ Review API 只接受 `PLATFORM_REVIEW_DATABASE_URL` 或 Keychain service
 - 集群快照：`http://127.0.0.1:8000/api/cluster/status`
 - Agent 目录：`http://127.0.0.1:8000/agents`
 - Sessions：`http://127.0.0.1:8000/sessions`
+- 反馈修复闭环：`http://127.0.0.1:8000/review`
 - 旧 `/flywheel` 书签会重定向到 Sessions；PostgreSQL Flywheel 采集和 API 继续运行。
 
 LaunchAgent 将 Operations 派生状态固定写入：
@@ -157,7 +159,11 @@ launchctl print gui/$(id -u)/com.orbbec.ai-agent-platform-sync
 /Users/neo/Library/Logs/OrbbecAI-Agent-Platform-Sync.stderr.log
 ```
 
-同步只通过 SSH 执行只读导出，再原子写入本机隔离镜像。失败时 `/api/sync/status` 会标记 failed，页面继续展示上一份成功快照。
+同步只通过 SSH 执行只读导出，再原子写入本机隔离镜像。每个源镜像成功提交后，
+同步器使用独立 review writer 幂等纳管新增负反馈回答；输出分别包含
+`source_sync` 与 `review_backfill`。闭环写库失败不会回滚或伪造源同步结果，但命令
+会以非零退出并报告 `review_backfill_failed`，便于运维重试。源同步失败时不会运行
+review backfill。失败时 `/api/sync/status` 会保留上一份成功快照。
 
 Langfuse 保持独立访问，不嵌入 Platform：
 
@@ -203,6 +209,7 @@ Operations 初始化、SQLite 迁移、数据源或轮询失败均隔离在该�
 - `GET /api/turns/{turn_key}/trace`: 脱敏 Trace 详情或明确的 unavailable 状态。
 - `GET /api/flywheel/overview` / `GET /api/flywheel/items`: Feedback、Review 和改进队列。
 - `GET /api/sync/status`: FAE/ADMIN 最近同步状态。
+- `GET /api/review/overview`、`/inbox`、`/issues`: 闭环总览、待纳管回答和证据计算事项；所有写入要求 `X-Review-Actor`。
 
 ## 测试
 

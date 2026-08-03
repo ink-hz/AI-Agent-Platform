@@ -8,6 +8,9 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
+from app.review.backfill import backfill_negative_feedback
+from app.review.models import BackfillReport
+
 from .export import ExportBundle
 from .identity_matcher import normalize_display_name
 
@@ -27,11 +30,25 @@ class NormalizedRow:
 
 @dataclass(frozen=True)
 class SyncResult:
+    run_id: str
     source_kind: str
     status: str
     source_counts: dict[str, int]
     applied_counts: dict[str, int]
     validation: dict[str, int]
+
+
+@dataclass(frozen=True)
+class CoordinatedSyncResult:
+    source_sync: SyncResult
+    review_backfill: BackfillReport
+
+
+class ReviewBackfillError(RuntimeError):
+    def __init__(self, source_sync: SyncResult) -> None:
+        self.source_sync = source_sync
+        self.reason = "review_backfill_failed"
+        super().__init__(self.reason)
 
 
 FAE_COLUMNS: dict[str, tuple[str, ...]] = {
@@ -340,9 +357,33 @@ def import_bundle(
                     )
             raise
     return SyncResult(
+        run_id=str(run_id),
         source_kind=bundle.source_kind,
         status="succeeded",
         source_counts=bundle.source_counts,
         applied_counts=applied,
         validation=validation,
+    )
+
+
+def import_bundle_with_review(
+    database_url: str,
+    bundle: ExportBundle,
+    *,
+    review_repository,
+    actor: str,
+    now: datetime | None = None,
+) -> CoordinatedSyncResult:
+    """Commit the source mirror first, then independently backfill review state."""
+    source_sync = import_bundle(database_url, bundle, now=now)
+    try:
+        review_backfill = backfill_negative_feedback(
+            review_repository,
+            actor=actor,
+        )
+    except Exception as error:
+        raise ReviewBackfillError(source_sync) from error
+    return CoordinatedSyncResult(
+        source_sync=source_sync,
+        review_backfill=review_backfill,
     )

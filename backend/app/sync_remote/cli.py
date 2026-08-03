@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
+import json
 import subprocess
 import sys
 
 from app.config import load_config
+from app.review.database import resolve_review_database_url
+from app.review.repository import PsycopgReviewRepository
 
 from .config import default_sources
 from .export import ExportError, export_source
-from .importer import import_bundle
+from .importer import ReviewBackfillError, import_bundle, import_bundle_with_review
 
 
 def _keychain_value(account: str, service: str) -> str:
@@ -40,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     sources = default_sources(config.remote_ssh_host, config.remote_ssh_key_path)
     selected = tuple(sources) if args.source == "all" else (args.source,)
     database_url: str | None = None
+    review_database_url: str | None = None
     if not args.export_only:
         try:
             database_url = _keychain_value(
@@ -49,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         except RuntimeError as error:
             print(str(error), file=sys.stderr)
             return 1
+        review_database_url = resolve_review_database_url(config)
 
     failed = False
     for kind in selected:
@@ -58,8 +64,48 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{kind}: exported {bundle.source_counts}")
                 continue
             assert database_url is not None
-            result = import_bundle(database_url, bundle)
-            print(f"{kind}: {result.status} {result.applied_counts}")
+            if review_database_url:
+                coordinated = import_bundle_with_review(
+                    database_url,
+                    bundle,
+                    review_repository=PsycopgReviewRepository(review_database_url),
+                    actor="codex",
+                )
+                print(json.dumps(
+                    {"source_kind": kind, "source_sync": asdict(coordinated.source_sync)},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ))
+                print(json.dumps(
+                    {"source_kind": kind, "review_backfill": {"status": "succeeded", **asdict(coordinated.review_backfill)}},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ))
+            else:
+                result = import_bundle(database_url, bundle)
+                print(json.dumps(
+                    {"source_kind": kind, "source_sync": asdict(result)},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ))
+                print(json.dumps(
+                    {"source_kind": kind, "review_backfill": {"status": "failed", "reason": "review_database_unavailable"}},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ), file=sys.stderr)
+                failed = True
+        except ReviewBackfillError as error:
+            failed = True
+            print(json.dumps(
+                {"source_kind": kind, "source_sync": asdict(error.source_sync)},
+                ensure_ascii=False,
+                sort_keys=True,
+            ))
+            print(json.dumps(
+                {"source_kind": kind, "review_backfill": {"status": "failed", "reason": error.reason}},
+                ensure_ascii=False,
+                sort_keys=True,
+            ), file=sys.stderr)
         except (ExportError, Exception) as error:  # sanitized below
             failed = True
             category = (
