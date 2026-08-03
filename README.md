@@ -99,6 +99,16 @@ Review API 只接受 `PLATFORM_REVIEW_DATABASE_URL` 或 Keychain service
 可以追加和更新闭环记录但不能删除审计事件，也不能修改 FAE/ADMIN 源镜像；
 `platform_sync_writer` 没有 review schema 写权限。
 
+FAE dev replay 的 API token 通过 registry 中的
+`env:AI_FAE_DEV_REPLAY_TOKEN` 引用，值不得写入 registry、plist、飞轮或前端。
+重载 LaunchAgent 前，由当前登录用户把安全存储中的值注入用户 launchd 环境；
+变量缺失时 replay 会以 `unsafe_replay_target` 显式阻断：
+
+```bash
+launchctl setenv AI_FAE_DEV_REPLAY_TOKEN "$(security find-generic-password \
+  -s ai-fae-dev-api -a neo -w)"
+```
+
 安装后，FastAPI 同源提供仪表盘与 API：
 
 - 仪表盘：`http://127.0.0.1:8000/`
