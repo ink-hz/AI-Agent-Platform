@@ -161,3 +161,13 @@ HTTP client 已设置 `trust_env=False`，确保 dev 目标和 Authorization 不
 文件。凭据值不进入仓库、plist、飞轮、日志或页面；文件缺失或权限不合格时相关能力
 fail-closed，不会使用 owner DSN 或静默降级。迁移设计与验收标准见
 `docs/superpowers/specs/2026-08-03-local-secret-files-design.md`。
+
+## 本机凭据迁移验收（2026-08-03）
+
+- Platform 合并提交：`e6ad3b10c1c434fd79a1171baa8b3469ecf2d4b9`
+- 四个凭据已迁移到仓库外的当前用户私有目录；目录权限 `0700`，四个普通文件权限均为 `0600`、owner 均为 `neo`，写入后与迁移源逐项一致。
+- 四个用户 launchd 临时环境变量均已清除；四个旧 macOS 凭据条目均已精确删除并确认不存在。
+- 无临时环境变量、无旧条目条件下两次重启 Platform 成功；最终 PID `83088`、LaunchAgent runs `21`，`/api/health`、`/review`、`/api/review/overview` 和 FAE Sessions API 均返回 HTTP 200。
+- 同步 LaunchAgent 在同一条件下完成第 `19` 次执行，last exit code `0`。FAE run `f42a2d30-0fd6-49e1-b056-8c86c4d4103f`、Admin run `aae0637c-8f44-46ab-9acf-a84eab4e6691` 均为 `succeeded`；两侧 review backfill 均为 `succeeded`，`linked_feedback_keys=53`。
+- Replay token 已通过 registry 的 `file:` 引用直接解析，公共 Agent API 未暴露引用或 token；该验收未发起任何模型请求，也未向 FAE production 运行 eval/replay。
+- Keychain 退役批次在当前 `master` 全量后端回归：`376 passed`。
