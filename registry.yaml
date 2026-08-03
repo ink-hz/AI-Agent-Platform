@@ -8,11 +8,20 @@ agents:
     owner: "<负责人>"
     env: "prod"
     status: "active"
-    entry_url: "http://<fae-host>/app/"
+    entry_url: "http://47.106.112.69/app/"
     health:
-      url: "http://<fae-host>/health"
+      url: "http://47.106.112.69/health"
       type: "fae"
-    api_base: "http://<fae-host>"
+    api_base: "http://47.106.112.69"
+    flywheel_agent_id: "ai-fae-agent"
+    replay_targets:
+      - environment: "dev"
+        api_base: "http://127.0.0.1:18080"
+        health_url: "http://127.0.0.1:18080/health"
+        credential_ref: "keychain:ai-fae-dev-api/neo"
+    review_evidence:
+      repository_path: "/Users/neo/Developer/work/AI-FAE-Agent"
+      release_manifest_dir: "/Users/neo/Developer/work/AI-FAE-Agent/dist/release/manifests"
     version: ""
     tags: ["pg-flywheel", "review-center"]
 

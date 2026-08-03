@@ -20,6 +20,7 @@ describe("Platform router", () => {
     expect(parseRoute("/sessions")).toEqual({ name: "sessions" });
     expect(parseRoute("/sessions/fae%3Aabc")).toEqual({ name: "session", sessionKey: "fae:abc" });
     expect(parseRoute("/flywheel")).toEqual({ name: "flywheel" });
+    expect(parseRoute("/review")).toEqual({ name: "review" });
     expect(parseRoute("/unknown")).toEqual({ name: "not-found" });
   });
 
@@ -27,6 +28,7 @@ describe("Platform router", () => {
     expect(routePath({ name: "session", sessionKey: "fae:a/b" })).toBe("/sessions/fae%3Aa%2Fb");
     expect(routePath({ name: "agent", agentId: "ai-fae-agent" })).toBe("/agents/ai-fae-agent");
     expect(routePath({ name: "agent-runtime", agentId: "fae/a" })).toBe("/agents/fae%2Fa/runtime");
+    expect(routePath({ name: "review" })).toBe("/review");
   });
 
   it("keeps detail pages in their parent navigation section", () => {
@@ -39,6 +41,10 @@ describe("Platform router", () => {
     expect(parseRoute("/activity")).toEqual({ name: "activity" });
     expect(routePath({ name: "activity" })).toBe("/activity");
     expect(routeSection({ name: "activity" })).toBe("activity");
+  });
+
+  it("routes Review as a primary navigation section", () => {
+    expect(routeSection({ name: "review" })).toBe("review");
   });
 
   it("treats search changes as navigation", () => {

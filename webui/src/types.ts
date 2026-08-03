@@ -358,3 +358,149 @@ export interface SyncStatus {
   error_summary: string | null;
   freshness: Freshness;
 }
+
+export type IssueStatus =
+  | "pending_triage"
+  | "fixing"
+  | "awaiting_merge"
+  | "awaiting_deploy"
+  | "awaiting_replay"
+  | "awaiting_review"
+  | "closed"
+  | "duplicate"
+  | "not_actionable"
+  | "wont_fix";
+
+export interface IssueProgress {
+  issue_id: string;
+  status: IssueStatus;
+  missing_gates: string[];
+  replay_passed_turns: number;
+  replay_required_turns: number;
+  reopened: boolean;
+}
+
+export interface ReviewOverview {
+  feedback_rows: number;
+  negative_rows: number;
+  negative_turns: number;
+  positive_rows: number;
+  issue_total: number;
+  statuses: Partial<Record<IssueStatus, number>>;
+  dispositions: Record<string, number>;
+}
+
+export interface ReviewInboxItem {
+  agent_id: string;
+  turn_key: string;
+  question: string;
+  answer: string;
+  feedback_keys: string[];
+  first_feedback_at: string;
+}
+
+export interface FeedbackIssueSummary {
+  id: string;
+  agent_id: string;
+  origin_turn_key: string | null;
+  title: string;
+  priority: "P0" | "P1" | "P2" | "P3";
+  failure_layer: string | null;
+  secondary_layers: string[];
+  root_cause: string;
+  impact_scope: string;
+  owner: string | null;
+  disposition: "actionable" | "duplicate" | "not_actionable" | "wont_fix";
+  row_version: number;
+  created_at?: string;
+  updated_at?: string;
+  progress: IssueProgress;
+}
+
+export interface IssueLink {
+  id: string;
+  issue_id?: string;
+  active: boolean;
+  link_role: "primary" | "secondary";
+  agent_id: string;
+  source_turn_key: string;
+  source_feedback_keys: string[];
+  source_question: string | null;
+  source_answer: string | null;
+  source_turn_index?: number | null;
+  source_session_key?: string | null;
+  source_created_at?: string | null;
+  source_details?: Record<string, unknown> | null;
+  source_sources?: Record<string, unknown>[] | null;
+  source_trace_key?: string | null;
+  source_outcome?: string | null;
+  source_fallback_used?: boolean | null;
+  source_context?: { turn_index: number; question: string; answer: string }[] | null;
+}
+
+export interface FixEvidence {
+  id: string;
+  evidence_type: "commit" | "pull_request" | "merge" | "deployment";
+  repository: string;
+  reference: string;
+  url: string;
+  version: string;
+  commit_sha: string;
+  release_manifest_ref: string;
+  environment: string;
+  verification_status: "pending" | "verified" | "rejected" | "revoked";
+  verification_details: Record<string, unknown>;
+  observed_at: string;
+  observed_by: string;
+}
+
+export interface ReplayRun {
+  id: string;
+  issue_link_id: string;
+  attempt_no: number;
+  expected_version?: string;
+  actual_version: string;
+  expected_git_sha?: string;
+  actual_git_sha: string;
+  configured_model: string;
+  actual_model: string;
+  answer: string;
+  sources: Record<string, unknown>[];
+  done?: Record<string, unknown>;
+  trace_id: string;
+  duration_ms?: number | null;
+  execution_status: "running" | "succeeded" | "failed" | "blocked";
+  runtime_gate: "pending" | "passed" | "failed";
+  runtime_failure_reason: string;
+  semantic_verdict: "pending" | "passed" | "failed";
+  review_method: "codex" | "human_fae" | null;
+  reviewer: string | null;
+  review_reason: string;
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface IssueEvent {
+  id?: string;
+  event_type: string;
+  actor: string;
+  reason: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface FeedbackIssueDetail {
+  issue: Omit<FeedbackIssueSummary, "progress">;
+  links: IssueLink[];
+  evidence: FixEvidence[];
+  replays: ReplayRun[];
+  events: IssueEvent[];
+  progress: IssueProgress;
+}
+
+export interface ReplayMatrixRow {
+  link: IssueLink;
+  attempts: ReplayRun[];
+  selected: ReplayRun | null;
+}

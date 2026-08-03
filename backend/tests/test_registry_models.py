@@ -1,3 +1,5 @@
+import json
+
 from app.registry.models import AgentEntry, Registry
 
 
@@ -38,3 +40,29 @@ def test_registry_parses_agent_list():
     registry = Registry.model_validate({"version": 1, "agents": [_entry_kwargs()]})
     assert len(registry.agents) == 1
     assert registry.agents[0].id == "fae"
+
+
+def test_public_dict_never_exposes_replay_credentials():
+    entry = AgentEntry(
+        **_entry_kwargs(
+            flywheel_agent_id="ai-fae-agent",
+            replay_targets=[
+                {
+                    "environment": "dev",
+                    "api_base": "http://127.0.0.1:18000",
+                    "health_url": "http://127.0.0.1:18000/health",
+                    "credential_ref": "keychain:ai-fae-dev-api/neo",
+                }
+            ],
+            review_evidence={
+                "repository_path": "/work/AI-FAE-Agent",
+                "release_manifest_dir": "/work/AI-FAE-Agent/dist/release/manifests",
+            },
+        )
+    )
+
+    public = entry.public_dict()
+
+    assert "replay_targets" not in public
+    assert "review_evidence" not in public
+    assert "credential_ref" not in json.dumps(public)

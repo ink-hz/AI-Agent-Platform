@@ -13,6 +13,7 @@ export function routeDocumentTitle(route: Route): string {
     case "agent-runtime": return `运行详情 · ${PLATFORM_TITLE}`;
     case "sessions": return `Session · ${PLATFORM_TITLE}`;
     case "session": return `Session 回放 · ${PLATFORM_TITLE}`;
+    case "review": return `复审闭环 · ${PLATFORM_TITLE}`;
     case "activity": return `运行记录 · ${PLATFORM_TITLE}`;
     default: return PLATFORM_TITLE;
   }

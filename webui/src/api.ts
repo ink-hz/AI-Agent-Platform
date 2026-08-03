@@ -2,13 +2,51 @@ import type {
   AgentRuntimeView, AgentSummary, ClusterSnapshot, FleetOverview, FlywheelOverview,
   ImprovementItem, Page, SessionDetail, SessionSummary, SyncStatus, TraceDetail,
   EventSeverity, OperationalEvent, OperationsBrief,
+  FeedbackIssueDetail, FeedbackIssueSummary, ReviewInboxItem, ReviewOverview,
+  ReplayRun,
 } from "./types";
 
 
-async function read<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { signal });
-  if (!response.ok) throw new Error(`${path} ${response.status}`);
+export class ReviewApiError extends Error {
+  constructor(public status: number, public detail: unknown) {
+    super(`review API ${status}`);
+  }
+}
+
+
+async function readJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, init);
+  if (!response.ok) {
+    let detail: unknown = null;
+    try { detail = await response.json(); } catch { detail = null; }
+    throw new ReviewApiError(response.status, detail);
+  }
   return response.json();
+}
+
+
+async function read<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return readJson<T>(path, { signal });
+}
+
+
+async function writeReview<T>(
+  path: string,
+  actor: string,
+  init: RequestInit,
+): Promise<T> {
+  const identity = actor.trim();
+  if (!identity || identity === "web-reviewer" || identity === "anonymous") {
+    throw new Error("需要可追责的复审身份");
+  }
+  return readJson<T>(path, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Review-Actor": identity,
+      ...init.headers,
+    },
+  });
 }
 
 
@@ -89,3 +127,68 @@ export const fetchFlywheelItems = (signal?: AbortSignal) =>
   read<Page<ImprovementItem>>("/api/flywheel/items?limit=100", signal);
 export const fetchSyncStatus = (signal?: AbortSignal) =>
   read<SyncStatus[]>("/api/sync/status", signal);
+
+export const fetchReviewOverview = (signal?: AbortSignal) =>
+  read<ReviewOverview>("/api/review/overview", signal);
+export const fetchReviewInbox = (signal?: AbortSignal) =>
+  read<ReviewInboxItem[]>("/api/review/inbox?limit=200", signal);
+export const fetchReviewIssues = (signal?: AbortSignal) =>
+  read<FeedbackIssueSummary[]>("/api/review/issues?limit=200", signal);
+export const fetchReviewIssue = (id: string, signal?: AbortSignal) =>
+  read<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(id)}`, signal);
+
+export const createReviewIssue = (
+  payload: Record<string, unknown>, actor: string,
+) => writeReview<FeedbackIssueDetail>("/api/review/issues", actor, {
+  method: "POST", body: JSON.stringify(payload),
+});
+export const updateReviewIssue = (
+  id: string, payload: Record<string, unknown>, actor: string,
+) => writeReview<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(id)}`, actor, {
+  method: "PATCH", body: JSON.stringify(payload),
+});
+export const linkReviewTurn = (
+  id: string, payload: Record<string, unknown>, actor: string,
+) => writeReview<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(id)}/links`, actor, {
+  method: "POST", body: JSON.stringify(payload),
+});
+export const moveReviewLink = (
+  issueId: string, linkId: string, payload: Record<string, unknown>, actor: string,
+) => writeReview<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(issueId)}/links/${encodeURIComponent(linkId)}/move`, actor, {
+  method: "POST", body: JSON.stringify(payload),
+});
+export const markFixReady = (
+  id: string, payload: Record<string, unknown>, actor: string,
+) => writeReview<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(id)}/fix-ready`, actor, {
+  method: "POST", body: JSON.stringify(payload),
+});
+export const mergeReviewIssue = (
+  id: string, payload: Record<string, unknown>, actor: string,
+) => writeReview<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(id)}/merge`, actor, {
+  method: "POST", body: JSON.stringify(payload),
+});
+export const addFixEvidence = (
+  id: string, payload: Record<string, unknown>, actor: string,
+) => writeReview<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(id)}/evidence`, actor, {
+  method: "POST", body: JSON.stringify(payload),
+});
+export const verifyFixEvidence = (
+  evidenceId: string, actor: string,
+) => writeReview<FeedbackIssueDetail>(`/api/review/evidence/${encodeURIComponent(evidenceId)}/verify`, actor, {
+  method: "POST", body: JSON.stringify({ reason: "machine verification requested" }),
+});
+export const startReplay = (
+  issueId: string, payload: Record<string, unknown>, actor: string,
+) => writeReview<ReplayRun>(`/api/review/issues/${encodeURIComponent(issueId)}/replays`, actor, {
+  method: "POST", body: JSON.stringify(payload),
+});
+export const reviewReplay = (
+  replayId: string, payload: Record<string, unknown>, actor: string,
+) => writeReview<FeedbackIssueDetail>(`/api/review/replays/${encodeURIComponent(replayId)}/semantic-review`, actor, {
+  method: "POST", body: JSON.stringify(payload),
+});
+export const setIssueDisposition = (
+  issueId: string, payload: Record<string, unknown>, actor: string,
+) => writeReview<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(issueId)}/disposition`, actor, {
+  method: "POST", body: JSON.stringify(payload),
+});

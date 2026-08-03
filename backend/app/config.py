@@ -16,6 +16,11 @@ class Config:
     flywheel_database_url: str | None
     flywheel_keychain_service: str
     flywheel_keychain_account: str
+    review_enabled: bool
+    review_database_url: str | None
+    review_keychain_service: str
+    review_keychain_account: str
+    review_request_timeout_seconds: float
     usage_cache_seconds: float
     active_window_minutes: int
     sync_keychain_service: str
@@ -57,6 +62,23 @@ def load_config() -> Config:
         flywheel_keychain_account=os.getenv(
             "PLATFORM_FLYWHEEL_KEYCHAIN_ACCOUNT",
             "neo",
+        ),
+        review_enabled=os.getenv("PLATFORM_REVIEW_ENABLED", "1") not in {
+            "0",
+            "false",
+            "False",
+        },
+        review_database_url=os.getenv("PLATFORM_REVIEW_DATABASE_URL"),
+        review_keychain_service=os.getenv(
+            "PLATFORM_REVIEW_KEYCHAIN_SERVICE",
+            "platform-review-writer-database-url",
+        ),
+        review_keychain_account=os.getenv(
+            "PLATFORM_REVIEW_KEYCHAIN_ACCOUNT",
+            "neo",
+        ),
+        review_request_timeout_seconds=float(
+            os.getenv("PLATFORM_REVIEW_REQUEST_TIMEOUT", "1200")
         ),
         usage_cache_seconds=float(os.getenv("PLATFORM_USAGE_CACHE_SECONDS", "60")),
         active_window_minutes=int(os.getenv("PLATFORM_ACTIVE_WINDOW_MINUTES", "15")),

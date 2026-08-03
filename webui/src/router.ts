@@ -9,6 +9,7 @@ export type Route =
   | { name: "sessions" }
   | { name: "session"; sessionKey: string }
   | { name: "flywheel" }
+  | { name: "review" }
   | { name: "activity" }
   | { name: "not-found" };
 
@@ -33,6 +34,7 @@ export function parseRoute(pathname: string): Route {
   if (clean === "/agents") return { name: "agents" };
   if (clean === "/sessions") return { name: "sessions" };
   if (clean === "/flywheel") return { name: "flywheel" };
+  if (clean === "/review") return { name: "review" };
   if (clean === "/activity") return { name: "activity" };
   const agentRuntime = /^\/agents\/([^/]+)\/runtime$/.exec(clean);
   if (agentRuntime) {
@@ -62,13 +64,14 @@ export function routePath(route: Route): string {
     case "sessions": return "/sessions";
     case "session": return `/sessions/${encodeURIComponent(route.sessionKey)}`;
     case "flywheel": return "/flywheel";
+    case "review": return "/review";
     case "activity": return "/activity";
     default: return "/404";
   }
 }
 
 
-export function routeSection(route: Route): "overview" | "agents" | "sessions" | "activity" | null {
+export function routeSection(route: Route): "overview" | "agents" | "sessions" | "review" | "activity" | null {
   if (route.name === "agent" || route.name === "agent-runtime") return "agents";
   if (route.name === "session") return "sessions";
   if (route.name === "flywheel" || route.name === "not-found") return null;

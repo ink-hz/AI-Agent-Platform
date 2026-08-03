@@ -643,7 +643,7 @@ describe("ActivityPage", () => {
 
     expect(container.querySelector(".topbar")).not.toBeNull();
     expect(container.querySelector(".readonly-tag")).toBeNull();
-    expect(container.querySelector(".product-nav")?.textContent).toBe("总览AgentSession运行记录");
+    expect(container.querySelector(".product-nav")?.textContent).toBe("总览AgentSession复审闭环运行记录");
     expect(container.querySelector("[role=alert]")?.textContent).toContain("运行记录暂不可用");
     expect(container.querySelector(".product-nav [aria-current=page]")?.textContent).toBe("运行记录");
   });
