@@ -314,33 +314,30 @@ def test_health_identity_failure_records_only_sanitized_diagnostics(monkeypatch)
     assert "secret" not in str(run.done)
 
 
-def test_credential_resolver_uses_exact_keychain_reference():
-    runner = Mock(return_value=SimpleNamespace(returncode=0, stdout="token\n"))
+def test_credential_resolver_reads_private_file_reference(tmp_path):
+    path = tmp_path / "replay-token"
+    path.write_text("token\n", encoding="utf-8")
+    path.chmod(0o600)
 
-    credential = CredentialResolver(runner=runner).resolve(
-        "keychain:ai-fae-dev-api/neo"
-    )
+    credential = CredentialResolver().resolve(f"file:{path}")
 
     assert credential.headers() == {"Authorization": "Bearer token"}
-    assert runner.call_args.args[0] == [
-        "/usr/bin/security",
-        "find-generic-password",
-        "-a",
-        "neo",
-        "-s",
-        "ai-fae-dev-api",
-        "-w",
-    ]
 
 
-def test_credential_keychain_timeout_is_unavailable():
-    def timed_out(*_args, **_kwargs):
-        raise __import__("subprocess").TimeoutExpired("security", 5)
+def test_credential_resolver_rejects_insecure_file(tmp_path):
+    path = tmp_path / "replay-token"
+    path.write_text("token\n", encoding="utf-8")
+    path.chmod(0o644)
 
     with pytest.raises(CredentialUnavailable):
-        CredentialResolver(runner=timed_out).resolve(
-            "keychain:ai-fae-dev-api/neo"
-        )
+        CredentialResolver().resolve(f"file:{path}")
+
+
+def test_credential_resolver_rejects_retired_keychain_reference():
+    retired_reference = "key" + "chain:ai-fae-dev-api/neo"
+
+    with pytest.raises(CredentialUnavailable, match="unsupported"):
+        CredentialResolver().resolve(retired_reference)
 
 
 def test_parse_sse_collects_named_json_events():

@@ -1,5 +1,15 @@
 import os
 from dataclasses import dataclass
+from pathlib import Path
+
+
+DEFAULT_SECRETS_DIR = (
+    Path.home()
+    / "Library"
+    / "Application Support"
+    / "OrbbecAI-Agent-Platform"
+    / "secrets"
+)
 
 
 @dataclass(frozen=True)
@@ -14,18 +24,15 @@ class Config:
     port: int
     flywheel_enabled: bool
     flywheel_database_url: str | None
-    flywheel_keychain_service: str
-    flywheel_keychain_account: str
+    flywheel_database_url_file: str
     review_enabled: bool
     review_database_url: str | None
-    review_keychain_service: str
-    review_keychain_account: str
+    review_database_url_file: str
     review_request_timeout_seconds: float
     usage_cache_seconds: float
     active_window_minutes: int
-    sync_keychain_service: str
-    sync_keychain_account: str
     sync_database_url: str | None
+    sync_database_url_file: str
     remote_ssh_host: str
     remote_ssh_key_path: str
     remote_poll_interval_seconds: float
@@ -56,13 +63,9 @@ def load_config() -> Config:
             "False",
         },
         flywheel_database_url=os.getenv("PLATFORM_FLYWHEEL_DATABASE_URL"),
-        flywheel_keychain_service=os.getenv(
-            "PLATFORM_FLYWHEEL_KEYCHAIN_SERVICE",
-            "flywheel-analyst-database-url",
-        ),
-        flywheel_keychain_account=os.getenv(
-            "PLATFORM_FLYWHEEL_KEYCHAIN_ACCOUNT",
-            "neo",
+        flywheel_database_url_file=os.getenv(
+            "PLATFORM_FLYWHEEL_DATABASE_URL_FILE",
+            str(DEFAULT_SECRETS_DIR / "flywheel-analyst-database-url"),
         ),
         review_enabled=os.getenv("PLATFORM_REVIEW_ENABLED", "1") not in {
             "0",
@@ -70,28 +73,20 @@ def load_config() -> Config:
             "False",
         },
         review_database_url=os.getenv("PLATFORM_REVIEW_DATABASE_URL"),
-        review_keychain_service=os.getenv(
-            "PLATFORM_REVIEW_KEYCHAIN_SERVICE",
-            "platform-review-writer-database-url",
-        ),
-        review_keychain_account=os.getenv(
-            "PLATFORM_REVIEW_KEYCHAIN_ACCOUNT",
-            "neo",
+        review_database_url_file=os.getenv(
+            "PLATFORM_REVIEW_DATABASE_URL_FILE",
+            str(DEFAULT_SECRETS_DIR / "platform-review-writer-database-url"),
         ),
         review_request_timeout_seconds=float(
             os.getenv("PLATFORM_REVIEW_REQUEST_TIMEOUT", "1200")
         ),
         usage_cache_seconds=float(os.getenv("PLATFORM_USAGE_CACHE_SECONDS", "60")),
         active_window_minutes=int(os.getenv("PLATFORM_ACTIVE_WINDOW_MINUTES", "15")),
-        sync_keychain_service=os.getenv(
-            "PLATFORM_SYNC_KEYCHAIN_SERVICE",
-            "platform-sync-database-url",
-        ),
-        sync_keychain_account=os.getenv(
-            "PLATFORM_SYNC_KEYCHAIN_ACCOUNT",
-            "neo",
-        ),
         sync_database_url=os.getenv("PLATFORM_SYNC_DATABASE_URL"),
+        sync_database_url_file=os.getenv(
+            "PLATFORM_SYNC_DATABASE_URL_FILE",
+            str(DEFAULT_SECRETS_DIR / "platform-sync-writer-database-url"),
+        ),
         remote_ssh_host=os.getenv(
             "PLATFORM_REMOTE_SSH_HOST",
             "root@47.106.112.69",

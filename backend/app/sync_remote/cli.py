@@ -3,46 +3,16 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 import json
-import subprocess
 import sys
 
 from app.config import load_config
+from app.local_secrets import SecretFileUnavailable, read_secret_file
 from app.review.database import resolve_review_database_url
 from app.review.repository import PsycopgReviewRepository
 
 from .config import default_sources
 from .export import ExportError, export_source
 from .importer import ReviewBackfillError, import_bundle, import_bundle_with_review
-
-
-def _keychain_value(
-    account: str,
-    service: str,
-    *,
-    runner=subprocess.run,
-) -> str:
-    try:
-        result = runner(
-            [
-                "/usr/bin/security",
-                "find-generic-password",
-                "-a",
-                account,
-                "-s",
-                service,
-                "-w",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
-    except subprocess.TimeoutExpired as error:
-        raise RuntimeError("sync_database_unavailable") from error
-    if result.returncode != 0 or not result.stdout.strip():
-        raise RuntimeError("sync_database_unavailable")
-    return result.stdout.strip()
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Sync remote Agent observability data")
@@ -58,12 +28,9 @@ def main(argv: list[str] | None = None) -> int:
         database_url = config.sync_database_url
         if not database_url:
             try:
-                database_url = _keychain_value(
-                    config.sync_keychain_account,
-                    config.sync_keychain_service,
-                )
-            except RuntimeError as error:
-                print(str(error), file=sys.stderr)
+                database_url = read_secret_file(config.sync_database_url_file)
+            except SecretFileUnavailable:
+                print("sync_database_unavailable", file=sys.stderr)
                 return 1
         review_database_url = resolve_review_database_url(config)
 

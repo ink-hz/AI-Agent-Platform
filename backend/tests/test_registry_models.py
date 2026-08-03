@@ -51,7 +51,7 @@ def test_public_dict_never_exposes_replay_credentials():
                     "environment": "dev",
                     "api_base": "http://127.0.0.1:18000",
                     "health_url": "http://127.0.0.1:18000/health",
-                    "credential_ref": "keychain:ai-fae-dev-api/neo",
+                    "credential_ref": "file:/private/replay-token",
                 }
             ],
             review_evidence={

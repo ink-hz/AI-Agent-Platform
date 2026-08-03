@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import os
-import subprocess
-from collections.abc import Callable
 from dataclasses import dataclass, field
 
-
-Runner = Callable[..., subprocess.CompletedProcess[str]]
+from app.local_secrets import SecretFileUnavailable, read_secret_file
 
 
 class CredentialUnavailable(RuntimeError):
@@ -25,9 +22,6 @@ class Credential:
 
 
 class CredentialResolver:
-    def __init__(self, *, runner: Runner = subprocess.run) -> None:
-        self.runner = runner
-
     def resolve(self, reference: str) -> Credential:
         if reference.startswith("env:"):
             name = reference.removeprefix("env:")
@@ -37,33 +31,12 @@ class CredentialResolver:
             if not value:
                 raise CredentialUnavailable("environment credential unavailable")
             return Credential(value)
-        if reference.startswith("keychain:"):
-            value = reference.removeprefix("keychain:")
-            service, separator, account = value.rpartition("/")
-            if not separator or not service or not account:
-                raise CredentialUnavailable("invalid keychain credential reference")
+        if reference.startswith("file:"):
+            path = reference.removeprefix("file:")
+            if not path:
+                raise CredentialUnavailable("invalid file credential reference")
             try:
-                result = self.runner(
-                    [
-                        "/usr/bin/security",
-                        "find-generic-password",
-                        "-a",
-                        account,
-                        "-s",
-                        service,
-                        "-w",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=5,
-                )
-            except subprocess.TimeoutExpired as error:
-                raise CredentialUnavailable(
-                    "keychain credential unavailable"
-                ) from error
-            token = result.stdout.strip() if result.returncode == 0 else ""
-            if not token:
-                raise CredentialUnavailable("keychain credential unavailable")
-            return Credential(token)
+                return Credential(read_secret_file(path))
+            except SecretFileUnavailable as error:
+                raise CredentialUnavailable("file credential unavailable") from error
         raise CredentialUnavailable("unsupported credential reference")

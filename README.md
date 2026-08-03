@@ -93,27 +93,32 @@ psql '<Platform owner PostgreSQL URL>' -v ON_ERROR_STOP=1 \
   -f backend/migrations/005_feedback_fix_closure.sql
 ```
 
-Review API 只接受 `PLATFORM_REVIEW_DATABASE_URL` 或 Keychain service
+Review API 只接受 `PLATFORM_REVIEW_DATABASE_URL` 或本机私有文件
 `platform-review-writer-database-url` 中的专用 writer DSN；它不会回退到
 `PLATFORM_FLYWHEEL_DATABASE_URL` 的 analyst DSN。`platform_review_writer`
 可以追加和更新闭环记录但不能删除审计事件，也不能修改 FAE/ADMIN 源镜像；
 `platform_sync_writer` 没有 review schema 写权限。
 
-FAE dev replay 的 API token 通过 registry 中的
-`env:AI_FAE_DEV_REPLAY_TOKEN` 引用，值不得写入 registry、plist、飞轮或前端。
-重载 LaunchAgent 前，由当前登录用户把安全存储中的值注入用户 launchd 环境；
-变量缺失时 replay 会以 `unsafe_replay_target` 显式阻断：
+本机运行凭据固定保存在当前用户独占目录，目录权限为 `0700`，四个文件权限为
+`0600`：
 
 ```bash
-launchctl setenv AI_FAE_DEV_REPLAY_TOKEN "$(security find-generic-password \
-  -s ai-fae-dev-api -a neo -w)"
+~/Library/Application Support/OrbbecAI-Agent-Platform/secrets/
+├── flywheel-analyst-database-url
+├── platform-review-writer-database-url
+├── platform-sync-writer-database-url
+└── ai-fae-dev-replay-token
 ```
 
-同理，Platform API 与定时同步分别接受
+文件必须是绝对路径、普通文件、非符号链接、归当前用户所有，且不得向 group/other
+开放权限；不满足任一条件时相关能力显式 fail-closed。FAE dev replay 通过 registry
+中的 `file:` 引用读取 token。凭据值不得写入 registry、plist、飞轮、日志或前端。
+
+Platform API 与定时同步仍分别接受
 `PLATFORM_FLYWHEEL_DATABASE_URL`、`PLATFORM_REVIEW_DATABASE_URL` 和
-`PLATFORM_SYNC_DATABASE_URL` 的进程环境注入；变量只应进入受控进程环境，
-不得写入 plist、仓库、日志或前端。未配置环境变量时才读取各自的 Keychain
-条目，三种数据库角色的既有最小权限边界不变。
+`PLATFORM_SYNC_DATABASE_URL` 作为临时运维覆盖；默认运行直接读取上述私有文件。
+也可用对应的 `*_DATABASE_URL_FILE` 环境变量覆盖文件位置。三种数据库角色的既有
+最小权限边界不变。
 
 安装后，FastAPI 同源提供仪表盘与 API：
 

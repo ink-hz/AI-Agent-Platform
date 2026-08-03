@@ -1,5 +1,4 @@
 import json
-import subprocess
 from types import SimpleNamespace
 
 from app.review.models import BackfillReport
@@ -34,8 +33,7 @@ def prepare(monkeypatch, review_url):
     config = SimpleNamespace(
         remote_ssh_host="host",
         remote_ssh_key_path="key",
-        sync_keychain_account="neo",
-        sync_keychain_service="sync",
+        sync_database_url_file="/private/sync-dsn",
         sync_database_url=None,
     )
     monkeypatch.setattr(cli, "load_config", lambda: config)
@@ -45,7 +43,7 @@ def prepare(monkeypatch, review_url):
         "export_source",
         lambda _source: ExportBundle("fae", {}, (), 0),
     )
-    monkeypatch.setattr(cli, "_keychain_value", lambda *_args: "sync-dsn")
+    monkeypatch.setattr(cli, "read_secret_file", lambda *_args: "sync-dsn")
     monkeypatch.setattr(cli, "resolve_review_database_url", lambda _config: review_url)
 
 
@@ -86,7 +84,7 @@ def test_cli_prefers_environment_sync_writer_dsn(monkeypatch):
     prepare(monkeypatch, "review-dsn")
     config = cli.load_config()
     config.sync_database_url = "env-sync-dsn"
-    monkeypatch.setattr(cli, "_keychain_value", lambda *_args: (_ for _ in ()).throw(AssertionError("keychain must not be read")))
+    monkeypatch.setattr(cli, "read_secret_file", lambda *_args: (_ for _ in ()).throw(AssertionError("secret file must not be read")))
     seen = {}
 
     def import_coordinated(database_url, *_args, **_kwargs):
@@ -99,9 +97,15 @@ def test_cli_prefers_environment_sync_writer_dsn(monkeypatch):
     assert seen["database_url"] == "env-sync-dsn"
 
 
-def test_keychain_timeout_is_reported_as_sync_database_unavailable():
-    def timed_out(*_args, **_kwargs):
-        raise subprocess.TimeoutExpired("security", 5)
+def test_secret_file_failure_is_reported_as_sync_database_unavailable(
+    monkeypatch, capsys
+):
+    prepare(monkeypatch, "review-dsn")
 
-    with __import__("pytest").raises(RuntimeError, match="sync_database_unavailable"):
-        cli._keychain_value("neo", "sync", runner=timed_out)
+    def unavailable(*_args, **_kwargs):
+        raise cli.SecretFileUnavailable("secret file unavailable")
+
+    monkeypatch.setattr(cli, "read_secret_file", unavailable)
+
+    assert cli.main(["--source", "fae"]) == 1
+    assert "sync_database_unavailable" in capsys.readouterr().err
