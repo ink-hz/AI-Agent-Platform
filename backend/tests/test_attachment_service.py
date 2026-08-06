@@ -193,10 +193,63 @@ def test_stream_always_closes_and_audits_without_sensitive_logs(
         assert b"".join(opened.stream) == b"payload"
 
     assert body.closed is True
-    assert repository.audit[0][2] == result
+    assert repository.audit == [
+        (
+            ATTACHMENT_ID,
+            "preview",
+            result,
+            {"request_id": "req-1", "range_requested": False},
+        )
+    ]
     logs = caplog.text
     for sensitive in ("secret-ticket", "private-name.pdf", "sha256/private-object"):
         assert sensitive not in logs
+
+
+@pytest.mark.parametrize(
+    ("range_header", "body_data", "content_length"),
+    [
+        (None, b"short", 7),
+        ("bytes=2-4", b"four", 3),
+    ],
+)
+def test_stream_length_mismatch_fails_closed_and_audits_exactly(
+    caplog, range_header, body_data, content_length
+) -> None:
+    body = FakeBody(body_data)
+    repository = FakeRepository(
+        resolved=resolved(name="private-name.pdf", purpose="download")
+    )
+    service = AttachmentService(
+        repository,
+        FakeStore(body, content_length=content_length),
+        300,
+    )
+    caplog.set_level(logging.INFO)
+    opened = service.open_content(
+        "secret-ticket", range_header, {"request_id": "req-1"}
+    )
+    emitted = []
+
+    with pytest.raises(RuntimeError, match="stream length mismatch"):
+        while True:
+            emitted.append(next(opened.stream))
+
+    assert sum(map(len, emitted)) <= content_length
+    assert body.closed is True
+    assert repository.audit == [
+        (
+            ATTACHMENT_ID,
+            "download",
+            "stream_failed",
+            {
+                "request_id": "req-1",
+                "range_requested": range_header is not None,
+            },
+        )
+    ]
+    for sensitive in ("secret-ticket", "private-name.pdf", "sha256/private-object"):
+        assert sensitive not in caplog.text
 
 
 def test_size_mismatch_fails_before_streaming_and_is_audited() -> None:

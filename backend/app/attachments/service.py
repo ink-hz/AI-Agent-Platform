@@ -154,7 +154,9 @@ class AttachmentService:
             )
 
         return OpenedAttachment(
-            stream=self._stream(body, resolved, trusted_context),
+            stream=self._stream(
+                body, resolved, trusted_context, expected_length
+            ),
             status_code=status_code,
             media_type=resolved.mime_type,
             headers=headers,
@@ -165,15 +167,20 @@ class AttachmentService:
         body,
         resolved: ResolvedAttachment,
         context: dict[str, Any],
+        expected_length: int,
     ) -> Iterator[bytes]:
         result = "stream_failed"
+        emitted = 0
         try:
-            while True:
+            while emitted < expected_length:
                 chunk = body.read(CHUNK_SIZE)
                 if not chunk:
-                    result = "streamed"
-                    break
+                    raise RuntimeError("attachment stream length mismatch")
+                if len(chunk) > expected_length - emitted:
+                    raise RuntimeError("attachment stream length mismatch")
+                emitted += len(chunk)
                 yield chunk
+            result = "streamed"
         finally:
             try:
                 body.close()

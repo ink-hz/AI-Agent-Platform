@@ -2,6 +2,9 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
@@ -9,7 +12,40 @@ from .models import Ticket
 from .service import AttachmentConflict, AttachmentNotFound, AttachmentRangeError
 
 
-router = APIRouter(prefix="/api/attachments", tags=["attachments"])
+PRIVATE_RESPONSE_HEADERS = {
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+}
+
+
+class AttachmentRoute(APIRoute):
+    def get_route_handler(self):
+        route_handler = super().get_route_handler()
+
+        async def secure_route_handler(request: Request):
+            try:
+                response = await route_handler(request)
+            except HTTPException as error:
+                error.headers = {
+                    **(error.headers or {}),
+                    **PRIVATE_RESPONSE_HEADERS,
+                }
+                raise
+            except RequestValidationError as error:
+                response = await request_validation_exception_handler(
+                    request, error
+                )
+            response.headers.update(PRIVATE_RESPONSE_HEADERS)
+            return response
+
+        return secure_route_handler
+
+
+router = APIRouter(
+    prefix="/api/attachments",
+    tags=["attachments"],
+    route_class=AttachmentRoute,
+)
 
 
 class TicketRequest(BaseModel):
@@ -32,7 +68,9 @@ def _raise_safe(error: RuntimeError) -> None:
             detail=str(error),
             headers={"Content-Range": "bytes */*"},
         ) from error
-    raise error
+    raise HTTPException(
+        status_code=500, detail="attachment service unavailable"
+    ) from error
 
 
 @router.post("/{attachment_id}/ticket", response_model=Ticket)
@@ -41,7 +79,7 @@ def issue_ticket(
 ) -> Ticket:
     try:
         return _service(request).issue_ticket(attachment_id, payload.purpose)
-    except (AttachmentNotFound, AttachmentConflict) as error:
+    except RuntimeError as error:
         _raise_safe(error)
 
 
@@ -61,7 +99,7 @@ def content(
     }
     try:
         opened = _service(request).open_content(ticket, range_header, context)
-    except (AttachmentNotFound, AttachmentConflict, AttachmentRangeError) as error:
+    except RuntimeError as error:
         _raise_safe(error)
     return StreamingResponse(
         opened.stream,

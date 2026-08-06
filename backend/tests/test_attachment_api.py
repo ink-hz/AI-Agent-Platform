@@ -51,11 +51,16 @@ class FakeService:
         return self.opened
 
 
-def make_client(service):
+def make_client(service, **kwargs):
     app = FastAPI()
     app.state.attachment_service = service
     app.include_router(router)
-    return TestClient(app)
+    return TestClient(app, **kwargs)
+
+
+def assert_private_attachment_headers(response) -> None:
+    assert response.headers["Cache-Control"] == "private, no-store"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
 def test_ticket_endpoint_has_strict_purpose_and_safe_response() -> None:
@@ -72,9 +77,12 @@ def test_ticket_endpoint_has_strict_purpose_and_safe_response() -> None:
         "expires_at": "2026-08-06T12:00:00Z",
         "content_path": "/api/attachments/content/opaque-value",
     }
-    assert client.post(
+    assert_private_attachment_headers(response)
+    invalid = client.post(
         f"/api/attachments/{ATTACHMENT_ID}/ticket", json={"purpose": "execute"}
-    ).status_code == 422
+    )
+    assert invalid.status_code == 422
+    assert_private_attachment_headers(invalid)
 
 
 def test_content_endpoint_uses_only_path_ticket_and_rejects_storage_coordinates() -> None:
@@ -91,6 +99,7 @@ def test_content_endpoint_uses_only_path_ticket_and_rejects_storage_coordinates(
     assert call[0:3] == ("open", "opaque", "bytes=0-3")
     assert call[3]["request_id"] == "req-1"
     assert "bucket" not in call[3] and "key" not in call[3]
+    assert_private_attachment_headers(response)
 
 
 def test_attachment_errors_map_to_safe_http_statuses() -> None:
@@ -105,6 +114,19 @@ def test_attachment_errors_map_to_safe_http_statuses() -> None:
         response = client.get("/api/attachments/content/opaque")
         assert response.status_code == status
         assert "opaque" not in response.text
+        assert_private_attachment_headers(response)
+
+
+def test_attachment_domain_500_has_private_headers_and_safe_detail() -> None:
+    service = FakeService()
+    service.error = RuntimeError("private storage coordinates")
+    client = make_client(service, raise_server_exceptions=False)
+
+    response = client.get("/api/attachments/content/opaque")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "attachment service unavailable"}
+    assert_private_attachment_headers(response)
 
 
 def test_uvicorn_access_filter_redacts_ticket_in_formatted_output() -> None:
