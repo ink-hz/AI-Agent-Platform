@@ -645,6 +645,23 @@ body {
 .answer-block { background: #f8fafc; }
 .answer-block > p,
 .answer-block .message-markdown p { color: #17263a; }
+.attachment-list { display: grid; gap: 8px; padding: 12px 25px 15px; border-top: 1px solid var(--line-soft); background: #f8fafc; }
+.attachment-list + .message-block { border-top: 1px solid var(--line-soft); }
+.attachment-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.attachment-detail { min-width: 0; }
+.attachment-name { display: block; overflow-wrap: anywhere; color: var(--ink); font-size: 13px; line-height: 1.5; }
+.attachment-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 3px; color: var(--ink-faint); font-size: 11.5px; }
+.attachment-state { display: inline-block; margin-top: 6px; color: var(--ink-soft); font-size: 11.5px; font-weight: 750; }
+.attachment-state-available { color: var(--ok); }
+.attachment-state-failed,
+.attachment-state-source_unavailable { color: var(--down); }
+.attachment-state-pending,
+.attachment-state-expired { color: var(--warn); }
+.attachment-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.attachment-actions button { min-height: 34px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--brand); font: inherit; font-size: 11.5px; font-weight: 780; cursor: pointer; }
+.attachment-actions button:hover { border-color: var(--brand-bright); }
+.attachment-actions button:disabled { cursor: wait; opacity: .6; }
+.attachment-error { display: block; margin-top: 5px; color: var(--down); font-size: 11.5px; }
 .message-markdown { min-width: 0; overflow-wrap: anywhere; }
 .message-markdown > :first-child { margin-top: 0; }
 .message-markdown > :last-child { margin-bottom: 0; }
@@ -795,6 +812,9 @@ body {
   .session-detail-head > dl { grid-template-columns: 1fr 1fr; }
   .message-block { grid-template-columns: 1fr; gap: 8px; padding: 19px; }
   .message-label { align-items: center; flex-direction: row; justify-content: space-between; }
+  .attachment-list { padding: 10px 19px 14px; }
+  .attachment-card { grid-template-columns: 1fr; }
+  .attachment-actions { justify-content: flex-start; }
   .turn-evidence > div { grid-template-columns: 1fr; }
   .trace-summary { grid-template-columns: 1fr 1fr; }
   .agent-data-option { min-width: 178px; flex-basis: 178px; }

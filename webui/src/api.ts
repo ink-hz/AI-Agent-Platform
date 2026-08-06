@@ -119,6 +119,20 @@ export function fetchSessions(query: SessionQuery = {}, signal?: AbortSignal) {
 
 export const fetchSession = (key: string, signal?: AbortSignal) =>
   read<SessionDetail>(`/api/sessions/${encodeURIComponent(key)}`, signal);
+export interface AttachmentTicket {
+  ticket: string;
+  expires_at: string;
+  content_path: string;
+}
+
+export const createAttachmentTicket = (
+  attachmentId: string,
+  purpose: "preview" | "download",
+) => readJson<AttachmentTicket>(`/api/attachments/${encodeURIComponent(attachmentId)}/ticket`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ purpose }),
+});
 export const fetchTrace = (turnKey: string, signal?: AbortSignal) =>
   read<TraceDetail>(`/api/turns/${encodeURIComponent(turnKey)}/trace`, signal);
 export const fetchFlywheelOverview = (signal?: AbortSignal) =>

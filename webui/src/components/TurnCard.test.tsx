@@ -45,3 +45,30 @@ it("negative feedback turn links to review inbox", async () => {
 
   expect(link?.getAttribute("href")).toContain("/review?turn_key=fae%3Aturn-1");
 });
+
+
+it("places input and output attachments immediately after their messages", async () => {
+  const summary = {
+    attachment_id: "attachment-1", display_name: "附件.pdf", mime_type: "application/pdf",
+    size_bytes: 10, received_or_generated_at: "2026-08-03T00:00:00Z",
+    archive_status: "pending" as const, delivery_status: "delivered" as const,
+    expires_at: "2027-08-03T00:00:00Z",
+  };
+  await act(async () => root.render(<TurnCard turn={{
+    ...turn,
+    input_attachments: [{ ...summary, direction: "user_input" }],
+    output_attachments: [{ ...summary, attachment_id: "attachment-2", direction: "agent_output" }],
+  }} />));
+
+  const children = [...container.querySelector(".turn-card")!.children];
+  const question = children.findIndex((element) => element.classList.contains("question-block"));
+  const answer = children.findIndex((element) => element.classList.contains("answer-block"));
+  expect(children[question + 1].getAttribute("aria-label")).toBe("用户输入附件");
+  expect(children[answer + 1].getAttribute("aria-label")).toBe("Agent 输出附件");
+});
+
+
+it("adds no attachment wrapper when the turn has no attachments", async () => {
+  await act(async () => root.render(<TurnCard turn={turn} />));
+  expect(container.querySelector(".attachment-list")).toBeNull();
+});

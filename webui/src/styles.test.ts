@@ -188,4 +188,12 @@ describe("Executive Operations visual contract", () => {
     expect(mobile).toContain(".message-block { grid-template-columns: 1fr; gap: 8px; padding: 19px; }");
     expect(mobile).toContain(".message-label { align-items: center; flex-direction: row; justify-content: space-between; }");
   });
+
+  it("keeps attachment names and cards readable on narrow screens", () => {
+    expect(rule(".attachment-name")).toContain("overflow-wrap: anywhere");
+    expect(rule(".attachment-card")).toContain("grid-template-columns: minmax(0, 1fr) auto");
+    const mobile = block("@media (max-width: 720px)");
+    expect(mobile).toContain(".attachment-card { grid-template-columns: 1fr; }");
+    expect(mobile).toContain(".attachment-actions { justify-content: flex-start; }");
+  });
 });
