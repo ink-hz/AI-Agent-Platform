@@ -1,3 +1,7 @@
+import os
+
+import pytest
+
 from app.config import load_config
 
 
@@ -74,3 +78,120 @@ def test_review_writer_config_defaults(monkeypatch) -> None:
         "secrets/platform-review-writer-database-url"
     )
     assert config.review_request_timeout_seconds == 1200
+
+
+ATTACHMENT_ENV = (
+    "PLATFORM_ATTACHMENT_ENABLED",
+    "PLATFORM_ATTACHMENT_S3_ENDPOINT",
+    "PLATFORM_ATTACHMENT_S3_BUCKET",
+    "PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE",
+    "PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE",
+    "PLATFORM_ATTACHMENT_TICKET_SECONDS",
+    "PLATFORM_TRUSTED_ATTACHMENT_PROXY",
+)
+
+
+def test_attachment_defaults_are_disabled_and_need_no_secret_files(monkeypatch) -> None:
+    for name in ATTACHMENT_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+    config = load_config()
+
+    assert config.attachment_enabled is False
+    assert config.attachment_s3_bucket == "orbbec-agent-attachments"
+    assert config.attachment_ticket_seconds == 300
+    assert config.trusted_attachment_proxy is False
+
+
+def _enable_attachments(monkeypatch, tmp_path, *, host="127.0.0.1"):
+    access = tmp_path / "s3-access"
+    secret = tmp_path / "s3-secret"
+    analyst = tmp_path / "flywheel-analyst-database-url"
+    access.write_text("archive-access", encoding="utf-8")
+    secret.write_text("archive-secret", encoding="utf-8")
+    analyst.write_text(
+        "postgresql://flywheel_analyst:db-secret@127.0.0.1/flywheel",
+        encoding="utf-8",
+    )
+    for path in (access, secret, analyst):
+        path.chmod(0o600)
+    monkeypatch.setenv("PLATFORM_ATTACHMENT_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_ATTACHMENT_S3_ENDPOINT", "http://127.0.0.1:9000")
+    monkeypatch.setenv("PLATFORM_ATTACHMENT_S3_BUCKET", "orbbec-agent-attachments")
+    monkeypatch.setenv("PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE", str(access))
+    monkeypatch.setenv("PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE", str(secret))
+    monkeypatch.setenv("PLATFORM_FLYWHEEL_DATABASE_URL_FILE", str(analyst))
+    monkeypatch.delenv("PLATFORM_FLYWHEEL_DATABASE_URL", raising=False)
+    monkeypatch.setenv("PLATFORM_HOST", host)
+    return access, secret, analyst
+
+
+def test_enabled_attachment_config_accepts_loopback_and_mode_0600_files(
+    monkeypatch, tmp_path
+) -> None:
+    access, secret, _analyst = _enable_attachments(monkeypatch, tmp_path)
+
+    config = load_config()
+
+    assert config.attachment_enabled is True
+    assert config.attachment_s3_endpoint == "http://127.0.0.1:9000"
+    assert config.attachment_s3_access_key_file == str(access)
+    assert config.attachment_s3_secret_key_file == str(secret)
+    assert "archive-access" not in repr(config)
+    assert "archive-secret" not in repr(config)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda monkeypatch, paths: monkeypatch.setenv(
+            "PLATFORM_ATTACHMENT_S3_ENDPOINT", "http://192.168.1.2:9000"
+        ), "loopback"),
+        (lambda monkeypatch, paths: monkeypatch.setenv(
+            "PLATFORM_ATTACHMENT_S3_BUCKET", "wrong-bucket"
+        ), "bucket"),
+        (lambda monkeypatch, paths: os.chmod(paths[0], 0o644), "0600"),
+        (lambda monkeypatch, paths: os.chmod(paths[1], 0o644), "0600"),
+        (lambda monkeypatch, paths: paths[2].write_text(
+            "postgresql://admin:secret@127.0.0.1/flywheel", encoding="utf-8"
+        ), "analyst"),
+    ],
+)
+def test_enabled_attachment_config_rejects_unsafe_storage_or_database(
+    monkeypatch, tmp_path, mutate, message
+) -> None:
+    paths = _enable_attachments(monkeypatch, tmp_path)
+    mutate(monkeypatch, paths)
+
+    with pytest.raises(RuntimeError, match=message):
+        load_config()
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "192.168.10.20"])
+def test_enabled_attachment_config_requires_loopback_platform_host(
+    monkeypatch, tmp_path, host
+) -> None:
+    _enable_attachments(monkeypatch, tmp_path, host=host)
+
+    with pytest.raises(RuntimeError, match="trusted attachment proxy"):
+        load_config()
+
+
+def test_trusted_proxy_explicitly_allows_non_loopback_host(monkeypatch, tmp_path) -> None:
+    _enable_attachments(monkeypatch, tmp_path, host="0.0.0.0")
+    monkeypatch.setenv("PLATFORM_TRUSTED_ATTACHMENT_PROXY", "1")
+
+    assert load_config().trusted_attachment_proxy is True
+
+
+def test_enabled_attachments_reject_inline_database_credentials(
+    monkeypatch, tmp_path
+) -> None:
+    _enable_attachments(monkeypatch, tmp_path)
+    monkeypatch.setenv(
+        "PLATFORM_FLYWHEEL_DATABASE_URL",
+        "postgresql://flywheel_analyst:inline-secret@127.0.0.1/flywheel",
+    )
+
+    with pytest.raises(RuntimeError, match="mode 0600"):
+        load_config()

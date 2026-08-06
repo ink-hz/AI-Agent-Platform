@@ -6,6 +6,11 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from .attachments import routes as attachment_routes
+from .attachments.logging import install_attachment_ticket_redaction
+from .attachments.repository import AttachmentRepository
+from .attachments.service import AttachmentService
+from .attachments.store import AttachmentStore
 from .cluster import routes as cluster_routes
 from .cluster.monitor import ClusterMonitor, cluster_poll_loop
 from .config import Config, load_config
@@ -101,6 +106,17 @@ def build_operations(
         return None, None
 
 
+def build_attachment_service(config: Config) -> AttachmentService:
+    database_url = resolve_flywheel_database_url(config)
+    if not database_url:
+        raise RuntimeError("attachment access requires the Flywheel analyst DSN")
+    return AttachmentService(
+        AttachmentRepository(database_url),
+        AttachmentStore.from_config(config),
+        config.attachment_ticket_seconds,
+    )
+
+
 def create_app(
     registry_path: str | None = None,
     cluster_contract_path: str | None = None,
@@ -112,6 +128,7 @@ def create_app(
     operations_scheduler: OperationsScheduler | None = None,
     control_room_service: ControlRoomService | None = None,
     review_service=None,
+    attachment_service=None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     config = load_config()
@@ -185,6 +202,10 @@ def create_app(
             )
         else:
             review_service = UnavailableReviewService()
+    if attachment_service is None and config.attachment_enabled:
+        attachment_service = build_attachment_service(config)
+    if attachment_service is not None:
+        install_attachment_ticket_redaction()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -236,6 +257,7 @@ def create_app(
     app.state.remote_health_monitor = remote_monitor
     app.state.control_room_service = control_room_service
     app.state.review_service = review_service
+    app.state.attachment_service = attachment_service
 
     @app.get("/api/health")
     def platform_health() -> dict:
@@ -249,6 +271,8 @@ def create_app(
     app.include_router(operations_routes.router)
     app.include_router(registry_routes.router)
     app.include_router(review_routes.router)
+    if attachment_service is not None:
+        app.include_router(attachment_routes.router)
 
     if os.path.isdir(config.static_dir):
         app.mount("/", SpaStaticFiles(directory=config.static_dir, html=True), name="portal")

@@ -1,6 +1,11 @@
 import os
 from dataclasses import dataclass
+import ipaddress
 from pathlib import Path
+import stat
+from urllib.parse import urlparse
+
+from .local_secrets import SecretFileUnavailable, read_secret_file
 
 
 DEFAULT_SECRETS_DIR = (
@@ -40,10 +45,72 @@ class Config:
     operations_usage_interval_seconds: float
     operations_execution_interval_seconds: float
     operations_lifecycle_interval_seconds: float
+    attachment_enabled: bool
+    attachment_s3_endpoint: str
+    attachment_s3_bucket: str
+    attachment_s3_access_key_file: str
+    attachment_s3_secret_key_file: str
+    attachment_ticket_seconds: int
+    trusted_attachment_proxy: bool
+
+
+def _enabled(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default) not in {"0", "false", "False"}
+
+
+def _loopback(value: str) -> bool:
+    host = value.strip().strip("[]")
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _mode_0600_secret(path: str) -> str:
+    try:
+        if stat.S_IMODE(Path(path).lstat().st_mode) != 0o600:
+            raise RuntimeError("attachment secret files must use mode 0600")
+        return read_secret_file(path)
+    except RuntimeError:
+        raise
+    except (OSError, SecretFileUnavailable) as error:
+        raise RuntimeError("attachment secret files must use mode 0600") from error
+
+
+def _validate_attachment_config(config: Config) -> None:
+    if not config.attachment_enabled:
+        return
+    endpoint = urlparse(config.attachment_s3_endpoint)
+    if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
+        raise RuntimeError("attachment S3 endpoint must be a loopback URL")
+    if not _loopback(endpoint.hostname):
+        raise RuntimeError("attachment S3 endpoint must be loopback")
+    if config.attachment_s3_bucket != "orbbec-agent-attachments":
+        raise RuntimeError("attachment S3 bucket must be orbbec-agent-attachments")
+    _mode_0600_secret(config.attachment_s3_access_key_file)
+    _mode_0600_secret(config.attachment_s3_secret_key_file)
+    if not config.trusted_attachment_proxy and not _loopback(config.host):
+        raise RuntimeError(
+            "non-loopback Platform host requires a trusted attachment proxy"
+        )
+    if config.flywheel_database_url:
+        raise RuntimeError(
+            "attachment database credentials must use a mode 0600 file"
+        )
+    try:
+        database_url = _mode_0600_secret(config.flywheel_database_url_file)
+    except RuntimeError as error:
+        raise RuntimeError(
+            "attachment access requires the Flywheel analyst DSN"
+        ) from error
+    if urlparse(database_url).username != "flywheel_analyst":
+        raise RuntimeError("attachment access requires the Flywheel analyst DSN")
 
 
 def load_config() -> Config:
-    return Config(
+    config = Config(
         registry_path=os.getenv("PLATFORM_REGISTRY_PATH", "../registry.yaml"),
         metabot_contract_path=os.getenv(
             "PLATFORM_METABOT_CONTRACT_PATH",
@@ -110,4 +177,25 @@ def load_config() -> Config:
         operations_lifecycle_interval_seconds=float(
             os.getenv("PLATFORM_OPERATIONS_LIFECYCLE_INTERVAL", "600")
         ),
+        attachment_enabled=_enabled("PLATFORM_ATTACHMENT_ENABLED"),
+        attachment_s3_endpoint=os.getenv(
+            "PLATFORM_ATTACHMENT_S3_ENDPOINT", "http://127.0.0.1:9000"
+        ),
+        attachment_s3_bucket=os.getenv(
+            "PLATFORM_ATTACHMENT_S3_BUCKET", "orbbec-agent-attachments"
+        ),
+        attachment_s3_access_key_file=os.getenv(
+            "PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE",
+            str(DEFAULT_SECRETS_DIR / "attachment-s3-access-key"),
+        ),
+        attachment_s3_secret_key_file=os.getenv(
+            "PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE",
+            str(DEFAULT_SECRETS_DIR / "attachment-s3-secret-key"),
+        ),
+        attachment_ticket_seconds=int(
+            os.getenv("PLATFORM_ATTACHMENT_TICKET_SECONDS", "300")
+        ),
+        trusted_attachment_proxy=_enabled("PLATFORM_TRUSTED_ATTACHMENT_PROXY"),
     )
+    _validate_attachment_config(config)
+    return config

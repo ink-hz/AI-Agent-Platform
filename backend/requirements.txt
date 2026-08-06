@@ -5,6 +5,7 @@ httpx2>=2.5
 pyyaml>=6.0
 pydantic>=2.7
 psycopg[binary]>=3.2
+boto3==1.42.97
 pytest>=8.0
 pytest-asyncio>=0.24
 respx>=0.21

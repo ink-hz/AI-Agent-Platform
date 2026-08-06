@@ -12,6 +12,10 @@ def test_active_runtime_and_operations_have_no_keychain_dependency():
     ]
     banned = (
         "/usr/bin/" + "security",
+        "import " + "keyring",
+        "from " + "keyring",
+        "osas" + "cript",
+        "SecKey" + "chain",
         "key" + "chain:",
         "_KEY" + "CHAIN_",
         "key" + "chain_service",
