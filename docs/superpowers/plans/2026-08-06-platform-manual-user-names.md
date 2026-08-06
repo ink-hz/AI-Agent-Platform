@@ -30,7 +30,7 @@
 - Consumes: migration SQL text.
 - Produces: regression checks for Session coverage, Turn coverage, union-ID privacy, compatibility, and permissions.
 
-- [ ] **Step 1: Write the failing migration contract test**
+- [x] **Step 1: Write the failing migration contract test**
 
 Create this test module:
 
@@ -80,7 +80,7 @@ def test_migration_restores_owner_and_read_permissions() -> None:
     assert "revoke all on platform_read.turns_raw_identity" in sql
 ```
 
-- [ ] **Step 2: Run the test and verify the expected failure**
+- [x] **Step 2: Run the test and verify the expected failure**
 
 Run:
 
@@ -101,7 +101,7 @@ Expected: four failures caused by missing `migrations/006_manual_user_names.sql`
 - Consumes: existing `platform_read.sessions`, `platform_read.turns`, `flywheel_analytics.messages`, and `flywheel_identity.resolved_user_names`.
 - Produces: unchanged public view schemas with corrected `primary_sender_name` and `sender_name` for every MetaBot record.
 
-- [ ] **Step 1: Preserve the deployed base views exactly once**
+- [x] **Step 1: Preserve the deployed base views exactly once**
 
 Use idempotent catalog guards:
 
@@ -120,7 +120,7 @@ end
 $$;
 ```
 
-- [ ] **Step 2: Recreate the public Session view with all 19 columns**
+- [x] **Step 2: Recreate the public Session view with all 19 columns**
 
 Build `latest_sender` from the newest non-null user message per conversation. Join a MetaBot base row by `native_id = conversation_id::text`, then join `resolved_user_names` by `user_id`. Calculate `effective_name` as:
 
@@ -135,7 +135,7 @@ end
 
 Explicitly select, in order: `session_key`, `agent_id`, `source_kind`, `native_id`, `channel`, `title`, `user_identity`, `created_at`, `last_active_at`, `turn_count`, `feedback_count`, `review_count`, `latest_outcome`, `source_synced_at`, `details`, `participant_count`, calculated `primary_sender_name`, `primary_sender_department`, and calculated `sender_identity_status`.
 
-- [ ] **Step 3: Recreate the public Turn view with all 25 columns**
+- [x] **Step 3: Recreate the public Turn view with all 25 columns**
 
 Build `turn_sender` from the newest non-null user message per `turn_id`. Join a MetaBot base row by `native_id = turn_id::text`, resolve the name with the same `manual|feishu` rule, and explicitly preserve all columns through `answer_time_status`:
 
@@ -150,7 +150,7 @@ end as effective_name
 
 For MetaBot, recompute `sender_identity_status` from `effective_name` and `sender_department`; for FAE/ADMIN, preserve the base status unchanged.
 
-- [ ] **Step 4: Reinstate ownership and least privilege**
+- [x] **Step 4: Reinstate ownership and least privilege**
 
 ```sql
 alter view platform_read.sessions owner to flywheel_owner;
@@ -161,7 +161,7 @@ revoke all on platform_read.sessions, platform_read.turns from public, flywheel_
 grant select on platform_read.sessions, platform_read.turns to flywheel_analyst;
 ```
 
-- [ ] **Step 5: Document the prerequisite and deployment command**
+- [x] **Step 5: Document the prerequisite and deployment command**
 
 Add to `README.md` that Flywheel migration 013 must exist, then apply:
 
@@ -172,7 +172,7 @@ psql '<Platform owner PostgreSQL URL>' -v ON_ERROR_STOP=1 \
 
 State that the migration changes all MetaBot historical/future Session and Turn display names immediately and needs no process restart.
 
-- [ ] **Step 6: Run focused and complete backend tests**
+- [x] **Step 6: Run focused and complete backend tests**
 
 Run:
 
@@ -184,7 +184,7 @@ cd backend
 
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit only this feature's files**
+- [x] **Step 7: Commit only this feature's files**
 
 ```bash
 git add backend/migrations/006_manual_user_names.sql \
@@ -202,11 +202,11 @@ git commit -m "fix(platform): resolve all metabot user names"
 - Consumes: production Flywheel owner socket and Platform API on `127.0.0.1:8000`.
 - Produces: corrected names on all existing and future MetaBot Session/Turn API records.
 
-- [ ] **Step 1: Capture count-only baselines**
+- [x] **Step 1: Capture count-only baselines**
 
 Record counts from `platform_read.sessions`, `platform_read.turns`, Flywheel messages, and conversations before migration. Record the number of distinct confirmed users and their matching Session/Turn rows without printing IDs or names.
 
-- [ ] **Step 2: Apply migration 006 with the existing local owner socket**
+- [x] **Step 2: Apply migration 006 with the existing local owner socket**
 
 ```bash
 psql -X -h /Users/neo/FlywheelData/socket -d flywheel \
@@ -215,7 +215,7 @@ psql -X -h /Users/neo/FlywheelData/socket -d flywheel \
 
 Expected: both wrapper views are created and permissions restored. No service restart or frontend rebuild is performed.
 
-- [ ] **Step 3: Verify all confirmed users, not only the reported Session**
+- [x] **Step 3: Verify all confirmed users, not only the reported Session**
 
 Run count-only assertions requiring:
 
@@ -225,7 +225,7 @@ Run count-only assertions requiring:
 - FAE/ADMIN rows match their base view names and statuses;
 - all baseline row counts remain unchanged.
 
-- [ ] **Step 4: Verify the reported API symptom directly**
+- [x] **Step 4: Verify the reported API symptom directly**
 
 Call:
 
@@ -236,6 +236,6 @@ curl -fsS \
 
 Assert `primary_sender_name` is the confirmed manual name and every returned Turn has the same `sender_name`. Return only booleans/counts in verification output.
 
-- [ ] **Step 5: Final privacy and workspace verification**
+- [x] **Step 5: Final privacy and workspace verification**
 
 Run Backend tests again, `git diff --check`, and scan the feature files for production Feishu IDs or employee names. Confirm the pre-existing dirty health files and local untracked configuration remain untouched.

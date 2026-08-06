@@ -99,6 +99,18 @@ Review API 只接受 `PLATFORM_REVIEW_DATABASE_URL` 或本机私有文件
 可以追加和更新闭环记录但不能删除审计事件，也不能修改 FAE/ADMIN 源镜像；
 `platform_sync_writer` 没有 review schema 写权限。
 
+MetaBot 用户姓名统一读取 Flywheel 负责人确认的人工名称。部署前须先确认
+Orbbec-Agent-Team 的 Flywheel 迁移 013 已存在，再由 owner 可重复地应用：
+
+```bash
+psql '<Platform owner PostgreSQL URL>' -v ON_ERROR_STOP=1 \
+  -f backend/migrations/006_manual_user_names.sql
+```
+
+该迁移会同时更新所有历史及未来 MetaBot Session 列表、Session 详情和逐轮问答的
+姓名解析口径，不改写飞书原始身份、消息或会话。数据库视图替换后立即生效，无需重启
+Platform 或重新构建前端；FAE 和 ADMIN 的独立身份数据保持原样。
+
 本机运行凭据固定保存在当前用户独占目录，目录权限为 `0700`，四个文件权限为
 `0600`：
 
