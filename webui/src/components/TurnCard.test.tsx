@@ -16,7 +16,8 @@ const turn: TurnDetail = {
   trace_key: null, outcome: "resolved", fallback_used: false, duration_ms: 1,
   sources: [], evidence: [], evidence_availability: "available",
   feedback: [{ feedback_key: "fae:feedback-1", sentiment: "negative", raw_rating: "bad", reason_code: null, comment: "错误", created_at: "2026-08-03T00:00:00Z", details: {} }],
-  reviews: [], improvements: [], details: {}, sender_name: null,
+  reviews: [], improvements: [], input_attachments: [], output_attachments: [],
+  details: {}, sender_name: null,
   sender_department: null, sender_identity_status: "unavailable",
 };
 

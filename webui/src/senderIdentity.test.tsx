@@ -50,6 +50,8 @@ const turn: TurnDetail = {
   feedback: [],
   reviews: [],
   improvements: [],
+  input_attachments: [],
+  output_attachments: [],
   details: {},
   sender_name: "Lina",
   sender_department: null,

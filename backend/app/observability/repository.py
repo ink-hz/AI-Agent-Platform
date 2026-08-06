@@ -12,6 +12,7 @@ from app.fleet.catalog import AgentCatalog
 
 from .models import (
     AgentSummary,
+    AttachmentSummary,
     EvidenceSummary,
     FeedbackItem,
     FlywheelFilters,
@@ -279,15 +280,43 @@ class PsycopgObservabilityRepository:
                        on t.turn_key=i.turn_key where t.session_key=%s order by i.created_at""",
                     (session_key,),
                 ).fetchall()
+                attachment_rows = []
+                if session["source_kind"] == "metabot" and turns:
+                    turn_keys = [row["native_id"] for row in turns]
+                    attachment_rows = cursor.execute(
+                        """select * from platform_read.attachments
+                           where turn_key = any(%s)
+                           order by received_or_generated_at, attachment_id""",
+                        (turn_keys,),
+                    ).fetchall()
             feedback = self._feedback_by_turn(feedback_rows)
             reviews = self._reviews_by_turn(review_rows)
             improvements = self._improvements_by_turn(improvement_rows)
+            attachments: defaultdict[tuple[str, str], list[AttachmentSummary]] = (
+                defaultdict(list)
+            )
+            for row in attachment_rows:
+                attachments[(row["turn_key"], row["direction"])].append(
+                    AttachmentSummary(
+                        attachment_id=row["attachment_id"],
+                        direction=row["direction"],
+                        display_name=row["display_name"],
+                        mime_type=row["mime_type"],
+                        size_bytes=row["size_bytes"],
+                        received_or_generated_at=row["received_or_generated_at"],
+                        archive_status=row["archive_status"],
+                        delivery_status=row["delivery_status"],
+                        expires_at=row["expires_at"],
+                    )
+                )
             turn_models = [
                 self._turn_detail(
                     row,
                     feedback.get(row["turn_key"], []),
                     reviews.get(row["turn_key"], []),
                     improvements.get(row["turn_key"], []),
+                    attachments.get((row.get("native_id", ""), "user_input"), []),
+                    attachments.get((row.get("native_id", ""), "agent_output"), []),
                 )
                 for row in turns
             ]
@@ -338,7 +367,10 @@ class PsycopgObservabilityRepository:
                 result[row["turn_key"]].append(self._improvement(row))
         return result
 
-    def _turn_detail(self, row, feedback, reviews, improvements) -> TurnDetail:
+    def _turn_detail(
+        self, row, feedback, reviews, improvements,
+        input_attachments=None, output_attachments=None,
+    ) -> TurnDetail:
         sources = _list(row.get("sources"))
         evidence = [
             EvidenceSummary(
@@ -366,7 +398,10 @@ class PsycopgObservabilityRepository:
             trace_key=row["trace_key"], outcome=row["outcome"], fallback_used=row["fallback_used"],
             duration_ms=row["duration_ms"], sources=sources, evidence=evidence,
             evidence_availability=availability, feedback=feedback, reviews=reviews,
-            improvements=improvements, sender_name=row.get("sender_name"),
+            improvements=improvements,
+            input_attachments=input_attachments or [],
+            output_attachments=output_attachments or [],
+            sender_name=row.get("sender_name"),
             sender_department=row.get("sender_department"),
             sender_identity_status=row.get("sender_identity_status") or "unavailable",
             details=_dict(row.get("details")),

@@ -29,7 +29,8 @@ const turn: TurnDetail = {
   question_time_status: "unavailable", answer_time_status: "unavailable",
   trace_key: "fae:trace-1", outcome: "resolved", fallback_used: false,
   duration_ms: 1250, sources: [], evidence: [], evidence_availability: "available",
-  feedback: [], reviews: [], improvements: [], details: {}, sender_name: null,
+  feedback: [], reviews: [], improvements: [], input_attachments: [],
+  output_attachments: [], details: {}, sender_name: null,
   sender_department: null, sender_identity_status: "unavailable",
 };
 

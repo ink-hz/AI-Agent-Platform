@@ -266,6 +266,18 @@ export interface ImprovementItem {
   details: Record<string, unknown>;
 }
 
+export interface AttachmentSummary {
+  attachment_id: string;
+  direction: "user_input" | "agent_output";
+  display_name: string | null;
+  mime_type: string | null;
+  size_bytes: number;
+  received_or_generated_at: string;
+  archive_status: "pending" | "available" | "failed" | "source_unavailable" | "expired";
+  delivery_status: "pending" | "delivered" | "failed" | "not_applicable";
+  expires_at: string;
+}
+
 export interface TurnDetail {
   turn_key: string;
   session_key: string;
@@ -289,6 +301,8 @@ export interface TurnDetail {
   feedback: FeedbackItem[];
   reviews: ReviewItem[];
   improvements: ImprovementItem[];
+  input_attachments: AttachmentSummary[];
+  output_attachments: AttachmentSummary[];
   details: Record<string, unknown>;
   sender_name: string | null;
   sender_department: string | null;

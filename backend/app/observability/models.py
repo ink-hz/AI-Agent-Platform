@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Generic, Literal, TypeVar
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -127,6 +128,20 @@ class ImprovementItem(BaseModel):
     details: dict = Field(default_factory=dict)
 
 
+class AttachmentSummary(BaseModel):
+    attachment_id: UUID
+    direction: Literal["user_input", "agent_output"]
+    display_name: str | None = None
+    mime_type: str | None = None
+    size_bytes: int
+    received_or_generated_at: datetime
+    archive_status: Literal[
+        "pending", "available", "failed", "source_unavailable", "expired"
+    ]
+    delivery_status: Literal["pending", "delivered", "failed", "not_applicable"]
+    expires_at: datetime
+
+
 class TurnDetail(BaseModel):
     turn_key: str
     session_key: str
@@ -150,6 +165,8 @@ class TurnDetail(BaseModel):
     feedback: list[FeedbackItem] = Field(default_factory=list)
     reviews: list[ReviewItem] = Field(default_factory=list)
     improvements: list[ImprovementItem] = Field(default_factory=list)
+    input_attachments: list[AttachmentSummary] = Field(default_factory=list)
+    output_attachments: list[AttachmentSummary] = Field(default_factory=list)
     sender_name: str | None = None
     sender_department: str | None = None
     sender_identity_status: SenderIdentityStatus = "unavailable"

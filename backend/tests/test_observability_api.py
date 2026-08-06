@@ -1,15 +1,18 @@
 import json
 from datetime import datetime, timezone
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.observability.models import (
     AgentSummary,
+    AttachmentSummary,
     Page,
     SessionDetail,
     SessionSummary,
     TraceDetail,
+    TurnDetail,
 )
 
 
@@ -57,7 +60,27 @@ class StaticObservabilityService:
         if session_key == "missing":
             return None
         summary = (await self.list_sessions(None, 1, 0)).items[0]
-        return SessionDetail(**summary.model_dump(), turns=[])
+        return SessionDetail(**summary.model_dump(), turns=[TurnDetail(
+            turn_key="fae:turn-1",
+            session_key=summary.session_key,
+            agent_id=summary.agent_id,
+            source_kind=summary.source_kind,
+            turn_index=0,
+            question="Question",
+            answer="Answer",
+            created_at=NOW,
+            input_attachments=[AttachmentSummary(
+                attachment_id=UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+                direction="user_input",
+                display_name="request.pdf",
+                mime_type="application/pdf",
+                size_bytes=123,
+                received_or_generated_at=NOW,
+                archive_status="available",
+                delivery_status="not_applicable",
+                expires_at=NOW,
+            )],
+        )])
 
     async def get_trace(self, turn_key):
         if turn_key == "missing":
@@ -116,6 +139,30 @@ def test_sessions_api_preserves_original_language_and_pagination(tmp_path) -> No
     assert body["items"][0]["title"] == "请保留这段中文原文"
     assert body["limit"] == 25
     assert body["total"] == 1
+
+
+def test_session_api_exposes_only_safe_attachment_metadata(tmp_path) -> None:
+    response = make_client(tmp_path).get("/api/sessions/fae%3Asession-1")
+
+    assert response.status_code == 200
+    turn = response.json()["turns"][0]
+    assert set(turn["input_attachments"][0]) == {
+        "attachment_id",
+        "direction",
+        "display_name",
+        "mime_type",
+        "size_bytes",
+        "received_or_generated_at",
+        "archive_status",
+        "delivery_status",
+        "expires_at",
+    }
+    assert turn["output_attachments"] == []
+    encoded = json.dumps(turn)
+    for forbidden in (
+        "bucket", "object_key", "platform_ref", "local_ref", "sha256", "ticket",
+    ):
+        assert forbidden not in encoded
 
 
 def test_agents_api_uses_unified_observability_model(tmp_path) -> None:

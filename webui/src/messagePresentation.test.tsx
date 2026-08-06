@@ -15,7 +15,8 @@ const turn: TurnDetail = {
   question_time_status: "exact", answer_time_status: "exact",
   trace_key: null, outcome: "resolved", fallback_used: false, duration_ms: 1250,
   sources: [], evidence: [], evidence_availability: "available", feedback: [],
-  reviews: [], improvements: [], details: {}, sender_name: null,
+  reviews: [], improvements: [], input_attachments: [], output_attachments: [],
+  details: {}, sender_name: null,
   sender_department: null, sender_identity_status: "unavailable",
 };
 

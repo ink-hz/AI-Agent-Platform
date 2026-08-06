@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 import pytest
 
@@ -115,6 +116,114 @@ def test_get_session_preserves_exact_message_times(get_session_rows) -> None:
     assert turn.answer_at == NOW - timedelta(seconds=1)
     assert turn.question_time_status == "exact"
     assert turn.answer_time_status == "exact"
+
+
+def test_get_metabot_session_batches_and_groups_safe_attachment_metadata() -> None:
+    first_turn_id = "11111111-1111-4111-8111-111111111111"
+    second_turn_id = "22222222-2222-4222-8222-222222222222"
+    generated_at = NOW - timedelta(seconds=1)
+    received_at = NOW - timedelta(seconds=2)
+    session_row = {
+        "session_key": "metabot:hr-bot:session-1",
+        "agent_id": "hr-bot",
+        "source_kind": "metabot",
+        "channel": "feishu",
+        "title": "Attachments",
+        "created_at": NOW,
+        "last_active_at": NOW,
+        "turn_count": 2,
+        "feedback_count": 0,
+        "review_count": 0,
+        "latest_outcome": "resolved",
+        "source_synced_at": None,
+    }
+    turn_rows = [
+        {
+            "turn_key": f"metabot:hr-bot:{turn_id}",
+            "native_id": turn_id,
+            "session_key": session_row["session_key"],
+            "agent_id": "hr-bot",
+            "source_kind": "metabot",
+            "turn_index": index,
+            "question": "Question",
+            "answer": "Answer",
+            "created_at": NOW,
+            "trace_key": None,
+            "outcome": "resolved",
+            "fallback_used": False,
+            "duration_ms": 1000,
+            "sources": [],
+            "details": {},
+        }
+        for index, turn_id in enumerate((first_turn_id, second_turn_id))
+    ]
+    attachment_rows = [
+        {
+            "attachment_id": UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+            "turn_key": first_turn_id,
+            "direction": "user_input",
+            "display_name": "request.pdf",
+            "mime_type": "application/pdf",
+            "size_bytes": 123,
+            "received_or_generated_at": received_at,
+            "archive_status": "available",
+            "delivery_status": "not_applicable",
+            "expires_at": NOW + timedelta(days=30),
+        },
+        {
+            "attachment_id": UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+            "turn_key": first_turn_id,
+            "direction": "agent_output",
+            "display_name": "answer.csv",
+            "mime_type": "text/csv",
+            "size_bytes": 456,
+            "received_or_generated_at": generated_at,
+            "archive_status": "pending",
+            "delivery_status": "delivered",
+            "expires_at": NOW + timedelta(days=30),
+        },
+    ]
+    fake = FakeConnect([
+        [session_row], turn_rows, [], [], [], attachment_rows,
+    ])
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, now=lambda: NOW,
+    )
+
+    session = repository.get_session(session_row["session_key"])
+
+    assert session is not None
+    attachment_queries = [
+        (statement, params) for statement, params in fake.executed
+        if "platform_read.attachments" in statement
+    ]
+    assert len(attachment_queries) == 1
+    statement, params = attachment_queries[0]
+    assert "where turn_key = any(%s)" in " ".join(statement.split())
+    assert "order by received_or_generated_at, attachment_id" in " ".join(statement.split())
+    assert params == ([first_turn_id, second_turn_id],)
+    assert [item.display_name for item in session.turns[0].input_attachments] == [
+        "request.pdf"
+    ]
+    assert [item.display_name for item in session.turns[0].output_attachments] == [
+        "answer.csv"
+    ]
+    assert session.turns[1].input_attachments == []
+    assert session.turns[1].output_attachments == []
+
+
+def test_non_metabot_session_does_not_query_attachments(get_session_rows) -> None:
+    fake = FakeConnect(get_session_rows)
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, now=lambda: NOW,
+    )
+
+    session = repository.get_session("fae:session-1")
+
+    assert session is not None
+    assert session.turns[0].input_attachments == []
+    assert session.turns[0].output_attachments == []
+    assert all("platform_read.attachments" not in sql for sql, _ in fake.executed)
 
 
 def test_fae_turn_maps_native_source_fields_to_evidence() -> None:
