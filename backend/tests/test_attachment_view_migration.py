@@ -47,3 +47,11 @@ def test_attachment_view_is_restricted_to_safe_metadata() -> None:
     assert "grant select on platform_read.attachments to flywheel_analyst" in sql
     for forbidden in ("bucket", "object_key", "platform_ref", "local_ref", "sha256"):
         assert forbidden not in sql
+
+
+def test_attachment_view_prefers_archived_rows_over_legacy_metadata_shadows() -> None:
+    sql = migration_sql()
+    assert "create or replace view platform_read.attachments" in sql
+    assert "ingest_key like 'legacy:%'" in sql
+    assert "canonical.ingest_key not like 'legacy:%'" in sql
+    assert "canonical.platform_message_id is not distinct from attachment.platform_message_id" in sql

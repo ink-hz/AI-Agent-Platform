@@ -13,7 +13,8 @@ export const ARCHIVE_LABEL: Record<AttachmentSummary["archive_status"], string> 
 };
 
 
-function formatBytes(bytes: number): string {
+function formatBytes(bytes: number | null): string {
+  if (bytes === null) return "大小未知";
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB"];
   let value = bytes / 1024;

@@ -159,6 +159,18 @@ def test_get_metabot_session_batches_and_groups_safe_attachment_metadata() -> No
     ]
     attachment_rows = [
         {
+            "attachment_id": UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+            "turn_key": first_turn_id,
+            "direction": "user_input",
+            "display_name": "historical-source.pdf",
+            "mime_type": None,
+            "size_bytes": None,
+            "received_or_generated_at": received_at,
+            "archive_status": "source_unavailable",
+            "delivery_status": "not_applicable",
+            "expires_at": NOW + timedelta(days=30),
+        },
+        {
             "attachment_id": UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
             "turn_key": first_turn_id,
             "direction": "user_input",
@@ -203,8 +215,9 @@ def test_get_metabot_session_batches_and_groups_safe_attachment_metadata() -> No
     assert "order by received_or_generated_at, attachment_id" in " ".join(statement.split())
     assert params == ([first_turn_id, second_turn_id],)
     assert [item.display_name for item in session.turns[0].input_attachments] == [
-        "request.pdf"
+        "historical-source.pdf", "request.pdf"
     ]
+    assert session.turns[0].input_attachments[0].size_bytes is None
     assert [item.display_name for item in session.turns[0].output_attachments] == [
         "answer.csv"
     ]

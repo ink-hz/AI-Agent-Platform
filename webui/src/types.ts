@@ -271,7 +271,7 @@ export interface AttachmentSummary {
   direction: "user_input" | "agent_output";
   display_name: string | null;
   mime_type: string | null;
-  size_bytes: number;
+  size_bytes: number | null;
   received_or_generated_at: string;
   archive_status: "pending" | "available" | "failed" | "source_unavailable" | "expired";
   delivery_status: "pending" | "delivered" | "failed" | "not_applicable";

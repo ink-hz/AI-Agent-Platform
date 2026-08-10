@@ -72,6 +72,14 @@ describe("AttachmentList", () => {
     expect(container.querySelector(".attachment-list")?.getAttribute("aria-label")).toBe("输入附件");
   });
 
+  it("shows unknown size when historical metadata has no byte count", async () => {
+    await act(async () => root.render(<AttachmentList
+      attachments={[attachment({ size_bytes: null, archive_status: "source_unavailable" })]}
+      label="输入附件"
+    />));
+    expect(container.textContent).toContain("大小未知");
+  });
+
   it("requests a ticket before opening a validated same-origin content path without leaking it", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       ticket: "secret-ticket", expires_at: "2026-08-03T09:10:00Z",

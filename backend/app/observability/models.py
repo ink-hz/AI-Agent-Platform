@@ -133,7 +133,7 @@ class AttachmentSummary(BaseModel):
     direction: Literal["user_input", "agent_output"]
     display_name: str | None = None
     mime_type: str | None = None
-    size_bytes: int
+    size_bytes: int | None = None
     received_or_generated_at: datetime
     archive_status: Literal[
         "pending", "available", "failed", "source_unavailable", "expired"
