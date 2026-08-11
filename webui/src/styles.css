@@ -79,7 +79,10 @@ body {
   content: "";
 }
 
-.review-entry { display: flex; justify-content: flex-end; padding: 12px 0 2px; }
+.review-entry { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0 2px; }
+.review-entry > div { display: grid; gap: 2px; }
+.review-entry > div strong { color: var(--ink); font-size: 12px; }
+.review-entry > div span { color: var(--ink-soft); font-size: 11.5px; }
 .review-entry a { padding: 8px 12px; border-radius: 8px; background: var(--brand-wash); color: var(--brand); font-size: 13px; font-weight: 760; text-decoration: none; }
 .review-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; }
 .review-hero > div > p { margin: 0 0 6px; color: var(--brand-bright); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }

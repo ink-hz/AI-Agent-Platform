@@ -42,9 +42,9 @@ beforeEach(() => {
   root = createRoot(container);
   window.history.replaceState({}, "", "/review?issue=issue-1");
   vi.stubGlobal("fetch", vi.fn((path: string) => {
-    if (path === "/api/review/overview") return Promise.resolve(response({ feedback_rows: 79, negative_rows: 51, negative_turns: 50, positive_rows: 28, statuses: { awaiting_review: 1 }, write_available: writeAvailable }));
-    if (path === "/api/review/inbox?limit=200") return Promise.resolve(response([inboxItem]));
-    if (path === "/api/review/issues?limit=200") return Promise.resolve(response([{ ...issue.issue, progress: issue.progress }]));
+    if (path.startsWith("/api/review/overview?")) return Promise.resolve(response({ feedback_rows: 79, negative_rows: 51, negative_turns: 50, positive_rows: 28, statuses: { awaiting_review: 1 }, write_available: writeAvailable }));
+    if (path.startsWith("/api/review/inbox?")) return Promise.resolve(response([inboxItem]));
+    if (path.startsWith("/api/review/issues?")) return Promise.resolve(response([{ ...issue.issue, progress: issue.progress }]));
     return Promise.resolve(response(issue));
   }));
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -67,6 +67,8 @@ it("shows the original and latest replay answer without force close", async () =
   expect(container.textContent).toContain("待语义复审");
   expect(container.textContent).not.toContain("强制关闭");
   expect([...container.querySelectorAll("button")].some((button) => /关闭事项/.test(button.textContent || ""))).toBe(false);
+  const paths = vi.mocked(fetch).mock.calls.map(([path]) => String(path));
+  expect(paths.filter((path) => path.includes("/api/review/")).every((path) => path.includes("agent_id=ai-fae-agent") || path.includes("/issues/issue-1"))).toBe(true);
 });
 
 

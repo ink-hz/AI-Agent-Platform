@@ -82,22 +82,45 @@ class ReviewService:
         )
         return await self._detail(issue_id)
 
-    async def overview(self) -> dict:
-        result = await self._run(self.read_repository.overview)
+    async def overview(self, *, agent_id: str | None = None) -> dict:
+        result = await self._run(
+            self.read_repository.overview,
+            agent_id=agent_id,
+        )
         return {**result, "write_available": self.write_repository is not None}
 
-    async def inbox(self, *, limit: int, offset: int) -> list[dict]:
+    async def inbox(
+        self,
+        *,
+        agent_id: str | None = None,
+        limit: int,
+        offset: int,
+    ) -> list[dict]:
         return await self._run(
             self.read_repository.list_inbox,
+            agent_id=agent_id,
             limit=limit,
             offset=offset,
         )
 
-    async def list_issues(self, *, limit: int, offset: int) -> list[dict]:
+    async def list_issues(
+        self,
+        *,
+        agent_id: str | None = None,
+        limit: int,
+        offset: int,
+    ) -> list[dict]:
         return await self._run(
             self.read_repository.list_issues,
+            agent_id=agent_id,
             limit=limit,
             offset=offset,
+        )
+
+    async def turn_summaries(self, *, turn_keys: list[str]) -> list[dict]:
+        return await self._run(
+            self.read_repository.get_turn_summaries,
+            turn_keys,
         )
 
     async def issue_detail(self, issue_id: UUID) -> dict:

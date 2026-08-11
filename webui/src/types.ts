@@ -405,6 +405,14 @@ export interface ReviewOverview {
   write_available: boolean;
 }
 
+export interface TurnClosureSummary {
+  turn_key: string;
+  issue_id: string | null;
+  status: IssueStatus;
+  missing_gates: string[];
+  latest_valid_replay_id: string | null;
+}
+
 export interface ReviewInboxItem {
   agent_id: string;
   turn_key: string;

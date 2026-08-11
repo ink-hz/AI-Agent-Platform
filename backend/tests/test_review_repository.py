@@ -47,6 +47,7 @@ def test_repository_exposes_transactional_closure_inputs():
         "set_disposition",
         "get_issue_detail",
         "list_inbox",
+        "get_turn_summaries",
         "overview",
         "recalculate_and_record_transition",
     ):
@@ -69,3 +70,57 @@ def test_backfill_reuses_canonical_primary_after_duplicate_merge():
     assert 'issue["canonical_issue_id"]' in source
     assert "where agent_id=%s and source_turn_key=%s and active" in source
     assert "link_role='primary'" in source
+
+
+def test_turn_summaries_use_one_read_query_and_fill_unmanaged_turns():
+    statements = []
+
+    class Result:
+        def fetchall(self):
+            return [{
+                "turn_key": "fae:linked",
+                "issue_id": UUID(int=1),
+                "status": "awaiting_replay",
+                "missing_gates": ["replay"],
+                "latest_valid_replay_id": None,
+            }]
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, statement, parameters):
+            statements.append((statement, parameters))
+            return Result()
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def cursor(self):
+            return Cursor()
+
+    repository = PsycopgReviewRepository(
+        "postgresql://analyst@db/flywheel",
+        connect=lambda *_args, **_kwargs: Connection(),
+    )
+
+    summaries = repository.get_turn_summaries(["fae:linked", "fae:unmanaged"])
+
+    assert len(statements) == 1
+    assert "source_turn_key = any(%s)" in " ".join(statements[0][0].split())
+    assert all(keyword not in statements[0][0].lower() for keyword in ("insert ", "update ", "delete "))
+    assert summaries[0]["status"] == "awaiting_replay"
+    assert summaries[1] == {
+        "turn_key": "fae:unmanaged",
+        "issue_id": None,
+        "status": "pending_triage",
+        "missing_gates": ["issue"],
+        "latest_valid_replay_id": None,
+    }

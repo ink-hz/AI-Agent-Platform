@@ -39,11 +39,19 @@ afterEach(async () => {
 
 
 it("negative feedback turn links to review inbox", async () => {
-  await act(async () => root.render(<TurnCard turn={turn} />));
+  await act(async () => root.render(<TurnCard turn={turn} closureSummary={{
+    turn_key: turn.turn_key,
+    issue_id: "issue-1",
+    status: "awaiting_replay",
+    missing_gates: ["replay"],
+    latest_valid_replay_id: null,
+  }} />));
 
-  const link = [...container.querySelectorAll("a")].find((item) => item.textContent === "进入修复闭环");
+  const link = [...container.querySelectorAll("a")].find((item) => item.textContent === "查看修复闭环");
 
-  expect(link?.getAttribute("href")).toContain("/review?turn_key=fae%3Aturn-1");
+  expect(link?.getAttribute("href")).toBe("/review?agent_id=ai-fae-agent&turn_key=fae%3Aturn-1");
+  expect(container.textContent).toContain("等待复跑");
+  expect(container.textContent).toContain("缺少：真实复跑");
 });
 
 

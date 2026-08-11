@@ -46,7 +46,7 @@ async def test_semantic_review_passes_review_method_to_repository():
 @pytest.mark.asyncio
 async def test_read_methods_survive_missing_writer():
     class ReadRepository:
-        def overview(self):
+        def overview(self, *, agent_id=None):
             return {"negative_turns": 7}
 
     service = ReviewService(ReadRepository(), write_repository=None)

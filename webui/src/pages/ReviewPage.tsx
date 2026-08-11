@@ -51,6 +51,7 @@ const STATUS_ORDER = [
 
 export function ReviewPage() {
   const query = useMemo(() => new URLSearchParams(window.location.search), []);
+  const agentId = query.get("agent_id") || "ai-fae-agent";
   const [overview, setOverview] = useState<ReviewOverview | null>(null);
   const [issues, setIssues] = useState<FeedbackIssueSummary[]>([]);
   const [inbox, setInbox] = useState<ReviewInboxItem[]>([]);
@@ -65,7 +66,7 @@ export function ReviewPage() {
 
   const loadLists = async (signal?: AbortSignal) => {
     const [nextOverview, nextInbox, nextIssues] = await Promise.all([
-      fetchReviewOverview(signal), fetchReviewInbox(signal), fetchReviewIssues(signal),
+      fetchReviewOverview(agentId, signal), fetchReviewInbox(agentId, signal), fetchReviewIssues(agentId, signal),
     ]);
     setOverview(nextOverview);
     setInbox(nextInbox);
@@ -93,12 +94,12 @@ export function ReviewPage() {
   const chooseIssue = (id: string) => {
     setSelectedId(id);
     setSelectedTurnKey(null);
-    window.history.replaceState({}, "", `/review?issue=${encodeURIComponent(id)}`);
+    window.history.replaceState({}, "", `/review?agent_id=${encodeURIComponent(agentId)}&issue=${encodeURIComponent(id)}`);
   };
   const chooseInbox = (turnKey: string) => {
     setSelectedId(null);
     setSelectedTurnKey(turnKey);
-    window.history.replaceState({}, "", `/review?turn_key=${encodeURIComponent(turnKey)}`);
+    window.history.replaceState({}, "", `/review?agent_id=${encodeURIComponent(agentId)}&turn_key=${encodeURIComponent(turnKey)}`);
   };
   const saveActor = (value: string) => {
     setActor(value);

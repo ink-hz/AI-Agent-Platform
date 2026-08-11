@@ -1280,7 +1280,13 @@ class PsycopgReviewRepository:
         except Exception as error:
             raise ReviewRepositoryError("negative feedback backfill failed") from error
 
-    def list_inbox(self, *, limit: int = 100, offset: int = 0) -> list[dict]:
+    def list_inbox(
+        self,
+        *,
+        agent_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
         with self._connection() as connection, connection.cursor() as cursor:
             rows = cursor.execute(
                 """
@@ -1289,8 +1295,10 @@ class PsycopgReviewRepository:
                   array_agg(f.feedback_key order by f.created_at, f.feedback_key) as feedback_keys,
                   min(f.created_at) as first_feedback_at
                 from platform_read.feedback f
-                left join platform_read.turns t on t.turn_key=f.turn_key
+                left join platform_read.turns t
+                  on t.agent_id=f.agent_id and t.turn_key=f.turn_key
                 where f.sentiment='negative'
+                  and (%s is null or f.agent_id=%s)
                   and not exists (
                     select 1 from platform_review.feedback_issue_links link
                     where link.agent_id=f.agent_id and link.source_turn_key=f.turn_key
@@ -1300,18 +1308,25 @@ class PsycopgReviewRepository:
                 order by min(f.created_at), f.agent_id, f.turn_key
                 limit %s offset %s
                 """,
-                (limit, offset),
+                (agent_id, agent_id, limit, offset),
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def list_issues(self, *, limit: int = 100, offset: int = 0) -> list[dict]:
+    def list_issues(
+        self,
+        *,
+        agent_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
         with self._connection() as connection, connection.cursor() as cursor:
             rows = cursor.execute(
                 """
                 select * from platform_review.feedback_issues
+                where (%s is null or agent_id=%s)
                 order by updated_at desc, id limit %s offset %s
                 """,
-                (limit, offset),
+                (agent_id, agent_id, limit, offset),
             ).fetchall()
             results = []
             for row in rows:
@@ -1321,7 +1336,57 @@ class PsycopgReviewRepository:
                 results.append(item)
         return results
 
-    def overview(self) -> dict:
+    def get_turn_summaries(self, turn_keys: list[str]) -> list[dict]:
+        requested = list(dict.fromkeys(turn_keys))
+        if not requested:
+            return []
+        with self._connection() as connection, connection.cursor() as cursor:
+            rows = cursor.execute(
+                """
+                select link.source_turn_key as turn_key,
+                  issue.id as issue_id,
+                  coalesce(progress.after->>'status', 'pending_triage') as status,
+                  coalesce(
+                    progress.after->'missing_gates',
+                    '["triage"]'::jsonb
+                  ) as missing_gates,
+                  valid_replay.id as latest_valid_replay_id
+                from platform_review.feedback_issue_links link
+                join platform_review.feedback_issues issue on issue.id=link.issue_id
+                left join lateral (
+                  select event.after
+                  from platform_review.feedback_issue_events event
+                  where event.issue_id=issue.id and event.after ? 'status'
+                  order by event.created_at desc, event.id desc
+                  limit 1
+                ) progress on true
+                left join lateral (
+                  select replay.id
+                  from platform_review.feedback_replay_runs replay
+                  where replay.issue_link_id=link.id
+                    and replay.execution_status='succeeded'
+                    and replay.runtime_gate='passed'
+                    and replay.completed_at is not null
+                  order by replay.completed_at desc, replay.attempt_no desc
+                  limit 1
+                ) valid_replay on true
+                where link.active and link.source_turn_key = any(%s)
+                """,
+                (requested,),
+            ).fetchall()
+        by_turn = {row["turn_key"]: dict(row) for row in rows}
+        return [
+            by_turn.get(turn_key, {
+                "turn_key": turn_key,
+                "issue_id": None,
+                "status": "pending_triage",
+                "missing_gates": ["issue"],
+                "latest_valid_replay_id": None,
+            })
+            for turn_key in requested
+        ]
+
+    def overview(self, *, agent_id: str | None = None) -> dict:
         with self._connection() as connection, connection.cursor() as cursor:
             source = cursor.execute(
                 """
@@ -1330,16 +1395,25 @@ class PsycopgReviewRepository:
                   count(distinct (agent_id, turn_key)) filter (where sentiment='negative') as negative_turns,
                   count(*) filter (where sentiment='positive') as positive_rows
                 from platform_read.feedback
-                """
+                where (%s is null or agent_id=%s)
+                """,
+                (agent_id, agent_id),
             ).fetchone()
             issues = cursor.execute(
                 """
                 select disposition, count(*) as count
-                from platform_review.feedback_issues group by disposition
-                """
+                from platform_review.feedback_issues
+                where (%s is null or agent_id=%s)
+                group by disposition
+                """,
+                (agent_id, agent_id),
             ).fetchall()
             issue_ids = cursor.execute(
-                "select id from platform_review.feedback_issues"
+                """
+                select id from platform_review.feedback_issues
+                where (%s is null or agent_id=%s)
+                """,
+                (agent_id, agent_id),
             ).fetchall()
             statuses: dict[str, int] = {}
             for row in issue_ids:

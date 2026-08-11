@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { SessionDetail } from "../types";
+import type { SessionDetail, TurnDetail } from "../types";
 import { SessionDetailPage } from "./SessionDetailPage";
 
 
@@ -27,6 +27,19 @@ const session: SessionDetail = {
   primary_sender_department: null,
   sender_identity_status: "unavailable",
   turns: [],
+};
+
+const negativeTurn: TurnDetail = {
+  turn_key: "fae:turn-1", session_key: session.session_key, agent_id: session.agent_id,
+  source_kind: "fae", turn_index: 1, question: "问题", answer: "旧答案",
+  created_at: "2026-08-03T00:00:00Z", question_at: null, answer_at: null,
+  question_time_status: "unavailable", answer_time_status: "unavailable",
+  trace_key: null, outcome: "resolved", fallback_used: false, duration_ms: 1,
+  sources: [], evidence: [], evidence_availability: "available",
+  feedback: [{ feedback_key: "fae:feedback-1", sentiment: "negative", raw_rating: "bad", reason_code: null, comment: "错误", created_at: "2026-08-03T00:00:00Z", details: {} }],
+  reviews: [], improvements: [], input_attachments: [], output_attachments: [],
+  details: {}, sender_name: null, sender_department: null,
+  sender_identity_status: "unavailable",
 };
 
 
@@ -82,5 +95,31 @@ describe("SessionDetailPage return navigation", () => {
     expect(container.textContent).toContain("Session 回放");
     expect(container.textContent).toContain("Gemini 335L troubleshooting");
     expect(container.textContent).not.toContain("SESSION REPLAY");
+  });
+
+  it("loads closure summaries once for all negative turns", async () => {
+    const fetchMock = vi.fn((path: string) => {
+      if (path.startsWith("/api/sessions/")) {
+        return Promise.resolve(response({ ...session, turn_count: 1, turns: [negativeTurn] }));
+      }
+      if (path.startsWith("/api/review/turn-summaries?")) {
+        return Promise.resolve(response([{
+          turn_key: negativeTurn.turn_key,
+          issue_id: "issue-1",
+          status: "awaiting_review",
+          missing_gates: ["semantic_review"],
+          latest_valid_replay_id: "replay-1",
+        }]));
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderPage();
+    await act(async () => await Promise.resolve());
+
+    expect(fetchMock.mock.calls.filter(([path]) => String(path).startsWith("/api/review/turn-summaries?")).length).toBe(1);
+    expect(container.textContent).toContain("等待语义复审");
+    expect(container.textContent).toContain("缺少：独立语义复审");
   });
 });
