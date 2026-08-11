@@ -111,6 +111,18 @@ psql '<Platform owner PostgreSQL URL>' -v ON_ERROR_STOP=1 \
 姓名解析口径，不改写飞书原始身份、消息或会话。数据库视图替换后立即生效，无需重启
 Platform 或重新构建前端；FAE 和 ADMIN 的独立身份数据保持原样。
 
+`CREATE OR REPLACE VIEW` 会清除目标 view 上已有的对象级 grant。应用 006 或任何后续
+会替换 `platform_read.feedback` / `platform_read.turns` 的迁移后，必须继续应用最终权限
+修复；该迁移先撤销 writer 对全部 read views 的权限，再只恢复闭环所需的两张 view：
+
+```bash
+psql '<Platform owner PostgreSQL URL>' -v ON_ERROR_STOP=1 \
+  -f backend/migrations/008_feedback_review_grants.sql
+```
+
+008 可重复执行。最终权限门禁要求 `platform_review_writer` 可 SELECT feedback/turns，
+不可 SELECT attachments，也不能删除 review events 或修改 source schema。
+
 本机运行凭据固定保存在当前用户独占目录，目录权限为 `0700`，四个文件权限为
 `0600`：
 
