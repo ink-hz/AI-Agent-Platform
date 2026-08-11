@@ -74,8 +74,9 @@ rollback() {
     if [[ -n "$previous_release" && -f "$previous_environment" ]]; then
       /bin/cp -p "$previous_environment" "$environment_path"
       /bin/ln -sfn "$previous_release" "$root_path/current"
-      /usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml" up -d platform-api >/dev/null 2>&1 || true
+      /usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml" up -d platform-api platform-loopback >/dev/null 2>&1 || true
     else
+      /usr/bin/docker rm -f orbbec-agent-platform-platform-loopback-1 >/dev/null 2>&1 || true
       /usr/bin/docker rm -f orbbec-agent-platform-platform-api-1 >/dev/null 2>&1 || true
       /usr/bin/systemctl disable --now orbbec-agent-platform-backup.timer >/dev/null 2>&1 || true
       if [[ -L "$root_path/current" ]]; then
@@ -154,7 +155,7 @@ done
   sh -ceu 'cp /source/replica-import-database-url /target/replica-database-url; cp /source/replica-encryption-key /source/replica-signing-public-key /target/; chown 10001:10001 /target/*; chmod 600 /target/replica-database-url; chmod 600 /target/replica-encryption-key; chmod 600 /target/replica-signing-public-key'
 
 if [[ -n "$previous_release" && -f "$environment_path" ]]; then
-  /usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml" stop platform-api >/dev/null
+  /usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml" stop platform-loopback platform-api >/dev/null
   api_stopped=1
 fi
 /usr/bin/printf 'PLATFORM_IMAGE=%s\n' "$image_name" > "$environment_path"
@@ -197,7 +198,7 @@ grant platform_replica_import to platform_replica_importer;
 SQL
 
 api_stopped=1
-"${compose[@]}" up -d platform-api >/dev/null
+"${compose[@]}" up -d platform-api platform-loopback >/dev/null
 for _attempt in $(/usr/bin/seq 1 40); do
   if /usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null; then
     break
