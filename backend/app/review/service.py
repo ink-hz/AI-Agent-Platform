@@ -5,7 +5,11 @@ import inspect
 from uuid import UUID
 
 from .evidence import GitEvidenceVerifier
-from .repository import PsycopgReviewRepository, ReviewRepositoryError
+from .repository import (
+    InvalidReviewMutation,
+    PsycopgReviewRepository,
+    ReviewRepositoryError,
+)
 
 
 class ReviewUnavailable(RuntimeError):
@@ -368,6 +372,18 @@ class ReviewService:
         return result
 
     async def semantic_review(self, replay_id: UUID, payload, *, actor: str) -> dict:
+        valid_identity = (
+            payload.method == "codex"
+            and actor == "codex"
+            and payload.reviewer == actor
+        ) or (
+            payload.method == "human_fae"
+            and actor.startswith("fae:")
+            and bool(actor.removeprefix("fae:").strip())
+            and payload.reviewer == actor
+        )
+        if not valid_identity:
+            raise InvalidReviewMutation("semantic review identity mismatch")
         writer = self._writer()
         row = await self._run(
             writer.review_replay,

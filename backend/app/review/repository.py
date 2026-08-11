@@ -1312,10 +1312,10 @@ class PsycopgReviewRepository:
                     left join platform_read.feedback feedback
                       on feedback.agent_id=turn.agent_id
                      and feedback.turn_key=turn.turn_key
-                    where turn.turn_key=any(%s)
+                    where turn.agent_id=%s and turn.turn_key=any(%s)
                     group by turn.agent_id, turn.turn_key
                     """,
-                    (turn_keys,),
+                    (validated.agent_id, turn_keys),
                 ).fetchall()
                 source_by_key = {row["turn_key"]: row for row in source_rows}
                 source_failure = ""

@@ -3,6 +3,7 @@ from uuid import UUID
 
 import pytest
 
+from app.review.repository import InvalidReviewMutation
 from app.review.service import ReviewService, ReviewUnavailable
 
 
@@ -41,6 +42,35 @@ async def test_semantic_review_passes_review_method_to_repository():
 
     assert repository.review_method == "codex"
     assert detail["issue"]["id"] == ISSUE_ID
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("actor", "method", "reviewer"),
+    [
+        ("fae:alice", "codex", "codex"),
+        ("codex", "human_fae", "fae:alice"),
+        ("fae:alice", "human_fae", "fae:bob"),
+        ("corp:alice", "human_fae", "corp:alice"),
+    ],
+)
+async def test_semantic_review_identity_cannot_be_spoofed(
+    actor, method, reviewer
+):
+    class Repository:
+        def review_replay(self, *_args, **_kwargs):
+            raise AssertionError("spoofed review must not reach repository")
+
+    service = ReviewService(Repository(), write_repository=Repository())
+    payload = SimpleNamespace(
+        verdict="passed",
+        method=method,
+        reviewer=reviewer,
+        reason="claimed independent review",
+    )
+
+    with pytest.raises(InvalidReviewMutation, match="review identity"):
+        await service.semantic_review(REPLAY_ID, payload, actor=actor)
 
 
 @pytest.mark.asyncio

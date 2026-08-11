@@ -203,10 +203,16 @@ def _relative_path(value: Any, reason: str) -> str:
 
 
 def _read_json(path: Path, reason: str) -> Mapping[str, Any]:
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024 * 1024:
-        raise _Blocked(reason)
     try:
+        if (
+            path.is_symlink()
+            or not path.is_file()
+            or path.stat().st_size > 1024 * 1024
+        ):
+            raise _Blocked(reason)
         return _mapping(json.loads(path.read_text(encoding="utf-8")), reason)
+    except _Blocked:
+        raise
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise _Blocked(reason) from error
 
@@ -426,6 +432,7 @@ class HandoffImporter:
         manifest_path = unresolved_manifest.resolve()
         if not manifest_path.is_relative_to(manifest_root):
             raise _Blocked("manifest_outside_allowlist")
+        _read_json(manifest_path, "release_manifest_unreadable")
         manifest_sha = release.get("manifest_sha256")
         if not isinstance(manifest_sha, str) or _sha256(manifest_path) != manifest_sha:
             raise _Blocked("release_manifest_hash_mismatch")

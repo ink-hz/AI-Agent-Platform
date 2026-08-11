@@ -149,6 +149,7 @@ def test_release_handoff_import_uses_one_writer_transaction():
     assert "source_turn_key" in source
     assert "feedback_release_handoffs" in source
     assert "feedback_release_handoff_events" in event_source
+    assert "turn.agent_id=%s" in source
     assert "similarity" not in source
 
 

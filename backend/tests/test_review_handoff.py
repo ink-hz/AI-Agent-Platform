@@ -180,6 +180,16 @@ def test_invalid_handoff_is_blocked(handoff_fixture, mutation, reason):
     assert result.reason == reason
 
 
+def test_missing_release_manifest_is_blocked_with_stable_reason(handoff_fixture):
+    _, _, payload, registry = handoff_fixture
+    Path(payload["release"]["manifest_path"]).unlink()
+
+    result = HandoffImporter(Repository(), registry).import_item(payload)
+
+    assert result.state == "blocked"
+    assert result.reason == "release_manifest_unreadable"
+
+
 def test_prepared_item_requires_manifest_and_production_build_proof(handoff_fixture):
     _, _, payload, registry = handoff_fixture
     payload["release"]["transaction_status"] = "prepared"
