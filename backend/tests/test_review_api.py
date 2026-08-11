@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.review.repository import ConcurrentUpdate
 from app.review.routes import router
+from app.review.service import ReviewService
 
 
 ISSUE_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -151,3 +152,36 @@ def test_link_can_be_moved_to_correct_canonical_issue(client, app):
         TARGET_ID,
         "codex",
     )
+
+
+def test_read_only_service_keeps_get_available_and_rejects_writes():
+    class ReadRepository:
+        def overview(self):
+            return {"negative_turns": 7}
+
+    application = FastAPI()
+    application.state.review_service = ReviewService(
+        ReadRepository(),
+        write_repository=None,
+    )
+    application.include_router(router)
+
+    with TestClient(application) as read_only_client:
+        read_response = read_only_client.get("/api/review/overview")
+        write_response = read_only_client.post(
+            "/api/review/issues",
+            json={
+                "agent_id": "ai-fae-agent",
+                "title": "issue",
+                "priority": "P1",
+            },
+            headers={"X-Review-Actor": "codex"},
+        )
+
+    assert read_response.status_code == 200
+    assert read_response.json() == {
+        "negative_turns": 7,
+        "write_available": False,
+    }
+    assert write_response.status_code == 503
+    assert write_response.json()["detail"] == "feedback review unavailable"

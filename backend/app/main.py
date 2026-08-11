@@ -117,6 +117,38 @@ def build_attachment_service(config: Config) -> AttachmentService:
     )
 
 
+def build_review_service(
+    config: Config,
+    registry: YamlRepository,
+    analyst_database_url: str | None,
+):
+    if not analyst_database_url:
+        return UnavailableReviewService()
+
+    read_repository = PsycopgReviewRepository(analyst_database_url)
+    writer_database_url = resolve_review_database_url(config)
+    write_repository = (
+        PsycopgReviewRepository(writer_database_url)
+        if writer_database_url
+        else None
+    )
+    replay_runner = (
+        ReplayRunner(
+            write_repository,
+            registry,
+            request_timeout=config.review_request_timeout_seconds,
+        )
+        if write_repository is not None
+        else None
+    )
+    return ReviewService(
+        read_repository,
+        write_repository=write_repository,
+        registry=registry,
+        replay_runner=replay_runner,
+    )
+
+
 def create_app(
     registry_path: str | None = None,
     cluster_contract_path: str | None = None,
@@ -186,22 +218,11 @@ def create_app(
             database_url,
         )
     if review_service is None:
-        review_database_url = (
-            resolve_review_database_url(config) if start_poller else None
+        review_service = build_review_service(
+            config,
+            repo,
+            database_url if start_poller else None,
         )
-        if review_database_url:
-            review_repository = PsycopgReviewRepository(review_database_url)
-            review_service = ReviewService(
-                review_repository,
-                registry=repo,
-                replay_runner=ReplayRunner(
-                    review_repository,
-                    repo,
-                    request_timeout=config.review_request_timeout_seconds,
-                ),
-            )
-        else:
-            review_service = UnavailableReviewService()
     if attachment_service is None and config.attachment_enabled:
         attachment_service = build_attachment_service(config)
     if attachment_service is not None:

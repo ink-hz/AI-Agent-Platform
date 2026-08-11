@@ -402,6 +402,7 @@ export interface ReviewOverview {
   issue_total: number;
   statuses: Partial<Record<IssueStatus, number>>;
   dispositions: Record<string, number>;
+  write_available: boolean;
 }
 
 export interface ReviewInboxItem {

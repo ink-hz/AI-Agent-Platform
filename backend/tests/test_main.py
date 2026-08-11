@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from app.config import load_config
-from app.main import build_operations, cancel_tasks, create_app
+from app.main import build_operations, build_review_service, cancel_tasks, create_app
 from app.operations.repository import OperationsRepository
 
 
@@ -131,6 +131,51 @@ def test_review_writer_unavailable_isolated_from_platform_health(tmp_path):
     with TestClient(app) as client:
         assert client.get("/api/health").json() == {"status": "ok"}
         assert client.get("/api/review/overview").status_code == 503
+
+
+def test_review_service_uses_analyst_for_reads_and_optional_writer_for_mutations(
+    monkeypatch,
+):
+    repositories = []
+
+    class Repository:
+        def __init__(self, database_url):
+            self.database_url = database_url
+            repositories.append(self)
+
+    class Runner:
+        def __init__(self, repository, _registry, *, request_timeout):
+            self.repository = repository
+            self.request_timeout = request_timeout
+
+    monkeypatch.setattr("app.main.PsycopgReviewRepository", Repository)
+    monkeypatch.setattr("app.main.ReplayRunner", Runner)
+    config = replace(
+        load_config(),
+        review_enabled=True,
+        review_database_url="postgresql://platform_review_writer@db/review",
+    )
+
+    service = build_review_service(
+        config,
+        registry=object(),
+        analyst_database_url="postgresql://flywheel_analyst@db/flywheel",
+    )
+
+    assert service.read_repository.database_url.endswith("/flywheel")
+    assert service.write_repository.database_url.endswith("/review")
+    assert service.replay_runner.repository is service.write_repository
+    assert repositories == [service.read_repository, service.write_repository]
+
+    read_only = build_review_service(
+        replace(config, review_enabled=False, review_database_url=None),
+        registry=object(),
+        analyst_database_url="postgresql://flywheel_analyst@db/flywheel",
+    )
+
+    assert read_only.read_repository.database_url.endswith("/flywheel")
+    assert read_only.write_repository is None
+    assert read_only.replay_runner is None
 
 
 def test_injected_review_service_lifecycle_remains_owned_by_caller(tmp_path):
