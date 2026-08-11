@@ -6,15 +6,17 @@ COPY webui/ ./
 RUN npm run build
 
 FROM python:3.11.13-slim-bookworm AS runtime
-ARG RELEASE_SHA
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PLATFORM_RELEASE_SHA=${RELEASE_SHA}
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 WORKDIR /app/backend
 COPY backend/requirements.cloud.txt ./requirements.cloud.txt
 RUN pip install --no-cache-dir --requirement requirements.cloud.txt \
     && groupadd --gid 10001 platform \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin platform
+ARG RELEASE_SHA
+ENV PLATFORM_RELEASE_SHA=${RELEASE_SHA}
 COPY --chown=10001:10001 backend/app ./app
 COPY --chown=10001:10001 backend/migrations ./migrations
 COPY --chown=10001:10001 deploy/cloud/registry.yaml /app/registry.yaml

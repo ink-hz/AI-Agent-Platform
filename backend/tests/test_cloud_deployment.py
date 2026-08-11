@@ -40,6 +40,8 @@ def test_image_is_multistage_nonroot_and_contains_only_runtime_assets():
     assert dockerfile.count("from ") >= 2
     assert "npm run build" in dockerfile
     assert "python:3.11" in dockerfile
+    assert "https://mirrors.aliyun.com/pypi/simple/" in dockerfile
+    assert dockerfile.index("run pip install") < dockerfile.index("arg release_sha")
     assert "user platform" in dockerfile
     assert "healthcheck" in dockerfile
     assert "uvicorn" in dockerfile
