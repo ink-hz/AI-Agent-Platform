@@ -3,8 +3,7 @@ import type {
   ImprovementItem, Page, SessionDetail, SessionSummary, SyncStatus, TraceDetail,
   EventSeverity, OperationalEvent, OperationsBrief,
   FeedbackIssueDetail, FeedbackIssueSummary, ReviewInboxItem, ReviewOverview,
-  ReplayRun,
-  DeploymentInfo,
+  ReplayRun, TurnClosureSummary, DeploymentInfo,
 } from "./types";
 
 
@@ -146,12 +145,22 @@ export const fetchFlywheelItems = (signal?: AbortSignal) =>
 export const fetchSyncStatus = (signal?: AbortSignal) =>
   read<SyncStatus[]>("/api/sync/status", signal);
 
-export const fetchReviewOverview = (signal?: AbortSignal) =>
-  read<ReviewOverview>("/api/review/overview", signal);
-export const fetchReviewInbox = (signal?: AbortSignal) =>
-  read<ReviewInboxItem[]>("/api/review/inbox?limit=200", signal);
-export const fetchReviewIssues = (signal?: AbortSignal) =>
-  read<FeedbackIssueSummary[]>("/api/review/issues?limit=200", signal);
+function reviewQuery(agentId: string, extras: Record<string, string> = {}) {
+  const params = new URLSearchParams({ agent_id: agentId, ...extras });
+  return params.toString();
+}
+
+export const fetchReviewOverview = (agentId: string, signal?: AbortSignal) =>
+  read<ReviewOverview>(`/api/review/overview?${reviewQuery(agentId)}`, signal);
+export const fetchReviewInbox = (agentId: string, signal?: AbortSignal) =>
+  read<ReviewInboxItem[]>(`/api/review/inbox?${reviewQuery(agentId, { limit: "200" })}`, signal);
+export const fetchReviewIssues = (agentId: string, signal?: AbortSignal) =>
+  read<FeedbackIssueSummary[]>(`/api/review/issues?${reviewQuery(agentId, { limit: "200" })}`, signal);
+export const fetchReviewTurnSummaries = (turnKeys: string[], signal?: AbortSignal) => {
+  const params = new URLSearchParams();
+  turnKeys.forEach((turnKey) => params.append("turn_key", turnKey));
+  return read<TurnClosureSummary[]>(`/api/review/turn-summaries?${params}`, signal);
+};
 export const fetchReviewIssue = (id: string, signal?: AbortSignal) =>
   read<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(id)}`, signal);
 

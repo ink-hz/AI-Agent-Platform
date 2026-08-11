@@ -413,6 +413,15 @@ export interface ReviewOverview {
   issue_total: number;
   statuses: Partial<Record<IssueStatus, number>>;
   dispositions: Record<string, number>;
+  write_available: boolean;
+}
+
+export interface TurnClosureSummary {
+  turn_key: string;
+  issue_id: string | null;
+  status: IssueStatus;
+  missing_gates: string[];
+  latest_valid_replay_id: string | null;
 }
 
 export interface ReviewInboxItem {

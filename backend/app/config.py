@@ -43,6 +43,7 @@ class Config:
     remote_ssh_host: str
     remote_ssh_key_path: str
     remote_poll_interval_seconds: float
+    feedback_closure_outbox_dir: str
     operations_database_path: str
     operations_usage_interval_seconds: float
     operations_execution_interval_seconds: float
@@ -161,6 +162,20 @@ def is_cloud_mode(config: Config) -> bool:
     return config.deployment_mode == "cloud-replica"
 
 
+def _feedback_closure_outbox_dir() -> str:
+    configured = os.getenv("PLATFORM_FEEDBACK_CLOSURE_OUTBOX_DIR")
+    path = (
+        Path(configured).expanduser()
+        if configured
+        else Path.home()
+        / "Library/Application Support/OrbbecAI-Agent-Platform"
+        / "feedback-closure-outbox"
+    )
+    if not path.is_absolute():
+        raise RuntimeError("feedback closure outbox path must be absolute")
+    return str(path)
+
+
 def load_config() -> Config:
     config = Config(
         deployment_mode=os.getenv("PLATFORM_DEPLOYMENT_MODE", "local"),
@@ -218,6 +233,7 @@ def load_config() -> Config:
         remote_poll_interval_seconds=float(
             os.getenv("PLATFORM_REMOTE_POLL_INTERVAL", "60")
         ),
+        feedback_closure_outbox_dir=_feedback_closure_outbox_dir(),
         operations_database_path=os.getenv(
             "PLATFORM_OPERATIONS_DATABASE_PATH", "../data/platform-operations.db"
         ),

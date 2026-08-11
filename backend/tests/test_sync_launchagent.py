@@ -12,6 +12,9 @@ def test_daily_sync_launchagent_contract() -> None:
     assert plist["StartCalendarInterval"] == {"Hour": 3, "Minute": 20}
     assert plist["RunAtLoad"] is False
     assert plist["ProgramArguments"][-1].endswith("deploy/sync-remote-agents")
+    assert plist["EnvironmentVariables"][
+        "PLATFORM_FEEDBACK_CLOSURE_OUTBOX_DIR"
+    ].endswith("/OrbbecAI-Agent-Platform/feedback-closure-outbox")
     assert "KeepAlive" not in plist
 
 
@@ -21,3 +24,12 @@ def test_installer_targets_only_sync_launchagent() -> None:
     assert "com.orbbec.ai-agent-platform-sync" in script
     assert "com.orbbec.ai-agent-platform.plist" not in script
     assert "MetaBot" not in script
+
+
+def test_sync_wrapper_exports_feedback_closure_outbox() -> None:
+    script = (ROOT / "deploy/sync-remote-agents").read_text(encoding="utf-8")
+
+    assert "PLATFORM_FEEDBACK_CLOSURE_OUTBOX_DIR" in script
+    assert "security find-generic-password" not in script
+    assert 'set -- --source all' in script
+    assert 'app.sync_remote.cli "$@"' in script

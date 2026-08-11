@@ -35,6 +35,8 @@ def prepare(monkeypatch, review_url):
         remote_ssh_key_path="key",
         sync_database_url_file="/private/sync-dsn",
         sync_database_url=None,
+        registry_path="registry.yaml",
+        feedback_closure_outbox_dir="/tmp/feedback-closure-outbox",
     )
     monkeypatch.setattr(cli, "load_config", lambda: config)
     monkeypatch.setattr(cli, "default_sources", lambda *_args: {"fae": object()})
@@ -45,6 +47,20 @@ def prepare(monkeypatch, review_url):
     )
     monkeypatch.setattr(cli, "read_secret_file", lambda *_args: "sync-dsn")
     monkeypatch.setattr(cli, "resolve_review_database_url", lambda _config: review_url)
+    monkeypatch.setattr(cli, "YamlRepository", lambda _path: object())
+    monkeypatch.setattr(cli, "HandoffImporter", lambda *_args: object())
+    monkeypatch.setattr(
+        cli,
+        "sync_feedback_closure_outbox",
+        lambda *_args: {
+            "prepared": 0,
+            "pending": 0,
+            "acknowledged": 0,
+            "blocked": 0,
+            "terminal_failed": 0,
+            "invalid": 0,
+        },
+    )
 
 
 def test_cli_reports_source_and_review_sections(monkeypatch, capsys):
@@ -61,6 +77,7 @@ def test_cli_reports_source_and_review_sections(monkeypatch, capsys):
     assert rows[0]["source_sync"]["run_id"] == "run-1"
     assert rows[1]["review_backfill"]["status"] == "succeeded"
     assert rows[1]["review_backfill"]["created_issues"] == 1
+    assert rows[2]["closure_handoff"]["blocked"] == 0
 
 
 def test_cli_does_not_misreport_source_when_review_writer_is_unavailable(

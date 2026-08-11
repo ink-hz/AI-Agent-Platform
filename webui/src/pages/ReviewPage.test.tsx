@@ -33,16 +33,18 @@ function response(body: unknown): Response {
 
 let container: HTMLDivElement;
 let root: Root;
+let writeAvailable: boolean;
 
 beforeEach(() => {
+  writeAvailable = true;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   window.history.replaceState({}, "", "/review?issue=issue-1");
   vi.stubGlobal("fetch", vi.fn((path: string) => {
-    if (path === "/api/review/overview") return Promise.resolve(response({ feedback_rows: 79, negative_rows: 51, negative_turns: 50, positive_rows: 28, statuses: { awaiting_review: 1 } }));
-    if (path === "/api/review/inbox?limit=200") return Promise.resolve(response([inboxItem]));
-    if (path === "/api/review/issues?limit=200") return Promise.resolve(response([{ ...issue.issue, progress: issue.progress }]));
+    if (path.startsWith("/api/review/overview?")) return Promise.resolve(response({ feedback_rows: 79, negative_rows: 51, negative_turns: 50, positive_rows: 28, statuses: { awaiting_review: 1 }, write_available: writeAvailable }));
+    if (path.startsWith("/api/review/inbox?")) return Promise.resolve(response([inboxItem]));
+    if (path.startsWith("/api/review/issues?")) return Promise.resolve(response([{ ...issue.issue, progress: issue.progress }]));
     return Promise.resolve(response(issue));
   }));
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -65,6 +67,8 @@ it("shows the original and latest replay answer without force close", async () =
   expect(container.textContent).toContain("待语义复审");
   expect(container.textContent).not.toContain("强制关闭");
   expect([...container.querySelectorAll("button")].some((button) => /关闭事项/.test(button.textContent || ""))).toBe(false);
+  const paths = vi.mocked(fetch).mock.calls.map(([path]) => String(path));
+  expect(paths.filter((path) => path.includes("/api/review/")).every((path) => path.includes("agent_id=ai-fae-agent") || path.includes("/issues/issue-1"))).toBe(true);
 });
 
 
@@ -78,4 +82,21 @@ it("can attach an inbox answer to an existing canonical issue", async () => {
   const select = container.querySelector('select[aria-label="已有事项"]');
   expect(select).not.toBeNull();
   expect(select?.textContent).toContain("型号事实错误");
+});
+
+
+it("keeps review data visible and disables mutations in read-only mode", async () => {
+  writeAvailable = false;
+
+  await act(async () => root.render(<ReviewPage />));
+  await act(async () => await Promise.resolve());
+
+  expect(container.textContent).toContain("只读模式");
+  expect(container.textContent).toContain("旧的错误答案");
+  expect(container.textContent).toContain("最新复测答案");
+  const save = [...container.querySelectorAll("button")].find((button) => button.textContent === "保存归因");
+  const replay = [...container.querySelectorAll("button")].find((button) => button.textContent?.startsWith("复跑 "));
+  expect(save?.disabled).toBe(true);
+  expect(replay?.disabled).toBe(true);
+  expect(container.textContent).not.toContain("语义通过");
 });

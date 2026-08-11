@@ -165,26 +165,53 @@ async def _invoke(awaitable):
 
 
 @router.get("/overview")
-async def overview(request: Request):
-    return await _invoke(_service(request).overview())
+async def overview(request: Request, agent_id: str | None = None):
+    return await _invoke(_service(request).overview(agent_id=agent_id))
 
 
 @router.get("/inbox")
 async def inbox(
     request: Request,
+    agent_id: str | None = None,
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    return await _invoke(_service(request).inbox(limit=limit, offset=offset))
+    return await _invoke(
+        _service(request).inbox(
+            agent_id=agent_id,
+            limit=limit,
+            offset=offset,
+        )
+    )
 
 
 @router.get("/issues")
 async def issues(
     request: Request,
+    agent_id: str | None = None,
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    return await _invoke(_service(request).list_issues(limit=limit, offset=offset))
+    return await _invoke(
+        _service(request).list_issues(
+            agent_id=agent_id,
+            limit=limit,
+            offset=offset,
+        )
+    )
+
+
+@router.get("/turn-summaries")
+async def turn_summaries(
+    request: Request,
+    turn_key: list[str] = Query(...),
+):
+    unique_keys = list(dict.fromkeys(turn_key))
+    if len(unique_keys) > 200:
+        raise HTTPException(status_code=422, detail="at most 200 turn keys")
+    return await _invoke(
+        _service(request).turn_summaries(turn_keys=unique_keys)
+    )
 
 
 @router.get("/issues/{issue_id}")

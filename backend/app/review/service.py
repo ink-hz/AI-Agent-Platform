@@ -5,7 +5,11 @@ import inspect
 from uuid import UUID
 
 from .evidence import GitEvidenceVerifier
-from .repository import PsycopgReviewRepository, ReviewRepositoryError
+from .repository import (
+    InvalidReviewMutation,
+    PsycopgReviewRepository,
+    ReviewRepositoryError,
+)
 
 
 class ReviewUnavailable(RuntimeError):
@@ -28,16 +32,23 @@ class UnavailableReviewService:
 class ReviewService:
     def __init__(
         self,
-        repository: PsycopgReviewRepository,
+        read_repository: PsycopgReviewRepository,
         *,
+        write_repository: PsycopgReviewRepository | None = None,
         registry=None,
         evidence_verifier=None,
         replay_runner=None,
     ) -> None:
-        self.repository = repository
+        self.read_repository = read_repository
+        self.write_repository = write_repository
         self.registry = registry
         self.evidence_verifier = evidence_verifier
         self.replay_runner = replay_runner
+
+    def _writer(self) -> PsycopgReviewRepository:
+        if self.write_repository is None:
+            raise ReviewUnavailable("feedback review is read-only")
+        return self.write_repository
 
     async def close(self) -> None:
         if self.replay_runner is not None and hasattr(self.replay_runner, "close"):
@@ -52,7 +63,7 @@ class ReviewService:
             raise ReviewUnavailable("feedback review unavailable") from error
 
     async def _detail(self, issue_id: UUID) -> dict:
-        detail = await self._run(self.repository.get_issue_detail, issue_id)
+        detail = await self._run(self.read_repository.get_issue_detail, issue_id)
         if detail is None:
             from .repository import ReviewNotFound
 
@@ -66,38 +77,64 @@ class ReviewService:
         actor: str,
         reason: str = "",
     ) -> dict:
+        writer = self._writer()
         await self._run(
-            self.repository.recalculate_and_record_transition,
+            writer.recalculate_and_record_transition,
             issue_id,
             actor=actor,
             reason=reason,
         )
         return await self._detail(issue_id)
 
-    async def overview(self) -> dict:
-        return await self._run(self.repository.overview)
+    async def overview(self, *, agent_id: str | None = None) -> dict:
+        result = await self._run(
+            self.read_repository.overview,
+            agent_id=agent_id,
+        )
+        return {**result, "write_available": self.write_repository is not None}
 
-    async def inbox(self, *, limit: int, offset: int) -> list[dict]:
+    async def inbox(
+        self,
+        *,
+        agent_id: str | None = None,
+        limit: int,
+        offset: int,
+    ) -> list[dict]:
         return await self._run(
-            self.repository.list_inbox,
+            self.read_repository.list_inbox,
+            agent_id=agent_id,
             limit=limit,
             offset=offset,
         )
 
-    async def list_issues(self, *, limit: int, offset: int) -> list[dict]:
+    async def list_issues(
+        self,
+        *,
+        agent_id: str | None = None,
+        limit: int,
+        offset: int,
+    ) -> list[dict]:
         return await self._run(
-            self.repository.list_issues,
+            self.read_repository.list_issues,
+            agent_id=agent_id,
             limit=limit,
             offset=offset,
+        )
+
+    async def turn_summaries(self, *, turn_keys: list[str]) -> list[dict]:
+        return await self._run(
+            self.read_repository.get_turn_summaries,
+            turn_keys,
         )
 
     async def issue_detail(self, issue_id: UUID) -> dict:
         return await self._detail(issue_id)
 
     async def create_issue(self, payload, *, actor: str) -> dict:
+        writer = self._writer()
         data = payload.model_dump(exclude={"reason"}, exclude_none=True)
         row = await self._run(
-            self.repository.create_issue,
+            writer.create_issue,
             data,
             actor=actor,
             reason=payload.reason,
@@ -109,13 +146,14 @@ class ReviewService:
         )
 
     async def update_issue(self, issue_id: UUID, payload, *, actor: str) -> dict:
+        writer = self._writer()
         updates = payload.model_dump(
             exclude={"row_version", "reason"},
             exclude_unset=True,
             exclude_none=False,
         )
         await self._run(
-            self.repository.update_issue,
+            writer.update_issue,
             issue_id,
             updates,
             expected_row_version=payload.row_version,
@@ -129,8 +167,9 @@ class ReviewService:
         )
 
     async def link_turn(self, issue_id: UUID, payload, *, actor: str) -> dict:
+        writer = self._writer()
         await self._run(
-            self.repository.link_turn,
+            writer.link_turn,
             issue_id,
             agent_id=payload.agent_id,
             source_turn_key=payload.source_turn_key,
@@ -153,6 +192,7 @@ class ReviewService:
         *,
         actor: str,
     ) -> dict:
+        writer = self._writer()
         detail = await self._detail(issue_id)
         if not any(
             str(link["id"]) == str(link_id) and link["active"]
@@ -167,14 +207,14 @@ class ReviewService:
             raise InvalidReviewMutation("target issue must differ from source issue")
         await self._detail(payload.target_issue_id)
         await self._run(
-            self.repository.move_link,
+            writer.move_link,
             link_id,
             payload.target_issue_id,
             actor=actor,
             reason=payload.reason,
         )
         await self._run(
-            self.repository.recalculate_and_record_transition,
+            writer.recalculate_and_record_transition,
             issue_id,
             actor=actor,
             reason=payload.reason,
@@ -186,8 +226,9 @@ class ReviewService:
         )
 
     async def merge_issue(self, issue_id: UUID, payload, *, actor: str) -> dict:
+        writer = self._writer()
         await self._run(
-            self.repository.merge_issue,
+            writer.merge_issue,
             issue_id,
             payload.target_issue_id,
             expected_row_version=payload.row_version,
@@ -195,7 +236,7 @@ class ReviewService:
             reason=payload.reason,
         )
         await self._run(
-            self.repository.recalculate_and_record_transition,
+            writer.recalculate_and_record_transition,
             issue_id,
             actor=actor,
             reason=payload.reason,
@@ -207,8 +248,9 @@ class ReviewService:
         )
 
     async def mark_fix_ready(self, issue_id: UUID, payload, *, actor: str) -> dict:
+        writer = self._writer()
         await self._run(
-            self.repository.mark_fix_ready,
+            writer.mark_fix_ready,
             issue_id,
             expected_row_version=payload.row_version,
             actor=actor,
@@ -221,9 +263,10 @@ class ReviewService:
         )
 
     async def add_evidence(self, issue_id: UUID, payload, *, actor: str) -> dict:
+        writer = self._writer()
         data = payload.model_dump(exclude={"reason"}, exclude_none=True)
         await self._run(
-            self.repository.add_evidence,
+            writer.add_evidence,
             issue_id,
             data,
             actor=actor,
@@ -236,7 +279,8 @@ class ReviewService:
         )
 
     async def verify_evidence(self, evidence_id: UUID, payload, *, actor: str) -> dict:
-        evidence = await self._run(self.repository.get_evidence, evidence_id)
+        writer = self._writer()
+        evidence = await self._run(self.read_repository.get_evidence, evidence_id)
         if evidence is None:
             from .repository import ReviewNotFound
 
@@ -288,7 +332,7 @@ class ReviewService:
                 **keyword_arguments,
             )
         row = await self._run(
-            self.repository.record_evidence_verification,
+            writer.record_evidence_verification,
             evidence_id,
             status=result.status,
             details=result.details,
@@ -302,6 +346,7 @@ class ReviewService:
         )
 
     async def start_replay(self, issue_id: UUID, payload, *, actor: str) -> dict:
+        writer = self._writer()
         if self.replay_runner is None:
             raise ReviewUnavailable("replay runner unavailable")
         detail = await self._detail(issue_id)
@@ -319,7 +364,7 @@ class ReviewService:
             actor=actor,
         )
         await self._run(
-            self.repository.recalculate_and_record_transition,
+            writer.recalculate_and_record_transition,
             issue_id,
             actor=actor,
             reason="replay completed",
@@ -327,8 +372,21 @@ class ReviewService:
         return result
 
     async def semantic_review(self, replay_id: UUID, payload, *, actor: str) -> dict:
+        valid_identity = (
+            payload.method == "codex"
+            and actor == "codex"
+            and payload.reviewer == actor
+        ) or (
+            payload.method == "human_fae"
+            and actor.startswith("fae:")
+            and bool(actor.removeprefix("fae:").strip())
+            and payload.reviewer == actor
+        )
+        if not valid_identity:
+            raise InvalidReviewMutation("semantic review identity mismatch")
+        writer = self._writer()
         row = await self._run(
-            self.repository.review_replay,
+            writer.review_replay,
             replay_id,
             verdict=payload.verdict,
             method=payload.method,
@@ -343,8 +401,9 @@ class ReviewService:
         )
 
     async def set_disposition(self, issue_id: UUID, payload, *, actor: str) -> dict:
+        writer = self._writer()
         await self._run(
-            self.repository.set_disposition,
+            writer.set_disposition,
             issue_id,
             disposition=payload.disposition,
             canonical_issue_id=payload.canonical_issue_id,

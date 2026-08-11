@@ -3,7 +3,7 @@ import { useState } from "react";
 import { fetchTrace } from "../api";
 import { formatMessageTime } from "../messageTime";
 import { formatSenderIdentity } from "../senderIdentity";
-import type { TraceDetail, TurnDetail } from "../types";
+import type { TraceDetail, TurnClosureSummary, TurnDetail } from "../types";
 import { AttachmentList } from "./AttachmentList";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { PlatformLink } from "./PlatformLink";
@@ -24,7 +24,33 @@ function availabilityLabel(value: TurnDetail["evidence_availability"]): string {
 }
 
 
-export function TurnCard({ turn }: { turn: TurnDetail }) {
+const CLOSURE_STATUS_LABELS: Record<string, string> = {
+  pending_triage: "待归因",
+  fixing: "修复中",
+  awaiting_merge: "等待合并",
+  awaiting_deploy: "等待部署",
+  awaiting_replay: "等待复跑",
+  awaiting_review: "等待语义复审",
+  closed: "已闭环",
+  duplicate: "重复事项",
+  not_actionable: "无需处理",
+  wont_fix: "暂不修复",
+};
+
+const MISSING_GATE_LABELS: Record<string, string> = {
+  issue: "纳管事项",
+  triage: "根因归类",
+  replay: "真实复跑",
+  semantic_review: "独立语义复审",
+  merge: "合并证据",
+  deployment: "部署证据",
+};
+
+
+export function TurnCard({ turn, closureSummary }: {
+  turn: TurnDetail;
+  closureSummary?: TurnClosureSummary;
+}) {
   const [open, setOpen] = useState(false);
   const [trace, setTrace] = useState<TraceDetail | null>(null);
   const [traceState, setTraceState] = useState<"idle" | "loading" | "missing">("idle");
@@ -52,7 +78,7 @@ export function TurnCard({ turn }: { turn: TurnDetail }) {
       {turn.reviews.map((item) => <div className="signal signal-review" key={item.review_key}><span>复审 · {item.normalized_priority}</span><p>{item.notes || item.corrected_answer || item.status}</p></div>)}
       {turn.improvements.map((item) => <div className="signal signal-improvement" key={item.item_key}><span>{item.item_type} · {item.status}</span><p>{item.title || item.summary}</p></div>)}
     </section>}
-    {hasNegativeFeedback && <div className="review-entry"><PlatformLink href={`/review?turn_key=${encodeURIComponent(turn.turn_key)}`}>进入修复闭环</PlatformLink></div>}
+    {hasNegativeFeedback && <div className="review-entry"><div><strong>{CLOSURE_STATUS_LABELS[closureSummary?.status || "pending_triage"]}</strong>{closureSummary?.missing_gates[0] && <span>缺少：{MISSING_GATE_LABELS[closureSummary.missing_gates[0]] || closureSummary.missing_gates[0]}</span>}</div><PlatformLink href={`/review?agent_id=${encodeURIComponent(turn.agent_id)}&turn_key=${encodeURIComponent(turn.turn_key)}`}>查看修复闭环</PlatformLink></div>}
     {turn.trace_key && <div className="trace-action"><button aria-expanded={open} onClick={toggleTrace}>{open ? "收起 Trace" : "查看 Trace"}</button><span>{turn.trace_key}</span></div>}
     {open && (trace ? <TraceTimeline trace={trace} /> : <div className="trace-loading">{traceState === "loading" ? "正在加载 Trace…" : "该轮暂无 Trace 详情。"}</div>)}
   </article>;

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.review.repository import ConcurrentUpdate
 from app.review.routes import router
+from app.review.service import ReviewService
 
 
 ISSUE_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -16,6 +17,7 @@ TARGET_ID = UUID("00000000-0000-0000-0000-000000000003")
 class FakeService:
     def __init__(self):
         self.move = None
+        self.read_filters = []
 
     async def create_issue(self, payload, *, actor):
         return {"issue": {"id": str(ISSUE_ID), **payload.model_dump()}}
@@ -25,8 +27,21 @@ class FakeService:
             {"id": str(issue_id), "row_version": 2, "owner": "fae:bob"}
         )
 
-    async def overview(self):
+    async def overview(self, *, agent_id=None):
+        self.read_filters.append(("overview", agent_id))
         return {"negative_turns": 50}
+
+    async def inbox(self, *, agent_id=None, limit, offset):
+        self.read_filters.append(("inbox", agent_id))
+        return []
+
+    async def list_issues(self, *, agent_id=None, limit, offset):
+        self.read_filters.append(("issues", agent_id))
+        return []
+
+    async def turn_summaries(self, *, turn_keys):
+        self.read_filters.append(("turn_summaries", turn_keys))
+        return [{"turn_key": turn_keys[0], "status": "pending_triage"}]
 
     async def move_link(self, issue_id, link_id, payload, *, actor):
         self.move = (issue_id, link_id, payload.target_issue_id, actor)
@@ -137,6 +152,30 @@ def test_read_endpoint_does_not_require_actor(client):
     assert client.get("/api/review/overview").json() == {"negative_turns": 50}
 
 
+def test_read_endpoints_forward_agent_filter_and_batch_turn_keys(client, app):
+    assert client.get(
+        "/api/review/overview?agent_id=ai-fae-agent"
+    ).status_code == 200
+    assert client.get(
+        "/api/review/inbox?agent_id=ai-fae-agent"
+    ).status_code == 200
+    assert client.get(
+        "/api/review/issues?agent_id=ai-fae-agent"
+    ).status_code == 200
+    response = client.get(
+        "/api/review/turn-summaries",
+        params=[("turn_key", "fae:one"), ("turn_key", "fae:two")],
+    )
+
+    assert response.status_code == 200
+    assert app.state.review_service.read_filters[-4:] == [
+        ("overview", "ai-fae-agent"),
+        ("inbox", "ai-fae-agent"),
+        ("issues", "ai-fae-agent"),
+        ("turn_summaries", ["fae:one", "fae:two"]),
+    ]
+
+
 def test_link_can_be_moved_to_correct_canonical_issue(client, app):
     response = client.post(
         f"/api/review/issues/{ISSUE_ID}/links/{LINK_ID}/move",
@@ -151,3 +190,36 @@ def test_link_can_be_moved_to_correct_canonical_issue(client, app):
         TARGET_ID,
         "codex",
     )
+
+
+def test_read_only_service_keeps_get_available_and_rejects_writes():
+    class ReadRepository:
+        def overview(self, *, agent_id=None):
+            return {"negative_turns": 7}
+
+    application = FastAPI()
+    application.state.review_service = ReviewService(
+        ReadRepository(),
+        write_repository=None,
+    )
+    application.include_router(router)
+
+    with TestClient(application) as read_only_client:
+        read_response = read_only_client.get("/api/review/overview")
+        write_response = read_only_client.post(
+            "/api/review/issues",
+            json={
+                "agent_id": "ai-fae-agent",
+                "title": "issue",
+                "priority": "P1",
+            },
+            headers={"X-Review-Actor": "codex"},
+        )
+
+    assert read_response.status_code == 200
+    assert read_response.json() == {
+        "negative_turns": 7,
+        "write_available": False,
+    }
+    assert write_response.status_code == 503
+    assert write_response.json()["detail"] == "feedback review unavailable"

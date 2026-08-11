@@ -1,20 +1,32 @@
 import { useEffect, useState } from "react";
 
-import { fetchSession } from "../api";
+import { fetchReviewTurnSummaries, fetchSession } from "../api";
 import { ErrorState, LoadingState } from "../components/DataState";
 import { sourceFreshnessLabel } from "../copy";
 import { PlatformLink } from "../components/PlatformLink";
 import { TurnCard } from "../components/TurnCard";
 import { sessionReturnTarget } from "../navigationContext";
-import type { SessionDetail } from "../types";
+import type { SessionDetail, TurnClosureSummary } from "../types";
 
 
 export function SessionDetailPage({ sessionKey }: { sessionKey: string }) {
   const [session, setSession] = useState<SessionDetail | null>(null);
+  const [closureSummaries, setClosureSummaries] = useState<Record<string, TurnClosureSummary>>({});
   const [error, setError] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    fetchSession(sessionKey, controller.signal).then(setSession).catch(() => { if (!controller.signal.aborted) setError(true); });
+    fetchSession(sessionKey, controller.signal).then(async (value) => {
+      const turnKeys = value.turns
+        .filter((turn) => turn.feedback.some((item) => item.sentiment === "negative"))
+        .map((turn) => turn.turn_key);
+      const summaries = turnKeys.length
+        ? await fetchReviewTurnSummaries(turnKeys, controller.signal)
+        : [];
+      if (!controller.signal.aborted) {
+        setClosureSummaries(Object.fromEntries(summaries.map((item) => [item.turn_key, item])));
+        setSession(value);
+      }
+    }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [sessionKey]);
   if (error) return <ErrorState />;
@@ -31,6 +43,6 @@ export function SessionDetailPage({ sessionKey }: { sessionKey: string }) {
       <div className="session-detail-source"><span>{session.source_kind.toUpperCase()}</span><strong>{session.channel}</strong><small className={`freshness freshness-${session.freshness}`}>{sourceFreshnessLabel(session.freshness)}</small></div>
       <dl><div><dt>Agent</dt><dd><PlatformLink href={`/agents/${encodeURIComponent(session.agent_id)}`}>{session.agent_id}</PlatformLink></dd></div><div><dt>对话轮次</dt><dd>{session.turn_count}</dd></div><div><dt>反馈</dt><dd>{session.feedback_count}</dd></div><div><dt>复审</dt><dd>{session.review_count}</dd></div></dl>
     </section>
-    <section className="turn-stack">{session.turns.map((turn) => <TurnCard turn={turn} key={turn.turn_key} />)}</section>
+    <section className="turn-stack">{session.turns.map((turn) => <TurnCard turn={turn} closureSummary={closureSummaries[turn.turn_key]} key={turn.turn_key} />)}</section>
   </>;
 }

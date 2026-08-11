@@ -6,6 +6,7 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any, Literal
 
 
@@ -66,6 +67,54 @@ class GitEvidenceVerifier:
         return VerificationResult(
             "verified",
             {"merge_sha": commit_sha, "commit_exists": True},
+        )
+
+    def verify_commit_path(
+        self,
+        commit_sha: str,
+        relative_path: str,
+    ) -> VerificationResult:
+        pure = PurePosixPath(relative_path)
+        if (
+            not FULL_SHA.fullmatch(commit_sha)
+            or not relative_path
+            or "\\" in relative_path
+            or pure.is_absolute()
+            or any(part in {"", ".", ".."} for part in pure.parts)
+        ):
+            return _rejected(
+                "invalid_git_path",
+                commit_sha=commit_sha,
+                relative_path=relative_path,
+            )
+        try:
+            result = self._git([
+                "git",
+                "-C",
+                self.repository_path,
+                "cat-file",
+                "-e",
+                f"{commit_sha}:{relative_path}",
+            ])
+        except (OSError, subprocess.SubprocessError):
+            return _rejected(
+                "git_verification_failed",
+                commit_sha=commit_sha,
+                relative_path=relative_path,
+            )
+        if result.returncode != 0:
+            return _rejected(
+                "commit_path_not_found",
+                commit_sha=commit_sha,
+                relative_path=relative_path,
+            )
+        return VerificationResult(
+            "verified",
+            {
+                "commit_sha": commit_sha,
+                "relative_path": relative_path,
+                "object_exists": True,
+            },
         )
 
     def _manifest_path(self, manifest_ref: str) -> Path | None:

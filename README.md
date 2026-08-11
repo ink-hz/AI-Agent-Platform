@@ -115,6 +115,18 @@ psql '<Platform owner PostgreSQL URL>' -v ON_ERROR_STOP=1 \
 姓名解析口径，不改写飞书原始身份、消息或会话。数据库视图替换后立即生效，无需重启
 Platform 或重新构建前端；FAE 和 ADMIN 的独立身份数据保持原样。
 
+`CREATE OR REPLACE VIEW` 会清除目标 view 上已有的对象级 grant。应用 006 或任何后续
+会替换 `platform_read.feedback` / `platform_read.turns` 的迁移后，必须继续应用最终权限
+修复；该迁移先撤销 writer 对全部 read views 的权限，再只恢复闭环所需的两张 view：
+
+```bash
+psql '<Platform owner PostgreSQL URL>' -v ON_ERROR_STOP=1 \
+  -f backend/migrations/009_feedback_review_grants.sql
+```
+
+008 可重复执行。最终权限门禁要求 `platform_review_writer` 可 SELECT feedback/turns，
+不可 SELECT attachments，也不能删除 review events 或修改 source schema。
+
 本机运行凭据固定保存在当前用户独占目录，目录权限为 `0700`，四个文件权限为
 `0600`：
 
@@ -197,10 +209,17 @@ launchctl print gui/$(id -u)/com.orbbec.ai-agent-platform-sync
 ```
 
 同步只通过 SSH 执行只读导出，再原子写入本机隔离镜像。每个源镜像成功提交后，
-同步器使用独立 review writer 幂等纳管新增负反馈回答；输出分别包含
-`source_sync` 与 `review_backfill`。闭环写库失败不会回滚或伪造源同步结果，但命令
-会以非零退出并报告 `review_backfill_failed`，便于运维重试。源同步失败时不会运行
-review backfill。失败时 `/api/sync/status` 会保留上一份成功快照。
+同步器使用独立 review writer 幂等纳管新增负反馈回答；FAE 顺序固定为
+`source_sync` → `review_backfill` → `closure_handoff`。最后一步扫描当前用户私有的
+`~/Library/Application Support/OrbbecAI-Agent-Platform/feedback-closure-outbox`
+（目录 0700、文件 0600），导入已发布修复批次的事项、合并与部署证据。路径可用
+`PLATFORM_FEEDBACK_CLOSURE_OUTBOX_DIR` 覆盖，但只接受绝对路径和非符号链接；该流程
+继续使用 mode-0600 的既有数据库凭据文件，不调用 macOS 钥匙串。
+
+输出分别包含 `source_sync`、`review_backfill` 和 FAE 的 `closure_handoff` 状态计数。
+单个 handoff blocked/terminal_failed 不会回滚或伪造已成功的源同步，但命令会以非零
+退出，后续定时任务只重试尚未 acknowledged 的项目。源同步失败时不会运行 review
+backfill 或 handoff import。失败时 `/api/sync/status` 会保留上一份成功快照。
 
 Langfuse 保持独立访问，不嵌入 Platform：
 
