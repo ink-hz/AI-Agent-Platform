@@ -206,3 +206,27 @@ def test_unsafe_turn_omits_both_message_bodies(policy):
     assert result.turns[0].answer.text == OMITTED_TEXT
     assert result.turns[0].question.safe is False
     assert result.turns[0].answer.safe is False
+
+
+def test_source_attachment_states_are_reduced_to_safe_categories(policy):
+    now = datetime(2026, 8, 11, tzinfo=UTC)
+    raw = RawSession(
+        session_key="s1", agent_id="hr-bot", source_kind="metabot", channel="feishu",
+        title=None, user_identity="u1", primary_sender_name="磐德",
+        primary_sender_department="HR", created_at=now, last_active_at=now,
+        turns=(RawTurn(
+            turn_key="t1", turn_index=1, question="问题", answer="回答", created_at=now,
+            attachments=(RawAttachment(
+                attachment_id="a1", direction="user_input", display_name="简历.pdf",
+                mime_type="application/pdf", size_bytes=100,
+                received_or_generated_at=now, archive_status="available",
+                delivery_status="not_applicable",
+            ),),
+        ),),
+    )
+
+    attachment = sanitize_session(raw, policy).turns[0].attachments[0]
+
+    assert attachment.direction == "incoming"
+    assert attachment.archive_status == "archived"
+    assert attachment.delivery_status == "unavailable"

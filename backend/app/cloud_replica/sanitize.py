@@ -258,6 +258,39 @@ def _safe_enum(value: str | None, allowed: set[str]) -> str | None:
     return value if value in allowed else None
 
 
+def _safe_attachment_direction(value: str | None) -> str:
+    return {
+        "user_input": "incoming",
+        "agent_output": "generated",
+        "source": "source",
+        "generated": "generated",
+        "incoming": "incoming",
+        "outgoing": "outgoing",
+    }.get(value or "", "unknown")
+
+
+def _safe_attachment_archive_status(value: str | None) -> str | None:
+    return {
+        "available": "archived",
+        "source_unavailable": "unavailable",
+        "pending": "pending",
+        "archived": "archived",
+        "expired": "expired",
+        "failed": "failed",
+        "unavailable": "unavailable",
+    }.get(value or "")
+
+
+def _safe_attachment_delivery_status(value: str | None) -> str | None:
+    return {
+        "not_applicable": "unavailable",
+        "pending": "pending",
+        "delivered": "delivered",
+        "failed": "failed",
+        "unavailable": "unavailable",
+    }.get(value or "")
+
+
 def _safe_identifier(value: str | None) -> str | None:
     if value and re.fullmatch(r"[A-Za-z0-9._-]{1,80}", value):
         return value
@@ -333,18 +366,12 @@ def sanitize_session(
                 category=_attachment_category(attachment),
                 mime_type=(attachment.mime_type or "")[:127] or None,
                 size_bucket=_size_bucket(attachment.size_bytes),
-                direction=_safe_enum(
-                    attachment.direction,
-                    {"source", "generated", "incoming", "outgoing"},
-                )
-                or "unknown",
-                archive_status=_safe_enum(
-                    attachment.archive_status,
-                    {"pending", "archived", "expired", "failed", "unavailable"},
+                direction=_safe_attachment_direction(attachment.direction),
+                archive_status=_safe_attachment_archive_status(
+                    attachment.archive_status
                 ),
-                delivery_status=_safe_enum(
-                    attachment.delivery_status,
-                    {"pending", "delivered", "failed", "unavailable"},
+                delivery_status=_safe_attachment_delivery_status(
+                    attachment.delivery_status
                 ),
                 occurred_at=attachment.received_or_generated_at,
             )

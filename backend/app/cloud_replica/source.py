@@ -33,12 +33,14 @@ order by session_key, turn_index, turn_key
 
 ATTACHMENT_SQL = """
 select
-    attachment_id, turn_key, direction, display_name, mime_type, size_bytes,
-    received_or_generated_at, archive_status, delivery_status, expires_at
-from platform_read.attachments
-where turn_key = any(%(turn_keys)s)
-  and received_or_generated_at <= %(through)s
-order by turn_key, received_or_generated_at, attachment_id
+    a.attachment_id, t.turn_key as turn_key, a.direction, a.display_name,
+    a.mime_type, a.size_bytes, a.received_or_generated_at, a.archive_status,
+    a.delivery_status, a.expires_at
+from platform_read.attachments a
+join platform_read.turns t on a.turn_key = t.native_id
+where t.turn_key = any(%(turn_keys)s)
+  and a.received_or_generated_at <= %(through)s
+order by t.turn_key, a.received_or_generated_at, a.attachment_id
 """.strip()
 
 TRACE_SQL = """

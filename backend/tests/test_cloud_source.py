@@ -16,7 +16,6 @@ def test_source_queries_are_explicit_bounded_and_never_touch_restricted_fields()
 
     assert "select *" not in combined
     for forbidden in (
-        "native_id",
         "details",
         "sources",
         "input_summary",
@@ -34,6 +33,9 @@ def test_source_queries_are_explicit_bounded_and_never_touch_restricted_fields()
     assert "order by last_active_at, session_key" in SESSION_SQL.lower()
     for statement in (TURN_SQL, ATTACHMENT_SQL, TRACE_SQL, TRACE_STEP_SQL):
         assert "%(through)s" in statement
+    assert "join platform_read.turns" in ATTACHMENT_SQL.lower()
+    assert "a.turn_key = t.native_id" in ATTACHMENT_SQL.lower()
+    assert "t.turn_key as turn_key" in ATTACHMENT_SQL.lower()
 
 
 class _Context:
