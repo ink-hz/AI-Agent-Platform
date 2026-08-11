@@ -38,10 +38,10 @@ fi
 repository_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repository_root"
 [[ -z "$(git status --porcelain)" ]] || fail
-branch_name="$(git rev-parse --abbrev-ref HEAD)"
-[[ "$branch_name" == "master" ]] || fail
 release_sha="$(git rev-parse HEAD)"
+remote_master_sha="$(git rev-parse refs/remotes/origin/master 2>/dev/null || true)"
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail
+[[ "$release_sha" == "$remote_master_sha" ]] || fail
 
 artifact_root="$(mktemp -d)"
 cleanup() { /bin/rm -rf -- "$artifact_root"; }

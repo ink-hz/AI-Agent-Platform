@@ -61,9 +61,9 @@ def test_local_deploy_preflight_is_clean_noninteractive_and_manifest_bound():
     script = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
 
     assert "git status --porcelain" in script
-    assert "git rev-parse --abbrev-ref HEAD" in script
-    assert '"master"' in script
     assert "git rev-parse HEAD" in script
+    assert "refs/remotes/origin/master" in script
+    assert '"$release_sha" == "$remote_master_sha"' in script
     assert "MANIFEST.sha256" in script
     assert "BatchMode=yes" in script
     assert "IdentitiesOnly=yes" in script
