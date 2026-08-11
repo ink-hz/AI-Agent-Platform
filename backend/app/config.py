@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import ipaddress
 from pathlib import Path
 import stat
+from typing import Literal
 from urllib.parse import urlparse
 
 from .local_secrets import SecretFileUnavailable, read_secret_file
@@ -19,6 +20,7 @@ DEFAULT_SECRETS_DIR = (
 
 @dataclass(frozen=True)
 class Config:
+    deployment_mode: Literal["local", "cloud-replica"]
     registry_path: str
     metabot_contract_path: str
     poll_interval_seconds: float
@@ -52,6 +54,10 @@ class Config:
     attachment_s3_secret_key_file: str
     attachment_ticket_seconds: int
     trusted_attachment_proxy: bool
+    replica_database_url_file: str
+    replica_encryption_key_file: str
+    replica_signing_public_key_file: str
+    replica_stale_seconds: int
 
 
 def _enabled(name: str, default: str = "0") -> bool:
@@ -109,8 +115,55 @@ def _validate_attachment_config(config: Config) -> None:
         raise RuntimeError("attachment access requires the Flywheel analyst DSN")
 
 
+def _validate_private_file(path_value: str, label: str) -> None:
+    path = Path(path_value)
+    if not path.is_absolute():
+        raise RuntimeError(f"{label} must use an absolute path")
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise RuntimeError(f"{label} must be a regular mode 0600 file") from error
+    if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
+        raise RuntimeError(f"{label} must be a regular mode 0600 file")
+    if stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise RuntimeError(f"{label} must use mode 0600")
+    if metadata.st_uid != os.getuid():
+        raise RuntimeError(f"{label} must be owned by the service user")
+
+
+def _validate_cloud_config(config: Config) -> None:
+    if config.deployment_mode not in {"local", "cloud-replica"}:
+        raise RuntimeError("unsupported deployment mode")
+    if config.deployment_mode != "cloud-replica":
+        return
+    if not _loopback(config.host):
+        raise RuntimeError("cloud replica host must be loopback")
+    if config.flywheel_enabled:
+        raise RuntimeError("cloud replica must not enable Flywheel access")
+    if config.review_enabled:
+        raise RuntimeError("cloud replica must not enable Review")
+    if config.attachment_enabled:
+        raise RuntimeError("cloud replica must not enable attachments")
+    if config.replica_stale_seconds != 900:
+        raise RuntimeError("cloud replica stale threshold must be exactly 900 seconds")
+    _validate_private_file(
+        config.replica_database_url_file, "replica database secret"
+    )
+    _validate_private_file(
+        config.replica_encryption_key_file, "replica encryption secret"
+    )
+    _validate_private_file(
+        config.replica_signing_public_key_file, "replica signing public key"
+    )
+
+
+def is_cloud_mode(config: Config) -> bool:
+    return config.deployment_mode == "cloud-replica"
+
+
 def load_config() -> Config:
     config = Config(
+        deployment_mode=os.getenv("PLATFORM_DEPLOYMENT_MODE", "local"),
         registry_path=os.getenv("PLATFORM_REGISTRY_PATH", "../registry.yaml"),
         metabot_contract_path=os.getenv(
             "PLATFORM_METABOT_CONTRACT_PATH",
@@ -196,6 +249,22 @@ def load_config() -> Config:
             os.getenv("PLATFORM_ATTACHMENT_TICKET_SECONDS", "300")
         ),
         trusted_attachment_proxy=_enabled("PLATFORM_TRUSTED_ATTACHMENT_PROXY"),
+        replica_database_url_file=os.getenv(
+            "PLATFORM_REPLICA_DATABASE_URL_FILE",
+            str(DEFAULT_SECRETS_DIR / "replica-database-url"),
+        ),
+        replica_encryption_key_file=os.getenv(
+            "PLATFORM_REPLICA_ENCRYPTION_KEY_FILE",
+            str(DEFAULT_SECRETS_DIR / "replica-encryption-key"),
+        ),
+        replica_signing_public_key_file=os.getenv(
+            "PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE",
+            str(DEFAULT_SECRETS_DIR / "replica-signing-public-key"),
+        ),
+        replica_stale_seconds=int(
+            os.getenv("PLATFORM_REPLICA_STALE_SECONDS", "900")
+        ),
     )
+    _validate_cloud_config(config)
     _validate_attachment_config(config)
     return config

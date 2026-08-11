@@ -13,7 +13,7 @@ from .attachments.service import AttachmentService
 from .attachments.store import AttachmentStore
 from .cluster import routes as cluster_routes
 from .cluster.monitor import ClusterMonitor, cluster_poll_loop
-from .config import Config, load_config
+from .config import Config, is_cloud_mode, load_config
 from .control_room import routes as control_room_routes
 from .control_room.service import ControlRoomService
 from .fleet import routes as fleet_routes
@@ -132,6 +132,8 @@ def create_app(
 ) -> FastAPI:
     owns_review_service = review_service is None
     config = load_config()
+    cloud_mode = is_cloud_mode(config)
+    runtime_pollers_enabled = start_poller and not cloud_mode
     path = registry_path or config.registry_path
     repo = YamlRepository(path)
     agents = repo.list_agents()
@@ -145,7 +147,9 @@ def create_app(
         config.remote_ssh_key_path,
         timeout=config.probe_timeout_seconds,
     )
-    database_url = resolve_flywheel_database_url(config) if start_poller else None
+    database_url = (
+        resolve_flywheel_database_url(config) if runtime_pollers_enabled else None
+    )
     catalog = AgentCatalog.default()
     if fleet_service is None:
         repository = (
@@ -175,7 +179,7 @@ def create_app(
             observability_service,
         )
     if (
-        start_poller
+        runtime_pollers_enabled
         and operations_service is None
         and operations_scheduler is None
     ):
@@ -187,7 +191,7 @@ def create_app(
         )
     if review_service is None:
         review_database_url = (
-            resolve_review_database_url(config) if start_poller else None
+            resolve_review_database_url(config) if runtime_pollers_enabled else None
         )
         if review_database_url:
             review_repository = PsycopgReviewRepository(review_database_url)
@@ -202,7 +206,7 @@ def create_app(
             )
         else:
             review_service = UnavailableReviewService()
-    if attachment_service is None and config.attachment_enabled:
+    if attachment_service is None and config.attachment_enabled and not cloud_mode:
         attachment_service = build_attachment_service(config)
     if attachment_service is not None:
         install_attachment_ticket_redaction()
@@ -210,7 +214,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         tasks = []
-        if start_poller:
+        if runtime_pollers_enabled:
             tasks = [
                 asyncio.create_task(
                     poll_loop(
