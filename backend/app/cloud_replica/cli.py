@@ -7,14 +7,16 @@ import os
 from pathlib import Path
 import stat
 import sys
-from typing import Callable, Sequence
+from typing import BinaryIO, Callable, Sequence
 
 from app.local_secrets import read_secret_file
 
-from .crypto import BatchSigner, read_key_file
+from .crypto import BatchSigner, BatchVerifier, FieldCipher, read_key_file
 from .exporter import ReplicaExporter
+from .protocol import BatchLimits, decode_and_verify_batch
 from .sanitize import SanitizationPolicy
 from .source import ReplicaSource
+from .store import ReplicaStore
 
 
 def _required_environment(name: str) -> str:
@@ -90,19 +92,85 @@ def _export(clock: Callable[[], datetime]) -> int:
     return 0
 
 
+def _store_from_environment() -> ReplicaStore:
+    database_url = read_secret_file(
+        _required_environment("PLATFORM_REPLICA_DATABASE_URL_FILE")
+    )
+    encryption_key = read_key_file(
+        _required_environment("PLATFORM_REPLICA_ENCRYPTION_KEY_FILE"),
+        expected_size=32,
+    )
+    return ReplicaStore(database_url, cipher=FieldCipher(encryption_key))
+
+
+def _verifier_from_environment() -> BatchVerifier:
+    return BatchVerifier.from_public_key_file(
+        _required_environment("PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE")
+    )
+
+
+def _import(input_stream: BinaryIO) -> int:
+    batch = decode_and_verify_batch(
+        input_stream,
+        _verifier_from_environment(),
+        BatchLimits(),
+    )
+    result = _store_from_environment().import_batch(batch)
+    print(
+        json.dumps(
+            {
+                "status": result.status,
+                "sequence": result.sequence,
+                "record_count": result.record_count,
+                "digest": result.digest,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _retention(clock: Callable[[], datetime], dry_run: bool) -> int:
+    result = _store_from_environment().expire(
+        now=clock().astimezone(UTC), dry_run=dry_run
+    )
+    print(
+        json.dumps(
+            {
+                "status": "completed",
+                "dry_run": result.dry_run,
+                "session_count": result.session_count,
+                "agent_count": result.agent_count,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    input_stream: BinaryIO | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(prog="platform-cloud-replica")
-    parser.add_argument("command", choices=("export",))
+    parser.add_argument("command", choices=("export", "import", "retention"))
+    parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == "export":
             return _export(clock)
+        if arguments.command == "import":
+            return _import(input_stream or sys.stdin.buffer)
+        if arguments.command == "retention":
+            return _retention(clock, arguments.dry_run)
     except Exception:
-        print('{"error":"export_failed","status":"failed"}', file=sys.stderr)
+        error = f"{arguments.command}_failed"
+        print(
+            json.dumps({"error": error, "status": "failed"}, sort_keys=True),
+            file=sys.stderr,
+        )
         return 1
     return 1
 

@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
+import io
 import json
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 
 from app.cloud_replica import cli
+from app.cloud_replica.store import ReplicaImportResult, ReplicaRetentionResult
 
 
 def _private(path, value: bytes):
@@ -47,3 +49,55 @@ def test_export_cli_uses_file_secrets_and_prints_only_aggregate_metadata(
     assert "digest" in value
     assert "sensitive-dsn" not in output
     assert str(database) not in output
+
+
+def test_import_cli_returns_only_aggregate_result(monkeypatch, capsys):
+    class Store:
+        def import_batch(self, batch):
+            return ReplicaImportResult(
+                status="imported",
+                sequence=batch.header.sequence,
+                record_count=len(batch.records),
+                digest=batch.digest,
+            )
+
+    monkeypatch.setattr(cli, "_store_from_environment", lambda: Store())
+    monkeypatch.setattr(cli, "_verifier_from_environment", lambda: object())
+    monkeypatch.setattr(
+        cli,
+        "decode_and_verify_batch",
+        lambda stream, verifier, limits: type(
+            "Batch",
+            (),
+            {
+                "header": type("Header", (), {"sequence": 7})(),
+                "records": ({"safe": True},),
+                "digest": "d" * 64,
+            },
+        )(),
+    )
+
+    assert cli.main(["import"], input_stream=io.BytesIO(b"signed")) == 0
+    output = capsys.readouterr().out
+
+    assert '"sequence": 7' in output
+    assert "signed" not in output
+
+
+def test_retention_cli_supports_dry_run(monkeypatch, capsys):
+    class Store:
+        def expire(self, *, now, dry_run):
+            assert dry_run is True
+            return ReplicaRetentionResult(True, 4, 1)
+
+    monkeypatch.setattr(cli, "_store_from_environment", lambda: Store())
+
+    assert cli.main(["retention", "--dry-run"]) == 0
+    value = json.loads(capsys.readouterr().out)
+
+    assert value == {
+        "agent_count": 1,
+        "dry_run": True,
+        "session_count": 4,
+        "status": "completed",
+    }
