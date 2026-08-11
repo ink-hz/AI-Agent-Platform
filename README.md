@@ -2,6 +2,10 @@
 
 面向 11 个 Agent 的只读观测平台：默认 Fleet 和 Operations 视图聚焦 9 个 Business Agents；Feishu Default 与 Test 两个 System Agents 仍可从 Agents 目录和显式筛选入口访问。Platform 展示运行状态、真实使用量、Sessions、逐轮问答、Evidence、Feedback、Review、Trace、Flywheel 改进项和基于证据的 Operations 事件，不提供 Agent 入口，也不执行重启、Review 或发布操作。
 
+云端采用不可逆脱敏、签名批次和字段级加密的只读副本，首期只监听
+`127.0.0.1:8080` 并通过 SSH tunnel 访问，不修改既有 FAE/Nginx。部署、同步、
+备份、恢复和 18 项验收见 [Cloud Platform sanitized replica runbook](docs/runbooks/cloud-platform.md)。
+
 ## 当前能力
 
 - 自动读取 `deploy/metabot.runtime-contract.json` 中的业务 Bot 和 test-bot。

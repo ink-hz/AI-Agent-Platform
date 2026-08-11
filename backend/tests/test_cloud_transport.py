@@ -33,12 +33,31 @@ def test_forced_import_rejects_commands_and_prints_bounded_acknowledgement():
     assert "SSH_ORIGINAL_COMMAND" in script
     assert "run --rm --no-deps -T" in script
     assert "orbbec-agent-platform-import-secrets:/run/import-secrets:ro" in script
+    assert "PLATFORM_REPLICA_ENCRYPTION_KEY_FILE=/run/import-secrets/replica-encryption-key" in script
+    assert "PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE=/run/import-secrets/replica-signing-public-key" in script
     assert "platform-api" in script
     assert "app.cloud_replica.cli import" in script
     assert "REPLICA_IMPORT_OK sequence=" in script
     assert "digest=" in script
     assert "replay=" in script
     assert "$@" not in script
+
+
+def test_import_secret_volume_contains_every_key_required_by_import_and_retention():
+    stage = (ROOT / "deploy" / "cloud" / "remote-stage.sh").read_text(
+        encoding="utf-8"
+    )
+    backup = (ROOT / "deploy" / "cloud" / "backup.sh").read_text(
+        encoding="utf-8"
+    )
+
+    import_copy = next(
+        line for line in stage.splitlines()
+        if "cp /source/replica-import-database-url" in line
+    )
+    assert "/source/replica-encryption-key" in import_copy
+    assert "/source/replica-signing-public-key" in import_copy
+    assert "PLATFORM_REPLICA_ENCRYPTION_KEY_FILE=/run/import-secrets/replica-encryption-key" in backup
 
 
 def test_bootstrap_emits_restricted_authorized_key_and_never_rotates_keys():

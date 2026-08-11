@@ -393,6 +393,65 @@ class ReplicaStore:
         except Exception:
             raise ReplicaStoreError("retention_failed") from None
 
+    def reset_test_generation(self, source_instance_id: str) -> None:
+        if source_instance_id != "synthetic-acceptance":
+            raise ReplicaStoreError("test_reset_refused")
+        try:
+            with self._connect() as connection:
+                with connection.transaction():
+                    cursor = connection.cursor()
+                    cursor.execute(
+                        "lock table platform_replica.generations in exclusive mode"
+                    )
+                    cursor.execute(
+                        """
+                        select source_instance_id
+                        from platform_replica.generations
+                        for update
+                        """
+                    )
+                    source_ids = {
+                        row["source_instance_id"] for row in cursor.fetchall()
+                    }
+                    if source_ids - {source_instance_id}:
+                        raise ReplicaStoreError("test_reset_refused")
+                    cursor.execute(
+                        """
+                        select
+                            (select count(*) from platform_replica.sessions)
+                                as session_count,
+                            (select count(*) from platform_replica.agents)
+                                as agent_count,
+                            (select count(*) from platform_replica.import_audit
+                             where source_instance_id <> %s)
+                                as other_audit_count,
+                            (select count(*) from platform_replica.runtime_snapshots)
+                                as runtime_count,
+                            (select count(*) from platform_replica.aggregate_snapshots)
+                                as aggregate_count
+                        """,
+                        (source_instance_id,),
+                    )
+                    counts = cursor.fetchone()
+                    if (
+                        counts["other_audit_count"]
+                        or counts["runtime_count"]
+                        or counts["aggregate_count"]
+                        or (
+                            not source_ids
+                            and (counts["session_count"] or counts["agent_count"])
+                        )
+                    ):
+                        raise ReplicaStoreError("test_reset_refused")
+                    cursor.execute("delete from platform_replica.sessions")
+                    cursor.execute("delete from platform_replica.agents")
+                    cursor.execute("delete from platform_replica.import_audit")
+                    cursor.execute("delete from platform_replica.generations")
+        except ReplicaStoreError:
+            raise
+        except Exception:
+            raise ReplicaStoreError("test_reset_failed") from None
+
 
 def import_verified_stream(
     stream: BinaryIO,

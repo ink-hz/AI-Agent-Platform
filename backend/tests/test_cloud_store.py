@@ -2,7 +2,9 @@ from datetime import UTC, datetime
 import json
 
 from app.cloud_replica.crypto import FieldCipher
-from app.cloud_replica.store import ReplicaStore
+import pytest
+
+from app.cloud_replica.store import ReplicaStore, ReplicaStoreError
 
 
 def test_prepared_session_encrypts_complete_display_payload_with_bound_aad():
@@ -111,6 +113,49 @@ class _RetentionConnection:
         return _RetentionCursor(self.statements)
 
 
+class _ResetCursor:
+    def __init__(self, statements, source_ids, counts):
+        self.statements = statements
+        self.source_ids = source_ids
+        self.counts = counts
+        self.result = None
+
+    def execute(self, sql, params=None):
+        normalized = " ".join(sql.lower().split())
+        self.statements.append((normalized, params))
+        if normalized.startswith("select source_instance_id"):
+            self.result = [
+                {"source_instance_id": source_id} for source_id in self.source_ids
+            ]
+        elif "as session_count" in normalized:
+            self.result = self.counts
+        else:
+            self.result = None
+
+    def fetchall(self):
+        return self.result
+
+    def fetchone(self):
+        return self.result
+
+
+class _ResetConnection(_RetentionConnection):
+    def __init__(self, source_ids, **counts):
+        super().__init__()
+        self.source_ids = source_ids
+        self.counts = {
+            "session_count": 0,
+            "agent_count": 0,
+            "other_audit_count": 0,
+            "runtime_count": 0,
+            "aggregate_count": 0,
+            **counts,
+        }
+
+    def cursor(self):
+        return _ResetCursor(self.statements, self.source_ids, self.counts)
+
+
 def test_retention_dry_run_counts_without_mutation():
     connection = _RetentionConnection()
     store = ReplicaStore(
@@ -144,3 +189,60 @@ def test_retention_deletes_expired_sessions_then_orphan_agents_and_audits():
     )
     assert any("insert into platform_replica.retention_audit" in value for value in sql)
     assert connection.events == ["begin", "commit"]
+
+
+def test_reset_test_generation_removes_only_empty_or_exclusively_synthetic_replica():
+    connection = _ResetConnection(
+        ["synthetic-acceptance"], session_count=1, agent_count=1
+    )
+    store = ReplicaStore(
+        "postgresql://replica",
+        cipher=FieldCipher(b"e" * 32),
+        connection_factory=lambda *_args, **_kwargs: connection,
+    )
+
+    store.reset_test_generation("synthetic-acceptance")
+
+    sql = [statement for statement, _ in connection.statements]
+    deletes = [statement for statement in sql if statement.startswith("delete")]
+    assert "lock table platform_replica.generations in exclusive mode" in sql
+    assert deletes == [
+        "delete from platform_replica.sessions",
+        "delete from platform_replica.agents",
+        "delete from platform_replica.import_audit",
+        "delete from platform_replica.generations",
+    ]
+    assert connection.events == ["begin", "commit"]
+
+
+def test_reset_test_generation_refuses_when_any_other_source_exists():
+    connection = _ResetConnection(["synthetic-acceptance", "production-local"])
+    store = ReplicaStore(
+        "postgresql://replica",
+        cipher=FieldCipher(b"e" * 32),
+        connection_factory=lambda *_args, **_kwargs: connection,
+    )
+
+    with pytest.raises(ReplicaStoreError, match="test_reset_refused"):
+        store.reset_test_generation("synthetic-acceptance")
+
+    assert not any(
+        statement.startswith("delete") for statement, _ in connection.statements
+    )
+    assert connection.events == ["begin", "rollback"]
+
+
+def test_reset_test_generation_refuses_orphaned_data_without_generation():
+    connection = _ResetConnection([], session_count=1, agent_count=1)
+    store = ReplicaStore(
+        "postgresql://replica",
+        cipher=FieldCipher(b"e" * 32),
+        connection_factory=lambda *_args, **_kwargs: connection,
+    )
+
+    with pytest.raises(ReplicaStoreError, match="test_reset_refused"):
+        store.reset_test_generation("synthetic-acceptance")
+
+    assert not any(
+        statement.startswith("delete") for statement, _ in connection.statements
+    )

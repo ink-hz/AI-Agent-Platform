@@ -123,6 +123,44 @@ def test_migrate_cli_runs_only_replica_migration(monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out) == {"status": "migrated"}
 
 
+def test_reset_test_generation_cli_requires_explicit_source(monkeypatch, capsys):
+    calls = []
+
+    class Store:
+        def reset_test_generation(self, source_instance_id):
+            calls.append(source_instance_id)
+
+    monkeypatch.setattr(cli, "_store_from_environment", lambda: Store())
+
+    assert cli.main([
+        "reset-test-generation", "--source-instance-id", "synthetic-acceptance"
+    ]) == 0
+    assert calls == ["synthetic-acceptance"]
+    assert json.loads(capsys.readouterr().out) == {"status": "reset"}
+
+
+def test_canary_cli_writes_without_printing_path_or_payload(monkeypatch, tmp_path, capsys):
+    output = tmp_path / "canary.jsonl"
+    calls = []
+
+    def create(path, _clock):
+        calls.append(path)
+        print('{"status":"created"}')
+        return 0
+
+    monkeypatch.setattr(
+        cli,
+        "_create_canary",
+        create,
+    )
+
+    assert cli.main(["canary", "--output", str(output)]) == 0
+    assert calls == [str(output)]
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"status": "created"}
+    assert str(output) not in captured.out
+
+
 def test_backup_and_restore_stream_cli_never_persists_plaintext(tmp_path, monkeypatch, capsys):
     recovery = X25519PrivateKey.generate()
     private = recovery.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())

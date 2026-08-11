@@ -146,7 +146,7 @@ done
 /usr/bin/docker run --rm --network none \
   -v orbbec-agent-platform-import-secrets:/target \
   -v "$private_path:/source:ro" alpine:3.22 \
-  sh -ceu 'cp /source/replica-import-database-url /target/replica-database-url; chown 10001:10001 /target/*; chmod 400 /target/*'
+  sh -ceu 'cp /source/replica-import-database-url /target/replica-database-url; cp /source/replica-encryption-key /source/replica-signing-public-key /target/; chown 10001:10001 /target/*; chmod 400 /target/*'
 
 if [[ -n "$previous_release" && -f "$environment_path" ]]; then
   /usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml" stop platform-api >/dev/null

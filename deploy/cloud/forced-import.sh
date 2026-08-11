@@ -24,6 +24,8 @@ if ! result="$(
     run --rm --no-deps -T \
     -v orbbec-agent-platform-import-secrets:/run/import-secrets:ro \
     -e PLATFORM_REPLICA_DATABASE_URL_FILE=/run/import-secrets/replica-database-url \
+    -e PLATFORM_REPLICA_ENCRYPTION_KEY_FILE=/run/import-secrets/replica-encryption-key \
+    -e PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE=/run/import-secrets/replica-signing-public-key \
     platform-api \
     python -m app.cloud_replica.cli import
 )"; then

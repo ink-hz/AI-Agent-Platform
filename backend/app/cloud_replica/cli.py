@@ -14,6 +14,7 @@ from app.local_secrets import read_secret_file
 
 from .crypto import BatchSigner, BatchVerifier, FieldCipher, read_key_file
 from .backup import decrypt_stream, encrypt_stream
+from .canary import create_synthetic_canary
 from .exporter import ReplicaExporter
 from .protocol import BatchLimits, decode_and_verify_batch
 from .sanitize import SanitizationPolicy
@@ -156,6 +157,31 @@ def _migrate() -> int:
     return 0
 
 
+def _reset_test_generation(source_instance_id: str) -> int:
+    _store_from_environment().reset_test_generation(source_instance_id)
+    print('{"status":"reset"}')
+    return 0
+
+
+def _create_canary(output_path: str, clock: Callable[[], datetime]) -> int:
+    create_synthetic_canary(
+        output_path,
+        policy=SanitizationPolicy.from_private_file(
+            _required_environment("PLATFORM_REPLICA_SANITIZER_DICTIONARY_FILE")
+        ),
+        identity_key=read_key_file(
+            _required_environment("PLATFORM_REPLICA_IDENTITY_KEY_FILE"),
+            expected_size=32,
+        ),
+        signer=BatchSigner.from_private_key_file(
+            _required_environment("PLATFORM_REPLICA_SIGNING_PRIVATE_KEY_FILE")
+        ),
+        created_at=clock(),
+    )
+    print('{"status":"created"}')
+    return 0
+
+
 def _backup(input_stream: BinaryIO, clock: Callable[[], datetime]) -> int:
     public_key = read_key_file(
         _required_environment("PLATFORM_REPLICA_BACKUP_PUBLIC_KEY_FILE"),
@@ -225,9 +251,13 @@ def main(
             "migrate",
             "backup",
             "restore-stream",
+            "reset-test-generation",
+            "canary",
         ),
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--source-instance-id")
+    parser.add_argument("--output")
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == "export":
@@ -238,6 +268,14 @@ def main(
             return _retention(clock, arguments.dry_run)
         if arguments.command == "migrate":
             return _migrate()
+        if arguments.command == "reset-test-generation":
+            if not arguments.source_instance_id:
+                raise RuntimeError("test reset source unavailable")
+            return _reset_test_generation(arguments.source_instance_id)
+        if arguments.command == "canary":
+            if not arguments.output:
+                raise RuntimeError("canary output unavailable")
+            return _create_canary(arguments.output, clock)
         if arguments.command == "backup":
             return _backup(input_stream or sys.stdin.buffer, clock)
         if arguments.command == "restore-stream":
