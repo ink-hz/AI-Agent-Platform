@@ -146,7 +146,7 @@ class ReplicaStore:
             or not _SAFE_KEY.fullmatch(user_id)
             or not isinstance(agent_id, str)
             or not _SAFE_AGENT.fullmatch(agent_id)
-            or source_kind not in {"metabot", "fae", "admin", "unknown"}
+            or source_kind not in {"metabot", "fae", "admin"}
             or channel not in {None, "feishu", "dingtalk", "web", "api"}
             or not isinstance(record.get("title"), dict)
             or not isinstance(record.get("turns"), list)

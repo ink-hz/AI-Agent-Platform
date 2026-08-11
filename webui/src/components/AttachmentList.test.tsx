@@ -80,6 +80,22 @@ describe("AttachmentList", () => {
     expect(container.textContent).toContain("大小未知");
   });
 
+  it("shows cloud-safe metadata without preview or download controls", async () => {
+    await act(async () => root.render(<AttachmentList
+      attachments={[attachment({
+        size_bytes: null,
+        size_bucket: "100 KiB–1 MiB",
+        safe_category: "document",
+        content_available: false,
+      })]}
+      label="输出附件"
+    />));
+
+    expect(container.textContent).toContain("100 KiB–1 MiB");
+    expect(container.textContent).toContain("仅保留脱敏元数据");
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+  });
+
   it("requests a ticket before opening a validated same-origin content path without leaking it", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       ticket: "secret-ticket", expires_at: "2026-08-03T09:10:00Z",

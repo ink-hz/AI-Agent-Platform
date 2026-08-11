@@ -343,6 +343,10 @@ describe("ActivityPage", () => {
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
       if (path === "/api/agents") return Promise.resolve(response(agents));
+      if (path === "/api/deployment") return Promise.resolve(response({
+        mode: "local", read_only: false, auth: "local",
+        freshness: "current", last_success_at: null,
+      }));
       eventPaths.push(path);
       return Promise.resolve(response<Page<OperationalEvent>>({ items: [], total: 0, limit: 50, offset: 0 }));
     }));

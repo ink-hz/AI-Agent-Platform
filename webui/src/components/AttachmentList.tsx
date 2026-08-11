@@ -75,13 +75,15 @@ function AttachmentCard({ attachment }: { attachment: AttachmentSummary }) {
       <strong className="attachment-name">{name}</strong>
       <div className="attachment-meta">
         <span>{attachment.mime_type || "类型未知"}</span>
-        <span>{formatBytes(attachment.size_bytes)}</span>
+        <span>{attachment.size_bucket || formatBytes(attachment.size_bytes)}</span>
         <time dateTime={attachment.received_or_generated_at}>{formatAttachmentTime(attachment.received_or_generated_at)}</time>
       </div>
-      <span className={`attachment-state attachment-state-${attachment.archive_status}`}>{ARCHIVE_LABEL[attachment.archive_status]}</span>
+      <span className={`attachment-state attachment-state-${attachment.archive_status}`}>
+        {attachment.content_available === false ? "仅保留脱敏元数据" : ARCHIVE_LABEL[attachment.archive_status]}
+      </span>
       {error && <span className="attachment-error" role="alert">附件访问失败，请重试</span>}
     </div>
-    {attachment.archive_status === "available" && <div className="attachment-actions">
+    {attachment.archive_status === "available" && attachment.content_available !== false && <div className="attachment-actions">
       {canPreview(attachment.mime_type) && action("preview", "查看")}
       {action("download", "下载")}
     </div>}

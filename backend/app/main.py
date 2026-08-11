@@ -14,6 +14,11 @@ from .attachments.store import AttachmentStore
 from .cluster import routes as cluster_routes
 from .cluster.monitor import ClusterMonitor, cluster_poll_loop
 from .config import Config, is_cloud_mode, load_config
+from .cloud_replica.crypto import FieldCipher, read_key_file
+from .cloud_replica.repository import (
+    ReplicaFlywheelRepository,
+    ReplicaObservabilityRepository,
+)
 from .control_room import routes as control_room_routes
 from .control_room.service import ControlRoomService
 from .fleet import routes as fleet_routes
@@ -27,6 +32,7 @@ from .fleet.repository import (
 from .fleet.service import FleetReadService
 from .health import routes as health_routes
 from .health.poller import HealthCache, poll_loop
+from .local_secrets import read_secret_file
 from .observability import routes as observability_routes
 from .observability.repository import (
     PsycopgObservabilityRepository,
@@ -58,6 +64,37 @@ async def cancel_tasks(tasks: list[asyncio.Task]) -> None:
         task.cancel()
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def build_cloud_replica_services(
+    config: Config,
+    cluster_monitor: ClusterMonitor,
+    remote_monitor: RemoteHealthMonitor,
+    catalog: AgentCatalog,
+):
+    database_url = read_secret_file(config.replica_database_url_file)
+    encryption_key = read_key_file(
+        config.replica_encryption_key_file, expected_size=32
+    )
+    repository = ReplicaObservabilityRepository(
+        database_url,
+        cipher=FieldCipher(encryption_key),
+        stale_seconds=config.replica_stale_seconds,
+        catalog=catalog,
+    )
+    repository.check_schema()
+    observability_service = ObservabilityService(repository)
+    fleet_service = FleetReadService(
+        cluster_monitor,
+        catalog,
+        UsageCache(
+            ReplicaFlywheelRepository(repository),
+            ttl_seconds=config.usage_cache_seconds,
+        ),
+        active_window_minutes=config.active_window_minutes,
+        remote_monitor=remote_monitor,
+    )
+    return fleet_service, observability_service, repository
 
 
 def build_operations(
@@ -147,10 +184,22 @@ def create_app(
         config.remote_ssh_key_path,
         timeout=config.probe_timeout_seconds,
     )
+    catalog = AgentCatalog.default()
+    replica_repository = None
+    if cloud_mode and (fleet_service is None or observability_service is None):
+        cloud_fleet, cloud_observability, replica_repository = (
+            build_cloud_replica_services(
+                config,
+                cluster_monitor,
+                remote_monitor,
+                catalog,
+            )
+        )
+        fleet_service = fleet_service or cloud_fleet
+        observability_service = observability_service or cloud_observability
     database_url = (
         resolve_flywheel_database_url(config) if runtime_pollers_enabled else None
     )
-    catalog = AgentCatalog.default()
     if fleet_service is None:
         repository = (
             PsycopgFlywheelRepository(database_url)
@@ -262,10 +311,31 @@ def create_app(
     app.state.control_room_service = control_room_service
     app.state.review_service = review_service
     app.state.attachment_service = attachment_service
+    app.state.replica_repository = replica_repository
 
     @app.get("/api/health")
     def platform_health() -> dict:
         return {"status": "ok"}
+
+    @app.get("/api/deployment")
+    def deployment_status() -> dict:
+        if cloud_mode:
+            if app.state.replica_repository is None:
+                return {
+                    "mode": "cloud-replica",
+                    "read_only": True,
+                    "auth": "ssh-tunnel",
+                    "freshness": "unavailable",
+                    "last_success_at": None,
+                }
+            return app.state.replica_repository.deployment_status()
+        return {
+            "mode": "local",
+            "read_only": False,
+            "auth": "local",
+            "freshness": "current",
+            "last_success_at": None,
+        }
 
     app.include_router(health_routes.router)
     app.include_router(cluster_routes.router)

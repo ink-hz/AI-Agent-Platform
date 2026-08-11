@@ -134,6 +134,14 @@ export type Availability = "available" | "missing" | "unavailable" | "restricted
 export type SenderIdentityStatus = "resolved" | "name_only" | "unavailable";
 export type MessageTimeStatus = "exact" | "estimated" | "unavailable";
 
+export interface DeploymentInfo {
+  mode: "local" | "cloud-replica";
+  read_only: boolean;
+  auth: "local" | "ssh-tunnel" | string;
+  freshness: "current" | "stale" | "unavailable";
+  last_success_at: string | null;
+}
+
 export interface AgentSummary {
   id: string;
   name: string;
@@ -276,6 +284,9 @@ export interface AttachmentSummary {
   archive_status: "pending" | "available" | "failed" | "source_unavailable" | "expired";
   delivery_status: "pending" | "delivered" | "failed" | "not_applicable";
   expires_at: string;
+  safe_category?: string | null;
+  size_bucket?: string | null;
+  content_available?: boolean;
 }
 
 export interface TurnDetail {

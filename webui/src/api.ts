@@ -4,6 +4,7 @@ import type {
   EventSeverity, OperationalEvent, OperationsBrief,
   FeedbackIssueDetail, FeedbackIssueSummary, ReviewInboxItem, ReviewOverview,
   ReplayRun,
+  DeploymentInfo,
 } from "./types";
 
 
@@ -66,6 +67,9 @@ export async function fetchFleetOverview(
   if (!response.ok) throw new Error(`fleet ${response.status}`);
   return response.json();
 }
+
+export const fetchDeployment = (signal?: AbortSignal) =>
+  read<DeploymentInfo>("/api/deployment", signal);
 
 export const fetchOperationsBrief = (signal?: AbortSignal) =>
   read<OperationsBrief>("/api/operations/brief", signal);

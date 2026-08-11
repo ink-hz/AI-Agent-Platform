@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Generic, Literal, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 
 SourceKind = Literal["metabot", "fae", "admin"]
@@ -140,6 +140,17 @@ class AttachmentSummary(BaseModel):
     ]
     delivery_status: Literal["pending", "delivered", "failed", "not_applicable"]
     expires_at: datetime
+    safe_category: str | None = None
+    size_bucket: str | None = None
+    content_available: bool | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler):
+        value = handler(self)
+        for field_name in ("safe_category", "size_bucket", "content_available"):
+            if value.get(field_name) is None:
+                value.pop(field_name, None)
+        return value
 
 
 class TurnDetail(BaseModel):

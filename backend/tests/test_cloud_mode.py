@@ -60,6 +60,10 @@ def test_cloud_mode_starts_without_local_pollers_or_mutating_services(
     monkeypatch.setattr("app.main.cluster_poll_loop", forbidden)
     monkeypatch.setattr("app.main.remote_poll_loop", forbidden)
     monkeypatch.setattr("app.main.operations_poll_loop", forbidden)
+    monkeypatch.setattr(
+        "app.main.build_cloud_replica_services",
+        lambda *_args: (object(), object(), object()),
+    )
 
     app = create_app(
         registry_path=str(registry),

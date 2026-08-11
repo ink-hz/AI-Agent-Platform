@@ -271,6 +271,11 @@ body {
 .banner { margin-top: 18px; padding: 11px 14px; border: 1px solid; border-radius: 10px; font-size: 14px; }
 .error-banner { border-color: #efbbb5; background: var(--down-wash); color: var(--down); }
 .source-banner { border-color: #efd28c; background: var(--warn-wash); color: #805300; }
+.cloud-replica-banner { display: flex; width: min(100% - 40px, 1240px); margin: 12px auto 0; align-items: center; gap: 10px; padding: 9px 13px; border: 1px solid #b9d5ef; border-radius: 10px; background: #f2f8fd; color: #315a78; font-size: 12px; }
+.cloud-replica-banner strong { color: #173f5c; font-size: 12.5px; }
+.cloud-replica-banner time { margin-left: auto; color: var(--ink-faint); }
+.cloud-replica-banner.is-stale { border-color: #efd28c; background: var(--warn-wash); color: #805300; }
+.cloud-replica-banner.is-unavailable { border-color: var(--line); background: #f7f8fa; color: var(--ink-soft); }
 
 .summary-section { margin-top: 42px; }
 .agents-section { margin-top: 38px; }
