@@ -31,3 +31,5 @@ def test_sync_wrapper_exports_feedback_closure_outbox() -> None:
 
     assert "PLATFORM_FEEDBACK_CLOSURE_OUTBOX_DIR" in script
     assert "security find-generic-password" not in script
+    assert 'set -- --source all' in script
+    assert 'app.sync_remote.cli "$@"' in script

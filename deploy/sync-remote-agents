@@ -7,4 +7,7 @@ cd "$REPO_ROOT/backend"
 
 export PYTHONUNBUFFERED=1
 export PLATFORM_FEEDBACK_CLOSURE_OUTBOX_DIR="${PLATFORM_FEEDBACK_CLOSURE_OUTBOX_DIR:-/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/feedback-closure-outbox}"
-exec .venv/bin/python -m app.sync_remote.cli --source all
+if (( $# == 0 )); then
+  set -- --source all
+fi
+exec .venv/bin/python -m app.sync_remote.cli "$@"
