@@ -10,6 +10,7 @@ import pytest
 
 MIGRATIONS = Path(__file__).parents[1] / "migrations"
 GRANT_MIGRATION = MIGRATIONS / "008_feedback_review_grants.sql"
+HANDOFF_MIGRATION = MIGRATIONS / "009_feedback_release_handoffs.sql"
 
 
 def _normalized_sql(path: Path) -> str:
@@ -70,6 +71,7 @@ def test_full_migration_chain_preserves_least_privilege():
     # later column additions. Re-run the additive grant repair itself to prove
     # its idempotency without rewriting unrelated migration history.
     _apply_migration(database_url, GRANT_MIGRATION)
+    _apply_migration(database_url, HANDOFF_MIGRATION)
 
     with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
         cursor.execute(
@@ -95,3 +97,7 @@ def test_full_migration_chain_preserves_least_privilege():
         cursor.execute("set role platform_review_writer")
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             cursor.execute("delete from platform_source_fae.chat_turns")
+        connection.rollback()
+        cursor.execute("set role platform_review_writer")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            cursor.execute("delete from platform_review.feedback_release_handoffs")
