@@ -107,6 +107,7 @@ def test_raw_key_files_inside_runtime_volumes_use_reader_contract_mode():
     stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
 
     for key_name in (
+        "replica-database-url",
         "replica-encryption-key",
         "replica-signing-public-key",
     ):
