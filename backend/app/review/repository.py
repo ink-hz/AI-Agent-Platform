@@ -1343,16 +1343,34 @@ class PsycopgReviewRepository:
         with self._connection() as connection, connection.cursor() as cursor:
             rows = cursor.execute(
                 """
-                select link.source_turn_key as turn_key,
+                select turn.turn_key,
                   issue.id as issue_id,
-                  coalesce(progress.after->>'status', 'pending_triage') as status,
-                  coalesce(
-                    progress.after->'missing_gates',
-                    '["triage"]'::jsonb
-                  ) as missing_gates,
+                  case
+                    when link.id is null then 'pending_triage'
+                    else coalesce(progress.after->>'status', 'pending_triage')
+                  end as status,
+                  case
+                    when link.id is null then '["issue"]'::jsonb
+                    else coalesce(
+                      progress.after->'missing_gates',
+                      '["triage"]'::jsonb
+                    )
+                  end as missing_gates,
                   valid_replay.id as latest_valid_replay_id
-                from platform_review.feedback_issue_links link
-                join platform_review.feedback_issues issue on issue.id=link.issue_id
+                from platform_read.turns turn
+                left join lateral (
+                  select candidate.*
+                  from platform_review.feedback_issue_links candidate
+                  where candidate.agent_id=turn.agent_id
+                    and candidate.source_turn_key=turn.turn_key
+                    and candidate.active
+                  order by
+                    case candidate.link_role when 'primary' then 0 else 1 end,
+                    candidate.linked_at desc,
+                    candidate.id desc
+                  limit 1
+                ) link on true
+                left join platform_review.feedback_issues issue on issue.id=link.issue_id
                 left join lateral (
                   select event.after
                   from platform_review.feedback_issue_events event
@@ -1370,21 +1388,12 @@ class PsycopgReviewRepository:
                   order by replay.completed_at desc, replay.attempt_no desc
                   limit 1
                 ) valid_replay on true
-                where link.active and link.source_turn_key = any(%s)
+                where turn.turn_key = any(%s)
                 """,
                 (requested,),
             ).fetchall()
         by_turn = {row["turn_key"]: dict(row) for row in rows}
-        return [
-            by_turn.get(turn_key, {
-                "turn_key": turn_key,
-                "issue_id": None,
-                "status": "pending_triage",
-                "missing_gates": ["issue"],
-                "latest_valid_replay_id": None,
-            })
-            for turn_key in requested
-        ]
+        return [by_turn[turn_key] for turn_key in requested if turn_key in by_turn]
 
     def overview(self, *, agent_id: str | None = None) -> dict:
         with self._connection() as connection, connection.cursor() as cursor:
