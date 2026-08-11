@@ -26,6 +26,7 @@ def test_backup_and_restore_scripts_never_create_plaintext_dump_files():
     assert "mktemp -d" not in backup
     assert "CLOUD_BACKUP_OK" in backup
     assert "CLOUD_RESTORE_DRILL_OK" in restore
+    assert "chmod 600 /target/recovery-public-key" in backup
 
 
 def test_daily_backup_timer_is_platform_scoped_and_persistent():

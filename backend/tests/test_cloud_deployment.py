@@ -96,3 +96,13 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
         "docker compose down",
     ):
         assert forbidden not in script
+
+
+def test_raw_key_files_inside_runtime_volumes_use_reader_contract_mode():
+    stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+
+    for key_name in (
+        "replica-encryption-key",
+        "replica-signing-public-key",
+    ):
+        assert f"chmod 600 /target/{key_name}" in stage

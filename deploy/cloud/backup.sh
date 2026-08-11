@@ -22,7 +22,7 @@ compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$compose_pat
 /usr/bin/docker run --rm --network none \
   -v orbbec-agent-platform-backup-secrets:/target \
   -v "$private_path:/source:ro" alpine:3.22 \
-  sh -ceu 'cp /source/backup-recovery-x25519.pub /target/recovery-public-key; chown 10001:10001 /target/recovery-public-key; chmod 400 /target/recovery-public-key'
+  sh -ceu 'cp /source/backup-recovery-x25519.pub /target/recovery-public-key; chown 10001:10001 /target/recovery-public-key; chmod 600 /target/recovery-public-key'
 /usr/bin/docker run --rm --network none \
   -v orbbec-agent-platform-backups:/target alpine:3.22 \
   sh -ceu 'chown 10001:10001 /target; chmod 700 /target'
