@@ -150,3 +150,14 @@ def test_release_handoff_import_uses_one_writer_transaction():
     assert "feedback_release_handoffs" in source
     assert "feedback_release_handoff_events" in event_source
     assert "similarity" not in source
+
+
+def test_optional_agent_filters_are_typed_for_postgres_parameters():
+    for method in (
+        PsycopgReviewRepository.list_inbox,
+        PsycopgReviewRepository.list_issues,
+        PsycopgReviewRepository.overview,
+    ):
+        source = inspect.getsource(method)
+        assert "%s is null" not in source
+        assert "%s::text is null" in source

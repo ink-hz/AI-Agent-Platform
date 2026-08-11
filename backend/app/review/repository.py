@@ -1798,7 +1798,7 @@ class PsycopgReviewRepository:
                 left join platform_read.turns t
                   on t.agent_id=f.agent_id and t.turn_key=f.turn_key
                 where f.sentiment='negative'
-                  and (%s is null or f.agent_id=%s)
+                  and (%s::text is null or f.agent_id=%s)
                   and not exists (
                     select 1 from platform_review.feedback_issue_links link
                     where link.agent_id=f.agent_id and link.source_turn_key=f.turn_key
@@ -1823,7 +1823,7 @@ class PsycopgReviewRepository:
             rows = cursor.execute(
                 """
                 select * from platform_review.feedback_issues
-                where (%s is null or agent_id=%s)
+                where (%s::text is null or agent_id=%s)
                 order by updated_at desc, id limit %s offset %s
                 """,
                 (agent_id, agent_id, limit, offset),
@@ -1904,7 +1904,7 @@ class PsycopgReviewRepository:
                   count(distinct (agent_id, turn_key)) filter (where sentiment='negative') as negative_turns,
                   count(*) filter (where sentiment='positive') as positive_rows
                 from platform_read.feedback
-                where (%s is null or agent_id=%s)
+                where (%s::text is null or agent_id=%s)
                 """,
                 (agent_id, agent_id),
             ).fetchone()
@@ -1912,7 +1912,7 @@ class PsycopgReviewRepository:
                 """
                 select disposition, count(*) as count
                 from platform_review.feedback_issues
-                where (%s is null or agent_id=%s)
+                where (%s::text is null or agent_id=%s)
                 group by disposition
                 """,
                 (agent_id, agent_id),
@@ -1920,7 +1920,7 @@ class PsycopgReviewRepository:
             issue_ids = cursor.execute(
                 """
                 select id from platform_review.feedback_issues
-                where (%s is null or agent_id=%s)
+                where (%s::text is null or agent_id=%s)
                 """,
                 (agent_id, agent_id),
             ).fetchall()
