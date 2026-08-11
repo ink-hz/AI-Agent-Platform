@@ -53,6 +53,8 @@ def _jsonable(value: Any) -> Any:
         return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
+    if isinstance(value, bytes):
+        return value.hex()
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
@@ -1127,43 +1129,541 @@ class PsycopgReviewRepository:
     ) -> IssueProgress:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                detail = self._load_issue_detail(
+                progress = self._recalculate_with_cursor(
                     cursor,
                     issue_id,
-                    lock_issue=True,
-                )
-                if detail is None:
-                    raise ReviewNotFound("issue not found")
-                progress: IssueProgress = detail["progress"]
-                previous = None
-                for event in reversed(detail["events"]):
-                    previous = (event.get("after") or {}).get("status")
-                    if previous:
-                        break
-                if previous == progress.status:
-                    return progress
-                event_type = (
-                    "issue_closed" if progress.status == "closed"
-                    else "issue_reopened" if previous == "closed"
-                    else "issue_status_changed"
-                )
-                self._event(
-                    cursor,
-                    issue_id=issue_id,
-                    event_type=event_type,
                     actor=actor,
                     reason=reason,
-                    before={"status": previous},
-                    after={
-                        "status": progress.status,
-                        "missing_gates": progress.missing_gates,
-                    },
                 )
             return progress
         except ReviewNotFound:
             raise
         except Exception as error:
             raise ReviewRepositoryError("recalculate issue progress failed") from error
+
+    def _recalculate_with_cursor(
+        self,
+        cursor,
+        issue_id: UUID | str,
+        *,
+        actor: str,
+        reason: str,
+    ) -> IssueProgress:
+        detail = self._load_issue_detail(cursor, issue_id, lock_issue=True)
+        if detail is None:
+            raise ReviewNotFound("issue not found")
+        progress: IssueProgress = detail["progress"]
+        previous = None
+        for event in reversed(detail["events"]):
+            previous = (event.get("after") or {}).get("status")
+            if previous:
+                break
+        if previous == progress.status:
+            return progress
+        event_type = (
+            "issue_closed" if progress.status == "closed"
+            else "issue_reopened" if previous == "closed"
+            else "issue_status_changed"
+        )
+        self._event(
+            cursor,
+            issue_id=issue_id,
+            event_type=event_type,
+            actor=actor,
+            reason=reason,
+            before={"status": previous},
+            after={
+                "status": progress.status,
+                "missing_gates": progress.missing_gates,
+            },
+        )
+        return progress
+
+    @staticmethod
+    def _handoff_event(
+        cursor,
+        *,
+        idempotency_key: str,
+        event_type: str,
+        actor: str,
+        reason: str = "",
+        before: Mapping[str, Any] | None = None,
+        after: Mapping[str, Any] | None = None,
+    ) -> None:
+        cursor.execute(
+            """
+            insert into platform_review.feedback_release_handoff_events
+              (idempotency_key, event_type, actor, reason, before, after)
+            values (%s, %s, %s, %s, %s, %s)
+            """,
+            (
+                idempotency_key,
+                event_type,
+                actor,
+                reason,
+                Jsonb(_jsonable(dict(before or {}))),
+                Jsonb(_jsonable(dict(after or {}))),
+            ),
+        )
+
+    def import_release_handoff(
+        self,
+        validated,
+        *,
+        actor: str = "closure-importer",
+    ) -> dict:
+        """Import one validated release handoff as one writer transaction."""
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                existing = cursor.execute(
+                    """
+                    select * from platform_review.feedback_release_handoffs
+                    where idempotency_key=%s or batch_id=%s
+                    for update
+                    """,
+                    (validated.idempotency_key, validated.batch_id),
+                ).fetchone()
+                identity = {
+                    "idempotency_key": validated.idempotency_key,
+                    "batch_id": validated.batch_id,
+                    "agent_id": validated.agent_id,
+                    "payload_sha256": validated.payload_sha256,
+                    "release_name": validated.release_name,
+                    "deployment_sha": validated.deployment_sha,
+                }
+                if existing is not None:
+                    same_identity = all(
+                        existing.get(key) == value
+                        for key, value in identity.items()
+                    )
+                    if same_identity and existing["import_status"] == "imported":
+                        return dict(existing["result"] or {})
+                    if not same_identity:
+                        self._handoff_event(
+                            cursor,
+                            idempotency_key=existing["idempotency_key"],
+                            event_type="handoff_identity_conflict",
+                            actor=actor,
+                            reason="batch_or_payload_conflict",
+                            before=existing,
+                            after=identity,
+                        )
+                        if existing["import_status"] != "imported":
+                            cursor.execute(
+                                """
+                                update platform_review.feedback_release_handoffs
+                                set import_status='terminal_failed',
+                                    failure_reason='batch_or_payload_conflict',
+                                    updated_at=now()
+                                where idempotency_key=%s
+                                """,
+                                (existing["idempotency_key"],),
+                            )
+                        return {
+                            "state": "terminal_failed",
+                            "reason": "batch_or_payload_conflict",
+                            "issue_ids": [],
+                            "evidence_ids": [],
+                        }
+                    cursor.execute(
+                        """
+                        update platform_review.feedback_release_handoffs
+                        set import_status='processing', failure_reason='',
+                            updated_at=now()
+                        where idempotency_key=%s
+                        """,
+                        (validated.idempotency_key,),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        insert into platform_review.feedback_release_handoffs
+                          (idempotency_key, batch_id, agent_id, payload_sha256,
+                           release_name, deployment_sha, import_status)
+                        values (%s, %s, %s, %s, %s, %s, 'processing')
+                        """,
+                        (
+                            validated.idempotency_key,
+                            validated.batch_id,
+                            validated.agent_id,
+                            validated.payload_sha256,
+                            validated.release_name,
+                            validated.deployment_sha,
+                        ),
+                    )
+                    self._handoff_event(
+                        cursor,
+                        idempotency_key=validated.idempotency_key,
+                        event_type="handoff_import_started",
+                        actor=actor,
+                        after=identity,
+                    )
+
+                turn_keys = [item.turn_key for item in validated.items]
+                source_rows = cursor.execute(
+                    """
+                    select turn.agent_id, turn.turn_key,
+                      coalesce(
+                        array_agg(feedback.feedback_key order by feedback.created_at)
+                          filter (where feedback.sentiment='negative'),
+                        '{}'::text[]
+                      ) as feedback_keys
+                    from platform_read.turns turn
+                    left join platform_read.feedback feedback
+                      on feedback.agent_id=turn.agent_id
+                     and feedback.turn_key=turn.turn_key
+                    where turn.turn_key=any(%s)
+                    group by turn.agent_id, turn.turn_key
+                    """,
+                    (turn_keys,),
+                ).fetchall()
+                source_by_key = {row["turn_key"]: row for row in source_rows}
+                source_failure = ""
+                for item in validated.items:
+                    source = source_by_key.get(item.turn_key)
+                    if source is None:
+                        source_failure = "source_turn_missing"
+                        break
+                    if source["agent_id"] != validated.agent_id:
+                        source_failure = "agent_mismatch"
+                        break
+                    if not source["feedback_keys"]:
+                        source_failure = "negative_feedback_missing"
+                        break
+                if source_failure:
+                    result = {
+                        "state": "blocked",
+                        "reason": source_failure,
+                        "issue_ids": [],
+                        "evidence_ids": [],
+                    }
+                    cursor.execute(
+                        """
+                        update platform_review.feedback_release_handoffs
+                        set import_status='blocked', failure_reason=%s, result=%s,
+                            updated_at=now()
+                        where idempotency_key=%s
+                        """,
+                        (
+                            source_failure,
+                            Jsonb(result),
+                            validated.idempotency_key,
+                        ),
+                    )
+                    self._handoff_event(
+                        cursor,
+                        idempotency_key=validated.idempotency_key,
+                        event_type="handoff_import_blocked",
+                        actor=actor,
+                        reason=source_failure,
+                        after=result,
+                    )
+                    return result
+
+                issue_by_key = {}
+                issue_ids: list[str] = []
+                evidence_ids: list[str] = []
+                for item in validated.issues:
+                    issue = cursor.execute(
+                        """
+                        select * from platform_review.feedback_issues
+                        where agent_id=%s and canonical_key=%s
+                        for update
+                        """,
+                        (validated.agent_id, item.issue_key),
+                    ).fetchone()
+                    if issue is None:
+                        issue = cursor.execute(
+                            """
+                            insert into platform_review.feedback_issues
+                              (agent_id, canonical_key, title, priority,
+                               failure_layer, secondary_layers, root_cause,
+                               impact_scope, owner, created_by)
+                            values (%s, %s, %s, 'P1', %s, %s, %s, %s, %s, %s)
+                            returning *
+                            """,
+                            (
+                                validated.agent_id,
+                                item.issue_key,
+                                item.title,
+                                item.failure_layer,
+                                list(item.secondary_layers),
+                                f"修复批次归因到 {item.failure_layer}: {item.title}",
+                                item.expected_repair,
+                                actor,
+                                actor,
+                            ),
+                        ).fetchone()
+                        self._event(
+                            cursor,
+                            issue_id=issue["id"],
+                            event_type="issue_created_from_release_handoff",
+                            actor=actor,
+                            reason=validated.batch_id,
+                            after=issue,
+                        )
+                    elif not issue["root_cause"] or not issue["owner"]:
+                        issue = cursor.execute(
+                            """
+                            update platform_review.feedback_issues
+                            set root_cause=case when root_cause='' then %s
+                                                else root_cause end,
+                                owner=coalesce(owner, %s),
+                                updated_at=now(), row_version=row_version+1
+                            where id=%s returning *
+                            """,
+                            (
+                                f"修复批次归因到 {item.failure_layer}: {item.title}",
+                                actor,
+                                issue["id"],
+                            ),
+                        ).fetchone()
+                    issue_by_key[item.issue_key] = issue
+                    issue_ids.append(str(issue["id"]))
+
+                for item in validated.items:
+                    target = issue_by_key[item.issue_key]
+                    source = source_by_key[item.turn_key]
+                    link = cursor.execute(
+                        """
+                        select * from platform_review.feedback_issue_links
+                        where agent_id=%s and source_turn_key=%s and active
+                          and link_role='primary'
+                        for update
+                        """,
+                        (validated.agent_id, item.turn_key),
+                    ).fetchone()
+                    feedback_keys = sorted(set(source["feedback_keys"]))
+                    if link is None:
+                        link = cursor.execute(
+                            """
+                            insert into platform_review.feedback_issue_links
+                              (issue_id, agent_id, source_turn_key,
+                               source_feedback_keys, link_role, linked_by,
+                               link_reason)
+                            values (%s, %s, %s, %s, 'primary', %s, %s)
+                            returning *
+                            """,
+                            (
+                                target["id"],
+                                validated.agent_id,
+                                item.turn_key,
+                                feedback_keys,
+                                actor,
+                                validated.batch_id,
+                            ),
+                        ).fetchone()
+                        self._event(
+                            cursor,
+                            issue_id=target["id"],
+                            event_type="turn_linked_from_release_handoff",
+                            actor=actor,
+                            reason=validated.batch_id,
+                            after=link,
+                        )
+                    elif link["issue_id"] != target["id"]:
+                        before = dict(link)
+                        link = cursor.execute(
+                            """
+                            update platform_review.feedback_issue_links
+                            set issue_id=%s, source_feedback_keys=%s,
+                                linked_by=%s, linked_at=now(), link_reason=%s
+                            where id=%s returning *
+                            """,
+                            (
+                                target["id"],
+                                feedback_keys,
+                                actor,
+                                validated.batch_id,
+                                link["id"],
+                            ),
+                        ).fetchone()
+                        self._event(
+                            cursor,
+                            issue_id=before["issue_id"],
+                            event_type="link_moved_out",
+                            actor=actor,
+                            reason=validated.batch_id,
+                            before=before,
+                            after=link,
+                        )
+                        self._event(
+                            cursor,
+                            issue_id=target["id"],
+                            event_type="link_moved_in",
+                            actor=actor,
+                            reason=validated.batch_id,
+                            before=before,
+                            after=link,
+                        )
+                        remaining = cursor.execute(
+                            """
+                            select 1 from platform_review.feedback_issue_links
+                            where issue_id=%s and active limit 1
+                            """,
+                            (before["issue_id"],),
+                        ).fetchone()
+                        if remaining is None:
+                            source_issue = cursor.execute(
+                                """
+                                select * from platform_review.feedback_issues
+                                where id=%s for update
+                                """,
+                                (before["issue_id"],),
+                            ).fetchone()
+                            if source_issue and source_issue["disposition"] == "actionable":
+                                duplicate = cursor.execute(
+                                    """
+                                    update platform_review.feedback_issues
+                                    set disposition='duplicate', canonical_issue_id=%s,
+                                        disposition_reason=%s, updated_at=now(),
+                                        row_version=row_version+1
+                                    where id=%s returning *
+                                    """,
+                                    (
+                                        target["id"],
+                                        f"explicit batch mapping: {validated.batch_id}",
+                                        source_issue["id"],
+                                    ),
+                                ).fetchone()
+                                self._event(
+                                    cursor,
+                                    issue_id=source_issue["id"],
+                                    event_type="issue_merged",
+                                    actor=actor,
+                                    reason=validated.batch_id,
+                                    before=source_issue,
+                                    after=duplicate,
+                                )
+                    else:
+                        cursor.execute(
+                            """
+                            update platform_review.feedback_issue_links
+                            set source_feedback_keys=%s
+                            where id=%s
+                            """,
+                            (feedback_keys, link["id"]),
+                        )
+
+                for issue in issue_by_key.values():
+                    before = cursor.execute(
+                        """
+                        select * from platform_review.feedback_issues
+                        where id=%s for update
+                        """,
+                        (issue["id"],),
+                    ).fetchone()
+                    if before["fix_ready_at"] is None:
+                        after = cursor.execute(
+                            """
+                            update platform_review.feedback_issues
+                            set fix_ready_at=now(), updated_at=now(),
+                                row_version=row_version+1
+                            where id=%s returning *
+                            """,
+                            (issue["id"],),
+                        ).fetchone()
+                        self._event(
+                            cursor,
+                            issue_id=issue["id"],
+                            event_type="fix_ready",
+                            actor=actor,
+                            reason=validated.batch_id,
+                            before=before,
+                            after=after,
+                        )
+                    for evidence_type, reference, commit_sha, manifest_ref, details in (
+                        (
+                            "merge",
+                            validated.remediation_commit,
+                            validated.remediation_commit,
+                            "",
+                            validated.merge_verification,
+                        ),
+                        (
+                            "deployment",
+                            validated.release_name,
+                            validated.deployment_sha,
+                            validated.release_manifest_ref,
+                            validated.deployment_verification,
+                        ),
+                    ):
+                        evidence = cursor.execute(
+                            """
+                            insert into platform_review.feedback_fix_evidence
+                              (issue_id, evidence_type, repository, reference,
+                               version, commit_sha, release_manifest_ref,
+                               environment, observed_at, observed_by,
+                               verification_status, verification_details)
+                            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                    'verified', %s)
+                            returning *
+                            """,
+                            (
+                                issue["id"],
+                                evidence_type,
+                                validated.repository_path,
+                                reference,
+                                validated.release_name if evidence_type == "deployment" else "",
+                                commit_sha,
+                                manifest_ref,
+                                "production" if evidence_type == "deployment" else "",
+                                self._now(),
+                                actor,
+                                Jsonb(_jsonable(dict(details))),
+                            ),
+                        ).fetchone()
+                        evidence_ids.append(str(evidence["id"]))
+                        self._event(
+                            cursor,
+                            issue_id=issue["id"],
+                            event_type="evidence_verified",
+                            actor=actor,
+                            reason=validated.batch_id,
+                            after=evidence,
+                        )
+                    self._recalculate_with_cursor(
+                        cursor,
+                        issue["id"],
+                        actor=actor,
+                        reason=validated.batch_id,
+                    )
+
+                result = {
+                    "state": "imported",
+                    "reason": "",
+                    "issue_ids": issue_ids,
+                    "evidence_ids": evidence_ids,
+                }
+                before = cursor.execute(
+                    """
+                    select * from platform_review.feedback_release_handoffs
+                    where idempotency_key=%s for update
+                    """,
+                    (validated.idempotency_key,),
+                ).fetchone()
+                cursor.execute(
+                    """
+                    update platform_review.feedback_release_handoffs
+                    set import_status='imported', failure_reason='', result=%s,
+                        updated_at=now()
+                    where idempotency_key=%s
+                    """,
+                    (Jsonb(result), validated.idempotency_key),
+                )
+                self._handoff_event(
+                    cursor,
+                    idempotency_key=validated.idempotency_key,
+                    event_type="handoff_imported",
+                    actor=actor,
+                    before=before,
+                    after=result,
+                )
+            return result
+        except Exception as error:
+            if isinstance(error, ReviewRepositoryError):
+                raise
+            raise ReviewRepositoryError("release handoff import failed") from error
 
     def list_negative_feedback_groups(self) -> list[NegativeFeedbackGroup]:
         with self._connection() as connection, connection.cursor() as cursor:

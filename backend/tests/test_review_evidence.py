@@ -125,6 +125,22 @@ def test_merge_requires_full_lowercase_sha_and_existing_commit(tmp_path):
     assert missing.details["reason"] == "merge_commit_not_found"
 
 
+def test_commit_path_verification_rejects_traversal_and_requires_exact_object(tmp_path):
+    repo = tmp_path / "repo"
+    manifests = tmp_path / "manifests"
+    repo.mkdir()
+    manifests.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "review@example.com")
+    _git(repo, "config", "user.name", "Review Test")
+    sha = _commit(repo, "review.md", "review")
+    verifier = GitEvidenceVerifier(str(repo), str(manifests))
+
+    assert verifier.verify_commit_path(sha, "review.md").status == "verified"
+    assert verifier.verify_commit_path(sha, "../secret").details["reason"] == "invalid_git_path"
+    assert verifier.verify_commit_path(sha, "missing.md").details["reason"] == "commit_path_not_found"
+
+
 def test_manifest_must_be_successful_object_with_valid_sha(tmp_path):
     repo = tmp_path / "repo"
     manifests = tmp_path / "manifests"

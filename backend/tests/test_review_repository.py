@@ -48,6 +48,7 @@ def test_repository_exposes_transactional_closure_inputs():
         "get_issue_detail",
         "list_inbox",
         "get_turn_summaries",
+        "import_release_handoff",
         "overview",
         "recalculate_and_record_transition",
     ):
@@ -58,10 +59,11 @@ def test_progress_recalculation_reads_gates_and_writes_event_in_one_transaction(
     source = inspect.getsource(
         PsycopgReviewRepository.recalculate_and_record_transition
     )
+    helper = inspect.getsource(PsycopgReviewRepository._recalculate_with_cursor)
 
     assert source.count("self._connection()") == 1
-    assert "lock_issue=True" in source
-    assert "self._event(" in source
+    assert "lock_issue=True" in helper
+    assert "self._event(" in helper
 
 
 def test_backfill_reuses_canonical_primary_after_duplicate_merge():
@@ -136,3 +138,15 @@ def test_turn_summaries_use_one_read_query_and_omit_missing_source_turns():
         "latest_valid_replay_id": None,
     }
     assert all(row["turn_key"] != "fae:missing" for row in summaries)
+
+
+def test_release_handoff_import_uses_one_writer_transaction():
+    source = inspect.getsource(PsycopgReviewRepository.import_release_handoff)
+    event_source = inspect.getsource(PsycopgReviewRepository._handoff_event)
+
+    assert source.count("self._connection()") == 1
+    assert "canonical_key" in source
+    assert "source_turn_key" in source
+    assert "feedback_release_handoffs" in source
+    assert "feedback_release_handoff_events" in event_source
+    assert "similarity" not in source
