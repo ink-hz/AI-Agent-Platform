@@ -1,0 +1,231 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from typing import Any, Callable
+
+import psycopg
+from psycopg.rows import dict_row
+
+from .models import RawAttachment, RawSession, RawTraceAggregate, RawTurn
+
+
+SESSION_SQL = """
+select
+    session_key, agent_id, source_kind, channel, title, user_identity,
+    created_at, last_active_at, primary_sender_name, primary_sender_department
+from platform_read.sessions
+where last_active_at >= %(retention_floor)s
+  and (last_active_at, session_key) > (%(after)s, %(after_key)s)
+  and last_active_at <= %(through)s
+order by last_active_at, session_key
+limit %(limit)s
+""".strip()
+
+TURN_SQL = """
+select
+    turn_key, session_key, turn_index, question, answer, created_at,
+    outcome, fallback_used, duration_ms, trace_key
+from platform_read.turns
+where session_key = any(%(session_keys)s)
+  and created_at <= %(through)s
+order by session_key, turn_index, turn_key
+""".strip()
+
+ATTACHMENT_SQL = """
+select
+    attachment_id, turn_key, direction, display_name, mime_type, size_bytes,
+    received_or_generated_at, archive_status, delivery_status, expires_at
+from platform_read.attachments
+where turn_key = any(%(turn_keys)s)
+  and received_or_generated_at <= %(through)s
+order by turn_key, received_or_generated_at, attachment_id
+""".strip()
+
+TRACE_SQL = """
+select
+    trace_key, turn_key, status, duration_ms, engine, backend, model,
+    input_tokens, output_tokens, cost_usd, error_class
+from platform_read.traces
+where turn_key = any(%(turn_keys)s)
+  and started_at <= %(through)s
+order by turn_key, trace_key
+""".strip()
+
+TRACE_STEP_SQL = """
+select trace_key, kind, status, seq
+from platform_read.trace_steps
+where trace_key = any(%(trace_keys)s)
+  and started_at <= %(through)s
+order by trace_key, seq, step_key
+""".strip()
+
+
+class ReplicaSource:
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        connection_factory: Callable[..., Any] = psycopg.connect,
+    ):
+        self._database_url = database_url
+        self._connection_factory = connection_factory
+
+    @staticmethod
+    def _fetch(cursor, sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+        cursor.execute(sql, params)
+        return list(cursor.fetchall())
+
+    def fetch_sessions(
+        self,
+        *,
+        after: datetime,
+        after_key: str,
+        through: datetime,
+        limit: int,
+    ) -> tuple[RawSession, ...]:
+        if (
+            after.tzinfo is None
+            or through.tzinfo is None
+            or after >= through
+            or not 1 <= limit <= 10_000
+        ):
+            raise ValueError("invalid replica source window")
+        options = "-c default_transaction_read_only=on -c statement_timeout=10000"
+        with self._connection_factory(
+            self._database_url,
+            options=options,
+            row_factory=dict_row,
+        ) as connection:
+            with connection.transaction():
+                cursor = connection.cursor()
+                cursor.execute(
+                    "set transaction isolation level repeatable read, read only"
+                )
+                common = {"through": through}
+                session_rows = self._fetch(
+                    cursor,
+                    SESSION_SQL,
+                    {
+                        **common,
+                        "after": after,
+                        "after_key": after_key,
+                        "retention_floor": through - timedelta(days=365),
+                        "limit": limit,
+                    },
+                )
+                session_keys = [row["session_key"] for row in session_rows]
+                if not session_keys:
+                    return ()
+                turn_rows = self._fetch(
+                    cursor,
+                    TURN_SQL,
+                    {**common, "session_keys": session_keys},
+                )
+                turn_keys = [row["turn_key"] for row in turn_rows]
+                attachment_rows = (
+                    self._fetch(
+                        cursor,
+                        ATTACHMENT_SQL,
+                        {**common, "turn_keys": turn_keys},
+                    )
+                    if turn_keys
+                    else []
+                )
+                trace_rows = (
+                    self._fetch(
+                        cursor,
+                        TRACE_SQL,
+                        {**common, "turn_keys": turn_keys},
+                    )
+                    if turn_keys
+                    else []
+                )
+                trace_keys = [row["trace_key"] for row in trace_rows]
+                step_rows = (
+                    self._fetch(
+                        cursor,
+                        TRACE_STEP_SQL,
+                        {**common, "trace_keys": trace_keys},
+                    )
+                    if trace_keys
+                    else []
+                )
+        return self._assemble(
+            session_rows, turn_rows, attachment_rows, trace_rows, step_rows
+        )
+
+    @staticmethod
+    def _assemble(
+        session_rows,
+        turn_rows,
+        attachment_rows,
+        trace_rows,
+        step_rows,
+    ) -> tuple[RawSession, ...]:
+        attachments_by_turn: dict[str, list[RawAttachment]] = {}
+        for row in attachment_rows:
+            attachments_by_turn.setdefault(row["turn_key"], []).append(
+                RawAttachment(
+                    attachment_id=row["attachment_id"],
+                    direction=row["direction"],
+                    display_name=row["display_name"],
+                    mime_type=row["mime_type"],
+                    size_bytes=row["size_bytes"],
+                    received_or_generated_at=row["received_or_generated_at"],
+                    archive_status=row["archive_status"],
+                    delivery_status=row["delivery_status"],
+                    expires_at=row["expires_at"],
+                )
+            )
+        tools_by_trace: dict[str, list[str]] = {}
+        for row in step_rows:
+            tools_by_trace.setdefault(row["trace_key"], []).append(row["kind"])
+        traces_by_turn = {
+            row["turn_key"]: RawTraceAggregate(
+                status=row["status"],
+                duration_ms=row["duration_ms"],
+                engine=row["engine"],
+                backend=row["backend"],
+                model=row["model"],
+                input_tokens=row["input_tokens"],
+                output_tokens=row["output_tokens"],
+                cost_usd=float(row["cost_usd"])
+                if row["cost_usd"] is not None
+                else None,
+                error_class=row["error_class"],
+                tool_categories=tuple(tools_by_trace.get(row["trace_key"], ())),
+            )
+            for row in trace_rows
+        }
+        turns_by_session: dict[str, list[RawTurn]] = {}
+        for row in turn_rows:
+            turns_by_session.setdefault(row["session_key"], []).append(
+                RawTurn(
+                    turn_key=row["turn_key"],
+                    turn_index=row["turn_index"],
+                    question=row["question"],
+                    answer=row["answer"],
+                    created_at=row["created_at"],
+                    outcome=row["outcome"],
+                    fallback_used=row["fallback_used"],
+                    duration_ms=row["duration_ms"],
+                    trace=traces_by_turn.get(row["turn_key"]),
+                    attachments=tuple(attachments_by_turn.get(row["turn_key"], ())),
+                )
+            )
+        return tuple(
+            RawSession(
+                session_key=row["session_key"],
+                agent_id=row["agent_id"],
+                source_kind=row["source_kind"],
+                channel=row["channel"],
+                title=row["title"],
+                user_identity=row["user_identity"],
+                primary_sender_name=row["primary_sender_name"],
+                primary_sender_department=row["primary_sender_department"],
+                created_at=row["created_at"],
+                last_active_at=row["last_active_at"],
+                turns=tuple(turns_by_session.get(row["session_key"], ())),
+            )
+            for row in session_rows
+        )

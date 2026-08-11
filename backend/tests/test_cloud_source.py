@@ -1,0 +1,160 @@
+from datetime import UTC, datetime, timedelta
+
+from app.cloud_replica.source import (
+    ATTACHMENT_SQL,
+    SESSION_SQL,
+    TRACE_SQL,
+    TRACE_STEP_SQL,
+    TURN_SQL,
+    ReplicaSource,
+)
+
+
+def test_source_queries_are_explicit_bounded_and_never_touch_restricted_fields():
+    statements = (SESSION_SQL, TURN_SQL, ATTACHMENT_SQL, TRACE_SQL, TRACE_STEP_SQL)
+    combined = "\n".join(statements).lower()
+
+    assert "select *" not in combined
+    for forbidden in (
+        "native_id",
+        "details",
+        "sources",
+        "input_summary",
+        "output_summary",
+        "safe_metadata",
+        "error_summary",
+        "review_writer",
+        "attachment_objects",
+        "provider_",
+    ):
+        assert forbidden not in combined
+    assert "last_active_at >= %(retention_floor)s" in SESSION_SQL
+    assert "(last_active_at, session_key) > (%(after)s, %(after_key)s)" in SESSION_SQL
+    assert "last_active_at <= %(through)s" in SESSION_SQL
+    assert "order by last_active_at, session_key" in SESSION_SQL.lower()
+    for statement in (TURN_SQL, ATTACHMENT_SQL, TRACE_SQL, TRACE_STEP_SQL):
+        assert "%(through)s" in statement
+
+
+class _Context:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+class _Cursor(_Context):
+    def __init__(self, rows_by_marker, calls):
+        self._rows_by_marker = rows_by_marker
+        self._calls = calls
+        self._rows = []
+
+    def execute(self, sql, params=None):
+        self._calls.append((sql, params))
+        marker = next((key for key in self._rows_by_marker if key in sql), None)
+        self._rows = self._rows_by_marker.get(marker, [])
+        return self
+
+    def fetchall(self):
+        return self._rows
+
+
+class _Connection(_Context):
+    def __init__(self, rows_by_marker, calls):
+        self._rows_by_marker = rows_by_marker
+        self._calls = calls
+
+    def transaction(self):
+        self._calls.append(("TRANSACTION", None))
+        return _Context()
+
+    def cursor(self):
+        return _Cursor(self._rows_by_marker, self._calls)
+
+
+def test_source_uses_read_only_repeatable_read_and_one_upper_watermark():
+    now = datetime(2026, 8, 11, tzinfo=UTC)
+    calls = []
+    connect_arguments = {}
+    rows = {
+        "from platform_read.sessions": [
+            {
+                "session_key": "s1",
+                "agent_id": "hr-bot",
+                "source_kind": "metabot",
+                "channel": "feishu",
+                "title": "title",
+                "user_identity": "raw-user",
+                "created_at": now,
+                "last_active_at": now,
+                "primary_sender_name": "洛奇",
+                "primary_sender_department": "市场部",
+            }
+        ],
+        "from platform_read.turns": [
+            {
+                "turn_key": "t1",
+                "session_key": "s1",
+                "turn_index": 1,
+                "question": "q",
+                "answer": "a",
+                "created_at": now,
+                "outcome": "success",
+                "fallback_used": False,
+                "duration_ms": 100,
+                "trace_key": "tr1",
+            }
+        ],
+        "from platform_read.attachments": [],
+        "from platform_read.traces": [],
+        "from platform_read.trace_steps": [],
+    }
+
+    def connect(dsn, **kwargs):
+        connect_arguments.update(dsn=dsn, **kwargs)
+        return _Connection(rows, calls)
+
+    source = ReplicaSource("postgresql://safe", connection_factory=connect)
+    result = source.fetch_sessions(
+        after=now - timedelta(minutes=5),
+        after_key="s0",
+        through=now,
+        limit=10,
+    )
+
+    assert len(result) == 1
+    assert result[0].turns[0].question == "q"
+    assert "default_transaction_read_only=on" in connect_arguments["options"]
+    assert "statement_timeout=10000" in connect_arguments["options"]
+    assert calls[0][0] == "TRANSACTION"
+    assert "repeatable read" in calls[1][0].lower()
+    query_params = [params for sql, params in calls if "platform_read." in sql]
+    assert query_params
+    assert all(params["through"] == now for params in query_params)
+    assert query_params[0]["after_key"] == "s0"
+    assert query_params[0]["retention_floor"] == now - timedelta(days=365)
+
+
+def test_source_rejects_invalid_window_before_connecting():
+    called = False
+
+    def connect(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    now = datetime(2026, 8, 11, tzinfo=UTC)
+    source = ReplicaSource("postgresql://safe", connection_factory=connect)
+
+    try:
+        source.fetch_sessions(
+            after=now,
+            after_key="",
+            through=now - timedelta(seconds=1),
+            limit=1,
+        )
+    except ValueError as error:
+        assert str(error) == "invalid replica source window"
+    else:
+        raise AssertionError("invalid window was accepted")
+    assert called is False

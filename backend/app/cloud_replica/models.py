@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -26,9 +28,24 @@ class RawTurn:
     outcome: str | None = None
     fallback_used: bool | None = None
     duration_ms: int | None = None
+    trace: RawTraceAggregate | None = None
     attachments: tuple[RawAttachment, ...] = ()
     sources: tuple[dict[str, Any], ...] = ()
     details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class RawTraceAggregate:
+    status: str | None
+    duration_ms: int | None
+    engine: str | None
+    backend: str | None
+    model: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: float | None
+    error_class: str | None
+    tool_categories: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +94,21 @@ class SanitizedTurnRecord:
     fallback_used: bool | None
     duration_ms: int | None
     attachments: tuple[SanitizedAttachment, ...]
+    trace: SanitizedTraceAggregate | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SanitizedTraceAggregate:
+    status: str | None
+    duration_ms: int | None
+    engine: str | None
+    backend: str | None
+    model_family: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: float | None
+    error_class: str | None
+    tool_categories: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)

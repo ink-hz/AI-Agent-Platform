@@ -17,6 +17,7 @@ from .models import (
     SanitizedAttachment,
     SanitizedSessionRecord,
     SanitizedText,
+    SanitizedTraceAggregate,
     SanitizedTurnRecord,
 )
 
@@ -257,6 +258,46 @@ def _safe_enum(value: str | None, allowed: set[str]) -> str | None:
     return value if value in allowed else None
 
 
+def _safe_identifier(value: str | None) -> str | None:
+    if value and re.fullmatch(r"[A-Za-z0-9._-]{1,80}", value):
+        return value
+    return None
+
+
+def _safe_count(value: int | None) -> int | None:
+    return max(value, 0) if isinstance(value, int) else None
+
+
+def _sanitize_trace(trace):
+    if trace is None:
+        return None
+    model = _safe_identifier(trace.model)
+    model_family = model.split("-")[0] if model else None
+    return SanitizedTraceAggregate(
+        status=_safe_enum(
+            trace.status,
+            {"success", "failed", "partial", "timeout", "running", "unknown"},
+        ),
+        duration_ms=_safe_count(trace.duration_ms),
+        engine=_safe_identifier(trace.engine),
+        backend=_safe_identifier(trace.backend),
+        model_family=model_family,
+        input_tokens=_safe_count(trace.input_tokens),
+        output_tokens=_safe_count(trace.output_tokens),
+        cost_usd=max(float(trace.cost_usd), 0.0)
+        if isinstance(trace.cost_usd, (int, float))
+        else None,
+        error_class=_safe_identifier(trace.error_class),
+        tool_categories=tuple(
+            dict.fromkeys(
+                category
+                for category in trace.tool_categories
+                if _safe_identifier(category)
+            )
+        ),
+    )
+
+
 def sanitize_session(
     raw: RawSession, policy: SanitizationPolicy
 ) -> SanitizedSessionRecord:
@@ -324,6 +365,7 @@ def sanitize_session(
                 if isinstance(turn.duration_ms, int)
                 else None,
                 attachments=attachments,
+                trace=_sanitize_trace(turn.trace),
             )
         )
     return SanitizedSessionRecord(
