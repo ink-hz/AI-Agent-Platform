@@ -14,6 +14,12 @@
   <key>WorkingDirectory</key>
   <string>__REPO_ROOT__</string>
 
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PLATFORM_FEEDBACK_CLOSURE_OUTBOX_DIR</key>
+    <string>/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/feedback-closure-outbox</string>
+  </dict>
+
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>

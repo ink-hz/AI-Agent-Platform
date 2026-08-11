@@ -102,6 +102,26 @@ def load_outbox_item(path: Path) -> dict[str, Any]:
     return payload
 
 
+def list_outbox_items(directory: Path) -> list[Path]:
+    candidate = Path(directory).expanduser()
+    if not candidate.is_absolute():
+        raise OutboxItemError("outbox directory path must be absolute")
+    current = candidate
+    while True:
+        if current.is_symlink():
+            raise OutboxItemError("outbox directory must not contain symlinks")
+        if current.parent == current:
+            break
+        current = current.parent
+    if not candidate.exists():
+        return []
+    if not candidate.is_dir():
+        raise OutboxItemError("outbox path must be a directory")
+    if stat.S_IMODE(candidate.stat().st_mode) != 0o700:
+        raise OutboxItemError("outbox directory must have mode 0700")
+    return sorted(candidate.glob("*.json"))
+
+
 def _fetch_json(url: str) -> Any:
     with urlopen(url, timeout=10) as response:
         return json.load(response)

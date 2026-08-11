@@ -3,16 +3,67 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 import json
+from pathlib import Path
 import sys
 
 from app.config import load_config
 from app.local_secrets import SecretFileUnavailable, read_secret_file
 from app.review.database import resolve_review_database_url
+from app.review.handoff import (
+    HandoffImporter,
+    OutboxItemError,
+    list_outbox_items,
+    load_outbox_item,
+)
 from app.review.repository import PsycopgReviewRepository
+from app.registry.repository import YamlRepository
 
 from .config import default_sources
 from .export import ExportError, export_source
 from .importer import ReviewBackfillError, import_bundle, import_bundle_with_review
+
+
+HANDOFF_STATES = (
+    "prepared",
+    "pending",
+    "acknowledged",
+    "blocked",
+    "terminal_failed",
+)
+
+
+def sync_feedback_closure_outbox(directory: Path, importer) -> dict[str, int]:
+    summary = {state: 0 for state in HANDOFF_STATES}
+    summary["invalid"] = 0
+    try:
+        paths = list_outbox_items(directory)
+    except OutboxItemError:
+        summary["invalid"] = 1
+        return summary
+    for path in paths:
+        try:
+            payload = load_outbox_item(path)
+            handoff = payload.get("handoff")
+            state = handoff.get("state") if isinstance(handoff, dict) else None
+            if state not in HANDOFF_STATES:
+                summary["invalid"] += 1
+                continue
+            if state not in {"acknowledged", "terminal_failed"}:
+                importer.import_path(path)
+            final = load_outbox_item(path)
+            final_handoff = final.get("handoff")
+            final_state = (
+                final_handoff.get("state")
+                if isinstance(final_handoff, dict)
+                else None
+            )
+            if final_state in HANDOFF_STATES:
+                summary[final_state] += 1
+            else:
+                summary["invalid"] += 1
+        except (OSError, OutboxItemError, ValueError):
+            summary["invalid"] += 1
+    return summary
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Sync remote Agent observability data")
@@ -43,10 +94,11 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             assert database_url is not None
             if review_database_url:
+                review_repository = PsycopgReviewRepository(review_database_url)
                 coordinated = import_bundle_with_review(
                     database_url,
                     bundle,
-                    review_repository=PsycopgReviewRepository(review_database_url),
+                    review_repository=review_repository,
                     actor="codex",
                 )
                 print(json.dumps(
@@ -59,6 +111,30 @@ def main(argv: list[str] | None = None) -> int:
                     ensure_ascii=False,
                     sort_keys=True,
                 ))
+                if kind == "fae":
+                    handoff = sync_feedback_closure_outbox(
+                        Path(config.feedback_closure_outbox_dir),
+                        HandoffImporter(
+                            review_repository,
+                            YamlRepository(config.registry_path),
+                        ),
+                    )
+                    print(json.dumps(
+                        {"source_kind": kind, "closure_handoff": handoff},
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ))
+                    if any(
+                        handoff[state]
+                        for state in (
+                            "prepared",
+                            "pending",
+                            "blocked",
+                            "terminal_failed",
+                            "invalid",
+                        )
+                    ):
+                        failed = True
             else:
                 result = import_bundle(database_url, bundle)
                 print(json.dumps(

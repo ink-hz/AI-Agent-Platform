@@ -205,10 +205,17 @@ launchctl print gui/$(id -u)/com.orbbec.ai-agent-platform-sync
 ```
 
 同步只通过 SSH 执行只读导出，再原子写入本机隔离镜像。每个源镜像成功提交后，
-同步器使用独立 review writer 幂等纳管新增负反馈回答；输出分别包含
-`source_sync` 与 `review_backfill`。闭环写库失败不会回滚或伪造源同步结果，但命令
-会以非零退出并报告 `review_backfill_failed`，便于运维重试。源同步失败时不会运行
-review backfill。失败时 `/api/sync/status` 会保留上一份成功快照。
+同步器使用独立 review writer 幂等纳管新增负反馈回答；FAE 顺序固定为
+`source_sync` → `review_backfill` → `closure_handoff`。最后一步扫描当前用户私有的
+`~/Library/Application Support/OrbbecAI-Agent-Platform/feedback-closure-outbox`
+（目录 0700、文件 0600），导入已发布修复批次的事项、合并与部署证据。路径可用
+`PLATFORM_FEEDBACK_CLOSURE_OUTBOX_DIR` 覆盖，但只接受绝对路径和非符号链接；该流程
+继续使用 mode-0600 的既有数据库凭据文件，不调用 macOS 钥匙串。
+
+输出分别包含 `source_sync`、`review_backfill` 和 FAE 的 `closure_handoff` 状态计数。
+单个 handoff blocked/terminal_failed 不会回滚或伪造已成功的源同步，但命令会以非零
+退出，后续定时任务只重试尚未 acknowledged 的项目。源同步失败时不会运行 review
+backfill 或 handoff import。失败时 `/api/sync/status` 会保留上一份成功快照。
 
 Langfuse 保持独立访问，不嵌入 Platform：
 
