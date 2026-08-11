@@ -11,9 +11,22 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     value = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
     services = value["services"]
 
-    assert set(services) == {"platform-api", "platform-postgres"}
+    assert set(services) == {
+        "platform-api", "platform-loopback", "platform-postgres"
+    }
     assert "ports" not in services["platform-postgres"]
-    assert services["platform-api"]["ports"] == ["127.0.0.1:8080:8080"]
+    assert "ports" not in services["platform-api"]
+    assert services["platform-loopback"]["ports"] == ["127.0.0.1:8080:8080"]
+    assert services["platform-loopback"]["command"] == [
+        "python", "-m", "app.cloud_replica.loopback_proxy"
+    ]
+    assert services["platform-loopback"]["volumes"] == []
+    assert services["platform-loopback"]["read_only"] is True
+    assert services["platform-loopback"]["cap_drop"] == ["ALL"]
+    assert set(services["platform-loopback"]["networks"]) == {
+        "platform-edge", "platform-internal"
+    }
+    assert services["platform-api"]["networks"] == ["platform-internal"]
     assert services["platform-api"]["read_only"] is True
     assert services["platform-api"]["cap_drop"] == ["ALL"]
     assert services["platform-api"]["security_opt"] == ["no-new-privileges:true"]
@@ -32,6 +45,8 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     serialized = (CLOUD / "compose.yaml").read_text(encoding="utf-8").lower()
     for forbidden in ("langfuse", "nginx", "ai-fae", "fae-backend"):
         assert forbidden not in serialized
+    assert value["networks"]["platform-internal"]["internal"] is True
+    assert value["networks"]["platform-edge"]["internal"] is False
 
 
 def test_image_is_multistage_nonroot_and_contains_only_runtime_assets():
@@ -88,6 +103,7 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
         "[::]:8080",
         "CLOUD_PLATFORM_DEPLOY_OK release=",
         "mode=ssh-tunnel",
+        "platform-loopback",
     ):
         assert evidence in script
     for forbidden in (

@@ -121,6 +121,9 @@ Platform and PostgreSQL use a dedicated Compose project and directories. The
 database is visible only on the private Compose network. The Platform container
 runs as a non-root user with a read-only root filesystem, dropped Linux
 capabilities, no Docker socket, and only explicitly mounted state paths.
+A credential-free loopback proxy is the only service attached to the publish
+network. It forwards raw TCP to Platform on the private network and binds only
+`127.0.0.1:8080`; Platform and PostgreSQL remain private-network-only.
 
 ## 6. Cloud replica data contract
 

@@ -49,8 +49,6 @@ services:
       PLATFORM_REPLICA_STALE_SECONDS: "900"
     volumes:
       - platform-api-secrets:/run/secrets:ro
-    ports:
-      - "127.0.0.1:8080:8080"
     networks:
       - platform-internal
     depends_on:
@@ -63,15 +61,48 @@ services:
       retries: 12
       start_period: 15s
 
+  platform-loopback:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700
+    command: ["python", "-m", "app.cloud_replica.loopback_proxy"]
+    volumes: []
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - platform-internal
+      - platform-edge
+    depends_on:
+      platform-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=2).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
 networks:
   platform-internal:
     name: orbbec-agent-platform-internal
     internal: true
+  platform-edge:
+    name: orbbec-agent-platform-edge
+    internal: false
 
 volumes:
   platform-postgres-data:
     name: orbbec-agent-platform-postgres-data
   platform-postgres-secrets:
     name: orbbec-agent-platform-postgres-secrets
+    external: true
   platform-api-secrets:
     name: orbbec-agent-platform-api-secrets
+    external: true

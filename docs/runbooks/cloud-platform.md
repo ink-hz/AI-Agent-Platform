@@ -236,9 +236,9 @@ Acceptance succeeds only with
 
 The deployment script automatically rolls back a failed candidate. For a later
 manual rollback, first retain an encrypted backup and the local export queue.
-Select the prior immutable release, stop only `platform-api`, atomically restore
+Select the prior immutable release, stop only `platform-loopback` and `platform-api`, atomically restore
 `/opt/orbbec-agent-platform/current` and its matching private environment, then
-start only the prior `platform-api`. Do not remove or recreate PostgreSQL unless
+start only the prior `platform-api` and `platform-loopback`. Do not remove or recreate PostgreSQL unless
 a separately approved restore operation requires it. Re-run the FAE, Nginx,
 public-listener, loopback API, and SSH tunnel checks after rollback.
 
