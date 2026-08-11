@@ -7,11 +7,13 @@ import os
 from pathlib import Path
 import stat
 import sys
+import tempfile
 from typing import BinaryIO, Callable, Sequence
 
 from app.local_secrets import read_secret_file
 
 from .crypto import BatchSigner, BatchVerifier, FieldCipher, read_key_file
+from .backup import decrypt_stream, encrypt_stream
 from .exporter import ReplicaExporter
 from .protocol import BatchLimits, decode_and_verify_batch
 from .sanitize import SanitizationPolicy
@@ -154,15 +156,76 @@ def _migrate() -> int:
     return 0
 
 
+def _backup(input_stream: BinaryIO, clock: Callable[[], datetime]) -> int:
+    public_key = read_key_file(
+        _required_environment("PLATFORM_REPLICA_BACKUP_PUBLIC_KEY_FILE"),
+        expected_size=32,
+    )
+    output_path = Path(_required_environment("PLATFORM_REPLICA_BACKUP_PATH"))
+    if not output_path.is_absolute() or output_path.is_symlink():
+        raise RuntimeError("backup path unavailable")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{output_path.name}.", dir=output_path.parent
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as target:
+            metadata = encrypt_stream(
+                input_stream, target, public_key, created_at=clock()
+            )
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(temporary_path, output_path)
+        output_path.chmod(0o600)
+    except Exception:
+        temporary_path.unlink(missing_ok=True)
+        raise
+    print(
+        json.dumps(
+            {
+                "status": "backed_up",
+                "encrypted_size": metadata.encrypted_size,
+                "plaintext_size": metadata.plaintext_size,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _restore_stream(output_stream: BinaryIO) -> int:
+    private_key = read_key_file(
+        _required_environment("PLATFORM_REPLICA_BACKUP_PRIVATE_KEY_FILE"),
+        expected_size=32,
+    )
+    backup_path = Path(_required_environment("PLATFORM_REPLICA_BACKUP_PATH"))
+    if not backup_path.is_absolute() or not backup_path.is_file() or backup_path.is_symlink():
+        raise RuntimeError("backup path unavailable")
+    with backup_path.open("rb") as source:
+        decrypt_stream(source, output_stream, private_key)
+    return 0
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     input_stream: BinaryIO | None = None,
+    output_stream: BinaryIO | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(prog="platform-cloud-replica")
     parser.add_argument(
-        "command", choices=("export", "import", "retention", "migrate")
+        "command",
+        choices=(
+            "export",
+            "import",
+            "retention",
+            "migrate",
+            "backup",
+            "restore-stream",
+        ),
     )
     parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args(argv)
@@ -175,6 +238,10 @@ def main(
             return _retention(clock, arguments.dry_run)
         if arguments.command == "migrate":
             return _migrate()
+        if arguments.command == "backup":
+            return _backup(input_stream or sys.stdin.buffer, clock)
+        if arguments.command == "restore-stream":
+            return _restore_stream(output_stream or sys.stdout.buffer)
     except Exception:
         error = f"{arguments.command}_failed"
         print(

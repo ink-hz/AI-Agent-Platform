@@ -3,7 +3,13 @@ import io
 import json
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    PublicFormat,
+)
 
 from app.cloud_replica import cli
 from app.cloud_replica.store import ReplicaImportResult, ReplicaRetentionResult
@@ -115,3 +121,25 @@ def test_migrate_cli_runs_only_replica_migration(monkeypatch, capsys):
     assert cli.main(["migrate"]) == 0
     assert calls == ["migrate"]
     assert json.loads(capsys.readouterr().out) == {"status": "migrated"}
+
+
+def test_backup_and_restore_stream_cli_never_persists_plaintext(tmp_path, monkeypatch, capsys):
+    recovery = X25519PrivateKey.generate()
+    private = recovery.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    public = recovery.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    private_path = _private(tmp_path / "recovery-private", private)
+    public_path = _private(tmp_path / "recovery-public", public)
+    backup_path = tmp_path / "replica.orb"
+    plaintext = b"synthetic sanitized database stream"
+    monkeypatch.setenv("PLATFORM_REPLICA_BACKUP_PUBLIC_KEY_FILE", str(public_path))
+    monkeypatch.setenv("PLATFORM_REPLICA_BACKUP_PATH", str(backup_path))
+
+    assert cli.main(["backup"], input_stream=io.BytesIO(plaintext)) == 0
+    assert plaintext not in backup_path.read_bytes()
+    assert backup_path.stat().st_mode & 0o777 == 0o600
+    capsys.readouterr()
+
+    monkeypatch.setenv("PLATFORM_REPLICA_BACKUP_PRIVATE_KEY_FILE", str(private_path))
+    restored = io.BytesIO()
+    assert cli.main(["restore-stream"], output_stream=restored) == 0
+    assert restored.getvalue() == plaintext

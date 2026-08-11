@@ -20,15 +20,18 @@ set -a
 # shellcheck disable=SC1090
 source "$config_path"
 set +a
-for required_name in CLOUD_ADMIN_HOST CLOUD_ADMIN_KEY CLOUD_SIGNING_PUBLIC_KEY; do
+for required_name in CLOUD_ADMIN_HOST CLOUD_ADMIN_KEY CLOUD_SIGNING_PUBLIC_KEY CLOUD_BACKUP_PUBLIC_KEY; do
   [[ -n "${!required_name:-}" ]] || fail
 done
-if [[ "$CLOUD_ADMIN_KEY" != /* || "$CLOUD_SIGNING_PUBLIC_KEY" != /* ||
+if [[ "$CLOUD_ADMIN_KEY" != /* || "$CLOUD_SIGNING_PUBLIC_KEY" != /* || "$CLOUD_BACKUP_PUBLIC_KEY" != /* ||
       ! -f "$CLOUD_ADMIN_KEY" || -L "$CLOUD_ADMIN_KEY" ||
       ! -f "$CLOUD_SIGNING_PUBLIC_KEY" || -L "$CLOUD_SIGNING_PUBLIC_KEY" ||
+      ! -f "$CLOUD_BACKUP_PUBLIC_KEY" || -L "$CLOUD_BACKUP_PUBLIC_KEY" ||
       "$(/usr/bin/stat -f '%Lp' "$CLOUD_ADMIN_KEY")" != "600" ||
       "$(/usr/bin/stat -f '%Lp' "$CLOUD_SIGNING_PUBLIC_KEY")" != "600" ||
-      "$(/usr/bin/stat -f '%z' "$CLOUD_SIGNING_PUBLIC_KEY")" != "32" ]]; then
+      "$(/usr/bin/stat -f '%z' "$CLOUD_SIGNING_PUBLIC_KEY")" != "32" ||
+      "$(/usr/bin/stat -f '%Lp' "$CLOUD_BACKUP_PUBLIC_KEY")" != "600" ||
+      "$(/usr/bin/stat -f '%z' "$CLOUD_BACKUP_PUBLIC_KEY")" != "32" ]]; then
   fail
 fi
 
@@ -75,6 +78,11 @@ ssh_options=(
 if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
   'umask 077; install -d -m 700 /opt/orbbec-agent-platform/bin; /bin/cat > /opt/orbbec-agent-platform/bin/remote-stage.sh.part; chmod 700 /opt/orbbec-agent-platform/bin/remote-stage.sh.part; mv -f /opt/orbbec-agent-platform/bin/remote-stage.sh.part /opt/orbbec-agent-platform/bin/remote-stage.sh' \
   < "$repository_root/deploy/cloud/remote-stage.sh"; then
+  fail
+fi
+if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
+  'umask 077; install -d -m 700 /opt/orbbec-agent-platform/private; /bin/cat > /opt/orbbec-agent-platform/private/backup-recovery-x25519.pub.part; chmod 600 /opt/orbbec-agent-platform/private/backup-recovery-x25519.pub.part; mv -f /opt/orbbec-agent-platform/private/backup-recovery-x25519.pub.part /opt/orbbec-agent-platform/private/backup-recovery-x25519.pub' \
+  < "$CLOUD_BACKUP_PUBLIC_KEY"; then
   fail
 fi
 if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \

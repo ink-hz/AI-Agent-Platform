@@ -1,0 +1,17 @@
+[Unit]
+Description=Orbbec Agent Platform encrypted replica backup and retention
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/orbbec-agent-platform/current/deploy/cloud/backup.sh
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/opt/orbbec-agent-platform
+TimeoutStartSec=3600

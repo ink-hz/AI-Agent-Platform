@@ -72,6 +72,10 @@ rollback() {
       /usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml" up -d platform-api >/dev/null 2>&1 || true
     else
       /usr/bin/docker rm -f orbbec-agent-platform-platform-api-1 >/dev/null 2>&1 || true
+      /usr/bin/systemctl disable --now orbbec-agent-platform-backup.timer >/dev/null 2>&1 || true
+      if [[ -L "$root_path/current" ]]; then
+        /usr/bin/unlink "$root_path/current" || true
+      fi
     fi
   fi
   if [[ -d "$release_path" && "$release_path" != "$previous_release" ]]; then
@@ -198,6 +202,14 @@ done
 /usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null || fail
 /usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/deployment | /usr/bin/python3 -c 'import json,sys; value=json.load(sys.stdin); assert value == {"mode":"cloud-replica","read_only":True,"auth":"ssh-tunnel","freshness":"unavailable","last_success_at":None}' || fail
 /bin/ln -sfn "$release_path" "$root_path/current"
+/usr/bin/install -o root -g root -m 644 \
+  "$release_path/deploy/cloud/orbbec-agent-platform-backup.service" \
+  /etc/systemd/system/orbbec-agent-platform-backup.service
+/usr/bin/install -o root -g root -m 644 \
+  "$release_path/deploy/cloud/orbbec-agent-platform-backup.timer" \
+  /etc/systemd/system/orbbec-agent-platform-backup.timer
+/usr/bin/systemctl daemon-reload
+/usr/bin/systemctl enable --now orbbec-agent-platform-backup.timer >/dev/null
 
 [[ "$fae_container_id" == "$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)" ]] || fail
 [[ "$fae_image" == "$(/usr/bin/docker inspect --format '{{.Config.Image}}' ai-fae-backend)" ]] || fail

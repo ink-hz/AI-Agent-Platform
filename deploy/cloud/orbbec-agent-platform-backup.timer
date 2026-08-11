@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Orbbec Agent Platform encrypted replica backup
+
+[Timer]
+OnCalendar=*-*-* 19:15:00 UTC
+RandomizedDelaySec=900
+Persistent=true
+Unit=orbbec-agent-platform-backup.service
+
+[Install]
+WantedBy=timers.target
