@@ -98,6 +98,9 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
         "docker compose down",
     ):
         assert forbidden not in script
+    assert 'previous_release=""' in script
+    assert 'if [[ -L "$root_path/current" ]]' in script
+    assert '[[ -f "$previous_release/deploy/cloud/compose.yaml" ]] || fail' in script
 
 
 def test_raw_key_files_inside_runtime_volumes_use_reader_contract_mode():

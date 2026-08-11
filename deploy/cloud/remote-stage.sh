@@ -34,7 +34,12 @@ public_listener_digest="$(/usr/bin/ss -H -lnt | /usr/bin/awk '$4 !~ /^(127\.0\.0
 [[ -n "$fae_container_id" && -n "$fae_image" && -n "$fae_started_at" ]] || fail
 
 existing_api="$(/usr/bin/docker ps --filter label=com.docker.compose.project=orbbec-agent-platform --filter label=com.docker.compose.service=platform-api --format '{{.ID}}' | /usr/bin/head -1)"
-previous_release="$(/usr/bin/readlink -f "$root_path/current" 2>/dev/null || true)"
+previous_release=""
+if [[ -L "$root_path/current" ]]; then
+  previous_release="$(/usr/bin/readlink -f "$root_path/current" 2>/dev/null || true)"
+  [[ -n "$previous_release" ]] || fail
+  [[ -f "$previous_release/deploy/cloud/compose.yaml" ]] || fail
+fi
 previous_environment="$stage_path/previous.env"
 if [[ -f "$environment_path" ]]; then
   /bin/cp -p "$environment_path" "$previous_environment"
