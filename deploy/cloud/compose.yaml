@@ -1,0 +1,77 @@
+name: orbbec-agent-platform
+
+services:
+  platform-postgres:
+    image: postgres:17.6-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agent_platform
+      POSTGRES_USER: platform_owner
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-owner-password
+    volumes:
+      - platform-postgres-data:/var/lib/postgresql/data
+      - platform-postgres-secrets:/run/secrets:ro
+    networks:
+      - platform-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform_owner -d agent_platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  platform-api:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700
+    environment:
+      PLATFORM_DEPLOYMENT_MODE: cloud-replica
+      PLATFORM_HOST: 127.0.0.1
+      PLATFORM_PORT: "8080"
+      PLATFORM_REGISTRY_PATH: /app/registry.yaml
+      PLATFORM_METABOT_CONTRACT_PATH: /app/metabot.runtime-contract.json
+      PLATFORM_STATIC_DIR: /app/backend/app/static
+      PLATFORM_FLYWHEEL_ENABLED: "0"
+      PLATFORM_REVIEW_ENABLED: "0"
+      PLATFORM_ATTACHMENT_ENABLED: "0"
+      PLATFORM_REPLICA_DATABASE_URL_FILE: /run/secrets/replica-database-url
+      PLATFORM_REPLICA_ENCRYPTION_KEY_FILE: /run/secrets/replica-encryption-key
+      PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE: /run/secrets/replica-signing-public-key
+      PLATFORM_REPLICA_STALE_SECONDS: "900"
+    volumes:
+      - platform-api-secrets:/run/secrets:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - platform-internal
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=2).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+networks:
+  platform-internal:
+    name: orbbec-agent-platform-internal
+    internal: true
+
+volumes:
+  platform-postgres-data:
+    name: orbbec-agent-platform-postgres-data
+  platform-postgres-secrets:
+    name: orbbec-agent-platform-postgres-secrets
+  platform-api-secrets:
+    name: orbbec-agent-platform-api-secrets

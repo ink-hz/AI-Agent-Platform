@@ -31,7 +31,9 @@ def test_forced_import_rejects_commands_and_prints_bounded_acknowledgement():
     script = FORCED.read_text(encoding="utf-8")
 
     assert "SSH_ORIGINAL_COMMAND" in script
-    assert "exec -T platform-api" in script
+    assert "run --rm --no-deps -T" in script
+    assert "orbbec-agent-platform-import-secrets:/run/import-secrets:ro" in script
+    assert "platform-api" in script
     assert "app.cloud_replica.cli import" in script
     assert "REPLICA_IMPORT_OK sequence=" in script
     assert "digest=" in script

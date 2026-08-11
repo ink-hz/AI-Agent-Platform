@@ -101,3 +101,17 @@ def test_retention_cli_supports_dry_run(monkeypatch, capsys):
         "session_count": 4,
         "status": "completed",
     }
+
+
+def test_migrate_cli_runs_only_replica_migration(monkeypatch, capsys):
+    calls = []
+
+    class Store:
+        def migrate(self):
+            calls.append("migrate")
+
+    monkeypatch.setattr(cli, "_store_from_environment", lambda: Store())
+
+    assert cli.main(["migrate"]) == 0
+    assert calls == ["migrate"]
+    assert json.loads(capsys.readouterr().out) == {"status": "migrated"}

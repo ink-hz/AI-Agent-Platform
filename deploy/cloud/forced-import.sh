@@ -21,7 +21,10 @@ if ! result="$(
   /usr/bin/docker compose \
     --env-file "$environment_file" \
     -f "$compose_file" \
-    exec -T platform-api \
+    run --rm --no-deps -T \
+    -v orbbec-agent-platform-import-secrets:/run/import-secrets:ro \
+    -e PLATFORM_REPLICA_DATABASE_URL_FILE=/run/import-secrets/replica-database-url \
+    platform-api \
     python -m app.cloud_replica.cli import
 )"; then
   fail

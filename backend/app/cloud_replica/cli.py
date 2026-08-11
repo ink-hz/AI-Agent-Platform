@@ -148,6 +148,12 @@ def _retention(clock: Callable[[], datetime], dry_run: bool) -> int:
     return 0
 
 
+def _migrate() -> int:
+    _store_from_environment().migrate()
+    print('{"status":"migrated"}')
+    return 0
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -155,7 +161,9 @@ def main(
     input_stream: BinaryIO | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(prog="platform-cloud-replica")
-    parser.add_argument("command", choices=("export", "import", "retention"))
+    parser.add_argument(
+        "command", choices=("export", "import", "retention", "migrate")
+    )
     parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args(argv)
     try:
@@ -165,6 +173,8 @@ def main(
             return _import(input_stream or sys.stdin.buffer)
         if arguments.command == "retention":
             return _retention(clock, arguments.dry_run)
+        if arguments.command == "migrate":
+            return _migrate()
     except Exception:
         error = f"{arguments.command}_failed"
         print(
