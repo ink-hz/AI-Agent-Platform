@@ -15,6 +15,7 @@ def test_cloud_deployment_endpoint_and_mutating_routes_are_read_only(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("PLATFORM_DEPLOYMENT_MODE", "cloud-replica")
+    monkeypatch.setenv("PLATFORM_CLOUD_AUTH_MODE", "basic-auth")
     monkeypatch.setenv("PLATFORM_HOST", "127.0.0.1")
     monkeypatch.setenv("PLATFORM_PORT", "8080")
     monkeypatch.setenv("PLATFORM_FLYWHEEL_ENABLED", "0")
@@ -41,10 +42,7 @@ def test_cloud_deployment_endpoint_and_mutating_routes_are_read_only(
         lambda *_args: (
             object(),
             EmptyObservability(),
-            type("Repository", (), {"deployment_status": lambda self: {
-                "mode": "cloud-replica", "read_only": True, "auth": "ssh-tunnel",
-                "freshness": "unavailable", "last_success_at": None,
-            }})(),
+            None,
         ),
     )
 
@@ -58,7 +56,7 @@ def test_cloud_deployment_endpoint_and_mutating_routes_are_read_only(
     assert client.get("/api/deployment").json() == {
         "mode": "cloud-replica",
         "read_only": True,
-        "auth": "ssh-tunnel",
+        "auth": "basic-auth",
         "freshness": "unavailable",
         "last_success_at": None,
     }

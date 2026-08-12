@@ -41,9 +41,15 @@ if [[ -L "$root_path/current" ]]; then
   [[ -f "$previous_release/deploy/cloud/compose.yaml" ]] || fail
 fi
 previous_environment="$stage_path/previous.env"
+cloud_auth_mode="ssh-tunnel"
 if [[ -f "$environment_path" ]]; then
   /bin/cp -p "$environment_path" "$previous_environment"
+  configured_auth_mode="$(/usr/bin/sed -n 's/^PLATFORM_CLOUD_AUTH_MODE=//p' "$environment_path")"
+  if [[ -n "$configured_auth_mode" ]]; then
+    cloud_auth_mode="$configured_auth_mode"
+  fi
 fi
+[[ "$cloud_auth_mode" == "ssh-tunnel" || "$cloud_auth_mode" == "basic-auth" ]] || fail
 if [[ -n "$existing_api" && ( -z "$previous_release" || ! -f "$previous_environment" ) ]]; then
   fail
 fi
@@ -158,7 +164,8 @@ if [[ -n "$previous_release" && -f "$environment_path" ]]; then
   /usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml" stop platform-loopback platform-api >/dev/null
   api_stopped=1
 fi
-/usr/bin/printf 'PLATFORM_IMAGE=%s\n' "$image_name" > "$environment_path"
+/usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=%s\n' \
+  "$image_name" "$cloud_auth_mode" > "$environment_path"
 /bin/chown root:root "$environment_path"
 /bin/chmod 600 "$environment_path"
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$release_path/deploy/cloud/compose.yaml")
@@ -206,7 +213,7 @@ for _attempt in $(/usr/bin/seq 1 40); do
   /bin/sleep 1
 done
 /usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null || fail
-/usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/deployment | /usr/bin/python3 -c 'import json,sys; value=json.load(sys.stdin); assert value == {"mode":"cloud-replica","read_only":True,"auth":"ssh-tunnel","freshness":"unavailable","last_success_at":None}' || fail
+/usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/deployment | /usr/bin/python3 -c 'import json,sys; expected=sys.argv[1]; value=json.load(sys.stdin); assert value == {"mode":"cloud-replica","read_only":True,"auth":expected,"freshness":"unavailable","last_success_at":None}' "$cloud_auth_mode" || fail
 /bin/ln -sfn "$release_path" "$root_path/current"
 /usr/bin/install -o root -g root -m 644 \
   "$release_path/deploy/cloud/orbbec-agent-platform-backup.service" \
@@ -230,4 +237,4 @@ fi
 
 rollback_required=0
 trap - EXIT
-echo "CLOUD_PLATFORM_DEPLOY_OK release=$release_sha mode=ssh-tunnel"
+echo "CLOUD_PLATFORM_DEPLOY_OK release=$release_sha auth=$cloud_auth_mode"

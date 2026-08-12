@@ -35,6 +35,7 @@ services:
       - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700
     environment:
       PLATFORM_DEPLOYMENT_MODE: cloud-replica
+      PLATFORM_CLOUD_AUTH_MODE: ${PLATFORM_CLOUD_AUTH_MODE:-ssh-tunnel}
       PLATFORM_HOST: 127.0.0.1
       PLATFORM_PORT: "8080"
       PLATFORM_REGISTRY_PATH: /app/registry.yaml

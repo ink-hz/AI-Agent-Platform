@@ -81,6 +81,7 @@ def build_cloud_replica_services(
         cipher=FieldCipher(encryption_key),
         stale_seconds=config.replica_stale_seconds,
         catalog=catalog,
+        auth_mode=config.cloud_auth_mode,
     )
     repository.check_schema()
     observability_service = ObservabilityService(repository)
@@ -345,7 +346,7 @@ def create_app(
                 return {
                     "mode": "cloud-replica",
                     "read_only": True,
-                    "auth": "ssh-tunnel",
+                    "auth": config.cloud_auth_mode,
                     "freshness": "unavailable",
                     "last_success_at": None,
                 }

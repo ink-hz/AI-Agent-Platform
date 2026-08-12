@@ -69,6 +69,7 @@ class ReplicaObservabilityRepository:
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         stale_seconds: int = 900,
         catalog: AgentCatalog | None = None,
+        auth_mode: str = "ssh-tunnel",
     ):
         self._database_url = database_url
         self._cipher = cipher
@@ -76,6 +77,7 @@ class ReplicaObservabilityRepository:
         self._now = now
         self._stale_after = timedelta(seconds=stale_seconds)
         self._catalog = catalog or AgentCatalog.default()
+        self._auth_mode = auth_mode
 
     def _connection(self):
         return self._connect(
@@ -119,7 +121,7 @@ class ReplicaObservabilityRepository:
             return {
                 "mode": "cloud-replica",
                 "read_only": True,
-                "auth": "ssh-tunnel",
+                "auth": self._auth_mode,
                 "freshness": freshness,
                 "last_success_at": last_success,
             }

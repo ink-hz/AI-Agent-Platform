@@ -193,6 +193,21 @@ def test_repository_freshness_supports_empty_current_stale_and_unavailable():
     assert repository.list_sessions(SessionFilters(), 50, 0).items == []
 
 
+def test_repository_reports_configured_public_authentication_mode():
+    now = datetime(2026, 8, 11, 8, 0, tzinfo=UTC)
+    cipher = FieldCipher(b"e" * 32)
+    connection = _Connection([], now)
+    repository = ReplicaObservabilityRepository(
+        "postgresql://replica",
+        cipher=cipher,
+        connect=lambda *_args, **_kwargs: connection,
+        now=lambda: now,
+        auth_mode="basic-auth",
+    )
+
+    assert repository.deployment_status()["auth"] == "basic-auth"
+
+
 def test_wrong_key_or_corrupt_ciphertext_fails_without_partial_data():
     now = datetime(2026, 8, 11, 8, 0, tzinfo=UTC)
     good_cipher = FieldCipher(b"e" * 32)

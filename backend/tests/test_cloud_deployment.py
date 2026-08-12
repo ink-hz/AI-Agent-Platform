@@ -32,6 +32,7 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert services["platform-api"]["security_opt"] == ["no-new-privileges:true"]
     assert services["platform-api"]["user"] not in {"0", "root", "0:0"}
     assert services["platform-api"]["environment"]["PLATFORM_DEPLOYMENT_MODE"] == "cloud-replica"
+    assert services["platform-api"]["environment"]["PLATFORM_CLOUD_AUTH_MODE"] == "${PLATFORM_CLOUD_AUTH_MODE:-ssh-tunnel}"
     assert services["platform-api"]["environment"]["PLATFORM_HOST"] == "127.0.0.1"
     assert services["platform-api"]["environment"]["PLATFORM_REVIEW_ENABLED"] == "0"
     assert services["platform-api"]["environment"]["PLATFORM_ATTACHMENT_ENABLED"] == "0"
@@ -102,7 +103,7 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
         "0.0.0.0:8080",
         "[::]:8080",
         "CLOUD_PLATFORM_DEPLOY_OK release=",
-        "mode=ssh-tunnel",
+        "auth=$cloud_auth_mode",
         "platform-loopback",
     ):
         assert evidence in script
@@ -117,6 +118,8 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
     assert 'previous_release=""' in script
     assert 'if [[ -L "$root_path/current" ]]' in script
     assert '[[ -f "$previous_release/deploy/cloud/compose.yaml" ]] || fail' in script
+    assert 'PLATFORM_CLOUD_AUTH_MODE=%s' in script
+    assert 'cloud_auth_mode="ssh-tunnel"' in script
 
 
 def test_raw_key_files_inside_runtime_volumes_use_reader_contract_mode():

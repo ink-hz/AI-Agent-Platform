@@ -7,6 +7,7 @@ from app.config import load_config
 
 CLOUD_ENV_NAMES = (
     "PLATFORM_DEPLOYMENT_MODE",
+    "PLATFORM_CLOUD_AUTH_MODE",
     "PLATFORM_HOST",
     "PLATFORM_PORT",
     "PLATFORM_FLYWHEEL_ENABLED",
@@ -68,12 +69,28 @@ def test_loads_exact_cloud_replica_configuration(monkeypatch, tmp_path):
     config = load_config()
 
     assert config.deployment_mode == "cloud-replica"
+    assert config.cloud_auth_mode == "ssh-tunnel"
     assert config.host == "127.0.0.1"
     assert config.port == 8080
     assert config.replica_database_url_file == str(secrets["database"])
     assert config.replica_encryption_key_file == str(secrets["encryption"])
     assert config.replica_signing_public_key_file == str(secrets["signing"])
     assert config.replica_stale_seconds == 900
+
+
+def test_loads_basic_auth_cloud_entry_mode(monkeypatch, tmp_path):
+    _configure_cloud(monkeypatch, tmp_path)
+    monkeypatch.setenv("PLATFORM_CLOUD_AUTH_MODE", "basic-auth")
+
+    assert load_config().cloud_auth_mode == "basic-auth"
+
+
+def test_rejects_unknown_cloud_auth_mode(monkeypatch, tmp_path):
+    _configure_cloud(monkeypatch, tmp_path)
+    monkeypatch.setenv("PLATFORM_CLOUD_AUTH_MODE", "anonymous")
+
+    with pytest.raises(RuntimeError, match="cloud authentication mode"):
+        load_config()
 
 
 @pytest.mark.parametrize(

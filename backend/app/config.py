@@ -21,6 +21,7 @@ DEFAULT_SECRETS_DIR = (
 @dataclass(frozen=True)
 class Config:
     deployment_mode: Literal["local", "cloud-replica"]
+    cloud_auth_mode: Literal["ssh-tunnel", "basic-auth"]
     registry_path: str
     metabot_contract_path: str
     poll_interval_seconds: float
@@ -137,6 +138,8 @@ def _validate_cloud_config(config: Config) -> None:
         raise RuntimeError("unsupported deployment mode")
     if config.deployment_mode != "cloud-replica":
         return
+    if config.cloud_auth_mode not in {"ssh-tunnel", "basic-auth"}:
+        raise RuntimeError("unsupported cloud authentication mode")
     if not _loopback(config.host):
         raise RuntimeError("cloud replica host must be loopback")
     if config.flywheel_enabled:
@@ -179,6 +182,7 @@ def _feedback_closure_outbox_dir() -> str:
 def load_config() -> Config:
     config = Config(
         deployment_mode=os.getenv("PLATFORM_DEPLOYMENT_MODE", "local"),
+        cloud_auth_mode=os.getenv("PLATFORM_CLOUD_AUTH_MODE", "ssh-tunnel"),
         registry_path=os.getenv("PLATFORM_REGISTRY_PATH", "../registry.yaml"),
         metabot_contract_path=os.getenv(
             "PLATFORM_METABOT_CONTRACT_PATH",
