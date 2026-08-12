@@ -103,7 +103,7 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
         "0.0.0.0:8080",
         "[::]:8080",
         "CLOUD_PLATFORM_DEPLOY_OK release=",
-        "auth=$cloud_auth_mode",
+        "mode=$cloud_auth_mode",
         "platform-loopback",
     ):
         assert evidence in script
@@ -120,6 +120,8 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
     assert '[[ -f "$previous_release/deploy/cloud/compose.yaml" ]] || fail' in script
     assert 'PLATFORM_CLOUD_AUTH_MODE=%s' in script
     assert 'cloud_auth_mode="ssh-tunnel"' in script
+    assert 'value["freshness"] in {"current","stale","unavailable"}' in script
+    assert '"freshness":"unavailable"' not in script
 
 
 def test_raw_key_files_inside_runtime_volumes_use_reader_contract_mode():

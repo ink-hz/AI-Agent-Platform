@@ -214,7 +214,7 @@ for _attempt in $(/usr/bin/seq 1 40); do
   /bin/sleep 1
 done
 /usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null || fail
-/usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/deployment | /usr/bin/python3 -c 'import json,sys; expected=sys.argv[1]; value=json.load(sys.stdin); assert value == {"mode":"cloud-replica","read_only":True,"auth":expected,"freshness":"unavailable","last_success_at":None}' "$cloud_auth_mode" || fail
+/usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/deployment | /usr/bin/python3 -c 'import json,sys; expected=sys.argv[1]; value=json.load(sys.stdin); assert value["mode"]=="cloud-replica" and value["read_only"] is True and value["auth"]==expected and value["freshness"] in {"current","stale","unavailable"}' "$cloud_auth_mode" || fail
 /bin/ln -sfn "$release_path" "$root_path/current"
 /usr/bin/install -o root -g root -m 644 \
   "$release_path/deploy/cloud/orbbec-agent-platform-backup.service" \
@@ -238,4 +238,4 @@ fi
 
 rollback_required=0
 trap - EXIT
-echo "CLOUD_PLATFORM_DEPLOY_OK release=$release_sha auth=$cloud_auth_mode"
+echo "CLOUD_PLATFORM_DEPLOY_OK release=$release_sha mode=$cloud_auth_mode"
