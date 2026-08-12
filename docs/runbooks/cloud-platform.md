@@ -255,3 +255,69 @@ behind the Platform `AuthProvider` and enable the three-role authorization and
 HR isolation model before any public Platform access. The sanitizer, signing,
 encryption, retention, backup, and one-way synchronization protocol stay
 unchanged.
+
+## Temporary administrator public entry
+
+Until DingTalk or Feishu identity is implemented, the sanitized cloud replica
+may be published at `https://agent.orbbec.com.cn` behind HTTPS Basic Auth for a
+small administrator group. This is not employee identity, department access,
+or HR authorization. Do not distribute the shared credential broadly. The
+publication never uses Keychain and does not expose port 8080.
+
+Create a private password file outside Git in the existing cloud-replica
+private directory. The password must contain 32–128 ASCII letters, digits,
+underscores, or hyphens. Generate it without printing it:
+
+```bash
+private_root="/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/cloud-replica"
+password_file="$private_root/agent-basic-auth-password"
+umask 077
+openssl rand -base64 48 | tr '+/' '_-' | tr -d '=\n' > "$password_file"
+printf '\n' >> "$password_file"
+chmod 600 "$password_file"
+```
+
+Add these owner-only values to a dedicated mode 0600 configuration file, for
+example `$private_root/agent-domain.env`:
+
+```bash
+CLOUD_ADMIN_HOST=root@47.106.112.69
+CLOUD_ADMIN_KEY=/Users/neo/.ssh/orbbec_aliyun_ed25519
+AGENT_DOMAIN=agent.orbbec.com.cn
+AGENT_BASIC_AUTH_USER=agentadmin
+AGENT_BASIC_AUTH_PASSWORD_FILE=/absolute/private/path/agent-basic-auth-password
+```
+
+From a clean reviewed release, publish the route:
+
+```bash
+deploy/cloud/publish-agent-domain.sh "$private_root/agent-domain.env"
+```
+
+Success is exactly:
+
+```text
+AGENT_DOMAIN_PUBLISH_OK domain=agent.orbbec.com.cn
+```
+
+The remote installer stores only a salted password hash in Nginx. Plaintext
+remains only in the protected local password file so an administrator can
+retrieve it deliberately. It is never printed, passed in argv, stored in Git,
+or loaded from Keychain.
+
+Acceptance requires HTTP 308, anonymous HTTPS 401, authenticated HTML and read
+APIs, `cloud-replica`, `read_only=true`, `auth=basic-auth`, TLS 1.2/1.3, a
+loopback-only 8080 listener, healthy Certbot renewal, unchanged FAE domain and
+legacy IP responses, and unchanged FAE container identity.
+
+For credential rotation, replace the local password file atomically with a new
+valid mode 0600 value and run the same publisher. Each run creates a new
+root-owned backup and `/root/rollback-agent-domain-<UTC>.sh`. Run the latest
+rollback script over the existing administrator SSH connection if publication
+must be withdrawn; it restores the prior Nginx files and Platform auth mode and
+restarts only Platform API and its loopback proxy.
+
+The temporary public entry does not approve the one-year backfill or
+five-minute synchronization. Those remain separate gates: the private sanitizer dictionary,
+canary scan, reconciliation, stale-state test, restore drill, and local scheduler
+must pass before real Session data is considered available or current.

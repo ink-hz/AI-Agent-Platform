@@ -24,7 +24,8 @@ Feishu identity and per-user authorization are available.
 - The username is `agentadmin`. The password is generated locally, stored in
   an owner-only mode-0600 file outside Git, and streamed to the cloud over the
   existing SSH channel. Nginx stores only a salted password hash in a
-  root-owned mode-0600 file. Neither plaintext nor hash is printed.
+  mode-0640 `root:www-data` file so its unprivileged workers can authenticate.
+  Neither plaintext nor hash is printed.
 - The deployment is non-interactive and never invokes Keychain, a password
   dialog, or a browser credential helper.
 - The application remains `cloud-replica` and `read_only=true`. Its deployment
