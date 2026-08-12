@@ -16,6 +16,10 @@ def _text(path: Path) -> str:
 def test_nginx_entry_authenticates_every_https_path_and_keeps_loopback_upstream():
     value = _text(NGINX)
 
+    assert "log_format agent_platform_redacted" in value
+    assert value.index("log_format agent_platform_redacted") < value.index(
+        "access_log /var/log/nginx/ai-fae-agent.access.log agent_platform_redacted;"
+    )
     assert "server_name __AGENT_DOMAIN__;" in value
     assert value.index("location ^~ /.well-known/acme-challenge/") < value.index(
         "return 308 https://__AGENT_DOMAIN__$request_uri;"
