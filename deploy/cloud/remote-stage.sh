@@ -168,6 +168,7 @@ fi
   "$image_name" "$cloud_auth_mode" > "$environment_path"
 /bin/chown root:root "$environment_path"
 /bin/chmod 600 "$environment_path"
+unset PLATFORM_CLOUD_AUTH_MODE
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$release_path/deploy/cloud/compose.yaml")
 "${compose[@]}" up -d platform-postgres >/dev/null
 for _attempt in $(/usr/bin/seq 1 40); do

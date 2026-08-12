@@ -29,6 +29,7 @@ for required_name in \
 done
 mode_600_file "$CLOUD_ADMIN_KEY" || fail
 mode_600_file "$AGENT_BASIC_AUTH_PASSWORD_FILE" || fail
+[[ "$CLOUD_ADMIN_HOST" == "root@47.106.112.69" ]] || fail
 [[ "$AGENT_DOMAIN" == "agent.orbbec.com.cn" ]] || fail
 [[ "$AGENT_BASIC_AUTH_USER" =~ ^[A-Za-z][A-Za-z0-9_-]{2,31}$ ]] || fail
 IFS= read -r agent_password < "$AGENT_BASIC_AUTH_PASSWORD_FILE" || fail

@@ -1,7 +1,7 @@
 # Agent Platform Public Entry Design
 
-**Date:** 2026-08-12  
-**Status:** Approved for implementation  
+**Date:** 2026-08-12
+**Status:** Approved for implementation
 **Scope:** Temporary administrator-only public entry for the sanitized cloud replica
 
 ## Goal

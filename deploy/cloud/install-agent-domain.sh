@@ -41,6 +41,7 @@ platform_compose="$platform_root/current/deploy/cloud/compose.yaml"
 timestamp="$(/usr/bin/date -u +%Y%m%dT%H%M%SZ)"
 backup_path="/root/nginx-backups/agent-platform-$timestamp"
 rollback_script="/root/rollback-agent-domain-$timestamp.sh"
+[[ ! -e "$backup_path" && ! -e "$rollback_script" ]] || fail
 
 for required in "$fae_http" "$agent_deny_available" "$platform_environment" "$platform_compose"; do
   [[ -f "$required" && ! -L "$required" ]] || fail
@@ -108,6 +109,7 @@ restore_path "$backup_path/htpasswd-agent-platform" /etc/nginx/.htpasswd-agent-p
 /bin/cp -a "$backup_path/platform/platform.env" "$platform_environment"
 /usr/sbin/nginx -t >/dev/null 2>&1
 /bin/systemctl reload nginx
+unset PLATFORM_CLOUD_AUTH_MODE
 compose=(/usr/bin/docker compose --env-file "$platform_environment" -f "$platform_compose")
 "${compose[@]}" up -d --no-deps --force-recreate platform-api >/dev/null
 for _attempt in $(/usr/bin/seq 1 40); do
@@ -141,7 +143,7 @@ ROLLBACK
 
 rollback_required=1
 rollback_on_failure() {
-  /bin/rm -f -- "$backup_path/curl-auth.conf"
+  /bin/rm -f -- "$backup_path/curl-auth.conf" "$backup_path/curl-wrong.conf"
   if [[ "$rollback_required" == "1" ]]; then
     "$rollback_script" >/dev/null 2>&1 || true
   fi
@@ -217,6 +219,7 @@ unset password_hash
 /bin/chown root:www-data "$htpasswd_path.part"
 /bin/chmod 640 "$htpasswd_path.part"
 /bin/mv -f "$htpasswd_path.part" "$htpasswd_path"
+[[ "$(/usr/bin/stat -c '%a %U %G' "$htpasswd_path")" == "640 root www-data" ]] || fail
 
 environment_part="$platform_environment.part"
 /usr/bin/awk -F= '$1 != "PLATFORM_CLOUD_AUTH_MODE" {print}' "$platform_environment" > "$environment_part"
@@ -225,6 +228,7 @@ environment_part="$platform_environment.part"
 /bin/chmod 600 "$environment_part"
 /bin/mv -f "$environment_part" "$platform_environment"
 
+unset PLATFORM_CLOUD_AUTH_MODE
 compose=(/usr/bin/docker compose --env-file "$platform_environment" -f "$platform_compose")
 "${compose[@]}" up -d --no-deps --force-recreate platform-api >/dev/null
 for _attempt in $(/usr/bin/seq 1 40); do
@@ -248,17 +252,20 @@ done
 /bin/systemctl reload nginx
 
 curl_auth_config="$backup_path/curl-auth.conf"
+curl_wrong_config="$backup_path/curl-wrong.conf"
 printf 'user = "%s:%s"\n' "$agent_user" "$agent_password" > "$curl_auth_config"
-/bin/chmod 600 "$curl_auth_config"
+printf 'user = "%s:%s"\n' "$agent_user" 'incorrect-credential-for-acceptance' > "$curl_wrong_config"
+/bin/chmod 600 "$curl_auth_config" "$curl_wrong_config"
 unset agent_password
 
 [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 8 --resolve "$agent_domain:443:127.0.0.1" "https://$agent_domain/")" == "401" ]] || fail
+[[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 8 --resolve "$agent_domain:443:127.0.0.1" --config "$curl_wrong_config" "https://$agent_domain/")" == "401" ]] || fail
 /usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve "$agent_domain:443:127.0.0.1" --config "$curl_auth_config" "https://$agent_domain/" >/dev/null || fail
 /usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve "$agent_domain:443:127.0.0.1" --config "$curl_auth_config" "https://$agent_domain/api/health" | \
   /usr/bin/python3 -c 'import json,sys; assert json.load(sys.stdin)=={"status":"ok"}' || fail
 /usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve "$agent_domain:443:127.0.0.1" --config "$curl_auth_config" "https://$agent_domain/api/deployment" | \
   /usr/bin/python3 -c 'import json,sys; v=json.load(sys.stdin); assert v["mode"]=="cloud-replica" and v["read_only"] is True and v["auth"]=="basic-auth"' || fail
-/bin/rm -f -- "$curl_auth_config"
+/bin/rm -f -- "$curl_auth_config" "$curl_wrong_config"
 
 [[ "$fae_container_id" == "$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)" ]] || fail
 [[ "$fae_image" == "$(/usr/bin/docker inspect --format '{{.Config.Image}}' ai-fae-backend)" ]] || fail
@@ -271,6 +278,7 @@ unset agent_password
 /usr/sbin/nginx -t >/dev/null 2>&1 || fail
 /bin/systemctl is-active --quiet certbot.timer || fail
 /bin/systemctl is-enabled --quiet certbot.timer || fail
+[[ -f "/etc/letsencrypt/renewal/$agent_domain.conf" ]] || fail
 [[ -x "$rollback_script" && "$(/usr/bin/stat -c '%a %U' "$rollback_script")" == "700 root" ]] || fail
 
 rollback_required=0
