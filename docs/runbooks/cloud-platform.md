@@ -284,6 +284,7 @@ example `$private_root/agent-domain.env`:
 CLOUD_ADMIN_HOST=root@47.106.112.69
 CLOUD_ADMIN_KEY=/Users/neo/.ssh/orbbec_aliyun_ed25519
 AGENT_DOMAIN=agent.orbbec.com.cn
+AGENT_PUBLIC_IP=47.106.112.69
 AGENT_BASIC_AUTH_USER=agentadmin
 AGENT_BASIC_AUTH_PASSWORD_FILE=/absolute/private/path/agent-basic-auth-password
 ```
@@ -299,6 +300,10 @@ Success is exactly:
 ```text
 AGENT_DOMAIN_PUBLISH_OK domain=agent.orbbec.com.cn
 ```
+
+The publisher verifies the A record with the default resolver and AliDNS, then
+pins acceptance traffic to `AGENT_PUBLIC_IP`; this prevents a stale local
+resolver cache from turning a successful publication into a false failure.
 
 The remote installer stores only a salted password hash in Nginx. Plaintext
 remains only in the protected local password file so an administrator can

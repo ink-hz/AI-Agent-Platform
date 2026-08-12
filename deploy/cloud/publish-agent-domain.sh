@@ -23,7 +23,7 @@ set -a
 source "$config_path"
 set +a
 for required_name in \
-  CLOUD_ADMIN_HOST CLOUD_ADMIN_KEY AGENT_DOMAIN \
+  CLOUD_ADMIN_HOST CLOUD_ADMIN_KEY AGENT_DOMAIN AGENT_PUBLIC_IP \
   AGENT_BASIC_AUTH_USER AGENT_BASIC_AUTH_PASSWORD_FILE; do
   [[ -n "${!required_name:-}" ]] || fail
 done
@@ -31,6 +31,7 @@ mode_600_file "$CLOUD_ADMIN_KEY" || fail
 mode_600_file "$AGENT_BASIC_AUTH_PASSWORD_FILE" || fail
 [[ "$CLOUD_ADMIN_HOST" == "root@47.106.112.69" ]] || fail
 [[ "$AGENT_DOMAIN" == "agent.orbbec.com.cn" ]] || fail
+[[ "$AGENT_PUBLIC_IP" == "47.106.112.69" ]] || fail
 [[ "$AGENT_BASIC_AUTH_USER" =~ ^[A-Za-z][A-Za-z0-9_-]{2,31}$ ]] || fail
 IFS= read -r agent_password < "$AGENT_BASIC_AUTH_PASSWORD_FILE" || fail
 if IFS= read -r _unexpected_line < <(/usr/bin/tail -n +2 "$AGENT_BASIC_AUTH_PASSWORD_FILE"); then
@@ -76,19 +77,26 @@ trap cleanup EXIT
 printf 'user = "%s:%s"\n' "$AGENT_BASIC_AUTH_USER" "$agent_password" > "$curl_auth_config"
 unset agent_password
 
-/usr/bin/curl --noproxy '*' -sS -D "$http_headers" -o /dev/null --max-time 12 "http://$AGENT_DOMAIN/acceptance?source=platform" || fail
+default_dns="$(/usr/bin/dig +time=3 +tries=1 +short "$AGENT_DOMAIN" A)" || fail
+alidns="$(/usr/bin/dig @223.5.5.5 +time=3 +tries=1 +short "$AGENT_DOMAIN" A)" || fail
+/usr/bin/grep -Fxq "$AGENT_PUBLIC_IP" <<< "$default_dns" || fail
+/usr/bin/grep -Fxq "$AGENT_PUBLIC_IP" <<< "$alidns" || fail
+
+/usr/bin/curl --noproxy '*' -sS -D "$http_headers" -o /dev/null --max-time 12 \
+  --resolve "$AGENT_DOMAIN:80:$AGENT_PUBLIC_IP" \
+  "http://$AGENT_DOMAIN/acceptance?source=platform" || fail
 /usr/bin/grep -Eq '^HTTP/[0-9.]+ 308 ' "$http_headers" || fail
 /usr/bin/grep -Fq "Location: https://$AGENT_DOMAIN/acceptance?source=platform" "$http_headers" || fail
-[[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 12 "https://$AGENT_DOMAIN/")" == "401" ]] || fail
+[[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 12 --resolve "$AGENT_DOMAIN:443:$AGENT_PUBLIC_IP" "https://$AGENT_DOMAIN/")" == "401" ]] || fail
 
-/usr/bin/curl --noproxy '*' -fsS --max-time 12 --config "$curl_auth_config" "https://$AGENT_DOMAIN/" >/dev/null || fail
-/usr/bin/curl --noproxy '*' -fsS --max-time 12 --config "$curl_auth_config" "https://$AGENT_DOMAIN/api/health" | \
+/usr/bin/curl --noproxy '*' -fsS --max-time 12 --resolve "$AGENT_DOMAIN:443:$AGENT_PUBLIC_IP" --config "$curl_auth_config" "https://$AGENT_DOMAIN/" >/dev/null || fail
+/usr/bin/curl --noproxy '*' -fsS --max-time 12 --resolve "$AGENT_DOMAIN:443:$AGENT_PUBLIC_IP" --config "$curl_auth_config" "https://$AGENT_DOMAIN/api/health" | \
   /usr/bin/python3 -c 'import json,sys; assert json.load(sys.stdin)=={"status":"ok"}' || fail
-/usr/bin/curl --noproxy '*' -fsS --max-time 12 --config "$curl_auth_config" "https://$AGENT_DOMAIN/api/deployment" | \
+/usr/bin/curl --noproxy '*' -fsS --max-time 12 --resolve "$AGENT_DOMAIN:443:$AGENT_PUBLIC_IP" --config "$curl_auth_config" "https://$AGENT_DOMAIN/api/deployment" | \
   /usr/bin/python3 -c 'import json,sys; v=json.load(sys.stdin); assert v["mode"]=="cloud-replica" and v["read_only"] is True and v["auth"]=="basic-auth"' || fail
-/usr/bin/curl --noproxy '*' -fsS --max-time 12 --config "$curl_auth_config" "https://$AGENT_DOMAIN/api/agents" | \
+/usr/bin/curl --noproxy '*' -fsS --max-time 12 --resolve "$AGENT_DOMAIN:443:$AGENT_PUBLIC_IP" --config "$curl_auth_config" "https://$AGENT_DOMAIN/api/agents" | \
   /usr/bin/python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin), list)' || fail
-/usr/bin/curl --noproxy '*' -fsS --max-time 12 --config "$curl_auth_config" "https://$AGENT_DOMAIN/api/sessions" | \
+/usr/bin/curl --noproxy '*' -fsS --max-time 12 --resolve "$AGENT_DOMAIN:443:$AGENT_PUBLIC_IP" --config "$curl_auth_config" "https://$AGENT_DOMAIN/api/sessions" | \
   /usr/bin/python3 -c 'import json,sys; v=json.load(sys.stdin); assert isinstance(v.get("items"), list)' || fail
 
 echo "AGENT_DOMAIN_PUBLISH_OK domain=$AGENT_DOMAIN"

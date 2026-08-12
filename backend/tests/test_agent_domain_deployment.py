@@ -97,12 +97,16 @@ def test_local_publisher_uses_private_files_noninteractive_ssh_and_stable_output
         "CLOUD_ADMIN_HOST",
         "CLOUD_ADMIN_KEY",
         "root@47.106.112.69",
+        "AGENT_PUBLIC_IP",
+        "/usr/bin/dig",
         "AGENT_BASIC_AUTH_PASSWORD_FILE",
         "BatchMode=yes",
         "IdentitiesOnly=yes",
         "StrictHostKeyChecking=yes",
         "--noproxy '*'",
         "--config",
+        '--resolve "$AGENT_DOMAIN:80:$AGENT_PUBLIC_IP"',
+        '--resolve "$AGENT_DOMAIN:443:$AGENT_PUBLIC_IP"',
         "AGENT_DOMAIN_PUBLISH_OK domain=",
     ):
         assert required in value
