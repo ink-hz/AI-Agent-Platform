@@ -29,6 +29,12 @@ RECONCILABLE_AUDIT_BOUNDARY_MIGRATION = (
     MIGRATIONS / "007_reconcilable_audit_boundary.sql"
 )
 TERMINAL_AUDIT_STATE_MIGRATION = MIGRATIONS / "008_terminal_audit_state.sql"
+AUDIT_REQUEST_SERIALIZATION_MIGRATION = (
+    MIGRATIONS / "009_audit_request_serialization.sql"
+)
+VERIFIED_IDENTITY_REFRESH_MIGRATION = (
+    MIGRATIONS / "010_verified_identity_refresh.sql"
+)
 PRODUCTION_ROLES = (
     "platform_control_migrator",
     "platform_control_app",
@@ -89,6 +95,7 @@ IMMUTABLE_MIGRATION_SHA256 = {
     "006_audited_mutation_boundary.sql": "7d1886ee0d162ee7303020369a394227b5f6aa958986633e1e763d721b0911a8",
     "007_reconcilable_audit_boundary.sql": "35794c341050cdac641fe4eea0cb15d155d4ebbdbab55288942a9c53762b11ec",
     "008_terminal_audit_state.sql": "11bfb519e242005049a0bcf1d539eefa43738e03d4392646e8c1bf6158096e9b",
+    "009_audit_request_serialization.sql": "f9cbb79af2d820795db53c59e5f140f20a077ba00da6fd716ceef059a72bc220",
 }
 
 
@@ -119,14 +126,22 @@ def test_first_control_migration_exists() -> None:
     assert TERMINAL_AUDIT_STATE_MIGRATION.is_file(), (
         f"missing terminal audit state migration: {TERMINAL_AUDIT_STATE_MIGRATION}"
     )
+    assert AUDIT_REQUEST_SERIALIZATION_MIGRATION.is_file(), (
+        "missing audit request serialization migration: "
+        f"{AUDIT_REQUEST_SERIALIZATION_MIGRATION}"
+    )
+    assert VERIFIED_IDENTITY_REFRESH_MIGRATION.is_file(), (
+        "missing verified identity refresh migration: "
+        f"{VERIFIED_IDENTITY_REFRESH_MIGRATION}"
+    )
 
 
-def test_control_migrations_001_through_008_are_byte_immutable() -> None:
+def test_control_migrations_001_through_009_are_byte_immutable() -> None:
     import hashlib
 
     assert {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in sorted(MIGRATIONS.glob("00[1-8]_*.sql"))
+        for path in sorted(MIGRATIONS.glob("00[1-9]_*.sql"))
     } == IMMUTABLE_MIGRATION_SHA256
 
 
@@ -302,7 +317,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                        (version, 64) for version in range(1, 10)
+                        (version, 64) for version in range(1, 11)
                 ]
 
     changed = tmp_path / "migrations"
