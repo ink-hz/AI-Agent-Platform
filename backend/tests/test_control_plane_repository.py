@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import inspect
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -9,7 +7,6 @@ import psycopg
 import pytest
 
 from app.control_plane.crypto import ProtectedProviderId
-from app.control_plane.models import IssuedWebSession
 from app.control_plane.repository import (
     ControlRepository,
     ControlRepositoryError,
@@ -253,152 +250,33 @@ def test_generic_identity_create_and_rotation_are_retired(
     assert connect_calls == 0
 
 
-@pytest.mark.postgres
-def test_web_session_persists_only_hashes_and_uses_database_expiry(
-    repository: ControlRepository,
-    production_environment,
-) -> None:
-    user_id = _seed_internal_user(repository,
-        repository.identity_codec.seal("employee", "session-provider-id"),
-        "Session User",
-    )
-
-    issued = repository.create_web_session(user_id, idle_seconds=120, absolute_seconds=300)
-
-    assert isinstance(issued, IssuedWebSession)
-    assert issued.cookie_token not in repr(issued)
-    assert issued.csrf_token not in repr(issued)
-    assert issued.idle_expires_at < issued.absolute_expires_at
-    with psycopg.connect(production_environment["admin"]) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "select token_hash, csrf_hash, "
-                "idle_expires_at - created_at, absolute_expires_at - created_at "
-                "from platform_control.web_sessions where session_id = %s",
-                (issued.session_id,),
-            )
-            token_hash, csrf_hash, idle_delta, absolute_delta = cursor.fetchone()
-    assert bytes(token_hash) == hashlib.sha256(issued.cookie_token.encode()).digest()
-    assert bytes(csrf_hash) == hashlib.sha256(issued.csrf_token.encode()).digest()
-    assert idle_delta.total_seconds() == pytest.approx(120, abs=0.01)
-    assert absolute_delta.total_seconds() == pytest.approx(300, abs=0.01)
-
-
-@pytest.mark.postgres
-def test_login_attempt_state_is_opaque_expiring_and_single_use(
-    repository: ControlRepository,
-    production_environment,
-) -> None:
-    raw_state = "opaque-login-state"
-    attempt_id = repository.create_login_attempt(
-        "qr", raw_state, ttl_seconds=60, return_path="/account"
-    )
-
-    with psycopg.connect(production_environment["admin"]) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "select state_hash, expires_at > now(), consumed_at "
-                "from platform_control.login_attempts where login_attempt_id = %s",
-                (attempt_id,),
-            )
-            state_hash, active, consumed_at = cursor.fetchone()
-    assert bytes(state_hash) == hashlib.sha256(raw_state.encode()).digest()
-    assert active is True
-    assert consumed_at is None
-    assert repository.consume_login_attempt(raw_state) == attempt_id
-    assert repository.consume_login_attempt(raw_state) is None
-
-
-@pytest.mark.postgres
-def test_expired_login_attempt_and_web_session_cannot_be_rotated(
-    repository: ControlRepository,
-    production_environment,
-) -> None:
-    attempt_id = repository.create_login_attempt("in_client", "expired-state", 60)
-    user_id = _seed_internal_user(repository,
-        repository.identity_codec.seal("employee", "expiry-provider-id"),
-        "Expiry User",
-    )
-    issued = repository.create_web_session(user_id, 60, 120)
-    with psycopg.connect(production_environment["admin"]) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "update platform_control.login_attempts set expires_at = now() - interval '1 second' "
-                "where login_attempt_id = %s",
-                (attempt_id,),
-            )
-            cursor.execute(
-                "update platform_control.web_sessions set idle_expires_at = now() - interval '2 seconds', "
-                "absolute_expires_at = now() - interval '1 second' where session_id = %s",
-                (issued.session_id,),
-            )
-
-    assert repository.consume_login_attempt("expired-state") is None
-    assert repository.rotate_web_session(issued.cookie_token, 60) is None
-
-
-@pytest.mark.postgres
-def test_session_rotation_and_revocation_are_atomic(
-    repository: ControlRepository,
-    production_environment,
-) -> None:
-    user_id = _seed_internal_user(repository,
-        repository.identity_codec.seal("employee", "revoke-provider-id"),
-        "Revoke User",
-    )
-    first = repository.create_web_session(user_id, 60, 120)
-    assert "absolute_seconds" not in inspect.signature(
-        repository.rotate_web_session
-    ).parameters
-    rotated = repository.rotate_web_session(first.cookie_token, 60)
-
-    assert rotated is not None
-    assert rotated.session_id != first.session_id
-    assert rotated.cookie_token != first.cookie_token
-    assert rotated.absolute_expires_at == first.absolute_expires_at
-    assert repository.rotate_web_session(first.cookie_token, 60) is None
-    assert repository.revoke_user_sessions(user_id, "security-test") == 1
-    assert repository.rotate_web_session(rotated.cookie_token, 60) is None
-    with psycopg.connect(production_environment["admin"]) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "select revoked_reason from platform_control.web_sessions "
-                "where session_id = %s",
-                (rotated.session_id,),
-            )
-            assert cursor.fetchone() == ("security-test",)
-
-
-@pytest.mark.postgres
 @pytest.mark.parametrize(
-    ("absolute_seconds", "rotated_idle_seconds"),
-    [(90, 15), (600, 300)],
+    ("method_name", "args", "kwargs"),
+    [
+        ("create_login_attempt", ("qr", "state", 300), {}),
+        ("consume_login_attempt", ("state",), {}),
+        ("create_web_session", (uuid4(), 28_800, 86_400), {}),
+        ("rotate_web_session", ("cookie", 28_800), {}),
+        ("revoke_user_sessions", (uuid4(), "logout"), {}),
+    ],
 )
-def test_session_rotation_preserves_smaller_and_larger_absolute_deadlines_exactly(
+def test_legacy_unbound_session_entry_points_fail_closed_without_database_access(
     repository: ControlRepository,
-    absolute_seconds: int,
-    rotated_idle_seconds: int,
+    monkeypatch,
+    method_name,
+    args,
+    kwargs,
 ) -> None:
-    user_id = _seed_internal_user(repository,
-        repository.identity_codec.seal(
-            "employee", f"absolute-{absolute_seconds}-provider-id"
-        ),
-        "Absolute Deadline User",
-    )
-    first = repository.create_web_session(
-        user_id,
-        idle_seconds=30,
-        absolute_seconds=absolute_seconds,
+    monkeypatch.setattr(
+        repository,
+        "_connection",
+        lambda: pytest.fail("legacy Session API reached the database"),
     )
 
-    rotated = repository.rotate_web_session(
-        first.cookie_token,
-        idle_seconds=rotated_idle_seconds,
-    )
-
-    assert rotated is not None
-    assert rotated.absolute_expires_at == first.absolute_expires_at
-    assert rotated.idle_expires_at <= rotated.absolute_expires_at
+    with pytest.raises(
+        ControlRepositoryError, match="secure web authentication flow required"
+    ):
+        getattr(repository, method_name)(*args, **kwargs)
 
 
 @pytest.mark.postgres

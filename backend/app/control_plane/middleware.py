@@ -1,0 +1,161 @@
+from __future__ import annotations
+
+import hmac
+from urllib.parse import urlsplit
+
+from starlette.datastructures import Headers
+from starlette.responses import JSONResponse
+
+from app.spa import is_public_build_asset
+
+
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _unprefixed(path: str, prefix: str) -> str | None:
+    if prefix == "/":
+        return path
+    base = prefix.rstrip("/")
+    if path == base:
+        return "/"
+    if not path.startswith(base + "/"):
+        return None
+    return path[len(base):]
+
+
+def is_public_request(
+    method: str,
+    path: str,
+    route_prefix: str,
+    public_assets: frozenset[str] | None = None,
+) -> bool:
+    local = _unprefixed(path, route_prefix)
+    if local is None:
+        return False
+    exact = {
+        ("GET", "/"),
+        ("GET", "/login"),
+        ("GET", "/favicon.ico"),
+        ("GET", "/api/health"),
+        ("POST", "/api/v1/auth/dingtalk/start"),
+        ("GET", "/api/v1/auth/dingtalk/callback"),
+        ("POST", "/api/v1/auth/dingtalk/in-client/exchange"),
+    }
+    if (method, local) in exact:
+        return True
+    if method == "GET" and local.startswith("/assets/"):
+        name = local.removeprefix("/assets/")
+        return is_public_build_asset(name) and name in (public_assets or frozenset())
+    return False
+
+
+def _origin_matches(origin: str | None, expected: str) -> bool:
+    if not origin or origin == "null":
+        return False
+    try:
+        actual = urlsplit(origin)
+        canonical = urlsplit(expected)
+        return (
+            actual.scheme == "https"
+            and actual.username is None
+            and actual.password is None
+            and not actual.path
+            and not actual.query
+            and not actual.fragment
+            and (actual.scheme, actual.hostname, actual.port)
+            == (canonical.scheme, canonical.hostname, canonical.port)
+        )
+    except ValueError:
+        return False
+
+
+class IdentitySecurityMiddleware:
+    """Exact public allowlist plus server-side Session and mutation checks."""
+
+    def __init__(self, app, *, auth, public_assets: frozenset[str]) -> None:
+        self.app = app
+        self.auth = auth
+        self.public_assets = public_assets
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        method = scope["method"].upper()
+        path = scope.get("path", "")
+        public = is_public_request(
+            method,path,self.auth.route_prefix,self.public_assets
+        )
+        headers = Headers(scope=scope)
+
+        if public and method not in _SAFE_METHODS and not _origin_matches(
+            headers.get("origin"), self.auth.public_base_url
+        ):
+            await JSONResponse(
+                {"detail": "request origin rejected"}, status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )(scope, receive, send)
+            return
+
+        session = None
+        csrf_cookie = None
+        if not public or method not in _SAFE_METHODS:
+            # Starlette does not preparse Cookies at middleware time.
+            from http.cookies import SimpleCookie
+
+            jar = SimpleCookie()
+            try:
+                jar.load(headers.get("cookie", ""))
+            except Exception:
+                jar = SimpleCookie()
+            morsel = jar.get(self.auth.cookie_name)
+            if morsel is not None:
+                session = self.auth.authenticate(morsel.value)
+            csrf_morsel = jar.get(self.auth.csrf_cookie_name)
+            if csrf_morsel is not None:
+                csrf_cookie = csrf_morsel.value
+
+        if not public and session is None:
+            await JSONResponse(
+                {"detail": "authentication required"}, status_code=401,
+                headers={"Cache-Control": "no-store"},
+            )(scope, receive, send)
+            return
+
+        if session is not None:
+            context, csrf_digest = session
+            scope.setdefault("state", {})["auth_context"] = context
+            scope["state"]["csrf_digest"] = csrf_digest
+            verifier = getattr(self.auth, "verify_csrf", None)
+            csrf_cookie_valid = (
+                verifier(csrf_cookie or "", csrf_digest)
+                if verifier is not None
+                else isinstance(csrf_digest, str)
+                and isinstance(csrf_cookie, str)
+                and hmac.compare_digest(csrf_cookie, csrf_digest)
+            )
+            scope["state"]["csrf_token"] = csrf_cookie if csrf_cookie_valid else ""
+            if method not in _SAFE_METHODS:
+                if not _origin_matches(
+                    headers.get("origin"), self.auth.public_base_url
+                ):
+                    await JSONResponse(
+                        {"detail": "request origin rejected"}, status_code=403,
+                        headers={"Cache-Control": "no-store"},
+                    )(scope, receive, send)
+                    return
+                submitted = headers.get("x-csrf-token", "")
+                verified = (
+                    verifier(submitted, csrf_digest)
+                    if verifier is not None
+                    else isinstance(csrf_digest, str)
+                    and hmac.compare_digest(submitted, csrf_digest)
+                )
+                if not verified:
+                    await JSONResponse(
+                        {"detail": "CSRF verification failed"}, status_code=403,
+                        headers={"Cache-Control": "no-store"},
+                    )(scope, receive, send)
+                    return
+
+        await self.app(scope, receive, send)

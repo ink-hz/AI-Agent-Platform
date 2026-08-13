@@ -39,3 +39,19 @@ def test_missing_static_asset_still_returns_404(tmp_path, monkeypatch) -> None:
     ))
 
     assert client.get("/missing.js").status_code == 404
+
+
+def test_build_hashed_asset_name_is_exact_and_rejects_maps_and_traversal() -> None:
+    from app.spa import is_public_build_asset
+
+    assert is_public_build_asset("app-a1b2c3d4.js")
+    assert is_public_build_asset("style-ABCDEF12.css")
+    for name in (
+        "app.js",
+        "app-a1b2c3d4.js.map",
+        "../index.html",
+        "%2e%2e/index.html",
+        "nested/app-a1b2c3d4.js",
+        "app-a1b2c3d4.svg",
+    ):
+        assert not is_public_build_asset(name)

@@ -173,6 +173,24 @@ async def test_qr_oauth_code_exchange_gets_unionid_and_corp() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_qr_oauth_exchange_binds_high_entropy_pkce_verifier() -> None:
+    token_route = respx.post(f"{API}/v1.0/oauth2/userAccessToken").mock(
+        return_value=httpx.Response(200, json={
+            "accessToken": "user-token", "expireIn": 7200, "corpId": "test-corp",
+        })
+    )
+    respx.get(f"{API}/v1.0/contact/users/me").mock(
+        return_value=httpx.Response(200, json={"unionId": "union-1"})
+    )
+    verifier = "v" * 43
+
+    await _client(flow="qr").exchange_login_code("one-time-code", verifier)
+
+    assert json.loads(token_route.calls[0].request.content)["codeVerifier"] == verifier
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_qr_exchange_rejects_wrong_corporation_before_profile_read() -> None:
     respx.post(f"{API}/v1.0/oauth2/userAccessToken").mock(
         return_value=httpx.Response(200, json={

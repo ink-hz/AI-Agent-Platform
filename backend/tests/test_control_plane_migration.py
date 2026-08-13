@@ -374,7 +374,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                        (version, 64) for version in range(1, 15)
+                    (version, 64) for version in range(1, 16)
                 ]
 
     changed = tmp_path / "migrations"

@@ -257,6 +257,22 @@ def test_freshness_thresholds_must_remain_ordered(tmp_path, monkeypatch) -> None
         load_config()
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "PLATFORM_OAUTH_STATE_TTL_SECONDS",
+        "PLATFORM_LOGIN_STARTS_PER_CHALLENGE",
+        "PLATFORM_IDENTITY_WARNING_AFTER_SECONDS",
+    ],
+)
+def test_invalid_integer_names_the_setting(tmp_path, monkeypatch, name) -> None:
+    install_required_identity_environment(tmp_path, monkeypatch, mode="production")
+    monkeypatch.setenv(name, "not-an-integer")
+
+    with pytest.raises(ValueError, match=name):
+        load_config()
+
+
 def test_trusted_proxy_defaults_are_loopback_only(tmp_path, monkeypatch) -> None:
     install_required_identity_environment(tmp_path, monkeypatch, mode="production")
 

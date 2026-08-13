@@ -153,7 +153,10 @@ def _required_environment(name: str) -> str:
 
 
 def _positive_environment_int(name: str, default: int) -> int:
-    value = int(os.getenv(name, str(default)))
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an integer") from None
     if value <= 0:
         raise ValueError(f"{name} must be positive")
     return value
@@ -342,14 +345,14 @@ def _load_control_plane_config() -> ControlPlaneConfig:
     for path, label in private_files:
         _validate_private_file(path, label)
 
-    reconcile_interval_seconds = int(
-        os.getenv("PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS", "21600")
+    reconcile_interval_seconds = _positive_environment_int(
+        "PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS", 21_600
     )
-    warning_after_seconds = int(
-        os.getenv("PLATFORM_IDENTITY_WARNING_AFTER_SECONDS", "28800")
+    warning_after_seconds = _positive_environment_int(
+        "PLATFORM_IDENTITY_WARNING_AFTER_SECONDS", 28_800
     )
-    hard_stale_after_seconds = int(
-        os.getenv("PLATFORM_IDENTITY_HARD_STALE_AFTER_SECONDS", "86400")
+    hard_stale_after_seconds = _positive_environment_int(
+        "PLATFORM_IDENTITY_HARD_STALE_AFTER_SECONDS", 86_400
     )
     if not (
         0

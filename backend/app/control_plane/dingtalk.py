@@ -460,7 +460,9 @@ class DingTalkClient:
             error_code="attempt_budget_exhausted",
         )
 
-    async def exchange_login_code(self, code: str) -> DingTalkAuthResult:
+    async def exchange_login_code(
+        self, code: str, code_verifier: str | None = None
+    ) -> DingTalkAuthResult:
         _required_string(code, maximum=2048)
         if self._login_flow == "in_client":
             token = await self._application_token()
@@ -509,17 +511,24 @@ class DingTalkClient:
             return login
 
         request_id = str(uuid4())
+        if code_verifier is not None:
+            _required_string(code_verifier, maximum=128)
+            if len(code_verifier) < 43:
+                raise ValueError("PKCE verifier invalid")
+        token_request = {
+            "clientId": self._app_key,
+            "clientSecret": self._app_secret,
+            "code": code,
+            "grantType": "authorization_code",
+        }
+        if code_verifier is not None:
+            token_request["codeVerifier"] = code_verifier
         token_response = await self._request(
             "POST",
             f"{self._api_base_url}/v1.0/oauth2/userAccessToken",
             request_id=request_id,
             retry_read=False,
-            json={
-                "clientId": self._app_key,
-                "clientSecret": self._app_secret,
-                "code": code,
-                "grantType": "authorization_code",
-            },
+            json=token_request,
         )
         token_identity = _parse_provider_value(lambda: (
             _required_string(

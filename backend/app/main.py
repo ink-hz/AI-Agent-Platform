@@ -21,6 +21,18 @@ from .cloud_replica.repository import (
 )
 from .control_room import routes as control_room_routes
 from .control_room.service import ControlRoomService
+from .control_plane.middleware import IdentitySecurityMiddleware
+from .control_plane.models import IdentityMode
+from .control_plane.routes_auth import build_auth_router
+from .control_plane.auth import (
+    AuthSecrets,
+    DingTalkWebAuth,
+    SystemHealthAuditWriter,
+    WebSessionRepository,
+)
+from .control_plane.crypto import IdentityKeyring, ProviderIdentityCodec
+from .control_plane.dingtalk import DingTalkClient
+from .control_plane.identity import IdentityResolver
 from .fleet import routes as fleet_routes
 from .fleet.cache import UsageCache
 from .fleet.catalog import AgentCatalog
@@ -53,7 +65,7 @@ from .review.database import resolve_review_database_url
 from .review.repository import PsycopgReviewRepository
 from .review.replay import ReplayRunner
 from .review.service import ReviewService, UnavailableReviewService
-from .spa import SpaStaticFiles
+from .spa import SpaStaticFiles, load_public_asset_manifest
 
 
 logger = logging.getLogger(__name__)
@@ -187,6 +199,78 @@ def build_review_service(
     )
 
 
+def build_identity_auth(config: Config) -> DingTalkWebAuth:
+    control = config.control_plane
+    database_url = read_secret_file(control.control_database_url_file)
+    app_secret = read_secret_file(control.dingtalk_app_secret_file)
+    encryption = IdentityKeyring.from_file(
+        control.encryption_keyring_file,
+        expected_purpose="provider-encryption",
+        expected_key_length=32,
+    )
+    lookup = IdentityKeyring.from_file(
+        control.hmac_keyring_file,
+        expected_purpose="provider-lookup-hmac",
+        expected_key_length=32,
+    )
+    codec = ProviderIdentityCodec(encryption, lookup)
+    auth_secrets = AuthSecrets(lookup.active_key, key_version=lookup.active_version)
+    repository = WebSessionRepository(database_url, secrets=auth_secrets)
+    qr_client = DingTalkClient(
+        app_key=control.dingtalk_app_key,
+        app_secret=app_secret,
+        corp_id=control.dingtalk_corp_id,
+        login_flow="qr",
+    )
+    in_client = DingTalkClient(
+        app_key=control.dingtalk_app_key,
+        app_secret=app_secret,
+        corp_id=control.dingtalk_corp_id,
+        login_flow="in_client",
+    )
+    qr_resolver = IdentityResolver(
+        database_url,
+        corp_id=control.dingtalk_corp_id,
+        client=qr_client,
+        identity_codec=codec,
+    )
+    in_client_resolver = IdentityResolver(
+        database_url,
+        corp_id=control.dingtalk_corp_id,
+        client=in_client,
+        identity_codec=codec,
+    )
+
+    async def resolve(client, resolver, code: str, verifier: str):
+        result = await client.exchange_login_code(code, verifier)
+        freshness = repository.directory_freshness(
+            warning_after_seconds=control.warning_after_seconds,
+            hard_stale_after_seconds=control.hard_stale_after_seconds,
+        )
+        return await resolver.resolve_active_member(result, freshness)
+
+    async def qr_login(code: str, verifier: str):
+        return await resolve(qr_client, qr_resolver, code, verifier)
+
+    async def in_client_login(code: str, verifier: str):
+        return await resolve(in_client, in_client_resolver, code, verifier)
+
+    return DingTalkWebAuth(
+        repository=repository,
+        secrets=auth_secrets,
+        qr_login=qr_login,
+        in_client_login=in_client_login,
+        environment="preview" if control.mode is IdentityMode.PREVIEW else "production",
+        route_prefix=control.route_prefix,
+        public_base_url=control.public_base_url,
+        app_key=control.dingtalk_app_key,
+        state_ttl_seconds=control.oauth_state_ttl_seconds,
+        mode=control.mode,
+        cookie_name=control.cookie_name,
+        close_callbacks=(qr_client.aclose, in_client.aclose),
+    )
+
+
 def create_app(
     registry_path: str | None = None,
     cluster_contract_path: str | None = None,
@@ -199,9 +283,17 @@ def create_app(
     control_room_service: ControlRoomService | None = None,
     review_service=None,
     attachment_service=None,
+    identity_auth=None,
 ) -> FastAPI:
     owns_review_service = review_service is None
+    owns_identity_auth = identity_auth is None
     config = load_config()
+    identity_enabled = (
+        identity_auth is not None
+        or config.control_plane.mode is not IdentityMode.DISABLED
+    )
+    if identity_enabled and identity_auth is None:
+        identity_auth = build_identity_auth(config)
     cloud_mode = is_cloud_mode(config)
     runtime_pollers_enabled = start_poller and not cloud_mode
     path = registry_path or config.registry_path
@@ -320,6 +412,8 @@ def create_app(
             await cancel_tasks(tasks)
             if owns_review_service:
                 await review_service.close()
+            if owns_identity_auth and identity_auth is not None:
+                await identity_auth.aclose()
 
     app = FastAPI(title="Orbbec AI Agent Platform", version="0.1.0", lifespan=lifespan)
     app.state.repo = repo
@@ -334,10 +428,23 @@ def create_app(
     app.state.review_service = review_service
     app.state.attachment_service = attachment_service
     app.state.replica_repository = replica_repository
+    app.state.identity_auth = identity_auth
+    if identity_enabled and config.control_plane.audit_database_url_file:
+        app.state.system_health_audit = SystemHealthAuditWriter(
+            read_secret_file(config.control_plane.audit_database_url_file)
+        )
 
-    @app.get("/api/health")
-    def platform_health() -> dict:
-        return {"status": "ok"}
+    if not identity_enabled:
+        @app.get("/api/health")
+        def platform_health() -> dict:
+            return {"status": "ok"}
+    else:
+        public_assets = load_public_asset_manifest(config.static_dir)
+        app.include_router(build_auth_router(
+            identity_auth,
+            static_dir=config.static_dir,
+            public_assets=public_assets,
+        ))
 
     @app.get("/api/deployment")
     def deployment_status() -> dict:
@@ -370,8 +477,15 @@ def create_app(
     if attachment_service is not None:
         app.include_router(attachment_routes.router)
 
-    if os.path.isdir(config.static_dir):
+    if os.path.isdir(config.static_dir) and not identity_enabled:
         app.mount("/", SpaStaticFiles(directory=config.static_dir, html=True), name="portal")
+
+    if identity_enabled:
+        app.add_middleware(
+            IdentitySecurityMiddleware,
+            auth=identity_auth,
+            public_assets=public_assets,
+        )
 
     return app
 
