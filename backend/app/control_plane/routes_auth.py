@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import AuthenticationError, CompletedLogin, cookie_policy
+from .rate_limit import RateLimitExceeded, RateLimitUnavailable
 from .models import AuthContext, IssuedWebSession, Role
 from app.health.platform import build_public_platform_health
 from app.spa import (
@@ -96,6 +97,18 @@ def _set_session_cookie(response: Response, auth, issued: IssuedWebSession) -> N
     response.headers["X-CSRF-Token"] = issued.csrf_token
 
 
+def _raise_rate_failure(error: Exception) -> None:
+    if isinstance(error, RateLimitExceeded):
+        raise HTTPException(
+            429,
+            "request rate limited",
+            headers={"Retry-After": str(error.retry_after), **_NO_STORE},
+        ) from None
+    if isinstance(error, RateLimitUnavailable):
+        raise HTTPException(503, "login unavailable", headers=_NO_STORE) from None
+    raise error
+
+
 def build_auth_router(
     auth,
     *,
@@ -110,20 +123,31 @@ def build_auth_router(
         return RedirectResponse(_local_path(auth, "/login"), status_code=302, headers=_NO_STORE)
 
     @router.get("/login", include_in_schema=False)
-    async def login():
+    async def login(request: Request):
         csp = _login_csp(auth)
         try:
             opened = open_public_static_file(static_dir, "index.html")
         except PublicAssetUnavailable:
-            return HTMLResponse("<!doctype html><title>Agent Platform</title>", headers={**_NO_STORE, "Content-Security-Policy": csp})
-        return _opened_response(
-            opened,
-            headers={
-                **_NO_STORE,
-                "Content-Security-Policy": csp,
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
+            response = HTMLResponse("<!doctype html><title>Agent Platform</title>", headers={**_NO_STORE, "Content-Security-Policy": csp})
+        else:
+            response = _opened_response(
+                opened,
+                headers={
+                    **_NO_STORE,
+                    "Content-Security-Policy": csp,
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
+        issuer = getattr(auth, "issue_browser_challenge", None)
+        if issuer is not None:
+            challenge = issuer(request.cookies.get(auth.challenge_cookie_name))
+            response.set_cookie(
+                auth.challenge_cookie_name,
+                challenge,
+                max_age=600,
+                **cookie_policy(auth.mode, auth.route_prefix),
+            )
+        return response
 
     @router.get("/favicon.ico", include_in_schema=False)
     async def favicon_route():
@@ -165,9 +189,18 @@ def build_auth_router(
         return build_public_platform_health()
 
     @router.post("/api/v1/auth/dingtalk/start")
-    async def start(payload: StartBody):
+    async def start(payload: StartBody, request: Request):
         try:
-            started = auth.start_qr(payload.return_path)
+            if getattr(auth, "rate_limiter", None) is None:
+                started = auth.start_qr(payload.return_path)
+            else:
+                started = auth.start_qr(
+                    payload.return_path,
+                    request.cookies.get(auth.challenge_cookie_name),
+                    request.state.edge_source.ip,
+                )
+        except (RateLimitExceeded, RateLimitUnavailable) as error:
+            _raise_rate_failure(error)
         except (AuthenticationError, ValueError):
             raise HTTPException(400, "login request invalid") from None
         return Response(
@@ -179,9 +212,17 @@ def build_auth_router(
         )
 
     @router.get("/api/v1/auth/dingtalk/callback")
-    async def callback(state: str, code: str):
+    async def callback(request: Request, state: str, code: str):
         try:
-            issued, return_path = _session_value(await auth.complete_qr(state, code))
+            if getattr(auth, "rate_limiter", None) is None:
+                completed = await auth.complete_qr(state, code)
+            else:
+                completed = await auth.complete_qr(
+                    state, code, request.state.edge_source.ip
+                )
+            issued, return_path = _session_value(completed)
+        except (RateLimitExceeded, RateLimitUnavailable) as error:
+            _raise_rate_failure(error)
         except AuthenticationError as error:
             code_status = 401 if str(error) == "login attempt invalid" else 503
             raise HTTPException(code_status, str(error)) from None
@@ -190,9 +231,19 @@ def build_auth_router(
         return response
 
     @router.post("/api/v1/auth/dingtalk/in-client/exchange")
-    async def in_client(payload: CodeBody):
+    async def in_client(payload: CodeBody, request: Request):
         try:
-            issued, _ = _session_value(await auth.complete_in_client(payload.code))
+            if getattr(auth, "rate_limiter", None) is None:
+                completed = await auth.complete_in_client(payload.code)
+            else:
+                completed = await auth.complete_in_client(
+                    payload.code,
+                    request.cookies.get(auth.challenge_cookie_name),
+                    request.state.edge_source.ip,
+                )
+            issued, _ = _session_value(completed)
+        except (RateLimitExceeded, RateLimitUnavailable) as error:
+            _raise_rate_failure(error)
         except AuthenticationError as error:
             raise HTTPException(503, str(error)) from None
         response = Response(

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import ipaddress
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -33,6 +34,7 @@ from .control_plane.auth import (
 from .control_plane.crypto import IdentityKeyring, ProviderIdentityCodec
 from .control_plane.dingtalk import DingTalkClient
 from .control_plane.identity import IdentityResolver
+from .control_plane.rate_limit import ControlRateLimiter
 from .fleet import routes as fleet_routes
 from .fleet.cache import UsageCache
 from .fleet.catalog import AgentCatalog
@@ -221,6 +223,20 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
     codec = ProviderIdentityCodec(encryption, lookup)
     auth_secrets = AuthSecrets(lookup.active_key, key_version=lookup.active_version)
     repository = WebSessionRepository(database_url, secrets=auth_secrets)
+    rate_limiter = ControlRateLimiter(
+        control_database_url=database_url,
+        secrets=auth_secrets,
+        login_starts_per_challenge=control.login_starts_per_challenge,
+        challenge_window_seconds=control.login_challenge_window_seconds,
+        active_login_attempts=control.active_login_attempts,
+        edge_login_per_minute=control.edge_login_starts_per_minute,
+        edge_login_burst=control.edge_login_burst,
+        edge_callbacks_per_minute=control.edge_callbacks_per_minute,
+        oauth_exchange_concurrency=control.oauth_exchange_concurrency,
+        oauth_exchanges_per_minute=control.oauth_exchanges_per_minute,
+        authenticated_reads_per_minute=control.authenticated_reads_per_minute,
+        authenticated_mutations_per_minute=control.authenticated_mutations_per_minute,
+    )
     qr_client = DingTalkClient(
         app_key=control.dingtalk_app_key,
         app_secret=app_secret,
@@ -272,6 +288,11 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
         state_ttl_seconds=control.oauth_state_ttl_seconds,
         mode=control.mode,
         cookie_name=control.cookie_name,
+        rate_limiter=rate_limiter,
+        trusted_proxy_networks=tuple(
+            ipaddress.ip_network(value, strict=True)
+            for value in control.trusted_proxy_cidrs
+        ),
         close_callbacks=(qr_client.aclose, in_client.aclose),
     )
 

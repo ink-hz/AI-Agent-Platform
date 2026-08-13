@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+import time
 from typing import Protocol
 from urllib.parse import quote, unquote, urlencode, urlsplit
 from uuid import UUID, uuid4
@@ -36,6 +37,8 @@ class LoginAttempt:
     return_path: str
     environment: str
     expires_at: datetime
+    browser_challenge_digest: bytes | None = None
+    browser_challenge_key_version: int | None = None
 
 
 @dataclass(frozen=True)
@@ -103,7 +106,10 @@ class AuthSecrets:
         return secrets.token_urlsafe(32)
 
     def digest(self, purpose: str, token: str) -> bytes:
-        if purpose not in {"oauth-state", "pkce-verifier", "session", "csrf"}:
+        if purpose not in {
+            "oauth-state", "pkce-verifier", "session", "csrf",
+            "browser-challenge",
+        }:
             raise ValueError("authentication hash purpose invalid")
         if not isinstance(token, str) or not token:
             raise ValueError("authentication token invalid")
@@ -112,6 +118,55 @@ class AuthSecrets:
             b"orbbec-agent-platform:auth:v1:" + purpose.encode("ascii") + b":" + token.encode("utf-8"),
             "sha256",
         )
+
+    def rate_digest(self, kind: str, value: str) -> bytes:
+        if kind not in {
+            "edge_login", "edge_callback", "oauth_exchange",
+            "authenticated_read", "authenticated_mutation",
+        }:
+            raise ValueError("rate key purpose invalid")
+        if not isinstance(value, str) or not value or len(value) > 256:
+            raise ValueError("rate key invalid")
+        return hmac.digest(
+            self._hmac_key,
+            b"orbbec-agent-platform:rate:v1:" + kind.encode("ascii")
+            + b":" + value.encode("ascii"),
+            "sha256",
+        )
+
+    def issue_browser_challenge(self) -> str:
+        payload = int(time.time()).to_bytes(8, "big") + secrets.token_bytes(24)
+        signature = hmac.digest(
+            self._hmac_key,
+            b"orbbec-agent-platform:browser-challenge:v1:" + payload,
+            "sha256",
+        )
+        return base64.urlsafe_b64encode(payload + signature).rstrip(b"=").decode("ascii")
+
+    def browser_challenge_digest(self, token: str, *, ttl_seconds: int = 600) -> bytes:
+        try:
+            if not isinstance(token, str) or not token or "=" in token:
+                raise ValueError
+            raw = base64.b64decode(
+                token + "=" * (-len(token) % 4),
+                altchars=b"-_",
+                validate=True,
+            )
+            if len(raw) != 64:
+                raise ValueError
+            payload, signature = raw[:32], raw[32:]
+            expected = hmac.digest(
+                self._hmac_key,
+                b"orbbec-agent-platform:browser-challenge:v1:" + payload,
+                "sha256",
+            )
+            issued_at = int.from_bytes(payload[:8], "big")
+            age = int(time.time()) - issued_at
+            if not hmac.compare_digest(signature, expected) or age < -30 or age > ttl_seconds:
+                raise ValueError
+            return self.digest("browser-challenge", token)
+        except (ValueError, TypeError, UnicodeError):
+            raise AuthenticationError("login challenge invalid") from None
 
     def matches(self, purpose: str, token: str, expected: bytes) -> bool:
         try:
@@ -226,6 +281,8 @@ class DingTalkWebAuth:
         state_ttl_seconds: int = 300,
         mode: IdentityMode | None = None,
         cookie_name: str | None = None,
+        rate_limiter=None,
+        trusted_proxy_networks=(),
         close_callbacks: tuple[Callable[[], Awaitable[None]], ...] = (),
     ) -> None:
         if environment not in {"production", "preview"}:
@@ -250,6 +307,13 @@ class DingTalkWebAuth:
             if self.mode is IdentityMode.PREVIEW
             else "__Host-platform_csrf"
         )
+        self.challenge_cookie_name = (
+            "platform_preview_login_challenge"
+            if self.mode is IdentityMode.PREVIEW
+            else "__Host-platform_login_challenge"
+        )
+        self.rate_limiter = rate_limiter
+        self.trusted_proxy_networks = tuple(trusted_proxy_networks)
         self._close_callbacks = close_callbacks
 
     async def aclose(self) -> None:
@@ -259,10 +323,35 @@ class DingTalkWebAuth:
     def _path(self, path: str) -> str:
         return path if self.route_prefix == "/" else self.route_prefix.rstrip("/") + path
 
-    def start_qr(self, return_path: str | None) -> StartedLogin:
+    def issue_browser_challenge(self, current: str | None = None) -> str:
+        if current:
+            try:
+                self.secrets.browser_challenge_digest(
+                    current, ttl_seconds=self.rate_limiter.challenge_window_seconds
+                    if self.rate_limiter is not None else 600,
+                )
+                return current
+            except AuthenticationError:
+                pass
+        return self.secrets.issue_browser_challenge()
+
+    def start_qr(
+        self,
+        return_path: str | None,
+        browser_challenge: str | None = None,
+        edge_ip=None,
+    ) -> StartedLogin:
         safe_return = validate_return_path(return_path, route_prefix=self.route_prefix)
         state = self.secrets.random_token()
         verifier = self.secrets.random_token()
+        browser_digest = None
+        browser_version = None
+        if self.rate_limiter is not None:
+            browser_digest = self.secrets.browser_challenge_digest(
+                browser_challenge or "",
+                ttl_seconds=self.rate_limiter.challenge_window_seconds,
+            )
+            browser_version = self.secrets.key_version
         attempt = LoginAttempt(
             attempt_id=uuid4(),
             attempt_kind="qr",
@@ -274,8 +363,13 @@ class DingTalkWebAuth:
             return_path=safe_return,
             environment=self.environment,
             expires_at=datetime.now(UTC) + timedelta(seconds=self.state_ttl_seconds),
+            browser_challenge_digest=browser_digest,
+            browser_challenge_key_version=browser_version,
         )
-        self.repository.create_attempt(attempt)
+        if self.rate_limiter is None:
+            self.repository.create_attempt(attempt)
+        else:
+            self.rate_limiter.create_login_attempt(attempt, edge_ip=edge_ip)
         callback = self.public_base_url + self._path("/api/v1/auth/dingtalk/callback")
         return StartedLogin(
             attempt.attempt_id,
@@ -303,7 +397,11 @@ class DingTalkWebAuth:
             raise AuthenticationError("login attempt invalid")
         return attempt
 
-    async def _complete(self, attempt: LoginAttempt, code: str, login) -> CompletedLogin:
+    async def _complete(
+        self, attempt: LoginAttempt, code: str, login, *, edge_ip=None
+    ) -> CompletedLogin:
+        from .rate_limit import RateLimitExceeded, RateLimitUnavailable
+
         try:
             verifier = self.secrets.open_verifier(attempt.verifier_ciphertext)
             if (
@@ -313,7 +411,15 @@ class DingTalkWebAuth:
                 )
             ):
                 raise AuthenticationError("login attempt invalid")
-            internal_user_id = await login(code, verifier)
+            if self.rate_limiter is None:
+                internal_user_id = await login(code, verifier)
+            else:
+                self.rate_limiter.check_callback(edge_ip)
+                async with self.rate_limiter.provider_exchange():
+                    internal_user_id = await login(code, verifier)
+        except (RateLimitExceeded, RateLimitUnavailable):
+            self.repository.fail_attempt(attempt.attempt_id, "provider_exchange_failed")
+            raise
         except Exception:
             self.repository.fail_attempt(attempt.attempt_id, "provider_exchange_failed")
             raise AuthenticationError("login unavailable") from None
@@ -343,24 +449,42 @@ class DingTalkWebAuth:
             attempt.return_path,
         )
 
-    async def complete_qr(self, state: str, code: str) -> CompletedLogin:
-        return await self._complete(self._claim(state, "qr"), code, self.qr_login)
+    async def complete_qr(self, state: str, code: str, edge_ip=None) -> CompletedLogin:
+        return await self._complete(
+            self._claim(state, "qr"), code, self.qr_login, edge_ip=edge_ip
+        )
 
-    async def complete_in_client(self, code: str) -> CompletedLogin:
+    async def complete_in_client(
+        self, code: str, browser_challenge: str | None = None, edge_ip=None
+    ) -> CompletedLogin:
         # In-client auth codes are also serialized through a backend-only random
         # one-time attempt; callers cannot select or reuse a browser flow.
         state = self.secrets.random_token()
         verifier = self.secrets.random_token()
+        browser_digest = None
+        browser_version = None
+        if self.rate_limiter is not None:
+            browser_digest = self.secrets.browser_challenge_digest(
+                browser_challenge or "",
+                ttl_seconds=self.rate_limiter.challenge_window_seconds,
+            )
+            browser_version = self.secrets.key_version
         attempt = LoginAttempt(
             uuid4(), "in_client", self.secrets.digest("oauth-state", state),
             self.secrets.key_version, self.secrets.digest("pkce-verifier", verifier),
             self.secrets.key_version, self.secrets.seal_verifier(verifier),
             self.route_prefix, self.environment,
             datetime.now(UTC) + timedelta(seconds=self.state_ttl_seconds),
+            browser_digest,browser_version,
         )
-        self.repository.create_attempt(attempt)
+        if self.rate_limiter is None:
+            self.repository.create_attempt(attempt)
+        else:
+            self.rate_limiter.create_login_attempt(attempt, edge_ip=edge_ip)
         claimed = self._claim(state, "in_client")
-        return await self._complete(claimed, code, self.in_client_login)
+        return await self._complete(
+            claimed, code, self.in_client_login, edge_ip=edge_ip
+        )
 
     def authenticate(self, cookie_token: str):
         try:

@@ -116,6 +116,8 @@ IMMUTABLE_MIGRATION_SHA256 = {
     "011_verified_identity_boundary.sql": "8febc87dde9ccd091914c0fc0fdaf8f1fc9bcbbe0f247727bb4c914019ea0225",
     "012_verified_identity_pair_boundary.sql": "63892ec38e49514b34d38c3fc851616981aaee0af172855dccb889a22888343b",
     "013_directory_promotion_boundary.sql": "1d324cfa3cdd8e9c41555acb3c302383094b1e1aaa6713aec87d6a01b5500759",
+    "014_exact_identity_mapping_boundary.sql": "4281cf9129035b2e07d7c6ed3029e558b216032ec81065692d6648892ca9bd9a",
+    "015_secure_web_sessions.sql": "551a81a9be8d9ae6900ab258052852f3d667d516794407945023693416d0e50d",
 }
 
 
@@ -172,7 +174,7 @@ def test_first_control_migration_exists() -> None:
     )
 
 
-def test_control_migrations_001_through_013_are_byte_immutable() -> None:
+def test_control_migrations_001_through_015_are_byte_immutable() -> None:
     import hashlib
 
     assert {
@@ -180,7 +182,7 @@ def test_control_migrations_001_through_013_are_byte_immutable() -> None:
         for path in sorted(
             (
                 *MIGRATIONS.glob("00[1-9]_*.sql"),
-                *MIGRATIONS.glob("01[0-3]_*.sql"),
+                *MIGRATIONS.glob("01[0-5]_*.sql"),
             )
         )
     } == IMMUTABLE_MIGRATION_SHA256
@@ -374,7 +376,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 16)
+                    (version, 64) for version in range(1, 17)
                 ]
 
     changed = tmp_path / "migrations"

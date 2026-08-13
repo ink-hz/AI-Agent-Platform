@@ -5,8 +5,11 @@ from urllib.parse import urlsplit
 
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.responses import JSONResponse
+from starlette.requests import Request
 
 from app.spa import is_public_build_asset
+from .client_address import UntrustedForwardingHeaders, resolve_edge_source
+from .rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limit_response
 
 
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -63,7 +66,9 @@ def is_public_request(
     return False
 
 
-def _origin_matches(origin: str | None, expected: str) -> bool:
+def _origin_matches(
+    origin: str | None, expected: str, *, effective_scheme: str | None = None
+) -> bool:
     if not origin or origin == "null":
         return False
     try:
@@ -71,6 +76,7 @@ def _origin_matches(origin: str | None, expected: str) -> bool:
         canonical = urlsplit(expected)
         return (
             actual.scheme == "https"
+            and (effective_scheme is None or effective_scheme == canonical.scheme)
             and actual.username is None
             and actual.password is None
             and not actual.path
@@ -111,9 +117,24 @@ class IdentitySecurityMiddleware:
             method,path,self.auth.route_prefix,self.public_assets
         )
         headers = Headers(scope=scope)
+        edge_source = None
+        if getattr(self.auth, "trusted_proxy_networks", ()):
+            try:
+                edge_source = resolve_edge_source(
+                    Request(scope), self.auth.trusted_proxy_networks
+                )
+            except UntrustedForwardingHeaders:
+                await JSONResponse(
+                    {"detail": "request forwarding rejected"},
+                    status_code=400,
+                    headers=_NO_STORE,
+                )(scope, receive, protected_send)
+                return
+            scope.setdefault("state", {})["edge_source"] = edge_source
 
         if public and method not in _SAFE_METHODS and not _origin_matches(
-            headers.get("origin"), self.auth.public_base_url
+            headers.get("origin"), self.auth.public_base_url,
+            effective_scheme=edge_source.scheme if edge_source else None,
         ):
             await JSONResponse(
                 {"detail": "request origin rejected"}, status_code=403,
@@ -148,6 +169,22 @@ class IdentitySecurityMiddleware:
 
         if session is not None:
             context, csrf_digest = session
+            limiter = getattr(self.auth, "rate_limiter", None)
+            if limiter is not None:
+                try:
+                    limiter.check_authenticated(
+                        context.internal_user_id, mutation=method not in _SAFE_METHODS
+                    )
+                except RateLimitExceeded as error:
+                    await rate_limit_response(error)(scope, receive, protected_send)
+                    return
+                except RateLimitUnavailable:
+                    await JSONResponse(
+                        {"detail": "rate limit unavailable"},
+                        status_code=503,
+                        headers=_NO_STORE,
+                    )(scope, receive, protected_send)
+                    return
             scope.setdefault("state", {})["auth_context"] = context
             scope["state"]["csrf_digest"] = csrf_digest
             verifier = getattr(self.auth, "verify_csrf", None)
@@ -161,7 +198,8 @@ class IdentitySecurityMiddleware:
             scope["state"]["csrf_token"] = csrf_cookie if csrf_cookie_valid else ""
             if method not in _SAFE_METHODS:
                 if not _origin_matches(
-                    headers.get("origin"), self.auth.public_base_url
+                    headers.get("origin"), self.auth.public_base_url,
+                    effective_scheme=edge_source.scheme if edge_source else None,
                 ):
                     await JSONResponse(
                         {"detail": "request origin rejected"}, status_code=403,
