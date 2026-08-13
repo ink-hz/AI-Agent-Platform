@@ -34,7 +34,7 @@ def test_purge_refuses_unknown_or_breached_health(
     time_health: str, wal_health: str
 ) -> None:
     repository = MaintenanceRepository(
-        "postgresql:///agent_platform_control"
+        "postgresql://platform_control_maintenance@/agent_platform_control"
     )
     with pytest.raises(MaintenanceHealthError, match="health is not confirmed"):
         repository.purge_expired(

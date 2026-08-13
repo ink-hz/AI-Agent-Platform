@@ -9,7 +9,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import psycopg
-from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 
 from .crypto import (
@@ -18,6 +17,7 @@ from .crypto import (
     ProviderIdentityCodec,
 )
 from .models import IssuedWebSession
+from .dsn import validate_control_dsn
 
 
 class ControlRepositoryError(RuntimeError):
@@ -60,11 +60,6 @@ def _identity_advisory_lock_key(version: int, lookup_hmac: bytes) -> int:
 
 
 class ControlRepository:
-    _CONTROL_DATABASES = {
-        "agent_platform_control",
-        "agent_platform_control_preview",
-    }
-
     def __init__(
         self,
         control_database_url: str,
@@ -72,12 +67,7 @@ class ControlRepository:
         identity_codec: ProviderIdentityCodec,
         connect: Callable[..., Any] = psycopg.connect,
     ) -> None:
-        try:
-            database_name = conninfo_to_dict(control_database_url).get("dbname")
-        except (TypeError, ValueError, psycopg.Error):
-            raise ValueError("control database DSN required") from None
-        if database_name not in self._CONTROL_DATABASES:
-            raise ValueError("control database DSN required")
+        validate_control_dsn(control_database_url, purpose="app")
         if not isinstance(identity_codec, ProviderIdentityCodec):
             raise ValueError("provider identity codec required")
         self._control_database_url = control_database_url
@@ -250,12 +240,13 @@ class ControlRepository:
                     )
 
                 internal_user_id = uuid4()
-                cursor.execute(
-                    "insert into platform_control.internal_users "
-                    "(internal_user_id, display_name, status) "
-                    "values (%s, %s, 'active')",
+                created = cursor.execute(
+                    "select platform_control.create_internal_member(%s, %s) "
+                    "as internal_user_id",
                     (internal_user_id, display_name.strip()),
-                )
+                ).fetchone()
+                if created is None or created["internal_user_id"] != internal_user_id:
+                    raise ControlRepositoryError("control repository unavailable")
                 cursor.execute(
                     "insert into platform_control.provider_identities "
                     "(provider_identity_id, internal_user_id, subject_kind, "

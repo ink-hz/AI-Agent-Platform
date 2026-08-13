@@ -7,26 +7,25 @@ from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 import psycopg
-from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from .audit import (
+    AppliedMutation,
     AuditCommand,
     AuditUnavailableError,
+    ControlCommitIndeterminateError,
     IndeterminateMutationError,
     SensitiveMutationCoordinator,
     sanitize_governance_metadata,
 )
 from .models import AuthContext, Role
+from .dsn import validate_control_dsn
 
 
 router = APIRouter(prefix="/api/v1/manage", tags=["identity-management"])
 _AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-_DATABASES = frozenset(
-    {"agent_platform_control", "agent_platform_control_preview"}
-)
 
 
 class ReasonBody(BaseModel):
@@ -102,13 +101,9 @@ def _mutation_guards(
 
 class ManagementRepository:
     def __init__(self, control_database_url: str, *, connect=psycopg.connect) -> None:
-        try:
-            database = conninfo_to_dict(control_database_url).get("dbname")
-        except (TypeError, ValueError, psycopg.Error):
-            raise ValueError("control app database DSN required") from None
-        if database not in _DATABASES:
-            raise ValueError("control app database DSN required")
+        parsed = validate_control_dsn(control_database_url, purpose="app")
         self._database_url = control_database_url
+        self.environment = parsed.environment
         self._connect = connect
 
     def _connection(self):
@@ -147,130 +142,199 @@ class ManagementRepository:
         except psycopg.Error:
             raise RuntimeError("identity management unavailable") from None
 
-    def assign_viewer(
-        self, actor: UUID, target: UUID, reason: str, audit_event_id: UUID
-    ) -> None:
+    def viewer_state(self, target: UUID) -> dict[str, Any]:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "update platform_control.internal_users set "
-                    "role = 'management_viewer', "
-                    "role_audit_event_id = %s, updated_at = now() "
-                    "where internal_user_id = %s and status = 'active' "
-                    "and role <> 'platform_owner' returning internal_user_id",
-                    (audit_event_id, target),
+                    "select role::text as role, row_version from "
+                    "platform_control.internal_users where internal_user_id = %s",
+                    (target,),
                 ).fetchone()
                 if row is None:
                     raise ValueError("viewer target unavailable")
+                scopes = connection.execute(
+                    "select agent_id from platform_control.observation_grants "
+                    "where viewer_internal_user_id = %s and revoked_at is null "
+                    "order by agent_id",
+                    (target,),
+                ).fetchall()
+            return {
+                "role": row["role"],
+                "row_version": row["row_version"],
+                "scopes": [scope["agent_id"] for scope in scopes],
+            }
         except ValueError:
             raise
         except psycopg.Error:
             raise RuntimeError("identity management unavailable") from None
 
-    def revoke_viewer(
-        self, actor: UUID, target: UUID, reason: str, audit_event_id: UUID
-    ) -> int:
+    def mutation_precondition(
+        self,
+        operation_id: UUID,
+        action: str,
+        target: UUID,
+        agent_id: str | None = None,
+    ) -> dict[str, int] | None:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "update platform_control.internal_users set role = 'member', "
-                    "role_audit_event_id = %s, updated_at = now() "
-                    "where internal_user_id = %s "
-                    "and (role = 'management_viewer' "
-                    "or (role = 'member' and role_audit_event_id = %s)) "
-                    "returning internal_user_id",
-                    (audit_event_id, target, audit_event_id),
+                    "select action, target_internal_user_id, agent_id, "
+                    "expected_target_row_version, expected_causal_row_version "
+                    "from platform_control.management_mutations "
+                    "where operation_id = %s",
+                    (operation_id,),
                 ).fetchone()
-                if row is None:
-                    raise ValueError("viewer target unavailable")
-                connection.execute(
-                    "update platform_control.observation_grants set "
-                    "revoked_at = coalesce(revoked_at, now()), revoked_by = %s, "
-                    "revoked_audit_event_id = coalesce(revoked_audit_event_id, %s) "
-                    "where viewer_internal_user_id = %s and revoked_at is null",
-                    (actor, audit_event_id, target),
-                )
-                sessions = connection.execute(
-                    "update platform_control.web_sessions set revoked_at = now(), "
-                    "revoked_reason = %s where internal_user_id = %s "
-                    "and revoked_at is null",
-                    (reason, target),
-                ).rowcount
-                return sessions
+            if row is None:
+                return None
+            if (
+                row["action"] != action
+                or row["target_internal_user_id"] != target
+                or row["agent_id"] != agent_id
+            ):
+                raise ValueError("operation identity collision")
+            return {
+                "expected_target_row_version": row[
+                    "expected_target_row_version"
+                ],
+                "expected_causal_row_version": row[
+                    "expected_causal_row_version"
+                ],
+            }
         except ValueError:
             raise
         except psycopg.Error:
             raise RuntimeError("identity management unavailable") from None
+
+    def observation_state(self, target: UUID, agent_id: str) -> dict[str, Any]:
+        state = self.viewer_state(target)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select coalesce(max(row_version), 0) as row_version "
+                    "from platform_control.observation_grants "
+                    "where viewer_internal_user_id = %s and agent_id = %s",
+                    (target, agent_id),
+                ).fetchone()
+            return {**state, "scope_row_version": row["row_version"] if row else 0}
+        except psycopg.Error:
+            raise RuntimeError("identity management unavailable") from None
+
+    def _mutate(
+        self, query: str, parameters: tuple[Any, ...], operation_id: UUID
+    ) -> dict[str, Any]:
+        try:
+            connection = self._connection()
+        except psycopg.Error:
+            raise RuntimeError("identity management unavailable") from None
+        try:
+            try:
+                row = connection.execute(query, parameters).fetchone()
+            except (psycopg.errors.CheckViolation, psycopg.errors.UniqueViolation) as error:
+                connection.rollback()
+                message = getattr(error.diag, "message_primary", "")
+                allowed = {
+                    "matching audit intent required",
+                    "operation identity collision",
+                    "viewer assignment precondition failed",
+                    "viewer revocation precondition failed",
+                    "scope assignment precondition failed",
+                    "scope revocation precondition failed",
+                }
+                raise ValueError(
+                    message if message in allowed else "management mutation rejected"
+                ) from None
+            except psycopg.Error:
+                raise ControlCommitIndeterminateError(operation_id) from None
+            if row is None or not isinstance(row["result"], dict):
+                connection.rollback()
+                raise RuntimeError("identity management unavailable")
+            try:
+                connection.commit()
+            except psycopg.Error:
+                raise ControlCommitIndeterminateError(operation_id) from None
+            return row["result"]
+        finally:
+            connection.close()
+
+    def assign_viewer(
+        self,
+        actor: UUID,
+        target: UUID,
+        operation_id: UUID,
+        expected_row_version: int,
+        audit_event_id: UUID,
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "select platform_control.assign_management_viewer("
+            "%s,%s,%s,%s,%s) as result",
+            (operation_id, actor, target, expected_row_version, audit_event_id),
+            operation_id,
+        )
+
+    def revoke_viewer(
+        self,
+        actor: UUID,
+        target: UUID,
+        operation_id: UUID,
+        expected_row_version: int,
+        audit_event_id: UUID,
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "select platform_control.revoke_management_viewer("
+            "%s,%s,%s,%s,%s) as result",
+            (operation_id, actor, target, expected_row_version, audit_event_id),
+            operation_id,
+        )
 
     def grant_observation(
         self,
         actor: UUID,
         target: UUID,
         agent_id: str,
-        reason: str,
+        operation_id: UUID,
+        expected_user_version: int,
+        expected_scope_version: int,
         audit_event_id: UUID,
-    ) -> None:
-        try:
-            with self._connection() as connection:
-                viewer = connection.execute(
-                    "select 1 from platform_control.internal_users where "
-                    "internal_user_id = %s and status = 'active' "
-                    "and role = 'management_viewer' for update",
-                    (target,),
-                ).fetchone()
-                if viewer is None:
-                    raise ValueError("viewer target unavailable")
-                existing = connection.execute(
-                    "select observation_grant_id, created_audit_event_id from "
-                    "platform_control.observation_grants where agent_id = %s "
-                    "and viewer_internal_user_id = %s and revoked_at is null "
-                    "for update",
-                    (agent_id, target),
-                ).fetchone()
-                if existing is None:
-                    connection.execute(
-                        "insert into platform_control.observation_grants "
-                        "(observation_grant_id, agent_id, "
-                        "viewer_internal_user_id, created_by, "
-                        "created_audit_event_id) values (%s, %s, %s, %s, %s)",
-                        (uuid4(), agent_id, target, actor, audit_event_id),
-                    )
-                elif existing["created_audit_event_id"] != audit_event_id:
-                    connection.execute(
-                        "update platform_control.observation_grants set "
-                        "created_audit_event_id = %s where observation_grant_id = %s",
-                        (audit_event_id, existing["observation_grant_id"]),
-                    )
-        except ValueError:
-            raise
-        except psycopg.Error:
-            raise RuntimeError("identity management unavailable") from None
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "select platform_control.grant_observation_scope("
+            "%s,%s,%s,%s,%s,%s,%s) as result",
+            (
+                operation_id,
+                actor,
+                target,
+                agent_id,
+                expected_user_version,
+                expected_scope_version,
+                audit_event_id,
+            ),
+            operation_id,
+        )
 
     def revoke_observation(
         self,
         actor: UUID,
         target: UUID,
         agent_id: str,
-        reason: str,
+        operation_id: UUID,
+        expected_user_version: int,
+        expected_scope_version: int,
         audit_event_id: UUID,
-    ) -> None:
-        try:
-            with self._connection() as connection:
-                row = connection.execute(
-                    "update platform_control.observation_grants set "
-                    "revoked_at = coalesce(revoked_at, now()), revoked_by = %s, "
-                    "revoked_audit_event_id = %s where agent_id = %s "
-                    "and viewer_internal_user_id = %s "
-                    "and (revoked_at is null or revoked_audit_event_id = %s) "
-                    "returning observation_grant_id",
-                    (actor, audit_event_id, agent_id, target, audit_event_id),
-                ).fetchone()
-                if row is None:
-                    raise ValueError("observation scope unavailable")
-        except ValueError:
-            raise
-        except psycopg.Error:
-            raise RuntimeError("identity management unavailable") from None
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "select platform_control.revoke_observation_scope("
+            "%s,%s,%s,%s,%s,%s,%s) as result",
+            (
+                operation_id,
+                actor,
+                target,
+                agent_id,
+                expected_user_version,
+                expected_scope_version,
+                audit_event_id,
+            ),
+            operation_id,
+        )
 
     def governance_audit(self) -> list[dict[str, Any]]:
         governance_patterns = (
@@ -278,6 +342,7 @@ class ManagementRepository:
             "viewer_role_%",
             "observation_scope_%",
             "directory_%",
+            "management_user_list_read_%",
             "governance_audit_read_%",
         )
         try:
@@ -291,8 +356,16 @@ class ManagementRepository:
                     "audit_event_id desc limit 500",
                     (list(governance_patterns),),
                 ).fetchall()
-            return [
-                {
+            projected = []
+            for row in rows:
+                try:
+                    metadata = sanitize_governance_metadata(
+                        row["sanitized_before_after"],
+                        event_type=row["event_type"],
+                    )
+                except ValueError:
+                    continue
+                projected.append({
                     "audit_event_id": row["audit_event_id"],
                     "actor_internal_user_id": row["actor_internal_user_id"],
                     "event_type": row["event_type"],
@@ -301,27 +374,32 @@ class ManagementRepository:
                     "request_id": row["request_id"],
                     "result": row["result"],
                     "reason_code": row["reason_code"],
-                    "sanitized_before_after": sanitize_governance_metadata(
-                        row["sanitized_before_after"]
-                    ),
+                    "sanitized_before_after": metadata,
                     "occurred_at": row["occurred_at"],
-                }
-                for row in rows
-            ]
+                })
+            return projected
         except psycopg.Error:
             raise RuntimeError("governance audit unavailable") from None
 
 
 class ManagementService:
     def __init__(self, repository: Any, audit_writer: Any) -> None:
+        repository_environment = getattr(repository, "environment", None)
+        audit_environment = getattr(audit_writer, "environment", None)
+        if (
+            repository_environment is not None
+            and audit_environment is not None
+            and repository_environment != audit_environment
+        ):
+            raise ValueError("control and audit environment mismatch")
         self.repository = repository
         self.audit_writer = audit_writer
 
     @staticmethod
-    def _reason(reason: str) -> str:
-        if not isinstance(reason, str) or not reason.strip():
-            raise HTTPException(status_code=422, detail="reason required")
-        return reason.strip()
+    def _reason(reason: str, expected: str) -> str:
+        if reason != expected:
+            raise HTTPException(status_code=422, detail="reason code invalid")
+        return reason
 
     def _execute(self, requested: AuditCommand, mutate):
         try:
@@ -354,7 +432,7 @@ class ManagementService:
         target_type: str,
         target_id: str,
         reason: str,
-        metadata: Mapping[str, str | int | bool],
+        metadata: Mapping[str, Any],
         request_id: UUID | None = None,
     ) -> AuditCommand:
         return AuditCommand(
@@ -368,16 +446,28 @@ class ManagementService:
         )
 
     def list_users(self, context: AuthContext) -> list[dict[str, Any]]:
+        operation_id = uuid4()
         requested = self._command(
             "management_user_list_read_requested",
             context,
             "management_user_directory",
             "all",
-            "privileged management user list read",
-            {"result": "requested"},
+            "privileged_read",
+            {"operation_id": str(operation_id), "result": "requested"},
+            operation_id,
         )
         return self._execute(
-            requested, lambda audit_event_id: self.repository.list_users()
+            requested,
+            lambda audit_event_id: self._read_result(
+                self.repository.list_users(), operation_id
+            ),
+        )
+
+    @staticmethod
+    def _read_result(value, operation_id: UUID) -> AppliedMutation:
+        return AppliedMutation(
+            value,
+            {"operation_id": str(operation_id), "item_count": len(value)},
         )
 
     def change_viewer(
@@ -389,8 +479,24 @@ class ManagementService:
         revoke: bool,
         request_id: UUID | None = None,
     ) -> None:
-        selected_reason = self._reason(reason)
+        selected_reason = self._reason(
+            reason, "access_revoked" if revoke else "access_approved"
+        )
         action = "revocation" if revoke else "assignment"
+        operation_id = request_id or uuid4()
+        expected_role = "management_viewer" if revoke else "member"
+        replay = self.repository.mutation_precondition(
+            operation_id,
+            "revoke_viewer" if revoke else "assign_viewer",
+            target,
+        )
+        if replay is None:
+            state = self.repository.viewer_state(target)
+            if state["role"] != expected_role:
+                raise HTTPException(status_code=409, detail="viewer target unavailable")
+            expected_version = state["row_version"]
+        else:
+            expected_version = replay["expected_target_row_version"]
         requested = self._command(
             f"viewer_role_{action}_requested",
             context,
@@ -398,18 +504,28 @@ class ManagementService:
             str(target),
             selected_reason,
             {
+                "operation_id": str(operation_id),
+                "previous_role": expected_role,
                 "new_role": "member" if revoke else "management_viewer",
+                "expected_row_version": expected_version,
                 "result": "requested",
             },
-            request_id,
+            operation_id,
         )
         operation = (
             self.repository.revoke_viewer if revoke else self.repository.assign_viewer
         )
         self._execute(
             requested,
-            lambda event_id: operation(
-                context.internal_user_id, target, selected_reason, event_id
+            lambda event_id: AppliedMutation(
+                None,
+                operation(
+                    context.internal_user_id,
+                    target,
+                    operation_id,
+                    expected_version,
+                    event_id,
+                ),
             ),
         )
 
@@ -425,16 +541,44 @@ class ManagementService:
     ) -> None:
         if _AGENT_ID.fullmatch(agent_id) is None:
             raise HTTPException(status_code=422, detail="exact agent ID required")
-        selected_reason = self._reason(reason)
+        selected_reason = self._reason(
+            reason, "scope_revoked" if revoke else "scope_approved"
+        )
         action = "revocation" if revoke else "assignment"
+        operation_id = request_id or uuid4()
+        replay = self.repository.mutation_precondition(
+            operation_id,
+            "revoke_scope" if revoke else "grant_scope",
+            target,
+            agent_id,
+        )
+        if replay is None:
+            state = self.repository.observation_state(target, agent_id)
+            if state["role"] != "management_viewer":
+                raise HTTPException(status_code=409, detail="viewer target unavailable")
+            if revoke and state["scope_row_version"] < 1:
+                raise HTTPException(status_code=409, detail="observation scope unavailable")
+            if not revoke and state["scope_row_version"] != 0:
+                raise HTTPException(status_code=409, detail="observation scope unavailable")
+            expected_user_version = state["row_version"]
+            expected_scope_version = state["scope_row_version"]
+        else:
+            expected_user_version = replay["expected_target_row_version"]
+            expected_scope_version = replay["expected_causal_row_version"]
         requested = self._command(
             f"observation_scope_{action}_requested",
             context,
             "agent_observation_scope",
             f"{target}:{agent_id}",
             selected_reason,
-            {"agent_id": agent_id, "result": "requested"},
-            request_id,
+            {
+                "operation_id": str(operation_id),
+                "agent_id": agent_id,
+                "expected_user_row_version": expected_user_version,
+                "expected_scope_row_version": expected_scope_version,
+                "result": "requested",
+            },
+            operation_id,
         )
         operation = (
             self.repository.revoke_observation
@@ -443,26 +587,36 @@ class ManagementService:
         )
         self._execute(
             requested,
-            lambda event_id: operation(
-                context.internal_user_id,
-                target,
-                agent_id,
-                selected_reason,
-                event_id,
+            lambda event_id: AppliedMutation(
+                None,
+                operation(
+                    context.internal_user_id,
+                    target,
+                    agent_id,
+                    operation_id,
+                    expected_user_version,
+                    expected_scope_version,
+                    event_id,
+                ),
             ),
         )
 
     def governance_audit(self, context: AuthContext) -> list[dict[str, Any]]:
+        operation_id = uuid4()
         requested = self._command(
             "governance_audit_read_requested",
             context,
             "governance_audit",
             "sanitized",
-            "privileged governance audit read",
-            {"result": "requested"},
+            "privileged_read",
+            {"operation_id": str(operation_id), "result": "requested"},
+            operation_id,
         )
         return self._execute(
-            requested, lambda event_id: self.repository.governance_audit()
+            requested,
+            lambda event_id: self._read_result(
+                self.repository.governance_audit(), operation_id
+            ),
         )
 
 

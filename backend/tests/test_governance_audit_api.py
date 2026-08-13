@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 import psycopg
 import pytest
 
-from app.control_plane.audit import AuditUnavailableError, IndeterminateMutationError
+from app.control_plane.audit import (
+    AuditCommand,
+    AuditUnavailableError,
+    IndeterminateMutationError,
+)
 from app.control_plane.models import AuthContext, Role
 from app.control_plane.routes_manage import (
     ManagementRepository,
@@ -40,24 +44,107 @@ class FakeManagementRepository:
         ]
         self.mutations = []
         self.revocations = []
+        self.states = {}
+        self.ledger = {}
 
     def list_users(self):
         return self.users
 
-    def assign_viewer(self, actor, target, reason, audit_event_id):
-        mutation = ("assign", actor, target, reason, audit_event_id)
+    def viewer_state(self, target):
+        return self.states.setdefault(
+            target, {"role": "member", "row_version": 0, "scopes": []}
+        )
+
+    def observation_state(self, target, agent_id):
+        state = self.viewer_state(target)
+        return {
+            **state,
+            "scope_row_version": 1 if agent_id in state["scopes"] else 0,
+        }
+
+    def mutation_precondition(self, operation_id, action, target, agent_id=None):
+        return self.ledger.get(operation_id)
+
+    def assign_viewer(
+        self, actor, target, operation_id, expected_version, audit_event_id
+    ):
+        mutation = ("assign", actor, target, operation_id, audit_event_id)
         if mutation not in self.mutations:
             self.mutations.append(mutation)
+        self.ledger[operation_id] = {
+            "expected_target_row_version": expected_version,
+            "expected_causal_row_version": 0,
+        }
+        state = self.viewer_state(target)
+        state.update({"role": "management_viewer", "row_version": expected_version + 1})
+        return {
+            "operation_id": str(operation_id),
+            "previous_role": "member",
+            "new_role": "management_viewer",
+            "row_version": expected_version + 1,
+            "session_revocation_count": 0,
+            "previous_scopes": [],
+            "new_scopes": [],
+        }
 
-    def revoke_viewer(self, actor, target, reason, audit_event_id):
-        self.mutations.append(("revoke", actor, target, reason, audit_event_id))
+    def revoke_viewer(
+        self, actor, target, operation_id, expected_version, audit_event_id
+    ):
+        state = self.viewer_state(target)
+        before = list(state["scopes"])
+        self.mutations.append(("revoke", actor, target, operation_id, audit_event_id))
         self.revocations.append(target)
+        self.ledger[operation_id] = {
+            "expected_target_row_version": expected_version,
+            "expected_causal_row_version": 0,
+        }
+        state.update({"role": "member", "row_version": expected_version + 1, "scopes": []})
+        return {
+            "operation_id": str(operation_id),
+            "previous_role": "management_viewer",
+            "new_role": "member",
+            "row_version": expected_version + 1,
+            "session_revocation_count": 1,
+            "previous_scopes": before,
+            "new_scopes": [],
+        }
 
-    def grant_observation(self, actor, target, agent_id, reason, audit_event_id):
-        self.mutations.append(("grant", actor, target, agent_id, reason, audit_event_id))
+    def grant_observation(
+        self, actor, target, agent_id, operation_id,
+        expected_user_version, expected_scope_version, audit_event_id
+    ):
+        state = self.viewer_state(target)
+        before = list(state["scopes"])
+        state["scopes"] = sorted({*before, agent_id})
+        self.mutations.append(("grant", actor, target, agent_id, operation_id, audit_event_id))
+        self.ledger[operation_id] = {
+            "expected_target_row_version": expected_user_version,
+            "expected_causal_row_version": expected_scope_version,
+        }
+        return {
+            "operation_id": str(operation_id), "agent_id": agent_id,
+            "before_scope": False, "after_scope": True, "row_version": 1,
+            "previous_scopes": before, "new_scopes": state["scopes"],
+        }
 
-    def revoke_observation(self, actor, target, agent_id, reason, audit_event_id):
-        self.mutations.append(("ungrant", actor, target, agent_id, reason, audit_event_id))
+    def revoke_observation(
+        self, actor, target, agent_id, operation_id,
+        expected_user_version, expected_scope_version, audit_event_id
+    ):
+        state = self.viewer_state(target)
+        before = list(state["scopes"])
+        state["scopes"] = [scope for scope in before if scope != agent_id]
+        self.mutations.append(("ungrant", actor, target, agent_id, operation_id, audit_event_id))
+        self.ledger[operation_id] = {
+            "expected_target_row_version": expected_user_version,
+            "expected_causal_row_version": expected_scope_version,
+        }
+        return {
+            "operation_id": str(operation_id), "agent_id": agent_id,
+            "before_scope": True, "after_scope": False,
+            "row_version": expected_scope_version + 1,
+            "previous_scopes": before, "new_scopes": state["scopes"],
+        }
 
     def governance_audit(self):
         return [
@@ -123,7 +210,7 @@ def test_only_owner_can_list_users_or_mutate(context: AuthContext) -> None:
     client, repository, _ = _client(context)
     assert client.get("/api/v1/manage/users").status_code == 403
     assert client.post(
-        f"/api/v1/manage/viewers/{uuid4()}", json={"reason": "approved"}
+        f"/api/v1/manage/viewers/{uuid4()}", json={"reason": "access_approved"}
     ).status_code == 403
     assert repository.mutations == []
 
@@ -153,7 +240,7 @@ def test_viewer_mutation_requires_owner_csrf_and_fresh_directory(
     client, repository, _ = _client(context, csrf=csrf, fresh=fresh)
     response = client.post(
         f"/api/v1/manage/viewers/{uuid4()}",
-        json={"reason": "approved viewer access"},
+        json={"reason": "access_approved"},
     )
     assert response.status_code == expected
     assert repository.mutations == []
@@ -164,21 +251,21 @@ def test_owner_can_assign_revoke_viewer_and_exact_observation_scope() -> None:
     target = uuid4()
     assert client.post(
         f"/api/v1/manage/viewers/{target}",
-        json={"reason": "approved viewer access"},
+        json={"reason": "access_approved"},
     ).status_code == 200
     assert client.put(
         f"/api/v1/manage/viewers/{target}/observations/fae",
-        json={"reason": "approved FAE observation"},
+        json={"reason": "scope_approved"},
     ).status_code == 200
     assert client.request(
         "DELETE",
         f"/api/v1/manage/viewers/{target}/observations/fae",
-        json={"reason": "scope no longer needed"},
+        json={"reason": "scope_revoked"},
     ).status_code == 200
     assert client.request(
         "DELETE",
         f"/api/v1/manage/viewers/{target}",
-        json={"reason": "viewer access removed"},
+        json={"reason": "access_revoked"},
     ).status_code == 200
     assert repository.revocations == [target]
     assert [entry[0] for entry in repository.mutations] == [
@@ -195,7 +282,7 @@ def test_required_initial_audit_failure_returns_503_without_mutation() -> None:
     audit.fail = True
     response = client.post(
         f"/api/v1/manage/viewers/{uuid4()}",
-        json={"reason": "approved viewer access"},
+        json={"reason": "access_approved"},
     )
     assert response.status_code == 503
     assert repository.mutations == []
@@ -206,7 +293,7 @@ def test_indeterminate_mutation_returns_request_id_and_retry_is_idempotent() -> 
     audit.fail_completed_once = True
     target = uuid4()
     request_id = uuid4()
-    body = {"reason": "approved viewer access", "request_id": str(request_id)}
+    body = {"reason": "access_approved", "request_id": str(request_id)}
 
     first = client.post(f"/api/v1/manage/viewers/{target}", json=body)
     assert first.status_code == 503
@@ -241,6 +328,44 @@ def test_member_cannot_read_governance_audit() -> None:
     assert audit.commands == []
 
 
+@pytest.mark.postgres
+def test_governance_projection_includes_management_directory_reads(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    actor = uuid4()
+    request_id = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id, display_name, status, role) values "
+            "(%s, 'Read Reviewer', 'active', 'member')",
+            (actor,),
+        )
+    writer = AuditWriter.from_database_url(
+        environment["urls"]["platform_audit_append"]
+    )
+    requested = writer.append(AuditCommand(
+        "management_user_list_read_requested", actor,
+        "management_user_directory", "all", request_id,
+        "privileged_read", {"operation_id": str(request_id), "result": "requested"},
+    ))
+    writer.append(AuditCommand(
+        "management_user_list_read_completed", actor,
+        "management_user_directory", "all", request_id,
+        "privileged_read", {"operation_id": str(request_id),
+                            "linked_audit_event_id": str(requested),
+                            "item_count": 1, "result": "completed"},
+    ))
+    events = ManagementRepository(
+        environment["urls"]["platform_control_app"]
+    ).governance_audit()
+    assert {event["event_type"] for event in events} >= {
+        "management_user_list_read_requested",
+        "management_user_list_read_completed",
+    }
+
+
 def test_hard_stale_owner_cannot_mutate_but_can_read_governance() -> None:
     stale_owner = AuthContext(
         OWNER.internal_user_id,
@@ -251,7 +376,7 @@ def test_hard_stale_owner_cannot_mutate_but_can_read_governance() -> None:
     client, repository, _ = _client(stale_owner)
     assert client.post(
         f"/api/v1/manage/viewers/{uuid4()}",
-        json={"reason": "approved viewer access"},
+        json={"reason": "access_approved"},
     ).status_code == 503
     assert client.get("/api/v1/manage/audit/governance").status_code == 200
     assert repository.mutations == []
@@ -298,7 +423,7 @@ def test_real_viewer_revocation_links_audit_and_revokes_sessions_atomically(
     ).change_viewer(
         context,
         viewer_id,
-        "viewer access removed by owner",
+        "access_revoked",
         revoke=True,
     )
 
@@ -323,7 +448,7 @@ def test_real_viewer_revocation_links_audit_and_revokes_sessions_atomically(
     assert user[0] == "member"
     assert user[1] is not None
     assert session[0] is not None
-    assert session[1] == "viewer access removed by owner"
+    assert session[1] == "viewer_role_revoked"
     assert events == [
         ("viewer_role_revocation_requested",),
         ("viewer_role_revocation_completed",),
@@ -359,7 +484,7 @@ def test_real_sensitive_mutation_failure_states_are_reconcilable(
         ManagementService(repository, InitialFailure()).change_viewer(
             context,
             target_id,
-            "approved failure-state test",
+            "access_approved",
             revoke=False,
             request_id=uuid4(),
         )
@@ -390,7 +515,7 @@ def test_real_sensitive_mutation_failure_states_are_reconcilable(
         ManagementService(repository, OutcomeFailure()).change_viewer(
             context,
             target_id,
-            "approved failure-state test",
+            "access_approved",
             revoke=False,
             request_id=request_id,
         )
@@ -400,7 +525,7 @@ def test_real_sensitive_mutation_failure_states_are_reconcilable(
     ManagementService(repository, real_writer).change_viewer(
         context,
         target_id,
-        "approved failure-state test",
+        "access_approved",
         revoke=False,
         request_id=request_id,
     )

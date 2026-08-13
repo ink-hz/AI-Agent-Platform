@@ -1,34 +1,257 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import json
-from typing import Any, TypeVar
+import re
+from typing import Any, Generic, TypeVar
 from uuid import UUID, uuid5
 
 import psycopg
-from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
+
+from .dsn import validate_control_dsn
 
 
 _AUDIT_EVENT_NAMESPACE = UUID("8fabf404-553e-4e15-bdd8-c744c05e1f5a")
-_ALLOWED_METADATA = frozenset(
+_AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_OS_IDENTITY = re.compile(
+    r"^(?:uid:[0-9]{1,10}|[a-z_][a-z0-9_.-]{0,31}|"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12})$"
+)
+_REFERENCE = re.compile(r"^[A-Z][A-Z0-9_-]{2,63}$")
+_HEX_64 = re.compile(r"^[0-9a-f]{64}$")
+_ERROR_CODES = frozenset({"business_rejected", "control_unavailable"})
+_ROLES = frozenset({"member", "management_viewer", "platform_owner"})
+_RESULTS = frozenset({"requested", "completed", "failed"})
+_UUID_KEYS = frozenset(
     {
-        "agent_id",
-        "approver_a",
-        "approver_b",
-        "directory_generation_id",
+        "operation_id",
         "linked_audit_event_id",
-        "new_role",
-        "operation",
-        "os_operator",
-        "previous_role",
-        "result",
-        "role",
-        "session_revocation_count",
+        "directory_generation_id",
+        "previous_owner_internal_user_id",
+        "new_owner_internal_user_id",
     }
 )
-_RESULTS = frozenset({"requested", "completed", "failed"})
+_COUNT_KEYS = frozenset(
+    {
+        "expected_row_version",
+        "expected_user_row_version",
+        "expected_scope_row_version",
+        "expected_owner_row_version",
+        "expected_target_row_version",
+        "row_version",
+        "session_revocation_count",
+        "previous_owner_row_version",
+        "new_owner_row_version",
+        "protected_target_lookup_version",
+        "item_count",
+    }
+)
+_BOOLEAN_KEYS = frozenset({"before_scope", "after_scope"})
+_ROLE_KEYS = frozenset(
+    {"previous_role", "new_role", "previous_owner_role", "new_owner_role"}
+)
+_SCOPE_KEYS = frozenset({"previous_scopes", "new_scopes"})
+_KNOWN_METADATA_KEYS = frozenset(
+    {
+        *_UUID_KEYS,
+        *_COUNT_KEYS,
+        *_BOOLEAN_KEYS,
+        *_ROLE_KEYS,
+        *_SCOPE_KEYS,
+        "result",
+        "agent_id",
+        "os_operator",
+        "approver_a",
+        "approver_b",
+        "backup_reference",
+        "incident_reference",
+        "directory_generation_digest",
+        "protected_target_lookup_hash",
+        "error_code",
+    }
+)
+
+_VIEWER_REQUEST = frozenset(
+    {
+        "operation_id",
+        "previous_role",
+        "new_role",
+        "expected_row_version",
+        "result",
+    }
+)
+_VIEWER_COMPLETED = frozenset(
+    {
+        "operation_id",
+        "linked_audit_event_id",
+        "previous_role",
+        "new_role",
+        "row_version",
+        "session_revocation_count",
+        "previous_scopes",
+        "new_scopes",
+        "result",
+    }
+)
+_SCOPE_REQUEST = frozenset(
+    {
+        "operation_id",
+        "agent_id",
+        "expected_user_row_version",
+        "expected_scope_row_version",
+        "result",
+    }
+)
+_SCOPE_COMPLETED = frozenset(
+    {
+        "operation_id",
+        "linked_audit_event_id",
+        "agent_id",
+        "before_scope",
+        "after_scope",
+        "row_version",
+        "previous_scopes",
+        "new_scopes",
+        "result",
+    }
+)
+_OWNER_COMMON_REQUEST = frozenset(
+    {
+        "operation_id",
+        "directory_generation_id",
+        "directory_generation_digest",
+        "protected_target_lookup_hash",
+        "protected_target_lookup_version",
+        "os_operator",
+        "approver_a",
+        "approver_b",
+        "backup_reference",
+        "incident_reference",
+        "expected_owner_row_version",
+        "expected_target_row_version",
+        "result",
+    }
+)
+_OWNER_COMPLETED = frozenset(
+    {
+        "operation_id",
+        "linked_audit_event_id",
+        "previous_owner_internal_user_id",
+        "new_owner_internal_user_id",
+        "previous_owner_role",
+        "new_owner_role",
+        "session_revocation_count",
+        "previous_owner_row_version",
+        "new_owner_row_version",
+        "result",
+    }
+)
+_OWNER_BINDING_COMPLETED = frozenset(
+    {
+        "operation_id",
+        "linked_audit_event_id",
+        "new_owner_internal_user_id",
+        "new_owner_role",
+        "session_revocation_count",
+        "new_owner_row_version",
+        "result",
+    }
+)
+_READ_REQUEST = frozenset({"operation_id", "result"})
+_READ_COMPLETED = frozenset(
+    {"operation_id", "linked_audit_event_id", "item_count", "result"}
+)
+_FAILED = frozenset(
+    {"operation_id", "linked_audit_event_id", "error_code", "result"}
+)
+
+_EVENT_SCHEMAS: dict[str, frozenset[str]] = {}
+_EVENT_REASON: dict[str, str] = {}
+_EVENT_TARGET: dict[str, str] = {}
+
+
+def _register_events(
+    stems: Sequence[str],
+    *,
+    reason: str,
+    target: str,
+    requested: frozenset[str],
+    completed: frozenset[str],
+) -> None:
+    for stem in stems:
+        for result, schema in (
+            ("requested", requested),
+            ("completed", completed),
+            ("failed", _FAILED),
+        ):
+            event_type = f"{stem}_{result}"
+            _EVENT_SCHEMAS[event_type] = schema
+            _EVENT_REASON[event_type] = reason
+            _EVENT_TARGET[event_type] = target
+
+
+_register_events(
+    ("viewer_role_assignment",),
+    reason="access_approved",
+    target="internal_user",
+    requested=_VIEWER_REQUEST,
+    completed=_VIEWER_COMPLETED,
+)
+_register_events(
+    ("viewer_role_revocation",),
+    reason="access_revoked",
+    target="internal_user",
+    requested=_VIEWER_REQUEST,
+    completed=_VIEWER_COMPLETED,
+)
+_register_events(
+    ("observation_scope_assignment",),
+    reason="scope_approved",
+    target="agent_observation_scope",
+    requested=_SCOPE_REQUEST,
+    completed=_SCOPE_COMPLETED,
+)
+_register_events(
+    ("observation_scope_revocation",),
+    reason="scope_revoked",
+    target="agent_observation_scope",
+    requested=_SCOPE_REQUEST,
+    completed=_SCOPE_COMPLETED,
+)
+_register_events(
+    ("owner_binding",),
+    reason="initial_owner_binding",
+    target="internal_user",
+    requested=_OWNER_COMMON_REQUEST,
+    completed=_OWNER_BINDING_COMPLETED,
+)
+_register_events(
+    ("owner_replacement",),
+    reason="owner_departure",
+    target="internal_user",
+    requested=_OWNER_COMMON_REQUEST | {"previous_owner_internal_user_id"},
+    completed=_OWNER_COMPLETED,
+)
+_register_events(
+    ("management_user_list_read",),
+    reason="privileged_read",
+    target="management_user_directory",
+    requested=_READ_REQUEST,
+    completed=_READ_COMPLETED,
+)
+_register_events(
+    ("governance_audit_read",),
+    reason="privileged_read",
+    target="governance_audit",
+    requested=_READ_REQUEST,
+    completed=_READ_COMPLETED,
+)
+
+AuditScalar = str | int | bool
+AuditValue = AuditScalar | Sequence[str]
 T = TypeVar("T")
 
 
@@ -36,8 +259,16 @@ class AuditUnavailableError(RuntimeError):
     """A required immutable audit event could not be persisted."""
 
 
+class ControlCommitIndeterminateError(RuntimeError):
+    """The server result of a control transaction commit is unknown."""
+
+    def __init__(self, request_id: UUID) -> None:
+        super().__init__("control mutation commit outcome indeterminate")
+        self.request_id = request_id
+
+
 class IndeterminateMutationError(AuditUnavailableError):
-    """The mutation committed, but its immutable outcome is not confirmed."""
+    """A mutation result cannot safely be described as failed or completed."""
 
     def __init__(self, request_id: UUID, requested_audit_event_id: UUID) -> None:
         super().__init__("management mutation outcome indeterminate")
@@ -53,36 +284,100 @@ class AuditCommand:
     target_id: str
     request_id: UUID
     reason: str
-    metadata: Mapping[str, str | int | bool]
+    metadata: Mapping[str, AuditValue]
+
+
+@dataclass(frozen=True)
+class AppliedMutation(Generic[T]):
+    value: T
+    outcome_metadata: Mapping[str, AuditValue]
+
+
+def _uuid_string(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(UUID(value)) == value.lower()
+    except (ValueError, AttributeError):
+        return False
+
+
+def _safe_metadata_value(key: str, value: Any) -> bool:
+    if key in _UUID_KEYS:
+        return _uuid_string(value)
+    if key in _COUNT_KEYS:
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    if key in _BOOLEAN_KEYS:
+        return isinstance(value, bool)
+    if key in _ROLE_KEYS:
+        return isinstance(value, str) and value in _ROLES
+    if key == "result":
+        return isinstance(value, str) and value in _RESULTS
+    if key == "agent_id":
+        return isinstance(value, str) and _AGENT_ID.fullmatch(value) is not None
+    if key in {"os_operator", "approver_a", "approver_b"}:
+        return isinstance(value, str) and _OS_IDENTITY.fullmatch(value) is not None
+    if key in {"backup_reference", "incident_reference"}:
+        return isinstance(value, str) and _REFERENCE.fullmatch(value) is not None
+    if key in {"directory_generation_digest", "protected_target_lookup_hash"}:
+        return isinstance(value, str) and _HEX_64.fullmatch(value) is not None
+    if key == "error_code":
+        return isinstance(value, str) and value in _ERROR_CODES
+    if key in _SCOPE_KEYS:
+        return (
+            isinstance(value, (list, tuple))
+            and len(value) <= 256
+            and all(
+                isinstance(item, str) and _AGENT_ID.fullmatch(item) is not None
+                for item in value
+            )
+            and list(value) == sorted(set(value))
+        )
+    return False
 
 
 def sanitize_governance_metadata(
-    metadata: Mapping[str, str | int | bool],
-) -> dict[str, str | int | bool]:
+    metadata: Mapping[str, AuditValue],
+    *,
+    event_type: str | None = None,
+) -> dict[str, AuditValue]:
     if not isinstance(metadata, Mapping):
         raise ValueError("audit metadata invalid")
-    sanitized: dict[str, str | int | bool] = {}
+    keys = frozenset(metadata)
+    if not keys <= _KNOWN_METADATA_KEYS:
+        raise ValueError("audit metadata invalid")
+    if event_type is not None and keys != _EVENT_SCHEMAS.get(event_type):
+        raise ValueError("audit metadata invalid")
+    sanitized: dict[str, AuditValue] = {}
     for key in sorted(metadata):
         value = metadata[key]
-        if key not in _ALLOWED_METADATA:
-            continue
-        if isinstance(value, bool):
-            sanitized[key] = value
-        elif isinstance(value, int) and not isinstance(value, bool):
-            sanitized[key] = value
-        elif isinstance(value, str) and value and len(value) <= 256 and "\0" not in value:
-            sanitized[key] = value
+        if not _safe_metadata_value(key, value):
+            raise ValueError("audit metadata invalid")
+        sanitized[key] = list(value) if key in _SCOPE_KEYS else value
     return sanitized
 
 
-def _event_result(event_type: str, metadata: Mapping[str, Any]) -> str:
-    supplied = metadata.get("result")
-    if supplied in _RESULTS:
-        return str(supplied)
-    for result in _RESULTS:
-        if event_type.endswith(f"_{result}"):
-            return result
-    return "completed"
+def _validate_target(command: AuditCommand) -> bool:
+    if command.target_type != _EVENT_TARGET.get(command.event_type):
+        return False
+    if command.target_type == "internal_user":
+        return _uuid_string(command.target_id)
+    if command.target_type == "agent_observation_scope":
+        user_id, separator, agent_id = command.target_id.partition(":")
+        return (
+            separator == ":"
+            and _uuid_string(user_id)
+            and _AGENT_ID.fullmatch(agent_id) is not None
+        )
+    if command.target_type == "management_user_directory":
+        return command.target_id == "all"
+    if command.target_type == "governance_audit":
+        return command.target_id == "sanitized"
+    return False
+
+
+def _event_result(event_type: str) -> str:
+    return event_type.rsplit("_", 1)[-1]
 
 
 def _event_id(command: AuditCommand) -> UUID:
@@ -101,26 +396,17 @@ def _event_id(command: AuditCommand) -> UUID:
 
 
 class AuditRepository:
-    _CONTROL_DATABASES = {
-        "agent_platform_control",
-        "agent_platform_control_preview",
-    }
-
     def __init__(self, audit_database_url: str, *, connect=psycopg.connect) -> None:
-        try:
-            database_name = conninfo_to_dict(audit_database_url).get("dbname")
-        except (TypeError, ValueError, psycopg.Error):
-            raise ValueError("audit database DSN required") from None
-        if database_name not in self._CONTROL_DATABASES:
-            raise ValueError("audit database DSN required")
+        parsed = validate_control_dsn(audit_database_url, purpose="audit")
         self._database_url = audit_database_url
+        self.environment = parsed.environment
         self._connect = connect
 
     def append(
         self,
         event_id: UUID,
         command: AuditCommand,
-        sanitized: Mapping[str, str | int | bool],
+        sanitized: Mapping[str, AuditValue],
     ) -> UUID:
         try:
             with self._connect(
@@ -139,8 +425,8 @@ class AuditRepository:
                         command.target_type,
                         command.target_id,
                         command.request_id,
-                        _event_result(command.event_type, sanitized),
-                        command.reason.strip(),
+                        _event_result(command.event_type),
+                        command.reason,
                         json.dumps(sanitized, sort_keys=True),
                     ),
                 ).fetchone()
@@ -157,6 +443,10 @@ class AuditWriter:
     def __init__(self, repository: Any) -> None:
         self.repository = repository
 
+    @property
+    def environment(self) -> str | None:
+        return getattr(self.repository, "environment", None)
+
     @classmethod
     def from_database_url(cls, audit_database_url: str) -> AuditWriter:
         return cls(AuditRepository(audit_database_url))
@@ -164,19 +454,20 @@ class AuditWriter:
     def append(self, command: AuditCommand) -> UUID:
         if (
             not isinstance(command, AuditCommand)
-            or not isinstance(command.reason, str)
-            or not command.reason.strip()
-        ):
-            raise ValueError("audit reason required")
-        if (
-            not command.event_type
-            or not command.target_type
-            or not command.target_id
             or not isinstance(command.actor_internal_user_id, UUID)
             or not isinstance(command.request_id, UUID)
+            or command.event_type not in _EVENT_SCHEMAS
+            or command.reason != _EVENT_REASON.get(command.event_type)
+            or not _validate_target(command)
         ):
             raise ValueError("audit command invalid")
-        sanitized = sanitize_governance_metadata(command.metadata)
+        sanitized = sanitize_governance_metadata(
+            command.metadata, event_type=command.event_type
+        )
+        if sanitized.get("result") != _event_result(command.event_type):
+            raise ValueError("audit command invalid")
+        if sanitized.get("operation_id") != str(command.request_id):
+            raise ValueError("audit command invalid")
         event_id = _event_id(command)
         return self.repository.append(event_id, command, sanitized)
 
@@ -185,20 +476,26 @@ def _outcome_command(
     requested: AuditCommand,
     requested_audit_event_id: UUID,
     result: str,
+    actual: Mapping[str, AuditValue] | None = None,
+    *,
+    error_code: str | None = None,
 ) -> AuditCommand:
-    suffix = "_requested"
-    base = (
-        requested.event_type[: -len(suffix)]
-        if requested.event_type.endswith(suffix)
-        else requested.event_type
-    )
-    metadata = dict(requested.metadata)
-    metadata.update(
-        {
+    base = requested.event_type.removesuffix("_requested")
+    if result == "completed":
+        metadata = dict(actual or {})
+        metadata.update(
+            {
+                "linked_audit_event_id": str(requested_audit_event_id),
+                "result": "completed",
+            }
+        )
+    else:
+        metadata = {
+            "operation_id": str(requested.request_id),
             "linked_audit_event_id": str(requested_audit_event_id),
-            "result": result,
+            "error_code": error_code or "control_unavailable",
+            "result": "failed",
         }
-    )
     return AuditCommand(
         event_type=f"{base}_{result}",
         actor_internal_user_id=requested.actor_internal_user_id,
@@ -211,13 +508,7 @@ def _outcome_command(
 
 
 class SensitiveMutationCoordinator:
-    """Coordinate independent immutable-audit and control-db commits.
-
-    The audit and application DSNs are separate connections. The immutable
-    requested event commits first. The control mutation then stores that event
-    ID. A missing outcome is reported as indeterminate and can be reconciled by
-    retrying the same request; event IDs and linked mutations are idempotent.
-    """
+    """Coordinate requested audit, idempotent control commit, and outcome audit."""
 
     def __init__(self, audit_writer: Any) -> None:
         self.audit_writer = audit_writer
@@ -226,25 +517,48 @@ class SensitiveMutationCoordinator:
         self,
         *,
         requested: AuditCommand,
-        mutate: Callable[[UUID], T],
+        mutate: Callable[[UUID], AppliedMutation[T]],
     ) -> T:
         requested_event_id = self.audit_writer.append(requested)
         try:
-            result = mutate(requested_event_id)
-        except Exception:
-            try:
-                self.audit_writer.append(
-                    _outcome_command(requested, requested_event_id, "failed")
-                )
-            except AuditUnavailableError:
-                pass
-            raise
-        try:
-            self.audit_writer.append(
-                _outcome_command(requested, requested_event_id, "completed")
-            )
-        except AuditUnavailableError:
+            applied = mutate(requested_event_id)
+            if not isinstance(applied, AppliedMutation):
+                raise RuntimeError("control mutation result invalid")
+        except ControlCommitIndeterminateError:
             raise IndeterminateMutationError(
                 requested.request_id, requested_event_id
             ) from None
-        return result
+        except Exception as error:
+            error_code = (
+                "business_rejected"
+                if isinstance(error, ValueError)
+                else "control_unavailable"
+            )
+            try:
+                self.audit_writer.append(
+                    _outcome_command(
+                        requested,
+                        requested_event_id,
+                        "failed",
+                        error_code=error_code,
+                    )
+                )
+            except (AuditUnavailableError, ValueError):
+                raise IndeterminateMutationError(
+                    requested.request_id, requested_event_id
+                ) from None
+            raise
+        try:
+            self.audit_writer.append(
+                _outcome_command(
+                    requested,
+                    requested_event_id,
+                    "completed",
+                    applied.outcome_metadata,
+                )
+            )
+        except (AuditUnavailableError, ValueError):
+            raise IndeterminateMutationError(
+                requested.request_id, requested_event_id
+            ) from None
+        return applied.value

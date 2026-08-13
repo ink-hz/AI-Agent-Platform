@@ -5,9 +5,11 @@ Web API for replacing the platform owner. Viewer role and exact Agent
 observation scopes are managed by the authenticated owner in the Web
 application.
 
-Phase one provides application-immutable audit evidence, not independently
-governed oversight. An owner can revoke a viewer; the revocation remains in the
-append-only audit table, but the former viewer immediately loses access to it.
+Phase one provides application-immutable audit evidence, not an independent
+external audit sink and not cryptographic proof that approvers independently
+signed. The root-operated receipt binds two recorded stable approver IDs; it
+does not create external approval. An owner can revoke a viewer, and the former
+viewer immediately loses audit access.
 
 ## Preconditions
 
@@ -18,16 +20,18 @@ append-only audit table, but the former viewer immediately loses access to it.
    not place the provider identity on the command line.
 3. Confirm control database time health is `healthy`, WAL archiving is healthy
    and within the 15-minute RPO, and free space is above protective thresholds.
-4. Complete and verify a control database backup before replacement. Record two
-   distinct named approvers and the incident/ticket reason.
+4. Complete and verify a control database backup. Record its constrained token
+   (`BACKUP_...`), a constrained incident token (`INC_...`), and two distinct
+   stable approver IDs (`uid:<number>`, approved OS identity, or internal UUID).
 5. Prefer the current active, fresh, complete directory generation. Task 4 does
    not provide hard-stale Web mutation continuity. If no trustworthy complete
    generation exists, stop and use the database-incident/two-person recovery
    process; never construct an identity from a name.
 
-All DSNs and identity keys remain in deployment-owned mode-0600 files. The
-commands below use their configured environment variables and print only JSON
-containing internal UUIDs, generation IDs, request IDs, and audit IDs.
+All DSNs and identity keys remain in deployment-owned mode-0600 files. Supply a
+dedicated root-owned mode-0600 HMAC keyring with purpose
+`offline-owner-receipt-hmac`, a positive key version, and a 32-byte base64 key.
+Machine-readable output never contains a provider identity.
 
 ## Inspect the selected generation
 
@@ -41,61 +45,76 @@ health. Pass that UUID explicitly on every bind or replacement.
 
 ## Initial owner bind
 
-Run a dry run first (no `--confirm`):
+Run a dry run first. It creates a signed, fsynced, root-owned mode-0600 receipt
+valid for 15 minutes:
 
 ```bash
 .venv/bin/python -m app.control_plane.admin_cli bind-owner \
   --provider-id-file /run/secrets/platform-owner-provider-id \
   --generation-id 00000000-0000-0000-0000-000000000000 \
-  --reason 'approved initial owner binding'
+  --incident-reference INC_2026_001 \
+  --backup-reference BACKUP_2026_001 \
+  --approver uid:1001 --approver uid:1002 \
+  --receipt-file /run/platform-control/bind-owner-receipt.json \
+  --receipt-key-file /run/secrets/platform-owner-receipt-keyring \
+  --receipt-key-version 1
 ```
 
-After checking the internal target UUID and generation, repeat as a separate
-command with `--confirm`. Preserve the returned `request_id`; if the command
-returns `management_mutation_indeterminate`, retry with that exact
-`--request-id`. The retry reuses the immutable requested/outcome event IDs and
-the linked role mutation.
+Check the generation digest, protected target lookup hash/version, owner/target
+row-version precondition, operation UUID, expiry, backup/incident tokens, and
+stable approver IDs. Confirm with the existing receipt path. There is no
+first-invocation confirmation shortcut; confirmation atomically consumes the
+receipt so it cannot confirm twice.
 
 ```bash
 .venv/bin/python -m app.control_plane.admin_cli bind-owner \
   --provider-id-file /run/secrets/platform-owner-provider-id \
   --generation-id 00000000-0000-0000-0000-000000000000 \
-  --reason 'approved initial owner binding' \
-  --confirm
+  --incident-reference INC_2026_001 \
+  --backup-reference BACKUP_2026_001 \
+  --approver uid:1001 --approver uid:1002 \
+  --receipt-file /run/platform-control/bind-owner-receipt.json \
+  --receipt-key-file /run/secrets/platform-owner-receipt-keyring \
+  --receipt-key-version 1 \
+  --confirm /run/platform-control/bind-owner-receipt.json
 ```
 
 ## Normal offline owner replacement
 
 The old owner must have departed or be under an approved incident response.
-Record the verified backup and two distinct approvers. First omit `--confirm`
-for the dry run, then repeat the identical command with `--confirm`:
+First create the replacement receipt:
 
 ```bash
 .venv/bin/python -m app.control_plane.admin_cli replace-owner \
   --provider-id-file /run/secrets/platform-replacement-provider-id \
   --generation-id 00000000-0000-0000-0000-000000000000 \
-  --reason 'incident ticket: owner departure' \
-  --approver 'first-approver' \
-  --approver 'second-approver' \
-  --backup-confirmed
+  --incident-reference INC_2026_002 \
+  --backup-reference BACKUP_2026_002 \
+  --approver uid:1001 --approver uid:1002 \
+  --receipt-file /run/platform-control/replace-owner-receipt.json \
+  --receipt-key-file /run/secrets/platform-owner-receipt-keyring \
+  --receipt-key-version 1
 ```
 
 ```bash
 .venv/bin/python -m app.control_plane.admin_cli replace-owner \
   --provider-id-file /run/secrets/platform-replacement-provider-id \
   --generation-id 00000000-0000-0000-0000-000000000000 \
-  --reason 'incident ticket: owner departure' \
-  --approver 'first-approver' \
-  --approver 'second-approver' \
-  --backup-confirmed \
-  --confirm
+  --incident-reference INC_2026_002 \
+  --backup-reference BACKUP_2026_002 \
+  --approver uid:1001 --approver uid:1002 \
+  --receipt-file /run/platform-control/replace-owner-receipt.json \
+  --receipt-key-file /run/secrets/platform-owner-receipt-keyring \
+  --receipt-key-version 1 \
+  --confirm /run/platform-control/replace-owner-receipt.json
 ```
 
-The database transaction demotes the old active owner, promotes the selected
+The database transaction finds and demotes the owner-role row even when it is
+inactive, promotes the selected
 active target, links both changes to the immutable requested audit ID, and
-revokes both users' active Web Sessions. The partial unique index continues to
-permit at most one active owner; zero is allowed after departure or before the
-first bind.
+revokes both users' active Web Sessions. The unique index permits at most one
+owner-role row regardless of status; `bind-owner` therefore refuses an
+inactive/departed owner and requires reviewed replacement.
 
 ## Verification and reconciliation
 
@@ -106,8 +125,8 @@ first bind.
    and that the role row stores the requested event ID. Never update the
    requested row.
 3. If outcome append failed after the role transaction, treat the response as
-   `503`/indeterminate. Retry with the original request ID or append the
-   deterministic completed outcome through the reviewed reconciliation tool.
+   `503`/indeterminate. Reconcile using the operation UUID in the consumed
+   receipt and mutation ledger before issuing another receipt.
    Do not undo a proven role mutation merely because the outcome was initially
    unavailable.
 4. Require the replacement owner to authenticate again and verify the previous

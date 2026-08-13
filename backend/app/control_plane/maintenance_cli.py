@@ -6,15 +6,10 @@ import os
 from typing import Any
 
 import psycopg
-from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 
 from app.local_secrets import read_secret_file
-
-
-_DATABASES = frozenset(
-    {"agent_platform_control", "agent_platform_control_preview"}
-)
+from .dsn import validate_control_dsn
 
 
 class MaintenanceHealthError(RuntimeError):
@@ -28,12 +23,7 @@ class MaintenanceRepository:
         *,
         connect=psycopg.connect,
     ) -> None:
-        try:
-            database = conninfo_to_dict(maintenance_database_url).get("dbname")
-        except (TypeError, ValueError, psycopg.Error):
-            raise ValueError("control maintenance database DSN required") from None
-        if database not in _DATABASES:
-            raise ValueError("control maintenance database DSN required")
+        validate_control_dsn(maintenance_database_url, purpose="maintenance")
         self._database_url = maintenance_database_url
         self._connect = connect
 

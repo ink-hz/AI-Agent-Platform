@@ -177,7 +177,7 @@ def test_repository_rejects_supplied_lookup_not_derived_from_plaintext_before_qu
         raise AssertionError("database must not be queried")
 
     repository = ControlRepository(
-        "postgresql://unused@127.0.0.1/agent_platform_control",
+        "postgresql://platform_control_app@127.0.0.1/agent_platform_control",
         identity_codec=_codec(tmp_path),
         connect=reject_query,
     )
@@ -409,6 +409,7 @@ def test_create_or_resolve_acquires_every_transition_lock_in_version_hmac_order(
 
     class Cursor:
         policy_selected = False
+        created_user_id = None
 
         def __enter__(self):
             return self
@@ -420,6 +421,8 @@ def test_create_or_resolve_acquires_every_transition_lock_in_version_hmac_order(
             self.policy_selected = (
                 "select lookup_transition_versions" in statement
             )
+            if "platform_control.create_internal_member" in statement:
+                self.created_user_id = parameters[0]
             if (
                 statement == "select pg_advisory_xact_lock(%s)"
                 and parameters != (1229998928,)
@@ -433,6 +436,8 @@ def test_create_or_resolve_acquires_every_transition_lock_in_version_hmac_order(
         def fetchone(self):
             if self.policy_selected:
                 return {"lookup_transition_versions": [1, 2]}
+            if self.created_user_id is not None:
+                return {"internal_user_id": self.created_user_id}
             return None
 
     class Connection:
@@ -446,7 +451,7 @@ def test_create_or_resolve_acquires_every_transition_lock_in_version_hmac_order(
             return Cursor()
 
     repository = ControlRepository(
-        "postgresql://unused@127.0.0.1/agent_platform_control",
+        "postgresql://platform_control_app@127.0.0.1/agent_platform_control",
         identity_codec=_codec(tmp_path),
         connect=lambda *args, **kwargs: Connection(),
     )
@@ -527,7 +532,7 @@ def test_identity_rotation_rejects_previous_lookup_before_database_connection(
         raise AssertionError("database connection must not be opened")
 
     repository = ControlRepository(
-        "postgresql://unused@127.0.0.1/agent_platform_control",
+        "postgresql://platform_control_app@127.0.0.1/agent_platform_control",
         identity_codec=_codec(tmp_path),
         connect=reject_connection,
     )
@@ -700,7 +705,7 @@ def test_session_rotation_preserves_smaller_and_larger_absolute_deadlines_exactl
 
 
 @pytest.mark.postgres
-def test_database_enforces_at_most_one_active_owner_and_allows_zero(
+def test_database_enforces_at_most_one_owner_role_including_inactive(
     repository: ControlRepository,
     production_environment,
 ) -> None:
@@ -712,12 +717,11 @@ def test_database_enforces_at_most_one_active_owner_and_allows_zero(
         repository.identity_codec.seal("employee", "owner-two-provider-id"),
         "Owner Two",
     )
-    app_url = production_environment["urls"]["platform_control_app"]
-    with psycopg.connect(app_url) as connection:
+    with psycopg.connect(production_environment["admin"]) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 "select count(*) from platform_control.internal_users "
-                "where role = 'platform_owner' and status = 'active'"
+                "where role = 'platform_owner'"
             )
             assert cursor.fetchone() == (0,)
             cursor.execute(
@@ -727,7 +731,8 @@ def test_database_enforces_at_most_one_active_owner_and_allows_zero(
             )
             with pytest.raises(psycopg.errors.UniqueViolation):
                 cursor.execute(
-                    "update platform_control.internal_users set role = 'platform_owner' "
+                    "update platform_control.internal_users set "
+                    "role = 'platform_owner', status = 'inactive' "
                     "where internal_user_id = %s",
                     (second,),
                 )
@@ -768,7 +773,7 @@ def test_observation_scopes_are_exact_active_agent_ids(
 
 
 def test_repository_rejects_replica_database_dsn(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="control database DSN required"):
+    with pytest.raises(ValueError, match="exact control app DSN required"):
         ControlRepository(
             "postgresql://app@127.0.0.1/agent_platform",
             identity_codec=_codec(tmp_path),

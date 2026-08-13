@@ -22,6 +22,9 @@ IDENTITY_KEY_POLICY_HARDENING_MIGRATION = (
 AUDITED_ROLE_ADMINISTRATION_MIGRATION = (
     MIGRATIONS / "005_audited_role_administration.sql"
 )
+AUDITED_MUTATION_BOUNDARY_MIGRATION = (
+    MIGRATIONS / "006_audited_mutation_boundary.sql"
+)
 PRODUCTION_ROLES = (
     "platform_control_migrator",
     "platform_control_app",
@@ -70,6 +73,15 @@ TABLES = {
     "auth_rate_buckets",
     "audit_events",
     "provider_identity_key_policies",
+    "management_mutations",
+}
+
+IMMUTABLE_MIGRATION_SHA256 = {
+    "001_identity_security.sql": "309cf6aebdb37d984823faebb859e58f44d387cda4c2fb4bdf61af06868541cd",
+    "002_isolate_environment_roles.sql": "837bb27aa7ee09ff52e424c978c2362cad4e40a25d1c02a4ced0183c61dcbd2f",
+    "003_identity_key_policy.sql": "4bef30a941e95f0e7508b5ad07c27fd1cf2673effad52738aac8b1fcf6c217f4",
+    "004_reject_null_identity_key_versions.sql": "e12c96fc6e6c7f1e563834f8b9ad1f7a6595cd3525043d59afc5bc204baa7ef6",
+    "005_audited_role_administration.sql": "836517d461b349e635a0183d2fbb7c88698b1bacfaba609360947e33599b2177",
 }
 
 
@@ -89,6 +101,19 @@ def test_first_control_migration_exists() -> None:
         "missing audited role administration migration: "
         f"{AUDITED_ROLE_ADMINISTRATION_MIGRATION}"
     )
+    assert AUDITED_MUTATION_BOUNDARY_MIGRATION.is_file(), (
+        "missing audited mutation boundary migration: "
+        f"{AUDITED_MUTATION_BOUNDARY_MIGRATION}"
+    )
+
+
+def test_control_migrations_001_through_005_are_byte_immutable() -> None:
+    import hashlib
+
+    assert {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(MIGRATIONS.glob("00[1-5]_*.sql"))
+    } == IMMUTABLE_MIGRATION_SHA256
 
 
 def _available_port() -> int:
@@ -263,11 +288,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (1, 64),
-                    (2, 64),
-                    (3, 64),
-                    (4, 64),
-                    (5, 64),
+                    (version, 64) for version in range(1, 7)
                 ]
 
     changed = tmp_path / "migrations"
@@ -381,7 +402,7 @@ def test_migration_creates_complete_constrained_control_model(control_database):
                     row[0].lower() for row in cursor.fetchall()
                 )
                 assert "one_platform_owner" in indexes
-                assert "where ((role = 'platform_owner'" in indexes
+                assert "where (role = 'platform_owner'" in indexes
                 assert "stream_inbox" in indexes and "event_key" in indexes
                 assert (
                     "observation_grants" in indexes
@@ -439,6 +460,97 @@ def _assert_denied(database_url: str, statement: str) -> None:
         with connection.cursor() as cursor:
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 cursor.execute(statement)
+
+
+@pytest.mark.postgres
+def test_app_cannot_bypass_audited_authorization_functions(control_database):
+    environment = control_database["environments"]["production"]
+    app_url = environment["urls"]["platform_control_app"]
+    owner_id = uuid.uuid4()
+    target_id = uuid.uuid4()
+    grant_id = uuid.uuid4()
+    audit_id = uuid.uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id, display_name, status, role) values "
+            "(%s, 'Boundary Owner', 'active', 'platform_owner'), "
+            "(%s, 'Boundary Target', 'active', 'management_viewer')",
+            (owner_id, target_id),
+        )
+        connection.execute(
+            "insert into platform_control.audit_events "
+            "(audit_event_id, actor_internal_user_id, event_type, target_type, "
+            "target_internal_id, request_id, result, reason_code) values "
+            "(%s, %s, 'viewer_role_assignment_requested', 'internal_user', "
+            "%s, %s, 'requested', 'access_approved')",
+            (audit_id, owner_id, str(target_id), uuid.uuid4()),
+        )
+        connection.execute(
+            "insert into platform_control.observation_grants "
+            "(observation_grant_id, agent_id, viewer_internal_user_id, created_by) "
+            "values (%s, 'boundary-agent', %s, %s)",
+            (grant_id, target_id, owner_id),
+        )
+
+    statements = (
+        "insert into platform_control.internal_users "
+        "(internal_user_id, display_name, status) values "
+        "(gen_random_uuid(), 'Bypass', 'active')",
+        f"update platform_control.internal_users set role = 'platform_owner' "
+        f"where internal_user_id = '{target_id}'",
+        f"update platform_control.internal_users set role = 'member' "
+        f"where internal_user_id = '{owner_id}'",
+        f"update platform_control.internal_users set role_audit_event_id = "
+        f"'{audit_id}' where internal_user_id = '{target_id}'",
+        "insert into platform_control.observation_grants "
+        "(observation_grant_id, agent_id, viewer_internal_user_id, created_by) "
+        f"values (gen_random_uuid(), 'bypass-agent', '{target_id}', '{owner_id}')",
+        f"update platform_control.observation_grants set revoked_at = now() "
+        f"where observation_grant_id = '{grant_id}'",
+        f"delete from platform_control.observation_grants "
+        f"where observation_grant_id = '{grant_id}'",
+    )
+    for statement in statements:
+        _assert_denied(app_url, statement)
+    _assert_denied(
+        environment["urls"]["platform_directory_worker"],
+        f"update platform_control.internal_users set status = 'inactive' "
+        f"where internal_user_id = '{target_id}'",
+    )
+
+
+@pytest.mark.postgres
+def test_app_has_only_audited_viewer_and_scope_mutation_functions(control_database):
+    environment = control_database["environments"]["production"]
+    roles = environment["roles"]
+    with psycopg.connect(environment["admin"]) as connection:
+        rows = connection.execute(
+            "select proname, has_function_privilege(%s, proc.oid, 'execute'), "
+            "has_function_privilege(%s, proc.oid, 'execute'), "
+            "has_function_privilege('public', proc.oid, 'execute') "
+            "from pg_proc proc where proc.pronamespace = "
+            "'platform_control'::regnamespace and proname = any(%s) "
+            "order by proname",
+            (
+                roles[1],
+                roles[0],
+                [
+                    "assign_management_viewer",
+                    "revoke_management_viewer",
+                    "grant_observation_scope",
+                    "revoke_observation_scope",
+                    "change_platform_owner_v2",
+                ],
+            ),
+        ).fetchall()
+    assert rows == [
+        ("assign_management_viewer", True, False, False),
+        ("change_platform_owner_v2", False, True, False),
+        ("grant_observation_scope", True, False, False),
+        ("revoke_management_viewer", True, False, False),
+        ("revoke_observation_scope", True, False, False),
+    ]
 
 
 @pytest.mark.postgres

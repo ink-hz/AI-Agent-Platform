@@ -10,6 +10,7 @@ from typing import Iterable
 import psycopg
 
 from .database import read_control_migrator_database_url
+from .dsn import validate_control_dsn
 
 
 _MIGRATION_NAME = re.compile(r"^(?P<version>[0-9]{3})_[a-z0-9_]+\.sql$")
@@ -79,6 +80,12 @@ def migrate_control_database(
 ) -> None:
     if owner_role not in _CONTROL_OWNER_ROLES:
         raise ValueError(f"unsupported control owner role: {owner_role!r}")
+    parsed = validate_control_dsn(database_url, purpose="migrator")
+    expected_owner = "platform_control_owner" + (
+        "_preview" if parsed.environment == "preview" else ""
+    )
+    if owner_role != expected_owner:
+        raise ValueError("control owner role environment mismatch")
     with psycopg.connect(database_url, autocommit=False) as connection:
         with connection.cursor() as cursor:
             cursor.execute(

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import base64
+from datetime import UTC, datetime, timedelta
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -10,6 +13,8 @@ import pytest
 from app.control_plane.admin_cli import (
     AdminRequest,
     OfflineOwnerAdministrator,
+    consume_confirmation_receipt,
+    write_confirmation_receipt,
     build_parser,
     render_error,
     render_result,
@@ -45,7 +50,10 @@ def test_parser_uses_provider_file_and_never_name_mobile_or_web_owner_route() ->
         ]._actions
     }
     assert "approver" in replace_actions
-    assert "--backup-confirmed" in replace_help
+    assert "--backup-reference" in replace_help
+    assert "--incident-reference" in replace_help
+    assert "--receipt-file" in replace_help
+    assert "--receipt-key-file" in replace_help
     assert "--confirm" in replace_help
 
     routes = (
@@ -89,20 +97,150 @@ def test_replacement_requires_two_distinct_named_approvers() -> None:
         "/private/provider-id",
         "--generation-id",
         str(uuid4()),
-        "--reason",
-        "owner departure incident",
-        "--backup-confirmed",
-        "--confirm",
+        "--incident-reference",
+        "INC_2026_001",
+        "--backup-reference",
+        "BACKUP_2026_001",
+        "--receipt-file",
+        "/private/receipt.json",
+        "--receipt-key-file",
+        "/private/receipt-key.json",
+        "--receipt-key-version",
+        "1",
     ]
-    parsed = parser.parse_args(base + ["--approver", "alice", "--approver", "bob"])
-    assert parsed.approver == ["alice", "bob"]
+    parsed = parser.parse_args(
+        base + ["--approver", "uid:1001", "--approver", "uid:1002"]
+    )
+    assert parsed.approver == ["uid:1001", "uid:1002"]
 
     with pytest.raises(ValueError, match="two distinct approvers required"):
         AdminRequest.from_namespace(
             parser.parse_args(
-                base + ["--approver", "alice", "--approver", "alice"]
+                base + ["--approver", "uid:1001", "--approver", "uid:1001"]
             )
         )
+
+    with pytest.raises(ValueError, match="stable approver identity required"):
+        AdminRequest.from_namespace(
+            parser.parse_args(
+                base + ["--approver", "Alice Smith", "--approver", "uid:1002"]
+            )
+        )
+
+
+def _receipt_key_file(tmp_path: Path) -> Path:
+    path = tmp_path / "offline-receipt-key.json"
+    path.write_text(
+        json.dumps(
+            {
+                "purpose": "offline-owner-receipt-hmac",
+                "keys": {"1": base64.b64encode(b"r" * 32).decode("ascii")},
+            }
+        ),
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
+    return path
+
+
+def _receipt_payload() -> dict[str, object]:
+    return {
+        "operation_id": str(uuid4()),
+        "action": "replace",
+        "protected_target_lookup_hash": "a" * 64,
+        "protected_target_lookup_version": 2,
+        "generation_id": str(uuid4()),
+        "backup_reference": "BACKUP_2026_001",
+        "incident_reference": "INC_2026_001",
+        "approvers": ["uid:1001", "uid:1002"],
+        "os_operator": "root",
+        "directory_generation_digest": "b" * 64,
+        "current_owner_internal_user_id": str(uuid4()),
+        "current_owner_row_version": 7,
+        "target_row_version": 3,
+    }
+
+
+def test_dry_run_receipt_is_authenticated_mode_0600_and_single_use(
+    tmp_path: Path,
+) -> None:
+    key_file = _receipt_key_file(tmp_path)
+    receipt_file = tmp_path / "owner-receipt.json"
+    payload = _receipt_payload()
+    issued_at = datetime(2026, 8, 13, 1, 0, tzinfo=UTC)
+
+    written = write_confirmation_receipt(
+        receipt_file,
+        key_file,
+        key_version=1,
+        payload=payload,
+        issued_at=issued_at,
+        expires_at=issued_at + timedelta(minutes=15),
+        expected_uid=os.getuid(),
+    )
+
+    assert receipt_file.stat().st_mode & 0o777 == 0o600
+    assert written["key_version"] == 1
+    assert len(written["payload_hash"]) == 64
+    assert len(written["mac"]) == 64
+    assert "provider" not in receipt_file.read_text(encoding="utf-8").lower()
+    consumed = consume_confirmation_receipt(
+        receipt_file,
+        key_file,
+        expected_payload=payload,
+        now=issued_at + timedelta(minutes=1),
+        expected_uid=os.getuid(),
+    )
+    assert consumed["operation_id"] == payload["operation_id"]
+    assert not receipt_file.exists()
+    with pytest.raises(ValueError, match="confirmation receipt unavailable"):
+        consume_confirmation_receipt(
+            receipt_file,
+            key_file,
+            expected_payload=payload,
+            now=issued_at + timedelta(minutes=2),
+            expected_uid=os.getuid(),
+        )
+
+
+@pytest.mark.parametrize("failure", ["tamper", "expired", "parameters"])
+def test_confirmation_receipt_rejects_tamper_expiry_and_state_change(
+    tmp_path: Path, failure: str
+) -> None:
+    key_file = _receipt_key_file(tmp_path)
+    receipt_file = tmp_path / f"receipt-{failure}.json"
+    payload = _receipt_payload()
+    issued_at = datetime(2026, 8, 13, 1, 0, tzinfo=UTC)
+    write_confirmation_receipt(
+        receipt_file,
+        key_file,
+        key_version=1,
+        payload=payload,
+        issued_at=issued_at,
+        expires_at=issued_at + timedelta(minutes=15),
+        expected_uid=os.getuid(),
+    )
+    expected = dict(payload)
+    now = issued_at + timedelta(minutes=1)
+    if failure == "tamper":
+        receipt = json.loads(receipt_file.read_text(encoding="utf-8"))
+        receipt["payload"]["target_row_version"] = 99
+        receipt_file.write_text(json.dumps(receipt), encoding="utf-8")
+        receipt_file.chmod(0o600)
+    elif failure == "expired":
+        now = issued_at + timedelta(minutes=16)
+    else:
+        expected["directory_generation_digest"] = "c" * 64
+
+    with pytest.raises(ValueError, match="confirmation receipt invalid"):
+        consume_confirmation_receipt(
+            receipt_file,
+            key_file,
+            expected_payload=expected,
+            now=now,
+            expected_uid=os.getuid(),
+        )
+    assert receipt_file.exists()
 
 
 @pytest.mark.postgres
@@ -135,8 +273,9 @@ def test_offline_bind_and_replace_select_stable_mapping_and_keep_one_owner(
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "insert into platform_control.directory_generations "
-            "(generation_id, status, completed_at) values (%s, 'complete', now())",
-            (generation_id,),
+            "(generation_id, status, completed_at, content_sha256) "
+            "values (%s, 'complete', now(), %s)",
+            (generation_id, "d" * 64),
         )
         for index, (internal_id, protected) in enumerate(
             (
@@ -175,18 +314,19 @@ def test_offline_bind_and_replace_select_stable_mapping_and_keep_one_owner(
         provider_id=first_provider,
         subject_kind="employee",
         generation_id=generation_id,
-        reason="initial approved owner binding",
         os_operator="root",
+        approvers=("uid:1001", "uid:1002"),
+        backup_reference="BACKUP_2026_001",
+        incident_reference="INC_2026_001",
     )
     replaced = administrator.replace_owner(
         provider_id=second_provider,
         subject_kind="employee",
         generation_id=generation_id,
-        reason="approved owner departure incident",
         os_operator="root",
-        approvers=("alice", "bob"),
-        backup_confirmed=True,
-        confirmed=True,
+        approvers=("uid:1001", "uid:1002"),
+        backup_reference="BACKUP_2026_002",
+        incident_reference="INC_2026_002",
     )
 
     assert bound["internal_user_id"] == str(first_id)
@@ -233,8 +373,9 @@ def test_bind_refuses_target_outside_selected_complete_generation(
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "insert into platform_control.directory_generations "
-            "(generation_id, status, completed_at) values (%s, 'complete', now())",
-            (generation_id,),
+            "(generation_id, status, completed_at, content_sha256) "
+            "values (%s, 'complete', now(), %s)",
+            (generation_id, "e" * 64),
         )
 
     administrator = OfflineOwnerAdministrator(
@@ -250,6 +391,8 @@ def test_bind_refuses_target_outside_selected_complete_generation(
             provider_id=provider_id,
             subject_kind="employee",
             generation_id=generation_id,
-            reason="initial approved owner binding",
             os_operator="root",
+            approvers=("uid:1001", "uid:1002"),
+            backup_reference="BACKUP_2026_003",
+            incident_reference="INC_2026_003",
         )
