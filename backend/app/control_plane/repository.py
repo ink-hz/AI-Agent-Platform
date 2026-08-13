@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 import hashlib
+import hmac
 import secrets
 from typing import Any
 from uuid import UUID, uuid4
@@ -27,6 +28,10 @@ class IdentityCollisionError(ControlRepositoryError):
     pass
 
 
+class IdentityKeyPolicyError(ControlRepositoryError):
+    pass
+
+
 class LoginAttemptCollisionError(ControlRepositoryError):
     pass
 
@@ -43,6 +48,15 @@ def _token_hash(token: str) -> bytes:
 def _advisory_lock_key(value: bytes) -> int:
     unsigned = int.from_bytes(value[:8], "big", signed=False)
     return unsigned - (1 << 64) if unsigned >= (1 << 63) else unsigned
+
+
+def _identity_advisory_lock_key(version: int, lookup_hmac: bytes) -> int:
+    lock_identity = hashlib.sha256(
+        b"provider-identity-lock:v1:"
+        + version.to_bytes(8, "big", signed=False)
+        + lookup_hmac
+    ).digest()
+    return _advisory_lock_key(lock_identity)
 
 
 class ControlRepository:
@@ -97,15 +111,50 @@ class ControlRepository:
     def _lookup_candidates(
         self, protected: ProtectedProviderId
     ) -> tuple[tuple[int, bytes], ...]:
-        supplied = ((protected.lookup_key_version, protected.lookup_hmac),)
         try:
             provider_id = self.identity_codec.unseal(protected)
-        except IdentityCryptoError:
-            return supplied
-        derived = self.identity_codec.lookup_candidates(
-            protected.subject_kind, provider_id
+            derived = self.identity_codec.lookup_candidates(
+                protected.subject_kind, provider_id
+            )
+            if not any(
+                protected.lookup_key_version == version
+                and hmac.compare_digest(protected.lookup_hmac, lookup_hmac)
+                for version, lookup_hmac in derived
+            ):
+                raise IdentityCollisionError("provider identity collision")
+            return derived
+        except IdentityCollisionError:
+            raise
+        except (AttributeError, IdentityCryptoError, TypeError, ValueError):
+            raise IdentityCollisionError("provider identity collision") from None
+
+    @staticmethod
+    def _lock_identity_candidates(cursor, candidates) -> None:
+        for version, lookup_hmac in sorted(
+            candidates, key=lambda candidate: (candidate[0], candidate[1])
+        ):
+            cursor.execute(
+                "select pg_advisory_xact_lock(%s)",
+                (_identity_advisory_lock_key(version, lookup_hmac),),
+            )
+
+    def _ensure_identity_key_policy(self, cursor) -> None:
+        configured = tuple(self.identity_codec.hmac.transition_versions or ())
+        cursor.execute("select pg_advisory_xact_lock(%s)", (1229998928,))
+        cursor.execute(
+            "insert into platform_control.provider_identity_key_policies "
+            "(provider, lookup_transition_versions) values "
+            "('dingtalk', %s) on conflict (provider) do nothing",
+            (list(configured),),
         )
-        return tuple(dict.fromkeys(derived + supplied))
+        cursor.execute(
+            "select lookup_transition_versions from "
+            "platform_control.provider_identity_key_policies "
+            "where provider = 'dingtalk'"
+        )
+        row = cursor.fetchone()
+        if row is None or tuple(row["lookup_transition_versions"]) != configured:
+            raise IdentityKeyPolicyError("provider identity key policy mismatch")
 
     @staticmethod
     def _identity_rows(cursor, subject_kind, candidates, *, for_update):
@@ -156,6 +205,7 @@ class ControlRepository:
         candidates = self._lookup_candidates(protected)
         try:
             with self._connection() as connection, connection.cursor() as cursor:
+                self._ensure_identity_key_policy(cursor)
                 rows = self._identity_rows(
                     cursor,
                     protected.subject_kind,
@@ -174,10 +224,10 @@ class ControlRepository:
         if not isinstance(display_name, str) or not display_name.strip():
             raise ControlRepositoryError("display name invalid")
         candidates = self._lookup_candidates(protected)
-        lock_key = _advisory_lock_key(candidates[0][1])
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                cursor.execute("select pg_advisory_xact_lock(%s)", (lock_key,))
+                self._ensure_identity_key_policy(cursor)
+                self._lock_identity_candidates(cursor, candidates)
                 rows = self._identity_rows(
                     cursor,
                     protected.subject_kind,
@@ -248,9 +298,12 @@ class ControlRepository:
             ):
                 raise IdentityCollisionError("provider identity collision")
             with self._connection() as connection, connection.cursor() as cursor:
-                cursor.execute(
-                    "select pg_advisory_xact_lock(%s)",
-                    (_advisory_lock_key(rotated.lookup_hmac),),
+                self._ensure_identity_key_policy(cursor)
+                self._lock_identity_candidates(
+                    cursor,
+                    self.identity_codec.lookup_candidates(
+                        rotated.subject_kind, rotated_provider_id
+                    ),
                 )
                 cursor.execute(
                     "select provider_identity_id, internal_user_id, subject_kind, "
@@ -409,7 +462,7 @@ class ControlRepository:
         cursor,
         internal_user_id: UUID,
         idle_seconds: int,
-        absolute_seconds: int,
+        absolute_seconds: int | None,
         *,
         existing_absolute_expires_at: datetime | None = None,
     ) -> IssuedWebSession:
@@ -417,9 +470,8 @@ class ControlRepository:
         cookie_token, csrf_token = ControlRepository._new_session_tokens()
         cursor.execute(
             "with expiry as (select now() as database_now, "
-            "least(now() + %s * interval '1 second', "
-            "coalesce(%s::timestamptz, 'infinity'::timestamptz)) "
-            "as absolute_expires_at) "
+            "coalesce(%s::timestamptz, "
+            "now() + %s * interval '1 second') as absolute_expires_at) "
             "insert into platform_control.web_sessions "
             "(session_id, internal_user_id, token_hash, csrf_hash, "
             "idle_expires_at, absolute_expires_at) "
@@ -428,8 +480,8 @@ class ControlRepository:
             "absolute_expires_at), absolute_expires_at from expiry "
             "returning idle_expires_at, absolute_expires_at",
             (
-                absolute_seconds,
                 existing_absolute_expires_at,
+                absolute_seconds,
                 session_id,
                 internal_user_id,
                 _token_hash(cookie_token),
@@ -468,9 +520,13 @@ class ControlRepository:
         self,
         cookie_token: str,
         idle_seconds: int,
-        absolute_seconds: int,
     ) -> IssuedWebSession | None:
-        self._validate_session_lifetimes(idle_seconds, absolute_seconds)
+        if (
+            isinstance(idle_seconds, bool)
+            or not isinstance(idle_seconds, int)
+            or idle_seconds <= 0
+        ):
+            raise ControlRepositoryError("session lifetime invalid")
         token_hash = _token_hash(cookie_token)
         try:
             with self._connection() as connection, connection.cursor() as cursor:
@@ -493,7 +549,7 @@ class ControlRepository:
                     cursor,
                     row["internal_user_id"],
                     idle_seconds,
-                    absolute_seconds,
+                    None,
                     existing_absolute_expires_at=row["absolute_expires_at"],
                 )
         except psycopg.Error:

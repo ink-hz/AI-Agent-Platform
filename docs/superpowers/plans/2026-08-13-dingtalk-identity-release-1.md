@@ -222,7 +222,7 @@ class ProviderIdentityCodec:
 ```
 
 - [ ] **Step 1: Write failing crypto tests** for deterministic HMAC lookup, randomized AES-GCM ciphertext, authenticated subject-kind/version AAD, active-plus-previous lookup, malformed keyring rejection, redacted `repr`, and rotation that re-derives lookups from decrypted IDs without changing `internal_user_id`.
-- [ ] **Step 2: Write failing repository tests** for atomic create-or-resolve, collision rejection, no name-based lookup method, opaque Session token hashing, single-use login attempts, idle/absolute expiry, revocation, exactly-one-owner enforcement, and observation grants scoped by exact Agent ID.
+- [ ] **Step 2: Write failing repository tests** for atomic create-or-resolve, collision rejection, no name-based lookup method, opaque Session token hashing, single-use login attempts, idle/absolute expiry, revocation, at-most-one-owner enforcement (zero owners is permitted), and observation grants scoped by exact Agent ID.
 - [ ] **Step 3: Run `cd backend && .venv/bin/python -m pytest tests/test_identity_crypto.py tests/test_control_plane_repository.py -q` and verify RED**. Expected: imports of `ProviderIdentityCodec` and `ControlRepository` fail.
 - [ ] **Step 4: Implement AES-256-GCM and HMAC-SHA-256 keyrings** using `cryptography`, constant-time comparison, explicit `kid`, and generic errors that never include provider values or ciphertext.
 - [ ] **Step 5: Implement repository transactions with parameterized psycopg SQL**, database time for expiry checks, `SELECT ... FOR UPDATE` for attempt consumption/session rotation, and no connection to the existing `agent_platform` replica database.

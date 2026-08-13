@@ -22,18 +22,20 @@ def _write_keyring(
     purpose: str,
     active_version: int,
     keys: dict[int, bytes],
+    transition_versions: tuple[int, ...] | None = None,
 ) -> Path:
+    document = {
+        "purpose": purpose,
+        "active_version": active_version,
+        "keys": {
+            str(version): base64.b64encode(key).decode("ascii")
+            for version, key in keys.items()
+        },
+    }
+    if transition_versions is not None:
+        document["transition_versions"] = list(transition_versions)
     path.write_text(
-        json.dumps(
-            {
-                "purpose": purpose,
-                "active_version": active_version,
-                "keys": {
-                    str(version): base64.b64encode(key).decode("ascii")
-                    for version, key in keys.items()
-                },
-            }
-        ),
+        json.dumps(document),
         encoding="utf-8",
     )
     path.chmod(0o600)
@@ -46,6 +48,7 @@ def _keyring(
     purpose: str,
     active_version: int,
     keys: dict[int, bytes],
+    transition_versions: tuple[int, ...] | None = None,
 ) -> IdentityKeyring:
     return IdentityKeyring.from_file(
         _write_keyring(
@@ -53,6 +56,7 @@ def _keyring(
             purpose=purpose,
             active_version=active_version,
             keys=keys,
+            transition_versions=transition_versions,
         ),
         expected_purpose=purpose,
         expected_key_length=32,
@@ -76,6 +80,7 @@ def _codec(tmp_path: Path, *, active_version: int = 2) -> ProviderIdentityCodec:
             "provider-lookup-hmac",
             active_version,
             hmac_versions,
+            transition_versions=(1, 2),
         ),
     )
 
@@ -120,7 +125,9 @@ def test_subject_kind_and_version_are_authenticated_aad(tmp_path: Path) -> None:
         assert protected.ciphertext.hex() not in str(caught.value)
 
 
-def test_lookup_candidates_include_only_active_and_previous_versions(tmp_path: Path) -> None:
+def test_lookup_candidates_follow_the_explicit_active_previous_transition(
+    tmp_path: Path,
+) -> None:
     encryption = _keyring(
         tmp_path,
         "encryption.json",
@@ -133,26 +140,164 @@ def test_lookup_candidates_include_only_active_and_previous_versions(tmp_path: P
         "hmac.json",
         "provider-lookup-hmac",
         3,
-        {1: b"d" * 32, 2: b"e" * 32, 3: b"f" * 32},
+        {2: b"e" * 32, 3: b"f" * 32},
+        transition_versions=(2, 3),
     )
     codec = ProviderIdentityCodec(encryption=encryption, hmac_keyring=lookup)
 
     candidates = codec.lookup_candidates("employee", "synthetic-provider-id")
 
-    assert tuple(version for version, _ in candidates) == (3, 2)
+    assert tuple(version for version, _ in candidates) == (2, 3)
     assert candidates[0][1] != candidates[1][1]
     assert codec.matches_lookup(
         subject_kind="employee",
         provider_id="synthetic-provider-id",
-        lookup_hmac=candidates[1][1],
+        lookup_hmac=candidates[0][1],
         lookup_key_version=2,
     )
     assert not codec.matches_lookup(
         subject_kind="employee",
         provider_id="another-synthetic-id",
-        lookup_hmac=candidates[1][1],
+        lookup_hmac=candidates[0][1],
         lookup_key_version=2,
     )
+
+
+@pytest.mark.parametrize(
+    ("active_version", "keys", "transition_versions"),
+    [
+        (2, {1: b"a" * 32, 2: b"b" * 32}, None),
+        (2, {1: b"a" * 32, 2: b"b" * 32}, (1,)),
+        (2, {1: b"a" * 32, 2: b"b" * 32}, (1, 1)),
+        (2, {1: b"a" * 32, 2: b"b" * 32}, (2, 1)),
+        (3, {1: b"a" * 32, 3: b"c" * 32}, (1, 3)),
+        (2, {1: b"a" * 32, 2: b"b" * 32, 3: b"c" * 32}, (2, 3)),
+        (2, {1: b"a" * 32, 2: b"b" * 32, 3: b"c" * 32}, (1, 2)),
+        (
+            3,
+            {1: b"a" * 32, 2: b"b" * 32, 3: b"c" * 32, 4: b"d" * 32},
+            (1, 2, 3, 4),
+        ),
+    ],
+)
+def test_provider_codec_rejects_unsafe_hmac_transition_layouts(
+    tmp_path: Path,
+    active_version: int,
+    keys: dict[int, bytes],
+    transition_versions: tuple[int, ...] | None,
+) -> None:
+    encryption = _keyring(
+        tmp_path,
+        "encryption.json",
+        "provider-encryption",
+        active_version,
+        keys,
+    )
+    lookup = _keyring(
+        tmp_path,
+        "hmac.json",
+        "provider-lookup-hmac",
+        active_version,
+        {version: bytes([key[0] + 10]) * 32 for version, key in keys.items()},
+        transition_versions=transition_versions,
+    )
+
+    with pytest.raises(IdentityCryptoError, match="identity transition invalid"):
+        ProviderIdentityCodec(encryption, lookup)
+
+
+def test_adjacent_rollout_nodes_derive_the_same_transition_candidates(
+    tmp_path: Path,
+) -> None:
+    encryption_keys = {1: b"e" * 32, 2: b"E" * 32, 3: b"f" * 32}
+    lookup_keys = {1: b"h" * 32, 2: b"H" * 32, 3: b"i" * 32}
+
+    old_codec = ProviderIdentityCodec(
+        _keyring(
+            tmp_path,
+            "old-encryption.json",
+            "provider-encryption",
+            2,
+            encryption_keys,
+        ),
+        _keyring(
+            tmp_path,
+            "old-hmac.json",
+            "provider-lookup-hmac",
+            2,
+            lookup_keys,
+            transition_versions=(1, 2, 3),
+        ),
+    )
+    new_codec = ProviderIdentityCodec(
+        _keyring(
+            tmp_path,
+            "new-encryption.json",
+            "provider-encryption",
+            3,
+            encryption_keys,
+        ),
+        _keyring(
+            tmp_path,
+            "new-hmac.json",
+            "provider-lookup-hmac",
+            3,
+            lookup_keys,
+            transition_versions=(1, 2, 3),
+        ),
+    )
+
+    assert old_codec.lookup_candidates(
+        "employee", "synthetic-provider-id"
+    ) == new_codec.lookup_candidates("employee", "synthetic-provider-id")
+
+
+def test_provider_codec_rejects_any_encryption_hmac_key_overlap(
+    tmp_path: Path,
+) -> None:
+    shared_key = b"shared-key-material".ljust(32, b"!")
+    encryption = _keyring(
+        tmp_path,
+        "encryption.json",
+        "provider-encryption",
+        2,
+        {1: shared_key, 2: b"E" * 32},
+    )
+    lookup = _keyring(
+        tmp_path,
+        "hmac.json",
+        "provider-lookup-hmac",
+        2,
+        {1: b"h" * 32, 2: shared_key},
+        transition_versions=(1, 2),
+    )
+
+    with pytest.raises(IdentityCryptoError, match="identity key separation invalid"):
+        ProviderIdentityCodec(encryption, lookup)
+
+
+def test_provider_codec_rejects_transition_metadata_on_encryption_keyring(
+    tmp_path: Path,
+) -> None:
+    encryption = _keyring(
+        tmp_path,
+        "encryption.json",
+        "provider-encryption",
+        2,
+        {1: b"e" * 32, 2: b"E" * 32},
+        transition_versions=(1, 2),
+    )
+    lookup = _keyring(
+        tmp_path,
+        "hmac.json",
+        "provider-lookup-hmac",
+        2,
+        {1: b"h" * 32, 2: b"H" * 32},
+        transition_versions=(1, 2),
+    )
+
+    with pytest.raises(IdentityCryptoError, match="identity transition invalid"):
+        ProviderIdentityCodec(encryption, lookup)
 
 
 @pytest.mark.parametrize(
@@ -253,6 +398,7 @@ def test_rotation_decrypts_old_value_and_rederives_both_active_versions(tmp_path
         "provider-lookup-hmac",
         1,
         {1: b"h" * 32},
+        transition_versions=(1,),
     )
     old_codec = ProviderIdentityCodec(old_encryption, old_lookup)
     old = old_codec.seal("employee", "synthetic-provider-id")

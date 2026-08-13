@@ -26,6 +26,7 @@ class IdentityKeyring:
     active_version: int
     purpose: str
     _keys: Mapping[int, bytes] = field(repr=False)
+    transition_versions: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "_keys", MappingProxyType(dict(self._keys)))
@@ -35,6 +36,7 @@ class IdentityKeyring:
         return (
             f"IdentityKeyring(active_version={self.active_version!r}, "
             f"purpose={self.purpose!r}, versions={versions!r}, "
+            f"transition_versions={self.transition_versions!r}, "
             "keys=<redacted>)"
         )
 
@@ -78,16 +80,21 @@ class IdentityKeyring:
                 raise ValueError
 
             document = json.loads(payload.decode("utf-8"))
-            if not isinstance(document, dict) or set(document) != {
-                "purpose",
-                "active_version",
-                "keys",
-            }:
+            if not isinstance(document, dict) or set(document) not in (
+                {"purpose", "active_version", "keys"},
+                {
+                    "purpose",
+                    "active_version",
+                    "keys",
+                    "transition_versions",
+                },
+            ):
                 raise ValueError
             if document["purpose"] != expected_purpose:
                 raise ValueError
             active_version = document["active_version"]
             encoded_keys = document["keys"]
+            encoded_transition_versions = document.get("transition_versions")
             if (
                 isinstance(active_version, bool)
                 or not isinstance(active_version, int)
@@ -96,6 +103,16 @@ class IdentityKeyring:
                 or not encoded_keys
             ):
                 raise ValueError
+            transition_versions: tuple[int, ...] | None = None
+            if encoded_transition_versions is not None:
+                if not isinstance(encoded_transition_versions, list) or any(
+                    isinstance(version, bool)
+                    or not isinstance(version, int)
+                    or version <= 0
+                    for version in encoded_transition_versions
+                ):
+                    raise ValueError
+                transition_versions = tuple(encoded_transition_versions)
 
             keys: dict[int, bytes] = {}
             for encoded_version, encoded_key in encoded_keys.items():
@@ -118,6 +135,7 @@ class IdentityKeyring:
                 active_version=active_version,
                 purpose=expected_purpose,
                 _keys=keys,
+                transition_versions=transition_versions,
             )
         except IdentityCryptoError:
             raise
@@ -139,14 +157,12 @@ class IdentityKeyring:
     def key_lengths(self) -> frozenset[int]:
         return frozenset(len(key) for key in self._keys.values())
 
-    @property
-    def active_and_previous_versions(self) -> tuple[int, ...]:
-        previous_versions = [
-            version for version in self._keys if version < self.active_version
-        ]
-        if previous_versions:
-            return (self.active_version, max(previous_versions))
-        return (self.active_version,)
+    def overlaps(self, other: IdentityKeyring) -> bool:
+        return any(
+            hmac.compare_digest(first, second)
+            for first in self._keys.values()
+            for second in other._keys.values()
+        )
 
     def key_for_version(self, version: int) -> bytes:
         try:
@@ -203,6 +219,14 @@ def _normalize_subject_kind(subject_kind: str) -> str:
 
 
 class ProviderIdentityCodec:
+    """Protect provider IDs under one deployment-wide HMAC transition window.
+
+    During an N to N+1 rollout, every participant must use the same ordered
+    contiguous transition versions: (N-1, N, N+1), omitting N-1 when absent.
+    This lets old and new nodes derive, query, and lock the identical lookup
+    candidates while retaining each active version's previous lookup.
+    """
+
     def __init__(
         self,
         encryption: IdentityKeyring,
@@ -214,6 +238,39 @@ class ProviderIdentityCodec:
             raise IdentityCryptoError("identity keyring purpose invalid")
         if encryption.key_lengths != {32} or hmac_keyring.key_lengths != {32}:
             raise IdentityCryptoError("identity key length invalid")
+        if encryption.transition_versions is not None:
+            raise IdentityCryptoError("identity transition invalid")
+        transition_versions = hmac_keyring.transition_versions
+        previous_versions = [
+            version
+            for version in hmac_keyring._keys
+            if version < hmac_keyring.active_version
+        ]
+        previous_version = max(previous_versions, default=None)
+        if (
+            transition_versions is None
+            or len(transition_versions) not in {1, 2, 3}
+            or tuple(sorted(set(transition_versions))) != transition_versions
+            or tuple(sorted(hmac_keyring._keys)) != transition_versions
+            or hmac_keyring.active_version not in transition_versions
+            or (
+                previous_version is not None
+                and previous_version not in transition_versions
+            )
+            or any(
+                version not in hmac_keyring._keys
+                for version in transition_versions
+            )
+            or any(
+                following != preceding + 1
+                for preceding, following in zip(
+                    transition_versions, transition_versions[1:]
+                )
+            )
+        ):
+            raise IdentityCryptoError("identity transition invalid")
+        if encryption.overlaps(hmac_keyring):
+            raise IdentityCryptoError("identity key separation invalid")
         self.encryption = encryption
         self.hmac = hmac_keyring
 
@@ -308,7 +365,7 @@ class ProviderIdentityCodec:
         normalized = normalize_provider_id(provider_id)
         return tuple(
             (version, self._lookup(kind, normalized, version))
-            for version in self.hmac.active_and_previous_versions
+            for version in self.hmac.transition_versions or ()
         )
 
     def matches_lookup(

@@ -15,6 +15,7 @@ BACKEND = Path(__file__).parents[1]
 MIGRATIONS = BACKEND / "control_migrations"
 MIGRATION = MIGRATIONS / "001_identity_security.sql"
 HARDENING_MIGRATION = MIGRATIONS / "002_isolate_environment_roles.sql"
+IDENTITY_KEY_POLICY_MIGRATION = MIGRATIONS / "003_identity_key_policy.sql"
 PRODUCTION_ROLES = (
     "platform_control_migrator",
     "platform_control_app",
@@ -62,6 +63,7 @@ TABLES = {
     "sync_runs",
     "auth_rate_buckets",
     "audit_events",
+    "provider_identity_key_policies",
 }
 
 
@@ -69,6 +71,9 @@ def test_first_control_migration_exists() -> None:
     assert MIGRATION.is_file(), f"missing migration: {MIGRATION}"
     assert HARDENING_MIGRATION.is_file(), (
         f"missing security migration: {HARDENING_MIGRATION}"
+    )
+    assert IDENTITY_KEY_POLICY_MIGRATION.is_file(), (
+        f"missing identity key policy migration: {IDENTITY_KEY_POLICY_MIGRATION}"
     )
 
 
@@ -243,7 +248,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "select version, length(sha256) "
                     "from platform_control.schema_migrations order by version"
                 )
-                assert cursor.fetchall() == [(1, 64), (2, 64)]
+                assert cursor.fetchall() == [(1, 64), (2, 64), (3, 64)]
 
     changed = tmp_path / "migrations"
     shutil.copytree(MIGRATIONS, changed)
@@ -457,6 +462,112 @@ def test_runtime_roles_cannot_cross_grant_boundaries(control_database):
             environment["urls"][roles[4]],
             "select * from platform_control.audit_events",
         )
+
+
+@pytest.mark.postgres
+def test_identity_key_policy_is_environment_owned_and_maintenance_only_mutable(
+    control_database,
+) -> None:
+    for environment in control_database["environments"].values():
+        roles = environment["roles"]
+        app_url = environment["urls"][roles[1]]
+        maintenance_url = environment["urls"][roles[5]]
+        opposite_name = (
+            "preview"
+            if environment["database"] == "agent_platform_control"
+            else "production"
+        )
+        opposite_roles = control_database["environments"][opposite_name]["roles"]
+        with psycopg.connect(environment["admin"]) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "select tableowner from pg_tables where schemaname = "
+                    "'platform_control' and tablename = "
+                    "'provider_identity_key_policies'"
+                )
+                assert cursor.fetchone() == (environment["owner"],)
+                cursor.execute(
+                    "select has_table_privilege(%s, "
+                    "'platform_control.provider_identity_key_policies', 'select'), "
+                    "has_table_privilege(%s, "
+                    "'platform_control.provider_identity_key_policies', 'insert'), "
+                    "has_table_privilege(%s, "
+                    "'platform_control.provider_identity_key_policies', 'update'), "
+                    "has_table_privilege(%s, "
+                    "'platform_control.provider_identity_key_policies', 'delete'), "
+                    "has_function_privilege(%s, "
+                    "'platform_control.set_provider_identity_key_policy(text,integer[])', "
+                    "'execute'), has_function_privilege(%s, "
+                    "'platform_control.set_provider_identity_key_policy(text,integer[])', "
+                    "'execute'), has_function_privilege('public', "
+                    "'platform_control.set_provider_identity_key_policy(text,integer[])', "
+                    "'execute')",
+                    (roles[1], roles[1], roles[1], roles[1], roles[5], roles[1]),
+                )
+                assert cursor.fetchone() == (
+                    True, True, False, False, True, False, False
+                )
+                cursor.execute(
+                    "select role_name, has_table_privilege(role_name, "
+                    "'platform_control.provider_identity_key_policies', 'select') "
+                    "from unnest(%s::text[]) role_name",
+                    (list(opposite_roles),),
+                )
+                assert cursor.fetchall() == [
+                    (role, False) for role in opposite_roles
+                ]
+
+        with psycopg.connect(app_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "insert into platform_control.provider_identity_key_policies "
+                    "(provider, lookup_transition_versions) values "
+                    "('dingtalk', array[1,2]) on conflict do nothing"
+                )
+                cursor.execute(
+                    "select lookup_transition_versions from "
+                    "platform_control.provider_identity_key_policies "
+                    "where provider = 'dingtalk'"
+                )
+                assert cursor.fetchone() == ([1, 2],)
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    cursor.execute(
+                        "update platform_control.provider_identity_key_policies "
+                        "set lookup_transition_versions = array[2,3] "
+                        "where provider = 'dingtalk'"
+                    )
+            connection.rollback()
+
+        with psycopg.connect(maintenance_url) as connection:
+            with connection.cursor() as cursor:
+                for invalid in ([0], [2, 1], [1, 1], [1, 3], [1, 2, 3, 4]):
+                    with pytest.raises(psycopg.errors.CheckViolation):
+                        cursor.execute(
+                            "select platform_control.set_provider_identity_key_policy("
+                            "'dingtalk', %s)",
+                            (invalid,),
+                        )
+                    connection.rollback()
+                cursor.execute(
+                    "select platform_control.set_provider_identity_key_policy("
+                    "'dingtalk', array[2,3])"
+                )
+
+        with psycopg.connect(environment["admin"]) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "select lookup_transition_versions, updated_at >= created_at "
+                    "from platform_control.provider_identity_key_policies "
+                    "where provider = 'dingtalk'"
+                )
+                assert cursor.fetchone() == ([2, 3], True)
+
+        for denied_role in roles[:5]:
+            _assert_denied(
+                environment["urls"][denied_role],
+                "select platform_control.set_provider_identity_key_policy("
+                "'dingtalk', array[1,2])",
+            )
 
 
 @pytest.mark.postgres
