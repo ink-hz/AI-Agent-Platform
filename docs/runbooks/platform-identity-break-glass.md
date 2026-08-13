@@ -125,8 +125,21 @@ inactive/departed owner and requires reviewed replacement.
    and that the role row stores the requested event ID. Never update the
    requested row.
 3. If outcome append failed after the role transaction, treat the response as
-   `503`/indeterminate. Reconcile using the operation UUID in the consumed
-   receipt and mutation ledger before issuing another receipt.
+   `503`/indeterminate. Reconcile using the immutable consumed receipt journal;
+   its name is the original receipt plus `.consumed-<operation UUID>`:
+
+   ```bash
+   .venv/bin/python -m app.control_plane.admin_cli reconcile-owner \
+     --provider-id-file /run/secrets/platform-replacement-provider-id \
+     --receipt-journal /run/platform-control/replace-owner-receipt.json.consumed-00000000-0000-0000-0000-000000000000 \
+     --receipt-key-file /run/secrets/platform-owner-receipt-keyring
+   ```
+
+   The command verifies the original signed pre-mutation payload, looks up only
+   that exact operation/audit identity in the immutable mutation ledger, and
+   idempotently appends the missing completed outcome. If the transaction did
+   not commit, it appends a failed outcome and reports `not_committed`; it never
+   invokes the owner mutation or creates a second operation.
    Do not undo a proven role mutation merely because the outcome was initially
    unavailable.
 4. Require the replacement owner to authenticate again and verify the previous

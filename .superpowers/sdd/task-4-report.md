@@ -376,3 +376,41 @@ presented again. It carries the same operation UUID and exact state/payload, so
 the database mutation ledger makes such presentation idempotent rather than a
 second state transition. Durable cross-host receipt redemption state is outside
 this phase-one local receipt design and remains a runbook/governance concern.
+
+## Second review fix
+
+The final reviewer reported three Important findings and one Minor hardening
+gap. The first real-PostgreSQL RED run was `2 failed`: the 257th scope produced
+an indeterminate outcome because the failed/completed contracts could not
+represent the existing list, and a legacy 257-scope viewer revocation committed
+but could not persist its completed event. Offline reconciliation and legacy
+projection initially failed at collection because their supported APIs did not
+exist. Receipt/key symlink tests also established the missing descriptor-level
+protection.
+
+Additive migration `007_reconcilable_audit_boundary.sql` now enforces at most
+256 active scopes before insert/update. Existing oversized legacy viewers can
+still be revoked: their ledger/outcome uses canonical scope count plus SHA-256
+summary instead of an impossible array. Same-request retry uses that immutable
+snapshot. The offline `reconcile-owner` command verifies the consumed signed
+pre-state journal and queries only the exact ledger identity; it appends a
+completed or failed outcome without calling the mutation function. Receipt and
+key files use no-follow descriptors, `fstat` owner/mode checks, inode/path
+identity checks, and a non-group/world-writable owner directory.
+
+Governance projection now marks strict rows `current`, projects only the 005
+metadata allowlist as `legacy_005`, and emits visible empty-metadata
+`unsupported_redacted` records for malformed/unsupported rows rather than
+silently dropping them. No arbitrary legacy metadata is exposed.
+
+The review-fix checkpoint reached `10 passed, 1 warning in 2.56s`; the complete
+Task 4/control suite then reached `130 passed, 1 warning in 6.32s`. Migrations
+001–006 are byte-immutable, including 006 SHA-256
+`7d1886ee0d162ee7303020369a394227b5f6aa958986633e1e763d721b0911a8`.
+
+Final self-review added a real concurrent PostgreSQL regression: without a
+per-viewer lock, two simultaneous grants at 255 both committed. It failed with
+two `committed` outcomes, then passed after the additive trigger acquired a
+per-viewer transaction advisory lock. The final Task 4/control suite reached
+`131 passed, 1 warning in 6.35s`; final fresh backend verification reached `823
+passed, 1 skipped, 1 warning in 14.99s`.

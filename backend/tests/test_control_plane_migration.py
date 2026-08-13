@@ -25,6 +25,9 @@ AUDITED_ROLE_ADMINISTRATION_MIGRATION = (
 AUDITED_MUTATION_BOUNDARY_MIGRATION = (
     MIGRATIONS / "006_audited_mutation_boundary.sql"
 )
+RECONCILABLE_AUDIT_BOUNDARY_MIGRATION = (
+    MIGRATIONS / "007_reconcilable_audit_boundary.sql"
+)
 PRODUCTION_ROLES = (
     "platform_control_migrator",
     "platform_control_app",
@@ -82,6 +85,7 @@ IMMUTABLE_MIGRATION_SHA256 = {
     "003_identity_key_policy.sql": "4bef30a941e95f0e7508b5ad07c27fd1cf2673effad52738aac8b1fcf6c217f4",
     "004_reject_null_identity_key_versions.sql": "e12c96fc6e6c7f1e563834f8b9ad1f7a6595cd3525043d59afc5bc204baa7ef6",
     "005_audited_role_administration.sql": "836517d461b349e635a0183d2fbb7c88698b1bacfaba609360947e33599b2177",
+    "006_audited_mutation_boundary.sql": "7d1886ee0d162ee7303020369a394227b5f6aa958986633e1e763d721b0911a8",
 }
 
 
@@ -105,14 +109,18 @@ def test_first_control_migration_exists() -> None:
         "missing audited mutation boundary migration: "
         f"{AUDITED_MUTATION_BOUNDARY_MIGRATION}"
     )
+    assert RECONCILABLE_AUDIT_BOUNDARY_MIGRATION.is_file(), (
+        "missing reconcilable audit boundary migration: "
+        f"{RECONCILABLE_AUDIT_BOUNDARY_MIGRATION}"
+    )
 
 
-def test_control_migrations_001_through_005_are_byte_immutable() -> None:
+def test_control_migrations_001_through_006_are_byte_immutable() -> None:
     import hashlib
 
     assert {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in sorted(MIGRATIONS.glob("00[1-5]_*.sql"))
+        for path in sorted(MIGRATIONS.glob("00[1-6]_*.sql"))
     } == IMMUTABLE_MIGRATION_SHA256
 
 
@@ -288,7 +296,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 7)
+                        (version, 64) for version in range(1, 8)
                 ]
 
     changed = tmp_path / "migrations"

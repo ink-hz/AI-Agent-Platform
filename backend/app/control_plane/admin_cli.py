@@ -72,28 +72,77 @@ def _canonical_json(value: Any) -> bytes:
     ).encode("ascii")
 
 
-def _private_file(path: Path, *, expected_uid: int) -> os.stat_result:
+def _safe_parent(path: Path, *, expected_uid: int, error: str) -> None:
     try:
-        metadata = path.lstat()
+        metadata = path.parent.stat()
     except OSError:
-        raise ValueError("confirmation receipt unavailable") from None
+        raise ValueError(error) from None
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != expected_uid
+        or stat.S_IMODE(metadata.st_mode) & 0o022
+    ):
+        raise ValueError(error)
+
+
+def _open_private_file(
+    path: Path, *, expected_uid: int, error: str
+) -> tuple[int, os.stat_result]:
+    _safe_parent(path, expected_uid=expected_uid, error=error)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+        metadata = os.fstat(descriptor)
+        path_metadata = path.lstat()
+    except OSError:
+        try:
+            os.close(descriptor)
+        except (OSError, UnboundLocalError):
+            pass
+        raise ValueError(error) from None
     if (
         not stat.S_ISREG(metadata.st_mode)
         or stat.S_IMODE(metadata.st_mode) != 0o600
         or metadata.st_uid != expected_uid
+        or (metadata.st_dev, metadata.st_ino)
+        != (path_metadata.st_dev, path_metadata.st_ino)
     ):
-        raise ValueError("confirmation receipt invalid")
-    return metadata
+        os.close(descriptor)
+        raise ValueError(error)
+    return descriptor, metadata
+
+
+def _read_private_json(
+    path: Path, *, expected_uid: int, error: str
+) -> tuple[dict[str, object], int, os.stat_result]:
+    descriptor, metadata = _open_private_file(
+        path, expected_uid=expected_uid, error=error
+    )
+    try:
+        with os.fdopen(os.dup(descriptor), "r", encoding="utf-8") as stream:
+            document = json.load(stream)
+        if not isinstance(document, dict):
+            raise ValueError(error)
+        return document, descriptor, metadata
+    except (OSError, TypeError, json.JSONDecodeError):
+        os.close(descriptor)
+        raise ValueError(error) from None
 
 
 def _receipt_key(path: Path, key_version: int, *, expected_uid: int) -> bytes:
-    _private_file(path, expected_uid=expected_uid)
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
+        document, descriptor, _ = _read_private_json(
+            path,
+            expected_uid=expected_uid,
+            error="confirmation receipt key invalid",
+        )
         encoded = document["keys"][str(key_version)]
         key = base64.b64decode(encoded, validate=True)
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
         raise ValueError("confirmation receipt key invalid") from None
+    finally:
+        if "descriptor" in locals():
+            os.close(descriptor)
     if document.get("purpose") != "offline-owner-receipt-hmac" or len(key) != 32:
         raise ValueError("confirmation receipt key invalid")
     return key
@@ -183,15 +232,28 @@ def write_confirmation_receipt(
         "mac": hmac.new(key, _canonical_json(authenticated), hashlib.sha256).hexdigest(),
     }
     path = Path(receipt_file)
+    _safe_parent(
+        path, expected_uid=expected_uid, error="confirmation receipt unavailable"
+    )
     try:
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        descriptor = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             json.dump(document, stream, sort_keys=True, separators=(",", ":"))
             stream.flush()
             os.fsync(stream.fileno())
     except OSError:
         raise ValueError("confirmation receipt unavailable") from None
-    _private_file(path, expected_uid=expected_uid)
+    descriptor, _ = _open_private_file(
+        path,
+        expected_uid=expected_uid,
+        error="confirmation receipt unavailable",
+    )
+    os.close(descriptor)
     return document
 
 
@@ -204,13 +266,17 @@ def consume_confirmation_receipt(
     expected_uid: int = 0,
 ) -> dict[str, object]:
     path = Path(receipt_file)
-    _private_file(path, expected_uid=expected_uid)
     try:
-        with path.open("r", encoding="utf-8") as stream:
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-            if not path.exists():
+        document, descriptor, metadata = _read_private_json(
+            path,
+            expected_uid=expected_uid,
+            error="confirmation receipt unavailable",
+        )
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            current = path.lstat()
+            if (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino):
                 raise ValueError("confirmation receipt unavailable")
-            document = json.load(stream)
             key_version = document["key_version"]
             key = _receipt_key(Path(key_file), key_version, expected_uid=expected_uid)
             authenticated = {
@@ -249,10 +315,55 @@ def consume_confirmation_receipt(
                 raise ValueError("confirmation receipt unavailable")
             os.rename(path, consumed)
             return selected
+        finally:
+            os.close(descriptor)
     except ValueError:
         raise
     except (OSError, KeyError, TypeError, json.JSONDecodeError):
         raise ValueError("confirmation receipt invalid") from None
+
+
+def read_confirmation_journal(
+    journal_file: str | Path,
+    key_file: str | Path,
+    *,
+    expected_uid: int = 0,
+) -> dict[str, object]:
+    path = Path(journal_file)
+    try:
+        document, descriptor, _ = _read_private_json(
+            path,
+            expected_uid=expected_uid,
+            error="confirmation journal unavailable",
+        )
+        key = _receipt_key(
+            Path(key_file), document["key_version"], expected_uid=expected_uid
+        )
+        authenticated = {
+            key_name: document[key_name]
+            for key_name in (
+                "receipt_version", "key_version", "payload_hash", "payload",
+                "issued_at", "expires_at",
+            )
+        }
+        selected = _validated_receipt_payload(dict(document["payload"]))
+        if (
+            document["receipt_version"] != 1
+            or not hmac.compare_digest(
+                document["mac"],
+                hmac.new(key, _canonical_json(authenticated), hashlib.sha256).hexdigest(),
+            )
+            or document["payload_hash"]
+            != hashlib.sha256(_canonical_json(selected)).hexdigest()
+            or path.name.rsplit(".consumed-", 1)[-1] != selected["operation_id"]
+        ):
+            raise ValueError("confirmation journal invalid")
+        return selected
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        raise ValueError("confirmation journal invalid") from None
+    finally:
+        if "descriptor" in locals():
+            os.close(descriptor)
 
 
 @dataclass(frozen=True)
@@ -439,41 +550,7 @@ class OfflineOwnerAdministrator:
             subject_kind=subject_kind,
             generation_id=generation_id,
         )
-        event_stem = "owner_binding" if operation == "bind" else "owner_replacement"
-        metadata: dict[str, Any] = {
-            "operation_id": str(correlation_id),
-            "directory_generation_id": str(generation_id),
-            "directory_generation_digest": selected["directory_generation_digest"],
-            "protected_target_lookup_hash": selected[
-                "protected_target_lookup_hash"
-            ],
-            "protected_target_lookup_version": selected[
-                "protected_target_lookup_version"
-            ],
-            "os_operator": selected["os_operator"],
-            "approver_a": selected["approvers"][0],
-            "approver_b": selected["approvers"][1],
-            "backup_reference": selected["backup_reference"],
-            "incident_reference": selected["incident_reference"],
-            "expected_owner_row_version": selected["current_owner_row_version"],
-            "expected_target_row_version": selected["target_row_version"],
-            "result": "requested",
-        }
-        if operation == "replace":
-            metadata["previous_owner_internal_user_id"] = selected[
-                "current_owner_internal_user_id"
-            ]
-        requested = AuditCommand(
-            event_type=f"{event_stem}_requested",
-            actor_internal_user_id=target,
-            target_type="internal_user",
-            target_id=str(target),
-            request_id=correlation_id,
-            reason=(
-                "initial_owner_binding" if operation == "bind" else "owner_departure"
-            ),
-            metadata=metadata,
-        )
+        requested = self._owner_request(selected, target)
 
         def mutate(requested_event_id: UUID) -> AppliedMutation[dict[str, str]]:
             try:
@@ -530,6 +607,106 @@ class OfflineOwnerAdministrator:
         return SensitiveMutationCoordinator(self.audit_writer).execute(
             requested=requested, mutate=mutate
         )
+
+    @staticmethod
+    def _owner_request(
+        selected: dict[str, object], target: UUID
+    ) -> AuditCommand:
+        operation = str(selected["action"])
+        generation_id = UUID(str(selected["generation_id"]))
+        correlation_id = UUID(str(selected["operation_id"]))
+        event_stem = "owner_binding" if operation == "bind" else "owner_replacement"
+        metadata: dict[str, Any] = {
+            "operation_id": str(correlation_id),
+            "directory_generation_id": str(generation_id),
+            "directory_generation_digest": selected["directory_generation_digest"],
+            "protected_target_lookup_hash": selected[
+                "protected_target_lookup_hash"
+            ],
+            "protected_target_lookup_version": selected[
+                "protected_target_lookup_version"
+            ],
+            "os_operator": selected["os_operator"],
+            "approver_a": selected["approvers"][0],
+            "approver_b": selected["approvers"][1],
+            "backup_reference": selected["backup_reference"],
+            "incident_reference": selected["incident_reference"],
+            "expected_owner_row_version": selected["current_owner_row_version"],
+            "expected_target_row_version": selected["target_row_version"],
+            "result": "requested",
+        }
+        if operation == "replace":
+            metadata["previous_owner_internal_user_id"] = selected[
+                "current_owner_internal_user_id"
+            ]
+        return AuditCommand(
+            event_type=f"{event_stem}_requested",
+            actor_internal_user_id=target,
+            target_type="internal_user",
+            target_id=str(target),
+            request_id=correlation_id,
+            reason=(
+                "initial_owner_binding" if operation == "bind" else "owner_departure"
+            ),
+            metadata=metadata,
+        )
+
+    def reconcile_owner_change(
+        self,
+        *,
+        payload: dict[str, object],
+        provider_id: str,
+        subject_kind: str,
+    ) -> dict[str, str]:
+        selected = _validated_receipt_payload(dict(payload))
+        target = self.resolve_target(
+            provider_id=provider_id,
+            subject_kind=subject_kind,
+            generation_id=UUID(str(selected["generation_id"])),
+        )
+        requested = self._owner_request(selected, target)
+        requested_event_id = self.audit_writer.append(requested)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select platform_control.reconcile_platform_owner_v2("
+                    "%s,%s,%s,%s,%s,%s,%s,%s) as result",
+                    (
+                        selected["operation_id"], selected["action"], target,
+                        selected["generation_id"],
+                        selected["current_owner_internal_user_id"],
+                        selected["current_owner_row_version"],
+                        selected["target_row_version"], requested_event_id,
+                    ),
+                ).fetchone()
+        except psycopg.Error as error:
+            raise self._safe_database_error(error) from None
+        applied = row["result"] if row else None
+        if applied is None:
+            self.audit_writer.append_outcome(
+                requested, requested_event_id, error_code="control_unavailable"
+            )
+            return {
+                "status": "not_committed",
+                "operation": str(selected["action"]),
+                "request_id": str(selected["operation_id"]),
+            }
+        actual = dict(applied)
+        if selected["action"] == "bind":
+            for key in (
+                "previous_owner_internal_user_id",
+                "previous_owner_role",
+                "previous_owner_row_version",
+            ):
+                actual.pop(key, None)
+        self.audit_writer.append_outcome(
+            requested, requested_event_id, actual=actual
+        )
+        return {
+            "status": "completed",
+            "operation": str(selected["action"]),
+            "request_id": str(selected["operation_id"]),
+        }
 
     def bind_owner(
         self,
@@ -638,6 +815,12 @@ def build_parser() -> argparse.ArgumentParser:
     replace = subparsers.add_parser("replace-owner")
     _common_owner_arguments(replace)
 
+    reconcile = subparsers.add_parser("reconcile-owner")
+    reconcile.add_argument("--provider-id-file", required=True)
+    reconcile.add_argument("--subject-kind", default="employee")
+    reconcile.add_argument("--receipt-journal", required=True)
+    reconcile.add_argument("--receipt-key-file", required=True)
+
     subparsers.add_parser("show-directory-generation")
     return parser
 
@@ -721,6 +904,18 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("offline owner administration requires root")
 
     provider_id = read_secret_file(namespace.provider_id_file)
+    if namespace.command == "reconcile-owner":
+        payload = read_confirmation_journal(
+            namespace.receipt_journal,
+            namespace.receipt_key_file,
+            expected_uid=0,
+        )
+        print(render_result(administrator.reconcile_owner_change(
+            payload=payload,
+            provider_id=provider_id,
+            subject_kind=namespace.subject_kind,
+        )))
+        return 0
     action = "bind" if namespace.command == "bind-owner" else "replace"
     receipt_path = Path(namespace.receipt_file)
     operation_id = None
@@ -728,13 +923,13 @@ def main(argv: list[str] | None = None) -> int:
         if Path(namespace.confirm) != receipt_path:
             raise ValueError("confirmation receipt invalid")
         try:
-            operation_id = UUID(
-                str(
-                    json.loads(receipt_path.read_text(encoding="utf-8"))["payload"][
-                        "operation_id"
-                    ]
-                )
+            document, descriptor, _ = _read_private_json(
+                receipt_path,
+                expected_uid=0,
+                error="confirmation receipt invalid",
             )
+            operation_id = UUID(str(document["payload"]["operation_id"]))
+            os.close(descriptor)
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
             raise ValueError("confirmation receipt invalid") from None
     payload = administrator.prepare_owner_change(

@@ -25,6 +25,13 @@ _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 _ERROR_CODES = frozenset({"business_rejected", "control_unavailable"})
 _ROLES = frozenset({"member", "management_viewer", "platform_owner"})
 _RESULTS = frozenset({"requested", "completed", "failed"})
+_LEGACY_005_KEYS = frozenset(
+    {
+        "agent_id", "approver_a", "approver_b", "directory_generation_id",
+        "linked_audit_event_id", "new_role", "operation", "os_operator",
+        "previous_role", "result", "role", "session_revocation_count",
+    }
+)
 _UUID_KEYS = frozenset(
     {
         "operation_id",
@@ -47,6 +54,8 @@ _COUNT_KEYS = frozenset(
         "new_owner_row_version",
         "protected_target_lookup_version",
         "item_count",
+        "previous_scope_count",
+        "new_scope_count",
     }
 )
 _BOOLEAN_KEYS = frozenset({"before_scope", "after_scope"})
@@ -71,6 +80,8 @@ _KNOWN_METADATA_KEYS = frozenset(
         "directory_generation_digest",
         "protected_target_lookup_hash",
         "error_code",
+        "previous_scope_sha256",
+        "new_scope_sha256",
     }
 )
 
@@ -93,6 +104,21 @@ _VIEWER_COMPLETED = frozenset(
         "session_revocation_count",
         "previous_scopes",
         "new_scopes",
+        "result",
+    }
+)
+_VIEWER_COMPLETED_SUMMARY = frozenset(
+    {
+        "operation_id",
+        "linked_audit_event_id",
+        "previous_role",
+        "new_role",
+        "row_version",
+        "session_revocation_count",
+        "previous_scope_count",
+        "previous_scope_sha256",
+        "new_scope_count",
+        "new_scope_sha256",
         "result",
     }
 )
@@ -168,7 +194,7 @@ _FAILED = frozenset(
     {"operation_id", "linked_audit_event_id", "error_code", "result"}
 )
 
-_EVENT_SCHEMAS: dict[str, frozenset[str]] = {}
+_EVENT_SCHEMAS: dict[str, tuple[frozenset[str], ...]] = {}
 _EVENT_REASON: dict[str, str] = {}
 _EVENT_TARGET: dict[str, str] = {}
 
@@ -188,7 +214,7 @@ def _register_events(
             ("failed", _FAILED),
         ):
             event_type = f"{stem}_{result}"
-            _EVENT_SCHEMAS[event_type] = schema
+            _EVENT_SCHEMAS[event_type] = (schema,)
             _EVENT_REASON[event_type] = reason
             _EVENT_TARGET[event_type] = target
 
@@ -206,6 +232,10 @@ _register_events(
     target="internal_user",
     requested=_VIEWER_REQUEST,
     completed=_VIEWER_COMPLETED,
+)
+_EVENT_SCHEMAS["viewer_role_revocation_completed"] = (
+    _VIEWER_COMPLETED,
+    _VIEWER_COMPLETED_SUMMARY,
 )
 _register_events(
     ("observation_scope_assignment",),
@@ -319,7 +349,12 @@ def _safe_metadata_value(key: str, value: Any) -> bool:
         return isinstance(value, str) and _OS_IDENTITY.fullmatch(value) is not None
     if key in {"backup_reference", "incident_reference"}:
         return isinstance(value, str) and _REFERENCE.fullmatch(value) is not None
-    if key in {"directory_generation_digest", "protected_target_lookup_hash"}:
+    if key in {
+        "directory_generation_digest",
+        "protected_target_lookup_hash",
+        "previous_scope_sha256",
+        "new_scope_sha256",
+    }:
         return isinstance(value, str) and _HEX_64.fullmatch(value) is not None
     if key == "error_code":
         return isinstance(value, str) and value in _ERROR_CODES
@@ -346,7 +381,7 @@ def sanitize_governance_metadata(
     keys = frozenset(metadata)
     if not keys <= _KNOWN_METADATA_KEYS:
         raise ValueError("audit metadata invalid")
-    if event_type is not None and keys != _EVENT_SCHEMAS.get(event_type):
+    if event_type is not None and keys not in _EVENT_SCHEMAS.get(event_type, ()):
         raise ValueError("audit metadata invalid")
     sanitized: dict[str, AuditValue] = {}
     for key in sorted(metadata):
@@ -355,6 +390,36 @@ def sanitize_governance_metadata(
             raise ValueError("audit metadata invalid")
         sanitized[key] = list(value) if key in _SCOPE_KEYS else value
     return sanitized
+
+
+def project_governance_metadata(
+    metadata: Mapping[str, Any], *, event_type: str
+) -> tuple[str, dict[str, AuditValue]]:
+    try:
+        return "current", sanitize_governance_metadata(
+            metadata, event_type=event_type
+        )
+    except ValueError:
+        pass
+    if (
+        not isinstance(metadata, Mapping)
+        or event_type not in _EVENT_SCHEMAS
+        or "operation_id" in metadata
+        or metadata.get("result") != _event_result(event_type)
+    ):
+        return "unsupported_redacted", {}
+    legacy: dict[str, AuditValue] = {}
+    for key in sorted(set(metadata) & _LEGACY_005_KEYS):
+        value = metadata[key]
+        if isinstance(value, bool):
+            legacy[key] = value
+        elif isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            legacy[key] = value
+        elif isinstance(value, str) and value and len(value) <= 256 and "\0" not in value:
+            legacy[key] = value
+    if legacy.get("result") != _event_result(event_type):
+        return "unsupported_redacted", {}
+    return "legacy_005", legacy
 
 
 def _validate_target(command: AuditCommand) -> bool:
@@ -470,6 +535,24 @@ class AuditWriter:
             raise ValueError("audit command invalid")
         event_id = _event_id(command)
         return self.repository.append(event_id, command, sanitized)
+
+    def append_outcome(
+        self,
+        requested: AuditCommand,
+        requested_audit_event_id: UUID,
+        *,
+        actual: Mapping[str, AuditValue] | None = None,
+        error_code: str | None = None,
+    ) -> UUID:
+        return self.append(
+            _outcome_command(
+                requested,
+                requested_audit_event_id,
+                "completed" if actual is not None else "failed",
+                actual,
+                error_code=error_code,
+            )
+        )
 
 
 def _outcome_command(

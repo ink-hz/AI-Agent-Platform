@@ -18,7 +18,7 @@ from .audit import (
     ControlCommitIndeterminateError,
     IndeterminateMutationError,
     SensitiveMutationCoordinator,
-    sanitize_governance_metadata,
+    project_governance_metadata,
 )
 from .models import AuthContext, Role
 from .dsn import validate_control_dsn
@@ -239,6 +239,7 @@ class ManagementRepository:
                     "viewer revocation precondition failed",
                     "scope assignment precondition failed",
                     "scope revocation precondition failed",
+                    "scope limit reached",
                 }
                 raise ValueError(
                     message if message in allowed else "management mutation rejected"
@@ -248,11 +249,19 @@ class ManagementRepository:
             if row is None or not isinstance(row["result"], dict):
                 connection.rollback()
                 raise RuntimeError("identity management unavailable")
+            canonical = connection.execute(
+                "select applied_result from platform_control.management_mutations "
+                "where operation_id = %s",
+                (operation_id,),
+            ).fetchone()
+            if canonical is None or not isinstance(canonical["applied_result"], dict):
+                connection.rollback()
+                raise RuntimeError("identity management unavailable")
             try:
                 connection.commit()
             except psycopg.Error:
                 raise ControlCommitIndeterminateError(operation_id) from None
-            return row["result"]
+            return canonical["applied_result"]
         finally:
             connection.close()
 
@@ -358,13 +367,9 @@ class ManagementRepository:
                 ).fetchall()
             projected = []
             for row in rows:
-                try:
-                    metadata = sanitize_governance_metadata(
-                        row["sanitized_before_after"],
-                        event_type=row["event_type"],
-                    )
-                except ValueError:
-                    continue
+                projection_status, metadata = project_governance_metadata(
+                    row["sanitized_before_after"], event_type=row["event_type"]
+                )
                 projected.append({
                     "audit_event_id": row["audit_event_id"],
                     "actor_internal_user_id": row["actor_internal_user_id"],
@@ -375,6 +380,7 @@ class ManagementRepository:
                     "result": row["result"],
                     "reason_code": row["reason_code"],
                     "sanitized_before_after": metadata,
+                    "projection_status": projection_status,
                     "occurred_at": row["occurred_at"],
                 })
             return projected
@@ -558,7 +564,7 @@ class ManagementService:
                 raise HTTPException(status_code=409, detail="viewer target unavailable")
             if revoke and state["scope_row_version"] < 1:
                 raise HTTPException(status_code=409, detail="observation scope unavailable")
-            if not revoke and state["scope_row_version"] != 0:
+            if not revoke and agent_id in state["scopes"]:
                 raise HTTPException(status_code=409, detail="observation scope unavailable")
             expected_user_version = state["row_version"]
             expected_scope_version = state["scope_row_version"]

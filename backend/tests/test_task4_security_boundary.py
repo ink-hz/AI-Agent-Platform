@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
+import threading
 from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from fastapi import HTTPException
 
+from app.control_plane.audit import AuditWriter
+from app.control_plane.models import AuthContext, Role
+from app.control_plane.routes_manage import ManagementRepository, ManagementService
 from test_control_plane_migration import control_database
 
 
@@ -546,3 +552,184 @@ def test_mutation_function_rejects_causal_parameters_not_matching_audit_payload(
                 "select platform_control.assign_management_viewer(%s,%s,%s,0,%s)",
                 (operation_id, owner, target, event_id),
             )
+
+
+@pytest.mark.postgres
+def test_257th_active_scope_is_rejected_before_state_change_and_failed_is_audited(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    target, request_id = uuid4(), uuid4()
+    agents = [f"legacy-{index:03d}" for index in range(256)]
+    with psycopg.connect(environment["admin"]) as connection:
+        owner = _active_owner(connection, "Scope Limit Owner")
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id, display_name, status, role, row_version) values "
+            "(%s, 'Scope Limit Viewer', 'active', 'management_viewer', 1)",
+            (target,),
+        )
+        connection.execute(
+            "alter table platform_control.observation_grants "
+            "disable trigger enforce_active_scope_limit"
+        )
+        connection.cursor().executemany(
+            "insert into platform_control.observation_grants "
+            "(observation_grant_id, agent_id, viewer_internal_user_id, created_by) "
+            "values (%s,%s,%s,%s)",
+            [(uuid4(), agent, target, owner) for agent in agents],
+        )
+        connection.execute(
+            "alter table platform_control.observation_grants "
+            "enable trigger enforce_active_scope_limit"
+        )
+    service = ManagementService(
+        ManagementRepository(environment["urls"]["platform_control_app"]),
+        AuditWriter.from_database_url(
+            environment["urls"]["platform_audit_append"]
+        ),
+    )
+    context = AuthContext(owner, Role.PLATFORM_OWNER, uuid4(), False)
+    with pytest.raises(HTTPException) as caught:
+        service.change_observation(
+            context,
+            target,
+            "overflow",
+            "scope_approved",
+            revoke=False,
+            request_id=request_id,
+        )
+    assert caught.value.status_code == 409
+    assert caught.value.detail == "scope limit reached"
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_control.observation_grants "
+            "where viewer_internal_user_id=%s and revoked_at is null",
+            (target,),
+        ).fetchone() == (256,)
+        assert connection.execute(
+            "select event_type, result from platform_control.audit_events "
+            "where request_id=%s order by event_type",
+            (request_id,),
+        ).fetchall() == [
+            ("observation_scope_assignment_failed", "failed"),
+            ("observation_scope_assignment_requested", "requested"),
+        ]
+
+
+@pytest.mark.postgres
+def test_legacy_oversized_viewer_revoke_is_summarized_and_reconcilable(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["preview"]
+    target, request_id = uuid4(), uuid4()
+    agents = [f"legacy-{index:03d}" for index in range(257)]
+    with psycopg.connect(environment["admin"]) as connection:
+        owner = _active_owner(connection, "Legacy Scope Owner")
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id, display_name, status, role, row_version) values "
+            "(%s, 'Legacy Oversized Viewer', 'active', 'management_viewer', 4)",
+            (target,),
+        )
+        connection.execute(
+            "alter table platform_control.observation_grants "
+            "disable trigger enforce_active_scope_limit"
+        )
+        connection.cursor().executemany(
+            "insert into platform_control.observation_grants "
+            "(observation_grant_id, agent_id, viewer_internal_user_id, created_by) "
+            "values (%s,%s,%s,%s)",
+            [(uuid4(), agent, target, owner) for agent in agents],
+        )
+        connection.execute(
+            "alter table platform_control.observation_grants "
+            "enable trigger enforce_active_scope_limit"
+        )
+    service = ManagementService(
+        ManagementRepository(
+            environment["urls"]["platform_control_app_preview"]
+        ),
+        AuditWriter.from_database_url(
+            environment["urls"]["platform_audit_append_preview"]
+        ),
+    )
+    context = AuthContext(owner, Role.PLATFORM_OWNER, uuid4(), False)
+    service.change_viewer(
+        context, target, "access_revoked", revoke=True, request_id=request_id
+    )
+    service.change_viewer(
+        context, target, "access_revoked", revoke=True, request_id=request_id
+    )
+    expected_digest = hashlib.sha256("\n".join(agents).encode()).hexdigest()
+    with psycopg.connect(environment["admin"]) as connection:
+        mutation, completed = connection.execute(
+            "select mutation.applied_result, event.sanitized_before_after "
+            "from platform_control.management_mutations mutation "
+            "join platform_control.audit_events event "
+            "on event.request_id=mutation.operation_id "
+            "and event.event_type='viewer_role_revocation_completed' "
+            "where mutation.operation_id=%s",
+            (request_id,),
+        ).fetchone()
+        assert connection.execute(
+            "select count(*) from platform_control.management_mutations "
+            "where operation_id=%s",
+            (request_id,),
+        ).fetchone() == (1,)
+    for metadata in (mutation, completed):
+        assert metadata["previous_scope_count"] == 257
+        assert metadata["previous_scope_sha256"] == expected_digest
+        assert metadata["new_scope_count"] == 0
+        assert metadata["new_scope_sha256"] == hashlib.sha256(b"").hexdigest()
+        assert "previous_scopes" not in metadata
+        assert "new_scopes" not in metadata
+
+
+@pytest.mark.postgres
+def test_scope_limit_serializes_concurrent_grants(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    target = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        owner = _active_owner(connection, "Concurrent Scope Owner")
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status,role) "
+            "values (%s,'Concurrent Scope Viewer','active','management_viewer')",
+            (target,),
+        )
+        connection.cursor().executemany(
+            "insert into platform_control.observation_grants "
+            "(observation_grant_id,agent_id,viewer_internal_user_id,created_by) "
+            "values (%s,%s,%s,%s)",
+            [(uuid4(), f"base-{index:03d}", target, owner) for index in range(255)],
+        )
+    barrier = threading.Barrier(2)
+    outcomes: list[str] = []
+
+    def insert(agent_id: str) -> None:
+        try:
+            with psycopg.connect(environment["admin"]) as connection:
+                barrier.wait()
+                connection.execute(
+                    "insert into platform_control.observation_grants "
+                    "(observation_grant_id,agent_id,viewer_internal_user_id,created_by) "
+                    "values (%s,%s,%s,%s)",
+                    (uuid4(), agent_id, target, owner),
+                )
+            outcomes.append("committed")
+        except psycopg.errors.CheckViolation:
+            outcomes.append("rejected")
+
+    threads = [threading.Thread(target=insert, args=(agent,)) for agent in ("race-a", "race-b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not any(thread.is_alive() for thread in threads)
+    assert sorted(outcomes) == ["committed", "rejected"]
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_control.observation_grants "
+            "where viewer_internal_user_id=%s and revoked_at is null", (target,)
+        ).fetchone() == (256,)

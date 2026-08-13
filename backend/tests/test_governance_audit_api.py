@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import FastAPI, HTTPException
@@ -364,6 +365,54 @@ def test_governance_projection_includes_management_directory_reads(
         "management_user_list_read_requested",
         "management_user_list_read_completed",
     }
+
+
+@pytest.mark.postgres
+def test_governance_projection_classifies_legacy_005_and_malformed_rows(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["preview"]
+    actor = uuid4()
+    legacy_id, malformed_id = uuid4(), uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values (%s,'Legacy Actor','active')",
+            (actor,),
+        )
+        connection.execute(
+            "insert into platform_control.audit_events "
+            "(audit_event_id,actor_internal_user_id,event_type,target_type,"
+            "target_internal_id,request_id,result,reason_code,sanitized_before_after) "
+            "values (%s,%s,'owner_binding_requested','internal_user',%s,%s,"
+            "'requested','approved binding',%s::jsonb),"
+            "(%s,%s,'viewer_role_assignment_requested','internal_user',%s,%s,"
+            "'requested','unsafe reason',%s::jsonb)",
+            (legacy_id, actor, str(actor), uuid4(),
+             json.dumps({"directory_generation_id": str(uuid4()),
+                         "operation": "bind", "os_operator": "root",
+                         "result": "requested", "role": "platform_owner",
+                         "secret_evidence": "must-not-project"}),
+             malformed_id, actor, str(actor), uuid4(),
+             json.dumps({"provider_id": "sensitive", "message": "raw"})),
+        )
+    events = ManagementRepository(
+        environment["urls"]["platform_control_app_preview"]
+    ).governance_audit()
+    selected = {event["audit_event_id"]: event for event in events}
+    assert selected[legacy_id]["projection_status"] == "legacy_005"
+    assert selected[legacy_id]["sanitized_before_after"] == {
+        "directory_generation_id": selected[legacy_id]["sanitized_before_after"][
+            "directory_generation_id"
+        ],
+        "operation": "bind",
+        "os_operator": "root",
+        "result": "requested",
+        "role": "platform_owner",
+    }
+    assert selected[malformed_id]["projection_status"] == "unsupported_redacted"
+    assert selected[malformed_id]["sanitized_before_after"] == {}
+    assert "provider_id" not in json.dumps(list(selected.values()), default=str)
 
 
 def test_hard_stale_owner_cannot_mutate_but_can_read_governance() -> None:
