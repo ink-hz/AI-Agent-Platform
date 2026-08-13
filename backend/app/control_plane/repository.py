@@ -50,15 +50,6 @@ def _advisory_lock_key(value: bytes) -> int:
     return unsigned - (1 << 64) if unsigned >= (1 << 63) else unsigned
 
 
-def _identity_advisory_lock_key(version: int, lookup_hmac: bytes) -> int:
-    lock_identity = hashlib.sha256(
-        b"provider-identity-lock:v1:"
-        + version.to_bytes(8, "big", signed=False)
-        + lookup_hmac
-    ).digest()
-    return _advisory_lock_key(lock_identity)
-
-
 class ControlRepository:
     def __init__(
         self,
@@ -117,16 +108,6 @@ class ControlRepository:
             raise
         except (AttributeError, IdentityCryptoError, TypeError, ValueError):
             raise IdentityCollisionError("provider identity collision") from None
-
-    @staticmethod
-    def _lock_identity_candidates(cursor, candidates) -> None:
-        for version, lookup_hmac in sorted(
-            candidates, key=lambda candidate: (candidate[0], candidate[1])
-        ):
-            cursor.execute(
-                "select pg_advisory_xact_lock(%s)",
-                (_identity_advisory_lock_key(version, lookup_hmac),),
-            )
 
     def _ensure_identity_key_policy(self, cursor) -> None:
         configured = tuple(self.identity_codec.hmac.transition_versions or ())
@@ -211,64 +192,9 @@ class ControlRepository:
     def create_internal_user(
         self, protected: ProtectedProviderId, display_name: str
     ) -> UUID:
-        if not isinstance(display_name, str) or not display_name.strip():
-            raise ControlRepositoryError("display name invalid")
-        candidates = self._lookup_candidates(protected)
-        try:
-            with self._connection() as connection, connection.cursor() as cursor:
-                self._ensure_identity_key_policy(cursor)
-                self._lock_identity_candidates(cursor, candidates)
-                rows = self._identity_rows(
-                    cursor,
-                    protected.subject_kind,
-                    candidates,
-                    for_update=True,
-                )
-                existing = self._matching_user_id(rows, protected)
-                if existing is not None:
-                    return existing
-
-                provider_id = self.identity_codec.unseal(protected)
-                if not self.identity_codec.matches_lookup(
-                    subject_kind=protected.subject_kind,
-                    provider_id=provider_id,
-                    lookup_hmac=protected.lookup_hmac,
-                    lookup_key_version=protected.lookup_key_version,
-                ):
-                    raise IdentityCollisionError(
-                        "provider identity collision"
-                    )
-
-                internal_user_id = uuid4()
-                created = cursor.execute(
-                    "select platform_control.create_internal_member(%s, %s) "
-                    "as internal_user_id",
-                    (internal_user_id, display_name.strip()),
-                ).fetchone()
-                if created is None or created["internal_user_id"] != internal_user_id:
-                    raise ControlRepositoryError("control repository unavailable")
-                cursor.execute(
-                    "insert into platform_control.provider_identities "
-                    "(provider_identity_id, internal_user_id, subject_kind, "
-                    "lookup_hmac, lookup_key_version, encrypted_provider_id, "
-                    "encryption_key_version) values (%s, %s, %s, %s, %s, %s, %s)",
-                    (
-                        uuid4(),
-                        internal_user_id,
-                        protected.subject_kind,
-                        protected.lookup_hmac,
-                        protected.lookup_key_version,
-                        protected.ciphertext,
-                        protected.encryption_key_version,
-                    ),
-                )
-                return internal_user_id
-        except (IdentityCollisionError, IdentityCryptoError):
-            raise
-        except psycopg.errors.UniqueViolation:
-            raise IdentityCollisionError("provider identity collision") from None
-        except psycopg.Error:
-            raise ControlRepositoryError("control repository unavailable") from None
+        raise ControlRepositoryError(
+            "verified directory identity required"
+        )
 
     def rotate_provider_identity(
         self,
@@ -276,81 +202,9 @@ class ControlRepository:
         previous: ProtectedProviderId,
         rotated: ProtectedProviderId,
     ) -> None:
-        try:
-            self._lookup_candidates(previous)
-            rotated_provider_id = self.identity_codec.unseal(rotated)
-            if (
-                not self.identity_codec.equivalent(previous, rotated)
-                or not self.identity_codec.matches_lookup(
-                    subject_kind=rotated.subject_kind,
-                    provider_id=rotated_provider_id,
-                    lookup_hmac=rotated.lookup_hmac,
-                    lookup_key_version=rotated.lookup_key_version,
-                )
-            ):
-                raise IdentityCollisionError("provider identity collision")
-            with self._connection() as connection, connection.cursor() as cursor:
-                self._ensure_identity_key_policy(cursor)
-                self._lock_identity_candidates(
-                    cursor,
-                    self.identity_codec.lookup_candidates(
-                        rotated.subject_kind, rotated_provider_id
-                    ),
-                )
-                cursor.execute(
-                    "select provider_identity_id, internal_user_id, subject_kind, "
-                    "lookup_hmac, lookup_key_version, encrypted_provider_id, "
-                    "encryption_key_version from platform_control.provider_identities "
-                    "where internal_user_id = %s and subject_kind = %s "
-                    "and lookup_hmac = %s and lookup_key_version = %s for update",
-                    (
-                        internal_user_id,
-                        previous.subject_kind,
-                        previous.lookup_hmac,
-                        previous.lookup_key_version,
-                    ),
-                )
-                row = cursor.fetchone()
-                if row is None or not self.identity_codec.equivalent(
-                    self._protected_from_row(row), previous
-                ):
-                    raise IdentityCollisionError("provider identity collision")
-                cursor.execute(
-                    "select internal_user_id, subject_kind, lookup_hmac, "
-                    "lookup_key_version, encrypted_provider_id, encryption_key_version "
-                    "from platform_control.provider_identities "
-                    "where subject_kind = %s and lookup_hmac = %s "
-                    "and lookup_key_version = %s and provider_identity_id <> %s "
-                    "for update",
-                    (
-                        rotated.subject_kind,
-                        rotated.lookup_hmac,
-                        rotated.lookup_key_version,
-                        row["provider_identity_id"],
-                    ),
-                )
-                if cursor.fetchone() is not None:
-                    raise IdentityCollisionError("provider identity collision")
-                cursor.execute(
-                    "update platform_control.provider_identities set "
-                    "subject_kind = %s, lookup_hmac = %s, lookup_key_version = %s, "
-                    "encrypted_provider_id = %s, encryption_key_version = %s, "
-                    "verified_at = now() where provider_identity_id = %s",
-                    (
-                        rotated.subject_kind,
-                        rotated.lookup_hmac,
-                        rotated.lookup_key_version,
-                        rotated.ciphertext,
-                        rotated.encryption_key_version,
-                        row["provider_identity_id"],
-                    ),
-                )
-        except (IdentityCollisionError, IdentityCryptoError):
-            raise IdentityCollisionError("provider identity collision") from None
-        except psycopg.errors.UniqueViolation:
-            raise IdentityCollisionError("provider identity collision") from None
-        except psycopg.Error:
-            raise ControlRepositoryError("control repository unavailable") from None
+        raise ControlRepositoryError(
+            "verified directory identity required"
+        )
 
     def create_login_attempt(
         self,

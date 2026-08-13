@@ -35,6 +35,9 @@ AUDIT_REQUEST_SERIALIZATION_MIGRATION = (
 VERIFIED_IDENTITY_REFRESH_MIGRATION = (
     MIGRATIONS / "010_verified_identity_refresh.sql"
 )
+VERIFIED_IDENTITY_BOUNDARY_MIGRATION = (
+    MIGRATIONS / "011_verified_identity_boundary.sql"
+)
 PRODUCTION_ROLES = (
     "platform_control_migrator",
     "platform_control_app",
@@ -96,6 +99,7 @@ IMMUTABLE_MIGRATION_SHA256 = {
     "007_reconcilable_audit_boundary.sql": "35794c341050cdac641fe4eea0cb15d155d4ebbdbab55288942a9c53762b11ec",
     "008_terminal_audit_state.sql": "11bfb519e242005049a0bcf1d539eefa43738e03d4392646e8c1bf6158096e9b",
     "009_audit_request_serialization.sql": "f9cbb79af2d820795db53c59e5f140f20a077ba00da6fd716ceef059a72bc220",
+    "010_verified_identity_refresh.sql": "a6695b5fcbad6a5b13c639dcabe1eacbe19898a1041c7d67dbf29f69a1865ca1",
 }
 
 
@@ -134,14 +138,20 @@ def test_first_control_migration_exists() -> None:
         "missing verified identity refresh migration: "
         f"{VERIFIED_IDENTITY_REFRESH_MIGRATION}"
     )
+    assert VERIFIED_IDENTITY_BOUNDARY_MIGRATION.is_file(), (
+        "missing verified identity boundary migration: "
+        f"{VERIFIED_IDENTITY_BOUNDARY_MIGRATION}"
+    )
 
 
-def test_control_migrations_001_through_009_are_byte_immutable() -> None:
+def test_control_migrations_001_through_010_are_byte_immutable() -> None:
     import hashlib
 
     assert {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in sorted(MIGRATIONS.glob("00[1-9]_*.sql"))
+        for path in sorted(
+            (*MIGRATIONS.glob("00[1-9]_*.sql"), *MIGRATIONS.glob("010_*.sql"))
+        )
     } == IMMUTABLE_MIGRATION_SHA256
 
 
@@ -317,7 +327,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                        (version, 64) for version in range(1, 11)
+                        (version, 64) for version in range(1, 12)
                 ]
 
     changed = tmp_path / "migrations"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import traceback
 
 import httpx
 import pytest
@@ -325,3 +326,181 @@ def test_provider_dto_representations_do_not_expose_identity_values() -> None:
     rendered += repr(DingTalkAuthResult(values[1], values[0], values[2]))
 
     assert all(value not in rendered for value in values)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_qr_profile_read_retries_without_repeating_code_exchange() -> None:
+    exchange = respx.post(f"{API}/v1.0/oauth2/userAccessToken").mock(
+        return_value=httpx.Response(200, json={
+            "accessToken": "user-token", "expireIn": 7200,
+            "corpId": "test-corp",
+        })
+    )
+    profile = respx.get(f"{API}/v1.0/contact/users/me").mock(side_effect=[
+        httpx.Response(503, json={"code": "temporarilyUnavailable"}),
+        httpx.Response(200, json={"unionId": "union-1"}),
+    ])
+    sleeps: list[float] = []
+
+    result = await _client(
+        flow="qr", sleep=lambda seconds: sleeps.append(seconds)
+    ).exchange_login_code("single-use-code")
+
+    assert result.unionid == "union-1"
+    assert exchange.call_count == 1
+    assert profile.call_count == 2
+    assert sleeps == [0.1]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_response_parse_error_preserves_exact_outbound_request_id() -> None:
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    route = respx.post(f"{OAPI}/topapi/v2/user/get").mock(
+        return_value=httpx.Response(200, json={
+            "errcode": 0, "result": {
+                "userid": 17, "unionid": "union-1", "name": "Employee",
+                "active": True, "dept_id_list": [1],
+            },
+        })
+    )
+
+    with pytest.raises(DingTalkProviderError) as caught:
+        await _client().get_member("employee-1")
+
+    assert caught.value.request_id == route.calls[0].request.headers["X-Request-Id"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_department_listsub_uses_only_supported_body_fields() -> None:
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    route = respx.post(f"{OAPI}/topapi/v2/department/listsub").mock(
+        return_value=httpx.Response(
+            200, json={"errcode": 0, "errmsg": "ok", "result": []}
+        )
+    )
+
+    assert [item async for item in _client().iter_departments()] == []
+    assert json.loads(route.calls[0].request.content) == {
+        "dept_id": 1,
+        "language": "zh_CN",
+    }
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_official_invalid_token_response_refreshes_once_with_global_cap() -> None:
+    token_route = respx.post(f"{API}/v1.0/oauth2/accessToken").mock(side_effect=[
+        httpx.Response(200, json={"accessToken": "expired-token", "expireIn": 7200}),
+        httpx.Response(200, json={"accessToken": "new-token", "expireIn": 7200}),
+    ])
+    member_route = respx.post(f"{OAPI}/topapi/v2/user/get").mock(side_effect=[
+        httpx.Response(200, json={"errcode": 42001, "errmsg": "expired"}),
+        httpx.Response(200, json={"errcode": 0, "errmsg": "ok", "result": {
+            "userid": "employee-1", "unionid": "union-1", "name": "Employee",
+            "active": True, "dept_id_list": [1],
+        }}),
+    ])
+
+    assert (await _client().get_member("employee-1")).userid == "employee-1"
+    assert token_route.call_count == 2
+    assert member_route.call_count == 2
+    assert [call.request.url.params["access_token"] for call in member_route.calls] == [
+        "expired-token", "new-token"
+    ]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_invalid_token_refresh_does_not_exceed_three_business_attempts() -> None:
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(side_effect=[
+        httpx.Response(200, json={"accessToken": "token-1", "expireIn": 7200}),
+        httpx.Response(200, json={"accessToken": "token-2", "expireIn": 7200}),
+    ])
+    member_route = respx.post(f"{OAPI}/topapi/v2/user/get").mock(side_effect=[
+        httpx.Response(503, json={"errcode": -1}),
+        httpx.Response(200, json={"errcode": 40014, "errmsg": "invalid"}),
+        httpx.Response(200, json={"errcode": 40014, "errmsg": "invalid"}),
+        httpx.Response(200, json={"errcode": 0, "result": {}}),
+    ])
+
+    with pytest.raises(DingTalkProviderError, match="40014"):
+        await _client(sleep=lambda _: None).get_member("employee-1")
+
+    assert member_route.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_all_httpx_request_errors_are_redacted_without_exception_chaining() -> None:
+    secret = "query-secret-token"
+
+    async def fail(request: httpx.Request) -> httpx.Response:
+        raise httpx.ProxyError(
+            f"proxy failed for {request.url}", request=request
+        )
+
+    transport = httpx.MockTransport(fail)
+    injected = httpx.AsyncClient(transport=transport)
+    client = _client(http_client=injected)
+    object.__setattr__(client, "_token", secret)
+    object.__setattr__(client, "_token_expires_at", float("inf"))
+    try:
+        with pytest.raises(DingTalkProviderError) as caught:
+            await client.get_member("employee-sensitive")
+        stable_rendering = str(caught.value) + repr(caught.value)
+        traceback_rendering = "".join(
+            traceback.format_exception(caught.value)
+        )
+        assert caught.value.__cause__ is None
+        assert caught.value.__suppress_context__ is True
+        assert secret not in traceback_rendering
+        assert "employee-sensitive" not in stable_rendering
+    finally:
+        await injected.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("level", [logging.INFO, logging.DEBUG])
+async def test_http_client_logs_redact_query_and_header_tokens(caplog, level) -> None:
+    secrets = ("legacy-query-secret", "user-header-secret")
+
+    def log_wire_request(request: httpx.Request) -> httpx.Response:
+        logging.getLogger("httpcore.http11").log(
+            level, "wire request=%r", request
+        )
+        if request.url.path.endswith("/users/me"):
+            return httpx.Response(400, json={"code": "denied"})
+        return httpx.Response(200, json={"errcode": 1, "errmsg": "no"})
+
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(
+        return_value=httpx.Response(
+            200, json={"accessToken": secrets[0], "expireIn": 7200}
+        )
+    )
+    respx.post(f"{OAPI}/topapi/v2/user/get").mock(
+        side_effect=log_wire_request
+    )
+    respx.post(f"{API}/v1.0/oauth2/userAccessToken").mock(
+        return_value=httpx.Response(200, json={
+            "accessToken": secrets[1], "expireIn": 7200, "corpId": "test-corp",
+        })
+    )
+    respx.get(f"{API}/v1.0/contact/users/me").mock(
+        side_effect=log_wire_request
+    )
+    caplog.set_level(level)
+
+    with pytest.raises(DingTalkProviderError):
+        await _client().get_member("employee-1")
+    with pytest.raises(DingTalkProviderError):
+        await _client(flow="qr").exchange_login_code("one-time-code")
+
+    assert all(secret not in caplog.text for secret in secrets)
+
+
+def test_self_owned_http_client_ignores_proxy_environment() -> None:
+    client = _client()
+    assert client._client._trust_env is False

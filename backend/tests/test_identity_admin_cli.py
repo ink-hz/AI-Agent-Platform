@@ -28,6 +28,28 @@ from test_control_plane_migration import control_database
 from test_identity_crypto import _codec
 
 
+def _seed_internal_user(environment, protected, display_name: str):
+    internal_user_id = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values (%s,%s,'active')",
+            (internal_user_id, display_name),
+        )
+        connection.execute(
+            "insert into platform_control.provider_identities "
+            "(provider_identity_id,internal_user_id,subject_kind,lookup_hmac,"
+            "lookup_key_version,encrypted_provider_id,encryption_key_version) "
+            "values (%s,%s,%s,%s,%s,%s,%s)",
+            (
+                uuid4(), internal_user_id, protected.subject_kind,
+                protected.lookup_hmac, protected.lookup_key_version,
+                protected.ciphertext, protected.encryption_key_version,
+            ),
+        )
+    return internal_user_id
+
+
 def test_parser_uses_provider_file_and_never_name_mobile_or_web_owner_route() -> None:
     parser = build_parser()
     help_text = parser.format_help()
@@ -314,10 +336,10 @@ def test_offline_bind_and_replace_select_stable_mapping_and_keep_one_owner(
 
     first_provider = "stable-owner-one"
     second_provider = "stable-owner-two"
-    first_id = app_repository.create_internal_user(
+    first_id = _seed_internal_user(environment,
         codec.seal("employee", first_provider), "Same Display Name"
     )
-    second_id = app_repository.create_internal_user(
+    second_id = _seed_internal_user(environment,
         codec.seal("employee", second_provider), "Same Display Name"
     )
     generation_id = uuid4()
@@ -417,7 +439,7 @@ def test_bind_refuses_target_outside_selected_complete_generation(
         identity_codec=codec,
     )
     provider_id = "not-in-generation"
-    repository.create_internal_user(
+    _seed_internal_user(environment,
         codec.seal("employee", provider_id), "Absent Target"
     )
     generation_id = uuid4()
@@ -463,7 +485,7 @@ def test_offline_owner_reconcile_uses_signed_prestate_without_second_mutation(
         environment["urls"]["platform_control_app_preview"],
         identity_codec=codec,
     )
-    target = repository.create_internal_user(
+    target = _seed_internal_user(environment,
         codec.seal("employee", provider_id), "Reconcile Target"
     )
     generation_id = uuid4()
@@ -553,7 +575,7 @@ def test_owner_confirm_reconcile_interleaving_never_creates_two_terminals(
     repository = ControlRepository(
         environment["urls"]["platform_control_app"], identity_codec=codec
     )
-    target = repository.create_internal_user(
+    target = _seed_internal_user(environment,
         codec.seal("employee", provider_id), "Owner Race Target"
     )
     generation_id = uuid4()

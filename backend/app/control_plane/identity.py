@@ -16,7 +16,6 @@ from .dingtalk import (
 )
 from .dsn import validate_control_dsn
 from .models import DirectoryFreshness
-from .repository import _identity_advisory_lock_key
 
 
 class IdentityResolutionError(RuntimeError):
@@ -74,15 +73,8 @@ class IdentityResolver:
             row_factory=dict_row,
         )
 
-    def _ensure_key_policy(self, cursor) -> None:
+    def _check_key_policy(self, cursor) -> None:
         configured = tuple(self.identity_codec.hmac.transition_versions or ())
-        cursor.execute("select pg_advisory_xact_lock(%s)", (1229998928,))
-        cursor.execute(
-            "insert into platform_control.provider_identity_key_policies "
-            "(provider, lookup_transition_versions) values "
-            "('dingtalk', %s) on conflict (provider) do nothing",
-            (list(configured),),
-        )
         row = cursor.execute(
             "select lookup_transition_versions from "
             "platform_control.provider_identity_key_policies "
@@ -117,15 +109,6 @@ class IdentityResolver:
             raise IdentityResolutionError("provider identity invalid")
         return candidates
 
-    @staticmethod
-    def _lock_candidates(cursor, candidates) -> None:
-        unique = sorted(set(candidates), key=lambda item: (item[0], item[1]))
-        for version, lookup_hmac in unique:
-            cursor.execute(
-                "select pg_advisory_xact_lock(%s)",
-                (_identity_advisory_lock_key(version, lookup_hmac),),
-            )
-
     def _matching_user(
         self,
         rows: list[dict[str, Any]],
@@ -149,7 +132,7 @@ class IdentityResolver:
             "lookup_hmac, lookup_key_version, encrypted_provider_id, "
             "encryption_key_version from platform_control.provider_identities "
             "where subject_kind=%s and (lookup_key_version,lookup_hmac) in "
-            "(select * from unnest(%s::integer[],%s::bytea[])) for update",
+            "(select * from unnest(%s::integer[],%s::bytea[]))",
             (
                 protected.subject_kind,
                 [version for version, _ in candidates],
@@ -167,11 +150,7 @@ class IdentityResolver:
         union_candidates = self._candidates(union)
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                self._ensure_key_policy(cursor)
-                self._lock_candidates(
-                    cursor,
-                    tuple(corporate_candidates) + tuple(union_candidates),
-                )
+                self._check_key_policy(cursor)
                 directory_rows = cursor.execute(
                     "select member.generation_id,member.member_key,"
                     "member.internal_user_id,member.subject_kind,member.lookup_hmac,"
@@ -210,60 +189,35 @@ class IdentityResolver:
                     mapped.add(directory_user)
                 if len(mapped) > 1:
                     raise IdentityResolutionError("provider identity collision")
-                internal_user_id = next(iter(mapped), None)
-                if internal_user_id is None:
-                    internal_user_id = uuid4()
-                    created = cursor.execute(
-                        "select platform_control.create_internal_member(%s,%s) "
-                        "as internal_user_id",
-                        (internal_user_id, member.display_name),
-                    ).fetchone()
-                    if created is None or created["internal_user_id"] != internal_user_id:
-                        raise IdentityResolutionError("identity persistence unavailable")
-                else:
-                    state = cursor.execute(
-                        "select status,locally_invalidated_at from "
-                        "platform_control.internal_users where internal_user_id=%s",
-                        (internal_user_id,),
-                    ).fetchone()
-                    if (
-                        state is None
-                        or state["status"] != "active"
-                        or state["locally_invalidated_at"] is not None
-                    ):
-                        raise IdentityResolutionError("member inactive")
-
-                for protected, rows in (
-                    (corporate, corporate_rows),
-                    (union, union_rows),
-                ):
-                    if not rows:
-                        cursor.execute(
-                            "insert into platform_control.provider_identities "
-                            "(provider_identity_id,internal_user_id,subject_kind,"
-                            "lookup_hmac,lookup_key_version,encrypted_provider_id,"
-                            "encryption_key_version) values (%s,%s,%s,%s,%s,%s,%s)",
-                            (
-                                uuid4(), internal_user_id, protected.subject_kind,
-                                protected.lookup_hmac, protected.lookup_key_version,
-                                protected.ciphertext, protected.encryption_key_version,
-                            ),
-                        )
-                generation_id = directory_rows[0]["generation_id"]
-                refreshed = cursor.execute(
-                    "select platform_control.refresh_verified_internal_member("
-                    "%s,%s,%s,%s,%s,%s) as internal_user_id",
+                proposed_user_id = next(iter(mapped), uuid4())
+                resolved = cursor.execute(
+                    "select platform_control.resolve_verified_dingtalk_member("
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                    "%s,%s,%s,%s,%s,%s,%s) as internal_user_id",
                     (
-                        internal_user_id,
+                        proposed_user_id,
                         member.display_name,
-                        generation_id,
-                        corporate.subject_kind,
+                        uuid4(),
+                        corporate.lookup_hmac,
+                        corporate.lookup_key_version,
+                        corporate.ciphertext,
+                        corporate.encryption_key_version,
                         [version for version, _ in corporate_candidates],
                         [lookup for _, lookup in corporate_candidates],
+                        uuid4(),
+                        union.lookup_hmac,
+                        union.lookup_key_version,
+                        union.ciphertext,
+                        union.encryption_key_version,
+                        [version for version, _ in union_candidates],
+                        [lookup for _, lookup in union_candidates],
                     ),
                 ).fetchone()
-                if refreshed is None or refreshed["internal_user_id"] != internal_user_id:
+                if resolved is None:
                     raise IdentityResolutionError("identity persistence unavailable")
+                internal_user_id = resolved["internal_user_id"]
+                if mapped and internal_user_id not in mapped:
+                    raise IdentityResolutionError("provider identity collision")
                 return internal_user_id
         except IdentityResolutionError:
             raise
@@ -307,4 +261,22 @@ class IdentityResolver:
             raise
         except DingTalkProviderError:
             raise IdentityResolutionError("provider identity unavailable") from None
-        return await asyncio.to_thread(self._resolve_transaction, member)
+        mutation = asyncio.create_task(
+            asyncio.to_thread(self._resolve_transaction, member)
+        )
+        try:
+            return await asyncio.shield(mutation)
+        except asyncio.CancelledError as cancellation:
+            while not mutation.done():
+                try:
+                    await asyncio.shield(mutation)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if mutation.done() and not mutation.cancelled():
+                try:
+                    mutation.result()
+                except Exception:
+                    pass
+            raise cancellation

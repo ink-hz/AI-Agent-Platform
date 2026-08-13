@@ -7,6 +7,8 @@ from uuid import uuid4
 import psycopg
 import pytest
 
+import app.control_plane.identity as identity_module
+
 from app.control_plane.dingtalk import DingTalkAuthResult, DingTalkMember
 from app.control_plane.identity import (
     IdentityResolutionError,
@@ -256,6 +258,61 @@ async def test_concurrent_first_login_creates_one_user_and_two_stable_mappings(
 
 @pytest.mark.asyncio
 @pytest.mark.postgres
+async def test_conflicting_corporate_and_union_mappings_leave_zero_partial_state(
+    production_environment, tmp_path: Path
+) -> None:
+    member = DingTalkMember("employee-conflict", "union-conflict", "Conflict", True, (1,))
+    resolver = _resolver(production_environment, tmp_path, member)
+    codec = resolver.identity_codec
+    corporate = codec.seal(
+        IdentityResolver.CORPORATE_SUBJECT_KIND,
+        _provider_value("test-corp", member.userid),
+    )
+    union = codec.seal(IdentityResolver.UNION_SUBJECT_KIND, member.unionid)
+    first_user, second_user = uuid4(), uuid4()
+    with psycopg.connect(production_environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values "
+            "(%s,'First','active'),(%s,'Second','active')",
+            (first_user, second_user),
+        )
+        for protected, user_id in ((corporate, first_user), (union, second_user)):
+            connection.execute(
+                "insert into platform_control.provider_identities "
+                "(provider_identity_id,internal_user_id,subject_kind,lookup_hmac,"
+                "lookup_key_version,encrypted_provider_id,encryption_key_version) "
+                "values (%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    uuid4(), user_id, protected.subject_kind,
+                    protected.lookup_hmac, protected.lookup_key_version,
+                    protected.ciphertext, protected.encryption_key_version,
+                ),
+            )
+        before = connection.execute(
+            "select (select count(*) from platform_control.internal_users),"
+            "(select count(*) from platform_control.provider_identities),"
+            "(select count(*) from platform_control.directory_members "
+            "where internal_user_id is not null)"
+        ).fetchone()
+
+    with pytest.raises(IdentityResolutionError, match="collision"):
+        await resolver.resolve_active_member(
+            DingTalkAuthResult(member.unionid, member.userid, "test-corp"),
+            DirectoryFreshness.FRESH,
+        )
+
+    with psycopg.connect(production_environment["admin"]) as connection:
+        assert connection.execute(
+            "select (select count(*) from platform_control.internal_users),"
+            "(select count(*) from platform_control.provider_identities),"
+            "(select count(*) from platform_control.directory_members "
+            "where internal_user_id is not null)"
+        ).fetchone() == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
 async def test_failed_final_refresh_rolls_back_user_and_provider_mappings(
     production_environment, tmp_path: Path
 ) -> None:
@@ -263,9 +320,15 @@ async def test_failed_final_refresh_rolls_back_user_and_provider_mappings(
     resolver = _resolver(production_environment, tmp_path, member)
     with psycopg.connect(production_environment["admin"]) as connection:
         connection.execute(
-            "revoke execute on function "
-            "platform_control.refresh_verified_internal_member("
-            "uuid,text,uuid,text,integer[],bytea[]) from platform_control_app"
+            "create function platform_control.reject_test_directory_bind() "
+            "returns trigger language plpgsql as $$ begin "
+            "if new.internal_user_id is not null then "
+            "raise exception 'forced tail failure'; end if; return new; end $$"
+        )
+        connection.execute(
+            "create trigger reject_test_directory_bind before update on "
+            "platform_control.directory_members for each row execute function "
+            "platform_control.reject_test_directory_bind()"
         )
         before = connection.execute(
             "select (select count(*) from platform_control.internal_users),"
@@ -287,14 +350,16 @@ async def test_failed_final_refresh_rolls_back_user_and_provider_mappings(
     finally:
         with psycopg.connect(production_environment["admin"]) as connection:
             connection.execute(
-                "grant execute on function "
-                "platform_control.refresh_verified_internal_member("
-                "uuid,text,uuid,text,integer[],bytea[]) to platform_control_app"
+                "drop trigger if exists reject_test_directory_bind on "
+                "platform_control.directory_members"
+            )
+            connection.execute(
+                "drop function if exists platform_control.reject_test_directory_bind()"
             )
 
 
 @pytest.mark.postgres
-def test_verified_refresh_function_is_hardened_and_environment_scoped(
+def test_obsolete_refresh_function_is_revoked_and_still_hardened(
     control_database,
 ) -> None:
     signature = (
@@ -316,5 +381,131 @@ def test_verified_refresh_function_is_hardened_and_environment_scoped(
                 "prosecdef,proconfig from pg_proc where oid=%s::regprocedure",
                 (app, signature, other_app, signature, signature, signature),
             ).fetchone()
-        assert privilege[:4] == (True, False, False, True)
+        assert privilege[:4] == (False, False, False, True)
         assert privilege[4] == ["search_path=pg_catalog, platform_control"]
+
+
+@pytest.mark.postgres
+def test_app_role_has_only_narrow_verified_identity_mutation_boundary(
+    control_database,
+) -> None:
+    forbidden_function = (
+        "platform_control.create_internal_member(uuid,text)"
+    )
+    obsolete_function = (
+        "platform_control.refresh_verified_internal_member("
+        "uuid,text,uuid,text,integer[],bytea[])"
+    )
+    for name, environment in control_database["environments"].items():
+        app = environment["roles"][1]
+        other_app = (
+            "platform_control_app_preview"
+            if name == "production"
+            else "platform_control_app"
+        )
+        with psycopg.connect(environment["admin"]) as connection:
+            privileges = connection.execute(
+                "select "
+                "has_table_privilege(%s,'platform_control.provider_identities','insert'),"
+                "has_table_privilege(%s,'platform_control.provider_identities','update'),"
+                "has_table_privilege(%s,'platform_control.provider_identities','delete'),"
+                "has_table_privilege(%s,'platform_control.directory_members','update'),"
+                "has_table_privilege(%s,'platform_control.internal_users','insert'),"
+                "has_function_privilege(%s,%s,'execute'),"
+                "has_function_privilege(%s,%s,'execute'),"
+                "exists (select 1 from pg_proc where pronamespace="
+                "'platform_control'::regnamespace and proname="
+                "'resolve_verified_dingtalk_member'),"
+                "exists (select 1 from pg_proc procedure join pg_namespace namespace "
+                "on namespace.oid=procedure.pronamespace where namespace.nspname="
+                "'platform_control' and procedure.proname="
+                "'resolve_verified_dingtalk_member' and "
+                "has_function_privilege(%s,procedure.oid,'execute')),"
+                "exists (select 1 from pg_proc procedure join pg_namespace namespace "
+                "on namespace.oid=procedure.pronamespace where namespace.nspname="
+                "'platform_control' and procedure.proname="
+                "'resolve_verified_dingtalk_member' and "
+                "has_function_privilege(%s,procedure.oid,'execute'))",
+                (
+                    app, app, app, app, app,
+                    app, forbidden_function,
+                    app, obsolete_function,
+                    app, other_app,
+                ),
+            ).fetchone()
+        assert privileges == (
+            False, False, False, False, False,
+            False, False, True, True, False,
+        )
+
+
+@pytest.mark.postgres
+def test_app_role_cannot_directly_create_rebind_or_copy_identity_rows(
+    production_environment,
+) -> None:
+    app_url = production_environment["urls"]["platform_control_app"]
+    statements = (
+        (
+            "select platform_control.create_internal_member(%s,'Bypass')",
+            (uuid4(),),
+        ),
+        (
+            "insert into platform_control.provider_identities "
+            "(provider_identity_id,internal_user_id,subject_kind,lookup_hmac,"
+            "lookup_key_version,encrypted_provider_id,encryption_key_version) "
+            "select %s,internal_user_id,subject_kind,lookup_hmac,"
+            "lookup_key_version,encrypted_provider_id,encryption_key_version "
+            "from platform_control.provider_identities limit 1",
+            (uuid4(),),
+        ),
+        (
+            "update platform_control.provider_identities set verified_at=now()",
+            (),
+        ),
+        (
+            "update platform_control.directory_members set internal_user_id=%s",
+            (uuid4(),),
+        ),
+    )
+    for statement, parameters in statements:
+        with psycopg.connect(app_url) as connection:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute(statement, parameters)
+
+
+@pytest.mark.asyncio
+async def test_cancellation_waits_for_database_mutation_to_finish_then_propagates(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    member = DingTalkMember("employee-9", "union-9", "Employee", True, (1,))
+    resolver = IdentityResolver(
+        "postgresql://platform_control_app@127.0.0.1/agent_platform_control",
+        corp_id="test-corp",
+        client=DirectoryClient(member),
+        identity_codec=_codec(tmp_path),
+    )
+    started = asyncio.Event()
+    release = asyncio.Event()
+    expected = uuid4()
+
+    async def delayed_to_thread(function, *args):
+        started.set()
+        await release.wait()
+        return expected
+
+    monkeypatch.setattr(identity_module.asyncio, "to_thread", delayed_to_thread)
+    task = asyncio.create_task(resolver.resolve_active_member(
+        DingTalkAuthResult("union-9", "employee-9", "test-corp"),
+        DirectoryFreshness.FRESH,
+    ))
+    await started.wait()
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task

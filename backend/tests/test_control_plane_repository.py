@@ -3,8 +3,6 @@ from __future__ import annotations
 import hashlib
 import inspect
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
-import threading
 from uuid import UUID, uuid4
 
 import psycopg
@@ -14,11 +12,11 @@ from app.control_plane.crypto import ProtectedProviderId
 from app.control_plane.models import IssuedWebSession
 from app.control_plane.repository import (
     ControlRepository,
+    ControlRepositoryError,
     IdentityCollisionError,
     IdentityKeyPolicyError,
-    _identity_advisory_lock_key,
 )
-from test_identity_crypto import _codec, _keyring
+from test_identity_crypto import _codec
 from test_control_plane_migration import control_database
 
 
@@ -37,10 +35,12 @@ def repository(production_environment, tmp_path: Path) -> ControlRepository:
                 "select platform_control.set_provider_identity_key_policy("
                 "'dingtalk', array[1,2])"
             )
-    return ControlRepository(
+    repository = ControlRepository(
         production_environment["urls"]["platform_control_app"],
         identity_codec=_codec(tmp_path),
     )
+    repository._test_admin_url = production_environment["admin"]
+    return repository
 
 
 def _stored_identity(protected: ProtectedProviderId, user_id: UUID) -> tuple:
@@ -55,15 +55,48 @@ def _stored_identity(protected: ProtectedProviderId, user_id: UUID) -> tuple:
     )
 
 
+def _seed_internal_user(
+    repository: ControlRepository,
+    protected: ProtectedProviderId,
+    display_name: str,
+) -> UUID:
+    user_id = uuid4()
+    with psycopg.connect(repository._test_admin_url) as connection:
+        existing = connection.execute(
+            "select internal_user_id from platform_control.provider_identities "
+            "where subject_kind=%s and lookup_hmac=%s and lookup_key_version=%s",
+            (
+                protected.subject_kind,
+                protected.lookup_hmac,
+                protected.lookup_key_version,
+            ),
+        ).fetchone()
+        if existing is not None:
+            return existing[0]
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values (%s,%s,'active')",
+            (user_id, display_name),
+        )
+        connection.execute(
+            "insert into platform_control.provider_identities "
+            "(provider_identity_id,internal_user_id,subject_kind,lookup_hmac,"
+            "lookup_key_version,encrypted_provider_id,encryption_key_version) "
+            "values (%s,%s,%s,%s,%s,%s,%s)",
+            _stored_identity(protected, user_id),
+        )
+    return user_id
+
+
 @pytest.mark.postgres
-def test_create_internal_user_atomically_resolves_same_provider_identity(
+def test_seeded_provider_identity_resolves_across_fresh_ciphertexts(
     repository: ControlRepository,
 ) -> None:
     first = repository.identity_codec.seal("employee", "synthetic-provider-id")
     second = repository.identity_codec.seal("employee", "synthetic-provider-id")
 
-    first_user = repository.create_internal_user(first, "Synthetic User")
-    second_user = repository.create_internal_user(second, "Changed Display Name")
+    first_user = _seed_internal_user(repository, first, "Synthetic User")
+    second_user = repository.resolve_provider_identity(second)
 
     assert second_user == first_user
     assert repository.resolve_provider_identity(second) == first_user
@@ -80,7 +113,7 @@ def test_repository_establishes_and_checks_exact_database_transition_policy(
         "employee", "policy-provider-id"
     )
 
-    repository.create_internal_user(protected, "Policy User")
+    _seed_internal_user(repository, protected, "Policy User")
     assert repository.resolve_provider_identity(protected) is not None
 
     with psycopg.connect(production_environment["admin"]) as connection:
@@ -93,19 +126,16 @@ def test_repository_establishes_and_checks_exact_database_transition_policy(
 
 
 @pytest.mark.postgres
-@pytest.mark.parametrize("operation", ["resolve", "create", "rotate"])
 def test_every_identity_transaction_fails_closed_on_database_policy_mismatch(
     repository: ControlRepository,
     production_environment,
-    operation: str,
 ) -> None:
     original = repository.identity_codec.seal(
-        "employee", f"policy-mismatch-{operation}-provider-id"
+        "employee", "policy-mismatch-resolve-provider-id"
     )
-    internal_user_id = repository.create_internal_user(
+    internal_user_id = _seed_internal_user(repository,
         original, "Policy Mismatch User"
     )
-    rotated = repository.identity_codec.rotate(original)
     with psycopg.connect(
         production_environment["urls"]["platform_control_maintenance"]
     ) as connection:
@@ -119,14 +149,7 @@ def test_every_identity_transaction_fails_closed_on_database_policy_mismatch(
         IdentityKeyPolicyError,
         match="provider identity key policy mismatch",
     ):
-        if operation == "resolve":
-            repository.resolve_provider_identity(original)
-        elif operation == "create":
-            repository.create_internal_user(rotated, "Should Not Change")
-        else:
-            repository.rotate_provider_identity(
-                internal_user_id, original, rotated
-            )
+        repository.resolve_provider_identity(original)
 
     with psycopg.connect(production_environment["admin"]) as connection:
         with connection.cursor() as cursor:
@@ -141,11 +164,11 @@ def test_every_identity_transaction_fails_closed_on_database_policy_mismatch(
 
 
 @pytest.mark.postgres
-def test_create_internal_user_rejects_lookup_collision_without_leaking_values(
+def test_resolve_rejects_lookup_collision_without_leaking_values(
     repository: ControlRepository,
 ) -> None:
     protected = repository.identity_codec.seal("employee", "synthetic-provider-id")
-    repository.create_internal_user(protected, "Synthetic User")
+    _seed_internal_user(repository, protected, "Synthetic User")
     collision = ProtectedProviderId(
         subject_kind=protected.subject_kind,
         lookup_hmac=protected.lookup_hmac,
@@ -155,18 +178,16 @@ def test_create_internal_user_rejects_lookup_collision_without_leaking_values(
     )
 
     with pytest.raises(IdentityCollisionError, match="provider identity collision") as caught:
-        repository.create_internal_user(collision, "Different User")
+        repository.resolve_provider_identity(collision)
 
     assert "Synthetic User" not in str(caught.value)
     assert "Different User" not in str(caught.value)
     assert protected.lookup_hmac.hex() not in str(caught.value)
 
 
-@pytest.mark.parametrize("operation", ["resolve", "create"])
 @pytest.mark.parametrize("tamper", ["lookup", "version"])
 def test_repository_rejects_supplied_lookup_not_derived_from_plaintext_before_query(
     tmp_path: Path,
-    operation: str,
     tamper: str,
 ) -> None:
     connect_calls = 0
@@ -197,331 +218,12 @@ def test_repository_rejects_supplied_lookup_not_derived_from_plaintext_before_qu
     )
 
     with pytest.raises(IdentityCollisionError, match="provider identity collision"):
-        if operation == "resolve":
-            repository.resolve_provider_identity(malformed)
-        else:
-            repository.create_internal_user(malformed, "Synthetic User")
+        repository.resolve_provider_identity(malformed)
 
     assert connect_calls == 0
 
 
-@pytest.mark.postgres
-def test_adjacent_rollout_nodes_atomically_create_or_resolve_one_identity(
-    production_environment,
-    tmp_path: Path,
-) -> None:
-    encryption_keys = {1: b"e" * 32, 2: b"E" * 32, 3: b"f" * 32}
-    lookup_keys = {1: b"h" * 32, 2: b"H" * 32, 3: b"i" * 32}
-
-    def rollout_codec(node: str, active_version: int):
-        from app.control_plane.crypto import ProviderIdentityCodec
-
-        return ProviderIdentityCodec(
-            _keyring(
-                tmp_path,
-                f"{node}-encryption.json",
-                "provider-encryption",
-                active_version,
-                encryption_keys,
-            ),
-            _keyring(
-                tmp_path,
-                f"{node}-hmac.json",
-                "provider-lookup-hmac",
-                active_version,
-                lookup_keys,
-                transition_versions=(1, 2, 3),
-            ),
-        )
-
-    database_url = production_environment["urls"]["platform_control_app"]
-    old_repository = ControlRepository(
-        database_url, identity_codec=rollout_codec("old", 2)
-    )
-    new_repository = ControlRepository(
-        database_url, identity_codec=rollout_codec("new", 3)
-    )
-    provider_id = "adjacent-rollout-provider-id"
-    start = threading.Barrier(2)
-
-    maintenance_url = production_environment["urls"][
-        "platform_control_maintenance"
-    ]
-    with psycopg.connect(maintenance_url) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "select platform_control.set_provider_identity_key_policy("
-                "'dingtalk', array[1,2,3])"
-            )
-
-    with psycopg.connect(production_environment["admin"]) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "create function platform_control.delay_rollout_user_insert() "
-                "returns trigger language plpgsql as $$ begin "
-                "if new.display_name like 'Rollout Node %' then "
-                "perform pg_sleep(0.25); end if; return new; end $$"
-            )
-            cursor.execute(
-                "create trigger delay_rollout_user_insert before insert on "
-                "platform_control.internal_users for each row execute function "
-                "platform_control.delay_rollout_user_insert()"
-            )
-
-    def create(repository: ControlRepository, display_name: str) -> UUID:
-        protected = repository.identity_codec.seal("employee", provider_id)
-        start.wait(timeout=5)
-        return repository.create_internal_user(protected, display_name)
-
-    try:
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            old_future = executor.submit(
-                create, old_repository, "Rollout Node Old"
-            )
-            new_future = executor.submit(
-                create, new_repository, "Rollout Node New"
-            )
-            old_user = old_future.result(timeout=10)
-            new_user = new_future.result(timeout=10)
-    finally:
-        with psycopg.connect(production_environment["admin"]) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "drop trigger if exists delay_rollout_user_insert on "
-                    "platform_control.internal_users"
-                )
-                cursor.execute(
-                    "drop function if exists "
-                    "platform_control.delay_rollout_user_insert()"
-                )
-
-    assert old_user == new_user
-    assert old_repository.resolve_provider_identity(
-        old_repository.identity_codec.seal("employee", provider_id)
-    ) == old_user
-    assert new_repository.resolve_provider_identity(
-        new_repository.identity_codec.seal("employee", provider_id)
-    ) == old_user
-    with psycopg.connect(production_environment["admin"]) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "select count(distinct internal_user_id) "
-                "from platform_control.provider_identities "
-                "where subject_kind = 'employee' and internal_user_id in (%s, %s)",
-                (old_user, new_user),
-            )
-            assert cursor.fetchone() == (1,)
-
-
-@pytest.mark.postgres
-def test_concurrent_mismatched_transition_windows_fail_closed_with_one_mapping(
-    production_environment,
-    tmp_path: Path,
-) -> None:
-    encryption_keys = {1: b"e" * 32, 2: b"E" * 32, 3: b"f" * 32}
-    lookup_keys = {1: b"h" * 32, 2: b"H" * 32, 3: b"i" * 32}
-
-    def rollout_codec(
-        node: str,
-        active_version: int,
-        transition_versions: tuple[int, ...],
-    ):
-        from app.control_plane.crypto import ProviderIdentityCodec
-
-        return ProviderIdentityCodec(
-            _keyring(
-                tmp_path,
-                f"mismatch-{node}-encryption.json",
-                "provider-encryption",
-                active_version,
-                encryption_keys,
-            ),
-            _keyring(
-                tmp_path,
-                f"mismatch-{node}-hmac.json",
-                "provider-lookup-hmac",
-                active_version,
-                {
-                    version: lookup_keys[version]
-                    for version in transition_versions
-                },
-                transition_versions=transition_versions,
-            ),
-        )
-
-    database_url = production_environment["urls"]["platform_control_app"]
-    old_repository = ControlRepository(
-        database_url,
-        identity_codec=rollout_codec("old", 2, (1, 2)),
-    )
-    new_repository = ControlRepository(
-        database_url,
-        identity_codec=rollout_codec("new", 3, (2, 3)),
-    )
-    provider_id = "mismatched-window-provider-id"
-    start = threading.Barrier(2)
-
-    with psycopg.connect(production_environment["admin"]) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "delete from platform_control.provider_identity_key_policies "
-                "where provider = 'dingtalk'"
-            )
-
-    def create(repository: ControlRepository, display_name: str):
-        protected = repository.identity_codec.seal("employee", provider_id)
-        start.wait(timeout=5)
-        try:
-            return repository.create_internal_user(protected, display_name)
-        except IdentityKeyPolicyError as error:
-            return error
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        results = (
-            executor.submit(create, old_repository, "Mismatch Old"),
-            executor.submit(create, new_repository, "Mismatch New"),
-        )
-        outcomes = [future.result(timeout=10) for future in results]
-
-    assert sum(isinstance(outcome, UUID) for outcome in outcomes) == 1
-    assert sum(isinstance(outcome, IdentityKeyPolicyError) for outcome in outcomes) == 1
-    with psycopg.connect(production_environment["admin"]) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "select lookup_transition_versions from "
-                "platform_control.provider_identity_key_policies "
-                "where provider = 'dingtalk'"
-            )
-            assert cursor.fetchone()[0] in ([1, 2], [2, 3])
-            cursor.execute(
-                "select count(*), count(distinct internal_user_id) "
-                "from platform_control.provider_identities identity "
-                "join platform_control.internal_users users using "
-                "(internal_user_id) where users.display_name like 'Mismatch %'"
-            )
-            assert cursor.fetchone() == (1, 1)
-
-
-def test_create_or_resolve_acquires_every_transition_lock_in_version_hmac_order(
-    tmp_path: Path,
-) -> None:
-    lock_calls: list[int] = []
-
-    class Cursor:
-        policy_selected = False
-        created_user_id = None
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def execute(self, statement, parameters=None):
-            self.policy_selected = (
-                "select lookup_transition_versions" in statement
-            )
-            if "platform_control.create_internal_member" in statement:
-                self.created_user_id = parameters[0]
-            if (
-                statement == "select pg_advisory_xact_lock(%s)"
-                and parameters != (1229998928,)
-            ):
-                lock_calls.append(parameters[0])
-            return self
-
-        def fetchall(self):
-            return []
-
-        def fetchone(self):
-            if self.policy_selected:
-                return {"lookup_transition_versions": [1, 2]}
-            if self.created_user_id is not None:
-                return {"internal_user_id": self.created_user_id}
-            return None
-
-    class Connection:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def cursor(self):
-            return Cursor()
-
-    repository = ControlRepository(
-        "postgresql://platform_control_app@127.0.0.1/agent_platform_control",
-        identity_codec=_codec(tmp_path),
-        connect=lambda *args, **kwargs: Connection(),
-    )
-    protected = repository.identity_codec.seal(
-        "employee", "ordered-lock-provider-id"
-    )
-    candidates = sorted(
-        repository.identity_codec.lookup_candidates(
-            protected.subject_kind,
-            repository.identity_codec.unseal(protected),
-        ),
-        key=lambda candidate: (candidate[0], candidate[1]),
-    )
-
-    repository.create_internal_user(protected, "Synthetic User")
-
-    assert lock_calls == [
-        _identity_advisory_lock_key(version, lookup_hmac)
-        for version, lookup_hmac in candidates
-    ]
-
-
-@pytest.mark.postgres
-def test_identity_rotation_preserves_internal_user_id_and_previous_lookup_window(
-    repository: ControlRepository,
-) -> None:
-    provider_id = "rotation-provider-id"
-    active = repository.identity_codec.seal("employee", provider_id)
-    previous_lookup = dict(repository.identity_codec.lookup_candidates(
-        "employee", provider_id
-    ))[1]
-    original = ProtectedProviderId(
-        subject_kind=active.subject_kind,
-        lookup_hmac=previous_lookup,
-        lookup_key_version=1,
-        ciphertext=active.ciphertext,
-        encryption_key_version=active.encryption_key_version,
-    )
-    internal_user_id = repository.create_internal_user(original, "Synthetic User")
-    rotated = repository.identity_codec.rotate(original)
-
-    repository.rotate_provider_identity(internal_user_id, original, rotated)
-
-    assert repository.resolve_provider_identity(rotated) == internal_user_id
-    assert repository.resolve_provider_identity(original) == internal_user_id
-
-
-@pytest.mark.postgres
-def test_identity_rotation_rejects_a_lookup_not_derived_from_ciphertext(
-    repository: ControlRepository,
-) -> None:
-    original = repository.identity_codec.seal(
-        "employee", "tampered-rotation-provider-id"
-    )
-    internal_user_id = repository.create_internal_user(original, "Rotation User")
-    tampered = ProtectedProviderId(
-        subject_kind=original.subject_kind,
-        lookup_hmac=b"x" * 32,
-        lookup_key_version=original.lookup_key_version,
-        ciphertext=original.ciphertext,
-        encryption_key_version=original.encryption_key_version,
-    )
-
-    with pytest.raises(IdentityCollisionError, match="provider identity collision"):
-        repository.rotate_provider_identity(internal_user_id, original, tampered)
-
-    assert repository.resolve_provider_identity(original) == internal_user_id
-
-
-def test_identity_rotation_rejects_previous_lookup_before_database_connection(
+def test_generic_identity_create_and_rotation_are_retired(
     tmp_path: Path,
 ) -> None:
     connect_calls = 0
@@ -536,22 +238,17 @@ def test_identity_rotation_rejects_previous_lookup_before_database_connection(
         identity_codec=_codec(tmp_path),
         connect=reject_connection,
     )
-    previous = repository.identity_codec.seal(
-        "employee", "tampered-previous-rotation-provider-id"
-    )
-    tampered_previous = ProtectedProviderId(
-        subject_kind=previous.subject_kind,
-        lookup_hmac=b"x" * 32,
-        lookup_key_version=previous.lookup_key_version,
-        ciphertext=previous.ciphertext,
-        encryption_key_version=previous.encryption_key_version,
-    )
+    previous = repository.identity_codec.seal("employee", "provider-id")
     rotated = repository.identity_codec.rotate(previous)
 
-    with pytest.raises(IdentityCollisionError, match="provider identity collision"):
-        repository.rotate_provider_identity(
-            uuid4(), tampered_previous, rotated
-        )
+    with pytest.raises(
+        ControlRepositoryError, match="verified directory identity required"
+    ):
+        repository.create_internal_user(previous, "User")
+    with pytest.raises(
+        ControlRepositoryError, match="verified directory identity required"
+    ):
+        repository.rotate_provider_identity(uuid4(), previous, rotated)
 
     assert connect_calls == 0
 
@@ -561,7 +258,7 @@ def test_web_session_persists_only_hashes_and_uses_database_expiry(
     repository: ControlRepository,
     production_environment,
 ) -> None:
-    user_id = repository.create_internal_user(
+    user_id = _seed_internal_user(repository,
         repository.identity_codec.seal("employee", "session-provider-id"),
         "Session User",
     )
@@ -618,7 +315,7 @@ def test_expired_login_attempt_and_web_session_cannot_be_rotated(
     production_environment,
 ) -> None:
     attempt_id = repository.create_login_attempt("in_client", "expired-state", 60)
-    user_id = repository.create_internal_user(
+    user_id = _seed_internal_user(repository,
         repository.identity_codec.seal("employee", "expiry-provider-id"),
         "Expiry User",
     )
@@ -645,7 +342,7 @@ def test_session_rotation_and_revocation_are_atomic(
     repository: ControlRepository,
     production_environment,
 ) -> None:
-    user_id = repository.create_internal_user(
+    user_id = _seed_internal_user(repository,
         repository.identity_codec.seal("employee", "revoke-provider-id"),
         "Revoke User",
     )
@@ -682,7 +379,7 @@ def test_session_rotation_preserves_smaller_and_larger_absolute_deadlines_exactl
     absolute_seconds: int,
     rotated_idle_seconds: int,
 ) -> None:
-    user_id = repository.create_internal_user(
+    user_id = _seed_internal_user(repository,
         repository.identity_codec.seal(
             "employee", f"absolute-{absolute_seconds}-provider-id"
         ),
@@ -709,11 +406,11 @@ def test_database_enforces_at_most_one_owner_role_including_inactive(
     repository: ControlRepository,
     production_environment,
 ) -> None:
-    first = repository.create_internal_user(
+    first = _seed_internal_user(repository,
         repository.identity_codec.seal("employee", "owner-one-provider-id"),
         "Owner One",
     )
-    second = repository.create_internal_user(
+    second = _seed_internal_user(repository,
         repository.identity_codec.seal("employee", "owner-two-provider-id"),
         "Owner Two",
     )
@@ -743,11 +440,11 @@ def test_observation_scopes_are_exact_active_agent_ids(
     repository: ControlRepository,
     production_environment,
 ) -> None:
-    viewer = repository.create_internal_user(
+    viewer = _seed_internal_user(repository,
         repository.identity_codec.seal("employee", "viewer-provider-id"),
         "Viewer",
     )
-    owner = repository.create_internal_user(
+    owner = _seed_internal_user(repository,
         repository.identity_codec.seal("employee", "grantor-provider-id"),
         "Grantor",
     )
