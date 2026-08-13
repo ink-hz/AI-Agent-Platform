@@ -133,3 +133,69 @@ def test_raw_key_files_inside_runtime_volumes_use_reader_contract_mode():
         "replica-signing-public-key",
     ):
         assert f"chmod 600 /target/{key_name}" in stage
+
+
+def test_control_database_bootstrap_is_isolated_and_least_privilege():
+    bootstrap_path = CLOUD / "bootstrap-control-db.sh"
+    assert bootstrap_path.is_file()
+    script = bootstrap_path.read_text(encoding="utf-8")
+
+    assert "agent_platform_control" in script
+    assert "agent_platform_control_preview" in script
+    assert "template0" in script
+    for role in (
+        "platform_control_migrator",
+        "platform_control_app",
+        "platform_directory_worker",
+        "platform_stream_ingest",
+        "platform_audit_append",
+        "platform_control_maintenance",
+    ):
+        assert role in script
+    for secret in (
+        "control-migrator-database-url",
+        "control-database-url",
+        "control-directory-worker-database-url",
+        "control-stream-ingest-database-url",
+        "control-audit-database-url",
+        "control-maintenance-database-url",
+    ):
+        assert secret in script
+    assert "chmod 600" in script
+    assert "revoke connect on database" in script.lower()
+    assert "revoke all on schema public from public" in script.lower()
+    assert "revoke create on schema public from public" in script.lower()
+    assert "revoke all on schema platform_control from public" in script.lower()
+    assert "app.control_plane.migrate" in script
+    assert "PLATFORM_CONTROL_MIGRATOR_DATABASE_URL_FILE" in script
+    assert "platform_replica" not in script
+    assert "replica-database-url" not in script
+
+    lowered = script.lower()
+    for forbidden in (
+        "create extension postgres_fdw",
+        "create extension dblink",
+        "login password '$",
+        "login password \"$",
+        "echo $",
+    ):
+        assert forbidden not in lowered
+
+
+def test_remote_stage_calls_control_bootstrap_without_replacing_replica():
+    stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+
+    assert '"$release_path/deploy/cloud/bootstrap-control-db.sh"' in stage
+    assert stage.count("bootstrap-control-db.sh") == 1
+    assert "replica-database-url" in stage
+    assert "platform_replica_reader" in stage
+    assert "platform_replica_importer" in stage
+    assert (
+        "postgresql://platform_replica_reader:%s@platform-postgres:5432/"
+        "agent_platform\\n"
+    ) in stage
+    assert (
+        "postgresql://platform_replica_importer:%s@platform-postgres:5432/"
+        "agent_platform\\n"
+    ) in stage
+    assert "publish-agent-domain.sh" not in stage

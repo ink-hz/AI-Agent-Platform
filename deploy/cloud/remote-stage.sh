@@ -186,6 +186,8 @@ done
   "$image_name" python -m app.cloud_replica.cli migrate >/dev/null
 
 postgres_container="$("${compose[@]}" ps -q platform-postgres)"
+"$release_path/deploy/cloud/bootstrap-control-db.sh" \
+  "$release_path" "$private_path" "$image_name" "$postgres_container"
 /usr/bin/docker exec -i "$postgres_container" psql -v ON_ERROR_STOP=1 -U platform_owner -d agent_platform >/dev/null <<SQL
 do \$\$
 begin
