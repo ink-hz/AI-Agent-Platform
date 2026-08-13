@@ -34,6 +34,15 @@ public_listener_digest="$(/usr/bin/ss -H -lnt | /usr/bin/awk '$4 !~ /^(127\.0\.0
 [[ -n "$fae_container_id" && -n "$fae_image" && -n "$fae_started_at" ]] || fail
 
 existing_api="$(/usr/bin/docker ps --filter label=com.docker.compose.project=orbbec-agent-platform --filter label=com.docker.compose.service=platform-api --format '{{.ID}}' | /usr/bin/head -1)"
+control_secret_consumer_services=(
+  platform-api
+  platform-api-preview
+  platform-directory
+  platform-directory-preview
+  platform-dingtalk-stream
+  platform-dingtalk-stream-preview
+)
+previous_control_consumers=()
 previous_release=""
 if [[ -L "$root_path/current" ]]; then
   previous_release="$(/usr/bin/readlink -f "$root_path/current" 2>/dev/null || true)"
@@ -80,7 +89,12 @@ rollback() {
     if [[ -n "$previous_release" && -f "$previous_environment" ]]; then
       /bin/cp -p "$previous_environment" "$environment_path"
       /bin/ln -sfn "$previous_release" "$root_path/current"
-      /usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml" up -d platform-api platform-loopback >/dev/null 2>&1 || true
+      if [[ "${#previous_control_consumers[@]}" -gt 0 ]]; then
+        /usr/bin/docker compose --env-file "$environment_path" \
+          -f "$previous_release/deploy/cloud/compose.yaml" \
+          up -d --force-recreate "${previous_control_consumers[@]}" \
+          >/dev/null 2>&1 || true
+      fi
     else
       /usr/bin/docker rm -f orbbec-agent-platform-platform-loopback-1 >/dev/null 2>&1 || true
       /usr/bin/docker rm -f orbbec-agent-platform-platform-api-1 >/dev/null 2>&1 || true
@@ -161,8 +175,18 @@ done
   sh -ceu 'cp /source/replica-import-database-url /target/replica-database-url; cp /source/replica-encryption-key /source/replica-signing-public-key /target/; chown 10001:10001 /target/*; chmod 600 /target/replica-database-url; chmod 600 /target/replica-encryption-key; chmod 600 /target/replica-signing-public-key'
 
 if [[ -n "$previous_release" && -f "$environment_path" ]]; then
-  /usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml" stop platform-loopback platform-api >/dev/null
-  api_stopped=1
+  previous_compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml")
+  previous_services="$("${previous_compose[@]}" config --services)"
+  previous_control_consumers=()
+  for service_name in "${control_secret_consumer_services[@]}" platform-loopback platform-loopback-preview; do
+    if /usr/bin/grep -Fxq "$service_name" <<<"$previous_services"; then
+      previous_control_consumers+=("$service_name")
+    fi
+  done
+  if [[ "${#previous_control_consumers[@]}" -gt 0 ]]; then
+    "${previous_compose[@]}" stop "${previous_control_consumers[@]}" >/dev/null
+    api_stopped=1
+  fi
 fi
 /usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=%s\n' \
   "$image_name" "$cloud_auth_mode" > "$environment_path"
@@ -186,8 +210,9 @@ done
   "$image_name" python -m app.cloud_replica.cli migrate >/dev/null
 
 postgres_container="$("${compose[@]}" ps -q platform-postgres)"
-"$release_path/deploy/cloud/bootstrap-control-db.sh" \
-  "$release_path" "$private_path" "$image_name" "$postgres_container"
+control_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-control-db.sh" \
+  "$release_path" "$private_path" "$image_name" "$postgres_container")" || fail
+[[ "$control_bootstrap_result" == "CONTROL_DATABASE_CREDENTIALS_READY version=2" ]] || fail
 /usr/bin/docker exec -i "$postgres_container" psql -v ON_ERROR_STOP=1 -U platform_owner -d agent_platform >/dev/null <<SQL
 do \$\$
 begin
@@ -207,8 +232,26 @@ grant platform_replica_read to platform_replica_reader;
 grant platform_replica_import to platform_replica_importer;
 SQL
 
-api_stopped=1
-"${compose[@]}" up -d platform-api platform-loopback >/dev/null
+available_release_services="$("${compose[@]}" config --services)"
+active_control_secret_consumers=()
+for service_name in "${control_secret_consumer_services[@]}"; do
+  if /usr/bin/grep -Fxq "$service_name" <<<"$available_release_services"; then
+    active_control_secret_consumers+=("$service_name")
+  fi
+done
+if [[ "${#active_control_secret_consumers[@]}" -gt 0 ]]; then
+  api_stopped=1
+  "${compose[@]}" up -d --force-recreate "${active_control_secret_consumers[@]}" >/dev/null
+fi
+active_loopback_services=()
+for service_name in platform-loopback platform-loopback-preview; do
+  if /usr/bin/grep -Fxq "$service_name" <<<"$available_release_services"; then
+    active_loopback_services+=("$service_name")
+  fi
+done
+if [[ "${#active_loopback_services[@]}" -gt 0 ]]; then
+  "${compose[@]}" up -d --force-recreate "${active_loopback_services[@]}" >/dev/null
+fi
 for _attempt in $(/usr/bin/seq 1 40); do
   if /usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null; then
     break

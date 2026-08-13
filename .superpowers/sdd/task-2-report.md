@@ -293,3 +293,151 @@ or dblink. The two `rg` no-match scans exited 1 as expected.
   legacy migrator-owned objects before the additive migration runs. The helper
   performs that reassignment idempotently; the immutable `001` checksum and
   checksum-mismatch behavior are preserved.
+
+### Legacy credential rotation follow-up
+
+The remaining Important upgrade-path finding is fixed without changing either
+applied migration. The deployment now owns an exact version-2 credential state
+machine under the existing private root:
+
+```text
+.control-database-credentials-v2.state
+.control-database-credentials-v2/
+```
+
+The state file is root-owned mode 0600 on deployment. It contains exactly
+`version=2`, `status=rotating`, and an origin while work is retryable, then
+exactly `version=2` and `status=complete` after successful verification. The
+private mode-0700 work directory preserves twelve candidate password/DSN pairs
+across retries. Detection accepts only an empty fresh layout, the exact legacy
+six-role shared-password layout, the exact twelve-role unmarked layout produced
+by the preceding fix, a valid rotating record, or a valid completed record. It
+also checks the cluster catalog signature, so marker absence alone cannot
+classify an installation.
+
+For every unmarked accepted layout, bootstrap generates twelve unique new
+passwords, rotates exactly the six canonical production roles, assigns the six
+preview passwords only to `_preview` roles, migrates both databases through the
+bounded NOLOGIN-owner membership window, restores grants/revocations, and
+requires zero owner-role memberships. It then atomically replaces every
+password/DSN file, writes the completion marker, and emits exactly:
+
+```text
+CONTROL_DATABASE_CREDENTIALS_READY version=2
+```
+
+Remote staging requires that exact result and force-recreates every present
+control-secret API/directory/Stream consumer before deployment acceptance.
+Future Task-14 services are optional at this stage and are skipped when absent.
+Audit credentials reload with the API; maintenance and migration are one-shot
+consumers that read their secret file on each invocation. No FAE operation,
+domain publication, replica credential/database change, or cutover was added.
+
+#### RED
+
+Initial exact command:
+
+```bash
+backend/.venv/bin/python -m pytest backend/tests/test_control_credential_upgrade.py -q
+```
+
+Output:
+
+```text
+FFFFFFFF                                                                 [100%]
+8 failed in 0.73s
+```
+
+The six executable-helper failures reported the missing
+`deploy/cloud/control-db-credential-state.sh`; the remaining failures proved
+that bootstrap lacked ordered rotation/verification/completion and remote
+staging lacked the exact acceptance marker plus consumer recreation contract.
+
+Failure-window review then added a state-only interruption test. Exact command:
+
+```bash
+backend/.venv/bin/python -m pytest backend/tests/test_control_credential_upgrade.py::test_state_only_partial_prepare_resumes_without_a_second_rotation -q
+```
+
+Output:
+
+```text
+F                                                                        [100%]
+1 failed in 0.05s
+```
+
+It failed because classification required the candidate directory to exist.
+The transition now persists the rotating state before creating candidates;
+state-only and partially generated candidate work both resume safely.
+
+#### GREEN and disposable PostgreSQL
+
+Focused helper/deployment command:
+
+```bash
+backend/.venv/bin/python -m pytest backend/tests/test_control_credential_upgrade.py backend/tests/test_cloud_deployment.py -q
+```
+
+Output:
+
+```text
+..................                                                       [100%]
+18 passed in 5.98s
+```
+
+These tests execute the shell state helper against temporary private roots and
+prove exact legacy detection, fresh-install classification, malformed/partial
+layout refusal, state-only and candidate retry behavior, twelve unique values,
+all six production values changing, disjoint preview values, exact role/DSN
+content, mode 0600 atomic replacement, exact completion contents, no second
+rotation after completion, ordered database verification, exact acceptance,
+optional consumer handling, and no FAE/replica bootstrap impact.
+
+Fresh real PostgreSQL command:
+
+```bash
+cd backend && .venv/bin/python -m pytest tests/test_control_plane_migration.py -vv
+```
+
+Output:
+
+```text
+collected 8 items
+8 passed in 0.86s
+```
+
+This re-proves the unchanged advisory/checksum migration behavior, two-database
+ownership/grants, cross-environment denial, NOLOGIN owners, zero retained owner
+membership, append-only audit, and maintenance-only fixed-cutoff retention on a
+disposable PostgreSQL 17.10 cluster.
+
+#### Full verification
+
+Full backend command:
+
+```bash
+cd backend && .venv/bin/python -m pytest -q
+```
+
+Output:
+
+```text
+676 passed, 1 skipped, 1 warning in 9.75s
+```
+
+The warning is the pre-existing Starlette/httpx deprecation warning.
+
+Final static checks cover all three affected shell scripts with `bash -n`,
+`git diff --check`, and scans for private-key material, common cloud/chat token
+forms, literal PostgreSQL credentials, FDW, and dblink. No Docker deployment,
+publication, cutover, FAE restart, or real credential access was performed.
+
+#### Concerns
+
+- Docker remains unavailable locally, so the orchestration path could not be
+  failure-injected end to end. The state machine and retry transitions are
+  executable shell tests; migration/ownership/grants are real PostgreSQL tests;
+  Docker ordering and consumer recreation remain strict static policy tests.
+- Task 14 still owns actual preview service/secret-volume packaging. This fix
+  supplies its required service-name/recreation and exact acceptance contract;
+  absent future services do not fail the current deployment.
