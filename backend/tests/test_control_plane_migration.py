@@ -19,6 +19,9 @@ IDENTITY_KEY_POLICY_MIGRATION = MIGRATIONS / "003_identity_key_policy.sql"
 IDENTITY_KEY_POLICY_HARDENING_MIGRATION = (
     MIGRATIONS / "004_reject_null_identity_key_versions.sql"
 )
+AUDITED_ROLE_ADMINISTRATION_MIGRATION = (
+    MIGRATIONS / "005_audited_role_administration.sql"
+)
 PRODUCTION_ROLES = (
     "platform_control_migrator",
     "platform_control_app",
@@ -81,6 +84,10 @@ def test_first_control_migration_exists() -> None:
     assert IDENTITY_KEY_POLICY_HARDENING_MIGRATION.is_file(), (
         "missing identity key policy hardening migration: "
         f"{IDENTITY_KEY_POLICY_HARDENING_MIGRATION}"
+    )
+    assert AUDITED_ROLE_ADMINISTRATION_MIGRATION.is_file(), (
+        "missing audited role administration migration: "
+        f"{AUDITED_ROLE_ADMINISTRATION_MIGRATION}"
     )
 
 
@@ -260,6 +267,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     (2, 64),
                     (3, 64),
                     (4, 64),
+                    (5, 64),
                 ]
 
     changed = tmp_path / "migrations"
