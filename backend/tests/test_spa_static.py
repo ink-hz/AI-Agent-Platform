@@ -1,6 +1,8 @@
 import json
+import os
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.main import create_app
 
@@ -55,3 +57,63 @@ def test_build_hashed_asset_name_is_exact_and_rejects_maps_and_traversal() -> No
         "app-a1b2c3d4.svg",
     ):
         assert not is_public_build_asset(name)
+
+
+def test_public_manifest_must_be_a_regular_non_symlink_file(tmp_path) -> None:
+    from app.spa import load_public_asset_manifest
+
+    static = tmp_path / "static"
+    manifest_dir = static / ".vite"
+    manifest_dir.mkdir(parents=True)
+    outside = tmp_path / "outside-manifest.json"
+    outside.write_text(
+        json.dumps({"index.html": {"file": "assets/app-a1b2c3d4.js"}}),
+        encoding="utf-8",
+    )
+    (manifest_dir / "manifest.json").symlink_to(outside)
+
+    assert load_public_asset_manifest(str(static)) == frozenset()
+
+
+def test_public_asset_open_rejects_asset_and_intermediate_symlinks(tmp_path) -> None:
+    from app.spa import PublicAssetUnavailable, open_public_build_asset
+
+    static = tmp_path / "static"
+    assets = static / "assets"
+    assets.mkdir(parents=True)
+    outside = tmp_path / "outside.js"
+    outside.write_text("TOP SECRET", encoding="utf-8")
+    (assets / "app-a1b2c3d4.js").symlink_to(outside)
+
+    with pytest.raises(PublicAssetUnavailable):
+        open_public_build_asset(str(static), "app-a1b2c3d4.js")
+
+    (assets / "app-a1b2c3d4.js").unlink()
+    assets.rmdir()
+    (tmp_path / "outside-deadbeef.js").write_text(
+        "TOP SECRET", encoding="utf-8"
+    )
+    assets.symlink_to(tmp_path, target_is_directory=True)
+    with pytest.raises(PublicAssetUnavailable):
+        open_public_build_asset(str(static), "outside-deadbeef.js")
+
+
+def test_public_asset_response_is_bound_to_opened_regular_inode(tmp_path) -> None:
+    from app.spa import open_public_build_asset
+
+    static = tmp_path / "static"
+    assets = static / "assets"
+    assets.mkdir(parents=True)
+    target = assets / "app-a1b2c3d4.js"
+    target.write_bytes(b"trusted build")
+    outside = tmp_path / "outside.js"
+    outside.write_bytes(b"TOP SECRET")
+
+    opened = open_public_build_asset(str(static), target.name)
+    os.replace(target, assets / "original-a1b2c3d4.js")
+    target.symlink_to(outside)
+    try:
+        assert opened.file.read() == b"trusted build"
+        assert opened.size == len(b"trusted build")
+    finally:
+        opened.file.close()

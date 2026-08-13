@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import AuthenticationError, CompletedLogin, cookie_policy
 from .models import AuthContext, IssuedWebSession, Role
-from app.spa import is_public_build_asset
+from app.health.platform import build_public_platform_health
+from app.spa import (
+    OpenedPublicAsset,
+    PublicAssetUnavailable,
+    is_public_build_asset,
+    open_public_build_asset,
+    open_public_static_file,
+)
 
 
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
@@ -29,6 +35,23 @@ def _login_csp(auth) -> str:
         "frame-ancestors 'none'; form-action 'none'; "
         f"script-src {asset_source}; style-src {asset_source}; "
         f"img-src {asset_source}; connect-src {connect_source}"
+    )
+
+
+def _opened_response(
+    opened: OpenedPublicAsset, *, headers: dict[str, str]
+) -> StreamingResponse:
+    def chunks():
+        try:
+            while data := opened.file.read(64 * 1024):
+                yield data
+        finally:
+            opened.file.close()
+
+    return StreamingResponse(
+        chunks(),
+        media_type=opened.media_type,
+        headers={**headers, "Content-Length": str(opened.size)},
     )
 
 
@@ -74,12 +97,13 @@ def _set_session_cookie(response: Response, auth, issued: IssuedWebSession) -> N
 
 
 def build_auth_router(
-    auth, *, static_dir: str, public_assets: frozenset[str]
+    auth,
+    *,
+    static_dir: str,
+    public_assets: frozenset[str],
+    detailed_health,
 ) -> APIRouter:
     router = APIRouter(prefix="" if auth.route_prefix == "/" else auth.route_prefix.rstrip("/"))
-    index = Path(static_dir) / "index.html"
-    favicon = Path(static_dir) / "favicon.ico"
-    assets = Path(static_dir) / "assets"
 
     @router.get("/", include_in_schema=False)
     async def root():
@@ -88,28 +112,57 @@ def build_auth_router(
     @router.get("/login", include_in_schema=False)
     async def login():
         csp = _login_csp(auth)
-        if not index.is_file():
+        try:
+            opened = open_public_static_file(static_dir, "index.html")
+        except PublicAssetUnavailable:
             return HTMLResponse("<!doctype html><title>Agent Platform</title>", headers={**_NO_STORE, "Content-Security-Policy": csp})
-        return FileResponse(index, headers={**_NO_STORE, "Content-Security-Policy": csp, "X-Content-Type-Options": "nosniff"})
+        return _opened_response(
+            opened,
+            headers={
+                **_NO_STORE,
+                "Content-Security-Policy": csp,
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @router.get("/favicon.ico", include_in_schema=False)
     async def favicon_route():
-        if not favicon.is_file():
-            raise HTTPException(404)
-        return FileResponse(favicon, headers={"Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff"})
+        try:
+            opened = open_public_static_file(static_dir, "favicon.ico")
+        except PublicAssetUnavailable:
+            try:
+                opened = open_public_static_file(
+                    static_dir, "platform-logo.svg"
+                )
+            except PublicAssetUnavailable:
+                raise HTTPException(404) from None
+        return _opened_response(
+            opened,
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @router.get("/assets/{filename}", include_in_schema=False)
     async def asset(filename: str):
         if not is_public_build_asset(filename) or filename not in public_assets:
             raise HTTPException(401, "authentication required")
-        target = assets / filename
-        if not target.is_file() or target.parent.resolve() != assets.resolve():
+        try:
+            opened = open_public_build_asset(static_dir, filename)
+        except PublicAssetUnavailable:
             raise HTTPException(404)
-        return FileResponse(target, headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"})
+        return _opened_response(
+            opened,
+            headers={
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @router.get("/api/health")
     async def public_health():
-        return {"status": "ok"}
+        return build_public_platform_health()
 
     @router.post("/api/v1/auth/dingtalk/start")
     async def start(payload: StartBody):
@@ -187,6 +240,10 @@ def build_auth_router(
         context: AuthContext = request.state.auth_context
         if context.role is not Role.PLATFORM_OWNER:
             raise HTTPException(403, "platform owner required")
+        try:
+            payload = detailed_health(request)
+        except Exception:
+            raise HTTPException(503, "detailed health unavailable") from None
         audit = getattr(request.app.state, "system_health_audit", None)
         if audit is None:
             raise HTTPException(503, "required audit unavailable")
@@ -194,10 +251,6 @@ def build_auth_router(
             audit(context)
         except Exception:
             raise HTTPException(503, "required audit unavailable") from None
-        return {
-            "status": "ok",
-            "identity_mode": auth.mode.value,
-            "dependencies": getattr(request.app.state, "dependency_health", {}),
-        }
+        return {**payload, "identity_mode": auth.mode.value}
 
     return router

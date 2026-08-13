@@ -3,13 +3,27 @@ from __future__ import annotations
 import hmac
 from urllib.parse import urlsplit
 
-from starlette.datastructures import Headers
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.responses import JSONResponse
 
 from app.spa import is_public_build_asset
 
 
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
+_IDENTITY_RESPONSE_PATHS = frozenset(
+    {
+        "/",
+        "/login",
+        "/api/health",
+        "/api/v1/auth/dingtalk/start",
+        "/api/v1/auth/dingtalk/callback",
+        "/api/v1/auth/dingtalk/in-client/exchange",
+        "/api/v1/account",
+        "/api/v1/auth/logout",
+        "/api/v1/manage/system-health",
+    }
+)
 
 
 def _unprefixed(path: str, prefix: str) -> str | None:
@@ -83,6 +97,16 @@ class IdentitySecurityMiddleware:
             return
         method = scope["method"].upper()
         path = scope.get("path", "")
+        local_path = _unprefixed(path, self.auth.route_prefix)
+        identity_response = local_path in _IDENTITY_RESPONSE_PATHS
+
+        async def protected_send(message):
+            if identity_response and message["type"] == "http.response.start":
+                response_headers = MutableHeaders(scope=message)
+                response_headers["Cache-Control"] = "no-store"
+                response_headers["Pragma"] = "no-cache"
+            await send(message)
+
         public = is_public_request(
             method,path,self.auth.route_prefix,self.public_assets
         )
@@ -93,8 +117,8 @@ class IdentitySecurityMiddleware:
         ):
             await JSONResponse(
                 {"detail": "request origin rejected"}, status_code=403,
-                headers={"Cache-Control": "no-store"},
-            )(scope, receive, send)
+                headers=_NO_STORE,
+            )(scope, receive, protected_send)
             return
 
         session = None
@@ -118,8 +142,8 @@ class IdentitySecurityMiddleware:
         if not public and session is None:
             await JSONResponse(
                 {"detail": "authentication required"}, status_code=401,
-                headers={"Cache-Control": "no-store"},
-            )(scope, receive, send)
+                headers=_NO_STORE,
+            )(scope, receive, protected_send)
             return
 
         if session is not None:
@@ -141,8 +165,8 @@ class IdentitySecurityMiddleware:
                 ):
                     await JSONResponse(
                         {"detail": "request origin rejected"}, status_code=403,
-                        headers={"Cache-Control": "no-store"},
-                    )(scope, receive, send)
+                        headers=_NO_STORE,
+                    )(scope, receive, protected_send)
                     return
                 submitted = headers.get("x-csrf-token", "")
                 verified = (
@@ -154,8 +178,8 @@ class IdentitySecurityMiddleware:
                 if not verified:
                     await JSONResponse(
                         {"detail": "CSRF verification failed"}, status_code=403,
-                        headers={"Cache-Control": "no-store"},
-                    )(scope, receive, send)
+                        headers=_NO_STORE,
+                    )(scope, receive, protected_send)
                     return
 
-        await self.app(scope, receive, send)
+        await self.app(scope, receive, protected_send)

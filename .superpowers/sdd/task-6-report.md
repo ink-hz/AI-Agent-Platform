@@ -89,3 +89,48 @@ per-request Cookie deprecations; there are no test failures.
 - Task 12 owns the complete member/viewer/owner route authorization matrix.
 - Task 13 owns the final login/account UI and role-aware shell.
 - No real DingTalk request or production deployment was performed in this task.
+
+## Review remediation
+
+The first independent review found no Critical issue and four Important
+issues. The follow-up change closes all four:
+
+1. Vite now emits relative entry references, and a real Vite-build contract
+   test loads the same `dist` through both `/login` and
+   `/_preview/dingtalk-r1/login`, resolves every JS/CSS URL as a browser would,
+   verifies preview-safe CSP, and retrieves each asset through the matching
+   route.
+2. The manifest and every public file are opened under a regular non-symlink
+   root through descriptor-relative `openat` semantics with `O_NOFOLLOW`, then
+   checked with `fstat`. Responses stream the already-opened inode instead of
+   reopening a pathname. Tests cover a manifest symlink, final-asset symlink,
+   intermediate-directory symlink, outside-content non-disclosure, and a path
+   replacement after open.
+3. Every identity-sensitive success, redirect, validation error,
+   authentication failure, authorization failure, account response, and owner
+   health response is forced to `Cache-Control: no-store` and
+   `Pragma: no-cache` by the identity middleware.
+4. The owner system-health endpoint now calls a shared live health builder
+   after role enforcement and before the required audit commit. It reports
+   validated release identity, deployment state, registry, runtime/local/remote
+   Agents, replica state, and service availability. Public health remains the
+   one-field liveness response.
+
+Review-remediation RED evidence:
+
+- real preview build test resolved assets to the root namespace;
+- three static-boundary tests failed because a manifest symlink was accepted
+  and descriptor-safe open helpers did not exist;
+- the route-level symlink test returned `200` with outside file content;
+- the cache-policy test found no policy on public health; and
+- the detailed-health test had no `build` field.
+
+Review-remediation GREEN evidence on the final follow-up tree:
+
+- focused backend security/API/build suite: 59 passed;
+- complete backend suite: 1,030 passed, 1 skipped;
+- complete frontend suite: 29 files and 169 tests passed;
+- production frontend build: succeeded with relative hashed JS/CSS references
+  and a compatible `.vite/manifest.json`;
+- no-Keychain runtime test: 2 passed;
+- Python `compileall` and `git diff --check`: passed.

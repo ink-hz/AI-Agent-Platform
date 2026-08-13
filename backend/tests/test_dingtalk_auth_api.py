@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from html.parser import HTMLParser
 import json
+import os
 from pathlib import Path
+import subprocess
+from urllib.parse import urljoin, urlsplit
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -57,7 +61,13 @@ class FakeAuth:
         self.revoked = True
 
 
-def _app(tmp_path: Path, monkeypatch, auth: FakeAuth):
+def _app(
+    tmp_path: Path,
+    monkeypatch,
+    auth: FakeAuth,
+    *,
+    registry_document: str = "version: 1\nagents: []\n",
+):
     static = tmp_path / "static"
     assets = static / "assets"
     assets.mkdir(parents=True)
@@ -74,7 +84,7 @@ def _app(tmp_path: Path, monkeypatch, auth: FakeAuth):
         encoding="utf-8",
     )
     registry = tmp_path / "registry.yaml"
-    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    registry.write_text(registry_document, encoding="utf-8")
     contract = tmp_path / "contract.json"
     contract.write_text(json.dumps({"bots": []}), encoding="utf-8")
     monkeypatch.setenv("PLATFORM_STATIC_DIR", str(static))
@@ -84,6 +94,90 @@ def _app(tmp_path: Path, monkeypatch, auth: FakeAuth):
         start_poller=False,
         identity_auth=auth,
     )
+
+
+def _app_with_static(
+    tmp_path: Path, monkeypatch, auth: FakeAuth, static: Path
+):
+    registry = tmp_path / f"registry-{auth.mode.value}.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / f"contract-{auth.mode.value}.json"
+    contract.write_text(json.dumps({"bots": []}), encoding="utf-8")
+    monkeypatch.setenv("PLATFORM_STATIC_DIR", str(static))
+    return create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        identity_auth=auth,
+    )
+
+
+class _AssetReferences(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.values: list[str] = []
+
+    def handle_starttag(self, tag, attrs) -> None:
+        for key, value in attrs:
+            if key in {"src", "href"} and isinstance(value, str):
+                self.values.append(value)
+
+
+def test_one_real_vite_build_serves_assets_at_root_and_preview(
+    tmp_path, monkeypatch
+) -> None:
+    webui = Path(__file__).parents[2] / "webui"
+    static = tmp_path / "vite-dist"
+    subprocess.run(
+        [
+            "npm",
+            "exec",
+            "vite",
+            "--",
+            "build",
+            "--outDir",
+            str(static),
+            "--emptyOutDir",
+        ],
+        cwd=webui,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    scenarios = (
+        (FakeAuth(), "/", "/login"),
+        (
+            FakeAuth(
+                mode=IdentityMode.PREVIEW,
+                prefix="/_preview/dingtalk-r1/",
+            ),
+            "/_preview/dingtalk-r1/",
+            "/_preview/dingtalk-r1/login",
+        ),
+    )
+    for auth, root, login_path in scenarios:
+        client = TestClient(_app_with_static(tmp_path, monkeypatch, auth, static))
+        root_response = client.get(root, follow_redirects=False)
+        assert root_response.status_code == 302
+        assert root_response.headers["location"] == login_path
+        login = client.get(login_path)
+        assert login.status_code == 200
+        parser = _AssetReferences()
+        parser.feed(login.text)
+        assert parser.values
+        for reference in parser.values:
+            resolved = urlsplit(
+                urljoin(f"https://agent.example.test{login_path}", reference)
+            ).path
+            assert resolved == root + "favicon.ico" or resolved.startswith(
+                root + "assets/"
+            )
+            assert client.get(resolved).status_code == 200
+        csp = login.headers["content-security-policy"]
+        assert f"https://agent.example.test{root}assets/" in csp or (
+            root == "/" and "script-src 'self'" in csp
+        )
 
 
 def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
@@ -110,6 +204,23 @@ def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
         assert client.get(path).status_code == 401, path
 
 
+def test_manifest_authorized_asset_symlink_never_exposes_outside_content(
+    tmp_path, monkeypatch
+) -> None:
+    app = _app(tmp_path, monkeypatch, FakeAuth())
+    static = Path(os.environ["PLATFORM_STATIC_DIR"])
+    target = static / "assets" / "app-a1b2c3d4.js"
+    outside = tmp_path / "outside.js"
+    outside.write_text("TOP SECRET", encoding="utf-8")
+    target.unlink()
+    target.symlink_to(outside)
+
+    response = TestClient(app).get("/assets/app-a1b2c3d4.js")
+
+    assert response.status_code != 200
+    assert "TOP SECRET" not in response.text
+
+
 def test_qr_start_uses_fixed_flow_safe_return_and_no_store(tmp_path, monkeypatch) -> None:
     auth = FakeAuth()
     client = TestClient(_app(tmp_path, monkeypatch, auth))
@@ -129,6 +240,74 @@ def test_qr_start_uses_fixed_flow_safe_return_and_no_store(tmp_path, monkeypatch
     assert response.status_code == 200
     assert response.json()["authorization_url"].startswith("https://login.dingtalk.com/")
     assert response.headers["cache-control"] == "no-store"
+
+
+def test_every_identity_response_prevents_browser_or_proxy_caching(
+    tmp_path, monkeypatch
+) -> None:
+    auth = FakeAuth()
+    client = TestClient(_app(tmp_path, monkeypatch, auth))
+    session_cookies = {
+        auth.cookie_name: "valid-cookie",
+        auth.csrf_cookie_name: auth.csrf,
+    }
+    responses = [
+        client.get("/", follow_redirects=False),
+        client.get("/login"),
+        client.get("/api/health"),
+        client.post(
+            "/api/v1/auth/dingtalk/start",
+            json={"unexpected": True},
+            headers={"Origin": auth.public_base_url},
+        ),
+        client.get(
+            "/api/v1/auth/dingtalk/callback?state=state&code=code",
+            follow_redirects=False,
+        ),
+        client.post(
+            "/api/v1/auth/dingtalk/in-client/exchange",
+            json={},
+            headers={"Origin": auth.public_base_url},
+        ),
+        client.get("/api/v1/account", cookies=session_cookies),
+        client.post(
+            "/api/v1/auth/logout",
+            cookies=session_cookies,
+            headers={"Origin": auth.public_base_url, "X-CSRF-Token": "wrong"},
+        ),
+        client.get(
+            "/api/v1/manage/system-health", cookies=session_cookies
+        ),
+    ]
+
+    for response in responses:
+        assert response.headers.get("cache-control") == "no-store", (
+            response.request.method,
+            response.request.url,
+            response.status_code,
+        )
+        assert response.headers.get("pragma") == "no-cache"
+
+
+def test_callback_error_is_generic_and_never_cacheable(tmp_path, monkeypatch) -> None:
+    from app.control_plane.auth import AuthenticationError
+
+    auth = FakeAuth()
+
+    async def rejected(_state, _code):
+        raise AuthenticationError("login attempt invalid")
+
+    auth.complete_qr = rejected
+    response = TestClient(_app(tmp_path, monkeypatch, auth)).get(
+        "/api/v1/auth/dingtalk/callback?state=unknown&code=secret-code",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "login attempt invalid"}
+    assert "secret-code" not in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
 
 
 def test_qr_and_in_client_login_set_rotated_cookie_and_return_csrf(tmp_path, monkeypatch) -> None:
@@ -273,8 +452,23 @@ def test_preview_prefix_never_generates_root_urls_or_root_cookie(tmp_path, monke
 
 
 def test_owner_detailed_health_is_returned_only_after_audit(tmp_path, monkeypatch) -> None:
+    release_sha = "a" * 40
+    monkeypatch.setenv("PLATFORM_RELEASE_SHA", release_sha)
     auth = FakeAuth()
-    app = _app(tmp_path, monkeypatch, auth)
+    app = _app(
+        tmp_path,
+        monkeypatch,
+        auth,
+        registry_document="""
+version: 1
+agents:
+  - id: marketing-gtm
+    name: Marketing GTM
+    entry_url: https://agent.example.test/agents/marketing-gtm
+    health:
+      url: http://127.0.0.1:9101/api/health
+""",
+    )
     audited = []
     app.state.system_health_audit = lambda context: audited.append(context.session_id)
     client = TestClient(app)
@@ -285,5 +479,41 @@ def test_owner_detailed_health_is_returned_only_after_audit(tmp_path, monkeypatc
     )
 
     assert response.status_code == 200
-    assert response.json()["identity_mode"] == "production"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    payload = response.json()
+    assert payload["identity_mode"] == "production"
+    assert payload["build"] == {
+        "available": True,
+        "release_name": "orbbec-agent-platform",
+        "git_sha": release_sha,
+    }
+    assert payload["release"] == {
+        "name": "orbbec-agent-platform",
+        "version": "0.1.0",
+        "git_sha": release_sha,
+    }
+    assert payload["deployment"]["mode"] == "local"
+    assert payload["dependencies"]["registry"] == {
+        "status": "ok",
+        "agent_count": 1,
+    }
+    assert payload["agents"]["registered"] == [
+        {
+            "id": "marketing-gtm",
+            "name": "Marketing GTM",
+            "status": "active",
+            "environment": "prod",
+            "version": "",
+        }
+    ]
+    assert [item["id"] for item in payload["agents"]["runtime"]] == [
+        "marketing-gtm"
+    ]
+    assert payload["agents"]["local"]["summary"]["total"] == 0
+    assert {agent["id"] for agent in payload["agents"]["remote"]["agents"]} == {
+        "ai-fae-agent",
+        "ai-admin-agent",
+    }
+    assert client.get("/api/health").json() == {"status": "ok"}
     assert audited == [auth.context.session_id]

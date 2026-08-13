@@ -43,6 +43,11 @@ from .fleet.repository import (
 )
 from .fleet.service import FleetReadService
 from .health import routes as health_routes
+from .health.platform import (
+    build_deployment_status,
+    build_detailed_platform_health,
+    build_public_platform_health,
+)
 from .health.poller import HealthCache, poll_loop
 from .local_secrets import read_secret_file
 from .observability import routes as observability_routes
@@ -437,34 +442,24 @@ def create_app(
     if not identity_enabled:
         @app.get("/api/health")
         def platform_health() -> dict:
-            return {"status": "ok"}
+            return build_public_platform_health()
     else:
         public_assets = load_public_asset_manifest(config.static_dir)
+        release_sha = os.getenv("PLATFORM_RELEASE_SHA")
         app.include_router(build_auth_router(
             identity_auth,
             static_dir=config.static_dir,
             public_assets=public_assets,
+            detailed_health=lambda request: build_detailed_platform_health(
+                request.app,
+                config,
+                release_sha=release_sha,
+            ),
         ))
 
     @app.get("/api/deployment")
     def deployment_status() -> dict:
-        if cloud_mode:
-            if app.state.replica_repository is None:
-                return {
-                    "mode": "cloud-replica",
-                    "read_only": True,
-                    "auth": config.cloud_auth_mode,
-                    "freshness": "unavailable",
-                    "last_success_at": None,
-                }
-            return app.state.replica_repository.deployment_status()
-        return {
-            "mode": "local",
-            "read_only": False,
-            "auth": "local",
-            "freshness": "current",
-            "last_success_at": None,
-        }
+        return build_deployment_status(app, config)
 
     app.include_router(health_routes.router)
     app.include_router(cluster_routes.router)
