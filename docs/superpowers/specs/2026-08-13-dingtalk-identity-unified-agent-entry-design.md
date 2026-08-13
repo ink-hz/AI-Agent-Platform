@@ -1,6 +1,6 @@
 # DingTalk Identity and Unified Internal Agent Entry Design
 
-**Status:** Approved design baseline
+**Status:** Approved design baseline, amended after implementation review
 
 **Date:** 2026-08-13
 
@@ -20,7 +20,7 @@ This design adds:
 
 - DingTalk enterprise identity;
 - an internal user and organization model;
-- one platform owner and ordinary members;
+- one platform owner, scoped management viewers, and ordinary members;
 - default-deny Agent authorization;
 - authenticated Session, attachment, Feedback, Review, Trace, and Evidence
   access;
@@ -58,7 +58,8 @@ The first releases do not add:
 - online Prompt or tool editing;
 - user-selectable models;
 - business-user Agent publishing;
-- multiple administrator levels;
+- multiple administrator levels (`management_viewer` is a non-administrative,
+  scoped read-only role);
 - approval workflows;
 - external customer accounts;
 - commercial multi-tenancy or billing; or
@@ -77,7 +78,8 @@ Trace, Evidence, and flywheel behavior. It is represented as an
 - FAE public routing, accounts, containers, model configuration, and APIs are
   not modified by this project;
 - FAE does not appear in an ordinary employee's internal chat directory;
-- sanitized FAE management data remains available to `platform_owner`;
+- sanitized FAE management data remains available to `platform_owner` and to
+  a `management_viewer` with an explicit FAE observation scope;
 - an FAE customer is represented by a source-scoped, pseudonymous external
   subject and is never merged automatically with a DingTalk employee; and
 - a future FAE customer account system is a separate product design.
@@ -96,6 +98,14 @@ Every Registry entry declares one access mode:
 Agent grants apply only to `platform_chat` and `platform_extension`. External
 product access is not advertised as being controlled by the internal grant
 system.
+
+`platform_extension` is not an arbitrary embedded application. It must be
+first-party code reviewed and released from the Platform repository, use only
+Platform backend APIs, inherit the Platform CSP, register no Service Worker,
+load no remote or third-party JavaScript, and embed no remote iframe. It cannot
+read the HttpOnly authentication Cookie. A professional surface that requires
+independently deployed code or a separate trust boundary is classified as an
+`external_product` and uses a separate origin.
 
 ## 4. Architecture and trust boundaries
 
@@ -126,7 +136,7 @@ An Agent must reject a missing, invalid, expired, or incorrectly addressed
 token. Agent APIs used by Platform must not be publicly usable as an alternate
 path around Platform authorization.
 
-## 5. Data domains
+## 5. Data domains and database isolation
 
 The existing sanitized replica and the new control plane have different trust
 and recovery properties and must remain separate.
@@ -158,7 +168,50 @@ This remains the current sanitized, read-only management replica for:
 It is rebuildable from approved source synchronization and is never used as an
 authentication or online authorization database.
 
-### 5.3 Identity namespaces
+### 5.3 Physical and logical database boundary
+
+The first release uses the existing PostgreSQL 17 cluster but separates the
+domains into two databases, not two schemas in one database:
+
+```text
+agent_platform          existing database; platform_replica remains here
+agent_platform_control  new database; platform_control is the application schema
+```
+
+Preview uses a third database, `agent_platform_control_preview`, and cannot
+connect to production control data. The existing `platform_identity` and
+`flywheel_identity` schemas in source systems remain replica-enrichment inputs;
+they do not become the new control plane.
+
+Database roles are separated:
+
+- `platform_control_migrator`: deployment-only DDL in the control database;
+- `platform_control_app`: normal control-plane reads and writes, without DDL;
+- `platform_control_sync`: DingTalk inbox and organization-generation writes;
+- `platform_control_audit_append`: execute-only access to an append audit
+  function, without audit update or delete;
+- `platform_replica_reader`: existing replica read-only role; and
+- `platform_replica_importer`: existing replica import role.
+
+`PUBLIC` receives no control-database connect or schema privileges. FDW,
+`dblink`, cross-database grants, and runtime use of the cluster owner are
+forbidden. Platform joins control and replica results in the authenticated
+service layer after authorization; SQL cannot join the two databases.
+
+Runtime connection strings come from separate root-owned mode-0600 files:
+
+```text
+/etc/orbbec-agent-platform/control-database-url
+/etc/orbbec-agent-platform/replica-database-url
+```
+
+The migration DSN is mounted only into the migration job and is not available
+to the running API. Because both databases share one PostgreSQL cluster,
+physical base backup and WAL retention apply to the entire cluster. The
+control database has the stated recovery objective; the replica remains
+rebuildable even though it is included in the same physical recovery stream.
+
+### 5.4 Identity namespaces
 
 Platform distinguishes:
 
@@ -169,8 +222,10 @@ legacy_unknown   historical actor without a trustworthy stable mapping
 ```
 
 Historical Sessions are not assigned to employees by name, mobile number, or
-other guesswork. A legacy or external Session without a verified internal owner
-is visible only to `platform_owner`.
+other guesswork. A `legacy_unknown` Session is visible only to
+`platform_owner`. An `external_subject` Session may also be read by a
+`management_viewer` with an explicit observation scope for its source Agent;
+that observation never converts it into an employee-owned Session.
 
 ## 6. DingTalk integration facts
 
@@ -219,22 +274,54 @@ the same internal user.
 Provider identifiers are stored as:
 
 - application-encrypted values for required server-side recovery; and
-- keyed HMAC lookup values for exact matching and uniqueness.
+- keyed HMAC lookup values for exact matching and uniqueness; and
+- an explicit `key_version` beside every encrypted or HMAC-derived value.
 
 Names are display data only. Phone number, email, title, avatar, job number,
 and unrelated profile fields are not synchronized.
 
 ### 7.2 Roles
 
-The only roles are:
+The roles are:
 
-- `platform_owner`; and
+- `platform_owner`;
+- `management_viewer`; and
 - `member`.
 
 A database constraint permits at most one owner. The first person to log in is
 not automatically promoted. An offline, audited operator command binds the
 owner role to a previously verified stable DingTalk identity. Frontend role,
 name, mobile-number, and department values are ignored.
+
+`management_viewer` is not an administrator. The owner assigns or revokes the
+role and one or more Agent observation scopes. A viewer can read management
+data only for scoped Agents and can review immutable audit metadata, including
+owner actions. A viewer cannot change grants or roles, mutate Review state,
+continue another user's conversation, export another user's content, or invoke
+an Agent using observation scope.
+
+### 7.3 Owner break-glass replacement
+
+Departure or disablement of the owner immediately revokes the owner's Web
+Sessions like any other user. Platform management then fails closed until an
+offline operator rebinds the role.
+
+The offline owner command is the break-glass path. It requires:
+
+- OS root access on the Platform host;
+- the deployment-only control migration credential;
+- an exact stable DingTalk identity, never a name or mobile number;
+- a target that is active in the latest complete organization generation;
+- an explicit incident reason and a dry-run followed by a separate confirmation;
+- one transaction that demotes the old owner, promotes the new owner, preserves
+  the one-owner constraint, and revokes both users' existing Web Sessions; and
+- append-only audit output containing the OS operator identity, target internal
+  ID, reason, result, and time, but no raw DingTalk identifier.
+
+The command refuses a target absent from the directory or a directory older
+than the hard-stale threshold. Recovery beyond those constraints is a separate
+database incident runbook requiring two-person approval, not an application
+fallback.
 
 ## 8. Authentication flows
 
@@ -279,6 +366,28 @@ Web Sessions are opaque, server-side Sessions:
 Unauthenticated requests return `401`. Authenticated but unauthorized requests
 return `403`; they never degrade silently.
 
+### 8.4 Exact unauthenticated route allowlist
+
+Only the following routes are reachable without an authenticated Web Session:
+
+```text
+GET  /login
+GET  /assets/{build-hashed-static-file}
+GET  /favicon.ico
+GET  /api/health
+POST /api/v1/auth/dingtalk/start
+GET  /api/v1/auth/dingtalk/callback
+POST /api/v1/auth/dingtalk/in-client/exchange
+GET  /.well-known/acme-challenge/{token}   Nginx only
+```
+
+The health response is minimal and contains no build secrets, dependency
+addresses, organization state, Agent details, or user counts. Login static
+assets are immutable build-hashed files; arbitrary paths under `/assets/` are
+not proxied to application handlers. All routes outside this exact allowlist
+require a valid backend Session. Authentication routes also enforce the rate
+and concurrency controls in section 14.5.
+
 ## 9. DingTalk organization synchronization
 
 ### 9.1 Reliable Stream ingestion
@@ -293,8 +402,8 @@ idempotent and retry with bounded exponential backoff.
 
 Departure immediately marks the user inactive and revokes every Web Session.
 Add, modify, and activation events trigger a targeted member refresh.
-Department events trigger a targeted branch refresh and authorization
-recalculation.
+Department events trigger a targeted branch refresh and construction of a new
+department-closure generation. No incomplete generation becomes active.
 
 Encrypted raw event payloads are retained for no more than seven days. Durable
 audit records retain only sanitized processing facts. Stream reconnects
@@ -318,13 +427,22 @@ A failed or partial run never replaces the last complete generation and never
 marks the entire organization inactive.
 
 Full reconciliation runs at Platform startup and every six hours. Stream
-events maintain freshness between runs. If the last successful full
-reconciliation is older than six hours:
+events maintain freshness between runs. Directory freshness has three distinct
+thresholds:
 
-- new login is refused;
-- Agent grant changes are refused;
-- current Sessions continue only for the last confirmed active users; and
-- the owner sees a persistent degraded-state warning.
+| Age of last complete generation | Behavior |
+|---|---|
+| Less than 8 hours | Normal |
+| 8 to less than 24 hours | Degraded warning; last confirmed active users may log in and use already granted access; role and grant changes are refused |
+| 24 hours or more | Hard stale; all new login and member data or Agent use are refused with `503`; an already authenticated owner or viewer may enter only a break-glass read-only sync-status view; role and grant changes remain refused |
+
+The six-hour schedule is not itself a failure threshold. A single missed run
+therefore raises an operations warning before it can block the organization.
+At hard stale, no previous Web Session creates an authorization bypass. Stream
+departure or disablement events still revoke a user immediately even when the
+full generation is otherwise fresh. The hard-stale operations view contains
+only synchronization health, sanitized failure metadata, and recovery
+instructions; it does not expose Sessions or Agent data.
 
 Stream online state does not substitute for full-reconciliation freshness.
 
@@ -345,6 +463,22 @@ release. There is no negative ACL or exception list. Selecting a top-level
 department or all employees requires a confirmation showing current department
 and member coverage.
 
+Descendant membership is served from an indexed generation table:
+
+```text
+department_closure(
+  generation_id,
+  ancestor_department_id,
+  descendant_department_id,
+  depth
+)
+```
+
+The closure is built and validated with the organization staging generation
+and activated in the same atomic switch. Request-time authorization uses
+indexed joins against the active generation; it never runs a recursive CTE on
+the chat path.
+
 Final grants are computed from indexed control-plane rows for every request;
 the first release does not cache a final authorization decision.
 
@@ -362,25 +496,59 @@ revoked_at
 
 Only `platform_owner` can add or revoke grants.
 
+Agent use grants and management observation grants are separate tables and
+capabilities. An `agent_observation_grant` binds a `management_viewer` to one
+Agent and permits only the read operations in section 11. It never satisfies
+the Agent-use expression above, and an Agent-use grant never grants management
+observation. Only `platform_owner` can assign the viewer role or add and revoke
+observation scopes.
+
+Each observation grant records:
+
+```text
+agent_id
+viewer_internal_user_id
+created_by
+created_at
+revoked_at
+```
+
 ## 11. Permission matrix
 
-| Operation | `member` | `platform_owner` |
-|---|---|---|
-| View internal Agent directory | Granted Agents only | All Agents |
-| Use an internal Agent | Granted Agents only | All internal Agents |
-| Create an internal Session | Self and granted Agent | Allowed |
-| Read or continue a Session | Own Session only | All Sessions |
-| Read attachments | Own Session only | All, audited when cross-user |
-| Submit and view Feedback | Own only | All |
-| Trace and Evidence | Own allowed presentation only | All |
-| Review and repair closure | No | Yes |
-| FAE external-product management data | No | Yes |
-| Agent grant management | No | Yes |
-| Organization and audit administration | No | Yes |
-| Prompt, model, tool, or Agent release editing | No | Not provided in phase one |
+| Operation | `member` | `management_viewer` | `platform_owner` |
+|---|---|---|---|
+| View internal Agent directory | Granted Agents only | Only Agents covered by a separate use grant | All Agents |
+| Use an internal Agent | Granted Agents only | Only with a separate Agent use grant | All internal Agents |
+| Create an internal Session | Self and granted Agent | No by observation scope | Allowed |
+| Read or continue a Session | Own Session only | Read scoped Sessions; cannot continue another user's Session | All Sessions |
+| Read attachments | Own Session only | Read scoped attachments; cross-user audited | All, audited when cross-user |
+| Submit and view Feedback | Own only | Read scoped Feedback; no mutation | All |
+| Trace and Evidence | Own allowed presentation only | Read for scoped Agents | All |
+| Review and repair closure | No | Read scoped Review state only; no mutation | Yes |
+| FAE external-product management data | No | Read only with FAE observation scope | Yes |
+| Agent grant and role management | No | No | Yes |
+| Organization administration | No | No | Yes |
+| Read immutable audit metadata | No | Yes, including owner actions | Yes |
+| Prompt, model, tool, or Agent release editing | No | No | Not provided in phase one |
 
-Opening another user's Session, attachment, Feedback, Trace, Evidence, or
-export always records a management-view audit event.
+Opening another user's Session, attachment, Feedback, Trace, or Evidence always
+records a management-view audit event. A viewer cannot export another user's
+content. Observation scopes constrain every underlying API row, not only the
+navigation.
+
+Release 1 applies a stricter coarse gate before row authorization exists:
+
+- `member` can use only login, logout, and account/status routes; every
+  management, replica, Session, Feedback, attachment, Review, Trace, Evidence,
+  audit, and Agent-use route returns `403`;
+- `management_viewer` receives `GET`/`HEAD` access only to explicitly scoped
+  existing management projections; all mutations return `403`; and
+- `platform_owner` can read existing management projections and perform only
+  the management actions explicitly enabled for Release 1.
+
+Release 2 refines this coarse gate into the row-level matrix above. It does not
+remove authentication or create a temporary all-employee view of existing
+data.
 
 ## 12. Session ownership and retention
 
@@ -396,8 +564,12 @@ last_active_at
 status
 ```
 
-The native uniqueness boundary is `(agent_id, external_session_id)`. Browser
-random IDs are external identifiers, never access credentials. Query,
+The native uniqueness boundary is `(agent_id, external_session_id)`. Platform
+generates `external_session_id` on the server using at least 128 bits of
+cryptographic entropy; a browser-supplied value is ignored. An internal
+collision is regenerated and never returned as a distinguishable conflict that
+could reveal another Session. External IDs are linkage identifiers, never
+access credentials. Query,
 continuation, Feedback, attachment, archive, and export all recheck the stored
 owner, Agent, and current Agent grant. Revoking a member's Agent access also
 hides that Agent's prior internal Sessions from the member; the data remains
@@ -408,7 +580,7 @@ Messages, Feedback, and attachments are retained for one year and removed by a
 central retention job. The flywheel may retain a necessary, non-content,
 sanitized audit outcome after source content expires.
 
-The first release supports single-Session HTML and JSON export:
+The first unified-chat release supports single-Session HTML and JSON export:
 
 - a member may export an owned Session;
 - the owner may export any one Session after supplying an internal purpose;
@@ -416,6 +588,14 @@ The first release supports single-Session HTML and JSON export:
 - owner export of another user's data is audited; and
 - attachment links in exports are short-lived rather than public permanent
   URLs.
+
+For a file or message uploaded in error, the owner has an emergency single-item
+erasure operation. It requires recent reauthentication and an explicit reason,
+is fully audited, replaces content and display filename with a non-sensitive
+tombstone, deletes the Platform object copy, and asks the downstream Adapter to
+delete its copy only when that Adapter declares deletion support. It cannot be
+used for bulk deletion. The audit record contains identifiers, reason, actor,
+and outcome but never the deleted content or original filename.
 
 ## 13. Internal Agent request identity
 
@@ -441,6 +621,29 @@ Agents validate signature, issuer, audience, expiry, and Agent identity. Public
 keys are distributed separately from the private signing key. Agent code never
 trusts a browser-provided identity claim.
 
+Validators allow at most 10 seconds of clock leeway. Every Platform and Agent
+host must use NTP; operations alert when offset exceeds two seconds, and token
+signing or readiness fails closed when offset exceeds five seconds.
+
+### 13.1 Key versioning and rotation
+
+Key versioning exists before the first protected identity row is written:
+
+- provider encryption and lookup-HMAC rows carry `key_version`;
+- encrypted event, message, run-event, audit-detail, and attachment metadata
+  carries the envelope-encryption key version;
+- object encryption records the wrapped data-key version;
+- internal Ed25519 tokens carry `kid`; and
+- verifiers accept the active and immediately previous signing public key only
+  during a bounded dual-acceptance window.
+
+HMAC rotation decrypts provider identifiers in a controlled offline job,
+derives the new lookup value, checks uniqueness, writes both versions, switches
+the active version, then removes the old lookup after the rollback window.
+Envelope-encryption rotation rewraps data keys rather than rewriting object
+content. Rotation progress is resumable and audited; missing or unknown key
+versions fail closed.
+
 ## 14. Unified chat gateway
 
 ### 14.1 Online fact ownership
@@ -464,14 +667,19 @@ The request lifecycle is:
 ### 14.2 Versioned endpoints
 
 ```text
+GET  /api/v1/agents
 POST /api/v1/agents/{agent_id}/sessions
 GET  /api/v1/sessions
 GET  /api/v1/sessions/{session_id}
 POST /api/v1/sessions/{session_id}/messages
+GET  /api/v1/runs/{run_id}/events?after={last_sequence}
 POST /api/v1/runs/{run_id}/cancel
 POST /api/v1/messages/{message_id}/feedback
 POST /api/v1/sessions/{session_id}/attachments
 GET  /api/v1/attachments/{attachment_id}/download
+POST /api/v1/sessions/{session_id}/exports
+POST /api/v1/manage/messages/{message_id}/erase
+POST /api/v1/manage/attachments/{attachment_id}/erase
 ```
 
 ### 14.3 SSE events
@@ -498,6 +706,17 @@ Reconnect resumes after the last accepted sequence and does not create a new
 run. Raw chain-of-thought is never transmitted. Progress events contain only
 safe user-facing stage descriptions.
 
+Replay is backed by an encrypted `run_events` table keyed by `(run_id, seq)`
+and carrying its encryption `key_version`. The gateway coalesces delta events
+and writes a checkpoint at least every two seconds or 32 KiB of new safe
+output, whichever comes first. Each run is limited to 5,000 persisted events
+and 10 MiB of replay payload; exceeding the limit produces an explicit
+interrupted result rather than unbounded storage growth. Terminal-run replay is
+retained for 30 minutes. Non-terminal and interrupted replay is retained for
+24 hours so a client can recover from a longer disconnect. After the replay
+window expires, the events endpoint returns `410 Gone` and the client reloads
+the canonical persisted Session and message state.
+
 The initial presentation types are user text, Assistant Markdown, progress,
 Evidence, simple tables, images, user attachments, generated attachments,
 explicit errors, and Feedback.
@@ -508,21 +727,44 @@ An Adapter declares:
 
 ```text
 streaming
+idempotency
 attachments_in
 attachments_out
 evidence
 tables
 cancellation
+content_deletion
 max_duration
 max_attachment_size
 ```
 
 Registry configuration, not browser input, selects the upstream URL and
 Adapter. Calls use an idempotency key. A connection failure may be retried once
-only before the Agent has started output. Once output begins, an interrupted
-run is not silently replayed. SSE emits a heartbeat every 15 seconds. Default
-maximum duration is 300 seconds; longer work later uses an asynchronous job
-protocol. The gateway never switches to another Agent or model as a fallback.
+before output only when the Adapter declares and implements idempotency. If it
+does not, the gateway reports an explicit interrupted run because a lost
+response does not prove the upstream request was unprocessed. Once output
+begins, an interrupted run is never silently replayed. SSE emits a heartbeat
+every 15 seconds. Default backend maximum duration is 300 seconds; the Nginx
+read and send timeout is 360 seconds to leave termination and persistence
+margin. Longer work later uses an asynchronous job protocol. The gateway never
+switches to another Agent or model as a fallback.
+
+### 14.5 Rate, upload, and connection limits
+
+Initial limits are configuration, not client claims:
+
+| Surface | Initial limit |
+|---|---|
+| Login start | 10 requests per minute per source IP |
+| OAuth callback | 30 requests per minute per source IP, plus one-time state |
+| Authenticated reads | 300 requests per minute per user |
+| Authenticated mutations | 60 requests per minute per user |
+| SSE | 3 concurrent connections per user, 2 per run, 200 total |
+| Upload | 2 concurrent uploads per user |
+
+Limits are enforced in the application, with coarse Nginx protection for
+unauthenticated routes. Exceeding a limit returns an explicit `429` and retry
+guidance; it never switches identity, Agent, model, or storage behavior.
 
 ## 15. Attachments
 
@@ -533,7 +775,7 @@ Private MinIO is used with:
 
 - no public S3 or management listener;
 - random object keys;
-- application-level envelope encryption;
+- application-level envelope encryption with recorded key version;
 - sanitized display filenames;
 - SHA-256, MIME, size, source, Session, and owner metadata;
 - a 50 MB per-file limit;
@@ -544,6 +786,16 @@ Every upload, preview, and download rechecks Session ownership. Downloads use a
 single-use ticket valid for no more than 60 seconds. MinIO addresses and
 permanent presigned URLs are never returned to the browser. Owner download of
 another user's attachment is audited.
+
+If MinIO is unavailable, new upload initialization and generated-file
+finalization return an explicit `503`; metadata is not committed as a usable
+attachment. Existing chat without attachments may continue. Quarantine, scan,
+download, and emergency erasure never fall back to a local filesystem or a
+public object URL.
+
+Emergency single-attachment erasure follows section 12. The object deletion
+and tombstone are coordinated through a durable deletion job. Until confirmed,
+the attachment remains inaccessible and visibly marked as deletion pending.
 
 Objects and sensitive metadata expire after one year. Deletion failures retry
 and surface as operations alerts. Backup and restore verify object/database
@@ -556,8 +808,10 @@ Audit covers:
 - login success, failure, and logout;
 - user disablement and Session revocation;
 - Agent grant creation and revocation;
-- owner access to another user's or an external subject's content;
+- viewer role and observation-scope creation and revocation;
+- owner or viewer access to another user's or an external subject's content;
 - cross-user attachment download and Session export;
+- emergency message or attachment erasure;
 - Feedback Review and repair actions;
 - owner binding or replacement; and
 - authorization denial and suspected access attempts.
@@ -580,6 +834,13 @@ They do not contain raw provider identifiers, Cookies, tokens, message bodies,
 or file contents. Audit is append-only to the application. If a required audit
 write fails, the sensitive management operation fails. Audit retention is one
 year.
+
+`management_viewer` may read immutable governance audit metadata, including
+owner binding, role, grant, synchronization, and owner management actions.
+Content-access audit details remain constrained to the viewer's Agent
+observation scopes. A viewer cannot suppress, annotate, export, update, or
+delete audit. Audit reads are themselves audited. The owner cannot mutate audit
+records or disable audit for an operation.
 
 ## 17. UI information architecture
 
@@ -606,6 +867,19 @@ Audit Log
 System Operations
 ```
 
+A `management_viewer` sees only the read-only management navigation supported
+by current observation scopes:
+
+```text
+Scoped Agent Sessions / Feedback
+Scoped Review / Trace / Evidence
+Immutable Audit Metadata
+Read-only System Status
+```
+
+Mutation controls are absent and the backend independently returns `403` if a
+viewer calls a write route.
+
 Owner access to another person or an external subject is visibly marked as a
 management view. FAE is labelled as an independent external product rather
 than an employee chat entry.
@@ -627,7 +901,7 @@ Development acceptance uses a temporary suffix path on the same host:
 
 ```text
 https://agent.orbbec.com.cn/_preview/dingtalk-r1/
-https://agent.orbbec.com.cn/_preview/dingtalk-r1/api/auth/dingtalk/callback
+https://agent.orbbec.com.cn/_preview/dingtalk-r1/api/v1/auth/dingtalk/callback
 ```
 
 Nginx keeps `/` on the current Basic-Auth-protected production release and
@@ -635,6 +909,28 @@ routes only the exact `/_preview/` namespace to an isolated candidate
 listener. Preview uses a separate database, MinIO bucket, Cookie name, signing
 key, OAuth state namespace, and test-member scope. It does not read production
 control data.
+
+The deployed Nginx baseline currently has server-level Basic Auth, a 1 MB body
+limit, a root `limit_except` that permits only `GET`, `HEAD`, and `OPTIONS`, and
+300-second proxy timeouts. Preview therefore requires an explicit dedicated
+`location ^~ /_preview/dingtalk-r1/` with these properties:
+
+- `auth_basic off`, because DingTalk callbacks and login initiation must reach
+  the application without the shared password;
+- no inherited or repeated root `limit_except`, so authenticated `POST` routes
+  can function;
+- application authentication and exact public-route allowlisting from section
+  8.4 after stripping only the fixed preview prefix;
+- `client_max_body_size 1m` by default and a 50 MB override only on the exact
+  attachment-upload route;
+- proxy read and send timeouts of 360 seconds; and
+- the unauthenticated rate limits and total connection bounds in section 14.5.
+
+Preview is network-reachable on the public host at its login and callback
+routes. Its protection is the application login protocol, one-time OAuth
+state, Orbbec enterprise membership, explicit test-member scope, CSRF defense,
+and rate limiting. It does not rely on a mobile-client source-IP allowlist.
+All non-allowlisted preview routes require an authenticated candidate Session.
 
 Because preview and production share an origin:
 
@@ -645,10 +941,15 @@ Because preview and production share an origin:
 - CSP and exact proxy routing prevent fallback into another backend; and
 - preview is removed and its Sessions revoked immediately after cutover.
 
-The DingTalk application homepage temporarily points to preview during real
-acceptance. The formal homepage and callback are restored before production
-publication. Public and internal DNS and company proxy configuration are
-required only for `agent.orbbec.com.cn`, not for every Agent.
+The DingTalk developer UI has been verified to accept multiple comma-separated
+redirect URLs, so the preview callback is added alongside the formal callback
+without removing it. The application homepage is a single URL. The current
+development application is unpublished, so initial in-client acceptance may
+use its preview homepage without disrupting existing users. After formal
+publication, later preview testers open the preview URL directly; the
+production homepage is not switched for routine acceptance. Public and
+internal DNS and company proxy configuration are required only for
+`agent.orbbec.com.cn`, not for every Agent.
 
 ## 19. Incremental releases
 
@@ -658,20 +959,27 @@ required only for `agent.orbbec.com.cn`, not for every Agent.
 - DingTalk QR and in-client login;
 - internal identity mapping;
 - unique owner binding;
+- scoped, non-administrative `management_viewer` binding;
 - Web Session, CSRF, and whole-site backend authentication;
 - Stream and six-hour organization synchronization;
 - audit logging; and
-- owner-only access to existing FAE and other management data.
+- the section 11 coarse gate: members receive `403` outside authentication and
+  account/status, the owner can read existing management data, and a viewer can
+  read only explicitly scoped existing management projections.
 
-Unified chat is not enabled in this release.
+No existing Session, Feedback, attachment, Review, Trace, Evidence, replica,
+or management route becomes generally visible to authenticated employees.
+Release 1 viewer routes are `GET`/`HEAD` only; existing cloud Review mutation
+remains disabled. Unified chat is not enabled in this release.
 
 ### Release 2: Agent management and grants
 
 - Registry access modes;
 - user, recursive department, and all-member grants;
 - authenticated Agent directory;
-- Session, Feedback, attachment, and management row authorization;
-- owner-only legacy and external Sessions; and
+- Session, Feedback, attachment, management, and observation-scope row
+  authorization beyond the Release 1 coarse gate;
+- owner-only legacy Sessions and observation-scoped external Sessions; and
 - preservation of current Review, Trace, Evidence, and flywheel behavior.
 
 ### Release 3: unified internal use
@@ -702,6 +1010,14 @@ All migrations are additive. `platform_replica` and current synchronized
 source data are retained. Existing read APIs first gain authentication, then
 actor-aware row filtering. Historical rows are not rewritten based on names.
 
+The existing `platform_identity.refresh_dingtalk_matches()`
+`exact_unique_name` result is retained only as a sanitized replica-side display
+annotation for investigation. It never creates or selects an
+`internal_user_id`, never owns a Session, and never participates in login,
+authorization, grants, export, or audit actor resolution. Control-plane tests
+must prove that a unique same-name annotation cannot affect any protected
+decision.
+
 The caller-supplied `X-Review-Actor` mechanism is removed from trusted use.
 Review actors come only from the authenticated server Session. Compatibility
 routes may remain temporarily, but no unauthenticated route can reach them.
@@ -718,16 +1034,20 @@ batch.
 | DingTalk OAuth unavailable | Login fails; no password or anonymous fallback |
 | Directory API unavailable | Last complete generation remains; partial data is discarded |
 | Stream disconnected | Automatic reconnect and owner alert; reconciliation continues |
+| Stream credential invalid or revoked | Connection reports hard failure; alert owner; reconciliation continues; no synthetic events |
 | Control database unavailable | `503`; no authorization bypass |
 | Authorization data invalid | Default deny |
 | Internal Agent unavailable | Explicit failure; no Agent/model fallback |
 | Signing key unavailable | Downstream call denied |
+| Clock offset above limit | Alert above two seconds; readiness and signing fail closed above five seconds |
 | Required audit write unavailable | Sensitive action fails |
+| MinIO unavailable | Attachment operations return `503`; chat without attachments may continue |
 | Attachment scan unavailable | File remains quarantined |
 
 ## 22. Backup and recovery
 
-`platform_control` receives:
+The shared PostgreSQL cluster containing `agent_platform_control` and the
+rebuildable `agent_platform` replica receives:
 
 - daily encrypted base backup;
 - continuous encrypted WAL archive with target RPO no greater than 15 minutes;
@@ -736,8 +1056,9 @@ batch.
 
 A restore verifies users, identities, grants, ownership, audit, and MinIO
 referential integrity. All restored Web Sessions are revoked and users log in
-again. `platform_replica` remains separately rebuildable from approved source
-data.
+again. The 15-minute RPO is a control-plane requirement even though physical
+WAL covers the entire cluster. `platform_replica` remains logically
+rebuildable from approved source data.
 
 ## 23. Security and backend test requirements
 
@@ -745,16 +1066,40 @@ Automated tests cover:
 
 - forged, replayed, expired, and cross-environment OAuth state;
 - non-Orbbec, inactive, departed, and reactivated users;
+- exact public-route allowlisting and authentication on every other route;
 - Session fixation, CSRF, logout, and revoked Cookie reuse;
 - ignored frontend user, role, department, Agent, and upstream claims;
 - direct management URL and API access by a member;
+- Release 1 coarse-gate behavior for member, viewer, and owner;
+- viewer observation-scope isolation and write denial;
 - unauthorized Agent use;
 - cross-user and cross-Agent Session access;
 - cross-user attachment, Feedback, Review, and export access;
-- Stream duplicate, out-of-order, disconnect, and reconnect behavior;
-- full-sync partial failure and atomic-generation preservation;
+- preview inability to read production control data;
+- owner departure, Session revocation, and break-glass replacement refusal and
+  success paths;
+- Stream duplicate, out-of-order, disconnect, reconnect, and invalid-credential
+  behavior;
+- full-sync partial failure, atomic-generation preservation, and exact 8-hour
+  warning and 24-hour hard-stale boundary behavior;
+- closure-table generation activation and absence of request-time recursion;
+- proof that replica same-name annotations cannot influence control identity or
+  authorization;
+- server-generated external Session IDs and non-distinguishable collision
+  handling;
+- SSE duplicate and out-of-order sequence handling, resume, storage bounds, and
+  expired-replay `410` behavior;
+- login, mutation, upload, and SSE rate and concurrency limits;
+- HMAC, envelope-encryption, and Ed25519 rotation with old/new acceptance
+  windows and unknown-version denial;
 - downstream token issuer, audience, Agent, expiry, and signature validation;
+- downstream token clock-leeway and fail-closed host-clock behavior;
+- Adapter retry denial when idempotency is not declared;
+- MinIO outage, quarantine, and emergency erasure behavior;
 - required audit failure semantics; and
+- Nginx preview behavior: Basic Auth disabled only under the exact prefix,
+  authenticated POST works, non-upload bodies remain 1 MB, upload is 50 MB,
+  and a 300-second backend run is not cut off by the proxy; and
 - absence of provider IDs, AppSecret, tokens, and Cookies from API and logs.
 
 ## 24. Real DingTalk acceptance
@@ -768,24 +1113,43 @@ Using a real test-member scope before broad publication:
 5. department movement changes Agent access;
 6. disabling a test member invalidates existing Web Sessions;
 7. Stream reconnects after a controlled disconnect;
-8. six-hour reconciliation and stale-directory behavior are demonstrated;
-9. owner access to a FAE Session creates an audit record; and
-10. a member cannot read FAE management data.
+8. current organization full reconciliation completes within ten minutes under
+   normal conditions and never exceeds a 15-minute hard acceptance deadline;
+9. a targeted organization event is reflected within 60 seconds at p95, and a
+   departure revokes Sessions within 30 seconds at p95 after Platform receives
+   the event;
+10. six-hour scheduling, the 8-hour warning threshold, and the 24-hour
+    hard-stale threshold are demonstrated without promoting partial data;
+11. owner access to a FAE Session creates an audit record;
+12. a scoped viewer can read only its Agent projection, cannot mutate it, and
+    can inspect the owner's immutable audit metadata;
+13. a member cannot read FAE or any other management data in Release 1; and
+14. login, callback, upload, and SSE limits return the documented explicit
+    failures under controlled load.
 
 ## 25. Production cutover and rollback
 
 Before cutover:
 
 - back up PostgreSQL, Nginx, current image, and the Basic Auth credential file;
+- inventory current shared-Basic-Auth dashboard users, bind approved people as
+  owner or scoped viewer, and explicitly accept that anyone not bound loses
+  dashboard access at cutover;
 - run migrations and the candidate on an isolated loopback listener;
 - complete automated and real DingTalk acceptance through `/_preview/`;
+- add the preview redirect URL alongside the formal DingTalk callback; do not
+  replace the formal callback;
 - verify 8000, 8080, MinIO, and PostgreSQL remain closed to the public;
-- switch the DingTalk homepage and callback to the formal root; and
+- verify the exact preview Nginx location, 1 MB default body limit, 50 MB upload
+  override, 360-second proxy timeouts, public-route allowlist, and rate limits;
+- set the DingTalk homepage to the formal root for publication; and
 - prepare exact Nginx and application rollback commands.
 
 Cutover atomically changes the root upstream and replaces Nginx Basic Auth with
 application-level DingTalk authentication only after the candidate is proven.
 Preview routes are then disabled.
+The preview callback is removed only after candidate Sessions are revoked and
+the formal callback has passed login acceptance.
 
 Rollback restores the old image, old upstream, and Basic Auth. It does not drop
 new control data. All candidate Web Sessions are revoked. Audit and failure
