@@ -44,6 +44,9 @@ VERIFIED_IDENTITY_PAIR_BOUNDARY_MIGRATION = (
 DIRECTORY_PROMOTION_BOUNDARY_MIGRATION = (
     MIGRATIONS / "013_directory_promotion_boundary.sql"
 )
+EXACT_IDENTITY_MAPPING_BOUNDARY_MIGRATION = (
+    MIGRATIONS / "014_exact_identity_mapping_boundary.sql"
+)
 RELEASE_1_PLAN = (
     Path(__file__).parents[2]
     / "docs/superpowers/plans/2026-08-13-dingtalk-identity-release-1.md"
@@ -112,6 +115,7 @@ IMMUTABLE_MIGRATION_SHA256 = {
     "010_verified_identity_refresh.sql": "a6695b5fcbad6a5b13c639dcabe1eacbe19898a1041c7d67dbf29f69a1865ca1",
     "011_verified_identity_boundary.sql": "8febc87dde9ccd091914c0fc0fdaf8f1fc9bcbbe0f247727bb4c914019ea0225",
     "012_verified_identity_pair_boundary.sql": "63892ec38e49514b34d38c3fc851616981aaee0af172855dccb889a22888343b",
+    "013_directory_promotion_boundary.sql": "1d324cfa3cdd8e9c41555acb3c302383094b1e1aaa6713aec87d6a01b5500759",
 }
 
 
@@ -162,9 +166,13 @@ def test_first_control_migration_exists() -> None:
         "missing directory promotion boundary migration: "
         f"{DIRECTORY_PROMOTION_BOUNDARY_MIGRATION}"
     )
+    assert EXACT_IDENTITY_MAPPING_BOUNDARY_MIGRATION.is_file(), (
+        "missing exact identity mapping boundary migration: "
+        f"{EXACT_IDENTITY_MAPPING_BOUNDARY_MIGRATION}"
+    )
 
 
-def test_control_migrations_001_through_012_are_byte_immutable() -> None:
+def test_control_migrations_001_through_013_are_byte_immutable() -> None:
     import hashlib
 
     assert {
@@ -172,7 +180,7 @@ def test_control_migrations_001_through_012_are_byte_immutable() -> None:
         for path in sorted(
             (
                 *MIGRATIONS.glob("00[1-9]_*.sql"),
-                *MIGRATIONS.glob("01[0-2]_*.sql"),
+                *MIGRATIONS.glob("01[0-3]_*.sql"),
             )
         )
     } == IMMUTABLE_MIGRATION_SHA256
@@ -366,7 +374,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                        (version, 64) for version in range(1, 14)
+                        (version, 64) for version in range(1, 15)
                 ]
 
     changed = tmp_path / "migrations"

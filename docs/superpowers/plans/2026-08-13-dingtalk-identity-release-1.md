@@ -313,11 +313,18 @@ class DingTalkDepartment:
 
 The exact public signatures are `exchange_login_code(code: str) -> DingTalkAuthResult`, `resolve_union_member(unionid: str) -> DingTalkMember`, `get_member(userid: str) -> DingTalkMember`, `iter_departments() -> AsyncIterator[DingTalkDepartment]`, `iter_department_members(department_id: int) -> AsyncIterator[DingTalkMember]`, and `resolve_active_member(auth_result: DingTalkAuthResult, freshness: DirectoryFreshness) -> UUID`.
 
+Online identity resolution authorizes only the exact corporate and union HMAC
+version/value pair stored on the active directory row. Previous-version lookup
+candidates never select, reuse, or rebind an internal user. If provider mappings
+still contain a different lookup version, login fails closed until a dedicated
+maintenance migration rotates the complete mapping set under the shared
+directory/identity lock; login itself never performs HMAC rotation.
+
 - [ ] **Step 1: Write failing `respx` tests** for token acquisition/expiry, QR and in-client code exchange, corp mismatch, inactive/absent users, pagination, provider error redaction, bounded timeout, 429/5xx retry only for idempotent reads, and no retry of login-code exchange.
 - [ ] **Step 2: Write failing resolver tests** proving QR unionid and in-client userid converge on one internal identity, display-name changes do not change identity, ambiguous/name-only data cannot create an identity, normal login requires active current directory state, and no failed flow leaves a partial user.
 - [ ] **Step 3: Run `cd backend && .venv/bin/python -m pytest tests/test_dingtalk_client.py tests/test_dingtalk_identity.py -q` and verify RED**. Expected: imports of `DingTalkClient` and `IdentityResolver` fail.
 - [ ] **Step 4: Implement the client with `httpx.AsyncClient`**, exact official endpoints/configurable base URL for tests, `X-Request-Id`, strict response models, a redacting error type, and an application-token cache protected by an async lock.
-- [ ] **Step 5: Implement the resolver as one control-database transaction** that validates the active generation and provider HMAC before mapping/creating the internal user; names update only `display_name`.
+- [ ] **Step 5: Implement the resolver as one control-database transaction** that validates the active generation and exact current corporate/union HMAC pair before mapping/creating the internal user; previous-version candidates cannot authorize or migrate identity, and names update only `display_name`.
 - [ ] **Step 6: Run focused tests and verify GREEN**, then verify logs under forced provider errors contain request IDs and error codes but no code, token, userid, unionid, AppSecret, mobile, or email.
 - [ ] **Step 7: Commit** with `git add backend/app/control_plane/dingtalk.py backend/app/control_plane/identity.py backend/tests/test_dingtalk_client.py backend/tests/test_dingtalk_identity.py && git commit -m "feat(identity): resolve verified DingTalk members"`.
 

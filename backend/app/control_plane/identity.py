@@ -96,22 +96,6 @@ class IdentityResolver:
             encryption_key_version=row["encryption_key_version"],
         )
 
-    def _candidates(
-        self, protected: ProtectedProviderId
-    ) -> tuple[tuple[int, bytes], ...]:
-        provider_id = self.identity_codec.unseal(protected)
-        candidates = self.identity_codec.lookup_candidates(
-            protected.subject_kind, provider_id
-        )
-        if not self.identity_codec.matches_lookup(
-            subject_kind=protected.subject_kind,
-            provider_id=provider_id,
-            lookup_hmac=protected.lookup_hmac,
-            lookup_key_version=protected.lookup_key_version,
-        ):
-            raise IdentityResolutionError("provider identity invalid")
-        return candidates
-
     def _matching_user(
         self,
         rows: list[dict[str, Any]],
@@ -129,17 +113,17 @@ class IdentityResolver:
         return next(iter(matches), None)
 
     @staticmethod
-    def _lookup_rows(cursor, protected, candidates):
+    def _lookup_rows(cursor, protected):
         return cursor.execute(
             "select provider_identity_id, internal_user_id, subject_kind, "
             "lookup_hmac, lookup_key_version, encrypted_provider_id, "
             "encryption_key_version from platform_control.provider_identities "
-            "where subject_kind=%s and (lookup_key_version,lookup_hmac) in "
-            "(select * from unnest(%s::integer[],%s::bytea[]))",
+            "where subject_kind=%s and lookup_key_version=%s "
+            "and lookup_hmac=%s",
             (
                 protected.subject_kind,
-                [version for version, _ in candidates],
-                [lookup for _, lookup in candidates],
+                protected.lookup_key_version,
+                protected.lookup_hmac,
             ),
         ).fetchall()
 
@@ -149,8 +133,6 @@ class IdentityResolver:
             self.corporate_provider_id(self._corp_id, member.userid),
         )
         union = self.identity_codec.seal(self.UNION_SUBJECT_KIND, member.unionid)
-        corporate_candidates = self._candidates(corporate)
-        union_candidates = self._candidates(union)
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 self._check_key_policy(cursor)
@@ -185,10 +167,8 @@ class IdentityResolver:
                 ):
                     raise IdentityResolutionError("active directory member unavailable")
 
-                corporate_rows = self._lookup_rows(
-                    cursor, corporate, corporate_candidates
-                )
-                union_rows = self._lookup_rows(cursor, union, union_candidates)
+                corporate_rows = self._lookup_rows(cursor, corporate)
+                union_rows = self._lookup_rows(cursor, union)
                 corporate_user = self._matching_user(corporate_rows, corporate)
                 union_user = self._matching_user(union_rows, union)
                 directory_user = directory_rows[0]["internal_user_id"]
@@ -211,8 +191,8 @@ class IdentityResolver:
                     proposed_user_id = corporate_user
                 resolved = cursor.execute(
                     "select platform_control.resolve_verified_dingtalk_member("
-                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,"
-                    "%s,%s,%s,%s,%s,%s,%s) as internal_user_id",
+                    "%s,%s,%s,%s,%s,%s,%s,"
+                    "%s,%s,%s,%s,%s) as internal_user_id",
                     (
                         proposed_user_id,
                         member.display_name,
@@ -221,15 +201,11 @@ class IdentityResolver:
                         corporate.lookup_key_version,
                         corporate.ciphertext,
                         corporate.encryption_key_version,
-                        [version for version, _ in corporate_candidates],
-                        [lookup for _, lookup in corporate_candidates],
                         uuid4(),
                         union.lookup_hmac,
                         union.lookup_key_version,
                         union.ciphertext,
                         union.encryption_key_version,
-                        [version for version, _ in union_candidates],
-                        [lookup for _, lookup in union_candidates],
                     ),
                 ).fetchone()
                 if resolved is None:

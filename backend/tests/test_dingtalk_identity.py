@@ -10,6 +10,7 @@ import pytest
 import app.control_plane.identity as identity_module
 
 from app.control_plane.dingtalk import DingTalkAuthResult, DingTalkMember
+from app.control_plane.crypto import ProtectedProviderId
 from app.control_plane.identity import (
     IdentityResolutionError,
     IdentityResolver,
@@ -121,6 +122,16 @@ def _seed_mapping(environment, protected, internal_user_id=None):
             ),
         )
     return selected_user_id
+
+
+def _at_lookup(protected, version: int, lookup_hmac: bytes):
+    return ProtectedProviderId(
+        subject_kind=protected.subject_kind,
+        lookup_hmac=lookup_hmac,
+        lookup_key_version=version,
+        ciphertext=protected.ciphertext,
+        encryption_key_version=protected.encryption_key_version,
+    )
 
 
 def _identity_state(environment):
@@ -514,6 +525,80 @@ async def test_conflicting_corporate_and_union_mappings_leave_zero_partial_state
             "(select count(*) from platform_control.directory_members "
             "where internal_user_id is not null)"
         ).fetchone() == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "mapping_state",
+    ("both_old_same_user", "one_old_one_exact", "exact_different_users"),
+)
+async def test_only_exact_current_pair_mappings_can_authorize_existing_user(
+    production_environment,
+    tmp_path: Path,
+    mapping_state: str,
+) -> None:
+    member = DingTalkMember(
+        f"exact-{mapping_state}",
+        f"exact-union-{mapping_state}",
+        "Exact Mapping",
+        True,
+        (1,),
+    )
+    resolver = _resolver(production_environment, tmp_path, member)
+    corporate = resolver.identity_codec.seal(
+        IdentityResolver.CORPORATE_SUBJECT_KIND,
+        _provider_value("test-corp", member.userid),
+    )
+    union = resolver.identity_codec.seal(
+        IdentityResolver.UNION_SUBJECT_KIND, member.unionid
+    )
+    old_corporate = _at_lookup(
+        corporate,
+        1,
+        dict(resolver.identity_codec.lookup_candidates(
+            corporate.subject_kind,
+            _provider_value("test-corp", member.userid),
+        ))[1],
+    )
+    old_union = _at_lookup(
+        union,
+        1,
+        dict(resolver.identity_codec.lookup_candidates(
+            union.subject_kind, member.unionid
+        ))[1],
+    )
+
+    seeded_users = []
+    if mapping_state == "both_old_same_user":
+        mapped_user = _seed_mapping(production_environment, old_corporate)
+        _seed_mapping(production_environment, old_union, mapped_user)
+        seeded_users.append(mapped_user)
+    elif mapping_state == "one_old_one_exact":
+        mapped_user = _seed_mapping(production_environment, old_corporate)
+        _seed_mapping(production_environment, union, mapped_user)
+        seeded_users.append(mapped_user)
+    else:
+        seeded_users.extend((
+            _seed_mapping(production_environment, corporate),
+            _seed_mapping(production_environment, union),
+        ))
+    before = _identity_state(production_environment)
+
+    try:
+        with pytest.raises(IdentityResolutionError, match="collision"):
+            await resolver.resolve_active_member(
+                DingTalkAuthResult(member.unionid, member.userid, "test-corp"),
+                DirectoryFreshness.FRESH,
+            )
+
+        assert _identity_state(production_environment) == before
+    finally:
+        with psycopg.connect(production_environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_control.internal_users "
+                "where internal_user_id=any(%s)", (seeded_users,)
+            )
 
 
 @pytest.mark.asyncio
@@ -1038,6 +1123,7 @@ def test_directory_worker_cannot_mutate_identity_or_bind_directory_rows(
 def test_pair_and_worker_functions_have_exact_environment_grants(control_database) -> None:
     pair_name = "resolve_verified_dingtalk_member"
     legacy_pair_name = "resolve_verified_dingtalk_member_v12"
+    legacy_v13_name = "resolve_verified_dingtalk_member_v13"
     stage_name = "stage_verified_directory_member"
     lock_name = "lock_dingtalk_identity_directory"
     promote_name = "promote_verified_directory_generation"
@@ -1048,7 +1134,8 @@ def test_pair_and_worker_functions_have_exact_environment_grants(control_databas
         ]["roles"]
         with psycopg.connect(environment["admin"]) as connection:
             rows = connection.execute(
-                "select proname,has_function_privilege(%s,oid,'execute'),"
+                "select proname,oidvectortypes(proargtypes),"
+                "has_function_privilege(%s,oid,'execute'),"
                 "has_function_privilege(%s,oid,'execute'),"
                 "has_function_privilege(%s,oid,'execute'),"
                 "has_function_privilege(%s,oid,'execute'),"
@@ -1059,29 +1146,45 @@ def test_pair_and_worker_functions_have_exact_environment_grants(control_databas
                     app, worker, other[1], other[2],
                     [
                         pair_name, legacy_pair_name, stage_name,
-                        lock_name, promote_name,
+                        legacy_v13_name, lock_name, promote_name,
                     ],
                 ),
             ).fetchall()
         assert rows == [
             (
-                lock_name, True, True, False, False, False, True,
+                lock_name, "", True, True, False, False, False, True,
                 ["search_path=pg_catalog, platform_control"],
             ),
             (
-                promote_name, False, True, False, False, False, True,
+                promote_name, "uuid", False, True, False, False, False, True,
                 ["search_path=pg_catalog, platform_control"],
             ),
             (
-                pair_name, True, False, False, False, False, True,
+                pair_name,
+                "uuid, text, uuid, bytea, integer, bytea, integer, uuid, "
+                "bytea, integer, bytea, integer",
+                True, False, False, False, False, True,
                 ["search_path=pg_catalog, platform_control"],
             ),
             (
-                legacy_pair_name, False, False, False, False, False, True,
+                legacy_pair_name,
+                "uuid, text, uuid, bytea, integer, bytea, integer, integer[], "
+                "bytea[], uuid, bytea, integer, bytea, integer, integer[], bytea[]",
+                False, False, False, False, False, True,
                 ["search_path=pg_catalog, platform_control"],
             ),
             (
-                stage_name, False, True, False, False, False, True,
+                legacy_v13_name,
+                "uuid, text, uuid, bytea, integer, bytea, integer, integer[], "
+                "bytea[], uuid, bytea, integer, bytea, integer, integer[], bytea[]",
+                False, False, False, False, False, True,
+                ["search_path=pg_catalog, platform_control"],
+            ),
+            (
+                stage_name,
+                "uuid, uuid, text, bytea, integer, bytea, integer, bytea, "
+                "integer, text, text",
+                False, True, False, False, False, True,
                 ["search_path=pg_catalog, platform_control"],
             ),
         ]
