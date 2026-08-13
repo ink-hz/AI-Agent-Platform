@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import threading
 from uuid import UUID, uuid4
 
 import psycopg
@@ -15,6 +16,7 @@ from app.control_plane.audit import (
     ControlCommitIndeterminateError,
     IndeterminateMutationError,
     SensitiveMutationCoordinator,
+    project_governance_metadata,
     sanitize_governance_metadata,
 )
 from test_control_plane_migration import control_database
@@ -574,3 +576,55 @@ def test_audit_module_uses_no_replica_or_distributed_transaction_claim() -> None
     assert "agent_platform_control" in dsn_source
     assert "agent_platform\"" not in source
     assert "distributed transaction" not in source.lower()
+
+
+@pytest.mark.postgres
+def test_audit_request_lock_is_session_scoped_and_released_on_exception(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    writer = AuditWriter.from_database_url(
+        environment["urls"]["platform_audit_append"]
+    )
+    request_id = uuid4()
+    entered = threading.Event()
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        with writer.serialized(request_id):
+            raise RuntimeError("simulated crash")
+
+    def acquire_again() -> None:
+        with writer.serialized(request_id):
+            entered.set()
+
+    thread = threading.Thread(target=acquire_again)
+    thread.start()
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert entered.is_set()
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "directory_generation_id", "linked_audit_event_id", "agent_id",
+        "operation", "role", "previous_role", "new_role",
+        "session_revocation_count", "os_operator", "approver_a", "approver_b",
+    ],
+)
+@pytest.mark.parametrize("malformed", [None, [], {}, 1, 1.5, False, True])
+def test_legacy_projection_is_total_for_every_malformed_allowlisted_value(
+    key, malformed
+) -> None:
+    metadata = {
+        "directory_generation_id": str(uuid4()),
+        "operation": "bind",
+        "role": "platform_owner",
+        "result": "requested",
+        key: malformed,
+    }
+    status, projected = project_governance_metadata(
+        metadata, event_type="owner_binding_requested"
+    )
+    assert status in {"legacy_005_redacted", "unsupported_redacted"}
+    assert malformed not in projected.values()

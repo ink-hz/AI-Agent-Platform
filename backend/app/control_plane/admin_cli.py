@@ -665,40 +665,49 @@ class OfflineOwnerAdministrator:
             generation_id=UUID(str(selected["generation_id"])),
         )
         requested = self._owner_request(selected, target)
-        requested_event_id = self.audit_writer.append(requested)
-        try:
-            with self._connection() as connection:
-                row = connection.execute(
-                    "select platform_control.reconcile_platform_owner_v2("
-                    "%s,%s,%s,%s,%s,%s,%s,%s) as result",
-                    (
-                        selected["operation_id"], selected["action"], target,
-                        selected["generation_id"],
-                        selected["current_owner_internal_user_id"],
-                        selected["current_owner_row_version"],
-                        selected["target_row_version"], requested_event_id,
-                    ),
-                ).fetchone()
-        except psycopg.Error as error:
-            raise self._safe_database_error(error) from None
-        applied = row["result"] if row else None
+        with self.audit_writer.serialized(requested.request_id) as audit_writer:
+            terminal = audit_writer.terminal_result(requested.request_id)
+            if terminal is not None:
+                return {
+                    "status": terminal,
+                    "operation": str(selected["action"]),
+                    "request_id": str(selected["operation_id"]),
+                }
+            requested_event_id = audit_writer.append(requested)
+            try:
+                with self._connection() as connection:
+                    row = connection.execute(
+                        "select platform_control.reconcile_platform_owner_v2("
+                        "%s,%s,%s,%s,%s,%s,%s,%s) as result",
+                        (
+                            selected["operation_id"], selected["action"], target,
+                            selected["generation_id"],
+                            selected["current_owner_internal_user_id"],
+                            selected["current_owner_row_version"],
+                            selected["target_row_version"], requested_event_id,
+                        ),
+                    ).fetchone()
+            except psycopg.Error as error:
+                raise self._safe_database_error(error) from None
+            applied = row["result"] if row else None
+            if applied is not None:
+                actual = dict(applied)
+                if selected["action"] == "bind":
+                    for key in (
+                        "previous_owner_internal_user_id",
+                        "previous_owner_role",
+                        "previous_owner_row_version",
+                    ):
+                        actual.pop(key, None)
+                audit_writer.append_outcome(
+                    requested, requested_event_id, actual=actual
+                )
         if applied is None:
             return {
                 "status": "pending",
                 "operation": str(selected["action"]),
                 "request_id": str(selected["operation_id"]),
             }
-        actual = dict(applied)
-        if selected["action"] == "bind":
-            for key in (
-                "previous_owner_internal_user_id",
-                "previous_owner_role",
-                "previous_owner_row_version",
-            ):
-                actual.pop(key, None)
-        self.audit_writer.append_outcome(
-            requested, requested_event_id, actual=actual
-        )
         return {
             "status": "completed",
             "operation": str(selected["action"]),

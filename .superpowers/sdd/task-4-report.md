@@ -2,15 +2,17 @@
 
 ## Status
 
-Complete and committed at current Task 4 HEAD. No deployment, production
+Complete at current Task 4 HEAD. No deployment, production
 access, real DingTalk identity, Keychain access, or external mutation was
 performed.
 
-Commit:
+Task 4 security hardening history before this final review commit:
 
 ```text
-07dd217536ff14cc19c83b257df4faa22d58ad9c
 07dd217 feat(identity): add audited role administration
+592f4bf fix(identity): enforce audited mutation boundary
+69ea121 fix(identity): reconcile audited owner and scope state
+cd2d2a0 fix(identity): serialize terminal audit outcomes
 ```
 
 ## Design and failure semantics
@@ -36,6 +38,17 @@ The Web reason body has an optional `request_id` specifically for retrying an
 indeterminate operation. Authentication, CSRF, and freshness do not trust
 headers: their explicit dependencies fail closed until Tasks 6/8/12 install
 the production implementations.
+
+The fourth security-review hardening adds a session-scoped advisory lock in
+the audit database. Web mutations, offline CLI confirmation, and offline
+reconciliation all derive the same signed 64-bit lock key from the request
+UUID and hold the dedicated audit connection from requested append through
+control mutation/reconciliation and terminal append. Connection close releases
+the lock after success, exception, or crash-like abandonment. A retry first
+checks the terminal audit state through the narrow migration-009
+`SECURITY DEFINER` function. A failed request is refused before any control
+mutation; a request whose control commit succeeded without a terminal can
+replay the idempotent control ledger and append `completed`.
 
 ## TDD evidence
 
@@ -123,6 +136,34 @@ The warning is the existing FastAPI TestClient deprecation warning:
 StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is
 deprecated; install `httpx2` instead.
 ```
+
+### Fourth security review RED/GREEN
+
+The cross-database request race and malformed legacy JSON tests first failed:
+
+```text
+6 failed, 51 passed, 1 warning in 1.62s
+```
+
+The failures showed that the second Web request did not block, the audit
+writer had no session request-lock context, unhashable JSON values raised from
+legacy role membership checks, and malformed values could be projected under
+an unrelated event schema.
+
+After the unified lock, terminal-state boundary, and event-specific typed
+legacy projection were added, the real-PostgreSQL and parameterized focused
+suite passed:
+
+```text
+141 passed, 1 warning in 4.24s
+```
+
+This covers the Web failure/success interleaving, session-lock release after
+exception, offline confirm/reconcile interleaving, a malformed legacy row
+alongside readable rows, and every legacy allowlisted key with JSON null,
+array, object, integer, float, and both boolean values. Migration 009 is
+additive. SHA-256 checks assert migrations 001 through 008 remain byte
+immutable.
 
 ## Real PostgreSQL evidence
 
@@ -221,10 +262,16 @@ Control integration:
 60 passed in 2.25s
 ```
 
-Full backend:
+Full backend before the fourth-review additions:
 
 ```text
 767 passed, 1 skipped, 1 warning in 13.89s
+```
+
+Fourth-review full backend verification:
+
+```text
+909 passed, 1 skipped, 1 warning in 15.40s
 ```
 
 Other final gates:
@@ -248,6 +295,7 @@ Keychain checks were used instead.
 ## Files
 
 - `backend/control_migrations/005_audited_role_administration.sql`
+- `backend/control_migrations/009_audit_request_serialization.sql`
 - `backend/app/control_plane/audit.py`
 - `backend/app/control_plane/admin_cli.py`
 - `backend/app/control_plane/maintenance_cli.py`

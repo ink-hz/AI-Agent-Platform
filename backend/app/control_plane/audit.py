@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import json
 import re
@@ -14,6 +15,7 @@ from .dsn import validate_control_dsn
 
 
 _AUDIT_EVENT_NAMESPACE = UUID("8fabf404-553e-4e15-bdd8-c744c05e1f5a")
+_AUDIT_REQUEST_LOCK_NAMESPACE = UUID("850d125b-dad0-491f-b84e-cfa340ed2f73")
 _AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _OS_IDENTITY = re.compile(
     r"^(?:uid:[0-9]{1,10}|[a-z_][a-z0-9_.-]{0,31}|"
@@ -422,17 +424,49 @@ def project_governance_metadata(
         "agent_id": lambda value: (
             isinstance(value, str) and _AGENT_ID.fullmatch(value) is not None
         ),
-        "operation": lambda value: value == expected_operation,
-        "role": lambda value: value == "platform_owner",
-        "previous_role": lambda value: value in _ROLES,
-        "new_role": lambda value: value == expected_new_role,
+        "operation": lambda value: (
+            isinstance(value, str) and value == expected_operation
+        ),
+        "role": lambda value: (
+            isinstance(value, str) and value == "platform_owner"
+        ),
+        "previous_role": lambda value: (
+            isinstance(value, str) and value in _ROLES
+        ),
+        "new_role": lambda value: (
+            isinstance(value, str) and value == expected_new_role
+        ),
         "session_revocation_count": lambda value: (
             isinstance(value, int) and not isinstance(value, bool) and value >= 0
         ),
     }
+    event_typed_keys: dict[str, frozenset[str]] = {
+        "owner_binding_requested": frozenset(
+            {"directory_generation_id", "operation", "role"}
+        ),
+        "owner_replacement_requested": frozenset(
+            {"directory_generation_id", "operation", "role"}
+        ),
+        "observation_scope_assignment_requested": frozenset({"agent_id"}),
+        "observation_scope_revocation_requested": frozenset({"agent_id"}),
+        "viewer_role_assignment_completed": frozenset(
+            {"linked_audit_event_id", "new_role", "previous_role",
+             "session_revocation_count"}
+        ),
+        "viewer_role_revocation_completed": frozenset(
+            {"linked_audit_event_id", "new_role", "previous_role",
+             "session_revocation_count"}
+        ),
+    }
+    allowed_typed_keys = event_typed_keys.get(
+        event_type,
+        frozenset({"linked_audit_event_id"})
+        if event_type.endswith(("_completed", "_failed"))
+        else frozenset(),
+    )
     for key, valid in typed_rules.items():
         if key in metadata:
-            if valid(metadata[key]):
+            if key in allowed_typed_keys and valid(metadata[key]):
                 legacy[key] = metadata[key]
             else:
                 redacted = True
@@ -513,6 +547,70 @@ class AuditRepository:
         self._database_url = audit_database_url
         self.environment = parsed.environment
         self._connect = connect
+        self._session_connection = None
+
+    def _scoped(self, connection) -> AuditRepository:
+        repository = object.__new__(AuditRepository)
+        repository._database_url = self._database_url
+        repository.environment = self.environment
+        repository._connect = self._connect
+        repository._session_connection = connection
+        return repository
+
+    def _open(self, *, autocommit: bool = False):
+        return self._connect(
+            self._database_url,
+            connect_timeout=3,
+            options="-c statement_timeout=10000",
+            row_factory=dict_row,
+            autocommit=autocommit,
+        )
+
+    @contextmanager
+    def serialized(self, request_id: UUID):
+        lock_key = int.from_bytes(
+            uuid5(_AUDIT_REQUEST_LOCK_NAMESPACE, str(request_id)).bytes[:8],
+            byteorder="big",
+            signed=True,
+        )
+        connection = None
+        try:
+            connection = self._open(autocommit=True)
+            connection.execute("select pg_advisory_lock(%s)", (lock_key,))
+        except psycopg.Error:
+            if connection is not None:
+                connection.close()
+            raise AuditUnavailableError("required audit unavailable") from None
+        try:
+            yield self._scoped(connection)
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _append_on(
+        connection,
+        event_id: UUID,
+        command: AuditCommand,
+        sanitized: Mapping[str, AuditValue],
+    ) -> UUID:
+        row = connection.execute(
+            "select platform_control.append_audit_event("
+            "%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb) as event_id",
+            (
+                event_id,
+                command.actor_internal_user_id,
+                command.event_type,
+                command.target_type,
+                command.target_id,
+                command.request_id,
+                _event_result(command.event_type),
+                command.reason,
+                json.dumps(sanitized, sort_keys=True),
+            ),
+        ).fetchone()
+        if row is None or row["event_id"] != event_id:
+            raise AuditUnavailableError("required audit unavailable")
+        return event_id
 
     def append(
         self,
@@ -521,32 +619,30 @@ class AuditRepository:
         sanitized: Mapping[str, AuditValue],
     ) -> UUID:
         try:
-            with self._connect(
-                self._database_url,
-                connect_timeout=3,
-                options="-c statement_timeout=10000",
-                row_factory=dict_row,
-            ) as connection:
-                row = connection.execute(
-                    "select platform_control.append_audit_event("
-                    "%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb) as event_id",
-                    (
-                        event_id,
-                        command.actor_internal_user_id,
-                        command.event_type,
-                        command.target_type,
-                        command.target_id,
-                        command.request_id,
-                        _event_result(command.event_type),
-                        command.reason,
-                        json.dumps(sanitized, sort_keys=True),
-                    ),
-                ).fetchone()
-                if row is None or row["event_id"] != event_id:
-                    raise AuditUnavailableError("required audit unavailable")
-                return event_id
+            if self._session_connection is not None:
+                return self._append_on(
+                    self._session_connection, event_id, command, sanitized
+                )
+            with self._open() as connection:
+                return self._append_on(connection, event_id, command, sanitized)
         except AuditUnavailableError:
             raise
+        except psycopg.Error:
+            raise AuditUnavailableError("required audit unavailable") from None
+
+    def terminal_result(self, request_id: UUID) -> str | None:
+        def select(connection):
+            row = connection.execute(
+                "select platform_control.audit_terminal_result(%s) as result",
+                (request_id,),
+            ).fetchone()
+            return None if row is None else row["result"]
+
+        try:
+            if self._session_connection is not None:
+                return select(self._session_connection)
+            with self._open() as connection:
+                return select(connection)
         except psycopg.Error:
             raise AuditUnavailableError("required audit unavailable") from None
 
@@ -582,6 +678,17 @@ class AuditWriter:
             raise ValueError("audit command invalid")
         event_id = _event_id(command)
         return self.repository.append(event_id, command, sanitized)
+
+    @contextmanager
+    def serialized(self, request_id: UUID):
+        with self.repository.serialized(request_id) as repository:
+            yield AuditWriter(repository)
+
+    def terminal_result(self, request_id: UUID) -> str | None:
+        result = self.repository.terminal_result(request_id)
+        if result not in {None, "completed", "failed"}:
+            raise AuditUnavailableError("required audit unavailable")
+        return result
 
     def append_outcome(
         self,
@@ -649,7 +756,33 @@ class SensitiveMutationCoordinator:
         requested: AuditCommand,
         mutate: Callable[[UUID], AppliedMutation[T]],
     ) -> T:
-        requested_event_id = self.audit_writer.append(requested)
+        serializer = getattr(self.audit_writer, "serialized", None)
+        scope = (
+            serializer(requested.request_id)
+            if serializer is not None
+            else nullcontext(self.audit_writer)
+        )
+        with scope as audit_writer:
+            terminal_result = getattr(audit_writer, "terminal_result", None)
+            if (
+                terminal_result is not None
+                and terminal_result(requested.request_id) == "failed"
+            ):
+                raise ValueError("operation already terminal failed")
+            return self._execute_locked(
+                audit_writer=audit_writer,
+                requested=requested,
+                mutate=mutate,
+            )
+
+    @staticmethod
+    def _execute_locked(
+        *,
+        audit_writer: Any,
+        requested: AuditCommand,
+        mutate: Callable[[UUID], AppliedMutation[T]],
+    ) -> T:
+        requested_event_id = audit_writer.append(requested)
         try:
             applied = mutate(requested_event_id)
             if not isinstance(applied, AppliedMutation):
@@ -665,7 +798,7 @@ class SensitiveMutationCoordinator:
                 else "control_unavailable"
             )
             try:
-                self.audit_writer.append(
+                audit_writer.append(
                     _outcome_command(
                         requested,
                         requested_event_id,
@@ -679,7 +812,7 @@ class SensitiveMutationCoordinator:
                 ) from None
             raise
         try:
-            self.audit_writer.append(
+            audit_writer.append(
                 _outcome_command(
                     requested,
                     requested_event_id,

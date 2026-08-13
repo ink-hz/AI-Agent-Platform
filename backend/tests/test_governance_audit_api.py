@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import FastAPI, HTTPException
@@ -387,15 +388,18 @@ def test_governance_projection_classifies_legacy_005_and_malformed_rows(
             "target_internal_id,request_id,result,reason_code,sanitized_before_after) "
             "values (%s,%s,'owner_binding_requested','internal_user',%s,%s,"
             "'requested','approved binding',%s::jsonb),"
-            "(%s,%s,'viewer_role_assignment_requested','internal_user',%s,%s,"
-            "'requested','unsafe reason',%s::jsonb)",
+            "(%s,%s,'viewer_role_assignment_completed','internal_user',%s,%s,"
+            "'completed','unsafe reason',%s::jsonb)",
             (legacy_id, actor, str(actor), uuid4(),
              json.dumps({"directory_generation_id": str(uuid4()),
                          "operation": "bind", "os_operator": "root",
                          "result": "requested", "role": "platform_owner",
                          "secret_evidence": "must-not-project"}),
              malformed_id, actor, str(actor), uuid4(),
-             json.dumps({"provider_id": "sensitive", "message": "raw"})),
+             json.dumps({"linked_audit_event_id": str(uuid4()),
+                         "previous_role": [], "new_role": "management_viewer",
+                         "session_revocation_count": 0,
+                         "result": "completed"})),
         )
     events = ManagementRepository(
         environment["urls"]["platform_control_app_preview"]
@@ -623,3 +627,100 @@ def test_real_sensitive_mutation_failure_states_are_reconcilable(
         ("viewer_role_assignment_completed",),
         ("viewer_role_assignment_requested",),
     ]
+
+
+@pytest.mark.postgres
+def test_same_request_failure_and_success_are_serialized_across_databases(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    owner_id, target_id, request_id = uuid4(), uuid4(), uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        row = connection.execute(
+            "select internal_user_id from platform_control.internal_users "
+            "where role='platform_owner'"
+        ).fetchone()
+        if row is not None:
+            owner_id = row[0]
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status,role) values "
+            "(%s,'Race Target','active','member')",
+            (target_id,),
+        )
+        if row is None:
+            connection.execute(
+                "insert into platform_control.internal_users "
+                "(internal_user_id,display_name,status,role) values "
+                "(%s,'Race Owner','active','platform_owner')", (owner_id,)
+            )
+    repository = ManagementRepository(
+        environment["urls"]["platform_control_app"]
+    )
+    writer = AuditWriter.from_database_url(
+        environment["urls"]["platform_audit_append"]
+    )
+    context = AuthContext(owner_id, Role.PLATFORM_OWNER, uuid4(), False)
+    failure_ready = threading.Event()
+    release_failure = threading.Event()
+    errors: list[int] = []
+
+    def unavailable_mutation() -> None:
+        class BlockingRepository:
+            environment = "production"
+
+            def mutation_precondition(self, *args):
+                return None
+
+            def viewer_state(self, target):
+                return {"role": "member", "row_version": 0, "scopes": []}
+
+            def assign_viewer(self, *args):
+                failure_ready.set()
+                release_failure.wait(timeout=10)
+                raise RuntimeError("control unavailable")
+
+        try:
+            ManagementService(BlockingRepository(), writer).change_viewer(
+                context, target_id, "access_approved", revoke=False,
+                request_id=request_id,
+            )
+        except HTTPException as error:
+            errors.append(error.status_code)
+
+    first = threading.Thread(target=unavailable_mutation)
+    first.start()
+    assert failure_ready.wait(timeout=10)
+    second_done = threading.Event()
+
+    def successful_retry() -> None:
+        try:
+            ManagementService(repository, writer).change_viewer(
+                context, target_id, "access_approved", revoke=False,
+                request_id=request_id,
+            )
+        except HTTPException as error:
+            errors.append(error.status_code)
+        finally:
+            second_done.set()
+
+    second = threading.Thread(target=successful_retry)
+    second.start()
+    assert not second_done.wait(timeout=0.2)
+    release_failure.set()
+    first.join(timeout=10)
+    second.join(timeout=10)
+    assert not first.is_alive() and not second.is_alive()
+    with psycopg.connect(environment["admin"]) as connection:
+        mutation_count = connection.execute(
+            "select count(*) from platform_control.management_mutations "
+            "where operation_id=%s", (request_id,)
+        ).fetchone()[0]
+        terminal = connection.execute(
+            "select result from platform_control.audit_events "
+            "where request_id=%s and result in ('completed','failed')",
+            (request_id,),
+        ).fetchall()
+    assert mutation_count <= 1
+    assert len(terminal) <= 1
+    assert terminal == ([("completed",)] if mutation_count else [("failed",)])
