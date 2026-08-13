@@ -6,6 +6,7 @@ import stat
 from typing import Literal
 from urllib.parse import urlparse
 
+from .control_plane.models import ControlPlaneConfig, IdentityMode
 from .local_secrets import SecretFileUnavailable, read_secret_file
 
 
@@ -60,6 +61,7 @@ class Config:
     replica_encryption_key_file: str
     replica_signing_public_key_file: str
     replica_stale_seconds: int
+    control_plane: ControlPlaneConfig
 
 
 def _enabled(name: str, default: str = "0") -> bool:
@@ -131,6 +133,215 @@ def _validate_private_file(path_value: str, label: str) -> None:
         raise RuntimeError(f"{label} must use mode 0600")
     if metadata.st_uid != os.getuid():
         raise RuntimeError(f"{label} must be owned by the service user")
+
+
+_INLINE_CONTROL_SECRET_ENV = (
+    "PLATFORM_CONTROL_DATABASE_URL",
+    "PLATFORM_CONTROL_AUDIT_DATABASE_URL",
+    "PLATFORM_DINGTALK_APP_SECRET",
+    "PLATFORM_IDENTITY_ENCRYPTION_KEYRING",
+    "PLATFORM_IDENTITY_HMAC_KEYRING",
+)
+
+
+def _required_environment(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise ValueError(f"{name} is required when identity is enabled")
+    return value
+
+
+def _positive_environment_int(name: str, default: int) -> int:
+    value = int(os.getenv(name, str(default)))
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    return value
+
+
+def _normalize_route_prefix(value: str) -> str:
+    if not value.startswith("/"):
+        raise ValueError("PLATFORM_ROUTE_PREFIX must be an absolute URL path")
+    parts = value.split("/")
+    if any(part in {".", ".."} for part in parts):
+        raise ValueError("PLATFORM_ROUTE_PREFIX must not contain dot segments")
+    normalized = "/" + "/".join(part for part in parts if part)
+    return "/" if normalized == "/" else f"{normalized}/"
+
+
+def _validate_public_base_url(value: str) -> None:
+    parsed = urlparse(value)
+    try:
+        parsed.port
+    except ValueError as error:
+        raise ValueError(
+            "PLATFORM_PUBLIC_BASE_URL must be a safe HTTPS origin"
+        ) from error
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("PLATFORM_PUBLIC_BASE_URL must be a safe HTTPS origin")
+
+
+def _trusted_proxy_cidrs(value: str) -> tuple[str, ...]:
+    cidrs = tuple(part.strip() for part in value.split(",") if part.strip())
+    if not cidrs:
+        raise ValueError("PLATFORM_TRUSTED_PROXY_CIDRS must not be empty")
+    try:
+        networks = tuple(ipaddress.ip_network(cidr, strict=True) for cidr in cidrs)
+    except ValueError as error:
+        raise ValueError("PLATFORM_TRUSTED_PROXY_CIDRS must contain valid CIDRs") from error
+    if not all(network.is_loopback for network in networks):
+        raise ValueError("trusted proxy CIDRs must be loopback networks")
+    return cidrs
+
+
+def _load_control_plane_config() -> ControlPlaneConfig:
+    try:
+        mode = IdentityMode(os.getenv("PLATFORM_IDENTITY_MODE", "disabled"))
+    except ValueError as error:
+        raise ValueError(
+            "PLATFORM_IDENTITY_MODE must be disabled, preview, or production"
+        ) from error
+
+    inline_secrets = [name for name in _INLINE_CONTROL_SECRET_ENV if os.getenv(name)]
+    if inline_secrets:
+        raise ValueError("identity credentials must use secret files, not environment values")
+
+    if mode is IdentityMode.DISABLED:
+        return ControlPlaneConfig(
+            mode=mode,
+            control_database_url_file="",
+            audit_database_url_file="",
+            public_base_url="",
+            route_prefix="/",
+            cookie_name="",
+            dingtalk_app_key="",
+            dingtalk_agent_id="",
+            dingtalk_corp_id="",
+            dingtalk_app_secret_file="",
+            encryption_keyring_file="",
+            hmac_keyring_file="",
+        )
+
+    control_database_url_file = _required_environment(
+        "PLATFORM_CONTROL_DATABASE_URL_FILE"
+    )
+    audit_database_url_file = _required_environment(
+        "PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE"
+    )
+    dingtalk_app_secret_file = _required_environment(
+        "PLATFORM_DINGTALK_APP_SECRET_FILE"
+    )
+    encryption_keyring_file = _required_environment(
+        "PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE"
+    )
+    hmac_keyring_file = _required_environment("PLATFORM_IDENTITY_HMAC_KEYRING_FILE")
+    public_base_url = _required_environment("PLATFORM_PUBLIC_BASE_URL")
+    route_prefix = _normalize_route_prefix(
+        _required_environment("PLATFORM_ROUTE_PREFIX")
+    )
+    cookie_name = _required_environment("PLATFORM_COOKIE_NAME")
+    _validate_public_base_url(public_base_url)
+
+    if cookie_name.startswith("__Host-") and route_prefix != "/":
+        raise ValueError("__Host- cookies require Path=/")
+    if mode is IdentityMode.PREVIEW:
+        if route_prefix != "/_preview/dingtalk-r1/":
+            raise ValueError("preview PLATFORM_ROUTE_PREFIX must be /_preview/dingtalk-r1/")
+        if cookie_name != "platform_preview_session":
+            raise ValueError("preview Cookie name must be platform_preview_session")
+    elif route_prefix != "/":
+        raise ValueError("production PLATFORM_ROUTE_PREFIX must be /")
+    elif cookie_name != "__Host-platform_session":
+        raise ValueError("production Cookie name must be __Host-platform_session")
+
+    private_files = (
+        (control_database_url_file, "control database secret"),
+        (audit_database_url_file, "control audit database secret"),
+        (dingtalk_app_secret_file, "DingTalk AppSecret"),
+        (encryption_keyring_file, "identity encryption keyring"),
+        (hmac_keyring_file, "identity HMAC keyring"),
+    )
+    for path, label in private_files:
+        _validate_private_file(path, label)
+
+    reconcile_interval_seconds = int(
+        os.getenv("PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS", "21600")
+    )
+    warning_after_seconds = int(
+        os.getenv("PLATFORM_IDENTITY_WARNING_AFTER_SECONDS", "28800")
+    )
+    hard_stale_after_seconds = int(
+        os.getenv("PLATFORM_IDENTITY_HARD_STALE_AFTER_SECONDS", "86400")
+    )
+    if not (
+        0
+        < reconcile_interval_seconds
+        < warning_after_seconds
+        < hard_stale_after_seconds
+    ):
+        raise ValueError("identity freshness thresholds must be positive and ordered")
+
+    return ControlPlaneConfig(
+        mode=mode,
+        control_database_url_file=control_database_url_file,
+        audit_database_url_file=audit_database_url_file,
+        public_base_url=public_base_url.rstrip("/"),
+        route_prefix=route_prefix,
+        cookie_name=cookie_name,
+        dingtalk_app_key=_required_environment("PLATFORM_DINGTALK_APP_KEY"),
+        dingtalk_agent_id=_required_environment("PLATFORM_DINGTALK_AGENT_ID"),
+        dingtalk_corp_id=_required_environment("PLATFORM_DINGTALK_CORP_ID"),
+        dingtalk_app_secret_file=dingtalk_app_secret_file,
+        encryption_keyring_file=encryption_keyring_file,
+        hmac_keyring_file=hmac_keyring_file,
+        reconcile_interval_seconds=reconcile_interval_seconds,
+        warning_after_seconds=warning_after_seconds,
+        hard_stale_after_seconds=hard_stale_after_seconds,
+        trusted_proxy_cidrs=_trusted_proxy_cidrs(
+            os.getenv("PLATFORM_TRUSTED_PROXY_CIDRS", "127.0.0.1/32,::1/128")
+        ),
+        login_starts_per_challenge=_positive_environment_int(
+            "PLATFORM_LOGIN_STARTS_PER_CHALLENGE", 5
+        ),
+        login_challenge_window_seconds=_positive_environment_int(
+            "PLATFORM_LOGIN_CHALLENGE_WINDOW_SECONDS", 600
+        ),
+        active_login_attempts=_positive_environment_int(
+            "PLATFORM_ACTIVE_LOGIN_ATTEMPTS", 3
+        ),
+        oauth_state_ttl_seconds=_positive_environment_int(
+            "PLATFORM_OAUTH_STATE_TTL_SECONDS", 300
+        ),
+        edge_login_starts_per_minute=_positive_environment_int(
+            "PLATFORM_EDGE_LOGIN_STARTS_PER_MINUTE", 600
+        ),
+        edge_login_burst=_positive_environment_int(
+            "PLATFORM_EDGE_LOGIN_BURST", 1_200
+        ),
+        edge_callbacks_per_minute=_positive_environment_int(
+            "PLATFORM_EDGE_CALLBACKS_PER_MINUTE", 1_200
+        ),
+        oauth_exchange_concurrency=_positive_environment_int(
+            "PLATFORM_OAUTH_EXCHANGE_CONCURRENCY", 100
+        ),
+        oauth_exchanges_per_minute=_positive_environment_int(
+            "PLATFORM_OAUTH_EXCHANGES_PER_MINUTE", 3_000
+        ),
+        authenticated_reads_per_minute=_positive_environment_int(
+            "PLATFORM_AUTHENTICATED_READS_PER_MINUTE", 300
+        ),
+        authenticated_mutations_per_minute=_positive_environment_int(
+            "PLATFORM_AUTHENTICATED_MUTATIONS_PER_MINUTE", 60
+        ),
+    )
 
 
 def _validate_cloud_config(config: Config) -> None:
@@ -284,6 +495,7 @@ def load_config() -> Config:
         replica_stale_seconds=int(
             os.getenv("PLATFORM_REPLICA_STALE_SECONDS", "900")
         ),
+        control_plane=_load_control_plane_config(),
     )
     _validate_cloud_config(config)
     _validate_attachment_config(config)

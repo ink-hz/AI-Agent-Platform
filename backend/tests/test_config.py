@@ -3,6 +3,42 @@ import os
 import pytest
 
 from app.config import load_config
+from app.control_plane.models import IdentityMode
+
+
+CONTROL_PLANE_ENV = (
+    "PLATFORM_IDENTITY_MODE",
+    "PLATFORM_CONTROL_DATABASE_URL_FILE",
+    "PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE",
+    "PLATFORM_PUBLIC_BASE_URL",
+    "PLATFORM_ROUTE_PREFIX",
+    "PLATFORM_COOKIE_NAME",
+    "PLATFORM_DINGTALK_APP_KEY",
+    "PLATFORM_DINGTALK_AGENT_ID",
+    "PLATFORM_DINGTALK_CORP_ID",
+    "PLATFORM_DINGTALK_APP_SECRET_FILE",
+    "PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE",
+    "PLATFORM_IDENTITY_HMAC_KEYRING_FILE",
+    "PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS",
+    "PLATFORM_IDENTITY_WARNING_AFTER_SECONDS",
+    "PLATFORM_IDENTITY_HARD_STALE_AFTER_SECONDS",
+    "PLATFORM_TRUSTED_PROXY_CIDRS",
+)
+
+
+def test_identity_defaults_are_disabled_and_need_no_secret_files(monkeypatch) -> None:
+    for name in CONTROL_PLANE_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+    control_plane = load_config().control_plane
+
+    assert control_plane.mode is IdentityMode.DISABLED
+    assert control_plane.control_database_url_file == ""
+    assert control_plane.audit_database_url_file == ""
+    assert control_plane.public_base_url == ""
+    assert control_plane.route_prefix == "/"
+    assert control_plane.cookie_name == ""
+    assert control_plane.trusted_proxy_cidrs == ("127.0.0.1/32", "::1/128")
 
 
 def test_remote_sync_config_defaults(monkeypatch) -> None:

@@ -6,3 +6,4 @@ pydantic==2.13.4
 psycopg[binary]==3.3.4
 boto3==1.42.97
 cryptography==50.0.0
+dingtalk-stream==0.24.3
