@@ -319,6 +319,23 @@ async def test_department_tree_and_member_pages_are_typed_async_iterators() -> N
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_directory_member_empty_continuation_page_is_rejected() -> None:
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/v2/user/list").mock(
+        return_value=httpx.Response(200, json={
+            "errcode": 0,
+            "result": {"has_more": True, "next_cursor": 100, "list": []},
+        })
+    )
+    client = _client()
+
+    with pytest.raises(DingTalkProviderError) as caught:
+        _ = [item async for item in client.iter_department_members(2)]
+    assert caught.value.error_code == "pagination_empty_page"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_idempotent_read_retries_only_429_and_5xx_with_capped_retry_after() -> None:
     sleeps: list[float] = []
     respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())

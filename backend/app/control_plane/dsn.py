@@ -15,6 +15,7 @@ _PURPOSE_ROLES = {
     "audit": "platform_audit_append",
     "migrator": "platform_control_migrator",
     "maintenance": "platform_control_maintenance",
+    "directory": "platform_directory_worker",
 }
 
 

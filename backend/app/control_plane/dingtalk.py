@@ -652,6 +652,12 @@ class DingTalkClient:
         pending = [1]
         seen = {1}
         while pending:
+            if len(seen) > 10_000:
+                raise DingTalkProviderError(
+                    "DingTalk pagination invalid",
+                    request_id=str(uuid4()),
+                    error_code="department_bound",
+                )
             parent_id = pending.pop(0)
             response = await self._legacy_read(
                 "/topapi/v2/department/listsub",
@@ -696,7 +702,15 @@ class DingTalkClient:
         department_id = _required_integer(department_id)
         cursor = 0
         seen_cursors = {cursor}
+        page_count = 0
         while True:
+            page_count += 1
+            if page_count > 10_000:
+                raise DingTalkProviderError(
+                    "DingTalk pagination invalid",
+                    request_id=str(uuid4()),
+                    error_code="pagination_bound",
+                )
             response = await self._legacy_read(
                 "/topapi/v2/user/list",
                 {
@@ -726,6 +740,12 @@ class DingTalkClient:
                     error_code="invalid_member_page",
                 )
             entries, has_more, next_cursor = page
+            if has_more and not entries:
+                raise DingTalkProviderError(
+                    "DingTalk pagination invalid",
+                    request_id=response.request_id,
+                    error_code="pagination_empty_page",
+                )
             for entry in entries:
                 yield self._member(entry, request_id=response.request_id)
             if not has_more:
