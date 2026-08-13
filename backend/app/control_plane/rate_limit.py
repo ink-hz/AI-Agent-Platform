@@ -7,6 +7,7 @@ import math
 import threading
 from typing import Callable
 from uuid import UUID
+from weakref import WeakKeyDictionary
 
 import psycopg
 from psycopg.rows import dict_row
@@ -40,15 +41,20 @@ def rate_limit_response(error: RateLimitExceeded) -> JSONResponse:
 
 
 _SEMAPHORE_LOCK = threading.Lock()
-_PROCESS_EXCHANGE_SEMAPHORES: dict[int, asyncio.Semaphore] = {}
+_LOOP_EXCHANGE_SEMAPHORES: WeakKeyDictionary = WeakKeyDictionary()
 
 
 def _process_semaphore(capacity: int) -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
     with _SEMAPHORE_LOCK:
-        semaphore = _PROCESS_EXCHANGE_SEMAPHORES.get(capacity)
-        if semaphore is None:
+        current = _LOOP_EXCHANGE_SEMAPHORES.get(loop)
+        if current is None:
             semaphore = asyncio.Semaphore(capacity)
-            _PROCESS_EXCHANGE_SEMAPHORES[capacity] = semaphore
+            _LOOP_EXCHANGE_SEMAPHORES[loop] = (capacity, semaphore)
+            return semaphore
+        configured_capacity, semaphore = current
+        if configured_capacity != capacity:
+            raise RateLimitUnavailable()
         return semaphore
 
 
@@ -60,6 +66,7 @@ class ControlRateLimiter:
         *,
         control_database_url: str,
         secrets: AuthSecrets,
+        rate_secrets: AuthSecrets | None = None,
         login_starts_per_challenge: int = 5,
         challenge_window_seconds: int = 600,
         active_login_attempts: int = 3,
@@ -108,6 +115,7 @@ class ControlRateLimiter:
         self._database_url = control_database_url
         self._connect = connect
         self.secrets = secrets
+        self.rate_secrets = rate_secrets or secrets
         self.login_starts_per_challenge = login_starts_per_challenge
         self.challenge_window_seconds = challenge_window_seconds
         self.active_login_attempts = active_login_attempts
@@ -137,7 +145,7 @@ class ControlRateLimiter:
         return self.secrets.issue_browser_challenge()
 
     def bucket_digest(self, kind: str, value: str) -> bytes:
-        return self.secrets.rate_digest(kind, value)
+        return self.rate_secrets.rate_digest(kind, value)
 
     @staticmethod
     def _canonical_ip(value: str | IPv4Address | IPv6Address) -> str:
@@ -168,7 +176,7 @@ class ControlRateLimiter:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select * from platform_control.create_rate_limited_web_login_attempt("
+                    "select * from platform_control.create_rate_limited_web_login_attempt_v2("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         record.attempt_id,
@@ -184,7 +192,7 @@ class ControlRateLimiter:
                         record.browser_challenge_digest,
                         record.browser_challenge_key_version,
                         edge_key,
-                        self.secrets.key_version,
+                        self.rate_secrets.key_version,
                         self.login_starts_per_challenge,
                         self.challenge_window_seconds,
                         self.active_login_attempts,
@@ -207,8 +215,16 @@ class ControlRateLimiter:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select * from platform_control.consume_auth_rate_limit(%s,%s,%s,%s)",
-                    (kind, key, rate, rate),
+                    "select * from platform_control.consume_auth_rate_limit_v2("
+                    "%s,%s,%s,%s,%s,%s)",
+                    (
+                        self.environment,
+                        kind,
+                        key,
+                        self.rate_secrets.key_version,
+                        rate,
+                        rate,
+                    ),
                 ).fetchone()
             if row is None:
                 raise RateLimitUnavailable()

@@ -53,6 +53,7 @@ class ControlPlaneConfig:
     dingtalk_app_secret_file: str
     encryption_keyring_file: str
     hmac_keyring_file: str
+    rate_limit_hmac_keyring_file: str = ""
     reconcile_interval_seconds: int = 21_600
     warning_after_seconds: int = 28_800
     hard_stale_after_seconds: int = 86_400

@@ -142,6 +142,7 @@ _INLINE_CONTROL_SECRET_ENV = (
     "PLATFORM_DINGTALK_APP_SECRET",
     "PLATFORM_IDENTITY_ENCRYPTION_KEYRING",
     "PLATFORM_IDENTITY_HMAC_KEYRING",
+    "PLATFORM_RATE_LIMIT_HMAC_KEYRING",
 )
 
 
@@ -270,8 +271,8 @@ def _trusted_proxy_cidrs(value: str) -> tuple[str, ...]:
         networks = tuple(ipaddress.ip_network(cidr, strict=True) for cidr in cidrs)
     except ValueError as error:
         raise ValueError("PLATFORM_TRUSTED_PROXY_CIDRS must contain valid CIDRs") from error
-    if not all(network.is_loopback for network in networks):
-        raise ValueError("trusted proxy CIDRs must be loopback networks")
+    if not all(network.num_addresses == 1 for network in networks):
+        raise ValueError("trusted proxy CIDRs must be exact host networks")
     return cidrs
 
 
@@ -316,6 +317,13 @@ def _load_control_plane_config() -> ControlPlaneConfig:
         "PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE"
     )
     hmac_keyring_file = _required_environment("PLATFORM_IDENTITY_HMAC_KEYRING_FILE")
+    rate_limit_hmac_keyring_file = _required_environment(
+        "PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE"
+    )
+    if Path(rate_limit_hmac_keyring_file) == Path(hmac_keyring_file):
+        raise ValueError(
+            "rate limit HMAC keyring must be distinct from identity HMAC keyring"
+        )
     public_base_url = _required_environment("PLATFORM_PUBLIC_BASE_URL")
     route_prefix = _normalize_route_prefix(
         _required_environment("PLATFORM_ROUTE_PREFIX")
@@ -341,9 +349,14 @@ def _load_control_plane_config() -> ControlPlaneConfig:
         (dingtalk_app_secret_file, "DingTalk AppSecret"),
         (encryption_keyring_file, "identity encryption keyring"),
         (hmac_keyring_file, "identity HMAC keyring"),
+        (rate_limit_hmac_keyring_file, "rate limit HMAC keyring"),
     )
     for path, label in private_files:
         _validate_private_file(path, label)
+    if Path(rate_limit_hmac_keyring_file).samefile(hmac_keyring_file):
+        raise ValueError(
+            "rate limit HMAC keyring must be distinct from identity HMAC keyring"
+        )
 
     reconcile_interval_seconds = _positive_environment_int(
         "PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS", 21_600
@@ -375,6 +388,7 @@ def _load_control_plane_config() -> ControlPlaneConfig:
         dingtalk_app_secret_file=dingtalk_app_secret_file,
         encryption_keyring_file=encryption_keyring_file,
         hmac_keyring_file=hmac_keyring_file,
+        rate_limit_hmac_keyring_file=rate_limit_hmac_keyring_file,
         reconcile_interval_seconds=reconcile_interval_seconds,
         warning_after_seconds=warning_after_seconds,
         hard_stale_after_seconds=hard_stale_after_seconds,

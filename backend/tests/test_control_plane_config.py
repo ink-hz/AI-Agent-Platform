@@ -23,6 +23,7 @@ SECRET_FILE_ENV = {
     "PLATFORM_DINGTALK_APP_SECRET_FILE": "dingtalk-app-secret",
     "PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE": "identity-encryption-keyring",
     "PLATFORM_IDENTITY_HMAC_KEYRING_FILE": "identity-hmac-keyring",
+    "PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE": "rate-limit-hmac-keyring",
 }
 
 INLINE_SECRET_ENV = (
@@ -31,6 +32,7 @@ INLINE_SECRET_ENV = (
     "PLATFORM_DINGTALK_APP_SECRET",
     "PLATFORM_IDENTITY_ENCRYPTION_KEYRING",
     "PLATFORM_IDENTITY_HMAC_KEYRING",
+    "PLATFORM_RATE_LIMIT_HMAC_KEYRING",
 )
 
 RATE_LIMIT_ENV = (
@@ -159,6 +161,9 @@ def test_preview_configuration_is_path_scoped_and_uses_initial_limits(
             paths["PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE"]
         ),
         hmac_keyring_file=str(paths["PLATFORM_IDENTITY_HMAC_KEYRING_FILE"]),
+        rate_limit_hmac_keyring_file=str(
+            paths["PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE"]
+        ),
     )
     assert control_plane.login_starts_per_challenge == 5
     assert control_plane.login_challenge_window_seconds == 600
@@ -188,13 +193,26 @@ def test_preview_and_production_cookie_names_are_fixed(tmp_path, monkeypatch) ->
     monkeypatch.setenv("PLATFORM_COOKIE_NAME", "shared_platform_session")
     with pytest.raises(ValueError, match="preview Cookie name"):
         load_config()
-
     monkeypatch.setenv("PLATFORM_IDENTITY_MODE", "production")
     monkeypatch.setenv("PLATFORM_ROUTE_PREFIX", "/")
     monkeypatch.setenv("PLATFORM_COOKIE_NAME", "platform_preview_session")
     with pytest.raises(ValueError, match="production Cookie name"):
         load_config()
 
+
+def test_rate_limit_keyring_must_be_distinct_from_identity_lookup_keyring(
+    tmp_path, monkeypatch
+) -> None:
+    paths = install_required_identity_environment(
+        tmp_path, monkeypatch, mode="production"
+    )
+    monkeypatch.setenv(
+        "PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE",
+        str(paths["PLATFORM_IDENTITY_HMAC_KEYRING_FILE"]),
+    )
+
+    with pytest.raises(ValueError, match="rate limit HMAC keyring must be distinct"):
+        load_config()
 
 def test_preview_rejects_host_cookie_because_it_is_path_scoped(tmp_path, monkeypatch) -> None:
     install_required_identity_environment(tmp_path, monkeypatch, mode="preview")
@@ -282,12 +300,22 @@ def test_trusted_proxy_defaults_are_loopback_only(tmp_path, monkeypatch) -> None
     )
 
 
-@pytest.mark.parametrize("cidrs", ["10.0.0.0/8", "127.0.0.1/32,192.168.1.0/24"])
-def test_trusted_proxy_cidrs_must_be_loopback(tmp_path, monkeypatch, cidrs) -> None:
+def test_trusted_proxy_accepts_one_exact_sidecar_address(tmp_path, monkeypatch) -> None:
+    install_required_identity_environment(tmp_path, monkeypatch, mode="production")
+    monkeypatch.setenv("PLATFORM_TRUSTED_PROXY_CIDRS", "172.30.0.3/32")
+
+    assert load_config().control_plane.trusted_proxy_cidrs == ("172.30.0.3/32",)
+
+
+@pytest.mark.parametrize(
+    "cidrs",
+    ["10.0.0.0/8", "192.168.1.0/24", "172.30.0.0/28", "2001:db8::/64"],
+)
+def test_trusted_proxy_cidrs_must_be_exact_hosts(tmp_path, monkeypatch, cidrs) -> None:
     install_required_identity_environment(tmp_path, monkeypatch, mode="production")
     monkeypatch.setenv("PLATFORM_TRUSTED_PROXY_CIDRS", cidrs)
 
-    with pytest.raises(ValueError, match="loopback"):
+    with pytest.raises(ValueError, match="exact host"):
         load_config()
 
 

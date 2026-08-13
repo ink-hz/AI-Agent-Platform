@@ -23,7 +23,8 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert "ports" not in services["platform-api"]
     assert services["platform-loopback"]["ports"] == ["127.0.0.1:8080:8080"]
     assert services["platform-loopback"]["command"] == [
-        "python", "-m", "app.cloud_replica.loopback_proxy"
+        "uvicorn", "app.cloud_replica.loopback_proxy:create_app", "--factory",
+        "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers",
     ]
     assert services["platform-loopback"]["volumes"] == []
     assert services["platform-loopback"]["read_only"] is True
@@ -31,7 +32,8 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert set(services["platform-loopback"]["networks"]) == {
         "platform-edge", "platform-internal"
     }
-    assert services["platform-api"]["networks"] == ["platform-internal"]
+    assert services["platform-loopback"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.3"
+    assert services["platform-api"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.4"
     assert services["platform-api"]["read_only"] is True
     assert services["platform-api"]["cap_drop"] == ["ALL"]
     assert services["platform-api"]["security_opt"] == ["no-new-privileges:true"]
@@ -41,6 +43,8 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert services["platform-api"]["environment"]["PLATFORM_HOST"] == "127.0.0.1"
     assert services["platform-api"]["environment"]["PLATFORM_REVIEW_ENABLED"] == "0"
     assert services["platform-api"]["environment"]["PLATFORM_ATTACHMENT_ENABLED"] == "0"
+    assert services["platform-api"]["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.3/32"
+    assert services["platform-loopback"]["environment"]["PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS"] == "127.0.0.1/32,172.31.0.1/32"
     assert services["platform-api"]["volumes"] == [
         "platform-api-secrets:/run/secrets:ro"
     ]
@@ -66,6 +70,7 @@ def test_image_is_multistage_nonroot_and_contains_only_runtime_assets():
     assert "user platform" in dockerfile
     assert "healthcheck" in dockerfile
     assert "uvicorn" in dockerfile
+    assert '"--no-proxy-headers"' in dockerfile
     for forbidden in ("copy .git", "copy backend/tests", "sensitive-dictionary", "identity-hmac"):
         assert forbidden not in dockerfile
 

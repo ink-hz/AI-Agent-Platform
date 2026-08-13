@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 from typing import Any
 
 import psycopg
@@ -17,6 +18,10 @@ class MaintenanceHealthError(RuntimeError):
 
 
 class MaintenanceRepository:
+    RATE_BUCKET_BATCH_SIZE = 100
+    RATE_BUCKET_MAX_BATCHES = 10
+    RATE_BUCKET_TIME_BUDGET_SECONDS = 5.0
+
     def __init__(
         self,
         maintenance_database_url: str,
@@ -48,11 +53,35 @@ class MaintenanceRepository:
                 ).fetchone()
                 if row is None:
                     raise RuntimeError("control retention unavailable")
+                environment = validate_control_dsn(
+                    self._database_url, purpose="maintenance"
+                ).environment
+                deleted_rate_buckets = 0
+                deadline = time.monotonic() + self.RATE_BUCKET_TIME_BUDGET_SECONDS
+                for _ in range(self.RATE_BUCKET_MAX_BATCHES):
+                    if time.monotonic() >= deadline:
+                        break
+                    batch = connection.execute(
+                        "select platform_control.maintain_auth_rate_buckets("
+                        "%s,%s,%s,%s) as deleted",
+                        (
+                            environment,
+                            1,
+                            86_400,
+                            self.RATE_BUCKET_BATCH_SIZE,
+                        ),
+                    ).fetchone()
+                    if batch is None:
+                        raise RuntimeError("control retention unavailable")
+                    count = batch["deleted"]
+                    deleted_rate_buckets += count
+                    if count < self.RATE_BUCKET_BATCH_SIZE:
+                        break
             return {
                 "audit_events": row["audit_events"],
                 "login_attempts": row["login_attempts"],
                 "sessions": row["web_sessions"],
-                "rate_buckets": row["rate_buckets"],
+                "rate_buckets": deleted_rate_buckets,
             }
         except psycopg.Error:
             raise RuntimeError("control retention unavailable") from None

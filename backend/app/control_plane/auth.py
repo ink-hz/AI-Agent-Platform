@@ -88,7 +88,11 @@ class AuthSecrets:
     def __init__(self, key: bytes, *, key_version: int) -> None:
         if not isinstance(key, bytes) or len(key) != 32:
             raise ValueError("authentication HMAC key must be 256 bits")
-        if isinstance(key_version, bool) or not isinstance(key_version, int) or key_version <= 0:
+        if (
+            isinstance(key_version, bool)
+            or not isinstance(key_version, int)
+            or not 1 <= key_version <= 999_999
+        ):
             raise ValueError("authentication HMAC key version invalid")
         self._hmac_key = hmac.digest(
             key, b"orbbec-agent-platform:web-auth:hmac:v1", "sha256"
@@ -414,7 +418,6 @@ class DingTalkWebAuth:
             if self.rate_limiter is None:
                 internal_user_id = await login(code, verifier)
             else:
-                self.rate_limiter.check_callback(edge_ip)
                 async with self.rate_limiter.provider_exchange():
                     internal_user_id = await login(code, verifier)
         except (RateLimitExceeded, RateLimitUnavailable):
@@ -450,6 +453,8 @@ class DingTalkWebAuth:
         )
 
     async def complete_qr(self, state: str, code: str, edge_ip=None) -> CompletedLogin:
+        if self.rate_limiter is not None:
+            self.rate_limiter.check_callback(edge_ip)
         return await self._complete(
             self._claim(state, "qr"), code, self.qr_login, edge_ip=edge_ip
         )
@@ -457,6 +462,8 @@ class DingTalkWebAuth:
     async def complete_in_client(
         self, code: str, browser_challenge: str | None = None, edge_ip=None
     ) -> CompletedLogin:
+        if self.rate_limiter is not None:
+            self.rate_limiter.check_callback(edge_ip)
         # In-client auth codes are also serialized through a backend-only random
         # one-time attempt; callers cannot select or reuse a browser flow.
         state = self.secrets.random_token()

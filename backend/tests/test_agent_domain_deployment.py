@@ -33,6 +33,10 @@ def test_nginx_entry_authenticates_every_https_path_and_keeps_loopback_upstream(
     assert "auth_delay 1s;" in value
     assert "location / {" in value
     assert "proxy_pass http://127.0.0.1:8080;" in value
+    assert "proxy_set_header X-Real-IP $remote_addr;" in value
+    assert "proxy_set_header X-Forwarded-For $remote_addr;" in value
+    assert 'proxy_set_header Forwarded "";' in value
+    assert "$proxy_add_x_forwarded_for" not in value
     assert 'proxy_set_header Authorization "";' in value
     assert "proxy_buffering off;" in value
     assert "proxy_cache off;" in value

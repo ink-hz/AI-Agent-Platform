@@ -220,12 +220,20 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
         expected_purpose="provider-lookup-hmac",
         expected_key_length=32,
     )
+    rate_lookup = IdentityKeyring.from_file(
+        control.rate_limit_hmac_keyring_file,
+        expected_purpose="rate-limit-hmac",
+        expected_key_length=32,
+    )
     codec = ProviderIdentityCodec(encryption, lookup)
     auth_secrets = AuthSecrets(lookup.active_key, key_version=lookup.active_version)
     repository = WebSessionRepository(database_url, secrets=auth_secrets)
     rate_limiter = ControlRateLimiter(
         control_database_url=database_url,
         secrets=auth_secrets,
+        rate_secrets=AuthSecrets(
+            rate_lookup.active_key, key_version=rate_lookup.active_version
+        ),
         login_starts_per_challenge=control.login_starts_per_challenge,
         challenge_window_seconds=control.login_challenge_window_seconds,
         active_login_attempts=control.active_login_attempts,

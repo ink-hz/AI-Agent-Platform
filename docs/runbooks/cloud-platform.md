@@ -256,6 +256,18 @@ HR isolation model before any public Platform access. The sanitizer, signing,
 encryption, retention, backup, and one-way synchronization protocol stay
 unchanged.
 
+The DingTalk identity runtime uses two different HMAC keyrings. Provider
+identity lookup and browser Session material use
+`PLATFORM_IDENTITY_HMAC_KEYRING_FILE`; abuse-control buckets use the dedicated
+mode-0600 `PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE` with purpose
+`rate-limit-hmac`. Never point both settings at the same file. Ordinary
+provider identity key rotation must leave the rate-limit keyring unchanged, so
+live callback, login, global exchange, and per-user buckets remain continuous.
+Rotate the rate-limit keyring only as a separate reviewed maintenance change,
+after the prior bucket TTL has elapsed or with an explicit overlap migration;
+changing its active key/version immediately creates a new digest namespace and
+is not an ordinary identity-key rotation step.
+
 ## Temporary administrator public entry
 
 Until DingTalk or Feishu identity is implemented, the sanitized cloud replica

@@ -78,8 +78,8 @@ def test_maintenance_purges_only_already_expired_data_at_exact_365_days(
         )
         connection.execute(
             "insert into platform_control.auth_rate_buckets "
-            "(bucket_key, bucket_kind, window_started_at, updated_at) "
-            "values (%s, 'login', now() - interval '2 days', now() - interval '2 days')",
+            "(bucket_key, bucket_key_version, bucket_kind, window_started_at, updated_at) "
+            "values (%s, 1, 'login', now() - interval '2 days', now() - interval '2 days')",
             (b"expired",),
         )
 
@@ -97,6 +97,46 @@ def test_maintenance_purges_only_already_expired_data_at_exact_365_days(
             (audit_ids,),
         ).fetchall()
         assert remaining == [(audit_ids[1],)]
+
+
+@pytest.mark.postgres
+def test_real_maintenance_path_bounds_rate_cleanup_and_leaves_locked_rows(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as connection:
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                "insert into platform_control.auth_rate_buckets "
+                "(bucket_key,bucket_key_version,bucket_kind,window_started_at,updated_at) "
+                "values (%s,23,'authenticated_read',now()-interval '2 days',"
+                "now()-interval '2 days')",
+                [((index + 90_000).to_bytes(32, "big"),) for index in range(1_501)],
+            )
+    repository = MaintenanceRepository(
+        environment["urls"]["platform_control_maintenance"]
+    )
+    with psycopg.connect(environment["admin"]) as locker:
+        locker.execute(
+            "select 1 from platform_control.auth_rate_buckets where bucket_key=%s "
+            "for update",
+            ((90_000).to_bytes(32, "big"),),
+        )
+        result = repository.purge_expired(
+            time_health="healthy", wal_health="healthy"
+        )
+
+    assert result["rate_buckets"] == 1_000
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_control.auth_rate_buckets "
+            "where bucket_key_version=23"
+        ).fetchone() == (501,)
+        source = connection.execute(
+            "select pg_get_functiondef("
+            "'platform_control.purge_expired_control_state()'::regprocedure)"
+        ).fetchone()[0].lower()
+    assert "delete from platform_control.auth_rate_buckets" not in source
 
 
 @pytest.mark.postgres

@@ -44,6 +44,7 @@ services:
       PLATFORM_FLYWHEEL_ENABLED: "0"
       PLATFORM_REVIEW_ENABLED: "0"
       PLATFORM_ATTACHMENT_ENABLED: "0"
+      PLATFORM_TRUSTED_PROXY_CIDRS: "172.30.0.3/32"
       PLATFORM_REPLICA_DATABASE_URL_FILE: /run/secrets/replica-database-url
       PLATFORM_REPLICA_ENCRYPTION_KEY_FILE: /run/secrets/replica-encryption-key
       PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE: /run/secrets/replica-signing-public-key
@@ -51,7 +52,8 @@ services:
     volumes:
       - platform-api-secrets:/run/secrets:ro
     networks:
-      - platform-internal
+      platform-internal:
+        ipv4_address: 172.30.0.4
     depends_on:
       platform-postgres:
         condition: service_healthy
@@ -73,18 +75,23 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700
-    command: ["python", "-m", "app.cloud_replica.loopback_proxy"]
+    command: ["uvicorn", "app.cloud_replica.loopback_proxy:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers"]
+    environment:
+      PLATFORM_LOOPBACK_TARGET_BASE_URL: http://platform-api:8080
+      PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS: 127.0.0.1/32,172.31.0.1/32
     volumes: []
     ports:
       - "127.0.0.1:8080:8080"
     networks:
-      - platform-internal
-      - platform-edge
+      platform-internal:
+        ipv4_address: 172.30.0.3
+      platform-edge:
+        ipv4_address: 172.31.0.3
     depends_on:
       platform-api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=2).read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; request=urllib.request.Request('http://127.0.0.1:8080/api/health',headers={'X-Real-IP':'127.0.0.1','X-Forwarded-Proto':'http'}); urllib.request.urlopen(request, timeout=2).read()"]
       interval: 10s
       timeout: 3s
       retries: 12
@@ -94,9 +101,17 @@ networks:
   platform-internal:
     name: orbbec-agent-platform-internal
     internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/28
+          gateway: 172.30.0.1
   platform-edge:
     name: orbbec-agent-platform-edge
     internal: false
+    ipam:
+      config:
+        - subnet: 172.31.0.0/28
+          gateway: 172.31.0.1
 
 volumes:
   platform-postgres-data:

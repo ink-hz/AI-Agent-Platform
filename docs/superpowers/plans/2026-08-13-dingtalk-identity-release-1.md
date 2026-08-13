@@ -38,7 +38,7 @@
 - Modify: `backend/tests/test_requirements.py`
 
 **Interfaces:**
-- Consumes secret-file settings `PLATFORM_CONTROL_DATABASE_URL_FILE`, `PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE`, `PLATFORM_DINGTALK_APP_SECRET_FILE`, `PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE`, and `PLATFORM_IDENTITY_HMAC_KEYRING_FILE`.
+- Consumes secret-file settings `PLATFORM_CONTROL_DATABASE_URL_FILE`, `PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE`, `PLATFORM_DINGTALK_APP_SECRET_FILE`, `PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE`, `PLATFORM_IDENTITY_HMAC_KEYRING_FILE`, and a separate stable `PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE`. Identity lookup-key rotation must not reset rate-limit buckets; rate-limit key rotation is a separate controlled operation with its own version and bucket TTL overlap.
 - Consumes nonsecret settings `PLATFORM_IDENTITY_MODE=disabled|preview|production`, `PLATFORM_PUBLIC_BASE_URL`, `PLATFORM_ROUTE_PREFIX`, `PLATFORM_COOKIE_NAME`, DingTalk AppKey/AgentId/CorpId, sync/freshness intervals, trusted-proxy CIDRs, and initial rate limits.
 - Produces immutable `ControlPlaneConfig`, `IdentityMode`, `Role`, `DirectoryFreshness`, and `AuthContext` types.
 
@@ -89,6 +89,7 @@ class ControlPlaneConfig:
     dingtalk_app_secret_file: str
     encryption_keyring_file: str
     hmac_keyring_file: str
+    rate_limit_hmac_keyring_file: str
     reconcile_interval_seconds: int = 21_600
     warning_after_seconds: int = 28_800
     hard_stale_after_seconds: int = 86_400
@@ -407,6 +408,7 @@ to fail closed; checking a prior application snapshot is not sufficient.
 - Edge ceilings: 600 starts/min burst 1200; 1200 callbacks/min; global exchange 100 concurrent and 3000/min.
 - Authenticated limits: 300 reads/min/user and 60 mutations/min/user.
 - Trusted immediate peers default only to `127.0.0.1/32` and `::1/128`.
+- Rate-limit digests use the dedicated `rate-limit-hmac` keyring, not the provider identity lookup keyring. Ordinary provider-key rotation therefore preserves all live buckets. A rate-limit-key rotation is scheduled separately after the prior buckets have expired or through an explicit overlap procedure; it must never happen implicitly during identity-key deployment.
 
 ```python
 @dataclass(frozen=True)
