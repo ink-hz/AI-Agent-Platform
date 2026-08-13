@@ -5,6 +5,7 @@ import base64
 from datetime import UTC, datetime, timedelta
 import os
 from pathlib import Path
+import threading
 from uuid import uuid4
 
 import psycopg
@@ -528,7 +529,7 @@ def test_offline_owner_reconcile_uses_signed_prestate_without_second_mutation(
     result = administrator.reconcile_owner_change(
         payload=payload, provider_id=provider_id, subject_kind="employee"
     )
-    assert result["status"] == ("completed" if committed else "not_committed")
+    assert result["status"] == ("completed" if committed else "pending")
     with psycopg.connect(environment["admin"]) as connection:
         assert connection.execute(
             "select count(*) from platform_control.management_mutations "
@@ -539,6 +540,109 @@ def test_offline_owner_reconcile_uses_signed_prestate_without_second_mutation(
             "where request_id=%s order by event_type", (payload["operation_id"],)
         ).fetchall() == ([
             ("owner_replacement_completed",), ("owner_replacement_requested",)
-        ] if committed else [
-            ("owner_replacement_failed",), ("owner_replacement_requested",)
-        ])
+        ] if committed else [("owner_replacement_requested",)])
+
+
+@pytest.mark.postgres
+def test_owner_confirm_reconcile_interleaving_never_creates_two_terminals(
+    control_database, tmp_path: Path
+) -> None:
+    environment = control_database["environments"]["production"]
+    codec = _codec(tmp_path)
+    provider_id = "owner-race-target"
+    repository = ControlRepository(
+        environment["urls"]["platform_control_app"], identity_codec=codec
+    )
+    target = repository.create_internal_user(
+        codec.seal("employee", provider_id), "Owner Race Target"
+    )
+    generation_id = uuid4()
+    protected = codec.seal("employee", provider_id)
+    with psycopg.connect(environment["admin"]) as connection:
+        owner = connection.execute(
+            "select internal_user_id from platform_control.internal_users "
+            "where role='platform_owner'"
+        ).fetchone()
+        if owner is None:
+            connection.execute(
+                "insert into platform_control.internal_users "
+                "(internal_user_id,display_name,status,role) "
+                "values (%s,'Owner Race Prior','active','platform_owner')", (uuid4(),)
+            )
+        connection.execute(
+            "insert into platform_control.directory_generations "
+            "(generation_id,status,completed_at,content_sha256) "
+            "values (%s,'complete',now(),%s)", (generation_id, "e" * 64)
+        )
+        connection.execute(
+            "insert into platform_control.directory_members "
+            "(generation_id,member_key,internal_user_id,subject_kind,lookup_hmac,"
+            "lookup_key_version,encrypted_provider_id,encryption_key_version,"
+            "display_name,status) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,'active')",
+            (generation_id, uuid4(), target, protected.subject_kind,
+             protected.lookup_hmac, protected.lookup_key_version,
+             protected.ciphertext, protected.encryption_key_version,
+             "Owner Race Target"),
+        )
+    writer = AuditWriter.from_database_url(
+        environment["urls"]["platform_audit_append"]
+    )
+    administrator = OfflineOwnerAdministrator(
+        environment["urls"]["platform_control_migrator"],
+        owner_role="platform_control_owner", identity_codec=codec,
+        audit_writer=writer,
+    )
+    payload = administrator.prepare_owner_change(
+        action="replace", provider_id=provider_id, subject_kind="employee",
+        generation_id=generation_id, os_operator="root",
+        approvers=("uid:1001", "uid:1002"),
+        backup_reference="BACKUP_RACE", incident_reference="INC_RACE",
+    )
+    target_id = administrator.resolve_target(
+        provider_id=provider_id, subject_kind="employee", generation_id=generation_id
+    )
+    requested = administrator._owner_request(payload, target_id)
+    requested_id = writer.append(requested)
+    entered = threading.Event()
+    release = threading.Event()
+
+    def confirm() -> None:
+        with psycopg.connect(
+            environment["urls"]["platform_control_migrator"]
+        ) as connection:
+            connection.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                               (payload["operation_id"],))
+            entered.set()
+            release.wait(timeout=10)
+            connection.execute(
+                "select platform_control.change_platform_owner_v2("
+                "%s,%s,%s,%s,%s,%s,%s,%s)",
+                (payload["operation_id"], payload["action"], target_id,
+                 payload["generation_id"], payload["current_owner_internal_user_id"],
+                 payload["current_owner_row_version"], payload["target_row_version"],
+                 requested_id),
+            )
+
+    thread = threading.Thread(target=confirm)
+    thread.start()
+    assert entered.wait(timeout=10)
+    release_timer = threading.Timer(0.2, release.set)
+    release_timer.start()
+    result = administrator.reconcile_owner_change(
+        payload=payload, provider_id=provider_id, subject_kind="employee"
+    )
+    release_timer.join(timeout=10)
+    thread.join(timeout=10)
+    assert not thread.is_alive()
+    assert result["status"] == "completed"
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_control.management_mutations "
+            "where operation_id=%s", (payload["operation_id"],)
+        ).fetchone() == (1,)
+        terminals = connection.execute(
+            "select event_type from platform_control.audit_events "
+            "where request_id=%s and result in ('completed','failed')",
+            (payload["operation_id"],),
+        ).fetchall()
+    assert terminals == [("owner_replacement_completed",)]

@@ -25,13 +25,6 @@ _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 _ERROR_CODES = frozenset({"business_rejected", "control_unavailable"})
 _ROLES = frozenset({"member", "management_viewer", "platform_owner"})
 _RESULTS = frozenset({"requested", "completed", "failed"})
-_LEGACY_005_KEYS = frozenset(
-    {
-        "agent_id", "approver_a", "approver_b", "directory_generation_id",
-        "linked_audit_event_id", "new_role", "operation", "os_operator",
-        "previous_role", "result", "role", "session_revocation_count",
-    }
-)
 _UUID_KEYS = frozenset(
     {
         "operation_id",
@@ -408,18 +401,72 @@ def project_governance_metadata(
         or metadata.get("result") != _event_result(event_type)
     ):
         return "unsupported_redacted", {}
-    legacy: dict[str, AuditValue] = {}
-    for key in sorted(set(metadata) & _LEGACY_005_KEYS):
-        value = metadata[key]
-        if isinstance(value, bool):
-            legacy[key] = value
-        elif isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            legacy[key] = value
-        elif isinstance(value, str) and value and len(value) <= 256 and "\0" not in value:
-            legacy[key] = value
-    if legacy.get("result") != _event_result(event_type):
+    legacy: dict[str, AuditValue] = {
+        "result": str(metadata["result"]),
+    }
+    redacted = False
+    expected_operation = (
+        "bind" if event_type.startswith("owner_binding_")
+        else "replace" if event_type.startswith("owner_replacement_")
+        else None
+    )
+    expected_new_role = (
+        "management_viewer"
+        if event_type.startswith("viewer_role_assignment_")
+        else "member" if event_type.startswith("viewer_role_revocation_")
+        else None
+    )
+    typed_rules: dict[str, Callable[[Any], bool]] = {
+        "directory_generation_id": _uuid_string,
+        "linked_audit_event_id": _uuid_string,
+        "agent_id": lambda value: (
+            isinstance(value, str) and _AGENT_ID.fullmatch(value) is not None
+        ),
+        "operation": lambda value: value == expected_operation,
+        "role": lambda value: value == "platform_owner",
+        "previous_role": lambda value: value in _ROLES,
+        "new_role": lambda value: value == expected_new_role,
+        "session_revocation_count": lambda value: (
+            isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        ),
+    }
+    for key, valid in typed_rules.items():
+        if key in metadata:
+            if valid(metadata[key]):
+                legacy[key] = metadata[key]
+            else:
+                redacted = True
+    for key in {"os_operator", "approver_a", "approver_b"}:
+        if key in metadata:
+            redacted = True
+    recognized = set(typed_rules) | {
+        "os_operator", "approver_a", "approver_b", "result"
+    }
+    if set(metadata) - recognized:
+        redacted = True
+    required: dict[str, frozenset[str]] = {
+        "owner_binding_requested": frozenset(
+            {"directory_generation_id", "operation", "role"}
+        ),
+        "owner_replacement_requested": frozenset(
+            {"directory_generation_id", "operation", "role"}
+        ),
+        "observation_scope_assignment_requested": frozenset({"agent_id"}),
+        "observation_scope_revocation_requested": frozenset({"agent_id"}),
+        "viewer_role_assignment_completed": frozenset(
+            {"new_role", "previous_role"}
+        ),
+        "viewer_role_revocation_completed": frozenset(
+            {"new_role", "previous_role"}
+        ),
+    }
+    if event_type.endswith(("_completed", "_failed")):
+        required[event_type] = required.get(event_type, frozenset()) | {
+            "linked_audit_event_id"
+        }
+    if not required.get(event_type, frozenset()) <= set(legacy):
         return "unsupported_redacted", {}
-    return "legacy_005", legacy
+    return ("legacy_005_redacted" if redacted else "legacy_005"), legacy
 
 
 def _validate_target(command: AuditCommand) -> bool:

@@ -683,11 +683,8 @@ class OfflineOwnerAdministrator:
             raise self._safe_database_error(error) from None
         applied = row["result"] if row else None
         if applied is None:
-            self.audit_writer.append_outcome(
-                requested, requested_event_id, error_code="control_unavailable"
-            )
             return {
-                "status": "not_committed",
+                "status": "pending",
                 "operation": str(selected["action"]),
                 "request_id": str(selected["operation_id"]),
             }

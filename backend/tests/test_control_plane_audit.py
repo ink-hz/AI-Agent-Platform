@@ -515,7 +515,6 @@ def test_offline_owner_function_rejects_mismatched_audit_intent(
             },
         )
     )
-
     with psycopg.connect(
         environment["urls"]["platform_control_migrator"]
     ) as connection:
@@ -529,6 +528,44 @@ def test_offline_owner_function_rejects_mismatched_audit_intent(
                 (request_id, actor_id, generation_id, event_id),
             )
 
+
+@pytest.mark.postgres
+def test_database_append_boundary_allows_at_most_one_terminal_per_request(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    actor, request_id, requested_id = uuid4(), uuid4(), uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values (%s,'Terminal Actor','active')",
+            (actor,),
+        )
+    writer = AuditWriter.from_database_url(
+        environment["urls"]["platform_audit_append"]
+    )
+    requested = _command(
+        event_type="viewer_role_assignment_requested",
+        actor_internal_user_id=actor,
+        target_id=str(actor),
+        request_id=request_id,
+        metadata={"operation_id": str(request_id), "previous_role": "member",
+                  "new_role": "management_viewer", "expected_row_version": 0,
+                  "result": "requested"},
+    )
+    requested_id = writer.append(requested)
+    writer.append_outcome(
+        requested, requested_id, error_code="control_unavailable"
+    )
+    with pytest.raises(AuditUnavailableError):
+        writer.append_outcome(
+            requested,
+            requested_id,
+            actual={"operation_id": str(request_id), "previous_role": "member",
+                    "new_role": "management_viewer", "row_version": 1,
+                    "session_revocation_count": 0, "previous_scopes": [],
+                    "new_scopes": []},
+        )
 
 def test_audit_module_uses_no_replica_or_distributed_transaction_claim() -> None:
     source = (Path(__file__).parents[1] / "app/control_plane/audit.py").read_text()

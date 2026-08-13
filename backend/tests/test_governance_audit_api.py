@@ -12,6 +12,7 @@ from app.control_plane.audit import (
     AuditCommand,
     AuditUnavailableError,
     IndeterminateMutationError,
+    project_governance_metadata,
 )
 from app.control_plane.models import AuthContext, Role
 from app.control_plane.routes_manage import (
@@ -400,19 +401,46 @@ def test_governance_projection_classifies_legacy_005_and_malformed_rows(
         environment["urls"]["platform_control_app_preview"]
     ).governance_audit()
     selected = {event["audit_event_id"]: event for event in events}
-    assert selected[legacy_id]["projection_status"] == "legacy_005"
+    assert selected[legacy_id]["projection_status"] == "legacy_005_redacted"
     assert selected[legacy_id]["sanitized_before_after"] == {
         "directory_generation_id": selected[legacy_id]["sanitized_before_after"][
             "directory_generation_id"
         ],
         "operation": "bind",
-        "os_operator": "root",
         "result": "requested",
         "role": "platform_owner",
     }
     assert selected[malformed_id]["projection_status"] == "unsupported_redacted"
     assert selected[malformed_id]["sanitized_before_after"] == {}
     assert "provider_id" not in json.dumps(list(selected.values()), default=str)
+
+
+@pytest.mark.parametrize(
+    ("event_type", "metadata", "forbidden"),
+    [
+        ("owner_binding_requested", {"directory_generation_id": "provider-secret",
+         "operation": "bind", "os_operator": "Bearer token", "result": "requested",
+         "role": "platform_owner"}, "provider-secret"),
+        ("owner_replacement_requested", {"directory_generation_id": str(uuid4()),
+         "operation": "../../secret.txt", "os_operator": "root", "result": "requested",
+         "role": "platform_owner"}, "../../secret.txt"),
+        ("observation_scope_assignment_requested", {"agent_id": "Bearer token",
+         "result": "requested"}, "Bearer token"),
+        ("viewer_role_assignment_completed", {"linked_audit_event_id": "message.txt",
+         "new_role": "provider-id", "previous_role": "member", "result": "completed",
+         "session_revocation_count": -1}, "provider-id"),
+        ("owner_binding_requested", {"directory_generation_id": str(uuid4()),
+         "operation": "bind", "os_operator": "provider_identity", "result": "requested",
+         "role": "platform_owner", "approver_a": "token=secret",
+         "approver_b": "/tmp/evidence.txt"}, "token=secret"),
+    ],
+)
+def test_legacy_projection_never_returns_suspicious_allowlisted_values(
+    event_type, metadata, forbidden
+) -> None:
+    status, projected = project_governance_metadata(metadata, event_type=event_type)
+    assert status in {"legacy_005_redacted", "unsupported_redacted"}
+    assert forbidden not in json.dumps(projected)
 
 
 def test_hard_stale_owner_cannot_mutate_but_can_read_governance() -> None:

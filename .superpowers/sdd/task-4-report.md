@@ -414,3 +414,30 @@ two `committed` outcomes, then passed after the additive trigger acquired a
 per-viewer transaction advisory lock. The final Task 4/control suite reached
 `131 passed, 1 warning in 6.35s`; final fresh backend verification reached `823
 passed, 1 skipped, 1 warning in 14.99s`.
+
+## Third review fix
+
+The third review found two Important gaps. RED was `7 failed, 2 passed`: absent
+ledger reconciliation incorrectly wrote a failed terminal, the database
+accepted failed and completed events for one request, and five adversarial
+legacy allowlisted-field cases returned suspicious provider/token/path/message
+values verbatim.
+
+Additive migration `008_terminal_audit_state.sql` creates a unique terminal
+event index per request and refuses mutation-ledger insertion after a failed
+terminal. Owner reconciliation now treats an exact requested event without an
+exact ledger row as `pending` and writes no terminal. A real concurrent
+PostgreSQL test holds the operation lock between requested audit and mutation,
+runs reconcile during that interval, and proves the final state has exactly one
+completed terminal and at most one mutation.
+
+Legacy 005 projection now applies event-specific typed rules: UUIDs, role and
+operation enums, safe Agent grammar, non-negative counts, and stable OS/approver
+identity grammar. Unknown or invalid allowlisted values are omitted; visible
+rows are classified `legacy_005_redacted` or `unsupported_redacted` rather than
+returning raw metadata.
+
+The direct third-review checkpoint reached `10 passed, 1 warning in 1.97s`.
+Final Task 4/control verification reached `138 passed, 1 warning in 6.60s`;
+fresh full backend verification reached `830 passed, 1 skipped, 1 warning in
+15.09s`. Migrations 001–007 remain byte-immutable.

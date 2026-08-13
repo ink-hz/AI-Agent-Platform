@@ -137,9 +137,11 @@ inactive/departed owner and requires reviewed replacement.
 
    The command verifies the original signed pre-mutation payload, looks up only
    that exact operation/audit identity in the immutable mutation ledger, and
-   idempotently appends the missing completed outcome. If the transaction did
-   not commit, it appends a failed outcome and reports `not_committed`; it never
-   invokes the owner mutation or creates a second operation.
+   idempotently appends the missing completed outcome. If the exact mutation
+   ledger row does not yet exist, it reports `pending` and appends no terminal
+   event; rerun the same command after the in-flight confirm finishes or after
+   incident review. It never infers failure from absence, invokes the owner
+   mutation, or creates a second operation.
    Do not undo a proven role mutation merely because the outcome was initially
    unavailable.
 4. Require the replacement owner to authenticate again and verify the previous
