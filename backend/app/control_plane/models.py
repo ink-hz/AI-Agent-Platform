@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
@@ -21,8 +21,8 @@ class AuthContext:
 @dataclass(frozen=True)
 class IssuedWebSession:
     session_id: UUID
-    cookie_token: str
-    csrf_token: str
+    cookie_token: str = field(repr=False)
+    csrf_token: str = field(repr=False)
     idle_expires_at: datetime
     absolute_expires_at: datetime
 
