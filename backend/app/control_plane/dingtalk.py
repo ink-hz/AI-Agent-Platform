@@ -308,6 +308,7 @@ class DingTalkClient:
         response: httpx.Response | None = None
         for attempt in range(attempts):
             secret_context = _LOG_SECRETS.set(sensitive_values)
+            transport_error: DingTalkProviderError | None = None
             try:
                 response = await self._client.request(
                     method,
@@ -319,13 +320,15 @@ class DingTalkClient:
             except asyncio.CancelledError:
                 raise
             except httpx.RequestError:
-                raise self._error(
+                transport_error = self._error(
                     "DingTalk provider unavailable",
                     request_id=request_id,
                     error_code="transport_error",
-                ) from None
+                )
             finally:
                 _LOG_SECRETS.reset(secret_context)
+            if transport_error is not None:
+                raise transport_error
             retryable = response.status_code == 429 or response.status_code >= 500
             if retry_read and retryable and attempt + 1 < attempts:
                 retry_after = response.headers.get("Retry-After")

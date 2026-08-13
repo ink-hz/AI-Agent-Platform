@@ -22,6 +22,17 @@ API = "https://api.test.invalid"
 OAPI = "https://oapi.test.invalid"
 
 
+def _all_request_error_types(error_type):
+    return tuple(
+        child
+        for direct in error_type.__subclasses__()
+        for child in (direct, *_all_request_error_types(direct))
+    )
+
+
+REQUEST_ERROR_TYPES = _all_request_error_types(httpx.RequestError)
+
+
 def _client(*, flow: str = "in_client", **overrides) -> DingTalkClient:
     return DingTalkClient(
         app_key="test-app-key",
@@ -433,30 +444,44 @@ async def test_invalid_token_refresh_does_not_exceed_three_business_attempts() -
 
 
 @pytest.mark.asyncio
-async def test_all_httpx_request_errors_are_redacted_without_exception_chaining() -> None:
-    secret = "query-secret-token"
+@pytest.mark.parametrize("error_type", REQUEST_ERROR_TYPES)
+async def test_all_httpx_request_errors_have_no_raw_context_or_provider_material(
+    error_type,
+) -> None:
+    secrets = (
+        "query-secret-token",
+        "test-app-secret",
+        "single-use-login-code",
+        "employee-sensitive",
+    )
 
     async def fail(request: httpx.Request) -> httpx.Response:
-        raise httpx.ProxyError(
-            f"proxy failed for {request.url}", request=request
+        raise error_type(
+            "provider failed " + " ".join(secrets) +
+            f" url={request.url} content={request.content!r}",
+            request=request,
         )
 
     transport = httpx.MockTransport(fail)
     injected = httpx.AsyncClient(transport=transport)
     client = _client(http_client=injected)
-    object.__setattr__(client, "_token", secret)
+    object.__setattr__(client, "_token", secrets[0])
     object.__setattr__(client, "_token_expires_at", float("inf"))
     try:
         with pytest.raises(DingTalkProviderError) as caught:
-            await client.get_member("employee-sensitive")
+            await client.get_member(secrets[3])
         stable_rendering = str(caught.value) + repr(caught.value)
         traceback_rendering = "".join(
             traceback.format_exception(caught.value)
         )
         assert caught.value.__cause__ is None
-        assert caught.value.__suppress_context__ is True
-        assert secret not in traceback_rendering
-        assert "employee-sensitive" not in stable_rendering
+        assert caught.value.__context__ is None
+        assert not hasattr(caught.value, "request")
+        assert not hasattr(caught.value, "response")
+        assert not hasattr(caught.value, "content")
+        assert not hasattr(caught.value, "url")
+        assert all(secret not in traceback_rendering for secret in secrets)
+        assert secrets[3] not in stable_rendering
     finally:
         await injected.aclose()
 

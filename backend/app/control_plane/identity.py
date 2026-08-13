@@ -151,25 +151,30 @@ class IdentityResolver:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 self._check_key_policy(cursor)
+                cursor.execute("select pg_advisory_xact_lock(1229998928)")
                 directory_rows = cursor.execute(
                     "select member.generation_id,member.member_key,"
                     "member.internal_user_id,member.subject_kind,member.lookup_hmac,"
                     "member.lookup_key_version,member.encrypted_provider_id,"
-                    "member.encryption_key_version from "
+                    "member.encryption_key_version,member.union_lookup_hmac,"
+                    "member.union_lookup_key_version from "
                     "platform_control.directory_state state join "
                     "platform_control.directory_generations generation on "
                     "generation.generation_id=state.active_generation_id and "
                     "generation.status='complete' join "
                     "platform_control.directory_members member on "
-                    "member.generation_id=generation.generation_id join "
-                    "unnest(%s::integer[],%s::bytea[]) candidate(key_version,lookup_hmac) "
-                    "on member.lookup_key_version=candidate.key_version and "
-                    "member.lookup_hmac=candidate.lookup_hmac where state.singleton "
-                    "and member.subject_kind=%s and member.status='active'",
+                    "member.generation_id=generation.generation_id "
+                    "where state.singleton and member.subject_kind=%s "
+                    "and member.status='active' and member.lookup_key_version=%s "
+                    "and member.lookup_hmac=%s and "
+                    "member.union_lookup_key_version=%s and "
+                    "member.union_lookup_hmac=%s",
                     (
-                        [version for version, _ in corporate_candidates],
-                        [lookup for _, lookup in corporate_candidates],
                         corporate.subject_kind,
+                        corporate.lookup_key_version,
+                        corporate.lookup_hmac,
+                        union.lookup_key_version,
+                        union.lookup_hmac,
                     ),
                 ).fetchall()
                 if len(directory_rows) != 1 or not self.identity_codec.equivalent(
@@ -183,13 +188,21 @@ class IdentityResolver:
                 union_rows = self._lookup_rows(cursor, union, union_candidates)
                 corporate_user = self._matching_user(corporate_rows, corporate)
                 union_user = self._matching_user(union_rows, union)
-                mapped = {value for value in (corporate_user, union_user) if value}
                 directory_user = directory_rows[0]["internal_user_id"]
-                if directory_user is not None:
-                    mapped.add(directory_user)
-                if len(mapped) > 1:
+                if (corporate_user is None) != (union_user is None):
                     raise IdentityResolutionError("provider identity collision")
-                proposed_user_id = next(iter(mapped), uuid4())
+                identity_was_unmapped = corporate_user is None
+                if corporate_user is None:
+                    if directory_user is not None:
+                        raise IdentityResolutionError("provider identity collision")
+                    proposed_user_id = uuid4()
+                else:
+                    if (
+                        corporate_user != union_user
+                        or directory_user != corporate_user
+                    ):
+                        raise IdentityResolutionError("provider identity collision")
+                    proposed_user_id = corporate_user
                 resolved = cursor.execute(
                     "select platform_control.resolve_verified_dingtalk_member("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s,"
@@ -216,7 +229,7 @@ class IdentityResolver:
                 if resolved is None:
                     raise IdentityResolutionError("identity persistence unavailable")
                 internal_user_id = resolved["internal_user_id"]
-                if mapped and internal_user_id not in mapped:
+                if not identity_was_unmapped and internal_user_id != proposed_user_id:
                     raise IdentityResolutionError("provider identity collision")
                 return internal_user_id
         except IdentityResolutionError:
