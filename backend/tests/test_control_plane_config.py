@@ -278,6 +278,26 @@ def test_trusted_proxy_cidrs_must_be_loopback(tmp_path, monkeypatch, cidrs) -> N
 @pytest.mark.parametrize(
     "public_base_url",
     [
+        "https://agent.example.test",
+        "https://agent.example.test:8443",
+        "https://127.0.0.1",
+        "https://127.0.0.1:8443",
+        "https://[2001:db8::1]",
+        "https://[2001:db8::1]:8443",
+    ],
+)
+def test_public_base_url_accepts_https_dns_and_ip_origins(
+    tmp_path, monkeypatch, public_base_url
+) -> None:
+    install_required_identity_environment(tmp_path, monkeypatch, mode="production")
+    monkeypatch.setenv("PLATFORM_PUBLIC_BASE_URL", public_base_url)
+
+    assert load_config().control_plane.public_base_url == public_base_url
+
+
+@pytest.mark.parametrize(
+    "public_base_url",
+    [
         "http://agent.example.test",
         "https://user:password@agent.example.test",
         "https://agent.example.test/path",
@@ -285,6 +305,20 @@ def test_trusted_proxy_cidrs_must_be_loopback(tmp_path, monkeypatch, cidrs) -> N
         "https://agent.example.test/#fragment",
         "https://agent.example.test:notaport",
         "https://agent.example.test:65536",
+        "https://agent.example.test:",
+        "https://agent.example.test:0",
+        "https://agent.example.test\\evil.example",
+        "https://agent.example.test%2fevil.example",
+        "https://agent.example.test\t.evil.example",
+        "https://agent.example.test\n.evil.example",
+        "https://agent .example.test",
+        "https://-agent.example.test",
+        "https://agent-.example.test",
+        "https://agent..example.test",
+        "https://agent_name.example.test",
+        "https://999.999.999.999",
+        "https://[not-an-ip]",
+        "https://[2001:db8::1",
     ],
 )
 def test_public_base_url_must_be_a_safe_https_origin(

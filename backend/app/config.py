@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass
 import ipaddress
 from pathlib import Path
+import re
 import stat
 from typing import Literal
 from urllib.parse import urlparse
@@ -168,17 +169,86 @@ def _normalize_route_prefix(value: str) -> str:
     return "/" if normalized == "/" else f"{normalized}/"
 
 
-def _validate_public_base_url(value: str) -> None:
-    parsed = urlparse(value)
+_DNS_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+
+
+def _validate_public_hostname(hostname: str, *, bracketed: bool) -> None:
+    if bracketed:
+        ipaddress.IPv6Address(hostname)
+        return
+
     try:
-        parsed.port
+        ipaddress.IPv4Address(hostname)
+        return
+    except ValueError:
+        pass
+
+    dns_hostname = hostname[:-1] if hostname.endswith(".") else hostname
+    if (
+        not dns_hostname
+        or len(dns_hostname) > 253
+        or all(character in "0123456789." for character in dns_hostname)
+        or any(_DNS_LABEL.fullmatch(label) is None for label in dns_hostname.split("."))
+    ):
+        raise ValueError("invalid public hostname")
+
+
+def _validate_public_authority(authority: str) -> None:
+    if (
+        not authority
+        or "@" in authority
+        or "\\" in authority
+        or "%" in authority
+        or any(ord(character) <= 0x20 or ord(character) == 0x7F for character in authority)
+    ):
+        raise ValueError("invalid public authority")
+
+    bracketed = authority.startswith("[")
+    if bracketed:
+        closing_bracket = authority.find("]")
+        if closing_bracket < 0:
+            raise ValueError("invalid public authority")
+        hostname = authority[1:closing_bracket]
+        suffix = authority[closing_bracket + 1 :]
+        if "[" in hostname or "]" in suffix:
+            raise ValueError("invalid public authority")
+        if suffix:
+            if not suffix.startswith(":"):
+                raise ValueError("invalid public authority")
+            port = suffix[1:]
+        else:
+            port = None
+    else:
+        if "[" in authority or "]" in authority or authority.count(":") > 1:
+            raise ValueError("invalid public authority")
+        hostname, separator, port = authority.partition(":")
+        if not separator:
+            port = None
+
+    _validate_public_hostname(hostname, bracketed=bracketed)
+    if port is not None and (
+        not port.isascii()
+        or not port.isdecimal()
+        or not 1 <= int(port) <= 65_535
+    ):
+        raise ValueError("invalid public port")
+
+
+def _validate_public_base_url(value: str) -> None:
+    try:
+        if any(
+            character in "\\%" or ord(character) <= 0x20 or ord(character) == 0x7F
+            for character in value
+        ):
+            raise ValueError("invalid public URL character")
+        parsed = urlparse(value)
+        _validate_public_authority(parsed.netloc)
     except ValueError as error:
         raise ValueError(
             "PLATFORM_PUBLIC_BASE_URL must be a safe HTTPS origin"
         ) from error
     if (
         parsed.scheme != "https"
-        or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
         or parsed.path not in {"", "/"}
