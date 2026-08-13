@@ -25,6 +25,9 @@ class IdentityResolutionError(RuntimeError):
 class IdentityResolver:
     CORPORATE_SUBJECT_KIND = "employee"
     UNION_SUBJECT_KIND = "employee_union"
+    DIRECTORY_LOCK_FUNCTION = (
+        "platform_control.lock_dingtalk_identity_directory()"
+    )
 
     def __init__(
         self,
@@ -151,7 +154,7 @@ class IdentityResolver:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 self._check_key_policy(cursor)
-                cursor.execute("select pg_advisory_xact_lock(1229998928)")
+                cursor.execute(f"select {self.DIRECTORY_LOCK_FUNCTION}")
                 directory_rows = cursor.execute(
                     "select member.generation_id,member.member_key,"
                     "member.internal_user_id,member.subject_kind,member.lookup_hmac,"
@@ -199,7 +202,10 @@ class IdentityResolver:
                 else:
                     if (
                         corporate_user != union_user
-                        or directory_user != corporate_user
+                        or (
+                            directory_user is not None
+                            and directory_user != corporate_user
+                        )
                     ):
                         raise IdentityResolutionError("provider identity collision")
                     proposed_user_id = corporate_user

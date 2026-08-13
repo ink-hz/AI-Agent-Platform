@@ -369,11 +369,19 @@ async def complete_login(attempt_id: UUID, code: str) -> IssuedWebSession:
     )
 ```
 
+`consume_attempt_and_issue_session` must acquire
+`platform_control.lock_dingtalk_identity_directory()` and, in the same database
+transaction that consumes the attempt and inserts the Web Session, recheck that
+the resolved internal user is active, locally valid, and bound to an active
+member row in the current complete directory generation. A directory promotion
+between identity resolution and Session issuance must therefore cause issuance
+to fail closed; checking a prior application snapshot is not sufficient.
+
 - [ ] **Step 1: Write failing API tests** for one-time five-minute state, exact environment and safe-return binding, unknown/expired/consumed state rejected before provider exchange, QR and in-client success, Session fixation prevention, Cookie flags/path, 8h idle/24h absolute expiry, logout revocation, and no username/password/anonymous fallback.
 - [ ] **Step 2: Write failing allowlist tests** that enumerate every route and prove unauthenticated `401` outside the exact list, `GET /` returns `302 /login`, arbitrary `/assets/` paths do not reach application handlers, public health leaks no build/dependency/org/Agent/user facts, detailed health moved to owner-only `/api/v1/manage/system-health`, and prefix mode generates only prefixed URLs/Cookies.
 - [ ] **Step 3: Write failing CSRF/Origin tests** for logout and every mutation: correct same-origin plus header/token succeeds; absent, mismatched, cross-origin, `null`, and untrusted forwarded scheme fail.
 - [ ] **Step 4: Run `cd backend && .venv/bin/python -m pytest tests/test_dingtalk_auth_api.py tests/test_web_session_security.py tests/test_spa_static.py -q` and verify RED**. Expected: `/api/v1/auth/dingtalk/start` is `404` and the unauthenticated protected-route assertion receives the current public response instead of `401`.
-- [ ] **Step 5: Implement the auth service and middleware** with atomic attempt consumption, post-login token rotation, database-time expiry, per-request local user status recheck, constant-time CSRF verification, and generic client errors.
+- [ ] **Step 5: Implement the auth service and middleware** with atomic attempt consumption, post-login token rotation, database-time expiry, per-request local user status recheck, constant-time CSRF verification, and generic client errors. Session issuance must call `platform_control.lock_dingtalk_identity_directory()` and recheck current active-directory membership inside the same database transaction as `consume_attempt_and_issue_session`.
 - [ ] **Step 6: Mount public and protected routes deliberately in `main.py`**; do not infer publicness from route prefixes. Keep `identity_mode=disabled` behavior unchanged for existing tests and local operation.
 - [ ] **Step 7: Run focused tests and verify GREEN**, then run `cd backend && .venv/bin/python -m pytest tests/test_main.py tests/test_api.py tests/test_cloud_api.py -q` and `git diff --check`.
 - [ ] **Step 8: Commit** with `git add backend/app/control_plane/auth.py backend/app/control_plane/routes_auth.py backend/app/control_plane/middleware.py backend/app/main.py backend/app/spa.py backend/tests/test_dingtalk_auth_api.py backend/tests/test_web_session_security.py backend/tests/test_spa_static.py && git commit -m "feat(identity): add secure DingTalk Web Sessions"`.
@@ -444,13 +452,20 @@ def evaluate_directory_freshness(last_complete_at: datetime | None, now: datetim
     return DirectoryFreshness.FRESH
 ```
 
-Promotion uses one serializable transaction: lock the singleton `directory_state`, verify the staging generation status/counts/checksum, replace closure/membership visibility, mark the prior generation superseded, set the new active generation and `last_complete_at`, then commit.
+Promotion calls the worker-only
+`platform_control.promote_verified_directory_generation(uuid)` boundary. That
+function shares `platform_control.lock_dingtalk_identity_directory()` with
+identity resolution and Session issuance, locks the singleton `directory_state`,
+verifies staging status/counts/checksum and complete corporate/union pair facts,
+marks the prior generation superseded, sets the new generation active and
+updates `last_complete_at` in one transaction. Task 8 must never perform raw
+`directory_state` DML or raw generation-status updates.
 
 - [ ] **Step 1: Write failing reconciliation tests** for paginated departments/members, staging isolation, atomic promotion, crash/timeout/429 mid-sync preserving the prior generation, departure in a complete generation, source-count checks, encrypted/HMAC provider IDs, and no partial membership visibility.
 - [ ] **Step 2: Write failing closure tests** for root, nested departments, member-to-multiple-departments, subtree moves, deleted departments, cycle rejection, indexed exact/recursive lookup, and closure replacement in the same promotion transaction.
 - [ ] **Step 3: Write failing freshness boundary tests** at just before/at/after 8h and 24h, startup without any complete generation, warning metadata, hard-stale member denial signal, and later local departure overriding older generation data.
 - [ ] **Step 4: Run `cd backend && .venv/bin/python -m pytest tests/test_directory_reconciliation.py tests/test_directory_freshness.py tests/test_department_closure.py -q` and verify RED**. Expected: imports of `DirectoryReconciler` and `evaluate_directory_freshness` fail.
-- [ ] **Step 5: Implement bounded page ingestion and staging generations** with explicit counts/checksums, no long transaction during network fetch, one short serializable promotion transaction, and scheduled startup/6h reconciliation with jitter and single-worker advisory lock.
+- [ ] **Step 5: Implement bounded page ingestion and staging generations** with explicit counts/checksums, no long transaction during network fetch, one short promotion through `platform_control.promote_verified_directory_generation(uuid)`, and scheduled startup/6h reconciliation with jitter. Do not restore raw `directory_state` or generation-status mutation grants.
 - [ ] **Step 6: Add performance fixtures** and assert a representative directory completes below the 10-minute target in the sizing harness and the code's configured hard timeout is 15 minutes; record stage timings without provider data.
 - [ ] **Step 7: Run focused tests and verify GREEN**, then force one full-sync failure and prove the active generation ID is unchanged.
 - [ ] **Step 8: Commit** with `git add backend/app/control_plane/directory.py backend/app/control_plane/directory_worker.py backend/tests/test_directory_reconciliation.py backend/tests/test_directory_freshness.py backend/tests/test_department_closure.py && git commit -m "feat(identity): reconcile DingTalk directory atomically"`.

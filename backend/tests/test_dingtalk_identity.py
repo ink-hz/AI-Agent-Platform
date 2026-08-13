@@ -133,6 +133,43 @@ def _identity_state(environment):
         ).fetchone()
 
 
+def _stage_and_promote_generation(environment, codec, members) -> UUID:
+    generation_id = uuid4()
+    worker_url = environment["urls"]["platform_directory_worker"]
+    with psycopg.connect(worker_url) as connection:
+        connection.execute(
+            "insert into platform_control.directory_generations "
+            "(generation_id,status,member_count,department_count,content_sha256) "
+            "values (%s,'staging',%s,0,%s)",
+            (generation_id, len(members), f"{len(members) + 1:064x}"),
+        )
+        for member in members:
+            corporate = codec.seal(
+                IdentityResolver.CORPORATE_SUBJECT_KIND,
+                _provider_value("test-corp", member.userid),
+            )
+            union = codec.seal(
+                IdentityResolver.UNION_SUBJECT_KIND, member.unionid
+            )
+            connection.execute(
+                "select platform_control.stage_verified_directory_member("
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    generation_id, uuid4(), corporate.subject_kind,
+                    corporate.lookup_hmac, corporate.lookup_key_version,
+                    corporate.ciphertext, corporate.encryption_key_version,
+                    union.lookup_hmac, union.lookup_key_version,
+                    member.display_name,
+                    "active" if member.active else "inactive",
+                ),
+            )
+        connection.execute(
+            "select platform_control.promote_verified_directory_generation(%s)",
+            (generation_id,),
+        )
+    return generation_id
+
+
 @pytest.mark.asyncio
 @pytest.mark.postgres
 async def test_qr_unionid_and_in_client_userid_converge_on_one_internal_identity(
@@ -183,6 +220,131 @@ async def test_display_name_change_updates_data_without_changing_identity(
             "select display_name from platform_control.internal_users "
             "where internal_user_id=%s", (first,)
         ).fetchone() == ("New Name",)
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+async def test_new_current_generation_rebinds_same_verified_pair_then_departure_denies(
+    production_environment,
+    tmp_path: Path,
+) -> None:
+    original = DingTalkMember(
+        "generation-user", "generation-union", "Original", True, (1,)
+    )
+    resolver = _resolver(production_environment, tmp_path, original)
+    internal_user_id = await resolver.resolve_active_member(
+        DingTalkAuthResult(original.unionid, original.userid, "test-corp"),
+        DirectoryFreshness.FRESH,
+    )
+
+    renamed = DingTalkMember(
+        original.userid, original.unionid, "Renamed", True, (1,)
+    )
+    second_generation = _stage_and_promote_generation(
+        production_environment, resolver.identity_codec, (renamed,)
+    )
+    with psycopg.connect(production_environment["admin"]) as connection:
+        assert connection.execute(
+            "select internal_user_id from platform_control.directory_members "
+            "where generation_id=%s", (second_generation,)
+        ).fetchone() == (None,)
+
+    resolver.client.member = renamed
+    assert await resolver.resolve_active_member(
+        DingTalkAuthResult(renamed.unionid, renamed.userid, "test-corp"),
+        DirectoryFreshness.FRESH,
+    ) == internal_user_id
+    with psycopg.connect(production_environment["admin"]) as connection:
+        assert connection.execute(
+            "select member.internal_user_id,users.display_name from "
+            "platform_control.directory_members member join "
+            "platform_control.internal_users users using (internal_user_id) "
+            "where member.generation_id=%s", (second_generation,)
+        ).fetchone() == (internal_user_id, "Renamed")
+
+    departed_generation = _stage_and_promote_generation(
+        production_environment, resolver.identity_codec, ()
+    )
+    before = _identity_state(production_environment)
+    with pytest.raises(IdentityResolutionError, match="directory member"):
+        await resolver.resolve_active_member(
+            DingTalkAuthResult(renamed.unionid, renamed.userid, "test-corp"),
+            DirectoryFreshness.FRESH,
+        )
+    assert _identity_state(production_environment) == before
+    with psycopg.connect(production_environment["admin"]) as connection:
+        assert connection.execute(
+            "select active_generation_id from platform_control.directory_state"
+        ).fetchone() == (departed_generation,)
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+async def test_new_generation_with_transition_candidate_only_pair_is_denied(
+    production_environment,
+    tmp_path: Path,
+) -> None:
+    member = DingTalkMember(
+        "candidate-user", "candidate-union", "Candidate", True, (1,)
+    )
+    resolver = _resolver(production_environment, tmp_path, member)
+    internal_user_id = await resolver.resolve_active_member(
+        DingTalkAuthResult(member.unionid, member.userid, "test-corp"),
+        DirectoryFreshness.FRESH,
+    )
+    corporate = resolver.identity_codec.seal(
+        IdentityResolver.CORPORATE_SUBJECT_KIND,
+        _provider_value("test-corp", member.userid),
+    )
+    union = resolver.identity_codec.seal(
+        IdentityResolver.UNION_SUBJECT_KIND, member.unionid
+    )
+    old_corporate = dict(resolver.identity_codec.lookup_candidates(
+        corporate.subject_kind,
+        _provider_value("test-corp", member.userid),
+    ))[1]
+    old_union = dict(resolver.identity_codec.lookup_candidates(
+        union.subject_kind, member.unionid
+    ))[1]
+    generation_id = uuid4()
+    worker_url = production_environment["urls"]["platform_directory_worker"]
+    with psycopg.connect(worker_url) as connection:
+        connection.execute(
+            "insert into platform_control.directory_generations "
+            "(generation_id,status,member_count,department_count,content_sha256) "
+            "values (%s,'staging',1,0,%s)",
+            (generation_id, "f" * 64),
+        )
+        connection.execute(
+            "select platform_control.stage_verified_directory_member("
+            "%s,%s,'employee',%s,1,%s,%s,%s,1,%s,'active')",
+            (
+                generation_id, uuid4(), old_corporate,
+                corporate.ciphertext, corporate.encryption_key_version,
+                old_union, member.display_name,
+            ),
+        )
+        connection.execute(
+            "select platform_control.promote_verified_directory_generation(%s)",
+            (generation_id,),
+        )
+
+    before = _identity_state(production_environment)
+    with pytest.raises(IdentityResolutionError, match="directory member"):
+        await resolver.resolve_active_member(
+            DingTalkAuthResult(member.unionid, member.userid, "test-corp"),
+            DirectoryFreshness.FRESH,
+        )
+    assert _identity_state(production_environment) == before
+    with psycopg.connect(production_environment["admin"]) as connection:
+        assert connection.execute(
+            "select internal_user_id from platform_control.directory_members "
+            "where generation_id=%s", (generation_id,)
+        ).fetchone() == (None,)
+        assert connection.execute(
+            "select status from platform_control.internal_users "
+            "where internal_user_id=%s", (internal_user_id,)
+        ).fetchone() == ("active",)
 
 
 @pytest.mark.asyncio
@@ -494,6 +656,64 @@ async def test_stale_generation_pair_cannot_authorize_login(
 
 @pytest.mark.asyncio
 @pytest.mark.postgres
+async def test_departure_promotion_serializes_before_resolution_commit(
+    production_environment,
+    tmp_path: Path,
+) -> None:
+    member = DingTalkMember(
+        "promotion-race", "promotion-race-union", "Race", True, (1,)
+    )
+    resolver = _resolver(production_environment, tmp_path, member)
+    await resolver.resolve_active_member(
+        DingTalkAuthResult(member.unionid, member.userid, "test-corp"),
+        DirectoryFreshness.FRESH,
+    )
+    generation_id = uuid4()
+    worker_url = production_environment["urls"]["platform_directory_worker"]
+    with psycopg.connect(worker_url) as worker:
+        worker.execute(
+            "insert into platform_control.directory_generations "
+            "(generation_id,status,member_count,department_count,content_sha256) "
+            "values (%s,'staging',0,0,%s)",
+            (generation_id, "d" * 64),
+        )
+        worker.execute(
+            "select platform_control.lock_dingtalk_identity_directory()"
+        )
+        before = _identity_state(production_environment)
+        resolving = asyncio.create_task(resolver.resolve_active_member(
+            DingTalkAuthResult(member.unionid, member.userid, "test-corp"),
+            DirectoryFreshness.FRESH,
+        ))
+        for _ in range(200):
+            with psycopg.connect(production_environment["admin"]) as admin:
+                waiting = admin.execute(
+                    "select exists (select 1 from pg_stat_activity where "
+                    "usename=%s and wait_event_type='Lock' and "
+                    "wait_event='advisory')",
+                    (production_environment["roles"][1],),
+                ).fetchone()[0]
+            if waiting:
+                break
+            await asyncio.sleep(0.005)
+        assert waiting is True
+        assert not resolving.done()
+        worker.execute(
+            "select platform_control.promote_verified_directory_generation(%s)",
+            (generation_id,),
+        )
+
+    with pytest.raises(IdentityResolutionError, match="directory member"):
+        await resolving
+    assert _identity_state(production_environment) == before
+    with psycopg.connect(production_environment["admin"]) as connection:
+        assert connection.execute(
+            "select active_generation_id from platform_control.directory_state"
+        ).fetchone() == (generation_id,)
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
 async def test_failed_final_refresh_rolls_back_user_and_provider_mappings(
     production_environment, tmp_path: Path
 ) -> None:
@@ -747,6 +967,42 @@ def test_directory_pair_rejects_mixed_key_versions_without_partial_row(
 
 
 @pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("declared_members", "content_sha256"),
+    ((1, "e" * 64), (0, None)),
+    ids=("count-mismatch", "missing-checksum"),
+)
+def test_directory_promotion_rejects_incomplete_generation_without_state_change(
+    production_environment,
+    declared_members: int,
+    content_sha256: str | None,
+) -> None:
+    worker_url = production_environment["urls"]["platform_directory_worker"]
+    generation_id = uuid4()
+    with psycopg.connect(production_environment["admin"]) as connection:
+        active_before = connection.execute(
+            "select active_generation_id from platform_control.directory_state"
+        ).fetchone()
+    with psycopg.connect(worker_url) as connection:
+        connection.execute(
+            "insert into platform_control.directory_generations "
+            "(generation_id,status,member_count,department_count,content_sha256) "
+            "values (%s,'staging',%s,0,%s)",
+            (generation_id, declared_members, content_sha256),
+        )
+        with pytest.raises(psycopg.errors.CheckViolation):
+            with connection.transaction():
+                connection.execute(
+                    "select platform_control.promote_verified_directory_generation(%s)",
+                    (generation_id,),
+                )
+    with psycopg.connect(production_environment["admin"]) as connection:
+        assert connection.execute(
+            "select active_generation_id from platform_control.directory_state"
+        ).fetchone() == active_before
+
+
+@pytest.mark.postgres
 def test_directory_worker_cannot_mutate_identity_or_bind_directory_rows(
     production_environment,
 ) -> None:
@@ -767,6 +1023,10 @@ def test_directory_worker_cannot_mutate_identity_or_bind_directory_rows(
         "gen_random_uuid(),'employee',decode(repeat('00',32),'hex'),1,'x',1,'x','active')",
         "update platform_control.directory_members set internal_user_id=gen_random_uuid()",
         "delete from platform_control.directory_members",
+        "update platform_control.directory_state set active_generation_id=null",
+        "insert into platform_control.directory_state (singleton) values (false)",
+        "delete from platform_control.directory_state",
+        "update platform_control.directory_generations set status='complete'",
     )
     for statement in statements:
         with psycopg.connect(worker_url) as connection:
@@ -777,7 +1037,10 @@ def test_directory_worker_cannot_mutate_identity_or_bind_directory_rows(
 @pytest.mark.postgres
 def test_pair_and_worker_functions_have_exact_environment_grants(control_database) -> None:
     pair_name = "resolve_verified_dingtalk_member"
+    legacy_pair_name = "resolve_verified_dingtalk_member_v12"
     stage_name = "stage_verified_directory_member"
+    lock_name = "lock_dingtalk_identity_directory"
+    promote_name = "promote_verified_directory_generation"
     for name, environment in control_database["environments"].items():
         app, worker = environment["roles"][1], environment["roles"][2]
         other = control_database["environments"][
@@ -792,11 +1055,29 @@ def test_pair_and_worker_functions_have_exact_environment_grants(control_databas
                 "has_function_privilege('public',oid,'execute'),prosecdef,proconfig "
                 "from pg_proc where pronamespace='platform_control'::regnamespace "
                 "and proname=any(%s) order by proname",
-                (app, worker, other[1], other[2], [pair_name, stage_name]),
+                (
+                    app, worker, other[1], other[2],
+                    [
+                        pair_name, legacy_pair_name, stage_name,
+                        lock_name, promote_name,
+                    ],
+                ),
             ).fetchall()
         assert rows == [
             (
+                lock_name, True, True, False, False, False, True,
+                ["search_path=pg_catalog, platform_control"],
+            ),
+            (
+                promote_name, False, True, False, False, False, True,
+                ["search_path=pg_catalog, platform_control"],
+            ),
+            (
                 pair_name, True, False, False, False, False, True,
+                ["search_path=pg_catalog, platform_control"],
+            ),
+            (
+                legacy_pair_name, False, False, False, False, False, True,
                 ["search_path=pg_catalog, platform_control"],
             ),
             (

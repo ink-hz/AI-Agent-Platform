@@ -41,6 +41,13 @@ VERIFIED_IDENTITY_BOUNDARY_MIGRATION = (
 VERIFIED_IDENTITY_PAIR_BOUNDARY_MIGRATION = (
     MIGRATIONS / "012_verified_identity_pair_boundary.sql"
 )
+DIRECTORY_PROMOTION_BOUNDARY_MIGRATION = (
+    MIGRATIONS / "013_directory_promotion_boundary.sql"
+)
+RELEASE_1_PLAN = (
+    Path(__file__).parents[2]
+    / "docs/superpowers/plans/2026-08-13-dingtalk-identity-release-1.md"
+)
 PRODUCTION_ROLES = (
     "platform_control_migrator",
     "platform_control_app",
@@ -104,6 +111,7 @@ IMMUTABLE_MIGRATION_SHA256 = {
     "009_audit_request_serialization.sql": "f9cbb79af2d820795db53c59e5f140f20a077ba00da6fd716ceef059a72bc220",
     "010_verified_identity_refresh.sql": "a6695b5fcbad6a5b13c639dcabe1eacbe19898a1041c7d67dbf29f69a1865ca1",
     "011_verified_identity_boundary.sql": "8febc87dde9ccd091914c0fc0fdaf8f1fc9bcbbe0f247727bb4c914019ea0225",
+    "012_verified_identity_pair_boundary.sql": "63892ec38e49514b34d38c3fc851616981aaee0af172855dccb889a22888343b",
 }
 
 
@@ -150,9 +158,13 @@ def test_first_control_migration_exists() -> None:
         "missing verified identity pair boundary migration: "
         f"{VERIFIED_IDENTITY_PAIR_BOUNDARY_MIGRATION}"
     )
+    assert DIRECTORY_PROMOTION_BOUNDARY_MIGRATION.is_file(), (
+        "missing directory promotion boundary migration: "
+        f"{DIRECTORY_PROMOTION_BOUNDARY_MIGRATION}"
+    )
 
 
-def test_control_migrations_001_through_011_are_byte_immutable() -> None:
+def test_control_migrations_001_through_012_are_byte_immutable() -> None:
     import hashlib
 
     assert {
@@ -160,10 +172,26 @@ def test_control_migrations_001_through_011_are_byte_immutable() -> None:
         for path in sorted(
             (
                 *MIGRATIONS.glob("00[1-9]_*.sql"),
-                *MIGRATIONS.glob("01[01]_*.sql"),
+                *MIGRATIONS.glob("01[0-2]_*.sql"),
             )
         )
     } == IMMUTABLE_MIGRATION_SHA256
+
+
+def test_task6_and_task8_share_exported_directory_identity_lock_contract() -> None:
+    migration = DIRECTORY_PROMOTION_BOUNDARY_MIGRATION.read_text(encoding="utf-8")
+    plan = RELEASE_1_PLAN.read_text(encoding="utf-8")
+    task6 = plan.split("### Task 6:", 1)[1].split("### Task 7:", 1)[0]
+    task8 = plan.split("### Task 8:", 1)[1].split("### Task 9:", 1)[0]
+
+    assert "lock_dingtalk_identity_directory" in migration
+    assert "promote_verified_directory_generation" in migration
+    assert "consume_attempt_and_issue_session" in task6
+    assert "lock_dingtalk_identity_directory" in task6
+    assert "same database transaction" in task6.lower()
+    assert "promote_verified_directory_generation" in task8
+    assert "directory_state" in task8
+    assert "raw" in task8.lower()
 
 
 def _available_port() -> int:
@@ -338,7 +366,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                        (version, 64) for version in range(1, 13)
+                        (version, 64) for version in range(1, 14)
                 ]
 
     changed = tmp_path / "migrations"

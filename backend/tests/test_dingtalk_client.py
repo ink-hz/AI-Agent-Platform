@@ -33,6 +33,29 @@ def _all_request_error_types(error_type):
 REQUEST_ERROR_TYPES = _all_request_error_types(httpx.RequestError)
 
 
+def _assert_no_provider_material_in_exception_tree(
+    error: BaseException,
+    secrets: tuple[str, ...],
+) -> None:
+    pending = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        rendered = "".join(traceback.format_exception(current))
+        assert all(secret not in rendered for secret in secrets)
+        for name in ("request", "response", "content", "url", "body"):
+            assert not hasattr(current, name)
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+    assert error.__cause__ is None
+    assert error.__context__ is None
+
+
 def _client(*, flow: str = "in_client", **overrides) -> DingTalkClient:
     return DingTalkClient(
         app_key="test-app-key",
@@ -482,6 +505,149 @@ async def test_all_httpx_request_errors_have_no_raw_context_or_provider_material
         assert not hasattr(caught.value, "url")
         assert all(secret not in traceback_rendering for secret in secrets)
         assert secrets[3] not in stable_rendering
+    finally:
+        await injected.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "scenario",
+    (
+        "raw_json",
+        "application_token",
+        "legacy_envelope",
+        "in_client_login",
+        "qr_token",
+        "qr_profile",
+        "member",
+        "union",
+        "department_item",
+        "member_page",
+        "member_page_entry",
+        "provider_error_body",
+    ),
+)
+async def test_all_provider_parse_failures_discard_raw_exception_chains(
+    scenario: str,
+) -> None:
+    secrets = (
+        "raw-response-secret",
+        "provider-token-secret",
+        "single-use-code-secret",
+        "employee-secret",
+        "union-secret",
+    )
+
+    def response_for(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if scenario == "raw_json":
+            return httpx.Response(
+                200,
+                content=b'{"raw-response-secret": [',
+                request=request,
+            )
+        if path.endswith("/oauth2/accessToken"):
+            if scenario == "application_token":
+                return httpx.Response(
+                    200,
+                    json={"accessToken": [secrets[0]], "expireIn": 7200},
+                    request=request,
+                )
+            return httpx.Response(
+                200,
+                json={"accessToken": secrets[1], "expireIn": 7200},
+                request=request,
+            )
+        if path.endswith("/oauth2/userAccessToken"):
+            payload = (
+                {"accessToken": [secrets[0]], "corpId": "test-corp"}
+                if scenario == "qr_token"
+                else {"accessToken": secrets[1], "corpId": "test-corp"}
+            )
+            return httpx.Response(200, json=payload, request=request)
+        if path.endswith("/contact/users/me"):
+            return httpx.Response(
+                200,
+                json={"unionId": [secrets[0]]},
+                request=request,
+            )
+        if path.endswith("/getuserinfo"):
+            return httpx.Response(
+                200,
+                json={"errcode": 0, "result": [secrets[0]]},
+                request=request,
+            )
+        if scenario == "legacy_envelope":
+            return httpx.Response(
+                200,
+                json={"errcode": [[secrets[0]]], "errmsg": secrets[0]},
+                request=request,
+            )
+        if scenario == "provider_error_body":
+            return httpx.Response(
+                400,
+                json={"code": [[secrets[0]]], "message": secrets[0]},
+                request=request,
+            )
+        if path.endswith("/getbyunionid"):
+            return httpx.Response(
+                200,
+                json={
+                    "errcode": 0,
+                    "result": {"contact_type": [secrets[0]], "userid": secrets[3]},
+                },
+                request=request,
+            )
+        if path.endswith("/department/listsub"):
+            return httpx.Response(
+                200,
+                json={"errcode": 0, "result": [[secrets[0]]]},
+                request=request,
+            )
+        if path.endswith("/user/list"):
+            entry = [secrets[0]] if scenario == "member_page_entry" else {}
+            payload = (
+                {"has_more": [secrets[0]], "next_cursor": 0, "list": []}
+                if scenario == "member_page"
+                else {"has_more": False, "next_cursor": 0, "list": [entry]}
+            )
+            return httpx.Response(
+                200, json={"errcode": 0, "result": payload}, request=request
+            )
+        return httpx.Response(
+            200,
+            json={
+                "errcode": 0,
+                "result": {
+                    "userid": [secrets[0]],
+                    "unionid": secrets[4],
+                    "name": secrets[0],
+                    "active": True,
+                    "dept_id_list": [1],
+                },
+            },
+            request=request,
+        )
+
+    injected = httpx.AsyncClient(transport=httpx.MockTransport(response_for))
+    flow = "qr" if scenario in {"qr_token", "qr_profile"} else "in_client"
+    client = _client(flow=flow, http_client=injected)
+    if scenario not in {"application_token"}:
+        object.__setattr__(client, "_token", secrets[1])
+        object.__setattr__(client, "_token_expires_at", float("inf"))
+    try:
+        with pytest.raises(DingTalkProviderError) as caught:
+            if scenario in {"in_client_login", "qr_token", "qr_profile"}:
+                await client.exchange_login_code(secrets[2])
+            elif scenario == "union":
+                await client.resolve_union_member(secrets[4])
+            elif scenario == "department_item":
+                await anext(client.iter_departments())
+            elif scenario in {"member_page", "member_page_entry"}:
+                await anext(client.iter_department_members(1))
+            else:
+                await client.get_member(secrets[3])
+        _assert_no_provider_material_in_exception_tree(caught.value, secrets)
     finally:
         await injected.aclose()
 

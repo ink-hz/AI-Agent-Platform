@@ -8,7 +8,7 @@ import inspect
 import logging
 import re
 import time
-from typing import Any
+from typing import Any, TypeVar
 from uuid import uuid4
 
 import httpx
@@ -21,6 +21,7 @@ _INVALID_APPLICATION_TOKEN_CODES = frozenset({40014, 42001})
 _LOG_SECRETS: ContextVar[tuple[str, ...]] = ContextVar(
     "dingtalk_log_secrets", default=()
 )
+_Parsed = TypeVar("_Parsed")
 
 
 def _redact_log_value(value: object) -> str:
@@ -161,6 +162,16 @@ def _required_boolean(value: object) -> bool:
 
 def _optional_integer(value: object) -> int | None:
     return None if value is None else _required_integer(value)
+
+
+def _parse_provider_value(
+    parser: Callable[[], _Parsed],
+) -> _Parsed | None:
+    """Discard raw parser exceptions before callers construct safe errors."""
+    try:
+        return parser()
+    except (TypeError, ValueError):
+        return None
 
 
 class DingTalkClient:
@@ -340,14 +351,15 @@ class DingTalkClient:
                 continue
             break
         assert response is not None
-        try:
-            payload = _required_object(response.json())
-        except (ValueError, TypeError):
+        payload = _parse_provider_value(
+            lambda: _required_object(response.json())
+        )
+        if payload is None:
             raise self._error(
                 "DingTalk response invalid",
                 request_id=request_id,
                 error_code=f"http_{response.status_code}",
-            ) from None
+            )
         if response.status_code >= 400:
             raise self._error(
                 "DingTalk provider unavailable",
@@ -370,19 +382,23 @@ class DingTalkClient:
                 retry_read=False,
                 json={"appKey": self._app_key, "appSecret": self._app_secret},
             )
-            try:
+            def parse_token() -> tuple[str, int]:
                 token = _required_string(
                     response.payload.get("accessToken"), maximum=4096
                 )
                 expires_in = _required_integer(response.payload.get("expireIn"))
                 if expires_in <= 0:
                     raise ValueError
-            except ValueError:
+                return token, expires_in
+
+            parsed_token = _parse_provider_value(parse_token)
+            if parsed_token is None:
                 raise self._error(
                     "DingTalk response invalid",
                     request_id=response.request_id,
                     error_code="invalid_token_response",
-                ) from None
+                )
+            token, expires_in = parsed_token
             skew = min(300, max(1, expires_in // 10))
             object.__setattr__(self, "_token", token)
             object.__setattr__(self, "_token_expires_at", self._now() + expires_in - skew)
@@ -412,16 +428,17 @@ class DingTalkClient:
                 json=body,
             )
             remaining_attempts -= response.attempts
-            try:
-                errcode = _required_legacy_error_code(
+            errcode = _parse_provider_value(
+                lambda: _required_legacy_error_code(
                     response.payload.get("errcode")
                 )
-            except ValueError:
+            )
+            if errcode is None:
                 raise self._error(
                     "DingTalk response invalid",
                     request_id=response.request_id,
                     error_code="invalid_envelope",
-                ) from None
+                )
             if errcode == 0:
                 return response
             if (
@@ -456,29 +473,40 @@ class DingTalkClient:
                 params={"access_token": token},
                 json={"code": code},
             )
-            try:
-                if _required_legacy_error_code(
+            errcode = _parse_provider_value(
+                lambda: _required_legacy_error_code(
                     response.payload.get("errcode")
-                ) != 0:
-                    raise self._error(
-                        "DingTalk login rejected",
-                        request_id=response.request_id,
-                        error_code=response.payload.get("errcode"),
-                    )
+                )
+            )
+            if errcode is None:
+                raise self._error(
+                    "DingTalk response invalid",
+                    request_id=response.request_id,
+                    error_code="invalid_login_response",
+                )
+            if errcode != 0:
+                raise self._error(
+                    "DingTalk login rejected",
+                    request_id=response.request_id,
+                    error_code=errcode,
+                )
+
+            def parse_login() -> DingTalkAuthResult:
                 result = _required_object(response.payload.get("result"))
                 return DingTalkAuthResult(
                     unionid=_required_string(result.get("unionid")),
                     userid=_required_string(result.get("userid")),
                     corp_id=self._corp_id,
                 )
-            except DingTalkProviderError:
-                raise
-            except ValueError:
+
+            login = _parse_provider_value(parse_login)
+            if login is None:
                 raise self._error(
                     "DingTalk response invalid",
                     request_id=response.request_id,
                     error_code="invalid_login_response",
-                ) from None
+                )
+            return login
 
         request_id = str(uuid4())
         token_response = await self._request(
@@ -493,17 +521,19 @@ class DingTalkClient:
                 "grantType": "authorization_code",
             },
         )
-        try:
-            user_token = _required_string(
+        token_identity = _parse_provider_value(lambda: (
+            _required_string(
                 token_response.payload.get("accessToken"), maximum=4096
-            )
-            corp_id = _required_string(token_response.payload.get("corpId"))
-        except ValueError:
+            ),
+            _required_string(token_response.payload.get("corpId")),
+        ))
+        if token_identity is None:
             raise self._error(
                 "DingTalk response invalid",
                 request_id=token_response.request_id,
                 error_code="invalid_login_response",
-            ) from None
+            )
+        user_token, corp_id = token_identity
         if corp_id != self._corp_id:
             raise self._error(
                 "DingTalk organization mismatch",
@@ -518,19 +548,20 @@ class DingTalkClient:
             retry_read=True,
             headers={"x-acs-dingtalk-access-token": user_token},
         )
-        try:
-            unionid = _required_string(profile_response.payload.get("unionId"))
-        except ValueError:
+        unionid = _parse_provider_value(
+            lambda: _required_string(profile_response.payload.get("unionId"))
+        )
+        if unionid is None:
             raise self._error(
                 "DingTalk response invalid",
                 request_id=profile_response.request_id,
                 error_code="invalid_profile_response",
-            ) from None
+            )
         return DingTalkAuthResult(unionid=unionid, userid=None, corp_id=corp_id)
 
     @staticmethod
     def _member(payload: object, *, request_id: str) -> DingTalkMember:
-        try:
+        def parse_member() -> DingTalkMember:
             result = _required_object(payload)
             raw_departments = result.get("dept_id_list")
             if not isinstance(raw_departments, list):
@@ -543,35 +574,42 @@ class DingTalkClient:
                 active=_required_boolean(result.get("active")),
                 department_ids=departments,
             )
-        except ValueError:
+
+        member = _parse_provider_value(parse_member)
+        if member is None:
             raise DingTalkProviderError(
                 "DingTalk response invalid",
                 request_id=request_id,
                 error_code="invalid_member_response",
-            ) from None
+            )
+        return member
 
     async def resolve_union_member(self, unionid: str) -> DingTalkMember:
         _required_string(unionid)
         response = await self._legacy_read(
             "/topapi/user/getbyunionid", {"unionid": unionid}
         )
-        try:
+        def parse_union() -> tuple[int, str]:
             result = _required_object(response.payload.get("result"))
-            if _required_integer(result.get("contact_type")) != 0:
-                raise DingTalkProviderError(
-                    "DingTalk member unavailable",
-                    request_id=response.request_id,
-                    error_code="not_internal_member",
-                )
-            userid = _required_string(result.get("userid"))
-        except DingTalkProviderError:
-            raise
-        except ValueError:
+            return (
+                _required_integer(result.get("contact_type")),
+                _required_string(result.get("userid")),
+            )
+
+        union_result = _parse_provider_value(parse_union)
+        if union_result is None:
             raise DingTalkProviderError(
                 "DingTalk response invalid",
                 request_id=response.request_id,
                 error_code="invalid_union_response",
-            ) from None
+            )
+        contact_type, userid = union_result
+        if contact_type != 0:
+            raise DingTalkProviderError(
+                "DingTalk member unavailable",
+                request_id=response.request_id,
+                error_code="not_internal_member",
+            )
         member, member_request_id = await self._get_member(userid)
         if member.unionid != unionid:
             raise DingTalkProviderError(
@@ -618,19 +656,21 @@ class DingTalkClient:
                     error_code="invalid_department_response",
                 )
             for item in result:
-                try:
+                def parse_department() -> DingTalkDepartment:
                     source = _required_object(item)
-                    department = DingTalkDepartment(
+                    return DingTalkDepartment(
                         department_id=_required_integer(source.get("dept_id")),
                         parent_department_id=_optional_integer(source.get("parent_id")),
                         display_name=_required_string(source.get("name"), maximum=256),
                     )
-                except ValueError:
+
+                department = _parse_provider_value(parse_department)
+                if department is None:
                     raise DingTalkProviderError(
                         "DingTalk response invalid",
                         request_id=response.request_id,
                         error_code="invalid_department_response",
-                    ) from None
+                    )
                 if department.department_id in seen:
                     raise DingTalkProviderError(
                         "DingTalk department cycle",
@@ -658,19 +698,25 @@ class DingTalkClient:
                     "language": "zh_CN",
                 },
             )
-            try:
+            def parse_page() -> tuple[list[object], bool, int]:
                 result = _required_object(response.payload.get("result"))
                 entries = result.get("list")
                 if not isinstance(entries, list):
                     raise ValueError
-                has_more = _required_boolean(result.get("has_more"))
-                next_cursor = _required_integer(result.get("next_cursor"))
-            except ValueError:
+                return (
+                    entries,
+                    _required_boolean(result.get("has_more")),
+                    _required_integer(result.get("next_cursor")),
+                )
+
+            page = _parse_provider_value(parse_page)
+            if page is None:
                 raise DingTalkProviderError(
                     "DingTalk response invalid",
                     request_id=response.request_id,
                     error_code="invalid_member_page",
-                ) from None
+                )
+            entries, has_more, next_cursor = page
             for entry in entries:
                 yield self._member(entry, request_id=response.request_id)
             if not has_more:
