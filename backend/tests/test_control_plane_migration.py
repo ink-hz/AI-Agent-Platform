@@ -16,6 +16,9 @@ MIGRATIONS = BACKEND / "control_migrations"
 MIGRATION = MIGRATIONS / "001_identity_security.sql"
 HARDENING_MIGRATION = MIGRATIONS / "002_isolate_environment_roles.sql"
 IDENTITY_KEY_POLICY_MIGRATION = MIGRATIONS / "003_identity_key_policy.sql"
+IDENTITY_KEY_POLICY_HARDENING_MIGRATION = (
+    MIGRATIONS / "004_reject_null_identity_key_versions.sql"
+)
 PRODUCTION_ROLES = (
     "platform_control_migrator",
     "platform_control_app",
@@ -74,6 +77,10 @@ def test_first_control_migration_exists() -> None:
     )
     assert IDENTITY_KEY_POLICY_MIGRATION.is_file(), (
         f"missing identity key policy migration: {IDENTITY_KEY_POLICY_MIGRATION}"
+    )
+    assert IDENTITY_KEY_POLICY_HARDENING_MIGRATION.is_file(), (
+        "missing identity key policy hardening migration: "
+        f"{IDENTITY_KEY_POLICY_HARDENING_MIGRATION}"
     )
 
 
@@ -248,7 +255,12 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "select version, length(sha256) "
                     "from platform_control.schema_migrations order by version"
                 )
-                assert cursor.fetchall() == [(1, 64), (2, 64), (3, 64)]
+                assert cursor.fetchall() == [
+                    (1, 64),
+                    (2, 64),
+                    (3, 64),
+                    (4, 64),
+                ]
 
     changed = tmp_path / "migrations"
     shutil.copytree(MIGRATIONS, changed)
@@ -568,6 +580,176 @@ def test_identity_key_policy_is_environment_owned_and_maintenance_only_mutable(
                 "select platform_control.set_provider_identity_key_policy("
                 "'dingtalk', array[1,2])",
             )
+
+
+@pytest.mark.postgres
+def test_app_role_insert_rejects_invalid_identity_key_version_arrays(
+    control_database,
+) -> None:
+    invalid_windows = (
+        [None],
+        [1, None],
+        [1, 2, None],
+        [0],
+        [-1],
+        [1, 0],
+        [1, -1],
+        [1, 2, 0],
+        [1, 2, -1],
+    )
+    valid_windows = ([1], [1, 2], [1, 2, 3])
+
+    for environment in control_database["environments"].values():
+        app_url = environment["urls"][environment["roles"][1]]
+        for versions in (*invalid_windows, *valid_windows):
+            with psycopg.connect(environment["admin"]) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "delete from "
+                        "platform_control.provider_identity_key_policies"
+                    )
+
+            with psycopg.connect(app_url) as connection:
+                with connection.cursor() as cursor:
+                    if versions in invalid_windows:
+                        with pytest.raises(psycopg.errors.CheckViolation):
+                            cursor.execute(
+                                "insert into "
+                                "platform_control.provider_identity_key_policies "
+                                "(provider, lookup_transition_versions) "
+                                "values ('dingtalk', %s)",
+                                (versions,),
+                            )
+                    else:
+                        cursor.execute(
+                            "insert into "
+                            "platform_control.provider_identity_key_policies "
+                            "(provider, lookup_transition_versions) "
+                            "values ('dingtalk', %s)",
+                            (versions,),
+                        )
+                        cursor.execute(
+                            "select lookup_transition_versions from "
+                            "platform_control.provider_identity_key_policies "
+                            "where provider = 'dingtalk'"
+                        )
+                        assert cursor.fetchone() == (versions,)
+                connection.rollback()
+
+
+@pytest.mark.postgres
+def test_identity_key_policy_hardening_fails_closed_on_poisoned_row_then_applies(
+    control_database,
+) -> None:
+    from app.control_plane.migrate import migrate_control_database
+
+    environment = control_database["environments"]["production"]
+    migrator_role = environment["roles"][0]
+    migrator_url = environment["urls"][migrator_role]
+    app_url = environment["urls"][environment["roles"][1]]
+
+    with psycopg.connect(environment["admin"]) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "alter table platform_control.provider_identity_key_policies "
+                "drop constraint if exists "
+                "provider_identity_key_policies_versions_nonnull_positive"
+            )
+            cursor.execute(
+                "delete from platform_control.schema_migrations where version = 4"
+            )
+            cursor.execute(
+                "delete from platform_control.provider_identity_key_policies"
+            )
+
+    with psycopg.connect(app_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "insert into platform_control.provider_identity_key_policies "
+                "(provider, lookup_transition_versions) "
+                "values ('dingtalk', array[null]::integer[])"
+            )
+
+    with psycopg.connect(
+        control_database["cluster_admin"], autocommit=True
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                psycopg.sql.SQL("grant {} to {}").format(
+                    psycopg.sql.Identifier(environment["owner"]),
+                    psycopg.sql.Identifier(migrator_role),
+                )
+            )
+    try:
+        with pytest.raises(
+            psycopg.errors.CheckViolation,
+            match="provider identity key policy data invalid",
+        ):
+            migrate_control_database(
+                migrator_url,
+                MIGRATIONS,
+                owner_role=environment["owner"],
+            )
+
+        with psycopg.connect(environment["admin"]) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "select lookup_transition_versions from "
+                    "platform_control.provider_identity_key_policies"
+                )
+                assert cursor.fetchone() == ([None],)
+                cursor.execute(
+                    "select count(*) from platform_control.schema_migrations "
+                    "where version = 4"
+                )
+                assert cursor.fetchone() == (0,)
+                cursor.execute(
+                    "delete from "
+                    "platform_control.provider_identity_key_policies"
+                )
+
+        migrate_control_database(
+            migrator_url,
+            MIGRATIONS,
+            owner_role=environment["owner"],
+        )
+        migrate_control_database(
+            migrator_url,
+            MIGRATIONS,
+            owner_role=environment["owner"],
+        )
+
+        with psycopg.connect(environment["admin"]) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "select count(*) from platform_control.schema_migrations "
+                    "where version = 4"
+                )
+                assert cursor.fetchone() == (1,)
+                cursor.execute(
+                    "select convalidated from pg_constraint where conname = "
+                    "'provider_identity_key_policies_versions_nonnull_positive'"
+                )
+                assert cursor.fetchone() == (True,)
+    finally:
+        with psycopg.connect(environment["admin"]) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "delete from "
+                    "platform_control.provider_identity_key_policies "
+                    "where array_position(lookup_transition_versions, null) "
+                    "is not null"
+                )
+        with psycopg.connect(
+            control_database["cluster_admin"], autocommit=True
+        ) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    psycopg.sql.SQL("revoke {} from {}").format(
+                        psycopg.sql.Identifier(environment["owner"]),
+                        psycopg.sql.Identifier(migrator_role),
+                    )
+                )
 
 
 @pytest.mark.postgres

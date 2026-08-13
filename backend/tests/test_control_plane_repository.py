@@ -516,6 +516,41 @@ def test_identity_rotation_rejects_a_lookup_not_derived_from_ciphertext(
     assert repository.resolve_provider_identity(original) == internal_user_id
 
 
+def test_identity_rotation_rejects_previous_lookup_before_database_connection(
+    tmp_path: Path,
+) -> None:
+    connect_calls = 0
+
+    def reject_connection(*args, **kwargs):
+        nonlocal connect_calls
+        connect_calls += 1
+        raise AssertionError("database connection must not be opened")
+
+    repository = ControlRepository(
+        "postgresql://unused@127.0.0.1/agent_platform_control",
+        identity_codec=_codec(tmp_path),
+        connect=reject_connection,
+    )
+    previous = repository.identity_codec.seal(
+        "employee", "tampered-previous-rotation-provider-id"
+    )
+    tampered_previous = ProtectedProviderId(
+        subject_kind=previous.subject_kind,
+        lookup_hmac=b"x" * 32,
+        lookup_key_version=previous.lookup_key_version,
+        ciphertext=previous.ciphertext,
+        encryption_key_version=previous.encryption_key_version,
+    )
+    rotated = repository.identity_codec.rotate(previous)
+
+    with pytest.raises(IdentityCollisionError, match="provider identity collision"):
+        repository.rotate_provider_identity(
+            uuid4(), tampered_previous, rotated
+        )
+
+    assert connect_calls == 0
+
+
 @pytest.mark.postgres
 def test_web_session_persists_only_hashes_and_uses_database_expiry(
     repository: ControlRepository,

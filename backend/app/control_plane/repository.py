@@ -286,6 +286,7 @@ class ControlRepository:
         rotated: ProtectedProviderId,
     ) -> None:
         try:
+            self._lookup_candidates(previous)
             rotated_provider_id = self.identity_codec.unseal(rotated)
             if (
                 not self.identity_codec.equivalent(previous, rotated)

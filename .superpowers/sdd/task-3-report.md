@@ -291,3 +291,111 @@ gap and the versionless advisory-lock identity. After the database-backed policy
 and versioned lock fixes, the reviewer reported no Critical or Important
 findings in migration 003, privileges and environment isolation, maintenance
 setter, repository checks, or matching/mismatched concurrency.
+
+## Second review fix: pre-connection rotation validation and migration 004
+
+### Status and scope
+
+Fixed the two remaining Important Task 3 findings. No deployment, real secrets,
+provider production data, or unrelated Task 6 Minor finding was touched.
+Migrations 001, 002, and 003 remain byte-for-byte unchanged.
+
+### TDD RED evidence
+
+The strict rotation regression supplied a `ControlRepository` connection
+factory that raises `AssertionError` whenever called. Its first run was:
+
+```text
+cd backend && .venv/bin/python -m pytest \
+  tests/test_control_plane_repository.py::test_identity_rotation_rejects_previous_lookup_before_database_connection -q
+1 failed in 0.10s
+```
+
+The failure stack reached `ControlRepository._connection`, proving a tampered
+`previous.lookup_key_version/lookup_hmac` crossed the database-connection
+boundary.
+
+Before migration 004 existed, the real-PostgreSQL RED command was:
+
+```text
+cd backend && .venv/bin/python -m pytest \
+  tests/test_control_plane_migration.py::test_first_control_migration_exists \
+  tests/test_control_plane_migration.py::test_app_role_insert_rejects_invalid_identity_key_version_arrays \
+  tests/test_control_plane_migration.py::test_identity_key_policy_hardening_fails_closed_on_poisoned_row_then_applies -q
+3 failed in 0.76s
+```
+
+The expected failures were the missing 004 file, direct app-role acceptance of
+`ARRAY[NULL]`, and migration success despite a poisoned pre-004 row.
+
+### Implementation and database safety
+
+- `rotate_provider_identity` now calls `_lookup_candidates(previous)` before
+  opening a database connection. This authenticates the previous ciphertext,
+  re-derives the configured lookup candidates, and rejects a supplied previous
+  version/HMAC that does not match any derived pair.
+- Additive migration `004_reject_null_identity_key_versions.sql` first locks the
+  policy table against concurrent app inserts, then scans every array element.
+  Any NULL or non-positive element raises the generic PostgreSQL check-violation
+  message `provider identity key policy data invalid`. The transaction abort
+  leaves the poisoned row intact and does not record migration version 004.
+- On clean data, migration 004 adds a named `NOT VALID` CHECK that explicitly
+  requires `array_position(..., NULL) IS NULL` and every element to be positive,
+  then validates it. The numbered migration runner makes clean reruns
+  idempotent.
+- Migration 004 contains no ownership, grant, revoke, role, or environment-role
+  statements. Existing tests confirm the policy table remains owned by the
+  selected environment owner and the app/maintenance privilege split remains
+  unchanged.
+- Direct app-role tests reject NULL in positions 1, 2, and 3, zero and negative
+  values in each applicable position, and accept valid one-, two-, and
+  three-version windows. The poisoned-row test verifies failure without repair
+  or deletion, followed by a clean successful and idempotent application.
+
+### GREEN and final verification
+
+Strict rotation GREEN, including the existing tampered-rotated and real
+PostgreSQL preservation cases:
+
+```text
+3 passed in 0.84s
+```
+
+The same migration command used for RED:
+
+```text
+3 passed in 0.81s
+```
+
+Focused crypto/repository, migration integration, control-plane integration,
+and full backend verification:
+
+```text
+49 passed in 1.28s
+11 passed in 1.02s
+135 passed in 7.64s
+728 passed, 1 skipped, 1 warning in 10.91s
+```
+
+The warning is the same pre-existing Starlette `httpx` deprecation warning.
+`compileall`, `git diff --check`, the replica-boundary scan, production
+provider/secret scans, changed-addition scans, and migration-004 privilege-drift
+scan exited cleanly. Ruff remains unavailable in the backend virtual
+environment, so no Ruff result is claimed. Broader test scans only found the
+pre-existing schema-column assertions and synthetic disposable-PostgreSQL URL
+constructors.
+
+The final SHA-256 values, equal to the recorded pre-change baseline, are:
+
+```text
+309cf6aebdb37d984823faebb859e58f44d387cda4c2fb4bdf61af06868541cd  001_identity_security.sql
+837bb27aa7ee09ff52e424c978c2362cad4e40a25d1c02a4ced0183c61dcbd2f  002_isolate_environment_roles.sql
+4bef30a941e95f0e7508b5ad07c27fd1cf2673effad52738aac8b1fcf6c217f4  003_identity_key_policy.sql
+```
+
+### Concerns
+
+- No known Task 3 correctness, security, migration, ownership, or privilege
+  blocker.
+- A poisoned deployment intentionally requires maintenance-incident handling;
+  migration 004 does not silently delete or infer replacement policy data.
