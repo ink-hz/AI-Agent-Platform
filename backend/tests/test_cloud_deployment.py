@@ -7,6 +7,11 @@ ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
 
 
+def _bash_array(script: str, name: str) -> tuple[str, ...]:
+    body = script.split(f"{name}=(\n", 1)[1].split("\n)", 1)[0]
+    return tuple(line.strip() for line in body.splitlines() if line.strip())
+
+
 def test_compose_is_isolated_loopback_only_and_hardened():
     value = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
     services = value["services"]
@@ -143,24 +148,46 @@ def test_control_database_bootstrap_is_isolated_and_least_privilege():
     assert "agent_platform_control" in script
     assert "agent_platform_control_preview" in script
     assert "template0" in script
-    for role in (
+    production_roles = (
         "platform_control_migrator",
         "platform_control_app",
         "platform_directory_worker",
         "platform_stream_ingest",
         "platform_audit_append",
         "platform_control_maintenance",
-    ):
-        assert role in script
-    for secret in (
+    )
+    preview_roles = tuple(f"{role}_preview" for role in production_roles)
+    assert _bash_array(script, "roles") == production_roles + preview_roles
+    production_passwords = (
+        "control-migrator-password",
+        "control-app-password",
+        "control-directory-worker-password",
+        "control-stream-ingest-password",
+        "control-audit-append-password",
+        "control-maintenance-password",
+    )
+    preview_passwords = tuple(
+        f"preview-{password}" for password in production_passwords
+    )
+    assert _bash_array(script, "password_names") == (
+        production_passwords + preview_passwords
+    )
+    production_dsns = (
         "control-migrator-database-url",
         "control-database-url",
         "control-directory-worker-database-url",
         "control-stream-ingest-database-url",
         "control-audit-database-url",
         "control-maintenance-database-url",
-    ):
-        assert secret in script
+    )
+    preview_dsns = tuple(f"preview-{dsn}" for dsn in production_dsns)
+    assert _bash_array(script, "dsn_names") == production_dsns + preview_dsns
+    assert _bash_array(script, "database_names") == (
+        ("agent_platform_control",) * 6
+        + ("agent_platform_control_preview",) * 6
+    )
+    assert len(set(production_passwords + preview_passwords)) == 12
+    assert len(set(production_dsns + preview_dsns)) == 12
     assert "chmod 600" in script
     assert "revoke connect on database" in script.lower()
     assert "revoke all on schema public from public" in script.lower()
@@ -168,6 +195,34 @@ def test_control_database_bootstrap_is_isolated_and_least_privilege():
     assert "revoke all on schema platform_control from public" in script.lower()
     assert "app.control_plane.migrate" in script
     assert "PLATFORM_CONTROL_MIGRATOR_DATABASE_URL_FILE" in script
+    assert "PLATFORM_CONTROL_OWNER_ROLE" in script
+    assert "platform_control_owner" in script
+    assert "platform_control_owner_preview" in script
+    assert "trap revoke_owner_memberships EXIT" in script
+    assert "revoke_owner_memberships" in script
+    assert "grant platform_control_owner to platform_control_migrator" in script
+    assert (
+        "grant platform_control_owner_preview "
+        "to platform_control_migrator_preview"
+    ) in script
+    assert "revoke platform_control_owner from platform_control_migrator" in script
+    assert (
+        "revoke platform_control_owner_preview "
+        "from platform_control_migrator_preview"
+    ) in script
+    assert "join pg_roles member on member.oid = membership.member" in script
+    assert "join pg_roles granted on granted.oid = membership.roleid" in script
+    assert "where member.rolname = any" in script
+    assert "where granted.rolname in" in script
+    assert script.count("select format('revoke %I from %I'") == 2
+    assert "nosuperuser" in script.lower()
+    assert "nocreatedb" in script.lower()
+    assert "nocreaterole" in script.lower()
+    assert "noreplication" in script.lower()
+    assert "nobypassrls" in script.lower()
+    assert "noinherit" in script.lower()
+    assert "-O platform_control_migrator" not in script
+    assert 'preview_dsn="$private_path/preview-${dsn_names[$index]}"' not in script
     assert "platform_replica" not in script
     assert "replica-database-url" not in script
 
@@ -178,8 +233,29 @@ def test_control_database_bootstrap_is_isolated_and_least_privilege():
         "login password '$",
         "login password \"$",
         "echo $",
+        "superuser password",
     ):
         assert forbidden not in lowered
+
+    trap_index = script.index("trap revoke_owner_memberships EXIT")
+    grant_index = script.index(
+        "grant platform_control_owner to platform_control_migrator;"
+    )
+    migration_index = script.index("python -m app.control_plane.migrate")
+    cleanup_index = script.index("revoke_owner_memberships || fail")
+    assert trap_index < grant_index < migration_index < cleanup_index
+
+
+def test_control_migrator_uses_only_the_validated_environment_owner_role():
+    runner = (
+        ROOT / "backend" / "app" / "control_plane" / "migrate.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"platform_control_owner"' in runner
+    assert '"platform_control_owner_preview"' in runner
+    assert "owner_role" in runner
+    assert "set local role" in runner.lower()
+    assert "PLATFORM_CONTROL_OWNER_ROLE" in runner
 
 
 def test_remote_stage_calls_control_bootstrap_without_replacing_replica():

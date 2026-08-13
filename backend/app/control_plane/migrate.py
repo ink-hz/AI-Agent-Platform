@@ -14,6 +14,12 @@ from .database import read_control_migrator_database_url
 
 _MIGRATION_NAME = re.compile(r"^(?P<version>[0-9]{3})_[a-z0-9_]+\.sql$")
 _ADVISORY_LOCK = 0x41504331
+_CONTROL_OWNER_ROLES = frozenset(
+    {
+        "platform_control_owner",
+        "platform_control_owner_preview",
+    }
+)
 
 
 class MigrationChecksumMismatch(RuntimeError):
@@ -65,9 +71,21 @@ def verify_or_apply(cursor, version: int, sha256: str, sql: str) -> None:
     )
 
 
-def migrate_control_database(database_url: str, migration_dir: Path) -> None:
+def migrate_control_database(
+    database_url: str,
+    migration_dir: Path,
+    *,
+    owner_role: str,
+) -> None:
+    if owner_role not in _CONTROL_OWNER_ROLES:
+        raise ValueError(f"unsupported control owner role: {owner_role!r}")
     with psycopg.connect(database_url, autocommit=False) as connection:
         with connection.cursor() as cursor:
+            cursor.execute(
+                psycopg.sql.SQL("set local role {}").format(
+                    psycopg.sql.Identifier(owner_role)
+                )
+            )
             cursor.execute("select pg_advisory_xact_lock(%s)", (_ADVISORY_LOCK,))
             cursor.execute("create schema if not exists platform_control")
             cursor.execute(
@@ -90,6 +108,9 @@ def main() -> int:
     secret_file = os.getenv("PLATFORM_CONTROL_MIGRATOR_DATABASE_URL_FILE", "")
     if not secret_file:
         raise RuntimeError("control migrator database secret unavailable")
+    owner_role = os.getenv("PLATFORM_CONTROL_OWNER_ROLE", "")
+    if not owner_role:
+        raise RuntimeError("control database owner role unavailable")
     migration_dir = Path(
         os.getenv(
             "PLATFORM_CONTROL_MIGRATION_DIR",
@@ -99,6 +120,7 @@ def main() -> int:
     migrate_control_database(
         read_control_migrator_database_url(secret_file),
         migration_dir,
+        owner_role=owner_role,
     )
     return 0
 
