@@ -99,7 +99,8 @@ for _attempt in $(/usr/bin/seq 1 20); do
   /bin/sleep 1
 done
 [[ "$code" == "302" ]] || fail
-/usr/bin/grep -Eiq '^location: /login\r?$' "$response_headers" || fail
+/usr/bin/tr -d '\r' < "$response_headers" |
+  /usr/bin/grep -Fxiq 'location: /login' || fail
 [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 4 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 \
   https://agent.orbbec.com.cn/login)" == "200" ]] || fail

@@ -134,7 +134,8 @@ def test_cutover_supports_a_fail_closed_first_owner_login_stage():
     assert "DINGTALK_PRODUCTION_OWNER_LOGIN_REQUIRED" in publish
     assert "dingtalk_nginx_transaction.py" in publish
     assert '[[ "$code" == "302" ]]' in publish
-    assert "location: /login" in publish
+    assert "/usr/bin/tr -d '\\r'" in publish
+    assert "/usr/bin/grep -Fxiq 'location: /login'" in publish
     assert "https://agent.orbbec.com.cn/login" in publish
 
 
