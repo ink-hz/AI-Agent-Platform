@@ -24,7 +24,7 @@ image_name="$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$api_contain
 [[ "$image_name" == orbbec-agent-platform:* ]] || fail
 
 if ! result="$(
-  /usr/bin/docker run --rm \
+  /usr/bin/docker run --rm -i \
     --user 10001:10001 \
     --read-only \
     --cap-drop ALL \

@@ -31,7 +31,7 @@ def test_forced_import_rejects_commands_and_prints_bounded_acknowledgement():
     script = FORCED.read_text(encoding="utf-8")
 
     assert "SSH_ORIGINAL_COMMAND" in script
-    assert "docker run --rm" in script
+    assert "docker run --rm -i" in script
     assert "--network orbbec-agent-platform-internal" in script
     assert "{{.Config.Image}}" in script
     assert "run --rm --no-deps -T" not in script
