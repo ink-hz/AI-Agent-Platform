@@ -66,6 +66,11 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     for forbidden in ("clientSecret:", "dingtalk-app-secret:", "corp-id:"):
         assert forbidden not in serialized
     assert services["platform-loopback"]["ports"] == ["127.0.0.1:8080:8080"]
+    assert services["platform-loopback"]["environment"] == {
+        "PLATFORM_LOOPBACK_TARGET_BASE_URL": "http://172.30.0.4:8080",
+        "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS": "127.0.0.1/32,172.31.0.1/32",
+        "PLATFORM_LOOPBACK_SOURCE_ADDRESS": "172.30.0.3",
+    }
     for name, service in services.items():
         if name != "platform-loopback":
             assert "ports" not in service
