@@ -123,6 +123,18 @@ def test_cutover_and_rollback_are_atomic_and_fae_safe():
     assert '/bin/ln -sfn "$PREVIOUS_RELEASE" "$platform_root/current"' in rollback
 
 
+def test_cutover_supports_a_fail_closed_first_owner_login_stage():
+    publish = (CLOUD / "publish-dingtalk-production.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--allow-unbound-owner" in publish
+    assert 'expected_readiness="0:1:1"' in publish
+    assert 'OWNER_BOOTSTRAP=%q' in publish
+    assert "DINGTALK_PRODUCTION_OWNER_LOGIN_REQUIRED" in publish
+    assert "dingtalk_nginx_transaction.py" in publish
+
+
 def test_identity_secret_bootstrap_is_noninteractive_and_service_scoped():
     script = (CLOUD / "bootstrap-dingtalk-production-secrets.sh").read_text(
         encoding="utf-8"

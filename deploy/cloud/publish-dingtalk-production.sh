@@ -7,7 +7,13 @@ fail() {
   exit 1
 }
 
-[[ "$(${ID_BIN:-/usr/bin/id} -u)" == "0" && $# -eq 1 ]] || fail
+[[ "$(${ID_BIN:-/usr/bin/id} -u)" == "0" ]] || fail
+owner_bootstrap=0
+if [[ $# -eq 2 && "$2" == "--allow-unbound-owner" ]]; then
+  owner_bootstrap=1
+elif [[ $# -ne 1 ]]; then
+  fail
+fi
 release_path="$1"
 [[ "$release_path" == /opt/orbbec-agent-platform/releases/* ]] || fail
 transaction="$release_path/deploy/cloud/dingtalk_nginx_transaction.py"
@@ -48,15 +54,20 @@ readiness="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
     (select count(*) from platform_control.directory_state where singleton and active_generation_id is not null and last_complete_at > clock_timestamp() - interval '8 hours'), ':',
     (select count(*) from platform_control.worker_heartbeats where worker_name='dingtalk-directory-event' and status='healthy' and last_seen_at > clock_timestamp() - interval '2 minutes')
   )")" || fail
-[[ "$readiness" == "1:1:1" ]] || fail
+expected_readiness="1:1:1"
+if [[ "$owner_bootstrap" == "1" ]]; then
+  expected_readiness="0:1:1"
+fi
+[[ "$readiness" == "$expected_readiness" ]] || fail
 
 timestamp="$(/usr/bin/date -u +%Y%m%dT%H%M%SZ)"
 backup_path="/root/nginx-backups/agent-platform-dingtalk-$timestamp"
 /usr/bin/install -d -o root -g root -m 700 "$backup_path"
 /bin/cp -a "$agent_available" "$backup_path/agent-domain.conf"
-/usr/bin/printf 'BACKUP_PATH=%q\nRELEASE_PATH=%q\nPREVIOUS_RELEASE=%q\nPREVIOUS_ENVIRONMENT=%q\nFAE_ID=%q\nFAE_STARTED_AT=%q\n' \
+/usr/bin/printf 'BACKUP_PATH=%q\nRELEASE_PATH=%q\nPREVIOUS_RELEASE=%q\nPREVIOUS_ENVIRONMENT=%q\nFAE_ID=%q\nFAE_STARTED_AT=%q\nOWNER_BOOTSTRAP=%q\n' \
   "$backup_path" "$release_path" "$previous_release" \
-  "$release_path/PREVIOUS_PLATFORM_ENV" "$fae_id" "$fae_started_at" > "$state_path.part"
+  "$release_path/PREVIOUS_PLATFORM_ENV" "$fae_id" "$fae_started_at" \
+  "$owner_bootstrap" > "$state_path.part"
 /bin/chown root:root "$state_path.part"
 /bin/chmod 600 "$state_path.part"
 
@@ -96,4 +107,8 @@ done
 /bin/mv -f "$state_path.part" "$state_path"
 rollback_required=0
 trap - EXIT
-echo "DINGTALK_PRODUCTION_PUBLISH_OK"
+if [[ "$owner_bootstrap" == "1" ]]; then
+  echo "DINGTALK_PRODUCTION_OWNER_LOGIN_REQUIRED"
+else
+  echo "DINGTALK_PRODUCTION_PUBLISH_OK"
+fi
