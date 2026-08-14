@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 import base64
 import json
@@ -82,6 +83,7 @@ def test_demo_runner_is_profiled_secure_and_uses_both_compose_networks() -> None
     assert runner["user"] == "0:0"
     assert runner["read_only"] is True
     assert runner["cap_drop"] == ["ALL"]
+    assert "cap_add" not in runner
     assert runner["security_opt"] == ["no-new-privileges:true"]
     assert runner["tmpfs"] == [
         "/tmp:rw,noexec,nosuid,size=32m,uid=0,gid=0,mode=0700"
@@ -255,6 +257,10 @@ def test_secret_bootstrap_has_fixed_root_only_idempotent_boundary() -> None:
     assert "provider-lookup-hmac" in script
     assert "rate-limit-hmac" in script
     assert "overlaps" in script
+    assert "--cap-drop ALL --cap-add CHOWN" in script
+    assert "DAC_OVERRIDE" not in script
+    assert "DAC_READ_SEARCH" not in script
+    assert "FOWNER" not in script
     for expected in (
         "dingtalk-app-key",
         "dingtalk-agent-id",
@@ -295,11 +301,55 @@ def test_runtime_api_cannot_reach_offline_migrator_worker_or_allowlist_secrets()
         assert offline_name not in api_contract
     assert "RUNTIME_NAMES" in bootstrap
     assert "OFFLINE_NAMES" in bootstrap
+    assert "RUNNER_NAMES" in bootstrap
     assert "os.chmod(runtime, 0o750)" in bootstrap
     assert "os.chmod(offline, 0o700)" in bootstrap
+    assert "os.chmod(runner, 0o700)" in bootstrap
     assert "os.chown(runtime, 0, 10001)" in bootstrap
     assert "os.chown(offline, 0, 0)" in bootstrap
+    assert "os.chown(runner, 0, 0)" in bootstrap
     assert value["x-demo-preview-image-smoke"]["run_user"] == "0:0"
+
+
+def test_runner_secret_projection_is_exact_root_only_atomic_and_resumable() -> None:
+    script = BOOTSTRAP.read_text(encoding="utf-8")
+    embedded = script.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    tree = ast.parse(embedded)
+    assignments = {
+        target.id: ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+        and target.id in {"RUNTIME_NAMES", "OFFLINE_NAMES", "RUNNER_NAMES"}
+    }
+
+    assert set(assignments["RUNNER_NAMES"]) == {
+        "dingtalk-app-key",
+        "dingtalk-corp-id",
+        "dingtalk-app-secret",
+        "preview-identity-encryption-keyring",
+        "preview-identity-hmac-keyring",
+        "preview-control-migrator-database-url",
+        "preview-control-directory-worker-database-url",
+        "demo-userids",
+    }
+    assert set(assignments["RUNNER_NAMES"]).issubset(
+        set(assignments["RUNTIME_NAMES"]) | set(assignments["OFFLINE_NAMES"])
+    )
+    assert "runner_staging = staging / \"runner\"" in embedded
+    assert (
+        "write_secret(runtime_staging / name, payloads[name], 10001, 10001)"
+        in embedded
+    )
+    assert "write_secret(offline_staging / name, payloads[name], 0, 0)" in embedded
+    assert "write_secret(runner_staging / name, payloads[name], 0, 0)" in embedded
+    assert "os.chmod(destination, 0o400)" in embedded
+    assert (
+        "os.replace(staging_directory / name, target_directory / name)" in embedded
+    )
+    assert "remove_stale_entries(target_directory, names)" in embedded
+    assert "shutil.rmtree(staging, ignore_errors=True)" in embedded
 
 
 def test_secret_bootstrap_reads_each_source_once_through_a_verified_dirfd() -> None:
@@ -351,16 +401,34 @@ def test_runtime_image_contains_control_migrations_for_preview_migrate_smoke() -
 
 def test_static_image_smoke_contract_migrates_bootstraps_and_checks_minimal_health() -> None:
     smoke = _overlay()["x-demo-preview-image-smoke"]
+    assert smoke["runner_secret_dir"] == "/run/demo-preview-secrets/runner"
 
     migrate = " ".join(smoke["migrate"])
     bootstrap = " ".join(smoke["bootstrap"])
     assert "python -m app.control_plane.migrate" in migrate
     assert "preview-control-migrator-database-url" in migrate
+    assert (
+        "/run/demo-preview-secrets/runner/preview-control-migrator-database-url"
+        in migrate
+    )
     assert "platform_control_owner_preview" in migrate
     assert "/app/backend/control_migrations" in migrate
     assert "python -m app.control_plane.demo_bootstrap" in bootstrap
     assert "preview-control-directory-worker-database-url" in bootstrap
     assert "--userid-file" in bootstrap and "demo-userids" in bootstrap
+    for secret_name in (
+        "dingtalk-app-key",
+        "dingtalk-corp-id",
+        "dingtalk-app-secret",
+        "preview-identity-encryption-keyring",
+        "preview-identity-hmac-keyring",
+        "preview-control-directory-worker-database-url",
+        "demo-userids",
+    ):
+        assert secret_name in bootstrap
+    assert "/run/demo-preview-secrets/runner/$${secret_name}" in bootstrap
+    assert "/run/demo-preview-secrets/runtime/" not in bootstrap
+    assert "/run/demo-preview-secrets/offline/" not in bootstrap
     assert smoke["api_service"] == "platform-api-demo-preview"
     assert smoke["runner_service"] == "platform-demo-preview-runner"
     assert smoke["loopback_service"] == "platform-loopback-demo-preview"

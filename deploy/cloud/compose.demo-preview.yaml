@@ -5,7 +5,7 @@ x-demo-preview-image-smoke:
     - -ec
     - |
       install -d -m 0700 /tmp/demo-preview-migrate
-      install -m 0600 /run/demo-preview-secrets/offline/preview-control-migrator-database-url /tmp/demo-preview-migrate/database-url
+      install -m 0600 /run/demo-preview-secrets/runner/preview-control-migrator-database-url /tmp/demo-preview-migrate/database-url
       export PLATFORM_CONTROL_MIGRATOR_DATABASE_URL_FILE=/tmp/demo-preview-migrate/database-url
       export PLATFORM_CONTROL_OWNER_ROLE=platform_control_owner_preview
       export PLATFORM_CONTROL_MIGRATION_DIR=/app/backend/control_migrations
@@ -16,11 +16,8 @@ x-demo-preview-image-smoke:
     - |
       secret_dir=/tmp/demo-preview-bootstrap
       install -d -m 0700 "$${secret_dir}"
-      for secret_name in dingtalk-app-key dingtalk-corp-id dingtalk-app-secret preview-identity-encryption-keyring preview-identity-hmac-keyring; do
-        install -m 0600 "/run/demo-preview-secrets/runtime/$${secret_name}" "$${secret_dir}/$${secret_name}"
-      done
-      for secret_name in preview-control-directory-worker-database-url demo-userids; do
-        install -m 0600 "/run/demo-preview-secrets/offline/$${secret_name}" "$${secret_dir}/$${secret_name}"
+      for secret_name in dingtalk-app-key dingtalk-corp-id dingtalk-app-secret preview-identity-encryption-keyring preview-identity-hmac-keyring preview-control-directory-worker-database-url demo-userids; do
+        install -m 0600 "/run/demo-preview-secrets/runner/$${secret_name}" "$${secret_dir}/$${secret_name}"
       done
       export PLATFORM_CONTROL_DIRECTORY_DATABASE_URL_FILE="$${secret_dir}/preview-control-directory-worker-database-url"
       export PLATFORM_DINGTALK_APP_KEY_FILE="$${secret_dir}/dingtalk-app-key"
@@ -31,6 +28,7 @@ x-demo-preview-image-smoke:
       exec python -m app.control_plane.demo_bootstrap --userid-file "$${secret_dir}/demo-userids"
   api_service: platform-api-demo-preview
   runner_service: platform-demo-preview-runner
+  runner_secret_dir: /run/demo-preview-secrets/runner
   loopback_service: platform-loopback-demo-preview
   health_url: http://127.0.0.1:8081/_preview/dingtalk-r1/api/health
   expected_health:

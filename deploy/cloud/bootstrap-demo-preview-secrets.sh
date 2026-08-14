@@ -21,7 +21,7 @@ platform_image="${PLATFORM_IMAGE:-}"
 
 if ! /usr/bin/docker run --rm -i --network none --user 0:0 \
   --read-only --security-opt no-new-privileges \
-  --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+  --cap-drop ALL --cap-add CHOWN \
   --mount "type=bind,src=$private_path,dst=/source,readonly" \
   --mount "type=volume,src=$volume_name,dst=/target" \
   --tmpfs /tmp:rw,noexec,nosuid,size=8m \
@@ -71,6 +71,16 @@ RUNTIME_NAMES = (
 OFFLINE_NAMES = (
     "preview-control-directory-worker-database-url",
     "preview-control-migrator-database-url",
+    "demo-userids",
+)
+RUNNER_NAMES = (
+    "dingtalk-app-key",
+    "dingtalk-corp-id",
+    "dingtalk-app-secret",
+    "preview-identity-encryption-keyring",
+    "preview-identity-hmac-keyring",
+    "preview-control-migrator-database-url",
+    "preview-control-directory-worker-database-url",
     "demo-userids",
 )
 DSNS = {
@@ -221,29 +231,66 @@ def validate(payloads: dict[str, bytes]) -> None:
         reject()
 
 
+def write_secret(
+    destination: Path, payload: bytes, uid: int, gid: int
+) -> None:
+    with destination.open("xb") as writer:
+        writer.write(payload)
+        writer.flush()
+        os.fsync(writer.fileno())
+    os.chmod(destination, 0o400)
+    os.chown(destination, uid, gid)
+
+
+def remove_stale_entries(directory: Path, names: tuple[str, ...]) -> None:
+    expected = set(names)
+    for entry in directory.iterdir():
+        if entry.name in expected:
+            continue
+        if entry.is_symlink() or entry.is_file():
+            entry.unlink()
+        else:
+            reject()
+
+
+def publish(
+    staging_directory: Path,
+    target_directory: Path,
+    names: tuple[str, ...],
+) -> None:
+    for name in names:
+        os.replace(staging_directory / name, target_directory / name)
+    remove_stale_entries(target_directory, names)
+
+
 try:
     payloads = read_source_payloads()
     validate(payloads)
+    for entry in TARGET.iterdir():
+        if not entry.name.startswith(".stage-"):
+            continue
+        if entry.is_symlink() or not entry.is_dir():
+            reject()
+        shutil.rmtree(entry)
     staging = TARGET / (".stage-" + uuid4().hex)
     staging.mkdir(mode=0o700)
     try:
         runtime_staging = staging / "runtime"
         offline_staging = staging / "offline"
+        runner_staging = staging / "runner"
         runtime_staging.mkdir(mode=0o700)
         offline_staging.mkdir(mode=0o700)
-        for name, payload in payloads.items():
-            destination = (
-                runtime_staging if name in RUNTIME_NAMES else offline_staging
-            ) / name
-            with destination.open("xb") as writer:
-                writer.write(payload)
-                writer.flush()
-                os.fsync(writer.fileno())
-            os.chown(destination, 10001, 10001)
-            os.chmod(destination, 0o400)
+        runner_staging.mkdir(mode=0o700)
+        for name in RUNTIME_NAMES:
+            write_secret(runtime_staging / name, payloads[name], 10001, 10001)
+        for name in OFFLINE_NAMES:
+            write_secret(offline_staging / name, payloads[name], 0, 0)
+        for name in RUNNER_NAMES:
+            write_secret(runner_staging / name, payloads[name], 0, 0)
         runtime = TARGET / "runtime"
         offline = TARGET / "offline"
-        for directory in (runtime, offline):
+        runner = TARGET / "runner"
+        for directory in (runtime, offline, runner):
             if directory.exists() and (
                 directory.is_symlink() or not directory.is_dir()
             ):
@@ -253,10 +300,11 @@ try:
         os.chmod(runtime, 0o750)
         os.chown(offline, 0, 0)
         os.chmod(offline, 0o700)
-        for name in RUNTIME_NAMES:
-            os.replace(runtime_staging / name, runtime / name)
-        for name in OFFLINE_NAMES:
-            os.replace(offline_staging / name, offline / name)
+        os.chown(runner, 0, 0)
+        os.chmod(runner, 0o700)
+        publish(runtime_staging, runtime, RUNTIME_NAMES)
+        publish(offline_staging, offline, OFFLINE_NAMES)
+        publish(runner_staging, runner, RUNNER_NAMES)
         # Remove entries written by the pre-split draft, if any. A failed
         # upgrade therefore cannot leave privileged credentials API-readable.
         for name in EXPECTED:
@@ -265,7 +313,7 @@ try:
                 if legacy.is_symlink() or not legacy.is_file():
                     reject()
                 legacy.unlink()
-        for directory in (runtime, offline):
+        for directory in (runtime, offline, runner):
             descriptor = os.open(
                 directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
             )

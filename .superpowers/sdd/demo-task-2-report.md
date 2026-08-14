@@ -49,11 +49,12 @@ Base commit: `a66c2ce`
   fixed child through that directory FD with `O_NOFOLLOW`, validates regular
   file/owner/mode/size using `fstat`, and reads/copies only the bytes obtained
   from that same descriptor.
-- Volume files are owned by UID 10001 with mode `0400`. Runtime credentials
-  live under a root-owned/group-10001 `0750` directory. Migrator, directory
-  worker and allowlist inputs live under a root-only `0700` directory, so a
-  compromised API cannot read offline credentials even though one dedicated
-  volume is used.
+- API runtime files remain UID/GID 10001 with mode `0400` beneath a
+  root-owned/group-10001 `0750` directory. Offline files are root-owned `0400`
+  beneath root-only `0700`. A separate root-only `runner` projection contains
+  exactly the eight migration/bootstrap inputs as root-owned `0400` copies.
+  The API cannot traverse either root-only directory, while the root runner can
+  use owner permission with every capability dropped.
 - The runtime image now contains `backend/control_migrations`; a static image
   command contract records exact preview migration, allowlist bootstrap,
   API/loopback start and minimal-health steps for the target smoke gate.
@@ -63,6 +64,12 @@ Base commit: `a66c2ce`
   It mounts the preview secret volume read-only, uses a private root tmpfs,
   drops all capabilities, enables `no-new-privileges`, and joins both the
   internal database network and outbound edge network.
+- Secret publication stages and fsyncs every file on the target volume before
+  atomic `os.replace`. Re-running replaces each required file, prunes stale
+  file/symlink entries from runtime/offline/runner projections, removes stale
+  prior staging directories and legacy pre-split root entries, and leaves
+  unexpected directories fail-closed. The publication container now needs
+  only `CHOWN`; it has no DAC override/read-search or FOWNER capability.
 
 ## One-off Compose commands
 
@@ -78,7 +85,7 @@ PLATFORM_IMAGE="$image_ref" docker compose \
   -f "$release_path/deploy/cloud/compose.demo-preview.yaml" \
   run --rm --no-deps platform-demo-preview-runner /bin/sh -ec '
     install -d -m 0700 /tmp/migrate
-    install -m 0600 /run/demo-preview-secrets/offline/preview-control-migrator-database-url /tmp/migrate/database-url
+    install -m 0600 /run/demo-preview-secrets/runner/preview-control-migrator-database-url /tmp/migrate/database-url
     export PLATFORM_CONTROL_MIGRATOR_DATABASE_URL_FILE=/tmp/migrate/database-url
     export PLATFORM_CONTROL_OWNER_ROLE=platform_control_owner_preview
     export PLATFORM_CONTROL_MIGRATION_DIR=/app/backend/control_migrations
@@ -95,11 +102,8 @@ PLATFORM_IMAGE="$image_ref" docker compose \
   -f "$release_path/deploy/cloud/compose.demo-preview.yaml" \
   run --rm --no-deps platform-demo-preview-runner /bin/sh -ec '
     install -d -m 0700 /tmp/bootstrap
-    for name in dingtalk-app-key dingtalk-corp-id dingtalk-app-secret preview-identity-encryption-keyring preview-identity-hmac-keyring; do
-      install -m 0600 "/run/demo-preview-secrets/runtime/$name" "/tmp/bootstrap/$name"
-    done
-    for name in preview-control-directory-worker-database-url demo-userids; do
-      install -m 0600 "/run/demo-preview-secrets/offline/$name" "/tmp/bootstrap/$name"
+    for name in dingtalk-app-key dingtalk-corp-id dingtalk-app-secret preview-identity-encryption-keyring preview-identity-hmac-keyring preview-control-directory-worker-database-url demo-userids; do
+      install -m 0600 "/run/demo-preview-secrets/runner/$name" "/tmp/bootstrap/$name"
     done
     export PLATFORM_CONTROL_DIRECTORY_DATABASE_URL_FILE=/tmp/bootstrap/preview-control-directory-worker-database-url
     export PLATFORM_DINGTALK_APP_KEY_FILE=/tmp/bootstrap/dingtalk-app-key
@@ -139,11 +143,18 @@ Additional RED:
   merged static-address set.
 - Default-route determinism RED: `4 failed, 13 passed, 1 skipped`. The failures
   proved that both the API and runner had equal implicit gateway priority 0.
+- Runner permission projection RED: `3 failed, 15 passed, 1 skipped`. It proved
+  there was no root-owned runner projection and that the one-off commands still
+  mixed UID-10001 runtime files with root-only offline paths.
+- Secret publisher capability RED: `1 failed, 17 passed, 1 skipped`. It proved
+  the publisher still retained DAC override and FOWNER despite the new
+  owner-readable projection design.
 
 Final GREEN:
 
 - Network egress focused group: `16 passed, 1 skipped`.
 - Default-route determinism focused group: `17 passed, 1 skipped`.
+- Runner permission focused group: `18 passed, 1 skipped`.
 - Network egress related deployment/config group: `165 passed, 1 skipped`.
 - Full git-tracked backend suite after the egress repair: `1154 passed, 2 skipped`
   with 31 pre-existing Starlette/httpx deprecation warnings.
@@ -172,6 +183,10 @@ Final GREEN:
   reported `3 failed, 1165 passed, 2 skipped`; all three failures are confined
   to that agent's untracked prerequisite/deploy scripts. The tracked-only full
   suite above is the isolation-preserving Task 2 result.
+- During the runner-permission follow-up, a fresh tracked full run reported
+  `2 failed, 1173 passed, 2 skipped`; both failures are in concurrently edited
+  Task 4 release transaction/rollback assertions. The isolated Task 2 focused
+  suite remained `18 passed, 1 skipped`.
 
 ## Required target gate / deferred evidence
 
