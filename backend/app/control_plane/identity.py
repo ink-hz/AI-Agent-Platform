@@ -15,7 +15,49 @@ from .dingtalk import (
     DingTalkProviderError,
 )
 from .dsn import validate_control_dsn
-from .models import DirectoryFreshness
+from .models import (
+    ControlUser,
+    DirectoryFreshness,
+    DirectoryState,
+    ResolvedLoginIdentity,
+    Role,
+    StaleAccessDecision,
+)
+
+
+def decide_stale_access(
+    user: ControlUser,
+    directory: DirectoryState,
+) -> StaleAccessDecision:
+    if user.status != "active" or user.locally_invalidated_at is not None:
+        return StaleAccessDecision(False, True, "locally_inactive")
+    if (
+        directory.active_generation_id is None
+        or directory.last_complete_at is None
+    ):
+        return StaleAccessDecision(False, True, "unbound_identity")
+    if directory.freshness is DirectoryFreshness.HARD_STALE:
+        if user.role in {Role.PLATFORM_OWNER, Role.MANAGEMENT_VIEWER}:
+            if not user.last_confirmed_active:
+                return StaleAccessDecision(False, True, "unbound_identity")
+            return StaleAccessDecision(
+                True,
+                True,
+                "privileged_last_generation",
+            )
+        return StaleAccessDecision(False, True, "member_hard_stale")
+    if not user.last_confirmed_active:
+        return StaleAccessDecision(False, True, "unbound_identity")
+    if directory.freshness in {
+        DirectoryFreshness.FRESH,
+        DirectoryFreshness.WARNING,
+    }:
+        return StaleAccessDecision(
+            True,
+            False,
+            directory.freshness.value,
+        )
+    return StaleAccessDecision(False, True, "unbound_identity")
 
 
 class IdentityResolutionError(RuntimeError):
@@ -203,6 +245,105 @@ class IdentityResolver:
             raise IdentityResolutionError("provider identity collision") from None
         except psycopg.Error:
             raise IdentityResolutionError("identity persistence unavailable") from None
+
+    def _resolve_stale_transaction(
+        self,
+        auth_result: DingTalkAuthResult,
+    ) -> ResolvedLoginIdentity:
+        union = self.identity_codec.seal(
+            self.UNION_SUBJECT_KIND, auth_result.unionid
+        )
+        corporate = (
+            self.identity_codec.seal(
+                self.CORPORATE_SUBJECT_KIND,
+                self.corporate_provider_id(self._corp_id, auth_result.userid),
+            )
+            if auth_result.userid is not None
+            else None
+        )
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                self._check_key_policy(cursor)
+                cursor.execute(f"select {self.DIRECTORY_LOCK_FUNCTION}")
+                union_user = self._matching_user(
+                    self._lookup_rows(cursor, union), union
+                )
+                corporate_user = (
+                    self._matching_user(
+                        self._lookup_rows(cursor, corporate), corporate
+                    )
+                    if corporate is not None
+                    else union_user
+                )
+                if (
+                    union_user is None
+                    or corporate_user is None
+                    or union_user != corporate_user
+                ):
+                    raise IdentityResolutionError("directory unavailable")
+                status = cursor.execute(
+                    "select * from platform_control.read_active_directory_status_v20()"
+                ).fetchone()
+                user = cursor.execute(
+                    "select internal_user_id,role::text,status,"
+                    "locally_invalidated_at,last_confirmed_generation_id "
+                    "from platform_control.internal_users "
+                    "where internal_user_id=%s",
+                    (union_user,),
+                ).fetchone()
+                if status is None or user is None:
+                    raise IdentityResolutionError("directory unavailable")
+                control_user = ControlUser(
+                    internal_user_id=user["internal_user_id"],
+                    role=Role(user["role"]),
+                    status=user["status"],
+                    last_confirmed_active=(
+                        user["last_confirmed_generation_id"]
+                        == status["active_generation_id"]
+                    ),
+                    locally_invalidated_at=user["locally_invalidated_at"],
+                )
+                directory = DirectoryState(
+                    active_generation_id=status["active_generation_id"],
+                    last_complete_at=status["last_complete_at"],
+                    freshness=DirectoryFreshness.HARD_STALE,
+                )
+                decision = decide_stale_access(control_user, directory)
+                if not decision.allowed:
+                    raise IdentityResolutionError("directory unavailable")
+                return ResolvedLoginIdentity(
+                    union_user,
+                    decision.read_only,
+                    decision.reason,
+                )
+        except IdentityResolutionError:
+            raise
+        except (IdentityCryptoError, psycopg.Error, ValueError):
+            raise IdentityResolutionError("directory unavailable") from None
+
+    async def resolve_login_identity(
+        self,
+        auth_result: DingTalkAuthResult,
+        freshness: DirectoryFreshness,
+    ) -> ResolvedLoginIdentity:
+        if not isinstance(auth_result, DingTalkAuthResult):
+            raise IdentityResolutionError("authentication result invalid")
+        if auth_result.corp_id != self._corp_id:
+            raise IdentityResolutionError("organization mismatch")
+        if not auth_result.unionid:
+            raise IdentityResolutionError("stable identity required")
+        if freshness is DirectoryFreshness.HARD_STALE:
+            return await asyncio.to_thread(
+                self._resolve_stale_transaction, auth_result
+            )
+        internal_user_id = await self.resolve_active_member(
+            auth_result, freshness
+        )
+        return ResolvedLoginIdentity(
+            internal_user_id,
+            False,
+            freshness.value,
+        )
 
     async def resolve_active_member(
         self,

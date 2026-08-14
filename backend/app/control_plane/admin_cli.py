@@ -54,6 +54,7 @@ _RECEIPT_FIELDS = frozenset(
         "protected_target_lookup_hash",
         "protected_target_lookup_version",
         "generation_id",
+        "accepted_stale_generation_id",
         "backup_reference",
         "incident_reference",
         "approvers",
@@ -154,6 +155,9 @@ def _validated_receipt_payload(payload: dict[str, object]) -> dict[str, object]:
     try:
         UUID(str(payload["operation_id"]))
         UUID(str(payload["generation_id"]))
+        accepted_stale = payload["accepted_stale_generation_id"]
+        if accepted_stale is not None:
+            UUID(str(accepted_stale))
         owner = payload["current_owner_internal_user_id"]
         if owner is not None:
             UUID(str(owner))
@@ -179,6 +183,10 @@ def _validated_receipt_payload(payload: dict[str, object]) -> dict[str, object]:
         or _HEX_64.fullmatch(payload["protected_target_lookup_hash"]) is None
         or not isinstance(payload["directory_generation_digest"], str)
         or _HEX_64.fullmatch(payload["directory_generation_digest"]) is None
+        or (
+            accepted_stale is not None
+            and str(accepted_stale) != str(payload["generation_id"])
+        )
     ):
         raise ValueError("confirmation receipt invalid")
     for key in (
@@ -433,6 +441,8 @@ class OfflineOwnerAdministrator:
             "matching audit intent required",
             "operation identity collision",
             "target unavailable in selected generation",
+            "explicit stale generation acceptance required",
+            "stale generation acceptance invalid",
         }
         return ValueError(
             message if message in allowed else "offline owner administration failed"
@@ -477,10 +487,15 @@ class OfflineOwnerAdministrator:
         approvers: tuple[str, str],
         backup_reference: str,
         incident_reference: str,
+        accept_stale_generation: UUID | None = None,
         operation_id: UUID | None = None,
     ) -> dict[str, object]:
         if action not in {"bind", "replace"}:
             raise ValueError("owner operation invalid")
+        if accept_stale_generation is not None and (
+            action != "replace" or accept_stale_generation != generation_id
+        ):
+            raise ValueError("stale generation acceptance invalid")
         if (
             len(approvers) != 2
             or len(set(approvers)) != 2
@@ -498,8 +513,12 @@ class OfflineOwnerAdministrator:
         try:
             with self._connection() as connection:
                 precondition = connection.execute(
-                    "select * from platform_control.owner_change_precondition(%s,%s)",
-                    (generation_id, target),
+                    "select * from platform_control.owner_change_precondition_v22(%s,%s,%s)",
+                    (
+                        generation_id,
+                        target,
+                        accept_stale_generation == generation_id,
+                    ),
                 ).fetchone()
             if precondition is None:
                 raise ValueError("owner precondition unavailable")
@@ -522,6 +541,11 @@ class OfflineOwnerAdministrator:
                 "protected_target_lookup_version"
             ],
             "generation_id": str(generation_id),
+            "accepted_stale_generation_id": (
+                str(accept_stale_generation)
+                if accept_stale_generation is not None
+                else None
+            ),
             "backup_reference": backup_reference,
             "incident_reference": incident_reference,
             "approvers": list(approvers),
@@ -560,8 +584,8 @@ class OfflineOwnerAdministrator:
             try:
                 try:
                     row = connection.execute(
-                        "select platform_control.change_platform_owner_v2("
-                        "%s,%s,%s,%s,%s,%s,%s,%s) as result",
+                        "select platform_control.change_platform_owner_v22("
+                        "%s,%s,%s,%s,%s,%s,%s,%s,%s) as result",
                         (
                             correlation_id,
                             operation,
@@ -571,6 +595,7 @@ class OfflineOwnerAdministrator:
                             selected["current_owner_row_version"],
                             selected["target_row_version"],
                             requested_event_id,
+                            selected["accepted_stale_generation_id"] is not None,
                         ),
                     ).fetchone()
                 except (psycopg.errors.CheckViolation, psycopg.errors.UniqueViolation) as error:
@@ -753,6 +778,7 @@ class OfflineOwnerAdministrator:
         approvers: tuple[str, str],
         backup_reference: str,
         incident_reference: str,
+        accept_stale_generation: UUID | None = None,
         request_id: UUID | None = None,
     ) -> dict[str, str]:
         payload = self.prepare_owner_change(
@@ -764,6 +790,7 @@ class OfflineOwnerAdministrator:
             approvers=approvers,
             backup_reference=backup_reference,
             incident_reference=incident_reference,
+            accept_stale_generation=accept_stale_generation,
             operation_id=request_id,
         )
         return self._change_owner(
@@ -820,6 +847,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     replace = subparsers.add_parser("replace-owner")
     _common_owner_arguments(replace)
+    replace.add_argument("--accept-stale-generation", type=UUID)
 
     reconcile = subparsers.add_parser("reconcile-owner")
     reconcile.add_argument("--provider-id-file", required=True)
@@ -947,6 +975,9 @@ def main(argv: list[str] | None = None) -> int:
         approvers=request.approvers,
         backup_reference=namespace.backup_reference,
         incident_reference=namespace.incident_reference,
+        accept_stale_generation=getattr(
+            namespace, "accept_stale_generation", None
+        ),
         operation_id=operation_id,
     )
     if namespace.confirm is None:

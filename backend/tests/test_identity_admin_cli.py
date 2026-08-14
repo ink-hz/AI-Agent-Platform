@@ -77,6 +77,7 @@ def test_parser_uses_provider_file_and_never_name_mobile_or_web_owner_route() ->
     assert "approver" in replace_actions
     assert "--backup-reference" in replace_help
     assert "--incident-reference" in replace_help
+    assert "--accept-stale-generation" in replace_help
     assert "--receipt-file" in replace_help
     assert "--receipt-key-file" in replace_help
     assert "--confirm" in replace_help
@@ -175,6 +176,7 @@ def _receipt_payload() -> dict[str, object]:
         "protected_target_lookup_hash": "a" * 64,
         "protected_target_lookup_version": 2,
         "generation_id": str(uuid4()),
+        "accepted_stale_generation_id": None,
         "backup_reference": "BACKUP_2026_001",
         "incident_reference": "INC_2026_001",
         "approvers": ["uid:1001", "uid:1002"],
@@ -374,6 +376,11 @@ def test_offline_bind_and_replace_select_stable_mapping_and_keep_one_owner(
                     "Same Display Name",
                 ),
             )
+        connection.execute(
+            "update platform_control.directory_state set active_generation_id=%s,"
+            "last_complete_at=clock_timestamp() where singleton",
+            (generation_id,),
+        )
 
     administrator = OfflineOwnerAdministrator(
         environment["urls"]["platform_control_migrator"],
@@ -518,6 +525,11 @@ def test_offline_owner_reconcile_uses_signed_prestate_without_second_mutation(
              protected.ciphertext, protected.encryption_key_version,
              "Reconcile Target"),
         )
+        connection.execute(
+            "update platform_control.directory_state set active_generation_id=%s,"
+            "last_complete_at=clock_timestamp() where singleton",
+            (generation_id,),
+        )
     real_writer = AuditWriter.from_database_url(
         environment["urls"]["platform_audit_append_preview"]
     )
@@ -605,6 +617,11 @@ def test_owner_confirm_reconcile_interleaving_never_creates_two_terminals(
              protected.lookup_hmac, protected.lookup_key_version,
              protected.ciphertext, protected.encryption_key_version,
              "Owner Race Target"),
+        )
+        connection.execute(
+            "update platform_control.directory_state set active_generation_id=%s,"
+            "last_complete_at=clock_timestamp() where singleton",
+            (generation_id,),
         )
     writer = AuditWriter.from_database_url(
         environment["urls"]["platform_audit_append"]

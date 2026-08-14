@@ -188,7 +188,11 @@ class FakeAuditWriter:
 def _client(context: AuthContext, *, csrf=True, fresh=True):
     repository = FakeManagementRepository()
     audit = FakeAuditWriter()
-    service = ManagementService(repository, audit)
+    service = ManagementService(
+        repository,
+        audit,
+        hard_stale_audit=lambda *_args: None,
+    )
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[authenticated_context] = lambda: context

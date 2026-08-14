@@ -16,7 +16,13 @@ import psycopg
 from psycopg.rows import dict_row
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from .models import AuthContext, DirectoryFreshness, IdentityMode, IssuedWebSession
+from .models import (
+    AuthContext,
+    DirectoryFreshness,
+    IdentityMode,
+    IssuedWebSession,
+    ResolvedLoginIdentity,
+)
 from .models import Role
 from .dsn import validate_control_dsn
 
@@ -288,6 +294,7 @@ class DingTalkWebAuth:
         rate_limiter=None,
         trusted_proxy_networks=(),
         close_callbacks: tuple[Callable[[], Awaitable[None]], ...] = (),
+        hard_stale_audit: Callable[[UUID, str, str], None] | None = None,
     ) -> None:
         if environment not in {"production", "preview"}:
             raise ValueError("authentication environment invalid")
@@ -319,6 +326,7 @@ class DingTalkWebAuth:
         self.rate_limiter = rate_limiter
         self.trusted_proxy_networks = tuple(trusted_proxy_networks)
         self._close_callbacks = close_callbacks
+        self.hard_stale_audit = hard_stale_audit
 
     async def aclose(self) -> None:
         for callback in self._close_callbacks:
@@ -416,10 +424,10 @@ class DingTalkWebAuth:
             ):
                 raise AuthenticationError("login attempt invalid")
             if self.rate_limiter is None:
-                internal_user_id = await login(code, verifier)
+                resolved_identity = await login(code, verifier)
             else:
                 async with self.rate_limiter.provider_exchange():
-                    internal_user_id = await login(code, verifier)
+                    resolved_identity = await login(code, verifier)
         except (RateLimitExceeded, RateLimitUnavailable):
             self.repository.fail_attempt(attempt.attempt_id, "provider_exchange_failed")
             raise
@@ -428,6 +436,17 @@ class DingTalkWebAuth:
             raise AuthenticationError("login unavailable") from None
         cookie_token = self.secrets.random_token()
         csrf_token = self.secrets.random_token()
+        if isinstance(resolved_identity, ResolvedLoginIdentity):
+            internal_user_id = resolved_identity.internal_user_id
+            hard_stale_read_only = resolved_identity.hard_stale_read_only
+        elif isinstance(resolved_identity, UUID):
+            internal_user_id = resolved_identity
+            hard_stale_read_only = False
+        else:
+            self.repository.fail_attempt(
+                attempt.attempt_id, "provider_exchange_failed"
+            )
+            raise AuthenticationError("login unavailable")
         result = self.repository.issue_session(
             attempt_id=attempt.attempt_id,
             internal_user_id=internal_user_id,
@@ -437,10 +456,25 @@ class DingTalkWebAuth:
             csrf_key_version=self.secrets.key_version,
             idle_seconds=self.IDLE_SECONDS,
             absolute_seconds=self.ABSOLUTE_SECONDS,
+            hard_stale_read_only=hard_stale_read_only,
         )
         if result is None:
             raise AuthenticationError("login unavailable")
         session_id, idle_expires_at, absolute_expires_at = result
+        if hard_stale_read_only:
+            try:
+                if self.hard_stale_audit is None:
+                    raise AuthenticationError("required audit unavailable")
+                self.hard_stale_audit(internal_user_id, "login", "self")
+            except Exception:
+                try:
+                    self.repository.revoke_session(
+                        session_id=session_id,
+                        reason="hard_stale_audit_failed",
+                    )
+                except Exception:
+                    pass
+                raise AuthenticationError("required audit unavailable") from None
         return CompletedLogin(
             IssuedWebSession(
                 session_id=session_id,
@@ -589,16 +623,18 @@ class WebSessionRepository:
         self, *, attempt_id: UUID, internal_user_id: UUID,
         token_digest: bytes, token_key_version: int, csrf_digest: bytes,
         csrf_key_version: int, idle_seconds: int, absolute_seconds: int,
+        hard_stale_read_only: bool = False,
     ):
         try:
             session_id = uuid4()
             with self._connection() as connection:
                 row = connection.execute(
-                    "select * from platform_control.consume_attempt_and_issue_session(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "select * from platform_control.consume_attempt_and_issue_session_v22(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         attempt_id,internal_user_id,session_id,token_digest,
                         token_key_version,csrf_digest,csrf_key_version,
                         idle_seconds,absolute_seconds,
+                        hard_stale_read_only,
                     ),
                 ).fetchone()
             if row is None:
@@ -611,7 +647,7 @@ class WebSessionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select * from platform_control.authenticate_web_session(%s,%s,%s)",
+                    "select * from platform_control.authenticate_web_session_v22(%s,%s,%s)",
                     (token_digest,token_key_version,idle_seconds),
                 ).fetchone()
             if row is None:
@@ -683,6 +719,37 @@ class SystemHealthAuditWriter:
                 row = connection.execute(
                     "select platform_control.append_system_health_read(%s,%s,%s) as event_id",
                     (event_id,context.internal_user_id,request_id),
+                ).fetchone()
+            if row is None or row["event_id"] != event_id:
+                raise AuthenticationError("required audit unavailable")
+        except AuthenticationError:
+            raise
+        except psycopg.Error:
+            raise AuthenticationError("required audit unavailable") from None
+
+
+class HardStaleAccessAuditWriter:
+    def __init__(self, audit_database_url: str, *, connect=psycopg.connect) -> None:
+        parsed = validate_control_dsn(audit_database_url, purpose="audit")
+        self.environment = parsed.environment
+        self._database_url = audit_database_url
+        self._connect = connect
+
+    def __call__(self, actor: UUID, access_kind: str, target: str) -> None:
+        if access_kind not in {"login", "read"}:
+            raise AuthenticationError("required audit unavailable")
+        try:
+            event_id = uuid4()
+            with self._connect(
+                self._database_url,
+                connect_timeout=3,
+                options="-c statement_timeout=10000",
+                row_factory=dict_row,
+            ) as connection:
+                row = connection.execute(
+                    "select platform_control.append_hard_stale_access_v22("
+                    "%s,%s,%s,%s,%s) as event_id",
+                    (event_id, actor, access_kind, target, uuid4()),
                 ).fetchone()
             if row is None or row["event_id"] != event_id:
                 raise AuthenticationError("required audit unavailable")

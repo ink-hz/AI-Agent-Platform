@@ -389,7 +389,13 @@ class ManagementRepository:
 
 
 class ManagementService:
-    def __init__(self, repository: Any, audit_writer: Any) -> None:
+    def __init__(
+        self,
+        repository: Any,
+        audit_writer: Any,
+        *,
+        hard_stale_audit=None,
+    ) -> None:
         repository_environment = getattr(repository, "environment", None)
         audit_environment = getattr(audit_writer, "environment", None)
         if (
@@ -400,6 +406,22 @@ class ManagementService:
             raise ValueError("control and audit environment mismatch")
         self.repository = repository
         self.audit_writer = audit_writer
+        self.hard_stale_audit = hard_stale_audit
+
+    def _hard_stale_read(
+        self, context: AuthContext, target: str, value: Any
+    ) -> Any:
+        if not context.hard_stale_read_only:
+            return value
+        try:
+            if self.hard_stale_audit is None:
+                raise RuntimeError("required audit unavailable")
+            self.hard_stale_audit(context.internal_user_id, "read", target)
+            return value
+        except Exception:
+            raise HTTPException(
+                status_code=503, detail="required audit unavailable"
+            ) from None
 
     @staticmethod
     def _reason(reason: str, expected: str) -> str:
@@ -462,11 +484,14 @@ class ManagementService:
             {"operation_id": str(operation_id), "result": "requested"},
             operation_id,
         )
-        return self._execute(
+        value = self._execute(
             requested,
             lambda audit_event_id: self._read_result(
                 self.repository.list_users(), operation_id
             ),
+        )
+        return self._hard_stale_read(
+            context, "management_user_directory", value
         )
 
     @staticmethod
@@ -618,12 +643,13 @@ class ManagementService:
             {"operation_id": str(operation_id), "result": "requested"},
             operation_id,
         )
-        return self._execute(
+        value = self._execute(
             requested,
             lambda event_id: self._read_result(
                 self.repository.governance_audit(), operation_id
             ),
         )
+        return self._hard_stale_read(context, "governance_audit", value)
 
 
 @router.get("/users")

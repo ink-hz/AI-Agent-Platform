@@ -23,8 +23,12 @@ viewer immediately loses audit access.
 4. Complete and verify a control database backup. Record its constrained token
    (`BACKUP_...`), a constrained incident token (`INC_...`), and two distinct
    stable approver IDs (`uid:<number>`, approved OS identity, or internal UUID).
-5. Prefer the current active, fresh, complete directory generation. Task 4 does
-   not provide hard-stale Web mutation continuity. If no trustworthy complete
+5. Use the current active complete directory generation. With a fresh
+   generation, no stale-acceptance flag is allowed. After the 24-hour hard-stale
+   threshold, only `replace-owner` may proceed and it requires
+   `--accept-stale-generation` with the exact same generation UUID. The target
+   must have a previously verified stable mapping, be active in that generation,
+   and have no later local departure or disablement. If no trustworthy complete
    generation exists, stop and use the database-incident/two-person recovery
    process; never construct an identity from a name.
 
@@ -95,6 +99,32 @@ First create the replacement receipt:
   --receipt-key-file /run/secrets/platform-owner-receipt-keyring \
   --receipt-key-version 1
 ```
+
+## Hard-stale owner replacement
+
+This is the only role mutation allowed while the directory is hard stale. Use
+the same two-step dry-run and confirmation flow shown above, but add the exact
+last complete generation explicitly to both invocations:
+
+```bash
+.venv/bin/python -m app.control_plane.admin_cli replace-owner \
+  --provider-id-file /run/secrets/platform-replacement-provider-id \
+  --generation-id 00000000-0000-0000-0000-000000000000 \
+  --accept-stale-generation 00000000-0000-0000-0000-000000000000 \
+  --incident-reference INC_2026_003 \
+  --backup-reference BACKUP_2026_003 \
+  --approver uid:1001 --approver uid:1002 \
+  --receipt-file /run/platform-control/replace-owner-stale-receipt.json \
+  --receipt-key-file /run/secrets/platform-owner-receipt-keyring \
+  --receipt-key-version 1
+```
+
+The confirmation command must repeat the same arguments and add `--confirm`
+with that receipt path. The database rechecks the active generation,
+hard-stale threshold, exact target membership, local invalidation, owner/target
+row versions, and immutable requested audit event while holding the directory
+coordination lock. The replacement owner's Web access remains read-only until
+a fresh complete directory reconciliation confirms normal access again.
 
 ```bash
 .venv/bin/python -m app.control_plane.admin_cli replace-owner \

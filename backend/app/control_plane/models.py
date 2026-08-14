@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 
@@ -37,6 +38,43 @@ class DirectoryFreshness(StrEnum):
     FRESH = "fresh"
     WARNING = "warning"
     HARD_STALE = "hard_stale"
+
+
+@dataclass(frozen=True)
+class ControlUser:
+    internal_user_id: UUID
+    role: Role
+    status: str
+    last_confirmed_active: bool
+    locally_invalidated_at: datetime | None
+
+
+@dataclass(frozen=True)
+class DirectoryState:
+    active_generation_id: UUID | None
+    last_complete_at: datetime | None
+    freshness: DirectoryFreshness
+
+
+@dataclass(frozen=True)
+class StaleAccessDecision:
+    allowed: bool
+    read_only: bool
+    reason: Literal[
+        "fresh",
+        "warning",
+        "member_hard_stale",
+        "privileged_last_generation",
+        "locally_inactive",
+        "unbound_identity",
+    ]
+
+
+@dataclass(frozen=True)
+class ResolvedLoginIdentity:
+    internal_user_id: UUID
+    hard_stale_read_only: bool
+    reason: str
 
 
 @dataclass(frozen=True)

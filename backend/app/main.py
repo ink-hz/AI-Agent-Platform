@@ -28,6 +28,7 @@ from .control_plane.routes_auth import build_auth_router
 from .control_plane.auth import (
     AuthSecrets,
     DingTalkWebAuth,
+    HardStaleAccessAuditWriter,
     SystemHealthAuditWriter,
     WebSessionRepository,
 )
@@ -276,7 +277,7 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
             warning_after_seconds=control.warning_after_seconds,
             hard_stale_after_seconds=control.hard_stale_after_seconds,
         )
-        return await resolver.resolve_active_member(result, freshness)
+        return await resolver.resolve_login_identity(result, freshness)
 
     async def qr_login(code: str, verifier: str):
         return await resolve(qr_client, qr_resolver, code, verifier)
@@ -302,6 +303,13 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
             for value in control.trusted_proxy_cidrs
         ),
         close_callbacks=(qr_client.aclose, in_client.aclose),
+        hard_stale_audit=(
+            HardStaleAccessAuditWriter(
+                read_secret_file(control.audit_database_url_file)
+            )
+            if control.audit_database_url_file
+            else None
+        ),
     )
 
 

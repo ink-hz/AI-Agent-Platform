@@ -1309,7 +1309,7 @@ async def test_identical_generation_promotion_preserves_bound_session_then_depar
         production_environment["urls"]["platform_control_app"]
     ) as connection:
         authenticated = connection.execute(
-            "select session_id from platform_control.authenticate_web_session(%s,1,28800)",
+            "select session_id from platform_control.authenticate_web_session_v22(%s,1,28800)",
             (token_hash,),
         ).fetchone()
     assert authenticated == (session_id,)
@@ -1330,7 +1330,7 @@ async def test_identical_generation_promotion_preserves_bound_session_then_depar
         production_environment["urls"]["platform_control_app"]
     ) as connection:
         assert connection.execute(
-            "select session_id from platform_control.authenticate_web_session(%s,1,28800)",
+            "select session_id from platform_control.authenticate_web_session_v22(%s,1,28800)",
             (token_hash,),
         ).fetchone() is None
 

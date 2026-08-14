@@ -125,7 +125,8 @@ class SessionRepository:
 
     def issue_session(self, *, attempt_id, internal_user_id, token_digest,
                       token_key_version, csrf_digest, csrf_key_version,
-                      idle_seconds, absolute_seconds):
+                      idle_seconds, absolute_seconds,
+                      hard_stale_read_only=False):
         for row in self.attempts.values():
             if row["record"].attempt_id == attempt_id and row["claimed"] and not row["consumed"]:
                 row["consumed"] = True
@@ -139,6 +140,7 @@ class SessionRepository:
                     "idle": now + timedelta(seconds=idle_seconds),
                     "absolute": now + timedelta(seconds=absolute_seconds),
                     "revoked": False,
+                    "hard_stale_read_only": hard_stale_read_only,
                 }
                 return session_id, now + timedelta(seconds=idle_seconds), now + timedelta(seconds=absolute_seconds)
         return None
@@ -147,7 +149,10 @@ class SessionRepository:
         row = self.sessions.get(token_digest)
         if row is None or row["revoked"]:
             return None
-        return AuthContext(row["user"], row["role"], row["session_id"], False), row["csrf"]
+        return AuthContext(
+            row["user"], row["role"], row["session_id"],
+            row["hard_stale_read_only"],
+        ), row["csrf"]
 
     def revoke_session(self, *, session_id, reason):
         for row in self.sessions.values():
@@ -376,8 +381,8 @@ def test_migration_015_revokes_direct_attempt_and_session_dml(production_environ
         "platform_control.create_web_login_attempt(uuid,text,bytea,integer,bytea,integer,bytea,text,text,integer)",
         "platform_control.claim_web_login_attempt(bytea,integer,text,text)",
         "platform_control.fail_web_login_attempt(uuid,text)",
-        "platform_control.consume_attempt_and_issue_session(uuid,uuid,uuid,bytea,integer,bytea,integer,integer,integer)",
-        "platform_control.authenticate_web_session(bytea,integer,integer)",
+        "platform_control.consume_attempt_and_issue_session_v22(uuid,uuid,uuid,bytea,integer,bytea,integer,integer,integer,boolean)",
+        "platform_control.authenticate_web_session_v22(bytea,integer,integer)",
         "platform_control.revoke_web_session(uuid,text)",
     )
     with psycopg.connect(production_environment["admin"]) as connection:
@@ -395,7 +400,8 @@ def test_migration_015_revokes_direct_attempt_and_session_dml(production_environ
             "where grantee='PUBLIC' and routine_schema='platform_control' "
             "and routine_name in ('create_web_login_attempt','claim_web_login_attempt',"
             "'fail_web_login_attempt','consume_attempt_and_issue_session',"
-            "'authenticate_web_session','revoke_web_session')"
+            "'consume_attempt_and_issue_session_v22','authenticate_web_session',"
+            "'authenticate_web_session_v22','revoke_web_session')"
         ).fetchone() == (0,)
 
 
