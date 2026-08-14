@@ -23,7 +23,12 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     assert "IFS= read" not in startup
     for secret_name in ("dingtalk-app-key", "dingtalk-agent-id", "dingtalk-corp-id"):
         assert f"/bin/cat /run/secrets/{secret_name}" in startup
-    assert "test -n" in startup
+    for variable in (
+        "PLATFORM_DINGTALK_APP_KEY",
+        "PLATFORM_DINGTALK_AGENT_ID",
+        "PLATFORM_DINGTALK_CORP_ID",
+    ):
+        assert f'test -n "$${variable}"' in startup
     assert api["environment"]["PLATFORM_IDENTITY_MODE"] == "production"
     assert api["environment"]["PLATFORM_PUBLIC_BASE_URL"] == "https://agent.orbbec.com.cn"
     assert api["environment"]["PLATFORM_ROUTE_PREFIX"] == "/"
