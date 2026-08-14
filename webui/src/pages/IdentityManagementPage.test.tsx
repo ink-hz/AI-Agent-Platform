@@ -473,11 +473,71 @@ describe("IdentityManagementPage", () => {
       .every((button) => button.hasAttribute("disabled"))).toBe(true);
   });
 
+  it.each([
+    ["transport rejection", "reject"],
+    ["unclassified proxy 502", "502"],
+  ] as const)("retains and reload-replays the identical operation after %s", async (
+    _scenario, failure,
+  ) => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    const randomUUID = vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
+    const assignedUsers = managedUsers.map((user) => user.internal_user_id === memberId
+      ? { ...user, role: "platform_admin" }
+      : user);
+    const fetchMock = vi.fn().mockResolvedValueOnce(usersResponse());
+    if (failure === "reject") {
+      fetchMock.mockRejectedValueOnce(new TypeError("network connection lost"));
+    } else {
+      fetchMock.mockResolvedValueOnce(new Response("proxy failure", { status: 502 }));
+    }
+    fetchMock
+      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(new Response("{}", {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(usersResponse(assignedUsers));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
+      .find((button) => button.textContent === "设为平台管理员");
+    await act(async () => action?.click());
+
+    expect(container.textContent).toContain("管理员变更结果仍未知；已刷新当前角色，请使用同一请求重试确认。");
+    expect(container.textContent).not.toContain("未执行任何变更");
+    expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toEqual({
+      version: 1,
+      kind: "pending",
+      target_internal_user_id: memberId,
+      action: "assign",
+      request_id: requestId,
+    });
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const retry = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "使用同一请求重试确认");
+    await act(async () => retry?.click());
+
+    const mutationBodies = fetchMock.mock.calls
+      .filter((call) => call[1]?.method === "POST")
+      .map((call) => JSON.parse(String(call[1]?.body)));
+    expect(mutationBodies).toEqual([
+      { reason: "admin_access_approved", request_id: requestId },
+      { reason: "admin_access_approved", request_id: requestId },
+    ]);
+    expect(randomUUID).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem(pendingAdministratorStorageKey)).toBeNull();
+    expect(container.textContent).toContain("变更结果曾无法确认；已使用同一请求重试并刷新确认生效。");
+  });
+
   it("shows click-level administrator errors without optimistic success", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(usersResponse())
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        detail: "identity management unavailable",
+        detail: "required audit unavailable",
       }), { status: 503, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -490,6 +550,7 @@ describe("IdentityManagementPage", () => {
     expect(container.querySelector("[role='status']")?.classList).toContain("is-error");
     expect(container.textContent).not.toContain("变更成功");
     expect(container.textContent).not.toContain("结果仍未知");
+    expect(sessionStorage.getItem(pendingAdministratorStorageKey)).toBeNull();
   });
 
   it.each([
@@ -498,6 +559,8 @@ describe("IdentityManagementPage", () => {
   ] as const)("reports confirmed administrator %s separately when role refresh fails", async (
     _scenario, targetName, actionLabel, method, refreshedRole, refreshedAction,
   ) => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
     const unavailable = () => new Response(JSON.stringify({
       detail: "identity management unavailable",
     }), { status: 503, headers: { "Content-Type": "application/json" } });
@@ -521,19 +584,85 @@ describe("IdentityManagementPage", () => {
     expect(container.textContent).toContain("管理员变更已由服务端确认，但当前角色刷新失败。");
     expect(container.textContent).not.toContain("未执行任何变更");
     expect(container.textContent).not.toContain("使用同一请求重试确认");
-    expect(sessionStorage.getItem(pendingAdministratorStorageKey)).toBeNull();
+    expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toEqual({
+      version: 1,
+      kind: "confirmed_needs_refresh",
+      target_internal_user_id: targetName === "测试成员" ? memberId : administratorId,
+      action: targetName === "测试成员" ? "assign" : "revoke",
+      request_id: requestId,
+    });
     expect(fetchMock.mock.calls.filter((call) => call[1]?.method === method)).toHaveLength(1);
     expect([...container.querySelectorAll("button")]
       .filter((button) => button.textContent?.includes("平台管理员"))
       .every((button) => button.hasAttribute("disabled"))).toBe(true);
 
-    const refresh = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "刷新当前角色");
-    await act(async () => refresh?.click());
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
 
     expect(fetchMock.mock.calls.filter((call) => call[1]?.method === method)).toHaveLength(1);
     expect(container.textContent).toContain("变更已确认，当前角色已刷新。");
     expect([...articleFor(container, targetName).querySelectorAll("button")]
       .some((button) => button.textContent === refreshedAction)).toBe(true);
+    expect(sessionStorage.getItem(pendingAdministratorStorageKey)).toBeNull();
+  });
+
+  it("keeps confirmed role mismatch blocked across consecutive refreshes and reload", async () => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
+    const assignedUsers = managedUsers.map((user) => user.internal_user_id === memberId
+      ? { ...user, role: "platform_admin" }
+      : user);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(new Response("{}", {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(usersResponse(assignedUsers));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
+      .find((button) => button.textContent === "设为平台管理员");
+    await act(async () => action?.click());
+
+    const expectedState = {
+      version: 1,
+      kind: "confirmed_needs_refresh",
+      target_internal_user_id: memberId,
+      action: "assign",
+      request_id: requestId,
+    };
+    expect(container.textContent).toContain("管理员变更已由服务端确认，但刷新后的角色与预期不一致；请手动核查。");
+    expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toEqual(expectedState);
+    const firstRefresh = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "刷新当前角色");
+    await act(async () => firstRefresh?.click());
+
+    expect(container.textContent).toContain("管理员变更已由服务端确认，但刷新后的角色与预期不一致；请手动核查。");
+    expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toEqual(expectedState);
+    expect([...container.querySelectorAll("button")]
+      .filter((button) => button.textContent?.includes("平台管理员"))
+      .every((button) => button.hasAttribute("disabled"))).toBe(true);
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+
+    expect(container.textContent).toContain("管理员变更已由服务端确认，但刷新后的角色与预期不一致；请手动核查。");
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+    expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toEqual(expectedState);
+    const finalRefresh = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "刷新当前角色");
+    await act(async () => finalRefresh?.click());
+
+    expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(1);
+    expect(container.textContent).toContain("变更已确认，当前角色已刷新。");
+    expect(sessionStorage.getItem(pendingAdministratorStorageKey)).toBeNull();
+    expect([...articleFor(container, "测试成员").querySelectorAll("button")]
+      .some((button) => button.textContent === "撤销平台管理员")).toBe(true);
   });
 });

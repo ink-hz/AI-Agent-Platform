@@ -52,7 +52,7 @@ export class PermissionDenied extends PlatformApiError {
 }
 
 export class DirectoryUnavailable extends PlatformApiError {
-  constructor() { super(503); }
+  constructor(detail: unknown = null) { super(503, detail); }
 }
 
 export class ManagementMutationIndeterminate extends PlatformApiError {
@@ -192,7 +192,7 @@ async function checked(response: Response): Promise<Response> {
     ) {
       throw new ManagementMutationIndeterminate(detail.detail.request_id, detail);
     }
-    throw new DirectoryUnavailable();
+    throw new DirectoryUnavailable(detail);
   }
   if (!response.ok) throw new PlatformApiError(response.status, await responseDetail(response));
   return response;

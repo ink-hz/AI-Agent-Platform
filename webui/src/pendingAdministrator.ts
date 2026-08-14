@@ -7,6 +7,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type PendingAdministratorState =
   | { kind: "none" }
   | { kind: "pending"; operation: AdministratorMutation }
+  | { kind: "confirmed_needs_refresh"; operation: AdministratorMutation }
   | { kind: "integrity_failure" };
 
 function storageKey(ownerInternalUserId: string): string {
@@ -42,7 +43,7 @@ export function loadPendingAdministrator(ownerInternalUserId: string): PendingAd
       return { kind: "integrity_failure" };
     }
     if (
-      value.kind === "pending"
+      (value.kind === "pending" || value.kind === "confirmed_needs_refresh")
       && hasExactKeys(value, ["version", "kind", "target_internal_user_id", "action", "request_id"])
       && typeof value.target_internal_user_id === "string"
       && UUID.test(value.target_internal_user_id)
@@ -51,7 +52,7 @@ export function loadPendingAdministrator(ownerInternalUserId: string): PendingAd
       && UUID.test(value.request_id)
     ) {
       return {
-        kind: "pending",
+        kind: value.kind,
         operation: Object.freeze({
           targetInternalUserId: value.target_internal_user_id,
           revoke: value.action === "revoke",
@@ -68,10 +69,27 @@ export function storePendingAdministrator(
   ownerInternalUserId: string,
   operation: AdministratorMutation,
 ): boolean {
+  return storeAdministratorOperation(ownerInternalUserId, "pending", operation);
+}
+
+export function storeConfirmedAdministratorRefresh(
+  ownerInternalUserId: string,
+  operation: AdministratorMutation,
+): boolean {
+  return storeAdministratorOperation(
+    ownerInternalUserId, "confirmed_needs_refresh", operation,
+  );
+}
+
+function storeAdministratorOperation(
+  ownerInternalUserId: string,
+  kind: "pending" | "confirmed_needs_refresh",
+  operation: AdministratorMutation,
+): boolean {
   try {
     sessionStorage.setItem(storageKey(ownerInternalUserId), JSON.stringify({
       version: 1,
-      kind: "pending",
+      kind,
       target_internal_user_id: operation.targetInternalUserId,
       action: operation.revoke ? "revoke" : "assign",
       request_id: operation.requestId,
