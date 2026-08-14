@@ -21,6 +21,18 @@ _CONTROL_OWNER_ROLES = frozenset(
         "platform_control_owner_preview",
     }
 )
+_ENVIRONMENT_ROLE_BASES = (
+    "platform_control_migrator",
+    "platform_control_app",
+    "platform_directory_worker",
+    "platform_stream_ingest",
+    "platform_audit_append",
+    "platform_control_maintenance",
+)
+_DYNAMIC_ENVIRONMENT_ROLE = re.compile(
+    r"'(?P<role>" + "|".join(re.escape(role) for role in _ENVIRONMENT_ROLE_BASES)
+    + r")'\s*\|\|\s*selected_suffix"
+)
 
 
 class MigrationChecksumMismatch(RuntimeError):
@@ -32,6 +44,33 @@ class NumberedMigration:
     version: int
     sha256: str
     sql: str
+
+
+def render_preview_role_sql(sql: str) -> str:
+    """Render immutable dual-environment migrations for a preview-only cluster."""
+    if not isinstance(sql, str):
+        raise TypeError("migration SQL must be text")
+    protected: dict[str, str] = {}
+
+    def protect(match: re.Match[str]) -> str:
+        marker = f"__ORBBEC_DYNAMIC_PREVIEW_ROLE_{len(protected)}__"
+        protected[marker] = match.group(0)
+        return marker
+
+    rendered = _DYNAMIC_ENVIRONMENT_ROLE.sub(protect, sql)
+    for role in _ENVIRONMENT_ROLE_BASES:
+        rendered = re.sub(
+            rf"(?<![A-Za-z0-9_]){re.escape(role)}(?![A-Za-z0-9_])",
+            f"{role}_preview",
+            rendered,
+        )
+    for marker, original in protected.items():
+        if marker not in rendered:
+            raise ValueError("preview migration role marker lost")
+        rendered = rendered.replace(marker, original, 1)
+    if "_preview_preview" in rendered:
+        raise ValueError("preview migration role rendered twice")
+    return rendered
 
 
 def load_numbered_migrations(migration_dir: Path) -> Iterable[NumberedMigration]:
@@ -102,11 +141,16 @@ def migrate_control_database(
                 "applied_at timestamptz not null)"
             )
             for migration in load_numbered_migrations(migration_dir):
+                migration_sql = (
+                    render_preview_role_sql(migration.sql)
+                    if parsed.environment == "preview"
+                    else migration.sql
+                )
                 verify_or_apply(
                     cursor,
                     migration.version,
                     migration.sha256,
-                    migration.sql,
+                    migration_sql,
                 )
         connection.commit()
 

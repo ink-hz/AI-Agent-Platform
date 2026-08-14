@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
@@ -197,6 +198,47 @@ def test_control_migrations_001_through_018_are_byte_immutable() -> None:
             )
         )
     } == IMMUTABLE_MIGRATION_SHA256
+
+
+def test_preview_role_renderer_maps_only_fixed_roles_and_preserves_dynamic_suffixes() -> None:
+    from app.control_plane.migrate import render_preview_role_sql
+
+    source = """
+grant usage on schema platform_control to platform_control_app;
+select 'platform_directory_worker';
+select 'platform_control_app_preview';
+selected_app := 'platform_control_app' || selected_suffix;
+select 'platform_control_application';
+select 'unrelated platform_control_app text';
+"""
+
+    rendered = render_preview_role_sql(source)
+
+    assert "to platform_control_app_preview;" in rendered
+    assert "select 'platform_directory_worker_preview';" in rendered
+    assert "select 'platform_control_app_preview';" in rendered
+    assert "'platform_control_app' || selected_suffix" in rendered
+    assert "platform_control_application" in rendered
+    assert "unrelated platform_control_app_preview text" in rendered
+    assert "_preview_preview" not in rendered
+
+
+def test_all_control_migrations_render_for_preview_without_unresolved_fixed_roles() -> None:
+    from app.control_plane.migrate import render_preview_role_sql
+
+    dynamic = re.compile(
+        r"'(platform_(?:control_(?:migrator|app|maintenance)|"
+        r"directory_worker|stream_ingest|audit_append))'\s*\|\|\s*selected_suffix"
+    )
+    fixed_role = re.compile(
+        r"(?<![A-Za-z0-9_])platform_(?:control_(?:migrator|app|maintenance)|"
+        r"directory_worker|stream_ingest|audit_append)(?![A-Za-z0-9_])"
+    )
+    for path in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
+        rendered = render_preview_role_sql(path.read_text(encoding="utf-8"))
+        without_dynamic = dynamic.sub("<dynamic-preview-role>", rendered)
+        assert fixed_role.search(without_dynamic) is None, path.name
+        assert "_preview_preview" not in rendered, path.name
 
 
 def test_task6_and_task8_share_exported_directory_identity_lock_contract() -> None:
