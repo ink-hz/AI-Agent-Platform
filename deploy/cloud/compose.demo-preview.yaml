@@ -30,6 +30,7 @@ x-demo-preview-image-smoke:
       export PLATFORM_IDENTITY_HMAC_KEYRING_FILE="$${secret_dir}/preview-identity-hmac-keyring"
       exec python -m app.control_plane.demo_bootstrap --userid-file "$${secret_dir}/demo-userids"
   api_service: platform-api-demo-preview
+  runner_service: platform-demo-preview-runner
   loopback_service: platform-loopback-demo-preview
   health_url: http://127.0.0.1:8081/_preview/dingtalk-r1/api/health
   expected_health:
@@ -91,12 +92,33 @@ services:
     networks:
       platform-internal:
         ipv4_address: 172.30.0.5
+      platform-edge:
+        ipv4_address: 172.31.0.5
     healthcheck:
       test: ["CMD", "python", "-c", "import json,urllib.request; value=json.load(urllib.request.urlopen('http://127.0.0.1:8080/_preview/dingtalk-r1/api/health',timeout=2)); assert value == {'status':'ok'}"]
       interval: 10s
       timeout: 3s
       retries: 12
       start_period: 15s
+
+  platform-demo-preview-runner:
+    profiles:
+      - demo-preview-tools
+    image: ${PLATFORM_IMAGE}
+    user: "0:0"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=0,gid=0,mode=0700
+    command: ["/bin/false"]
+    volumes:
+      - orbbec-agent-platform-demo-preview-secrets:/run/demo-preview-secrets:ro
+    networks:
+      platform-internal: {}
+      platform-edge: {}
 
   platform-loopback-demo-preview:
     image: ${PLATFORM_IMAGE}

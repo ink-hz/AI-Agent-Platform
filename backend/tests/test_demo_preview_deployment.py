@@ -31,21 +31,71 @@ def test_demo_overlay_adds_only_isolated_preview_services_and_one_loopback_port(
 
     assert set(services) == {
         "platform-api-demo-preview",
+        "platform-demo-preview-runner",
         "platform-loopback-demo-preview",
     }
     assert "platform-api" not in services
     assert "platform-loopback" not in services
     assert "platform-postgres" not in services
     assert "ports" not in services["platform-api-demo-preview"]
+    assert "expose" not in services["platform-api-demo-preview"]
+    assert "ports" not in services["platform-demo-preview-runner"]
+    assert "expose" not in services["platform-demo-preview-runner"]
     assert services["platform-loopback-demo-preview"]["ports"] == [
         "127.0.0.1:8081:8080"
     ]
     assert services["platform-api-demo-preview"]["networks"] == {
-        "platform-internal": {"ipv4_address": "172.30.0.5"}
+        "platform-internal": {"ipv4_address": "172.30.0.5"},
+        "platform-edge": {"ipv4_address": "172.31.0.5"},
     }
     assert services["platform-loopback-demo-preview"]["networks"][
         "platform-internal"
     ]["ipv4_address"] == "172.30.0.6"
+
+
+def test_demo_api_keeps_internal_database_path_and_gains_external_egress() -> None:
+    base = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
+    api = _overlay()["services"]["platform-api-demo-preview"]
+
+    assert base["networks"]["platform-internal"]["internal"] is True
+    assert base["networks"]["platform-edge"]["internal"] is False
+    assert set(api["networks"]) == {"platform-internal", "platform-edge"}
+    assert api["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.5"
+    assert api["networks"]["platform-edge"]["ipv4_address"] == "172.31.0.5"
+    assert api["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.6/32"
+    assert "ports" not in api
+    assert "expose" not in api
+    assert api.get("network_mode") != "host"
+
+
+def test_demo_runner_is_profiled_secure_and_uses_both_compose_networks() -> None:
+    value = _overlay()
+    api = value["services"]["platform-api-demo-preview"]
+    runner = value["services"]["platform-demo-preview-runner"]
+
+    assert runner["profiles"] == ["demo-preview-tools"]
+    assert runner["image"] == "${PLATFORM_IMAGE}"
+    assert runner["user"] == "0:0"
+    assert runner["read_only"] is True
+    assert runner["cap_drop"] == ["ALL"]
+    assert runner["security_opt"] == ["no-new-privileges:true"]
+    assert runner["tmpfs"] == [
+        "/tmp:rw,noexec,nosuid,size=32m,uid=0,gid=0,mode=0700"
+    ]
+    assert runner["volumes"] == api["volumes"]
+    assert runner["networks"] == {
+        "platform-internal": {},
+        "platform-edge": {},
+    }
+    assert runner["command"] == ["/bin/false"]
+    assert "restart" not in runner
+    assert "ports" not in runner
+    assert "expose" not in runner
+    assert "depends_on" not in runner
+    assert "ipv4_address" not in yaml.safe_dump(runner["networks"])
+    assert value["x-demo-preview-image-smoke"]["runner_service"] == (
+        "platform-demo-preview-runner"
+    )
 
 
 def test_demo_overlay_uses_only_the_dedicated_external_secret_volume() -> None:
@@ -57,6 +107,9 @@ def test_demo_overlay_uses_only_the_dedicated_external_secret_volume() -> None:
         volume_name: {"external": True, "name": volume_name}
     }
     assert services["platform-api-demo-preview"]["volumes"] == [
+        f"{volume_name}:/run/demo-preview-secrets:ro"
+    ]
+    assert services["platform-demo-preview-runner"]["volumes"] == [
         f"{volume_name}:/run/demo-preview-secrets:ro"
     ]
     assert services["platform-loopback-demo-preview"]["volumes"] == []
@@ -113,7 +166,7 @@ def test_demo_services_are_nonroot_readonly_capability_free_and_healthy() -> Non
     api = services["platform-api-demo-preview"]
     loopback = services["platform-loopback-demo-preview"]
 
-    for service in services.values():
+    for service in (api, loopback):
         assert service["user"] == "10001:10001"
         assert service["read_only"] is True
         assert service["cap_drop"] == ["ALL"]
@@ -284,6 +337,7 @@ def test_static_image_smoke_contract_migrates_bootstraps_and_checks_minimal_heal
     assert "preview-control-directory-worker-database-url" in bootstrap
     assert "--userid-file" in bootstrap and "demo-userids" in bootstrap
     assert smoke["api_service"] == "platform-api-demo-preview"
+    assert smoke["runner_service"] == "platform-demo-preview-runner"
     assert smoke["loopback_service"] == "platform-loopback-demo-preview"
     assert smoke["health_url"] == (
         "http://127.0.0.1:8081/_preview/dingtalk-r1/api/health"
@@ -384,6 +438,33 @@ def test_compose_overlay_statically_merges_without_replacing_root_services() -> 
     assert merged_services["platform-api"] == base["services"]["platform-api"]
     assert merged_services["platform-loopback"] == base["services"]["platform-loopback"]
     assert merged_services["platform-postgres"] == base["services"]["platform-postgres"]
+
+
+def test_merged_compose_static_addresses_are_unique_and_never_use_host_network() -> None:
+    base = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
+    overlay = _overlay()
+    merged_services = {**base["services"], **overlay["services"]}
+    addresses: dict[str, str] = {}
+
+    for service_name, service in merged_services.items():
+        assert service.get("network_mode") != "host"
+        networks = service.get("networks", {})
+        if not isinstance(networks, dict):
+            continue
+        for network_config in networks.values():
+            if not isinstance(network_config, dict):
+                continue
+            address = network_config.get("ipv4_address")
+            if address is None:
+                continue
+            assert address not in addresses, (
+                f"{address} is shared by {addresses[address]} and {service_name}"
+            )
+            addresses[address] = service_name
+
+    assert addresses["172.30.0.5"] == "platform-api-demo-preview"
+    assert addresses["172.31.0.5"] == "platform-api-demo-preview"
+    assert "--network host" not in OVERLAY.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="Docker unavailable")
