@@ -10,6 +10,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.local_secrets import read_secret_file
+from .crypto import IdentityKeyring
 from .dsn import validate_control_dsn
 
 
@@ -86,6 +87,35 @@ class MaintenanceRepository:
         except psycopg.Error:
             raise RuntimeError("control retention unavailable") from None
 
+    def sync_identity_key_policy(
+        self, transition_versions: tuple[int, ...]
+    ) -> tuple[int, ...]:
+        if (
+            len(transition_versions) not in {1, 2, 3}
+            or tuple(sorted(set(transition_versions))) != transition_versions
+            or any(
+                isinstance(version, bool)
+                or not isinstance(version, int)
+                or version <= 0
+                for version in transition_versions
+            )
+        ):
+            raise ValueError("identity policy transition versions invalid")
+        try:
+            with self._connect(
+                self._database_url,
+                connect_timeout=3,
+                options="-c statement_timeout=10000",
+                row_factory=dict_row,
+            ) as connection:
+                connection.execute(
+                    "select platform_control.set_provider_identity_key_policy(%s,%s)",
+                    ("dingtalk", list(transition_versions)),
+                )
+            return transition_versions
+        except psycopg.Error:
+            raise RuntimeError("identity policy synchronization unavailable") from None
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Control-plane maintenance")
@@ -105,6 +135,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("healthy", "unknown", "breached"),
         required=True,
     )
+    policy = subparsers.add_parser(
+        "sync-identity-policy",
+        help="Synchronize the database identity-key policy to a private keyring",
+    )
+    policy.add_argument("--keyring-file", required=True)
     return parser
 
 
@@ -122,11 +157,31 @@ def main(argv: list[str] | None = None) -> int:
     repository = MaintenanceRepository(
         read_secret_file(_database_url_file(namespace))
     )
-    result = repository.purge_expired(
-        time_health=namespace.time_health,
-        wal_health=namespace.wal_health,
+    if namespace.command == "purge-expired":
+        result = repository.purge_expired(
+            time_health=namespace.time_health,
+            wal_health=namespace.wal_health,
+        )
+        print(json.dumps({"status": "ok", **result}, sort_keys=True))
+        return 0
+    keyring = IdentityKeyring.from_file(
+        namespace.keyring_file,
+        expected_purpose="provider-lookup-hmac",
+        expected_key_length=32,
     )
-    print(json.dumps({"status": "ok", **result}, sort_keys=True))
+    versions = repository.sync_identity_key_policy(
+        keyring.transition_versions or ()
+    )
+    print(
+        json.dumps(
+            {
+                "provider": "dingtalk",
+                "status": "ok",
+                "transition_versions": list(versions),
+            },
+            sort_keys=True,
+        )
+    )
     return 0
 
 

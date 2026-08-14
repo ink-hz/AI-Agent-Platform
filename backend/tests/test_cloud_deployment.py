@@ -138,6 +138,10 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
     assert 'PLATFORM_CLOUD_AUTH_MODE=dingtalk' in script
     assert 'cloud_auth_mode="ssh-tunnel"' in script
     assert "/api/deployment" not in script
+    assert "sync-identity-policy" in script
+    assert script.index("sync-identity-policy") < script.index(
+        'up -d --force-recreate "${active_control_secret_consumers[@]}"'
+    )
     for runtime_value in (
         "PLATFORM_DEPLOYMENT_MODE=cloud-replica",
         "PLATFORM_CLOUD_AUTH_MODE=dingtalk",

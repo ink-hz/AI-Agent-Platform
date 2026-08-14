@@ -24,6 +24,10 @@ def test_purge_cli_has_fixed_command_without_cutoff_override() -> None:
     assert "--days" not in purge_help
     assert "--time-health" in purge_help
     assert "--wal-health" in purge_help
+    policy_help = build_parser()._subparsers._group_actions[0].choices[
+        "sync-identity-policy"
+    ].format_help()
+    assert "--keyring-file" in policy_help
 
 
 @pytest.mark.parametrize(
@@ -41,6 +45,35 @@ def test_purge_refuses_unknown_or_breached_health(
             time_health=time_health,
             wal_health=wal_health,
         )
+
+
+@pytest.mark.parametrize("versions", [(), (0,), (2, 1), (1, 1), (1, 2, 3, 4)])
+def test_identity_policy_rejects_invalid_transition_versions(versions) -> None:
+    repository = MaintenanceRepository(
+        "postgresql://platform_control_maintenance@/agent_platform_control"
+    )
+    with pytest.raises(ValueError, match="transition versions invalid"):
+        repository.sync_identity_key_policy(versions)
+
+
+@pytest.mark.postgres
+def test_maintenance_syncs_identity_policy_to_exact_keyring_versions(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    repository = MaintenanceRepository(
+        environment["urls"]["platform_control_maintenance"]
+    )
+
+    assert repository.sync_identity_key_policy((1, 2)) == (1, 2)
+
+    with psycopg.connect(environment["admin"]) as connection:
+        row = connection.execute(
+            "select lookup_transition_versions from "
+            "platform_control.provider_identity_key_policies "
+            "where provider='dingtalk'"
+        ).fetchone()
+    assert row == ([1, 2],)
 
 
 @pytest.mark.postgres

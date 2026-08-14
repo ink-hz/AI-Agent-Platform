@@ -236,6 +236,17 @@ control_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-control-db.sh"
 identity_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-dingtalk-production-secrets.sh" \
   "$private_path")" || fail
 [[ "$identity_bootstrap_result" == "DINGTALK_PRODUCTION_SECRETS_OK" ]] || fail
+identity_policy_result="$(/usr/bin/docker run --rm --user 0:0 --read-only \
+  --cap-drop ALL --security-opt no-new-privileges:true \
+  --network orbbec-agent-platform-internal \
+  --tmpfs /tmp:rw,noexec,nosuid,size=8m \
+  -v "$private_path:/run/control-secrets:ro" \
+  "$image_name" python -m app.control_plane.maintenance_cli \
+  --database-url-file /run/control-secrets/control-maintenance-database-url \
+  sync-identity-policy \
+  --keyring-file /run/control-secrets/identity-hmac-keyring)" || fail
+/usr/bin/python3 -c 'import json,sys; value=json.load(sys.stdin); assert value=={"provider":"dingtalk","status":"ok","transition_versions":[1]}' \
+  <<<"$identity_policy_result" || fail
 /usr/bin/docker exec -i "$postgres_container" psql -v ON_ERROR_STOP=1 -U platform_owner -d agent_platform >/dev/null <<SQL
 do \$\$
 begin
