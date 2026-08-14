@@ -23,7 +23,7 @@ DEFAULT_SECRETS_DIR = (
 @dataclass(frozen=True)
 class Config:
     deployment_mode: Literal["local", "cloud-replica"]
-    cloud_auth_mode: Literal["ssh-tunnel", "basic-auth"]
+    cloud_auth_mode: Literal["ssh-tunnel", "basic-auth", "dingtalk"]
     registry_path: str
     metabot_contract_path: str
     poll_interval_seconds: float
@@ -436,7 +436,7 @@ def _validate_cloud_config(config: Config) -> None:
         raise RuntimeError("unsupported deployment mode")
     if config.deployment_mode != "cloud-replica":
         return
-    if config.cloud_auth_mode not in {"ssh-tunnel", "basic-auth"}:
+    if config.cloud_auth_mode not in {"ssh-tunnel", "basic-auth", "dingtalk"}:
         raise RuntimeError("unsupported cloud authentication mode")
     if not _loopback(config.host):
         raise RuntimeError("cloud replica host must be loopback")

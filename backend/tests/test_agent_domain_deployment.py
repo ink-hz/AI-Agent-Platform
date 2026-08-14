@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
-NGINX = CLOUD / "agent-domain.nginx.conf"
+NGINX = CLOUD / "agent-domain.basic-auth.nginx.conf"
 INSTALLER = CLOUD / "install-agent-domain.sh"
 PUBLISHER = CLOUD / "publish-agent-domain.sh"
 RUNBOOK = ROOT / "docs" / "runbooks" / "cloud-platform.md"

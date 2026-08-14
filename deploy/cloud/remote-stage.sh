@@ -58,7 +58,7 @@ if [[ -f "$environment_path" ]]; then
     cloud_auth_mode="$configured_auth_mode"
   fi
 fi
-[[ "$cloud_auth_mode" == "ssh-tunnel" || "$cloud_auth_mode" == "basic-auth" ]] || fail
+[[ "$cloud_auth_mode" == "ssh-tunnel" || "$cloud_auth_mode" == "basic-auth" || "$cloud_auth_mode" == "dingtalk" ]] || fail
 if [[ -n "$existing_api" && ( -z "$previous_release" || ! -f "$previous_environment" ) ]]; then
   fail
 fi
@@ -86,6 +86,21 @@ rollback() {
     return
   fi
   if [[ "$api_stopped" -eq 1 ]]; then
+    if [[ -f "$release_path/deploy/cloud/compose.yaml" && -f "$environment_path" ]]; then
+      candidate_services="$(/usr/bin/docker compose --env-file "$environment_path" \
+        -f "$release_path/deploy/cloud/compose.yaml" config --services 2>/dev/null || true)"
+      candidate_to_stop=()
+      for service_name in platform-loopback platform-api platform-directory platform-dingtalk-stream; do
+        if /usr/bin/grep -Fxq "$service_name" <<<"$candidate_services"; then
+          candidate_to_stop+=("$service_name")
+        fi
+      done
+      if [[ "${#candidate_to_stop[@]}" -gt 0 ]]; then
+        /usr/bin/docker compose --env-file "$environment_path" \
+          -f "$release_path/deploy/cloud/compose.yaml" \
+          stop "${candidate_to_stop[@]}" >/dev/null 2>&1 || true
+      fi
+    fi
     if [[ -n "$previous_release" && -f "$previous_environment" ]]; then
       /bin/cp -p "$previous_environment" "$environment_path"
       /bin/ln -sfn "$previous_release" "$root_path/current"
@@ -188,8 +203,8 @@ if [[ -n "$previous_release" && -f "$environment_path" ]]; then
     api_stopped=1
   fi
 fi
-/usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=%s\n' \
-  "$image_name" "$cloud_auth_mode" > "$environment_path"
+/usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\n' \
+  "$image_name" > "$environment_path"
 /bin/chown root:root "$environment_path"
 /bin/chmod 600 "$environment_path"
 unset PLATFORM_CLOUD_AUTH_MODE
@@ -213,6 +228,9 @@ postgres_container="$("${compose[@]}" ps -q platform-postgres)"
 control_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-control-db.sh" \
   "$release_path" "$private_path" "$image_name" "$postgres_container")" || fail
 [[ "$control_bootstrap_result" == "CONTROL_DATABASE_CREDENTIALS_READY version=2" ]] || fail
+identity_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-dingtalk-production-secrets.sh" \
+  "$private_path")" || fail
+[[ "$identity_bootstrap_result" == "DINGTALK_PRODUCTION_SECRETS_OK" ]] || fail
 /usr/bin/docker exec -i "$postgres_container" psql -v ON_ERROR_STOP=1 -U platform_owner -d agent_platform >/dev/null <<SQL
 do \$\$
 begin
@@ -259,7 +277,17 @@ for _attempt in $(/usr/bin/seq 1 40); do
   /bin/sleep 1
 done
 /usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null || fail
-/usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/deployment | /usr/bin/python3 -c 'import json,sys; expected=sys.argv[1]; value=json.load(sys.stdin); assert value["mode"]=="cloud-replica" and value["read_only"] is True and value["auth"]==expected and value["freshness"] in {"current","stale","unavailable"}' "$cloud_auth_mode" || fail
+/usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/deployment | /usr/bin/python3 -c 'import json,sys; value=json.load(sys.stdin); assert value["mode"]=="cloud-replica" and value["read_only"] is True and value["auth"]=="dingtalk" and value["freshness"] in {"current","stale","unavailable"}' || fail
+if [[ -n "$previous_release" ]]; then
+  /usr/bin/printf '%s\n' "$previous_release" > "$release_path/PREVIOUS_RELEASE"
+  /bin/chown root:root "$release_path/PREVIOUS_RELEASE"
+  /bin/chmod 600 "$release_path/PREVIOUS_RELEASE"
+fi
+if [[ -f "$previous_environment" ]]; then
+  /bin/cp -p "$previous_environment" "$release_path/PREVIOUS_PLATFORM_ENV"
+  /bin/chown root:root "$release_path/PREVIOUS_PLATFORM_ENV"
+  /bin/chmod 600 "$release_path/PREVIOUS_PLATFORM_ENV"
+fi
 /bin/ln -sfn "$release_path" "$root_path/current"
 /usr/bin/install -o root -g root -m 644 \
   "$release_path/deploy/cloud/orbbec-agent-platform-backup.service" \
@@ -283,4 +311,4 @@ fi
 
 rollback_required=0
 trap - EXIT
-echo "CLOUD_PLATFORM_DEPLOY_OK release=$release_sha mode=$cloud_auth_mode"
+echo "CLOUD_PLATFORM_DEPLOY_OK release=$release_sha mode=dingtalk"

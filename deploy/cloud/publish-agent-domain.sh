@@ -41,7 +41,7 @@ fi
 
 repository_root="$(cd "$(dirname "$0")/../.." && pwd)"
 installer="$repository_root/deploy/cloud/install-agent-domain.sh"
-template="$repository_root/deploy/cloud/agent-domain.nginx.conf"
+template="$repository_root/deploy/cloud/agent-domain.basic-auth.nginx.conf"
 [[ -f "$installer" && ! -L "$installer" && -f "$template" && ! -L "$template" ]] || fail
 
 ssh_options=(

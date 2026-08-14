@@ -85,6 +85,13 @@ def test_loads_basic_auth_cloud_entry_mode(monkeypatch, tmp_path):
     assert load_config().cloud_auth_mode == "basic-auth"
 
 
+def test_loads_dingtalk_cloud_entry_mode(monkeypatch, tmp_path):
+    _configure_cloud(monkeypatch, tmp_path)
+    monkeypatch.setenv("PLATFORM_CLOUD_AUTH_MODE", "dingtalk")
+
+    assert load_config().cloud_auth_mode == "dingtalk"
+
+
 def test_rejects_unknown_cloud_auth_mode(monkeypatch, tmp_path):
     _configure_cloud(monkeypatch, tmp_path)
     monkeypatch.setenv("PLATFORM_CLOUD_AUTH_MODE", "anonymous")

@@ -1,0 +1,132 @@
+from pathlib import Path
+
+import yaml
+
+
+ROOT = Path(__file__).parents[2]
+CLOUD = ROOT / "deploy" / "cloud"
+
+
+def test_production_compose_runs_identity_and_least_privilege_workers():
+    value = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
+    services = value["services"]
+
+    assert set(services) == {
+        "platform-postgres",
+        "platform-api",
+        "platform-loopback",
+        "platform-directory",
+        "platform-dingtalk-stream",
+    }
+    api = services["platform-api"]
+    assert api["environment"]["PLATFORM_IDENTITY_MODE"] == "production"
+    assert api["environment"]["PLATFORM_PUBLIC_BASE_URL"] == "https://agent.orbbec.com.cn"
+    assert api["environment"]["PLATFORM_ROUTE_PREFIX"] == "/"
+    assert api["environment"]["PLATFORM_COOKIE_NAME"] == "__Host-platform_session"
+    assert api["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.3/32"
+    assert set(api["networks"]) == {"platform-internal", "platform-edge"}
+
+    directory = services["platform-directory"]
+    stream = services["platform-dingtalk-stream"]
+    assert directory["command"] == [
+        "python", "-m", "app.control_plane.worker_runtime", "directory"
+    ]
+    assert stream["command"] == [
+        "python", "-m", "app.control_plane.worker_runtime", "stream"
+    ]
+    assert directory["restart"] == stream["restart"] == "unless-stopped"
+    assert directory["read_only"] is stream["read_only"] is True
+    assert directory["cap_drop"] == stream["cap_drop"] == ["ALL"]
+    assert set(directory["networks"]) == set(stream["networks"]) == {
+        "platform-internal", "platform-edge"
+    }
+    assert directory["volumes"] != stream["volumes"]
+    assert "PLATFORM_CONTROL_STREAM_DATABASE_URL_FILE" not in directory["environment"]
+    assert "PLATFORM_CONTROL_DIRECTORY_DATABASE_URL_FILE" not in stream["environment"]
+
+    serialized = (CLOUD / "compose.yaml").read_text(encoding="utf-8")
+    for forbidden in ("clientSecret:", "dingtalk-app-secret:", "corp-id:"):
+        assert forbidden not in serialized
+    assert services["platform-loopback"]["ports"] == ["127.0.0.1:8080:8080"]
+    for name, service in services.items():
+        if name != "platform-loopback":
+            assert "ports" not in service
+
+
+def test_runtime_image_contains_control_migrations():
+    dockerfile = (CLOUD / "Dockerfile").read_text(encoding="utf-8")
+    assert "backend/control_migrations" in dockerfile
+
+
+def test_formal_nginx_uses_backend_auth_and_preserves_basic_auth_rollback():
+    formal = (CLOUD / "agent-domain.nginx.conf").read_text(encoding="utf-8")
+    rollback = (CLOUD / "agent-domain.basic-auth.nginx.conf").read_text(
+        encoding="utf-8"
+    )
+
+    assert "auth_basic" not in formal
+    assert "limit_except" not in formal
+    assert "proxy_pass http://127.0.0.1:8080;" in formal
+    assert "proxy_read_timeout 360s;" in formal
+    assert "proxy_send_timeout 360s;" in formal
+    assert "proxy_set_header X-Forwarded-For $remote_addr;" in formal
+    assert 'proxy_set_header Forwarded "";' in formal
+    assert 'proxy_set_header Authorization "";' in formal
+    assert 'Content-Security-Policy "default-src \'none\';' in formal
+
+    assert 'auth_basic "Orbbec Agent Platform";' in rollback
+    assert "limit_except GET HEAD OPTIONS" in rollback
+    assert "proxy_pass http://127.0.0.1:8080;" in rollback
+
+
+def test_cutover_and_rollback_are_atomic_and_fae_safe():
+    publish = (CLOUD / "publish-dingtalk-production.sh").read_text(encoding="utf-8")
+    rollback = (CLOUD / "rollback-dingtalk-production.sh").read_text(encoding="utf-8")
+
+    for script in (publish, rollback):
+        assert "set -euo pipefail" in script
+        assert "nginx -t" in script
+        assert "systemctl reload nginx" in script
+        assert "ai-fae-backend" in script
+        assert "StartedAt" in script
+        for forbidden in (
+            "docker restart ai-fae-backend",
+            "docker stop ai-fae-backend",
+            "docker compose down",
+            "systemctl restart nginx",
+        ):
+            assert forbidden not in script
+    assert "PLATFORM_IDENTITY_MODE=production" in publish
+    assert "agent-domain.basic-auth.nginx.conf" in rollback
+    assert "PREVIOUS_RELEASE" in publish
+    assert "PREVIOUS_PLATFORM_ENV" in publish
+    assert "PREVIOUS_RELEASE" in rollback
+    assert 'stop "${services_to_stop[@]}"' in rollback
+    assert 'up -d --force-recreate "${services_to_start[@]}"' in rollback
+    assert '/bin/ln -sfn "$PREVIOUS_RELEASE" "$platform_root/current"' in rollback
+
+
+def test_identity_secret_bootstrap_is_noninteractive_and_service_scoped():
+    script = (CLOUD / "bootstrap-dingtalk-production-secrets.sh").read_text(
+        encoding="utf-8"
+    )
+
+    for required in (
+        "identity-encryption-keyring",
+        "identity-hmac-keyring",
+        "rate-limit-hmac-keyring",
+        "control-database-url",
+        "control-audit-database-url",
+        "control-directory-worker-database-url",
+        "control-stream-ingest-database-url",
+        "orbbec-agent-platform-api-secrets",
+        "orbbec-agent-platform-directory-secrets",
+        "orbbec-agent-platform-stream-secrets",
+        "chown 10001:10001",
+        "chmod 600",
+    ):
+        assert required in script
+    for forbidden in ("security ", "read -s", "set -x", "dingtalk-app-secret="):
+        assert forbidden not in script
+    assert script.count("openssl rand 32") >= 3
+    assert "cmp -s" not in script

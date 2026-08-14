@@ -19,6 +19,7 @@ ARG RELEASE_SHA
 ENV PLATFORM_RELEASE_SHA=${RELEASE_SHA}
 COPY --chown=10001:10001 backend/app ./app
 COPY --chown=10001:10001 backend/migrations ./migrations
+COPY --chown=10001:10001 backend/control_migrations ./control_migrations
 COPY --chown=10001:10001 deploy/cloud/registry.yaml /app/registry.yaml
 COPY --chown=10001:10001 deploy/cloud/metabot.runtime-contract.json /app/metabot.runtime-contract.json
 COPY --from=web-builder --chown=10001:10001 /src/webui/dist ./app/static

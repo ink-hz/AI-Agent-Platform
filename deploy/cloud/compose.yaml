@@ -33,9 +33,18 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        IFS= read -r PLATFORM_DINGTALK_APP_KEY < /run/secrets/dingtalk-app-key
+        IFS= read -r PLATFORM_DINGTALK_AGENT_ID < /run/secrets/dingtalk-agent-id
+        IFS= read -r PLATFORM_DINGTALK_CORP_ID < /run/secrets/dingtalk-corp-id
+        export PLATFORM_DINGTALK_APP_KEY PLATFORM_DINGTALK_AGENT_ID PLATFORM_DINGTALK_CORP_ID
+        exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8080 --no-proxy-headers --no-access-log
     environment:
       PLATFORM_DEPLOYMENT_MODE: cloud-replica
-      PLATFORM_CLOUD_AUTH_MODE: ${PLATFORM_CLOUD_AUTH_MODE:-ssh-tunnel}
+      PLATFORM_CLOUD_AUTH_MODE: dingtalk
       PLATFORM_HOST: 127.0.0.1
       PLATFORM_PORT: "8080"
       PLATFORM_REGISTRY_PATH: /app/registry.yaml
@@ -45,6 +54,19 @@ services:
       PLATFORM_REVIEW_ENABLED: "0"
       PLATFORM_ATTACHMENT_ENABLED: "0"
       PLATFORM_TRUSTED_PROXY_CIDRS: "172.30.0.3/32"
+      PLATFORM_IDENTITY_MODE: production
+      PLATFORM_PUBLIC_BASE_URL: https://agent.orbbec.com.cn
+      PLATFORM_ROUTE_PREFIX: /
+      PLATFORM_COOKIE_NAME: __Host-platform_session
+      PLATFORM_CONTROL_DATABASE_URL_FILE: /run/secrets/control-database-url
+      PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE: /run/secrets/control-audit-database-url
+      PLATFORM_DINGTALK_APP_SECRET_FILE: /run/secrets/dingtalk-app-secret
+      PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE: /run/secrets/identity-encryption-keyring
+      PLATFORM_IDENTITY_HMAC_KEYRING_FILE: /run/secrets/identity-hmac-keyring
+      PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE: /run/secrets/rate-limit-hmac-keyring
+      PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS: "21600"
+      PLATFORM_IDENTITY_WARNING_AFTER_SECONDS: "28800"
+      PLATFORM_IDENTITY_HARD_STALE_AFTER_SECONDS: "86400"
       PLATFORM_REPLICA_DATABASE_URL_FILE: /run/secrets/replica-database-url
       PLATFORM_REPLICA_ENCRYPTION_KEY_FILE: /run/secrets/replica-encryption-key
       PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE: /run/secrets/replica-signing-public-key
@@ -54,6 +76,8 @@ services:
     networks:
       platform-internal:
         ipv4_address: 172.30.0.4
+      platform-edge:
+        gw_priority: 1
     depends_on:
       platform-postgres:
         condition: service_healthy
@@ -63,6 +87,77 @@ services:
       timeout: 3s
       retries: 12
       start_period: 15s
+
+  platform-directory:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+    command: ["python", "-m", "app.control_plane.worker_runtime", "directory"]
+    environment:
+      PLATFORM_CONTROL_DIRECTORY_DATABASE_URL_FILE: /run/secrets/control-directory-worker-database-url
+      PLATFORM_DINGTALK_APP_KEY_FILE: /run/secrets/dingtalk-app-key
+      PLATFORM_DINGTALK_CORP_ID_FILE: /run/secrets/dingtalk-corp-id
+      PLATFORM_DINGTALK_APP_SECRET_FILE: /run/secrets/dingtalk-app-secret
+      PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE: /run/secrets/identity-encryption-keyring
+      PLATFORM_IDENTITY_HMAC_KEYRING_FILE: /run/secrets/identity-hmac-keyring
+    volumes:
+      - platform-directory-secrets:/run/secrets:ro
+    networks:
+      platform-internal: {}
+      platform-edge:
+        gw_priority: 1
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  platform-dingtalk-stream:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+    command: ["python", "-m", "app.control_plane.worker_runtime", "stream"]
+    environment:
+      PLATFORM_CONTROL_STREAM_DATABASE_URL_FILE: /run/secrets/control-stream-ingest-database-url
+      PLATFORM_DINGTALK_APP_KEY_FILE: /run/secrets/dingtalk-app-key
+      PLATFORM_DINGTALK_CORP_ID_FILE: /run/secrets/dingtalk-corp-id
+      PLATFORM_DINGTALK_APP_SECRET_FILE: /run/secrets/dingtalk-app-secret
+      PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE: /run/secrets/identity-encryption-keyring
+    volumes:
+      - platform-stream-secrets:/run/secrets:ro
+    networks:
+      platform-internal: {}
+      platform-edge:
+        gw_priority: 1
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
 
   platform-loopback:
     image: ${PLATFORM_IMAGE}
@@ -121,4 +216,10 @@ volumes:
     external: true
   platform-api-secrets:
     name: orbbec-agent-platform-api-secrets
+    external: true
+  platform-directory-secrets:
+    name: orbbec-agent-platform-directory-secrets
+    external: true
+  platform-stream-secrets:
+    name: orbbec-agent-platform-stream-secrets
     external: true
