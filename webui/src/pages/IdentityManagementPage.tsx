@@ -89,15 +89,7 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       if (pendingAdministratorState.kind === "pending_replay") {
         setMessage("管理员变更结果仍未知；已刷新当前角色，请使用同一请求重试确认。");
       } else if (pendingAdministratorState.kind === "inflight_no_replay") {
-        if (matchesAdministratorOutcome(refreshed, pendingAdministratorState.operation)) {
-          if (clearAdministratorState(pendingAdministratorState)) {
-            setMessage("变更已确认，当前角色已刷新。");
-          } else {
-            setMessage("管理员变更无法安全重放，且本地锁定状态无法清除；请手动核查。");
-          }
-        } else {
-          setMessage("管理员变更可能已提交但无法安全重放；已刷新当前角色，请手动核查。");
-        }
+        setMessage("管理员变更处于不可重放状态；当前角色仅供参考，无法证明该请求已终态完成，请人工核查治理审计。");
       } else if (pendingAdministratorState.kind === "confirmed_needs_refresh") {
         if (matchesAdministratorOutcome(refreshed, pendingAdministratorState.operation)) {
           if (clearAdministratorState(pendingAdministratorState)) {
@@ -115,7 +107,7 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       if (pendingAdministratorState.kind === "pending_replay") {
         setMessage("管理员变更结果仍未知；当前角色刷新失败，请使用同一请求重试确认。");
       } else if (pendingAdministratorState.kind === "inflight_no_replay") {
-        setMessage("管理员变更可能已提交但无法安全重放；当前角色刷新失败，请手动核查。");
+        setMessage("管理员变更处于不可重放状态；当前角色刷新失败，请人工核查治理审计。");
       } else if (pendingAdministratorState.kind === "confirmed_needs_refresh") {
         setMessage("管理员变更已由服务端确认，但当前角色刷新失败。");
       } else if (pendingAdministratorState.kind === "integrity_failure") {
@@ -299,7 +291,9 @@ export function IdentityManagementPage({ account }: { account: Account }) {
     setBusy(true);
     try {
       const refreshed = await refreshUsers();
-      if (!matchesAdministratorOutcome(refreshed, operation)) {
+      if (inflightAdministrator) {
+        setMessage("管理员变更处于不可重放状态；当前角色仅供参考，无法证明该请求已终态完成，请人工核查治理审计。");
+      } else if (!matchesAdministratorOutcome(refreshed, operation)) {
         setMessage(confirmedAdministrator
           ? "管理员变更已由服务端确认，但刷新后的角色与预期不一致；请手动核查。"
           : "管理员变更可能已提交但无法安全重放；已刷新当前角色，请手动核查。");
@@ -313,7 +307,7 @@ export function IdentityManagementPage({ account }: { account: Account }) {
     } catch {
       setMessage(confirmedAdministrator
         ? "管理员变更已由服务端确认，但当前角色刷新失败。"
-        : "管理员变更可能已提交但无法安全重放；当前角色刷新失败，请手动核查。");
+        : "管理员变更处于不可重放状态；当前角色刷新失败，请人工核查治理审计。");
     } finally { setBusy(false); }
   };
   const mutateScope = async (user: ManagedUser, agentId: string, revoke = false) => {

@@ -583,7 +583,7 @@ describe("IdentityManagementPage", () => {
       .every((button) => button.hasAttribute("disabled"))).toBe(true);
   });
 
-  it("reconciles a reloaded in-flight mutation read-only and never replays it", async () => {
+  it("keeps an applied-role in-flight mutation blocked without terminal audit evidence", async () => {
     const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
     sessionStorage.setItem(pendingAdministratorStorageKey, JSON.stringify({
       version: 1,
@@ -596,13 +596,15 @@ describe("IdentityManagementPage", () => {
       ? { ...user, role: "platform_admin" }
       : user);
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(usersResponse(assignedUsers))
       .mockResolvedValueOnce(usersResponse(assignedUsers));
     vi.stubGlobal("fetch", fetchMock);
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
 
     expect(container.textContent).not.toContain("使用同一请求重试确认");
+    expect(container.textContent).not.toContain("变更已确认");
+    expect(container.textContent).toContain("人工核查治理审计");
     expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(0);
     expect([...container.querySelectorAll("button")]
       .filter((button) => button.textContent?.includes("平台管理员"))
@@ -612,8 +614,40 @@ describe("IdentityManagementPage", () => {
     await act(async () => refresh?.click());
 
     expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(0);
-    expect(sessionStorage.getItem(pendingAdministratorStorageKey)).toBeNull();
-    expect(container.textContent).toContain("变更已确认，当前角色已刷新。");
+    expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toMatchObject({
+      version: 1, kind: "inflight_no_replay", request_id: requestId,
+    });
+    expect(container.textContent).not.toContain("变更已确认");
+    expect(container.textContent).toContain("人工核查治理审计");
+  });
+
+  it("keeps inflight blocked when a different operation produced the expected role", async () => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    sessionStorage.setItem(pendingAdministratorStorageKey, JSON.stringify({
+      version: 1,
+      kind: "inflight_no_replay",
+      target_internal_user_id: administratorId,
+      action: "revoke",
+      request_id: requestId,
+    }));
+    const memberUsers = managedUsers.map((user) => user.internal_user_id === administratorId
+      ? { ...user, role: "member" }
+      : user);
+    const fetchMock = vi.fn().mockResolvedValue(usersResponse(memberUsers));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+    expect(container.textContent).not.toContain("变更已确认");
+    expect(container.textContent).toContain("人工核查治理审计");
+    expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toMatchObject({
+      version: 1, kind: "inflight_no_replay", request_id: requestId,
+    });
+    expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "DELETE")).toHaveLength(0);
+    expect([...container.querySelectorAll("button")]
+      .filter((button) => button.textContent?.includes("平台管理员"))
+      .every((button) => button.hasAttribute("disabled"))).toBe(true);
   });
 
   it("does not make an unclassified client failure replayable", async () => {
