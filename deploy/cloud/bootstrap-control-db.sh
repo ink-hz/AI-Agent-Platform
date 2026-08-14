@@ -113,7 +113,7 @@ control_catalog_signature="$(/usr/bin/docker exec "$postgres_container" \
     (select count(*) from pg_database database_entry join pg_roles owner_role on owner_role.oid = database_entry.datdba where (database_entry.datname = 'agent_platform_control' and owner_role.rolname = 'platform_control_owner') or (database_entry.datname = 'agent_platform_control_preview' and owner_role.rolname = 'platform_control_owner_preview'))
   )")" || fail
 case "$credential_layout:$control_catalog_signature" in
-  fresh:0:0:0:0:0:0|legacy-shared:2:6:0:0:2:0|isolated-unmarked:2:6:6:2:0:2)
+  fresh:0:0:0:0:0:0|fresh:1:0:6:1:0:1|legacy-shared:2:6:0:0:2:0|isolated-unmarked:2:6:6:2:0:2)
     credential_origin="$credential_layout"
     "$credential_helper" prepare "$private_path" "$credential_origin" \
       >/dev/null || fail

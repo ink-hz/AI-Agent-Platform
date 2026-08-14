@@ -268,6 +268,7 @@ def test_bootstrap_orders_rotation_migrations_verification_and_marker() -> None:
     assert _bash_array(script, "production_rotation_roles") == PRODUCTION_ROLES
     assert "control_catalog_signature" in script
     assert 'fresh:0:0:0:0:0:0' in script
+    assert 'fresh:1:0:6:1:0:1' in script
     assert 'legacy-shared:2:6:0:0:2:0' in script
     assert 'isolated-unmarked:2:6:6:2:0:2' in script
     assert "control-db-credential-state.sh" in script
