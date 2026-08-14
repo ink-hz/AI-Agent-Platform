@@ -488,7 +488,7 @@ verify_phase() {
   validate_secret_prerequisites
   /usr/bin/docker build --pull=false --build-arg "RELEASE_SHA=$release_sha" \
     -t "$image_ref" -f "$release_path/deploy/cloud/Dockerfile" "$release_path" >/dev/null
-  PLATFORM_IMAGE="$image_ref" compose_preview config --format json > "$baseline_dir/compose-config.json"
+  PLATFORM_IMAGE="$image_ref" compose_preview --profile demo-preview-tools config --format json > "$baseline_dir/compose-config.json"
   /bin/chmod 600 "$baseline_dir/compose-config.json"
   /usr/bin/python3 - "$baseline_dir/compose-config.json" "$image_ref" <<'PY'
 import json

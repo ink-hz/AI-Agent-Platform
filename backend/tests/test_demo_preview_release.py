@@ -216,6 +216,10 @@ def test_deploy_bootstraps_then_validates_and_uses_compose_runner_networks() -> 
 def test_merged_compose_gate_distinguishes_egress_from_loopback_contract() -> None:
     value = _text(DEPLOY)
 
+    assert (
+        'compose_preview --profile demo-preview-tools config --format json'
+        in value
+    )
     assert 'egress_services = (' in value
     assert '"platform-api-demo-preview"' in value
     assert '"platform-demo-preview-runner"' in value
