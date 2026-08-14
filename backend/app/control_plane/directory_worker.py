@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from datetime import datetime
 import random
 import logging
+import math
+import time
 from typing import Any, Iterator
 from uuid import UUID
 
@@ -35,11 +37,18 @@ class DirectoryWorkerRepository:
     def __repr__(self) -> str:
         return "DirectoryWorkerRepository(database_url=<redacted>)"
 
-    def _connection(self):
+    def _connection(self, timeout_seconds: float = 20.0):
+        if timeout_seconds <= 0:
+            raise DirectoryRepositoryError("directory deadline exceeded")
+        statement_ms = max(1, min(20_000, int(timeout_seconds * 1000)))
+        lock_ms = max(1, min(5_000, statement_ms))
         return self._connect(
             self._database_url,
-            connect_timeout=3,
-            options="-c statement_timeout=20000 -c lock_timeout=5000",
+            connect_timeout=max(1, min(3, math.ceil(timeout_seconds))),
+            options=(
+                f"-c statement_timeout={statement_ms} "
+                f"-c lock_timeout={lock_ms}"
+            ),
             row_factory=dict_row,
         )
 
@@ -69,9 +78,11 @@ class DirectoryWorkerRepository:
                     pass
             connection.close()
 
-    def _call(self, query: str, parameters: tuple[Any, ...]) -> Any:
+    def _call(
+        self, query: str, parameters: tuple[Any, ...], *, timeout_seconds: float = 20.0
+    ) -> Any:
         try:
-            with self._connection() as connection, connection.cursor() as cursor:
+            with self._connection(timeout_seconds) as connection, connection.cursor() as cursor:
                 cursor.execute(query, parameters)
                 row = cursor.fetchone() if cursor.description else None
             return row
@@ -86,10 +97,15 @@ class DirectoryWorkerRepository:
         member_count: int,
         department_count: int,
         membership_count: int,
+        closure_count: int,
+        source_schema_version: int,
+        expected_digest: str,
+        *,
+        timeout_seconds: float = 20.0,
     ) -> None:
         self._call(
-            "select platform_control.create_directory_staging_generation("
-            "%s,%s,%s,%s,%s,%s)",
+            "select platform_control.create_directory_staging_generation_v20("
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 generation_id,
                 run_id,
@@ -97,11 +113,16 @@ class DirectoryWorkerRepository:
                 member_count,
                 department_count,
                 membership_count,
+                closure_count,
+                source_schema_version,
+                expected_digest,
             ),
+            timeout_seconds=timeout_seconds,
         )
 
     def stage_departments(
-        self, generation_id: UUID, rows: tuple[StagedDepartment, ...]
+        self, generation_id: UUID, rows: tuple[StagedDepartment, ...], *,
+        timeout_seconds: float = 20.0,
     ) -> None:
         self._batch(
             "select platform_control.stage_directory_department("
@@ -118,11 +139,12 @@ class DirectoryWorkerRepository:
                     row.display_name,
                 )
                 for row in rows
-            ),
+            ), timeout_seconds=timeout_seconds,
         )
 
     def stage_members(
-        self, generation_id: UUID, rows: tuple[StagedMember, ...]
+        self, generation_id: UUID, rows: tuple[StagedMember, ...], *,
+        timeout_seconds: float = 20.0,
     ) -> None:
         self._batch(
             "select platform_control.stage_directory_member_v19("
@@ -143,57 +165,70 @@ class DirectoryWorkerRepository:
                     row.status,
                 )
                 for row in rows
-            ),
+            ), timeout_seconds=timeout_seconds,
         )
 
     def stage_memberships(
-        self, generation_id: UUID, rows: tuple[tuple[UUID, UUID], ...]
+        self, generation_id: UUID, rows: tuple[tuple[UUID, UUID], ...], *,
+        timeout_seconds: float = 20.0,
     ) -> None:
         self._batch(
             "select platform_control.stage_directory_membership(%s,%s,%s)",
             ((generation_id, member, department) for member, department in rows),
+            timeout_seconds=timeout_seconds,
         )
 
     def stage_closure(
         self,
         generation_id: UUID,
         rows: tuple[tuple[UUID, UUID, int], ...],
+        *, timeout_seconds: float = 20.0,
     ) -> None:
         self._batch(
             "select platform_control.stage_department_closure(%s,%s,%s,%s)",
             (
                 (generation_id, ancestor, descendant, depth)
                 for ancestor, descendant, depth in rows
-            ),
+            ), timeout_seconds=timeout_seconds,
         )
 
-    def _batch(self, query: str, parameters) -> None:
+    def _batch(self, query: str, parameters, *, timeout_seconds: float = 20.0) -> None:
         try:
-            with self._connection() as connection, connection.cursor() as cursor:
+            with self._connection(timeout_seconds) as connection, connection.cursor() as cursor:
                 for values in parameters:
                     cursor.execute(query, values)
         except psycopg.Error:
             raise DirectoryRepositoryError("directory repository unavailable") from None
 
-    def finalize_staging_generation(self, generation_id: UUID) -> str:
+    def finalize_staging_generation(
+        self, generation_id: UUID, *, timeout_seconds: float = 20.0
+    ) -> str:
         row = self._call(
             "select platform_control.finalize_directory_staging_generation(%s) "
             "as checksum",
-            (generation_id,),
+            (generation_id,), timeout_seconds=timeout_seconds,
         )
         return str(row["checksum"])
 
-    def promote_generation(self, generation_id: UUID) -> None:
+    def promote_generation(
+        self, generation_id: UUID, *, timeout_seconds: float = 20.0
+    ) -> None:
+        deadline = time.monotonic() + timeout_seconds
         try:
             self._call(
                 "select platform_control.promote_verified_directory_generation(%s)",
-                (generation_id,),
+                (generation_id,), timeout_seconds=timeout_seconds,
             )
             return
         except DirectoryRepositoryError:
             # A lost response after COMMIT is reconciled by authoritative state.
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise DirectoryPromotionIndeterminate(
+                    "directory promotion indeterminate"
+                ) from None
             try:
-                with self._connection() as connection, connection.cursor() as cursor:
+                with self._connection(remaining) as connection, connection.cursor() as cursor:
                     cursor.execute(
                         "select active_generation_id from "
                         "platform_control.directory_state where singleton"
@@ -207,10 +242,13 @@ class DirectoryWorkerRepository:
                 ) from None
             raise
 
-    def mark_generation_failed(self, generation_id: UUID, error_code: str) -> None:
+    def mark_generation_failed(
+        self, generation_id: UUID, error_code: str, *, timeout_seconds: float = 20.0
+    ) -> None:
         self._call(
             "select platform_control.fail_directory_staging_generation(%s,%s)",
             (generation_id, error_code),
+            timeout_seconds=timeout_seconds,
         )
 
     def read_directory_clock(self):

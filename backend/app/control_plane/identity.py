@@ -138,33 +138,16 @@ class IdentityResolver:
                 self._check_key_policy(cursor)
                 cursor.execute(f"select {self.DIRECTORY_LOCK_FUNCTION}")
                 directory_rows = cursor.execute(
-                    "select member.generation_id,member.member_key,"
-                    "member.internal_user_id,member.subject_kind,member.lookup_hmac,"
-                    "member.lookup_key_version,member.encrypted_provider_id,"
-                    "member.encryption_key_version,member.union_lookup_hmac,"
-                    "member.union_lookup_key_version from "
-                    "platform_control.directory_state state join "
-                    "platform_control.directory_generations generation on "
-                    "generation.generation_id=state.active_generation_id and "
-                    "generation.status='complete' join "
-                    "platform_control.directory_members member on "
-                    "member.generation_id=generation.generation_id "
-                    "where state.singleton and member.subject_kind=%s "
-                    "and member.status='active' and member.lookup_key_version=%s "
-                    "and member.lookup_hmac=%s and "
-                    "member.union_lookup_key_version=%s and "
-                    "member.union_lookup_hmac=%s",
+                    "select * from platform_control."
+                    "read_active_directory_member_v20(%s,%s,%s,%s)",
                     (
-                        corporate.subject_kind,
                         corporate.lookup_key_version,
                         corporate.lookup_hmac,
                         union.lookup_key_version,
                         union.lookup_hmac,
                     ),
                 ).fetchall()
-                if len(directory_rows) != 1 or not self.identity_codec.equivalent(
-                    self._row_identity(directory_rows[0]), corporate
-                ):
+                if len(directory_rows) != 1:
                     raise IdentityResolutionError("active directory member unavailable")
 
                 corporate_rows = self._lookup_rows(cursor, corporate)

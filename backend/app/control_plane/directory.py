@@ -5,19 +5,34 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
+import hashlib
 import logging
+import struct
 import time
 from typing import Any
 from uuid import UUID, uuid4
 
 from .crypto import ProtectedProviderId, ProviderIdentityCodec
 from .dingtalk import DingTalkClient, DingTalkDepartment, DingTalkMember
+from .directory_limits import (
+    DIRECTORY_FETCH_CONCURRENCY,
+    DIRECTORY_SOURCE_SCHEMA_VERSION,
+    DIRECTORY_STAGE_BATCH_SIZE,
+    MAX_CLOSURE_ROWS,
+    MAX_DEPARTMENT_DEPTH,
+    MAX_DEPARTMENTS,
+    MAX_DEPARTMENTS_PER_MEMBER,
+    MAX_DISPLAY_NAME_LENGTH,
+    MAX_MEMBERS,
+    MAX_MEMBERSHIPS,
+    MAX_PROVIDER_CIPHERTEXT_BYTES,
+    MIN_PROVIDER_CIPHERTEXT_BYTES,
+)
 from .models import DirectoryFreshness
 from .identity import IdentityResolver
 
 
 _LOG = logging.getLogger(__name__)
-
 
 class DirectoryReconciliationError(RuntimeError):
     """Safe directory reconciliation failure with a bounded reason code."""
@@ -48,7 +63,7 @@ class DirectoryFreshnessStatus:
 @dataclass(frozen=True)
 class MemberAccessSignal:
     allowed: bool
-    reason: str
+    reason: MemberAccessReason
     freshness: DirectoryFreshness
 
 
@@ -133,7 +148,7 @@ class DirectoryFreshnessService:
             reason = MemberAccessReason.ALLOWED
         return MemberAccessSignal(
             allowed=reason is MemberAccessReason.ALLOWED,
-            reason=reason.value,
+            reason=reason,
             freshness=status.freshness,
         )
 
@@ -160,6 +175,10 @@ def build_department_closure(
                 break
             current = parent
             depth += 1
+            if depth > MAX_DEPARTMENT_DEPTH:
+                raise DirectoryReconciliationError("department_depth_bound")
+        if len(rows) > MAX_CLOSURE_ROWS:
+            raise DirectoryReconciliationError("department_closure_bound")
     return tuple(sorted(rows))
 
 
@@ -180,7 +199,70 @@ def normalize_member_departments(
         )
     ):
         raise ValueError("member department invalid")
+    if len(normalized) > MAX_DEPARTMENTS_PER_MEMBER:
+        raise ValueError("member department bound")
     return normalized
+
+
+def _canonical_field(value: bytes | str | int | UUID | None) -> bytes:
+    if value is None:
+        return struct.pack(">i", -1)
+    if isinstance(value, bytes):
+        encoded = value
+    elif isinstance(value, UUID):
+        encoded = str(value).encode("ascii")
+    elif isinstance(value, int) and not isinstance(value, bool):
+        encoded = str(value).encode("ascii")
+    elif isinstance(value, str):
+        encoded = value.encode("utf-8")
+    else:
+        raise ValueError("directory canonical field invalid")
+    return struct.pack(">i", len(encoded)) + encoded
+
+
+def _canonical_record(tag: bytes, *fields: bytes | str | int | UUID | None) -> bytes:
+    return tag + b"".join(_canonical_field(field) for field in fields)
+
+
+def canonical_directory_digest(
+    source_schema_version: int,
+    departments: tuple[StagedDepartment, ...],
+    members: tuple[StagedMember, ...],
+    memberships: tuple[tuple[UUID, UUID], ...],
+    closure: tuple[tuple[UUID, UUID, int], ...],
+) -> str:
+    if source_schema_version != DIRECTORY_SOURCE_SCHEMA_VERSION:
+        raise ValueError("directory source schema invalid")
+    records = [
+        _canonical_record(
+            b"H", source_schema_version, len(members), len(departments),
+            len(memberships), len(closure)
+        )
+    ]
+    for row in sorted(departments, key=lambda item: item.department_key.bytes):
+        records.append(_canonical_record(
+            b"D", row.department_key, row.parent_department_key,
+            row.display_name, row.protected.lookup_key_version,
+            row.protected.lookup_hmac, row.protected.encryption_key_version,
+            row.protected.ciphertext,
+        ))
+    for row in sorted(members, key=lambda item: item.member_key.bytes):
+        records.append(_canonical_record(
+            b"M", row.member_key, row.display_name, row.status,
+            row.corporate.lookup_key_version, row.corporate.lookup_hmac,
+            row.corporate.encryption_key_version, row.corporate.ciphertext,
+            row.union.lookup_key_version, row.union.lookup_hmac,
+            row.union.encryption_key_version, row.union.ciphertext,
+        ))
+    for member_key, department_key in sorted(
+        memberships, key=lambda item: (item[0].bytes, item[1].bytes)
+    ):
+        records.append(_canonical_record(b"P", member_key, department_key))
+    for ancestor, descendant, depth in sorted(
+        closure, key=lambda item: (item[0].bytes, item[1].bytes, item[2])
+    ):
+        records.append(_canonical_record(b"C", ancestor, descendant, depth))
+    return hashlib.sha256(b"".join(records)).hexdigest()
 
 
 def _stable_key(protected: ProtectedProviderId) -> UUID:
@@ -192,8 +274,8 @@ def _stable_key(protected: ProtectedProviderId) -> UUID:
 
 class DirectoryReconciler:
     DEFAULT_HARD_TIMEOUT_SECONDS = 900
-    DEFAULT_FETCH_CONCURRENCY = 4
-    BATCH_SIZE = 250
+    DEFAULT_FETCH_CONCURRENCY = DIRECTORY_FETCH_CONCURRENCY
+    BATCH_SIZE = DIRECTORY_STAGE_BATCH_SIZE
 
     def __init__(
         self,
@@ -224,10 +306,13 @@ class DirectoryReconciler:
         if run_kind not in {"startup", "scheduled", "targeted", "event"}:
             raise ValueError("directory run kind invalid")
         started = time.monotonic()
+        hard_deadline = started + self._hard_timeout_seconds
+        cleanup_reserve = min(1.0, self._hard_timeout_seconds * 0.2)
         try:
             return await asyncio.wait_for(
                 self._run_full(
-                    run_kind, started, started + self._hard_timeout_seconds
+                    run_kind, started, hard_deadline - cleanup_reserve,
+                    hard_deadline,
                 ),
                 timeout=self._hard_timeout_seconds,
             )
@@ -241,13 +326,16 @@ class DirectoryReconciler:
             raise DirectoryReconciliationError("provider_failed") from None
 
     async def _run_full(
-        self, run_kind: str, started: float, deadline: float
+        self, run_kind: str, started: float, deadline: float,
+        hard_deadline: float,
     ) -> DirectoryReconciliationResult:
         # The complete provider snapshot is collected and validated before opening
         # the first database transaction. No network await occurs while staging.
         departments = [DingTalkDepartment(1, None, "Organization")]
         async for department in self._client.iter_departments():
             departments.append(department)
+            if len(departments) > MAX_DEPARTMENTS:
+                raise DirectoryReconciliationError("department_count_bound")
         by_id: dict[int, DingTalkDepartment] = {}
         for department in departments:
             previous = by_id.get(department.department_id)
@@ -261,31 +349,18 @@ class DirectoryReconciler:
         }
         closure_ids = build_department_closure(parents)
 
-        semaphore = asyncio.Semaphore(self._fetch_concurrency)
-
-        async def collect(department_id: int) -> list[DingTalkMember]:
-            async with semaphore:
-                return [
-                    member
-                    async for member in self._client.iter_department_members(
-                        department_id
-                    )
-                ]
-
-        pages = await asyncio.gather(*(collect(key) for key in sorted(by_id)))
         members: dict[str, DingTalkMember] = {}
         union_owners: dict[str, str] = {}
-        for page in pages:
-            for member in page:
+        department_keys = sorted(by_id)
+        for offset in range(0, len(department_keys), self._fetch_concurrency):
+            chunk = department_keys[offset : offset + self._fetch_concurrency]
+            async for member in self._iter_member_chunk(chunk):
                 departments_for_member = normalize_member_departments(
                     member.department_ids, set(by_id)
                 )
                 normalized = DingTalkMember(
-                    member.userid,
-                    member.unionid,
-                    member.display_name,
-                    member.active,
-                    departments_for_member,
+                    member.userid, member.unionid, member.display_name,
+                    member.active, departments_for_member,
                 )
                 previous = members.get(member.userid)
                 if previous is not None and previous != normalized:
@@ -295,11 +370,15 @@ class DirectoryReconciler:
                     raise DirectoryReconciliationError("member_conflict")
                 members[member.userid] = normalized
                 union_owners[member.unionid] = member.userid
+                if len(members) > MAX_MEMBERS:
+                    raise DirectoryReconciliationError("member_count_bound")
 
         protected_departments: dict[int, StagedDepartment] = {}
         for department_id in sorted(by_id):
             item = by_id[department_id]
             protected = self._codec.seal("department", str(department_id))
+            self._validate_protected(protected)
+            self._validate_display_name(item.display_name)
             protected_departments[department_id] = StagedDepartment(
                 department_key=_stable_key(protected),
                 parent_department_key=None,
@@ -328,6 +407,9 @@ class DirectoryReconciler:
                 IdentityResolver.corporate_provider_id(self._corp_id, userid),
             )
             union = self._codec.seal("employee_union", member.unionid)
+            self._validate_protected(corporate)
+            self._validate_protected(union)
+            self._validate_display_name(member.display_name)
             key = _stable_key(corporate)
             member_keys[userid] = key
             staged_members.append(
@@ -349,6 +431,8 @@ class DirectoryReconciler:
                 for department_id in member.department_ids
             )
         )
+        if len(memberships) > MAX_MEMBERSHIPS:
+            raise DirectoryReconciliationError("membership_count_bound")
         closure = tuple(
             (
                 protected_departments[ancestor].department_key,
@@ -356,6 +440,11 @@ class DirectoryReconciler:
                 depth,
             )
             for ancestor, descendant, depth in closure_ids
+        )
+        expected_digest = canonical_directory_digest(
+            DIRECTORY_SOURCE_SCHEMA_VERSION,
+            tuple(protected_departments[key] for key in sorted(protected_departments)),
+            tuple(staged_members), memberships, closure,
         )
         generation_id = uuid4()
         run_id = uuid4()
@@ -368,6 +457,10 @@ class DirectoryReconciler:
                 len(staged_members),
                 len(protected_departments),
                 len(memberships),
+                len(closure),
+                DIRECTORY_SOURCE_SCHEMA_VERSION,
+                expected_digest,
+                timeout_seconds=self._remaining(deadline),
             )
             self._check_deadline(deadline)
             self._stage_batches(
@@ -380,15 +473,17 @@ class DirectoryReconciler:
             self._stage_batches("stage_memberships", generation_id, memberships, deadline)
             self._stage_batches("stage_closure", generation_id, closure, deadline)
             self._check_deadline(deadline)
-            self._repository.finalize_staging_generation(generation_id)
+            self._repository.finalize_staging_generation(
+                generation_id, timeout_seconds=self._remaining(deadline)
+            )
             self._check_deadline(deadline)
-            self._repository.promote_generation(generation_id)
-            self._check_deadline(deadline)
+            self._repository.promote_generation(
+                generation_id, timeout_seconds=self._remaining(deadline)
+            )
         except DirectoryReconciliationError as error:
-            try:
-                self._repository.mark_generation_failed(generation_id, str(error))
-            except Exception:
-                pass
+            self._mark_failed_with_remaining_budget(
+                generation_id, str(error), hard_deadline
+            )
             raise
         except DirectoryPromotionIndeterminate:
             # A promotion may have committed even when both its response and the
@@ -398,12 +493,9 @@ class DirectoryReconciler:
                 "promotion_indeterminate"
             ) from None
         except Exception:
-            try:
-                self._repository.mark_generation_failed(
-                    generation_id, "staging_failed"
-                )
-            except Exception:
-                pass
+            self._mark_failed_with_remaining_budget(
+                generation_id, "staging_failed", hard_deadline
+            )
             raise DirectoryReconciliationError("staging_failed") from None
         duration = time.monotonic() - started
         _LOG.info(
@@ -435,10 +527,68 @@ class DirectoryReconciler:
         method = getattr(self._repository, method_name)
         for offset in range(0, len(rows), self.BATCH_SIZE):
             self._check_deadline(deadline)
-            method(generation_id, rows[offset : offset + self.BATCH_SIZE])
+            method(
+                generation_id, rows[offset : offset + self.BATCH_SIZE],
+                timeout_seconds=self._remaining(deadline),
+            )
             self._check_deadline(deadline)
+
+    async def _iter_member_chunk(
+        self, department_ids: list[int]
+    ):
+        """Round-robin at most four provider iterators without page accumulation."""
+        sentinel = object()
+        iterators = [
+            self._client.iter_department_members(department_id).__aiter__()
+            for department_id in department_ids
+        ]
+        while iterators:
+            results = await asyncio.gather(*(
+                anext(iterator, sentinel) for iterator in iterators
+            ))
+            remaining = []
+            for iterator, result in zip(iterators, results, strict=True):
+                if result is sentinel:
+                    continue
+                remaining.append(iterator)
+                yield result
+            iterators = remaining
 
     @staticmethod
     def _check_deadline(deadline: float) -> None:
         if time.monotonic() >= deadline:
             raise DirectoryReconciliationError("sync_timeout")
+
+    @staticmethod
+    def _remaining(deadline: float) -> float:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise DirectoryReconciliationError("sync_timeout")
+        return remaining
+
+    @staticmethod
+    def _validate_display_name(value: str) -> None:
+        if not isinstance(value, str) or len(value) > MAX_DISPLAY_NAME_LENGTH:
+            raise DirectoryReconciliationError("display_name_bound")
+
+    @staticmethod
+    def _validate_protected(value: ProtectedProviderId) -> None:
+        if not (
+            MIN_PROVIDER_CIPHERTEXT_BYTES
+            <= len(value.ciphertext)
+            <= MAX_PROVIDER_CIPHERTEXT_BYTES
+        ):
+            raise DirectoryReconciliationError("provider_ciphertext_bound")
+
+    def _mark_failed_with_remaining_budget(
+        self, generation_id: UUID, error_code: str, deadline: float
+    ) -> None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        try:
+            self._repository.mark_generation_failed(
+                generation_id, error_code, timeout_seconds=remaining
+            )
+        except Exception:
+            pass

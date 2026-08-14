@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -12,6 +13,13 @@ from typing import Any, TypeVar
 from uuid import uuid4
 
 import httpx
+
+from .directory_limits import (
+    DIRECTORY_PAGE_SIZE,
+    MAX_DEPARTMENTS,
+    MAX_DISPLAY_NAME_LENGTH,
+    MAX_MEMBERS,
+)
 
 
 _LOG = logging.getLogger(__name__)
@@ -649,16 +657,16 @@ class DingTalkClient:
         return member, response.request_id
 
     async def iter_departments(self) -> AsyncIterator[DingTalkDepartment]:
-        pending = [1]
+        pending = deque([1])
         seen = {1}
         while pending:
-            if len(seen) > 10_000:
+            if len(seen) > MAX_DEPARTMENTS:
                 raise DingTalkProviderError(
                     "DingTalk pagination invalid",
                     request_id=str(uuid4()),
                     error_code="department_bound",
                 )
-            parent_id = pending.pop(0)
+            parent_id = pending.popleft()
             response = await self._legacy_read(
                 "/topapi/v2/department/listsub",
                 {"dept_id": parent_id, "language": "zh_CN"},
@@ -676,7 +684,9 @@ class DingTalkClient:
                     return DingTalkDepartment(
                         department_id=_required_integer(source.get("dept_id")),
                         parent_department_id=_optional_integer(source.get("parent_id")),
-                        display_name=_required_string(source.get("name"), maximum=256),
+                        display_name=_required_string(
+                            source.get("name"), maximum=MAX_DISPLAY_NAME_LENGTH
+                        ),
                     )
 
                 department = _parse_provider_value(parse_department)
@@ -705,7 +715,7 @@ class DingTalkClient:
         page_count = 0
         while True:
             page_count += 1
-            if page_count > 10_000:
+            if page_count > (MAX_MEMBERS // DIRECTORY_PAGE_SIZE) + 1:
                 raise DingTalkProviderError(
                     "DingTalk pagination invalid",
                     request_id=str(uuid4()),
@@ -716,7 +726,7 @@ class DingTalkClient:
                 {
                     "dept_id": department_id,
                     "cursor": cursor,
-                    "size": 100,
+                    "size": DIRECTORY_PAGE_SIZE,
                     "contain_access_limit": False,
                     "language": "zh_CN",
                 },
@@ -740,6 +750,12 @@ class DingTalkClient:
                     error_code="invalid_member_page",
                 )
             entries, has_more, next_cursor = page
+            if len(entries) > DIRECTORY_PAGE_SIZE:
+                raise DingTalkProviderError(
+                    "DingTalk pagination invalid",
+                    request_id=response.request_id,
+                    error_code="pagination_page_bound",
+                )
             if has_more and not entries:
                 raise DingTalkProviderError(
                     "DingTalk pagination invalid",

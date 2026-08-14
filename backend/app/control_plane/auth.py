@@ -643,17 +643,19 @@ class WebSessionRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select case "
-                    "when last_complete_at is null then 'hard_stale' "
-                    "when clock_timestamp()-last_complete_at >= %s*interval '1 second' then 'hard_stale' "
-                    "when clock_timestamp()-last_complete_at >= %s*interval '1 second' then 'warning' "
-                    "else 'fresh' end as freshness "
-                    "from platform_control.directory_state where singleton",
-                    (hard_stale_after_seconds,warning_after_seconds),
+                    "select * from platform_control."
+                    "read_active_directory_status_v20()",
                 ).fetchone()
-            if row is None:
+            if row is None or row["last_complete_at"] is None:
                 return DirectoryFreshness.HARD_STALE
-            return DirectoryFreshness(row["freshness"])
+            age_seconds = (
+                row["database_now"] - row["last_complete_at"]
+            ).total_seconds()
+            if age_seconds < 0 or age_seconds >= hard_stale_after_seconds:
+                return DirectoryFreshness.HARD_STALE
+            if age_seconds >= warning_after_seconds:
+                return DirectoryFreshness.WARNING
+            return DirectoryFreshness.FRESH
         except (psycopg.Error, ValueError):
             return DirectoryFreshness.HARD_STALE
 

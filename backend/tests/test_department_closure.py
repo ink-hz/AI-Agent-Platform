@@ -45,3 +45,22 @@ def test_member_can_belong_to_multiple_departments() -> None:
     assert normalize_member_departments((3, 2, 3), {1, 2, 3}) == (2, 3)
     with pytest.raises(ValueError, match="member department invalid"):
         normalize_member_departments((2, 99), {1, 2, 3})
+
+
+def test_closure_and_membership_bounds_fail_before_large_allocation() -> None:
+    from app.control_plane.directory import (
+        MAX_DEPARTMENT_DEPTH,
+        MAX_DEPARTMENTS_PER_MEMBER,
+        DirectoryReconciliationError,
+        build_department_closure,
+        normalize_member_departments,
+    )
+
+    deep = {1: None, **{index: index - 1 for index in range(2, MAX_DEPARTMENT_DEPTH + 3)}}
+    with pytest.raises(DirectoryReconciliationError, match="department_depth_bound"):
+        build_department_closure(deep)
+    with pytest.raises(ValueError, match="member department bound"):
+        normalize_member_departments(
+            tuple(range(1, MAX_DEPARTMENTS_PER_MEMBER + 2)),
+            set(range(1, MAX_DEPARTMENTS_PER_MEMBER + 2)),
+        )

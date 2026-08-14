@@ -52,7 +52,7 @@ def test_freshness_service_uses_database_time_and_local_departure_override() -> 
         "internal-safe-id"
     )
     assert signal.allowed is False
-    assert signal.reason == "locally_invalidated"
+    assert signal.reason.value == "locally_invalidated"
 
 
 def test_hard_stale_is_a_typed_member_denial_signal() -> None:
@@ -72,4 +72,4 @@ def test_hard_stale_is_a_typed_member_denial_signal() -> None:
     assert service.evaluate().freshness is DirectoryFreshness.HARD_STALE
     signal = service.member_access_signal("member")
     assert signal.allowed is False
-    assert signal.reason == "directory_hard_stale"
+    assert signal.reason.value == "directory_hard_stale"

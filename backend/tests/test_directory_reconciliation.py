@@ -45,41 +45,41 @@ class FakeRepository:
         self.calls = []
         self.staged = {}
 
-    def create_staging_generation(self, generation_id, run_id, kind, member_count, department_count, membership_count):
+    def create_staging_generation(self, generation_id, run_id, kind, member_count, department_count, membership_count, closure_count, source_schema_version, expected_digest, **kwargs):
         self.calls.append(("create", generation_id, member_count, department_count, membership_count))
         self.staged[generation_id] = {"departments": [], "members": [], "memberships": [], "closure": [], "failed": None}
 
-    def stage_departments(self, generation_id, rows):
+    def stage_departments(self, generation_id, rows, **kwargs):
         assert self.fail_at != "departments"
         self.calls.append(("departments", generation_id))
         self.staged[generation_id]["departments"].extend(rows)
 
-    def stage_members(self, generation_id, rows):
+    def stage_members(self, generation_id, rows, **kwargs):
         assert self.fail_at != "members"
         self.calls.append(("members", generation_id))
         self.staged[generation_id]["members"].extend(rows)
 
-    def stage_memberships(self, generation_id, rows):
+    def stage_memberships(self, generation_id, rows, **kwargs):
         assert self.fail_at != "memberships"
         self.calls.append(("memberships", generation_id))
         self.staged[generation_id]["memberships"].extend(rows)
 
-    def stage_closure(self, generation_id, rows):
+    def stage_closure(self, generation_id, rows, **kwargs):
         assert self.fail_at != "closure"
         self.calls.append(("closure", generation_id))
         self.staged[generation_id]["closure"].extend(rows)
 
-    def finalize_staging_generation(self, generation_id):
+    def finalize_staging_generation(self, generation_id, **kwargs):
         assert self.fail_at != "finalize"
         self.calls.append(("finalize", generation_id))
 
-    def promote_generation(self, generation_id):
+    def promote_generation(self, generation_id, **kwargs):
         if self.fail_at == "promote":
             raise ConnectionError("ambiguous")
         self.active_generation = generation_id
         self.calls.append(("promote", generation_id))
 
-    def mark_generation_failed(self, generation_id, error_code):
+    def mark_generation_failed(self, generation_id, error_code, **kwargs):
         self.staged[generation_id]["failed"] = error_code
         self.calls.append(("failed", generation_id, error_code))
 
@@ -186,15 +186,15 @@ async def test_hard_timeout_is_15_minutes_and_cancels_before_any_database_write(
 @pytest.mark.asyncio
 async def test_total_deadline_marks_an_existing_staging_generation_failed() -> None:
     class SlowRepository(FakeRepository):
-        def stage_departments(self, generation_id, rows):
-            super().stage_departments(generation_id, rows)
-            time.sleep(0.01)
+        def stage_departments(self, generation_id, rows, **kwargs):
+            super().stage_departments(generation_id, rows, **kwargs)
+            time.sleep(0.041)
 
     previous = UUID("00000000-0000-0000-0000-000000000001")
     repository = SlowRepository(active_generation=previous)
     with pytest.raises(Exception, match="sync_timeout"):
         await _reconciler(
-            FakeClient(), repository, hard_timeout_seconds=0.005
+            FakeClient(), repository, hard_timeout_seconds=0.05
         ).run_full()
     generation_id = repository.calls[0][1]
     assert repository.active_generation == previous
@@ -278,10 +278,12 @@ def test_worker_has_only_narrow_directory_functions(production_directory) -> Non
             "has_function_privilege(current_user,'platform_control."
             "create_directory_staging_generation(uuid,uuid,text,integer,integer,integer)','execute'),"
             "has_function_privilege(current_user,'platform_control."
+            "create_directory_staging_generation_v20(uuid,uuid,text,integer,integer,integer,integer,integer,text)','execute'),"
+            "has_function_privilege(current_user,'platform_control."
             "promote_verified_directory_generation(uuid)','execute')"
         )
         assert cursor.fetchone() == (
-            "platform_directory_worker", "agent_platform_control", True, True
+            "platform_directory_worker", "agent_platform_control", False, True, True
         )
         cursor.execute(
             "select proname,has_function_privilege(current_user,oid,'execute'),"
@@ -291,7 +293,7 @@ def test_worker_has_only_narrow_directory_functions(production_directory) -> Non
             "from pg_proc where pronamespace='platform_control'::regnamespace "
             "and proname=any(%s) order by proname",
             ([
-                "create_directory_staging_generation",
+                "create_directory_staging_generation_v20",
                 "stage_directory_department",
                 "stage_directory_member_v19",
                 "stage_directory_membership",
@@ -312,7 +314,7 @@ def test_worker_has_only_narrow_directory_functions(production_directory) -> Non
     with psycopg.connect(app_url) as connection, connection.cursor() as cursor:
         cursor.execute(
             "select has_function_privilege(current_user,'platform_control."
-            "create_directory_staging_generation(uuid,uuid,text,integer,integer,integer)','execute')"
+            "create_directory_staging_generation_v20(uuid,uuid,text,integer,integer,integer,integer,integer,text)','execute')"
         )
         assert cursor.fetchone()[0] is False
 
@@ -345,7 +347,7 @@ def test_promotion_connection_ambiguity_reconciles_authoritative_active_state() 
     repository = DirectoryWorkerRepository(
         "postgresql://platform_directory_worker@127.0.0.1/agent_platform_control"
     )
-    repository._call = lambda *args: (_ for _ in ()).throw(
+    repository._call = lambda *args, **kwargs: (_ for _ in ()).throw(
         DirectoryRepositoryError("directory repository unavailable")
     )
 
@@ -360,7 +362,7 @@ def test_promotion_connection_ambiguity_reconciles_authoritative_active_state() 
         def __exit__(self, *args): return None
         def cursor(self): return Cursor()
 
-    repository._connection = lambda: Connection()
+    repository._connection = lambda *args, **kwargs: Connection()
     repository.promote_generation(selected)
 
 
@@ -374,10 +376,10 @@ def test_unreconciled_promotion_ambiguity_is_explicit() -> None:
     repository = DirectoryWorkerRepository(
         "postgresql://platform_directory_worker@127.0.0.1/agent_platform_control"
     )
-    repository._call = lambda *args: (_ for _ in ()).throw(
+    repository._call = lambda *args, **kwargs: (_ for _ in ()).throw(
         DirectoryRepositoryError("directory repository unavailable")
     )
-    repository._connection = lambda: (_ for _ in ()).throw(
+    repository._connection = lambda *args, **kwargs: (_ for _ in ()).throw(
         psycopg.OperationalError("database details")
     )
     with pytest.raises(DirectoryPromotionIndeterminate) as caught:
@@ -396,7 +398,7 @@ async def test_reconciler_does_not_mark_indeterminate_promotion_failed() -> None
     )
 
     class IndeterminateRepository(FakeRepository):
-        def promote_generation(self, generation_id):
+        def promote_generation(self, generation_id, **kwargs):
             raise DirectoryPromotionIndeterminate(
                 "directory promotion indeterminate"
             )
@@ -441,7 +443,10 @@ async def test_real_postgres_atomic_promotion_and_staging_isolation(
 
     # A candidate can be staged, but active-generation queries cannot see it.
     generation = UUID("10000000-0000-0000-0000-000000000001")
-    repository.create_staging_generation(generation, UUID("20000000-0000-0000-0000-000000000001"), "scheduled", 0, 1, 0)
+    repository.create_staging_generation(
+        generation, UUID("20000000-0000-0000-0000-000000000001"),
+        "scheduled", 0, 1, 0, 1, 1, "0" * 64,
+    )
     with psycopg.connect(environment["admin"]) as connection, connection.cursor() as cursor:
         cursor.execute(
             "select active_generation_id from platform_control.directory_state where singleton"
@@ -517,11 +522,23 @@ async def test_checksum_mismatch_cannot_replace_active_generation(
     prior = await _reconciler(FakeClient(), repository).run_full()
     candidate = UUID("30000000-0000-0000-0000-000000000001")
     run = UUID("40000000-0000-0000-0000-000000000001")
-    repository.create_staging_generation(candidate, run, "scheduled", 0, 1, 0)
+    root_key = UUID("50000000-0000-0000-0000-000000000001")
     protected = _codec().seal("department", "root-checksum")
-    from app.control_plane.directory import StagedDepartment
-    repository.stage_departments(candidate, (StagedDepartment(UUID("50000000-0000-0000-0000-000000000001"), None, protected, "Root"),))
-    repository.stage_closure(candidate, ((UUID("50000000-0000-0000-0000-000000000001"), UUID("50000000-0000-0000-0000-000000000001"), 0),))
+    from app.control_plane.directory import (
+        DIRECTORY_SOURCE_SCHEMA_VERSION, StagedDepartment,
+        canonical_directory_digest,
+    )
+    department = StagedDepartment(root_key, None, protected, "Root")
+    closure = ((root_key, root_key, 0),)
+    digest = canonical_directory_digest(
+        DIRECTORY_SOURCE_SCHEMA_VERSION, (department,), (), (), closure
+    )
+    repository.create_staging_generation(
+        candidate, run, "scheduled", 0, 1, 0, 1,
+        DIRECTORY_SOURCE_SCHEMA_VERSION, digest,
+    )
+    repository.stage_departments(candidate, (department,))
+    repository.stage_closure(candidate, closure)
     repository.finalize_staging_generation(candidate)
     with psycopg.connect(environment["admin"]) as connection, connection.cursor() as cursor:
         cursor.execute(
@@ -550,7 +567,10 @@ def test_cycle_and_declared_count_mismatch_fail_before_promotion(
     first = UUID("60000000-0000-0000-0000-000000000001")
     second = UUID("60000000-0000-0000-0000-000000000002")
     generation = UUID("60000000-0000-0000-0000-000000000003")
-    repository.create_staging_generation(generation, UUID("60000000-0000-0000-0000-000000000004"), "scheduled", 0, 2, 0)
+    repository.create_staging_generation(
+        generation, UUID("60000000-0000-0000-0000-000000000004"),
+        "scheduled", 0, 2, 0, 2, 1, "0" * 64,
+    )
     repository.stage_departments(generation, (
         StagedDepartment(first, second, codec.seal("department", "cycle-1"), "One"),
         StagedDepartment(second, first, codec.seal("department", "cycle-2"), "Two"),
@@ -560,7 +580,10 @@ def test_cycle_and_declared_count_mismatch_fail_before_promotion(
         repository.finalize_staging_generation(generation)
 
     mismatch = UUID("70000000-0000-0000-0000-000000000001")
-    repository.create_staging_generation(mismatch, UUID("70000000-0000-0000-0000-000000000002"), "scheduled", 1, 1, 0)
+    repository.create_staging_generation(
+        mismatch, UUID("70000000-0000-0000-0000-000000000002"),
+        "scheduled", 1, 1, 0, 1, 1, "0" * 64,
+    )
     root = UUID("70000000-0000-0000-0000-000000000003")
     repository.stage_departments(mismatch, (StagedDepartment(root, None, codec.seal("department", "mismatch-root"), "Root"),))
     repository.stage_closure(mismatch, ((root, root, 0),))
@@ -644,3 +667,104 @@ async def test_worker_survives_startup_failure_and_schedules_six_hour_retry() ->
         await worker.serve()
     assert reconciler.calls == 1
     assert delays == [21_600]
+
+
+def test_versioned_canonical_digest_has_golden_vector_and_covers_ciphertext() -> None:
+    from app.control_plane.directory import (
+        DIRECTORY_SOURCE_SCHEMA_VERSION,
+        canonical_directory_digest,
+    )
+
+    codec = _codec()
+    department = codec.seal("department", "golden-dept")
+    corporate = codec.seal("employee", "golden-user")
+    union = codec.seal("employee_union", "golden-union")
+    # Fixed ciphertext makes this a stable cross-language serialization vector.
+    department = type(department)(department.subject_kind, department.lookup_hmac, 1, b"d" * 29, 1)
+    corporate = type(corporate)(corporate.subject_kind, corporate.lookup_hmac, 1, b"c" * 29, 1)
+    union = type(union)(union.subject_kind, union.lookup_hmac, 1, b"u" * 29, 1)
+    dept_key = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+    member_key = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+    from app.control_plane.directory import StagedDepartment, StagedMember
+    digest = canonical_directory_digest(
+        DIRECTORY_SOURCE_SCHEMA_VERSION,
+        (StagedDepartment(dept_key, None, department, "研发"),),
+        (StagedMember(member_key, corporate, union, "Alice", "active"),),
+        ((member_key, dept_key),),
+        ((dept_key, dept_key, 0),),
+    )
+    assert digest == "a8e83fb0ab9a26f2916cd83ac67c7d97b93f9ad1a650a6a79648881ca2f7d605"
+    changed = type(corporate)(corporate.subject_kind, corporate.lookup_hmac, 1, b"x" * 29, 1)
+    assert canonical_directory_digest(
+        DIRECTORY_SOURCE_SCHEMA_VERSION,
+        (StagedDepartment(dept_key, None, department, "研发"),),
+        (StagedMember(member_key, changed, union, "Alice", "active"),),
+        ((member_key, dept_key),),
+        ((dept_key, dept_key, 0),),
+    ) != digest
+
+
+@pytest.mark.postgres
+def test_python_and_postgres_canonical_digest_are_identical(
+    production_directory,
+) -> None:
+    from app.control_plane.directory import (
+        DIRECTORY_SOURCE_SCHEMA_VERSION,
+        StagedDepartment,
+        canonical_directory_digest,
+    )
+
+    repository, environment = production_directory
+    codec = _codec()
+    protected = codec.seal("department", "cross-language")
+    protected = type(protected)(
+        protected.subject_kind, protected.lookup_hmac, 1, b"z" * 29, 1
+    )
+    department = StagedDepartment(
+        UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+        None, protected, "Cross Language",
+    )
+    closure = ((department.department_key, department.department_key, 0),)
+    expected = canonical_directory_digest(
+        DIRECTORY_SOURCE_SCHEMA_VERSION, (department,), (), (), closure
+    )
+    generation = UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+    repository.create_staging_generation(
+        generation, UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
+        "scheduled", 0, 1, 0, 1, DIRECTORY_SOURCE_SCHEMA_VERSION, expected,
+    )
+    repository.stage_departments(generation, (department,))
+    repository.stage_closure(generation, closure)
+    assert repository.finalize_staging_generation(generation) == expected
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select platform_control.directory_generation_checksum_v20(%s)",
+            (generation,),
+        ).fetchone() == (expected,)
+
+
+@pytest.mark.postgres
+def test_database_operation_consumes_remaining_deadline_budget(
+    production_directory,
+) -> None:
+    from app.control_plane.directory_worker import DirectoryRepositoryError
+
+    repository, _ = production_directory
+    started = time.monotonic()
+    with pytest.raises(DirectoryRepositoryError):
+        repository._call("select pg_sleep(1)", (), timeout_seconds=0.05)
+    assert time.monotonic() - started < 0.8
+
+
+@pytest.mark.asyncio
+async def test_committed_promotion_near_deadline_reports_success() -> None:
+    class NearDeadlineRepository(FakeRepository):
+        def promote_generation(self, generation_id, **kwargs):
+            self.active_generation = generation_id
+            time.sleep(0.06)
+
+    repository = NearDeadlineRepository()
+    result = await _reconciler(
+        FakeClient(), repository, hard_timeout_seconds=0.05
+    ).run_full()
+    assert result.generation_id == repository.active_generation
