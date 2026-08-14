@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   DirectoryUnavailable,
   PermissionDenied,
+  changeAdministrator,
   changeObservationScope,
   changeViewer,
   listManagedUsers,
@@ -31,8 +32,8 @@ export function IdentityManagementPage({ account }: { account: Account }) {
     try { setUsers(await listManagedUsers()); } catch (error) { setMessage(failureMessage(error)); }
   };
   useEffect(() => { void load(); }, []);
-  if (account.role !== "platform_owner") {
-    return <section className="permission-state" role="alert"><h1>无权访问</h1><p>只有平台所有者可以修改角色和观察范围。</p></section>;
+  if (account.role !== "platform_owner" && account.role !== "platform_admin") {
+    return <section className="permission-state" role="alert"><h1>无权访问</h1><p>只有平台管理账号可以修改角色和观察范围。</p></section>;
   }
   const mutate = async (user: ManagedUser) => {
     if (!reason.trim()) return;
@@ -42,6 +43,17 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       await changeViewer(account, user, reason.trim());
       setMessage("变更成功，服务端已记录审计事件。");
       setReason("");
+      await load();
+    } catch (error) {
+      setMessage(failureMessage(error));
+    } finally { setBusy(false); }
+  };
+  const mutateAdministrator = async (user: ManagedUser, revoke: boolean) => {
+    setBusy(true);
+    setMessage("");
+    try {
+      await changeAdministrator(account, user, revoke);
+      setMessage("变更成功，服务端已记录审计事件。");
       await load();
     } catch (error) {
       setMessage(failureMessage(error));
@@ -71,9 +83,12 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       <div className="identity-users">
         {users.map((user) => <article key={user.internal_user_id}>
           <div><strong>{user.display_name}</strong><span>{user.status === "active" ? "在职" : "不可用"}</span></div>
-          <p>{user.role === "management_viewer" ? "只读观察者" : user.role === "platform_owner" ? "平台所有者" : "企业成员"}</p>
+          <p>{user.role === "management_viewer" ? "只读观察者" : user.role === "platform_admin" ? "平台管理员" : user.role === "platform_owner" ? "平台所有者" : "企业成员"}</p>
           <small>{user.scopes.length ? `范围：${user.scopes.join("、")}` : "未授予 Agent 观察范围"}</small>
-          {user.role !== "platform_owner" && <button type="button" disabled={busy || !reason.trim()} onClick={() => void mutate(user)}>
+          {account.role === "platform_owner" && (user.role === "member" || user.role === "platform_admin") && <button type="button" disabled={busy} onClick={() => void mutateAdministrator(user, user.role === "platform_admin")}>
+            {user.role === "platform_admin" ? "撤销平台管理员" : "设为平台管理员"}
+          </button>}
+          {(user.role === "member" || user.role === "management_viewer") && <button type="button" disabled={busy || !reason.trim()} onClick={() => void mutate(user)}>
             {user.role === "management_viewer" ? "撤销只读观察者" : "设为只读观察者"}
           </button>}
           {user.role === "management_viewer" && <div className="scope-controls">

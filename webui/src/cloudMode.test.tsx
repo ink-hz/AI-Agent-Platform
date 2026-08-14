@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "./AppShell";
+import App from "./App";
 import type { Account } from "./auth";
 
 
@@ -22,6 +23,8 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.restoreAllMocks();
+  document.querySelector('meta[name="platform-identity-mode"]')?.remove();
+  window.history.replaceState({}, "", "/");
 });
 
 
@@ -95,5 +98,57 @@ describe("cloud replica mode", () => {
       <AppShell route={{ name: "overview" }} account={owner}><p>内容</p></AppShell>,
     ));
     expect(container.querySelector(".hard-stale-banner")?.textContent).toContain("只读访问");
+  });
+
+  it("gives a platform administrator full manager navigation and deployment status", async () => {
+    const administrator: Account = {
+      internal_user_id: "admin", display_name: "管理员", role: "platform_admin",
+      observation_agent_ids: [], directory_freshness: "fresh",
+      hard_stale_read_only: false, csrf_token: "csrf",
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      mode: "local", read_only: false, auth: "dingtalk",
+      freshness: "current", last_success_at: null,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await act(async () => root.render(
+      <AppShell route={{ name: "identity" }} account={administrator}><p>内容</p></AppShell>,
+    ));
+    await act(async () => await Promise.resolve());
+
+    const navigation = container.querySelector(".product-nav")?.textContent || "";
+    expect(navigation).toContain("总览");
+    expect(navigation).toContain("Session");
+    expect(navigation).toContain("身份管理");
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("admits a platform administrator to the identity route", async () => {
+    const meta = document.createElement("meta");
+    meta.name = "platform-identity-mode";
+    meta.content = "enabled";
+    document.head.append(meta);
+    window.history.replaceState({}, "", "/identity");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/account")) return new Response(JSON.stringify({
+        internal_user_id: "admin", display_name: "管理员", role: "platform_admin",
+        observation_agent_ids: [], directory_freshness: "fresh",
+        hard_stale_read_only: false, csrf_token: "csrf",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (url.endsWith("/api/v1/manage/users")) return new Response(JSON.stringify({ users: [] }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+      return new Response(JSON.stringify({
+        mode: "local", read_only: false, auth: "dingtalk",
+        freshness: "current", last_success_at: null,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    await act(async () => root.render(<App />));
+    await act(async () => await Promise.resolve());
+
+    expect(container.textContent).toContain("身份与观察范围");
+    expect(container.textContent).not.toContain("无权访问");
   });
 });

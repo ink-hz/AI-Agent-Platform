@@ -1,4 +1,8 @@
-export type PlatformRole = "member" | "management_viewer" | "platform_owner";
+export type PlatformRole =
+  | "member"
+  | "management_viewer"
+  | "platform_admin"
+  | "platform_owner";
 export type DirectoryFreshness = "fresh" | "warning" | "hard_stale";
 
 export interface Account {
@@ -54,6 +58,12 @@ const ACCOUNT_KEYS = new Set([
   "internal_user_id", "display_name", "role", "observation_agent_ids",
   "directory_freshness", "hard_stale_read_only", "csrf_token",
 ]);
+const MANAGED_USER_KEYS = new Set([
+  "internal_user_id", "display_name", "status", "role", "scopes",
+]);
+const PLATFORM_ROLES: readonly PlatformRole[] = [
+  "member", "management_viewer", "platform_admin", "platform_owner",
+];
 
 
 export function routePrefix(pathname?: string): string {
@@ -90,6 +100,11 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 
+function isPlatformRole(value: unknown): value is PlatformRole {
+  return PLATFORM_ROLES.includes(value as PlatformRole);
+}
+
+
 function parseAccount(value: unknown): Account {
   if (!isObject(value) || Object.keys(value).some((key) => !ACCOUNT_KEYS.has(key))) {
     throw new Error("account response invalid");
@@ -100,7 +115,7 @@ function parseAccount(value: unknown): Account {
   if (
     typeof value.internal_user_id !== "string" || !value.internal_user_id
     || typeof value.display_name !== "string" || !value.display_name
-    || !["member", "management_viewer", "platform_owner"].includes(String(role))
+    || !isPlatformRole(role)
     || !Array.isArray(scopes) || scopes.some((scope) => typeof scope !== "string" || !scope)
     || !["fresh", "warning", "hard_stale"].includes(String(freshness))
     || typeof value.hard_stale_read_only !== "boolean"
@@ -116,6 +131,30 @@ function parseAccount(value: unknown): Account {
     directory_freshness: freshness as DirectoryFreshness,
     hard_stale_read_only: value.hard_stale_read_only,
     csrf_token: value.csrf_token,
+  };
+}
+
+
+function parseManagedUser(value: unknown): ManagedUser {
+  if (!isObject(value) || Object.keys(value).some((key) => !MANAGED_USER_KEYS.has(key))) {
+    throw new Error("management response invalid");
+  }
+  if (
+    typeof value.internal_user_id !== "string" || !value.internal_user_id
+    || typeof value.display_name !== "string" || !value.display_name
+    || typeof value.status !== "string" || !value.status
+    || !isPlatformRole(value.role)
+    || !Array.isArray(value.scopes)
+    || value.scopes.some((scope) => typeof scope !== "string" || !scope)
+  ) {
+    throw new Error("management response invalid");
+  }
+  return {
+    internal_user_id: value.internal_user_id,
+    display_name: value.display_name,
+    status: value.status,
+    role: value.role,
+    scopes: [...value.scopes] as string[],
   };
 }
 
@@ -229,7 +268,27 @@ export async function listManagedUsers(): Promise<ManagedUser[]> {
   await checked(response);
   const payload: unknown = await response.json();
   if (!isObject(payload) || !Array.isArray(payload.users)) throw new Error("management response invalid");
-  return payload.users as ManagedUser[];
+  return payload.users.map(parseManagedUser);
+}
+
+
+export async function changeAdministrator(
+  account: Account,
+  user: ManagedUser,
+  revoke: boolean,
+): Promise<void> {
+  const response = await fetch(platformPath(`/api/v1/manage/admins/${encodeURIComponent(user.internal_user_id)}`), {
+    method: revoke ? "DELETE" : "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/json", "Content-Type": "application/json",
+      "X-CSRF-Token": account.csrf_token,
+    },
+    body: JSON.stringify({
+      reason: revoke ? "admin_access_revoked" : "admin_access_approved",
+    }),
+  });
+  await checked(response);
 }
 
 

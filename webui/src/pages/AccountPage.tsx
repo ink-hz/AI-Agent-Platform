@@ -6,6 +6,7 @@ import type { Account } from "../auth";
 const ROLE_LABEL = {
   member: "企业成员",
   management_viewer: "只读观察者",
+  platform_admin: "平台管理员",
   platform_owner: "平台所有者",
 } as const;
 

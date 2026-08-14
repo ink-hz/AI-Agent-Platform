@@ -124,7 +124,7 @@ export default function App() {
       navigate("/account", { replace: true });
       return <AccessState title="正在打开企业账号" description="" />;
     }
-    const allowed = account.role === "platform_owner"
+    const allowed = account.role === "platform_owner" || account.role === "platform_admin"
       || (account.role === "member" ? route.name === "account" : viewerRouteAllowed(account, route));
     if (!allowed) {
       return <AppShell route={route} account={account}><section className="permission-state" role="alert"><h1>无权访问</h1><p>该页面不在你的后端授权范围内。</p></section></AppShell>;

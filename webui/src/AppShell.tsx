@@ -58,7 +58,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
   const current = routeSection(route);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   useEffect(() => {
-    if (account && account.role !== "platform_owner") return;
+    if (account && account.role !== "platform_owner" && account.role !== "platform_admin") return;
     const controller = new AbortController();
     void fetchDeployment(controller.signal).then(setDeployment).catch(() => undefined);
     return () => controller.abort();

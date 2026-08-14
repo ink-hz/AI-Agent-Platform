@@ -42,4 +42,13 @@ describe("AccountPage", () => {
     await act(async () => container.querySelector("button")?.click());
     expect(onLogout).toHaveBeenCalledWith(account.csrf_token);
   });
+
+  it("labels a platform administrator account", async () => {
+    await act(async () => root.render(<AccountPage
+      account={{ ...account, role: "platform_admin", display_name: "管理员" }}
+      onLogout={vi.fn().mockResolvedValue(undefined)}
+    />));
+
+    expect(container.textContent).toContain("平台管理员");
+  });
 });

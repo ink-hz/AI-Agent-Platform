@@ -19,11 +19,15 @@ import {
   AuthenticationRequired,
   DirectoryUnavailable,
   PermissionDenied,
+  changeAdministrator,
   loadAccount,
   inClientLogin,
   inClientLoginAvailable,
+  listManagedUsers,
   platformPath,
   routePrefix,
+  type Account,
+  type ManagedUser,
 } from "./auth";
 
 
@@ -37,6 +41,34 @@ afterEach(() => {
 
 
 describe("authenticated account bootstrap", () => {
+  it("accepts the platform administrator role", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      internal_user_id: "admin",
+      display_name: "平台管理员",
+      role: "platform_admin",
+      observation_agent_ids: [],
+      directory_freshness: "fresh",
+      hard_stale_read_only: false,
+      csrf_token: "csrf",
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(loadAccount("")).resolves.toMatchObject({ role: "platform_admin" });
+  });
+
+  it("rejects an unknown account role", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      internal_user_id: "unknown",
+      display_name: "未知角色",
+      role: "platform_superuser",
+      observation_agent_ids: [],
+      directory_freshness: "fresh",
+      hard_stale_read_only: false,
+      csrf_token: "csrf",
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(loadAccount("")).rejects.toThrow("account response invalid");
+  });
+
   it("uses Cookie credentials and the preview prefix without provider identity fields", async () => {
     window.history.replaceState({}, "", "/_preview/dingtalk-r1/account");
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
@@ -108,5 +140,53 @@ describe("authenticated account bootstrap", () => {
     expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/auth/dingtalk/in-client/exchange");
     expect(fetchMock.mock.calls[1][1]?.body).toBe(JSON.stringify({ code: "one-time-code" }));
     expect(storage).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("identity management contract", () => {
+  const owner: Account = {
+    internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
+    observation_agent_ids: [], directory_freshness: "fresh",
+    hard_stale_read_only: false, csrf_token: "owner-csrf",
+  };
+  const member: ManagedUser = {
+    internal_user_id: "member/id", display_name: "企业成员", role: "member",
+    status: "active", scopes: [],
+  };
+
+  it.each([
+    [false, "POST", "admin_access_approved"],
+    [true, "DELETE", "admin_access_revoked"],
+  ] as const)("uses the exact administrator API contract for revoke=%s", async (revoke, method, reason) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await changeAdministrator(owner, member, revoke);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/manage/admins/member%2Fid",
+      {
+        method,
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "X-CSRF-Token": "owner-csrf",
+        },
+        body: JSON.stringify({ reason }),
+      },
+    );
+  });
+
+  it("fails closed when the managed-user list contains an unknown role", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: [{
+      internal_user_id: "unknown", display_name: "未知角色", status: "active",
+      role: "platform_superuser", scopes: [],
+    }] }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(listManagedUsers()).rejects.toThrow("management response invalid");
   });
 });
