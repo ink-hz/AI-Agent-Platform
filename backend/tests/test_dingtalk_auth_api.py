@@ -9,10 +9,12 @@ import subprocess
 from urllib.parse import urljoin, urlsplit
 from uuid import uuid4
 
+from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
 from app.control_plane.models import AuthContext, IdentityMode, IssuedWebSession, Role
+from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.main import create_app
 
 
@@ -69,6 +71,46 @@ class FakeAuth:
             "directory_freshness": "hard_stale"
             if context.hard_stale_read_only else "fresh",
         }
+
+
+def test_authorization_route_resolution_expands_included_fastapi_routers() -> None:
+    router = APIRouter()
+
+    @router.get("/account")
+    async def account_shell():
+        return None
+
+    @router.get("/api/agents/{agent_id}/runtime")
+    async def agent_runtime(agent_id: str):
+        return agent_id
+
+    app = FastAPI()
+    app.include_router(router)
+    middleware = IdentitySecurityMiddleware(
+        app,
+        auth=FakeAuth(),
+        public_assets=frozenset(),
+        authorization=object(),
+        routes=tuple(app.router.routes),
+    )
+
+    def scope(path: str) -> dict:
+        return {
+            "type": "http",
+            "path": path,
+            "raw_path": path.encode(),
+            "root_path": "",
+            "method": "GET",
+            "scheme": "https",
+            "query_string": b"",
+            "headers": [],
+        }
+
+    assert middleware._resolved_route(scope("/account")) == ("/account", {})
+    assert middleware._resolved_route(scope("/api/agents/hr/runtime")) == (
+        "/api/agents/{agent_id}/runtime",
+        {"agent_id": "hr"},
+    )
 
 
 def _app(

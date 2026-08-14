@@ -108,7 +108,18 @@ class IdentitySecurityMiddleware:
         self.auth = auth
         self.public_assets = public_assets
         self.authorization = authorization
-        self.routes = tuple(routes)
+        self.routes = self._expand_included_routes(routes)
+
+    @staticmethod
+    def _expand_included_routes(routes) -> tuple:
+        expanded = []
+        for route in routes:
+            effective = getattr(route, "effective_route_contexts", None)
+            if callable(effective):
+                expanded.extend(effective())
+            else:
+                expanded.append(route)
+        return tuple(expanded)
 
     def _resolved_route(self, scope) -> tuple[str, dict] | None:
         for route in self.routes:
