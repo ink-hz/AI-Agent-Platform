@@ -427,6 +427,7 @@ def test_migration_commits_each_numbered_file_before_the_next(
     control_database, monkeypatch, tmp_path
 ):
     from app.control_plane import dsn as control_dsn
+    from app.control_plane import migrate as migration_runner
     from app.control_plane.migrate import (
         MigrationChecksumMismatch,
         migrate_control_database,
@@ -514,6 +515,42 @@ def test_migration_commits_each_numbered_file_before_the_next(
             migrations,
             owner_role=owner_role,
         )
+
+        with psycopg.connect(database_admin_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "select version from platform_control.schema_migrations "
+                    "order by version"
+                )
+                assert cursor.fetchall() == [(900,), (901,)]
+                cursor.execute(
+                    "select role::text from "
+                    "platform_control.transaction_test_users"
+                )
+                assert cursor.fetchall() == [("platform_admin",)]
+
+        (migrations / "902_interrupt_after_apply.sql").write_text(
+            "insert into platform_control.transaction_test_users (role) "
+            "values ('member');\n",
+            encoding="utf-8",
+        )
+        original_verify_or_apply = migration_runner.verify_or_apply
+
+        def interrupt_after_apply(cursor, version, sha256, sql):
+            original_verify_or_apply(cursor, version, sha256, sql)
+            if version == 902:
+                raise KeyboardInterrupt
+
+        with monkeypatch.context() as interrupt:
+            interrupt.setattr(
+                migration_runner, "verify_or_apply", interrupt_after_apply
+            )
+            with pytest.raises(KeyboardInterrupt):
+                migrate_control_database(
+                    migrator_url,
+                    migrations,
+                    owner_role=owner_role,
+                )
 
         with psycopg.connect(database_admin_url) as connection:
             with connection.cursor() as cursor:

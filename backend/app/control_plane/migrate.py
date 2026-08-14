@@ -121,7 +121,7 @@ def migrate_control_database(
                         migration.sql,
                     )
                     connection.commit()
-            except Exception:
+            except BaseException:
                 connection.rollback()
                 raise
             finally:
