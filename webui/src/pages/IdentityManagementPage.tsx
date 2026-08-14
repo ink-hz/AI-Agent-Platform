@@ -13,6 +13,13 @@ import {
   type AdministratorMutation,
   type ManagedUser,
 } from "../auth";
+import {
+  clearPendingAdministrator,
+  loadPendingAdministrator,
+  storeAdministratorIntegrityFailure,
+  storePendingAdministrator,
+  type PendingAdministratorState,
+} from "../pendingAdministrator";
 
 
 function failureMessage(error: unknown): string {
@@ -30,7 +37,17 @@ export function IdentityManagementPage({ account }: { account: Account }) {
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [pendingAdministrator, setPendingAdministrator] = useState<AdministratorMutation | null>(null);
+  const [confirmedAdministratorRefreshNeeded, setConfirmedAdministratorRefreshNeeded] = useState(false);
+  const [pendingAdministratorState, setPendingAdministratorState] = useState<PendingAdministratorState>(() => (
+    account.role === "platform_owner"
+      ? loadPendingAdministrator(account.internal_user_id)
+      : { kind: "none" }
+  ));
+  const pendingAdministrator = pendingAdministratorState.kind === "pending"
+    ? pendingAdministratorState.operation
+    : null;
+  const administratorMutationBlocked = pendingAdministratorState.kind !== "none"
+    || confirmedAdministratorRefreshNeeded;
   const [scopeDrafts, setScopeDrafts] = useState<Record<string, string>>({});
   const refreshUsers = async () => {
     const refreshed = await listManagedUsers();
@@ -38,7 +55,22 @@ export function IdentityManagementPage({ account }: { account: Account }) {
     return refreshed;
   };
   const load = async () => {
-    try { await refreshUsers(); } catch (error) { setMessage(failureMessage(error)); }
+    try {
+      await refreshUsers();
+      if (pendingAdministratorState.kind === "pending") {
+        setMessage("管理员变更结果仍未知；已刷新当前角色，请使用同一请求重试确认。");
+      } else if (pendingAdministratorState.kind === "integrity_failure") {
+        setMessage("无法验证待处理的管理员操作；已停止新的管理员变更，请手动核查。");
+      }
+    } catch (error) {
+      if (pendingAdministratorState.kind === "pending") {
+        setMessage("管理员变更结果仍未知；当前角色刷新失败，请使用同一请求重试确认。");
+      } else if (pendingAdministratorState.kind === "integrity_failure") {
+        setMessage("无法验证待处理的管理员操作；已停止新的管理员变更，请手动核查。");
+      } else {
+        setMessage(failureMessage(error));
+      }
+    }
   };
   useEffect(() => { void load(); }, []);
   if (account.role !== "platform_owner" && account.role !== "platform_admin") {
@@ -77,56 +109,114 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       return false;
     }
   };
-  const replayAdministrator = async (operation: AdministratorMutation) => {
-    try {
-      await changeAdministrator(account, operation);
-    } catch {
-      const refreshed = await refreshUnknownAdministrator();
-      setPendingAdministrator(operation);
-      setMessage(unknownAdministratorMessage(refreshed));
+  const retainPendingAdministrator = (operation: AdministratorMutation) => {
+    if (!storePendingAdministrator(account.internal_user_id, operation)) {
+      setPendingAdministratorState({ kind: "integrity_failure" });
+      setMessage("无法保存待处理的管理员操作；已停止新的管理员变更，请手动核查。");
+      return false;
+    }
+    setPendingAdministratorState({ kind: "pending", operation });
+    return true;
+  };
+  const clearAdministratorState = () => {
+    if (!clearPendingAdministrator(account.internal_user_id)) {
+      storeAdministratorIntegrityFailure(account.internal_user_id);
+      setPendingAdministratorState({ kind: "integrity_failure" });
+      return false;
+    }
+    setPendingAdministratorState({ kind: "none" });
+    return true;
+  };
+  const failAdministratorIntegrity = (message: string) => {
+    storeAdministratorIntegrityFailure(account.internal_user_id);
+    setPendingAdministratorState({ kind: "integrity_failure" });
+    setMessage(message);
+  };
+  const finishConfirmedAdministrator = async (
+    operation: AdministratorMutation,
+    reconciled: boolean,
+  ) => {
+    if (!clearAdministratorState()) {
+      setMessage("管理员变更已由服务端确认，但本地待处理状态无法清除；请手动核查。");
       return;
     }
     try {
       const refreshed = await refreshUsers();
-      if (matchesAdministratorOutcome(refreshed, operation)) {
-        setPendingAdministrator(null);
-        setMessage("变更结果曾无法确认；已使用同一请求重试并刷新确认生效。");
+      if (!matchesAdministratorOutcome(refreshed, operation)) {
+        setConfirmedAdministratorRefreshNeeded(true);
+        setMessage("管理员变更已由服务端确认，但刷新后的角色与预期不一致；请手动核查。");
         return;
       }
-      setPendingAdministrator(operation);
-      setMessage(unknownAdministratorMessage(true));
+      setConfirmedAdministratorRefreshNeeded(false);
+      setMessage(reconciled
+        ? "变更结果曾无法确认；已使用同一请求重试并刷新确认生效。"
+        : "变更成功，服务端已记录审计事件。");
     } catch {
-      setPendingAdministrator(operation);
-      setMessage(unknownAdministratorMessage(false));
+      setConfirmedAdministratorRefreshNeeded(true);
+      setMessage("管理员变更已由服务端确认，但当前角色刷新失败。");
     }
+  };
+  const replayAdministrator = async (operation: AdministratorMutation) => {
+    try {
+      await changeAdministrator(account, operation);
+    } catch (error) {
+      const refreshed = await refreshUnknownAdministrator();
+      if (
+        error instanceof ManagementMutationIndeterminate
+        && error.requestId !== operation.requestId
+      ) {
+        failAdministratorIntegrity("管理员变更响应校验失败；已停止新的管理员变更，请手动核查。");
+        return;
+      }
+      if (!retainPendingAdministrator(operation)) return;
+      setMessage(unknownAdministratorMessage(refreshed));
+      return;
+    }
+    await finishConfirmedAdministrator(operation, true);
   };
   const mutateAdministrator = async (user: ManagedUser, revoke: boolean) => {
     const operation = createAdministratorMutation(user, revoke);
     setBusy(true);
     setMessage("");
+    if (!retainPendingAdministrator(operation)) {
+      setBusy(false);
+      return;
+    }
     try {
       await changeAdministrator(account, operation);
-      await refreshUsers();
-      setMessage("变更成功，服务端已记录审计事件。");
     } catch (error) {
       if (error instanceof ManagementMutationIndeterminate) {
-        const refreshed = await refreshUnknownAdministrator();
+        await refreshUnknownAdministrator();
         if (error.requestId === operation.requestId) {
           await replayAdministrator(operation);
         } else {
-          setPendingAdministrator(operation);
-          setMessage(unknownAdministratorMessage(refreshed));
+          failAdministratorIntegrity("管理员变更响应校验失败；已停止新的管理员变更，请手动核查。");
         }
       } else {
+        clearAdministratorState();
         setMessage(failureMessage(error));
       }
-    } finally { setBusy(false); }
+      setBusy(false);
+      return;
+    }
+    await finishConfirmedAdministrator(operation, false);
+    setBusy(false);
   };
   const retryAdministrator = async () => {
     if (!pendingAdministrator) return;
     setBusy(true);
     setMessage("");
     try { await replayAdministrator(pendingAdministrator); } finally { setBusy(false); }
+  };
+  const refreshConfirmedAdministrator = async () => {
+    setBusy(true);
+    try {
+      await refreshUsers();
+      setConfirmedAdministratorRefreshNeeded(false);
+      setMessage("变更已确认，当前角色已刷新。");
+    } catch {
+      setMessage("管理员变更已由服务端确认，但当前角色刷新失败。");
+    } finally { setBusy(false); }
   };
   const mutateScope = async (user: ManagedUser, agentId: string, revoke = false) => {
     if (!reason.trim()) return;
@@ -148,16 +238,19 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       <label className="identity-reason">变更原因
         <input aria-label="变更原因" value={reason} onInput={(event) => setReason(event.currentTarget.value)} placeholder="填写审批或业务原因" />
       </label>
-      {message && <p className={`auth-message ${message.startsWith("变更成功") || message.startsWith("变更结果曾无法确认") ? "is-success" : "is-error"}`} role="status">{message}</p>}
+      {message && <p className={`auth-message ${message.startsWith("变更成功") || message.startsWith("变更结果曾无法确认") || message.startsWith("变更已确认") ? "is-success" : "is-error"}`} role="status">{message}</p>}
       {pendingAdministrator && <button type="button" disabled={busy} onClick={() => void retryAdministrator()}>
         使用同一请求重试确认
+      </button>}
+      {confirmedAdministratorRefreshNeeded && <button type="button" disabled={busy} onClick={() => void refreshConfirmedAdministrator()}>
+        刷新当前角色
       </button>}
       <div className="identity-users">
         {users.map((user) => <article key={user.internal_user_id}>
           <div><strong>{user.display_name}</strong><span>{user.status === "active" ? "在职" : "不可用"}</span></div>
           <p>{user.role === "management_viewer" ? "只读观察者" : user.role === "platform_admin" ? "平台管理员" : user.role === "platform_owner" ? "平台所有者" : "企业成员"}</p>
           <small>{user.scopes.length ? `范围：${user.scopes.join("、")}` : "未授予 Agent 观察范围"}</small>
-          {account.role === "platform_owner" && (user.role === "member" || user.role === "platform_admin") && <button type="button" disabled={busy || pendingAdministrator !== null} onClick={() => void mutateAdministrator(user, user.role === "platform_admin")}>
+          {account.role === "platform_owner" && (user.role === "member" || user.role === "platform_admin") && <button type="button" disabled={busy || administratorMutationBlocked} onClick={() => void mutateAdministrator(user, user.role === "platform_admin")}>
             {user.role === "platform_admin" ? "撤销平台管理员" : "设为平台管理员"}
           </button>}
           {(user.role === "member" || user.role === "management_viewer") && <button type="button" disabled={busy || !reason.trim()} onClick={() => void mutate(user)}>
