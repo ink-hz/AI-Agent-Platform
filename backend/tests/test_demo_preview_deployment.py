@@ -79,14 +79,11 @@ def test_demo_overlay_adds_only_isolated_preview_services_and_one_loopback_port(
     ]
     assert services["platform-api-demo-preview"]["networks"] == {
         "platform-internal": {"ipv4_address": "172.30.0.5"},
-        "platform-edge": {
-            "ipv4_address": "172.31.0.5",
-            "gw_priority": 1,
-        },
+        "platform-edge": {"gw_priority": 1},
     }
-    assert services["platform-loopback-demo-preview"]["networks"][
-        "platform-internal"
-    ]["ipv4_address"] == "172.30.0.6"
+    assert services["platform-loopback-demo-preview"]["networks"] == {
+        "platform-internal": {"ipv4_address": "172.30.0.6"},
+    }
 
 
 def test_demo_api_keeps_internal_database_path_and_gains_external_egress() -> None:
@@ -97,7 +94,7 @@ def test_demo_api_keeps_internal_database_path_and_gains_external_egress() -> No
     assert base["networks"]["platform-edge"]["internal"] is False
     assert set(api["networks"]) == {"platform-internal", "platform-edge"}
     assert api["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.5"
-    assert api["networks"]["platform-edge"]["ipv4_address"] == "172.31.0.5"
+    assert "ipv4_address" not in api["networks"]["platform-edge"]
     assert api["networks"]["platform-edge"]["gw_priority"] == 1
     assert api["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.6/32"
     assert "ports" not in api
@@ -247,7 +244,7 @@ def test_demo_services_are_nonroot_readonly_capability_free_and_healthy() -> Non
     ]
     assert loopback["environment"] == {
         "PLATFORM_LOOPBACK_TARGET_BASE_URL": "http://platform-api-demo-preview:8080",
-        "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS": "127.0.0.1/32,172.31.0.1/32",
+        "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS": "127.0.0.1/32,172.30.0.1/32",
         "PLATFORM_LOOPBACK_SOURCE_ADDRESS": "172.30.0.6",
     }
     health = " ".join(loopback["healthcheck"]["test"])
@@ -590,7 +587,9 @@ def test_merged_compose_static_addresses_are_unique_and_never_use_host_network()
             addresses[address] = service_name
 
     assert addresses["172.30.0.5"] == "platform-api-demo-preview"
-    assert addresses["172.31.0.5"] == "platform-api-demo-preview"
+    assert addresses["172.30.0.6"] == "platform-loopback-demo-preview"
+    assert "172.31.0.4" not in addresses
+    assert "172.31.0.5" not in addresses
     assert "--network host" not in OVERLAY.read_text(encoding="utf-8")
 
 

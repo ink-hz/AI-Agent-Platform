@@ -231,7 +231,7 @@ def test_merged_compose_gate_distinguishes_egress_from_loopback_contract() -> No
     assert '"platform-api-demo-preview"' in value
     assert '"platform-demo-preview-runner"' in value
     assert 'loopback = services.get("platform-loopback-demo-preview")' in value
-    assert 'set(loopback.get("networks", {})) != required_networks' in value
+    assert 'set(loopback.get("networks", {})) != {"platform-internal"}' in value
     assert 'loopback.get("image") != expected_image' in value
     assert 'port.get("host_ip") != "127.0.0.1"' in value
     assert 'str(port.get("published")) != "8081"' in value

@@ -562,6 +562,8 @@ for name in egress_services:
         f"platform-postgres={expected_postgres_address}"
     ]:
         raise SystemExit(1)
+    if "ipv4_address" in networks["platform-edge"]:
+        raise SystemExit(1)
 for name in egress_services:
     if services[name].get("ports"):
         raise SystemExit(1)
@@ -569,7 +571,7 @@ for name in egress_services:
 loopback = services.get("platform-loopback-demo-preview")
 if not isinstance(loopback, dict) or loopback.get("image") != expected_image:
     raise SystemExit(1)
-if set(loopback.get("networks", {})) != required_networks:
+if set(loopback.get("networks", {})) != {"platform-internal"}:
     raise SystemExit(1)
 ports = loopback.get("ports", [])
 if not isinstance(ports, list) or len(ports) != 1:
