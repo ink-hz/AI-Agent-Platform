@@ -38,9 +38,12 @@ services:
       - /bin/sh
       - -ec
       - |
-        IFS= read -r PLATFORM_DINGTALK_APP_KEY < /run/secrets/dingtalk-app-key
-        IFS= read -r PLATFORM_DINGTALK_AGENT_ID < /run/secrets/dingtalk-agent-id
-        IFS= read -r PLATFORM_DINGTALK_CORP_ID < /run/secrets/dingtalk-corp-id
+        PLATFORM_DINGTALK_APP_KEY="$(/bin/cat /run/secrets/dingtalk-app-key)"
+        PLATFORM_DINGTALK_AGENT_ID="$(/bin/cat /run/secrets/dingtalk-agent-id)"
+        PLATFORM_DINGTALK_CORP_ID="$(/bin/cat /run/secrets/dingtalk-corp-id)"
+        test -n "$PLATFORM_DINGTALK_APP_KEY"
+        test -n "$PLATFORM_DINGTALK_AGENT_ID"
+        test -n "$PLATFORM_DINGTALK_CORP_ID"
         export PLATFORM_DINGTALK_APP_KEY PLATFORM_DINGTALK_AGENT_ID PLATFORM_DINGTALK_CORP_ID
         exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8080 --no-proxy-headers --no-access-log
     environment:

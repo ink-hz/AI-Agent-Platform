@@ -19,6 +19,11 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
         "platform-dingtalk-stream",
     }
     api = services["platform-api"]
+    startup = api["command"][2]
+    assert "IFS= read" not in startup
+    for secret_name in ("dingtalk-app-key", "dingtalk-agent-id", "dingtalk-corp-id"):
+        assert f"/bin/cat /run/secrets/{secret_name}" in startup
+    assert "test -n" in startup
     assert api["environment"]["PLATFORM_IDENTITY_MODE"] == "production"
     assert api["environment"]["PLATFORM_PUBLIC_BASE_URL"] == "https://agent.orbbec.com.cn"
     assert api["environment"]["PLATFORM_ROUTE_PREFIX"] == "/"
