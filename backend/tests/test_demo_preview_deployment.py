@@ -83,6 +83,7 @@ def test_demo_overlay_adds_only_isolated_preview_services_and_one_loopback_port(
     }
     assert services["platform-loopback-demo-preview"]["networks"] == {
         "platform-internal": {"ipv4_address": "172.30.0.6"},
+        "platform-edge": {"gw_priority": 1},
     }
 
 
@@ -244,7 +245,10 @@ def test_demo_services_are_nonroot_readonly_capability_free_and_healthy() -> Non
     ]
     assert loopback["environment"] == {
         "PLATFORM_LOOPBACK_TARGET_BASE_URL": "http://platform-api-demo-preview:8080",
-        "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS": "127.0.0.1/32,172.30.0.1/32",
+        "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS": (
+            "127.0.0.1/32,"
+            "${PLATFORM_EDGE_GATEWAY_PREVIEW_ADDRESS:?required}/32"
+        ),
         "PLATFORM_LOOPBACK_SOURCE_ADDRESS": "172.30.0.6",
     }
     health = " ".join(loopback["healthcheck"]["test"])
@@ -596,14 +600,19 @@ def test_merged_compose_static_addresses_are_unique_and_never_use_host_network()
 @pytest.mark.skipif(shutil.which("docker") is None, reason="Docker unavailable")
 def test_compose_config_and_immutable_image_command_smoke_when_docker_available() -> None:
     image = "orbbec-agent-platform-demo-preview:test"
-    environment = {**os.environ, "PLATFORM_IMAGE": image}
+    environment = {
+        **os.environ,
+        "PLATFORM_IMAGE": image,
+        "PLATFORM_POSTGRES_PREVIEW_ADDRESS": "172.30.0.4",
+        "PLATFORM_EDGE_GATEWAY_PREVIEW_ADDRESS": "172.22.0.1",
+    }
     try:
         completed = subprocess.run(
             [
                 "docker",
                 "compose",
                 "-f",
-                str(CLOUD / "compose.yaml"),
+                str(PREVIEW_BASE),
                 "-f",
                 str(OVERLAY),
                 "config",

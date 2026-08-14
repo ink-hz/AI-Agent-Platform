@@ -135,7 +135,7 @@ services:
     command: ["uvicorn", "app.cloud_replica.loopback_proxy:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers", "--no-access-log"]
     environment:
       PLATFORM_LOOPBACK_TARGET_BASE_URL: http://platform-api-demo-preview:8080
-      PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS: 127.0.0.1/32,172.30.0.1/32
+      PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS: 127.0.0.1/32,${PLATFORM_EDGE_GATEWAY_PREVIEW_ADDRESS:?required}/32
       PLATFORM_LOOPBACK_SOURCE_ADDRESS: 172.30.0.6
     volumes: []
     ports:
@@ -143,6 +143,8 @@ services:
     networks:
       platform-internal:
         ipv4_address: 172.30.0.6
+      platform-edge:
+        gw_priority: 1
     depends_on:
       platform-api-demo-preview:
         condition: service_healthy

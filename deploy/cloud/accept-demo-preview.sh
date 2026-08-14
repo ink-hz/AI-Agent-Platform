@@ -110,12 +110,38 @@ if address not in network or address in {
     raise SystemExit(1)
 PY
 
+edge_signature="$(/usr/bin/docker network inspect --format \
+  '{{.Name}}|{{.Driver}}|{{.Scope}}|{{.Internal}}|{{len .IPAM.Config}}|{{(index .IPAM.Config 0).Subnet}}|{{(index .IPAM.Config 0).Gateway}}' \
+  orbbec-agent-platform-edge)" || fail
+IFS='|' read -r edge_name edge_driver edge_scope edge_internal \
+  edge_config_count edge_subnet edge_gateway_address <<< "$edge_signature"
+[[ "$edge_name" == orbbec-agent-platform-edge && "$edge_driver" == bridge && \
+   "$edge_scope" == local && "$edge_internal" == false && \
+   "$edge_config_count" == 1 ]] || fail
+/usr/bin/python3 - "$edge_subnet" "$edge_gateway_address" <<'PY' || fail
+import ipaddress
+import sys
+
+network = ipaddress.ip_network(sys.argv[1], strict=True)
+gateway = ipaddress.ip_address(sys.argv[2])
+if (
+    network.version != 4
+    or not network.is_private
+    or network.overlaps(ipaddress.ip_network("172.30.0.0/28"))
+    or gateway not in network
+    or gateway in {network.network_address, network.broadcast_address}
+):
+    raise SystemExit(1)
+PY
+
 PLATFORM_IMAGE="$image_ref" PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address" \
+  PLATFORM_EDGE_GATEWAY_PREVIEW_ADDRESS="$edge_gateway_address" \
   "${preview_stack[@]}" config --format json \
   > "$temporary_root/compose.json" 2>/dev/null || fail
 for service in platform-api-demo-preview platform-loopback-demo-preview; do
   container_id="$(PLATFORM_IMAGE="$image_ref" \
     PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address" \
+    PLATFORM_EDGE_GATEWAY_PREVIEW_ADDRESS="$edge_gateway_address" \
     "${preview_stack[@]}" ps -q "$service")"
   [[ -n "$container_id" ]] || fail
   [[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$container_id")" == \

@@ -9,6 +9,7 @@ ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
 DEPLOY = CLOUD / "deploy-demo-preview.sh"
 ACCEPT = CLOUD / "accept-demo-preview.sh"
+ROLLBACK = CLOUD / "rollback-demo-preview.sh"
 PREREQUISITES = CLOUD / "bootstrap-demo-preview-prerequisites.sh"
 RUNBOOK = ROOT / "docs" / "runbooks" / "minimal-dingtalk-demo.md"
 
@@ -222,7 +223,10 @@ def test_merged_compose_gate_distinguishes_egress_from_loopback_contract() -> No
     assert 'preview_stack=(/usr/bin/docker compose' in value
     assert '-f "$preview_base_compose" -f "$preview_compose")' in value
     assert 'PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address"' in value
+    assert 'PLATFORM_EDGE_GATEWAY_PREVIEW_ADDRESS="$edge_gateway_address"' in value
     assert 'orbbec-agent-platform-internal' in value
+    assert 'orbbec-agent-platform-edge' in value
+    assert 'docker network inspect' in value
     assert (
         'compose_preview --profile demo-preview-tools config --format json'
         in value
@@ -231,7 +235,7 @@ def test_merged_compose_gate_distinguishes_egress_from_loopback_contract() -> No
     assert '"platform-api-demo-preview"' in value
     assert '"platform-demo-preview-runner"' in value
     assert 'loopback = services.get("platform-loopback-demo-preview")' in value
-    assert 'set(loopback.get("networks", {})) != {"platform-internal"}' in value
+    assert 'set(loopback.get("networks", {})) != required_networks' in value
     assert 'loopback.get("image") != expected_image' in value
     assert 'port.get("host_ip") != "127.0.0.1"' in value
     assert 'str(port.get("published")) != "8081"' in value
@@ -240,7 +244,17 @@ def test_merged_compose_gate_distinguishes_egress_from_loopback_contract() -> No
     loopback = value.index('loopback = services.get("platform-loopback-demo-preview")')
     assert egress < loopback
     assert 'edge_priority = networks["platform-edge"]' in value[egress:loopback]
-    assert "edge_priority" not in value[loopback : value.index("PY", loopback)]
+    assert 'loopback_edge = loopback["networks"]["platform-edge"]' in value
+    assert 'loopback_edge.get("gw_priority", 0) != 1' in value
+    assert '"ipv4_address" in loopback_edge' in value
+
+
+def test_accept_and_rollback_resolve_the_existing_edge_gateway() -> None:
+    for path in (ACCEPT, ROLLBACK):
+        value = _text(path)
+        assert "docker network inspect" in value
+        assert 'orbbec-agent-platform-edge' in value
+        assert 'PLATFORM_EDGE_GATEWAY_PREVIEW_ADDRESS="$edge_gateway_address"' in value
 
 
 def test_operator_preflight_accepts_only_safe_resumable_partial_publication() -> None:

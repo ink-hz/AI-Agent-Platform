@@ -137,6 +137,7 @@ preview_stack=(/usr/bin/docker compose --env-file "$platform_environment" \
   -f "$preview_base_compose" -f "$preview_compose")
 postgres_container=""
 postgres_address=""
+edge_gateway_address=""
 expected_files=(
   dingtalk-app-key
   dingtalk-agent-id
@@ -201,9 +202,40 @@ capture_responses() {
 
 compose_preview() {
   resolve_postgres_endpoint || return 1
+  resolve_edge_gateway || return 1
   PLATFORM_IMAGE="$image_ref" \
     PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address" \
+    PLATFORM_EDGE_GATEWAY_PREVIEW_ADDRESS="$edge_gateway_address" \
     "${preview_stack[@]}" "$@"
+}
+
+resolve_edge_gateway() {
+  local signature name driver scope internal config_count subnet gateway
+  if [[ -n "$edge_gateway_address" ]]; then
+    return 0
+  fi
+  signature="$(/usr/bin/docker network inspect --format \
+    '{{.Name}}|{{.Driver}}|{{.Scope}}|{{.Internal}}|{{len .IPAM.Config}}|{{(index .IPAM.Config 0).Subnet}}|{{(index .IPAM.Config 0).Gateway}}' \
+    orbbec-agent-platform-edge)" || return 1
+  IFS='|' read -r name driver scope internal config_count subnet gateway <<< "$signature"
+  [[ "$name" == orbbec-agent-platform-edge && "$driver" == bridge && \
+     "$scope" == local && "$internal" == false && "$config_count" == 1 ]] || return 1
+  /usr/bin/python3 - "$subnet" "$gateway" <<'PY' || return 1
+import ipaddress
+import sys
+
+network = ipaddress.ip_network(sys.argv[1], strict=True)
+gateway = ipaddress.ip_address(sys.argv[2])
+if (
+    network.version != 4
+    or not network.is_private
+    or network.overlaps(ipaddress.ip_network("172.30.0.0/28"))
+    or gateway not in network
+    or gateway in {network.network_address, network.broadcast_address}
+):
+    raise SystemExit(1)
+PY
+  edge_gateway_address="$gateway"
 }
 
 resolve_postgres_endpoint() {
@@ -533,7 +565,7 @@ verify_phase() {
   PLATFORM_IMAGE="$image_ref" compose_preview --profile demo-preview-tools config --format json > "$baseline_dir/compose-config.json"
   /bin/chmod 600 "$baseline_dir/compose-config.json"
   /usr/bin/python3 - "$baseline_dir/compose-config.json" "$image_ref" \
-    "$postgres_address" <<'PY'
+    "$postgres_address" "$edge_gateway_address" <<'PY'
 import json
 import pathlib
 import sys
@@ -542,6 +574,7 @@ document = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 services = document.get("services", {})
 expected_image = sys.argv[2]
 expected_postgres_address = sys.argv[3]
+expected_edge_gateway = sys.argv[4]
 required_networks = {"platform-internal", "platform-edge"}
 egress_services = (
     "platform-api-demo-preview",
@@ -571,7 +604,14 @@ for name in egress_services:
 loopback = services.get("platform-loopback-demo-preview")
 if not isinstance(loopback, dict) or loopback.get("image") != expected_image:
     raise SystemExit(1)
-if set(loopback.get("networks", {})) != {"platform-internal"}:
+if set(loopback.get("networks", {})) != required_networks:
+    raise SystemExit(1)
+loopback_edge = loopback["networks"]["platform-edge"]
+if loopback_edge.get("gw_priority", 0) != 1 or "ipv4_address" in loopback_edge:
+    raise SystemExit(1)
+if loopback.get("environment", {}).get(
+    "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS"
+) != f"127.0.0.1/32,{expected_edge_gateway}/32":
     raise SystemExit(1)
 ports = loopback.get("ports", [])
 if not isinstance(ports, list) or len(ports) != 1:
