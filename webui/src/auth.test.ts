@@ -2,12 +2,26 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const { requestAuthCode, dingTalkSdk } = vi.hoisted(() => {
+  const requestAuthCode = vi.fn();
+  return {
+    requestAuthCode,
+    dingTalkSdk: {
+      env: { platform: "android" },
+      requestAuthCode,
+    },
+  };
+});
+
+vi.mock("dingtalk-jsapi", () => ({ default: dingTalkSdk }));
+
 import {
   AuthenticationRequired,
   DirectoryUnavailable,
   PermissionDenied,
   loadAccount,
   inClientLogin,
+  inClientLoginAvailable,
   platformPath,
   routePrefix,
 } from "./auth";
@@ -15,6 +29,9 @@ import {
 
 afterEach(() => {
   window.history.replaceState({}, "", "/");
+  dingTalkSdk.env.platform = "android";
+  requestAuthCode.mockReset();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -69,19 +86,27 @@ describe("authenticated account bootstrap", () => {
     await expect(loadAccount("")).rejects.toThrow("account response invalid");
   });
 
-  it("uses the injected DingTalk JSAPI code without storing it", async () => {
+  it("detects the bundled DingTalk runtime without window.dd", () => {
+    delete (window as typeof window & { dd?: unknown }).dd;
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 DingTalk/7.6.50 Android");
+
+    expect(inClientLoginAvailable()).toBe(true);
+  });
+
+  it("uses the bundled DingTalk JSAPI code without storing it", async () => {
     const storage = vi.spyOn(Storage.prototype, "setItem");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ client_id: "client", corp_id: "corp" }), { status: 200, headers: { "Content-Type": "application/json" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrf_token: "not-persisted" }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
-    Object.assign(window, { dd: { requestAuthCode: vi.fn().mockResolvedValue({ code: "one-time-code" }) } });
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 DingTalk/7.6.50 Android");
+    requestAuthCode.mockResolvedValueOnce({ code: "one-time-code" });
 
     await inClientLogin();
 
+    expect(requestAuthCode).toHaveBeenCalledWith({ clientId: "client", corpId: "corp" });
     expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/auth/dingtalk/in-client/exchange");
     expect(fetchMock.mock.calls[1][1]?.body).toBe(JSON.stringify({ code: "one-time-code" }));
     expect(storage).not.toHaveBeenCalled();
-    delete (window as typeof window & { dd?: unknown }).dd;
   });
 });

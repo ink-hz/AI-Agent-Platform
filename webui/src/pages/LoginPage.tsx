@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { inClientLogin, inClientLoginAvailable, platformPath, startQrLogin } from "../auth";
 
@@ -17,6 +17,7 @@ export function LoginPage({
 }: LoginPageProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(() => new URLSearchParams(window.location.search).has("error"));
+  const automaticAttempted = useRef(false);
   const inClientAction = onInClient ?? (inClientLoginAvailable() ? inClientLogin : null);
   const begin = async () => {
     setBusy(true);
@@ -28,7 +29,7 @@ export function LoginPage({
       setError(true);
     }
   };
-  const beginInClient = async () => {
+  const beginInClient = useCallback(async () => {
     if (!inClientAction) return;
     setBusy(true);
     setError(false);
@@ -39,7 +40,12 @@ export function LoginPage({
       setBusy(false);
       setError(true);
     }
-  };
+  }, [inClientAction, onNavigate]);
+  useEffect(() => {
+    if (!inClientAction || automaticAttempted.current) return;
+    automaticAttempted.current = true;
+    void beginInClient();
+  }, [beginInClient, inClientAction]);
   return (
     <main className="login-shell">
       <section className="login-card" aria-labelledby="login-title">

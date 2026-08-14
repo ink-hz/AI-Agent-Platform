@@ -45,11 +45,24 @@ describe("LoginPage", () => {
     expect(container.textContent).not.toContain("provider-secret-value");
   });
 
-  it("offers in-client免登 when the DingTalk JSAPI is available", async () => {
+  it("automatically performs in-client免登 once", async () => {
     const onInClient = vi.fn().mockResolvedValue(undefined);
+    const onNavigate = vi.fn();
+    await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={onNavigate} />));
+
+    expect(onInClient).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledWith("/account");
+  });
+
+  it("keeps manual in-client retry after automatic failure", async () => {
+    const onInClient = vi.fn()
+      .mockRejectedValueOnce(new Error("bridge unavailable"))
+      .mockResolvedValueOnce(undefined);
     await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={() => undefined} />));
+
+    expect(container.textContent).toContain("登录未完成");
     const button = [...container.querySelectorAll("button")].find((item) => item.textContent?.includes("钉钉内免登"));
     await act(async () => button?.click());
-    expect(onInClient).toHaveBeenCalledTimes(1);
+    expect(onInClient).toHaveBeenCalledTimes(2);
   });
 });

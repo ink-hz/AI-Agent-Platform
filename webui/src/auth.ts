@@ -27,14 +27,6 @@ export interface GovernanceEvent {
   occurred_at: string;
 }
 
-declare global {
-  interface Window {
-    dd?: {
-      requestAuthCode?: (options: { clientId: string; corpId: string }) => Promise<{ code: string }>;
-    };
-  }
-}
-
 export class PlatformApiError extends Error {
   constructor(public status: number, public detail: unknown = null) {
     super(`platform API ${status}`);
@@ -187,12 +179,12 @@ export async function exchangeInClientCode(code: string): Promise<void> {
 
 
 export function inClientLoginAvailable(): boolean {
-  return typeof window !== "undefined" && typeof window.dd?.requestAuthCode === "function";
+  if (typeof navigator === "undefined") return false;
+  return /DingTalk|AliApp\(DingTalk/i.test(navigator.userAgent);
 }
 
 
-export async function inClientLogin(): Promise<void> {
-  if (!inClientLoginAvailable()) throw new Error("DingTalk JSAPI unavailable");
+async function loadPublicDingTalkConfig(): Promise<{ client_id: string; corp_id: string }> {
   const configResponse = await fetch(platformPath("/api/v1/auth/dingtalk/config"), {
     credentials: "include", headers: { Accept: "application/json" },
   });
@@ -203,7 +195,15 @@ export async function inClientLogin(): Promise<void> {
     || typeof config.corp_id !== "string" || !config.corp_id) {
     throw new Error("DingTalk configuration invalid");
   }
-  const result = await window.dd!.requestAuthCode!({
+  return { client_id: config.client_id, corp_id: config.corp_id };
+}
+
+
+export async function inClientLogin(): Promise<void> {
+  if (!inClientLoginAvailable()) throw new Error("DingTalk JSAPI unavailable");
+  const { default: dd } = await import("dingtalk-jsapi");
+  const config = await loadPublicDingTalkConfig();
+  const result = await dd.requestAuthCode({
     clientId: config.client_id,
     corpId: config.corp_id,
   });
