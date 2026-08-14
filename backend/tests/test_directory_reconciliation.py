@@ -188,13 +188,16 @@ async def test_total_deadline_marks_an_existing_staging_generation_failed() -> N
     class SlowRepository(FakeRepository):
         def stage_departments(self, generation_id, rows, **kwargs):
             super().stage_departments(generation_id, rows, **kwargs)
-            time.sleep(0.041)
+            # The fake cannot enforce PostgreSQL statement_timeout, so leave a
+            # realistic cleanup margin instead of relying on a scheduler-sensitive
+            # 9ms window.
+            time.sleep(0.41)
 
     previous = UUID("00000000-0000-0000-0000-000000000001")
     repository = SlowRepository(active_generation=previous)
     with pytest.raises(Exception, match="sync_timeout"):
         await _reconciler(
-            FakeClient(), repository, hard_timeout_seconds=0.05
+            FakeClient(), repository, hard_timeout_seconds=0.5
         ).run_full()
     generation_id = repository.calls[0][1]
     assert repository.active_generation == previous

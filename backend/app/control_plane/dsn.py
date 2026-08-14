@@ -16,6 +16,7 @@ _PURPOSE_ROLES = {
     "migrator": "platform_control_migrator",
     "maintenance": "platform_control_maintenance",
     "directory": "platform_directory_worker",
+    "stream": "platform_stream_ingest",
 }
 
 

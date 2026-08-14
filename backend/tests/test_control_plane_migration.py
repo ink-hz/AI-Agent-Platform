@@ -100,6 +100,8 @@ TABLES = {
     "audit_events",
     "provider_identity_key_policies",
     "management_mutations",
+    "worker_heartbeats",
+    "directory_event_subject_state",
 }
 
 IMMUTABLE_MIGRATION_SHA256 = {
@@ -380,7 +382,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 21)
+                    (version, 64) for version in range(1, 22)
                 ]
 
     changed = tmp_path / "migrations"
@@ -658,13 +660,18 @@ def test_runtime_roles_cannot_cross_grant_boundaries(control_database):
                     "'platform_control.web_sessions', 'select'), "
                     "has_table_privilege(%s, "
                     "'platform_control.stream_inbox', 'insert'), "
+                    "has_function_privilege(%s, "
+                    "'platform_control.insert_stream_event_v21(text,text,bytea,integer)', "
+                    "'execute'), "
                     "has_table_privilege(%s, "
                     "'platform_control.audit_events', 'insert'), "
                     "has_table_privilege(%s, "
                     "'platform_control.audit_events', 'delete')",
-                    (roles[1], roles[3], roles[4], roles[5]),
+                    (roles[1], roles[3], roles[3], roles[4], roles[5]),
                 )
-                assert cursor.fetchone() == (False, True, True, False, False)
+                assert cursor.fetchone() == (
+                    False, True, False, True, False, False
+                )
 
         _assert_denied(
             environment["urls"][roles[1]],
