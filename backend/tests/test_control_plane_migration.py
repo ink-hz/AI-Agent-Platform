@@ -481,6 +481,92 @@ def test_migration_rejects_unapproved_owner_identifier() -> None:
 
 
 @pytest.mark.postgres
+def test_preview_migration_initializes_identity_key_policy_without_overwriting(
+    control_database,
+) -> None:
+    from app.control_plane.migrate import (
+        MigrationIdentityKeyPolicyMismatch,
+        migrate_control_database,
+    )
+
+    environment = control_database["environments"]["preview"]
+    migrator_role = environment["roles"][0]
+    migrator_url = environment["urls"][migrator_role]
+    with psycopg.connect(
+        control_database["cluster_admin"], autocommit=True
+    ) as connection:
+        connection.execute(
+            psycopg.sql.SQL("grant {} to {}").format(
+                psycopg.sql.Identifier(environment["owner"]),
+                psycopg.sql.Identifier(migrator_role),
+            )
+        )
+    try:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_control.provider_identity_key_policies"
+            )
+
+        migrate_control_database(
+            migrator_url,
+            MIGRATIONS,
+            owner_role=environment["owner"],
+            identity_lookup_transition_versions=(1,),
+        )
+        with psycopg.connect(environment["admin"]) as connection:
+            assert connection.execute(
+                "select lookup_transition_versions from "
+                "platform_control.provider_identity_key_policies "
+                "where provider='dingtalk'"
+            ).fetchone() == ([1],)
+            connection.execute(
+                "update platform_control.provider_identity_key_policies "
+                "set lookup_transition_versions=array[1,2] "
+                "where provider='dingtalk'"
+            )
+
+        with pytest.raises(
+            MigrationIdentityKeyPolicyMismatch,
+            match="preview identity key policy mismatch",
+        ):
+            migrate_control_database(
+                migrator_url,
+                MIGRATIONS,
+                owner_role=environment["owner"],
+                identity_lookup_transition_versions=(1,),
+            )
+        with psycopg.connect(environment["admin"]) as connection:
+            assert connection.execute(
+                "select lookup_transition_versions from "
+                "platform_control.provider_identity_key_policies "
+                "where provider='dingtalk'"
+            ).fetchone() == ([1, 2],)
+    finally:
+        with psycopg.connect(
+            control_database["cluster_admin"], autocommit=True
+        ) as connection:
+            connection.execute(
+                psycopg.sql.SQL("revoke {} from {}").format(
+                    psycopg.sql.Identifier(environment["owner"]),
+                    psycopg.sql.Identifier(migrator_role),
+                )
+            )
+
+
+def test_production_migration_rejects_preview_identity_key_policy_input() -> None:
+    from app.control_plane.migrate import migrate_control_database
+
+    with pytest.raises(ValueError, match="preview identity key policy"):
+        migrate_control_database(
+            "postgresql://platform_control_migrator@127.0.0.1/"
+            "agent_platform_control",
+            MIGRATIONS,
+            owner_role="platform_control_owner",
+            identity_lookup_transition_versions=(1,),
+        )
+
+
+@pytest.mark.postgres
 def test_migration_creates_complete_constrained_control_model(control_database):
     for environment in control_database["environments"].values():
         with psycopg.connect(environment["admin"]) as connection:

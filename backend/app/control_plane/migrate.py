@@ -11,6 +11,7 @@ import psycopg
 
 from .database import read_control_migrator_database_url
 from .dsn import validate_control_dsn
+from .crypto import IdentityKeyring
 
 
 _MIGRATION_NAME = re.compile(r"^(?P<version>[0-9]{3})_[a-z0-9_]+\.sql$")
@@ -37,6 +38,10 @@ _DYNAMIC_ENVIRONMENT_ROLE = re.compile(
 
 class MigrationChecksumMismatch(RuntimeError):
     """An applied migration no longer has its recorded contents."""
+
+
+class MigrationIdentityKeyPolicyMismatch(RuntimeError):
+    """The configured preview lookup-key window differs from stored policy."""
 
 
 @dataclass(frozen=True)
@@ -111,11 +116,49 @@ def verify_or_apply(cursor, version: int, sha256: str, sql: str) -> None:
     )
 
 
+def _initialize_preview_identity_key_policy(
+    cursor,
+    transition_versions: tuple[int, ...],
+) -> None:
+    if (
+        not isinstance(transition_versions, tuple)
+        or not 1 <= len(transition_versions) <= 3
+        or any(
+            not isinstance(version, int) or isinstance(version, bool) or version <= 0
+            for version in transition_versions
+        )
+        or any(
+            current != previous + 1
+            for previous, current in zip(
+                transition_versions, transition_versions[1:]
+            )
+        )
+    ):
+        raise ValueError("preview identity key policy invalid")
+    cursor.execute("select pg_advisory_xact_lock(%s)", (1229998928,))
+    cursor.execute(
+        "insert into platform_control.provider_identity_key_policies "
+        "(provider, lookup_transition_versions) values ('dingtalk', %s) "
+        "on conflict (provider) do nothing",
+        (list(transition_versions),),
+    )
+    row = cursor.execute(
+        "select lookup_transition_versions from "
+        "platform_control.provider_identity_key_policies "
+        "where provider='dingtalk'"
+    ).fetchone()
+    if row is None or tuple(row[0]) != transition_versions:
+        raise MigrationIdentityKeyPolicyMismatch(
+            "preview identity key policy mismatch"
+        )
+
+
 def migrate_control_database(
     database_url: str,
     migration_dir: Path,
     *,
     owner_role: str,
+    identity_lookup_transition_versions: tuple[int, ...] | None = None,
 ) -> None:
     if owner_role not in _CONTROL_OWNER_ROLES:
         raise ValueError(f"unsupported control owner role: {owner_role!r}")
@@ -125,6 +168,11 @@ def migrate_control_database(
     )
     if owner_role != expected_owner:
         raise ValueError("control owner role environment mismatch")
+    if (
+        identity_lookup_transition_versions is not None
+        and parsed.environment != "preview"
+    ):
+        raise ValueError("preview identity key policy requires preview database")
     with psycopg.connect(database_url, autocommit=False) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -152,6 +200,11 @@ def migrate_control_database(
                     migration.sha256,
                     migration_sql,
                 )
+            if identity_lookup_transition_versions is not None:
+                _initialize_preview_identity_key_policy(
+                    cursor,
+                    identity_lookup_transition_versions,
+                )
         connection.commit()
 
 
@@ -168,10 +221,20 @@ def main() -> int:
             str(Path(__file__).parents[2] / "control_migrations"),
         )
     )
+    hmac_keyring_file = os.getenv("PLATFORM_IDENTITY_HMAC_KEYRING_FILE", "")
+    transition_versions = None
+    if hmac_keyring_file:
+        keyring = IdentityKeyring.from_file(
+            hmac_keyring_file,
+            expected_purpose="provider-lookup-hmac",
+            expected_key_length=32,
+        )
+        transition_versions = tuple(keyring.transition_versions or ())
     migrate_control_database(
         read_control_migrator_database_url(secret_file),
         migration_dir,
         owner_role=owner_role,
+        identity_lookup_transition_versions=transition_versions,
     )
     return 0
 

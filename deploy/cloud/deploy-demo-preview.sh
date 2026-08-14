@@ -441,9 +441,11 @@ run_preview_migration() {
   compose_preview run --rm --no-deps platform-demo-preview-runner /bin/sh -ec '
       install -d -m 0700 /tmp/migrate
       install -m 0600 /run/demo-preview-secrets/runner/preview-control-migrator-database-url /tmp/migrate/database-url
+      install -m 0600 /run/demo-preview-secrets/runner/preview-identity-hmac-keyring /tmp/migrate/identity-hmac-keyring
       export PLATFORM_CONTROL_MIGRATOR_DATABASE_URL_FILE=/tmp/migrate/database-url
       export PLATFORM_CONTROL_OWNER_ROLE=platform_control_owner_preview
       export PLATFORM_CONTROL_MIGRATION_DIR=/app/backend/control_migrations
+      export PLATFORM_IDENTITY_HMAC_KEYRING_FILE=/tmp/migrate/identity-hmac-keyring
       exec python -m app.control_plane.migrate
     ' >/dev/null 2>&1 || remote_fail
 }

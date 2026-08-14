@@ -443,6 +443,8 @@ def test_static_image_smoke_contract_migrates_bootstraps_and_checks_minimal_heal
         "/run/demo-preview-secrets/runner/preview-control-migrator-database-url"
         in migrate
     )
+    assert "preview-identity-hmac-keyring" in migrate
+    assert "PLATFORM_IDENTITY_HMAC_KEYRING_FILE" in migrate
     assert "platform_control_owner_preview" in migrate
     assert "/app/backend/control_migrations" in migrate
     assert "python -m app.control_plane.demo_bootstrap" in bootstrap
