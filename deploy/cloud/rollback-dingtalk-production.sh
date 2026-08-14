@@ -21,10 +21,10 @@ set +a
 [[ "$PREVIOUS_RELEASE" == /opt/orbbec-agent-platform/releases/* ]] || fail
 [[ "$PREVIOUS_ENVIRONMENT" == "$RELEASE_PATH/PREVIOUS_PLATFORM_ENV" ]] || fail
 
-basic_template="$RELEASE_PATH/deploy/cloud/agent-domain.basic-auth.nginx.conf"
 agent_available=/etc/nginx/sites-available/agent-domain.conf
 agent_enabled=/etc/nginx/sites-enabled/agent-domain.conf
 htpasswd=/etc/nginx/.htpasswd-agent-platform
+basic_template="$RELEASE_PATH/deploy/cloud/agent-domain.basic-auth.nginx.conf"
 [[ -f "$basic_template" && -f "$htpasswd" && -f "$BACKUP_PATH/agent-domain.conf" ]] || fail
 [[ -f "$PREVIOUS_RELEASE/deploy/cloud/compose.yaml" && -f "$PREVIOUS_ENVIRONMENT" ]] || fail
 
@@ -65,14 +65,7 @@ for _attempt in $(/usr/bin/seq 1 40); do
 done
 /usr/bin/curl --noproxy '*' -fsS --max-time 2 http://127.0.0.1:8080/api/health >/dev/null || fail
 
-rendered="$BACKUP_PATH/agent-domain.basic-auth.rollback.conf"
-/usr/bin/sed \
-  -e 's|__AGENT_DOMAIN__|agent.orbbec.com.cn|g' \
-  -e "s|__HTPASSWD_PATH__|$htpasswd|g" \
-  -e 's|__CERT_PATH__|/etc/letsencrypt/live/agent.orbbec.com.cn/fullchain.pem|g' \
-  -e 's|__KEY_PATH__|/etc/letsencrypt/live/agent.orbbec.com.cn/privkey.pem|g' \
-  "$basic_template" > "$rendered"
-/usr/bin/install -o root -g root -m 644 "$rendered" "$agent_available.part"
+/usr/bin/install -o root -g root -m 644 "$BACKUP_PATH/agent-domain.conf" "$agent_available.part"
 /bin/mv -f "$agent_available.part" "$agent_available"
 /bin/ln -sfn "$agent_available" "$agent_enabled"
 /usr/sbin/nginx -t >/dev/null 2>&1 || fail

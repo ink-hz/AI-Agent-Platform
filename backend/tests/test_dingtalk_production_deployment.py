@@ -59,13 +59,11 @@ def test_runtime_image_contains_control_migrations():
 
 
 def test_formal_nginx_uses_backend_auth_and_preserves_basic_auth_rollback():
-    formal = (CLOUD / "agent-domain.nginx.conf").read_text(encoding="utf-8")
+    formal = (CLOUD / "dingtalk_nginx_transaction.py").read_text(encoding="utf-8")
     rollback = (CLOUD / "agent-domain.basic-auth.nginx.conf").read_text(
         encoding="utf-8"
     )
 
-    assert "auth_basic" not in formal
-    assert "limit_except" not in formal
     assert "proxy_pass http://127.0.0.1:8080;" in formal
     assert "proxy_read_timeout 360s;" in formal
     assert "proxy_send_timeout 360s;" in formal
@@ -73,6 +71,7 @@ def test_formal_nginx_uses_backend_auth_and_preserves_basic_auth_rollback():
     assert 'proxy_set_header Forwarded "";' in formal
     assert 'proxy_set_header Authorization "";' in formal
     assert 'Content-Security-Policy "default-src \'none\';' in formal
+    assert "orbbec-agent-demo-preview.conf" in formal
 
     assert 'auth_basic "Orbbec Agent Platform";' in rollback
     assert "limit_except GET HEAD OPTIONS" in rollback
@@ -130,3 +129,56 @@ def test_identity_secret_bootstrap_is_noninteractive_and_service_scoped():
         assert forbidden not in script
     assert script.count("openssl rand 32") >= 3
     assert "cmp -s" not in script
+
+
+def test_initial_owner_binding_uses_exact_private_provider_id_and_two_phase_receipt():
+    script = (CLOUD / "bind-production-owner.sh").read_text(encoding="utf-8")
+
+    for required in (
+        "dingtalk-owner-userid",
+        "show-directory-generation",
+        "bind-owner",
+        "--provider-id-file",
+        "--receipt-file",
+        "--receipt-key-file",
+        "--confirm",
+        "--approver",
+        "platform_control_owner",
+        "owner_binding=1",
+    ):
+        assert required in script
+    assert script.count("--approver") >= 2
+    for forbidden in ("display_name", "苍渊", "grep.*name", "security ", "set -x"):
+        assert forbidden not in script
+
+
+def test_production_acceptance_covers_identity_workers_admin_and_fae_invariants():
+    script = (CLOUD / "accept-dingtalk-production.sh").read_text(
+        encoding="utf-8"
+    )
+
+    for required in (
+        "https://agent.orbbec.com.cn/",
+        "/api/v1/account",
+        "/admin/",
+        "platform-identity-mode",
+        "platform-directory",
+        "platform-dingtalk-stream",
+        "dingtalk-directory-event",
+        "platform_owner",
+        "active_generation_id",
+        "127.0.0.1:8080",
+        "ai-fae-backend",
+        "FAE_STARTED_AT",
+        "nginx -t",
+        "DINGTALK_PRODUCTION_ACCEPTANCE_OK release=",
+    ):
+        assert required in script
+    for forbidden in (
+        "docker restart ai-fae-backend",
+        "docker stop ai-fae-backend",
+        "docker compose down",
+        "systemctl restart nginx",
+        "set -x",
+    ):
+        assert forbidden not in script

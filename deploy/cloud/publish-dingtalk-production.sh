@@ -10,14 +10,8 @@ fail() {
 [[ "$(${ID_BIN:-/usr/bin/id} -u)" == "0" && $# -eq 1 ]] || fail
 release_path="$1"
 [[ "$release_path" == /opt/orbbec-agent-platform/releases/* ]] || fail
-template="$release_path/deploy/cloud/agent-domain.nginx.conf"
-[[ -f "$template" && ! -L "$template" ]] || fail
-for placeholder in __AGENT_DOMAIN__ __CERT_PATH__ __KEY_PATH__; do
-  /usr/bin/grep -Fq "$placeholder" "$template" || fail
-done
-if /usr/bin/grep -Fq "__HTPASSWD_PATH__" "$template"; then
-  fail
-fi
+transaction="$release_path/deploy/cloud/dingtalk_nginx_transaction.py"
+[[ -f "$transaction" && ! -L "$transaction" ]] || fail
 
 platform_root=/opt/orbbec-agent-platform
 environment_path="$platform_root/private/platform.env"
@@ -67,11 +61,7 @@ backup_path="/root/nginx-backups/agent-platform-dingtalk-$timestamp"
 /bin/chmod 600 "$state_path.part"
 
 rendered="$backup_path/agent-domain.dingtalk.conf"
-/usr/bin/sed \
-  -e 's|__AGENT_DOMAIN__|agent.orbbec.com.cn|g' \
-  -e 's|__CERT_PATH__|/etc/letsencrypt/live/agent.orbbec.com.cn/fullchain.pem|g' \
-  -e 's|__KEY_PATH__|/etc/letsencrypt/live/agent.orbbec.com.cn/privkey.pem|g' \
-  "$template" > "$rendered"
+/usr/bin/python3 "$transaction" "$agent_available" "$rendered" || fail
 /bin/chown root:root "$rendered"
 /bin/chmod 644 "$rendered"
 

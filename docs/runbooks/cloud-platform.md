@@ -1,13 +1,15 @@
-# Cloud Platform sanitized replica runbook
+# Cloud Platform and DingTalk identity runbook
 
-This runbook operates the read-only cloud replica of AI Agent Platform. It does
-not publish a public Platform route. Access is through an SSH tunnel until
-domain authentication is delivered.
+This runbook operates the read-only cloud replica and the production DingTalk
+identity boundary of AI Agent Platform. The public employee entry is
+`https://agent.orbbec.com.cn/`; PostgreSQL and the Platform upstream remain
+private.
 
 ## Non-negotiable boundaries
 
-- Never change the existing FAE container, its port, Nginx, Langfuse, or the
-  existing public listener set.
+- Never change the existing FAE container, its port, its Nginx server blocks,
+  Langfuse, or its legacy IP behavior. The formal cutover may modify only the
+  Agent HTTPS server's shared authentication and root `location /`.
 - The Platform API binds only to `127.0.0.1:8080`; PostgreSQL and the forced
   importer have no host port.
 - The data flow is one way: local source to a sanitized, signed batch to the
@@ -19,6 +21,78 @@ domain authentication is delivered.
   reviewed. An empty dictionary is not approval.
 - Every secret file and acceptance evidence file is an owner-only regular file
   with mode `0600`; its parent directory uses mode `0700`.
+
+## Formal DingTalk production release
+
+The formal release runs five Compose services: PostgreSQL, Platform API,
+loopback proxy, directory/event worker, and DingTalk Stream consumer. Only the
+loopback proxy binds a host port, exactly `127.0.0.1:8080`. The API and both
+workers have outbound access but no published port. The API uses the
+`platform_control_app` and append-only audit roles; the directory and Stream
+processes use separate least-privilege roles and separate secret volumes.
+
+Before deploying, these root-owned mode-0600 files must exist under
+`/opt/orbbec-agent-platform/private`:
+
+```text
+dingtalk-app-key
+dingtalk-agent-id
+dingtalk-corp-id
+dingtalk-app-secret
+dingtalk-owner-userid
+backup-recovery-x25519.pub
+```
+
+The deployment generates production control DSNs and four independent
+versioned keyrings. It never reads macOS Keychain and never accepts credentials
+through process arguments. Do not print or copy secret contents into a shell
+history.
+
+Run the reviewed clean release through the normal deploy command. Success is:
+
+```text
+CLOUD_PLATFORM_DEPLOY_OK release=<commit> mode=dingtalk
+```
+
+Deployment starts the formal services while the existing root Basic Auth is
+still present. Wait for the first atomic directory generation and verify the
+directory/event heartbeat. Bind the sole owner with the exact private DingTalk
+userid; never select the owner by display name:
+
+```bash
+/opt/orbbec-agent-platform/current/deploy/cloud/bind-production-owner.sh \
+  approver_one approver_two BACKUP_REFERENCE INITIAL_OWNER_BINDING
+```
+
+The command performs a dry run, creates a 15-minute authenticated receipt, and
+then consumes the same receipt for the audited mutation. The two approver
+identifiers must be distinct stable lowercase operator identifiers. The backup
+and incident references must be uppercase stable references.
+
+After owner binding, publish only the root identity boundary:
+
+```bash
+/opt/orbbec-agent-platform/current/deploy/cloud/publish-dingtalk-production.sh \
+  /opt/orbbec-agent-platform/current
+/opt/orbbec-agent-platform/current/deploy/cloud/accept-dingtalk-production.sh
+```
+
+The Nginx transaction removes the old shared Platform Basic Auth, replaces only
+the Platform root location, removes the obsolete DingTalk preview include, and
+preserves `/admin`, its independent authentication, TLS, ACME, and unrelated
+locations byte-for-byte. It uses 360-second proxy timeouts and overwrites all
+trusted forwarding headers.
+
+Rollback restores the exact pre-cutover Nginx file, prior immutable release,
+and matching environment; it stops only Platform services and never restarts
+FAE:
+
+```bash
+/opt/orbbec-agent-platform/current/deploy/cloud/rollback-dingtalk-production.sh
+```
+
+Do not delete the cutover state or pre-cutover release until the acceptance
+window closes.
 
 ## One-time local preparation
 
@@ -80,7 +154,7 @@ prints their values.
 deploy/cloud/deploy.sh "$private_root/deploy.env"
 ```
 
-Success is exactly:
+Legacy SSH-tunnel deployments reported:
 
 ```text
 CLOUD_PLATFORM_DEPLOY_OK release=<commit> mode=ssh-tunnel
@@ -245,9 +319,10 @@ public-listener, loopback API, and SSH tunnel checks after rollback.
 Never restart, recreate, or edit FAE, Nginx, Langfuse, local source databases,
 attachments, or MetaBot as part of Platform rollback.
 
-## Later domain and identity release
+## Historical domain and identity notes
 
-After DNS and identity approval, add exact records for
+The following describes the design that preceded the formal DingTalk release.
+The DNS records now exist. Keep these notes only for migration history: add exact records for
 `agent.orbbec.com.cn` and `fae.orbbec.com.cn`. Nginx will use separate HTTPS
 virtual hosts: `agent.orbbec.com.cn` to loopback Platform and
 `fae.orbbec.com.cn` to the existing FAE listener. Add DingTalk (or Feishu)
@@ -268,7 +343,7 @@ after the prior bucket TTL has elapsed or with an explicit overlap migration;
 changing its active key/version immediately creates a new digest namespace and
 is not an ordinary identity-key rotation step.
 
-## Temporary administrator public entry
+## Legacy temporary administrator public entry
 
 Until DingTalk or Feishu identity is implemented, the sanitized cloud replica
 may be published at `https://agent.orbbec.com.cn` behind HTTPS Basic Auth for a
