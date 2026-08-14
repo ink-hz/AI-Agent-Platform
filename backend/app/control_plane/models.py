@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 
@@ -50,6 +51,7 @@ class ControlPlaneConfig:
     dingtalk_app_key: str
     dingtalk_agent_id: str
     dingtalk_corp_id: str
+    dingtalk_login_flow: Literal["qr", "both"]
     dingtalk_app_secret_file: str
     encryption_keyring_file: str
     hmac_keyring_file: str

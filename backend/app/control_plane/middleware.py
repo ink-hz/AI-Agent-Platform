@@ -45,6 +45,8 @@ def is_public_request(
     path: str,
     route_prefix: str,
     public_assets: frozenset[str] | None = None,
+    *,
+    allow_in_client: bool = True,
 ) -> bool:
     local = _unprefixed(path, route_prefix)
     if local is None:
@@ -56,8 +58,9 @@ def is_public_request(
         ("GET", "/api/health"),
         ("POST", "/api/v1/auth/dingtalk/start"),
         ("GET", "/api/v1/auth/dingtalk/callback"),
-        ("POST", "/api/v1/auth/dingtalk/in-client/exchange"),
     }
+    if allow_in_client:
+        exact.add(("POST", "/api/v1/auth/dingtalk/in-client/exchange"))
     if (method, local) in exact:
         return True
     if method == "GET" and local.startswith("/assets/"):
@@ -114,7 +117,11 @@ class IdentitySecurityMiddleware:
             await send(message)
 
         public = is_public_request(
-            method,path,self.auth.route_prefix,self.public_assets
+            method,
+            path,
+            self.auth.route_prefix,
+            self.public_assets,
+            allow_in_client=getattr(self.auth, "in_client_enabled", True),
         )
         headers = Headers(scope=scope)
         edge_source = None

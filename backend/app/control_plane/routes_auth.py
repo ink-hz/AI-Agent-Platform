@@ -230,28 +230,29 @@ def build_auth_router(
         _set_session_cookie(response, auth, issued)
         return response
 
-    @router.post("/api/v1/auth/dingtalk/in-client/exchange")
-    async def in_client(payload: CodeBody, request: Request):
-        try:
-            if getattr(auth, "rate_limiter", None) is None:
-                completed = await auth.complete_in_client(payload.code)
-            else:
-                completed = await auth.complete_in_client(
-                    payload.code,
-                    request.cookies.get(auth.challenge_cookie_name),
-                    request.state.edge_source.ip,
-                )
-            issued, _ = _session_value(completed)
-        except (RateLimitExceeded, RateLimitUnavailable) as error:
-            _raise_rate_failure(error)
-        except AuthenticationError as error:
-            raise HTTPException(503, str(error)) from None
-        response = Response(
-            content=("{\"csrf_token\":" + json.dumps(issued.csrf_token) + "}"),
-            media_type="application/json",
-        )
-        _set_session_cookie(response, auth, issued)
-        return response
+    if getattr(auth, "in_client_enabled", True):
+        @router.post("/api/v1/auth/dingtalk/in-client/exchange")
+        async def in_client(payload: CodeBody, request: Request):
+            try:
+                if getattr(auth, "rate_limiter", None) is None:
+                    completed = await auth.complete_in_client(payload.code)
+                else:
+                    completed = await auth.complete_in_client(
+                        payload.code,
+                        request.cookies.get(auth.challenge_cookie_name),
+                        request.state.edge_source.ip,
+                    )
+                issued, _ = _session_value(completed)
+            except (RateLimitExceeded, RateLimitUnavailable) as error:
+                _raise_rate_failure(error)
+            except AuthenticationError as error:
+                raise HTTPException(503, str(error)) from None
+            response = Response(
+                content=("{\"csrf_token\":" + json.dumps(issued.csrf_token) + "}"),
+                media_type="application/json",
+            )
+            _set_session_cookie(response, auth, issued)
+            return response
 
     @router.get("/api/v1/account")
     async def account(request: Request):

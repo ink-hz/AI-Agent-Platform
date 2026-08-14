@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import base64
+import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -7,6 +11,8 @@ import subprocess
 
 import pytest
 import yaml
+
+from app.main import create_app
 
 
 ROOT = Path(__file__).parents[2]
@@ -83,7 +89,7 @@ def test_demo_api_has_exact_preview_identity_and_proxy_contract() -> None:
         "/preview-control-database-url"
     )
     assert environment["PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE"].endswith(
-        "/preview-control-database-url"
+        "/preview-control-audit-database-url"
     )
     assert environment["PLATFORM_IDENTITY_HMAC_KEYRING_FILE"].endswith(
         "/preview-identity-hmac-keyring"
@@ -177,6 +183,7 @@ def test_secret_bootstrap_has_fixed_root_only_idempotent_boundary() -> None:
         "dingtalk-corp-id",
         "dingtalk-app-secret",
         "preview-control-database-url",
+        "preview-control-audit-database-url",
         "preview-control-directory-worker-database-url",
         "preview-control-migrator-database-url",
         "preview-identity-hmac-keyring",
@@ -187,6 +194,7 @@ def test_secret_bootstrap_has_fixed_root_only_idempotent_boundary() -> None:
         assert expected in script
     for role in (
         "platform_control_app_preview",
+        "platform_audit_append_preview",
         "platform_directory_worker_preview",
         "platform_control_migrator_preview",
     ):
@@ -214,6 +222,27 @@ def test_runtime_api_cannot_reach_offline_migrator_worker_or_allowlist_secrets()
     assert "os.chown(runtime, 0, 10001)" in bootstrap
     assert "os.chown(offline, 0, 0)" in bootstrap
     assert value["x-demo-preview-image-smoke"]["run_user"] == "0:0"
+
+
+def test_secret_bootstrap_reads_each_source_once_through_a_verified_dirfd() -> None:
+    script = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert '[[ ! -L "$private_path" ]]' in script
+    assert 'getattr(os, "O_DIRECTORY", 0)' in script
+    assert 'getattr(os, "O_NOFOLLOW", 0)' in script
+    assert "dir_fd=source_fd" in script
+    assert "os.fstat(descriptor)" in script
+    assert "opened.st_uid != 0" in script
+    assert "stat.S_IMODE(opened.st_mode) != 0o600" in script
+    assert "payloads[name]" in script
+    embedded = script.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    for forbidden in (
+        "SOURCE / name",
+        "path.read_bytes()",
+        "path.read_text(",
+        "source.open(",
+    ):
+        assert forbidden not in embedded
 
 
 def test_secret_bootstrap_never_uses_interactive_or_secret_echo_paths() -> None:
@@ -262,6 +291,90 @@ def test_static_image_smoke_contract_migrates_bootstraps_and_checks_minimal_heal
     assert smoke["expected_health"] == {"status": "ok"}
 
 
+def test_real_create_app_smoke_accepts_separate_preview_app_and_audit_roles(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def secret(name: str, value: str) -> Path:
+        path = tmp_path / name
+        path.write_text(value + "\n", encoding="utf-8")
+        path.chmod(0o600)
+        return path
+
+    def keyring(
+        name: str, purpose: str, byte: bytes, *, transition: bool = False
+    ) -> Path:
+        document = {
+            "purpose": purpose,
+            "active_version": 1,
+            "keys": {"1": base64.b64encode(byte * 32).decode("ascii")},
+        }
+        if transition:
+            document["transition_versions"] = [1]
+        return secret(
+            name,
+            json.dumps(document),
+        )
+
+    registry = tmp_path / "registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "contract.json"
+    contract.write_text('{"bots": []}\n', encoding="utf-8")
+    static = tmp_path / "static"
+    static.mkdir()
+    app_dsn = secret(
+        "app-dsn",
+        "postgresql://platform_control_app_preview@127.0.0.1/"
+        "agent_platform_control_preview",
+    )
+    audit_dsn = secret(
+        "audit-dsn",
+        "postgresql://platform_audit_append_preview@127.0.0.1/"
+        "agent_platform_control_preview",
+    )
+    environment = {
+        "PLATFORM_DEPLOYMENT_MODE": "local",
+        "PLATFORM_FLYWHEEL_ENABLED": "0",
+        "PLATFORM_REVIEW_ENABLED": "0",
+        "PLATFORM_ATTACHMENT_ENABLED": "0",
+        "PLATFORM_STATIC_DIR": str(static),
+        "PLATFORM_IDENTITY_MODE": "preview",
+        "PLATFORM_PUBLIC_BASE_URL": "https://agent.orbbec.com.cn",
+        "PLATFORM_ROUTE_PREFIX": "/_preview/dingtalk-r1/",
+        "PLATFORM_COOKIE_NAME": "platform_preview_session",
+        "PLATFORM_DINGTALK_LOGIN_FLOW": "qr",
+        "PLATFORM_DINGTALK_APP_KEY": "synthetic-app-key",
+        "PLATFORM_DINGTALK_AGENT_ID": "synthetic-agent-id",
+        "PLATFORM_DINGTALK_CORP_ID": "synthetic-corp-id",
+        "PLATFORM_CONTROL_DATABASE_URL_FILE": str(app_dsn),
+        "PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE": str(audit_dsn),
+        "PLATFORM_DINGTALK_APP_SECRET_FILE": str(
+            secret("app-secret", "synthetic-app-secret")
+        ),
+        "PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE": str(
+            keyring("encryption", "provider-encryption", b"e")
+        ),
+        "PLATFORM_IDENTITY_HMAC_KEYRING_FILE": str(
+            keyring("lookup", "provider-lookup-hmac", b"h", transition=True)
+        ),
+        "PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE": str(
+            keyring("rate", "rate-limit-hmac", b"r")
+        ),
+    }
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+    )
+    try:
+        assert app.state.system_health_audit.environment == "preview"
+        assert app.state.identity_auth.in_client_enabled is False
+    finally:
+        asyncio.run(app.state.identity_auth.aclose())
+
+
 def test_compose_overlay_statically_merges_without_replacing_root_services() -> None:
     base = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
     overlay = _overlay()
@@ -275,21 +388,72 @@ def test_compose_overlay_statically_merges_without_replacing_root_services() -> 
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="Docker unavailable")
 def test_compose_config_and_immutable_image_command_smoke_when_docker_available() -> None:
-    completed = subprocess.run(
-        [
-            "docker",
-            "compose",
-            "-f",
-            str(CLOUD / "compose.yaml"),
-            "-f",
-            str(OVERLAY),
-            "config",
-        ],
-        cwd=ROOT,
-        env={"PATH": str(Path(shutil.which("docker")).parent), "PLATFORM_IMAGE": "test.invalid/platform@sha256:" + "0" * 64},
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    assert not re.search(r"(?:0\.0\.0\.0|\[::\]):8081", completed.stdout)
+    image = "orbbec-agent-platform-demo-preview:test"
+    environment = {**os.environ, "PLATFORM_IMAGE": image}
+    try:
+        completed = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(CLOUD / "compose.yaml"),
+                "-f",
+                str(OVERLAY),
+                "config",
+            ],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert not re.search(r"(?:0\.0\.0\.0|\[::\]):8081", completed.stdout)
+        built = subprocess.run(
+            [
+                "docker",
+                "build",
+                "--file",
+                str(CLOUD / "Dockerfile"),
+                "--build-arg",
+                "RELEASE_SHA=" + "0" * 40,
+                "--tag",
+                image,
+                ".",
+            ],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert built.returncode == 0, built.stderr
+        smoke = subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                image,
+                "python",
+                "-c",
+                "from pathlib import Path; from app.main import create_app; "
+                "app=create_app(start_poller=False); "
+                "assert app.title == 'Orbbec AI Agent Platform'; "
+                "assert Path('/app/backend/control_migrations/019_demo_preview_bootstrap.sql').is_file()",
+            ],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert smoke.returncode == 0, smoke.stderr
+    finally:
+        subprocess.run(
+            ["docker", "image", "rm", "--force", image],
+            env=environment,
+            capture_output=True,
+            check=False,
+        )

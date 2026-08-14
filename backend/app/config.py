@@ -299,6 +299,7 @@ def _load_control_plane_config() -> ControlPlaneConfig:
             dingtalk_app_key="",
             dingtalk_agent_id="",
             dingtalk_corp_id="",
+            dingtalk_login_flow="both",
             dingtalk_app_secret_file="",
             encryption_keyring_file="",
             hmac_keyring_file="",
@@ -342,6 +343,15 @@ def _load_control_plane_config() -> ControlPlaneConfig:
         raise ValueError("production PLATFORM_ROUTE_PREFIX must be /")
     elif cookie_name != "__Host-platform_session":
         raise ValueError("production Cookie name must be __Host-platform_session")
+    expected_login_flow = "qr" if mode is IdentityMode.PREVIEW else "both"
+    dingtalk_login_flow = os.getenv(
+        "PLATFORM_DINGTALK_LOGIN_FLOW", expected_login_flow
+    )
+    if dingtalk_login_flow != expected_login_flow:
+        raise ValueError(
+            f"PLATFORM_DINGTALK_LOGIN_FLOW must be {expected_login_flow} "
+            f"when identity mode is {mode.value}"
+        )
 
     private_files = (
         (control_database_url_file, "control database secret"),
@@ -385,6 +395,7 @@ def _load_control_plane_config() -> ControlPlaneConfig:
         dingtalk_app_key=_required_environment("PLATFORM_DINGTALK_APP_KEY"),
         dingtalk_agent_id=_required_environment("PLATFORM_DINGTALK_AGENT_ID"),
         dingtalk_corp_id=_required_environment("PLATFORM_DINGTALK_CORP_ID"),
+        dingtalk_login_flow=dingtalk_login_flow,
         dingtalk_app_secret_file=dingtalk_app_secret_file,
         encryption_keyring_file=encryption_keyring_file,
         hmac_keyring_file=hmac_keyring_file,

@@ -11,7 +11,8 @@ fail() {
 private_path=/opt/orbbec-agent-platform/private/demo-preview
 volume_name=orbbec-agent-platform-demo-preview-secrets
 platform_image="${PLATFORM_IMAGE:-}"
-[[ -n "$platform_image" && -d "$private_path" ]] || fail
+[[ -n "$platform_image" && ! -L "$private_path" && -d "$private_path" ]] || fail
+[[ ! -L "$private_path" ]] || fail
 [[ "$(/usr/bin/stat -c '%u:%a:%F' "$private_path" 2>/dev/null)" == "0:700:directory" ]] || fail
 /usr/bin/docker image inspect "$platform_image" >/dev/null 2>&1 || fail
 
@@ -32,12 +33,12 @@ from pathlib import Path
 import shutil
 import stat
 import sys
+import tempfile
 from uuid import uuid4
 
 from psycopg.conninfo import conninfo_to_dict
 
 from app.control_plane.crypto import IdentityKeyring
-from app.control_plane.demo_bootstrap import read_demo_userids
 
 
 SOURCE = Path(sys.argv[1])
@@ -48,6 +49,7 @@ EXPECTED = (
     "dingtalk-corp-id",
     "dingtalk-app-secret",
     "preview-control-database-url",
+    "preview-control-audit-database-url",
     "preview-control-directory-worker-database-url",
     "preview-control-migrator-database-url",
     "preview-identity-hmac-keyring",
@@ -61,6 +63,7 @@ RUNTIME_NAMES = (
     "dingtalk-corp-id",
     "dingtalk-app-secret",
     "preview-control-database-url",
+    "preview-control-audit-database-url",
     "preview-identity-hmac-keyring",
     "preview-identity-encryption-keyring",
     "preview-rate-limit-hmac-keyring",
@@ -72,6 +75,7 @@ OFFLINE_NAMES = (
 )
 DSNS = {
     "preview-control-database-url": "platform_control_app_preview",
+    "preview-control-audit-database-url": "platform_audit_append_preview",
     "preview-control-directory-worker-database-url":
         "platform_directory_worker_preview",
     "preview-control-migrator-database-url":
@@ -83,24 +87,43 @@ def reject() -> None:
     raise RuntimeError("invalid demo preview secret input")
 
 
-def checked_file(name: str) -> Path:
-    path = SOURCE / name
-    metadata = path.lstat()
-    if (
-        path.is_symlink()
-        or stat.S_ISLNK(metadata.st_mode)
-        or not stat.S_ISREG(metadata.st_mode)
-        or metadata.st_uid != 0
-        or stat.S_IMODE(metadata.st_mode) != 0o600
-        or metadata.st_size <= 0
-        or metadata.st_size > 65_536
-    ):
-        reject()
-    return path
+def checked_file(name: str, source_fd: int) -> bytes:
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=source_fd,
+        )
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_uid != 0
+            or stat.S_IMODE(opened.st_mode) != 0o600
+            or opened.st_size <= 0
+            or opened.st_size > 65_536
+        ):
+            reject()
+        chunks: list[bytes] = []
+        remaining = 65_537
+        while remaining > 0:
+            chunk = os.read(descriptor, min(remaining, 64 * 1024))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        if len(payload) != opened.st_size or len(payload) > 65_536:
+            reject()
+        return payload
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
-def one_line(path: Path, *, maximum: int = 4096) -> str:
-    payload = path.read_bytes()
+def one_line(payload: bytes, *, maximum: int = 4096) -> str:
     if len(payload) > maximum or b"\0" in payload:
         reject()
     try:
@@ -113,53 +136,94 @@ def one_line(path: Path, *, maximum: int = 4096) -> str:
     return lines[0]
 
 
-def validate() -> dict[str, Path]:
-    source_metadata = SOURCE.lstat()
-    if (
-        SOURCE.is_symlink()
-        or not stat.S_ISDIR(source_metadata.st_mode)
-        or source_metadata.st_uid != 0
-        or stat.S_IMODE(source_metadata.st_mode) != 0o700
-    ):
-        reject()
-    files = {name: checked_file(name) for name in EXPECTED}
+def read_source_payloads() -> dict[str, bytes]:
+    source_fd = -1
+    try:
+        source_fd = os.open(
+            SOURCE,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        source_metadata = os.fstat(source_fd)
+        if (
+            not stat.S_ISDIR(source_metadata.st_mode)
+            or source_metadata.st_uid != 0
+            or stat.S_IMODE(source_metadata.st_mode) != 0o700
+        ):
+            reject()
+        return {name: checked_file(name, source_fd) for name in EXPECTED}
+    finally:
+        if source_fd >= 0:
+            os.close(source_fd)
+
+
+def validate(payloads: dict[str, bytes]) -> None:
     for name in (
         "dingtalk-app-key",
         "dingtalk-agent-id",
         "dingtalk-corp-id",
         "dingtalk-app-secret",
     ):
-        one_line(files[name])
-    read_demo_userids(files["demo-userids"])
+        one_line(payloads[name])
+    try:
+        userids = payloads["demo-userids"].decode("utf-8").splitlines()
+    except UnicodeError:
+        reject()
+    if (
+        not 1 <= len(userids) <= 3
+        or len(set(userids)) != len(userids)
+        or any(
+            not value
+            or value != value.strip()
+            or len(value.encode("utf-8")) > 512
+            or any(ord(character) < 0x20 or ord(character) == 0x7F for character in value)
+            for value in userids
+        )
+    ):
+        reject()
     for name, expected_role in DSNS.items():
-        parsed = conninfo_to_dict(one_line(files[name], maximum=16_384))
+        parsed = conninfo_to_dict(one_line(payloads[name], maximum=16_384))
         if (
             parsed.get("user") != expected_role
             or parsed.get("dbname") != "agent_platform_control_preview"
         ):
             reject()
-    encryption = IdentityKeyring.from_file(
-        files["preview-identity-encryption-keyring"],
-        expected_purpose="provider-encryption",
-        expected_key_length=32,
-    )
-    lookup = IdentityKeyring.from_file(
-        files["preview-identity-hmac-keyring"],
-        expected_purpose="provider-lookup-hmac",
-        expected_key_length=32,
-    )
-    rate = IdentityKeyring.from_file(
-        files["preview-rate-limit-hmac-keyring"],
-        expected_purpose="rate-limit-hmac",
-        expected_key_length=32,
-    )
+    with tempfile.TemporaryDirectory(prefix="keyring-", dir="/tmp") as temporary:
+        keyring_paths = {}
+        for name in (
+            "preview-identity-encryption-keyring",
+            "preview-identity-hmac-keyring",
+            "preview-rate-limit-hmac-keyring",
+        ):
+            keyring_path = Path(temporary) / name
+            with keyring_path.open("xb") as writer:
+                writer.write(payloads[name])
+            keyring_path.chmod(0o600)
+            keyring_paths[name] = keyring_path
+        encryption = IdentityKeyring.from_file(
+            keyring_paths["preview-identity-encryption-keyring"],
+            expected_purpose="provider-encryption",
+            expected_key_length=32,
+        )
+        lookup = IdentityKeyring.from_file(
+            keyring_paths["preview-identity-hmac-keyring"],
+            expected_purpose="provider-lookup-hmac",
+            expected_key_length=32,
+        )
+        rate = IdentityKeyring.from_file(
+            keyring_paths["preview-rate-limit-hmac-keyring"],
+            expected_purpose="rate-limit-hmac",
+            expected_key_length=32,
+        )
     if encryption.overlaps(lookup) or encryption.overlaps(rate) or lookup.overlaps(rate):
         reject()
-    return files
 
 
 try:
-    files = validate()
+    payloads = read_source_payloads()
+    validate(payloads)
     staging = TARGET / (".stage-" + uuid4().hex)
     staging.mkdir(mode=0o700)
     try:
@@ -167,12 +231,12 @@ try:
         offline_staging = staging / "offline"
         runtime_staging.mkdir(mode=0o700)
         offline_staging.mkdir(mode=0o700)
-        for name, source in files.items():
+        for name, payload in payloads.items():
             destination = (
                 runtime_staging if name in RUNTIME_NAMES else offline_staging
             ) / name
-            with source.open("rb") as reader, destination.open("xb") as writer:
-                shutil.copyfileobj(reader, writer, length=64 * 1024)
+            with destination.open("xb") as writer:
+                writer.write(payload)
                 writer.flush()
                 os.fsync(writer.fileno())
             os.chown(destination, 10001, 10001)
@@ -223,4 +287,4 @@ then
   fail
 fi
 
-/usr/bin/printf '%s\n' 'DEMO_PREVIEW_SECRETS_READY files=11'
+/usr/bin/printf '%s\n' 'DEMO_PREVIEW_SECRETS_READY files=12'

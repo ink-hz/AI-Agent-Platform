@@ -156,6 +156,7 @@ def test_preview_configuration_is_path_scoped_and_uses_initial_limits(
         dingtalk_app_key="test-app-key",
         dingtalk_agent_id="test-agent-id",
         dingtalk_corp_id="test-corp-id",
+        dingtalk_login_flow="qr",
         dingtalk_app_secret_file=str(paths["PLATFORM_DINGTALK_APP_SECRET_FILE"]),
         encryption_keyring_file=str(
             paths["PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE"]
@@ -176,6 +177,21 @@ def test_preview_configuration_is_path_scoped_and_uses_initial_limits(
     assert control_plane.oauth_exchanges_per_minute == 3_000
     assert control_plane.authenticated_reads_per_minute == 300
     assert control_plane.authenticated_mutations_per_minute == 60
+    assert control_plane.dingtalk_login_flow == "qr"
+
+
+def test_preview_rejects_in_client_or_combined_login_flow(tmp_path, monkeypatch) -> None:
+    install_required_identity_environment(tmp_path, monkeypatch, mode="preview")
+    for flow in ("in_client", "both"):
+        monkeypatch.setenv("PLATFORM_DINGTALK_LOGIN_FLOW", flow)
+        with pytest.raises(ValueError, match="PLATFORM_DINGTALK_LOGIN_FLOW"):
+            load_config()
+
+
+def test_production_uses_combined_login_flow(tmp_path, monkeypatch) -> None:
+    install_required_identity_environment(tmp_path, monkeypatch, mode="production")
+
+    assert load_config().control_plane.dingtalk_login_flow == "both"
 
 
 def test_production_configuration_uses_root_host_cookie(tmp_path, monkeypatch) -> None:

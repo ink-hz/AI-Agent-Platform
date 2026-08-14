@@ -251,22 +251,10 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
         corp_id=control.dingtalk_corp_id,
         login_flow="qr",
     )
-    in_client = DingTalkClient(
-        app_key=control.dingtalk_app_key,
-        app_secret=app_secret,
-        corp_id=control.dingtalk_corp_id,
-        login_flow="in_client",
-    )
     qr_resolver = IdentityResolver(
         database_url,
         corp_id=control.dingtalk_corp_id,
         client=qr_client,
-        identity_codec=codec,
-    )
-    in_client_resolver = IdentityResolver(
-        database_url,
-        corp_id=control.dingtalk_corp_id,
-        client=in_client,
         identity_codec=codec,
     )
 
@@ -281,8 +269,27 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
     async def qr_login(code: str, verifier: str):
         return await resolve(qr_client, qr_resolver, code, verifier)
 
-    async def in_client_login(code: str, verifier: str):
-        return await resolve(in_client, in_client_resolver, code, verifier)
+    in_client = None
+    in_client_login = None
+    close_callbacks = (qr_client.aclose,)
+    if control.dingtalk_login_flow == "both":
+        in_client = DingTalkClient(
+            app_key=control.dingtalk_app_key,
+            app_secret=app_secret,
+            corp_id=control.dingtalk_corp_id,
+            login_flow="in_client",
+        )
+        in_client_resolver = IdentityResolver(
+            database_url,
+            corp_id=control.dingtalk_corp_id,
+            client=in_client,
+            identity_codec=codec,
+        )
+
+        async def in_client_login(code: str, verifier: str):
+            return await resolve(in_client, in_client_resolver, code, verifier)
+
+        close_callbacks = (qr_client.aclose, in_client.aclose)
 
     return DingTalkWebAuth(
         repository=repository,
@@ -301,7 +308,7 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
             ipaddress.ip_network(value, strict=True)
             for value in control.trusted_proxy_cidrs
         ),
-        close_callbacks=(qr_client.aclose, in_client.aclose),
+        close_callbacks=close_callbacks,
     )
 
 

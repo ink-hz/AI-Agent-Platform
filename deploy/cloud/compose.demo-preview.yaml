@@ -53,7 +53,7 @@ services:
       - |
         secret_dir=/tmp/demo-preview-secrets
         install -d -m 0700 "$${secret_dir}"
-        for secret_name in preview-control-database-url dingtalk-app-secret preview-identity-encryption-keyring preview-identity-hmac-keyring preview-rate-limit-hmac-keyring; do
+        for secret_name in preview-control-database-url preview-control-audit-database-url dingtalk-app-secret preview-identity-encryption-keyring preview-identity-hmac-keyring preview-rate-limit-hmac-keyring; do
           install -m 0600 "/run/demo-preview-secrets/runtime/$${secret_name}" "$${secret_dir}/$${secret_name}"
         done
         PLATFORM_DINGTALK_APP_KEY=
@@ -81,7 +81,7 @@ services:
       PLATFORM_DINGTALK_LOGIN_FLOW: qr
       PLATFORM_TRUSTED_PROXY_CIDRS: 172.30.0.6/32
       PLATFORM_CONTROL_DATABASE_URL_FILE: /tmp/demo-preview-secrets/preview-control-database-url
-      PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE: /tmp/demo-preview-secrets/preview-control-database-url
+      PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE: /tmp/demo-preview-secrets/preview-control-audit-database-url
       PLATFORM_DINGTALK_APP_SECRET_FILE: /tmp/demo-preview-secrets/dingtalk-app-secret
       PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE: /tmp/demo-preview-secrets/preview-identity-encryption-keyring
       PLATFORM_IDENTITY_HMAC_KEYRING_FILE: /tmp/demo-preview-secrets/preview-identity-hmac-keyring

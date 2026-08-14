@@ -35,6 +35,7 @@ class FakeAuth:
         self.csrf = "csrf-value"
         self.revoked = False
         self.provider_calls = 0
+        self.in_client_enabled = True
 
     def start_qr(self, return_path):
         from app.control_plane.auth import StartedLogin
@@ -332,6 +333,24 @@ def test_qr_and_in_client_login_set_rotated_cookie_and_return_csrf(tmp_path, mon
     assert in_client.status_code == 200
     assert in_client.json() == {"csrf_token": "csrf-value"}
     assert auth.provider_calls == 2
+
+
+def test_qr_only_auth_has_no_public_in_client_route_or_provider_exchange(
+    tmp_path, monkeypatch
+) -> None:
+    auth = FakeAuth(mode=IdentityMode.PREVIEW, prefix="/_preview/dingtalk-r1/")
+    auth.in_client_enabled = False
+    client = TestClient(_app(tmp_path, monkeypatch, auth))
+
+    response = client.post(
+        "/_preview/dingtalk-r1/api/v1/auth/dingtalk/in-client/exchange",
+        json={"code": "must-not-reach-provider"},
+        headers={"Origin": auth.public_base_url},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "authentication required"}
+    assert auth.provider_calls == 0
 
 
 def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch) -> None:

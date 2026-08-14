@@ -277,7 +277,7 @@ class DingTalkWebAuth:
         repository: AuthRepository,
         secrets: AuthSecrets,
         qr_login: Callable[[str], Awaitable[UUID]],
-        in_client_login: Callable[[str], Awaitable[UUID]],
+        in_client_login: Callable[[str], Awaitable[UUID]] | None,
         environment: str,
         route_prefix: str,
         public_base_url: str,
@@ -297,6 +297,7 @@ class DingTalkWebAuth:
         self.secrets = secrets
         self.qr_login = qr_login
         self.in_client_login = in_client_login
+        self.in_client_enabled = in_client_login is not None
         self.environment = environment
         self.route_prefix = route_prefix
         self.public_base_url = public_base_url.rstrip("/")
@@ -462,6 +463,8 @@ class DingTalkWebAuth:
     async def complete_in_client(
         self, code: str, browser_challenge: str | None = None, edge_ip=None
     ) -> CompletedLogin:
+        if self.in_client_login is None:
+            raise AuthenticationError("login unavailable")
         if self.rate_limiter is not None:
             self.rate_limiter.check_callback(edge_ip)
         # In-client auth codes are also serialized through a backend-only random
