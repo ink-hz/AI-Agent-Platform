@@ -23,6 +23,12 @@ export interface ManagedUser {
   scopes: string[];
 }
 
+export interface AdministratorMutation {
+  readonly targetInternalUserId: string;
+  readonly revoke: boolean;
+  readonly requestId: string;
+}
+
 export interface GovernanceEvent {
   audit_event_id: string;
   event_type: string;
@@ -47,6 +53,13 @@ export class PermissionDenied extends PlatformApiError {
 
 export class DirectoryUnavailable extends PlatformApiError {
   constructor() { super(503); }
+}
+
+export class ManagementMutationIndeterminate extends PlatformApiError {
+  constructor(public requestId: string, detail: unknown) {
+    super(503, detail);
+    this.name = "ManagementMutationIndeterminate";
+  }
 }
 
 export class IdentityDisabled extends PlatformApiError {
@@ -168,7 +181,19 @@ async function checked(response: Response): Promise<Response> {
   if (response.status === 401) throw new AuthenticationRequired();
   if (response.status === 403) throw new PermissionDenied();
   if (response.status === 404) throw new IdentityDisabled();
-  if (response.status === 503) throw new DirectoryUnavailable();
+  if (response.status === 503) {
+    const detail = await responseDetail(response);
+    if (
+      isObject(detail)
+      && isObject(detail.detail)
+      && detail.detail.code === "management_mutation_indeterminate"
+      && typeof detail.detail.request_id === "string"
+      && detail.detail.request_id
+    ) {
+      throw new ManagementMutationIndeterminate(detail.detail.request_id, detail);
+    }
+    throw new DirectoryUnavailable();
+  }
   if (!response.ok) throw new PlatformApiError(response.status, await responseDetail(response));
   return response;
 }
@@ -272,20 +297,32 @@ export async function listManagedUsers(): Promise<ManagedUser[]> {
 }
 
 
-export async function changeAdministrator(
-  account: Account,
+export function createAdministratorMutation(
   user: ManagedUser,
   revoke: boolean,
+): AdministratorMutation {
+  return Object.freeze({
+    targetInternalUserId: user.internal_user_id,
+    revoke,
+    requestId: crypto.randomUUID(),
+  });
+}
+
+
+export async function changeAdministrator(
+  account: Account,
+  operation: AdministratorMutation,
 ): Promise<void> {
-  const response = await fetch(platformPath(`/api/v1/manage/admins/${encodeURIComponent(user.internal_user_id)}`), {
-    method: revoke ? "DELETE" : "POST",
+  const response = await fetch(platformPath(`/api/v1/manage/admins/${encodeURIComponent(operation.targetInternalUserId)}`), {
+    method: operation.revoke ? "DELETE" : "POST",
     credentials: "include",
     headers: {
       Accept: "application/json", "Content-Type": "application/json",
       "X-CSRF-Token": account.csrf_token,
     },
     body: JSON.stringify({
-      reason: revoke ? "admin_access_revoked" : "admin_access_approved",
+      reason: operation.revoke ? "admin_access_revoked" : "admin_access_approved",
+      request_id: operation.requestId,
     }),
   });
   await checked(response);

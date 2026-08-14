@@ -159,12 +159,17 @@ describe("identity management contract", () => {
     [false, "POST", "admin_access_approved"],
     [true, "DELETE", "admin_access_revoked"],
   ] as const)("uses the exact administrator API contract for revoke=%s", async (revoke, method, reason) => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
     const fetchMock = vi.fn().mockResolvedValue(new Response("{}", {
       status: 200, headers: { "Content-Type": "application/json" },
     }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await changeAdministrator(owner, member, revoke);
+    await changeAdministrator(owner, {
+      targetInternalUserId: member.internal_user_id,
+      revoke,
+      requestId,
+    });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/manage/admins/member%2Fid",
@@ -176,9 +181,29 @@ describe("identity management contract", () => {
           "Content-Type": "application/json",
           "X-CSRF-Token": "owner-csrf",
         },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason, request_id: requestId }),
       },
     );
+  });
+
+  it("preserves the backend indeterminate mutation contract for safe replay", async () => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: {
+        code: "management_mutation_indeterminate",
+        request_id: requestId,
+      },
+    }), { status: 503, headers: { "Content-Type": "application/json" } })));
+
+    await expect(changeAdministrator(owner, {
+      targetInternalUserId: member.internal_user_id,
+      revoke: false,
+      requestId,
+    })).rejects.toMatchObject({
+      name: "ManagementMutationIndeterminate",
+      status: 503,
+      requestId,
+    });
   });
 
   it("fails closed when the managed-user list contains an unknown role", async () => {
