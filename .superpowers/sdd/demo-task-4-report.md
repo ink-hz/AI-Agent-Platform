@@ -47,8 +47,13 @@ Final focused GREEN:
 
 ```text
 backend/.venv/bin/pytest -q backend/tests/test_demo_preview_release.py
-14 passed
+20 passed
 ```
+
+The final review RED added six independent regressions for the merged Compose
+contract, resumable prerequisite publication, duplicate-free runner view, safe
+`current` transaction, fail-closed rollback and the signal window between the
+atomic `current` move and its bookkeeping flag. All six are GREEN.
 
 ## Implementation boundary
 
@@ -61,10 +66,13 @@ The release is an explicit `prepare → verify → activate` transaction:
   verifies the fully merged Compose JSON, migrates and bootstraps through the
   dual-network `platform-demo-preview-runner`, starts only the two preview
   services, and proves 8081 is loopback-only. Nginx is not touched.
-- `activate` switches the release link, invokes the Task 3 hash-locked Nginx
-  installer, then runs fixed-output acceptance. A post-activation failure invokes
-  preview-only rollback, stops preview services and restores the prior release
-  link.
+- `activate` first proves that `current` resolves to an exact 40-hex release
+  directory, arms cleanup before creating a per-process temporary link, and
+  switches it atomically. The failure handler ignores secondary termination
+  signals, resolves the live link rather than trusting a late flag, requires the
+  exact Task 3 rollback result, proves the Nginx include/snippet and 8081 listener
+  are absent, and only then restores the prior link. A rollback failure keeps the
+  new release/current and backend state, records `rollback-retry`, and hard-fails.
 
 The first-run prerequisite boundary accepts exactly five root-owned `0600`
 operator files. It generates three independent purpose-bound 32-byte keyrings and
@@ -75,6 +83,13 @@ the four real credential roles are LOGIN/NOINHERIT; the only role membership is
 preview owner to preview migrator so the offline migrator can explicitly
 `SET ROLE`. A completed rerun reuses the same credentials and does not rotate
 them.
+
+The deployment preflight now accepts a 6–11-file crash state only when the
+sibling state is a root-owned non-symlink `0700` directory and its root-owned
+`0600` files are the exact disjoint complement of already published generated
+files. The migration and member bootstrap consume only the new duplicate-free
+runner projection; the loopback Compose gate validates its exact networks,
+image and sole loopback port without imposing the API/runner egress priority.
 
 PostgreSQL gives ordinary databases PUBLIC CONNECT and has no per-role DENY. The
 helper deliberately does not revoke production PUBLIC access. It removes direct
@@ -104,8 +119,8 @@ directory, deletes them on exit, and emits only fixed PASS/FAIL labels.
 ## Verification run
 
 ```text
-Related Task 1–4/deployment regression: 105 passed, 1 skipped
-Full backend: 1169 passed, 2 skipped, 31 warnings
+Related Task 2/4 deployment regression: 38 passed, 1 skipped
+Full backend: 1176 passed, 2 skipped, 31 warnings
 Frontend: 29 files / 169 tests passed
 Frontend production build: passed
 Python compileall: passed

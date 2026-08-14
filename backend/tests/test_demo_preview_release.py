@@ -213,6 +213,122 @@ def test_deploy_bootstraps_then_validates_and_uses_compose_runner_networks() -> 
     )
 
 
+def test_merged_compose_gate_distinguishes_egress_from_loopback_contract() -> None:
+    value = _text(DEPLOY)
+
+    assert 'egress_services = (' in value
+    assert '"platform-api-demo-preview"' in value
+    assert '"platform-demo-preview-runner"' in value
+    assert 'loopback = services.get("platform-loopback-demo-preview")' in value
+    assert 'set(loopback.get("networks", {})) != required_networks' in value
+    assert 'loopback.get("image") != expected_image' in value
+    assert 'port.get("host_ip") != "127.0.0.1"' in value
+    assert 'str(port.get("published")) != "8081"' in value
+    assert 'int(port.get("target", 0)) != 8080' in value
+    egress = value.index("egress_services = (")
+    loopback = value.index('loopback = services.get("platform-loopback-demo-preview")')
+    assert egress < loopback
+    assert 'edge_priority = networks["platform-edge"]' in value[egress:loopback]
+    assert "edge_priority" not in value[loopback : value.index("PY", loopback)]
+
+
+def test_operator_preflight_accepts_only_safe_resumable_partial_publication() -> None:
+    value = _text(DEPLOY)
+
+    assert 'state = pathlib.Path(sys.argv[2])' in value
+    assert 'state_path=/opt/orbbec-agent-platform/private/.demo-preview-prerequisite-state' in value
+    assert "state.is_symlink()" in value
+    assert "state_metadata.st_uid != 0" in value
+    assert "stat.S_IMODE(state_metadata.st_mode) != 0o700" in value
+    assert "published_generated.isdisjoint(staged_generated)" in value
+    assert "published_generated | staged_generated != generated" in value
+    assert "operator | published_generated" in value
+    assert 'checked_file(path, 0o600)' in value
+    assert 'checked_file(state / name, 0o600)' in value
+
+
+def test_runner_commands_use_only_the_duplicate_free_runner_secret_view() -> None:
+    value = _text(DEPLOY)
+    migration = value[value.index("run_preview_migration()") : value.index("run_preview_bootstrap()")]
+    bootstrap = value[value.index("run_preview_bootstrap()") : value.index("wait_preview_health()")]
+
+    assert "/run/demo-preview-secrets/runner/preview-control-migrator-database-url" in migration
+    for name in (
+        "dingtalk-app-key",
+        "dingtalk-corp-id",
+        "dingtalk-app-secret",
+        "preview-identity-encryption-keyring",
+        "preview-identity-hmac-keyring",
+        "preview-control-directory-worker-database-url",
+        "demo-userids",
+    ):
+        assert f'/run/demo-preview-secrets/runner/$name' in bootstrap
+    assert "/run/demo-preview-secrets/runtime/" not in migration + bootstrap
+    assert "/run/demo-preview-secrets/offline/" not in migration + bootstrap
+    assert "cap_add" not in migration + bootstrap
+    assert "--cap-add" not in migration + bootstrap
+
+
+def test_current_symlink_transaction_is_safe_unique_and_reentrant() -> None:
+    value = _text(DEPLOY)
+
+    assert "resolve_current_release()" in value
+    assert r"^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$" in value
+    assert 'current_before="$(resolve_current_release)"' in value
+    assert 'transaction_nonce="$(/usr/bin/od -An -N16 -tx1 /dev/urandom' in value
+    assert 'transaction_id="${release_sha}-${BASHPID}-${transaction_nonce}"' in value
+    assert '.current-next-$transaction_id' in value
+    assert '.current-restore-$transaction_id' in value
+    assert "cleanup_transaction_links()" in value
+    assert "restore_current_atomically()" in value
+    assert "current.part" not in value
+    assert "current.rollback" not in value
+    activate = value[value.index("activate_phase()") : value.index('case "$phase"')]
+    assert activate.index("trap rollback_after_activation EXIT") < activate.index("/bin/ln -s")
+    assert activate.index("/bin/ln -s") < activate.index("/bin/mv -Tf")
+    rollback = value[value.index("rollback_after_activation()") : value.index("activate_phase()")]
+    assert "cleanup_transaction_links" in rollback
+
+
+def test_current_switch_signal_window_resolves_the_link_instead_of_trusting_a_late_flag() -> None:
+    value = _text(DEPLOY)
+    activate = value[value.index("activate_phase()") : value.index('case "$phase"')]
+    rollback = value[value.index("rollback_after_activation()") : value.index("activate_phase()")]
+
+    attempted = activate.index("current_switch_attempted=1")
+    move = activate.index("/bin/mv -Tf")
+    switched = activate.index("current_switched=1")
+    assert attempted < move < switched
+    assert "${current_switch_attempted:-0}" in rollback
+    assert 'active_current="$(resolve_current_release)"' in rollback
+    assert '"$active_current" == "$current_before"' in rollback
+    assert '"$active_current" != "$release_path"' in rollback
+    assert "trap '' HUP INT TERM" in rollback
+
+
+def test_failed_activation_rollback_is_fail_closed_before_current_restore() -> None:
+    value = _text(DEPLOY)
+    rollback = value[value.index("rollback_after_activation()") : value.index("activate_phase()")]
+
+    assert "rollback-demo-preview.sh" in rollback
+    assert "|| true" not in rollback
+    assert "AGENT_DEMO_PREVIEW_ROLLBACK_OK" in rollback
+    assert "orbbec-agent-demo-preview.conf" in rollback
+    assert "rollback-retry" in rollback
+    assert "127.0.0.1:8081" in rollback
+    assert "$4 ~ /:8081$/" in rollback
+    assert "restore_current_atomically" in rollback
+    task3 = rollback.index("rollback-demo-preview.sh")
+    include_absent = rollback.index("orbbec-agent-demo-preview.conf", task3)
+    listener_absent = rollback.index("127.0.0.1:8081", include_absent)
+    restore = rollback.index("restore_current_atomically", listener_absent)
+    assert task3 < include_absent < listener_absent < restore
+    assert "preserve_rollback_retry" in rollback
+    runbook = _text(RUNBOOK)
+    assert "rollback-retry" in runbook
+    assert "回滚失败时保留新 current" in runbook
+
+
 def test_verify_uses_base_plus_overlay_and_preview_only_database_roles() -> None:
     value = _text(DEPLOY)
 

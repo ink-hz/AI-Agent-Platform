@@ -122,6 +122,7 @@ platform_root=/opt/orbbec-agent-platform
 incoming="$platform_root/incoming/demo-$release_sha.tar"
 release_path="$platform_root/releases/$release_sha"
 private_path=/opt/orbbec-agent-platform/private/demo-preview
+state_path=/opt/orbbec-agent-platform/private/.demo-preview-prerequisite-state
 platform_environment="$platform_root/private/platform.env"
 state_dir=/var/lib/orbbec-agent-demo-preview
 verified_state="$state_dir/verified-release"
@@ -201,6 +202,23 @@ stop_preview_services() {
   fi
 }
 
+stop_preview_services_strict() {
+  [[ -f "$base_compose" && ! -L "$base_compose" ]] || return 1
+  [[ -f "$preview_compose" && ! -L "$preview_compose" ]] || return 1
+  [[ -f "$platform_environment" && ! -L "$platform_environment" ]] || return 1
+  compose_preview stop platform-api-demo-preview platform-loopback-demo-preview >/dev/null 2>&1
+  compose_preview rm -f platform-api-demo-preview platform-loopback-demo-preview >/dev/null 2>&1
+}
+
+resolve_current_release() {
+  [[ -L "$platform_root/current" ]] || return 1
+  local target
+  target="$(/usr/bin/readlink -f "$platform_root/current")" || return 1
+  [[ "$target" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ ]] || return 1
+  [[ -d "$target" && ! -L "$target" ]] || return 1
+  /usr/bin/printf '%s\n' "$target"
+}
+
 validate_secret_prerequisites() {
   [[ -d "$private_path" && ! -L "$private_path" ]] || remote_fail
   [[ "$(/usr/bin/stat -c '%u:%a:%F' "$private_path")" == "0:700:directory" ]] || remote_fail
@@ -237,12 +255,13 @@ PY
 validate_operator_prerequisites() {
   [[ -d "$private_path" && ! -L "$private_path" ]] || remote_fail
   [[ "$(/usr/bin/stat -c '%u:%a:%F' "$private_path")" == "0:700:directory" ]] || remote_fail
-  /usr/bin/python3 - "$private_path" <<'PY'
+  /usr/bin/python3 - "$private_path" "$state_path" <<'PY'
 import pathlib
 import stat
 import sys
 
 root = pathlib.Path(sys.argv[1])
+state = pathlib.Path(sys.argv[2])
 operator = {
     "dingtalk-app-key", "dingtalk-agent-id", "dingtalk-corp-id",
     "dingtalk-app-secret", "demo-userids",
@@ -254,15 +273,42 @@ generated = {
     "preview-identity-hmac-keyring", "preview-identity-encryption-keyring",
     "preview-rate-limit-hmac-keyring",
 }
-actual = {path.name for path in root.iterdir()}
-if actual not in (operator, operator | generated):
-    raise SystemExit(1)
-for path in root.iterdir():
+def checked_file(path: pathlib.Path, mode: int) -> None:
     item = path.lstat()
     if path.is_symlink() or not stat.S_ISREG(item.st_mode):
         raise SystemExit(1)
-    if item.st_uid != 0 or stat.S_IMODE(item.st_mode) != 0o600:
+    if item.st_uid != 0 or stat.S_IMODE(item.st_mode) != mode:
         raise SystemExit(1)
+
+actual = {path.name for path in root.iterdir()}
+if not operator.issubset(actual) or not actual.issubset(operator | generated):
+    raise SystemExit(1)
+for path in root.iterdir():
+    checked_file(path, 0o600)
+
+published_generated = actual - operator
+state_exists = state.exists() or state.is_symlink()
+if published_generated == generated:
+    if state_exists:
+        raise SystemExit(1)
+elif state_exists:
+    if state.is_symlink() or not state.is_dir():
+        raise SystemExit(1)
+    state_metadata = state.lstat()
+    if state_metadata.st_uid != 0 or stat.S_IMODE(state_metadata.st_mode) != 0o700:
+        raise SystemExit(1)
+    staged_generated = {path.name for path in state.iterdir()}
+    if not published_generated.isdisjoint(staged_generated):
+        raise SystemExit(1)
+    if published_generated | staged_generated != generated:
+        raise SystemExit(1)
+    for name in staged_generated:
+        checked_file(state / name, 0o600)
+elif published_generated:
+    raise SystemExit(1)
+
+if actual != operator | published_generated:
+    raise SystemExit(1)
 userids = (root / "demo-userids").read_text(encoding="utf-8").splitlines()
 if not 1 <= len(userids) <= 3 or len(userids) != len(set(userids)):
     raise SystemExit(1)
@@ -275,7 +321,7 @@ validate_read_only_preflight() {
   [[ -f "$incoming" && ! -L "$incoming" ]] || remote_fail
   [[ "$(/usr/bin/sha256sum "$incoming" | /usr/bin/awk '{print $1}')" == "$archive_sha256" ]] || remote_fail
   [[ -f "$platform_environment" && ! -L "$platform_environment" ]] || remote_fail
-  [[ -L "$platform_root/current" ]] || remote_fail
+  current_before="$(resolve_current_release)" || remote_fail
   validate_operator_prerequisites
   [[ "$(( $(/usr/bin/df -Pk "$platform_root" | /usr/bin/awk 'NR==2 {print $4}') ))" -ge 2097152 ]] || remote_fail
   ! /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Eq '^(127\.0\.0\.1|0\.0\.0\.0|\[::\]|\[::1\]):8081$' || remote_fail
@@ -337,7 +383,8 @@ capture_baseline() {
   protected_container_invariants > "$baseline_dir/containers.before"
   public_listener_invariants > "$baseline_dir/listeners.before"
   capture_responses > "$baseline_dir/responses.before"
-  /usr/bin/readlink -f "$platform_root/current" > "$baseline_dir/current.before"
+  current_before="$(resolve_current_release)" || remote_fail
+  /usr/bin/printf '%s\n' "$current_before" > "$baseline_dir/current.before"
   /usr/bin/printf '%s\n' "$release_sha" > "$baseline_dir/release-sha"
   /usr/bin/printf '%s\n' "$archive_sha256" > "$baseline_dir/archive-sha256"
   /usr/bin/printf '%s\n' "$image_ref" > "$baseline_dir/image-ref"
@@ -348,7 +395,7 @@ capture_baseline() {
 run_preview_migration() {
   compose_preview run --rm --no-deps platform-demo-preview-runner /bin/sh -ec '
       install -d -m 0700 /tmp/migrate
-      install -m 0600 /run/demo-preview-secrets/offline/preview-control-migrator-database-url /tmp/migrate/database-url
+      install -m 0600 /run/demo-preview-secrets/runner/preview-control-migrator-database-url /tmp/migrate/database-url
       export PLATFORM_CONTROL_MIGRATOR_DATABASE_URL_FILE=/tmp/migrate/database-url
       export PLATFORM_CONTROL_OWNER_ROLE=platform_control_owner_preview
       export PLATFORM_CONTROL_MIGRATION_DIR=/app/backend/control_migrations
@@ -361,11 +408,8 @@ run_preview_bootstrap() {
   result="$(compose_preview run --rm --no-deps \
     platform-demo-preview-runner /bin/sh -ec '
       install -d -m 0700 /tmp/bootstrap
-      for name in dingtalk-app-key dingtalk-corp-id dingtalk-app-secret preview-identity-encryption-keyring preview-identity-hmac-keyring; do
-        install -m 0600 "/run/demo-preview-secrets/runtime/$name" "/tmp/bootstrap/$name"
-      done
-      for name in preview-control-directory-worker-database-url demo-userids; do
-        install -m 0600 "/run/demo-preview-secrets/offline/$name" "/tmp/bootstrap/$name"
+      for name in dingtalk-app-key dingtalk-corp-id dingtalk-app-secret preview-identity-encryption-keyring preview-identity-hmac-keyring preview-control-directory-worker-database-url demo-userids; do
+        install -m 0600 "/run/demo-preview-secrets/runner/$name" "/tmp/bootstrap/$name"
       done
       export PLATFORM_CONTROL_DIRECTORY_DATABASE_URL_FILE=/tmp/bootstrap/preview-control-directory-worker-database-url
       export PLATFORM_DINGTALK_APP_KEY_FILE=/tmp/bootstrap/dingtalk-app-key
@@ -450,11 +494,11 @@ document = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 services = document.get("services", {})
 expected_image = sys.argv[2]
 required_networks = {"platform-internal", "platform-edge"}
-for name in (
+egress_services = (
     "platform-api-demo-preview",
     "platform-demo-preview-runner",
-    "platform-loopback-demo-preview",
-):
+)
+for name in egress_services:
     service = services.get(name)
     if not isinstance(service, dict) or service.get("image") != expected_image:
         raise SystemExit(1)
@@ -465,9 +509,27 @@ for name in (
     internal_priority = networks["platform-internal"].get("gw_priority", 0)
     if edge_priority != 1 or edge_priority <= internal_priority:
         raise SystemExit(1)
-for name in ("platform-api-demo-preview", "platform-demo-preview-runner"):
+for name in egress_services:
     if services[name].get("ports"):
         raise SystemExit(1)
+
+loopback = services.get("platform-loopback-demo-preview")
+if not isinstance(loopback, dict) or loopback.get("image") != expected_image:
+    raise SystemExit(1)
+if set(loopback.get("networks", {})) != required_networks:
+    raise SystemExit(1)
+ports = loopback.get("ports", [])
+if not isinstance(ports, list) or len(ports) != 1:
+    raise SystemExit(1)
+port = ports[0]
+if not isinstance(port, dict):
+    raise SystemExit(1)
+if port.get("host_ip") != "127.0.0.1":
+    raise SystemExit(1)
+if str(port.get("published")) != "8081":
+    raise SystemExit(1)
+if int(port.get("target", 0)) != 8080:
+    raise SystemExit(1)
 PY
   image_id="$(/usr/bin/docker image inspect --format '{{.Id}}' "$image_ref")"
   [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || remote_fail
@@ -493,18 +555,136 @@ PY
   /usr/bin/printf '%s\n' 'DEMO_PREVIEW_VERIFY_OK'
 }
 
-rollback_after_activation() {
-  local status=$?
-  if [[ "${activation_completed:-0}" != 1 ]]; then
-    "$release_path/deploy/cloud/rollback-demo-preview.sh" >/dev/null 2>&1 || true
-    stop_preview_services
-    if [[ -f "$baseline_dir/current.before" ]]; then
-      previous_current="$(< "$baseline_dir/current.before")"
-      if [[ "$previous_current" == "$platform_root"/releases/* && -d "$previous_current" ]]; then
-        /bin/ln -s "$previous_current" "$platform_root/current.rollback"
-        /bin/mv -Tf -- "$platform_root/current.rollback" "$platform_root/current"
-      fi
+cleanup_transaction_links() {
+  local link
+  for link in "${current_next:-}" "${current_restore:-}"; do
+    [[ -n "$link" ]] || continue
+    case "$link" in
+      "$platform_root"/.current-next-"$transaction_id"|"$platform_root"/.current-restore-"$transaction_id") ;;
+      *) return 1 ;;
+    esac
+    if [[ -L "$link" ]]; then
+      /bin/rm -f -- "$link" || return 1
+    elif [[ -e "$link" ]]; then
+      return 1
     fi
+  done
+}
+
+restore_current_atomically() {
+  local previous_current active_current
+  [[ -f "$baseline_dir/current.before" && ! -L "$baseline_dir/current.before" ]] || return 1
+  IFS= read -r previous_current < "$baseline_dir/current.before" || return 1
+  [[ "$previous_current" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ ]] || return 1
+  [[ -d "$previous_current" && ! -L "$previous_current" ]] || return 1
+  active_current="$(resolve_current_release)" || return 1
+  if [[ "$active_current" == "$previous_current" ]]; then
+    return 0
+  fi
+  [[ "$active_current" == "$release_path" ]] || return 1
+  [[ ! -e "$current_restore" && ! -L "$current_restore" ]] || return 1
+  /bin/ln -s "$previous_current" "$current_restore" || return 1
+  /bin/mv -Tf -- "$current_restore" "$platform_root/current" || return 1
+  [[ "$(resolve_current_release)" == "$previous_current" ]]
+}
+
+preserve_rollback_retry() {
+  local retry_state="$state_dir/rollback-retry"
+  local retry_part="$state_dir/.rollback-retry-$transaction_id"
+  if [[ -L "$retry_state" || -e "$retry_part" || -L "$retry_part" ]]; then
+    return 1
+  fi
+  /usr/bin/printf 'release_sha=%s\ncommand=%s\n' \
+    "$release_sha" "$release_path/deploy/cloud/rollback-demo-preview.sh" > "$retry_part" || return 1
+  /bin/chown root:root "$retry_part" || return 1
+  /bin/chmod 600 "$retry_part" || return 1
+  /bin/mv -f -- "$retry_part" "$retry_state" || return 1
+  /usr/bin/printf '%s\n' \
+    "DEMO_PREVIEW_ROLLBACK_RETRY_REQUIRED $retry_state" >&2
+}
+
+rollback_after_activation() {
+  local status=$? rollback_result agent_target include_count active_current listener_snapshot
+  trap - EXIT
+  trap '' HUP INT TERM
+  if ! cleanup_transaction_links; then
+    preserve_rollback_retry || exit 1
+    exit 1
+  fi
+  if [[ "${activation_completed:-0}" == 1 ]]; then
+    exit "$status"
+  fi
+  if [[ "${current_switch_attempted:-0}" != 1 ]]; then
+    if ! stop_preview_services_strict; then
+      preserve_rollback_retry || exit 1
+      exit 1
+    fi
+    exit "$status"
+  fi
+  active_current="$(resolve_current_release)" || {
+    preserve_rollback_retry || exit 1
+    exit 1
+  }
+  if [[ "$active_current" == "$current_before" ]]; then
+    if ! stop_preview_services_strict; then
+      preserve_rollback_retry || exit 1
+      exit 1
+    fi
+    exit "$status"
+  fi
+  if [[ "$active_current" != "$release_path" ]]; then
+    preserve_rollback_retry || exit 1
+    exit 1
+  fi
+
+  if ! rollback_result="$("$release_path/deploy/cloud/rollback-demo-preview.sh" 2>&1)"; then
+    preserve_rollback_retry || exit 1
+    exit 1
+  fi
+  case "$rollback_result" in
+    AGENT_DEMO_PREVIEW_ROLLBACK_OK|"AGENT_DEMO_PREVIEW_ROLLBACK_OK state=already-absent") ;;
+    *)
+      preserve_rollback_retry || exit 1
+      exit 1
+      ;;
+  esac
+
+  agent_target="$(/usr/bin/readlink -f /etc/nginx/sites-enabled/agent-domain.conf)" || {
+    preserve_rollback_retry || exit 1
+    exit 1
+  }
+  [[ "$agent_target" == /etc/nginx/* && -f "$agent_target" && ! -L "$agent_target" ]] || {
+    preserve_rollback_retry || exit 1
+    exit 1
+  }
+  include_count="$(/usr/bin/awk \
+    '/include \/etc\/nginx\/snippets\/orbbec-agent-demo-preview\.conf;/{count++} END {print count+0}' \
+    "$agent_target")" || {
+    preserve_rollback_retry || exit 1
+    exit 1
+  }
+  if [[ "$include_count" != 0 || \
+        -e /etc/nginx/snippets/orbbec-agent-demo-preview.conf || \
+        -L /etc/nginx/snippets/orbbec-agent-demo-preview.conf ]]; then
+    preserve_rollback_retry || exit 1
+    exit 1
+  fi
+  listener_snapshot="$(/usr/bin/ss -H -lnt)" || {
+    preserve_rollback_retry || exit 1
+    exit 1
+  }
+  # Reject every address representation, including 127.0.0.1:8081 and *:8081.
+  if /usr/bin/awk '$4 ~ /:8081$/ {found=1} END {exit(found?0:1)}' \
+      <<< "$listener_snapshot"; then
+    preserve_rollback_retry || exit 1
+    exit 1
+  fi
+  if ! restore_current_atomically; then
+    preserve_rollback_retry || exit 1
+    exit 1
+  fi
+  if [[ -f "$state_dir/rollback-retry" && ! -L "$state_dir/rollback-retry" ]]; then
+    /bin/rm -f -- "$state_dir/rollback-retry"
   fi
   exit "$status"
 }
@@ -515,14 +695,32 @@ activate_phase() {
   /usr/bin/grep -Fxq "archive_sha256=$archive_sha256" "$verified_state" || remote_fail
   [[ "$(response_code https://agent.orbbec.com.cn/ agent.orbbec.com.cn:443:127.0.0.1)" == 401 ]] || remote_fail
   [[ "$(response_code https://fae.orbbec.com.cn/ fae.orbbec.com.cn:443:127.0.0.1)" == 200 ]] || remote_fail
+  current_before="$(resolve_current_release)" || remote_fail
+  [[ "$(< "$baseline_dir/current.before")" == "$current_before" ]] || remote_fail
+  transaction_nonce="$(/usr/bin/od -An -N16 -tx1 /dev/urandom | \
+    /usr/bin/tr -d ' \n')" || remote_fail
+  [[ "$transaction_nonce" =~ ^[0-9a-f]{32}$ ]] || remote_fail
+  transaction_id="${release_sha}-${BASHPID}-${transaction_nonce}"
+  [[ "$transaction_id" =~ ^[0-9a-f]{40}-[0-9]+-[0-9a-f]{32}$ ]] || remote_fail
+  current_next="$platform_root/.current-next-$transaction_id"
+  current_restore="$platform_root/.current-restore-$transaction_id"
+  [[ ! -e "$current_next" && ! -L "$current_next" ]] || remote_fail
+  [[ ! -e "$current_restore" && ! -L "$current_restore" ]] || remote_fail
   activation_completed=0
-  trap rollback_after_activation EXIT HUP INT TERM
-  /bin/ln -s "$release_path" "$platform_root/current.part"
-  /bin/mv -Tf -- "$platform_root/current.part" "$platform_root/current"
+  current_switch_attempted=0
+  current_switched=0
+  trap rollback_after_activation EXIT
+  trap 'exit 1' HUP INT TERM
+  /bin/ln -s "$release_path" "$current_next"
+  current_switch_attempted=1
+  /bin/mv -Tf -- "$current_next" "$platform_root/current"
+  current_switched=1
+  [[ "$(resolve_current_release)" == "$release_path" ]] || remote_fail
   EXPECTED_LIVE_SHA256=382d733e1a581569f4ceedd03ce24ab9113f61a595015bc0449e1319026c1e97 \
     "$release_path/deploy/cloud/install-demo-preview.sh" \
     "$release_path/deploy/cloud/demo-preview.nginx.conf" >/dev/null
   "$release_path/deploy/cloud/accept-demo-preview.sh" >/dev/null
+  cleanup_transaction_links || remote_fail
   activation_completed=1
   trap - EXIT HUP INT TERM
   /usr/bin/printf '%s\n' 'DEMO_PREVIEW_ACTIVATE_OK'

@@ -53,7 +53,10 @@ demo-userids
 bootstrap 会在 sibling root:0700 状态目录中一次生成四套独立的 64 位十六进制
 数据库密码和三套独立的 32-byte keyring，幂等创建仅属于 demo 的 preview 数据库
 和角色，验证成功后再发布 7 个 root:0600 文件。失败时保留不对外可读的 staging
-以便用同一批密码恢复，不会在重跑时静默轮换。
+以便用同一批密码恢复，不会在重跑时静默轮换。若进程在发布中途退出，主目录可能
+出现 6–11 个文件；仅当 sibling 状态目录仍为 root:0700、其中的 root:0600 文件与
+已发布生成文件互不重叠且两者恰好覆盖全部 7 个生成文件时，verify 才允许继续。
+状态目录为符号链接、属主/模式错误、文件重叠或缺失时一律失败关闭。
 
 成功生成后的目录必须恰好是以下 12 个文件：
 
@@ -111,9 +114,13 @@ manifest；脏 worktree、错误 SHA 或错误摘要都会在连接目标机前�
    数据库/角色/DSN/keyring；构建带 commit SHA 的镜像；用基础 Compose 加预览
    overlay 生成实际配置；migration 和成员 bootstrap 都通过无 host port 的
    `platform-demo-preview-runner` 同时连接 internal 与 edge 网络，前者只访问 preview
-   PostgreSQL，后者可调用钉钉；重新解析 1–3 个白名单成员；只启动两个预览服务并
+   PostgreSQL，后者可调用钉钉。runner 只读取去重后的 root:0700
+   `/run/demo-preview-secrets/runner` 视图（8 个 root:0400 文件），不同时挂载 runtime
+   与 offline 的同名秘密；重新解析 1–3 个白名单成员；只启动两个预览服务并
    验证 `127.0.0.1:8081`。此阶段不修改 Nginx，失败只停止并移除预览服务。
-3. **activate**：把 `current` 原子切到已验证 release，使用 Task 3 installer 的
+3. **activate**：先验证旧 `current` 只指向 releases 下的 40 位 commit 目录，再用
+   每次执行唯一的临时符号链接把 `current` 原子切到已验证 release；临时链接由预先
+   安装的 trap 清理，恢复操作可安全重入。随后使用 Task 3 installer 的
    锁定 Nginx 摘要安装单一路由，再运行自动验收。激活后的任意失败自动调用预览
    rollback，并恢复之前的 `current` 链接。
 
@@ -167,6 +174,14 @@ ssh -i /Users/neo/.ssh/orbbec_aliyun_ed25519 root@47.106.112.69 \
 它只删除预览 Nginx include、reload Nginx，并停止/移除两个预览服务；不会执行
 `docker compose down`，不会重启 FAE、ADMIN 或现有 Platform。回滚后再次确认
 根路径 `401`、FAE `200`、8081 不再监听，并记录 Task 3 rollback 的固定安全结果。
+
+自动激活失败时严格按以下顺序处理：先要求 Task 3 rollback 返回精确成功标记，
+再验证 Nginx include 与 snippet 均不存在、`127.0.0.1:8081` 已停止，最后才原子恢复
+旧 `current`。回滚失败时保留新 current、已验证 release 和尚在运行的预览服务，
+不会把仍指向预览的路由接到已停止的后端；同时写入 root:0600 的
+`/var/lib/orbbec-agent-demo-preview/rollback-retry`。值班人员先查看该文件中的固定
+release 回滚命令，修复失败原因后原样重试；只有精确成功标记和上述两项后置验证
+都通过，才允许恢复旧 `current`。不得删除 `rollback-retry` 来绕过失败状态。
 
 ## 发布证据（执行后填写，不含秘密）
 
