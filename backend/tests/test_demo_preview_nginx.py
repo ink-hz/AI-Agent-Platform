@@ -227,6 +227,51 @@ def test_installer_validates_a_complete_staged_config_before_arming_live_writes(
     assert "trap 'exit 1' HUP INT TERM" in value
 
 
+@pytest.mark.parametrize(
+    "failpoint",
+    ("reload_returns_failure", "signal_during_reload"),
+)
+def test_installer_reload_failpoints_revalidate_and_reload_restored_config(
+    failpoint: str,
+) -> None:
+    value = _text(INSTALLER)
+    restore_start = value.index("restore_on_failure()")
+    restore_end = value.index("trap restore_on_failure EXIT", restore_start)
+    restore = value[restore_start:restore_end]
+    transaction = value.index("transaction_armed=1")
+    attempted = value.index("reload_attempted=1", transaction)
+    reload_call = value.index("/bin/systemctl reload nginx", transaction)
+
+    if failpoint == "reload_returns_failure":
+        assert "set -euo pipefail" in value
+        assert value.splitlines()[value[:reload_call].count("\n")] == (
+            "/bin/systemctl reload nginx"
+        )
+    else:
+        assert value.index("trap 'exit 1' HUP INT TERM") < attempted
+        assert value.index("trap - EXIT HUP INT TERM", reload_call) > reload_call
+    assert attempted < reload_call
+    assert '[[ "$reload_attempted" == "1" ]]' in restore
+    restored_test = restore.index("/usr/sbin/nginx -t")
+    restored_reload = restore.index("/bin/systemctl reload nginx")
+    assert restored_test < restored_reload
+
+
+def test_installer_after_active_state_mv_failpoint_removes_transaction_state() -> None:
+    value = _text(INSTALLER)
+    restore_start = value.index("restore_on_failure()")
+    restore_end = value.index("trap restore_on_failure EXIT", restore_start)
+    restore = value[restore_start:restore_end]
+    active_mv = value.index('/bin/mv -f -- "$active_state.part" "$active_state"')
+    disarm = value.index("transaction_armed=0", active_mv)
+    cleanup = restore.index('/bin/rm -f -- "$active_state" "$active_state.part"')
+    exit_check = restore.index('if [[ "$exit_code" -ne 0 ]]')
+    armed_end = restore.rindex("  fi", 0, exit_check)
+
+    assert active_mv < disarm
+    assert cleanup < armed_end
+
+
 def _transaction_module():
     spec = importlib.util.spec_from_file_location("demo_preview_transaction", TRANSACTION)
     assert spec is not None and spec.loader is not None

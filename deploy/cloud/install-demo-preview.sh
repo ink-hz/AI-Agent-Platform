@@ -225,18 +225,18 @@ PY
 /usr/sbin/nginx -t -p "$validation_root/" -c "$validation_config" >/dev/null 2>&1 || fail
 
 transaction_armed=0
-reload_completed=0
+reload_attempted=0
 restore_on_failure() {
   local exit_code=$?
   if [[ "$transaction_armed" == "1" ]]; then
     /usr/bin/install -o root -g root -m "$agent_mode" "$backup_path/agent-domain.conf.original" "$agent_target.part"
     /bin/mv -f -- "$agent_target.part" "$agent_target"
     /bin/rm -f -- "$snippet_target" "$snippet_target.part" "$agent_target.part"
-    if /usr/sbin/nginx -t >/dev/null 2>&1 && [[ "$reload_completed" == "1" ]]; then
+    if [[ "$reload_attempted" == "1" ]] && /usr/sbin/nginx -t >/dev/null 2>&1; then
       /bin/systemctl reload nginx >/dev/null 2>&1 || true
     fi
+    /bin/rm -f -- "$active_state" "$active_state.part"
   fi
-  /bin/rm -f -- "$active_state.part"
   if [[ "$exit_code" -ne 0 ]]; then
     echo "AGENT_DEMO_PREVIEW_INSTALL_FAILED" >&2
   fi
@@ -256,8 +256,8 @@ transaction_armed=1
   --gid 0 || fail
 
 /usr/sbin/nginx -t >/dev/null 2>&1 || fail
+reload_attempted=1
 /bin/systemctl reload nginx
-reload_completed=1
 
 enabled_invariants > "$backup_path/sites-enabled.after"
 container_invariants > "$backup_path/containers.after"

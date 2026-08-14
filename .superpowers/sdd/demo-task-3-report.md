@@ -83,6 +83,35 @@ git diff --check
 Both passed. No `security`, Keychain, `set -x`, Nginx restart, broad Compose
 shutdown, FAE stop/restart, or non-preview container stop/remove path is present.
 
+## Transaction Important Follow-up
+
+An additional review found two narrow shell-orchestration windows and they were
+closed without deployment or Task 4 changes:
+
+- `reload_attempted=1` is now set before `systemctl reload nginx`. Therefore a
+  reload that is accepted and then returns nonzero, or a handled signal while
+  reload is in flight, restores the original files, validates the restored
+  Nginx configuration, and attempts a second reload of those restored bytes.
+- While the transaction remains armed, recovery deletes both `active-backup`
+  and `active-backup.part`. This covers failure or a handled signal after the
+  active-state move and before disarm. Cleanup stays inside the armed branch so
+  a signal after commit cannot remove valid rollback state while leaving the
+  preview live.
+
+Follow-up TDD evidence:
+
+```text
+RED: 3 failed, 16 passed
+RED (armed-cleanup placement): 1 failed, 2 passed
+GREEN focused: 19 passed
+GREEN relevant: 32 passed, 1 skipped
+GREEN full backend: 1162 passed, 2 skipped, 31 warnings in 22.78s
+```
+
+The new failpoint contracts cover reload-return failure, a signal during
+reload, and the point immediately after the active-state move. Final
+`bash -n` and `git diff --check` also passed.
+
 ## Deferred Target Gate
 
 Nginx is not installed on the local development machine. Real
