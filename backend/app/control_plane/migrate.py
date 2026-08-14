@@ -88,27 +88,48 @@ def migrate_control_database(
         raise ValueError("control owner role environment mismatch")
     with psycopg.connect(database_url, autocommit=False) as connection:
         with connection.cursor() as cursor:
-            cursor.execute(
-                psycopg.sql.SQL("set local role {}").format(
-                    psycopg.sql.Identifier(owner_role)
+            lock_acquired = False
+            try:
+                cursor.execute(
+                    "select pg_advisory_lock(%s)", (_ADVISORY_LOCK,)
                 )
-            )
-            cursor.execute("select pg_advisory_xact_lock(%s)", (_ADVISORY_LOCK,))
-            cursor.execute("create schema if not exists platform_control")
-            cursor.execute(
-                "create table if not exists platform_control.schema_migrations ("
-                "version integer primary key, "
-                "sha256 text not null check (length(sha256) = 64), "
-                "applied_at timestamptz not null)"
-            )
-            for migration in load_numbered_migrations(migration_dir):
-                verify_or_apply(
-                    cursor,
-                    migration.version,
-                    migration.sha256,
-                    migration.sql,
+                lock_acquired = True
+                cursor.execute(
+                    psycopg.sql.SQL("set local role {}").format(
+                        psycopg.sql.Identifier(owner_role)
+                    )
                 )
-        connection.commit()
+                cursor.execute("create schema if not exists platform_control")
+                cursor.execute(
+                    "create table if not exists "
+                    "platform_control.schema_migrations ("
+                    "version integer primary key, "
+                    "sha256 text not null check (length(sha256) = 64), "
+                    "applied_at timestamptz not null)"
+                )
+                connection.commit()
+                for migration in load_numbered_migrations(migration_dir):
+                    cursor.execute(
+                        psycopg.sql.SQL("set local role {}").format(
+                            psycopg.sql.Identifier(owner_role)
+                        )
+                    )
+                    verify_or_apply(
+                        cursor,
+                        migration.version,
+                        migration.sha256,
+                        migration.sql,
+                    )
+                    connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            finally:
+                if lock_acquired:
+                    cursor.execute(
+                        "select pg_advisory_unlock(%s)", (_ADVISORY_LOCK,)
+                    )
+                    connection.commit()
 
 
 def main() -> int:

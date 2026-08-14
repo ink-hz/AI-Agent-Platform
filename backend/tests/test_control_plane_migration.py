@@ -382,7 +382,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 24)
+                    (version, 64) for version in range(1, 25)
                 ]
 
     changed = tmp_path / "migrations"
@@ -422,6 +422,143 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                 )
 
 
+@pytest.mark.postgres
+def test_migration_commits_each_numbered_file_before_the_next(
+    control_database, monkeypatch, tmp_path
+):
+    from app.control_plane import dsn as control_dsn
+    from app.control_plane.migrate import (
+        MigrationChecksumMismatch,
+        migrate_control_database,
+    )
+
+    database_name = f"migration_transactions_{uuid.uuid4().hex}"
+    owner_role = OWNER_ROLES[0]
+    migrator_role = PRODUCTION_ROLES[0]
+    admin_url = control_database["cluster_admin"]
+    database_admin_url = (
+        f"postgresql://control_test_admin@127.0.0.1:"
+        f"{control_database['port']}/{database_name}"
+    )
+    migrator_url = (
+        f"postgresql://{migrator_role}:{ROLE_PASSWORDS[migrator_role]}@"
+        f"127.0.0.1:{control_database['port']}/{database_name}"
+    )
+    migrations = tmp_path / "consecutive-enum-migrations"
+    migrations.mkdir()
+    enum_migration = migrations / "900_add_test_role.sql"
+    enum_migration.write_text(
+        "alter type platform_control.transaction_test_role "
+        "add value 'platform_admin';\n",
+        encoding="utf-8",
+    )
+    (migrations / "901_use_test_role.sql").write_text(
+        "insert into platform_control.transaction_test_users (role) "
+        "values ('platform_admin');\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(
+        control_dsn._DATABASE_ENVIRONMENTS, database_name, "production"
+    )
+
+    try:
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    psycopg.sql.SQL(
+                        "create database {} owner {} template template0"
+                    ).format(
+                        psycopg.sql.Identifier(database_name),
+                        psycopg.sql.Identifier(owner_role),
+                    )
+                )
+                cursor.execute(
+                    psycopg.sql.SQL(
+                        "revoke connect on database {} from public"
+                    ).format(psycopg.sql.Identifier(database_name))
+                )
+                cursor.execute(
+                    psycopg.sql.SQL(
+                        "grant connect on database {} to {}"
+                    ).format(
+                        psycopg.sql.Identifier(database_name),
+                        psycopg.sql.Identifier(migrator_role),
+                    )
+                )
+                cursor.execute(
+                    psycopg.sql.SQL("grant {} to {}").format(
+                        psycopg.sql.Identifier(owner_role),
+                        psycopg.sql.Identifier(migrator_role),
+                    )
+                )
+
+        with psycopg.connect(database_admin_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    psycopg.sql.SQL("set local role {}").format(
+                        psycopg.sql.Identifier(owner_role)
+                    )
+                )
+                cursor.execute("create schema platform_control")
+                cursor.execute(
+                    "create type platform_control.transaction_test_role "
+                    "as enum ('member')"
+                )
+                cursor.execute(
+                    "create table platform_control.transaction_test_users ("
+                    "role platform_control.transaction_test_role not null)"
+                )
+
+        migrate_control_database(
+            migrator_url,
+            migrations,
+            owner_role=owner_role,
+        )
+
+        with psycopg.connect(database_admin_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "select version from platform_control.schema_migrations "
+                    "order by version"
+                )
+                assert cursor.fetchall() == [(900,), (901,)]
+                cursor.execute(
+                    "select role::text from "
+                    "platform_control.transaction_test_users"
+                )
+                assert cursor.fetchall() == [("platform_admin",)]
+
+        enum_migration.write_text(
+            enum_migration.read_text(encoding="utf-8") + "select 1;\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(MigrationChecksumMismatch):
+            migrate_control_database(
+                migrator_url,
+                migrations,
+                owner_role=owner_role,
+            )
+    finally:
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "select pg_terminate_backend(pid) from pg_stat_activity "
+                    "where datname = %s and pid <> pg_backend_pid()",
+                    (database_name,),
+                )
+                cursor.execute(
+                    psycopg.sql.SQL("drop database if exists {}").format(
+                        psycopg.sql.Identifier(database_name)
+                    )
+                )
+                cursor.execute(
+                    psycopg.sql.SQL("revoke {} from {}").format(
+                        psycopg.sql.Identifier(owner_role),
+                        psycopg.sql.Identifier(migrator_role),
+                    )
+                )
+
+
 def test_migration_rejects_unapproved_owner_identifier() -> None:
     from app.control_plane.migrate import migrate_control_database
 
@@ -452,6 +589,7 @@ def test_migration_creates_complete_constrained_control_model(control_database):
                 assert [row[0] for row in cursor.fetchall()] == [
                     "member",
                     "management_viewer",
+                    "platform_admin",
                     "platform_owner",
                 ]
 
@@ -512,6 +650,13 @@ def test_partial_owner_and_active_grant_uniqueness(control_database):
     database_url = control_database["environments"]["production"]["admin"]
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
+            cursor.execute(
+                "insert into platform_control.internal_users "
+                "(internal_user_id,role,display_name,status) values "
+                "(%s,'platform_admin','Admin One','active'),"
+                "(%s,'platform_admin','Admin Two','active')",
+                (uuid.uuid4(), uuid.uuid4()),
+            )
             cursor.execute(
                 "insert into platform_control.internal_users "
                 "(internal_user_id, role, display_name, status) "
