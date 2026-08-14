@@ -315,18 +315,75 @@ def test_failed_activation_rollback_is_fail_closed_before_current_restore() -> N
     assert "AGENT_DEMO_PREVIEW_ROLLBACK_OK" in rollback
     assert "orbbec-agent-demo-preview.conf" in rollback
     assert "rollback-retry" in rollback
-    assert "127.0.0.1:8081" in rollback
-    assert "$4 ~ /:8081$/" in rollback
+    assert 'rollback_listeners="$(preview_listener_set)"' in rollback
     assert "restore_current_atomically" in rollback
     task3 = rollback.index("rollback-demo-preview.sh")
     include_absent = rollback.index("orbbec-agent-demo-preview.conf", task3)
-    listener_absent = rollback.index("127.0.0.1:8081", include_absent)
+    listener_absent = rollback.index('rollback_listeners="$(preview_listener_set)"', include_absent)
     restore = rollback.index("restore_current_atomically", listener_absent)
     assert task3 < include_absent < listener_absent < restore
     assert "preserve_rollback_retry" in rollback
     runbook = _text(RUNBOOK)
     assert "rollback-retry" in runbook
     assert "回滚失败时保留新 current" in runbook
+
+
+def test_every_8081_gate_uses_the_same_any_address_listener_set_contract() -> None:
+    deploy = _text(DEPLOY)
+    accept = _text(ACCEPT)
+
+    parser = "/usr/bin/awk '$4 ~ /:8081$/ {print $4}' | /usr/bin/sort"
+    assert deploy.count("preview_listener_set()") == 1
+    assert accept.count("preview_listener_set()") == 1
+    assert parser in deploy and parser in accept
+
+    preflight = deploy[
+        deploy.index("validate_read_only_preflight()") : deploy.index("extract_release()")
+    ]
+    verify = deploy[deploy.index("verify_invariants()") : deploy.index("verify_phase()")]
+    rollback = deploy[
+        deploy.index("rollback_after_activation()") : deploy.index("activate_phase()")
+    ]
+    assert 'preflight_listeners="$(preview_listener_set)"' in preflight
+    assert '[[ -z "$preflight_listeners" ]]' in preflight
+    assert 'verify_listeners="$(preview_listener_set)"' in verify
+    assert '[[ "$verify_listeners" == "127.0.0.1:8081" ]]' in verify
+    assert 'rollback_listeners="$(preview_listener_set)"' in rollback
+    assert '[[ -n "$rollback_listeners" ]]' in rollback
+
+    assert 'accept_listeners="$(preview_listener_set)"' in accept
+    assert '[[ "$accept_listeners" == "127.0.0.1:8081" ]]' in accept
+    for value in (deploy, accept):
+        assert "0\\.0\\.0\\.0" not in value
+        assert "\\[::\\]" not in value
+
+
+def test_8081_listener_parser_keeps_wildcards_other_interfaces_and_duplicates() -> None:
+    program = "$4 ~ /:8081$/ {print $4}"
+    sample = "\n".join(
+        (
+            "LISTEN 0 128 127.0.0.1:8081 0.0.0.0:*",
+            "LISTEN 0 128 *:8081 *:*",
+            "LISTEN 0 128 [::]:8081 [::]:*",
+            "LISTEN 0 128 10.0.0.8:8081 0.0.0.0:*",
+            "LISTEN 0 128 127.0.0.1:8081 0.0.0.0:*",
+            "LISTEN 0 128 127.0.0.1:8080 0.0.0.0:*",
+        )
+    )
+    result = subprocess.run(
+        ["/usr/bin/awk", program],
+        input=sample,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert sorted(result.stdout.splitlines()) == [
+        "*:8081",
+        "10.0.0.8:8081",
+        "127.0.0.1:8081",
+        "127.0.0.1:8081",
+        "[::]:8081",
+    ]
 
 
 def test_verify_uses_base_plus_overlay_and_preview_only_database_roles() -> None:
@@ -385,8 +442,8 @@ def test_release_preserves_existing_services_and_public_network_surface() -> Non
         "http://47.106.112.69/",
         "ss -H -lnt",
         "127.0.0.1:8081",
-        "0.0.0.0:8081",
-        "[::]:8081",
+        "preview_listener_set",
+        "$4 ~ /:8081$/",
     ):
         assert required in combined
     for forbidden in (

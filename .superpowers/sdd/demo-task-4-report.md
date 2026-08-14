@@ -47,13 +47,19 @@ Final focused GREEN:
 
 ```text
 backend/.venv/bin/pytest -q backend/tests/test_demo_preview_release.py
-20 passed
+22 passed
 ```
 
 The final review RED added six independent regressions for the merged Compose
 contract, resumable prerequisite publication, duplicate-free runner view, safe
 `current` transaction, fail-closed rollback and the signal window between the
 atomic `current` move and its bookkeeping flag. All six are GREEN.
+
+A follow-up RED proved that preflight, verify and acceptance still enumerated
+only known 8081 address forms. They now share one listener-set parser contract:
+preflight requires the set to be empty; verify and acceptance require the exact
+single record `127.0.0.1:8081`; wildcard, IPv6, other-interface and duplicate
+records all fail closed. Rollback uses the same parser and requires an empty set.
 
 ## Implementation boundary
 
@@ -119,8 +125,8 @@ directory, deletes them on exit, and emits only fixed PASS/FAIL labels.
 ## Verification run
 
 ```text
-Related Task 2/4 deployment regression: 38 passed, 1 skipped
-Full backend: 1176 passed, 2 skipped, 31 warnings
+Related Task 2/4 deployment regression: 40 passed, 1 skipped
+Full backend: 1178 passed, 2 skipped, 31 warnings
 Frontend: 29 files / 169 tests passed
 Frontend production build: passed
 Python compileall: passed

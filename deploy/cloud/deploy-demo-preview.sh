@@ -177,6 +177,10 @@ public_listener_invariants() {
     '$4 !~ /^(127\.0\.0\.1|\[::1\]):/ {print $4}' | /usr/bin/sort -u
 }
 
+preview_listener_set() {
+  /usr/bin/ss -H -lnt | /usr/bin/awk '$4 ~ /:8081$/ {print $4}' | /usr/bin/sort
+}
+
 response_code() {
   local url="$1" resolve_value="${2:-}" command
   command=(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 8)
@@ -318,17 +322,18 @@ PY
 }
 
 validate_read_only_preflight() {
+  local preflight_listeners live_target
   [[ -f "$incoming" && ! -L "$incoming" ]] || remote_fail
   [[ "$(/usr/bin/sha256sum "$incoming" | /usr/bin/awk '{print $1}')" == "$archive_sha256" ]] || remote_fail
   [[ -f "$platform_environment" && ! -L "$platform_environment" ]] || remote_fail
   current_before="$(resolve_current_release)" || remote_fail
   validate_operator_prerequisites
   [[ "$(( $(/usr/bin/df -Pk "$platform_root" | /usr/bin/awk 'NR==2 {print $4}') ))" -ge 2097152 ]] || remote_fail
-  ! /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Eq '^(127\.0\.0\.1|0\.0\.0\.0|\[::\]|\[::1\]):8081$' || remote_fail
+  preflight_listeners="$(preview_listener_set)" || remote_fail
+  [[ -z "$preflight_listeners" ]] || remote_fail
   [[ "$(response_code https://agent.orbbec.com.cn/ agent.orbbec.com.cn:443:127.0.0.1)" == 401 ]] || remote_fail
   [[ "$(response_code https://fae.orbbec.com.cn/ fae.orbbec.com.cn:443:127.0.0.1)" == 200 ]] || remote_fail
   [[ "$(response_code http://47.106.112.69/)" == 200 ]] || remote_fail
-  local live_target
   live_target="$(/usr/bin/readlink -f /etc/nginx/sites-enabled/agent-domain.conf)"
   [[ "$live_target" == /etc/nginx/* && -f "$live_target" ]] || remote_fail
   [[ "$(/usr/bin/sha256sum "$live_target" | /usr/bin/awk '{print $1}')" == "$expected_live_sha256" ]] || remote_fail
@@ -451,15 +456,15 @@ PY
 }
 
 verify_invariants() {
+  local verify_listeners
   protected_container_invariants > "$baseline_dir/containers.after-verify"
   public_listener_invariants > "$baseline_dir/listeners.after-verify"
   capture_responses > "$baseline_dir/responses.after-verify"
   /usr/bin/cmp -s "$baseline_dir/containers.before" "$baseline_dir/containers.after-verify" || remote_fail
   /usr/bin/cmp -s "$baseline_dir/listeners.before" "$baseline_dir/listeners.after-verify" || remote_fail
   /usr/bin/cmp -s "$baseline_dir/responses.before" "$baseline_dir/responses.after-verify" || remote_fail
-  /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Fxq '127.0.0.1:8081' || remote_fail
-  # Reject the two public wildcard forms: 0.0.0.0:8081 and [::]:8081.
-  ! /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Eq '^(0\.0\.0\.0|\[::\]):8081$' || remote_fail
+  verify_listeners="$(preview_listener_set)" || remote_fail
+  [[ "$verify_listeners" == "127.0.0.1:8081" ]] || remote_fail
 }
 
 verify_phase() {
@@ -604,7 +609,7 @@ preserve_rollback_retry() {
 }
 
 rollback_after_activation() {
-  local status=$? rollback_result agent_target include_count active_current listener_snapshot
+  local status=$? rollback_result agent_target include_count active_current rollback_listeners
   trap - EXIT
   trap '' HUP INT TERM
   if ! cleanup_transaction_links; then
@@ -669,13 +674,11 @@ rollback_after_activation() {
     preserve_rollback_retry || exit 1
     exit 1
   fi
-  listener_snapshot="$(/usr/bin/ss -H -lnt)" || {
+  rollback_listeners="$(preview_listener_set)" || {
     preserve_rollback_retry || exit 1
     exit 1
   }
-  # Reject every address representation, including 127.0.0.1:8081 and *:8081.
-  if /usr/bin/awk '$4 ~ /:8081$/ {found=1} END {exit(found?0:1)}' \
-      <<< "$listener_snapshot"; then
+  if [[ -n "$rollback_listeners" ]]; then
     preserve_rollback_retry || exit 1
     exit 1
   fi

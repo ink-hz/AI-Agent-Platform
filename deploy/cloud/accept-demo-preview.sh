@@ -59,6 +59,10 @@ public_listener_invariants() {
     '$4 !~ /^(127\.0\.0\.1|\[::1\]):/ {print $4}' | /usr/bin/sort -u
 }
 
+preview_listener_set() {
+  /usr/bin/ss -H -lnt | /usr/bin/awk '$4 ~ /:8081$/ {print $4}' | /usr/bin/sort
+}
+
 response_code() {
   local url="$1" resolve_value="${2:-}" command
   command=(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 8)
@@ -98,11 +102,8 @@ done
 /usr/bin/printf '%s\n' 'PASS preview_containers'
 
 /usr/sbin/nginx -t >/dev/null 2>&1 || fail
-/usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | \
-  /usr/bin/grep -Fxq '127.0.0.1:8081' || fail
- # Public wildcard listeners 0.0.0.0:8081 and [::]:8081 are forbidden.
-! /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | \
-  /usr/bin/grep -Eq '^(0\.0\.0\.0|\[::\]):8081$' || fail
+accept_listeners="$(preview_listener_set)" || fail
+[[ "$accept_listeners" == "127.0.0.1:8081" ]] || fail
 /usr/bin/printf '%s\n' 'PASS loopback_only'
 
 protected_container_invariants > "$temporary_root/containers.after"
