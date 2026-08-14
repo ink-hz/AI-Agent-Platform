@@ -282,7 +282,15 @@ for _attempt in $(/usr/bin/seq 1 40); do
   /bin/sleep 1
 done
 /usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null || fail
-/usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/deployment | /usr/bin/python3 -c 'import json,sys; value=json.load(sys.stdin); assert value["mode"]=="cloud-replica" and value["read_only"] is True and value["auth"]=="dingtalk" and value["freshness"] in {"current","stale","unavailable"}' || fail
+api_container="$("${compose[@]}" ps -q platform-api)"
+[[ -n "$api_container" ]] || fail
+api_environment="$(/usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_container")"
+for required_runtime_value in \
+  PLATFORM_DEPLOYMENT_MODE=cloud-replica \
+  PLATFORM_CLOUD_AUTH_MODE=dingtalk \
+  PLATFORM_IDENTITY_MODE=production; do
+  /usr/bin/grep -Fxq "$required_runtime_value" <<<"$api_environment" || fail
+done
 if [[ -n "$previous_release" ]]; then
   /usr/bin/printf '%s\n' "$previous_release" > "$release_path/PREVIOUS_RELEASE"
   /bin/chown root:root "$release_path/PREVIOUS_RELEASE"

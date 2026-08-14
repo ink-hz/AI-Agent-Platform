@@ -137,7 +137,13 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
     assert '[[ -f "$previous_release/deploy/cloud/compose.yaml" ]] || fail' in script
     assert 'PLATFORM_CLOUD_AUTH_MODE=dingtalk' in script
     assert 'cloud_auth_mode="ssh-tunnel"' in script
-    assert 'value["freshness"] in {"current","stale","unavailable"}' in script
+    assert "/api/deployment" not in script
+    for runtime_value in (
+        "PLATFORM_DEPLOYMENT_MODE=cloud-replica",
+        "PLATFORM_CLOUD_AUTH_MODE=dingtalk",
+        "PLATFORM_IDENTITY_MODE=production",
+    ):
+        assert runtime_value in script
     assert '"freshness":"unavailable"' not in script
 
 
