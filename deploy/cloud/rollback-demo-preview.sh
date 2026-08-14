@@ -93,12 +93,12 @@ PY
       PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address" \
       PLATFORM_EDGE_GATEWAY_PREVIEW_ADDRESS="$edge_gateway_address" \
       "${preview_stack[@]}" stop \
-      platform-api-demo-preview platform-loopback-demo-preview >/dev/null
+      platform-api-demo-preview platform-loopback-demo-preview >/dev/null 2>&1
     PLATFORM_IMAGE="${PLATFORM_IMAGE:-orbbec-agent-platform-demo-preview:rollback}" \
       PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address" \
       PLATFORM_EDGE_GATEWAY_PREVIEW_ADDRESS="$edge_gateway_address" \
       "${preview_stack[@]}" rm -f \
-      platform-api-demo-preview platform-loopback-demo-preview >/dev/null
+      platform-api-demo-preview platform-loopback-demo-preview >/dev/null 2>&1
   else
     local running
     running="$(

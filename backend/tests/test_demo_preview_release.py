@@ -87,6 +87,19 @@ def test_deploy_refuses_dirty_source_and_builds_a_verified_immutable_archive() -
     assert "git reset" not in value
 
 
+def test_remote_release_extraction_removes_group_and_other_write_bits() -> None:
+    value = _text(DEPLOY)
+    extraction = value.split("extract_release() {", 1)[1].split(
+        "validate_release_contract() {", 1
+    )[0]
+
+    assert '/bin/chmod -R go-w -- "$staging"' in extraction
+    assert '/bin/chmod -R go-w -- "$release_path"' in extraction
+    assert extraction.index('/bin/chown -R root:root "$staging"') < extraction.index(
+        '/bin/chmod -R go-w -- "$staging"'
+    )
+
+
 def test_deploy_has_prepare_verify_activate_order_and_bounded_failure_paths() -> None:
     value = _text(DEPLOY)
 
@@ -255,6 +268,15 @@ def test_accept_and_rollback_resolve_the_existing_edge_gateway() -> None:
         assert "docker network inspect" in value
         assert 'orbbec-agent-platform-edge' in value
         assert 'PLATFORM_EDGE_GATEWAY_PREVIEW_ADDRESS="$edge_gateway_address"' in value
+
+
+def test_rollback_suppresses_compose_progress_from_machine_result() -> None:
+    value = _text(ROLLBACK)
+    stop = value.split("stop_demo_services() {", 1)[1].split(
+        "if [[ ! -e \"$active_state\"", 1
+    )[0]
+
+    assert stop.count(">/dev/null 2>&1") == 2
 
 
 def test_operator_preflight_accepts_only_safe_resumable_partial_publication() -> None:

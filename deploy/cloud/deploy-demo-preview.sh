@@ -433,6 +433,7 @@ PY
   /usr/bin/sha256sum "$incoming" > "$staging/archive.sha256"
   /usr/bin/sha256sum "$staging/release-manifest" > "$staging/manifest.sha256"
   /bin/chown -R root:root "$staging"
+  /bin/chmod -R go-w -- "$staging"
   /bin/chmod 600 "$staging/release-manifest" "$staging/archive.sha256" "$staging/manifest.sha256"
   if [[ -e "$release_path" ]]; then
     [[ -f "$release_path/release-manifest" ]] || remote_fail
@@ -441,6 +442,7 @@ PY
   else
     /bin/mv -- "$staging" "$release_path"
   fi
+  /bin/chmod -R go-w -- "$release_path"
 }
 
 validate_release_contract() {
