@@ -295,10 +295,24 @@ async def test_hard_stale_login_fails_closed_and_revokes_session_when_audit_fail
 
 
 @pytest.mark.postgres
-def test_hard_stale_access_audit_exposes_only_reason_and_freshness_time(
+@pytest.mark.parametrize(
+    "role,allowed",
+    [
+        ("member", False),
+        ("platform_owner", True),
+        ("platform_admin", True),
+        ("management_viewer", True),
+    ],
+)
+def test_hard_stale_access_audit_allows_exact_privileged_roles(
     control_database,
+    role: str,
+    allowed: bool,
 ) -> None:
-    from app.control_plane.auth import HardStaleAccessAuditWriter
+    from app.control_plane.auth import (
+        AuthenticationError,
+        HardStaleAccessAuditWriter,
+    )
 
     environment = control_database["environments"]["production"]
     user_id, _ = _seed_current_bound_member(environment)
@@ -308,9 +322,9 @@ def test_hard_stale_access_audit_exposes_only_reason_and_freshness_time(
             "where role='platform_owner'"
         )
         connection.execute(
-            "update platform_control.internal_users set role='platform_owner' "
+            "update platform_control.internal_users set role=%s "
             "where internal_user_id=%s",
-            (user_id,),
+            (role, user_id),
         )
         connection.execute(
             "update platform_control.directory_state set "
@@ -320,8 +334,14 @@ def test_hard_stale_access_audit_exposes_only_reason_and_freshness_time(
         environment["urls"]["platform_audit_append"]
     )
 
-    writer(user_id, "login", "self")
-    writer(user_id, "read", "governance_audit")
+    if allowed:
+        writer(user_id, "login", "self")
+        writer(user_id, "read", "governance_audit")
+    else:
+        with pytest.raises(
+            AuthenticationError, match="required audit unavailable"
+        ):
+            writer(user_id, "login", "self")
 
     with psycopg.connect(environment["admin"]) as connection:
         rows = connection.execute(
@@ -331,12 +351,18 @@ def test_hard_stale_access_audit_exposes_only_reason_and_freshness_time(
             "order by event_type",
             (user_id,),
         ).fetchall()
-    assert [row[0] for row in rows] == [
-        "hard_stale_privileged_login_completed",
-        "hard_stale_privileged_read_completed",
-    ]
-    assert all(row[1] == "privileged_last_generation" for row in rows)
-    assert all(set(row[2]) == {"freshness_reason", "last_complete_at"} for row in rows)
+    if allowed:
+        assert [row[0] for row in rows] == [
+            "hard_stale_privileged_login_completed",
+            "hard_stale_privileged_read_completed",
+        ]
+        assert all(row[1] == "privileged_last_generation" for row in rows)
+        assert all(
+            set(row[2]) == {"freshness_reason", "last_complete_at"}
+            for row in rows
+        )
+    else:
+        assert rows == []
 
 
 @pytest.mark.postgres
@@ -464,6 +490,87 @@ def test_existing_session_is_rechecked_when_directory_crosses_hard_stale(
     assert (authenticated is not None) is allowed
     if authenticated is not None:
         assert authenticated[0].hard_stale_read_only is read_only
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "role,allowed",
+    [
+        ("member", False),
+        ("platform_owner", True),
+        ("platform_admin", True),
+        ("management_viewer", True),
+    ],
+)
+def test_hard_stale_session_issue_allows_exact_privileged_roles(
+    control_database,
+    role: str,
+    allowed: bool,
+) -> None:
+    from app.control_plane.auth import LoginAttempt
+
+    environment = control_database["environments"]["production"]
+    repository = _db_repository(environment)
+    user_id, _ = _seed_current_bound_member(environment)
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.internal_users set role='member' "
+            "where role='platform_owner'"
+        )
+        connection.execute(
+            "update platform_control.internal_users set role=%s "
+            "where internal_user_id=%s",
+            (role, user_id),
+        )
+        connection.execute(
+            "update platform_control.directory_state set "
+            "last_complete_at=clock_timestamp()-interval '25 hours' "
+            "where singleton"
+        )
+    state = repository.secrets.random_token()
+    verifier = repository.secrets.random_token()
+    attempt = LoginAttempt(
+        uuid4(),
+        "qr",
+        repository.secrets.digest("oauth-state", state),
+        9,
+        repository.secrets.digest("pkce-verifier", verifier),
+        9,
+        repository.secrets.seal_verifier(verifier),
+        "/",
+        "production",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    repository.create_attempt(attempt)
+    assert repository.claim_attempt(
+        state_digest=attempt.state_digest,
+        environment="production",
+        attempt_kind="qr",
+    ) is not None
+    raw_cookie = repository.secrets.random_token()
+
+    issued = repository.issue_session(
+        attempt_id=attempt.attempt_id,
+        internal_user_id=user_id,
+        token_digest=repository.secrets.digest("session", raw_cookie),
+        token_key_version=9,
+        csrf_digest=repository.secrets.digest("csrf", "csrf"),
+        csrf_key_version=9,
+        idle_seconds=28_800,
+        absolute_seconds=86_400,
+        hard_stale_read_only=True,
+    )
+
+    assert (issued is not None) is allowed
+    authenticated = repository.authenticate_session(
+        token_digest=repository.secrets.digest("session", raw_cookie),
+        token_key_version=9,
+        idle_seconds=28_800,
+    )
+    assert (authenticated is not None) is allowed
+    if authenticated is not None:
+        assert authenticated[0].role.value == role
+        assert authenticated[0].hard_stale_read_only is True
 
 
 @pytest.mark.postgres

@@ -176,6 +176,42 @@ class Provider:
         return self.user_id
 
 
+def test_database_session_unknown_stored_role_fails_closed() -> None:
+    from app.control_plane.auth import AuthSecrets, WebSessionRepository
+
+    class UnknownRoleConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, _query, _parameters):
+            return self
+
+        def fetchone(self):
+            return {
+                "session_id": uuid4(),
+                "internal_user_id": uuid4(),
+                "role": "unknown_stored_role",
+                "hard_stale_read_only": False,
+                "csrf_hash": b"c" * 32,
+                "csrf_hash_key_version": 1,
+            }
+
+    repository = WebSessionRepository(
+        "dbname=agent_platform_control user=platform_control_app",
+        secrets=AuthSecrets(b"u" * 32, key_version=1),
+        connect=lambda *_args, **_kwargs: UnknownRoleConnection(),
+    )
+
+    assert repository.authenticate_session(
+        token_digest=b"t" * 32,
+        token_key_version=1,
+        idle_seconds=28_800,
+    ) is None
+
+
 @pytest.mark.asyncio
 async def test_unknown_expired_consumed_and_environment_mismatch_reject_before_provider() -> None:
     from app.control_plane.auth import AuthSecrets, DingTalkWebAuth
