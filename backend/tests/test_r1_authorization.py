@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+import psycopg
+
+from app.control_plane.authorization import (
+    AuthorizationReadAuditWriter,
+    AuthorizationRepository,
+    AuthorizationService,
+    require_exact_viewer_agent,
+)
+from app.control_plane.models import AuthContext, Role
+from app.control_plane.middleware import IdentitySecurityMiddleware
+from test_control_plane_migration import control_database
+
+
+OWNER = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+VIEWER = AuthContext(uuid4(), Role.MANAGEMENT_VIEWER, uuid4(), False)
+MEMBER = AuthContext(uuid4(), Role.MEMBER, uuid4(), False)
+STALE_OWNER = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), True)
+
+
+class Grants:
+    def __init__(self, allowed=("hr-bot",)):
+        self.allowed = set(allowed)
+        self.calls = []
+
+    def permits(self, actor, agent_id):
+        self.calls.append((actor, agent_id))
+        return agent_id in self.allowed
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        "/api/agents/{agent_id}/runtime",
+        "/api/review/overview",
+        "/api/review/inbox",
+        "/api/review/issues",
+        "/api/operations/events",
+    ],
+)
+def test_viewer_requires_one_exact_granted_agent(route):
+    grants = Grants()
+    service = AuthorizationService(grants)
+
+    permitted = service.decide(VIEWER, "GET", route, ("hr-bot",))
+    denied = service.decide(VIEWER, "GET", route, ("HR-BOT",))
+
+    assert permitted.allowed is True and permitted.agent_id == "hr-bot"
+    assert denied.allowed is False and denied.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "values",
+    [(), ("hr-bot", "hr-bot"), ("hr-bot", "marketing-bot"), ("",)],
+)
+def test_viewer_agent_scope_rejects_missing_duplicate_or_conflicting(values):
+    with pytest.raises(ValueError, match="exactly one Agent scope required"):
+        require_exact_viewer_agent(values)
+
+
+def test_member_and_unknown_route_default_deny_but_owner_reads_known_routes():
+    service = AuthorizationService(Grants())
+
+    assert service.decide(
+        MEMBER, "GET", "/api/review/issues", ("hr-bot",)
+    ).status_code == 403
+    assert service.decide(
+        VIEWER, "GET", "/api/future/unknown", ("hr-bot",)
+    ).status_code == 403
+    assert service.decide(
+        OWNER, "GET", "/api/review/issues/{issue_id}", ()
+    ).allowed is True
+
+
+def test_hard_stale_owner_is_read_only_and_cloud_review_mutations_are_disabled():
+    service = AuthorizationService(Grants(), cloud_mode=True)
+
+    assert service.decide(
+        STALE_OWNER, "GET", "/api/review/issues", ("hr-bot",)
+    ).allowed is True
+    assert service.decide(
+        STALE_OWNER, "POST", "/api/review/issues", ()
+    ).status_code == 503
+    assert service.decide(
+        OWNER, "POST", "/api/review/issues", ()
+    ).status_code == 403
+
+
+def test_governance_read_is_the_only_viewer_route_without_agent_scope():
+    service = AuthorizationService(Grants())
+
+    decision = service.decide(
+        VIEWER, "GET", "/api/v1/manage/audit/governance", ()
+    )
+
+    assert decision.allowed is True and decision.agent_id is None
+
+
+def test_middleware_denies_before_service_and_audits_exact_viewer_read():
+    invoked = []
+    audits = []
+    grants = Grants()
+    authorization = AuthorizationService(
+        grants,
+        read_audit=lambda actor, agent, target: audits.append(
+            (actor, agent, target)
+        ),
+    )
+
+    class Auth:
+        route_prefix = "/"
+        cookie_name = "session"
+        csrf_cookie_name = "csrf"
+        public_base_url = "https://agent.example.test"
+        trusted_proxy_networks = ()
+        rate_limiter = None
+
+        def authenticate(self, token):
+            return (VIEWER, b"csrf") if token == "valid" else None
+
+        def verify_csrf(self, *_args):
+            return True
+
+    app = FastAPI()
+
+    @app.get("/api/review/issues")
+    def issues(agent_id: str | None = None):
+        invoked.append(agent_id)
+        return {"agent_id": agent_id}
+
+    app.add_middleware(
+        IdentitySecurityMiddleware,
+        auth=Auth(),
+        public_assets=frozenset(),
+        authorization=authorization,
+        routes=tuple(app.router.routes),
+    )
+    client = TestClient(app)
+    client.cookies.set("session", "valid")
+
+    assert client.get("/api/review/issues").status_code == 403
+    assert invoked == []
+    assert client.get(
+        "/api/review/issues?agent_id=hr-bot&agent_id=hr-bot"
+    ).status_code == 403
+    response = client.get("/api/review/issues?agent_id=hr-bot")
+
+    assert response.status_code == 200
+    assert invoked == ["hr-bot"]
+    assert audits == [
+        (VIEWER.internal_user_id, "hr-bot", "management_projection")
+    ]
+
+
+@pytest.mark.postgres
+def test_database_scope_check_and_viewer_read_audit_are_exact_and_immutable(
+    control_database,
+):
+    environment = control_database["environments"]["production"]
+    owner = uuid4()
+    viewer = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status,role) values "
+            "(%s,'Owner','active','platform_owner'),"
+            "(%s,'Viewer','active','management_viewer')",
+            (owner, viewer),
+        )
+        connection.execute(
+            "insert into platform_control.observation_grants "
+            "(observation_grant_id,agent_id,viewer_internal_user_id,created_by) "
+            "values (%s,'hr-bot',%s,%s)",
+            (uuid4(), viewer, owner),
+        )
+    repository = AuthorizationRepository(
+        environment["urls"]["platform_control_app"]
+    )
+    audit = AuthorizationReadAuditWriter(
+        environment["urls"]["platform_audit_append"]
+    )
+
+    assert repository.permits(viewer, "hr-bot") is True
+    assert repository.permits(viewer, "HR-BOT") is False
+    audit(viewer, "hr-bot", "management_projection")
+
+    with psycopg.connect(environment["admin"]) as connection:
+        row = connection.execute(
+            "select event_type,target_internal_id,reason_code,"
+            "sanitized_before_after from platform_control.audit_events "
+            "where actor_internal_user_id=%s",
+            (viewer,),
+        ).fetchone()
+    assert row[:3] == (
+        "scoped_management_read_completed",
+        "hr-bot",
+        "privileged_read",
+    )
+    assert row[3] == {"agent_id": "hr-bot", "scope_kind": "exact_agent"}

@@ -3,9 +3,10 @@ from __future__ import annotations
 import hmac
 from urllib.parse import urlsplit
 
-from starlette.datastructures import Headers, MutableHeaders
+from starlette.datastructures import Headers, MutableHeaders, QueryParams
 from starlette.responses import JSONResponse
 from starlette.requests import Request
+from starlette.routing import Match
 
 from app.spa import is_public_build_asset
 from .client_address import UntrustedForwardingHeaders, resolve_edge_source
@@ -92,10 +93,34 @@ def _origin_matches(
 class IdentitySecurityMiddleware:
     """Exact public allowlist plus server-side Session and mutation checks."""
 
-    def __init__(self, app, *, auth, public_assets: frozenset[str]) -> None:
+    def __init__(
+        self,
+        app,
+        *,
+        auth,
+        public_assets: frozenset[str],
+        authorization=None,
+        routes=(),
+    ) -> None:
         self.app = app
         self.auth = auth
         self.public_assets = public_assets
+        self.authorization = authorization
+        self.routes = tuple(routes)
+
+    def _resolved_route(self, scope) -> tuple[str, dict] | None:
+        for route in self.routes:
+            matcher = getattr(route, "matches", None)
+            if matcher is None:
+                continue
+            match, child_scope = matcher(scope)
+            if match is Match.FULL:
+                template = getattr(route, "path", None)
+                if not isinstance(template, str):
+                    return None
+                local = _unprefixed(template, self.auth.route_prefix)
+                return local or template, child_scope.get("path_params", {})
+        return None
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -196,6 +221,54 @@ class IdentitySecurityMiddleware:
                 and hmac.compare_digest(csrf_cookie, csrf_digest)
             )
             scope["state"]["csrf_token"] = csrf_cookie if csrf_cookie_valid else ""
+            if not public and self.authorization is not None:
+                resolved = self._resolved_route(scope)
+                if resolved is None:
+                    await JSONResponse(
+                        {"detail": "route not authorized"},
+                        status_code=403,
+                        headers=_NO_STORE,
+                    )(scope, receive, protected_send)
+                    return
+                route_template, path_params = resolved
+                query = QueryParams(scope.get("query_string", b""))
+                agent_ids = tuple(
+                    value for value in (
+                        path_params.get("agent_id"),
+                        *query.getlist("agent_id"),
+                    ) if value is not None
+                )
+                decision = self.authorization.decide(
+                    context, method, route_template, agent_ids
+                )
+                if not decision.allowed:
+                    await JSONResponse(
+                        {"detail": decision.reason},
+                        status_code=decision.status_code,
+                        headers=_NO_STORE,
+                    )(scope, receive, protected_send)
+                    return
+                try:
+                    if context.hard_stale_read_only:
+                        audit = getattr(self.auth, "hard_stale_audit", None)
+                        if audit is None:
+                            raise RuntimeError
+                        audit(
+                            context.internal_user_id,
+                            "read",
+                            "management_projection",
+                        )
+                    else:
+                        self.authorization.audit_permitted(
+                            context, route_template, decision
+                        )
+                except Exception:
+                    await JSONResponse(
+                        {"detail": "required audit unavailable"},
+                        status_code=503,
+                        headers=_NO_STORE,
+                    )(scope, receive, protected_send)
+                    return
             if method not in _SAFE_METHODS:
                 if not _origin_matches(
                     headers.get("origin"), self.auth.public_base_url,

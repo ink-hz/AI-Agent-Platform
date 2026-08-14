@@ -130,7 +130,15 @@ class SetDisposition(StrictModel):
         return self
 
 
-def review_actor(x_review_actor: str = Header(...)) -> str:
+def review_actor(
+    request: Request,
+    x_review_actor: str | None = Header(default=None),
+) -> str:
+    context = getattr(request.state, "auth_context", None)
+    if context is not None:
+        return f"corp:{context.internal_user_id}"
+    if x_review_actor is None:
+        raise HTTPException(status_code=422, detail="accountable review actor required")
     actor = x_review_actor.strip()
     if actor == "codex":
         return actor

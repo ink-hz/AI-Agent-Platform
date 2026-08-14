@@ -5,7 +5,7 @@ import ipaddress
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from .attachments import routes as attachment_routes
 from .attachments.logging import install_attachment_ticket_redaction
@@ -27,7 +27,15 @@ from .cloud_replica.management_repository import (
 from .control_room import routes as control_room_routes
 from .control_room.service import ControlRoomService
 from .control_plane.middleware import IdentitySecurityMiddleware
-from .control_plane.models import IdentityMode
+from .control_plane.authorization import (
+    AuthorizationReadAuditWriter,
+    AuthorizationRepository,
+    AuthorizationService,
+)
+from .control_plane import routes_manage
+from .control_plane.audit import AuditWriter
+from .control_plane.routes_manage import ManagementRepository, ManagementService
+from .control_plane.models import DirectoryFreshness, IdentityMode
 from .control_plane.routes_auth import build_auth_router
 from .control_plane.auth import (
     AuthSecrets,
@@ -503,9 +511,24 @@ def create_app(
     app.state.attachment_service = attachment_service
     app.state.replica_repository = replica_repository
     app.state.identity_auth = identity_auth
+    authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
-        app.state.system_health_audit = SystemHealthAuditWriter(
-            read_secret_file(config.control_plane.audit_database_url_file)
+        control_database_url = read_secret_file(
+            config.control_plane.control_database_url_file
+        )
+        audit_database_url = read_secret_file(
+            config.control_plane.audit_database_url_file
+        )
+        app.state.system_health_audit = SystemHealthAuditWriter(audit_database_url)
+        app.state.identity_management_service = ManagementService(
+            ManagementRepository(control_database_url),
+            AuditWriter.from_database_url(audit_database_url),
+            hard_stale_audit=identity_auth.hard_stale_audit,
+        )
+        authorization_service = AuthorizationService(
+            AuthorizationRepository(control_database_url),
+            cloud_mode=cloud_mode,
+            read_audit=AuthorizationReadAuditWriter(audit_database_url),
         )
 
     if not identity_enabled:
@@ -538,6 +561,36 @@ def create_app(
     app.include_router(operations_routes.router)
     app.include_router(registry_routes.router)
     app.include_router(review_routes.router)
+    if identity_enabled:
+        app.include_router(routes_manage.router)
+        def request_auth_context(request: Request):
+            return request.state.auth_context
+
+        def request_csrf_verified(request: Request) -> bool:
+            return bool(request.state.csrf_token)
+
+        def current_directory_is_fresh() -> bool:
+            return (
+                identity_auth.repository.directory_freshness(
+                    warning_after_seconds=(
+                        config.control_plane.warning_after_seconds
+                    ),
+                    hard_stale_after_seconds=(
+                        config.control_plane.hard_stale_after_seconds
+                    ),
+                )
+                is DirectoryFreshness.FRESH
+            )
+
+        app.dependency_overrides[routes_manage.authenticated_context] = (
+            request_auth_context
+        )
+        app.dependency_overrides[routes_manage.csrf_protection] = (
+            request_csrf_verified
+        )
+        app.dependency_overrides[routes_manage.fresh_directory] = (
+            current_directory_is_fresh
+        )
     if attachment_service is not None:
         app.include_router(attachment_routes.router)
 
@@ -549,6 +602,8 @@ def create_app(
             IdentitySecurityMiddleware,
             auth=identity_auth,
             public_assets=public_assets,
+            authorization=authorization_service,
+            routes=tuple(app.router.routes),
         )
 
     return app
