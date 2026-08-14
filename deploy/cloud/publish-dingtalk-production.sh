@@ -91,13 +91,18 @@ trap rollback_on_failure EXIT
 /usr/sbin/nginx -t >/dev/null 2>&1 || fail
 /bin/systemctl reload nginx
 
+response_headers="$backup_path/root-response.headers"
 for _attempt in $(/usr/bin/seq 1 20); do
-  code="$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 4 \
+  code="$(/usr/bin/curl --noproxy '*' -sS -D "$response_headers" -o /dev/null -w '%{http_code}' --max-time 4 \
     --resolve agent.orbbec.com.cn:443:127.0.0.1 https://agent.orbbec.com.cn/ || true)"
-  [[ "$code" == "200" ]] && break
+  [[ "$code" == "302" ]] && break
   /bin/sleep 1
 done
-[[ "${code:-}" == "200" ]] || fail
+[[ "$code" == "302" ]] || fail
+/usr/bin/grep -Eiq '^location: /login\r?$' "$response_headers" || fail
+[[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 4 \
+  --resolve agent.orbbec.com.cn:443:127.0.0.1 \
+  https://agent.orbbec.com.cn/login)" == "200" ]] || fail
 /usr/bin/curl --noproxy '*' -fsS --max-time 4 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 \
   https://agent.orbbec.com.cn/api/health |
