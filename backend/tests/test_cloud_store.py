@@ -65,6 +65,72 @@ def test_prepared_session_exposes_only_safe_index_columns():
     assert not hasattr(prepared, "question")
 
 
+@pytest.mark.parametrize(
+    "record",
+    [
+        {
+            "kind": "review_issue_projection",
+            "key": "5e18847c-91c0-4a35-bc3c-ddc39dac6ff3",
+            "agent_id": "hr-bot",
+            "updated_at": "2026-08-11T08:01:00.000000Z",
+            "title": {"text": "已脱敏标题"},
+            "status": "open",
+            "priority": "P1",
+            "failure_layer": "model",
+            "owner_display": None,
+            "linked_turn_count": 2,
+            "sanitizer_policy_version": "test-v1",
+        },
+        {
+            "kind": "review_inbox_projection",
+            "key": "a" * 52,
+            "agent_id": "hr-bot",
+            "first_feedback_at": "2026-08-11T08:01:00.000000Z",
+            "turn_key": "c" * 52,
+            "feedback_count": 2,
+            "sanitizer_policy_version": "test-v1",
+        },
+        {
+            "kind": "operation_event_projection",
+            "key": "b" * 52,
+            "agent_id": "hr-bot",
+            "occurred_at": "2026-08-11T08:01:00.000000Z",
+            "event_type": "usage_change",
+            "severity": "attention",
+            "summary": {"text": "已脱敏标题"},
+            "sanitizer_policy_version": "test-v1",
+        },
+    ],
+)
+def test_prepared_management_projection_encrypts_display_fields(
+    record,
+):
+    store = ReplicaStore("postgresql://replica", cipher=FieldCipher(b"e" * 32))
+
+    prepared = store.prepare_management(record)
+
+    assert prepared.projection_kind == record["kind"]
+    assert prepared.record_key == record["key"]
+    assert prepared.agent_id == "hr-bot"
+    assert prepared.occurred_at == datetime(2026, 8, 11, 8, 1, tzinfo=UTC)
+    assert "已脱敏标题" not in json.dumps(prepared.encrypted, ensure_ascii=False)
+
+
+def test_unknown_or_sensitive_management_projection_is_rejected():
+    store = ReplicaStore("postgresql://replica", cipher=FieldCipher(b"e" * 32))
+    with pytest.raises(ReplicaStoreError, match="record_invalid"):
+        store.prepare_management(
+            {
+                "kind": "review_issue_projection",
+                "key": "5e18847c-91c0-4a35-bc3c-ddc39dac6ff3",
+                "agent_id": "hr-bot",
+                "updated_at": "2026-08-11T08:01:00.000000Z",
+                "raw_feedback": "不能出现在副本",
+                "sanitizer_policy_version": "test-v1",
+            }
+        )
+
+
 class _RetentionTransaction:
     def __init__(self, events):
         self.events = events
@@ -86,6 +152,8 @@ class _RetentionCursor:
         self.statements.append((normalized, params))
         if normalized.startswith("select count(*)") and "sessions where expires_at" in normalized:
             self.result = {"count": 3}
+        elif normalized.startswith("select count(*)") and "management_projections" in normalized:
+            self.result = {"count": 4}
         elif normalized.startswith("select count(*)") and "from platform_replica.agents" in normalized:
             self.result = {"count": 2}
         else:
@@ -149,6 +217,7 @@ class _ResetConnection(_RetentionConnection):
             "other_audit_count": 0,
             "runtime_count": 0,
             "aggregate_count": 0,
+            "management_count": 0,
             **counts,
         }
 
@@ -166,7 +235,7 @@ def test_retention_dry_run_counts_without_mutation():
 
     result = store.expire(now=datetime(2026, 8, 11, tzinfo=UTC), dry_run=True)
 
-    assert (result.session_count, result.agent_count) == (3, 2)
+    assert (result.session_count, result.agent_count, result.management_count) == (3, 2, 4)
     assert result.dry_run is True
     assert not any(sql.startswith("delete") for sql, _ in connection.statements)
     assert not any("retention_audit" in sql for sql, _ in connection.statements)
@@ -208,6 +277,7 @@ def test_reset_test_generation_removes_only_empty_or_exclusively_synthetic_repli
     assert "lock table platform_replica.generations in exclusive mode" in sql
     assert deletes == [
         "delete from platform_replica.sessions",
+        "delete from platform_replica.management_projections",
         "delete from platform_replica.agents",
         "delete from platform_replica.import_audit",
         "delete from platform_replica.generations",

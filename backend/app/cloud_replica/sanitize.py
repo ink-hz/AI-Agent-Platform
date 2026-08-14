@@ -12,6 +12,7 @@ from typing import Callable
 import yaml
 
 from .models import (
+    OperationEventProjection,
     RawAttachment,
     RawSession,
     SanitizedAttachment,
@@ -19,7 +20,10 @@ from .models import (
     SanitizedText,
     SanitizedTraceAggregate,
     SanitizedTurnRecord,
+    ReviewInboxProjection,
+    ReviewIssueProjection,
 )
+from .crypto import stable_id
 
 
 OMITTED_TEXT = "内容因敏感性未同步"
@@ -225,6 +229,63 @@ def sanitize_text(
     # mapping; complete Sessions share a context in ``sanitize_session``.
     del scope
     return _sanitize_text(text, policy, _PlaceholderContext())
+
+
+def sanitize_management_projection(
+    raw: object,
+    policy: SanitizationPolicy,
+    identity_key: bytes,
+) -> dict[str, object]:
+    if len(identity_key) != 32:
+        raise ValueError("invalid identity key")
+    agent_id = getattr(raw, "agent_id", None)
+    if _safe_identifier(agent_id) != agent_id:
+        raise ValueError("unsafe management projection")
+    if isinstance(raw, ReviewIssueProjection):
+        title = sanitize_text(raw.title, policy, "review-issue-title")
+        owner = (
+            sanitize_text(raw.owner_display, policy, "review-owner")
+            if raw.owner_display
+            else None
+        )
+        return {
+            "kind": "review_issue_projection",
+            "key": str(raw.issue_id),
+            "agent_id": raw.agent_id,
+            "status": _safe_identifier(raw.status) or "unknown",
+            "priority": _safe_identifier(raw.priority) or "unknown",
+            "title": {"text": title.text},
+            "failure_layer": _safe_identifier(raw.failure_layer),
+            "owner_display": owner.text if owner and owner.safe else None,
+            "linked_turn_count": max(raw.linked_turn_count, 0),
+            "updated_at": raw.updated_at,
+            "sanitizer_policy_version": policy.version,
+        }
+    if isinstance(raw, ReviewInboxProjection):
+        return {
+            "kind": "review_inbox_projection",
+            "key": stable_id(
+                "review-inbox", f"{raw.agent_id}:{raw.turn_key}", identity_key
+            ),
+            "agent_id": raw.agent_id,
+            "turn_key": stable_id("turn", raw.turn_key, identity_key),
+            "feedback_count": max(raw.feedback_count, 0),
+            "first_feedback_at": raw.first_feedback_at,
+            "sanitizer_policy_version": policy.version,
+        }
+    if isinstance(raw, OperationEventProjection):
+        summary = sanitize_text(raw.summary, policy, "operation-summary")
+        return {
+            "kind": "operation_event_projection",
+            "key": stable_id("operation-event", raw.event_id, identity_key),
+            "agent_id": raw.agent_id,
+            "event_type": _safe_identifier(raw.event_type) or "unknown",
+            "severity": _safe_identifier(raw.severity) or "unknown",
+            "summary": {"text": summary.text},
+            "occurred_at": raw.occurred_at,
+            "sanitizer_policy_version": policy.version,
+        }
+    raise ValueError("unsupported management projection")
 
 
 def _size_bucket(size_bytes: int | None) -> str:

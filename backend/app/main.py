@@ -20,6 +20,10 @@ from .cloud_replica.repository import (
     ReplicaFlywheelRepository,
     ReplicaObservabilityRepository,
 )
+from .cloud_replica.management_repository import (
+    ReplicaOperationsRepository,
+    ReplicaReviewRepository,
+)
 from .control_room import routes as control_room_routes
 from .control_room.service import ControlRoomService
 from .control_plane.middleware import IdentitySecurityMiddleware
@@ -104,6 +108,16 @@ def build_cloud_replica_services(
         auth_mode=config.cloud_auth_mode,
     )
     repository.check_schema()
+    repository.review_repository = ReplicaReviewRepository(
+        database_url,
+        cipher=FieldCipher(encryption_key),
+        stale_seconds=config.replica_stale_seconds,
+    )
+    repository.operations_repository = ReplicaOperationsRepository(
+        database_url,
+        cipher=FieldCipher(encryption_key),
+        stale_seconds=config.replica_stale_seconds,
+    )
     observability_service = ObservabilityService(repository)
     fleet_service = FleetReadService(
         cluster_monitor,
@@ -364,6 +378,24 @@ def create_app(
         )
         fleet_service = fleet_service or cloud_fleet
         observability_service = observability_service or cloud_observability
+        if review_service is None:
+            cloud_review_repository = getattr(
+                replica_repository, "review_repository", None
+            )
+            if cloud_review_repository is not None:
+                review_service = ReviewService(
+                    cloud_review_repository,
+                    write_repository=None,
+                    registry=repo,
+                )
+        if operations_service is None:
+            cloud_operations_repository = getattr(
+                replica_repository, "operations_repository", None
+            )
+            if cloud_operations_repository is not None:
+                operations_service = OperationsService(
+                    cloud_operations_repository
+                )
     database_url = (
         resolve_flywheel_database_url(config) if runtime_pollers_enabled else None
     )

@@ -20,6 +20,7 @@ from .protocol import BatchLimits, decode_and_verify_batch
 from .sanitize import SanitizationPolicy
 from .source import ReplicaSource
 from .store import ReplicaStore
+from app.operations.repository import OperationsRepository
 
 
 def _required_environment(name: str) -> str:
@@ -58,8 +59,12 @@ def _export(clock: Callable[[], datetime]) -> int:
     state_path = Path(
         _required_environment("PLATFORM_REPLICA_EXPORT_STATE_PATH")
     )
+    source = ReplicaSource(database_url)
+    operations_path = os.getenv("PLATFORM_OPERATIONS_DATABASE_PATH")
+    if operations_path and hasattr(source, "_operations_repository"):
+        source._operations_repository = OperationsRepository(operations_path)
     exporter = ReplicaExporter(
-        source=ReplicaSource(database_url),
+        source=source,
         policy=SanitizationPolicy.from_private_file(
             _required_environment("PLATFORM_REPLICA_SANITIZER_DICTIONARY_FILE")
         ),

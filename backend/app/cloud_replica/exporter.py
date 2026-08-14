@@ -12,7 +12,11 @@ from typing import Any, Callable
 from .crypto import BatchSigner, stable_id
 from .models import RawSession, SanitizedSessionRecord
 from .protocol import BatchState, encode_batch
-from .sanitize import SanitizationPolicy, sanitize_session
+from .sanitize import (
+    SanitizationPolicy,
+    sanitize_management_projection,
+    sanitize_session,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,10 +226,27 @@ class ReplicaExporter:
             through=through,
             limit=limit,
         )
-        records = tuple(
+        session_records = tuple(
             self._record(raw, sanitize_session(raw, self.policy))
             for raw in raw_sessions
         )
+        fetch_management = getattr(
+            self.source, "fetch_management_projections", None
+        )
+        management = (
+            fetch_management(through=through)
+            if callable(fetch_management)
+            else ()
+        )
+        management_records = tuple(
+            _json_safe(
+                sanitize_management_projection(
+                    raw, self.policy, self.identity_key
+                )
+            )
+            for raw in management
+        )
+        records = session_records + management_records
         created_at = self.clock()
         if len(raw_sessions) == limit:
             checkpoint = max(

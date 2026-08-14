@@ -38,6 +38,16 @@ class PreparedSession:
 
 
 @dataclass(frozen=True, slots=True)
+class PreparedManagement:
+    projection_kind: str
+    record_key: str
+    agent_id: str
+    occurred_at: datetime
+    encrypted: dict[str, str]
+    payload_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
 class ReplicaImportResult:
     status: str
     sequence: int
@@ -50,6 +60,7 @@ class ReplicaRetentionResult:
     dry_run: bool
     session_count: int
     agent_count: int
+    management_count: int = 0
 
 
 _SESSION_KEYS = {
@@ -68,7 +79,26 @@ _SESSION_KEYS = {
     "sanitizer_policy_version",
 }
 _SAFE_KEY = re.compile(r"[a-z2-7]{40,64}\Z")
+_SAFE_RECORD_KEY = re.compile(
+    r"(?:[a-z2-7]{40,64}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12})\Z"
+)
 _SAFE_AGENT = re.compile(r"[A-Za-z0-9._-]{1,80}\Z")
+_MANAGEMENT_KEYS = {
+    "review_issue_projection": {
+        "kind", "key", "agent_id", "updated_at", "title", "status",
+        "priority", "failure_layer", "owner_display", "linked_turn_count",
+        "sanitizer_policy_version",
+    },
+    "review_inbox_projection": {
+        "kind", "key", "agent_id", "first_feedback_at", "turn_key",
+        "feedback_count", "sanitizer_policy_version",
+    },
+    "operation_event_projection": {
+        "kind", "key", "agent_id", "occurred_at", "event_type", "severity",
+        "summary", "sanitizer_policy_version",
+    },
+}
 
 
 def _canonical(record: dict[str, Any]) -> str:
@@ -172,20 +202,68 @@ class ReplicaStore:
             payload_sha256=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
         )
 
+    def prepare_management(self, record: dict[str, Any]) -> PreparedManagement:
+        kind = record.get("kind")
+        expected = _MANAGEMENT_KEYS.get(kind)
+        if expected is None or set(record) != expected:
+            raise ReplicaStoreError("record_invalid")
+        record_key = record.get("key")
+        agent_id = record.get("agent_id")
+        time_field = {
+            "review_issue_projection": "updated_at",
+            "review_inbox_projection": "first_feedback_at",
+            "operation_event_projection": "occurred_at",
+        }[kind]
+        if (
+            not isinstance(record_key, str)
+            or not _SAFE_RECORD_KEY.fullmatch(record_key)
+            or not isinstance(agent_id, str)
+            or not _SAFE_AGENT.fullmatch(agent_id)
+            or not isinstance(record.get("sanitizer_policy_version"), str)
+            or not record["sanitizer_policy_version"]
+        ):
+            raise ReplicaStoreError("record_invalid")
+        occurred_at = _parse_time(record[time_field])
+        canonical = _canonical(record)
+        encrypted = self._cipher.encrypt(
+            canonical, f"2:{kind}:{record_key}"
+        )
+        return PreparedManagement(
+            projection_kind=kind,
+            record_key=record_key,
+            agent_id=agent_id,
+            occurred_at=occurred_at,
+            encrypted=encrypted,
+            payload_sha256=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        )
+
     def _prepared_records(
         self, records: tuple[dict[str, Any], ...]
-    ) -> tuple[PreparedSession, ...]:
+    ) -> tuple[tuple[PreparedSession, ...], tuple[PreparedManagement, ...]]:
         by_key: dict[str, PreparedSession] = {}
+        management_by_key: dict[tuple[str, str], PreparedManagement] = {}
         for record in records:
-            prepared = self.prepare_session(record)
-            existing = by_key.get(prepared.session_key)
-            if existing and existing.payload_sha256 != prepared.payload_sha256:
-                raise ReplicaStoreError("record_conflict")
-            by_key[prepared.session_key] = prepared
-        return tuple(by_key.values())
+            if record.get("kind") == "session":
+                prepared = self.prepare_session(record)
+                existing = by_key.get(prepared.session_key)
+                if existing and existing.payload_sha256 != prepared.payload_sha256:
+                    raise ReplicaStoreError("record_conflict")
+                by_key[prepared.session_key] = prepared
+            else:
+                projection = self.prepare_management(record)
+                key = (projection.projection_kind, projection.record_key)
+                existing_projection = management_by_key.get(key)
+                if (
+                    existing_projection
+                    and existing_projection.payload_sha256
+                    != projection.payload_sha256
+                ):
+                    raise ReplicaStoreError("record_conflict")
+                management_by_key[key] = projection
+        return tuple(by_key.values()), tuple(management_by_key.values())
 
     def import_batch(self, batch: SignedBatch) -> ReplicaImportResult:
-        prepared_records = self._prepared_records(batch.records)
+        prepared_records, prepared_management = self._prepared_records(batch.records)
         try:
             with self._connect() as connection:
                 with connection.transaction():
@@ -294,6 +372,36 @@ class ReplicaStore:
                                 prepared.payload_sha256,
                             ),
                         )
+                    for prepared in prepared_management:
+                        cursor.execute(
+                            """
+                            insert into platform_replica.management_projections
+                                (projection_kind,record_key,agent_id,occurred_at,
+                                 expires_at,generation_sequence,display_payload,
+                                 payload_nonce,payload_sha256,updated_at)
+                            values (%s,%s,%s,%s,%s + interval '1 year',%s,%s,%s,%s,now())
+                            on conflict (projection_kind,record_key) do update set
+                                agent_id=excluded.agent_id,
+                                occurred_at=excluded.occurred_at,
+                                expires_at=excluded.expires_at,
+                                generation_sequence=excluded.generation_sequence,
+                                display_payload=excluded.display_payload,
+                                payload_nonce=excluded.payload_nonce,
+                                payload_sha256=excluded.payload_sha256,
+                                updated_at=now()
+                            """,
+                            (
+                                prepared.projection_kind,
+                                prepared.record_key,
+                                prepared.agent_id,
+                                prepared.occurred_at,
+                                prepared.occurred_at,
+                                batch.header.sequence,
+                                _decode(prepared.encrypted["ciphertext"]),
+                                _decode(prepared.encrypted["nonce"]),
+                                prepared.payload_sha256,
+                            ),
+                        )
                     cursor.execute(
                         """
                         insert into platform_replica.generations
@@ -324,14 +432,14 @@ class ReplicaStore:
                             batch.header.source_instance_id,
                             batch.header.sequence,
                             batch.digest,
-                            len(prepared_records),
+                            len(prepared_records) + len(prepared_management),
                             batch.header.upper_watermark,
                         ),
                     )
             return ReplicaImportResult(
                 status="imported",
                 sequence=batch.header.sequence,
-                record_count=len(prepared_records),
+                record_count=len(prepared_records) + len(prepared_management),
                 digest=batch.digest,
             )
         except ReplicaStoreError:
@@ -353,6 +461,13 @@ class ReplicaStore:
                     )
                     session_count = cursor.fetchone()["count"]
                     cursor.execute(
+                        "select count(*) as count from "
+                        "platform_replica.management_projections "
+                        "where expires_at <= %s",
+                        (cutoff,),
+                    )
+                    management_count = cursor.fetchone()["count"]
+                    cursor.execute(
                         """
                         select count(*) as count from platform_replica.agents a
                         where not exists (
@@ -364,6 +479,11 @@ class ReplicaStore:
                     )
                     agent_count = cursor.fetchone()["count"]
                     if not dry_run:
+                        cursor.execute(
+                            "delete from platform_replica.management_projections "
+                            "where expires_at <= %s",
+                            (cutoff,),
+                        )
                         cursor.execute(
                             "delete from platform_replica.sessions where expires_at <= %s",
                             (cutoff,),
@@ -380,15 +500,17 @@ class ReplicaStore:
                         cursor.execute(
                             """
                             insert into platform_replica.retention_audit
-                                (cutoff_at, deleted_session_count, deleted_agent_count)
-                            values (%s, %s, %s)
+                                (cutoff_at, deleted_session_count,
+                                 deleted_agent_count,deleted_management_count)
+                            values (%s, %s, %s, %s)
                             """,
-                            (cutoff, session_count, agent_count),
+                            (cutoff, session_count, agent_count, management_count),
                         )
             return ReplicaRetentionResult(
                 dry_run=dry_run,
                 session_count=session_count,
                 agent_count=agent_count,
+                management_count=management_count,
             )
         except Exception:
             raise ReplicaStoreError("retention_failed") from None
@@ -428,7 +550,9 @@ class ReplicaStore:
                             (select count(*) from platform_replica.runtime_snapshots)
                                 as runtime_count,
                             (select count(*) from platform_replica.aggregate_snapshots)
-                                as aggregate_count
+                                as aggregate_count,
+                            (select count(*) from platform_replica.management_projections)
+                                as management_count
                         """,
                         (source_instance_id,),
                     )
@@ -437,6 +561,7 @@ class ReplicaStore:
                         counts["other_audit_count"]
                         or counts["runtime_count"]
                         or counts["aggregate_count"]
+                        or counts["management_count"]
                         or (
                             not source_ids
                             and (counts["session_count"] or counts["agent_count"])
@@ -444,6 +569,7 @@ class ReplicaStore:
                     ):
                         raise ReplicaStoreError("test_reset_refused")
                     cursor.execute("delete from platform_replica.sessions")
+                    cursor.execute("delete from platform_replica.management_projections")
                     cursor.execute("delete from platform_replica.agents")
                     cursor.execute("delete from platform_replica.import_audit")
                     cursor.execute("delete from platform_replica.generations")

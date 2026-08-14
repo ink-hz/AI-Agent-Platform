@@ -15,7 +15,7 @@ from .crypto import BatchSigner, BatchVerifier, ReplicaCryptoError
 
 
 PROTOCOL_VERSION = 1
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class ReplicaProtocolError(RuntimeError):
@@ -55,6 +55,7 @@ class BatchHeader:
     expires_at: datetime
     record_count: int
     records_byte_count: int
+    record_counts: dict[str, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +79,7 @@ _HEADER_KEYS = {
     "record_count",
     "records_byte_count",
 }
+_HEADER_V2_KEYS = _HEADER_KEYS | {"record_counts"}
 _SOURCE_ID = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -113,7 +115,8 @@ def _parse_timestamp(value: Any) -> datetime:
 
 
 def _header_from_dict(value: dict[str, Any]) -> BatchHeader:
-    if set(value) != _HEADER_KEYS:
+    keys = set(value)
+    if keys != _HEADER_KEYS and keys != _HEADER_V2_KEYS:
         raise ValueError
     header = BatchHeader(
         protocol_version=value["protocol_version"],
@@ -128,12 +131,13 @@ def _header_from_dict(value: dict[str, Any]) -> BatchHeader:
         expires_at=_parse_timestamp(value["expires_at"]),
         record_count=value["record_count"],
         records_byte_count=value["records_byte_count"],
+        record_counts=value.get("record_counts"),
     )
     if (
         type(header.protocol_version) is not int
         or header.protocol_version != PROTOCOL_VERSION
         or type(header.schema_version) is not int
-        or header.schema_version != SCHEMA_VERSION
+        or header.schema_version not in {1, SCHEMA_VERSION}
         or not isinstance(header.sanitizer_policy_version, str)
         or not 1 <= len(header.sanitizer_policy_version) <= 64
         or not isinstance(header.source_instance_id, str)
@@ -152,6 +156,21 @@ def _header_from_dict(value: dict[str, Any]) -> BatchHeader:
         )
     ):
         raise ValueError
+    if header.schema_version == 1:
+        if header.record_counts is not None:
+            raise ValueError
+    elif (
+        not isinstance(header.record_counts, dict)
+        or any(
+            not isinstance(kind, str)
+            or not kind
+            or type(count) is not int
+            or count < 0
+            for kind, count in header.record_counts.items()
+        )
+        or sum(header.record_counts.values()) != header.record_count
+    ):
+        raise ValueError
     if header.sequence == 1:
         if header.previous_digest is not None:
             raise ValueError
@@ -163,7 +182,10 @@ def _header_from_dict(value: dict[str, Any]) -> BatchHeader:
 
 
 def _header_dict(
-    state: BatchState, record_count: int, records_byte_count: int
+    state: BatchState,
+    record_count: int,
+    records_byte_count: int,
+    record_counts: dict[str, int],
 ) -> dict[str, Any]:
     return {
         "protocol_version": PROTOCOL_VERSION,
@@ -178,6 +200,7 @@ def _header_dict(
         "expires_at": _timestamp(state.expires_at),
         "record_count": record_count,
         "records_byte_count": records_byte_count,
+        "record_counts": record_counts,
     }
 
 
@@ -188,8 +211,16 @@ def encode_batch(
 ) -> bytes:
     try:
         record_lines = tuple(_canonical(record) for record in records)
+        record_counts: dict[str, int] = {}
+        for record in records:
+            kind = record.get("kind")
+            if not isinstance(kind, str) or not kind:
+                raise ReplicaProtocolError("batch_invalid")
+            record_counts[kind] = record_counts.get(kind, 0) + 1
         records_byte_count = sum(len(line) + 1 for line in record_lines)
-        header_value = _header_dict(state, len(records), records_byte_count)
+        header_value = _header_dict(
+            state, len(records), records_byte_count, record_counts
+        )
         _header_from_dict(header_value)
         content = b"\n".join((_canonical(header_value), *record_lines)) + b"\n"
         digest = hashlib.sha256(content).hexdigest()
@@ -248,6 +279,15 @@ def decode_and_verify_batch(
         ):
             raise ValueError
         records = tuple(_decode_json_line(line) for line in record_lines)
+        if header.record_counts is not None:
+            actual_counts: dict[str, int] = {}
+            for record in records:
+                kind = record.get("kind")
+                if not isinstance(kind, str) or not kind:
+                    raise ValueError
+                actual_counts[kind] = actual_counts.get(kind, 0) + 1
+            if actual_counts != header.record_counts:
+                raise ValueError
         content = b"\n".join(lines[:-1]) + b"\n"
         digest = hashlib.sha256(content).hexdigest()
         if not isinstance(trailer["digest"], str) or not _DIGEST.fullmatch(

@@ -15,6 +15,7 @@ def test_cloud_replica_migration_has_dedicated_encrypted_schema_and_roles():
         "sessions",
         "runtime_snapshots",
         "aggregate_snapshots",
+        "management_projections",
         "import_audit",
         "retention_audit",
     ):
@@ -26,6 +27,7 @@ def test_cloud_replica_migration_has_dedicated_encrypted_schema_and_roles():
     assert "grant select" in sql
     assert "grant insert" in sql or "grant select, insert" in sql
     assert "revoke all on schema public" in sql
+    assert "replica_management_agent_time_idx" in sql
 
 
 def test_cloud_replica_schema_has_no_raw_or_cleartext_sensitive_columns():

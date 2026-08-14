@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,3 +124,34 @@ class SanitizedSessionRecord:
     last_active_at: datetime
     turns: tuple[SanitizedTurnRecord, ...]
     sanitizer_policy_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewIssueProjection:
+    issue_id: UUID
+    agent_id: str
+    status: str
+    priority: str
+    title: str
+    failure_layer: str | None
+    owner_display: str | None
+    linked_turn_count: int
+    updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewInboxProjection:
+    agent_id: str
+    turn_key: str
+    feedback_count: int
+    first_feedback_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class OperationEventProjection:
+    event_id: str
+    agent_id: str
+    event_type: str
+    severity: str
+    summary: str
+    occurred_at: datetime

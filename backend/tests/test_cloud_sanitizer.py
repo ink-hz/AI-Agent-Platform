@@ -2,13 +2,21 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
-from app.cloud_replica.models import RawAttachment, RawSession, RawTurn
+from app.cloud_replica.models import (
+    OperationEventProjection,
+    RawAttachment,
+    RawSession,
+    RawTurn,
+    ReviewIssueProjection,
+)
 from app.cloud_replica.sanitize import (
     OMITTED_TEXT,
     SanitizationPolicy,
+    sanitize_management_projection,
     sanitize_session,
     sanitize_text,
 )
@@ -230,3 +238,46 @@ def test_source_attachment_states_are_reduced_to_safe_categories(policy):
     assert attachment.direction == "incoming"
     assert attachment.archive_status == "archived"
     assert attachment.delivery_status == "unavailable"
+
+
+def test_management_projection_redacts_contacts_links_paths_and_names(policy):
+    now = datetime(2026, 8, 11, tzinfo=UTC)
+    issue = sanitize_management_projection(
+        ReviewIssueProjection(
+            issue_id=uuid4(),
+            agent_id="hr-bot",
+            status="open",
+            priority="P1",
+            title="联系 alice@example.com 处理项目鹰 /Users/neo/a.md",
+            failure_layer="model",
+            owner_display="张候选人",
+            linked_turn_count=1,
+            updated_at=now,
+        ),
+        policy,
+        b"i" * 32,
+    )
+    operation = sanitize_management_projection(
+        OperationEventProjection(
+            event_id="raw-event-provider-on_27882925f0e4f159846581dd8144ad63",
+            agent_id="hr-bot",
+            event_type="execution_failure",
+            severity="critical",
+            summary="客户甲集团 https://example.com/private",
+            occurred_at=now,
+        ),
+        policy,
+        b"i" * 32,
+    )
+    serialized = json.dumps([issue, operation], ensure_ascii=False, default=str)
+
+    for forbidden in (
+        "alice@example.com",
+        "项目鹰",
+        "/Users/neo/a.md",
+        "张候选人",
+        "客户甲集团",
+        "https://example.com/private",
+        "on_27882925f0e4f159846581dd8144ad63",
+    ):
+        assert forbidden not in serialized

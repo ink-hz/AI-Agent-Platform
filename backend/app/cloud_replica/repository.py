@@ -94,10 +94,17 @@ class ReplicaObservabilityRepository:
                     """
                     select
                       to_regclass('platform_replica.sessions') as sessions,
-                      to_regclass('platform_replica.generations') as generations
+                      to_regclass('platform_replica.generations') as generations,
+                      to_regclass('platform_replica.management_projections')
+                        as management_projections
                     """
                 ).fetchone()
-            if not row or row["sessions"] is None or row["generations"] is None:
+            if (
+                not row
+                or row["sessions"] is None
+                or row["generations"] is None
+                or row["management_projections"] is None
+            ):
                 raise ValueError
         except Exception:
             raise ObservabilityReadError("replica schema unavailable") from None

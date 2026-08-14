@@ -68,6 +68,30 @@ create table if not exists platform_replica.aggregate_snapshots (
     payload_sha256 char(64) not null
 );
 
+create table if not exists platform_replica.management_projections (
+    projection_kind text not null check (projection_kind in (
+        'review_issue_projection',
+        'review_inbox_projection',
+        'operation_event_projection'
+    )),
+    record_key text not null,
+    agent_id text not null,
+    occurred_at timestamptz not null,
+    expires_at timestamptz not null,
+    generation_sequence bigint not null,
+    display_payload bytea not null,
+    payload_nonce bytea not null,
+    payload_sha256 char(64) not null,
+    updated_at timestamptz not null default now(),
+    primary key (projection_kind, record_key)
+);
+create index if not exists replica_management_agent_time_idx
+    on platform_replica.management_projections(
+        projection_kind, agent_id, occurred_at desc, record_key
+    );
+create index if not exists replica_management_expiry_idx
+    on platform_replica.management_projections(expires_at);
+
 create table if not exists platform_replica.import_audit (
     source_instance_id text not null,
     sequence bigint not null,
@@ -83,8 +107,11 @@ create table if not exists platform_replica.retention_audit (
     cutoff_at timestamptz not null,
     deleted_session_count integer not null,
     deleted_agent_count integer not null,
+    deleted_management_count integer not null default 0,
     completed_at timestamptz not null default now()
 );
+alter table platform_replica.retention_audit
+    add column if not exists deleted_management_count integer not null default 0;
 
 grant select, insert, update, delete on all tables in schema platform_replica
     to platform_replica_import;

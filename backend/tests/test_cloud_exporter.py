@@ -7,7 +7,13 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from app.cloud_replica.crypto import BatchSigner, BatchVerifier
 from app.cloud_replica.exporter import ReplicaExporter
-from app.cloud_replica.models import RawAttachment, RawSession, RawTurn
+from app.cloud_replica.models import (
+    OperationEventProjection,
+    RawAttachment,
+    RawSession,
+    RawTurn,
+    ReviewInboxProjection,
+)
 from app.cloud_replica.protocol import BatchLimits, decode_and_verify_batch
 from app.cloud_replica.sanitize import SanitizationPolicy
 
@@ -119,6 +125,40 @@ def test_exporter_queues_only_sanitized_hmac_identified_records(tmp_path):
         '"sources"',
     ):
         assert forbidden not in serialized
+
+
+def test_exporter_signs_management_projection_manifest_counts(tmp_path):
+    now = datetime(2026, 8, 11, 8, 0, tzinfo=UTC)
+    private = Ed25519PrivateKey.generate()
+
+    class ManagementSource(_Source):
+        def fetch_management_projections(self, *, through):
+            assert through == now
+            return (
+                ReviewInboxProjection("hr-bot", "raw-turn", 2, now),
+                OperationEventProjection(
+                    "raw-event", "hr-bot", "execution_failure", "critical",
+                    "联系 alice@example.com", now,
+                ),
+            )
+
+    exporter = _exporter(tmp_path, now, ManagementSource(()), private)
+    result = exporter.export_batch(
+        after=now - timedelta(minutes=5), through=now, limit=100
+    )
+    payload = result.batch_path.read_bytes()
+    decoded = decode_and_verify_batch(
+        io.BytesIO(payload), BatchVerifier(private.public_key()), BatchLimits()
+    )
+
+    assert decoded.header.record_counts == {
+        "operation_event_projection": 1,
+        "review_inbox_projection": 1,
+    }
+    assert {record["kind"] for record in decoded.records} == set(
+        decoded.header.record_counts
+    )
+    assert "alice@example.com" not in payload.decode("utf-8")
 
 
 def test_export_failure_preserves_existing_state_and_queue(tmp_path, monkeypatch):
