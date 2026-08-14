@@ -81,6 +81,7 @@ services:
       platform-internal:
         ipv4_address: 172.30.0.4
       platform-edge:
+        ipv4_address: 172.31.0.4
         gw_priority: 1
     depends_on:
       platform-postgres:
@@ -115,8 +116,10 @@ services:
     volumes:
       - platform-directory-secrets:/run/secrets:ro
     networks:
-      platform-internal: {}
+      platform-internal:
+        ipv4_address: 172.30.0.5
       platform-edge:
+        ipv4_address: 172.31.0.5
         gw_priority: 1
     depends_on:
       platform-postgres:
@@ -150,8 +153,10 @@ services:
     volumes:
       - platform-stream-secrets:/run/secrets:ro
     networks:
-      platform-internal: {}
+      platform-internal:
+        ipv4_address: 172.30.0.6
       platform-edge:
+        ipv4_address: 172.31.0.6
         gw_priority: 1
     depends_on:
       platform-postgres:

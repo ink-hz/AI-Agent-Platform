@@ -40,6 +40,12 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
 
     directory = services["platform-directory"]
     stream = services["platform-dingtalk-stream"]
+    assert directory["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.5"
+    assert directory["networks"]["platform-edge"]["ipv4_address"] == "172.31.0.5"
+    assert stream["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.6"
+    assert stream["networks"]["platform-edge"]["ipv4_address"] == "172.31.0.6"
+    assert api["networks"]["platform-edge"]["ipv4_address"] == "172.31.0.4"
+    assert services["platform-loopback"]["networks"]["platform-edge"]["ipv4_address"] == "172.31.0.3"
     assert directory["command"] == [
         "python", "-m", "app.control_plane.worker_runtime", "directory"
     ]
