@@ -237,7 +237,7 @@ identity_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-dingtalk-prod
   "$private_path")" || fail
 [[ "$identity_bootstrap_result" == "DINGTALK_PRODUCTION_SECRETS_OK" ]] || fail
 identity_policy_result="$(/usr/bin/docker run --rm --user 0:0 --read-only \
-  --cap-drop ALL --security-opt no-new-privileges:true \
+  --security-opt no-new-privileges:true \
   --network orbbec-agent-platform-internal \
   --tmpfs /tmp:rw,noexec,nosuid,size=8m \
   -v "$private_path:/run/control-secrets:ro" \
