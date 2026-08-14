@@ -1,0 +1,295 @@
+from __future__ import annotations
+
+from pathlib import Path
+import re
+import shutil
+import subprocess
+
+import pytest
+import yaml
+
+
+ROOT = Path(__file__).parents[2]
+CLOUD = ROOT / "deploy" / "cloud"
+OVERLAY = CLOUD / "compose.demo-preview.yaml"
+BOOTSTRAP = CLOUD / "bootstrap-demo-preview-secrets.sh"
+
+
+def _overlay() -> dict:
+    return yaml.safe_load(OVERLAY.read_text(encoding="utf-8"))
+
+
+def test_demo_overlay_adds_only_isolated_preview_services_and_one_loopback_port() -> None:
+    value = _overlay()
+    services = value["services"]
+
+    assert set(services) == {
+        "platform-api-demo-preview",
+        "platform-loopback-demo-preview",
+    }
+    assert "platform-api" not in services
+    assert "platform-loopback" not in services
+    assert "platform-postgres" not in services
+    assert "ports" not in services["platform-api-demo-preview"]
+    assert services["platform-loopback-demo-preview"]["ports"] == [
+        "127.0.0.1:8081:8080"
+    ]
+    assert services["platform-api-demo-preview"]["networks"] == {
+        "platform-internal": {"ipv4_address": "172.30.0.5"}
+    }
+    assert services["platform-loopback-demo-preview"]["networks"][
+        "platform-internal"
+    ]["ipv4_address"] == "172.30.0.6"
+
+
+def test_demo_overlay_uses_only_the_dedicated_external_secret_volume() -> None:
+    value = _overlay()
+    services = value["services"]
+    volume_name = "orbbec-agent-platform-demo-preview-secrets"
+
+    assert value["volumes"] == {
+        volume_name: {"external": True, "name": volume_name}
+    }
+    assert services["platform-api-demo-preview"]["volumes"] == [
+        f"{volume_name}:/run/demo-preview-secrets:ro"
+    ]
+    assert services["platform-loopback-demo-preview"]["volumes"] == []
+    serialized = OVERLAY.read_text(encoding="utf-8")
+    for forbidden in (
+        "platform-api-secrets",
+        "platform-postgres-secrets",
+        "/run/secrets/control-database-url",
+        "/run/secrets/identity-hmac-keyring",
+        "/run/secrets/identity-encryption-keyring",
+    ):
+        assert forbidden not in serialized
+
+
+def test_demo_api_has_exact_preview_identity_and_proxy_contract() -> None:
+    service = _overlay()["services"]["platform-api-demo-preview"]
+    environment = service["environment"]
+
+    assert service["image"] == "${PLATFORM_IMAGE}"
+    assert environment["PLATFORM_IDENTITY_MODE"] == "preview"
+    assert environment["PLATFORM_PUBLIC_BASE_URL"] == "https://agent.orbbec.com.cn"
+    assert environment["PLATFORM_ROUTE_PREFIX"] == "/_preview/dingtalk-r1/"
+    assert environment["PLATFORM_COOKIE_NAME"] == "platform_preview_session"
+    assert environment["PLATFORM_DINGTALK_LOGIN_FLOW"] == "qr"
+    assert environment["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.6/32"
+    assert environment["PLATFORM_FLYWHEEL_ENABLED"] == "0"
+    assert environment["PLATFORM_REVIEW_ENABLED"] == "0"
+    assert environment["PLATFORM_ATTACHMENT_ENABLED"] == "0"
+    assert environment["PLATFORM_CONTROL_DATABASE_URL_FILE"].endswith(
+        "/preview-control-database-url"
+    )
+    assert environment["PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE"].endswith(
+        "/preview-control-database-url"
+    )
+    assert environment["PLATFORM_IDENTITY_HMAC_KEYRING_FILE"].endswith(
+        "/preview-identity-hmac-keyring"
+    )
+    assert environment["PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE"].endswith(
+        "/preview-identity-encryption-keyring"
+    )
+    assert environment["PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE"].endswith(
+        "/preview-rate-limit-hmac-keyring"
+    )
+    command = " ".join(service["command"])
+    assert "--no-proxy-headers" in command
+    assert "--no-access-log" in command
+    assert "PLATFORM_DINGTALK_APP_KEY" in command
+    assert "PLATFORM_DINGTALK_AGENT_ID" in command
+    assert "PLATFORM_DINGTALK_CORP_ID" in command
+
+
+def test_demo_services_are_nonroot_readonly_capability_free_and_healthy() -> None:
+    services = _overlay()["services"]
+    api = services["platform-api-demo-preview"]
+    loopback = services["platform-loopback-demo-preview"]
+
+    for service in services.values():
+        assert service["user"] == "10001:10001"
+        assert service["read_only"] is True
+        assert service["cap_drop"] == ["ALL"]
+        assert service["security_opt"] == ["no-new-privileges:true"]
+        assert service["healthcheck"]["retries"] > 0
+    assert api["tmpfs"] == [
+        "/tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700"
+    ]
+    assert loopback["command"] == [
+        "uvicorn",
+        "app.cloud_replica.loopback_proxy:create_app",
+        "--factory",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+        "--no-proxy-headers",
+        "--no-access-log",
+    ]
+    assert loopback["environment"] == {
+        "PLATFORM_LOOPBACK_TARGET_BASE_URL": "http://platform-api-demo-preview:8080",
+        "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS": "127.0.0.1/32,172.31.0.1/32",
+        "PLATFORM_LOOPBACK_SOURCE_ADDRESS": "172.30.0.6",
+    }
+    health = " ".join(loopback["healthcheck"]["test"])
+    assert "X-Real-IP" in health
+    assert "127.0.0.1" in health
+    assert "X-Forwarded-Proto" in health
+    assert "http" in health
+
+
+def test_demo_overlay_has_no_stream_reconciler_or_directory_schedule() -> None:
+    serialized = OVERLAY.read_text(encoding="utf-8").lower()
+    for forbidden in (
+        "dingtalk-stream",
+        "stream-ingest",
+        "directory-reconcile",
+        "reconcile_interval",
+        "schedule",
+        "cron",
+    ):
+        assert forbidden not in serialized
+
+
+def test_secret_bootstrap_has_fixed_root_only_idempotent_boundary() -> None:
+    script = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "EUID" in script and '-eq 0' in script
+    assert "/opt/orbbec-agent-platform/private/demo-preview" in script
+    assert "orbbec-agent-platform-demo-preview-secrets" in script
+    assert "docker volume inspect" in script
+    assert "docker volume create" in script
+    assert "10001" in script
+    assert "0o400" in script or "0400" in script
+    assert "0o600" in script or "0600" in script
+    assert "stat.S_ISREG" in script
+    assert "is_symlink" in script or "S_ISLNK" in script
+    assert "st_uid != 0" in script
+    assert "os.replace" in script
+    assert "provider-encryption" in script
+    assert "provider-lookup-hmac" in script
+    assert "rate-limit-hmac" in script
+    assert "overlaps" in script
+    for expected in (
+        "dingtalk-app-key",
+        "dingtalk-agent-id",
+        "dingtalk-corp-id",
+        "dingtalk-app-secret",
+        "preview-control-database-url",
+        "preview-control-directory-worker-database-url",
+        "preview-control-migrator-database-url",
+        "preview-identity-hmac-keyring",
+        "preview-identity-encryption-keyring",
+        "preview-rate-limit-hmac-keyring",
+        "demo-userids",
+    ):
+        assert expected in script
+    for role in (
+        "platform_control_app_preview",
+        "platform_directory_worker_preview",
+        "platform_control_migrator_preview",
+    ):
+        assert role in script
+    assert "agent_platform_control_preview" in script
+
+
+def test_runtime_api_cannot_reach_offline_migrator_worker_or_allowlist_secrets() -> None:
+    value = _overlay()
+    api = value["services"]["platform-api-demo-preview"]
+    api_contract = yaml.safe_dump(api, sort_keys=True)
+    bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "/run/demo-preview-secrets/runtime/" in api_contract
+    for offline_name in (
+        "preview-control-directory-worker-database-url",
+        "preview-control-migrator-database-url",
+        "demo-userids",
+    ):
+        assert offline_name not in api_contract
+    assert "RUNTIME_NAMES" in bootstrap
+    assert "OFFLINE_NAMES" in bootstrap
+    assert "os.chmod(runtime, 0o750)" in bootstrap
+    assert "os.chmod(offline, 0o700)" in bootstrap
+    assert "os.chown(runtime, 0, 10001)" in bootstrap
+    assert "os.chown(offline, 0, 0)" in bootstrap
+    assert value["x-demo-preview-image-smoke"]["run_user"] == "0:0"
+
+
+def test_secret_bootstrap_never_uses_interactive_or_secret_echo_paths() -> None:
+    lowered = BOOTSTRAP.read_text(encoding="utf-8").lower()
+
+    for forbidden in (
+        "set -x",
+        "security ",
+        "keychain",
+        "read -p",
+        "cat $",
+        "echo $",
+        "docker compose down",
+        "docker stop",
+        "docker rm",
+    ):
+        assert forbidden not in lowered
+
+
+def test_runtime_image_contains_control_migrations_for_preview_migrate_smoke() -> None:
+    dockerfile = (CLOUD / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "backend/control_migrations" in dockerfile
+    assert "./control_migrations" in dockerfile
+    assert "USER platform:platform" in dockerfile
+    assert '"--no-proxy-headers"' in dockerfile
+
+
+def test_static_image_smoke_contract_migrates_bootstraps_and_checks_minimal_health() -> None:
+    smoke = _overlay()["x-demo-preview-image-smoke"]
+
+    migrate = " ".join(smoke["migrate"])
+    bootstrap = " ".join(smoke["bootstrap"])
+    assert "python -m app.control_plane.migrate" in migrate
+    assert "preview-control-migrator-database-url" in migrate
+    assert "platform_control_owner_preview" in migrate
+    assert "/app/backend/control_migrations" in migrate
+    assert "python -m app.control_plane.demo_bootstrap" in bootstrap
+    assert "preview-control-directory-worker-database-url" in bootstrap
+    assert "--userid-file" in bootstrap and "demo-userids" in bootstrap
+    assert smoke["api_service"] == "platform-api-demo-preview"
+    assert smoke["loopback_service"] == "platform-loopback-demo-preview"
+    assert smoke["health_url"] == (
+        "http://127.0.0.1:8081/_preview/dingtalk-r1/api/health"
+    )
+    assert smoke["expected_health"] == {"status": "ok"}
+
+
+def test_compose_overlay_statically_merges_without_replacing_root_services() -> None:
+    base = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
+    overlay = _overlay()
+    merged_services = {**base["services"], **overlay["services"]}
+
+    assert set(base["services"]).issubset(merged_services)
+    assert merged_services["platform-api"] == base["services"]["platform-api"]
+    assert merged_services["platform-loopback"] == base["services"]["platform-loopback"]
+    assert merged_services["platform-postgres"] == base["services"]["platform-postgres"]
+
+
+@pytest.mark.skipif(shutil.which("docker") is None, reason="Docker unavailable")
+def test_compose_config_and_immutable_image_command_smoke_when_docker_available() -> None:
+    completed = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(CLOUD / "compose.yaml"),
+            "-f",
+            str(OVERLAY),
+            "config",
+        ],
+        cwd=ROOT,
+        env={"PATH": str(Path(shutil.which("docker")).parent), "PLATFORM_IMAGE": "test.invalid/platform@sha256:" + "0" * 64},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert not re.search(r"(?:0\.0\.0\.0|\[::\]):8081", completed.stdout)

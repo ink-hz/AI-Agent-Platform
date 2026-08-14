@@ -1,0 +1,138 @@
+x-demo-preview-image-smoke:
+  run_user: "0:0"
+  migrate:
+    - /bin/sh
+    - -ec
+    - |
+      install -d -m 0700 /tmp/demo-preview-migrate
+      install -m 0600 /run/demo-preview-secrets/offline/preview-control-migrator-database-url /tmp/demo-preview-migrate/database-url
+      export PLATFORM_CONTROL_MIGRATOR_DATABASE_URL_FILE=/tmp/demo-preview-migrate/database-url
+      export PLATFORM_CONTROL_OWNER_ROLE=platform_control_owner_preview
+      export PLATFORM_CONTROL_MIGRATION_DIR=/app/backend/control_migrations
+      exec python -m app.control_plane.migrate
+  bootstrap:
+    - /bin/sh
+    - -ec
+    - |
+      secret_dir=/tmp/demo-preview-bootstrap
+      install -d -m 0700 "$${secret_dir}"
+      for secret_name in dingtalk-app-key dingtalk-corp-id dingtalk-app-secret preview-identity-encryption-keyring preview-identity-hmac-keyring; do
+        install -m 0600 "/run/demo-preview-secrets/runtime/$${secret_name}" "$${secret_dir}/$${secret_name}"
+      done
+      for secret_name in preview-control-directory-worker-database-url demo-userids; do
+        install -m 0600 "/run/demo-preview-secrets/offline/$${secret_name}" "$${secret_dir}/$${secret_name}"
+      done
+      export PLATFORM_CONTROL_DIRECTORY_DATABASE_URL_FILE="$${secret_dir}/preview-control-directory-worker-database-url"
+      export PLATFORM_DINGTALK_APP_KEY_FILE="$${secret_dir}/dingtalk-app-key"
+      export PLATFORM_DINGTALK_CORP_ID_FILE="$${secret_dir}/dingtalk-corp-id"
+      export PLATFORM_DINGTALK_APP_SECRET_FILE="$${secret_dir}/dingtalk-app-secret"
+      export PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE="$${secret_dir}/preview-identity-encryption-keyring"
+      export PLATFORM_IDENTITY_HMAC_KEYRING_FILE="$${secret_dir}/preview-identity-hmac-keyring"
+      exec python -m app.control_plane.demo_bootstrap --userid-file "$${secret_dir}/demo-userids"
+  api_service: platform-api-demo-preview
+  loopback_service: platform-loopback-demo-preview
+  health_url: http://127.0.0.1:8081/_preview/dingtalk-r1/api/health
+  expected_health:
+    status: ok
+
+services:
+  platform-api-demo-preview:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        secret_dir=/tmp/demo-preview-secrets
+        install -d -m 0700 "$${secret_dir}"
+        for secret_name in preview-control-database-url dingtalk-app-secret preview-identity-encryption-keyring preview-identity-hmac-keyring preview-rate-limit-hmac-keyring; do
+          install -m 0600 "/run/demo-preview-secrets/runtime/$${secret_name}" "$${secret_dir}/$${secret_name}"
+        done
+        PLATFORM_DINGTALK_APP_KEY=
+        PLATFORM_DINGTALK_AGENT_ID=
+        PLATFORM_DINGTALK_CORP_ID=
+        IFS= read -r PLATFORM_DINGTALK_APP_KEY < /run/demo-preview-secrets/runtime/dingtalk-app-key || test -n "$${PLATFORM_DINGTALK_APP_KEY}"
+        IFS= read -r PLATFORM_DINGTALK_AGENT_ID < /run/demo-preview-secrets/runtime/dingtalk-agent-id || test -n "$${PLATFORM_DINGTALK_AGENT_ID}"
+        IFS= read -r PLATFORM_DINGTALK_CORP_ID < /run/demo-preview-secrets/runtime/dingtalk-corp-id || test -n "$${PLATFORM_DINGTALK_CORP_ID}"
+        export PLATFORM_DINGTALK_APP_KEY PLATFORM_DINGTALK_AGENT_ID PLATFORM_DINGTALK_CORP_ID
+        exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8080 --no-proxy-headers --no-access-log
+    environment:
+      PLATFORM_DEPLOYMENT_MODE: local
+      PLATFORM_HOST: 127.0.0.1
+      PLATFORM_PORT: "8080"
+      PLATFORM_REGISTRY_PATH: /app/registry.yaml
+      PLATFORM_METABOT_CONTRACT_PATH: /app/metabot.runtime-contract.json
+      PLATFORM_STATIC_DIR: /app/backend/app/static
+      PLATFORM_FLYWHEEL_ENABLED: "0"
+      PLATFORM_REVIEW_ENABLED: "0"
+      PLATFORM_ATTACHMENT_ENABLED: "0"
+      PLATFORM_IDENTITY_MODE: preview
+      PLATFORM_PUBLIC_BASE_URL: https://agent.orbbec.com.cn
+      PLATFORM_ROUTE_PREFIX: /_preview/dingtalk-r1/
+      PLATFORM_COOKIE_NAME: platform_preview_session
+      PLATFORM_DINGTALK_LOGIN_FLOW: qr
+      PLATFORM_TRUSTED_PROXY_CIDRS: 172.30.0.6/32
+      PLATFORM_CONTROL_DATABASE_URL_FILE: /tmp/demo-preview-secrets/preview-control-database-url
+      PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE: /tmp/demo-preview-secrets/preview-control-database-url
+      PLATFORM_DINGTALK_APP_SECRET_FILE: /tmp/demo-preview-secrets/dingtalk-app-secret
+      PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE: /tmp/demo-preview-secrets/preview-identity-encryption-keyring
+      PLATFORM_IDENTITY_HMAC_KEYRING_FILE: /tmp/demo-preview-secrets/preview-identity-hmac-keyring
+      PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE: /tmp/demo-preview-secrets/preview-rate-limit-hmac-keyring
+    volumes:
+      - orbbec-agent-platform-demo-preview-secrets:/run/demo-preview-secrets:ro
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.5
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; value=json.load(urllib.request.urlopen('http://127.0.0.1:8080/_preview/dingtalk-r1/api/health',timeout=2)); assert value == {'status':'ok'}"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  platform-loopback-demo-preview:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700
+    command: ["uvicorn", "app.cloud_replica.loopback_proxy:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers", "--no-access-log"]
+    environment:
+      PLATFORM_LOOPBACK_TARGET_BASE_URL: http://platform-api-demo-preview:8080
+      PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS: 127.0.0.1/32,172.31.0.1/32
+      PLATFORM_LOOPBACK_SOURCE_ADDRESS: 172.30.0.6
+    volumes: []
+    ports:
+      - "127.0.0.1:8081:8080"
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.6
+      platform-edge:
+        ipv4_address: 172.31.0.4
+    depends_on:
+      platform-api-demo-preview:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; request=urllib.request.Request('http://127.0.0.1:8080/_preview/dingtalk-r1/api/health',headers={'X-Real-IP':'127.0.0.1','X-Forwarded-For':'127.0.0.1','X-Forwarded-Proto':'http','Forwarded':''}); value=json.load(urllib.request.urlopen(request,timeout=2)); assert value == {'status':'ok'}"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+volumes:
+  orbbec-agent-platform-demo-preview-secrets:
+    external: true
+    name: orbbec-agent-platform-demo-preview-secrets
