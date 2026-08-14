@@ -111,9 +111,11 @@ manifest；脏 worktree、错误 SHA 或错误摘要都会在连接目标机前�
 1. **prepare**：拒绝脏源码，生成并核对不可变 archive、release manifest 和摘要。
 2. **verify**：上传到固定 incoming 路径；在目标机再次核对摘要、12 个秘密文件、
    operator 输入、当前根路径与 FAE、Nginx 摘要、磁盘和端口；生成并验证 preview
-   数据库/角色/DSN/keyring；构建带 commit SHA 的镜像；用基础 Compose 加预览
-   overlay 生成实际配置；migration 和成员 bootstrap 都通过无 host port 的
-   `platform-demo-preview-runner` 同时连接 internal 与 edge 网络，前者只访问 preview
+   数据库/角色/DSN/keyring；构建带 commit SHA 的镜像；通过独立的
+   `orbbec-agent-demo-preview` Compose 项目加载预览 base 与 overlay，不让 Compose
+   协调或改写现有生产项目；生产 PostgreSQL 容器地址从已验证的 internal 网络端点
+   读取并只映射为 preview 内的 `platform-postgres`。migration 和成员 bootstrap
+   都通过无 host port 的 `platform-demo-preview-runner` 同时连接 internal 与 edge 网络，前者只访问 preview
    PostgreSQL，后者可调用钉钉。runner 只读取去重后的 root:0700
    `/run/demo-preview-secrets/runner` 视图（8 个 root:0400 文件），不同时挂载 runtime
    与 offline 的同名秘密；重新解析 1–3 个白名单成员；只启动两个预览服务并

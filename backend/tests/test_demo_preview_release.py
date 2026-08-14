@@ -216,6 +216,13 @@ def test_deploy_bootstraps_then_validates_and_uses_compose_runner_networks() -> 
 def test_merged_compose_gate_distinguishes_egress_from_loopback_contract() -> None:
     value = _text(DEPLOY)
 
+    assert 'preview_base_compose="$release_path/deploy/cloud/compose.demo-preview-base.yaml"' in value
+    assert 'production_compose=(/usr/bin/docker compose' in value
+    assert '-f "$base_compose")' in value
+    assert 'preview_stack=(/usr/bin/docker compose' in value
+    assert '-f "$preview_base_compose" -f "$preview_compose")' in value
+    assert 'PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address"' in value
+    assert 'orbbec-agent-platform-internal' in value
     assert (
         'compose_preview --profile demo-preview-tools config --format json'
         in value
@@ -390,7 +397,7 @@ def test_8081_listener_parser_keeps_wildcards_other_interfaces_and_duplicates() 
     ]
 
 
-def test_verify_uses_base_plus_overlay_and_preview_only_database_roles() -> None:
+def test_verify_uses_isolated_preview_stack_and_preview_only_database_roles() -> None:
     value = _text(DEPLOY)
 
     for required in (
@@ -413,7 +420,7 @@ def test_verify_uses_base_plus_overlay_and_preview_only_database_roles() -> None
         assert required in value
     assert "platform_control_owner " not in value
     assert "agent_platform_control " not in value
-    assert "platform-postgres " not in value
+    assert "compose_preview up -d --no-deps platform-postgres" not in value
 
 
 def test_activation_is_locked_to_current_live_nginx_and_preview_rollback() -> None:

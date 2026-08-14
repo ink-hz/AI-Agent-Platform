@@ -19,11 +19,43 @@ from app.main import create_app
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
 OVERLAY = CLOUD / "compose.demo-preview.yaml"
+PREVIEW_BASE = CLOUD / "compose.demo-preview-base.yaml"
 BOOTSTRAP = CLOUD / "bootstrap-demo-preview-secrets.sh"
 
 
 def _overlay() -> dict:
     return yaml.safe_load(OVERLAY.read_text(encoding="utf-8"))
+
+
+def test_demo_uses_a_separate_compose_project_on_external_platform_networks() -> None:
+    value = yaml.safe_load(PREVIEW_BASE.read_text(encoding="utf-8"))
+
+    assert value["name"] == "orbbec-agent-demo-preview"
+    assert set(value["services"]) == {
+        "platform-api-demo-preview",
+        "platform-demo-preview-runner",
+    }
+    expected_host = [
+        "platform-postgres=${PLATFORM_POSTGRES_PREVIEW_ADDRESS:?required}"
+    ]
+    assert value["services"]["platform-api-demo-preview"]["extra_hosts"] == expected_host
+    assert value["services"]["platform-demo-preview-runner"]["extra_hosts"] == expected_host
+    assert value["networks"] == {
+        "platform-internal": {
+            "external": True,
+            "name": "orbbec-agent-platform-internal",
+        },
+        "platform-edge": {
+            "external": True,
+            "name": "orbbec-agent-platform-edge",
+        },
+    }
+    assert value["volumes"] == {
+        "orbbec-agent-platform-demo-preview-secrets": {
+            "external": True,
+            "name": "orbbec-agent-platform-demo-preview-secrets",
+        }
+    }
 
 
 def test_demo_overlay_adds_only_isolated_preview_services_and_one_loopback_port() -> None:

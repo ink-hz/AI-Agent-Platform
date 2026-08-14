@@ -1,0 +1,24 @@
+name: orbbec-agent-demo-preview
+
+services:
+  platform-api-demo-preview:
+    extra_hosts:
+      - "platform-postgres=${PLATFORM_POSTGRES_PREVIEW_ADDRESS:?required}"
+
+  platform-demo-preview-runner:
+    extra_hosts:
+      - "platform-postgres=${PLATFORM_POSTGRES_PREVIEW_ADDRESS:?required}"
+
+networks:
+  platform-internal:
+    external: true
+    name: orbbec-agent-platform-internal
+
+  platform-edge:
+    external: true
+    name: orbbec-agent-platform-edge
+
+volumes:
+  orbbec-agent-platform-demo-preview-secrets:
+    external: true
+    name: orbbec-agent-platform-demo-preview-secrets

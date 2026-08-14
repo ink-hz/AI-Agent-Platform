@@ -16,6 +16,7 @@ active_state="$state_dir/active-backup"
 platform_root=/opt/orbbec-agent-platform
 platform_environment="$platform_root/private/platform.env"
 base_compose="$platform_root/current/deploy/cloud/compose.yaml"
+preview_base_compose="$platform_root/current/deploy/cloud/compose.demo-preview-base.yaml"
 preview_compose="$platform_root/current/deploy/cloud/compose.demo-preview.yaml"
 
 protected_container_invariants() {
@@ -51,11 +52,27 @@ response_invariants() {
 stop_demo_services() {
   if [[ -f "$platform_environment" && ! -L "$platform_environment" && \
         -f "$base_compose" && ! -L "$base_compose" && \
+        -f "$preview_base_compose" && ! -L "$preview_base_compose" && \
         -f "$preview_compose" && ! -L "$preview_compose" ]]; then
-    local compose=(/usr/bin/docker compose --env-file "$platform_environment" \
-      -f "$base_compose" -f "$preview_compose")
-    "${compose[@]}" stop platform-api-demo-preview platform-loopback-demo-preview >/dev/null
-    "${compose[@]}" rm -f platform-api-demo-preview platform-loopback-demo-preview >/dev/null
+    local production_compose=(/usr/bin/docker compose --env-file "$platform_environment" \
+      -f "$base_compose")
+    local preview_stack=(/usr/bin/docker compose --env-file "$platform_environment" \
+      -f "$preview_base_compose" -f "$preview_compose")
+    local postgres_container postgres_address
+    postgres_container="$("${production_compose[@]}" ps -q platform-postgres)" || fail
+    [[ "$postgres_container" =~ ^[0-9a-f]{12,64}$ ]] || fail
+    postgres_address="$(/usr/bin/docker inspect --format \
+      '{{with index .NetworkSettings.Networks "orbbec-agent-platform-internal"}}{{.IPAddress}}{{end}}' \
+      "$postgres_container")" || fail
+    [[ "$postgres_address" =~ ^172\.30\.0\.[0-9]+$ ]] || fail
+    PLATFORM_IMAGE="${PLATFORM_IMAGE:-orbbec-agent-platform-demo-preview:rollback}" \
+      PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address" \
+      "${preview_stack[@]}" stop \
+      platform-api-demo-preview platform-loopback-demo-preview >/dev/null
+    PLATFORM_IMAGE="${PLATFORM_IMAGE:-orbbec-agent-platform-demo-preview:rollback}" \
+      PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address" \
+      "${preview_stack[@]}" rm -f \
+      platform-api-demo-preview platform-loopback-demo-preview >/dev/null
   else
     local running
     running="$(

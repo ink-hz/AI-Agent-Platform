@@ -17,6 +17,7 @@ state_dir=/var/lib/orbbec-agent-demo-preview
 baseline_dir="$state_dir/release-baseline"
 platform_environment="$platform_root/private/platform.env"
 base_compose="$platform_root/current/deploy/cloud/compose.yaml"
+preview_base_compose="$platform_root/current/deploy/cloud/compose.demo-preview-base.yaml"
 preview_compose="$platform_root/current/deploy/cloud/compose.demo-preview.yaml"
 prefix=/_preview/dingtalk-r1/
 public_base=https://agent.orbbec.com.cn/_preview/dingtalk-r1/
@@ -39,6 +40,7 @@ for required in \
 done
 [[ -f "$platform_environment" && ! -L "$platform_environment" ]] || fail
 [[ -f "$base_compose" && ! -L "$base_compose" ]] || fail
+[[ -f "$preview_base_compose" && ! -L "$preview_base_compose" ]] || fail
 [[ -f "$preview_compose" && ! -L "$preview_compose" ]] || fail
 
 protected_container_invariants() {
@@ -80,17 +82,41 @@ capture_responses() {
   /usr/bin/printf 'fae_ip=%s\n' "$(response_code http://47.106.112.69/)"
 }
 
-compose=(/usr/bin/docker compose --env-file "$platform_environment" \
-  -f "$base_compose" -f "$preview_compose")
+production_compose=(/usr/bin/docker compose --env-file "$platform_environment" \
+  -f "$base_compose")
+preview_stack=(/usr/bin/docker compose --env-file "$platform_environment" \
+  -f "$preview_base_compose" -f "$preview_compose")
 image_ref="$(< "$baseline_dir/image-ref")"
 image_id="$(< "$baseline_dir/image-id")"
 [[ "$image_ref" =~ ^orbbec-agent-platform-demo-preview:[0-9a-f]{40}$ ]] || fail
 [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail
+postgres_container="$("${production_compose[@]}" ps -q platform-postgres)" || fail
+[[ "$postgres_container" =~ ^[0-9a-f]{12,64}$ ]] || fail
+postgres_address="$(/usr/bin/docker inspect --format \
+  '{{with index .NetworkSettings.Networks "orbbec-agent-platform-internal"}}{{.IPAddress}}{{end}}' \
+  "$postgres_container")" || fail
+/usr/bin/python3 - "$postgres_address" <<'PY' || fail
+import ipaddress
+import sys
 
-PLATFORM_IMAGE="$image_ref" "${compose[@]}" config --format json \
+address = ipaddress.ip_address(sys.argv[1])
+network = ipaddress.ip_network("172.30.0.0/28")
+if address not in network or address in {
+    network.network_address,
+    network.broadcast_address,
+    ipaddress.ip_address("172.30.0.5"),
+    ipaddress.ip_address("172.30.0.6"),
+}:
+    raise SystemExit(1)
+PY
+
+PLATFORM_IMAGE="$image_ref" PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address" \
+  "${preview_stack[@]}" config --format json \
   > "$temporary_root/compose.json" 2>/dev/null || fail
 for service in platform-api-demo-preview platform-loopback-demo-preview; do
-  container_id="$(PLATFORM_IMAGE="$image_ref" "${compose[@]}" ps -q "$service")"
+  container_id="$(PLATFORM_IMAGE="$image_ref" \
+    PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address" \
+    "${preview_stack[@]}" ps -q "$service")"
   [[ -n "$container_id" ]] || fail
   [[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$container_id")" == \
     healthy ]] || fail

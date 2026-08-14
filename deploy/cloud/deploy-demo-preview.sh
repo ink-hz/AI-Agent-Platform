@@ -129,10 +129,14 @@ verified_state="$state_dir/verified-release"
 baseline_dir="$state_dir/release-baseline"
 image_ref="orbbec-agent-platform-demo-preview:$release_sha"
 base_compose="$release_path/deploy/cloud/compose.yaml"
+preview_base_compose="$release_path/deploy/cloud/compose.demo-preview-base.yaml"
 preview_compose="$release_path/deploy/cloud/compose.demo-preview.yaml"
-compose=(/usr/bin/docker compose --env-file "$platform_environment" \
-  -f "$base_compose" -f "$preview_compose")
+production_compose=(/usr/bin/docker compose --env-file "$platform_environment" \
+  -f "$base_compose")
+preview_stack=(/usr/bin/docker compose --env-file "$platform_environment" \
+  -f "$preview_base_compose" -f "$preview_compose")
 postgres_container=""
+postgres_address=""
 expected_files=(
   dingtalk-app-key
   dingtalk-agent-id
@@ -196,11 +200,46 @@ capture_responses() {
 }
 
 compose_preview() {
-  PLATFORM_IMAGE="$image_ref" "${compose[@]}" "$@"
+  resolve_postgres_endpoint || return 1
+  PLATFORM_IMAGE="$image_ref" \
+    PLATFORM_POSTGRES_PREVIEW_ADDRESS="$postgres_address" \
+    "${preview_stack[@]}" "$@"
+}
+
+resolve_postgres_endpoint() {
+  local candidate address
+  if [[ -n "$postgres_container" && -n "$postgres_address" ]]; then
+    return 0
+  fi
+  candidate="$("${production_compose[@]}" ps -q platform-postgres)" || return 1
+  [[ "$candidate" =~ ^[0-9a-f]{12,64}$ ]] || return 1
+  [[ "$(/usr/bin/docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' \
+    "$candidate" 2>/dev/null)" == platform-postgres ]] || return 1
+  [[ "$(/usr/bin/docker inspect --format '{{.State.Running}}' "$candidate")" == true ]] || return 1
+  address="$(/usr/bin/docker inspect --format \
+    '{{with index .NetworkSettings.Networks "orbbec-agent-platform-internal"}}{{.IPAddress}}{{end}}' \
+    "$candidate")" || return 1
+  /usr/bin/python3 - "$address" <<'PY' || return 1
+import ipaddress
+import sys
+
+address = ipaddress.ip_address(sys.argv[1])
+network = ipaddress.ip_network("172.30.0.0/28")
+if address not in network or address in {
+    network.network_address,
+    network.broadcast_address,
+    ipaddress.ip_address("172.30.0.5"),
+    ipaddress.ip_address("172.30.0.6"),
+}:
+    raise SystemExit(1)
+PY
+  postgres_container="$candidate"
+  postgres_address="$address"
 }
 
 stop_preview_services() {
-  if [[ -f "$base_compose" && -f "$preview_compose" && -f "$platform_environment" ]]; then
+  if [[ -f "$base_compose" && -f "$preview_base_compose" && \
+        -f "$preview_compose" && -f "$platform_environment" ]]; then
     compose_preview stop platform-api-demo-preview platform-loopback-demo-preview >/dev/null 2>&1 || true
     compose_preview rm -f platform-api-demo-preview platform-loopback-demo-preview >/dev/null 2>&1 || true
   fi
@@ -208,6 +247,7 @@ stop_preview_services() {
 
 stop_preview_services_strict() {
   [[ -f "$base_compose" && ! -L "$base_compose" ]] || return 1
+  [[ -f "$preview_base_compose" && ! -L "$preview_base_compose" ]] || return 1
   [[ -f "$preview_compose" && ! -L "$preview_compose" ]] || return 1
   [[ -f "$platform_environment" && ! -L "$platform_environment" ]] || return 1
   compose_preview stop platform-api-demo-preview platform-loopback-demo-preview >/dev/null 2>&1
@@ -477,11 +517,11 @@ verify_phase() {
   trap cleanup_failed_verify EXIT HUP INT TERM
   validate_read_only_preflight
   extract_release
-  [[ -f "$base_compose" && -f "$preview_compose" ]] || remote_fail
+  [[ -f "$base_compose" && -f "$preview_base_compose" && \
+    -f "$preview_compose" ]] || remote_fail
   validate_release_contract
   capture_baseline
-  postgres_container="$(compose_preview ps -q platform-postgres)"
-  [[ "$postgres_container" =~ ^[0-9a-f]{12,64}$ ]] || remote_fail
+  resolve_postgres_endpoint || remote_fail
   prerequisite_result="$("$release_path/deploy/cloud/bootstrap-demo-preview-prerequisites.sh" \
     "$postgres_container" 2>/dev/null)" || remote_fail
   [[ "$prerequisite_result" == 'DEMO_PREVIEW_PREREQUISITES_READY files=12' ]] || remote_fail
@@ -490,7 +530,8 @@ verify_phase() {
     -t "$image_ref" -f "$release_path/deploy/cloud/Dockerfile" "$release_path" >/dev/null
   PLATFORM_IMAGE="$image_ref" compose_preview --profile demo-preview-tools config --format json > "$baseline_dir/compose-config.json"
   /bin/chmod 600 "$baseline_dir/compose-config.json"
-  /usr/bin/python3 - "$baseline_dir/compose-config.json" "$image_ref" <<'PY'
+  /usr/bin/python3 - "$baseline_dir/compose-config.json" "$image_ref" \
+    "$postgres_address" <<'PY'
 import json
 import pathlib
 import sys
@@ -498,6 +539,7 @@ import sys
 document = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 services = document.get("services", {})
 expected_image = sys.argv[2]
+expected_postgres_address = sys.argv[3]
 required_networks = {"platform-internal", "platform-edge"}
 egress_services = (
     "platform-api-demo-preview",
@@ -513,6 +555,10 @@ for name in egress_services:
     edge_priority = networks["platform-edge"].get("gw_priority", 0)
     internal_priority = networks["platform-internal"].get("gw_priority", 0)
     if edge_priority != 1 or edge_priority <= internal_priority:
+        raise SystemExit(1)
+    if service.get("extra_hosts") != [
+        f"platform-postgres={expected_postgres_address}"
+    ]:
         raise SystemExit(1)
 for name in egress_services:
     if services[name].get("ports"):
