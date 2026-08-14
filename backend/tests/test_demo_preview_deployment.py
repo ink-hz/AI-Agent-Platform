@@ -46,7 +46,10 @@ def test_demo_overlay_adds_only_isolated_preview_services_and_one_loopback_port(
     ]
     assert services["platform-api-demo-preview"]["networks"] == {
         "platform-internal": {"ipv4_address": "172.30.0.5"},
-        "platform-edge": {"ipv4_address": "172.31.0.5"},
+        "platform-edge": {
+            "ipv4_address": "172.31.0.5",
+            "gw_priority": 1,
+        },
     }
     assert services["platform-loopback-demo-preview"]["networks"][
         "platform-internal"
@@ -62,6 +65,7 @@ def test_demo_api_keeps_internal_database_path_and_gains_external_egress() -> No
     assert set(api["networks"]) == {"platform-internal", "platform-edge"}
     assert api["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.5"
     assert api["networks"]["platform-edge"]["ipv4_address"] == "172.31.0.5"
+    assert api["networks"]["platform-edge"]["gw_priority"] == 1
     assert api["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.6/32"
     assert "ports" not in api
     assert "expose" not in api
@@ -85,7 +89,7 @@ def test_demo_runner_is_profiled_secure_and_uses_both_compose_networks() -> None
     assert runner["volumes"] == api["volumes"]
     assert runner["networks"] == {
         "platform-internal": {},
-        "platform-edge": {},
+        "platform-edge": {"gw_priority": 1},
     }
     assert runner["command"] == ["/bin/false"]
     assert "restart" not in runner
@@ -96,6 +100,27 @@ def test_demo_runner_is_profiled_secure_and_uses_both_compose_networks() -> None
     assert value["x-demo-preview-image-smoke"]["runner_service"] == (
         "platform-demo-preview-runner"
     )
+
+
+def test_merged_api_and_runner_choose_edge_as_the_default_gateway() -> None:
+    base = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
+    overlay = _overlay()
+    merged_services = {**base["services"], **overlay["services"]}
+
+    for service_name in (
+        "platform-api-demo-preview",
+        "platform-demo-preview-runner",
+    ):
+        networks = merged_services[service_name]["networks"]
+        priorities = {
+            network_name: network_config.get("gw_priority", 0)
+            for network_name, network_config in networks.items()
+        }
+        assert priorities == {
+            "platform-internal": 0,
+            "platform-edge": 1,
+        }
+        assert priorities["platform-edge"] > priorities["platform-internal"]
 
 
 def test_demo_overlay_uses_only_the_dedicated_external_secret_volume() -> None:

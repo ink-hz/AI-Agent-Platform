@@ -14,6 +14,10 @@ Base commit: `a66c2ce`
   and gains fixed edge address `172.31.0.5` for DingTalk egress. It has no
   `ports` or `expose`, keeps the exact `172.30.0.6/32` trusted immediate proxy,
   and has Uvicorn proxy-header parsing disabled.
+- Both dual-network egress callers set `platform-edge.gw_priority: 1`; the
+  internal network retains Compose's default priority 0. This makes the edge
+  route the deterministic default gateway while retaining internal database
+  DNS and traffic.
 - The preview loopback has fixed internal address `172.30.0.6`, an explicit
   source bind back to the API, and the only added host binding is
   `127.0.0.1:8081:8080`. It overwrites upstream forwarding headers and uses
@@ -133,10 +137,13 @@ Additional RED:
   specifically proved that the API lacked `platform-edge`, the one-off runner
   and runner contract were absent, and edge address `172.31.0.5` was not in the
   merged static-address set.
+- Default-route determinism RED: `4 failed, 13 passed, 1 skipped`. The failures
+  proved that both the API and runner had equal implicit gateway priority 0.
 
 Final GREEN:
 
 - Network egress focused group: `16 passed, 1 skipped`.
+- Default-route determinism focused group: `17 passed, 1 skipped`.
 - Network egress related deployment/config group: `165 passed, 1 skipped`.
 - Full git-tracked backend suite after the egress repair: `1154 passed, 2 skipped`
   with 31 pre-existing Starlette/httpx deprecation warnings.
@@ -154,6 +161,8 @@ Final GREEN:
 - PyYAML overlay/base static merge: passed; three additive services, unique
   static IPs, API internal plus edge connectivity, and one loopback-only host
   port. Root services remain byte-for-byte equal after the static merge.
+- Target read-only validation with Docker Compose 2.40.3 and Docker 29 accepted
+  the merged configuration, preserved edge `gw_priority: 1`, and exited 0.
 - Non-root execution of the secret bootstrap: exit 1, empty stdout, stable
   redacted stderr.
 - `git diff --check`: passed.

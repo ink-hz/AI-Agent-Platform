@@ -94,6 +94,7 @@ services:
         ipv4_address: 172.30.0.5
       platform-edge:
         ipv4_address: 172.31.0.5
+        gw_priority: 1
     healthcheck:
       test: ["CMD", "python", "-c", "import json,urllib.request; value=json.load(urllib.request.urlopen('http://127.0.0.1:8080/_preview/dingtalk-r1/api/health',timeout=2)); assert value == {'status':'ok'}"]
       interval: 10s
@@ -118,7 +119,8 @@ services:
       - orbbec-agent-platform-demo-preview-secrets:/run/demo-preview-secrets:ro
     networks:
       platform-internal: {}
-      platform-edge: {}
+      platform-edge:
+        gw_priority: 1
 
   platform-loopback-demo-preview:
     image: ${PLATFORM_IMAGE}
