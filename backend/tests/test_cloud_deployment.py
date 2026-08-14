@@ -38,7 +38,7 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     }
     assert services["platform-postgres"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.2"
     assert services["platform-loopback"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.3"
-    assert "ipv4_address" not in services["platform-api"]["networks"]["platform-internal"]
+    assert services["platform-api"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.4"
     assert services["platform-api"]["read_only"] is True
     assert services["platform-api"]["cap_drop"] == ["ALL"]
     assert services["platform-api"]["security_opt"] == ["no-new-privileges:true"]

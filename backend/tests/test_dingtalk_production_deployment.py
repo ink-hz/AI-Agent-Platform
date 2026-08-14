@@ -35,7 +35,7 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     assert api["environment"]["PLATFORM_COOKIE_NAME"] == "__Host-platform_session"
     assert api["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.3/32"
     assert set(api["networks"]) == {"platform-internal", "platform-edge"}
-    assert "ipv4_address" not in api["networks"]["platform-internal"]
+    assert api["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.4"
     assert services["platform-postgres"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.2"
 
     directory = services["platform-directory"]

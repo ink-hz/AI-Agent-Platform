@@ -78,7 +78,8 @@ services:
     volumes:
       - platform-api-secrets:/run/secrets:ro
     networks:
-      platform-internal: {}
+      platform-internal:
+        ipv4_address: 172.30.0.4
       platform-edge:
         gw_priority: 1
     depends_on:
