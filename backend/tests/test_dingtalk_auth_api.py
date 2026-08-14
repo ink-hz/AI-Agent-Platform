@@ -367,7 +367,9 @@ def test_every_identity_response_prevents_browser_or_proxy_caching(
         assert response.headers.get("pragma") == "no-cache"
 
 
-def test_callback_error_is_generic_and_never_cacheable(tmp_path, monkeypatch) -> None:
+def test_callback_error_returns_to_login_and_never_exposes_provider_detail(
+    tmp_path, monkeypatch
+) -> None:
     from app.control_plane.auth import AuthenticationError
 
     auth = FakeAuth()
@@ -381,11 +383,28 @@ def test_callback_error_is_generic_and_never_cacheable(tmp_path, monkeypatch) ->
         follow_redirects=False,
     )
 
-    assert response.status_code == 401
-    assert response.json() == {"detail": "login attempt invalid"}
+    assert response.status_code == 302
+    assert response.headers["location"] == "/login?error=1"
     assert "secret-code" not in response.text
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["pragma"] == "no-cache"
+
+
+def test_duplicate_callback_with_valid_session_recovers_without_provider_exchange(
+    tmp_path, monkeypatch
+) -> None:
+    auth = FakeAuth()
+    response = TestClient(_app(tmp_path, monkeypatch, auth)).get(
+        "/api/v1/auth/dingtalk/callback?state=already-used&code=already-used",
+        cookies={auth.cookie_name: "valid-cookie"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/account"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert auth.provider_calls == 0
 
 
 def test_qr_and_in_client_login_set_rotated_cookie_and_return_csrf(tmp_path, monkeypatch) -> None:

@@ -268,6 +268,11 @@ def build_auth_router(
 
     @router.get("/api/v1/auth/dingtalk/callback")
     async def callback(request: Request, state: str, code: str):
+        token = request.cookies.get(auth.cookie_name)
+        if token and auth.authenticate(token) is not None:
+            return RedirectResponse(
+                _local_path(auth, "/account"), status_code=302, headers=_NO_STORE
+            )
         try:
             if getattr(auth, "rate_limiter", None) is None:
                 completed = await auth.complete_qr(state, code)
@@ -278,9 +283,12 @@ def build_auth_router(
             issued, return_path = _session_value(completed)
         except (RateLimitExceeded, RateLimitUnavailable) as error:
             _raise_rate_failure(error)
-        except AuthenticationError as error:
-            code_status = 401 if str(error) == "login attempt invalid" else 503
-            raise HTTPException(code_status, str(error)) from None
+        except AuthenticationError:
+            return RedirectResponse(
+                _local_path(auth, "/login") + "?error=1",
+                status_code=302,
+                headers=_NO_STORE,
+            )
         response = RedirectResponse(return_path or auth.route_prefix, status_code=302)
         _set_session_cookie(response, auth, issued)
         return response
