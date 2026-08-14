@@ -6,7 +6,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type PendingAdministratorState =
   | { kind: "none" }
-  | { kind: "pending"; operation: AdministratorMutation }
+  | { kind: "inflight_no_replay"; operation: AdministratorMutation }
+  | { kind: "pending_replay"; operation: AdministratorMutation }
   | { kind: "confirmed_needs_refresh"; operation: AdministratorMutation }
   | { kind: "integrity_failure" };
 
@@ -28,8 +29,13 @@ function integrityRecord(): string {
   return JSON.stringify({ version: 1, kind: "integrity_failure" });
 }
 
-export function storeAdministratorIntegrityFailure(ownerInternalUserId: string): void {
-  try { sessionStorage.setItem(storageKey(ownerInternalUserId), integrityRecord()); } catch { /* fail closed in memory */ }
+export function storeAdministratorIntegrityFailure(ownerInternalUserId: string): boolean {
+  try {
+    sessionStorage.setItem(storageKey(ownerInternalUserId), integrityRecord());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function loadPendingAdministrator(ownerInternalUserId: string): PendingAdministratorState {
@@ -43,7 +49,9 @@ export function loadPendingAdministrator(ownerInternalUserId: string): PendingAd
       return { kind: "integrity_failure" };
     }
     if (
-      (value.kind === "pending" || value.kind === "confirmed_needs_refresh")
+      (value.kind === "inflight_no_replay"
+        || value.kind === "pending_replay"
+        || value.kind === "confirmed_needs_refresh")
       && hasExactKeys(value, ["version", "kind", "target_internal_user_id", "action", "request_id"])
       && typeof value.target_internal_user_id === "string"
       && UUID.test(value.target_internal_user_id)
@@ -65,11 +73,18 @@ export function loadPendingAdministrator(ownerInternalUserId: string): PendingAd
   return { kind: "integrity_failure" };
 }
 
-export function storePendingAdministrator(
+export function storeInflightAdministrator(
   ownerInternalUserId: string,
   operation: AdministratorMutation,
 ): boolean {
-  return storeAdministratorOperation(ownerInternalUserId, "pending", operation);
+  return storeAdministratorOperation(ownerInternalUserId, "inflight_no_replay", operation);
+}
+
+export function storePendingAdministratorReplay(
+  ownerInternalUserId: string,
+  operation: AdministratorMutation,
+): boolean {
+  return storeAdministratorOperation(ownerInternalUserId, "pending_replay", operation);
 }
 
 export function storeConfirmedAdministratorRefresh(
@@ -83,7 +98,7 @@ export function storeConfirmedAdministratorRefresh(
 
 function storeAdministratorOperation(
   ownerInternalUserId: string,
-  kind: "pending" | "confirmed_needs_refresh",
+  kind: "inflight_no_replay" | "pending_replay" | "confirmed_needs_refresh",
   operation: AdministratorMutation,
 ): boolean {
   try {

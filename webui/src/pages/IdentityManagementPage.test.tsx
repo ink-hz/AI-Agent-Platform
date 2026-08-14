@@ -267,7 +267,7 @@ describe("IdentityManagementPage", () => {
     expect(container.querySelector("[role='status']")?.classList).toContain("is-error");
     expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toEqual({
       version: 1,
-      kind: "pending",
+      kind: "pending_replay",
       target_internal_user_id: memberId,
       action: "assign",
       request_id: requestId,
@@ -289,7 +289,7 @@ describe("IdentityManagementPage", () => {
     const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
     sessionStorage.setItem(pendingAdministratorStorageKey, JSON.stringify({
       version: 1,
-      kind: "pending",
+      kind: "pending_replay",
       target_internal_user_id: memberId,
       action: "assign",
       request_id: requestId,
@@ -326,17 +326,21 @@ describe("IdentityManagementPage", () => {
   it.each([
     ["malformed JSON", "{"],
     ["unknown shape", JSON.stringify({ version: 1, kind: "unexpected" })],
-    ["extra field", JSON.stringify({
+    ["legacy replayable kind", JSON.stringify({
       version: 1, kind: "pending", target_internal_user_id: memberId,
+      action: "assign", request_id: "47f493ac-e830-4fe7-9e7d-58b1dfcebd56",
+    })],
+    ["extra field", JSON.stringify({
+      version: 1, kind: "pending_replay", target_internal_user_id: memberId,
       action: "assign", request_id: "47f493ac-e830-4fe7-9e7d-58b1dfcebd56",
       csrf_token: "must-not-be-accepted",
     })],
     ["invalid request ID", JSON.stringify({
-      version: 1, kind: "pending", target_internal_user_id: memberId,
+      version: 1, kind: "pending_replay", target_internal_user_id: memberId,
       action: "assign", request_id: "not-a-uuid",
     })],
     ["invalid target ID", JSON.stringify({
-      version: 1, kind: "pending", target_internal_user_id: "not-a-uuid",
+      version: 1, kind: "pending_replay", target_internal_user_id: "not-a-uuid",
       action: "assign", request_id: "47f493ac-e830-4fe7-9e7d-58b1dfcebd56",
     })],
   ])("fails closed when persisted administrator state has %s", async (_scenario, value) => {
@@ -408,12 +412,271 @@ describe("IdentityManagementPage", () => {
     expect(stored).not.toContain(echoedRequestId);
   });
 
+  it("keeps a confirmed mutation non-replayable when durable replacement and cleanup fail", async () => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
+    let persisted: string | null = null;
+    vi.stubGlobal("sessionStorage", {
+      getItem: vi.fn(() => persisted),
+      setItem: vi.fn((_key: string, value: string) => {
+        if (persisted === null) {
+          persisted = value;
+          return;
+        }
+        throw new DOMException("storage unavailable");
+      }),
+      removeItem: vi.fn(() => { throw new DOMException("storage unavailable"); }),
+      clear: vi.fn(),
+    });
+    const assignedUsers = managedUsers.map((user) => user.internal_user_id === memberId
+      ? { ...user, role: "platform_admin" }
+      : user);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(new Response("{}", {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValue(usersResponse(assignedUsers));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
+      .find((button) => button.textContent === "设为平台管理员");
+    await act(async () => action?.click());
+
+    expect(JSON.parse(String(persisted))).toMatchObject({
+      version: 1, kind: "inflight_no_replay", request_id: requestId,
+    });
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+
+    expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(1);
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+    expect(JSON.parse(String(persisted))).toMatchObject({
+      version: 1, kind: "inflight_no_replay", request_id: requestId,
+    });
+  });
+
+  it("keeps a durable confirmed state non-replayable when cleanup fails", async () => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
+    let persisted: string | null = null;
+    vi.stubGlobal("sessionStorage", {
+      getItem: vi.fn(() => persisted),
+      setItem: vi.fn((_key: string, value: string) => { persisted = value; }),
+      removeItem: vi.fn(() => { throw new DOMException("storage unavailable"); }),
+      clear: vi.fn(),
+    });
+    const assignedUsers = managedUsers.map((user) => user.internal_user_id === memberId
+      ? { ...user, role: "platform_admin" }
+      : user);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(new Response("{}", {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValue(usersResponse(assignedUsers));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
+      .find((button) => button.textContent === "设为平台管理员");
+    await act(async () => action?.click());
+
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+    expect(JSON.parse(String(persisted))).toMatchObject({
+      version: 1, kind: "confirmed_needs_refresh", request_id: requestId,
+    });
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+
+    expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(1);
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+    expect(JSON.parse(String(persisted))).toMatchObject({
+      version: 1, kind: "confirmed_needs_refresh", request_id: requestId,
+    });
+  });
+
+  it("keeps an ID-mismatched mutation non-replayable when the integrity write fails", async () => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    const echoedRequestId = "cbabef76-43c2-49a5-ae88-ed225caca69c";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
+    let persisted: string | null = null;
+    vi.stubGlobal("sessionStorage", {
+      getItem: vi.fn(() => persisted),
+      setItem: vi.fn((_key: string, value: string) => {
+        if (persisted === null) {
+          persisted = value;
+          return;
+        }
+        throw new DOMException("storage unavailable");
+      }),
+      removeItem: vi.fn(() => { throw new DOMException("storage unavailable"); }),
+      clear: vi.fn(),
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(indeterminateResponse(echoedRequestId))
+      .mockResolvedValue(usersResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
+      .find((button) => button.textContent === "设为平台管理员");
+    await act(async () => action?.click());
+
+    expect(JSON.parse(String(persisted))).toMatchObject({
+      version: 1, kind: "inflight_no_replay", request_id: requestId,
+    });
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+
+    expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(1);
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+    expect(JSON.parse(String(persisted))).toMatchObject({
+      version: 1, kind: "inflight_no_replay", request_id: requestId,
+    });
+  });
+
+  it("does not expose replay when the uncertainty transition cannot be persisted", async () => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
+    let persisted: string | null = null;
+    vi.stubGlobal("sessionStorage", {
+      getItem: vi.fn(() => persisted),
+      setItem: vi.fn((_key: string, value: string) => {
+        if (persisted === null) {
+          persisted = value;
+          return;
+        }
+        throw new DOMException("storage unavailable");
+      }),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(usersResponse())
+      .mockRejectedValueOnce(new TypeError("network connection lost"))
+      .mockResolvedValueOnce(usersResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
+      .find((button) => button.textContent === "设为平台管理员");
+    await act(async () => action?.click());
+
+    expect(container.textContent).toContain("操作保持不可重放");
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+    expect(JSON.parse(String(persisted))).toMatchObject({
+      version: 1, kind: "inflight_no_replay", request_id: requestId,
+    });
+    expect([...container.querySelectorAll("button")]
+      .filter((button) => button.textContent?.includes("平台管理员"))
+      .every((button) => button.hasAttribute("disabled"))).toBe(true);
+  });
+
+  it("reconciles a reloaded in-flight mutation read-only and never replays it", async () => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    sessionStorage.setItem(pendingAdministratorStorageKey, JSON.stringify({
+      version: 1,
+      kind: "inflight_no_replay",
+      target_internal_user_id: memberId,
+      action: "assign",
+      request_id: requestId,
+    }));
+    const assignedUsers = managedUsers.map((user) => user.internal_user_id === memberId
+      ? { ...user, role: "platform_admin" }
+      : user);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(usersResponse(assignedUsers));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+    expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(0);
+    expect([...container.querySelectorAll("button")]
+      .filter((button) => button.textContent?.includes("平台管理员"))
+      .every((button) => button.hasAttribute("disabled"))).toBe(true);
+    const refresh = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "刷新当前角色");
+    await act(async () => refresh?.click());
+
+    expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(0);
+    expect(sessionStorage.getItem(pendingAdministratorStorageKey)).toBeNull();
+    expect(container.textContent).toContain("变更已确认，当前角色已刷新。");
+  });
+
+  it("does not make an unclassified client failure replayable", async () => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(usersResponse())
+      .mockRejectedValueOnce(new Error("unexpected client failure"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
+      .find((button) => button.textContent === "设为平台管理员");
+    await act(async () => action?.click());
+
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+    expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toMatchObject({
+      version: 1, kind: "inflight_no_replay", request_id: requestId,
+    });
+  });
+
+  it("keeps terminal cleanup failure blocked in the non-replayable state", async () => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
+    let persisted: string | null = null;
+    vi.stubGlobal("sessionStorage", {
+      getItem: vi.fn(() => persisted),
+      setItem: vi.fn((_key: string, value: string) => { persisted = value; }),
+      removeItem: vi.fn(() => { throw new DOMException("storage unavailable"); }),
+      clear: vi.fn(),
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: "forbidden" }), {
+        status: 403, headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValue(usersResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
+      .find((button) => button.textContent === "设为平台管理员");
+    await act(async () => action?.click());
+
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+    expect(JSON.parse(String(persisted))).toMatchObject({
+      version: 1, kind: "inflight_no_replay", request_id: requestId,
+    });
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+
+    expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(1);
+    expect(container.textContent).not.toContain("使用同一请求重试确认");
+  });
+
   it("fails closed on a mismatched request ID echoed during restored replay", async () => {
     const clientRequestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
     const echoedRequestId = "cbabef76-43c2-49a5-ae88-ed225caca69c";
     sessionStorage.setItem(pendingAdministratorStorageKey, JSON.stringify({
       version: 1,
-      kind: "pending",
+      kind: "pending_replay",
       target_internal_user_id: memberId,
       action: "assign",
       request_id: clientRequestId,
@@ -442,7 +705,7 @@ describe("IdentityManagementPage", () => {
     const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
     const persisted = JSON.stringify({
       version: 1,
-      kind: "pending",
+      kind: "pending_replay",
       target_internal_user_id: memberId,
       action: "assign",
       request_id: requestId,
@@ -508,7 +771,7 @@ describe("IdentityManagementPage", () => {
     expect(container.textContent).not.toContain("未执行任何变更");
     expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toEqual({
       version: 1,
-      kind: "pending",
+      kind: "pending_replay",
       target_internal_user_id: memberId,
       action: "assign",
       request_id: requestId,

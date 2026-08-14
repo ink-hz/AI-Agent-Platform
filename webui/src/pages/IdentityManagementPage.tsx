@@ -19,7 +19,8 @@ import {
   loadPendingAdministrator,
   storeAdministratorIntegrityFailure,
   storeConfirmedAdministratorRefresh,
-  storePendingAdministrator,
+  storeInflightAdministrator,
+  storePendingAdministratorReplay,
   type PendingAdministratorState,
 } from "../pendingAdministrator";
 
@@ -49,6 +50,13 @@ function provesAdministratorMutationNotApplied(error: unknown): boolean {
 }
 
 
+function leavesAdministratorMutationOutcomeUncertain(error: unknown): boolean {
+  return error instanceof ManagementMutationIndeterminate
+    || error instanceof TypeError
+    || (error instanceof PlatformApiError && error.status >= 500);
+}
+
+
 export function IdentityManagementPage({ account }: { account: Account }) {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [reason, setReason] = useState("");
@@ -59,7 +67,10 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       ? loadPendingAdministrator(account.internal_user_id)
       : { kind: "none" }
   ));
-  const pendingAdministrator = pendingAdministratorState.kind === "pending"
+  const pendingAdministrator = pendingAdministratorState.kind === "pending_replay"
+    ? pendingAdministratorState.operation
+    : null;
+  const inflightAdministrator = pendingAdministratorState.kind === "inflight_no_replay"
     ? pendingAdministratorState.operation
     : null;
   const confirmedAdministrator = pendingAdministratorState.kind === "confirmed_needs_refresh"
@@ -75,11 +86,21 @@ export function IdentityManagementPage({ account }: { account: Account }) {
   const load = async () => {
     try {
       const refreshed = await refreshUsers();
-      if (pendingAdministratorState.kind === "pending") {
+      if (pendingAdministratorState.kind === "pending_replay") {
         setMessage("管理员变更结果仍未知；已刷新当前角色，请使用同一请求重试确认。");
+      } else if (pendingAdministratorState.kind === "inflight_no_replay") {
+        if (matchesAdministratorOutcome(refreshed, pendingAdministratorState.operation)) {
+          if (clearAdministratorState(pendingAdministratorState)) {
+            setMessage("变更已确认，当前角色已刷新。");
+          } else {
+            setMessage("管理员变更无法安全重放，且本地锁定状态无法清除；请手动核查。");
+          }
+        } else {
+          setMessage("管理员变更可能已提交但无法安全重放；已刷新当前角色，请手动核查。");
+        }
       } else if (pendingAdministratorState.kind === "confirmed_needs_refresh") {
         if (matchesAdministratorOutcome(refreshed, pendingAdministratorState.operation)) {
-          if (clearAdministratorState()) {
+          if (clearAdministratorState(pendingAdministratorState)) {
             setMessage("变更已确认，当前角色已刷新。");
           } else {
             setMessage("管理员变更已由服务端确认，但本地待处理状态无法清除；请手动核查。");
@@ -91,8 +112,10 @@ export function IdentityManagementPage({ account }: { account: Account }) {
         setMessage("无法验证待处理的管理员操作；已停止新的管理员变更，请手动核查。");
       }
     } catch (error) {
-      if (pendingAdministratorState.kind === "pending") {
+      if (pendingAdministratorState.kind === "pending_replay") {
         setMessage("管理员变更结果仍未知；当前角色刷新失败，请使用同一请求重试确认。");
+      } else if (pendingAdministratorState.kind === "inflight_no_replay") {
+        setMessage("管理员变更可能已提交但无法安全重放；当前角色刷新失败，请手动核查。");
       } else if (pendingAdministratorState.kind === "confirmed_needs_refresh") {
         setMessage("管理员变更已由服务端确认，但当前角色刷新失败。");
       } else if (pendingAdministratorState.kind === "integrity_failure") {
@@ -139,32 +162,44 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       return false;
     }
   };
-  const retainPendingAdministrator = (operation: AdministratorMutation) => {
-    if (!storePendingAdministrator(account.internal_user_id, operation)) {
-      setPendingAdministratorState({ kind: "integrity_failure" });
-      setMessage("无法保存待处理的管理员操作；已停止新的管理员变更，请手动核查。");
-      return false;
-    }
-    setPendingAdministratorState({ kind: "pending", operation });
-    return true;
-  };
-  const clearAdministratorState = () => {
+  const clearAdministratorState = (retainedState: PendingAdministratorState) => {
     if (!clearPendingAdministrator(account.internal_user_id)) {
-      storeAdministratorIntegrityFailure(account.internal_user_id);
-      setPendingAdministratorState({ kind: "integrity_failure" });
+      setPendingAdministratorState(retainedState);
       return false;
     }
     setPendingAdministratorState({ kind: "none" });
     return true;
   };
-  const failAdministratorIntegrity = (message: string) => {
-    storeAdministratorIntegrityFailure(account.internal_user_id);
-    setPendingAdministratorState({ kind: "integrity_failure" });
+  const beginInflightAdministrator = (operation: AdministratorMutation) => {
+    if (!storeInflightAdministrator(account.internal_user_id, operation)) {
+      setPendingAdministratorState({ kind: "integrity_failure" });
+      setMessage("无法保存待处理的管理员操作；已停止新的管理员变更，请手动核查。");
+      return false;
+    }
+    setPendingAdministratorState({ kind: "inflight_no_replay", operation });
+    return true;
+  };
+  const retainPendingAdministratorReplay = (operation: AdministratorMutation) => {
+    if (!storePendingAdministratorReplay(account.internal_user_id, operation)) {
+      setPendingAdministratorState({ kind: "inflight_no_replay", operation });
+      setMessage("无法保存可重试的管理员操作；操作保持不可重放，请手动核查。");
+      return false;
+    }
+    setPendingAdministratorState({ kind: "pending_replay", operation });
+    return true;
+  };
+  const failAdministratorIntegrity = (operation: AdministratorMutation, message: string) => {
+    if (storeAdministratorIntegrityFailure(account.internal_user_id)) {
+      setPendingAdministratorState({ kind: "integrity_failure" });
+    } else {
+      setPendingAdministratorState({ kind: "inflight_no_replay", operation });
+    }
     setMessage(message);
   };
   const retainConfirmedAdministrator = (operation: AdministratorMutation) => {
     if (!storeConfirmedAdministratorRefresh(account.internal_user_id, operation)) {
-      failAdministratorIntegrity("管理员变更已由服务端确认，但本地待处理状态无法保存；请手动核查。");
+      setPendingAdministratorState({ kind: "inflight_no_replay", operation });
+      setMessage("管理员变更已由服务端确认，但本地确认状态无法保存；操作保持不可重放，请手动核查。");
       return false;
     }
     setPendingAdministratorState({ kind: "confirmed_needs_refresh", operation });
@@ -181,7 +216,7 @@ export function IdentityManagementPage({ account }: { account: Account }) {
         setMessage("管理员变更已由服务端确认，但刷新后的角色与预期不一致；请手动核查。");
         return;
       }
-      if (!clearAdministratorState()) {
+      if (!clearAdministratorState({ kind: "confirmed_needs_refresh", operation })) {
         setMessage("管理员变更已由服务端确认，但本地待处理状态无法清除；请手动核查。");
         return;
       }
@@ -192,62 +227,61 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       setMessage("管理员变更已由服务端确认，但当前角色刷新失败。");
     }
   };
-  const replayAdministrator = async (operation: AdministratorMutation) => {
+  async function dispatchInflightAdministrator(
+    operation: AdministratorMutation,
+    reconciled: boolean,
+    replayMatchingIndeterminate: boolean,
+  ) {
     try {
       await changeAdministrator(account, operation);
     } catch (error) {
-      const refreshed = await refreshUnknownAdministrator();
       if (
         error instanceof ManagementMutationIndeterminate
         && error.requestId !== operation.requestId
       ) {
-        failAdministratorIntegrity("管理员变更响应校验失败；已停止新的管理员变更，请手动核查。");
+        failAdministratorIntegrity(
+          operation,
+          "管理员变更响应校验失败；已停止新的管理员变更，请手动核查。",
+        );
         return;
       }
       if (provesAdministratorMutationNotApplied(error)) {
-        clearAdministratorState();
-        setMessage(failureMessage(error));
+        if (clearAdministratorState({ kind: "inflight_no_replay", operation })) {
+          setMessage(failureMessage(error));
+        } else {
+          setMessage("服务端确认未执行管理员变更，但本地锁定状态无法清除；请手动核查。");
+        }
         return;
       }
-      if (!retainPendingAdministrator(operation)) return;
+      if (!leavesAdministratorMutationOutcomeUncertain(error)) {
+        setPendingAdministratorState({ kind: "inflight_no_replay", operation });
+        setMessage("管理员变更遇到无法分类的客户端错误；操作保持不可重放，请手动核查。");
+        return;
+      }
+      const refreshed = await refreshUnknownAdministrator();
+      if (!retainPendingAdministratorReplay(operation)) return;
+      if (error instanceof ManagementMutationIndeterminate && replayMatchingIndeterminate) {
+        await replayAdministrator(operation);
+        return;
+      }
       setMessage(unknownAdministratorMessage(refreshed));
       return;
     }
-    await finishConfirmedAdministrator(operation, true);
-  };
+    await finishConfirmedAdministrator(operation, reconciled);
+  }
+  async function replayAdministrator(operation: AdministratorMutation) {
+    if (!beginInflightAdministrator(operation)) return;
+    await dispatchInflightAdministrator(operation, true, false);
+  }
   const mutateAdministrator = async (user: ManagedUser, revoke: boolean) => {
     const operation = createAdministratorMutation(user, revoke);
     setBusy(true);
     setMessage("");
-    if (!retainPendingAdministrator(operation)) {
+    if (!beginInflightAdministrator(operation)) {
       setBusy(false);
       return;
     }
-    try {
-      await changeAdministrator(account, operation);
-    } catch (error) {
-      if (error instanceof ManagementMutationIndeterminate) {
-        await refreshUnknownAdministrator();
-        if (error.requestId === operation.requestId) {
-          await replayAdministrator(operation);
-        } else {
-          failAdministratorIntegrity("管理员变更响应校验失败；已停止新的管理员变更，请手动核查。");
-        }
-      } else if (provesAdministratorMutationNotApplied(error)) {
-        clearAdministratorState();
-        setMessage(failureMessage(error));
-      } else {
-        const refreshed = await refreshUnknownAdministrator();
-        if (!retainPendingAdministrator(operation)) {
-          setBusy(false);
-          return;
-        }
-        setMessage(unknownAdministratorMessage(refreshed));
-      }
-      setBusy(false);
-      return;
-    }
-    await finishConfirmedAdministrator(operation, false);
+    await dispatchInflightAdministrator(operation, false, true);
     setBusy(false);
   };
   const retryAdministrator = async () => {
@@ -256,20 +290,30 @@ export function IdentityManagementPage({ account }: { account: Account }) {
     setMessage("");
     try { await replayAdministrator(pendingAdministrator); } finally { setBusy(false); }
   };
-  const refreshConfirmedAdministrator = async () => {
-    if (!confirmedAdministrator) return;
+  const refreshNonReplayAdministrator = async () => {
+    const operation = confirmedAdministrator || inflightAdministrator;
+    if (!operation) return;
+    const retainedState: PendingAdministratorState = confirmedAdministrator
+      ? { kind: "confirmed_needs_refresh", operation }
+      : { kind: "inflight_no_replay", operation };
     setBusy(true);
     try {
       const refreshed = await refreshUsers();
-      if (!matchesAdministratorOutcome(refreshed, confirmedAdministrator)) {
-        setMessage("管理员变更已由服务端确认，但刷新后的角色与预期不一致；请手动核查。");
-      } else if (clearAdministratorState()) {
+      if (!matchesAdministratorOutcome(refreshed, operation)) {
+        setMessage(confirmedAdministrator
+          ? "管理员变更已由服务端确认，但刷新后的角色与预期不一致；请手动核查。"
+          : "管理员变更可能已提交但无法安全重放；已刷新当前角色，请手动核查。");
+      } else if (clearAdministratorState(retainedState)) {
         setMessage("变更已确认，当前角色已刷新。");
       } else {
-        setMessage("管理员变更已由服务端确认，但本地待处理状态无法清除；请手动核查。");
+        setMessage(confirmedAdministrator
+          ? "管理员变更已由服务端确认，但本地待处理状态无法清除；请手动核查。"
+          : "管理员变更无法安全重放，且本地锁定状态无法清除；请手动核查。");
       }
     } catch {
-      setMessage("管理员变更已由服务端确认，但当前角色刷新失败。");
+      setMessage(confirmedAdministrator
+        ? "管理员变更已由服务端确认，但当前角色刷新失败。"
+        : "管理员变更可能已提交但无法安全重放；当前角色刷新失败，请手动核查。");
     } finally { setBusy(false); }
   };
   const mutateScope = async (user: ManagedUser, agentId: string, revoke = false) => {
@@ -296,7 +340,7 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       {pendingAdministrator && <button type="button" disabled={busy} onClick={() => void retryAdministrator()}>
         使用同一请求重试确认
       </button>}
-      {confirmedAdministrator && <button type="button" disabled={busy} onClick={() => void refreshConfirmedAdministrator()}>
+      {(confirmedAdministrator || inflightAdministrator) && <button type="button" disabled={busy} onClick={() => void refreshNonReplayAdministrator()}>
         刷新当前角色
       </button>}
       <div className="identity-users">
