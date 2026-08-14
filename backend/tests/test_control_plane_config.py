@@ -99,6 +99,7 @@ def test_control_plane_models_are_explicit_and_immutable() -> None:
     assert tuple(Role) == (
         Role.MEMBER,
         Role.MANAGEMENT_VIEWER,
+        Role.PLATFORM_ADMIN,
         Role.PLATFORM_OWNER,
     )
     assert tuple(IdentityMode) == (

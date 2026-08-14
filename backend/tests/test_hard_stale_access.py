@@ -75,7 +75,10 @@ def test_fresh_and_warning_allow_bound_active_users_without_read_only(
     )
 
 
-@pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.MANAGEMENT_VIEWER])
+@pytest.mark.parametrize(
+    "role",
+    [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.MANAGEMENT_VIEWER],
+)
 def test_hard_stale_allows_only_previously_bound_privileged_users_read_only(
     role: Role,
 ) -> None:
@@ -109,7 +112,10 @@ def test_unbound_identity_is_rejected_even_before_hard_stale(role: Role) -> None
     assert decision == StaleAccessDecision(False, True, "unbound_identity")
 
 
-@pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.MANAGEMENT_VIEWER])
+@pytest.mark.parametrize(
+    "role",
+    [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.MANAGEMENT_VIEWER],
+)
 @pytest.mark.parametrize(
     "status,invalidated",
     [
@@ -142,7 +148,9 @@ def test_missing_complete_generation_rejects_every_identity() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.postgres
-@pytest.mark.parametrize("role", ["platform_owner", "management_viewer"])
+@pytest.mark.parametrize(
+    "role", ["platform_owner", "platform_admin", "management_viewer"]
+)
 async def test_existing_privileged_identity_can_resolve_read_only_when_hard_stale(
     control_database,
     tmp_path,
@@ -383,6 +391,7 @@ def test_hard_stale_management_read_adds_required_access_audit(
     [
         ("member", False, None),
         ("platform_owner", True, True),
+        ("platform_admin", True, True),
         ("management_viewer", True, True),
     ],
 )

@@ -480,6 +480,28 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
     assert client.get("/api/v1/account", cookies=cookies).status_code == 401
 
 
+def test_account_serializes_platform_admin_role(tmp_path, monkeypatch) -> None:
+    auth = FakeAuth()
+    auth.context = AuthContext(
+        auth.context.internal_user_id,
+        Role.PLATFORM_ADMIN,
+        auth.context.session_id,
+        False,
+    )
+    response = TestClient(_app(tmp_path, monkeypatch, auth)).get(
+        "/api/v1/account",
+        cookies={auth.cookie_name: "valid-cookie"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["role"] == "platform_admin"
+
+
+def test_unknown_stored_role_fails_closed() -> None:
+    with pytest.raises(ValueError):
+        Role("unknown_stored_role")
+
+
 @pytest.mark.parametrize("method", ["post", "put", "patch", "delete"])
 def test_every_authenticated_mutation_uses_origin_and_csrf(
     tmp_path, monkeypatch, method

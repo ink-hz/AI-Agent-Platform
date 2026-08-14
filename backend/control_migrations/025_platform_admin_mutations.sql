@@ -7,6 +7,199 @@ alter table platform_control.management_mutations
     'bind_owner', 'replace_owner'
   ));
 
+create or replace function platform_control.consume_attempt_and_issue_session_v22(
+  selected_attempt_id uuid,
+  selected_internal_user_id uuid,
+  selected_session_id uuid,
+  selected_token_hash bytea,
+  selected_token_key_version integer,
+  selected_csrf_hash bytea,
+  selected_csrf_key_version integer,
+  selected_idle_seconds integer,
+  selected_absolute_seconds integer,
+  selected_hard_stale_read_only boolean
+) returns table(
+  session_id uuid,
+  idle_expires_at timestamptz,
+  absolute_expires_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_control
+as $function$
+declare
+  database_now timestamptz := clock_timestamp();
+  selected_role platform_control.user_role;
+  selected_last_complete_at timestamptz;
+  actual_hard_stale boolean;
+begin
+  if selected_hard_stale_read_only is null then return; end if;
+  perform platform_control.lock_dingtalk_identity_directory();
+  select users.role,state.last_complete_at
+    into selected_role,selected_last_complete_at
+    from platform_control.internal_users users
+    join platform_control.directory_state state on state.singleton
+    where users.internal_user_id=selected_internal_user_id
+      and users.status='active'
+      and users.locally_invalidated_at is null;
+  if selected_last_complete_at is null then return; end if;
+  actual_hard_stale := (
+    selected_last_complete_at <= database_now - interval '24 hours'
+  );
+  if selected_hard_stale_read_only <> actual_hard_stale
+     or (
+       actual_hard_stale
+       and selected_role not in (
+         'platform_owner','platform_admin','management_viewer'
+       )
+     )
+  then return; end if;
+
+  return query
+    select issued.session_id,issued.idle_expires_at,issued.absolute_expires_at
+    from platform_control.consume_attempt_and_issue_session(
+      selected_attempt_id,selected_internal_user_id,selected_session_id,
+      selected_token_hash,selected_token_key_version,selected_csrf_hash,
+      selected_csrf_key_version,selected_idle_seconds,selected_absolute_seconds
+    ) issued;
+  if found then
+    update platform_control.web_sessions session
+      set hard_stale_read_only=actual_hard_stale
+      where session.session_id=selected_session_id;
+  end if;
+end
+$function$;
+
+create or replace function platform_control.authenticate_web_session_v22(
+  selected_token_hash bytea,
+  selected_token_key_version integer,
+  selected_idle_seconds integer
+) returns table(
+  session_id uuid,
+  internal_user_id uuid,
+  role text,
+  hard_stale_read_only boolean,
+  csrf_hash bytea,
+  csrf_hash_key_version integer
+)
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_control
+as $function$
+declare
+  database_now timestamptz := clock_timestamp();
+begin
+  if octet_length(selected_token_hash) <> 32
+     or selected_token_key_version is null
+     or selected_token_key_version <= 0
+     or selected_idle_seconds <> 28800
+  then return; end if;
+  perform platform_control.lock_dingtalk_identity_directory();
+  return query
+  update platform_control.web_sessions session
+    set last_seen_at=database_now,
+        idle_expires_at=least(
+          database_now + interval '28800 seconds',session.absolute_expires_at
+        ),
+        hard_stale_read_only=(
+          state.last_complete_at <= database_now - interval '24 hours'
+        )
+  from platform_control.internal_users users,
+       platform_control.directory_state state,
+       platform_control.directory_generations generation,
+       platform_control.directory_members member
+  where session.token_hash=selected_token_hash
+    and session.token_hash_key_version=selected_token_key_version
+    and session.revoked_at is null
+    and session.idle_expires_at > database_now
+    and session.absolute_expires_at > database_now
+    and users.internal_user_id=session.internal_user_id
+    and users.status='active'
+    and users.locally_invalidated_at is null
+    and state.singleton
+    and state.last_complete_at is not null
+    and generation.generation_id=state.active_generation_id
+    and generation.status='complete'
+    and users.last_confirmed_generation_id=generation.generation_id
+    and member.generation_id=generation.generation_id
+    and member.internal_user_id=users.internal_user_id
+    and member.status='active'
+    and (
+      state.last_complete_at > database_now - interval '24 hours'
+      or users.role in (
+        'platform_owner','platform_admin','management_viewer'
+      )
+    )
+  returning session.session_id,session.internal_user_id,users.role::text,
+    session.hard_stale_read_only,session.csrf_hash,
+    session.csrf_hash_key_version;
+end
+$function$;
+
+create or replace function platform_control.append_hard_stale_access_v22(
+  selected_event_id uuid,
+  selected_actor_id uuid,
+  selected_access_kind text,
+  selected_target text,
+  selected_request_id uuid
+) returns uuid
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_control
+as $function$
+declare selected_last_complete_at timestamptz;
+begin
+  if selected_access_kind not in ('login','read')
+     or selected_target not in (
+       'self','management_user_directory','governance_audit',
+       'management_projection'
+     )
+     or (selected_access_kind='login' and selected_target <> 'self')
+     or (selected_access_kind='read' and selected_target = 'self')
+  then raise check_violation using message='hard stale audit invalid'; end if;
+  select state.last_complete_at into selected_last_complete_at
+  from platform_control.directory_state state
+  join platform_control.directory_generations generation
+    on generation.generation_id=state.active_generation_id
+   and generation.status='complete'
+  join platform_control.internal_users users
+    on users.internal_user_id=selected_actor_id
+   and users.status='active'
+   and users.locally_invalidated_at is null
+   and users.role in (
+     'platform_owner','platform_admin','management_viewer'
+   )
+   and users.last_confirmed_generation_id=generation.generation_id
+  join platform_control.directory_members member
+    on member.generation_id=generation.generation_id
+   and member.internal_user_id=users.internal_user_id
+   and member.status='active'
+  where state.singleton
+    and state.last_complete_at <= clock_timestamp()-interval '24 hours';
+  if not found then
+    raise check_violation using message='hard stale audit rejected';
+  end if;
+  insert into platform_control.audit_events(
+    audit_event_id,actor_internal_user_id,event_type,target_type,
+    target_internal_id,request_id,result,reason_code,sanitized_before_after
+  ) values (
+    selected_event_id,selected_actor_id,
+    case selected_access_kind when 'login'
+      then 'hard_stale_privileged_login_completed'
+      else 'hard_stale_privileged_read_completed' end,
+    case selected_access_kind when 'login'
+      then 'platform_authentication' else 'platform_management' end,
+    selected_target,selected_request_id,'completed',
+    'privileged_last_generation',
+    jsonb_build_object(
+      'freshness_reason','hard_stale',
+      'last_complete_at',selected_last_complete_at
+    )
+  );
+  return selected_event_id;
+end
+$function$;
+
 create or replace function platform_control.require_management_actor(actor_id uuid)
 returns void
 language plpgsql

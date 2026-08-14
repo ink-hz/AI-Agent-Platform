@@ -37,7 +37,11 @@ def decide_stale_access(
     ):
         return StaleAccessDecision(False, True, "unbound_identity")
     if directory.freshness is DirectoryFreshness.HARD_STALE:
-        if user.role in {Role.PLATFORM_OWNER, Role.MANAGEMENT_VIEWER}:
+        if user.role in {
+            Role.PLATFORM_OWNER,
+            Role.PLATFORM_ADMIN,
+            Role.MANAGEMENT_VIEWER,
+        }:
             if not user.last_confirmed_active:
                 return StaleAccessDecision(False, True, "unbound_identity")
             return StaleAccessDecision(

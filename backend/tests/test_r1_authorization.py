@@ -19,9 +19,11 @@ from test_control_plane_migration import control_database
 
 
 OWNER = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+ADMIN = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), False)
 VIEWER = AuthContext(uuid4(), Role.MANAGEMENT_VIEWER, uuid4(), False)
 MEMBER = AuthContext(uuid4(), Role.MEMBER, uuid4(), False)
 STALE_OWNER = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), True)
+STALE_ADMIN = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), True)
 
 
 class Grants:
@@ -90,6 +92,26 @@ def test_hard_stale_owner_is_read_only_and_cloud_review_mutations_are_disabled()
     assert service.decide(
         OWNER, "POST", "/api/review/issues", ()
     ).status_code == 403
+
+
+def test_platform_admin_uses_owner_routes_after_fail_closed_gates():
+    service = AuthorizationService(Grants(), cloud_mode=True)
+
+    assert service.decide(
+        ADMIN, "GET", "/api/sessions/{session_key}", ()
+    ).allowed is True
+    assert service.decide(
+        ADMIN, "GET", "/api/future/unknown", ()
+    ).status_code == 403
+    assert service.decide(
+        ADMIN, "POST", "/api/review/issues", ()
+    ).status_code == 403
+    assert service.decide(
+        STALE_ADMIN,
+        "POST",
+        "/api/v1/manage/viewers/{internal_user_id}",
+        (),
+    ).status_code == 503
 
 
 def test_governance_read_is_the_only_viewer_route_without_agent_scope():

@@ -8,6 +8,7 @@ from uuid import UUID
 class Role(StrEnum):
     MEMBER = "member"
     MANAGEMENT_VIEWER = "management_viewer"
+    PLATFORM_ADMIN = "platform_admin"
     PLATFORM_OWNER = "platform_owner"
 
 
