@@ -31,7 +31,10 @@ def test_forced_import_rejects_commands_and_prints_bounded_acknowledgement():
     script = FORCED.read_text(encoding="utf-8")
 
     assert "SSH_ORIGINAL_COMMAND" in script
-    assert "run --rm --no-deps -T" in script
+    assert "docker run --rm" in script
+    assert "--network orbbec-agent-platform-internal" in script
+    assert "{{.Config.Image}}" in script
+    assert "run --rm --no-deps -T" not in script
     assert "orbbec-agent-platform-import-secrets:/run/import-secrets:ro" in script
     assert "PLATFORM_REPLICA_ENCRYPTION_KEY_FILE=/run/import-secrets/replica-encryption-key" in script
     assert "PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE=/run/import-secrets/replica-signing-public-key" in script

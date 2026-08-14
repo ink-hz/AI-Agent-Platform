@@ -17,16 +17,25 @@ if [[ ! -f "$compose_file" || ! -f "$environment_file" || -L "$environment_file"
   fail
 fi
 
+compose=(/usr/bin/docker compose --env-file "$environment_file" -f "$compose_file")
+api_container="$("${compose[@]}" ps -q platform-api)"
+[[ -n "$api_container" ]] || fail
+image_name="$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$api_container")"
+[[ "$image_name" == orbbec-agent-platform:* ]] || fail
+
 if ! result="$(
-  /usr/bin/docker compose \
-    --env-file "$environment_file" \
-    -f "$compose_file" \
-    run --rm --no-deps -T \
+  /usr/bin/docker run --rm \
+    --user 10001:10001 \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges:true \
+    --network orbbec-agent-platform-internal \
+    --tmpfs /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700 \
     -v orbbec-agent-platform-import-secrets:/run/import-secrets:ro \
     -e PLATFORM_REPLICA_DATABASE_URL_FILE=/run/import-secrets/replica-database-url \
     -e PLATFORM_REPLICA_ENCRYPTION_KEY_FILE=/run/import-secrets/replica-encryption-key \
     -e PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE=/run/import-secrets/replica-signing-public-key \
-    platform-api \
+    "$image_name" \
     python -m app.cloud_replica.cli import
 )"; then
   fail
