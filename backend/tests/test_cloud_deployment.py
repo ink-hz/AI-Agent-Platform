@@ -36,8 +36,9 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert set(services["platform-loopback"]["networks"]) == {
         "platform-edge", "platform-internal"
     }
+    assert services["platform-postgres"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.2"
     assert services["platform-loopback"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.3"
-    assert services["platform-api"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.4"
+    assert "ipv4_address" not in services["platform-api"]["networks"]["platform-internal"]
     assert services["platform-api"]["read_only"] is True
     assert services["platform-api"]["cap_drop"] == ["ALL"]
     assert services["platform-api"]["security_opt"] == ["no-new-privileges:true"]
@@ -118,6 +119,8 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
         "[::]:8080",
         "CLOUD_PLATFORM_DEPLOY_OK release=",
         "mode=dingtalk",
+        'up -d --force-recreate platform-postgres',
+        'docker rm -f "$container_id"',
         "platform-loopback",
     ):
         assert evidence in script

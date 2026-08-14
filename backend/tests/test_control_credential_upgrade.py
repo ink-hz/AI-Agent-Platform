@@ -320,10 +320,8 @@ def test_remote_acceptance_requires_exact_marker_and_consumer_recreation() -> No
         'if [[ "${#previous_control_consumers[@]}" -gt 0 ]]; then'
         in stage
     )
-    assert (
-        'up -d --force-recreate "${previous_control_consumers[@]}"'
-        in stage
-    )
+    assert 'docker rm -f "$container_id"' in stage
+    assert 'up -d --force-recreate "${previous_control_consumers[@]}"' in stage
     rollback = stage.index("rollback() {")
     stop = stage.index('stop "${previous_control_consumers[@]}"')
     assert rollback < stage.index(

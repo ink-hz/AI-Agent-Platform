@@ -96,9 +96,14 @@ rollback() {
         fi
       done
       if [[ "${#candidate_to_stop[@]}" -gt 0 ]]; then
-        /usr/bin/docker compose --env-file "$environment_path" \
-          -f "$release_path/deploy/cloud/compose.yaml" \
-          stop "${candidate_to_stop[@]}" >/dev/null 2>&1 || true
+        for service_name in "${candidate_to_stop[@]}"; do
+          container_id="$(/usr/bin/docker compose --env-file "$environment_path" \
+            -f "$release_path/deploy/cloud/compose.yaml" \
+            ps -a -q "$service_name" 2>/dev/null || true)"
+          if [[ -n "$container_id" ]]; then
+            /usr/bin/docker rm -f "$container_id" >/dev/null 2>&1 || true
+          fi
+        done
       fi
     fi
     if [[ -n "$previous_release" && -f "$previous_environment" ]]; then
@@ -209,7 +214,7 @@ fi
 /bin/chmod 600 "$environment_path"
 unset PLATFORM_CLOUD_AUTH_MODE
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$release_path/deploy/cloud/compose.yaml")
-"${compose[@]}" up -d platform-postgres >/dev/null
+"${compose[@]}" up -d --force-recreate platform-postgres >/dev/null
 for _attempt in $(/usr/bin/seq 1 40); do
   postgres_id="$("${compose[@]}" ps -q platform-postgres)"
   [[ -n "$postgres_id" ]] || { /bin/sleep 1; continue; }
