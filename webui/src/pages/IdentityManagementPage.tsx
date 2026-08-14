@@ -250,7 +250,7 @@ export function IdentityManagementPage({ account }: { account: Account }) {
           <div><strong>{user.display_name}</strong><span>{user.status === "active" ? "在职" : "不可用"}</span></div>
           <p>{user.role === "management_viewer" ? "只读观察者" : user.role === "platform_admin" ? "平台管理员" : user.role === "platform_owner" ? "平台所有者" : "企业成员"}</p>
           <small>{user.scopes.length ? `范围：${user.scopes.join("、")}` : "未授予 Agent 观察范围"}</small>
-          {account.role === "platform_owner" && (user.role === "member" || user.role === "platform_admin") && <button type="button" disabled={busy || administratorMutationBlocked} onClick={() => void mutateAdministrator(user, user.role === "platform_admin")}>
+          {account.role === "platform_owner" && (user.role === "platform_admin" || (user.role === "member" && user.status === "active")) && <button type="button" disabled={busy || administratorMutationBlocked} onClick={() => void mutateAdministrator(user, user.role === "platform_admin")}>
             {user.role === "platform_admin" ? "撤销平台管理员" : "设为平台管理员"}
           </button>}
           {(user.role === "member" || user.role === "management_viewer") && <button type="button" disabled={busy || !reason.trim()} onClick={() => void mutate(user)}>

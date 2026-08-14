@@ -120,6 +120,34 @@ describe("IdentityManagementPage", () => {
       .some((button) => button.textContent?.includes("平台管理员"))).toBe(false);
   });
 
+  it("lets the owner revoke an inactive administrator but never assign an inactive member", async () => {
+    const inactiveUsers = [
+      ...managedUsers,
+      {
+        internal_user_id: "f9ed17df-9496-4923-979a-aec1e465dc58",
+        display_name: "离职管理员",
+        role: "platform_admin",
+        status: "inactive",
+        scopes: [],
+      },
+      {
+        internal_user_id: "61acb7d7-fd4f-4cb1-b9c8-4bc7e7b36faf",
+        display_name: "离职成员",
+        role: "member",
+        status: "inactive",
+        scopes: [],
+      },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(usersResponse(inactiveUsers)));
+
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+
+    expect([...articleFor(container, "离职管理员").querySelectorAll("button")]
+      .map((button) => button.textContent)).toEqual(["撤销平台管理员"]);
+    expect([...articleFor(container, "离职成员").querySelectorAll("button")]
+      .some((button) => button.textContent?.includes("平台管理员"))).toBe(false);
+  });
+
   it("lets an administrator manage viewers and scopes but never administrator roles", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: managedUsers }), {
       status: 200, headers: { "Content-Type": "application/json" },

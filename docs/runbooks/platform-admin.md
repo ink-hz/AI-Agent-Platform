@@ -16,7 +16,7 @@ stable internal account created by a verified DingTalk login.
 1. Start from the reviewed release commit in a clean worktree. Confirm the
    deployment configuration and SSH key are regular, current-user-owned
    mode-0600 files without printing their contents.
-2. Confirm the current release includes control migrations 024 and 025, the
+2. Confirm the current release includes control migrations 024 through 026, the
    directory is fresh, and all five Platform services are healthy.
 3. Confirm `苍渊` is still the single active `platform_owner`. Administrator
    assignment never replaces, demotes, or duplicates the owner.
@@ -454,8 +454,9 @@ status codes and sanitized outcomes:
 1. Sign in as `苍渊`, verify `平台所有者`, and open `/identity` while the current
    release still supports `platform_admin`.
 2. Locate the exact previously verified stable internal account. Confirm its
-   human-readable name, `在职` status, and `平台管理员` role, then select
-   `撤销平台管理员`.
+   human-readable name and `平台管理员` role, then select `撤销平台管理员`.
+   The row may show either `在职` or `不可用`; directory departure does not
+   remove the owner-only cleanup control.
 3. Require the success message and refreshed row to show `企业成员`. Revocation
    returns the target to `member` and invalidates all of the target's active
    Platform Sessions in the same audited change.
@@ -470,21 +471,56 @@ do not issue an unrelated second mutation.
 ## Mandatory gate before rollback
 
 Before rolling back to any binary that does not recognize `platform_admin`, use
-the current release and the authenticated owner to enumerate every active
-administrator by stable internal account. Revoke each one with the normal
-procedure above. After every revocation, confirm the row is `member`, its active
-Sessions were invalidated, and the audited completion exists.
+the current release and the authenticated owner to enumerate every
+administrator by stable internal account, including inactive, disabled, or
+locally invalidated rows. Revoke each one with the normal procedure above.
+After every revocation, confirm the row is `member`, every remaining active
+Session was invalidated, and the audited completion exists.
 
-Run a final sanitized aggregate check and require zero active
-`platform_admin` accounts before starting the rollback. Do not infer this from
-display names, do not demote the owner, and do not attempt the cleanup after an
-older binary is running. If any administrator cannot be revoked and verified,
-the rollback is blocked.
+Run this sanitized aggregate check on the Platform host. It emits only a count
+or the fixed success marker; it never emits an internal account, display name,
+or provider identity:
+
+```bash
+set -euo pipefail
+platform_root=/opt/orbbec-agent-platform
+environment_path="$platform_root/private/platform.env"
+compose_path="$platform_root/current/deploy/cloud/compose.yaml"
+compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$compose_path")
+postgres_id="$("${compose[@]}" ps -q platform-postgres)"
+if [[ -z "$postgres_id" ]]; then
+  echo "platform-postgres is unavailable" >&2
+  exit 1
+fi
+administrator_count="$(
+  /usr/bin/docker exec "$postgres_id" /usr/bin/psql -X -A -t \
+    -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 \
+    -c "select count(*) from platform_control.internal_users where role = 'platform_admin';"
+)"
+if [[ ! "$administrator_count" =~ ^[0-9]+$ ]]; then
+  unset administrator_count postgres_id
+  echo "administrator rollback count is invalid" >&2
+  exit 1
+fi
+if [[ "$administrator_count" != "0" ]]; then
+  unset administrator_count postgres_id
+  echo "administrator rollback cleanup is incomplete" >&2
+  exit 1
+fi
+unset administrator_count postgres_id
+printf '%s\n' ADMIN_ROLLBACK_ZERO_GATE_OK
+```
+
+Require `ADMIN_ROLLBACK_ZERO_GATE_OK` before starting the rollback. The query
+counts `platform_admin` across every local status; there is no active-only
+exception. Do not infer this from display names, do not demote the owner, and
+do not attempt cleanup after an older binary is running. If any administrator
+cannot be revoked and verified, the rollback is blocked.
 
 ## Evidence record
 
 Record the immutable release commit, frontend and backend test counts,
-migration versions 024 and 025, production acceptance result, the sanitized
+migration versions 024 through 026, production acceptance result, the sanitized
 role result, Session revocation count, and any remaining human login action.
 Do not include raw database rows or any provider identifier, authorization
 code, Cookie, CSRF value, secret, or encryption material.

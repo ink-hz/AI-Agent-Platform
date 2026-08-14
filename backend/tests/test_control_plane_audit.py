@@ -979,6 +979,90 @@ def test_platform_admin_mutations_are_owner_only_audited_and_idempotent(
 
 
 @pytest.mark.postgres
+@pytest.mark.parametrize("target_state", ["inactive", "previous_generation"])
+def test_platform_admin_assignment_rejects_ineligible_directory_target(
+    control_database,
+    target_state,
+) -> None:
+    environment = control_database["environments"]["preview"]
+    owner_id, target_id = uuid4(), uuid4()
+    previous_generation_id, current_generation_id = uuid4(), uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        existing_owner = connection.execute(
+            "select internal_user_id from platform_control.internal_users "
+            "where role='platform_owner' and status='active'"
+        ).fetchone()
+        if existing_owner is not None:
+            owner_id = existing_owner[0]
+        else:
+            connection.execute(
+                "insert into platform_control.internal_users "
+                "(internal_user_id,display_name,status,role) values "
+                "(%s,'Assignment Gate Owner','active','platform_owner')",
+                (owner_id,),
+            )
+        connection.execute(
+            "insert into platform_control.directory_generations "
+            "(generation_id,status,content_sha256,completed_at) values "
+            "(%s,'complete',%s,now()),(%s,'complete',%s,now())",
+            (
+                previous_generation_id,
+                "b" * 64,
+                current_generation_id,
+                "c" * 64,
+            ),
+        )
+        connection.execute(
+            "update platform_control.directory_state set "
+            "active_generation_id=%s,last_complete_at=now(),updated_at=now() "
+            "where singleton",
+            (current_generation_id,),
+        )
+        target_status = "inactive" if target_state == "inactive" else "active"
+        target_invalidated = target_state == "inactive"
+        target_generation = (
+            current_generation_id
+            if target_state == "inactive"
+            else previous_generation_id
+        )
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status,role,"
+            "locally_invalidated_at,last_confirmed_generation_id) values "
+            "(%s,'Assignment Gate Target',%s,'member',"
+            "case when %s then now() else null end,%s)",
+            (
+                target_id,
+                target_status,
+                target_invalidated,
+                target_generation,
+            ),
+        )
+
+    request_id = uuid4()
+    writer = AuditWriter.from_database_url(
+        environment["urls"]["platform_audit_append_preview"]
+    )
+    audit_id = writer.append(_admin_command(
+        actor_id=owner_id,
+        target_id=target_id,
+        request_id=request_id,
+    ))
+    with psycopg.connect(
+        environment["urls"]["platform_control_app_preview"]
+    ) as connection:
+        with pytest.raises(
+            psycopg.errors.CheckViolation,
+            match="admin assignment precondition failed",
+        ):
+            connection.execute(
+                "select platform_control.assign_platform_admin("
+                "%s,%s,%s,0,%s)",
+                (request_id, owner_id, target_id, audit_id),
+            )
+
+
+@pytest.mark.postgres
 def test_offline_owner_function_rejects_mismatched_audit_intent(
     control_database,
 ) -> None:

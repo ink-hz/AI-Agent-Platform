@@ -50,6 +50,9 @@ EXACT_IDENTITY_MAPPING_BOUNDARY_MIGRATION = (
 PLATFORM_ADMIN_MUTATION_MIGRATION = (
     MIGRATIONS / "025_platform_admin_mutations.sql"
 )
+INACTIVE_ADMIN_CLEANUP_MIGRATION = (
+    MIGRATIONS / "026_inactive_platform_admin_cleanup.sql"
+)
 RELEASE_1_PLAN = (
     Path(__file__).parents[2]
     / "docs/superpowers/plans/2026-08-13-dingtalk-identity-release-1.md"
@@ -181,6 +184,10 @@ def test_first_control_migration_exists() -> None:
         "missing exact identity mapping boundary migration: "
         f"{EXACT_IDENTITY_MAPPING_BOUNDARY_MIGRATION}"
     )
+    assert INACTIVE_ADMIN_CLEANUP_MIGRATION.is_file(), (
+        "missing inactive administrator cleanup migration: "
+        f"{INACTIVE_ADMIN_CLEANUP_MIGRATION}"
+    )
 
 
 def test_control_migrations_001_through_019_are_byte_immutable() -> None:
@@ -214,10 +221,17 @@ def test_task6_and_task8_share_exported_directory_identity_lock_contract() -> No
 
 
 def test_platform_admin_mutations_serialize_with_directory_promotion() -> None:
-    migration = PLATFORM_ADMIN_MUTATION_MIGRATION.read_text(encoding="utf-8")
-    for function_name in ("assign_platform_admin", "revoke_platform_admin"):
+    migrations = {
+        "assign_platform_admin": PLATFORM_ADMIN_MUTATION_MIGRATION.read_text(
+            encoding="utf-8"
+        ),
+        "revoke_platform_admin": INACTIVE_ADMIN_CLEANUP_MIGRATION.read_text(
+            encoding="utf-8"
+        ),
+    }
+    for function_name, migration in migrations.items():
         function = migration.split(
-            f"create function platform_control.{function_name}", 1
+            f"function platform_control.{function_name}", 1
         )[1].split("$function$;", 1)[0]
         assert function.index(
             "perform platform_control.lock_dingtalk_identity_directory();"
@@ -402,7 +416,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 26)
+                    (version, 64) for version in range(1, 27)
                 ]
 
     changed = tmp_path / "migrations"

@@ -331,6 +331,39 @@ def test_owner_can_assign_and_revoke_admin_with_exact_reasons() -> None:
     ]
 
 
+def test_owner_can_list_and_revoke_inactive_admin_by_stable_account() -> None:
+    client, repository, _ = _client(OWNER)
+    target = uuid4()
+    repository.users = [{
+        "internal_user_id": target,
+        "display_name": "Inactive Administrator",
+        "status": "inactive",
+        "role": "platform_admin",
+        "scopes": [],
+    }]
+    repository.states[target] = {
+        "role": "platform_admin",
+        "row_version": 3,
+        "scopes": [],
+    }
+
+    listed = client.get("/api/v1/manage/users")
+    assert listed.status_code == 200
+    assert listed.json()["users"] == [{
+        "internal_user_id": str(target),
+        "display_name": "Inactive Administrator",
+        "status": "inactive",
+        "role": "platform_admin",
+        "scopes": [],
+    }]
+    assert client.request(
+        "DELETE",
+        f"/api/v1/manage/admins/{target}",
+        json={"reason": "admin_access_revoked"},
+    ).status_code == 200
+    assert [entry[0] for entry in repository.mutations] == ["admin_revoke"]
+
+
 @pytest.mark.parametrize("context", [ADMIN, MEMBER, VIEWER])
 @pytest.mark.parametrize(
     ("method", "reason"),
@@ -354,17 +387,26 @@ def test_only_owner_can_mutate_admins_without_repository_invocation(
 
 
 @pytest.mark.parametrize(
+    ("method", "reason"),
+    [("POST", "admin_access_approved"), ("DELETE", "admin_access_revoked")],
+)
+@pytest.mark.parametrize(
     ("csrf", "fresh", "expected"),
     [(False, True, 403), (True, False, 503)],
 )
 def test_admin_mutation_requires_csrf_and_fresh_directory_without_repository_invocation(
-    csrf: bool, fresh: bool, expected: int
+    method: str,
+    reason: str,
+    csrf: bool,
+    fresh: bool,
+    expected: int,
 ) -> None:
     client, repository, audit = _client(OWNER, csrf=csrf, fresh=fresh)
 
-    assert client.post(
+    assert client.request(
+        method,
         f"/api/v1/manage/admins/{uuid4()}",
-        json={"reason": "admin_access_approved"},
+        json={"reason": reason},
     ).status_code == expected
     assert repository.mutations == []
     assert audit.commands == []
@@ -766,8 +808,10 @@ def test_real_admin_revocation_links_audit_and_revokes_sessions_atomically(
     environment = control_database["environments"]["production"]
     owner_id = uuid4()
     admin_id = uuid4()
-    session_id = uuid4()
+    departed_session_id = uuid4()
+    orphan_session_id = uuid4()
     generation_id = uuid4()
+    lookup_hmac = b"d" * 32
     with psycopg.connect(environment["admin"]) as connection:
         existing_owner = connection.execute(
             "select internal_user_id from platform_control.internal_users "
@@ -798,58 +842,117 @@ def test_real_admin_revocation_links_audit_and_revokes_sessions_atomically(
             "insert into platform_control.internal_users "
             "(internal_user_id, display_name, status, role, "
             "last_confirmed_generation_id) values "
-            "(%s, 'Admin API Target', 'active', 'platform_admin', "
+            "(%s, 'Admin API Target', 'active', 'member', "
             "%s)",
             (admin_id, generation_id),
         )
+        connection.execute(
+            "insert into platform_control.provider_identities "
+            "(provider_identity_id,internal_user_id,subject_kind,lookup_hmac,"
+            "lookup_key_version,encrypted_provider_id,encryption_key_version) "
+            "values (%s,%s,'employee',%s,1,%s,1)",
+            (uuid4(), admin_id, lookup_hmac, b"encrypted-departure-subject"),
+        )
+
+    context = AuthContext(owner_id, Role.PLATFORM_OWNER, uuid4(), False)
+    service = ManagementService(
+        ManagementRepository(environment["urls"]["platform_control_app"]),
+        AuditWriter.from_database_url(
+            environment["urls"]["platform_audit_append"]
+        ),
+    )
+    service.change_admin(
+        context,
+        admin_id,
+        "admin_access_approved",
+        request_id=uuid4(),
+    )
+
+    with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "insert into platform_control.web_sessions "
             "(session_id, internal_user_id, token_hash, csrf_hash, "
             "idle_expires_at, absolute_expires_at) values "
             "(%s, %s, %s, %s, now() + interval '1 hour', "
             "now() + interval '8 hours')",
-            (session_id, admin_id, b"admin-api-session", b"admin-api-csrf"),
+            (
+                departed_session_id,
+                admin_id,
+                b"departed-admin-session",
+                b"departed-admin-csrf",
+            ),
         )
 
-    context = AuthContext(owner_id, Role.PLATFORM_OWNER, uuid4(), False)
-    ManagementService(
-        ManagementRepository(environment["urls"]["platform_control_app"]),
-        AuditWriter.from_database_url(
-            environment["urls"]["platform_audit_append"]
-        ),
-    ).change_admin(
+    with psycopg.connect(
+        environment["urls"]["platform_directory_worker"]
+    ) as connection:
+        assert connection.execute(
+            "select platform_control.apply_directory_departure_v21("
+            "1,%s,now(),%s)",
+            (lookup_hmac, "d" * 64),
+        ).fetchone() == ("applied",)
+
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.web_sessions "
+            "(session_id, internal_user_id, token_hash, csrf_hash, "
+            "idle_expires_at, absolute_expires_at) values "
+            "(%s, %s, %s, %s, now() + interval '1 hour', "
+            "now() + interval '8 hours')",
+            (
+                orphan_session_id,
+                admin_id,
+                b"orphan-admin-session",
+                b"orphan-admin-csrf",
+            ),
+        )
+
+    revocation_request_id = uuid4()
+    service.change_admin(
         context,
         admin_id,
         "admin_access_revoked",
         revoke=True,
+        request_id=revocation_request_id,
+    )
+    service.change_admin(
+        context,
+        admin_id,
+        "admin_access_revoked",
+        revoke=True,
+        request_id=revocation_request_id,
     )
 
     with psycopg.connect(environment["admin"]) as connection:
         user = connection.execute(
-            "select role::text, role_audit_event_id from "
+            "select role::text,status,locally_invalidated_at is not null,"
+            "row_version,role_audit_event_id from "
             "platform_control.internal_users where internal_user_id = %s",
             (admin_id,),
         ).fetchone()
-        session = connection.execute(
-            "select revoked_at, revoked_reason from "
-            "platform_control.web_sessions where session_id = %s",
-            (session_id,),
-        ).fetchone()
-        events = connection.execute(
-            "select event_type from platform_control.audit_events "
-            "where request_id = (select request_id from "
-            "platform_control.audit_events where audit_event_id = %s) "
-            "order by occurred_at, event_type",
-            (user[1],),
+        sessions = connection.execute(
+            "select revoked_at is not null,revoked_reason from "
+            "platform_control.web_sessions where internal_user_id = %s",
+            (admin_id,),
         ).fetchall()
-    assert user[0] == "member"
-    assert user[1] is not None
-    assert session[0] is not None
-    assert session[1] == "admin_role_revoked"
-    assert events == [
-        ("admin_role_revocation_requested",),
-        ("admin_role_revocation_completed",),
+        events = connection.execute(
+            "select event_type,sanitized_before_after from "
+            "platform_control.audit_events where request_id = %s "
+            "order by occurred_at, event_type",
+            (revocation_request_id,),
+        ).fetchall()
+    assert user[:4] == ("member", "inactive", True, 2)
+    assert user[4] is not None
+    assert set(sessions) == {
+        (True, "dingtalk_departure"),
+        (True, "admin_role_revoked"),
+    }
+    assert [event[0] for event in events] == [
+        "admin_role_revocation_requested",
+        "admin_role_revocation_completed",
     ]
+    assert events[1][1]["linked_audit_event_id"] == str(user[4])
+    assert events[1][1]["session_revocation_count"] == 1
     projected = ManagementRepository(
         environment["urls"]["platform_control_app"]
     ).governance_audit()
