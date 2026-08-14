@@ -451,6 +451,36 @@ def test_legacy_projection_never_returns_suspicious_allowlisted_values(
     assert forbidden not in json.dumps(projected)
 
 
+@pytest.mark.parametrize(
+    ("event_type", "previous_role", "new_role"),
+    [
+        ("admin_role_assignment_completed", "member", "platform_admin"),
+        ("admin_role_revocation_completed", "platform_admin", "member"),
+    ],
+)
+def test_legacy_admin_projection_accepts_only_exact_role_transition(
+    event_type, previous_role, new_role
+) -> None:
+    metadata = {
+        "linked_audit_event_id": str(uuid4()),
+        "previous_role": previous_role,
+        "new_role": new_role,
+        "session_revocation_count": 0,
+        "result": "completed",
+    }
+    assert project_governance_metadata(metadata, event_type=event_type)[0] == (
+        "legacy_005"
+    )
+    wrong_previous = {**metadata, "previous_role": "management_viewer"}
+    wrong_new = {**metadata, "new_role": "platform_owner"}
+    assert project_governance_metadata(
+        wrong_previous, event_type=event_type
+    ) == ("unsupported_redacted", {})
+    assert project_governance_metadata(
+        wrong_new, event_type=event_type
+    ) == ("unsupported_redacted", {})
+
+
 def test_hard_stale_owner_cannot_mutate_but_can_read_governance() -> None:
     stale_owner = AuthContext(
         OWNER.internal_user_id,

@@ -47,6 +47,9 @@ DIRECTORY_PROMOTION_BOUNDARY_MIGRATION = (
 EXACT_IDENTITY_MAPPING_BOUNDARY_MIGRATION = (
     MIGRATIONS / "014_exact_identity_mapping_boundary.sql"
 )
+PLATFORM_ADMIN_MUTATION_MIGRATION = (
+    MIGRATIONS / "025_platform_admin_mutations.sql"
+)
 RELEASE_1_PLAN = (
     Path(__file__).parents[2]
     / "docs/superpowers/plans/2026-08-13-dingtalk-identity-release-1.md"
@@ -208,6 +211,26 @@ def test_task6_and_task8_share_exported_directory_identity_lock_contract() -> No
     assert "promote_verified_directory_generation" in task8
     assert "directory_state" in task8
     assert "raw" in task8.lower()
+
+
+def test_platform_admin_mutations_serialize_with_directory_promotion() -> None:
+    migration = PLATFORM_ADMIN_MUTATION_MIGRATION.read_text(encoding="utf-8")
+    assert migration.count(
+        "perform platform_control.lock_dingtalk_identity_directory();"
+    ) == 2
+    for function_name in ("assign_platform_admin", "revoke_platform_admin"):
+        function = migration.split(
+            f"create function platform_control.{function_name}", 1
+        )[1].split("$function$;", 1)[0]
+        assert function.index(
+            "perform platform_control.lock_dingtalk_identity_directory();"
+        ) < function.index("perform pg_advisory_xact_lock(")
+        assert function.index("perform pg_advisory_xact_lock(") < function.index(
+            "perform platform_control.require_platform_owner(selected_actor_id);"
+        )
+        assert function.index(
+            "perform platform_control.require_platform_owner(selected_actor_id);"
+        ) < function.index("replay := platform_control.replay_management_mutation(")
 
 
 def _available_port() -> int:
@@ -382,7 +405,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 25)
+                    (version, 64) for version in range(1, 26)
                 ]
 
     changed = tmp_path / "migrations"
@@ -797,7 +820,7 @@ def test_app_cannot_bypass_audited_authorization_functions(control_database):
 
 
 @pytest.mark.postgres
-def test_app_has_only_audited_viewer_and_scope_mutation_functions(control_database):
+def test_app_has_only_audited_management_mutation_functions(control_database):
     environment = control_database["environments"]["production"]
     roles = environment["roles"]
     with psycopg.connect(environment["admin"]) as connection:
@@ -813,7 +836,9 @@ def test_app_has_only_audited_viewer_and_scope_mutation_functions(control_databa
                 roles[0],
                 [
                     "assign_management_viewer",
+                    "assign_platform_admin",
                     "revoke_management_viewer",
+                    "revoke_platform_admin",
                     "grant_observation_scope",
                     "revoke_observation_scope",
                     "change_platform_owner_v2",
@@ -822,10 +847,12 @@ def test_app_has_only_audited_viewer_and_scope_mutation_functions(control_databa
         ).fetchall()
     assert rows == [
         ("assign_management_viewer", True, False, False),
+        ("assign_platform_admin", True, False, False),
         ("change_platform_owner_v2", False, True, False),
         ("grant_observation_scope", True, False, False),
         ("revoke_management_viewer", True, False, False),
         ("revoke_observation_scope", True, False, False),
+        ("revoke_platform_admin", True, False, False),
     ]
 
 

@@ -25,7 +25,9 @@ _OS_IDENTITY = re.compile(
 _REFERENCE = re.compile(r"^[A-Z][A-Z0-9_-]{2,63}$")
 _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 _ERROR_CODES = frozenset({"business_rejected", "control_unavailable"})
-_ROLES = frozenset({"member", "management_viewer", "platform_owner"})
+_ROLES = frozenset(
+    {"member", "management_viewer", "platform_admin", "platform_owner"}
+)
 _RESULTS = frozenset({"requested", "completed", "failed"})
 _UUID_KEYS = frozenset(
     {
@@ -192,6 +194,7 @@ _FAILED = frozenset(
 _EVENT_SCHEMAS: dict[str, tuple[frozenset[str], ...]] = {}
 _EVENT_REASON: dict[str, str] = {}
 _EVENT_TARGET: dict[str, str] = {}
+_EVENT_TRANSITION: dict[str, tuple[str, str]] = {}
 
 
 def _register_events(
@@ -228,6 +231,26 @@ _register_events(
     requested=_VIEWER_REQUEST,
     completed=_VIEWER_COMPLETED,
 )
+_register_events(
+    ("admin_role_assignment",),
+    reason="admin_access_approved",
+    target="internal_user",
+    requested=_VIEWER_REQUEST,
+    completed=_VIEWER_COMPLETED,
+)
+_register_events(
+    ("admin_role_revocation",),
+    reason="admin_access_revoked",
+    target="internal_user",
+    requested=_VIEWER_REQUEST,
+    completed=_VIEWER_COMPLETED,
+)
+for _stem, _transition in (
+    ("admin_role_assignment", ("member", "platform_admin")),
+    ("admin_role_revocation", ("platform_admin", "member")),
+):
+    for _result in ("requested", "completed"):
+        _EVENT_TRANSITION[f"{_stem}_{_result}"] = _transition
 _EVENT_SCHEMAS["viewer_role_revocation_completed"] = (
     _VIEWER_COMPLETED,
     _VIEWER_COMPLETED_SUMMARY,
@@ -384,6 +407,11 @@ def sanitize_governance_metadata(
         if not _safe_metadata_value(key, value):
             raise ValueError("audit metadata invalid")
         sanitized[key] = list(value) if key in _SCOPE_KEYS else value
+    transition = _EVENT_TRANSITION.get(event_type or "")
+    if transition is not None and (
+        sanitized.get("previous_role"), sanitized.get("new_role")
+    ) != transition:
+        raise ValueError("audit metadata invalid")
     return sanitized
 
 
@@ -412,12 +440,16 @@ def project_governance_metadata(
         else "replace" if event_type.startswith("owner_replacement_")
         else None
     )
-    expected_new_role = (
-        "management_viewer"
-        if event_type.startswith("viewer_role_assignment_")
-        else "member" if event_type.startswith("viewer_role_revocation_")
-        else None
-    )
+    expected_new_role = None
+    expected_previous_role = None
+    if event_type.startswith("viewer_role_assignment_"):
+        expected_new_role = "management_viewer"
+    elif event_type.startswith("viewer_role_revocation_"):
+        expected_new_role = "member"
+    elif event_type.startswith("admin_role_assignment_"):
+        expected_previous_role, expected_new_role = "member", "platform_admin"
+    elif event_type.startswith("admin_role_revocation_"):
+        expected_previous_role, expected_new_role = "platform_admin", "member"
     typed_rules: dict[str, Callable[[Any], bool]] = {
         "directory_generation_id": _uuid_string,
         "linked_audit_event_id": _uuid_string,
@@ -431,7 +463,12 @@ def project_governance_metadata(
             isinstance(value, str) and value == "platform_owner"
         ),
         "previous_role": lambda value: (
-            isinstance(value, str) and value in _ROLES
+            isinstance(value, str)
+            and (
+                value == expected_previous_role
+                if expected_previous_role is not None
+                else value in _ROLES
+            )
         ),
         "new_role": lambda value: (
             isinstance(value, str) and value == expected_new_role
@@ -454,6 +491,14 @@ def project_governance_metadata(
              "session_revocation_count"}
         ),
         "viewer_role_revocation_completed": frozenset(
+            {"linked_audit_event_id", "new_role", "previous_role",
+             "session_revocation_count"}
+        ),
+        "admin_role_assignment_completed": frozenset(
+            {"linked_audit_event_id", "new_role", "previous_role",
+             "session_revocation_count"}
+        ),
+        "admin_role_revocation_completed": frozenset(
             {"linked_audit_event_id", "new_role", "previous_role",
              "session_revocation_count"}
         ),
@@ -491,6 +536,12 @@ def project_governance_metadata(
             {"new_role", "previous_role"}
         ),
         "viewer_role_revocation_completed": frozenset(
+            {"new_role", "previous_role"}
+        ),
+        "admin_role_assignment_completed": frozenset(
+            {"new_role", "previous_role"}
+        ),
+        "admin_role_revocation_completed": frozenset(
             {"new_role", "previous_role"}
         ),
     }

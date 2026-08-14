@@ -44,6 +44,40 @@ def _command(**overrides) -> AuditCommand:
     return AuditCommand(**values)
 
 
+def _admin_command(
+    *,
+    actor_id,
+    target_id,
+    request_id,
+    revoke: bool = False,
+    expected_row_version: int = 0,
+) -> AuditCommand:
+    previous_role, new_role = (
+        ("platform_admin", "member")
+        if revoke
+        else ("member", "platform_admin")
+    )
+    return AuditCommand(
+        event_type=(
+            "admin_role_revocation_requested"
+            if revoke
+            else "admin_role_assignment_requested"
+        ),
+        actor_internal_user_id=actor_id,
+        target_type="internal_user",
+        target_id=str(target_id),
+        request_id=request_id,
+        reason="admin_access_revoked" if revoke else "admin_access_approved",
+        metadata={
+            "operation_id": str(request_id),
+            "previous_role": previous_role,
+            "new_role": new_role,
+            "expected_row_version": expected_row_version,
+            "result": "requested",
+        },
+    )
+
+
 def test_governance_metadata_rejects_unknown_keys_instead_of_silently_dropping() -> None:
     with pytest.raises(ValueError, match="audit metadata invalid"):
         sanitize_governance_metadata(
@@ -95,6 +129,74 @@ def test_audit_writer_rejects_event_and_reason_outside_exact_vocabulary(
         AuditWriter(Repository()).append(
             _command(event_type=event_type, reason=reason)
         )
+
+
+@pytest.mark.parametrize(
+    ("revoke", "reason", "previous_role", "new_role"),
+    [
+        (False, "admin_access_approved", "member", "platform_admin"),
+        (True, "admin_access_revoked", "platform_admin", "member"),
+    ],
+)
+def test_administrator_audit_events_require_exact_reason_and_transition(
+    revoke, reason, previous_role, new_role
+) -> None:
+    appended = []
+
+    class Repository:
+        def append(self, event_id, command, sanitized):
+            appended.append((command, sanitized))
+            return event_id
+
+    actor_id, target_id, request_id = uuid4(), uuid4(), uuid4()
+    command = _admin_command(
+        actor_id=actor_id,
+        target_id=target_id,
+        request_id=request_id,
+        revoke=revoke,
+    )
+    writer = AuditWriter(Repository())
+    requested_id = writer.append(command)
+    writer.append_outcome(
+        command,
+        requested_id,
+        actual={
+            "operation_id": str(request_id),
+            "previous_role": previous_role,
+            "new_role": new_role,
+            "row_version": 1,
+            "session_revocation_count": 1 if revoke else 0,
+            "previous_scopes": [],
+            "new_scopes": [],
+        },
+    )
+
+    assert [item[0].reason for item in appended] == [reason, reason]
+    assert [item[1]["result"] for item in appended] == [
+        "requested",
+        "completed",
+    ]
+    for invalid in (
+        AuditCommand(**{**command.__dict__, "reason": "access_approved"}),
+        AuditCommand(
+            **{
+                **command.__dict__,
+                "metadata": {**command.metadata, "previous_role": "member"},
+            }
+        )
+        if revoke
+        else AuditCommand(
+            **{
+                **command.__dict__,
+                "metadata": {
+                    **command.metadata,
+                    "new_role": "management_viewer",
+                },
+            }
+        ),
+    ):
+        with pytest.raises(ValueError, match="audit (command|metadata) invalid"):
+            writer.append(invalid)
 
 
 @pytest.mark.parametrize("reason", ["", "   ", None])
@@ -472,6 +574,407 @@ def test_database_append_boundary_rejects_noncanonical_scope_arrays(
                 "%s,%s,'viewer_role_assignment_completed','internal_user',"
                 "%s,%s,'completed','access_approved',%s::jsonb)",
                 (uuid4(), actor, str(actor), operation_id, json.dumps(metadata)),
+            )
+
+
+@pytest.mark.postgres
+def test_platform_admin_mutation_functions_exist(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as connection:
+        functions = connection.execute(
+            "select to_regprocedure(%s), to_regprocedure(%s)",
+            (
+                "platform_control.assign_platform_admin(uuid,uuid,uuid,bigint,uuid)",
+                "platform_control.revoke_platform_admin(uuid,uuid,uuid,bigint,uuid)",
+            ),
+        ).fetchone()
+    assert functions[0] is not None
+    assert functions[1] is not None
+
+
+@pytest.mark.postgres
+def test_platform_admin_mutations_are_owner_only_audited_and_idempotent(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["preview"]
+    admin_url = environment["admin"]
+    app_url = environment["urls"]["platform_control_app_preview"]
+    audit_url = environment["urls"]["platform_audit_append_preview"]
+    owner_id, admin_actor_id = uuid4(), uuid4()
+    target_id, protected_member_id, unrelated_id = uuid4(), uuid4(), uuid4()
+    managed_viewer_id = uuid4()
+    generation_id, unrelated_grant_id = uuid4(), uuid4()
+    with psycopg.connect(admin_url) as connection:
+        connection.execute(
+            "insert into platform_control.directory_generations "
+            "(generation_id,status,content_sha256,completed_at) values "
+            "(%s,'complete',%s,now())",
+            (generation_id, "a" * 64),
+        )
+        connection.execute(
+            "update platform_control.directory_state set "
+            "active_generation_id=%s,last_complete_at=now(),updated_at=now() "
+            "where singleton",
+            (generation_id,),
+        )
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status,role,"
+            "last_confirmed_generation_id) values "
+            "(%s,'Admin Boundary Owner','active','platform_owner',%s),"
+            "(%s,'Admin Boundary Actor','active','platform_admin',%s),"
+            "(%s,'Admin Boundary Target','active','member',%s),"
+            "(%s,'Admin Boundary Protected','active','member',%s),"
+            "(%s,'Admin Boundary Unrelated','active','management_viewer',%s),"
+            "(%s,'Admin Managed Viewer','active','member',%s)",
+            (
+                owner_id, generation_id,
+                admin_actor_id, generation_id,
+                target_id, generation_id,
+                protected_member_id, generation_id,
+                unrelated_id, generation_id,
+                managed_viewer_id, generation_id,
+            ),
+        )
+        connection.execute(
+            "insert into platform_control.observation_grants "
+            "(observation_grant_id,agent_id,viewer_internal_user_id,created_by) "
+            "values (%s,'unrelated-agent',%s,%s)",
+            (unrelated_grant_id, unrelated_id, owner_id),
+        )
+
+    writer = AuditWriter.from_database_url(audit_url)
+
+    def append_request(
+        actor_id, selected_target_id, *, revoke=False, expected_version=0
+    ):
+        request_id = uuid4()
+        command = _admin_command(
+            actor_id=actor_id,
+            target_id=selected_target_id,
+            request_id=request_id,
+            revoke=revoke,
+            expected_row_version=expected_version,
+        )
+        return request_id, writer.append(command)
+
+    try:
+        viewer_request_id = uuid4()
+        viewer_command = _command(
+            actor_internal_user_id=admin_actor_id,
+            target_id=str(managed_viewer_id),
+            request_id=viewer_request_id,
+            metadata={
+                "operation_id": str(viewer_request_id),
+                "previous_role": "member",
+                "new_role": "management_viewer",
+                "expected_row_version": 0,
+                "result": "requested",
+            },
+        )
+        viewer_audit_id = writer.append(viewer_command)
+        scope_request_id = uuid4()
+        scope_command = AuditCommand(
+            event_type="observation_scope_assignment_requested",
+            actor_internal_user_id=admin_actor_id,
+            target_type="agent_observation_scope",
+            target_id=f"{managed_viewer_id}:managed-agent",
+            request_id=scope_request_id,
+            reason="scope_approved",
+            metadata={
+                "operation_id": str(scope_request_id),
+                "agent_id": "managed-agent",
+                "expected_user_row_version": 1,
+                "expected_scope_row_version": 0,
+                "result": "requested",
+            },
+        )
+        scope_audit_id = writer.append(scope_command)
+        with psycopg.connect(app_url) as connection:
+            connection.execute(
+                "select platform_control.assign_management_viewer("
+                "%s,%s,%s,0,%s)",
+                (
+                    viewer_request_id,
+                    admin_actor_id,
+                    managed_viewer_id,
+                    viewer_audit_id,
+                ),
+            )
+            connection.execute(
+                "select platform_control.grant_observation_scope("
+                "%s,%s,%s,'managed-agent',1,0,%s)",
+                (
+                    scope_request_id,
+                    admin_actor_id,
+                    managed_viewer_id,
+                    scope_audit_id,
+                ),
+            )
+
+        stale_request_id, stale_audit_id = append_request(
+            owner_id, protected_member_id
+        )
+        with psycopg.connect(admin_url) as connection:
+            connection.execute(
+                "update platform_control.directory_state set "
+                "last_complete_at=now()-interval '25 hours' where singleton"
+            )
+        with psycopg.connect(app_url) as connection:
+            with pytest.raises(
+                psycopg.errors.CheckViolation,
+                match="admin assignment precondition failed",
+            ):
+                connection.execute(
+                    "select platform_control.assign_platform_admin("
+                    "%s,%s,%s,0,%s)",
+                    (
+                        stale_request_id,
+                        owner_id,
+                        protected_member_id,
+                        stale_audit_id,
+                    ),
+                )
+        with psycopg.connect(admin_url) as connection:
+            connection.execute(
+                "update platform_control.directory_state set "
+                "last_complete_at=now(),updated_at=now() where singleton"
+            )
+
+        assignment_id, assignment_audit_id = append_request(owner_id, target_id)
+        with psycopg.connect(app_url) as connection:
+            assigned = connection.execute(
+                "select platform_control.assign_platform_admin(%s,%s,%s,%s,%s)",
+                (assignment_id, owner_id, target_id, 0, assignment_audit_id),
+            ).fetchone()[0]
+        assert assigned == {
+            "operation_id": str(assignment_id),
+            "previous_role": "member",
+            "new_role": "platform_admin",
+            "row_version": 1,
+            "session_revocation_count": 0,
+            "previous_scopes": [],
+            "new_scopes": [],
+        }
+        with psycopg.connect(app_url) as connection:
+            assert connection.execute(
+                "select platform_control.assign_platform_admin(%s,%s,%s,%s,%s)",
+                (assignment_id, owner_id, target_id, 0, assignment_audit_id),
+            ).fetchone()[0] == assigned
+
+        for changed_target, changed_version in (
+            (protected_member_id, 0),
+            (target_id, 1),
+        ):
+            with psycopg.connect(app_url) as connection:
+                with pytest.raises(
+                    psycopg.errors.UniqueViolation,
+                    match="operation identity collision",
+                ):
+                    connection.execute(
+                        "select platform_control.assign_platform_admin("
+                        "%s,%s,%s,%s,%s)",
+                        (
+                            assignment_id,
+                            owner_id,
+                            changed_target,
+                            changed_version,
+                            assignment_audit_id,
+                        ),
+                    )
+
+        denied_assignment_id, denied_assignment_audit = append_request(
+            admin_actor_id, protected_member_id
+        )
+        denied_revocation_id, denied_revocation_audit = append_request(
+            admin_actor_id, target_id, revoke=True, expected_version=1
+        )
+        for function_name, arguments in (
+            (
+                "assign_platform_admin",
+                (
+                    denied_assignment_id,
+                    admin_actor_id,
+                    protected_member_id,
+                    0,
+                    denied_assignment_audit,
+                ),
+            ),
+            (
+                "revoke_platform_admin",
+                (
+                    denied_revocation_id,
+                    admin_actor_id,
+                    target_id,
+                    1,
+                    denied_revocation_audit,
+                ),
+            ),
+        ):
+            with psycopg.connect(app_url) as connection:
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    connection.execute(
+                        f"select platform_control.{function_name}(%s,%s,%s,%s,%s)",
+                        arguments,
+                    )
+
+        for protected_target in (owner_id, admin_actor_id):
+            request_id, audit_id = append_request(owner_id, protected_target)
+            with psycopg.connect(app_url) as connection:
+                with pytest.raises(
+                    psycopg.errors.CheckViolation,
+                    match="admin assignment precondition failed",
+                ):
+                    connection.execute(
+                        "select platform_control.assign_platform_admin("
+                        "%s,%s,%s,0,%s)",
+                        (request_id, owner_id, protected_target, audit_id),
+                    )
+
+        missing_audit_operation = uuid4()
+        with psycopg.connect(app_url) as connection:
+            with pytest.raises(
+                psycopg.errors.CheckViolation,
+                match="matching audit intent required",
+            ):
+                connection.execute(
+                    "select platform_control.assign_platform_admin("
+                    "%s,%s,%s,0,%s)",
+                    (missing_audit_operation, owner_id, protected_member_id, uuid4()),
+                )
+        mismatch_id, mismatch_audit_id = append_request(
+            owner_id, protected_member_id, expected_version=1
+        )
+        with psycopg.connect(app_url) as connection:
+            with pytest.raises(
+                psycopg.errors.CheckViolation,
+                match="audit payload mismatch",
+            ):
+                connection.execute(
+                    "select platform_control.assign_platform_admin("
+                    "%s,%s,%s,0,%s)",
+                    (mismatch_id, owner_id, protected_member_id, mismatch_audit_id),
+                )
+
+        session_ids = (uuid4(), uuid4())
+        with psycopg.connect(admin_url) as connection:
+            connection.execute(
+                "insert into platform_control.web_sessions "
+                "(session_id,internal_user_id,token_hash,csrf_hash,"
+                "idle_expires_at,absolute_expires_at) values "
+                "(%s,%s,%s,%s,now()+interval '1 hour',now()+interval '8 hours'),"
+                "(%s,%s,%s,%s,now()+interval '1 hour',now()+interval '8 hours')",
+                (
+                    session_ids[0], target_id, b"admin-session-1", b"admin-csrf-1",
+                    session_ids[1], target_id, b"admin-session-2", b"admin-csrf-2",
+                ),
+            )
+        revocation_id, revocation_audit_id = append_request(
+            owner_id, target_id, revoke=True, expected_version=1
+        )
+        with psycopg.connect(app_url) as connection:
+            revoked = connection.execute(
+                "select platform_control.revoke_platform_admin(%s,%s,%s,%s,%s)",
+                (revocation_id, owner_id, target_id, 1, revocation_audit_id),
+            ).fetchone()[0]
+            assert connection.execute(
+                "select platform_control.revoke_platform_admin(%s,%s,%s,%s,%s)",
+                (revocation_id, owner_id, target_id, 1, revocation_audit_id),
+            ).fetchone()[0] == revoked
+        assert revoked == {
+            "operation_id": str(revocation_id),
+            "previous_role": "platform_admin",
+            "new_role": "member",
+            "row_version": 2,
+            "session_revocation_count": 2,
+            "previous_scopes": [],
+            "new_scopes": [],
+        }
+
+        with psycopg.connect(admin_url) as connection:
+            connection.execute(
+                "update platform_control.internal_users set role='platform_admin' "
+                "where internal_user_id=%s",
+                (owner_id,),
+            )
+        replay_calls = (
+            (
+                "assign_platform_admin",
+                (assignment_id, owner_id, target_id, 0, assignment_audit_id),
+            ),
+            (
+                "revoke_platform_admin",
+                (revocation_id, owner_id, target_id, 1, revocation_audit_id),
+            ),
+            (
+                "assign_platform_admin",
+                (
+                    assignment_id,
+                    owner_id,
+                    protected_member_id,
+                    0,
+                    assignment_audit_id,
+                ),
+            ),
+        )
+        for function_name, arguments in replay_calls:
+            with psycopg.connect(app_url) as connection:
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    connection.execute(
+                        f"select platform_control.{function_name}(%s,%s,%s,%s,%s)",
+                        arguments,
+                    )
+        with psycopg.connect(admin_url) as connection:
+            connection.execute(
+                "update platform_control.internal_users set role='platform_owner' "
+                "where internal_user_id=%s",
+                (owner_id,),
+            )
+
+        with psycopg.connect(admin_url) as connection:
+            assert connection.execute(
+                "select role::text,row_version from platform_control.internal_users "
+                "where internal_user_id=%s",
+                (target_id,),
+            ).fetchone() == ("member", 2)
+            assert connection.execute(
+                "select count(*) from platform_control.web_sessions "
+                "where internal_user_id=%s and revoked_at is not null "
+                "and revoked_reason='admin_role_revoked'",
+                (target_id,),
+            ).fetchone() == (2,)
+            assert connection.execute(
+                "select role::text,row_version from platform_control.internal_users "
+                "where internal_user_id=%s",
+                (owner_id,),
+            ).fetchone() == ("platform_owner", 0)
+            assert connection.execute(
+                "select revoked_at is null from platform_control.observation_grants "
+                "where observation_grant_id=%s",
+                (unrelated_grant_id,),
+            ).fetchone() == (True,)
+            assert connection.execute(
+                "select role::text,row_version from platform_control.internal_users "
+                "where internal_user_id=%s",
+                (protected_member_id,),
+            ).fetchone() == ("member", 0)
+            assert connection.execute(
+                "select role::text,row_version from platform_control.internal_users "
+                "where internal_user_id=%s",
+                (managed_viewer_id,),
+            ).fetchone() == ("management_viewer", 1)
+            assert connection.execute(
+                "select count(*) from platform_control.observation_grants "
+                "where viewer_internal_user_id=%s and agent_id='managed-agent' "
+                "and revoked_at is null",
+                (managed_viewer_id,),
+            ).fetchone() == (1,)
+    finally:
+        with psycopg.connect(admin_url) as connection:
+            connection.execute(
+                "update platform_control.internal_users set role='member' "
+                "where internal_user_id=%s",
+                (owner_id,),
             )
 
 
