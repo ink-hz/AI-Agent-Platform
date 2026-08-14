@@ -731,16 +731,16 @@ class DingTalkClient:
                     "language": "zh_CN",
                 },
             )
-            def parse_page() -> tuple[list[object], bool, int]:
+            def parse_page() -> tuple[list[object], bool, int | None]:
                 result = _required_object(response.payload.get("result"))
                 entries = result.get("list")
                 if not isinstance(entries, list):
                     raise ValueError
-                return (
-                    entries,
-                    _required_boolean(result.get("has_more")),
-                    _required_integer(result.get("next_cursor")),
-                )
+                has_more = _required_boolean(result.get("has_more"))
+                next_cursor = _optional_integer(result.get("next_cursor"))
+                if has_more and next_cursor is None:
+                    raise ValueError
+                return entries, has_more, next_cursor
 
             page = _parse_provider_value(parse_page)
             if page is None:
@@ -766,6 +766,7 @@ class DingTalkClient:
                 yield self._member(entry, request_id=response.request_id)
             if not has_more:
                 return
+            assert next_cursor is not None
             if next_cursor in seen_cursors:
                 raise DingTalkProviderError(
                     "DingTalk pagination invalid",

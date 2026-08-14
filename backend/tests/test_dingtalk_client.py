@@ -336,6 +336,21 @@ async def test_directory_member_empty_continuation_page_is_rejected() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_directory_member_terminal_page_may_omit_next_cursor() -> None:
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/v2/user/list").mock(
+        return_value=httpx.Response(200, json={
+            "errcode": 0,
+            "result": {"has_more": False, "list": []},
+        })
+    )
+    client = _client()
+
+    assert [item async for item in client.iter_department_members(1)] == []
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_idempotent_read_retries_only_429_and_5xx_with_capped_retry_after() -> None:
     sleeps: list[float] = []
     respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
