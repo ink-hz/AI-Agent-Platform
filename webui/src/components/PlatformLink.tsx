@@ -2,6 +2,7 @@ import type { AnchorHTMLAttributes, MouseEvent } from "react";
 
 import { captureSessionOrigin } from "../navigationContext";
 import { navigate } from "../router";
+import { platformPath } from "../auth";
 
 
 type PlatformLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
@@ -18,5 +19,5 @@ export function PlatformLink(props: PlatformLinkProps) {
     const state = preserveSessionContext ? captureSessionOrigin(window.scrollY) : undefined;
     navigate(href, { state });
   };
-  return <a {...rest} href={href} onClick={follow} />;
+  return <a {...rest} href={platformPath(href)} onClick={follow} />;
 }

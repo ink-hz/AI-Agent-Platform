@@ -15,6 +15,10 @@ export function routeDocumentTitle(route: Route): string {
     case "session": return `Session 回放 · ${PLATFORM_TITLE}`;
     case "review": return `复审闭环 · ${PLATFORM_TITLE}`;
     case "activity": return `运行记录 · ${PLATFORM_TITLE}`;
+    case "login": return `登录 · ${PLATFORM_TITLE}`;
+    case "account": return `企业账号 · ${PLATFORM_TITLE}`;
+    case "identity": return `身份管理 · ${PLATFORM_TITLE}`;
+    case "governance": return `治理审计 · ${PLATFORM_TITLE}`;
     default: return PLATFORM_TITLE;
   }
 }

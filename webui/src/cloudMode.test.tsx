@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "./AppShell";
+import type { Account } from "./auth";
 
 
 let container: HTMLDivElement;
@@ -55,5 +56,44 @@ describe("cloud replica mode", () => {
 
     expect(container.textContent).toContain("数据已过期");
     expect(container.querySelector(".cloud-replica-banner")?.className).toContain("is-stale");
+  });
+
+  it("derives member and viewer navigation from the server account", async () => {
+    const member: Account = {
+      internal_user_id: "member", display_name: "成员", role: "member",
+      observation_agent_ids: [], directory_freshness: "fresh",
+      hard_stale_read_only: false, csrf_token: "csrf",
+    };
+    await act(async () => root.render(
+      <AppShell route={{ name: "account" }} account={member}><p>内容</p></AppShell>,
+    ));
+    expect(container.querySelector(".product-nav")?.textContent).toBe("企业账号");
+
+    const viewer: Account = {
+      ...member, display_name: "观察者", role: "management_viewer",
+      observation_agent_ids: ["ai-fae-agent", "hr-bot"],
+    };
+    await act(async () => root.render(
+      <AppShell route={{ name: "governance" }} account={viewer}><p>内容</p></AppShell>,
+    ));
+    const navigation = container.querySelector(".product-nav")?.textContent || "";
+    expect(navigation).toContain("ai-fae-agent 运行");
+    expect(navigation).toContain("hr-bot 复审");
+    expect(navigation).toContain("治理审计");
+    expect(navigation).not.toContain("总览");
+    expect(navigation).not.toContain("Session");
+  });
+
+  it("shows the server-enforced hard-stale read-only state", async () => {
+    const owner: Account = {
+      internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
+      observation_agent_ids: [], directory_freshness: "hard_stale",
+      hard_stale_read_only: true, csrf_token: "csrf",
+    };
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("deployment unavailable"));
+    await act(async () => root.render(
+      <AppShell route={{ name: "overview" }} account={owner}><p>内容</p></AppShell>,
+    ));
+    expect(container.querySelector(".hard-stale-banner")?.textContent).toContain("只读访问");
   });
 });

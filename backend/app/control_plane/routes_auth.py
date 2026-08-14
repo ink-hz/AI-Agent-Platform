@@ -26,16 +26,18 @@ _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 def _login_csp(auth) -> str:
     if auth.route_prefix == "/":
         asset_source = "'self'"
+        image_source = "'self'"
         connect_source = "'self'"
     else:
         base = auth.public_base_url + auth.route_prefix.rstrip("/")
         asset_source = base + "/assets/"
+        image_source = base + "/"
         connect_source = base + "/api/"
     return (
         "default-src 'none'; base-uri 'none'; object-src 'none'; "
         "frame-ancestors 'none'; form-action 'none'; "
         f"script-src {asset_source}; style-src {asset_source}; "
-        f"img-src {asset_source}; connect-src {connect_source}"
+        f"img-src {image_source}; connect-src {connect_source}"
     )
 
 
@@ -53,6 +55,34 @@ def _opened_response(
         chunks(),
         media_type=opened.media_type,
         headers={**headers, "Content-Length": str(opened.size)},
+    )
+
+
+def _shell_response(opened: OpenedPublicAsset, *, csp: str) -> Response:
+    try:
+        if opened.size > 2_097_152:
+            raise PublicAssetUnavailable("application shell unavailable")
+        content = opened.file.read(opened.size + 1)
+    finally:
+        opened.file.close()
+    if len(content) != opened.size:
+        raise PublicAssetUnavailable("application shell unavailable")
+    disabled = b'<meta name="platform-identity-mode" content="disabled" />'
+    enabled = b'<meta name="platform-identity-mode" content="enabled" />'
+    if disabled in content:
+        content = content.replace(disabled, enabled, 1)
+    elif b"<head>" in content:
+        content = content.replace(b"<head>", b"<head>" + enabled, 1)
+    else:
+        content = enabled + content
+    return Response(
+        content=content,
+        media_type="text/html",
+        headers={
+            **_NO_STORE,
+            "Content-Security-Policy": csp,
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -118,8 +148,18 @@ def build_auth_router(
 ) -> APIRouter:
     router = APIRouter(prefix="" if auth.route_prefix == "/" else auth.route_prefix.rstrip("/"))
 
+    def application_shell() -> Response:
+        try:
+            opened = open_public_static_file(static_dir, "index.html")
+            return _shell_response(opened, csp=_login_csp(auth))
+        except PublicAssetUnavailable:
+            raise HTTPException(503, "application shell unavailable") from None
+
     @router.get("/", include_in_schema=False)
-    async def root():
+    async def root(request: Request):
+        token = request.cookies.get(auth.cookie_name)
+        if token and auth.authenticate(token) is not None:
+            return application_shell()
         return RedirectResponse(_local_path(auth, "/login"), status_code=302, headers=_NO_STORE)
 
     @router.get("/login", include_in_schema=False)
@@ -130,14 +170,7 @@ def build_auth_router(
         except PublicAssetUnavailable:
             response = HTMLResponse("<!doctype html><title>Agent Platform</title>", headers={**_NO_STORE, "Content-Security-Policy": csp})
         else:
-            response = _opened_response(
-                opened,
-                headers={
-                    **_NO_STORE,
-                    "Content-Security-Policy": csp,
-                    "X-Content-Type-Options": "nosniff",
-                },
-            )
+            response = _shell_response(opened, csp=csp)
         issuer = getattr(auth, "issue_browser_challenge", None)
         if issuer is not None:
             challenge = issuer(request.cookies.get(auth.challenge_cookie_name))
@@ -148,6 +181,20 @@ def build_auth_router(
                 **cookie_policy(auth.mode, auth.route_prefix),
             )
         return response
+
+    @router.get("/account", include_in_schema=False)
+    @router.get("/agents", include_in_schema=False)
+    @router.get("/agents/{client_path:path}", include_in_schema=False)
+    @router.get("/sessions", include_in_schema=False)
+    @router.get("/sessions/{client_path:path}", include_in_schema=False)
+    @router.get("/review", include_in_schema=False)
+    @router.get("/activity", include_in_schema=False)
+    @router.get("/identity", include_in_schema=False)
+    @router.get("/governance", include_in_schema=False)
+    @router.get("/flywheel", include_in_schema=False)
+    async def authenticated_shell(client_path: str | None = None):
+        del client_path
+        return application_shell()
 
     @router.get("/favicon.ico", include_in_schema=False)
     async def favicon_route():
@@ -187,6 +234,14 @@ def build_auth_router(
     @router.get("/api/health")
     async def public_health():
         return build_public_platform_health()
+
+    @router.get("/api/v1/auth/dingtalk/config")
+    async def public_dingtalk_config():
+        return Response(
+            content=json.dumps({"client_id": auth.app_key, "corp_id": auth.corp_id}),
+            media_type="application/json",
+            headers=_NO_STORE,
+        )
 
     @router.post("/api/v1/auth/dingtalk/start")
     async def start(payload: StartBody, request: Request):
@@ -256,9 +311,16 @@ def build_auth_router(
     @router.get("/api/v1/account")
     async def account(request: Request):
         context: AuthContext = request.state.auth_context
+        try:
+            snapshot = auth.account_snapshot(context)
+        except AuthenticationError:
+            raise HTTPException(503, "account unavailable") from None
         return {
             "internal_user_id": str(context.internal_user_id),
+            "display_name": snapshot["display_name"],
             "role": context.role.value,
+            "observation_agent_ids": snapshot["observation_agent_ids"],
+            "directory_freshness": snapshot["directory_freshness"],
             "hard_stale_read_only": context.hard_stale_read_only,
             "csrf_token": request.state.csrf_token,
         }

@@ -31,6 +31,8 @@ class FakeAuth:
             else "__Host-platform_csrf"
         )
         self.public_base_url = "https://agent.example.test"
+        self.app_key = "public-client-id"
+        self.corp_id = "public-corp-id"
         self.context = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
         self.csrf = "csrf-value"
         self.revoked = False
@@ -59,6 +61,14 @@ class FakeAuth:
 
     def logout(self, context):
         self.revoked = True
+
+    def account_snapshot(self, context):
+        return {
+            "display_name": "Platform user",
+            "observation_agent_ids": [],
+            "directory_freshness": "hard_stale"
+            if context.hard_stale_read_only else "fresh",
+        }
 
 
 def _app(
@@ -190,6 +200,10 @@ def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
     assert client.get("/favicon.ico").status_code == 200
     assert client.get("/assets/app-a1b2c3d4.js").status_code == 200
     assert client.get("/api/health").json() == {"status": "ok"}
+    assert client.get("/api/v1/auth/dingtalk/config").json() == {
+        "client_id": "public-client-id",
+        "corp_id": "public-corp-id",
+    }
 
     for path in (
         "/api/deployment",
@@ -202,6 +216,28 @@ def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
         "/assets/../index.html",
     ):
         assert client.get(path).status_code == 401, path
+
+
+def test_authenticated_root_and_product_routes_serve_identity_shell(
+    tmp_path, monkeypatch
+) -> None:
+    auth = FakeAuth()
+    client = TestClient(_app(tmp_path, monkeypatch, auth))
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    root = client.get("/", cookies=cookies, follow_redirects=False)
+    assert root.status_code == 200
+    assert 'name="platform-identity-mode" content="enabled"' in root.text
+    for path in (
+        "/account", "/agents", "/agents/hr-bot/runtime", "/sessions",
+        "/sessions/fae%3Aone", "/review", "/activity", "/identity",
+        "/governance",
+    ):
+        response = client.get(path, cookies=cookies)
+        assert response.status_code == 200, path
+        assert "LOGIN SHELL" in response.text
+        assert 'name="platform-identity-mode" content="enabled"' in response.text
+    assert client.get("/unknown", cookies=cookies).status_code in {403, 404}
 
 
 def test_manifest_authorized_asset_symlink_never_exposes_outside_content(
@@ -344,8 +380,15 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
 
     account = client.get("/api/v1/account", cookies=cookies)
     assert account.status_code == 200
-    assert account.json()["role"] == "platform_owner"
-    assert account.json()["csrf_token"] == auth.csrf
+    assert account.json() == {
+        "internal_user_id": str(auth.context.internal_user_id),
+        "display_name": "Platform user",
+        "role": "platform_owner",
+        "observation_agent_ids": [],
+        "directory_freshness": "fresh",
+        "hard_stale_read_only": False,
+        "csrf_token": auth.csrf,
+    }
 
     missing_csrf_cookie = client.get(
         "/api/v1/account", cookies={auth.cookie_name: "valid-cookie"}

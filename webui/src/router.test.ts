@@ -22,6 +22,20 @@ describe("Platform router", () => {
     expect(parseRoute("/flywheel")).toEqual({ name: "flywheel" });
     expect(parseRoute("/review")).toEqual({ name: "review" });
     expect(parseRoute("/unknown")).toEqual({ name: "not-found" });
+    expect(parseRoute("/login")).toEqual({ name: "login" });
+    expect(parseRoute("/account")).toEqual({ name: "account" });
+    expect(parseRoute("/identity")).toEqual({ name: "identity" });
+    expect(parseRoute("/governance")).toEqual({ name: "governance" });
+  });
+
+  it("parses and navigates inside the isolated preview prefix", () => {
+    window.history.replaceState({}, "", "/_preview/dingtalk-r1/account");
+    expect(parseRoute(window.location.pathname)).toEqual({ name: "account" });
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 1);
+
+    navigate("/agents");
+
+    expect(window.location.pathname).toBe("/_preview/dingtalk-r1/agents");
   });
 
   it("creates encoded detail paths", () => {
@@ -29,6 +43,9 @@ describe("Platform router", () => {
     expect(routePath({ name: "agent", agentId: "ai-fae-agent" })).toBe("/agents/ai-fae-agent");
     expect(routePath({ name: "agent-runtime", agentId: "fae/a" })).toBe("/agents/fae%2Fa/runtime");
     expect(routePath({ name: "review" })).toBe("/review");
+    expect(routePath({ name: "account" })).toBe("/account");
+    expect(routePath({ name: "identity" })).toBe("/identity");
+    expect(routePath({ name: "governance" })).toBe("/governance");
   });
 
   it("keeps detail pages in their parent navigation section", () => {

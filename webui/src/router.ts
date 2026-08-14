@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 
+import { localPathname, platformPath } from "./auth";
+
 
 export type Route =
+  | { name: "login" }
+  | { name: "account" }
+  | { name: "identity" }
+  | { name: "governance" }
   | { name: "overview" }
   | { name: "agents" }
   | { name: "agent"; agentId: string }
@@ -29,7 +35,12 @@ function decode(value: string): string | null {
 
 
 export function parseRoute(pathname: string): Route {
-  const clean = pathname === "/" ? "/" : pathname.replace(/\/+$/, "");
+  const local = localPathname(pathname);
+  const clean = local === "/" ? "/" : local.replace(/\/+$/, "");
+  if (clean === "/login") return { name: "login" };
+  if (clean === "/account") return { name: "account" };
+  if (clean === "/identity") return { name: "identity" };
+  if (clean === "/governance") return { name: "governance" };
   if (clean === "/") return { name: "overview" };
   if (clean === "/agents") return { name: "agents" };
   if (clean === "/sessions") return { name: "sessions" };
@@ -57,6 +68,10 @@ export function parseRoute(pathname: string): Route {
 
 export function routePath(route: Route): string {
   switch (route.name) {
+    case "login": return "/login";
+    case "account": return "/account";
+    case "identity": return "/identity";
+    case "governance": return "/governance";
     case "overview": return "/";
     case "agents": return "/agents";
     case "agent": return `/agents/${encodeURIComponent(route.agentId)}`;
@@ -71,25 +86,26 @@ export function routePath(route: Route): string {
 }
 
 
-export function routeSection(route: Route): "overview" | "agents" | "sessions" | "review" | "activity" | null {
+export function routeSection(route: Route): "overview" | "agents" | "sessions" | "review" | "activity" | "account" | "identity" | "governance" | null {
   if (route.name === "agent" || route.name === "agent-runtime") return "agents";
   if (route.name === "session") return "sessions";
-  if (route.name === "flywheel" || route.name === "not-found") return null;
+  if (route.name === "flywheel" || route.name === "not-found" || route.name === "login") return null;
   return route.name;
 }
 
 
 export function currentLocationPath(): string {
-  return `${window.location.pathname}${window.location.search}`;
+  return `${localPathname()}${window.location.search}`;
 }
 
 
 export function navigate(path: string, options: NavigateOptions = {}): void {
   if (currentLocationPath() === path) return;
+  const target = platformPath(path);
   if (options.replace) {
-    window.history.replaceState(options.state ?? {}, "", path);
+    window.history.replaceState(options.state ?? {}, "", target);
   } else {
-    window.history.pushState(options.state ?? {}, "", path);
+    window.history.pushState(options.state ?? {}, "", target);
   }
   window.dispatchEvent(new Event("platform:navigate"));
   if (!options.replace) window.requestAnimationFrame(() => window.scrollTo(0, 0));

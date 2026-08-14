@@ -351,6 +351,34 @@ def _seed_current_bound_member(environment):
 
 
 @pytest.mark.postgres
+def test_account_snapshot_returns_only_display_name_and_active_exact_scopes(
+    production_environment,
+) -> None:
+    repository = _db_repository(production_environment)
+    internal_user_id, _ = _seed_current_bound_member(production_environment)
+    with psycopg.connect(production_environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.internal_users set role='management_viewer' "
+            "where internal_user_id=%s",
+            (internal_user_id,),
+        )
+        connection.execute(
+            "insert into platform_control.observation_grants "
+            "(observation_grant_id,viewer_internal_user_id,agent_id,created_by) values "
+            "(%s,%s,'ai-fae-agent',%s),(%s,%s,'hr-bot',%s)",
+            (
+                uuid4(), internal_user_id, internal_user_id,
+                uuid4(), internal_user_id, internal_user_id,
+            ),
+        )
+
+    assert repository.account_snapshot(internal_user_id) == {
+        "display_name": "Web Session User",
+        "observation_agent_ids": ["ai-fae-agent", "hr-bot"],
+    }
+
+
+@pytest.mark.postgres
 def test_migration_015_revokes_direct_attempt_and_session_dml(production_environment) -> None:
     migration = (
         __import__("pathlib").Path(__file__).parents[1]

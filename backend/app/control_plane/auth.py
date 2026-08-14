@@ -288,6 +288,7 @@ class DingTalkWebAuth:
         route_prefix: str,
         public_base_url: str,
         app_key: str,
+        corp_id: str = "",
         state_ttl_seconds: int = 300,
         mode: IdentityMode | None = None,
         cookie_name: str | None = None,
@@ -295,6 +296,8 @@ class DingTalkWebAuth:
         trusted_proxy_networks=(),
         close_callbacks: tuple[Callable[[], Awaitable[None]], ...] = (),
         hard_stale_audit: Callable[[UUID, str, str], None] | None = None,
+        warning_after_seconds: int = 28_800,
+        hard_stale_after_seconds: int = 86_400,
     ) -> None:
         if environment not in {"production", "preview"}:
             raise ValueError("authentication environment invalid")
@@ -308,6 +311,7 @@ class DingTalkWebAuth:
         self.route_prefix = route_prefix
         self.public_base_url = public_base_url.rstrip("/")
         self.app_key = app_key
+        self.corp_id = corp_id
         self.state_ttl_seconds = state_ttl_seconds
         self.mode = mode or (IdentityMode.PREVIEW if environment == "preview" else IdentityMode.PRODUCTION)
         self.cookie_name = cookie_name or (
@@ -327,6 +331,8 @@ class DingTalkWebAuth:
         self.trusted_proxy_networks = tuple(trusted_proxy_networks)
         self._close_callbacks = close_callbacks
         self.hard_stale_audit = hard_stale_audit
+        self.warning_after_seconds = warning_after_seconds
+        self.hard_stale_after_seconds = hard_stale_after_seconds
 
     async def aclose(self) -> None:
         for callback in self._close_callbacks:
@@ -547,6 +553,17 @@ class DingTalkWebAuth:
         if not self.repository.revoke_session(session_id=context.session_id, reason="logout"):
             raise AuthenticationError("session unavailable")
 
+    def account_snapshot(self, context: AuthContext) -> dict[str, object]:
+        snapshot = self.repository.account_snapshot(context.internal_user_id)
+        freshness = self.repository.directory_freshness(
+            warning_after_seconds=self.warning_after_seconds,
+            hard_stale_after_seconds=self.hard_stale_after_seconds,
+        )
+        return {
+            **snapshot,
+            "directory_freshness": freshness.value,
+        }
+
 
 class WebSessionRepository:
     """Narrow app-role facade over migration 015 SECURITY DEFINER functions."""
@@ -672,6 +689,31 @@ class WebSessionRepository:
             return bool(row and row["revoked"])
         except psycopg.Error:
             raise AuthenticationError("session unavailable") from None
+
+    def account_snapshot(self, internal_user_id: UUID) -> dict[str, object]:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select users.display_name, coalesce(scopes.agent_ids, "
+                    "array[]::text[]) as observation_agent_ids from "
+                    "platform_control.internal_users users left join lateral "
+                    "(select array_agg(grants.agent_id order by grants.agent_id) "
+                    "as agent_ids from platform_control.observation_grants grants "
+                    "where grants.viewer_internal_user_id=users.internal_user_id "
+                    "and grants.revoked_at is null) scopes on true where "
+                    "users.internal_user_id=%s and users.status='active'",
+                    (internal_user_id,),
+                ).fetchone()
+            if row is None:
+                raise AuthenticationError("account unavailable")
+            return {
+                "display_name": row["display_name"],
+                "observation_agent_ids": list(row["observation_agent_ids"]),
+            }
+        except AuthenticationError:
+            raise
+        except psycopg.Error:
+            raise AuthenticationError("account unavailable") from None
 
     def directory_freshness(
         self, *, warning_after_seconds: int, hard_stale_after_seconds: int

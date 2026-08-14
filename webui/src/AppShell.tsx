@@ -4,6 +4,7 @@ import { fetchDeployment } from "./api";
 import { UI_COPY } from "./copy";
 import { navigate, routeSection, type Route } from "./router";
 import type { DeploymentInfo } from "./types";
+import { platformPath, type Account } from "./auth";
 
 
 const NAVIGATION = [
@@ -15,6 +16,37 @@ const NAVIGATION = [
 ] as const;
 
 
+interface NavigationItem {
+  label: string;
+  path: string;
+  section: "overview" | "agents" | "sessions" | "review" | "activity" | "account" | "identity" | "governance";
+}
+
+
+function navigationFor(account?: Account | null): NavigationItem[] {
+  if (!account) return [...NAVIGATION];
+  if (account.role === "member") {
+    return [{ label: "企业账号", path: "/account", section: "account" }];
+  }
+  if (account.role === "management_viewer") {
+    return [
+      { label: "企业账号", path: "/account", section: "account" },
+      ...account.observation_agent_ids.flatMap((agentId): NavigationItem[] => [
+        { label: `${agentId} 运行`, path: `/agents/${encodeURIComponent(agentId)}/runtime`, section: "agents" },
+        { label: `${agentId} 复审`, path: `/review?agent_id=${encodeURIComponent(agentId)}`, section: "review" },
+        { label: `${agentId} 记录`, path: `/activity?agent_id=${encodeURIComponent(agentId)}`, section: "activity" },
+      ]),
+      { label: "治理审计", path: "/governance", section: "governance" },
+    ];
+  }
+  return [
+    ...NAVIGATION,
+    { label: "身份管理", path: "/identity", section: "identity" },
+    { label: "企业账号", path: "/account", section: "account" },
+  ];
+}
+
+
 function follow(event: MouseEvent<HTMLAnchorElement>, path: string) {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
@@ -22,18 +54,20 @@ function follow(event: MouseEvent<HTMLAnchorElement>, path: string) {
 }
 
 
-export function AppShell({ route, children }: { route: Route; children: ReactNode }) {
+export function AppShell({ route, children, account }: { route: Route; children: ReactNode; account?: Account | null }) {
   const current = routeSection(route);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   useEffect(() => {
+    if (account && account.role !== "platform_owner") return;
     const controller = new AbortController();
     void fetchDeployment(controller.signal).then(setDeployment).catch(() => undefined);
     return () => controller.abort();
-  }, []);
+  }, [account]);
   const cloudReplica = deployment?.mode === "cloud-replica" && deployment.read_only;
+  const roleNavigation = navigationFor(account);
   const navigation = cloudReplica
-    ? NAVIGATION.filter((item) => item.section !== "review")
-    : NAVIGATION;
+    ? roleNavigation.filter((item) => item.section !== "review")
+    : roleNavigation;
   const freshnessLabel = deployment?.freshness === "current"
     ? "数据已同步"
     : deployment?.freshness === "stale"
@@ -43,8 +77,8 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
     <div className="app">
       <header className="topbar">
         <div className="topbar-inner">
-          <a className="brand" href="/" onClick={(event) => follow(event, "/")}>
-            <img className="brand-mark" src="/platform-logo.svg" alt="" aria-hidden="true" />
+          <a className="brand" href={platformPath(account?.role === "member" ? "/account" : "/")} onClick={(event) => follow(event, account?.role === "member" ? "/account" : "/")}>
+            <img className="brand-mark" src={platformPath("/favicon.ico")} alt="" aria-hidden="true" />
             <span className="brand-name"><strong>Orbbec</strong> Agent Platform</span>
           </a>
           <nav className="product-nav" aria-label={UI_COPY.navigationLabel}>
@@ -52,14 +86,18 @@ export function AppShell({ route, children }: { route: Route; children: ReactNod
               <a
                 aria-current={current === item.section ? "page" : undefined}
                 className={current === item.section ? "is-current" : undefined}
-                href={item.path}
+                href={platformPath(item.path)}
                 key={item.path}
                 onClick={(event) => follow(event, item.path)}
               >{item.label}</a>
             ))}
           </nav>
+          {account && <span className="account-chip">{account.display_name}</span>}
         </div>
       </header>
+      {account?.hard_stale_read_only && <aside className="hard-stale-banner" role="status">
+        <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
+      </aside>}
       {cloudReplica && <aside
         className={`cloud-replica-banner is-${deployment.freshness}`}
         aria-label="云端副本状态"

@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { createAttachmentTicket } from "../api";
+import { platformPath } from "../auth";
 import type { AttachmentSummary } from "../types";
 
 
@@ -52,7 +53,7 @@ function AttachmentCard({ attachment }: { attachment: AttachmentSummary }) {
     try {
       const ticket = await createAttachmentTicket(attachment.attachment_id, purpose);
       if (!ticket.content_path.startsWith("/api/attachments/content/")) throw new Error("invalid attachment content path");
-      window.open(ticket.content_path, "_blank", "noopener,noreferrer");
+      window.open(platformPath(ticket.content_path), "_blank", "noopener,noreferrer");
     } catch {
       setError(true);
     } finally {

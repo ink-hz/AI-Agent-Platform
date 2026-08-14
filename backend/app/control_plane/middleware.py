@@ -21,6 +21,7 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
         "/login",
         "/api/health",
         "/api/v1/auth/dingtalk/start",
+        "/api/v1/auth/dingtalk/config",
         "/api/v1/auth/dingtalk/callback",
         "/api/v1/auth/dingtalk/in-client/exchange",
         "/api/v1/account",
@@ -56,6 +57,7 @@ def is_public_request(
         ("GET", "/favicon.ico"),
         ("GET", "/api/health"),
         ("POST", "/api/v1/auth/dingtalk/start"),
+        ("GET", "/api/v1/auth/dingtalk/config"),
         ("GET", "/api/v1/auth/dingtalk/callback"),
         ("POST", "/api/v1/auth/dingtalk/in-client/exchange"),
     }

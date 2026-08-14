@@ -5,6 +5,7 @@ import type {
   FeedbackIssueDetail, FeedbackIssueSummary, ReviewInboxItem, ReviewOverview,
   ReplayRun, TurnClosureSummary, DeploymentInfo,
 } from "./types";
+import { platformPath } from "./auth";
 
 
 export class ReviewApiError extends Error {
@@ -15,7 +16,7 @@ export class ReviewApiError extends Error {
 
 
 async function readJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, init);
+  const response = await fetch(platformPath(path), init);
   if (!response.ok) {
     let detail: unknown = null;
     try { detail = await response.json(); } catch { detail = null; }
@@ -53,7 +54,7 @@ async function writeReview<T>(
 export async function fetchClusterStatus(
   signal?: AbortSignal,
 ): Promise<ClusterSnapshot> {
-  const response = await fetch("/api/cluster/status", { signal });
+  const response = await fetch(platformPath("/api/cluster/status"), { signal });
   if (!response.ok) throw new Error(`cluster ${response.status}`);
   return response.json();
 }
@@ -62,7 +63,7 @@ export async function fetchClusterStatus(
 export async function fetchFleetOverview(
   signal?: AbortSignal,
 ): Promise<FleetOverview> {
-  const response = await fetch("/api/fleet/overview", { signal });
+  const response = await fetch(platformPath("/api/fleet/overview"), { signal });
   if (!response.ok) throw new Error(`fleet ${response.status}`);
   return response.json();
 }

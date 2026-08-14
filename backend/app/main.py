@@ -316,6 +316,7 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
         route_prefix=control.route_prefix,
         public_base_url=control.public_base_url,
         app_key=control.dingtalk_app_key,
+        corp_id=control.dingtalk_corp_id,
         state_ttl_seconds=control.oauth_state_ttl_seconds,
         mode=control.mode,
         cookie_name=control.cookie_name,
@@ -332,6 +333,8 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
             if control.audit_database_url_file
             else None
         ),
+        warning_after_seconds=control.warning_after_seconds,
+        hard_stale_after_seconds=control.hard_stale_after_seconds,
     )
 
 

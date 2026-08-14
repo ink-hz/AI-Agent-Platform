@@ -26,6 +26,16 @@ VIEWER_R1_ROUTES = frozenset({
 _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/account"),
     ("POST", "/api/v1/auth/logout"),
+    ("GET", "/account"),
+    ("GET", "/agents"),
+    ("GET", "/agents/{client_path:path}"),
+    ("GET", "/sessions"),
+    ("GET", "/sessions/{client_path:path}"),
+    ("GET", "/review"),
+    ("GET", "/activity"),
+    ("GET", "/identity"),
+    ("GET", "/governance"),
+    ("GET", "/flywheel"),
 })
 
 _OWNER_ROUTES = frozenset({
