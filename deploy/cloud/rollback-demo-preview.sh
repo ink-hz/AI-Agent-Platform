@@ -67,6 +67,12 @@ stop_demo_services() {
 }
 
 if [[ ! -e "$active_state" && ! -L "$active_state" ]]; then
+  [[ -f "$agent_enabled" ]] || fail
+  orphan_include_count="$(/usr/bin/grep -Fc 'include /etc/nginx/snippets/orbbec-agent-demo-preview.conf;' "$agent_enabled" || true)"
+  if [[ "$orphan_include_count" != "0" || -e "$snippet_target" || -L "$snippet_target" ]]; then
+    echo "AGENT_DEMO_PREVIEW_ROLLBACK_FAILED orphaned_preview_state" >&2
+    exit 1
+  fi
   stop_demo_services
   echo "AGENT_DEMO_PREVIEW_ROLLBACK_OK state=already-absent"
   exit 0

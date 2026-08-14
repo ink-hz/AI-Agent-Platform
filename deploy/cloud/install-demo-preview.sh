@@ -13,6 +13,7 @@ EXPECTED_LIVE_SHA256="${EXPECTED_LIVE_SHA256:-}"
 
 script_dir="$(/usr/bin/readlink -f "$(/usr/bin/dirname "$0")")"
 snippet_source="${1:-$script_dir/demo-preview.nginx.conf}"
+transaction_helper="$script_dir/demo_preview_nginx_transaction.py"
 agent_enabled=/etc/nginx/sites-enabled/agent-domain.conf
 snippet_target=/etc/nginx/snippets/orbbec-agent-demo-preview.conf
 state_dir=/var/lib/orbbec-agent-demo-preview
@@ -20,14 +21,16 @@ active_state="$state_dir/active-backup"
 timestamp="$(/usr/bin/date -u +%Y%m%dT%H%M%SZ)"
 backup_path="/root/nginx-backups/agent-demo-preview-$timestamp"
 
-for source_path in "$snippet_source" "$agent_enabled"; do
+for source_path in "$snippet_source" "$transaction_helper" "$agent_enabled"; do
   [[ -f "$source_path" && ! -L "$source_path" ]] || {
     [[ "$source_path" == "$agent_enabled" && -L "$source_path" && -f "$source_path" ]] || fail
   }
 done
 [[ "$snippet_source" == /* ]] || fail
-[[ "$(/usr/bin/stat -c '%U' "$snippet_source")" == "root" ]] || fail
-[[ "$(/usr/bin/stat -c '%a' "$snippet_source")" =~ ^(600|640|644)$ ]] || fail
+for trusted_source in "$snippet_source" "$transaction_helper"; do
+  [[ "$(/usr/bin/stat -c '%U' "$trusted_source")" == "root" ]] || fail
+  [[ "$(/usr/bin/stat -c '%a' "$trusted_source")" =~ ^(600|640|644|755)$ ]] || fail
+done
 [[ ! -e "$snippet_target" && ! -L "$snippet_target" ]] || fail
 [[ ! -e "$active_state" && ! -L "$active_state" ]] || fail
 
@@ -187,17 +190,48 @@ PY
 /bin/chown root:root "$candidate"
 /bin/chmod 600 "$candidate"
 
-# The candidate differs from the live file by the one include only.  Installing
-# the two staged files changes no running worker until nginx -t succeeds and the
-# explicit reload below is reached.
-files_touched=0
+# Validate a complete, isolated config tree before any live Nginx path is
+# touched.  The candidate's fixed live include is replaced only in this staged
+# copy so nginx parses the exact staged snippet bytes.
+validation_root="$backup_path/validation"
+validation_snippet="$validation_root/validation-snippet.conf"
+validation_agent="$validation_root/validation-agent-domain.conf"
+validation_config="$validation_root/nginx.conf"
+/usr/bin/install -d -o root -g root -m 700 "$validation_root"
+/usr/bin/install -o root -g root -m 600 "$snippet_source" "$validation_snippet"
+/usr/bin/python3 - "$candidate" "$validation_agent" "$validation_snippet" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+target = pathlib.Path(sys.argv[2])
+snippet = pathlib.Path(sys.argv[3])
+value = source.read_text(encoding="utf-8")
+live = "include /etc/nginx/snippets/orbbec-agent-demo-preview.conf;"
+if value.count(live) != 1:
+    raise SystemExit(1)
+updated = value.replace(live, f"include {snippet};", 1)
+if live in updated or updated.count(str(snippet)) != 1:
+    raise SystemExit(1)
+target.write_text(updated, encoding="utf-8")
+PY
+/bin/chown root:root "$validation_agent"
+/bin/chmod 600 "$validation_agent"
+/usr/bin/printf \
+  'worker_processes 1;\npid %s/nginx.pid;\nerror_log %s/error.log;\nevents { worker_connections 32; }\nhttp { include %s; }\n' \
+  "$validation_root" "$validation_root" "$validation_agent" > "$validation_config"
+/bin/chown root:root "$validation_config"
+/bin/chmod 600 "$validation_config"
+/usr/sbin/nginx -t -p "$validation_root/" -c "$validation_config" >/dev/null 2>&1 || fail
+
+transaction_armed=0
 reload_completed=0
 restore_on_failure() {
   local exit_code=$?
-  if [[ "$files_touched" == "1" ]]; then
+  if [[ "$transaction_armed" == "1" ]]; then
     /usr/bin/install -o root -g root -m "$agent_mode" "$backup_path/agent-domain.conf.original" "$agent_target.part"
     /bin/mv -f -- "$agent_target.part" "$agent_target"
-    /bin/rm -f -- "$snippet_target"
+    /bin/rm -f -- "$snippet_target" "$snippet_target.part" "$agent_target.part"
     if /usr/sbin/nginx -t >/dev/null 2>&1 && [[ "$reload_completed" == "1" ]]; then
       /bin/systemctl reload nginx >/dev/null 2>&1 || true
     fi
@@ -208,12 +242,18 @@ restore_on_failure() {
   fi
 }
 trap restore_on_failure EXIT
+trap 'exit 1' HUP INT TERM
 
-/usr/bin/install -o root -g root -m 644 "$snippet_source" "$snippet_target.part"
-/bin/mv -f -- "$snippet_target.part" "$snippet_target"
-/usr/bin/install -o root -g root -m "$agent_mode" "$candidate" "$agent_target.part"
-/bin/mv -f -- "$agent_target.part" "$agent_target"
-files_touched=1
+# Arm restoration before the helper can create either live .part file.
+transaction_armed=1
+/usr/bin/python3 "$transaction_helper" \
+  --live-config "$agent_target" \
+  --candidate "$candidate" \
+  --live-snippet "$snippet_target" \
+  --snippet-candidate "$snippet_source" \
+  --mode "$agent_mode" \
+  --uid 0 \
+  --gid 0 || fail
 
 /usr/sbin/nginx -t >/dev/null 2>&1 || fail
 /bin/systemctl reload nginx
@@ -242,6 +282,6 @@ listener_invariants > "$backup_path/listeners.after"
 /bin/chown root:root "$active_state.part"
 /bin/chmod 600 "$active_state.part"
 /bin/mv -f -- "$active_state.part" "$active_state"
-files_touched=0
-trap - EXIT
+transaction_armed=0
+trap - EXIT HUP INT TERM
 echo "AGENT_DEMO_PREVIEW_INSTALL_OK"

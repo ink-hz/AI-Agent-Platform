@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import importlib.util
+import os
 import re
 import subprocess
 import sys
+
+import pytest
 
 
 ROOT = Path(__file__).parents[2]
@@ -11,6 +15,7 @@ CLOUD = ROOT / "deploy" / "cloud"
 SNIPPET = CLOUD / "demo-preview.nginx.conf"
 INSTALLER = CLOUD / "install-demo-preview.sh"
 ROLLBACK = CLOUD / "rollback-demo-preview.sh"
+TRANSACTION = CLOUD / "demo_preview_nginx_transaction.py"
 AGENT_TEMPLATE = CLOUD / "agent-domain.nginx.conf"
 
 INCLUDE = "include /etc/nginx/snippets/orbbec-agent-demo-preview.conf;"
@@ -59,6 +64,10 @@ def test_exact_redirect_is_non_cacheable_and_keeps_browser_hardening() -> None:
     assert 'add_header X-Content-Type-Options "nosniff" always;' in body
     assert 'add_header X-Frame-Options "DENY" always;' in body
     assert 'add_header Referrer-Policy "no-referrer" always;' in body
+    assert (
+        'add_header Strict-Transport-Security "max-age=31536000" always;'
+        in body
+    )
 
 
 def test_preview_location_supports_qr_callback_and_all_login_posts() -> None:
@@ -123,6 +132,7 @@ def test_preview_location_has_no_store_and_browser_security_headers() -> None:
         'add_header X-Content-Type-Options "nosniff" always;',
         'add_header X-Frame-Options "DENY" always;',
         'add_header Referrer-Policy "no-referrer" always;',
+        'add_header Strict-Transport-Security "max-age=31536000" always;',
     ):
         assert required in body
 
@@ -197,6 +207,94 @@ def test_installer_captures_and_rechecks_root_fae_admin_listener_and_container_i
         "keychain",
     ):
         assert forbidden not in value.lower()
+
+
+def test_installer_validates_a_complete_staged_config_before_arming_live_writes() -> None:
+    value = _text(INSTALLER)
+
+    staged_test = value.index('nginx -t -p "$validation_root/" -c "$validation_config"')
+    trap_index = value.index("trap restore_on_failure EXIT")
+    armed_index = value.index("transaction_armed=1")
+    transaction_index = value.index('/usr/bin/python3 "$transaction_helper"')
+    live_test = value.index(
+        "/usr/sbin/nginx -t >/dev/null 2>&1 || fail", transaction_index
+    )
+    reload_index = value.index("/bin/systemctl reload nginx", live_test)
+    assert staged_test < trap_index < armed_index < transaction_index < live_test < reload_index
+    assert "validation-agent-domain.conf" in value
+    assert "validation-snippet.conf" in value
+    assert "worker_processes 1;" in value
+    assert "trap 'exit 1' HUP INT TERM" in value
+
+
+def _transaction_module():
+    spec = importlib.util.spec_from_file_location("demo_preview_transaction", TRANSACTION)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_file_transaction_restores_every_write_point_and_interruption(
+    tmp_path: Path,
+) -> None:
+    module = _transaction_module()
+    original = b"server { location / { proxy_pass http://127.0.0.1:8080; } }\n"
+    candidate_bytes = original + b"# preview include\n"
+    snippet_bytes = b"location ^~ /_preview/dingtalk-r1/ { return 503; }\n"
+
+    for failpoint in module.FAILPOINTS:
+        case = tmp_path / failpoint
+        case.mkdir()
+        live_config = case / "agent-domain.conf"
+        candidate = case / "candidate.conf"
+        live_snippet = case / "preview.conf"
+        snippet_candidate = case / "snippet-candidate.conf"
+        live_config.write_bytes(original)
+        live_config.chmod(0o640)
+        candidate.write_bytes(candidate_bytes)
+        snippet_candidate.write_bytes(snippet_bytes)
+
+        with pytest.raises(module.InjectedTransactionFailure):
+            module.install_preview_files(
+                live_config=live_config,
+                candidate=candidate,
+                live_snippet=live_snippet,
+                snippet_candidate=snippet_candidate,
+                mode=0o640,
+                uid=os.getuid(),
+                gid=os.getgid(),
+                failpoint=failpoint,
+            )
+
+        assert live_config.read_bytes() == original
+        assert not live_snippet.exists()
+        assert not live_config.with_name("agent-domain.conf.part").exists()
+        assert not live_snippet.with_name("preview.conf.part").exists()
+
+
+def test_file_transaction_success_installs_both_files_atomically(tmp_path: Path) -> None:
+    module = _transaction_module()
+    live_config = tmp_path / "agent-domain.conf"
+    candidate = tmp_path / "candidate.conf"
+    live_snippet = tmp_path / "preview.conf"
+    snippet_candidate = tmp_path / "snippet-candidate.conf"
+    live_config.write_text("original\n", encoding="utf-8")
+    candidate.write_text("candidate\n", encoding="utf-8")
+    snippet_candidate.write_text("snippet\n", encoding="utf-8")
+
+    module.install_preview_files(
+        live_config=live_config,
+        candidate=candidate,
+        live_snippet=live_snippet,
+        snippet_candidate=snippet_candidate,
+        mode=0o644,
+        uid=os.getuid(),
+        gid=os.getgid(),
+    )
+
+    assert live_config.read_text(encoding="utf-8") == "candidate\n"
+    assert live_snippet.read_text(encoding="utf-8") == "snippet\n"
 
 
 def test_installer_patcher_preserves_live_admin_and_http_blocks_byte_for_byte(
@@ -296,3 +394,17 @@ def test_rollback_is_idempotent_restores_only_preview_nginx_and_stops_only_demo_
         "rm -rf",
     ):
         assert forbidden not in value
+
+
+def test_rollback_refuses_orphan_include_or_snippet_without_active_state() -> None:
+    value = _text(ROLLBACK)
+    absent_branch = value[value.index('if [[ ! -e "$active_state"') : value.index(
+        '[[ -f "$active_state"', value.index('if [[ ! -e "$active_state"')
+    )]
+
+    assert "orphaned_preview_state" in absent_branch
+    assert "grep" in absent_branch
+    assert '"$snippet_target"' in absent_branch
+    assert absent_branch.index("orphaned_preview_state") < absent_branch.index(
+        "state=already-absent"
+    )

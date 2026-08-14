@@ -22,12 +22,21 @@ rollback without deploying it to production.
   `127.0.0.1:8080`; it never renders over the live file from the base template.
 - The installer snapshots the complete live file, other enabled-site hashes,
   all running-container ID/image/start/restart facts, listeners, and root,
-  ADMIN and FAE response codes. It runs `nginx -t`, reloads (never restarts),
-  verifies invariants, and restores the original bytes automatically on any
-  failure.
+  ADMIN and FAE response codes. Before any live Nginx path is touched it renders
+  a complete isolated Nginx configuration, rewrites the candidate's include to
+  the staged snippet, and requires staged `nginx -t` to pass. It then arms the
+  restoration trap before entering a dedicated atomic two-file transaction,
+  validates the live config again, reloads (never restarts), verifies
+  invariants, and restores the original bytes automatically on any failure or
+  handled interruption.
 - Rollback surgically removes the unique include, removes its snippet, validates
   and reloads Nginx, then stops/removes only the two demo-preview Compose
   services. A repeated rollback is safe.
+- If rollback state is missing, the command returns `already-absent` only after
+  proving both the live include and live snippet are absent. Either orphaned
+  artifact fails closed without changing Nginx.
+- Both preview locations repeat the root HSTS policy because their local
+  `add_header` directives replace inherited headers under Nginx semantics.
 
 The supplied target preflight hash remains external input. The implementation
 does not embed the observed production hash, so drift fails closed.
@@ -43,27 +52,31 @@ RED:
 Failures were the expected missing snippet, installer, rollback and template
 include contracts.
 
-GREEN, focused plus deployment regression:
+GREEN after independent-review fixes, focused plus deployment regression:
 
 ```text
-39 passed, 1 skipped in 0.71s
+43 passed, 1 skipped in 0.71s
 ```
 
 The tests include an executable representative live config containing the
 existing HTTP redirect, Basic Auth, `limit_req_zone` and `/admin/` route. The
 installer patcher adds exactly one include; deleting that insertion reproduces
-the input byte for byte. An ambiguous platform root is rejected.
+the input byte for byte. An ambiguous platform root is rejected. The atomic
+file transaction is exercised at six injected write/interruption points; every
+failure restores the original config bytes and removes the snippet and both
+`.part` files.
 
 Full backend:
 
 ```text
-1144 passed, 2 skipped, 31 warnings in 22.15s
+1148 passed, 2 skipped, 31 warnings in 26.10s
 ```
 
 Additional checks:
 
 ```text
 bash -n deploy/cloud/install-demo-preview.sh deploy/cloud/rollback-demo-preview.sh
+python3 -m py_compile deploy/cloud/demo_preview_nginx_transaction.py
 git diff --check
 ```
 
