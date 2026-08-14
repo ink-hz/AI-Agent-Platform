@@ -56,15 +56,19 @@ trap cleanup EXIT
 /usr/bin/curl --noproxy '*' -sS -D "$headers" -o "$body" --max-time 8 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 \
   https://agent.orbbec.com.cn/ || fail
-/usr/bin/grep -Eq '^HTTP/[0-9.]+ 200 ' "$headers" || fail
+/usr/bin/grep -Eq '^HTTP/[0-9.]+ 302 ' "$headers" || fail
+/usr/bin/tr -d '\r' < "$headers" | /usr/bin/grep -Fxiq 'location: /login' || fail
 ! /usr/bin/grep -Eqi '^WWW-Authenticate:' "$headers" || fail
+/usr/bin/curl --noproxy '*' -sS -o "$body" --max-time 8 \
+  --resolve agent.orbbec.com.cn:443:127.0.0.1 \
+  https://agent.orbbec.com.cn/login || fail
 /usr/bin/grep -Fq 'platform-identity-mode' "$body" || fail
 [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 8 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 \
   https://agent.orbbec.com.cn/api/v1/account)" == "401" ]] || fail
 [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 8 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 \
-  https://agent.orbbec.com.cn/admin/)" == "401" ]] || fail
+  'https://agent.orbbec.com.cn/admin/?view=services')" == "401" ]] || fail
 /usr/bin/curl --noproxy '*' -fsS --max-time 8 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 \
   https://agent.orbbec.com.cn/api/health |

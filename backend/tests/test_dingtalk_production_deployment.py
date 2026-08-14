@@ -204,8 +204,9 @@ def test_production_acceptance_covers_identity_workers_admin_and_fae_invariants(
 
     for required in (
         "https://agent.orbbec.com.cn/",
+        "https://agent.orbbec.com.cn/login",
         "/api/v1/account",
-        "/admin/",
+        "/admin/?view=services",
         "platform-identity-mode",
         "platform-directory",
         "platform-dingtalk-stream",
@@ -217,6 +218,7 @@ def test_production_acceptance_covers_identity_workers_admin_and_fae_invariants(
         "FAE_STARTED_AT",
         "nginx -t",
         "DINGTALK_PRODUCTION_ACCEPTANCE_OK release=",
+        "location: /login",
     ):
         assert required in script
     for forbidden in (
