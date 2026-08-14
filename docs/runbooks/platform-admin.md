@@ -118,6 +118,9 @@ stable internal account into a silent terminal read. This read-only query emits
 exactly five fields: display name, role, local status, directory status, and the
 aggregate count of Sessions revoked by administrator-role revocation. It does
 not emit the internal account or any DingTalk identity.
+Both identifier-handling blocks below run `set +x` immediately before the
+hidden read. Shell tracing must remain disabled until the identifier variable
+has been unset or the block exits; never run `set -x` inside either block.
 
 ```bash
 set -euo pipefail
@@ -131,6 +134,7 @@ if [[ -z "$postgres_id" ]]; then
   exit 1
 fi
 
+set +x
 read -r -s -p "Enter verified internal account: " target_internal_id
 printf '\n'
 uuid_pattern='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
@@ -255,6 +259,7 @@ reauthentication behavior as described below.
      exit 1
    fi
 
+   set +x
    read -r -s -p \
      "Enter verified internal account: " target_internal_id
    printf '\n'
