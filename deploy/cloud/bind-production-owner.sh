@@ -62,11 +62,18 @@ PY
 /bin/mv -f "$provider_file.part" "$provider_file"
 
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$compose_path")
+api_container="$("${compose[@]}" ps -q platform-api)"
+[[ -n "$api_container" ]] || fail
+image_name="$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$api_container")"
+[[ "$image_name" == orbbec-agent-platform:* ]] || fail
 admin=(
-  "${compose[@]}" run --rm --no-deps -T --user 0:0
+  /usr/bin/docker run --rm --user 0:0 --read-only
+  --security-opt no-new-privileges:true
+  --network orbbec-agent-platform-internal
+  --tmpfs /tmp:rw,noexec,nosuid,size=8m
   -v "$private_path:/run/owner-secrets:ro"
   -v "$state_path:/run/owner-state"
-  platform-api python -m app.control_plane.admin_cli
+  "$image_name" python -m app.control_plane.admin_cli
   --database-url-file /run/owner-secrets/control-migrator-database-url
   --audit-database-url-file /run/owner-secrets/control-audit-database-url
   --encryption-keyring-file /run/owner-secrets/identity-encryption-keyring

@@ -163,10 +163,16 @@ def test_initial_owner_binding_uses_exact_private_provider_id_and_two_phase_rece
         "--approver",
         "platform_control_owner",
         "owner_binding=1",
+        "docker run --rm",
+        "{{.Config.Image}}",
+        "--network orbbec-agent-platform-internal",
     ):
         assert required in script
     assert script.count("--approver") >= 2
-    for forbidden in ("display_name", "苍渊", "grep.*name", "security ", "set -x"):
+    for forbidden in (
+        "display_name", "苍渊", "grep.*name", "security ", "set -x",
+        "run --rm --no-deps",
+    ):
         assert forbidden not in script
 
 
