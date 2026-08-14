@@ -76,6 +76,8 @@ _OWNER_ROUTES = frozenset({
     ("POST", "/api/review/issues/{issue_id}/disposition"),
     ("POST", "/api/v1/manage/viewers/{internal_user_id}"),
     ("DELETE", "/api/v1/manage/viewers/{internal_user_id}"),
+    ("POST", "/api/v1/manage/admins/{internal_user_id}"),
+    ("DELETE", "/api/v1/manage/admins/{internal_user_id}"),
     ("PUT", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
     ("DELETE", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
 }) | _AUTHENTICATED_SELF_ROUTES

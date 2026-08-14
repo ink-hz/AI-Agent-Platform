@@ -114,6 +114,18 @@ def test_platform_admin_uses_owner_routes_after_fail_closed_gates():
     ).status_code == 503
 
 
+@pytest.mark.parametrize("method", ["POST", "DELETE"])
+def test_admin_routes_are_allowlisted_but_remain_route_level_owner_only(method):
+    service = AuthorizationService(Grants())
+    route = "/api/v1/manage/admins/{internal_user_id}"
+
+    assert service.decide(OWNER, method, route, ()).allowed is True
+    assert service.decide(ADMIN, method, route, ()).allowed is True
+    assert service.decide(MEMBER, method, route, ()).status_code == 403
+    assert service.decide(VIEWER, method, route, ()).status_code == 403
+    assert service.decide(STALE_OWNER, method, route, ()).status_code == 503
+
+
 def test_governance_read_is_the_only_viewer_route_without_agent_scope():
     service = AuthorizationService(Grants())
 

@@ -71,6 +71,13 @@ Auth = Annotated[AuthContext, Depends(authenticated_context)]
 Service = Annotated["ManagementService", Depends(management_service)]
 
 
+def _manager(context: AuthContext) -> None:
+    if not isinstance(context, AuthContext):
+        raise HTTPException(status_code=401, detail="authentication required")
+    if context.role not in {Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN}:
+        raise HTTPException(status_code=403, detail="platform manager required")
+
+
 def _owner(context: AuthContext) -> None:
     if not isinstance(context, AuthContext):
         raise HTTPException(status_code=401, detail="authentication required")
@@ -81,7 +88,11 @@ def _owner(context: AuthContext) -> None:
 def _governance_reader(context: AuthContext) -> None:
     if not isinstance(context, AuthContext):
         raise HTTPException(status_code=401, detail="authentication required")
-    if context.role not in {Role.PLATFORM_OWNER, Role.MANAGEMENT_VIEWER}:
+    if context.role not in {
+        Role.PLATFORM_OWNER,
+        Role.PLATFORM_ADMIN,
+        Role.MANAGEMENT_VIEWER,
+    }:
         raise HTTPException(status_code=403, detail="audit access denied")
 
 
@@ -90,7 +101,6 @@ def _mutation_guards(
     csrf_verified: bool,
     directory_is_fresh: bool,
 ) -> None:
-    _owner(context)
     if not csrf_verified:
         raise HTTPException(status_code=403, detail="CSRF verification failed")
     if context.hard_stale_read_only or not directory_is_fresh:
@@ -237,6 +247,8 @@ class ManagementRepository:
                     "operation identity collision",
                     "viewer assignment precondition failed",
                     "viewer revocation precondition failed",
+                    "admin assignment precondition failed",
+                    "admin revocation precondition failed",
                     "scope assignment precondition failed",
                     "scope revocation precondition failed",
                     "scope limit reached",
@@ -295,6 +307,36 @@ class ManagementRepository:
             operation_id,
         )
 
+    def assign_admin(
+        self,
+        actor: UUID,
+        target: UUID,
+        operation_id: UUID,
+        expected_row_version: int,
+        audit_event_id: UUID,
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "select platform_control.assign_platform_admin("
+            "%s,%s,%s,%s,%s) as result",
+            (operation_id, actor, target, expected_row_version, audit_event_id),
+            operation_id,
+        )
+
+    def revoke_admin(
+        self,
+        actor: UUID,
+        target: UUID,
+        operation_id: UUID,
+        expected_row_version: int,
+        audit_event_id: UUID,
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "select platform_control.revoke_platform_admin("
+            "%s,%s,%s,%s,%s) as result",
+            (operation_id, actor, target, expected_row_version, audit_event_id),
+            operation_id,
+        )
+
     def grant_observation(
         self,
         actor: UUID,
@@ -348,6 +390,7 @@ class ManagementRepository:
     def governance_audit(self) -> list[dict[str, Any]]:
         governance_patterns = (
             "owner_%",
+            "admin_role_%",
             "viewer_role_%",
             "observation_scope_%",
             "directory_%",
@@ -560,6 +603,66 @@ class ManagementService:
             ),
         )
 
+    def change_admin(
+        self,
+        context: AuthContext,
+        target: UUID,
+        reason: str,
+        *,
+        revoke: bool = False,
+        request_id: UUID | None = None,
+    ) -> None:
+        selected_reason = self._reason(
+            reason,
+            "admin_access_revoked" if revoke else "admin_access_approved",
+        )
+        action = "revocation" if revoke else "assignment"
+        operation_id = request_id or uuid4()
+        expected_role = "platform_admin" if revoke else "member"
+        replay = self.repository.mutation_precondition(
+            operation_id,
+            "revoke_admin" if revoke else "assign_admin",
+            target,
+        )
+        if replay is None:
+            state = self.repository.viewer_state(target)
+            if state["role"] != expected_role:
+                raise HTTPException(status_code=409, detail="admin target unavailable")
+            expected_version = state["row_version"]
+        else:
+            expected_version = replay["expected_target_row_version"]
+        requested = self._command(
+            f"admin_role_{action}_requested",
+            context,
+            "internal_user",
+            str(target),
+            selected_reason,
+            {
+                "operation_id": str(operation_id),
+                "previous_role": expected_role,
+                "new_role": "member" if revoke else "platform_admin",
+                "expected_row_version": expected_version,
+                "result": "requested",
+            },
+            operation_id,
+        )
+        operation = (
+            self.repository.revoke_admin if revoke else self.repository.assign_admin
+        )
+        self._execute(
+            requested,
+            lambda event_id: AppliedMutation(
+                None,
+                operation(
+                    context.internal_user_id,
+                    target,
+                    operation_id,
+                    expected_version,
+                    event_id,
+                ),
+            ),
+        )
+
     def change_observation(
         self,
         context: AuthContext,
@@ -654,8 +757,50 @@ class ManagementService:
 
 @router.get("/users")
 def list_users(context: Auth, service: Service) -> dict[str, Any]:
-    _owner(context)
+    _manager(context)
     return {"users": service.list_users(context)}
+
+
+@router.post("/admins/{internal_user_id}")
+def assign_admin(
+    internal_user_id: UUID,
+    payload: ReasonBody,
+    context: Auth,
+    service: Service,
+    csrf_verified: Annotated[bool, Depends(csrf_protection)],
+    directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
+) -> dict[str, str]:
+    _owner(context)
+    _mutation_guards(context, csrf_verified, directory_is_fresh)
+    service.change_admin(
+        context,
+        internal_user_id,
+        payload.reason,
+        revoke=False,
+        request_id=payload.request_id,
+    )
+    return {"status": "ok"}
+
+
+@router.delete("/admins/{internal_user_id}")
+def revoke_admin(
+    internal_user_id: UUID,
+    payload: Annotated[ReasonBody, Body()],
+    context: Auth,
+    service: Service,
+    csrf_verified: Annotated[bool, Depends(csrf_protection)],
+    directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
+) -> dict[str, str]:
+    _owner(context)
+    _mutation_guards(context, csrf_verified, directory_is_fresh)
+    service.change_admin(
+        context,
+        internal_user_id,
+        payload.reason,
+        revoke=True,
+        request_id=payload.request_id,
+    )
+    return {"status": "ok"}
 
 
 @router.post("/viewers/{internal_user_id}")
@@ -667,6 +812,7 @@ def assign_viewer(
     csrf_verified: Annotated[bool, Depends(csrf_protection)],
     directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
 ) -> dict[str, str]:
+    _manager(context)
     _mutation_guards(context, csrf_verified, directory_is_fresh)
     service.change_viewer(
         context,
@@ -687,6 +833,7 @@ def revoke_viewer(
     csrf_verified: Annotated[bool, Depends(csrf_protection)],
     directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
 ) -> dict[str, str]:
+    _manager(context)
     _mutation_guards(context, csrf_verified, directory_is_fresh)
     service.change_viewer(
         context,
@@ -708,6 +855,7 @@ def grant_observation(
     csrf_verified: Annotated[bool, Depends(csrf_protection)],
     directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
 ) -> dict[str, str]:
+    _manager(context)
     _mutation_guards(context, csrf_verified, directory_is_fresh)
     service.change_observation(
         context,
@@ -730,6 +878,7 @@ def revoke_observation(
     csrf_verified: Annotated[bool, Depends(csrf_protection)],
     directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
 ) -> dict[str, str]:
+    _manager(context)
     _mutation_guards(context, csrf_verified, directory_is_fresh)
     service.change_observation(
         context,

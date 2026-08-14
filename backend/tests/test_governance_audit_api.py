@@ -30,6 +30,7 @@ from test_control_plane_migration import control_database
 
 
 OWNER = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+ADMIN = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), False)
 VIEWER = AuthContext(uuid4(), Role.MANAGEMENT_VIEWER, uuid4(), False)
 MEMBER = AuthContext(uuid4(), Role.MEMBER, uuid4(), False)
 
@@ -109,6 +110,51 @@ class FakeManagementRepository:
             "row_version": expected_version + 1,
             "session_revocation_count": 1,
             "previous_scopes": before,
+            "new_scopes": [],
+        }
+
+    def assign_admin(
+        self, actor, target, operation_id, expected_version, audit_event_id
+    ):
+        mutation = ("admin_assign", actor, target, operation_id, audit_event_id)
+        if mutation not in self.mutations:
+            self.mutations.append(mutation)
+        self.ledger[operation_id] = {
+            "expected_target_row_version": expected_version,
+            "expected_causal_row_version": 0,
+        }
+        state = self.viewer_state(target)
+        state.update({"role": "platform_admin", "row_version": expected_version + 1})
+        return {
+            "operation_id": str(operation_id),
+            "previous_role": "member",
+            "new_role": "platform_admin",
+            "row_version": expected_version + 1,
+            "session_revocation_count": 0,
+            "previous_scopes": [],
+            "new_scopes": [],
+        }
+
+    def revoke_admin(
+        self, actor, target, operation_id, expected_version, audit_event_id
+    ):
+        mutation = ("admin_revoke", actor, target, operation_id, audit_event_id)
+        if mutation not in self.mutations:
+            self.mutations.append(mutation)
+        self.revocations.append(target)
+        self.ledger[operation_id] = {
+            "expected_target_row_version": expected_version,
+            "expected_causal_row_version": 0,
+        }
+        state = self.viewer_state(target)
+        state.update({"role": "member", "row_version": expected_version + 1})
+        return {
+            "operation_id": str(operation_id),
+            "previous_role": "platform_admin",
+            "new_role": "member",
+            "row_version": expected_version + 1,
+            "session_revocation_count": 1,
+            "previous_scopes": [],
             "new_scopes": [],
         }
 
@@ -235,6 +281,149 @@ def test_owner_user_list_is_internal_and_sanitized() -> None:
         "scopes",
     }
     assert not set(payload) & {"provider_id", "mobile", "email"}
+
+
+def test_admin_can_manage_viewers_scopes_and_read_governance() -> None:
+    client, repository, audit = _client(ADMIN)
+    target = uuid4()
+
+    assert client.get("/api/v1/manage/users").status_code == 200
+    assert client.post(
+        f"/api/v1/manage/viewers/{target}",
+        json={"reason": "access_approved"},
+    ).status_code == 200
+    assert client.put(
+        f"/api/v1/manage/viewers/{target}/observations/fae",
+        json={"reason": "scope_approved"},
+    ).status_code == 200
+    assert client.get("/api/v1/manage/audit/governance").status_code == 200
+    assert [entry[0] for entry in repository.mutations] == ["assign", "grant"]
+    assert any(
+        command.event_type == "governance_audit_read_requested"
+        for command in audit.commands
+    )
+
+
+def test_owner_can_assign_and_revoke_admin_with_exact_reasons() -> None:
+    client, repository, audit = _client(OWNER)
+    target = uuid4()
+    request_id = uuid4()
+
+    assert client.post(
+        f"/api/v1/manage/admins/{target}",
+        json={
+            "reason": "admin_access_approved",
+            "request_id": str(request_id),
+        },
+    ).status_code == 200
+    assert client.request(
+        "DELETE",
+        f"/api/v1/manage/admins/{target}",
+        json={"reason": "admin_access_revoked"},
+    ).status_code == 200
+    assert [entry[0] for entry in repository.mutations] == [
+        "admin_assign",
+        "admin_revoke",
+    ]
+    assert [command.event_type for command in audit.commands if command.event_type.endswith("_requested")] == [
+        "admin_role_assignment_requested",
+        "admin_role_revocation_requested",
+    ]
+
+
+@pytest.mark.parametrize("context", [ADMIN, MEMBER, VIEWER])
+@pytest.mark.parametrize(
+    ("method", "reason"),
+    [
+        ("POST", "admin_access_approved"),
+        ("DELETE", "admin_access_revoked"),
+    ],
+)
+def test_only_owner_can_mutate_admins_without_repository_invocation(
+    context: AuthContext, method: str, reason: str
+) -> None:
+    client, repository, audit = _client(context)
+
+    assert client.request(
+        method,
+        f"/api/v1/manage/admins/{uuid4()}",
+        json={"reason": reason},
+    ).status_code == 403
+    assert repository.mutations == []
+    assert audit.commands == []
+
+
+@pytest.mark.parametrize(
+    ("csrf", "fresh", "expected"),
+    [(False, True, 403), (True, False, 503)],
+)
+def test_admin_mutation_requires_csrf_and_fresh_directory_without_repository_invocation(
+    csrf: bool, fresh: bool, expected: int
+) -> None:
+    client, repository, audit = _client(OWNER, csrf=csrf, fresh=fresh)
+
+    assert client.post(
+        f"/api/v1/manage/admins/{uuid4()}",
+        json={"reason": "admin_access_approved"},
+    ).status_code == expected
+    assert repository.mutations == []
+    assert audit.commands == []
+
+
+@pytest.mark.parametrize("role", ["platform_owner", "platform_admin"])
+def test_admin_assignment_rejects_owner_and_existing_admin_targets(role: str) -> None:
+    client, repository, audit = _client(OWNER)
+    target = uuid4()
+    repository.states[target] = {"role": role, "row_version": 7, "scopes": []}
+
+    assert client.post(
+        f"/api/v1/manage/admins/{target}",
+        json={"reason": "admin_access_approved"},
+    ).status_code == 409
+    assert repository.mutations == []
+    assert audit.commands == []
+
+
+def test_admin_mutation_rejects_inexact_reason_without_repository_invocation() -> None:
+    client, repository, audit = _client(OWNER)
+
+    assert client.post(
+        f"/api/v1/manage/admins/{uuid4()}",
+        json={"reason": "access_approved"},
+    ).status_code == 422
+    assert repository.mutations == []
+    assert audit.commands == []
+
+
+def test_admin_initial_audit_failure_returns_503_without_mutation() -> None:
+    client, repository, audit = _client(OWNER)
+    audit.fail = True
+
+    assert client.post(
+        f"/api/v1/manage/admins/{uuid4()}",
+        json={"reason": "admin_access_approved"},
+    ).status_code == 503
+    assert repository.mutations == []
+
+
+def test_admin_assignment_replay_succeeds_without_second_mutation() -> None:
+    client, repository, audit = _client(OWNER)
+    audit.fail_completed_once = True
+    target = uuid4()
+    request_id = uuid4()
+    body = {
+        "reason": "admin_access_approved",
+        "request_id": str(request_id),
+    }
+
+    first = client.post(f"/api/v1/manage/admins/{target}", json=body)
+    assert first.status_code == 503
+    assert first.json()["detail"] == {
+        "code": "management_mutation_indeterminate",
+        "request_id": str(request_id),
+    }
+    assert client.post(f"/api/v1/manage/admins/{target}", json=body).status_code == 200
+    assert [entry[0] for entry in repository.mutations] == ["admin_assign"]
 
 
 @pytest.mark.parametrize(
@@ -568,6 +757,110 @@ def test_real_viewer_revocation_links_audit_and_revokes_sessions_atomically(
         ("viewer_role_revocation_requested",),
         ("viewer_role_revocation_completed",),
     ]
+
+
+@pytest.mark.postgres
+def test_real_admin_revocation_links_audit_and_revokes_sessions_atomically(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    owner_id = uuid4()
+    admin_id = uuid4()
+    session_id = uuid4()
+    generation_id = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        existing_owner = connection.execute(
+            "select internal_user_id from platform_control.internal_users "
+            "where role = 'platform_owner'"
+        ).fetchone()
+        if existing_owner is not None:
+            owner_id = existing_owner[0]
+        else:
+            connection.execute(
+                "insert into platform_control.internal_users "
+                "(internal_user_id, display_name, status, role) values "
+                "(%s, 'Admin API Owner', 'active', 'platform_owner')",
+                (owner_id,),
+            )
+        connection.execute(
+            "insert into platform_control.directory_generations "
+            "(generation_id, status, content_sha256, completed_at) values "
+            "(%s, 'complete', %s, now())",
+            (generation_id, generation_id.hex * 2),
+        )
+        connection.execute(
+            "update platform_control.directory_state set "
+            "active_generation_id=%s, last_complete_at=now(), updated_at=now() "
+            "where singleton",
+            (generation_id,),
+        )
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id, display_name, status, role, "
+            "last_confirmed_generation_id) values "
+            "(%s, 'Admin API Target', 'active', 'platform_admin', "
+            "%s)",
+            (admin_id, generation_id),
+        )
+        connection.execute(
+            "insert into platform_control.web_sessions "
+            "(session_id, internal_user_id, token_hash, csrf_hash, "
+            "idle_expires_at, absolute_expires_at) values "
+            "(%s, %s, %s, %s, now() + interval '1 hour', "
+            "now() + interval '8 hours')",
+            (session_id, admin_id, b"admin-api-session", b"admin-api-csrf"),
+        )
+
+    context = AuthContext(owner_id, Role.PLATFORM_OWNER, uuid4(), False)
+    ManagementService(
+        ManagementRepository(environment["urls"]["platform_control_app"]),
+        AuditWriter.from_database_url(
+            environment["urls"]["platform_audit_append"]
+        ),
+    ).change_admin(
+        context,
+        admin_id,
+        "admin_access_revoked",
+        revoke=True,
+    )
+
+    with psycopg.connect(environment["admin"]) as connection:
+        user = connection.execute(
+            "select role::text, role_audit_event_id from "
+            "platform_control.internal_users where internal_user_id = %s",
+            (admin_id,),
+        ).fetchone()
+        session = connection.execute(
+            "select revoked_at, revoked_reason from "
+            "platform_control.web_sessions where session_id = %s",
+            (session_id,),
+        ).fetchone()
+        events = connection.execute(
+            "select event_type from platform_control.audit_events "
+            "where request_id = (select request_id from "
+            "platform_control.audit_events where audit_event_id = %s) "
+            "order by occurred_at, event_type",
+            (user[1],),
+        ).fetchall()
+    assert user[0] == "member"
+    assert user[1] is not None
+    assert session[0] is not None
+    assert session[1] == "admin_role_revoked"
+    assert events == [
+        ("admin_role_revocation_requested",),
+        ("admin_role_revocation_completed",),
+    ]
+    projected = ManagementRepository(
+        environment["urls"]["platform_control_app"]
+    ).governance_audit()
+    assert {
+        event["event_type"]
+        for event in projected
+        if event["target_internal_id"] == str(admin_id)
+    } >= {
+        "admin_role_revocation_requested",
+        "admin_role_revocation_completed",
+    }
 
 
 @pytest.mark.postgres
