@@ -62,6 +62,19 @@ describe("LoginPage", () => {
     expect(onStartQr).toHaveBeenCalledWith("/account");
   });
 
+  it("falls back to account when the browser URL has a fragment", async () => {
+    window.history.replaceState({}, "", "/login?return_path=/admin/#fragment");
+    const onStartQr = vi.fn().mockResolvedValue("https://login.dingtalk.com/oauth2/auth");
+    await act(async () => root.render(<LoginPage onStartQr={onStartQr} onNavigate={() => undefined} />));
+
+    const button = [...container.querySelectorAll("button")].find((item) => item.textContent?.includes("扫码登录"));
+    await act(async () => button?.click());
+
+    expect(window.location.search).toBe("?return_path=/admin/");
+    expect(window.location.hash).toBe("#fragment");
+    expect(onStartQr).toHaveBeenCalledWith("/account");
+  });
+
   it("renders only a generic callback failure", async () => {
     window.history.replaceState({}, "", "/login?error=provider-secret-value");
     await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onNavigate={() => undefined} />));
@@ -86,6 +99,16 @@ describe("LoginPage", () => {
 
     expect(onInClient).toHaveBeenCalledTimes(1);
     expect(onNavigate).toHaveBeenCalledWith("/admin/");
+  });
+
+  it("keeps in-client fragment URLs on the default account page", async () => {
+    window.history.replaceState({}, "", "/login?return_path=/admin/#fragment");
+    const onInClient = vi.fn().mockResolvedValue(undefined);
+    const onNavigate = vi.fn();
+    await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={onNavigate} />));
+
+    expect(onInClient).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledWith("/account");
   });
 
   it("keeps manual in-client retry after automatic failure", async () => {
