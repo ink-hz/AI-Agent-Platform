@@ -555,11 +555,25 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
     assert client.get("/api/v1/account", cookies=cookies).status_code == 401
 
 
-def test_account_serializes_platform_admin_role(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("role", "serialized_role"),
+    [
+        (Role.MEMBER, "member"),
+        (Role.MANAGEMENT_VIEWER, "management_viewer"),
+        (Role.PLATFORM_ADMIN, "platform_admin"),
+        (Role.PLATFORM_OWNER, "platform_owner"),
+    ],
+)
+def test_account_serializes_every_ai_admin_contract_role_with_exact_fields(
+    tmp_path,
+    monkeypatch,
+    role,
+    serialized_role,
+) -> None:
     auth = FakeAuth()
     auth.context = AuthContext(
         auth.context.internal_user_id,
-        Role.PLATFORM_ADMIN,
+        role,
         auth.context.session_id,
         False,
     )
@@ -569,7 +583,8 @@ def test_account_serializes_platform_admin_role(tmp_path, monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["role"] == "platform_admin"
+    assert set(response.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
+    assert response.json()["role"] == serialized_role
 
 
 def test_unknown_stored_role_fails_closed() -> None:
