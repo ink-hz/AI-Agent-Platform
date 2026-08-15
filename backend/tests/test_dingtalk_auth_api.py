@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 from uuid import uuid4
 
 from fastapi import APIRouter, FastAPI
@@ -39,17 +39,26 @@ class FakeAuth:
         self.csrf = "csrf-value"
         self.revoked = False
         self.provider_calls = 0
-        self.return_path = self.route_prefix
+        self.return_paths: dict[str, str] = {}
+        self.started_count = 0
 
     def start_qr(self, return_path):
         from app.control_plane.auth import StartedLogin
-        self.return_path = return_path
-        return StartedLogin(uuid4(), "state-value", "https://login.dingtalk.com/test", return_path)
+        self.started_count += 1
+        state = f"state-{self.started_count}"
+        self.return_paths[state] = return_path
+        return StartedLogin(
+            uuid4(), state, f"https://login.dingtalk.com/test?state={state}", return_path
+        )
 
     async def complete_qr(self, state, code):
-        from app.control_plane.auth import CompletedLogin
+        from app.control_plane.auth import AuthenticationError, CompletedLogin
+        try:
+            return_path = self.return_paths.pop(state)
+        except KeyError:
+            raise AuthenticationError("login attempt invalid") from None
         self.provider_calls += 1
-        return CompletedLogin(self._issued(), self.return_path)
+        return CompletedLogin(self._issued(), return_path)
 
     async def complete_in_client(self, code):
         self.provider_calls += 1
@@ -323,24 +332,46 @@ def test_qr_start_uses_fixed_flow_safe_return_and_no_store(tmp_path, monkeypatch
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_qr_start_and_callback_preserve_exact_admin_return(tmp_path, monkeypatch) -> None:
+def test_qr_callbacks_use_the_return_path_bound_to_each_state(tmp_path, monkeypatch) -> None:
     auth = FakeAuth()
     client = TestClient(_app(tmp_path, monkeypatch, auth))
 
-    started = client.post(
+    account_started = client.post(
+        "/api/v1/auth/dingtalk/start",
+        json={"return_path": "/account"},
+        headers={"Origin": "https://agent.example.test"},
+    )
+    admin_started = client.post(
         "/api/v1/auth/dingtalk/start",
         json={"return_path": "/admin/"},
         headers={"Origin": "https://agent.example.test"},
     )
-    callback = client.get(
-        "/api/v1/auth/dingtalk/callback?state=state&code=code",
+    account_state = parse_qs(urlsplit(account_started.json()["authorization_url"]).query)["state"][0]
+    admin_state = parse_qs(urlsplit(admin_started.json()["authorization_url"]).query)["state"][0]
+
+    admin_callback = client.get(
+        f"/api/v1/auth/dingtalk/callback?state={admin_state}&code=admin-code",
+        follow_redirects=False,
+    )
+    account_callback = client.get(
+        f"/api/v1/auth/dingtalk/callback?state={account_state}&code=account-code",
+        follow_redirects=False,
+    )
+    unknown_callback = client.get(
+        "/api/v1/auth/dingtalk/callback?state=unknown-state-secret&code=unknown-code-secret",
         follow_redirects=False,
     )
 
-    assert started.status_code == 200
-    assert auth.return_path == "/admin/"
-    assert callback.status_code == 302
-    assert callback.headers["location"] == "/admin/"
+    assert admin_callback.status_code == 302
+    assert admin_callback.headers["location"] == "/admin/"
+    assert account_callback.status_code == 302
+    assert account_callback.headers["location"] == "/account"
+    assert unknown_callback.status_code == 302
+    assert unknown_callback.headers["location"] == "/login?error=1"
+    assert "unknown-state-secret" not in unknown_callback.text
+    assert "unknown-code-secret" not in unknown_callback.text
+    assert "unknown-state-secret" not in unknown_callback.headers["location"]
+    assert "unknown-code-secret" not in unknown_callback.headers["location"]
 
 
 def test_every_identity_response_prevents_browser_or_proxy_caching(
@@ -434,7 +465,16 @@ def test_qr_and_in_client_login_set_rotated_cookie_and_return_csrf(tmp_path, mon
     auth = FakeAuth()
     client = TestClient(_app(tmp_path, monkeypatch, auth))
 
-    qr = client.get("/api/v1/auth/dingtalk/callback?state=state&code=code", follow_redirects=False)
+    started = client.post(
+        "/api/v1/auth/dingtalk/start",
+        json={"return_path": "/"},
+        headers={"Origin": "https://agent.example.test"},
+    )
+    state = parse_qs(urlsplit(started.json()["authorization_url"]).query)["state"][0]
+    qr = client.get(
+        f"/api/v1/auth/dingtalk/callback?state={state}&code=code",
+        follow_redirects=False,
+    )
     assert qr.status_code == 302
     assert qr.headers["location"] == "/"
     assert "__Host-platform_session=new-cookie" in qr.headers["set-cookie"]
