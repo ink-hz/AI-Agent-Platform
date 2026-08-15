@@ -18,6 +18,17 @@ from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.main import create_app
 
 
+AI_ADMIN_ACCOUNT_CONTRACT_FIELDS = {
+    "internal_user_id",
+    "display_name",
+    "role",
+    "observation_agent_ids",
+    "directory_freshness",
+    "hard_stale_read_only",
+    "csrf_token",
+}
+
+
 class FakeAuth:
     def __init__(self, *, mode=IdentityMode.PRODUCTION, prefix="/") -> None:
         self.mode = mode
@@ -504,6 +515,7 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
 
     account = client.get("/api/v1/account", cookies=cookies)
     assert account.status_code == 200
+    assert set(account.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
     assert account.json() == {
         "internal_user_id": str(auth.context.internal_user_id),
         "display_name": "Platform user",
