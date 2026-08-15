@@ -23,6 +23,7 @@ import {
   loadAccount,
   inClientLogin,
   inClientLoginAvailable,
+  loginReturnPath,
   listManagedUsers,
   platformPath,
   routePrefix,
@@ -37,6 +38,28 @@ afterEach(() => {
   requestAuthCode.mockReset();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+
+describe("login return path", () => {
+  it.each([
+    ["?return_path=/admin/", "/admin/"],
+    ["?return_path=%2Fadmin%2F", "/admin/"],
+    ["", "/account"],
+    ["?return_path=https%3A%2F%2Fevil.example%2F", "/account"],
+    ["?return_path=%2F%2Fevil.example%2F", "/account"],
+    ["?return_path=%2Fadmin", "/account"],
+    ["?return_path=%2Fadmin%2F%3Fview%3Dshuttle", "/account"],
+    ["?return_path=%252Fadmin%252F", "/account"],
+    ["?return_path=%2Fadmin%5C", "/account"],
+    ["?return_path=%2Fadmin%2F%00", "/account"],
+    ["?return_path=%2Fadmin%2F%23fragment", "/account"],
+    ["?return_path=/admin/#fragment", "/account"],
+    ["?return_path=%2Fadmin%2F&return_path=%2Fadmin%2F", "/account"],
+    ["?return_path=%2Fadmin%2F&return_path=%2Faccount", "/account"],
+  ] as const)("maps %s to %s", (search, expected) => {
+    expect(loginReturnPath(search)).toBe(expected);
+  });
 });
 
 
