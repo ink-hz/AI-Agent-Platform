@@ -15,7 +15,9 @@ export function LoginPage({
   onInClient,
   onNavigate = (target) => window.location.assign(target),
 }: LoginPageProps) {
-  const [returnPath] = useState(() => loginReturnPath(window.location.search));
+  const [returnPath] = useState(() => (
+    window.location.hash ? "/account" : loginReturnPath(window.location.search)
+  ));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(() => new URLSearchParams(window.location.search).has("error"));
   const automaticAttempted = useRef(false);
