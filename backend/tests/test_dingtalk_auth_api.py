@@ -27,6 +27,12 @@ AI_ADMIN_ACCOUNT_CONTRACT_FIELDS = {
     "hard_stale_read_only",
     "csrf_token",
 }
+AI_ADMIN_ACCOUNT_CONTRACT_ROLES = {
+    "member",
+    "management_viewer",
+    "platform_admin",
+    "platform_owner",
+}
 
 
 class FakeAuth:
@@ -555,20 +561,15 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
     assert client.get("/api/v1/account", cookies=cookies).status_code == 401
 
 
-@pytest.mark.parametrize(
-    ("role", "serialized_role"),
-    [
-        (Role.MEMBER, "member"),
-        (Role.MANAGEMENT_VIEWER, "management_viewer"),
-        (Role.PLATFORM_ADMIN, "platform_admin"),
-        (Role.PLATFORM_OWNER, "platform_owner"),
-    ],
-)
+def test_ai_admin_account_contract_roles_match_complete_platform_role_enum() -> None:
+    assert AI_ADMIN_ACCOUNT_CONTRACT_ROLES == {role.value for role in Role}
+
+
+@pytest.mark.parametrize("role", tuple(Role))
 def test_account_serializes_every_ai_admin_contract_role_with_exact_fields(
     tmp_path,
     monkeypatch,
     role,
-    serialized_role,
 ) -> None:
     auth = FakeAuth()
     auth.context = AuthContext(
@@ -584,7 +585,7 @@ def test_account_serializes_every_ai_admin_contract_role_with_exact_fields(
 
     assert response.status_code == 200
     assert set(response.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
-    assert response.json()["role"] == serialized_role
+    assert response.json()["role"] == role.value
 
 
 def test_unknown_stored_role_fails_closed() -> None:
