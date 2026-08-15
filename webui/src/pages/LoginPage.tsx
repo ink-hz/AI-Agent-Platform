@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { inClientLogin, inClientLoginAvailable, platformPath, startQrLogin } from "../auth";
+import { inClientLogin, inClientLoginAvailable, loginReturnPath, platformPath, startQrLogin } from "../auth";
 
 
 export interface LoginPageProps {
-  onStartQr?: () => Promise<string>;
+  onStartQr?: (returnPath: "/admin/" | "/account") => Promise<string>;
   onInClient?: () => Promise<void>;
   onNavigate?: (target: string) => void;
 }
 
 
 export function LoginPage({
-  onStartQr = () => startQrLogin(),
+  onStartQr = startQrLogin,
   onInClient,
   onNavigate = (target) => window.location.assign(target),
 }: LoginPageProps) {
+  const [returnPath] = useState(() => loginReturnPath(window.location.search));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(() => new URLSearchParams(window.location.search).has("error"));
   const automaticAttempted = useRef(false);
@@ -23,7 +24,7 @@ export function LoginPage({
     setBusy(true);
     setError(false);
     try {
-      onNavigate(await onStartQr());
+      onNavigate(await onStartQr(returnPath));
     } catch {
       setBusy(false);
       setError(true);
@@ -35,12 +36,12 @@ export function LoginPage({
     setError(false);
     try {
       await inClientAction();
-      onNavigate(platformPath("/account"));
+      onNavigate(platformPath(returnPath));
     } catch {
       setBusy(false);
       setError(true);
     }
-  }, [inClientAction, onNavigate]);
+  }, [inClientAction, onNavigate, returnPath]);
   useEffect(() => {
     if (!inClientAction || automaticAttempted.current) return;
     automaticAttempted.current = true;

@@ -102,6 +102,15 @@ export function localPathname(pathname?: string): string {
 }
 
 
+export function loginReturnPath(search: string): "/admin/" | "/account" {
+  const params = new URLSearchParams(search);
+  return params.getAll("return_path").length === 1
+    && params.get("return_path") === "/admin/"
+    ? "/admin/"
+    : "/account";
+}
+
+
 export function identityShellEnabled(): boolean {
   if (typeof document === "undefined") return false;
   return document.querySelector<HTMLMetaElement>('meta[name="platform-identity-mode"]')?.content === "enabled";
@@ -211,7 +220,7 @@ export async function loadAccount(prefix = routePrefix()): Promise<Account> {
 }
 
 
-export async function startQrLogin(returnPath = "/account"): Promise<string> {
+export async function startQrLogin(returnPath: "/admin/" | "/account" = "/account"): Promise<string> {
   const response = await fetch(platformPath("/api/v1/auth/dingtalk/start"), {
     method: "POST",
     credentials: "include",

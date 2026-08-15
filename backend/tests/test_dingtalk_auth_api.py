@@ -39,14 +39,17 @@ class FakeAuth:
         self.csrf = "csrf-value"
         self.revoked = False
         self.provider_calls = 0
+        self.return_path = self.route_prefix
 
     def start_qr(self, return_path):
         from app.control_plane.auth import StartedLogin
+        self.return_path = return_path
         return StartedLogin(uuid4(), "state-value", "https://login.dingtalk.com/test", return_path)
 
     async def complete_qr(self, state, code):
+        from app.control_plane.auth import CompletedLogin
         self.provider_calls += 1
-        return self._issued()
+        return CompletedLogin(self._issued(), self.return_path)
 
     async def complete_in_client(self, code):
         self.provider_calls += 1
@@ -318,6 +321,26 @@ def test_qr_start_uses_fixed_flow_safe_return_and_no_store(tmp_path, monkeypatch
     assert response.status_code == 200
     assert response.json()["authorization_url"].startswith("https://login.dingtalk.com/")
     assert response.headers["cache-control"] == "no-store"
+
+
+def test_qr_start_and_callback_preserve_exact_admin_return(tmp_path, monkeypatch) -> None:
+    auth = FakeAuth()
+    client = TestClient(_app(tmp_path, monkeypatch, auth))
+
+    started = client.post(
+        "/api/v1/auth/dingtalk/start",
+        json={"return_path": "/admin/"},
+        headers={"Origin": "https://agent.example.test"},
+    )
+    callback = client.get(
+        "/api/v1/auth/dingtalk/callback?state=state&code=code",
+        follow_redirects=False,
+    )
+
+    assert started.status_code == 200
+    assert auth.return_path == "/admin/"
+    assert callback.status_code == 302
+    assert callback.headers["location"] == "/admin/"
 
 
 def test_every_identity_response_prevents_browser_or_proxy_caching(
