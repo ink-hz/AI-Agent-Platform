@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { inClientLogin, inClientLoginAvailable, loginReturnPath, platformPath, startQrLogin } from "../auth";
+import { inClientLogin, inClientLoginAvailable, loginReturnPath, platformPath, routePrefix, startQrLogin } from "../auth";
 
 
 export interface LoginPageProps {
@@ -15,19 +15,35 @@ export function LoginPage({
   onInClient,
   onNavigate = (target) => window.location.assign(target),
 }: LoginPageProps) {
-  const [returnPath] = useState(() => (
-    window.location.hash ? "/account" : loginReturnPath(window.location.search)
-  ));
+  const [{ returnPath, successTarget }] = useState<{
+    returnPath: "/admin/" | "/account";
+    successTarget: string;
+  }>(() => {
+    const selectedReturnPath = window.location.href.includes("#")
+      ? "/account"
+      : loginReturnPath(window.location.search);
+    return {
+      returnPath: selectedReturnPath,
+      successTarget: platformPath(
+        selectedReturnPath,
+        routePrefix(window.location.pathname),
+      ),
+    };
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(() => new URLSearchParams(window.location.search).has("error"));
+  const active = useRef(true);
   const automaticAttempted = useRef(false);
   const inClientAction = onInClient ?? (inClientLoginAvailable() ? inClientLogin : null);
   const begin = async () => {
     setBusy(true);
     setError(false);
     try {
-      onNavigate(await onStartQr(returnPath));
+      const authorizationUrl = await onStartQr(returnPath);
+      if (!active.current) return;
+      onNavigate(authorizationUrl);
     } catch {
+      if (!active.current) return;
       setBusy(false);
       setError(true);
     }
@@ -38,12 +54,18 @@ export function LoginPage({
     setError(false);
     try {
       await inClientAction();
-      onNavigate(platformPath(returnPath));
+      if (!active.current) return;
+      onNavigate(successTarget);
     } catch {
+      if (!active.current) return;
       setBusy(false);
       setError(true);
     }
-  }, [inClientAction, onNavigate, returnPath]);
+  }, [inClientAction, onNavigate, successTarget]);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
   useEffect(() => {
     if (!inClientAction || automaticAttempted.current) return;
     automaticAttempted.current = true;

@@ -373,8 +373,12 @@ def production_environment(control_database):
 def _db_repository(environment):
     from app.control_plane.auth import AuthSecrets, WebSessionRepository
 
+    app_role = next(
+        role for role in environment["roles"]
+        if role in {"platform_control_app", "platform_control_app_preview"}
+    )
     return WebSessionRepository(
-        environment["urls"]["platform_control_app"],
+        environment["urls"][app_role],
         secrets=AuthSecrets(b"w" * 32, key_version=9),
     )
 
@@ -524,17 +528,27 @@ def test_system_health_read_audit_is_exact_owner_only(production_environment) ->
 
 
 @pytest.mark.postgres
-def test_database_attempt_claim_is_atomic_and_environment_bound(production_environment) -> None:
+@pytest.mark.parametrize(
+    ("environment_name", "return_path"),
+    [
+        ("production", "/admin/"),
+        ("preview", "/_preview/dingtalk-r1/admin/"),
+    ],
+)
+def test_database_attempt_claim_is_atomic_and_environment_bound(
+    control_database, environment_name, return_path
+) -> None:
     from app.control_plane.auth import LoginAttempt
 
-    repository = _db_repository(production_environment)
+    environment = control_database["environments"][environment_name]
+    repository = _db_repository(environment)
     state = repository.secrets.random_token()
     now = datetime.now(UTC)
     attempt = LoginAttempt(
         uuid4(), "qr", repository.secrets.digest("oauth-state", state), 9,
         repository.secrets.digest("pkce-verifier", repository.secrets.random_token()), 9,
         repository.secrets.seal_verifier(repository.secrets.random_token()),
-        "/", "production", now + timedelta(minutes=5),
+        return_path, environment_name, now + timedelta(minutes=5),
     )
     repository.create_attempt(attempt)
     results = []
@@ -544,7 +558,7 @@ def test_database_attempt_claim_is_atomic_and_environment_bound(production_envir
         barrier.wait()
         results.append(repository.claim_attempt(
             state_digest=attempt.state_digest,
-            environment="production",
+            environment=environment_name,
             attempt_kind="qr",
         ))
 
@@ -554,10 +568,12 @@ def test_database_attempt_claim_is_atomic_and_environment_bound(production_envir
     for thread in threads:
         thread.join()
 
-    assert sum(item is not None for item in results) == 1
+    winners = [item for item in results if item is not None]
+    assert len(winners) == 1
+    assert winners[0].return_path == return_path
     assert repository.claim_attempt(
         state_digest=attempt.state_digest,
-        environment="preview",
+        environment="preview" if environment_name == "production" else "production",
         attempt_kind="qr",
     ) is None
 
