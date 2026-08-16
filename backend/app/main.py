@@ -136,6 +136,7 @@ def build_cloud_replica_services(
         ),
         active_window_minutes=config.active_window_minutes,
         remote_monitor=remote_monitor,
+        include_catalog_agents=True,
     )
     return fleet_service, observability_service, repository
 

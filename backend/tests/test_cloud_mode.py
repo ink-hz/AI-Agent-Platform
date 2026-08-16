@@ -3,7 +3,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.config import is_cloud_mode, load_config
-from app.main import create_app
+from app.fleet.catalog import AgentCatalog
+from app.main import build_cloud_replica_services, create_app
 
 
 def _private_file(path: Path) -> Path:
@@ -80,3 +81,54 @@ def test_cloud_mode_starts_without_local_pollers_or_mutating_services(
     assert app.state.operations_service is None
     assert app.state.operations_scheduler is None
     assert app.state.attachment_service is None
+
+
+def test_cloud_fleet_enables_catalog_roster_completion(monkeypatch, tmp_path):
+    _configure_cloud(monkeypatch, tmp_path)
+    captured = {}
+    fleet_service = object()
+
+    class ReplicaRepository:
+        def check_schema(self):
+            return None
+
+    repository = ReplicaRepository()
+    monkeypatch.setattr("app.main.read_secret_file", lambda _path: "database-url")
+    monkeypatch.setattr("app.main.read_key_file", lambda *_args, **_kwargs: b"0" * 32)
+    monkeypatch.setattr(
+        "app.main.ReplicaObservabilityRepository",
+        lambda *_args, **_kwargs: repository,
+    )
+    monkeypatch.setattr(
+        "app.main.ReplicaReviewRepository",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "app.main.ReplicaOperationsRepository",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "app.main.ReplicaFlywheelRepository",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "app.main.UsageCache",
+        lambda *_args, **_kwargs: object(),
+    )
+
+    def capture_fleet_service(*_args, **kwargs):
+        captured.update(kwargs)
+        return fleet_service
+
+    monkeypatch.setattr("app.main.FleetReadService", capture_fleet_service)
+
+    built_fleet, _observability, built_repository = build_cloud_replica_services(
+        load_config(),
+        object(),
+        object(),
+        AgentCatalog.default(),
+    )
+
+    assert built_fleet is fleet_service
+    assert built_repository is repository
+    assert captured["include_catalog_agents"] is True
