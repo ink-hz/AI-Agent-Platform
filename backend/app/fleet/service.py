@@ -48,6 +48,14 @@ class _UsageTotal:
             self.recent_summary = record.recent_summary
 
 
+@dataclass(frozen=True)
+class _UnobservedCatalogAgent:
+    id: str
+    name: str
+    status: str = "unknown"
+    uptime_seconds: int | None = None
+
+
 def _parse_time(value: str | None) -> datetime | None:
     if value is None:
         return None
@@ -69,12 +77,14 @@ class FleetReadService:
         *,
         active_window_minutes: int = 15,
         remote_monitor=None,
+        include_catalog_agents: bool = False,
     ) -> None:
         self._monitor = monitor
         self._catalog = catalog
         self._usage_cache = usage_cache
         self._active_window = timedelta(minutes=active_window_minutes)
         self._remote_monitor = remote_monitor
+        self._include_catalog_agents = include_catalog_agents
 
     async def overview(self, now: datetime | None = None) -> FleetOverview:
         now = now or datetime.now(timezone.utc)
@@ -82,6 +92,13 @@ class FleetReadService:
         remote = self._remote_monitor.snapshot() if self._remote_monitor else None
         cached = await self._usage_cache.get()
         instances = list(cluster.instances) + (list(remote.agents) if remote else [])
+        if self._include_catalog_agents:
+            observed_ids = {instance.id for instance in instances}
+            instances.extend(
+                _UnobservedCatalogAgent(profile.id, profile.name)
+                for profile in self._catalog.all_profiles()
+                if profile.id not in observed_ids
+            )
         current_ids = {instance.id for instance in instances}
 
         usage_by_id: dict[str, _UsageTotal] | None = None

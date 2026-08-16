@@ -69,9 +69,10 @@ def make_service(
     healthy=True,
     status_overrides=None,
     bot_ids=None,
+    include_catalog_agents=False,
 ):
     status_overrides = status_overrides or {}
-    bot_ids = bot_ids or CURRENT_BOT_IDS
+    bot_ids = CURRENT_BOT_IDS if bot_ids is None else bot_ids
     statuses = [
         InstanceStatus(
             id=bot_id,
@@ -95,6 +96,7 @@ def make_service(
         AgentCatalog.default(),
         StaticCache(records, trend=trend, healthy=healthy),
         active_window_minutes=15,
+        include_catalog_agents=include_catalog_agents,
     )
 
 
@@ -298,6 +300,40 @@ async def test_overview_expected_roster_retains_missing_catalog_agents():
     assert "ai-fae-agent" in overview.expected_agent_ids
     assert "ai-admin-agent" in overview.expected_agent_ids
     assert "marketing-intelligence-bot" in overview.expected_agent_ids
+
+
+@pytest.mark.asyncio
+async def test_cloud_roster_completion_keeps_catalog_agents_and_usage():
+    service = make_service(
+        UsageRecord("hr-bot", 14, 4, 2, NOW, "HR question"),
+        bot_ids=[],
+        include_catalog_agents=True,
+    )
+    service._remote_monitor = StaticRemoteMonitor(RemoteHealthSnapshot(
+        healthy=False,
+        checked_at=None,
+        error="not_checked",
+        agents=[
+            RemoteAgentStatus(
+                id="ai-fae-agent",
+                name="AI FAE Agent",
+                status="unknown",
+            ),
+            RemoteAgentStatus(
+                id="ai-admin-agent",
+                name="AI ADMIN Agent",
+                status="unknown",
+            ),
+        ],
+    ))
+
+    overview = await service.overview(now=NOW)
+
+    assert len({agent.id for agent in overview.agents}) == len(overview.agents) == 12
+    assert overview.summary.total_agents == 10
+    assert get_agent(overview, "hr-bot").state == "unknown"
+    assert get_agent(overview, "hr-bot").total_conversations == 14
+    assert overview.summary.total_conversations == 14
 
 
 @pytest.mark.asyncio
