@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.serialization import (
 )
 
 from app.cloud_replica import cli
+from app.cloud_replica.exporter import ExportState
 from app.cloud_replica.store import ReplicaImportResult, ReplicaRetentionResult
 
 
@@ -181,3 +182,74 @@ def test_backup_and_restore_stream_cli_never_persists_plaintext(tmp_path, monkey
     restored = io.BytesIO()
     assert cli.main(["restore-stream"], output_stream=restored) == 0
     assert restored.getvalue() == plaintext
+
+
+def test_rewind_export_cli_uses_guarded_paths_and_prints_no_digest(
+    tmp_path, monkeypatch, capsys,
+):
+    now = datetime(2026, 8, 17, 2, 0, tzinfo=UTC)
+    target = datetime(2026, 8, 16, 19, 20, 15, tzinfo=UTC)
+    state_path = tmp_path / "state.json"
+    queue_dir = tmp_path / "queue"
+    monkeypatch.setenv("PLATFORM_REPLICA_EXPORT_STATE_PATH", str(state_path))
+    monkeypatch.setenv("PLATFORM_REPLICA_EXPORT_QUEUE_DIR", str(queue_dir))
+    calls = []
+
+    def rewind(**kwargs):
+        calls.append(kwargs)
+        return ExportState(
+            source_instance_id="production",
+            next_sequence=765,
+            previous_digest="sensitive-digest",
+            upper_watermark=target,
+            cursor_session_key="",
+        )
+
+    monkeypatch.setattr(cli, "rewind_export_state", rewind, raising=False)
+
+    assert cli.main([
+        "rewind-export",
+        "--to", "2026-08-16T19:20:15.000000Z",
+        "--expected-next-sequence", "765",
+    ], clock=lambda: now) == 0
+
+    assert calls == [{
+        "state_path": state_path,
+        "queue_dir": queue_dir,
+        "target": target,
+        "expected_next_sequence": 765,
+        "now": now,
+    }]
+    output = capsys.readouterr().out
+    assert json.loads(output) == {
+        "status": "rewound",
+        "next_sequence": 765,
+        "upper_watermark": "2026-08-16T19:20:15.000000Z",
+    }
+    assert "digest" not in output
+    assert str(state_path) not in output
+
+
+def test_rewind_export_cli_fails_closed(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv(
+        "PLATFORM_REPLICA_EXPORT_STATE_PATH", str(tmp_path / "state.json")
+    )
+    monkeypatch.setenv(
+        "PLATFORM_REPLICA_EXPORT_QUEUE_DIR", str(tmp_path / "queue")
+    )
+    monkeypatch.setattr(
+        cli,
+        "rewind_export_state",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("rejected")),
+        raising=False,
+    )
+
+    assert cli.main([
+        "rewind-export",
+        "--to", "2026-08-16T19:20:15.000000Z",
+        "--expected-next-sequence", "765",
+    ], clock=lambda: datetime(2026, 8, 17, 2, 0, tzinfo=UTC)) == 1
+    assert json.loads(capsys.readouterr().err) == {
+        "error": "rewind-export_failed",
+        "status": "failed",
+    }

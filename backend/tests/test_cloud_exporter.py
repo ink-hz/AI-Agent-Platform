@@ -5,6 +5,7 @@ import json
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from app.cloud_replica import exporter as exporter_module
 from app.cloud_replica.crypto import BatchSigner, BatchVerifier
 from app.cloud_replica.exporter import ReplicaExporter
 from app.cloud_replica.models import (
@@ -285,3 +286,102 @@ def test_replica_updated_composite_cursor_does_not_drop_late_sessions(tmp_path):
     assert len(second_batch.records) == 1
     assert len({record["key"] for record in first_batch.records + second_batch.records}) == 101
     assert second.upper_watermark == now
+
+
+def _write_export_state(path, *, watermark, next_sequence=765):
+    path.write_text(
+        json.dumps({
+            "source_instance_id": "orbbec-platform-local-production",
+            "next_sequence": next_sequence,
+            "previous_digest": "a" * 64,
+            "upper_watermark": watermark.isoformat(timespec="microseconds")
+            .replace("+00:00", "Z"),
+            "cursor_session_key": "old-cursor",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
+
+
+def test_rewind_export_state_preserves_digest_chain_and_resets_cursor(tmp_path):
+    now = datetime(2026, 8, 17, 2, 0, tzinfo=UTC)
+    current = now - timedelta(minutes=1)
+    target = now - timedelta(hours=7)
+    state_path = tmp_path / "state.json"
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir()
+    _write_export_state(state_path, watermark=current)
+
+    state = exporter_module.rewind_export_state(
+        state_path=state_path,
+        queue_dir=queue_dir,
+        target=target,
+        expected_next_sequence=765,
+        now=now,
+    )
+
+    value = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state.upper_watermark == target
+    assert state.cursor_session_key == ""
+    assert value["source_instance_id"] == "orbbec-platform-local-production"
+    assert value["next_sequence"] == 765
+    assert value["previous_digest"] == "a" * 64
+    assert value["upper_watermark"] == "2026-08-16T19:00:00.000000Z"
+    assert value["cursor_session_key"] == ""
+    assert state_path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize(
+    ("case", "target", "expected_sequence"),
+    (
+        ("sequence", datetime(2026, 8, 16, 19, 0, tzinfo=UTC), 764),
+        ("not_earlier", datetime(2026, 8, 17, 1, 59, tzinfo=UTC), 765),
+        ("too_old", datetime(2025, 8, 16, 1, 59, tzinfo=UTC), 765),
+        ("naive", datetime(2026, 8, 16, 19, 0), 765),
+    ),
+)
+def test_rewind_export_state_rejects_invalid_guard_without_mutation(
+    tmp_path, case, target, expected_sequence,
+):
+    now = datetime(2026, 8, 17, 2, 0, tzinfo=UTC)
+    state_path = tmp_path / "state.json"
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir()
+    _write_export_state(state_path, watermark=now - timedelta(minutes=1))
+    before = state_path.read_bytes()
+
+    with pytest.raises(RuntimeError, match="replica export rewind rejected"):
+        exporter_module.rewind_export_state(
+            state_path=state_path,
+            queue_dir=queue_dir,
+            target=target,
+            expected_next_sequence=expected_sequence,
+            now=now,
+        )
+
+    assert state_path.read_bytes() == before, case
+
+
+def test_rewind_export_state_rejects_queued_batch_and_unsafe_state(tmp_path):
+    now = datetime(2026, 8, 17, 2, 0, tzinfo=UTC)
+    state_path = tmp_path / "state.json"
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir()
+    _write_export_state(state_path, watermark=now - timedelta(minutes=1))
+    before = state_path.read_bytes()
+    (queue_dir / "batch-00000000000000000765.jsonl").write_text("queued")
+
+    with pytest.raises(RuntimeError, match="replica export rewind rejected"):
+        exporter_module.rewind_export_state(
+            state_path=state_path, queue_dir=queue_dir,
+            target=now - timedelta(hours=7), expected_next_sequence=765, now=now,
+        )
+    assert state_path.read_bytes() == before
+
+    (queue_dir / "batch-00000000000000000765.jsonl").unlink()
+    state_path.chmod(0o644)
+    with pytest.raises(RuntimeError, match="replica export rewind rejected"):
+        exporter_module.rewind_export_state(
+            state_path=state_path, queue_dir=queue_dir,
+            target=now - timedelta(hours=7), expected_next_sequence=765, now=now,
+        )

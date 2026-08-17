@@ -50,6 +50,50 @@ def _parse_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value[:-1] + "+00:00").astimezone(UTC)
 
 
+def _read_export_state(path: Path) -> ExportState:
+    metadata = path.lstat()
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or metadata.st_mode & 0o777 != 0o600
+        or metadata.st_uid != os.getuid()
+    ):
+        raise RuntimeError("replica export state is unsafe")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if set(value) != {
+        "source_instance_id",
+        "next_sequence",
+        "previous_digest",
+        "upper_watermark",
+        "cursor_session_key",
+    }:
+        raise ValueError
+    state = ExportState(
+        source_instance_id=value["source_instance_id"],
+        next_sequence=value["next_sequence"],
+        previous_digest=value["previous_digest"],
+        upper_watermark=_parse_timestamp(value["upper_watermark"]),
+        cursor_session_key=value["cursor_session_key"],
+    )
+    if (
+        not isinstance(state.source_instance_id, str)
+        or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", state.source_instance_id)
+        or type(state.next_sequence) is not int
+        or state.next_sequence < 1
+        or not isinstance(state.cursor_session_key, str)
+        or (state.next_sequence == 1 and state.previous_digest is not None)
+        or (
+            state.next_sequence > 1
+            and (
+                not isinstance(state.previous_digest, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", state.previous_digest)
+            )
+        )
+    ):
+        raise ValueError
+    return state
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, datetime):
         return _timestamp(value)
@@ -95,6 +139,58 @@ def _atomic_create(path: Path, payload: bytes) -> None:
         path.chmod(0o600)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def rewind_export_state(
+    *,
+    state_path: str | Path,
+    queue_dir: str | Path,
+    target: datetime,
+    expected_next_sequence: int,
+    now: datetime,
+) -> ExportState:
+    state_path = Path(state_path)
+    queue_dir = Path(queue_dir)
+    try:
+        state = _read_export_state(state_path)
+        if (
+            queue_dir.is_symlink()
+            or not queue_dir.is_dir()
+            or any(queue_dir.glob("batch-*.jsonl"))
+            or type(expected_next_sequence) is not int
+            or expected_next_sequence != state.next_sequence
+            or target.tzinfo is None
+            or target.utcoffset() != timedelta(0)
+            or now.tzinfo is None
+            or now.utcoffset() != timedelta(0)
+            or not now - timedelta(days=365) <= target < state.upper_watermark
+        ):
+            raise ValueError
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError, RuntimeError):
+        raise RuntimeError("replica export rewind rejected") from None
+    rewound = ExportState(
+        source_instance_id=state.source_instance_id,
+        next_sequence=state.next_sequence,
+        previous_digest=state.previous_digest,
+        upper_watermark=target.astimezone(UTC),
+        cursor_session_key="",
+    )
+    payload = (
+        json.dumps(
+            {
+                "source_instance_id": rewound.source_instance_id,
+                "next_sequence": rewound.next_sequence,
+                "previous_digest": rewound.previous_digest,
+                "upper_watermark": _timestamp(rewound.upper_watermark),
+                "cursor_session_key": rewound.cursor_session_key,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode("utf-8")
+    _atomic_replace(state_path, payload)
+    return rewound
 
 
 def build_session_record(
@@ -163,31 +259,8 @@ class ReplicaExporter:
                 upper_watermark=after,
                 cursor_session_key="",
             )
-        metadata = self.state_path.lstat()
-        if (
-            self.state_path.is_symlink()
-            or not self.state_path.is_file()
-            or metadata.st_mode & 0o777 != 0o600
-            or metadata.st_uid != os.getuid()
-        ):
-            raise RuntimeError("replica export state is unsafe")
         try:
-            value = json.loads(self.state_path.read_text(encoding="utf-8"))
-            if set(value) != {
-                "source_instance_id",
-                "next_sequence",
-                "previous_digest",
-                "upper_watermark",
-                "cursor_session_key",
-            }:
-                raise ValueError
-            state = ExportState(
-                source_instance_id=value["source_instance_id"],
-                next_sequence=value["next_sequence"],
-                previous_digest=value["previous_digest"],
-                upper_watermark=_parse_timestamp(value["upper_watermark"]),
-                cursor_session_key=value["cursor_session_key"],
-            )
+            state = _read_export_state(self.state_path)
         except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
             raise RuntimeError("replica export state is invalid") from None
         if (

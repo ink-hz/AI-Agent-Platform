@@ -15,7 +15,7 @@ from app.local_secrets import read_secret_file
 from .crypto import BatchSigner, BatchVerifier, FieldCipher, read_key_file
 from .backup import decrypt_stream, encrypt_stream
 from .canary import create_synthetic_canary
-from .exporter import ReplicaExporter
+from .exporter import ReplicaExporter, rewind_export_state
 from .protocol import BatchLimits, decode_and_verify_batch
 from .sanitize import SanitizationPolicy
 from .source import ReplicaSource
@@ -97,6 +97,40 @@ def _export(clock: Callable[[], datetime]) -> int:
             sort_keys=True,
         )
     )
+    return 0
+
+
+def _rewind_export(
+    target_value: str | None,
+    expected_next_sequence: int | None,
+    clock: Callable[[], datetime],
+) -> int:
+    if (
+        not isinstance(target_value, str)
+        or not target_value.endswith("Z")
+        or type(expected_next_sequence) is not int
+        or expected_next_sequence < 1
+    ):
+        raise RuntimeError("replica export rewind configuration unavailable")
+    target = datetime.fromisoformat(target_value[:-1] + "+00:00").astimezone(UTC)
+    state = rewind_export_state(
+        state_path=Path(
+            _required_environment("PLATFORM_REPLICA_EXPORT_STATE_PATH")
+        ),
+        queue_dir=Path(
+            _required_environment("PLATFORM_REPLICA_EXPORT_QUEUE_DIR")
+        ),
+        target=target,
+        expected_next_sequence=expected_next_sequence,
+        now=clock().astimezone(UTC),
+    )
+    print(json.dumps({
+        "status": "rewound",
+        "next_sequence": state.next_sequence,
+        "upper_watermark": state.upper_watermark.isoformat(
+            timespec="microseconds"
+        ).replace("+00:00", "Z"),
+    }, sort_keys=True))
     return 0
 
 
@@ -258,15 +292,24 @@ def main(
             "restore-stream",
             "reset-test-generation",
             "canary",
+            "rewind-export",
         ),
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--source-instance-id")
     parser.add_argument("--output")
+    parser.add_argument("--to")
+    parser.add_argument("--expected-next-sequence", type=int)
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == "export":
             return _export(clock)
+        if arguments.command == "rewind-export":
+            return _rewind_export(
+                arguments.to,
+                arguments.expected_next_sequence,
+                clock,
+            )
         if arguments.command == "import":
             return _import(input_stream or sys.stdin.buffer)
         if arguments.command == "retention":
