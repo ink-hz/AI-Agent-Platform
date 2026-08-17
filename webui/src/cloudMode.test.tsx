@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./AppShell";
 import App from "./App";
 import type { Account } from "./auth";
+import { navigate } from "./router";
 
 
 let container: HTMLDivElement;
@@ -29,6 +30,88 @@ afterEach(async () => {
 
 
 describe("cloud replica mode", () => {
+  it("keeps the loaded account across authenticated route transitions", async () => {
+    const meta = document.createElement("meta");
+    meta.name = "platform-identity-mode";
+    meta.content = "enabled";
+    document.head.append(meta);
+    window.history.replaceState({}, "", "/account");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/account")) return new Response(JSON.stringify({
+        internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
+        observation_agent_ids: [], directory_freshness: "fresh",
+        hard_stale_read_only: false, csrf_token: "csrf",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (url.endsWith("/api/v1/manage/users")) return new Response(JSON.stringify({ users: [] }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+      return new Response(JSON.stringify({
+        mode: "local", read_only: false, auth: "dingtalk",
+        freshness: "current", last_success_at: null,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(container.textContent).toContain("苍渊");
+
+    await act(async () => {
+      navigate("/identity");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const accountCalls = fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/api/v1/account"));
+    expect(accountCalls).toHaveLength(1);
+    expect(container.textContent).not.toContain("正在验证企业身份");
+  });
+
+  it("offers recovery actions and retries account bootstrap in place", async () => {
+    const meta = document.createElement("meta");
+    meta.name = "platform-identity-mode";
+    meta.content = "enabled";
+    document.head.append(meta);
+    window.history.replaceState({}, "", "/account");
+    let accountReads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/account")) {
+        accountReads += 1;
+        if (accountReads === 1) return new Response("{}", { status: 500 });
+        return new Response(JSON.stringify({
+          internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
+          observation_agent_ids: [], directory_freshness: "fresh",
+          hard_stale_read_only: false, csrf_token: "csrf",
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        mode: "local", read_only: false, auth: "dingtalk",
+        freshness: "current", last_success_at: null,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(container.textContent).toContain("暂时无法进入平台");
+    expect(container.textContent).toContain("重新尝试");
+    expect(container.querySelector<HTMLAnchorElement>('a[href="/login"]')?.textContent).toBe("重新登录");
+
+    const retry = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "重新尝试");
+    expect(retry).toBeDefined();
+    await act(async () => {
+      retry?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(accountReads).toBe(2);
+    expect(container.textContent).toContain("苍渊");
+    expect(container.textContent).not.toContain("暂时无法进入平台");
+  });
+
   it("shows a compact read-only banner and hides Review navigation", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       mode: "cloud-replica", read_only: true, auth: "ssh-tunnel",

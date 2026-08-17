@@ -46,8 +46,16 @@ function LegacyFlywheelRedirect() {
 }
 
 
-function AccessState({ title, description }: { title: string; description: string }) {
-  return <main className="access-shell"><section className="permission-state" role="alert"><h1>{title}</h1><p>{description}</p></section></main>;
+function AccessState({
+  title,
+  description,
+  onRetry,
+}: {
+  title: string;
+  description: string;
+  onRetry?: () => void;
+}) {
+  return <main className="access-shell"><section className="permission-state" role="alert"><h1>{title}</h1><p>{description}</p>{onRetry && <div className="access-actions"><button type="button" onClick={onRetry}>重新尝试</button><a href={platformPath("/login")}>重新登录</a></div>}</section></main>;
 }
 
 
@@ -91,12 +99,14 @@ export default function App() {
   const [legacyMode, setLegacyMode] = useState(!identityMode);
   const [failure, setFailure] = useState<"permission" | "directory" | "unavailable" | null>(null);
   const [loading, setLoading] = useState(identityMode && route.name !== "login");
+  const [accountAttempt, setAccountAttempt] = useState(0);
+  const loginRoute = route.name === "login";
   useDocumentTitle(routeDocumentTitle(route));
   useEffect(() => {
-    if (route.name === "login") { setLoading(false); return; }
+    if (loginRoute) { setLoading(false); return; }
     if (!identityMode) { setLegacyMode(true); setLoading(false); return; }
     let current = true;
-    setLoading(true);
+    setFailure(null); setLoading(true);
     void loadAccount().then((value) => {
       if (!current) return;
       setAccount(value); setLegacyMode(false); setFailure(null); setLoading(false);
@@ -112,13 +122,13 @@ export default function App() {
       }
     });
     return () => { current = false; };
-  }, [identityMode, route.name]);
+  }, [identityMode, loginRoute, accountAttempt]);
 
-  if (route.name === "login") return <LoginPage />;
-  if (loading) return <AccessState title="正在验证企业身份" description="正在读取账号与授权范围。" />;
+  if (loginRoute) return <LoginPage />;
+  if (loading) return <AccessState title="正在进入 Agent Platform" description="正在确认您的企业账号，通常只需片刻。" />;
   if (failure === "permission") return <AccessState title="无权访问" description="当前账号没有该入口的访问权限。" />;
-  if (failure === "directory") return <AccessState title="企业通讯录暂不可用" description="平台无法确认当前成员状态，请稍后重试。" />;
-  if (failure) return <AccessState title="平台暂不可用" description="无法读取账号状态，请稍后重试。" />;
+  if (failure === "directory") return <AccessState title="暂时无法确认企业账号" description="企业通讯录同步可能延迟，请稍后重试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
+  if (failure) return <AccessState title="暂时无法进入平台" description="连接服务时遇到短暂问题，请重新尝试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
   if (!legacyMode && account) {
     if (account.role === "member" && route.name === "overview") {
       navigate("/account", { replace: true });

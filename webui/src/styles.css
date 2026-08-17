@@ -52,6 +52,10 @@ body {
 .permission-state { width: min(620px, 100%); margin: 50px auto; padding: 35px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); text-align: center; }
 .permission-state h1 { margin: 0; font-size: 28px; }
 .permission-state p { margin: 11px 0 0; color: var(--ink-soft); line-height: 1.65; }
+.access-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 24px; }
+.access-actions button, .access-actions a { min-width: 112px; padding: 10px 16px; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 760; cursor: pointer; text-decoration: none; }
+.access-actions button { border: 1px solid var(--brand); background: var(--brand); color: #fff; }
+.access-actions a { border: 1px solid var(--line); background: var(--surface); color: var(--brand); }
 .account-chip { max-width: 130px; overflow: hidden; padding: 7px 10px; border-radius: 999px; background: var(--brand-wash); color: var(--brand); font-size: 12px; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; }
 .hard-stale-banner { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 11px 20px; border-bottom: 1px solid #e4cf9f; background: var(--warn-wash); color: var(--warn); font-size: 12px; }
 .account-page, .identity-page, .governance-page { max-width: 920px; margin: 0 auto; }
