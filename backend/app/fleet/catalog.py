@@ -29,10 +29,17 @@ class AgentCatalog:
         profiles: dict[str, AgentProfile],
         aliases: dict[str, str],
         unresolved_aliases: set[str],
+        excluded_ids: set[str] | None = None,
     ) -> None:
         self._profiles = profiles
         self._aliases = aliases
         self._unresolved_aliases = unresolved_aliases
+        self._excluded_ids = set(excluded_ids or ())
+        missing = self._excluded_ids - profiles.keys()
+        if missing:
+            raise ValueError(
+                f"excluded agent profile not declared: {sorted(missing)}"
+            )
 
     @classmethod
     def default(cls) -> "AgentCatalog":
@@ -46,6 +53,7 @@ class AgentCatalog:
             profiles,
             dict(payload.get("aliases") or {}),
             set(payload.get("unresolved_aliases") or []),
+            set(payload.get("excluded_ids") or []),
         )
 
     def profile(self, bot_id: str, fallback_name: str) -> AgentProfile:
@@ -64,18 +72,29 @@ class AgentCatalog:
         )
 
     def canonical_id(self, bot_id: str) -> str | None:
-        if bot_id in self._profiles:
-            return bot_id
         if bot_id in self._unresolved_aliases:
             return None
-        return self._aliases.get(bot_id, bot_id)
+        canonical = self._aliases.get(bot_id, bot_id)
+        if canonical in self._excluded_ids:
+            return None
+        return canonical
+
+    def is_excluded(self, agent_id: str) -> bool:
+        return self._aliases.get(agent_id, agent_id) in self._excluded_ids
+
+    def excluded_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._excluded_ids))
 
     def all_profiles(self) -> tuple[AgentProfile, ...]:
-        return tuple(self._profiles.values())
+        return tuple(
+            profile
+            for profile in self._profiles.values()
+            if profile.id not in self._excluded_ids
+        )
 
     def ids_for_visibility(self, visibility: AgentVisibility) -> tuple[str, ...]:
         return tuple(
             profile.id
-            for profile in self._profiles.values()
+            for profile in self.all_profiles()
             if profile.visibility == visibility
         )

@@ -1,3 +1,5 @@
+import pytest
+
 from app.fleet.catalog import AgentCatalog
 
 
@@ -115,3 +117,23 @@ def test_iris_codex_has_business_visibility_and_release_lifecycle():
     assert profile.live_since_basis == "release_artifact"
     assert profile.last_updated_at == "2026-07-21T18:01:18+08:00"
     assert profile.last_updated_basis == "release_artifact"
+
+
+def test_catalog_excludes_felix_and_iris_without_excluding_ai_fae():
+    catalog = AgentCatalog.default()
+
+    assert catalog.is_excluded("fae-bot") is True
+    assert catalog.is_excluded("codex-assistant") is True
+    assert catalog.is_excluded("ai-fae-agent") is False
+    assert catalog.canonical_id("fae-bot") is None
+    assert catalog.canonical_id("codex-assistant") is None
+    assert catalog.excluded_ids() == ("codex-assistant", "fae-bot")
+    included = {profile.id for profile in catalog.all_profiles()}
+    assert "fae-bot" not in included
+    assert "codex-assistant" not in included
+    assert "ai-fae-agent" in included
+
+
+def test_catalog_rejects_unknown_exclusion():
+    with pytest.raises(ValueError, match="excluded agent profile"):
+        AgentCatalog({}, {}, set(), {"missing-agent"})

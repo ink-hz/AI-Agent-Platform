@@ -138,3 +138,7 @@ aliases:
 unresolved_aliases:
   - pc-bot
   - quality-bot
+
+excluded_ids:
+  - fae-bot
+  - codex-assistant
