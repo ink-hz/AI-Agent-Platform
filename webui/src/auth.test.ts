@@ -33,12 +33,26 @@ import {
 
 
 afterEach(() => {
+  vi.useRealTimers();
   window.history.replaceState({}, "", "/");
   dingTalkSdk.env.platform = "android";
   requestAuthCode.mockReset();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+
+function accountResponse(): Response {
+  return new Response(JSON.stringify({
+    internal_user_id: "owner",
+    display_name: "苍渊",
+    role: "platform_owner",
+    observation_agent_ids: [],
+    directory_freshness: "fresh",
+    hard_stale_read_only: false,
+    csrf_token: "csrf",
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+}
 
 
 describe("login return path", () => {
@@ -64,6 +78,50 @@ describe("login return path", () => {
 
 
 describe("authenticated account bootstrap", () => {
+  it("retries one transient gateway failure", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 502 }))
+      .mockResolvedValueOnce(accountResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const account = expect(loadAccount("")).resolves.toMatchObject({ display_name: "苍渊" });
+    await vi.runAllTimersAsync();
+
+    await account;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("aborts a stalled account read and retries once", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn()
+      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+      }))
+      .mockResolvedValueOnce(accountResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const account = loadAccount("");
+    await Promise.resolve();
+    expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    await vi.advanceTimersByTimeAsync(5_200);
+
+    await expect(account).resolves.toMatchObject({ display_name: "苍渊" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a directory-unavailable response", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const account = expect(loadAccount("")).rejects.toBeInstanceOf(DirectoryUnavailable);
+    await vi.runAllTimersAsync();
+
+    await account;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("accepts the platform administrator role", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       internal_user_id: "admin",

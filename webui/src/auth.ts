@@ -77,6 +77,8 @@ const MANAGED_USER_KEYS = new Set([
 const PLATFORM_ROLES: readonly PlatformRole[] = [
   "member", "management_viewer", "platform_admin", "platform_owner",
 ];
+const ACCOUNT_TIMEOUT_MS = 5_000;
+const ACCOUNT_RETRY_DELAY_MS = 200;
 
 
 export function routePrefix(pathname?: string): string {
@@ -208,15 +210,45 @@ async function checked(response: Response): Promise<Response> {
 }
 
 
+async function fetchAccount(prefix: string): Promise<Account> {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), ACCOUNT_TIMEOUT_MS);
+  try {
+    const response = await fetch(platformPath("/api/v1/account", prefix), {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    await checked(response);
+    const contentType = response.headers.get("Content-Type") || "";
+    if (!contentType.toLowerCase().includes("application/json")) throw new IdentityDisabled();
+    return parseAccount(await response.json());
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
+
+
+function retryableAccountRead(error: unknown): boolean {
+  if (error instanceof PlatformApiError) return error.status === 502 || error.status === 504;
+  if (error instanceof TypeError) return true;
+  return isObject(error) && error.name === "AbortError";
+}
+
+
+function accountRetryDelay(): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ACCOUNT_RETRY_DELAY_MS));
+}
+
+
 export async function loadAccount(prefix = routePrefix()): Promise<Account> {
-  const response = await fetch(platformPath("/api/v1/account", prefix), {
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  });
-  await checked(response);
-  const contentType = response.headers.get("Content-Type") || "";
-  if (!contentType.toLowerCase().includes("application/json")) throw new IdentityDisabled();
-  return parseAccount(await response.json());
+  try {
+    return await fetchAccount(prefix);
+  } catch (error) {
+    if (!retryableAccountRead(error)) throw error;
+    await accountRetryDelay();
+    return fetchAccount(prefix);
+  }
 }
 
 
