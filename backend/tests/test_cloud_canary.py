@@ -4,7 +4,11 @@ import io
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from app.cloud_replica.canary import CANARY_VALUES, create_synthetic_canary
+from app.cloud_replica.canary import (
+    CANARY_CONTENT_VALUES,
+    CANARY_VALUES,
+    create_synthetic_canary,
+)
 from app.cloud_replica.crypto import BatchSigner, BatchVerifier
 from app.cloud_replica.protocol import BatchLimits, decode_and_verify_batch
 from app.cloud_replica.sanitize import SanitizationPolicy
@@ -32,9 +36,14 @@ def test_synthetic_canary_batch_is_signed_and_contains_no_raw_fixture(tmp_path):
     assert batch.header.sequence == 1
     assert len(batch.records) == 1
     assert output.stat().st_mode & 0o777 == 0o600
-    assert batch.records[0]["turns"][0]["attachments"][0]["display_label"] == "附件 1"
+    assert (
+        batch.records[0]["turns"][0]["attachments"][0]["display_label"]
+        == "CANARY-RESUME-1D75.pdf"
+    )
     for value in CANARY_VALUES:
         assert value not in serialized
+    for value in CANARY_CONTENT_VALUES:
+        assert value in serialized
 
 
 def test_synthetic_canary_never_overwrites_an_existing_file(tmp_path):

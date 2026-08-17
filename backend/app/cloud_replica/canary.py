@@ -16,15 +16,22 @@ _PROJECT = "CANARY-PROJECT-9B53"
 _PRODUCT = "CANARY-PRODUCT-0C64"
 _ADDRESS = "深圳市南山区验收路88号"
 _ATTACHMENT = "CANARY-RESUME-1D75.pdf"
+
+# Live credentials must never survive export. These are the acceptance markers.
 CANARY_VALUES = (
+    "Bearer canaryCredential1234567890",
+    "AKIAIOSFODNN7EXAMPLE",
+    "ghp_CANARYaaaaaaaaaaaaaaaaaaaaaaaa",
+    "password=canarySecret",
+)
+# Business content must survive export verbatim: the cloud replica is readable
+# only by authenticated administrators, and rewriting it corrupts the record.
+CANARY_CONTENT_VALUES = (
     "13900001234",
     "cloud-canary@example.invalid",
     "11010519491231002X",
-    "Bearer canaryCredential1234567890",
-    "AKIAIOSFODNN7EXAMPLE",
     "/Users/cloud-canary/private.txt",
     "https://example.invalid/private?X-Amz-Signature=canary",
-    "on_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     _CUSTOMER,
     _CANDIDATE,
     _PROJECT,
@@ -32,17 +39,6 @@ CANARY_VALUES = (
     _ADDRESS,
     _ATTACHMENT,
 )
-
-
-def _with_canary_aliases(policy: SanitizationPolicy) -> SanitizationPolicy:
-    return SanitizationPolicy(
-        version=policy.version,
-        customers=(*policy.customers, _CUSTOMER),
-        candidates=(*policy.candidates, _CANDIDATE),
-        projects=(*policy.projects, _PROJECT),
-        products=(*policy.products, _PRODUCT),
-        addresses=(*policy.addresses, _ADDRESS),
-    )
 
 
 def create_synthetic_canary(
@@ -72,8 +68,8 @@ def create_synthetic_canary(
             RawTurn(
                 turn_key="synthetic-canary-turn",
                 turn_index=1,
-                question=" | ".join(CANARY_VALUES),
-                answer=" | ".join(reversed(CANARY_VALUES)),
+                question=" | ".join((*CANARY_VALUES, *CANARY_CONTENT_VALUES)),
+                answer=" | ".join(reversed(CANARY_CONTENT_VALUES)),
                 created_at=now,
                 outcome="success",
                 attachments=(
@@ -91,10 +87,7 @@ def create_synthetic_canary(
             ),
         ),
     )
-    canary_policy = _with_canary_aliases(policy)
-    record = build_session_record(
-        raw, sanitize_session(raw, canary_policy), identity_key
-    )
+    record = build_session_record(raw, sanitize_session(raw, policy), identity_key)
     state = BatchState(
         source_instance_id="synthetic-acceptance",
         sequence=1,
@@ -103,6 +96,6 @@ def create_synthetic_canary(
         upper_watermark=now,
         created_at=now,
         expires_at=now + timedelta(minutes=15),
-        sanitizer_policy_version=canary_policy.version,
+        sanitizer_policy_version=policy.version,
     )
     _atomic_create(output, encode_batch((record,), state, signer))

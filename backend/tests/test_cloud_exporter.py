@@ -116,16 +116,14 @@ def test_exporter_queues_only_sanitized_hmac_identified_records(tmp_path):
         "raw-turn-uuid",
         "raw-attachment-uuid",
         "on_27882925f0e4f159846581dd8144ad63",
-        "secret-customer.pdf",
-        "alice@example.com",
-        "客户甲",
-        "张三",
-        "项目鹰",
         "/Users/neo/source.md",
         '"details"',
         '"sources"',
     ):
         assert forbidden not in serialized
+    # Business content is replicated verbatim for authenticated administrators.
+    for expected in ("alice@example.com", "客户甲", "张三", "项目鹰"):
+        assert expected in serialized
 
 
 def test_exporter_signs_management_projection_manifest_counts(tmp_path):
@@ -159,7 +157,8 @@ def test_exporter_signs_management_projection_manifest_counts(tmp_path):
     assert {record["kind"] for record in decoded.records} == set(
         decoded.header.record_counts
     )
-    assert "alice@example.com" not in payload.decode("utf-8")
+    assert "联系 alice@example.com" in payload.decode("utf-8")
+    assert "raw-event" not in payload.decode("utf-8")
 
 
 def test_export_failure_preserves_existing_state_and_queue(tmp_path, monkeypatch):

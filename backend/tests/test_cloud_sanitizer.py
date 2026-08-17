@@ -14,7 +14,6 @@ from app.cloud_replica.models import (
     ReviewIssueProjection,
 )
 from app.cloud_replica.sanitize import (
-    OMITTED_TEXT,
     SanitizationPolicy,
     sanitize_management_projection,
     sanitize_session,
@@ -24,10 +23,12 @@ from app.cloud_replica.sanitize import (
 
 @pytest.fixture
 def policy() -> SanitizationPolicy:
+    # Dictionary groups are retired. They are still populated here to prove that
+    # a stale dictionary can no longer rewrite business text.
     return SanitizationPolicy(
         version="test-v1",
         customers=("客户甲集团", "客户甲"),
-        candidates=("张候选人",),
+        candidates=("张候选人", "确认", "数据"),
         projects=("项目鹰",),
         products=("秘密型号X9",),
         addresses=("深圳市南山区测试路88号",),
@@ -35,52 +36,64 @@ def policy() -> SanitizationPolicy:
 
 
 @pytest.mark.parametrize(
-    ("canary", "expected"),
+    "credential",
     [
-        ("13800138000", "[电话]"),
-        ("alice@example.com", "[邮箱]"),
-        ("11010519491231002X", "[证件]"),
-        ("深圳市南山区测试路88号", "[地址1]"),
-        ("Bearer abcdefghijklmnopqrstuvwxyz", "[凭证]"),
-        ("AKIAIOSFODNN7EXAMPLE", "[凭证]"),
-        ("/Users/neo/secret/customer.md", "[路径]"),
-        ("/etc/orbbec/private.conf", "[路径]"),
-        ("https://example.com/a?X-Amz-Signature=secret", "[链接1]"),
-        ("on_27882925f0e4f159846581dd8144ad63", "[用户标识]"),
-        ("客户甲集团", "[客户1]"),
-        ("张候选人", "[候选人1]"),
-        ("项目鹰", "[项目1]"),
-        ("秘密型号X9", "[产品1]"),
+        "Bearer abcdefghijklmnopqrstuvwxyz",
+        "AKIAIOSFODNN7EXAMPLE",
+        "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890",
+        "password=Sup3rSecret",
+        "api_key: sk-abcdef123456",
     ],
 )
-def test_deterministic_canaries_never_survive(policy, canary, expected):
-    result = sanitize_text(f"前缀 {canary} 后缀", policy, "session-1")
+def test_live_credentials_never_reach_the_replica(policy, credential):
+    result = sanitize_text(f"前缀 {credential} 后缀", policy, "session-1")
 
-    assert canary not in result.text
-    assert expected in result.text
+    assert credential not in result.text
+    assert "[凭证]" in result.text
+    assert result.text.startswith("前缀 ")
+    assert result.text.endswith(" 后缀")
     assert result.safe is True
 
 
-def test_placeholders_are_stable_and_longest_alias_wins(policy):
+@pytest.mark.parametrize(
+    "content",
+    [
+        # The defect this contract exists to prevent: a dictionary entry such as
+        # 「确认」 used to rewrite ordinary prose into "[候选人33]".
+        "您说的「需要」我想确认一下具体是哪一项",
+        "徐良的简历数据已经整理好了",
+        "客户甲集团询问项目鹰的秘密型号X9",
+        "联系方式 13800138000，邮箱 alice@example.com",
+        "身份证 11010519491231002X",
+        "文件在 /Users/neo/secret/customer.md 和 /etc/orbbec/private.conf",
+        "参考 https://example.com/a?X-Amz-Signature=abc",
+        "飞书标识 on_27882925f0e4f159846581dd8144ad63",
+        "地址是深圳市南山区测试路88号",
+        "请查附件 customer-secret.pdf",
+    ],
+)
+def test_business_content_is_exported_verbatim(policy, content):
+    result = sanitize_text(content, policy, "session-1")
+
+    assert result.text == content
+    assert result.safe is True
+
+
+def test_no_placeholder_tokens_are_generated(policy):
     result = sanitize_text(
-        "客户甲集团询问项目鹰，客户甲集团要求附件报价",
+        "确认数据后，张候选人和客户甲集团在项目鹰的附件里补充地址",
         policy,
         "session-1",
     )
 
-    assert result.text == "[客户1]询问[项目1]，[客户1]要求[附件1]报价"
-    assert result.safe is True
+    for placeholder in ("[候选人", "[客户", "[项目", "[产品", "[地址", "[链接", "[附件"):
+        assert placeholder not in result.text
 
 
-def test_post_detector_can_only_force_omission(policy):
-    result = sanitize_text(
-        "未覆盖的凭证 ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890",
-        policy,
-        "session-1",
-    )
+def test_whitespace_is_normalized_without_dropping_content(policy):
+    result = sanitize_text("  第一行  内容 \r\n  第二行  ", policy, "session-1")
 
-    assert result.text == OMITTED_TEXT
-    assert result.safe is False
+    assert result.text == "第一行 内容\n第二行"
 
 
 def test_private_dictionary_requires_private_owned_regular_file(tmp_path):
@@ -118,7 +131,7 @@ def test_private_dictionary_rejects_symlink(tmp_path):
         SanitizationPolicy.from_private_file(link)
 
 
-def test_sanitize_session_exports_only_allowlisted_safe_fields(policy):
+def test_sanitize_session_keeps_content_and_drops_raw_identifiers(policy):
     now = datetime(2026, 8, 11, 8, 0, tzinfo=UTC)
     raw = RawSession(
         session_key="raw-session-id",
@@ -163,28 +176,30 @@ def test_sanitize_session_exports_only_allowlisted_safe_fields(policy):
     result = sanitize_session(raw, policy)
     serialized = json.dumps(asdict(result), ensure_ascii=False, default=str)
 
+    # Raw provider identifiers and unexported structures stay out of the replica.
     for forbidden in (
         "raw-session-id",
         "raw-turn-id",
         "raw-attachment-id",
         "on_27882925f0e4f159846581dd8144ad63",
-        "customer-secret.pdf",
         "/Users/neo/private.md",
         "system_prompt",
         "provider_chat_id",
-        "alice@example.com",
-        "客户甲集团",
-        "张候选人",
+        "oc_secret",
     ):
         assert forbidden not in serialized
-    assert result.title.text == "[客户1]招聘[项目1]"
-    assert result.turns[0].attachments[0].display_label == "附件 1"
+
+    # Business content is preserved exactly.
+    assert result.title.text == "客户甲集团招聘项目鹰"
+    assert result.turns[0].question.text == "张候选人的邮箱是 alice@example.com"
+    assert result.turns[0].answer.text == "请查附件 customer-secret.pdf"
+    assert result.turns[0].attachments[0].display_label == "customer-secret.pdf"
     assert result.turns[0].attachments[0].size_bucket == "100 KiB–1 MiB"
     assert result.primary_sender_name == "洛奇"
     assert result.primary_sender_department == "市场部"
 
 
-def test_unsafe_turn_omits_both_message_bodies(policy):
+def test_credentials_in_one_turn_do_not_omit_the_other_message(policy):
     now = datetime(2026, 8, 11, tzinfo=UTC)
     raw = RawSession(
         session_key="s1",
@@ -210,10 +225,30 @@ def test_unsafe_turn_omits_both_message_bodies(policy):
 
     result = sanitize_session(raw, policy)
 
-    assert result.turns[0].question.text == OMITTED_TEXT
-    assert result.turns[0].answer.text == OMITTED_TEXT
-    assert result.turns[0].question.safe is False
-    assert result.turns[0].answer.safe is False
+    assert result.turns[0].question.text == "[凭证]"
+    assert result.turns[0].answer.text == "本来安全的回答"
+    assert result.turns[0].question.safe is True
+    assert result.turns[0].answer.safe is True
+
+
+def test_attachment_without_display_name_falls_back_to_ordinal_label(policy):
+    now = datetime(2026, 8, 11, tzinfo=UTC)
+    raw = RawSession(
+        session_key="s1", agent_id="hr-bot", source_kind="metabot", channel="feishu",
+        title=None, user_identity="u1", primary_sender_name="磐德",
+        primary_sender_department="HR", created_at=now, last_active_at=now,
+        turns=(RawTurn(
+            turn_key="t1", turn_index=1, question="问题", answer="回答", created_at=now,
+            attachments=(RawAttachment(
+                attachment_id="a1", direction="user_input", display_name=None,
+                mime_type="application/pdf", size_bytes=100,
+                received_or_generated_at=now, archive_status="available",
+                delivery_status="not_applicable",
+            ),),
+        ),),
+    )
+
+    assert sanitize_session(raw, policy).turns[0].attachments[0].display_label == "附件 1"
 
 
 def test_source_attachment_states_are_reduced_to_safe_categories(policy):
@@ -238,9 +273,10 @@ def test_source_attachment_states_are_reduced_to_safe_categories(policy):
     assert attachment.direction == "incoming"
     assert attachment.archive_status == "archived"
     assert attachment.delivery_status == "unavailable"
+    assert attachment.display_label == "简历.pdf"
 
 
-def test_management_projection_redacts_contacts_links_paths_and_names(policy):
+def test_management_projection_keeps_text_and_hashes_identifiers(policy):
     now = datetime(2026, 8, 11, tzinfo=UTC)
     issue = sanitize_management_projection(
         ReviewIssueProjection(
@@ -269,15 +305,11 @@ def test_management_projection_redacts_contacts_links_paths_and_names(policy):
         policy,
         b"i" * 32,
     )
-    serialized = json.dumps([issue, operation], ensure_ascii=False, default=str)
 
-    for forbidden in (
-        "alice@example.com",
-        "项目鹰",
-        "/Users/neo/a.md",
-        "张候选人",
-        "客户甲集团",
-        "https://example.com/private",
-        "on_27882925f0e4f159846581dd8144ad63",
-    ):
-        assert forbidden not in serialized
+    assert issue["title"]["text"] == "联系 alice@example.com 处理项目鹰 /Users/neo/a.md"
+    assert issue["owner_display"] == "张候选人"
+    assert operation["summary"]["text"] == "客户甲集团 https://example.com/private"
+    # The raw event id is still replaced by a derived stable identifier.
+    assert "on_27882925f0e4f159846581dd8144ad63" not in json.dumps(
+        operation, ensure_ascii=False, default=str
+    )

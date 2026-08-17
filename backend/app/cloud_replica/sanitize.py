@@ -26,7 +26,6 @@ from .models import (
 from .crypto import stable_id
 
 
-OMITTED_TEXT = "内容因敏感性未同步"
 _DICTIONARY_GROUPS = (
     "customers",
     "candidates",
@@ -34,20 +33,11 @@ _DICTIONARY_GROUPS = (
     "products",
     "addresses",
 )
-_PLACEHOLDER_LABELS = {
-    "customers": "客户",
-    "candidates": "候选人",
-    "projects": "项目",
-    "products": "产品",
-    "addresses": "地址",
-    "links": "链接",
-    "attachments": "附件",
-}
 
 
 @dataclass(frozen=True, slots=True)
 class SanitizationPolicy:
-    version: str = "2026-08-11"
+    version: str = "2026-08-17-raw"
     customers: tuple[str, ...] = ()
     candidates: tuple[str, ...] = ()
     projects: tuple[str, ...] = ()
@@ -56,7 +46,7 @@ class SanitizationPolicy:
 
     @classmethod
     def from_private_file(
-        cls, path_value: str | Path, *, version: str = "2026-08-11"
+        cls, path_value: str | Path, *, version: str = "2026-08-17-raw"
     ) -> SanitizationPolicy:
         path = Path(path_value)
         if not path.is_absolute():
@@ -92,17 +82,6 @@ class SanitizationPolicy:
         return cls(version=version, **normalized)
 
 
-class _PlaceholderContext:
-    def __init__(self) -> None:
-        self._values: dict[str, dict[str, str]] = {}
-
-    def replace(self, group: str, value: str) -> str:
-        values = self._values.setdefault(group, {})
-        if value not in values:
-            values[value] = f"[{_PLACEHOLDER_LABELS[group]}{len(values) + 1}]"
-        return values[value]
-
-
 def _normalize(text: str) -> str:
     value = unicodedata.normalize("NFC", text).replace("\r\n", "\n").replace("\r", "\n")
     value = "".join(
@@ -115,18 +94,6 @@ def _normalize(text: str) -> str:
     return value.strip()
 
 
-def _replace_aliases(
-    text: str,
-    aliases: tuple[str, ...],
-    group: str,
-    context: _PlaceholderContext,
-) -> str:
-    result = text
-    for alias in sorted(set(aliases), key=lambda item: (-len(item), item)):
-        result = result.replace(alias, context.replace(group, alias))
-    return result
-
-
 def _replace_pattern(
     pattern: re.Pattern[str],
     text: str,
@@ -135,27 +102,21 @@ def _replace_pattern(
     return pattern.sub(replacement, text)
 
 
-_MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\((https?://[^\s)]+)\)", re.IGNORECASE)
-_URL = re.compile(r"https?://[^\s<>\]\)]+", re.IGNORECASE)
-_BEARER = re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE)
-_AWS_ACCESS_KEY = re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")
-_EMAIL = re.compile(r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\w.-])", re.IGNORECASE)
-_PRC_ID = re.compile(r"(?<!\d)\d{17}[0-9Xx](?!\d)")
-_PHONE = re.compile(r"(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)")
-_PROVIDER_ID = re.compile(r"\b(?:on|ou|oc)_[A-Za-z0-9_-]{12,}\b")
-_POSIX_PATH = re.compile(r"(?<![\w:])/(?:Users|home|etc|var|opt|srv|private|root)/[^\s,，;；)\]}]+")
-_WINDOWS_PATH = re.compile(r"\b[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]+")
-_GENERIC_ADDRESS = re.compile(
-    r"[\u4e00-\u9fff]{2,}(?:省|市|区|县)[\u4e00-\u9fff0-9]{2,}(?:路|街|大道|巷)\d+号"
-)
-_POST_SENSITIVE = (
+# Replica text is exported verbatim. The cloud copy is reachable only by
+# authenticated administrators who are entitled to read the business content, so
+# names, contacts, links and paths are preserved exactly as the Agent produced
+# them. Live machine credentials are the sole exception: no reviewer needs them
+# and they must not be copied into the cloud database or its encrypted backups.
+_CREDENTIAL_PATTERNS = (
+    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE),
+    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b", re.IGNORECASE),
-    re.compile(r"\b(?:password|client_secret|api_key|access_token)\s*[:=]\s*\S+", re.IGNORECASE),
-    _PROVIDER_ID,
-    _POSIX_PATH,
-    _WINDOWS_PATH,
-    re.compile(r"https?://[^\s]+\?[^\s]+", re.IGNORECASE),
+    re.compile(
+        r"\b(?:password|client_secret|api_key|access_token)\s*[:=]\s*\S+",
+        re.IGNORECASE,
+    ),
 )
+_CREDENTIAL_PLACEHOLDER = "[凭证]"
 
 
 def _digest(value: str) -> str:
@@ -171,64 +132,23 @@ def _sanitized(value: str, safe: bool, policy: SanitizationPolicy) -> SanitizedT
     )
 
 
-def _sanitize_text(
-    text: str | None,
-    policy: SanitizationPolicy,
-    context: _PlaceholderContext,
-    *,
-    attachment_aliases: tuple[str, ...] = (),
-) -> SanitizedText:
-    value = _normalize(text or "")
-    for group in _DICTIONARY_GROUPS:
-        value = _replace_aliases(value, getattr(policy, group), group, context)
-    value = _replace_aliases(value, attachment_aliases, "attachments", context)
-    value = _replace_pattern(
-        _MARKDOWN_LINK,
-        value,
-        lambda match: f"{match.group(1)}{context.replace('links', match.group(2))}",
-    )
-    value = _replace_pattern(
-        _URL, value, lambda match: context.replace("links", match.group(0))
-    )
-    for pattern, replacement in (
-        (_BEARER, "[凭证]"),
-        (_AWS_ACCESS_KEY, "[凭证]"),
-        (_EMAIL, "[邮箱]"),
-        (_PRC_ID, "[证件]"),
-        (_PHONE, "[电话]"),
-        (_PROVIDER_ID, "[用户标识]"),
-        (_POSIX_PATH, "[路径]"),
-        (_WINDOWS_PATH, "[路径]"),
-        (_GENERIC_ADDRESS, "[地址]"),
-    ):
-        value = _replace_pattern(pattern, value, replacement)
-    value = re.sub(
-        r"附件(?!\d|\s*\[附件\d+\])",
-        lambda match: context.replace("attachments", match.group(0)),
-        value,
-    )
-    unresolved_aliases = (
-        *policy.customers,
-        *policy.candidates,
-        *policy.projects,
-        *policy.products,
-        *policy.addresses,
-        *attachment_aliases,
-    )
-    if any(alias and alias in value for alias in unresolved_aliases) or any(
-        pattern.search(value) for pattern in _POST_SENSITIVE
-    ):
-        return _sanitized(OMITTED_TEXT, False, policy)
-    return _sanitized(value, True, policy)
+def _strip_credentials(value: str) -> str:
+    for pattern in _CREDENTIAL_PATTERNS:
+        value = _replace_pattern(pattern, value, _CREDENTIAL_PLACEHOLDER)
+    return value
+
+
+def _sanitize_text(text: str | None, policy: SanitizationPolicy) -> SanitizedText:
+    return _sanitized(_strip_credentials(_normalize(text or "")), True, policy)
 
 
 def sanitize_text(
     text: str, policy: SanitizationPolicy, scope: str
 ) -> SanitizedText:
-    # Scope is deliberately not persisted. A standalone call owns one ephemeral
-    # mapping; complete Sessions share a context in ``sanitize_session``.
+    # Scope is deliberately not persisted; it only documents the call site.
     del scope
-    return _sanitize_text(text, policy, _PlaceholderContext())
+    return _sanitize_text(text, policy)
+
 
 
 def sanitize_management_projection(
@@ -395,35 +315,17 @@ def _sanitize_trace(trace):
 def sanitize_session(
     raw: RawSession, policy: SanitizationPolicy
 ) -> SanitizedSessionRecord:
-    context = _PlaceholderContext()
-    title = _sanitize_text(raw.title, policy, context)
+    title = _sanitize_text(raw.title, policy)
     turns: list[SanitizedTurnRecord] = []
     for turn in sorted(raw.turns, key=lambda item: item.turn_index):
-        attachment_aliases = tuple(
-            attachment.display_name
-            for attachment in turn.attachments
-            if attachment.display_name
-        )
-        for attachment_alias in attachment_aliases:
-            context.replace("attachments", attachment_alias)
-        question = _sanitize_text(
-            turn.question,
-            policy,
-            context,
-            attachment_aliases=attachment_aliases,
-        )
-        answer = _sanitize_text(
-            turn.answer,
-            policy,
-            context,
-            attachment_aliases=attachment_aliases,
-        )
-        if not question.safe or not answer.safe:
-            question = _sanitized(OMITTED_TEXT, False, policy)
-            answer = _sanitized(OMITTED_TEXT, False, policy)
+        question = _sanitize_text(turn.question, policy)
+        answer = _sanitize_text(turn.answer, policy)
         attachments = tuple(
             SanitizedAttachment(
-                display_label=f"附件 {index}",
+                display_label=_strip_credentials(
+                    _normalize(attachment.display_name or "")
+                )
+                or f"附件 {index}",
                 category=_attachment_category(attachment),
                 mime_type=(attachment.mime_type or "")[:127] or None,
                 size_bucket=_size_bucket(attachment.size_bytes),
