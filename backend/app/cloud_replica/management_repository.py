@@ -13,7 +13,7 @@ from psycopg.rows import dict_row
 
 from app.fleet.catalog import AgentCatalog
 from app.observability.models import Page
-from app.operations.models import EventFilters, OperationalEvent
+from app.operations.models import EventFilters, OperationalEvent, RunHealth, UsageLeader
 from app.review.repository import ReviewRepositoryError
 
 from .crypto import FieldCipher
@@ -48,6 +48,10 @@ class _ProjectionReader:
             options="-c default_transaction_read_only=on -c statement_timeout=10000",
             row_factory=dict_row,
         )
+
+    @property
+    def stale_after_seconds(self) -> float:
+        return self._stale_after.total_seconds()
 
     def _records(self, kind: str, agent_id: str | None = None) -> list[dict]:
         if agent_id is not None and self._catalog.is_excluded(agent_id):
@@ -230,11 +234,75 @@ class ReplicaOperationsRepository(_ProjectionReader):
             if item.severity in {"attention", "critical"}
         )
 
-    def usage_leaders(self, *_args):
-        return ()
+    def usage_leaders(
+        self,
+        date_from: datetime,
+        date_to: datetime,
+        agent_visibility: str = "business",
+    ) -> tuple[UsageLeader, ...]:
+        # A cloud conversation count is derived from the replicated Sessions
+        # themselves: one Session created inside the window is one new
+        # conversation. The local poller's usage occurrences are not replicated,
+        # so counting them here would always report zero.
+        allowed = set(self._catalog.ids_for_visibility(agent_visibility))
+        try:
+            with self._connection() as connection:
+                rows = list(
+                    connection.execute(
+                        "select agent_id, count(*) as conversations "
+                        "from platform_replica.sessions "
+                        "where created_at >= %s and created_at <= %s "
+                        "group by agent_id",
+                        (date_from, date_to),
+                    ).fetchall()
+                )
+        except Exception as error:
+            raise ReviewRepositoryError("replica usage unavailable") from error
+        leaders = [
+            UsageLeader(
+                agent_id=str(row["agent_id"]),
+                agent_name=self._catalog.profile(
+                    str(row["agent_id"]), str(row["agent_id"])
+                ).name,
+                conversations=int(row["conversations"]),
+            )
+            for row in rows
+            if str(row["agent_id"]) in allowed
+            and not self._catalog.is_excluded(str(row["agent_id"]))
+        ]
+        leaders.sort(key=lambda item: (-item.conversations, item.agent_id))
+        return tuple(leaders)
 
-    def latest_run(self, _run_name: str):
-        return None
+    def latest_run(self, run_name: str) -> RunHealth | None:
+        # The cloud refresh unit is the replica import, not a local poller. A
+        # committed generation is a successful refresh; this deliberately does
+        # not apply the staleness guard so the Brief can report `stale` instead
+        # of failing outright.
+        committed_at = self._last_import()
+        if committed_at is None:
+            return None
+        return RunHealth(
+            run_name=run_name,
+            status="succeeded",
+            started_at=committed_at,
+            finished_at=committed_at,
+        )
 
-    def latest_successful_run(self, _run_name: str):
-        return None
+    def latest_successful_run(self, run_name: str) -> RunHealth | None:
+        return self.latest_run(run_name)
+
+    def _last_import(self) -> datetime | None:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select max(committed_at) as committed_at "
+                    "from platform_replica.generations"
+                ).fetchone()
+        except Exception as error:
+            raise ReviewRepositoryError("replica generation unavailable") from error
+        committed_at = row["committed_at"] if row else None
+        if committed_at is None:
+            return None
+        if committed_at.tzinfo is None:
+            return committed_at.replace(tzinfo=UTC)
+        return committed_at

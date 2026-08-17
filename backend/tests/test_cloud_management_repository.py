@@ -215,3 +215,150 @@ def test_excluded_agents_are_absent_from_operation_projections():
 
     assert [item.agent_id for item in page.items] == ["hr-bot"]
     assert hidden.total == 0
+
+
+class _BriefConnection(_Connection):
+    """Serves projection rows, the generation watermark and Session counts."""
+
+    def __init__(self, rows, session_counts, committed_at=NOW):
+        super().__init__(rows)
+        self.session_counts = session_counts
+        self.committed_at = committed_at
+        self.session_windows: list[tuple] = []
+
+    def execute(self, sql, params=()):
+        if "max(committed_at)" in sql:
+            return _Result([{"committed_at": self.committed_at}])
+        if "platform_replica.sessions" in sql:
+            self.session_windows.append(params)
+            return _Result([
+                {"agent_id": agent_id, "conversations": count}
+                for agent_id, count in self.session_counts.items()
+            ])
+        return super().execute(sql, params)
+
+
+def _brief_repository(connection):
+    return ReplicaOperationsRepository(
+        "postgresql://replica",
+        cipher=FieldCipher(b"m" * 32),
+        connect=lambda *_args, **_kwargs: connection,
+        now=lambda: NOW,
+    )
+
+
+def test_usage_leaders_counts_business_sessions_and_skips_system_agents():
+    connection = _BriefConnection(
+        [],
+        {
+            "hr-bot": 3,
+            "marketing-gtm-bot": 7,
+            "test-bot": 99,
+            "feishu-default": 42,
+        },
+    )
+    repository = _brief_repository(connection)
+
+    leaders = repository.usage_leaders(
+        datetime(2026, 8, 13, 8, 0, tzinfo=UTC), NOW, "business"
+    )
+
+    assert [(item.agent_id, item.conversations) for item in leaders] == [
+        ("marketing-gtm-bot", 7),
+        ("hr-bot", 3),
+    ]
+    assert [item.agent_name for item in leaders] == ["Marketing GTM", "HR"]
+    # The window is pushed into SQL rather than filtered in Python.
+    assert connection.session_windows == [
+        (datetime(2026, 8, 13, 8, 0, tzinfo=UTC), NOW)
+    ]
+
+
+def test_latest_run_reports_the_last_replica_import():
+    repository = _brief_repository(_BriefConnection([], {}))
+
+    run = repository.latest_run("replica_import")
+
+    assert run is not None
+    assert run.status == "succeeded"
+    assert run.finished_at == NOW
+    assert repository.latest_successful_run("replica_import") == run
+
+
+def test_latest_run_is_absent_before_the_first_import():
+    repository = _brief_repository(_BriefConnection([], {}, committed_at=None))
+
+    assert repository.latest_run("replica_import") is None
+    assert repository.latest_successful_run("replica_import") is None
+
+
+def test_brief_reports_current_freshness_and_real_conversation_counts():
+    from app.operations.service import OperationsService
+
+    records = [
+        {
+            "kind": "operation_event_projection", "key": "c" * 52,
+            "agent_id": "hr-bot", "event_type": "execution_failure",
+            "severity": "critical", "summary": {"text": "执行失败"},
+            "occurred_at": "2026-08-14T07:30:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        },
+    ]
+    cipher = FieldCipher(b"m" * 32)
+    connection = _BriefConnection(
+        [_row(cipher, record) for record in records],
+        {"hr-bot": 3, "ai-fae-agent": 5, "test-bot": 99},
+    )
+    service = OperationsService(
+        _brief_repository(connection), intervals={"replica_import": 225.0}
+    )
+
+    brief = service.brief(now=NOW)
+
+    assert brief.freshness.status == "current"
+    assert brief.usage.conversations == 8
+    assert brief.usage.active_agents == 2
+    assert [item.agent_id for item in brief.usage.leaders] == [
+        "ai-fae-agent",
+        "hr-bot",
+    ]
+    # A critical event still blocks the healthy claim.
+    assert [item.agent_id for item in brief.attention] == ["hr-bot"]
+    assert brief.can_claim_healthy is False
+
+
+def test_brief_goes_stale_when_the_replica_import_falls_behind():
+    from app.operations.service import OperationsService
+
+    connection = _BriefConnection(
+        [],
+        {"hr-bot": 1},
+        committed_at=datetime(2026, 8, 14, 7, 50, tzinfo=UTC),
+    )
+    service = OperationsService(
+        _brief_repository(connection), intervals={"replica_import": 225.0}
+    )
+
+    brief = service.brief(now=NOW)
+
+    # 600s behind: past the 450s stale threshold, still inside the 900s budget
+    # the projection reader enforces, so the warning is visible not fatal.
+    assert brief.freshness.status == "stale"
+    assert brief.can_claim_healthy is False
+    assert brief.usage.conversations == 1
+
+
+def test_brief_can_claim_healthy_without_attention_events():
+    from app.operations.service import OperationsService
+
+    service = OperationsService(
+        _brief_repository(_BriefConnection([], {"hr-bot": 2})),
+        intervals={"replica_import": 225.0},
+    )
+
+    brief = service.brief(now=NOW)
+
+    assert brief.freshness.status == "current"
+    assert brief.attention == []
+    assert brief.can_claim_healthy is True
+    assert brief.usage.conversations == 2

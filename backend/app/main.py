@@ -407,8 +407,18 @@ def create_app(
                 replica_repository, "operations_repository", None
             )
             if cloud_operations_repository is not None:
+                # The cloud has one refresh unit — the replica import — instead
+                # of the six local poller groups. A quarter of the staleness
+                # budget as the interval means the Brief reports `stale` (at
+                # half the budget) while the projection reader still serves
+                # data, so the warning is visible before reads start failing.
                 operations_service = OperationsService(
-                    cloud_operations_repository
+                    cloud_operations_repository,
+                    intervals={
+                        "replica_import": max(
+                            cloud_operations_repository.stale_after_seconds / 4, 1.0
+                        )
+                    },
                 )
     database_url = (
         resolve_flywheel_database_url(config) if runtime_pollers_enabled else None
