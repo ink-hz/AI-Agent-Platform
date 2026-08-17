@@ -197,7 +197,7 @@ def test_initial_owner_binding_uses_exact_private_provider_id_and_two_phase_rece
         assert forbidden not in script
 
 
-def test_production_acceptance_covers_identity_workers_admin_and_fae_invariants():
+def test_production_acceptance_covers_platform_identity_workers_and_fae_invariants():
     script = (CLOUD / "accept-dingtalk-production.sh").read_text(
         encoding="utf-8"
     )
@@ -206,7 +206,6 @@ def test_production_acceptance_covers_identity_workers_admin_and_fae_invariants(
         "https://agent.orbbec.com.cn/",
         "https://agent.orbbec.com.cn/login",
         "/api/v1/account",
-        "/admin/?view=services",
         "platform-identity-mode",
         "platform-directory",
         "platform-dingtalk-stream",
@@ -227,5 +226,7 @@ def test_production_acceptance_covers_identity_workers_admin_and_fae_invariants(
         "docker compose down",
         "systemctl restart nginx",
         "set -x",
+        'auth_basic "AI ADMIN Demo";',
+        "/admin/?view=services",
     ):
         assert forbidden not in script

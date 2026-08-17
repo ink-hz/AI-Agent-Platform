@@ -44,7 +44,6 @@ readiness="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
 
 /usr/sbin/nginx -t >/dev/null 2>&1 || fail
 ! /usr/bin/grep -Fq 'auth_basic "Orbbec Agent Platform";' "$agent_config" || fail
-/usr/bin/grep -Fq 'auth_basic "AI ADMIN Demo";' "$agent_config" || fail
 ! /usr/bin/grep -Fq 'orbbec-agent-demo-preview.conf' "$agent_config" || fail
 /usr/bin/grep -Fq 'proxy_read_timeout 360s;' "$agent_config" || fail
 /usr/bin/grep -Fq 'proxy_set_header X-Forwarded-For $remote_addr;' "$agent_config" || fail
@@ -66,9 +65,6 @@ trap cleanup EXIT
 [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 8 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 \
   https://agent.orbbec.com.cn/api/v1/account)" == "401" ]] || fail
-[[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 8 \
-  --resolve agent.orbbec.com.cn:443:127.0.0.1 \
-  'https://agent.orbbec.com.cn/admin/?view=services')" == "401" ]] || fail
 /usr/bin/curl --noproxy '*' -fsS --max-time 8 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 \
   https://agent.orbbec.com.cn/api/health |
