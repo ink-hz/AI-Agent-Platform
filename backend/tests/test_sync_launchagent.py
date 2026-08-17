@@ -18,6 +18,25 @@ def test_daily_sync_launchagent_contract() -> None:
     assert "KeepAlive" not in plist
 
 
+def test_admin_sync_launchagent_runs_every_five_minutes() -> None:
+    with (
+        ROOT / "deploy/com.orbbec.ai-agent-platform-admin-sync.plist"
+    ).open("rb") as handle:
+        plist = plistlib.load(handle)
+
+    assert plist["StartInterval"] == 300
+    assert plist["RunAtLoad"] is True
+    assert plist["ProgramArguments"][-2:] == ["--source", "admin"]
+    assert plist["ProgramArguments"][-3].endswith("deploy/sync-remote-agents")
+    assert "KeepAlive" not in plist
+
+    installer = (
+        ROOT / "deploy/install-admin-sync-launchagent.sh"
+    ).read_text(encoding="utf-8")
+    assert "com.orbbec.ai-agent-platform-admin-sync" in installer
+    assert "launchctl bootstrap" in installer
+
+
 def test_installer_targets_only_sync_launchagent() -> None:
     script = (ROOT / "deploy/install-sync-launchagent.sh").read_text(encoding="utf-8")
 

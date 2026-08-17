@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.orbbec.ai-agent-platform-admin-sync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>__REPO_ROOT__/deploy/sync-remote-agents</string>
+    <string>--source</string>
+    <string>admin</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO_ROOT__</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PLATFORM_FEEDBACK_CLOSURE_OUTBOX_DIR</key>
+    <string>/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/feedback-closure-outbox</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/neo/Library/Logs/OrbbecAI-Agent-Platform-Admin-Sync.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/neo/Library/Logs/OrbbecAI-Agent-Platform-Admin-Sync.stderr.log</string>
+</dict>
+</plist>
