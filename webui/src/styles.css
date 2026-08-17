@@ -580,6 +580,13 @@ body {
 .activity-group .operational-event-list { margin-top: 17px; }
 .activity-load-more { display: block; min-height: 44px; margin: 22px auto 0; padding: 0 24px; border: 1px solid var(--brand); border-radius: 10px; background: var(--surface); color: var(--brand); font: inherit; font-size: 13px; font-weight: 760; cursor: pointer; }
 .activity-load-more:disabled { border-color: var(--line); color: var(--ink-faint); cursor: progress; }
+.session-pagination { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 22px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.session-pagination p { margin: 0; color: var(--ink-soft); font-size: 12.5px; }
+.session-pagination > div { display: flex; align-items: center; gap: 8px; }
+.session-pagination button { min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--brand); font: inherit; font-size: 12px; font-weight: 750; cursor: pointer; }
+.session-pagination button:hover:not(:disabled) { border-color: var(--brand-bright); background: var(--brand-wash); }
+.session-pagination button:disabled { color: var(--ink-faint); cursor: not-allowed; }
+.session-pagination span { min-width: 82px; color: var(--ink); font-size: 12.5px; font-weight: 720; text-align: center; }
 
 .session-list { overflow: hidden; margin-top: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 12px 30px rgba(20,51,89,.08); }
 .session-row { display: grid; grid-template-columns: 116px minmax(240px, 1.7fr) minmax(190px, 1fr) 120px 70px; align-items: center; gap: 17px; min-height: 92px; padding: 17px 20px; border-top: 1px solid var(--line-soft); color: inherit; text-decoration: none; transition: background .15s ease; }
@@ -820,6 +827,10 @@ body {
 }
 
 @media (max-width: 760px) {
+  .session-pagination { align-items: stretch; flex-direction: column; }
+  .session-pagination > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .session-pagination span { grid-column: 1 / -1; grid-row: 1; width: 100%; }
+  .session-pagination button { width: 100%; }
   .daily-brief-grid { grid-template-columns: 1fr; }
   .attention-panel { order: -1; }
   .activity-filter-bar { grid-template-columns: 1fr; }
