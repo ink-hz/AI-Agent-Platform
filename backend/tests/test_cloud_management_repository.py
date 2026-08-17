@@ -11,6 +11,7 @@ from app.cloud_replica.management_repository import (
     ReplicaOperationsRepository,
     ReplicaReviewRepository,
 )
+from app.fleet.catalog import AgentCatalog
 from app.operations.models import EventFilters
 
 
@@ -147,3 +148,70 @@ def test_operation_projection_filters_before_pagination():
     assert page.total == 1
     assert page.items[0].agent_id == "hr-bot"
     assert page.items[0].summary == "脱敏故障"
+
+
+def test_excluded_agents_are_absent_from_review_projections():
+    cipher = FieldCipher(b"m" * 32)
+    visible_issue_id = uuid4()
+    hidden_issue_id = uuid4()
+    records = [
+        {
+            "kind": "review_issue_projection", "key": str(visible_issue_id),
+            "agent_id": "hr-bot", "status": "open", "priority": "P1",
+            "title": {"text": "Visible"}, "failure_layer": "model",
+            "owner_display": None, "linked_turn_count": 1,
+            "updated_at": "2026-08-14T08:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        },
+        {
+            "kind": "review_issue_projection", "key": str(hidden_issue_id),
+            "agent_id": "fae-bot", "status": "open", "priority": "P1",
+            "title": {"text": "Hidden"}, "failure_layer": "model",
+            "owner_display": None, "linked_turn_count": 1,
+            "updated_at": "2026-08-14T07:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        },
+    ]
+    repository = ReplicaReviewRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record) for record in records]),
+        now=lambda: NOW, catalog=AgentCatalog.default(),
+    )
+
+    assert [item["agent_id"] for item in repository.list_issues()] == ["hr-bot"]
+    assert repository.list_issues(agent_id="fae-bot") == []
+    assert repository.get_issue_detail(hidden_issue_id) is None
+    assert repository.get_issue_detail(visible_issue_id) is not None
+
+
+def test_excluded_agents_are_absent_from_operation_projections():
+    cipher = FieldCipher(b"m" * 32)
+    records = [
+        {
+            "kind": "operation_event_projection", "key": "c" * 52,
+            "agent_id": "hr-bot", "event_type": "execution_failure",
+            "severity": "critical", "summary": {"text": "Visible"},
+            "occurred_at": "2026-08-14T08:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        },
+        {
+            "kind": "operation_event_projection", "key": "d" * 52,
+            "agent_id": "codex-assistant", "event_type": "execution_failure",
+            "severity": "critical", "summary": {"text": "Hidden"},
+            "occurred_at": "2026-08-14T07:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        },
+    ]
+    repository = ReplicaOperationsRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record) for record in records]),
+        now=lambda: NOW, catalog=AgentCatalog.default(),
+    )
+
+    page = repository.list_events(EventFilters(), 50, 0)
+    hidden = repository.list_events(
+        EventFilters(agent_id="codex-assistant"), 50, 0
+    )
+
+    assert [item.agent_id for item in page.items] == ["hr-bot"]
+    assert hidden.total == 0

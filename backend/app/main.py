@@ -120,11 +120,13 @@ def build_cloud_replica_services(
         database_url,
         cipher=FieldCipher(encryption_key),
         stale_seconds=config.replica_stale_seconds,
+        catalog=catalog,
     )
     repository.operations_repository = ReplicaOperationsRepository(
         database_url,
         cipher=FieldCipher(encryption_key),
         stale_seconds=config.replica_stale_seconds,
+        catalog=catalog,
     )
     observability_service = ObservabilityService(repository)
     fleet_service = FleetReadService(

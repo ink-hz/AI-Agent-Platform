@@ -253,10 +253,20 @@ def test_source_deduplicates_signals_and_discards_unknown_agents():
                 glyph="AI",
                 accent="blue",
                 visibility="system",
-            )
+            ),
+            "hidden-agent": AgentProfile(
+                id="hidden-agent",
+                name="隐藏 Agent",
+                domain="System",
+                description="不进入管理平台",
+                glyph="H",
+                accent="testing",
+                visibility="system",
+            ),
         },
         aliases={},
         unresolved_aliases=set(),
+        excluded_ids={"hidden-agent"},
     )
     duplicate = {
         "turn_key": "metabot:turn-1",
@@ -274,6 +284,11 @@ def test_source_deduplicates_signals_and_discards_unknown_agents():
                 **duplicate,
                 "turn_key": "metabot:turn-2",
                 "agent_id": "unknown-agent",
+            },
+            {
+                **duplicate,
+                "turn_key": "metabot:turn-3",
+                "agent_id": "hidden-agent",
             },
         ],
         catalog=catalog,

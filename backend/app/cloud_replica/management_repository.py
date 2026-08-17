@@ -11,6 +11,7 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
+from app.fleet.catalog import AgentCatalog
 from app.observability.models import Page
 from app.operations.models import EventFilters, OperationalEvent
 from app.review.repository import ReviewRepositoryError
@@ -31,12 +32,14 @@ class _ProjectionReader:
         connect: Callable[..., Any] = psycopg.connect,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         stale_seconds: int = 900,
+        catalog: AgentCatalog | None = None,
     ) -> None:
         self._database_url = database_url
         self._cipher = cipher
         self._connect = connect
         self._now = now
         self._stale_after = timedelta(seconds=stale_seconds)
+        self._catalog = catalog or AgentCatalog.default()
 
     def _connection(self):
         return self._connect(
@@ -47,6 +50,8 @@ class _ProjectionReader:
         )
 
     def _records(self, kind: str, agent_id: str | None = None) -> list[dict]:
+        if agent_id is not None and self._catalog.is_excluded(agent_id):
+            return []
         sql = (
             "select projection_kind,record_key,agent_id,occurred_at,"
             "display_payload,payload_nonce,payload_sha256 "
@@ -68,7 +73,13 @@ class _ProjectionReader:
                 if committed_at is None or self._now() - committed_at > self._stale_after:
                     raise ReviewRepositoryError("replica management projection stale")
                 rows = list(connection.execute(sql, tuple(params)).fetchall())
-            return [self._decrypt(row) for row in rows]
+            return [
+                value
+                for value in (self._decrypt(row) for row in rows)
+                if not self._catalog.is_excluded(
+                    str(value.get("agent_id") or "")
+                )
+            ]
         except ReviewRepositoryError:
             raise
         except Exception as error:
