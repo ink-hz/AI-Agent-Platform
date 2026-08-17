@@ -251,9 +251,12 @@ class ReplicaExporter:
         if len(raw_sessions) == limit:
             checkpoint = max(
                 raw_sessions,
-                key=lambda session: (session.last_active_at, session.session_key),
+                key=lambda session: (
+                    session.replication_cursor_at,
+                    session.session_key,
+                ),
             )
-            next_watermark = checkpoint.last_active_at
+            next_watermark = checkpoint.replication_cursor_at
             next_cursor_key = checkpoint.session_key
         else:
             next_watermark = through

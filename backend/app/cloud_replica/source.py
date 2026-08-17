@@ -18,14 +18,23 @@ from .models import (
 
 
 SESSION_SQL = """
-select
+with candidate_sessions as (
+  select
     session_key, agent_id, source_kind, channel, title, user_identity,
-    created_at, last_active_at, primary_sender_name, primary_sender_department
-from platform_read.sessions
-where last_active_at >= %(retention_floor)s
-  and (last_active_at, session_key) > (%(after)s, %(after_key)s)
-  and last_active_at <= %(through)s
-order by last_active_at, session_key
+    created_at, last_active_at, primary_sender_name, primary_sender_department,
+    greatest(last_active_at, coalesce(source_synced_at, last_active_at))
+      as replica_updated_at
+  from platform_read.sessions
+  where last_active_at >= %(retention_floor)s
+)
+select
+  session_key, agent_id, source_kind, channel, title, user_identity,
+  created_at, last_active_at, primary_sender_name, primary_sender_department,
+  replica_updated_at
+from candidate_sessions
+where (replica_updated_at, session_key) > (%(after)s, %(after_key)s)
+  and replica_updated_at <= %(through)s
+order by replica_updated_at, session_key
 limit %(limit)s
 """.strip()
 
@@ -318,6 +327,7 @@ class ReplicaSource:
                 primary_sender_department=row["primary_sender_department"],
                 created_at=row["created_at"],
                 last_active_at=row["last_active_at"],
+                replica_updated_at=row["replica_updated_at"],
                 turns=tuple(turns_by_session.get(row["session_key"], ())),
             )
             for row in session_rows

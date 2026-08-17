@@ -61,8 +61,13 @@ class RawSession:
     primary_sender_department: str | None
     created_at: datetime
     last_active_at: datetime
+    replica_updated_at: datetime | None = None
     turns: tuple[RawTurn, ...] = ()
     details: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def replication_cursor_at(self) -> datetime:
+        return self.replica_updated_at or self.last_active_at
 
 
 @dataclass(frozen=True, slots=True)

@@ -28,9 +28,13 @@ def test_source_queries_are_explicit_bounded_and_never_touch_restricted_fields()
     ):
         assert forbidden not in combined
     assert "last_active_at >= %(retention_floor)s" in SESSION_SQL
-    assert "(last_active_at, session_key) > (%(after)s, %(after_key)s)" in SESSION_SQL
-    assert "last_active_at <= %(through)s" in SESSION_SQL
-    assert "order by last_active_at, session_key" in SESSION_SQL.lower()
+    assert (
+        "greatest(last_active_at, coalesce(source_synced_at, last_active_at))"
+        " as replica_updated_at"
+    ) in " ".join(SESSION_SQL.lower().split())
+    assert "(replica_updated_at, session_key) > (%(after)s, %(after_key)s)" in SESSION_SQL
+    assert "replica_updated_at <= %(through)s" in SESSION_SQL
+    assert "order by replica_updated_at, session_key" in SESSION_SQL.lower()
     for statement in (TURN_SQL, ATTACHMENT_SQL, TRACE_SQL, TRACE_STEP_SQL):
         assert "%(through)s" in statement
     assert "join platform_read.turns" in ATTACHMENT_SQL.lower()
@@ -89,7 +93,8 @@ def test_source_uses_read_only_repeatable_read_and_one_upper_watermark():
                 "title": "title",
                 "user_identity": "raw-user",
                 "created_at": now,
-                "last_active_at": now,
+                "last_active_at": now - timedelta(days=3),
+                "replica_updated_at": now,
                 "primary_sender_name": "洛奇",
                 "primary_sender_department": "市场部",
             }
@@ -127,6 +132,8 @@ def test_source_uses_read_only_repeatable_read_and_one_upper_watermark():
 
     assert len(result) == 1
     assert result[0].turns[0].question == "q"
+    assert result[0].last_active_at == now - timedelta(days=3)
+    assert result[0].replication_cursor_at == now
     assert "default_transaction_read_only=on" in connect_arguments["options"]
     assert "statement_timeout=10000" in connect_arguments["options"]
     assert calls[0][0] == "TRANSACTION"

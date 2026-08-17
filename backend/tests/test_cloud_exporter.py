@@ -233,9 +233,10 @@ def test_replay_has_same_logical_records_but_fresh_envelope(tmp_path):
     assert first_batch.digest != second_batch.digest
 
 
-def test_composite_cursor_does_not_drop_or_loop_equal_timestamp_sessions(tmp_path):
+def test_replica_updated_composite_cursor_does_not_drop_late_sessions(tmp_path):
     now = datetime(2026, 8, 11, 8, 0, tzinfo=UTC)
-    activity_time = now - timedelta(minutes=1)
+    activity_time = now - timedelta(days=3)
+    replica_updated_at = now - timedelta(minutes=1)
     sessions = tuple(
         RawSession(
             session_key=f"session-{index:03d}",
@@ -248,6 +249,7 @@ def test_composite_cursor_does_not_drop_or_loop_equal_timestamp_sessions(tmp_pat
             primary_sender_department="市场部",
             created_at=activity_time,
             last_active_at=activity_time,
+            replica_updated_at=replica_updated_at,
         )
         for index in range(101)
     )
@@ -257,8 +259,9 @@ def test_composite_cursor_does_not_drop_or_loop_equal_timestamp_sessions(tmp_pat
             eligible = tuple(
                 session
                 for session in sessions
-                if (session.last_active_at, session.session_key) > (after, after_key)
-                and session.last_active_at <= through
+                if (session.replication_cursor_at, session.session_key)
+                > (after, after_key)
+                and session.replication_cursor_at <= through
             )
             return eligible[:limit]
 
