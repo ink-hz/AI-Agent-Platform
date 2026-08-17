@@ -60,12 +60,20 @@ class _Connection:
         return _Cursor(self)
 
 
-def _record(now, key="a" * 52, title="人才定位", question="寻找视觉算法人才"):
+def _record(
+    now,
+    key="a" * 52,
+    title="人才定位",
+    question="寻找视觉算法人才",
+    *,
+    agent_id="hr-bot",
+    turn_key="c" * 52,
+):
     return {
         "kind": "session",
         "key": key,
         "user_id": "b" * 52,
-        "agent_id": "hr-bot",
+        "agent_id": agent_id,
         "source_kind": "metabot",
         "channel": "feishu",
         "title": {"text": title, "safe": True, "sha256": "1" * 64, "policy_version": "v1"},
@@ -75,7 +83,7 @@ def _record(now, key="a" * 52, title="人才定位", question="寻找视觉算�
         "last_active_at": now.isoformat().replace("+00:00", "Z"),
         "turns": [
             {
-                "key": "c" * 52,
+                "key": turn_key,
                 "turn_index": 1,
                 "question": {"text": question, "safe": True, "sha256": "2" * 64, "policy_version": "v1"},
                 "answer": {"text": "建议优先搜索 GitHub", "safe": True, "sha256": "3" * 64, "policy_version": "v1"},
@@ -229,3 +237,43 @@ def test_repository_rejects_limit_above_ui_contract():
 
     with pytest.raises(ObservabilityReadError):
         repository.list_sessions(SessionFilters(), 101, 0)
+
+
+def test_repository_excludes_platform_hidden_agents_from_all_read_paths():
+    now = datetime(2026, 8, 11, 8, 0, tzinfo=UTC)
+    fae_session_key = "f" * 52
+    fae_turn_key = "1" * 52
+    codex_session_key = "i" * 52
+    repository, _ = _repository(
+        now,
+        (
+            _record(now, "h" * 52, agent_id="hr-bot", turn_key="2" * 52),
+            _record(
+                now,
+                fae_session_key,
+                agent_id="fae-bot",
+                turn_key=fae_turn_key,
+            ),
+            _record(
+                now,
+                codex_session_key,
+                agent_id="codex-assistant",
+                turn_key="3" * 52,
+            ),
+        ),
+    )
+
+    page = repository.list_sessions(SessionFilters(), 50, 0)
+
+    assert [item.agent_id for item in page.items] == ["hr-bot"]
+    assert repository.list_sessions(
+        SessionFilters(agent_id="fae-bot"), 50, 0
+    ).total == 0
+    assert repository.get_session(fae_session_key) is None
+    assert repository.get_trace(fae_turn_key) is None
+    assert repository.get_agent("fae-bot") is None
+    assert repository.get_agent("codex-assistant") is None
+    assert repository.get_agent("ai-fae-agent") is not None
+    assert "fae-bot" not in {
+        item.bot_id for item in repository.usage_snapshot().records
+    }

@@ -24,9 +24,15 @@ def visibility_catalog() -> AgentCatalog:
                 description="Integration testing", glyph="T", accent="testing",
                 visibility="system",
             ),
+            "fae-bot": AgentProfile(
+                id="fae-bot", name="FAE", domain="System",
+                description="Hidden MetaBot FAE", glyph="F", accent="testing",
+                visibility="system",
+            ),
         },
         {},
         set(),
+        {"fae-bot"},
     )
 
 
@@ -481,6 +487,22 @@ def test_explicit_system_agent_session_list_bypasses_business_allowlist() -> Non
     assert fake.executed[1][1] == ("test-bot", 25, 0)
 
 
+def test_explicit_excluded_agent_session_list_is_empty() -> None:
+    fake = FakeConnect([[{"count": 0}], []])
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, catalog=visibility_catalog(),
+    )
+
+    page = repository.list_sessions(
+        SessionFilters(agent_id="fae-bot"), limit=25, offset=0,
+    )
+
+    assert page.total == 0
+    assert page.items == []
+    sql_text = " ".join(statement for statement, _ in fake.executed).lower()
+    assert "false" in sql_text
+
+
 def test_list_sessions_uses_canonical_view_filters_and_pagination() -> None:
     fake = FakeConnect(
         [
@@ -690,6 +712,44 @@ def test_get_admin_trace_marks_engineering_detail_unavailable() -> None:
     assert trace.steps == []
 
 
+def test_excluded_agent_session_and_trace_are_not_addressable() -> None:
+    session_row = {
+        "session_key": "metabot:fae-bot:session-1",
+        "agent_id": "fae-bot",
+        "source_kind": "metabot",
+        "channel": "feishu",
+        "title": "Hidden session",
+        "created_at": NOW,
+        "last_active_at": NOW,
+        "turn_count": 0,
+        "feedback_count": 0,
+        "review_count": 0,
+        "latest_outcome": None,
+        "source_synced_at": None,
+    }
+    session_fake = FakeConnect([[session_row]])
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=session_fake, catalog=visibility_catalog(),
+    )
+
+    assert repository.get_session(session_row["session_key"]) is None
+    assert len(session_fake.executed) == 1
+
+    trace_row = {
+        "trace_key": "metabot:fae-bot:trace-1",
+        "turn_key": "metabot:fae-bot:turn-1",
+        "agent_id": "fae-bot",
+        "source_kind": "metabot",
+    }
+    trace_fake = FakeConnect([[trace_row]])
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=trace_fake, catalog=visibility_catalog(),
+    )
+
+    assert repository.get_trace(trace_row["turn_key"]) is None
+    assert len(trace_fake.executed) == 1
+
+
 def test_latest_runtime_observation_reads_only_bounded_trace_facts() -> None:
     fake = FakeConnect([[
         {
@@ -729,6 +789,16 @@ def test_latest_runtime_observation_is_none_without_usable_trace() -> None:
     )
 
     assert repository.get_latest_runtime_observation("quiet-agent") is None
+
+
+def test_excluded_agent_has_no_runtime_observation() -> None:
+    fake = FakeConnect([])
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, catalog=visibility_catalog(),
+    )
+
+    assert repository.get_latest_runtime_observation("fae-bot") is None
+    assert fake.executed == []
 
 
 def test_flywheel_pending_review_counts_unreviewed_negative_feedback() -> None:

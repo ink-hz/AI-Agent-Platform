@@ -107,6 +107,8 @@ class PsycopgObservabilityRepository:
             result: list[AgentSummary] = []
             seen: set[str] = set()
             for row in rows:
+                if self._catalog.is_excluded(row["agent_id"]):
+                    continue
                 profile = self._catalog.profile(row["agent_id"], row["agent_id"])
                 source = row["source_kind"]
                 seen.add(row["agent_id"])
@@ -158,6 +160,8 @@ class PsycopgObservabilityRepository:
     def _session_conditions(self, filters: SessionFilters) -> tuple[str, list]:
         conditions = ["true"]
         params: list = []
+        if filters.agent_id and self._catalog.is_excluded(filters.agent_id):
+            conditions.append("false")
         if not filters.agent_id:
             business_ids = list(self._catalog.ids_for_visibility("business"))
             if business_ids:
@@ -259,7 +263,7 @@ class PsycopgObservabilityRepository:
                     "select * from platform_read.sessions where session_key=%s",
                     (session_key,),
                 ).fetchone()
-                if session is None:
+                if session is None or self._catalog.is_excluded(session["agent_id"]):
                     return None
                 turns = cursor.execute(
                     "select * from platform_read.turns where session_key=%s order by turn_index, created_at",
@@ -414,7 +418,7 @@ class PsycopgObservabilityRepository:
                     "select * from platform_read.traces where turn_key=%s",
                     (turn_key,),
                 ).fetchone()
-                if trace is None:
+                if trace is None or self._catalog.is_excluded(trace["agent_id"]):
                     return None
                 rows = cursor.execute(
                     """select * from platform_read.trace_steps where trace_key=%s
@@ -449,6 +453,8 @@ class PsycopgObservabilityRepository:
     def get_latest_runtime_observation(
         self, agent_id: str
     ) -> RuntimeObservation | None:
+        if self._catalog.is_excluded(agent_id):
+            return None
         statement = """
           select agent_id, source_kind, engine, backend, model,
             coalesce(completed_at, started_at) as observed_at
@@ -468,19 +474,28 @@ class PsycopgObservabilityRepository:
 
     def get_flywheel_overview(self) -> FlywheelOverview:
         statement = """
+        with visible_turns as (
+          select turn_key from platform_read.turns where not (agent_id = any(%s))
+        ), visible_feedback as (
+          select f.* from platform_read.feedback f
+          join visible_turns t on t.turn_key=f.turn_key
+        ), visible_improvements as (
+          select * from platform_read.improvement_items where not (agent_id = any(%s))
+        )
         select
-          (select count(*) from platform_read.feedback)::bigint as feedback_total,
-          (select count(*) from platform_read.feedback where sentiment='negative')::bigint as negative_feedback,
-          (select count(*) from platform_read.feedback f
+          (select count(*) from visible_feedback)::bigint as feedback_total,
+          (select count(*) from visible_feedback where sentiment='negative')::bigint as negative_feedback,
+          (select count(*) from visible_feedback f
              left join platform_read.reviews r on r.turn_key=f.turn_key
              where f.sentiment='negative' and r.review_key is null)::bigint as pending_reviews,
-          (select count(*) from platform_read.improvement_items where item_type='evaluation')::bigint as evaluation_candidates,
-          (select count(*) from platform_read.improvement_items where item_type='knowledge')::bigint as knowledge_tasks,
-          (select count(*) from platform_read.improvement_items where item_type='qa')::bigint as qa_candidates
+          (select count(*) from visible_improvements where item_type='evaluation')::bigint as evaluation_candidates,
+          (select count(*) from visible_improvements where item_type='knowledge')::bigint as knowledge_tasks,
+          (select count(*) from visible_improvements where item_type='qa')::bigint as qa_candidates
         """
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                row = cursor.execute(statement).fetchone()
+                excluded = list(self._catalog.excluded_ids())
+                row = cursor.execute(statement, (excluded, excluded)).fetchone()
             return FlywheelOverview(**{key: int(value) for key, value in row.items()})
         except Exception as error:
             raise ObservabilityReadError("observability query failed") from error
@@ -488,6 +503,11 @@ class PsycopgObservabilityRepository:
     def list_improvement_items(self, filters: FlywheelFilters, limit: int, offset: int) -> Page[ImprovementItem]:
         conditions = ["true"]
         params: list = []
+        if filters.agent_id and self._catalog.is_excluded(filters.agent_id):
+            conditions.append("false")
+        else:
+            conditions.append("not (agent_id = any(%s))")
+            params.append(list(self._catalog.excluded_ids()))
         for column, value in (("agent_id", filters.agent_id), ("item_type", filters.item_type), ("status", filters.status)):
             if value:
                 conditions.append(f"{column}=%s")

@@ -174,7 +174,16 @@ class ReplicaObservabilityRepository:
 
     def _records(self, *, session_key: str | None = None) -> list[dict[str, Any]]:
         try:
-            return [self._decrypt(row) for row in self._rows(session_key=session_key)]
+            records = [
+                self._decrypt(row) for row in self._rows(session_key=session_key)
+            ]
+            return [
+                record
+                for record in records
+                if not self._catalog.is_excluded(
+                    str(record.get("agent_id") or "")
+                )
+            ]
         except (ReplicaCryptoError, OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
             raise ObservabilityReadError("replica read failed") from None
         except Exception:
