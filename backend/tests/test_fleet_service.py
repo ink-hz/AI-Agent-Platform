@@ -132,13 +132,20 @@ async def test_overview_merges_legacy_usage_into_current_agent():
 async def test_recent_healthy_agent_is_active_and_idle_agent_is_online():
     overview = await make_service(
         UsageRecord("hr-bot", 14, 4, 2, NOW - timedelta(minutes=2), "recent"),
-        UsageRecord("fae-bot", 4, 0, 1, NOW - timedelta(days=2), "old"),
+        UsageRecord(
+            "marketing-inbound-bot",
+            4,
+            0,
+            1,
+            NOW - timedelta(days=2),
+            "old",
+        ),
     ).overview(now=NOW)
 
     assert get_agent(overview, "hr-bot").state == "active"
-    assert get_agent(overview, "fae-bot").state == "online"
+    assert get_agent(overview, "marketing-inbound-bot").state == "online"
     assert overview.summary.active_agents == 1
-    assert overview.summary.running_agents == 8
+    assert overview.summary.running_agents == 6
 
 
 @pytest.mark.asyncio
@@ -166,11 +173,11 @@ async def test_system_agents_remain_diagnostic_but_do_not_enter_business_reporti
         ],
     ).overview(now=NOW)
 
-    assert len(overview.agents) == 10
+    assert len(overview.agents) == 8
     assert get_agent(overview, "test-bot").visibility == "system"
     assert get_agent(overview, "feishu-default").visibility == "system"
     assert get_agent(overview, "test-bot").total_conversations == 1
-    assert overview.summary.total_agents == 8
+    assert overview.summary.total_agents == 6
     assert overview.summary.total_conversations == 14
     assert overview.summary.conversations_last_7d == 4
     assert overview.trend[-1].conversations == 4
@@ -185,7 +192,7 @@ async def test_offline_runtime_state_wins_over_recent_usage():
 
     assert get_agent(overview, "hr-bot").state == "offline"
     assert overview.summary.offline_agents == 1
-    assert overview.summary.running_agents == 7
+    assert overview.summary.running_agents == 5
 
 
 @pytest.mark.asyncio
@@ -196,7 +203,7 @@ async def test_missing_usage_is_unknown_not_zero():
     assert overview.summary.conversations_last_7d is None
     assert overview.trend == []
     assert all(agent.total_conversations is None for agent in overview.agents)
-    assert overview.summary.running_agents == 8
+    assert overview.summary.running_agents == 6
     assert overview.usage_source.error == "usage_unavailable"
 
 
@@ -280,13 +287,13 @@ async def test_overview_combines_ten_local_and_two_remote_agents():
 
     overview = await service.overview(now=NOW)
 
-    assert len(overview.agents) == 12
-    assert overview.summary.total_agents == 10
-    assert overview.summary.running_agents == 10
+    assert len(overview.agents) == 10
+    assert overview.summary.total_agents == 8
+    assert overview.summary.running_agents == 8
     assert get_agent(overview, "ai-fae-agent").session_count == 168
     assert get_agent(overview, "ai-admin-agent").session_count == 118
     assert set(overview.expected_agent_ids) == {
-        *CURRENT_BOT_IDS,
+        *(set(CURRENT_BOT_IDS) - {"fae-bot", "codex-assistant"}),
         "ai-fae-agent",
         "ai-admin-agent",
     }
@@ -306,6 +313,15 @@ async def test_overview_expected_roster_retains_missing_catalog_agents():
 async def test_cloud_roster_completion_keeps_catalog_agents_and_usage():
     service = make_service(
         UsageRecord("hr-bot", 14, 4, 2, NOW, "HR question"),
+        UsageRecord("fae-bot", 100, 100, 0, NOW, "excluded FAE"),
+        UsageRecord(
+            "codex-assistant",
+            200,
+            200,
+            0,
+            NOW,
+            "excluded Codex",
+        ),
         bot_ids=[],
         include_catalog_agents=True,
     )
@@ -329,8 +345,11 @@ async def test_cloud_roster_completion_keeps_catalog_agents_and_usage():
 
     overview = await service.overview(now=NOW)
 
-    assert len({agent.id for agent in overview.agents}) == len(overview.agents) == 12
-    assert overview.summary.total_agents == 10
+    assert len({agent.id for agent in overview.agents}) == len(overview.agents) == 10
+    assert overview.summary.total_agents == 8
+    assert {"fae-bot", "codex-assistant"}.isdisjoint(
+        agent.id for agent in overview.agents
+    )
     assert get_agent(overview, "hr-bot").state == "unknown"
     assert get_agent(overview, "hr-bot").total_conversations == 14
     assert overview.summary.total_conversations == 14

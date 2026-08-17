@@ -196,3 +196,25 @@ async def test_partial_trace_failure_preserves_runtime_and_sanitizes_evidence():
 @pytest.mark.asyncio
 async def test_unknown_agent_returns_none():
     assert await service(local_instance()).get_runtime("missing-agent") is None
+
+
+@pytest.mark.asyncio
+async def test_platform_excluded_agents_have_no_runtime_detail():
+    cluster = ClusterSnapshot(
+        summary=ClusterSummary(
+            total=0, healthy=0, degraded=0, offline=0, checking=0,
+        ),
+        source=SourceStatus(healthy=True, checked_at=NOW.isoformat()),
+        instances=[],
+    )
+    runtime = ControlRoomService(
+        AgentCatalog.default(),
+        SnapshotMonitor(cluster),
+        SnapshotMonitor(RemoteHealthSnapshot(healthy=True, agents=[])),
+        Observations(),
+        now=lambda: NOW,
+    )
+
+    assert await runtime.get_runtime("fae-bot") is None
+    assert await runtime.get_runtime("codex-assistant") is None
+    assert await runtime.get_runtime("ai-fae-agent") is not None

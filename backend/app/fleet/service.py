@@ -91,7 +91,13 @@ class FleetReadService:
         cluster = self._monitor.snapshot()
         remote = self._remote_monitor.snapshot() if self._remote_monitor else None
         cached = await self._usage_cache.get()
-        instances = list(cluster.instances) + (list(remote.agents) if remote else [])
+        instances = [
+            instance
+            for instance in (
+                list(cluster.instances) + (list(remote.agents) if remote else [])
+            )
+            if not self._catalog.is_excluded(instance.id)
+        ]
         if self._include_catalog_agents:
             observed_ids = {instance.id for instance in instances}
             instances.extend(
