@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 from uuid import uuid4
 
 from fastapi import APIRouter, FastAPI
@@ -16,6 +16,23 @@ import pytest
 from app.control_plane.models import AuthContext, IdentityMode, IssuedWebSession, Role
 from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.main import create_app
+
+
+AI_ADMIN_ACCOUNT_CONTRACT_FIELDS = {
+    "internal_user_id",
+    "display_name",
+    "role",
+    "observation_agent_ids",
+    "directory_freshness",
+    "hard_stale_read_only",
+    "csrf_token",
+}
+AI_ADMIN_ACCOUNT_CONTRACT_ROLES = {
+    "member",
+    "management_viewer",
+    "platform_admin",
+    "platform_owner",
+}
 
 
 class FakeAuth:
@@ -39,14 +56,26 @@ class FakeAuth:
         self.csrf = "csrf-value"
         self.revoked = False
         self.provider_calls = 0
+        self.return_paths: dict[str, str] = {}
+        self.started_count = 0
 
     def start_qr(self, return_path):
         from app.control_plane.auth import StartedLogin
-        return StartedLogin(uuid4(), "state-value", "https://login.dingtalk.com/test", return_path)
+        self.started_count += 1
+        state = f"state-{self.started_count}"
+        self.return_paths[state] = return_path
+        return StartedLogin(
+            uuid4(), state, f"https://login.dingtalk.com/test?state={state}", return_path
+        )
 
     async def complete_qr(self, state, code):
+        from app.control_plane.auth import AuthenticationError, CompletedLogin
+        try:
+            return_path = self.return_paths.pop(state)
+        except KeyError:
+            raise AuthenticationError("login attempt invalid") from None
         self.provider_calls += 1
-        return self._issued()
+        return CompletedLogin(self._issued(), return_path)
 
     async def complete_in_client(self, code):
         self.provider_calls += 1
@@ -320,6 +349,48 @@ def test_qr_start_uses_fixed_flow_safe_return_and_no_store(tmp_path, monkeypatch
     assert response.headers["cache-control"] == "no-store"
 
 
+def test_qr_callbacks_use_the_return_path_bound_to_each_state(tmp_path, monkeypatch) -> None:
+    auth = FakeAuth()
+    client = TestClient(_app(tmp_path, monkeypatch, auth))
+
+    account_started = client.post(
+        "/api/v1/auth/dingtalk/start",
+        json={"return_path": "/account"},
+        headers={"Origin": "https://agent.example.test"},
+    )
+    admin_started = client.post(
+        "/api/v1/auth/dingtalk/start",
+        json={"return_path": "/admin/"},
+        headers={"Origin": "https://agent.example.test"},
+    )
+    account_state = parse_qs(urlsplit(account_started.json()["authorization_url"]).query)["state"][0]
+    admin_state = parse_qs(urlsplit(admin_started.json()["authorization_url"]).query)["state"][0]
+
+    admin_callback = client.get(
+        f"/api/v1/auth/dingtalk/callback?state={admin_state}&code=admin-code",
+        follow_redirects=False,
+    )
+    account_callback = client.get(
+        f"/api/v1/auth/dingtalk/callback?state={account_state}&code=account-code",
+        follow_redirects=False,
+    )
+    unknown_callback = client.get(
+        "/api/v1/auth/dingtalk/callback?state=unknown-state-secret&code=unknown-code-secret",
+        follow_redirects=False,
+    )
+
+    assert admin_callback.status_code == 302
+    assert admin_callback.headers["location"] == "/admin/"
+    assert account_callback.status_code == 302
+    assert account_callback.headers["location"] == "/account"
+    assert unknown_callback.status_code == 302
+    assert unknown_callback.headers["location"] == "/login?error=1"
+    assert "unknown-state-secret" not in unknown_callback.text
+    assert "unknown-code-secret" not in unknown_callback.text
+    assert "unknown-state-secret" not in unknown_callback.headers["location"]
+    assert "unknown-code-secret" not in unknown_callback.headers["location"]
+
+
 def test_every_identity_response_prevents_browser_or_proxy_caching(
     tmp_path, monkeypatch
 ) -> None:
@@ -411,7 +482,16 @@ def test_qr_and_in_client_login_set_rotated_cookie_and_return_csrf(tmp_path, mon
     auth = FakeAuth()
     client = TestClient(_app(tmp_path, monkeypatch, auth))
 
-    qr = client.get("/api/v1/auth/dingtalk/callback?state=state&code=code", follow_redirects=False)
+    started = client.post(
+        "/api/v1/auth/dingtalk/start",
+        json={"return_path": "/"},
+        headers={"Origin": "https://agent.example.test"},
+    )
+    state = parse_qs(urlsplit(started.json()["authorization_url"]).query)["state"][0]
+    qr = client.get(
+        f"/api/v1/auth/dingtalk/callback?state={state}&code=code",
+        follow_redirects=False,
+    )
     assert qr.status_code == 302
     assert qr.headers["location"] == "/"
     assert "__Host-platform_session=new-cookie" in qr.headers["set-cookie"]
@@ -441,6 +521,7 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
 
     account = client.get("/api/v1/account", cookies=cookies)
     assert account.status_code == 200
+    assert set(account.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
     assert account.json() == {
         "internal_user_id": str(auth.context.internal_user_id),
         "display_name": "Platform user",
@@ -480,11 +561,20 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
     assert client.get("/api/v1/account", cookies=cookies).status_code == 401
 
 
-def test_account_serializes_platform_admin_role(tmp_path, monkeypatch) -> None:
+def test_ai_admin_account_contract_roles_match_complete_platform_role_enum() -> None:
+    assert AI_ADMIN_ACCOUNT_CONTRACT_ROLES == {role.value for role in Role}
+
+
+@pytest.mark.parametrize("role", tuple(Role))
+def test_account_serializes_every_ai_admin_contract_role_with_exact_fields(
+    tmp_path,
+    monkeypatch,
+    role,
+) -> None:
     auth = FakeAuth()
     auth.context = AuthContext(
         auth.context.internal_user_id,
-        Role.PLATFORM_ADMIN,
+        role,
         auth.context.session_id,
         False,
     )
@@ -494,7 +584,8 @@ def test_account_serializes_platform_admin_role(tmp_path, monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["role"] == "platform_admin"
+    assert set(response.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
+    assert response.json()["role"] == role.value
 
 
 def test_unknown_stored_role_fails_closed() -> None:
