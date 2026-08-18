@@ -316,3 +316,30 @@ def test_reset_test_generation_refuses_orphaned_data_without_generation():
     assert not any(
         statement.startswith("delete") for statement, _ in connection.statements
     )
+
+
+def test_sql_check_constraint_allows_every_python_projection_kind():
+    """The Python allowlist and the database CHECK must not drift.
+
+    A kind accepted by ``prepare_management`` but missing from the SQL
+    constraint fails the whole batch at import time with a check violation,
+    which is exactly how the feedback totals projection first broke.
+    """
+    import pathlib
+    import re
+
+    from app.cloud_replica.store import _MANAGEMENT_KEYS
+
+    sql = (
+        pathlib.Path(__file__).parents[1] / "migrations" / "008_cloud_replica.sql"
+    ).read_text(encoding="utf-8")
+    # The final constraint wins: read the idempotent `add constraint` block.
+    blocks = re.findall(
+        r"add constraint management_projections_projection_kind_check\s*"
+        r"check \(projection_kind in \(([^)]*)\)\)",
+        sql,
+    )
+    assert blocks, "projection_kind constraint not found"
+    allowed = set(re.findall(r"'([a-z_]+)'", blocks[-1]))
+
+    assert set(_MANAGEMENT_KEYS) == allowed

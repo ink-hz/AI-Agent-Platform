@@ -72,7 +72,8 @@ create table if not exists platform_replica.management_projections (
     projection_kind text not null check (projection_kind in (
         'review_issue_projection',
         'review_inbox_projection',
-        'operation_event_projection'
+        'operation_event_projection',
+        'review_feedback_totals_projection'
     )),
     record_key text not null,
     agent_id text not null,
@@ -89,6 +90,22 @@ create index if not exists replica_management_agent_time_idx
     on platform_replica.management_projections(
         projection_kind, agent_id, occurred_at desc, record_key
     );
+
+-- `create table if not exists` never revises an existing constraint, so a new
+-- projection kind must be granted explicitly and idempotently. Without this an
+-- already-deployed replica rejects the new kind with a check violation and the
+-- whole batch fails to import.
+alter table platform_replica.management_projections
+    drop constraint if exists management_projections_projection_kind_check;
+alter table platform_replica.management_projections
+    add constraint management_projections_projection_kind_check
+    check (projection_kind in (
+        'review_issue_projection',
+        'review_inbox_projection',
+        'operation_event_projection',
+        'review_feedback_totals_projection'
+    ));
+
 create index if not exists replica_management_expiry_idx
     on platform_replica.management_projections(expires_at);
 
