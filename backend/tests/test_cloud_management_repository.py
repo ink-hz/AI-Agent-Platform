@@ -32,6 +32,7 @@ def _row(cipher: FieldCipher, record: dict) -> dict:
     time_value = (
         record.get("updated_at")
         or record.get("first_feedback_at")
+        or record.get("observed_at")
         or record["occurred_at"]
     )
     return {
@@ -362,3 +363,81 @@ def test_brief_can_claim_healthy_without_attention_events():
     assert brief.attention == []
     assert brief.can_claim_healthy is True
     assert brief.usage.conversations == 2
+
+
+class _TotalsConnection(_Connection):
+    """Serves projection rows plus the generation watermark."""
+
+    def __init__(self, rows, committed_at=NOW):
+        super().__init__(rows)
+        self.committed_at = committed_at
+
+    def execute(self, sql, params=()):
+        if "max(committed_at)" in sql:
+            return _Result([{"committed_at": self.committed_at}])
+        return super().execute(sql, params)
+
+
+def _totals_record(agent_id, feedback, negative, negative_turns, positive):
+    return {
+        "kind": "review_feedback_totals_projection",
+        "key": f"{'t' * 44}{abs(hash(agent_id)) % 10}",
+        "agent_id": agent_id,
+        "feedback_rows": feedback,
+        "negative_rows": negative,
+        "negative_turns": negative_turns,
+        "positive_rows": positive,
+        "observed_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v2",
+    }
+
+
+def _review_repository(rows):
+    cipher = FieldCipher(b"m" * 32)
+    return ReplicaReviewRepository(
+        "postgresql://replica",
+        cipher=cipher,
+        connect=lambda *_a, **_k: _TotalsConnection(
+            [_row(cipher, record) for record in rows]
+        ),
+        now=lambda: NOW,
+    ), cipher
+
+
+def test_overview_reports_real_feedback_totals_not_the_inbox():
+    # A fully triaged Agent has an empty inbox but plenty of feedback. Counting
+    # the inbox would report zero feedback for the best-reviewed Agent.
+    repository, _ = _review_repository([
+        _totals_record("hr-bot", 40, 12, 9, 28),
+        _totals_record("ai-fae-agent", 60, 20, 15, 40),
+    ])
+
+    overview = repository.overview()
+
+    assert overview["feedback_rows"] == 100
+    assert overview["negative_rows"] == 32
+    assert overview["negative_turns"] == 24
+    assert overview["positive_rows"] == 68
+    assert overview["feedback_totals_status"] == "resolved"
+
+
+def test_overview_marks_totals_unavailable_instead_of_reporting_zero():
+    repository, _ = _review_repository([])
+
+    overview = repository.overview()
+
+    assert overview["feedback_totals_status"] == "unavailable"
+    for field in ("feedback_rows", "negative_rows", "negative_turns", "positive_rows"):
+        assert overview[field] is None, field
+
+
+def test_overview_totals_are_agent_scoped():
+    repository, _ = _review_repository([
+        _totals_record("hr-bot", 40, 12, 9, 28),
+        _totals_record("ai-fae-agent", 60, 20, 15, 40),
+    ])
+
+    overview = repository.overview(agent_id="hr-bot")
+
+    assert overview["feedback_rows"] == 40
+    assert overview["positive_rows"] == 28

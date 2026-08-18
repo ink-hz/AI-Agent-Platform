@@ -119,20 +119,36 @@ class _ProjectionReader:
 class ReplicaReviewRepository(_ProjectionReader):
     def overview(self, *, agent_id: str | None = None) -> dict:
         issues = self._records("review_issue_projection", agent_id)
-        inbox = self._records("review_inbox_projection", agent_id)
+        totals = self._records("review_feedback_totals_projection", agent_id)
         dispositions: dict[str, int] = {}
         for issue in issues:
             status = str(issue.get("status") or "unknown")
             dispositions[status] = dispositions.get(status, 0) + 1
-        return {
-            "feedback_rows": sum(int(item["feedback_count"]) for item in inbox),
-            "negative_rows": sum(int(item["feedback_count"]) for item in inbox),
-            "negative_turns": len(inbox),
-            "positive_rows": 0,
+        overview = {
             "dispositions": dispositions,
             "statuses": dispositions,
             "issue_total": len(issues),
         }
+        if not totals:
+            # The inbox only holds untriaged negative feedback, so it must never
+            # stand in for the totals: a fully triaged Agent would report zero
+            # feedback. Report the absence instead of a wrong zero.
+            overview.update(
+                feedback_rows=None,
+                negative_rows=None,
+                negative_turns=None,
+                positive_rows=None,
+                feedback_totals_status="unavailable",
+            )
+            return overview
+        overview.update(
+            feedback_rows=sum(int(item["feedback_rows"]) for item in totals),
+            negative_rows=sum(int(item["negative_rows"]) for item in totals),
+            negative_turns=sum(int(item["negative_turns"]) for item in totals),
+            positive_rows=sum(int(item["positive_rows"]) for item in totals),
+            feedback_totals_status="resolved",
+        )
+        return overview
 
     def list_inbox(
         self, *, agent_id: str | None = None, limit: int = 100, offset: int = 0

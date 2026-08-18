@@ -98,6 +98,11 @@ _MANAGEMENT_KEYS = {
         "kind", "key", "agent_id", "occurred_at", "event_type", "severity",
         "summary", "sanitizer_policy_version",
     },
+    "review_feedback_totals_projection": {
+        "kind", "key", "agent_id", "observed_at", "feedback_rows",
+        "negative_rows", "negative_turns", "positive_rows",
+        "sanitizer_policy_version",
+    },
 }
 
 
@@ -213,6 +218,7 @@ class ReplicaStore:
             "review_issue_projection": "updated_at",
             "review_inbox_projection": "first_feedback_at",
             "operation_event_projection": "occurred_at",
+            "review_feedback_totals_projection": "observed_at",
         }[kind]
         if (
             not isinstance(record_key, str)
