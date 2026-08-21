@@ -188,6 +188,34 @@ def _stage(release_sha: str, deployment_id: str) -> None:
         os.close(descriptor)
 
 
+def _discard(release_sha: str, deployment_id: str) -> None:
+    descriptor = _lock()
+    try:
+        _validate_deploy_input(release_sha, deployment_id)
+        if any(
+            path.exists() or path.is_symlink()
+            for path in (STATE, DEPLOY_STATE, DEPLOY_STATE_PART, DEPLOY_BACKUP)
+        ):
+            raise InstallError
+        release_root = STAGING_ROOT / release_sha
+        target = release_root / "execution-worker-public-keyring.json"
+        part = release_root / ".execution-worker-public-keyring.json.part"
+        if not (release_root.exists() or release_root.is_symlink()):
+            return
+        _directory(STAGING_ROOT, {0o700})
+        _directory(release_root, {0o700})
+        if target.exists() or target.is_symlink():
+            _validate_document(_secure_value(target))
+        _unlink_part(part)
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            return
+        _fsync_directory(release_root)
+    finally:
+        os.close(descriptor)
+
+
 def _cutover(release_sha: str, digest: str, deployment_id: str) -> None:
     staged = STAGING_ROOT / release_sha / "execution-worker-public-keyring.json"
     descriptor = _lock()
@@ -246,8 +274,8 @@ def main() -> int:
         if (
             os.getuid() != REQUIRED_UID
             or not values
-            or values[0] not in {"stage", "cutover"}
-            or len(values) != (3 if values[0] == "stage" else 4)
+            or values[0] not in {"stage", "discard", "cutover"}
+            or len(values) != (4 if values[0] == "cutover" else 3)
             or RELEASE.fullmatch(values[1]) is None
             or DEPLOYMENT.fullmatch(values[-1]) is None
             or (values[0] == "cutover" and re.fullmatch(r"[0-9a-f]{64}", values[2]) is None)
@@ -258,6 +286,9 @@ def main() -> int:
         if values[0] == "stage":
             _stage(values[1], values[2])
             print("EXECUTION_WORKER_KEYRING_STAGED")
+        elif values[0] == "discard":
+            _discard(values[1], values[2])
+            print("EXECUTION_WORKER_KEYRING_DISCARDED")
         else:
             _cutover(values[1], values[2], values[3])
         return 0

@@ -32,9 +32,10 @@ A cloud deploy holds the persistent root-only
 `/opt/orbbec-agent-platform/private/deploy-input.lock` transaction from before
 the first fixed upload through cutover. A second deploy fails before writing any
 fixed `.part`. If the local deploy process is killed, the transaction is
-deliberately left fail-closed. Failures before cutover starts release it, but an
-SSH error, disconnect, or missing/changed success response after cutover starts
-retains it. Only the exact `CLOUD_PLATFORM_DEPLOY_OK` response confirms cutover.
+deliberately left fail-closed. An SSH error, disconnect, or signal during any
+post-acquire upload, keyring stage, or cutover retains it; cleanup releases only
+when no remote operation is uncertain before cutover, or after the exact
+`CLOUD_PLATFORM_DEPLOY_OK` response confirms cutover.
 Do not rerun a deploy or cutover for an existing release after an uncertain
 response. First perform the following read-only audit of the token, current
 release, health, and any deploy journal. Release only that exact recorded token
@@ -46,9 +47,11 @@ set -euo pipefail
 private_root=/opt/orbbec-agent-platform/private
 lock_root="$private_root/deploy-input.lock"
 helper=/opt/orbbec-agent-platform/bin/deploy-input-lock.py
+installer=/opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py
 [[ "$(/usr/bin/stat -c '%a %U' "$helper")" == "700 root" ]]
+[[ "$(/usr/bin/stat -c '%a %U' "$installer")" == "700 root" ]]
 shopt -s nullglob
-tombstones=("$private_root"/deploy-input.releasing-*)
+tombstones=("$private_root"/deploy-input.releasing-* "$private_root"/deploy-input.completed-*)
 shopt -u nullglob
 [[ "${#tombstones[@]}" -le 1 ]]
 active_transaction=0
@@ -68,9 +71,9 @@ else
   [[ -d "$tombstone" && ! -L "$tombstone" ]]
   [[ "$(/usr/bin/stat -c '%a %U' "$tombstone")" == "700 root" ]]
   tombstone_name="$(/usr/bin/basename "$tombstone")"
-  [[ "$tombstone_name" =~ ^deploy-input\.releasing-([0-9a-f]{40})-([0-9a-f]{32})$ ]]
-  release_sha="${BASH_REMATCH[1]}"
-  deployment_id="${BASH_REMATCH[2]}"
+  [[ "$tombstone_name" =~ ^deploy-input\.(releasing|completed)-([0-9a-f]{40})-([0-9a-f]{32})$ ]]
+  release_sha="${BASH_REMATCH[2]}"
+  deployment_id="${BASH_REMATCH[3]}"
   [[ -z "$(/usr/bin/find "$tombstone" -mindepth 1 -maxdepth 1 ! -name owner.json -print -quit)" ]]
   owner="$tombstone/owner.json"
   if [[ -e "$owner" || -L "$owner" ]]; then
@@ -84,25 +87,48 @@ else
     [[ ! -e "$owner" && ! -L "$owner" ]]
   fi
 fi
-! /usr/bin/pgrep -f 'deploy/cloud/deploy.sh|/opt/orbbec-agent-platform/bin/remote-stage.sh'
-/usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null
+! /usr/bin/pgrep -f 'deploy/cloud/deploy.sh|/bin/cat > /opt/orbbec-agent-platform/|/opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py|/opt/orbbec-agent-platform/bin/remote-stage.sh'
 deploy_state=/opt/orbbec-agent-platform/private/execution-worker-keyring-deploy-state.json
 deploy_state_part="$deploy_state.part"
 deploy_backup=/opt/orbbec-agent-platform/private/execution-worker-public-keyring.deploy.previous.json
 staged_keyring="/opt/orbbec-agent-platform/staging/$release_sha/execution-worker-public-keyring.json"
-for residual in "$deploy_state" "$deploy_state_part" "$deploy_backup" "$staged_keyring"; do
+staged_keyring_part="/opt/orbbec-agent-platform/staging/$release_sha/.execution-worker-public-keyring.json.part"
+for residual in "$deploy_state" "$deploy_state_part" "$deploy_backup"; do
   [[ ! -e "$residual" && ! -L "$residual" ]]
 done
 target_release="/opt/orbbec-agent-platform/releases/$release_sha"
-current_release="$(/usr/bin/readlink -f /opt/orbbec-agent-platform/current)"
+current=/opt/orbbec-agent-platform/current
+if [[ -L "$current" ]]; then
+  current_release="$(/usr/bin/readlink -f "$current")"
+  [[ -n "$current_release" ]]
+else
+  [[ ! -e "$current" && ! -L "$current" ]]
+  current_release=""
+fi
 if [[ "$current_release" == "$target_release" ]]; then
+  [[ ! -e "$staged_keyring" && ! -L "$staged_keyring" ]]
   deploy_outcome=completed
 else
-  [[ "$current_release" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ ]]
+  [[ -z "$current_release" || "$current_release" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ ]]
   [[ ! -e "$target_release" && ! -L "$target_release" ]]
   deploy_outcome=rolled-back
 fi
 [[ "$deploy_outcome" == "completed" || "$deploy_outcome" == "rolled-back" ]]
+if [[ -n "$current_release" ]]; then
+  /usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null
+else
+  [[ "$deploy_outcome" == "rolled-back" ]]
+  [[ -z "$(/usr/bin/ss -H -lnt 'sport = :8080')" ]]
+  running_services="$(/usr/bin/docker ps --filter label=com.docker.compose.project=orbbec-agent-platform --format '{{.Label "com.docker.compose.service"}}' | /usr/bin/sort -u)"
+  [[ -z "$running_services" || "$running_services" == "platform-postgres" ]]
+fi
+if [[ "$deploy_outcome" == "rolled-back" && "$active_transaction" == "1" ]]; then
+  [[ "$active_transaction" == "1" ]]
+  "$installer" discard "$release_sha" "$deployment_id"
+fi
+for staged_residual in "$staged_keyring" "$staged_keyring_part"; do
+  [[ ! -e "$staged_residual" && ! -L "$staged_residual" ]]
+done
 if [[ "$active_transaction" == "1" ]]; then
   "$helper" validate "$release_sha" "$deployment_id"
 fi

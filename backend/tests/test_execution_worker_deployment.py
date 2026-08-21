@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import plistlib
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -3952,6 +3953,56 @@ def test_cloud_deploy_stage_rejects_completed_deploy_journal_without_mutation(
     assert paths["staged"].read_bytes() == original
 
 
+@pytest.mark.parametrize(
+    "residual",
+    ["state", "deploy_state", "deploy_state_part", "deploy_backup"],
+)
+def test_cloud_deploy_discard_is_token_bound_and_rejects_deploy_residuals(
+    tmp_path: Path, residual: str
+) -> None:
+    paths = _cloud_keyring_installer_environment(tmp_path)
+    assert _run_cloud_keyring_installer(paths).returncode == 0
+    original = paths["staged"].read_bytes()
+    paths["deployment_id"] = "f" * 32
+    assert _run_cloud_keyring_installer(paths, "discard").returncode == 1
+    assert paths["staged"].read_bytes() == original
+    paths["deployment_id"] = "e" * 32
+    residual_path = paths["private"] / {
+        "state": "execution-worker-key-rotation-state.json",
+        "deploy_state": "execution-worker-keyring-deploy-state.json",
+        "deploy_state_part": "execution-worker-keyring-deploy-state.json.part",
+        "deploy_backup": "execution-worker-public-keyring.deploy.previous.json",
+    }[residual]
+    residual_path.write_text("{}\n", encoding="utf-8")
+    residual_path.chmod(0o600)
+
+    rejected = _run_cloud_keyring_installer(paths, "discard")
+
+    assert rejected.returncode == 1
+    assert paths["staged"].read_bytes() == original
+    residual_path.unlink()
+    assert _run_cloud_keyring_installer(paths, "discard").returncode == 0
+    assert not paths["staged"].exists()
+
+
+def test_cloud_deploy_discard_holds_rotation_lock_and_is_reentrant(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_keyring_installer_environment(tmp_path)
+    assert _run_cloud_keyring_installer(paths).returncode == 0
+    descriptor = os.open(paths["lock"], os.O_RDWR)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert _run_cloud_keyring_installer(paths, "discard").returncode == 1
+        assert paths["staged"].exists()
+    finally:
+        os.close(descriptor)
+
+    assert _run_cloud_keyring_installer(paths, "discard").returncode == 0
+    assert not paths["staged"].exists()
+    assert _run_cloud_keyring_installer(paths, "discard").returncode == 0
+
+
 def _cloud_deploy_input_lock_environment(tmp_path: Path) -> tuple[Path, Path]:
     platform = tmp_path / "platform"
     private = platform / "private"
@@ -4012,7 +4063,7 @@ def test_cloud_deploy_input_cleanup_requires_exact_owner_token(
     assert _run_cloud_deploy_input_lock(helper, "acquire", second_id).returncode == 0
 
 
-@pytest.mark.parametrize("killed_after", ["rename", "unlink", "rmdir"])
+@pytest.mark.parametrize("killed_after", ["active_rename", "completed_rename"])
 def test_cloud_deploy_input_release_recovers_after_each_persistent_boundary(
     tmp_path: Path, killed_after: str
 ) -> None:
@@ -4021,9 +4072,8 @@ def test_cloud_deploy_input_release_recovers_after_each_persistent_boundary(
     assert _run_cloud_deploy_input_lock(helper, "acquire", deployment_id).returncode == 0
     original = helper.read_text(encoding="utf-8")
     needle = {
-        "rename": "        os.replace(LOCK_ROOT, tombstone)\n",
-        "unlink": "            tombstone_state.unlink()\n",
-        "rmdir": "        tombstone.rmdir()\n",
+        "active_rename": "        os.replace(LOCK_ROOT, tombstone)\n",
+        "completed_rename": "        os.replace(tombstone, completed)\n",
     }[killed_after]
     assert needle in original
     indentation = needle[: len(needle) - len(needle.lstrip())]
@@ -4038,24 +4088,101 @@ def test_cloud_deploy_input_release_recovers_after_each_persistent_boundary(
 
     assert killed.returncode < 0
     helper.write_text(original, encoding="utf-8")
-    if killed_after == "rename":
-        assert _run_cloud_deploy_input_lock(helper, "release", "2" * 32).returncode == 1
+    assert _run_cloud_deploy_input_lock(helper, "release", "2" * 32).returncode == 1
     assert _run_cloud_deploy_input_lock(helper, "release", deployment_id).returncode == 0
     assert _run_cloud_deploy_input_lock(helper, "release", deployment_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "release", "2" * 32).returncode == 1
     assert _run_cloud_deploy_input_lock(helper, "acquire", "2" * 32).returncode == 0
+
+
+@pytest.mark.parametrize("killed_after", ["rename", "unlink", "rmdir"])
+def test_cloud_deploy_input_acquire_clears_receipt_after_each_boundary(
+    tmp_path: Path, killed_after: str
+) -> None:
+    helper, _platform = _cloud_deploy_input_lock_environment(tmp_path)
+    first_id = "1" * 32
+    second_id = "2" * 32
+    assert _run_cloud_deploy_input_lock(helper, "acquire", first_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "release", first_id).returncode == 0
+    original = helper.read_text(encoding="utf-8")
+    needle = {
+        "rename": "        os.replace(receipt, clearing_receipt)\n",
+        "unlink": "            clearing_state.unlink()\n",
+        "rmdir": "        clearing_receipt.rmdir()\n",
+    }[killed_after]
+    assert needle in original
+    indentation = needle[: len(needle) - len(needle.lstrip())]
+    helper.write_text(
+        original.replace(
+            needle, needle + indentation + "os.kill(os.getpid(), 9)\n", 1
+        ),
+        encoding="utf-8",
+    )
+
+    killed = _run_cloud_deploy_input_lock(helper, "acquire", second_id)
+
+    assert killed.returncode < 0
+    helper.write_text(original, encoding="utf-8")
+    assert _run_cloud_deploy_input_lock(helper, "release", first_id).returncode == 1
+    assert _run_cloud_deploy_input_lock(helper, "acquire", second_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "validate", second_id).returncode == 0
+
+
+def test_cloud_deploy_input_next_acquire_validates_receipt_under_transaction_lock(
+    tmp_path: Path,
+) -> None:
+    helper, platform = _cloud_deploy_input_lock_environment(tmp_path)
+    first_id = "1" * 32
+    second_id = "2" * 32
+    assert _run_cloud_deploy_input_lock(helper, "acquire", first_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "release", first_id).returncode == 0
+    receipt = platform / "private" / f"deploy-input.completed-{'b' * 40}-{first_id}"
+    owner = receipt / "owner.json"
+    original = owner.read_bytes()
+    owner.write_bytes(b"{}\n")
+    assert _run_cloud_deploy_input_lock(helper, "acquire", second_id).returncode == 1
+    assert receipt.exists()
+    assert not (platform / "private" / "deploy-input.lock").exists()
+    owner.write_bytes(original)
+    transaction = os.open(
+        platform / "private" / "deploy-input.transaction.lock", os.O_RDWR
+    )
+    fcntl.flock(transaction, fcntl.LOCK_EX)
+    process = subprocess.Popen(
+        [sys.executable, str(helper), "acquire", "b" * 40, second_id],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        time.sleep(0.1)
+        assert process.poll() is None
+        assert receipt.exists()
+        assert not (platform / "private" / "deploy-input.lock").exists()
+    finally:
+        fcntl.flock(transaction, fcntl.LOCK_UN)
+        os.close(transaction)
+    stdout, stderr = process.communicate(timeout=5)
+    assert process.returncode == 0, (stdout, stderr)
+    assert not receipt.exists()
 
 
 def test_cloud_deploy_retains_input_token_until_exact_cutover_success() -> None:
     deploy = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
     cleanup = deploy.split("cleanup() {", 1)[1].split("}\ntrap cleanup EXIT", 1)[0]
+    assert "remote_operation_uncertain=0" in deploy
     assert 'cutover_started=0' in deploy
     assert 'cutover_confirmed=0' in deploy
-    assert '"$cutover_started" == "0" || "$cutover_confirmed" == "1"' in cleanup
+    assert '"$remote_operation_uncertain" == "0"' in cleanup
+    assert '"$cutover_started" == "0"' in cleanup
+    assert '"$cutover_confirmed" == "1"' in cleanup
+    post_acquire = deploy.split("deploy_input_acquired=1", 1)[1]
+    assert post_acquire.count("run_remote_operation /usr/bin/ssh") == 7
     started = deploy.index("cutover_started=1")
+    stage = deploy.index('install-execution-worker-keyring.py" stage')
     cutover = deploy.index("install-execution-worker-keyring.py\" cutover")
     exact = deploy.index('CLOUD_PLATFORM_DEPLOY_OK release=$release_sha mode=dingtalk')
     confirmed = deploy.index("cutover_confirmed=1")
-    assert started < cutover < exact < confirmed
+    assert started < stage < cutover < exact < confirmed
 
 
 def test_cloud_deploy_input_runbook_recovers_exact_single_tombstone() -> None:
@@ -4065,23 +4192,46 @@ def test_cloud_deploy_input_runbook_recovers_exact_single_tombstone() -> None:
     section = runbook.split("A cloud deploy holds", 1)[1].split("## Status", 1)[0]
     assert "deploy-input.releasing-*" in section
     assert '[[ "${#tombstones[@]}" == "1" ]]' in section
-    assert "^deploy-input\\.releasing-([0-9a-f]{40})-([0-9a-f]{32})$" in section
+    assert "^deploy-input\\.(releasing|completed)-([0-9a-f]{40})-([0-9a-f]{32})$" in section
     assert '[[ ! -e "$owner" && ! -L "$owner" ]]' in section
     assert '[[ "$owner_release_sha" == "$release_sha" ]]' in section
     assert '[[ "$owner_deployment_id" == "$deployment_id" ]]' in section
     assert "deploy_outcome=completed" in section
     assert "deploy_outcome=rolled-back" in section
     assert '[[ ! -e "$target_release" && ! -L "$target_release" ]]' in section
-    assert 'for residual in "$deploy_state" "$deploy_state_part" "$deploy_backup" "$staged_keyring"' in section
+    assert 'for residual in "$deploy_state" "$deploy_state_part" "$deploy_backup"' in section
+    assert '"$installer" discard "$release_sha" "$deployment_id"' in section
+    assert 'for staged_residual in "$staged_keyring" "$staged_keyring_part"' in section
+    assert '[[ ! -e "$current" && ! -L "$current" ]]' in section
+    assert "sport = :8080" in section
+    assert "com.docker.compose.project=orbbec-agent-platform" in section
+    assert '"$running_services" == "platform-postgres"' in section
+    outcome = section.index('[[ "$deploy_outcome" == "completed" || "$deploy_outcome" == "rolled-back" ]]')
+    assert outcome < section.index("http://127.0.0.1:8080/api/health")
+    assert "/bin/rm" not in section
+    pgrep = next(line for line in section.splitlines() if "pgrep -f" in line)
+    for process in ("/bin/cat", "install-execution-worker-keyring.py", "remote-stage.sh"):
+        assert process in pgrep
 
 
 @pytest.mark.parametrize(
-    ("cutover_started", "cutover_confirmed", "released"),
-    [(0, 0, True), (1, 0, False), (1, 1, True)],
-    ids=["pre-cutover-failure", "uncertain-cutover", "confirmed-cutover"],
+    (
+        "remote_operation_uncertain",
+        "cutover_started",
+        "cutover_confirmed",
+        "released",
+    ),
+    [(0, 0, 0, True), (1, 0, 0, False), (0, 1, 0, False), (1, 1, 1, True)],
+    ids=[
+        "pre-remote-failure",
+        "uncertain-upload",
+        "stage-or-cutover-started",
+        "confirmed-cutover",
+    ],
 )
 def test_cloud_deploy_exit_cleanup_executes_fail_closed_release_policy(
     tmp_path: Path,
+    remote_operation_uncertain: int,
     cutover_started: int,
     cutover_confirmed: int,
     released: bool,
@@ -4103,6 +4253,7 @@ def test_cloud_deploy_exit_cleanup_executes_fail_closed_release_policy(
     shell = f"""set -u
 artifact_root={str(artifact)!r}
 deploy_input_acquired=1
+remote_operation_uncertain={remote_operation_uncertain}
 cutover_started={cutover_started}
 cutover_confirmed={cutover_confirmed}
 ssh_options=(test-option)
@@ -4125,6 +4276,83 @@ cleanup
     assert result.returncode == 1
     assert marker.exists() is released
     assert not artifact.exists()
+
+
+def test_cloud_deploy_signal_keeps_token_while_remote_child_is_orphaned(
+    tmp_path: Path,
+) -> None:
+    deploy = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
+    remote_operation = "run_remote_operation() {" + deploy.split(
+        "run_remote_operation() {", 1
+    )[1].split("}\n", 1)[0] + "}\n"
+    cleanup = "cleanup() {" + deploy.split("cleanup() {", 1)[1].split(
+        "}\ntrap cleanup EXIT", 1
+    )[0] + "}\n"
+    released = tmp_path / "released"
+    release_remote = tmp_path / "release-remote"
+    remote_pid = tmp_path / "remote-pid"
+    remote_started = tmp_path / "remote-started"
+    fake_release_ssh = tmp_path / "release-ssh"
+    fake_release_ssh.write_text(
+        "#!/bin/bash\n/bin/cat >/dev/null\n/usr/bin/touch \"$RELEASE_MARKER\"\n",
+        encoding="utf-8",
+    )
+    fake_release_ssh.chmod(0o700)
+    cleanup = cleanup.replace("/usr/bin/ssh", str(fake_release_ssh))
+    fake_operation = tmp_path / "operation-ssh"
+    fake_operation.write_text(
+        "#!/usr/bin/python3\n"
+        "import os, pathlib, signal, time\n"
+        "child = os.fork()\n"
+        "if child == 0:\n"
+        "    os.setsid()\n"
+        "    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        f"    pathlib.Path({str(remote_pid)!r}).write_text(str(os.getpid()))\n"
+        f"    pathlib.Path({str(remote_started)!r}).touch()\n"
+        f"    while not pathlib.Path({str(release_remote)!r}).exists(): time.sleep(0.01)\n"
+        "    raise SystemExit(0)\n"
+        "os.waitpid(child, 0)\n",
+        encoding="utf-8",
+    )
+    fake_operation.chmod(0o700)
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+    shell = f"""set -u
+artifact_root={str(artifact)!r}
+deploy_input_acquired=1
+remote_operation_uncertain=0
+cutover_started=0
+cutover_confirmed=0
+ssh_options=(test-option)
+CLOUD_ADMIN_HOST=cloud.example
+release_sha={'b' * 40}
+deployment_id={'1' * 32}
+repository_root={str(ROOT)!r}
+{remote_operation}
+{cleanup}
+trap cleanup EXIT
+run_remote_operation {str(fake_operation)!r}
+"""
+    process = subprocess.Popen(
+        ["/bin/bash", "-c", shell],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env={**os.environ, "RELEASE_MARKER": str(released)},
+        start_new_session=True,
+    )
+    try:
+        _wait_for_file(remote_started)
+        orphan_pid = int(remote_pid.read_text())
+        os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=5)
+        os.kill(orphan_pid, 0)
+        assert not released.exists()
+        assert not artifact.exists()
+    finally:
+        release_remote.touch()
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
 
 
 def test_cloud_deploy_real_git_archive_extracts_root_only_sensitive_assets(

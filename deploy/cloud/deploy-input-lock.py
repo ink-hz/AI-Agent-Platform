@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 from __future__ import annotations
 
-import json
 import fcntl
+import json
 import os
 from pathlib import Path
 import re
@@ -18,6 +18,8 @@ STATE = LOCK_ROOT / "owner.json"
 STATE_PART = LOCK_ROOT / "owner.json.part"
 TRANSACTION_LOCK = PRIVATE_ROOT / "deploy-input.transaction.lock"
 RELEASING_PREFIX = "deploy-input.releasing-"
+COMPLETED_PREFIX = "deploy-input.completed-"
+CLEARING_PREFIX = "deploy-input.clearing-"
 RELEASE = re.compile(r"[0-9a-f]{40}\Z")
 DEPLOYMENT = re.compile(r"[0-9a-f]{32}\Z")
 
@@ -105,22 +107,38 @@ def _transaction_lock() -> int:
         raise
 
 
-def _tombstone(release_sha: str, deployment_id: str) -> Path:
-    return PRIVATE_ROOT / f"{RELEASING_PREFIX}{release_sha}-{deployment_id}"
+def _marker(prefix: str, release_sha: str, deployment_id: str) -> Path:
+    return PRIVATE_ROOT / f"{prefix}{release_sha}-{deployment_id}"
 
 
-def _validate_tombstone(
-    tombstone: Path, release_sha: str, deployment_id: str
+def _markers(prefix: str) -> set[Path]:
+    return {
+        path for path in PRIVATE_ROOT.iterdir() if path.name.startswith(prefix)
+    }
+
+
+def _marker_identity(path: Path, prefix: str) -> tuple[str, str]:
+    match = re.fullmatch(
+        rf"{re.escape(prefix)}([0-9a-f]{{40}})-([0-9a-f]{{32}})",
+        path.name,
+    )
+    if match is None:
+        raise DeployInputError
+    return match.group(1), match.group(2)
+
+
+def _validate_marker(
+    marker: Path, release_sha: str, deployment_id: str
 ) -> Path | None:
-    _directory(tombstone, {0o700})
-    entries = {path.name for path in tombstone.iterdir()}
+    _directory(marker, {0o700})
+    entries = {path.name for path in marker.iterdir()}
     if not entries <= {STATE.name}:
         raise DeployInputError
-    tombstone_state = tombstone / STATE.name
+    marker_state = marker / STATE.name
     if not entries:
         return None
     descriptor = os.open(
-        tombstone_state, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        marker_state, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     )
     try:
         metadata = os.fstat(descriptor)
@@ -135,15 +153,44 @@ def _validate_tombstone(
             raise DeployInputError
     finally:
         os.close(descriptor)
-    return tombstone_state
+    return marker_state
 
 
 def _acquire(release_sha: str, deployment_id: str) -> None:
-    if any(
-        path.name.startswith(RELEASING_PREFIX)
-        for path in PRIVATE_ROOT.iterdir()
+    releasing = _markers(RELEASING_PREFIX)
+    completed = _markers(COMPLETED_PREFIX)
+    clearing = _markers(CLEARING_PREFIX)
+    if (
+        releasing
+        or len(completed) + len(clearing) > 1
+        or ((LOCK_ROOT.exists() or LOCK_ROOT.is_symlink()) and (completed or clearing))
     ):
         raise DeployInputError
+    if completed:
+        receipt = next(iter(completed))
+        receipt_release, receipt_deployment = _marker_identity(
+            receipt, COMPLETED_PREFIX
+        )
+        _validate_marker(receipt, receipt_release, receipt_deployment)
+        clearing_receipt = _marker(
+            CLEARING_PREFIX, receipt_release, receipt_deployment
+        )
+        os.replace(receipt, clearing_receipt)
+        _fsync(PRIVATE_ROOT)
+        clearing = {clearing_receipt}
+    if clearing:
+        clearing_receipt = next(iter(clearing))
+        receipt_release, receipt_deployment = _marker_identity(
+            clearing_receipt, CLEARING_PREFIX
+        )
+        clearing_state = _validate_marker(
+            clearing_receipt, receipt_release, receipt_deployment
+        )
+        if clearing_state is not None:
+            clearing_state.unlink()
+            _fsync(clearing_receipt)
+        clearing_receipt.rmdir()
+        _fsync(PRIVATE_ROOT)
     try:
         LOCK_ROOT.mkdir(mode=0o700)
     except FileExistsError as error:
@@ -186,32 +233,37 @@ def _acquire(release_sha: str, deployment_id: str) -> None:
 
 
 def _release(release_sha: str, deployment_id: str) -> None:
-    tombstone = _tombstone(release_sha, deployment_id)
-    tombstones = {
-        path
-        for path in PRIVATE_ROOT.iterdir()
-        if path.name.startswith(RELEASING_PREFIX)
-    }
-    if tombstones and tombstones != {tombstone}:
+    tombstone = _marker(RELEASING_PREFIX, release_sha, deployment_id)
+    completed = _marker(COMPLETED_PREFIX, release_sha, deployment_id)
+    tombstones = _markers(RELEASING_PREFIX)
+    receipts = _markers(COMPLETED_PREFIX)
+    clearing = _markers(CLEARING_PREFIX)
+    if (
+        clearing
+        or (tombstones and tombstones != {tombstone})
+        or (receipts and receipts != {completed})
+        or (tombstones and receipts)
+    ):
         raise DeployInputError
     active_exists = LOCK_ROOT.exists() or LOCK_ROOT.is_symlink()
     tombstone_exists = tombstone.exists() or tombstone.is_symlink()
-    if active_exists and tombstone_exists:
+    completed_exists = completed.exists() or completed.is_symlink()
+    if active_exists and (tombstone_exists or completed_exists):
         raise DeployInputError
+    if completed_exists:
+        _validate_marker(completed, release_sha, deployment_id)
+        return
     if active_exists:
         _validate(release_sha, deployment_id)
         os.replace(LOCK_ROOT, tombstone)
         _fsync(PRIVATE_ROOT)
         tombstone_exists = True
     if tombstone_exists:
-        tombstone_state = _validate_tombstone(
-            tombstone, release_sha, deployment_id
-        )
-        if tombstone_state is not None:
-            tombstone_state.unlink()
-            _fsync(tombstone)
-        tombstone.rmdir()
+        _validate_marker(tombstone, release_sha, deployment_id)
+        os.replace(tombstone, completed)
         _fsync(PRIVATE_ROOT)
+        return
+    raise DeployInputError
 
 
 def main(arguments: list[str] | None = None) -> int:
