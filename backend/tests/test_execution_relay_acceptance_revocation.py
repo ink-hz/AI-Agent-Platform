@@ -550,7 +550,7 @@ def test_final_remote_script_uses_private_registration_directory_and_real_replic
 
 def test_main_runs_disposable_before_production_and_finishes_with_invariants(monkeypatch) -> None:
     calls: list[str] = []
-    initial = subject.InitialGateResult("agentops-mac-primary", "a" * 64, 0)
+    initial = subject.InitialGateResult("agentops-mac-primary", "worker-v2", "a" * 64, 0)
     execution = subject.ExecutionGateResult(
         RUN_ID, RUN_ID, RUN_ID, RUN_ID, 0
     )

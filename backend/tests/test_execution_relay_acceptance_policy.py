@@ -197,6 +197,43 @@ def test_runbook_cloud_maintenance_commands_use_deployed_container_boundary() ->
     assert not re.search(r"(?m)^python -m app\.execution_relay\.register_worker", maintenance)
 
 
+def test_runbook_key_rotation_is_executable_ordered_and_has_exact_rollback() -> None:
+    rotation = _runbook().split("## Key rotation", 1)[1].split(
+        "## Worker revocation", 1
+    )[0]
+    ordered = (
+        "rotate-worker-key.py prepare worker-v2",
+        '"${maintenance[@]}" add-key agentops-mac-primary',
+        '/usr/bin/test ! -e "$worker_keyring_previous"',
+        '/bin/mv -f "$worker_keyring_part" "$worker_keyring"',
+        "rotate-worker-key.py activate worker-v2",
+        "accept.sh",
+        "accept-dingtalk-production.sh",
+        "revoke-key agentops-mac-primary worker-v1",
+        "rotate-worker-key.py finalize worker-v2",
+    )
+    positions = [rotation.index(value) for value in ordered]
+    assert positions == sorted(positions)
+    for required in (
+        "execution-worker-ed25519.next.key",
+        "execution-worker-public.next.json",
+        "execution-worker-key-rotation-state.json",
+        "rotate-worker-key.py abort worker-v2",
+        "execution-worker-public-keyring.json.part",
+        "rotate-worker-key.py rollback worker-v2",
+        "revoke-key agentops-mac-primary worker-v2",
+        'mv -f "$worker_keyring_previous" "$worker_keyring"',
+        'rm -f -- "$worker_keyring_previous"',
+        "from app.execution_relay.acceptance_orchestrator import load_config",
+        'CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING` to the activated canonical current',
+    ):
+        assert required in rotation
+    assert "/Users/agentops/AgentRuntime/private/cloud-admin-ed25519" not in rotation
+    lowered = rotation.lower()
+    for forbidden in ("keychain", "/usr/bin/security", "sudo", "password", "private key bytes"):
+        assert forbidden not in lowered
+
+
 def test_runbook_limits_acceptance_cli_and_uses_controlled_production_cancel() -> None:
     interruption = _runbook().split("## Explicit interruption", 1)[1].split(
         "## Restart", 1

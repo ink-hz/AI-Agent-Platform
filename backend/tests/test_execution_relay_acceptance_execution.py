@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import plistlib
 import signal
 from uuid import UUID
 
 import pytest
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from app.execution_relay import acceptance_orchestrator as subject
 from app.execution_relay.models import RelayEvent
@@ -39,6 +44,26 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     token = private / "metabot-api-token"
     _secure_write(ssh_key, b"test ssh key")
     _secure_write(worker_key, b"W" * 32)
+    public_key = Ed25519PrivateKey.from_private_bytes(b"W" * 32).public_key().public_bytes(
+        Encoding.Raw, PublicFormat.Raw
+    )
+    _secure_write(
+        private / "execution-worker-public.json",
+        (json.dumps({
+            "worker_id": "agentops-mac-primary",
+            "key_id": "worker-v2",
+            "public_key_base64url": base64.urlsafe_b64encode(public_key).decode().rstrip("="),
+            "allowed_agent_ids": [
+                "hr-bot",
+                "fae-bot",
+                "marketing-prospecting-bot",
+                "marketing-inbound-bot",
+                "marketing-voice-bot",
+                "marketing-intelligence-bot",
+                "marketing-gtm-bot",
+            ],
+        }) + "\n").encode(),
+    )
     _secure_write(dsn, b"postgresql://runtime:test@127.0.0.1:5432/worker")
     _secure_write(token, b"test metabot token")
     backend = tmp_path / "backend"
@@ -49,7 +74,17 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     contract = tmp_path / "runtime-contract.json"
     _secure_write(contract, b'{"bots":[]}\n')
     launchagent = tmp_path / "worker.plist"
-    _secure_write(launchagent, b"test plist")
+    _secure_write(
+        launchagent,
+        plistlib.dumps({
+            "Label": "com.orbbec.agent-execution-worker",
+            "EnvironmentVariables": {
+                "PLATFORM_WORKER_ID": "agentops-mac-primary",
+                "PLATFORM_WORKER_KEY_ID": "worker-v2",
+                "PLATFORM_WORKER_PRIVATE_KEY_FILE": str(worker_key),
+            },
+        }),
+    )
     config = private / "acceptance-config.json"
     _secure_write(
         config,
@@ -91,6 +126,7 @@ class Boundary:
         self.fail_kickstart = False
         self.replay_inserted = 0
         self.replayed: list[tuple[UUID, tuple[RelayEvent, ...]]] = []
+        self.replay_key_ids: list[str] = []
         self.local_reads: dict[UUID, int] = {}
 
     @staticmethod
@@ -225,9 +261,14 @@ class Boundary:
         )
 
     def duplicate_reupload(
-        self, run_id: UUID, events: tuple[RelayEvent, ...], _private_key: bytes
+        self,
+        run_id: UUID,
+        events: tuple[RelayEvent, ...],
+        key_id: str,
+        _private_key: bytes,
     ) -> subject.DuplicateUploadResult:
         self.replayed.append((run_id, events))
+        self.replay_key_ids.append(key_id)
         return subject.DuplicateUploadResult(
             status_code=200,
             accepted=len(events),
@@ -256,6 +297,7 @@ def _run(
         uuid_factory=uuid_factory or (lambda: next(values)),
         private_root=config.parent,
         worker_private_key_path=worker_key,
+        worker_public_document_path=config.parent / "execution-worker-public.json",
         runtime_dsn_path=dsn,
         hook_directory=config.parent / "execution-relay-acceptance",
         backend_root=config.parent.parent / "backend",
@@ -293,6 +335,10 @@ def test_gate_04_to_08_runs_real_cli_crashes_exact_children_and_restores(tmp_pat
         for call in boundary.process_calls
     }
     assert controls == {str(config.parent / "execution-relay-acceptance/control.json")}
+    assert {
+        call["environment"]["PLATFORM_WORKER_KEY_ID"]
+        for call in boundary.process_calls
+    } == {"worker-v2"}
     platform_environment = {
         key
         for key in boundary.process_calls[0]["environment"]
@@ -311,6 +357,7 @@ def test_gate_04_to_08_runs_real_cli_crashes_exact_children_and_restores(tmp_pat
         "PLATFORM_WORKER_ACCEPTANCE_CONTROL_FILE",
     }
     assert boundary.replayed[0][0] == RUNS[0]
+    assert boundary.replay_key_ids == ["worker-v2"]
     assert [event.seq for event in boundary.replayed[0][1]] == [1, 2]
     launch_actions = [call[0][1] for call in boundary.calls if call[0][0] == "/bin/launchctl"]
     assert launch_actions[0:2] == ["print", "bootout"]
@@ -322,6 +369,25 @@ def test_gate_04_to_08_runs_real_cli_crashes_exact_children_and_restores(tmp_pat
     ]
     assert remote_actions[0] == "setup"
     assert remote_actions[-1] == "cleanup"
+
+
+def test_gate_04_to_08_rejects_plist_identity_mismatch_before_bootout(
+    tmp_path: Path,
+) -> None:
+    config, worker_key, dsn = _fixture(tmp_path)
+    launchagent = config.parent.parent / "worker.plist"
+    value = plistlib.loads(launchagent.read_bytes())
+    value["EnvironmentVariables"]["PLATFORM_WORKER_KEY_ID"] = "worker-v1"
+    _secure_write(launchagent, plistlib.dumps(value))
+    boundary = Boundary(config.parent)
+
+    with pytest.raises(ValueError, match="acceptance gate failed"):
+        _run(config, worker_key, dsn, boundary)
+
+    assert not any(
+        call[0][0] == "/bin/launchctl" and call[0][1] == "bootout"
+        for call in boundary.calls
+    )
 
 
 def test_gate_06_requires_exact_duplicate_inserted_zero(tmp_path: Path) -> None:

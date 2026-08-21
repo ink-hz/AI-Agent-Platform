@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import stat
 import sys
@@ -28,6 +29,7 @@ AGENTS = (
 
 _DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _FILE_READ_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+_KEY_ID = re.compile(r"worker-v[1-9][0-9]*\Z")
 
 
 def _secure_parent(path: Path) -> int:
@@ -191,16 +193,19 @@ def _write_public(path: Path, value: bytes) -> None:
 def main(arguments: list[str] | None = None) -> int:
     values = sys.argv[1:] if arguments is None else arguments
     try:
-        if len(values) != 2:
+        if len(values) not in {2, 3}:
             raise ValueError
-        private_path, public_path = map(Path, values)
+        private_path, public_path = map(Path, values[:2])
+        key_id = values[2] if len(values) == 3 else "worker-v1"
+        if _KEY_ID.fullmatch(key_id) is None:
+            raise ValueError
         private = _private_bytes(private_path)
         public = Ed25519PrivateKey.from_private_bytes(private).public_key().public_bytes(
             Encoding.Raw, PublicFormat.Raw
         )
         document = {
             "worker_id": "agentops-mac-primary",
-            "key_id": "worker-v1",
+            "key_id": key_id,
             "public_key_base64url": base64.urlsafe_b64encode(public).decode().rstrip("="),
             "allowed_agent_ids": list(AGENTS),
         }

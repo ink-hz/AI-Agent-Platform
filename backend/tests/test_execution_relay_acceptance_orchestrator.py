@@ -29,7 +29,7 @@ def _secure_write(path: Path, value: bytes) -> None:
     path.chmod(0o600)
 
 
-def _fixture(tmp_path: Path) -> tuple[Path, Path, str]:
+def _fixture(tmp_path: Path, *, key_id: str = "worker-v1") -> tuple[Path, Path, str]:
     private = tmp_path / "private"
     private.mkdir(mode=0o700)
     key = Ed25519PrivateKey.generate()
@@ -45,7 +45,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, str]:
         public_path,
         (json.dumps({
             "worker_id": "agentops-mac-primary",
-            "key_id": "worker-v1",
+            "key_id": key_id,
             "public_key_base64url": base64.urlsafe_b64encode(public_value).decode().rstrip("="),
             "allowed_agent_ids": AGENTS,
         }) + "\n").encode(),
@@ -143,7 +143,7 @@ def test_secure_config_rejects_open_parent_file_and_symlink(tmp_path: Path) -> N
 
 
 def test_gate_01_to_03_uses_pinned_ssh_and_process_owned_listener_probe(tmp_path: Path) -> None:
-    config_path, public_path, fingerprint = _fixture(tmp_path)
+    config_path, public_path, fingerprint = _fixture(tmp_path, key_id="worker-v2")
     runner = Runner(fingerprint)
     result = subject.run_gates_01_to_03(
         config_path,
@@ -156,6 +156,7 @@ def test_gate_01_to_03_uses_pinned_ssh_and_process_owned_listener_probe(tmp_path
     )
 
     assert result.worker_id == "agentops-mac-primary"
+    assert result.key_id == "worker-v2"
     assert result.registered_public_key_sha256 == fingerprint
     assert result.public_ports_added == 0
     ssh_calls = [call for call in runner.calls if call[0][0] == "/usr/bin/ssh"]
@@ -166,11 +167,18 @@ def test_gate_01_to_03_uses_pinned_ssh_and_process_owned_listener_probe(tmp_path
         assert "IdentitiesOnly=yes" in arguments
         assert "StrictHostKeyChecking=yes" in arguments
         assert "ConnectTimeout=8" in arguments
-        assert arguments[-2:] == ("root@47.106.112.69", "/bin/bash -s")
+        assert arguments[-4:] == (
+            "root@47.106.112.69",
+            "/bin/bash -s",
+            "--",
+            "worker-v2",
+        )
         assert remote_script is not None
         assert b"cloud_api_healthy" in remote_script
         assert b"cloud_database_healthy" in remote_script
         assert b"worker_heartbeat_fresh" in remote_script
+        assert b'expected_key_id="$1"' in remote_script
+        assert b"worker_key.key_id=:'expected_key_id'" in remote_script
         assert b"9101-9108" in remote_script
         assert b"127.0.0.1:8000" in remote_script
         assert b"127.0.0.1:8080" in remote_script

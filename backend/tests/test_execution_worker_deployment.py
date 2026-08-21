@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import fcntl
 import importlib
 import json
 import os
@@ -22,7 +23,9 @@ from test_control_plane_migration import control_database
 ROOT = Path(__file__).parents[2]
 LOCAL = ROOT / "deploy" / "local-execution-worker"
 CLOUD = ROOT / "deploy" / "cloud"
+CLOUD_ACCEPTANCE = CLOUD / "accept-dingtalk-production.sh"
 GENERATOR = LOCAL / "generate-worker-key.py"
+ROTATOR = LOCAL / "rotate-worker-key.py"
 BOOTSTRAP = LOCAL / "bootstrap-worker-database.sh"
 PLIST = LOCAL / "com.orbbec.agent-execution-worker.plist.template"
 INSTALLER = LOCAL / "install.sh"
@@ -39,7 +42,7 @@ AGENTS = [
 
 
 def test_local_worker_command_assets_are_executable() -> None:
-    for path in (GENERATOR, BOOTSTRAP, INSTALLER, REMOVER):
+    for path in (GENERATOR, ROTATOR, BOOTSTRAP, INSTALLER, REMOVER):
         assert os.access(path, os.X_OK)
 
 
@@ -59,6 +62,17 @@ def test_removal_wrapper_has_exact_confirmation_private_inputs_and_no_recursive_
     assert "O_NOFOLLOW" in script and "dir_fd=" in script and "os.fstat" in script
     assert "0o700" in script and "0o600" in script
     assert "agent_execution_worker.dump" in script
+    for rotation_asset in (
+        "execution-worker-ed25519.next.key",
+        "execution-worker-public.next.json",
+        "com.orbbec.agent-execution-worker.next.plist",
+        "execution-worker-ed25519.previous.key",
+        "execution-worker-public.previous.json",
+        "com.orbbec.agent-execution-worker.previous.plist",
+        "execution-worker-key-rotation-state.json",
+        "execution-worker-key-rotation.lock",
+    ):
+        assert rotation_asset in script
     assert "pg_shdepend" in lowered and "pg_auth_members" in lowered
     assert "cross-database dependency" in lowered
     for attribute in (
@@ -114,6 +128,14 @@ def test_removal_preflight_precedes_every_local_mutation() -> None:
         '/bin/rm -f -- "$runtime_dsn"',
         '/bin/rm -f -- "$stdout_log"',
         '/bin/rm -f -- "$stderr_log"',
+        '/bin/rm -f -- "$next_private_key"',
+        '/bin/rm -f -- "$next_public_document"',
+        '/bin/rm -f -- "$next_plist"',
+        '/bin/rm -f -- "$previous_private_key"',
+        '/bin/rm -f -- "$previous_public_document"',
+        '/bin/rm -f -- "$previous_plist"',
+        '/bin/rm -f -- "$rotation_state"',
+        '/bin/rm -f -- "$rotation_lock"',
     ):
         assert script.index(mutation) > preflight
 
@@ -234,6 +256,15 @@ def _removal_test_environment(control_database, tmp_path: Path):
         "runtime_dsn": runtime_dsn,
         "stdout_log": log / "execution-worker.out.log",
         "stderr_log": log / "execution-worker.err.log",
+        "next_private_key": private / "execution-worker-ed25519.next.key",
+        "next_public_document": runtime / "execution-worker-public.next.json",
+        "next_plist": launch_agents / "com.orbbec.agent-execution-worker.next.plist",
+        "previous_private_key": private / "execution-worker-ed25519.previous.key",
+        "previous_public_document": runtime / "execution-worker-public.previous.json",
+        "previous_plist": launch_agents
+        / "com.orbbec.agent-execution-worker.previous.plist",
+        "rotation_state": private / "execution-worker-key-rotation-state.json",
+        "rotation_lock": private / "execution-worker-key-rotation.lock",
     }
     for name, path in assets.items():
         if name != "runtime_dsn":
@@ -564,6 +595,304 @@ def test_key_generator_is_idempotent_private_and_exact(tmp_path: Path) -> None:
     assert derived.public_bytes_raw() == base64.urlsafe_b64decode(
         document["public_key_base64url"] + "="
     )
+
+
+@pytest.mark.parametrize(
+    "key_id",
+    ["worker-v0", "worker-v01", "worker-v", "worker-v2-extra", "Worker-v2"],
+)
+def test_key_generator_supports_only_strict_positive_version_targets(
+    tmp_path: Path, key_id: str
+) -> None:
+    private_dir = tmp_path / "private"
+    public_dir = tmp_path / "public"
+    private_dir.mkdir(mode=0o700)
+    public_dir.mkdir(mode=0o700)
+    private = private_dir / "worker.key"
+    public = public_dir / "worker.json"
+
+    invalid = subprocess.run(
+        [sys.executable, str(GENERATOR), str(private), str(public), key_id],
+        text=True,
+        capture_output=True,
+    )
+
+    assert invalid.returncode == 1
+    assert invalid.stderr == "WORKER_KEY_GENERATION_FAILED\n"
+    assert not private.exists() and not public.exists()
+
+
+def test_key_generator_writes_requested_worker_v2_identity(tmp_path: Path) -> None:
+    private_dir = tmp_path / "private"
+    public_dir = tmp_path / "public"
+    private_dir.mkdir(mode=0o700)
+    public_dir.mkdir(mode=0o700)
+    private = private_dir / "worker.key"
+    public = public_dir / "worker.json"
+
+    result = subprocess.run(
+        [sys.executable, str(GENERATOR), str(private), str(public), "worker-v2"],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(public.read_text(encoding="utf-8"))["key_id"] == "worker-v2"
+    assert _mode(private) == _mode(public) == 0o600
+
+
+def _rotation_test_environment(tmp_path: Path, *, loaded: bool = True):
+    current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
+    runtime = tmp_path / "AgentRuntime"
+    private = runtime / "private"
+    local = runtime / "platform/deploy/local-execution-worker"
+    launch_agents = tmp_path / "Library/LaunchAgents"
+    for directory in (runtime, private, launch_agents):
+        directory.mkdir(parents=True, mode=0o700)
+        directory.chmod(0o700)
+    local.mkdir(parents=True)
+    generator = local / GENERATOR.name
+    generator.write_bytes(GENERATOR.read_bytes())
+    generator.chmod(0o700)
+    canonical_private = private / "execution-worker-ed25519.key"
+    canonical_public = runtime / "execution-worker-public.json"
+    generated = subprocess.run(
+        [sys.executable, str(generator), str(canonical_private), str(canonical_public)],
+        text=True,
+        capture_output=True,
+    )
+    assert generated.returncode == 0, generated.stderr
+    canonical_plist = launch_agents / "com.orbbec.agent-execution-worker.plist"
+    canonical_plist.write_text(
+        PLIST.read_text(encoding="utf-8").replace(
+            "/Users/agentops/AgentRuntime", str(runtime)
+        ),
+        encoding="utf-8",
+    )
+    canonical_plist.chmod(0o600)
+
+    launch_state = tmp_path / "launch-state"
+    launch_state.write_text("loaded" if loaded else "unloaded", encoding="utf-8")
+    launch_fail = tmp_path / "launch-fail"
+    launch_log = tmp_path / "launch-log"
+    fake_launchctl = tmp_path / "launchctl"
+    fake_launchctl.write_text(
+        """#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$FAKE_LAUNCH_LOG"
+case "$1" in
+  print) [[ "$(<"$FAKE_LAUNCH_STATE")" == loaded ]] ;;
+  bootout) printf unloaded > "$FAKE_LAUNCH_STATE" ;;
+  bootstrap)
+    if [[ -e "$FAKE_LAUNCH_FAIL" ]]; then
+      /bin/rm -f -- "$FAKE_LAUNCH_FAIL"
+      exit 71
+    fi
+    printf loaded > "$FAKE_LAUNCH_STATE"
+    ;;
+  enable) ;;
+  kickstart) [[ "$(<"$FAKE_LAUNCH_STATE")" == loaded ]] ;;
+  *) exit 72 ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_launchctl.chmod(0o700)
+    rotator = local / ROTATOR.name
+    source = ROTATOR.read_text(encoding="utf-8")
+    source = source.replace("/Users/agentops/AgentRuntime", str(runtime))
+    source = source.replace(
+        "/Users/agentops/Library/LaunchAgents", str(launch_agents)
+    )
+    source = source.replace("/bin/launchctl", str(fake_launchctl))
+    source = source.replace(
+        'REQUIRED_USER = "agentops"', f'REQUIRED_USER = "{current_user}"'
+    )
+    rotator.write_text(source, encoding="utf-8")
+    rotator.chmod(0o700)
+    environment = {
+        **os.environ,
+        "FAKE_LAUNCH_STATE": str(launch_state),
+        "FAKE_LAUNCH_FAIL": str(launch_fail),
+        "FAKE_LAUNCH_LOG": str(launch_log),
+    }
+    managed = {
+        "next_private": private / "execution-worker-ed25519.next.key",
+        "next_public": runtime / "execution-worker-public.next.json",
+        "next_plist": launch_agents / "com.orbbec.agent-execution-worker.next.plist",
+        "previous_private": private / "execution-worker-ed25519.previous.key",
+        "previous_public": runtime / "execution-worker-public.previous.json",
+        "previous_plist": launch_agents
+        / "com.orbbec.agent-execution-worker.previous.plist",
+        "state": private / "execution-worker-key-rotation-state.json",
+    }
+    return {
+        "rotator": rotator,
+        "environment": environment,
+        "launch_state": launch_state,
+        "launch_fail": launch_fail,
+        "rotation_lock": private / "execution-worker-key-rotation.lock",
+        "canonical_private": canonical_private,
+        "canonical_public": canonical_public,
+        "canonical_plist": canonical_plist,
+        "managed": managed,
+    }
+
+
+def _run_rotation(paths, action: str):
+    return subprocess.run(
+        [sys.executable, str(paths["rotator"]), action, "worker-v2"],
+        text=True,
+        capture_output=True,
+        env=paths["environment"],
+    )
+
+
+def _assert_rotation_identity(paths, key_id: str) -> None:
+    private = paths["canonical_private"].read_bytes()
+    document = json.loads(paths["canonical_public"].read_text(encoding="utf-8"))
+    value = plistlib.loads(paths["canonical_plist"].read_bytes())
+    public = Ed25519PrivateKey.from_private_bytes(private).public_key().public_bytes_raw()
+    assert document["key_id"] == key_id
+    assert base64.urlsafe_b64encode(public).decode().rstrip("=") == document[
+        "public_key_base64url"
+    ]
+    assert value["EnvironmentVariables"]["PLATFORM_WORKER_KEY_ID"] == key_id
+
+
+def test_local_key_rotation_prepare_activate_finalize_is_consistent_and_atomic(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path)
+    original = {
+        name: paths[name].read_bytes()
+        for name in ("canonical_private", "canonical_public", "canonical_plist")
+    }
+
+    prepared = _run_rotation(paths, "prepare")
+    assert prepared.returncode == 0, prepared.stderr
+    assert all(paths["managed"][name].is_file() for name in (
+        "next_private", "next_public", "next_plist"
+    ))
+    activated = _run_rotation(paths, "activate")
+    assert activated.returncode == 0, activated.stderr
+    _assert_rotation_identity(paths, "worker-v2")
+    assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+    assert paths["managed"]["previous_private"].read_bytes() == original[
+        "canonical_private"
+    ]
+    assert paths["managed"]["previous_public"].read_bytes() == original[
+        "canonical_public"
+    ]
+    assert paths["managed"]["previous_plist"].read_bytes() == original[
+        "canonical_plist"
+    ]
+    assert not any(paths["managed"][name].exists() for name in (
+        "next_private", "next_public", "next_plist"
+    ))
+    finalized = _run_rotation(paths, "finalize")
+    assert finalized.returncode == 0, finalized.stderr
+    _assert_rotation_identity(paths, "worker-v2")
+    assert not any(path.exists() for path in paths["managed"].values())
+
+
+def test_local_key_rotation_activation_failure_restores_exact_previous_state(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path, loaded=True)
+    original = {
+        name: paths[name].read_bytes()
+        for name in ("canonical_private", "canonical_public", "canonical_plist")
+    }
+    assert _run_rotation(paths, "prepare").returncode == 0
+    paths["launch_fail"].write_text("bootstrap", encoding="utf-8")
+
+    activated = _run_rotation(paths, "activate")
+
+    assert activated.returncode == 1
+    assert activated.stderr == "EXECUTION_WORKER_KEY_ROTATION_FAILED\n"
+    assert {
+        name: paths[name].read_bytes()
+        for name in ("canonical_private", "canonical_public", "canonical_plist")
+    } == original
+    assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+    assert not any(paths["managed"][name].exists() for name in (
+        "previous_private", "previous_public", "previous_plist", "state"
+    ))
+    assert all(paths["managed"][name].is_file() for name in (
+        "next_private", "next_public", "next_plist"
+    ))
+
+
+@pytest.mark.parametrize("loaded", [True, False], ids=["loaded", "unloaded"])
+def test_local_key_rotation_rollback_restores_previous_identity_and_loaded_state(
+    tmp_path: Path, loaded: bool
+) -> None:
+    paths = _rotation_test_environment(tmp_path, loaded=loaded)
+    original = {
+        name: paths[name].read_bytes()
+        for name in ("canonical_private", "canonical_public", "canonical_plist")
+    }
+    assert _run_rotation(paths, "prepare").returncode == 0
+    assert _run_rotation(paths, "activate").returncode == 0
+
+    rolled_back = _run_rotation(paths, "rollback")
+
+    assert rolled_back.returncode == 0, rolled_back.stderr
+    assert {
+        name: paths[name].read_bytes()
+        for name in ("canonical_private", "canonical_public", "canonical_plist")
+    } == original
+    _assert_rotation_identity(paths, "worker-v1")
+    assert paths["launch_state"].read_text(encoding="utf-8") == (
+        "loaded" if loaded else "unloaded"
+    )
+    assert not any(path.exists() for path in paths["managed"].values())
+
+
+def test_local_key_rotation_abort_removes_only_prepared_next_assets(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path)
+    original = {
+        name: paths[name].read_bytes()
+        for name in ("canonical_private", "canonical_public", "canonical_plist")
+    }
+    assert _run_rotation(paths, "prepare").returncode == 0
+
+    aborted = _run_rotation(paths, "abort")
+
+    assert aborted.returncode == 0, aborted.stderr
+    assert {
+        name: paths[name].read_bytes()
+        for name in ("canonical_private", "canonical_public", "canonical_plist")
+    } == original
+    assert not any(paths["managed"][name].exists() for name in (
+        "next_private", "next_public", "next_plist"
+    ))
+
+
+def test_local_key_rotation_rejects_concurrent_operation_without_changes(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path)
+    lock_path = paths["rotation_lock"]
+    lock_path.write_bytes(b"rotation-lock\n")
+    lock_path.chmod(0o600)
+    descriptor = os.open(lock_path, os.O_RDWR)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        concurrent = _run_rotation(paths, "prepare")
+
+        assert concurrent.returncode == 1
+        assert concurrent.stderr == "EXECUTION_WORKER_KEY_ROTATION_FAILED\n"
+        assert not any(paths["managed"][name].exists() for name in (
+            "next_private", "next_public", "next_plist"
+        ))
+        _assert_rotation_identity(paths, "worker-v1")
+    finally:
+        os.close(descriptor)
 
 
 @pytest.mark.parametrize("target", ["private-parent", "private-file", "public-parent"])
@@ -2313,6 +2642,43 @@ def test_launchagent_is_agentops_loopback_and_bounded() -> None:
         assert forbidden not in raw.lower()
 
 
+def test_cloud_production_acceptance_uses_canonical_current_worker_key() -> None:
+    script = CLOUD_ACCEPTANCE.read_text(encoding="utf-8")
+    assert "execution-worker-public-keyring.json" in script
+    assert "worker-v[1-9][0-9]*" in script
+    assert '-v expected_key_id="$expected_key_id"' in script
+    assert "worker_key.key_id=:'expected_key_id'" in script
+    assert 'value["key_id"] != "worker-v1"' not in script
+    assert '"$expected_key_id" == "worker-v1"' not in script
+    assert "worker_key.key_id='worker-v1'" not in script
+
+
+def test_local_key_rotator_is_strict_bounded_and_noninteractive() -> None:
+    source = ROTATOR.read_text(encoding="utf-8")
+    lowered = source.lower()
+    assert source.startswith("#!/usr/bin/env python3\n")
+    assert 're.compile(r"worker-v[1-9][0-9]*\\Z")' in source
+    for action in ("prepare", "abort", "activate", "rollback", "finalize"):
+        assert f'"{action}"' in source
+    for asset in (
+        "execution-worker-ed25519.next.key",
+        "execution-worker-public.next.json",
+        'f"{LABEL}.next.plist"',
+        "execution-worker-ed25519.previous.key",
+        "execution-worker-public.previous.json",
+        'f"{LABEL}.previous.plist"',
+        "execution-worker-key-rotation-state.json",
+        "execution-worker-key-rotation.lock",
+    ):
+        assert asset in source
+    assert "pwd.getpwuid(os.getuid()).pw_name" in source
+    assert "os.replace(" in source and "os.fsync(" in source
+    assert "O_NOFOLLOW" in source and "0o600" in source and "0o700" in source
+    for forbidden in ("keychain", "/usr/bin/security", "sudo", "osascript", "password"):
+        assert forbidden not in lowered
+    compile(source, str(ROTATOR), "exec")
+
+
 def test_installer_is_noninteractive_agentops_only_and_permission_gated() -> None:
     script = INSTALLER.read_text(encoding="utf-8")
     lowered = script.lower()
@@ -2489,7 +2855,9 @@ def test_production_acceptance_gates_worker_identity_freshness_and_public_ports(
     assert "interval '60 seconds'" in lowered
     assert "public_key_sha256" in lowered
     assert "agentops-mac-primary" in script
-    assert "worker-v1" in script
+    assert "worker-v[1-9][0-9]*" in script
+    assert "worker_key.key_id=:'expected_key_id'" in script
+    assert "worker_key.key_id='worker-v1'" not in script
     assert "9101-9108" in script
     assert r"0\.0\.0\.0" in script and r"\[::\]" in script
     assert script.index("execution_workers") < script.index(

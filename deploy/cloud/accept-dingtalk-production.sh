@@ -55,7 +55,11 @@ import sys
 value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 if set(value) != {"worker_id", "key_id", "public_key_base64url", "allowed_agent_ids"}:
     raise SystemExit(1)
-if value["worker_id"] != "agentops-mac-primary" or value["key_id"] != "worker-v1":
+if (
+    value["worker_id"] != "agentops-mac-primary"
+    or not isinstance(value["key_id"], str)
+    or re.fullmatch(r"worker-v[1-9][0-9]*", value["key_id"]) is None
+):
     raise SystemExit(1)
 expected_agents = ['hr-bot', 'fae-bot', 'marketing-prospecting-bot', 'marketing-inbound-bot', 'marketing-voice-bot', 'marketing-intelligence-bot', 'marketing-gtm-bot']
 if value["allowed_agent_ids"] != expected_agents:
@@ -74,9 +78,10 @@ print(
 PY
 )" || fail
 read -r expected_worker_id expected_key_id public_key_sha256 expected_agents_json <<<"$worker_identity"
-[[ "$expected_worker_id" == "agentops-mac-primary" && "$expected_key_id" == "worker-v1" && "$public_key_sha256" =~ ^[0-9a-f]{64}$ && -n "$expected_agents_json" ]] || fail
+[[ "$expected_worker_id" == "agentops-mac-primary" && "$expected_key_id" =~ ^worker-v[1-9][0-9]*$ && "$public_key_sha256" =~ ^[0-9a-f]{64}$ && -n "$expected_agents_json" ]] || fail
 relay_identity="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
-  -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c \
+  -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 \
+  -v expected_key_id="$expected_key_id" -c \
   "select concat(worker.status, ':', worker_key.status, ':',
     worker.last_seen_at > clock_timestamp() - interval '60 seconds', ':',
     encode(sha256(worker_key.public_key), 'hex'), ':',
@@ -84,7 +89,7 @@ relay_identity="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
    from platform_control.execution_workers worker
    join platform_control.execution_worker_keys worker_key using(worker_id)
    where worker.worker_id='agentops-mac-primary'
-     and worker_key.key_id='worker-v1'
+     and worker_key.key_id=:'expected_key_id'
      and worker.status='active'
      and worker_key.status='active'")" || fail
 [[ "$relay_identity" == "active:active:t:$public_key_sha256:$expected_agents_json" ]] || fail

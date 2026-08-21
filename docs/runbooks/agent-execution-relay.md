@@ -52,16 +52,46 @@ into tickets.
 
 ## Key rotation
 
-Generate the new private/public pair in the owner-only runtime directory, then
-transfer the reviewed public document to the cloud host as
-`/root/execution-worker-public-v2.json` mode 0600. On the cloud host, use the
-currently deployed Platform image, internal network, and host maintenance DSN.
-The maintenance DSN is exactly
-`/opt/orbbec-agent-platform/private/control-maintenance-database-url`.
-The two audited subcommands below are `register_worker add-key` and
-`register_worker revoke-key`.
-The registration document must be inside its own mode-0700 directory because
-the maintenance CLI validates the document's parent as well as the file:
+Run one rotation at a time. This example rotates `worker-v1` to the strict
+target `worker-v2`; later targets use the same positive `worker-vN` form
+without leading zeroes. On the `agentops` Mac, prepare the fixed next assets
+and copy only the public document to the cloud host:
+
+```bash
+/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python /Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/rotate-worker-key.py prepare worker-v2
+/usr/bin/test "$(/usr/bin/stat -f '%Lp %Su' /Users/agentops/AgentRuntime/private/execution-worker-ed25519.next.key)" = "600 agentops"
+/usr/bin/test "$(/usr/bin/stat -f '%Lp %Su' /Users/agentops/AgentRuntime/execution-worker-public.next.json)" = "600 agentops"
+acceptance_config=/Users/agentops/AgentRuntime/private/acceptance-config.json
+read -r cloud_admin_host cloud_admin_key < <(
+  cd /Users/agentops/AgentRuntime/platform/backend
+  .venv/bin/python - "$acceptance_config" <<'PY'
+from pathlib import Path
+import sys
+from app.execution_relay.acceptance_orchestrator import load_config
+path = Path(sys.argv[1])
+config = load_config(path, private_root=path.parent)
+print(config.cloud_admin_host, config.cloud_admin_key)
+PY
+)
+/usr/bin/scp -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -i "$cloud_admin_key" /Users/agentops/AgentRuntime/execution-worker-public.next.json "$cloud_admin_host:/root/execution-worker-public-v2.json"
+```
+
+The fixed local transaction state is
+`/Users/agentops/AgentRuntime/private/execution-worker-key-rotation-state.json`.
+The prepare and activate actions never use an interactive credential store and
+never expose secret material.
+If the rotation is abandoned before cloud `add-key`, delete only the validated
+fixed next assets with:
+
+```bash
+/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python /Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/rotate-worker-key.py abort worker-v2
+```
+
+On the cloud host, use the currently deployed Platform image, internal network,
+and exact maintenance DSN
+`/opt/orbbec-agent-platform/private/control-maintenance-database-url`. The
+registration document has its own mode-0700 parent because the maintenance CLI
+validates both parent and file:
 
 ```bash
 platform_root=/opt/orbbec-agent-platform
@@ -72,25 +102,87 @@ api_id="$("${compose[@]}" ps -q platform-api)"
 image="$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$api_id")"
 maintenance_dsn="$platform_root/private/control-maintenance-database-url"
 registration_root="$platform_root/private/execution-worker-key-rotation"
+worker_keyring="$platform_root/private/execution-worker-public-keyring.json"
+worker_keyring_previous="$platform_root/private/execution-worker-public-keyring.previous.json"
+worker_keyring_part="$platform_root/private/execution-worker-public-keyring.json.part"
 /usr/bin/test "$(/usr/bin/stat -c '%a %U' "$platform_root/private")" = "700 root"
 /usr/bin/test "$(/usr/bin/stat -c '%a %U' "$maintenance_dsn")" = "600 root"
 /usr/bin/install -d -o root -g root -m 700 "$registration_root"
 /usr/bin/install -o root -g root -m 600 /root/execution-worker-public-v2.json "$registration_root/worker.json"
 maintenance=(/usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 -v "$platform_root/private:/run/control-secrets:ro" -v "$registration_root:/run/worker-registration:ro" -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url "$image" python -m app.execution_relay.register_worker)
+# Audited maintenance action: register_worker add-key.
 "${maintenance[@]}" add-key agentops-mac-primary /run/worker-registration/worker.json RELAY_KEY_ROTATION_2026
+/usr/bin/test ! -e "$worker_keyring_previous"
+/usr/bin/install -o root -g root -m 600 "$worker_keyring" "$worker_keyring_previous"
+/usr/bin/install -o root -g root -m 600 "$registration_root/worker.json" "$worker_keyring_part"
+/bin/mv -f "$worker_keyring_part" "$worker_keyring"
 ```
 
-Deploy and verify the new signer before revoking the old key. After the new
-Worker has produced an accepted heartbeat, run:
+Back on the `agentops` Mac, atomically activate the prepared identity. The
+wrapper stops the LaunchAgent before replacing the canonical private key,
+public document and plist; an immediate failure restores all three and the
+exact previous loaded state:
+
+```bash
+/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python /Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/rotate-worker-key.py activate worker-v2
+/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/accept.sh /Users/agentops/AgentRuntime/private/acceptance-config.json
+```
+
+Gate01-08 reads the canonical public document, verifies the installed plist and
+private key use the same `worker-v2`, and queries that exact registered key and
+fresh heartbeat. On the cloud host, independently verify the canonical keyring,
+database key, fingerprint, and heartbeat:
+
+```bash
+/opt/orbbec-agent-platform/current/deploy/cloud/accept-dingtalk-production.sh
+```
+
+Only after both acceptance commands succeed, revoke the old key on the cloud
+host with `register_worker revoke-key`:
 
 ```bash
 "${maintenance[@]}" revoke-key agentops-mac-primary worker-v1 RELAY_KEY_ROTATION_2026
+```
+
+Then finalize on the Mac, and remove the retained cloud backup and registration
+assets on the cloud host:
+
+```bash
+/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python /Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/rotate-worker-key.py finalize worker-v2
+/bin/rm -f -- "$worker_keyring_previous"
+/bin/rm -f -- "$registration_root/worker.json"
+/bin/rmdir -- "$registration_root"
+```
+
+Before any later Platform deploy, set the owner-only deploy configuration's
+`CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING` to the activated canonical current
+document `/Users/agentops/AgentRuntime/execution-worker-public.json`. This
+prevents a later deploy from writing the retired `worker-v1` document back to
+the cloud keyring.
+
+If local activation, either acceptance command, or the fresh heartbeat and
+fingerprint comparison fails after cloud `add-key`, roll back before any retry.
+On the Mac, the state file exists only after an activation that needs explicit
+rollback:
+
+```bash
+if /usr/bin/test -f /Users/agentops/AgentRuntime/private/execution-worker-key-rotation-state.json; then
+  /Users/agentops/AgentRuntime/platform/backend/.venv/bin/python /Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/rotate-worker-key.py rollback worker-v2
+fi
+```
+
+On the cloud host, atomically restore the retained `worker-v1` keyring, revoke
+the failed new key, and remove only the bounded registration directory:
+
+```bash
+/bin/mv -f "$worker_keyring_previous" "$worker_keyring"
+"${maintenance[@]}" revoke-key agentops-mac-primary worker-v2 RELAY_KEY_ROTATION_ROLLBACK_2026
 /bin/rm -f -- "$registration_root/worker.json"
 /bin/rmdir -- "$registration_root"
 ```
 
 Never overwrite a key ID with different bytes and never revoke the old key
-before the accepted heartbeat.
+before the accepted heartbeat and matching fingerprint gates.
 
 ## Worker revocation
 
@@ -204,8 +296,9 @@ cloud Worker, run the owner-only wrapper as `agentops`:
 
 The wrapper completes its role, membership, ACL, and cross-database dependency
 preflight before bootout or unlink. It removes only the dedicated LaunchAgent,
-execution-worker key/public/DSN, dedicated logs, and known acceptance residual
-files. It then executes only:
+execution-worker key/public/DSN, dedicated logs, fixed rotation
+next/previous/state/lock assets, and known acceptance residual files. It then
+executes only:
 
 ```sql
 drop database agent_execution_worker;

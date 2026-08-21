@@ -22,6 +22,14 @@ runtime_dsn=/Users/agentops/AgentRuntime/private/execution-worker-postgres-dsn
 stdout_log=/Users/agentops/AgentRuntime/log/execution-worker.out.log
 stderr_log=/Users/agentops/AgentRuntime/log/execution-worker.err.log
 acceptance_root=/Users/agentops/AgentRuntime/private/execution-relay-acceptance
+next_private_key=/Users/agentops/AgentRuntime/private/execution-worker-ed25519.next.key
+next_public_document=/Users/agentops/AgentRuntime/execution-worker-public.next.json
+next_plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.next.plist
+previous_private_key=/Users/agentops/AgentRuntime/private/execution-worker-ed25519.previous.key
+previous_public_document=/Users/agentops/AgentRuntime/execution-worker-public.previous.json
+previous_plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.previous.plist
+rotation_state=/Users/agentops/AgentRuntime/private/execution-worker-key-rotation-state.json
+rotation_lock=/Users/agentops/AgentRuntime/private/execution-worker-key-rotation.lock
 label=com.orbbec.agent-execution-worker
 domain="gui/$(/usr/bin/id -u)"
 psql_bin="${PLATFORM_LOCAL_POSTGRES17_PSQL:-/opt/homebrew/opt/postgresql@17/bin/psql}"
@@ -139,13 +147,20 @@ PY
 
 "$python_bin" - "$runtime_root" "$private_root" "$log_root" "$plist" \
   "$private_key" "$public_document" "$runtime_dsn" "$stdout_log" \
-  "$stderr_log" "$acceptance_root" <<'PY'
+  "$stderr_log" "$acceptance_root" "$next_private_key" \
+  "$next_public_document" "$next_plist" "$previous_private_key" \
+  "$previous_public_document" "$previous_plist" "$rotation_state" \
+  "$rotation_lock" <<'PY'
 import os
 import pathlib
 import stat
 import sys
 
-runtime, private, log, plist, private_key, public, dsn, stdout, stderr, acceptance = map(pathlib.Path, sys.argv[1:])
+(
+    runtime, private, log, plist, private_key, public, dsn, stdout, stderr,
+    acceptance, next_private, next_public, next_plist, previous_private,
+    previous_public, previous_plist, rotation_state, rotation_lock,
+) = map(pathlib.Path, sys.argv[1:])
 for directory in (runtime, private, log, plist.parent):
     metadata = directory.lstat()
     if (
@@ -164,7 +179,10 @@ for path in (plist, private_key, public, dsn):
         or metadata.st_uid != os.getuid()
     ):
         raise SystemExit(1)
-for path in (stdout, stderr):
+for path in (
+    stdout, stderr, next_private, next_public, next_plist, previous_private,
+    previous_public, previous_plist, rotation_state, rotation_lock,
+):
     if path.exists() or path.is_symlink():
         metadata = path.lstat()
         if (
@@ -346,6 +364,14 @@ SQL
 /bin/rm -f -- "$runtime_dsn"
 /bin/rm -f -- "$stdout_log"
 /bin/rm -f -- "$stderr_log"
+/bin/rm -f -- "$next_private_key"
+/bin/rm -f -- "$next_public_document"
+/bin/rm -f -- "$next_plist"
+/bin/rm -f -- "$previous_private_key"
+/bin/rm -f -- "$previous_public_document"
+/bin/rm -f -- "$previous_plist"
+/bin/rm -f -- "$rotation_state"
+/bin/rm -f -- "$rotation_lock"
 for residual in control.json state.json completion-paused dispatching-paused; do
   if [[ -e "$acceptance_root/$residual" ]]; then
     /bin/rm -f -- "$acceptance_root/$residual"

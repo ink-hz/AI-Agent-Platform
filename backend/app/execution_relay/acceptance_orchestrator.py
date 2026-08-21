@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import plistlib
 import re
 import secrets
 import signal
@@ -30,7 +31,6 @@ from .worker_auth import WorkerRequestSigner
 
 
 _WORKER_ID = "agentops-mac-primary"
-_KEY_ID = "worker-v1"
 _LABEL = "com.orbbec.agent-execution-worker"
 _CLOUD_HOST = "root@47.106.112.69"
 _AGENTS = (
@@ -50,6 +50,7 @@ _PUBLIC_KEYS = {
     "allowed_agent_ids",
 }
 _HEX_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_PRODUCTION_KEY_ID = re.compile(r"worker-v[1-9][0-9]*\Z")
 _PID = re.compile(rb"(?m)^\s*pid\s*=\s*([1-9][0-9]*)\s*$")
 _SESSION_LIST_PATH = "/api/sessions?limit=1"
 _SESSION_DETAIL_PREFIX = "/api/sessions/"
@@ -88,6 +89,7 @@ class AcceptanceConfig:
 @dataclass(frozen=True)
 class InitialGateResult:
     worker_id: str
+    key_id: str
     registered_public_key_sha256: str
     public_ports_added: int
 
@@ -271,7 +273,7 @@ def _require_command(
 
 def _local_identity(
     private_root: Path, private_key_path: Path, public_document_path: Path
-) -> str:
+) -> tuple[str, str]:
     try:
         private = _read_owner_file(private_root, private_key_path, maximum_size=32)
         if len(private) != 32:
@@ -285,14 +287,16 @@ def _local_identity(
         if not isinstance(document, dict) or set(document) != _PUBLIC_KEYS:
             raise _gate_error()
         encoded = base64.urlsafe_b64encode(public).decode("ascii").rstrip("=")
+        key_id = document["key_id"]
         if (
             document["worker_id"] != _WORKER_ID
-            or document["key_id"] != _KEY_ID
+            or not isinstance(key_id, str)
+            or _PRODUCTION_KEY_ID.fullmatch(key_id) is None
             or document["public_key_base64url"] != encoded
             or document["allowed_agent_ids"] != list(_AGENTS)
         ):
             raise _gate_error()
-        return fingerprint
+        return key_id, fingerprint
     except AcceptanceGateError as error:
         if str(error) == "acceptance gate failed":
             raise
@@ -309,6 +313,8 @@ def _remote_probe_script() -> bytes:
     # Gate 03: return only the registered_public_key_sha256, never key bytes.
     return br'''#!/bin/bash
 set -euo pipefail
+expected_key_id="$1"
+[[ "$expected_key_id" =~ ^worker-v[1-9][0-9]*$ ]]
 platform_root=/opt/orbbec-agent-platform
 release_path="$(/usr/bin/readlink -f "$platform_root/current")"
 environment_path="$platform_root/private/platform.env"
@@ -326,8 +332,8 @@ fi
 if [[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$postgres_id")" == healthy ]]; then
   cloud_database_healthy=true
 fi
-relay_identity="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c \
-  "select concat(worker.last_seen_at > clock_timestamp() - interval '60 seconds', ':', encode(sha256(worker_key.public_key), 'hex')) from platform_control.execution_workers worker join platform_control.execution_worker_keys worker_key using(worker_id) where worker.worker_id='agentops-mac-primary' and worker_key.key_id='worker-v1' and worker.status='active' and worker_key.status='active'")"
+relay_identity="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v expected_key_id="$expected_key_id" -c \
+  "select concat(worker.last_seen_at > clock_timestamp() - interval '60 seconds', ':', encode(sha256(worker_key.public_key), 'hex')) from platform_control.execution_workers worker join platform_control.execution_worker_keys worker_key using(worker_id) where worker.worker_id='agentops-mac-primary' and worker_key.key_id=:'expected_key_id' and worker.status='active' and worker_key.status='active'")"
 registered_public_key_sha256="${relay_identity#*:}"
 if [[ "$relay_identity" == t:* ]]; then worker_heartbeat_fresh=true; fi
 listeners="$(/usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/sort -u)"
@@ -471,7 +477,9 @@ def run_gates_01_to_03(
         if current_user != "agentops" or isinstance(uid, bool) or not isinstance(uid, int) or uid < 1:
             raise _gate_error()
         config = load_config(config_path, private_root=private_root)
-        fingerprint = _local_identity(private_root, private_key_path, public_document_path)
+        key_id, fingerprint = _local_identity(
+            private_root, private_key_path, public_document_path
+        )
         _check_local_listener(runner, uid)
         remote = _require_command(
             runner,
@@ -489,6 +497,8 @@ def run_gates_01_to_03(
                 str(config.cloud_admin_key),
                 config.cloud_admin_host,
                 "/bin/bash -s",
+                "--",
+                key_id,
             ),
             input_bytes=_remote_probe_script(),
             timeout=30,
@@ -498,6 +508,7 @@ def run_gates_01_to_03(
             worker_id=_WORKER_ID,
             registered_public_key_sha256=fingerprint,
             public_ports_added=0,
+            key_id=key_id,
         )
     except AcceptanceGateError as error:
         if str(error) == "acceptance gate failed":
@@ -629,6 +640,27 @@ def _validate_runtime_file(path: Path, *, executable: bool = False) -> None:
         raise _gate_error() from None
 
 
+def _validate_launchagent_identity(
+    path: Path, *, key_id: str, private_key_path: Path
+) -> None:
+    try:
+        value = plistlib.loads(
+            _read_owner_file(path.parent, path, maximum_size=65_536)
+        )
+        environment = value.get("EnvironmentVariables") if isinstance(value, dict) else None
+        if (
+            value.get("Label") != _LABEL
+            or not isinstance(environment, dict)
+            or environment.get("PLATFORM_WORKER_ID") != _WORKER_ID
+            or environment.get("PLATFORM_WORKER_KEY_ID") != key_id
+            or environment.get("PLATFORM_WORKER_PRIVATE_KEY_FILE")
+            != str(private_key_path)
+        ):
+            raise ValueError
+    except Exception:
+        raise _gate_error() from None
+
+
 def _default_process_factory(**values: object):
     environment = values.pop("environment")
     return subprocess.Popen(env=environment, **values)
@@ -662,7 +694,7 @@ def _default_local_events(dsn: str, run_id: UUID) -> tuple[RelayEvent, ...]:
 
 
 def _default_duplicate_upload(
-    run_id: UUID, events: tuple[RelayEvent, ...], private_key: bytes
+    run_id: UUID, events: tuple[RelayEvent, ...], key_id: str, private_key: bytes
 ) -> DuplicateUploadResult:
     path = f"/api/v1/execution-worker/runs/{run_id}/events"
     body = json.dumps(
@@ -670,7 +702,7 @@ def _default_duplicate_upload(
         ensure_ascii=False, sort_keys=True, separators=(",", ":"),
     ).encode()
     signer = WorkerRequestSigner(
-        _WORKER_ID, _KEY_ID, Ed25519PrivateKey.from_private_bytes(private_key)
+        _WORKER_ID, key_id, Ed25519PrivateKey.from_private_bytes(private_key)
     )
     headers = {**signer.sign("POST", path, body), "Content-Type": "application/json"}
     with httpx.Client(timeout=10, follow_redirects=False, trust_env=False) as client:
@@ -800,11 +832,12 @@ def run_gates_04_to_08(
     kill_process: Callable[[int, signal.Signals], None] = _default_kill_process,
     local_state_reader: Callable[[str, UUID], LocalRunState] = _default_local_state,
     local_events_reader: Callable[[str, UUID], tuple[RelayEvent, ...]] = _default_local_events,
-    duplicate_uploader: Callable[[UUID, tuple[RelayEvent, ...], bytes], DuplicateUploadResult] = _default_duplicate_upload,
+    duplicate_uploader: Callable[[UUID, tuple[RelayEvent, ...], str, bytes], DuplicateUploadResult] = _default_duplicate_upload,
     sleep: Callable[[float], None] = time.sleep,
     uuid_factory: Callable[[], UUID] = uuid4,
     private_root: Path = Path("/Users/agentops/AgentRuntime/private"),
     worker_private_key_path: Path = Path("/Users/agentops/AgentRuntime/private/execution-worker-ed25519.key"),
+    worker_public_document_path: Path = Path("/Users/agentops/AgentRuntime/execution-worker-public.json"),
     runtime_dsn_path: Path = Path("/Users/agentops/AgentRuntime/private/execution-worker-postgres-dsn"),
     hook_directory: Path = Path("/Users/agentops/AgentRuntime/private/execution-relay-acceptance"),
     backend_root: Path = Path("/Users/agentops/AgentRuntime/platform/backend"),
@@ -833,6 +866,14 @@ def run_gates_04_to_08(
     for path, executable in ((python, True), (launchagent_path, False), (metabot_contract_path, False)):
         _validate_runtime_file(path, executable=executable)
     worker_key = _read_owner_file(private_root, worker_private_key_path, maximum_size=32)
+    worker_key_id, _worker_fingerprint = _local_identity(
+        private_root, worker_private_key_path, worker_public_document_path
+    )
+    _validate_launchagent_identity(
+        launchagent_path,
+        key_id=worker_key_id,
+        private_key_path=worker_private_key_path,
+    )
     dsn = _read_owner_file(private_root, runtime_dsn_path, maximum_size=16_384).decode().strip()
     _read_owner_file(private_root, metabot_token_path, maximum_size=16_384)
     if len(worker_key) != 32 or not dsn:
@@ -863,7 +904,7 @@ def run_gates_04_to_08(
             "HOME": "/Users/agentops",
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
             "PLATFORM_WORKER_ID": _WORKER_ID,
-            "PLATFORM_WORKER_KEY_ID": _KEY_ID,
+            "PLATFORM_WORKER_KEY_ID": worker_key_id,
             "PLATFORM_WORKER_PRIVATE_KEY_FILE": str(worker_private_key_path),
             "PLATFORM_WORKER_DATABASE_URL_FILE": str(runtime_dsn_path),
             "PLATFORM_WORKER_CALLBACK_PORT": "9120",
@@ -913,7 +954,7 @@ def run_gates_04_to_08(
         terminal.add(intelligence_run)
         # Gate 06: exact stored event replay must be accepted but insert zero rows.
         events = local_events_reader(dsn, hr_run)
-        replay = duplicate_uploader(hr_run, events, worker_key)
+        replay = duplicate_uploader(hr_run, events, worker_key_id, worker_key)
         if replay.status_code != 200 or replay.accepted != len(events) or replay.inserted != 0:
             raise _gate_error()
         domain = f"gui/{uid}"
@@ -1472,6 +1513,7 @@ def main(arguments: list[str] | None = None) -> int:
             or final.sessions_status != 200
             or final.history_status != 200
             or final_boundary.public_ports_added != 0
+            or final_boundary.key_id != initial.key_id
             or final_boundary.registered_public_key_sha256
             != initial.registered_public_key_sha256
         ):
