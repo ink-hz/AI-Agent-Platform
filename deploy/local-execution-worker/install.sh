@@ -38,6 +38,45 @@ done
 [[ -f "$metabot_contract" && ! -L "$metabot_contract" ]] || fail
 /bin/mkdir -p "$log_root" "$HOME/Library/LaunchAgents"
 /bin/chmod 700 "$log_root" "$HOME/Library/LaunchAgents"
+rotation_lock="$private_root/execution-worker-key-rotation.lock"
+if [[ -z "${PLATFORM_EXECUTION_WORKER_ROTATION_LOCK_FD:-}" ]]; then
+  "$platform_root/backend/.venv/bin/python" - "$rotation_lock" "$0" "$@" <<'PY' || fail
+import fcntl
+import os
+import stat
+import sys
+
+lock_path, script, *arguments = sys.argv[1:]
+descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+try:
+    metadata = os.fstat(descriptor)
+    if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid():
+        raise SystemExit(1)
+    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    os.set_inheritable(descriptor, True)
+    environment = dict(os.environ)
+    environment["PLATFORM_EXECUTION_WORKER_ROTATION_LOCK_FD"] = str(descriptor)
+    os.execve("/bin/bash", ["/bin/bash", script, *arguments], environment)
+finally:
+    os.close(descriptor)
+PY
+  exit 0
+fi
+[[ "$PLATFORM_EXECUTION_WORKER_ROTATION_LOCK_FD" =~ ^[0-9]+$ ]] || fail
+"$platform_root/backend/.venv/bin/python" - "$rotation_lock" "$PLATFORM_EXECUTION_WORKER_ROTATION_LOCK_FD" <<'PY' || fail
+import fcntl
+import os
+import stat
+import sys
+
+path, raw_descriptor = sys.argv[1:]
+descriptor = int(raw_descriptor)
+metadata = os.fstat(descriptor)
+named = os.stat(path, follow_symlinks=False)
+if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid() or (metadata.st_dev, metadata.st_ino) != (named.st_dev, named.st_ino):
+    raise SystemExit(1)
+fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+PY
 
 "$platform_root/backend/.venv/bin/python" "$script_dir/generate-worker-key.py" \
   "$private_key" "$public_document"

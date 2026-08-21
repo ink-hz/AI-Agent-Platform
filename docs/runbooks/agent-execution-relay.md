@@ -157,9 +157,25 @@ After a successful rotation, `agentops` publishes only the canonical public
 document through a fixed part and verifies its identity and fingerprint:
 
 ```bash
+set -euo pipefail
 source_public=/Users/agentops/AgentRuntime/execution-worker-public.json
+source_root=/Users/agentops/AgentRuntime
+handoff_root=/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public
 handoff=/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public/current.json
+[[ -d "$source_root" && ! -L "$source_root" ]]
+/usr/bin/test "$([ -d "$source_root" ] && /usr/bin/stat -f '%Lp %Su' "$source_root")" = "700 agentops"
+[[ -f "$source_public" && ! -L "$source_public" ]]
+/usr/bin/test "$([ -f "$source_public" ] && /usr/bin/stat -f '%Lp %Su' "$source_public")" = "600 agentops"
+[[ -d "$handoff_root" && ! -L "$handoff_root" ]]
+/usr/bin/test "$([ -d "$handoff_root" ] && /usr/bin/stat -f '%Lp %Su' "$handoff_root")" = "755 agentops"
+[[ ! -e "$handoff.part" && ! -L "$handoff.part" ]]
+if [[ -e "$handoff" || -L "$handoff" ]]; then
+  [[ -f "$handoff" && ! -L "$handoff" ]]
+  /usr/bin/test "$([ -f "$handoff" ] && /usr/bin/stat -f '%Lp %Su' "$handoff")" = "444 agentops"
+fi
 /usr/bin/install -m 600 "$source_public" "$handoff.part"
+[[ -f "$handoff.part" && ! -L "$handoff.part" ]]
+/usr/bin/test "$([ -f "$handoff.part" ] && /usr/bin/stat -f '%Lp %Su' "$handoff.part")" = "600 agentops"
 /Users/agentops/AgentRuntime/platform/backend/.venv/bin/python - "$source_public" "$handoff.part" worker-v2 <<'PY'
 import base64, hashlib, json, pathlib, re, sys
 source, staged = map(pathlib.Path, sys.argv[1:3])
@@ -184,13 +200,26 @@ As `neo`, copy that public file into a neo-owned secret boundary and verify the
 same bytes, identity, and fingerprint before the atomic rename:
 
 ```bash
+set -euo pipefail
 handoff=/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public/current.json
+handoff_root=/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public
 neo_secret_root="/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/secrets"
 neo_keyring="$neo_secret_root/execution-worker-public-keyring.json"
+[[ -d "$handoff_root" && ! -L "$handoff_root" ]]
+/usr/bin/test "$([ -d "$handoff_root" ] && /usr/bin/stat -f '%Lp %Su' "$handoff_root")" = "755 agentops"
+[[ -f "$handoff" && ! -L "$handoff" ]]
 /usr/bin/install -d -m 700 "$neo_secret_root"
+[[ -d "$neo_secret_root" && ! -L "$neo_secret_root" ]]
 /usr/bin/test "$(/usr/bin/stat -f '%Lp %Su' "$neo_secret_root")" = "700 neo"
 /usr/bin/test "$(/usr/bin/stat -f '%Lp %Su' "$handoff")" = "444 agentops"
+[[ ! -e "$neo_keyring.part" && ! -L "$neo_keyring.part" ]]
+if [[ -e "$neo_keyring" || -L "$neo_keyring" ]]; then
+  [[ -f "$neo_keyring" && ! -L "$neo_keyring" ]]
+  /usr/bin/test "$([ -f "$neo_keyring" ] && /usr/bin/stat -f '%Lp %Su' "$neo_keyring")" = "600 neo"
+fi
 /usr/bin/install -m 600 "$handoff" "$neo_keyring.part"
+[[ -f "$neo_keyring.part" && ! -L "$neo_keyring.part" ]]
+/usr/bin/test "$([ -f "$neo_keyring.part" ] && /usr/bin/stat -f '%Lp %Su' "$neo_keyring.part")" = "600 neo"
 /usr/bin/cmp -s "$handoff" "$neo_keyring.part"
 /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python - "$neo_keyring.part" worker-v2 <<'PY'
 import base64, hashlib, json, pathlib, re, sys

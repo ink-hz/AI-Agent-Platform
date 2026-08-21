@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 from __future__ import annotations
 
 import base64
@@ -14,10 +14,11 @@ import sys
 REQUIRED_UID = 0
 PLATFORM_ROOT = Path("/opt/orbbec-agent-platform")
 PRIVATE_ROOT = PLATFORM_ROOT / "private"
-KEYRING = PRIVATE_ROOT / "execution-worker-public-keyring.json"
-PART = PRIVATE_ROOT / "execution-worker-public-keyring.json.part"
+STAGING_ROOT = PLATFORM_ROOT / "staging"
+REMOTE_STAGE = Path("/opt/orbbec-agent-platform/bin/remote-stage.sh")
 STATE = PRIVATE_ROOT / "execution-worker-key-rotation-state.json"
 LOCK = PRIVATE_ROOT / "execution-worker-key-rotation.lock"
+RELEASE = re.compile(r"[0-9a-f]{40}\Z")
 AGENTS = (
     "hr-bot",
     "fae-bot",
@@ -63,21 +64,21 @@ def _optional_file(path: Path, *, allow_empty: bool) -> None:
         os.close(descriptor)
 
 
-def _fsync_private() -> None:
-    descriptor = os.open(PRIVATE_ROOT, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
 
 
-def _unlink_part() -> None:
-    _optional_file(PART, allow_empty=True)
+def _unlink_part(part: Path) -> None:
+    _optional_file(part, allow_empty=True)
     try:
-        PART.unlink()
+        part.unlink()
     except FileNotFoundError:
         return
-    _fsync_private()
+    _fsync_directory(part.parent)
 
 
 def _validate_document(raw: bytes) -> None:
@@ -122,55 +123,114 @@ def _lock() -> int:
         raise
 
 
-def main() -> int:
-    descriptor = -1
+def _stage(release_sha: str) -> None:
+    STAGING_ROOT.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(STAGING_ROOT, 0o700)
+    _directory(STAGING_ROOT, {0o700})
+    release_root = STAGING_ROOT / release_sha
+    release_root.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(release_root, 0o700)
+    _directory(release_root, {0o700})
+    target = release_root / "execution-worker-public-keyring.json"
+    part = release_root / ".execution-worker-public-keyring.json.part"
+    raw = sys.stdin.buffer.read(65_537)
+    if not raw or len(raw) > 65_536:
+        raise InstallError
+    _validate_document(raw)
+    _unlink_part(part)
+    output = os.open(
+        part,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+    )
     try:
-        if os.getuid() != REQUIRED_UID or len(sys.argv) != 1:
+        os.fchmod(output, 0o600)
+        offset = 0
+        while offset < len(raw):
+            written = os.write(output, raw[offset:])
+            if written <= 0:
+                raise InstallError
+            offset += written
+        os.fsync(output)
+    finally:
+        os.close(output)
+    os.replace(part, target)
+    _fsync_directory(release_root)
+
+
+def _cutover(release_sha: str, digest: str) -> None:
+    staged = STAGING_ROOT / release_sha / "execution-worker-public-keyring.json"
+    _validate_document(_secure_value(staged))
+    remote = REMOTE_STAGE.lstat()
+    if (
+        not stat.S_ISREG(remote.st_mode)
+        or REMOTE_STAGE.is_symlink()
+        or stat.S_IMODE(remote.st_mode) != 0o700
+        or remote.st_uid != os.getuid()
+    ):
+        raise InstallError
+    descriptor = _lock()
+    try:
+        if STATE.exists() or STATE.is_symlink():
+            raise InstallError
+        os.set_inheritable(descriptor, True)
+        os.execve(
+            "/bin/bash",
+            ["/bin/bash", str(REMOTE_STAGE), release_sha, digest],
+            {
+                "PATH": "/usr/bin:/bin",
+                "LC_ALL": "C.UTF-8",
+                "PLATFORM_EXECUTION_WORKER_DEPLOY_LOCK_FD": str(descriptor),
+            },
+        )
+    finally:
+        os.close(descriptor)
+
+
+def _secure_value(path: Path) -> bytes:
+    _directory(path.parent, {0o700})
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or metadata.st_size < 1
+            or metadata.st_size > 65_536
+        ):
+            raise InstallError
+        raw = os.read(descriptor, 65_537)
+        if len(raw) != metadata.st_size or os.read(descriptor, 1):
+            raise InstallError
+        return raw
+    finally:
+        os.close(descriptor)
+
+
+def main() -> int:
+    try:
+        values = sys.argv[1:]
+        if (
+            os.getuid() != REQUIRED_UID
+            or not values
+            or values[0] not in {"stage", "cutover"}
+            or len(values) != (2 if values[0] == "stage" else 3)
+            or RELEASE.fullmatch(values[1]) is None
+            or (values[0] == "cutover" and re.fullmatch(r"[0-9a-f]{64}", values[2]) is None)
+        ):
             raise InstallError
         _directory(PLATFORM_ROOT, {0o700, 0o755})
         _directory(PRIVATE_ROOT, {0o700})
-        raw = sys.stdin.buffer.read(65_537)
-        if not raw or len(raw) > 65_536:
-            raise InstallError
-        _validate_document(raw)
-        descriptor = _lock()
-        if STATE.exists() or STATE.is_symlink():
-            raise InstallError
-        _optional_file(KEYRING, allow_empty=False)
-        _unlink_part()
-        output = os.open(
-            PART,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
-            0o600,
-        )
-        try:
-            os.fchmod(output, 0o600)
-            offset = 0
-            while offset < len(raw):
-                written = os.write(output, raw[offset:])
-                if written <= 0:
-                    raise InstallError
-                offset += written
-            os.fsync(output)
-        finally:
-            os.close(output)
-        if STATE.exists() or STATE.is_symlink():
-            raise InstallError
-        os.replace(PART, KEYRING)
-        _fsync_private()
-        print("EXECUTION_WORKER_KEYRING_INSTALLED")
+        if values[0] == "stage":
+            _stage(values[1])
+            print("EXECUTION_WORKER_KEYRING_STAGED")
+        else:
+            _cutover(values[1], values[2])
         return 0
     except Exception:
         print("EXECUTION_WORKER_KEYRING_INSTALL_FAILED", file=sys.stderr)
         return 1
-    finally:
-        if descriptor >= 0:
-            try:
-                _unlink_part()
-            except Exception:
-                pass
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-            os.close(descriptor)
 
 
 if __name__ == "__main__":

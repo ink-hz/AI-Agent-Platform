@@ -106,12 +106,12 @@ if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
   fail
 fi
 if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
-  '/opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py' \
+  "/opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py" stage "$release_sha" \
   < "$CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING"; then
   fail
 fi
 if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
-  "/opt/orbbec-agent-platform/bin/remote-stage.sh" "$release_sha" "$artifact_digest" \
+  "/opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py" cutover "$release_sha" "$artifact_digest" \
   < "$artifact_path"; then
   fail
 fi

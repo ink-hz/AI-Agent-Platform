@@ -30,6 +30,7 @@ AGENTS = (
 _DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _FILE_READ_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
 _KEY_ID = re.compile(r"worker-v[1-9][0-9]*\Z")
+_LOCK_ENV = "PLATFORM_EXECUTION_WORKER_ROTATION_LOCK_FD"
 
 
 def _secure_parent(path: Path) -> int:
@@ -50,6 +51,52 @@ def _secure_parent(path: Path) -> int:
         os.close(descriptor)
         raise ValueError
     return descriptor
+
+
+def _rotation_lock(private_path: Path) -> int:
+    path = private_path.parent / "execution-worker-key-rotation.lock"
+    inherited = os.environ.get(_LOCK_ENV)
+    if inherited is None:
+        try:
+            descriptor = os.open(
+                path,
+                os.O_RDWR
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+            os.fchmod(descriptor, 0o600)
+        except FileExistsError:
+            descriptor = os.open(
+                path,
+                os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+            )
+        owned = True
+    elif inherited.isdigit():
+        descriptor = int(inherited)
+        owned = False
+    else:
+        raise ValueError
+    try:
+        metadata = os.fstat(descriptor)
+        named = os.stat(path, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or (metadata.st_dev, metadata.st_ino) != (named.st_dev, named.st_ino)
+        ):
+            raise ValueError
+        fcntl.flock(
+            descriptor,
+            fcntl.LOCK_EX if owned else fcntl.LOCK_EX | fcntl.LOCK_NB,
+        )
+        return descriptor if owned else -1
+    except Exception:
+        if owned:
+            os.close(descriptor)
+        raise
 
 
 def _private_bytes(path: Path) -> bytes:
@@ -225,20 +272,26 @@ def main(arguments: list[str] | None = None) -> int:
         key_id = values[2] if len(values) == 3 else "worker-v1"
         if _KEY_ID.fullmatch(key_id) is None:
             raise ValueError
-        private = _private_bytes(private_path)
-        public = Ed25519PrivateKey.from_private_bytes(private).public_key().public_bytes(
-            Encoding.Raw, PublicFormat.Raw
-        )
-        document = {
-            "worker_id": "agentops-mac-primary",
-            "key_id": key_id,
-            "public_key_base64url": base64.urlsafe_b64encode(public).decode().rstrip("="),
-            "allowed_agent_ids": list(AGENTS),
-        }
-        _write_public(
-            public_path,
-            (json.dumps(document, indent=2) + "\n").encode("utf-8"),
-        )
+        lock = _rotation_lock(private_path)
+        try:
+            private = _private_bytes(private_path)
+            public = Ed25519PrivateKey.from_private_bytes(private).public_key().public_bytes(
+                Encoding.Raw, PublicFormat.Raw
+            )
+            document = {
+                "worker_id": "agentops-mac-primary",
+                "key_id": key_id,
+                "public_key_base64url": base64.urlsafe_b64encode(public).decode().rstrip("="),
+                "allowed_agent_ids": list(AGENTS),
+            }
+            _write_public(
+                public_path,
+                (json.dumps(document, indent=2) + "\n").encode("utf-8"),
+            )
+        finally:
+            if lock >= 0:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                os.close(lock)
         print(f"WORKER_KEY_FINGERPRINT={hashlib.sha256(public).hexdigest()}")
         return 0
     except Exception:

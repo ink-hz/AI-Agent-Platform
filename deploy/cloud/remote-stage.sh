@@ -7,6 +7,13 @@ private_path="$root_path/private"
 releases_path="$root_path/releases"
 staging_path="$root_path/staging"
 environment_path="$private_path/platform.env"
+rotation_lock="$private_path/execution-worker-key-rotation.lock"
+rotation_state="$private_path/execution-worker-key-rotation-state.json"
+deploy_state="$private_path/execution-worker-keyring-deploy-state.json"
+deploy_state_part="$private_path/execution-worker-keyring-deploy-state.json.part"
+worker_keyring="$private_path/execution-worker-public-keyring.json"
+worker_keyring_part="$private_path/execution-worker-public-keyring.json.part"
+worker_keyring_previous="$private_path/execution-worker-public-keyring.deploy.previous.json"
 
 fail() {
   echo "CLOUD_PLATFORM_DEPLOY_FAILED" >&2
@@ -22,6 +29,30 @@ stage_path="$staging_path/$release_sha"
 archive_path="$stage_path/release.tar.gz"
 
 /usr/bin/install -d -m 700 "$private_path" "$releases_path" "$stage_path"
+staged_worker_keyring="$stage_path/execution-worker-public-keyring.json"
+[[ "${PLATFORM_EXECUTION_WORKER_DEPLOY_LOCK_FD:-}" =~ ^[0-9]+$ ]] || fail
+/usr/bin/python3 - "$rotation_lock" "$PLATFORM_EXECUTION_WORKER_DEPLOY_LOCK_FD" <<'PY' || fail
+import fcntl
+import os
+import stat
+import sys
+
+path, raw_descriptor = sys.argv[1:]
+descriptor = int(raw_descriptor)
+metadata = os.fstat(descriptor)
+named = os.stat(path, follow_symlinks=False)
+if (
+    not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+    or metadata.st_uid != os.getuid()
+    or (metadata.st_dev, metadata.st_ino) != (named.st_dev, named.st_ino)
+):
+    raise SystemExit(1)
+fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+PY
+[[ ! -e "$rotation_state" && ! -L "$rotation_state" ]] || fail
+[[ -f "$staged_worker_keyring" && ! -L "$staged_worker_keyring" ]] || fail
+[[ "$(/usr/bin/stat -c '%a %U' "$staged_worker_keyring")" == "600 root" ]] || fail
 available_bytes="$(/usr/bin/df -B1 --output=avail "$root_path" | /usr/bin/tail -1 | /usr/bin/tr -d ' ')"
 [[ "$available_bytes" =~ ^[0-9]+$ && "$available_bytes" -ge 10737418240 ]] || fail
 
@@ -78,12 +109,95 @@ if /usr/bin/tar -tzf "$archive_path" | /usr/bin/grep -Eq '(^/|(^|/)\.\.(/|$))'; 
   fail
 fi
 [[ ! -e "$release_path" ]] || fail
-/usr/bin/install -d -m 755 "$release_path"
+/usr/bin/install -d -m 700 "$release_path"
 rollback_required=1
 api_stopped=0
+fsync_private() {
+  /usr/bin/python3 - "$private_path" <<'PY'
+import os
+import sys
+descriptor = os.open(sys.argv[1], os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+PY
+}
+fsync_file() {
+  /usr/bin/python3 - "$1" <<'PY'
+import os
+import sys
+descriptor = os.open(sys.argv[1], os.O_RDONLY)
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+PY
+}
+write_deploy_state() {
+  phase="$1"
+  /usr/bin/printf '{"next_sha256":"%s","phase":"%s","previous_sha256":"%s","release_sha":"%s","schema_version":1}\n' \
+    "$next_keyring_sha" "$phase" "$previous_keyring_sha" "$release_sha" > "$deploy_state_part"
+  /bin/chmod 600 "$deploy_state_part"
+  fsync_file "$deploy_state_part"
+  /bin/mv -f "$deploy_state_part" "$deploy_state"
+  fsync_private
+}
+cleanup_worker_keyring_deploy() {
+  /bin/rm -f -- "$deploy_state_part" "$worker_keyring_previous" "$staged_worker_keyring"
+  fsync_private
+  /bin/rm -f -- "$deploy_state"
+  fsync_private
+}
+restore_worker_keyring() {
+  if [[ -e "$deploy_state" || -L "$deploy_state" ]]; then
+    [[ -f "$deploy_state" && ! -L "$deploy_state" ]] || return 1
+    [[ "$(/usr/bin/stat -c '%a %U' "$deploy_state")" == "600 root" ]] || return 1
+    [[ -f "$worker_keyring_previous" && ! -L "$worker_keyring_previous" ]] || return 1
+    [[ "$(/usr/bin/stat -c '%a %U' "$worker_keyring_previous")" == "600 root" ]] || return 1
+    /usr/bin/python3 - "$deploy_state" "$worker_keyring_previous" "$staged_worker_keyring" "$release_sha" <<'PY' || return 1
+import hashlib
+import json
+import pathlib
+import re
+import sys
+
+state_path, previous_path, staged_path = map(pathlib.Path, sys.argv[1:4])
+release_sha = sys.argv[4]
+value = json.loads(state_path.read_bytes())
+if (
+    not isinstance(value, dict)
+    or set(value) != {"schema_version", "phase", "release_sha", "previous_sha256", "next_sha256"}
+    or value["schema_version"] != 1
+    or value["phase"] not in {"keyring_switching", "keyring_switched", "completed"}
+    or value["release_sha"] != release_sha
+    or any(not isinstance(value[name], str) or re.fullmatch(r"[0-9a-f]{64}", value[name]) is None for name in ("previous_sha256", "next_sha256"))
+    or hashlib.sha256(previous_path.read_bytes()).hexdigest() != value["previous_sha256"]
+    or hashlib.sha256(staged_path.read_bytes()).hexdigest() != value["next_sha256"]
+):
+    raise SystemExit(1)
+PY
+    /usr/bin/install -o root -g root -m 600 "$worker_keyring_previous" "$worker_keyring_part" || return 1
+    fsync_file "$worker_keyring_part" || return 1
+    /bin/mv -f "$worker_keyring_part" "$worker_keyring" || return 1
+    fsync_private || return 1
+    cleanup_worker_keyring_deploy || return 1
+  elif [[ -e "$worker_keyring_previous" || -L "$worker_keyring_previous" ]]; then
+    [[ -f "$worker_keyring_previous" && ! -L "$worker_keyring_previous" ]] || return 1
+    /usr/bin/cmp -s "$worker_keyring_previous" "$worker_keyring" || return 1
+    /bin/rm -f -- "$worker_keyring_previous" || return 1
+    fsync_private || return 1
+  fi
+}
+if [[ -e "$deploy_state" || -L "$deploy_state" || -e "$deploy_state_part" || -L "$deploy_state_part" || -e "$worker_keyring_previous" || -L "$worker_keyring_previous" ]]; then
+  fail
+fi
 rollback() {
   if [[ "$rollback_required" -ne 1 ]]; then
     return
+  fi
+  if ! restore_worker_keyring; then
+    echo "EXECUTION_WORKER_KEYRING_DEPLOY_ROLLBACK_FAILED" >&2
   fi
   if [[ "$api_stopped" -eq 1 ]]; then
     if [[ -f "$release_path/deploy/cloud/compose.yaml" && -f "$environment_path" ]]; then
@@ -233,6 +347,18 @@ postgres_container="$("${compose[@]}" ps -q platform-postgres)"
 control_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-control-db.sh" \
   "$release_path" "$private_path" "$image_name" "$postgres_container")" || fail
 [[ "$control_bootstrap_result" == "CONTROL_DATABASE_CREDENTIALS_READY version=2" ]] || fail
+/usr/bin/test ! -e "$worker_keyring_previous" || fail
+/usr/bin/install -o root -g root -m 600 "$worker_keyring" "$worker_keyring_previous"
+fsync_file "$worker_keyring_previous"
+fsync_private
+previous_keyring_sha="$(/usr/bin/sha256sum "$worker_keyring_previous" | /usr/bin/awk '{print $1}')"
+next_keyring_sha="$(/usr/bin/sha256sum "$staged_worker_keyring" | /usr/bin/awk '{print $1}')"
+write_deploy_state keyring_switching
+/usr/bin/install -o root -g root -m 600 "$staged_worker_keyring" "$worker_keyring_part"
+fsync_file "$worker_keyring_part"
+/bin/mv -f "$worker_keyring_part" "$worker_keyring"
+fsync_private
+write_deploy_state keyring_switched
 identity_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-dingtalk-production-secrets.sh" \
   "$private_path")" || fail
 [[ "$identity_bootstrap_result" == "DINGTALK_PRODUCTION_SECRETS_OK" ]] || fail
@@ -333,6 +459,8 @@ if /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Eq "^(${forb
   fail
 fi
 
+write_deploy_state completed
+cleanup_worker_keyring_deploy
 rollback_required=0
 trap - EXIT
 echo "CLOUD_PLATFORM_DEPLOY_OK release=$release_sha mode=dingtalk"

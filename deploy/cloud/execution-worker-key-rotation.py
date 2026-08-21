@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 from __future__ import annotations
 
 import base64
@@ -27,6 +27,9 @@ KEYRING = PRIVATE_ROOT / "execution-worker-public-keyring.json"
 PREVIOUS = PRIVATE_ROOT / "execution-worker-public-keyring.previous.json"
 STAGED = PRIVATE_ROOT / "execution-worker-public-keyring.next.json"
 STATE = PRIVATE_ROOT / "execution-worker-key-rotation-state.json"
+DEPLOY_STATE = PRIVATE_ROOT / "execution-worker-keyring-deploy-state.json"
+DEPLOY_STATE_PART = PRIVATE_ROOT / "execution-worker-keyring-deploy-state.json.part"
+DEPLOY_BACKUP = PRIVATE_ROOT / "execution-worker-public-keyring.deploy.previous.json"
 LOCK = PRIVATE_ROOT / "execution-worker-key-rotation.lock"
 KEYRING_PART = PRIVATE_ROOT / "execution-worker-public-keyring.json.part"
 PREVIOUS_PART = PRIVATE_ROOT / "execution-worker-public-keyring.previous.json.part"
@@ -76,6 +79,21 @@ value = {
 }
 print(json.dumps(value, sort_keys=True, separators=(",", ":")))
 """
+WORKER_INSPECT_SCRIPT = r"""
+import json
+import psycopg
+import sys
+from app.execution_relay.register_worker import _secret_file
+
+worker_id = sys.argv[2]
+with psycopg.connect(_secret_file()) as connection:
+    row = connection.execute(
+        "select status from platform_control.execution_workers where worker_id=%s",
+        (worker_id,),
+    ).fetchone()
+print(json.dumps({"worker_id": worker_id, "status": "absent" if row is None else row[0]}, sort_keys=True))
+"""
+HOST_ENV = {"PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8"}
 
 
 class RotationError(ValueError):
@@ -119,18 +137,18 @@ def _release_compose() -> Path:
         or re.fullmatch(r"[0-9a-f]{40}", target.name) is None
     ):
         raise RotationError
-    _secure_code_directory(target, {0o755})
+    _secure_code_directory(target, {0o700})
     deploy = target / "deploy"
     cloud = deploy / "cloud"
-    _secure_code_directory(deploy, {0o755})
-    _secure_code_directory(cloud, {0o755})
+    _secure_code_directory(deploy, {0o700})
+    _secure_code_directory(cloud, {0o700})
     compose = cloud / "compose.yaml"
     descriptor = os.open(compose, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     try:
         metadata = os.fstat(descriptor)
         if (
             not stat.S_ISREG(metadata.st_mode)
-            or stat.S_IMODE(metadata.st_mode) != 0o644
+            or stat.S_IMODE(metadata.st_mode) != 0o600
             or metadata.st_uid != os.getuid()
             or metadata.st_size < 1
             or metadata.st_size > 1_048_576
@@ -309,13 +327,13 @@ def _image() -> str:
     ]
     container = subprocess.run(
         [*compose, "ps", "-q", "platform-api"],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, env=HOST_ENV,
     ).stdout.strip()
     if not container or "\n" in container:
         raise RotationError
     image = subprocess.run(
         [DOCKER, "inspect", "--format", "{{.Config.Image}}", container],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, env=HOST_ENV,
     ).stdout.strip()
     if not image or "\n" in image:
         raise RotationError
@@ -331,7 +349,7 @@ def _container(arguments: list[str]) -> subprocess.CompletedProcess[str]:
             "-e", "PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url",
             _image(), *arguments,
         ],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, env=HOST_ENV,
     )
 
 
@@ -360,6 +378,21 @@ def _inspect(key_id: object) -> tuple[str, str | None]:
     ):
         raise RotationError
     return value["status"], value["public_key_sha256"]
+
+
+def _inspect_worker() -> str:
+    result = _container(
+        ["python", "-c", WORKER_INSPECT_SCRIPT, "--inspect-execution-worker", WORKER_ID]
+    )
+    value = json.loads(result.stdout)
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"worker_id", "status"}
+        or value["worker_id"] != WORKER_ID
+        or value["status"] not in {"absent", "active", "revoked"}
+    ):
+        raise RotationError
+    return value["status"]
 
 
 def _maintenance(arguments: list[str]) -> None:
@@ -482,16 +515,33 @@ def _cleanup(value: dict[str, object]) -> None:
 
 
 def _rollback(target: str) -> None:
+    if not STATE.exists() and not STATE.is_symlink():
+        if any(path.exists() or path.is_symlink() for path in (PREVIOUS, STAGED)):
+            raise RotationError
+        current_id, _raw, _digest, current_fingerprint = _document(KEYRING)
+        if current_id == target:
+            raise RotationError
+        _expect_status(current_id, "active", current_fingerprint)
+        status, fingerprint = _inspect(target)
+        if status == "absent" and fingerprint is None:
+            return
+        if status == "revoked" and fingerprint is not None:
+            return
+        raise RotationError
     value = _state()
     allowed = {"prepared", "adding", "cloud_active", "accepted", "restoring", "revoking", "revoked"}
     if value["to_key_id"] != target or value["phase"] not in allowed:
         raise RotationError
-    previous = _validate_document(
-        PREVIOUS, value["from_key_id"], value["previous_document_sha256"], value["previous_public_sha256"]
-    )
+    previous: bytes | None = None
+    if value["phase"] in {"prepared", "adding", "cloud_active", "accepted", "restoring"}:
+        previous = _validate_document(
+            PREVIOUS, value["from_key_id"], value["previous_document_sha256"], value["previous_public_sha256"]
+        )
     if value["phase"] in {"prepared", "adding", "cloud_active", "accepted"}:
         _write_state(value, "restoring")
     if value["phase"] == "restoring":
+        if previous is None:
+            raise RotationError
         _atomic_write(KEYRING, KEYRING_PART, previous)
         status, fingerprint = _inspect(target)
         if status == "absent":
@@ -526,6 +576,14 @@ def _rollback(target: str) -> None:
 
 
 def _finalize(target: str) -> None:
+    if not STATE.exists() and not STATE.is_symlink():
+        if any(path.exists() or path.is_symlink() for path in (PREVIOUS, STAGED)):
+            raise RotationError
+        _key_id, _raw, _digest, fingerprint = _document(KEYRING)
+        if _key_id != target:
+            raise RotationError
+        _expect_status(target, "active", fingerprint)
+        return
     value = _state()
     if value["to_key_id"] != target or value["phase"] not in {"old_revoked", "finalizing"}:
         raise RotationError
@@ -556,7 +614,19 @@ def _recover(target: str) -> None:
 def _revoke_worker() -> None:
     if STATE.exists() or STATE.is_symlink():
         raise RotationError
-    _maintenance(["revoke-worker", WORKER_ID, "RELAY_WORKER_REVOKE_2026"])
+    status = _inspect_worker()
+    if status == "revoked":
+        return
+    if status != "active":
+        raise RotationError
+    try:
+        _maintenance(["revoke-worker", WORKER_ID, "RELAY_WORKER_REVOKE_2026"])
+    except Exception:
+        if _inspect_worker() != "revoked":
+            raise
+        return
+    if _inspect_worker() != "revoked":
+        raise RotationError
 
 
 def _acquire_lock() -> int:
@@ -600,6 +670,11 @@ def main(arguments: list[str] | None = None) -> int:
         for path in (ENVIRONMENT, MAINTENANCE_DSN):
             _secure_file(path)
         lock = _acquire_lock()
+        if any(
+            path.exists() or path.is_symlink()
+            for path in (DEPLOY_STATE, DEPLOY_STATE_PART, DEPLOY_BACKUP)
+        ):
+            raise RotationError
         _clean_parts()
         if worker_revoke:
             _revoke_worker()

@@ -28,6 +28,7 @@ CLOUD = ROOT / "deploy" / "cloud"
 CLOUD_ACCEPTANCE = CLOUD / "accept-dingtalk-production.sh"
 CLOUD_ROTATOR = CLOUD / "execution-worker-key-rotation.py"
 CLOUD_KEYRING_INSTALLER = CLOUD / "install-execution-worker-keyring.py"
+CLOUD_REMOTE_STAGE = CLOUD / "remote-stage.sh"
 GENERATOR = LOCAL / "generate-worker-key.py"
 ROTATOR = LOCAL / "rotate-worker-key.py"
 BOOTSTRAP = LOCAL / "bootstrap-worker-database.sh"
@@ -1429,7 +1430,9 @@ def test_key_generator_first_private_write_failure_is_atomic_and_retryable(
     monkeypatch.setattr(module.os, "write", fail_first_write)
     assert module.main([str(private), str(public)]) == 1
     assert not private.exists()
-    assert list(private_dir.iterdir()) == []
+    assert set(private_dir.iterdir()) == {
+        private_dir / "execution-worker-key-rotation.lock"
+    }
 
     monkeypatch.setattr(module.os, "write", original_write)
     assert module.main([str(private), str(public)]) == 0
@@ -1457,7 +1460,11 @@ def test_key_generator_concurrent_first_generation_publishes_one_complete_key(
     assert len({stdout for stdout, _stderr in results}) == 1
     assert all(stderr == "" for _stdout, stderr in results)
     assert len(private.read_bytes()) == 32
-    assert list(private_dir.iterdir()) == [private]
+    assert set(private_dir.iterdir()) == {
+        private,
+        private_dir / "execution-worker-key-rotation.lock",
+    }
+    assert _mode(private_dir / "execution-worker-key-rotation.lock") == 0o600
 
 
 def test_registration_cli_uses_only_v27_maintenance_functions(
@@ -3169,15 +3176,15 @@ def _cloud_rotation_test_environment(tmp_path: Path):
     for directory in (platform_root, private_root, incoming_root, releases_root, release):
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         directory.chmod(0o700)
-    release.chmod(0o755)
+    release.chmod(0o700)
     current = platform_root / "current"
     current.symlink_to(release)
     compose = release / "deploy/cloud/compose.yaml"
-    compose.parent.mkdir(parents=True, mode=0o755)
-    (release / "deploy").chmod(0o755)
-    compose.parent.chmod(0o755)
+    compose.parent.mkdir(parents=True, mode=0o700)
+    (release / "deploy").chmod(0o700)
+    compose.parent.chmod(0o700)
     compose.write_text("services: {}\n", encoding="utf-8")
-    compose.chmod(0o644)
+    compose.chmod(0o600)
     for required in (private_root / "platform.env", private_root / "control-maintenance-database-url"):
         required.write_text("bounded-test-value\n", encoding="utf-8")
         required.chmod(0o600)
@@ -3216,6 +3223,8 @@ import os
 from pathlib import Path
 import sys
 
+if any(name in os.environ for name in ("DOCKER_HOST", "DOCKER_CONTEXT", "PYTHONPATH")):
+    raise SystemExit(97)
 arguments = sys.argv[1:]
 if arguments[0] == "compose":
     print("platform-api-container")
@@ -3230,6 +3239,11 @@ if "--inspect-execution-worker-key" in arguments:
     key_id = arguments[-1]
     value = database.get(key_id)
     print(json.dumps({"key_id": key_id, "status": "absent", "public_key_sha256": None} if value is None else {"key_id": key_id, "status": value["status"], "public_key_sha256": value["fingerprint"]}, sort_keys=True))
+    raise SystemExit(0)
+if "--inspect-execution-worker" in arguments:
+    statuses = {value["status"] for value in database.values()}
+    status = "revoked" if statuses and statuses == {"revoked"} else "active"
+    print(json.dumps({"worker_id": "agentops-mac-primary", "status": status}, sort_keys=True))
     raise SystemExit(0)
 if "add-key" in arguments:
     action = "add"
@@ -3248,6 +3262,8 @@ elif "revoke-key" in arguments:
     existing["status"] = "revoked"
 elif "revoke-worker" in arguments:
     action = "revoke-worker"
+    if not any(existing["status"] == "active" for existing in database.values()):
+        raise SystemExit(1)
     for existing in database.values():
         if existing["status"] == "active":
             existing["status"] = "revoked"
@@ -3257,7 +3273,11 @@ database_path.write_text(json.dumps(database))
 with log.open("a") as stream:
     stream.write(action + "\\n")
 fail_after = Path(os.environ["FAKE_ROTATION_FAIL_AFTER"])
-if fail_after.exists() and fail_after.read_text().strip() == action:
+failure = fail_after.read_text().strip() if fail_after.exists() else ""
+if failure == "kill-" + action:
+    fail_after.unlink()
+    os.kill(os.getpid(), 9)
+if failure == action:
     fail_after.unlink()
     raise SystemExit(71)
 print("EXECUTION_WORKER_MAINTENANCE_OK")
@@ -3277,6 +3297,17 @@ print("EXECUTION_WORKER_MAINTENANCE_OK")
     )
     source = source.replace('DOCKER = "/usr/bin/docker"', f"DOCKER = {str(fake_docker)!r}")
     source = source.replace(
+        'HOST_ENV = {"PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8"}',
+        "HOST_ENV = " + repr({
+            "PATH": "/usr/bin:/bin",
+            "LC_ALL": "C.UTF-8",
+            "FAKE_ROTATION_DATABASE": str(database),
+            "FAKE_ROTATION_LOG": str(maintenance_log),
+            "FAKE_ROTATION_FAIL_AFTER": str(fail_after),
+            "FAKE_ROTATION_TARGET_FINGERPRINT": target_fingerprint,
+        }),
+    )
+    source = source.replace(
         'print("EXECUTION_WORKER_CLOUD_ROTATION_FAILED", file=sys.stderr)',
         'import traceback; traceback.print_exc()',
     )
@@ -3284,6 +3315,9 @@ print("EXECUTION_WORKER_MAINTENANCE_OK")
     helper.chmod(0o700)
     environment = {
         **os.environ,
+        "DOCKER_HOST": "tcp://attacker.invalid:2375",
+        "DOCKER_CONTEXT": "attacker",
+        "PYTHONPATH": str(tmp_path / "attacker-python"),
         "FAKE_ROTATION_DATABASE": str(database),
         "FAKE_ROTATION_LOG": str(maintenance_log),
         "FAKE_ROTATION_FAIL_AFTER": str(fail_after),
@@ -3301,6 +3335,7 @@ print("EXECUTION_WORKER_MAINTENANCE_OK")
         "state": private_root / "execution-worker-key-rotation-state.json",
         "previous": private_root / "execution-worker-public-keyring.previous.json",
         "state_part": private_root / "execution-worker-key-rotation-state.json.part",
+        "deploy_state": private_root / "execution-worker-keyring-deploy-state.json",
         "keyring_part": private_root / "execution-worker-public-keyring.json.part",
         "staged": private_root / "execution-worker-public-keyring.next.json",
         "lock": private_root / "execution-worker-key-rotation.lock",
@@ -3327,7 +3362,9 @@ def _run_cloud_worker_revoke(paths):
 
 def test_cloud_rotation_helper_is_root_only_fixed_and_bounded() -> None:
     source = CLOUD_ROTATOR.read_text(encoding="utf-8")
-    assert source.startswith("#!/usr/bin/env python3\n")
+    installer = CLOUD_KEYRING_INSTALLER.read_text(encoding="utf-8")
+    assert source.startswith("#!/usr/bin/python3\n")
+    assert installer.startswith("#!/usr/bin/python3\n")
     assert "REQUIRED_UID = 0" in source
     assert 'PLATFORM_ROOT = Path("/opt/orbbec-agent-platform")' in source
     assert 'INCOMING_ROOT = Path("/root")' in source
@@ -3335,6 +3372,9 @@ def test_cloud_rotation_helper_is_root_only_fixed_and_bounded() -> None:
     for action in ("prepare", "activate", "mark-accepted", "commit", "rollback", "finalize", "recover"):
         assert f'"{action}"' in source
     assert "os.environ" not in source
+    assert "DOCKER_HOST" not in source and "DOCKER_CONTEXT" not in source
+    assert "PYTHONPATH" not in source
+    assert "env=HOST_ENV" in source
     assert "O_NOFOLLOW" in source and "fcntl.flock" in source
 
 
@@ -3426,6 +3466,94 @@ def test_cloud_rotation_helper_finalize_cleans_missing_residuals_and_state_last(
     assert not paths["keyring_part"].exists()
 
 
+@pytest.mark.parametrize("killed_after", ["previous", "staged", "state"])
+def test_cloud_rollback_cleanup_recovers_after_each_unlink(
+    tmp_path: Path, killed_after: str
+) -> None:
+    paths = _cloud_rotation_test_environment(tmp_path)
+    assert _run_cloud_rotation(paths, "prepare").returncode == 0
+    original = paths["helper"].read_text(encoding="utf-8")
+    source = original
+    ordered = {
+        "previous": "    _unlink(PREVIOUS)\n",
+        "staged": "    _unlink(STAGED)\n",
+        "state": "    _unlink(STATE)\n",
+    }
+    needle = ordered[killed_after]
+    source = source.replace(
+        needle,
+        needle + "    os.kill(os.getpid(), 9)\n",
+        1,
+    )
+    paths["helper"].write_text(source, encoding="utf-8")
+    killed = _run_cloud_rotation(paths, "rollback")
+    assert killed.returncode < 0
+    paths["helper"].write_text(original, encoding="utf-8")
+
+    recovered = _run_cloud_rotation(
+        paths, "rollback" if killed_after == "state" else "recover"
+    )
+    assert recovered.returncode == 0, recovered.stderr
+    assert not paths["state"].exists()
+    assert not paths["previous"].exists()
+
+
+def test_cloud_rollback_revoked_phase_does_not_require_deleted_previous(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_rotation_test_environment(tmp_path)
+    assert _run_cloud_rotation(paths, "prepare").returncode == 0
+    original = paths["helper"].read_text(encoding="utf-8")
+    paths["helper"].write_text(
+        original.replace(
+            "def _cleanup(value: dict[str, object]) -> None:\n",
+            "def _cleanup(value: dict[str, object]) -> None:\n    raise RotationError\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    assert _run_cloud_rotation(paths, "rollback").returncode == 1
+    assert json.loads(paths["state"].read_text())["phase"] == "revoked"
+    paths["previous"].unlink()
+    paths["helper"].write_text(original, encoding="utf-8")
+
+    recovered = _run_cloud_rotation(paths, "recover")
+
+    assert recovered.returncode == 0, recovered.stderr
+    assert not paths["state"].exists()
+
+
+@pytest.mark.parametrize("killed_after", ["previous", "staged", "state"])
+def test_cloud_finalize_cleanup_recovers_after_each_unlink(
+    tmp_path: Path, killed_after: str
+) -> None:
+    paths = _cloud_rotation_test_environment(tmp_path)
+    for action in ("prepare", "activate", "mark-accepted", "commit"):
+        assert _run_cloud_rotation(paths, action).returncode == 0
+    original = paths["helper"].read_text(encoding="utf-8")
+    needle = {
+        "previous": "    _unlink(PREVIOUS)\n",
+        "staged": "    _unlink(STAGED)\n",
+        "state": "    _unlink(STATE)\n",
+    }[killed_after]
+    paths["helper"].write_text(
+        original.replace(needle, needle + "    os.kill(os.getpid(), 9)\n", 1),
+        encoding="utf-8",
+    )
+
+    killed = _run_cloud_rotation(paths, "finalize")
+
+    assert killed.returncode < 0
+    paths["helper"].write_text(original, encoding="utf-8")
+    recovered = _run_cloud_rotation(
+        paths, "finalize" if killed_after == "state" else "recover"
+    )
+    assert recovered.returncode == 0, recovered.stderr
+    assert paths["keyring"].read_bytes() == paths["target"]
+    assert not paths["state"].exists()
+    assert not paths["previous"].exists()
+
+
 def test_runbook_public_handoff_validators_execute_with_exact_schema_and_base64(
     tmp_path: Path,
 ) -> None:
@@ -3481,6 +3609,66 @@ def test_runbook_public_handoff_validators_execute_with_exact_schema_and_base64(
             assert subprocess.run(command, capture_output=True).returncode != 0
 
 
+def test_runbook_public_handoff_shell_blocks_fail_before_atomic_rename(
+    tmp_path: Path,
+) -> None:
+    runbook = (ROOT / "docs/runbooks/agent-execution-relay.md").read_text(
+        encoding="utf-8"
+    )
+    blocks = re.findall(r"```bash\n(.*?)\n```", runbook, re.DOTALL)
+    agent_block = next(block for block in blocks if "source_public=" in block)
+    neo_block = next(block for block in blocks if "neo_secret_root=" in block)
+    current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
+
+    source_root = tmp_path / "agent-runtime"
+    source_root.mkdir(mode=0o700)
+    source_public = source_root / "execution-worker-public.json"
+    source_public.write_text("{}\n", encoding="utf-8")
+    source_public.chmod(0o600)
+    handoff_root = tmp_path / "handoff"
+    handoff_root.mkdir(mode=0o755)
+    handoff = handoff_root / "current.json"
+    handoff.write_bytes(b"old-handoff\n")
+    handoff.chmod(0o444)
+    agent_script = (
+        agent_block.replace("/Users/agentops/AgentRuntime/execution-worker-public.json", str(source_public))
+        .replace("/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python", sys.executable)
+        .replace("/Users/agentops/AgentRuntime", str(source_root))
+        .replace("/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public/current.json", str(handoff))
+        .replace("/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public", str(handoff_root))
+        .replace("agentops", current_user)
+    )
+
+    failed_agent = subprocess.run(
+        ["/bin/bash", "-c", agent_script], text=True, capture_output=True
+    )
+
+    assert failed_agent.returncode != 0
+    assert handoff.read_bytes() == b"old-handoff\n"
+
+    (handoff_root / "current.json.part").unlink(missing_ok=True)
+    neo_secret_root = tmp_path / "neo-secrets"
+    neo_secret_root.mkdir(mode=0o700)
+    neo_keyring = neo_secret_root / "execution-worker-public-keyring.json"
+    neo_keyring.write_bytes(b"old-neo-keyring\n")
+    neo_keyring.chmod(0o600)
+    neo_script = (
+        neo_block.replace("/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public/current.json", str(handoff))
+        .replace("/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public", str(handoff_root))
+        .replace('"/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/secrets"', f'"{neo_secret_root}"')
+        .replace("/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python", sys.executable)
+        .replace("agentops", current_user)
+        .replace(" neo", f" {current_user}")
+    )
+
+    failed_neo = subprocess.run(
+        ["/bin/bash", "-c", neo_script], text=True, capture_output=True
+    )
+
+    assert failed_neo.returncode != 0
+    assert neo_keyring.read_bytes() == b"old-neo-keyring\n"
+
+
 def test_cloud_worker_revocation_fails_closed_on_rotation_state_and_shared_lock(
     tmp_path: Path,
 ) -> None:
@@ -3504,6 +3692,27 @@ def test_cloud_worker_revocation_fails_closed_on_rotation_state_and_shared_lock(
     assert revoked.returncode == 0, revoked.stderr
     assert json.loads(concurrent["database"].read_text())["worker-v1"]["status"] == "revoked"
 
+    deploy_residue = _cloud_rotation_test_environment(tmp_path / "deploy-residue")
+    deploy_residue["deploy_state"].write_text("{}\n", encoding="utf-8")
+    deploy_residue["deploy_state"].chmod(0o600)
+    assert _run_cloud_worker_revoke(deploy_residue).returncode == 1
+    assert _run_cloud_rotation(deploy_residue, "prepare").returncode == 1
+    assert json.loads(deploy_residue["database"].read_text())["worker-v1"]["status"] == "active"
+
+
+def test_cloud_worker_revocation_recovers_killed_maintenance_response(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_rotation_test_environment(tmp_path)
+    paths["fail_after"].write_text("kill-revoke-worker", encoding="utf-8")
+
+    revoked = _run_cloud_worker_revoke(paths)
+    repeated = _run_cloud_worker_revoke(paths)
+
+    assert revoked.returncode == repeated.returncode == 0
+    assert json.loads(paths["database"].read_text())["worker-v1"]["status"] == "revoked"
+    assert paths["log"].read_text().splitlines() == ["revoke-worker"]
+
 
 def _cloud_keyring_installer_environment(tmp_path: Path):
     platform = tmp_path / "platform"
@@ -3516,6 +3725,21 @@ def _cloud_keyring_installer_environment(tmp_path: Path):
     source = source.replace(
         'PLATFORM_ROOT = Path("/opt/orbbec-agent-platform")',
         f"PLATFORM_ROOT = Path({str(platform)!r})",
+    )
+    remote = tmp_path / "remote-stage.sh"
+    ready = tmp_path / "cutover-ready"
+    release = tmp_path / "cutover-release"
+    remote.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        "[[ -z ${DOCKER_HOST+x} && -z ${DOCKER_CONTEXT+x} && -z ${PYTHONPATH+x} ]]\n"
+        f"/usr/bin/touch {ready}\n"
+        f"while [[ ! -e {release} ]]; do /bin/sleep 0.01; done\n",
+        encoding="utf-8",
+    )
+    remote.chmod(0o700)
+    source = source.replace(
+        'REMOTE_STAGE = Path("/opt/orbbec-agent-platform/bin/remote-stage.sh")',
+        f"REMOTE_STAGE = Path({str(remote)!r})",
     )
     helper.write_text(source, encoding="utf-8")
     helper.chmod(0o700)
@@ -3541,51 +3765,182 @@ def _cloud_keyring_installer_environment(tmp_path: Path):
         "keyring": private / "execution-worker-public-keyring.json",
         "state": private / "execution-worker-key-rotation-state.json",
         "lock": private / "execution-worker-key-rotation.lock",
+        "staged": platform / "staging" / ("b" * 40) / "execution-worker-public-keyring.json",
+        "ready": ready,
+        "release": release,
     }
 
 
-def _run_cloud_keyring_installer(paths):
+def _run_cloud_keyring_installer(paths, action: str = "stage"):
+    arguments = [sys.executable, str(paths["helper"]), action, "b" * 40]
+    if action == "cutover":
+        arguments.append("c" * 64)
     return subprocess.run(
-        [sys.executable, str(paths["helper"])],
-        input=paths["document"],
+        arguments,
+        input=paths["document"] if action == "stage" else None,
         capture_output=True,
     )
 
 
-def test_cloud_deploy_keyring_installer_holds_shared_lock_and_fails_on_active_state(
+def test_cloud_deploy_stages_keyring_without_mutating_canonical(
     tmp_path: Path,
 ) -> None:
     paths = _cloud_keyring_installer_environment(tmp_path)
     paths["keyring"].write_bytes(b"old\n")
     paths["keyring"].chmod(0o600)
+
+    staged = _run_cloud_keyring_installer(paths)
+
+    assert staged.returncode == 0, staged.stderr
+    assert paths["keyring"].read_bytes() == b"old\n"
+    assert paths["staged"].read_bytes() == paths["document"]
+    assert _mode(paths["staged"]) == 0o600
+
+
+def test_cloud_deploy_cutover_holds_shared_lock_and_fails_on_active_state(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_keyring_installer_environment(tmp_path)
+    assert _run_cloud_keyring_installer(paths).returncode == 0
     paths["state"].write_text("{}\n", encoding="utf-8")
     paths["state"].chmod(0o600)
 
-    active = _run_cloud_keyring_installer(paths)
+    active = _run_cloud_keyring_installer(paths, "cutover")
 
     assert active.returncode == 1
-    assert paths["keyring"].read_bytes() == b"old\n"
     paths["state"].unlink()
-    descriptor = os.open(paths["lock"], os.O_RDWR | os.O_CREAT, 0o600)
+    process = subprocess.Popen(
+        [sys.executable, str(paths["helper"]), "cutover", "b" * 40, "c" * 64],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env={
+            **os.environ,
+            "DOCKER_HOST": "tcp://attacker.invalid:2375",
+            "DOCKER_CONTEXT": "attacker",
+            "PYTHONPATH": str(tmp_path / "attacker-python"),
+        },
+    )
+    _wait_for_file(paths["ready"])
+    descriptor = os.open(paths["lock"], os.O_RDWR)
+    try:
+        with pytest.raises(BlockingIOError):
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        os.close(descriptor)
+    paths["release"].touch()
+    stdout, stderr = process.communicate(timeout=5)
+    assert process.returncode == 0, (stdout, stderr)
+    descriptor = os.open(paths["lock"], os.O_RDWR)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        part = paths["private"] / "execution-worker-public-keyring.json.part"
-        part.write_bytes(b"inflight")
-        part.chmod(0o600)
-        concurrent = _run_cloud_keyring_installer(paths)
-        assert concurrent.returncode == 1
-        assert paths["keyring"].read_bytes() == b"old\n"
-        assert part.read_bytes() == b"inflight"
     finally:
         os.close(descriptor)
 
-    part.write_bytes(b"")
-    part.chmod(0o600)
-    installed = _run_cloud_keyring_installer(paths)
-    assert installed.returncode == 0, installed.stderr
-    assert paths["keyring"].read_bytes() == paths["document"]
-    assert _mode(paths["keyring"]) == 0o600
-    assert not part.exists()
+
+def test_cloud_deploy_real_git_archive_extracts_root_only_sensitive_assets(
+    tmp_path: Path,
+) -> None:
+    release = tmp_path / "release"
+    release.mkdir(mode=0o700)
+    archive = subprocess.Popen(
+        ["git", "archive", "HEAD"], cwd=ROOT, stdout=subprocess.PIPE
+    )
+    assert archive.stdout is not None
+    extracted = subprocess.run(
+        ["/usr/bin/tar", "-x", "-C", str(release)],
+        stdin=archive.stdout,
+        capture_output=True,
+        preexec_fn=lambda: os.umask(0o077),
+    )
+    archive.stdout.close()
+    assert archive.wait(timeout=5) == 0
+
+    assert extracted.returncode == 0, extracted.stderr
+    assert _mode(release / "deploy") == 0o700
+    assert _mode(release / "deploy/cloud") == 0o700
+    assert _mode(release / "deploy/cloud/compose.yaml") == 0o600
+    helper = CLOUD_ROTATOR.read_text(encoding="utf-8")
+    assert "_secure_code_directory(deploy, {0o700})" in helper
+    assert "_secure_code_directory(cloud, {0o700})" in helper
+    assert "stat.S_IMODE(metadata.st_mode) != 0o600" in helper
+
+
+def test_cloud_remote_stage_journals_before_switch_and_restores_state_last(
+    tmp_path: Path,
+) -> None:
+    source = CLOUD_REMOTE_STAGE.read_text(encoding="utf-8")
+    inherited_lock = source.index("PLATFORM_EXECUTION_WORKER_DEPLOY_LOCK_FD")
+    archive_read = source.index('of="$archive_path.part"')
+    journal = source.index("write_deploy_state keyring_switching")
+    switch = source.index('"$staged_worker_keyring" "$worker_keyring_part"')
+    restore = source.index("if ! restore_worker_keyring; then")
+    service_rollback = source.index('if [[ "$api_stopped" -eq 1 ]]', restore)
+    assert inherited_lock < archive_read
+    assert journal < switch
+    assert restore < service_rollback
+    cleanup = source.split("cleanup_worker_keyring_deploy() {", 1)[1].split("}\n", 1)[0]
+    assert cleanup.index('"$worker_keyring_previous"') < cleanup.index('"$deploy_state"')
+
+    private = tmp_path / "private"
+    stage = tmp_path / "stage"
+    private.mkdir(mode=0o700)
+    stage.mkdir(mode=0o700)
+    canonical = private / "execution-worker-public-keyring.json"
+    previous = private / "execution-worker-public-keyring.deploy.previous.json"
+    staged = stage / "execution-worker-public-keyring.json"
+    state = private / "execution-worker-keyring-deploy-state.json"
+    canonical.write_bytes(b"new-keyring\n")
+    previous.write_bytes(b"old-keyring\n")
+    staged.write_bytes(b"new-keyring\n")
+    for path in (canonical, previous, staged):
+        path.chmod(0o600)
+    release_sha = "d" * 40
+    state.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "phase": "keyring_switched",
+                "release_sha": release_sha,
+                "previous_sha256": hashlib.sha256(previous.read_bytes()).hexdigest(),
+                "next_sha256": hashlib.sha256(staged.read_bytes()).hexdigest(),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    state.chmod(0o600)
+    functions = source.split("fsync_private() {", 1)[1].split(
+        '\nif [[ -e "$deploy_state"', 1
+    )[0]
+    functions = "fsync_private() {" + functions
+    current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
+    functions = functions.replace(
+        "/usr/bin/stat -c '%a %U'", "/usr/bin/stat -f '%Lp %Su'"
+    ).replace("600 root", f"600 {current_user}")
+    functions = functions.replace(
+        "/usr/bin/install -o root -g root -m 600", "/usr/bin/install -m 600"
+    )
+    shell = f"""set -euo pipefail
+private_path={str(private)!r}
+deploy_state={str(state)!r}
+deploy_state_part={str(private / 'execution-worker-keyring-deploy-state.json.part')!r}
+worker_keyring={str(canonical)!r}
+worker_keyring_part={str(private / 'execution-worker-public-keyring.json.part')!r}
+worker_keyring_previous={str(previous)!r}
+staged_worker_keyring={str(staged)!r}
+release_sha={release_sha}
+{functions}
+restore_worker_keyring
+"""
+
+    restored = subprocess.run(
+        ["/bin/bash", "-c", shell], text=True, capture_output=True
+    )
+
+    assert restored.returncode == 0, restored.stderr
+    assert canonical.read_bytes() == b"old-keyring\n"
+    assert not state.exists() and not previous.exists() and not staged.exists()
 
 
 def test_installer_is_noninteractive_agentops_only_and_permission_gated() -> None:
@@ -3610,6 +3965,73 @@ def test_installer_is_noninteractive_agentops_only_and_permission_gated() -> Non
     ):
         assert forbidden not in lowered
     subprocess.run(["/bin/bash", "-n", str(INSTALLER)], check=True)
+
+
+def test_installer_acquires_rotation_lock_before_generator_or_database() -> None:
+    script = INSTALLER.read_text(encoding="utf-8")
+    acquired = script.index("PLATFORM_EXECUTION_WORKER_ROTATION_LOCK_FD")
+    assert acquired < script.index('"$script_dir/generate-worker-key.py"')
+    assert acquired < script.index('"$script_dir/bootstrap-worker-database.sh"')
+    assert 'execution-worker-key-rotation.lock' in script
+    assert "fcntl.flock" in script
+
+
+def test_installer_holds_rotation_lock_while_rotator_fails_without_mutation(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path)
+    runtime = paths["canonical_public"].parent
+    private = paths["canonical_private"].parent
+    platform = runtime / "platform"
+    local = platform / "deploy/local-execution-worker"
+    installer = local / "install.sh"
+    source = INSTALLER.read_text(encoding="utf-8")
+    source = source.replace("runtime_root=/Users/agentops/AgentRuntime", f"runtime_root={runtime}")
+    source = source.replace(
+        '"$(/usr/bin/id -un)" == "agentops"',
+        f'"$(/usr/bin/id -un)" == "{subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()}"',
+    )
+    current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
+    source = source.replace("700 agentops", f"700 {current_user}")
+    source = source.replace("600 agentops", f"600 {current_user}")
+    installer.write_text(source, encoding="utf-8")
+    installer.chmod(0o700)
+    (runtime / "metabot").mkdir(mode=0o700)
+    (runtime / "metabot/runtime-contract.json").write_text("{}\n")
+    (private / "metabot-api-token").write_text("token\n")
+    (private / "metabot-api-token").chmod(0o600)
+    owner_dsn = private / "owner-dsn"
+    owner_dsn.write_text("postgresql://owner:secret@127.0.0.1:5432/postgres\n")
+    owner_dsn.chmod(0o600)
+    marker = tmp_path / "installer-generator-ready"
+    release = tmp_path / "installer-generator-release"
+    python = platform / "backend/.venv/bin/python"
+    python.parent.mkdir(parents=True, exist_ok=True)
+    python.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        f"if [[ \"${{1:-}}\" != *generate-worker-key.py ]]; then exec {sys.executable} \"$@\"; fi\n"
+        f"/usr/bin/touch {marker}\n"
+        f"while [[ ! -e {release} ]]; do /bin/sleep 0.01; done\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o700)
+    before = _rotation_components(paths, "canonical")
+    process = subprocess.Popen(
+        ["/bin/bash", str(installer), str(owner_dsn)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env={**os.environ, "HOME": str(paths["canonical_plist"].parents[2])},
+    )
+    _wait_for_file(marker)
+
+    blocked = _run_rotation(paths, "prepare")
+
+    assert blocked.returncode == 1
+    assert _rotation_components(paths, "canonical") == before
+    assert not any(paths["managed"][name].exists() for name in ("next_private", "next_public", "next_plist"))
+    release.touch()
+    process.communicate(timeout=5)
 
 
 def test_installer_preserves_loaded_state_and_has_strict_rollback() -> None:
@@ -3639,7 +4061,12 @@ def test_installer_rolls_back_plist_and_exact_loaded_state_with_fake_launchctl(
     python = platform / "backend/.venv/bin/python"
     local.mkdir(parents=True)
     python.parent.mkdir(parents=True)
-    python.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+    python.write_text(
+        "#!/bin/bash\n"
+        f"if [[ \"${{1:-}}\" == - ]]; then exec {sys.executable} \"$@\"; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
     python.chmod(0o700)
     (local / "bootstrap-worker-database.sh").write_text(
         "#!/bin/bash\nexit 0\n", encoding="utf-8"

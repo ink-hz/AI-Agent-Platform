@@ -51,6 +51,7 @@ COMPONENTS = ("private", "public", "plist")
 CANONICAL_PATHS = (PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
 NEXT_PATHS = (NEXT_PRIVATE_KEY, NEXT_PUBLIC_DOCUMENT, NEXT_PLIST)
 PREVIOUS_PATHS = (PREVIOUS_PRIVATE_KEY, PREVIOUS_PUBLIC_DOCUMENT, PREVIOUS_PLIST)
+ACTIVE_LOCK_FD = -1
 PART_PATHS = tuple(
     path.parent / f".{path.name}.part"
     for path in (*CANONICAL_PATHS, *NEXT_PATHS, *PREVIOUS_PATHS, STATE)
@@ -422,6 +423,8 @@ def _prepare(target_key_id: str) -> None:
         STATE,
     ))
     try:
+        environment = dict(os.environ)
+        environment["PLATFORM_EXECUTION_WORKER_ROTATION_LOCK_FD"] = str(ACTIVE_LOCK_FD)
         subprocess.run(
             [
                 sys.executable,
@@ -433,6 +436,8 @@ def _prepare(target_key_id: str) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True,
+            env=environment,
+            pass_fds=(ACTIVE_LOCK_FD,),
         )
         current_plist = plistlib.loads(_secure_file(PLIST, maximum_size=65_536))
         current_plist["EnvironmentVariables"]["PLATFORM_WORKER_KEY_ID"] = target_key_id
@@ -640,6 +645,7 @@ def _finalize(target_key_id: str) -> None:
 
 
 def main(arguments: list[str] | None = None) -> int:
+    global ACTIVE_LOCK_FD
     values = sys.argv[1:] if arguments is None else arguments
     try:
         if (
@@ -653,6 +659,8 @@ def main(arguments: list[str] | None = None) -> int:
             _secure_directory(directory)
         action, target_key_id = values
         lock = _acquire_lock()
+        ACTIVE_LOCK_FD = lock
+        os.set_inheritable(lock, True)
         try:
             _cleanup_parts()
             {
