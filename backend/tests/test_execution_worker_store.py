@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
 import json
 from pathlib import Path
@@ -10,14 +12,23 @@ import socket
 import stat
 import subprocess
 import tempfile
-from threading import Barrier
+from threading import Barrier, Thread
 from uuid import UUID
 
 import psycopg
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+import httpx
 
 from app.execution_relay import worker_store
+from app.execution_relay.metabot_client import MetaBotClient, MetaBotRuntimeMap
 from app.execution_relay.models import RelayEvent, RelayJobPayload, RelayLease
+from app.execution_relay.worker import (
+    SignedCloudClient,
+    WorkerRuntime,
+    callback_server,
+)
+from app.execution_relay.worker_auth import WorkerRequestSigner
 from app.execution_relay.worker_store import WorkerStore, WorkerStoreError
 
 
@@ -529,6 +540,264 @@ def test_dispatch_and_event_outbox_are_atomic_contiguous_and_durable(
         ).fetchone()
     assert state == ("running",)
     assert count == (2,)
+
+
+@pytest.mark.postgres
+def test_callback_winning_dispatch_race_keeps_running_and_records_acceptance(
+    worker_database: str, dsn_file: Path
+) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    store.record_lease(_lease(), 9101, "callback-secret")
+    store.mark_dispatching(RUN_ID)
+    assert store.append_event(_event(1)) is True
+
+    store.mark_dispatched(RUN_ID)
+
+    with psycopg.connect(worker_database) as connection:
+        row = connection.execute(
+            "select state,dispatched_at is not null "
+            "from execution_worker.local_runs where run_id=%s",
+            (RUN_ID,),
+        ).fetchone()
+    assert row == ("running", True)
+
+
+@pytest.mark.postgres
+def test_recovery_rows_preserve_acceptance_and_outbox_facts(dsn_file: Path) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    store.record_lease(_lease(), 9101, "callback-secret")
+    store.mark_dispatching(RUN_ID)
+    store.append_event(_event(1))
+    store.mark_terminal(RUN_ID, "interrupted")
+
+    rows = store.recoverable_runs()
+
+    assert len(rows) == 1
+    assert rows[0].run_id == RUN_ID
+    assert rows[0].agent_id == "hr-bot"
+    assert rows[0].state == "interrupted"
+    assert rows[0].dispatched_at is None
+    assert rows[0].has_events is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+async def test_real_loopback_and_postgres_survive_races_failures_and_restarts(
+    worker_database: str, dsn_file: Path, tmp_path: Path, request
+) -> None:
+    trace: list[tuple[object, ...]] = []
+    lease = _lease()
+    failure_counts = {"dispatched": 1, "events": 1}
+
+    class CloudHandler(BaseHTTPRequestHandler):
+        def _reply(self, status: int, value: dict[str, object] | None = None):
+            body = b"" if value is None else json.dumps(value).encode()
+            self.send_response(status)
+            self.send_header("Content-Length", str(len(body)))
+            if body:
+                self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length)
+            assert self.headers.get("X-Orbbec-Worker-Signature")
+            trace.append(("cloud", self.path, json.loads(body)))
+            if self.path.endswith("/lease"):
+                self._reply(200, lease.model_dump(mode="json"))
+            elif self.path.endswith("/heartbeat"):
+                self._reply(200, {"cancel_requested_run_ids": []})
+            elif self.path.endswith("/dispatched"):
+                if failure_counts["dispatched"]:
+                    failure_counts["dispatched"] -= 1
+                    self._reply(503, {"detail": "offline"})
+                else:
+                    self._reply(200, {"status": "accepted"})
+            elif self.path.endswith("/events"):
+                if failure_counts["events"]:
+                    failure_counts["events"] -= 1
+                    self._reply(503, {"detail": "offline"})
+                else:
+                    count = len(json.loads(body)["events"])
+                    self._reply(200, {"accepted": count, "inserted": count})
+            elif self.path.endswith("/terminal"):
+                self._reply(200, {"status": "accepted"})
+            else:
+                self._reply(404)
+
+        def log_message(self, _format, *_args):
+            return None
+
+    class MetaBotHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            request = json.loads(self.rfile.read(length))
+            if self.path == "/api/core-chat/runs":
+                trace.append(("metabot_start", request["runId"]))
+                event = RelayEvent(
+                    run_id=RUN_ID,
+                    seq=1,
+                    event_type="run.terminal",
+                    created_at=NOW + timedelta(seconds=1),
+                    payload={"status": "completed"},
+                )
+                with httpx.Client(trust_env=False) as client:
+                    response = client.post(
+                        request["eventCallbackUrl"],
+                        content=event.model_dump_json().encode(),
+                        headers={"Content-Type": "application/json"},
+                    )
+                trace.append(("callback_status", response.status_code))
+                value = {
+                    "status": "accepted",
+                    "runId": request["runId"],
+                    "targetBot": request["targetBot"],
+                }
+                body = json.dumps(value).encode()
+                self.send_response(202)
+            else:
+                body = json.dumps({"runId": self.path.rsplit("/", 2)[-2]}).encode()
+                self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format, *_args):
+            return None
+
+    cloud_server = ThreadingHTTPServer(("127.0.0.1", 0), CloudHandler)
+    metabot_server = ThreadingHTTPServer(("127.0.0.1", 0), MetaBotHandler)
+    cloud_thread = Thread(target=cloud_server.serve_forever, daemon=True)
+    metabot_thread = Thread(target=metabot_server.serve_forever, daemon=True)
+    cloud_thread.start()
+    metabot_thread.start()
+
+    def stop_servers() -> None:
+        cloud_server.shutdown()
+        metabot_server.shutdown()
+        cloud_server.server_close()
+        metabot_server.server_close()
+        cloud_thread.join(timeout=2)
+        metabot_thread.join(timeout=2)
+
+    request.addfinalizer(stop_servers)
+
+    secret_dir = tmp_path / "metabot-secrets"
+    secret_dir.mkdir(mode=0o700)
+    bearer_file = secret_dir / "bearer"
+    bearer_file.write_text("local-bearer", encoding="utf-8")
+    bearer_file.chmod(0o600)
+    bot_ids = (
+        "hr-bot",
+        "marketing-prospecting-bot",
+        "marketing-inbound-bot",
+        "marketing-voice-bot",
+        "fae-bot",
+        "marketing-gtm-bot",
+        "marketing-intelligence-bot",
+    )
+    used = {metabot_server.server_port}
+    ports: dict[str, int] = {"hr-bot": metabot_server.server_port}
+    candidate = 30_000
+    for agent_id in bot_ids[1:]:
+        while candidate in used:
+            candidate += 1
+        ports[agent_id] = candidate
+        used.add(candidate)
+        candidate += 1
+    runtime_map = MetaBotRuntimeMap(ports)
+    metabot = MetaBotClient(runtime_map, bearer_file)
+    private_key = Ed25519PrivateKey.generate()
+
+    def cloud_client() -> SignedCloudClient:
+        signer = WorkerRequestSigner("worker-a", "worker-v1", private_key)
+        return SignedCloudClient(
+            f"http://127.0.0.1:{cloud_server.server_port}", signer
+        )
+
+    store = WorkerStore.from_dsn_file(dsn_file)
+    first_cloud = cloud_client()
+    first = WorkerRuntime(
+        worker_id="worker-a",
+        cloud=first_cloud,
+        store=store,
+        runtime_map=runtime_map,
+        metabot=metabot,
+        callback_port=0,
+        token_factory=lambda: "A" * 43,
+    )
+    callback_task = asyncio.create_task(callback_server(first))
+    try:
+        await asyncio.wait_for(first.callback_ready.wait(), timeout=1)
+        assert await first.lease_once() is False
+        with psycopg.connect(worker_database) as connection:
+            row = connection.execute(
+                "select state,dispatched_at is not null from "
+                "execution_worker.local_runs where run_id=%s",
+                (RUN_ID,),
+            ).fetchone()
+            outbox = connection.execute(
+                "select count(*),bool_and(delivered_at is null) from "
+                "execution_worker.event_outbox where run_id=%s",
+                (RUN_ID,),
+            ).fetchone()
+        assert row == ("completed", True)
+        assert outbox == (1, True)
+        assert ("callback_status", 204) in trace
+
+        assert await first.upload_once() is False
+        assert store.contiguous_outbox(RUN_ID) != ()
+    finally:
+        first.stop()
+        await asyncio.wait_for(callback_task, timeout=1)
+        await first_cloud.aclose()
+
+    second_cloud = cloud_client()
+    second = WorkerRuntime(
+        worker_id="worker-a",
+        cloud=second_cloud,
+        store=WorkerStore.from_dsn_file(dsn_file),
+        runtime_map=runtime_map,
+        metabot=metabot,
+        callback_port=0,
+    )
+    await second.recover_local_state()
+    assert await second.lease_once() is True
+    assert await second.upload_once() is True
+    await second_cloud.aclose()
+
+    cloud_paths = [entry[1] for entry in trace if entry[0] == "cloud"]
+    assert cloud_paths.count("/api/v1/execution-worker/lease") == 1
+    assert [entry[0] for entry in trace].count("metabot_start") == 1
+    final_paths = cloud_paths[-3:]
+    assert final_paths[0].endswith("/dispatched")
+    assert final_paths[1].endswith("/events")
+    assert final_paths[2].endswith("/terminal")
+    assert store.contiguous_outbox(RUN_ID) == ()
+
+    run2 = UUID("00000000-0000-4000-8000-000000000201")
+    job2 = UUID("00000000-0000-4000-8000-000000000211")
+    store.record_lease(_lease(job_id=job2, run_id=run2), 9101, "B" * 43)
+    store.mark_dispatching(run2)
+    third_cloud = cloud_client()
+    third = WorkerRuntime(
+        worker_id="worker-a",
+        cloud=third_cloud,
+        store=store,
+        runtime_map=runtime_map,
+        metabot=metabot,
+        callback_port=0,
+    )
+    await third.recover_local_state()
+    assert await third.lease_once() is True
+    assert [entry[0] for entry in trace].count("metabot_start") == 1
+    assert {row.run_id: row.state for row in store.recoverable_runs()}[run2] == (
+        "interrupted"
+    )
+    await third_cloud.aclose()
+
 
 
 @pytest.mark.postgres

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
 import hashlib
 import hmac
 import os
@@ -26,6 +28,15 @@ _TERMINAL_STATES = frozenset(
 
 class WorkerStoreError(RuntimeError):
     """Stable worker-store failure that never includes protected values."""
+
+
+@dataclass(frozen=True)
+class WorkerRunRecovery:
+    run_id: UUID
+    agent_id: str
+    state: str
+    dispatched_at: datetime | None
+    has_events: bool
 
 
 def _read_owner_only_file(path: Path) -> str:
@@ -257,12 +268,65 @@ class WorkerStore:
         )
 
     def mark_dispatched(self, run_id: UUID) -> None:
-        self._transition(
-            run_id,
-            expected=frozenset({"dispatching"}),
-            target="dispatched",
-            timestamp_column="dispatched_at",
-        )
+        try:
+            if not isinstance(run_id, UUID):
+                raise ValueError
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select state from execution_worker.local_runs "
+                    "where run_id=%s for update",
+                    (run_id,),
+                ).fetchone()
+                if row is None or row["state"] not in {
+                    "dispatching",
+                    "dispatched",
+                    "running",
+                    *_TERMINAL_STATES,
+                }:
+                    raise ValueError
+                if row["state"] == "dispatching":
+                    connection.execute(
+                        "update execution_worker.local_runs "
+                        "set state='dispatched',dispatched_at=now() "
+                        "where run_id=%s",
+                        (run_id,),
+                    )
+                else:
+                    connection.execute(
+                        "update execution_worker.local_runs "
+                        "set dispatched_at=coalesce(dispatched_at,now()) "
+                        "where run_id=%s",
+                        (run_id,),
+                    )
+        except WorkerStoreError:
+            raise
+        except (ValueError, psycopg.Error):
+            raise self._conflict() from None
+
+    def recoverable_runs(self) -> tuple[WorkerRunRecovery, ...]:
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select r.run_id,r.agent_id,r.state,r.dispatched_at,"
+                    "exists(select 1 from execution_worker.event_outbox o "
+                    "where o.run_id=r.run_id) as has_events "
+                    "from execution_worker.local_runs r "
+                    "where r.state<>'leased' order by r.leased_at,r.run_id"
+                ).fetchall()
+            return tuple(
+                WorkerRunRecovery(
+                    run_id=row["run_id"],
+                    agent_id=row["agent_id"],
+                    state=row["state"],
+                    dispatched_at=row["dispatched_at"],
+                    has_events=row["has_events"],
+                )
+                for row in rows
+            )
+        except WorkerStoreError:
+            raise
+        except (TypeError, ValueError, psycopg.Error):
+            raise self._conflict() from None
 
     def append_event(self, event: RelayEvent) -> bool:
         try:

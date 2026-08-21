@@ -3,18 +3,28 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 import json
+import logging
+from pathlib import Path
 import signal
+import socket
+import threading
 from uuid import UUID
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import httpx
 import pytest
 
 from app.execution_relay.models import RelayEvent, RelayJobPayload, RelayLease
+from app.execution_relay.worker_store import WorkerRunRecovery
 from app.execution_relay.worker import (
     CallbackResult,
+    CloudRelayError,
     ExponentialBackoff,
     SignedCloudClient,
     WorkerRuntime,
+    WorkerRuntimeError,
+    _owner_private_key,
     callback_server,
     heartbeat_loop,
     lease_loop,
@@ -63,6 +73,7 @@ class FakeStore:
         self.terminals: dict[UUID, str] = {}
         self.agents: dict[UUID, str] = {}
         self.states: dict[UUID, str] = {}
+        self.dispatched: set[UUID] = set()
 
     def record_lease(self, lease, port, token):
         self.calls.append(("lease", lease.payload.run_id, port))
@@ -79,7 +90,9 @@ class FakeStore:
 
     def mark_dispatched(self, run_id):
         self.calls.append(("dispatched", run_id))
-        self.states[run_id] = "dispatched"
+        self.dispatched.add(run_id)
+        if self.states[run_id] == "dispatching":
+            self.states[run_id] = "dispatched"
 
     def append_event(self, event):
         rows = self.events.setdefault(event.run_id, [])
@@ -109,7 +122,13 @@ class FakeStore:
 
     def recoverable_runs(self):
         return tuple(
-            (run_id, self.agents[run_id], state)
+            WorkerRunRecovery(
+                run_id=run_id,
+                agent_id=self.agents[run_id],
+                state=state,
+                dispatched_at=NOW if run_id in self.dispatched else None,
+                has_events=bool(self.events.get(run_id)),
+            )
             for run_id, state in self.states.items()
             if state != "leased"
         )
@@ -141,6 +160,7 @@ class FakeCloud:
         self.calls: list[tuple[object, ...]] = []
         self.offline: set[str] = set()
         self.cancel_ids: tuple[UUID, ...] = ()
+        self.closed = False
 
     async def lease(self):
         self.calls.append(("lease",))
@@ -170,7 +190,7 @@ class FakeCloud:
         return self.cancel_ids
 
     async def aclose(self):
-        return None
+        self.closed = True
 
 
 def _runtime(
@@ -329,6 +349,33 @@ async def test_initial_and_heartbeat_cancellation_never_redispatch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cancel_observed_while_lease_commits_prevents_metabot_start() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingStore(FakeStore):
+        def mark_dispatching(self, run_id):
+            super().mark_dispatching(run_id)
+            entered.set()
+            assert release.wait(timeout=2)
+
+    cloud = FakeCloud([_lease()])
+    cloud.cancel_ids = (RUN_ID,)
+    store = BlockingStore()
+    metabot = FakeMetaBot()
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+
+    lease_task = asyncio.create_task(runtime.lease_once())
+    assert await asyncio.to_thread(entered.wait, 1)
+    assert await runtime.heartbeat_once() is True
+    release.set()
+    assert await asyncio.wait_for(lease_task, timeout=1) is True
+
+    assert metabot.calls == []
+    assert store.terminals[RUN_ID] == "cancelled"
+
+
+@pytest.mark.asyncio
 async def test_interrupt_marks_active_run_and_does_not_repost() -> None:
     cloud = FakeCloud([_lease()])
     metabot = FakeMetaBot()
@@ -401,6 +448,20 @@ def test_backoff_schedule_jitter_and_reset() -> None:
     assert backoff.next_delay() == pytest.approx(1.0, abs=0.2)
 
 
+def test_backoff_saturates_at_full_required_schedule() -> None:
+    backoff = ExponentialBackoff(jitter=lambda _low, _high: 1.0)
+    assert [backoff.next_delay() for _ in range(8)] == [
+        1.0,
+        2.0,
+        4.0,
+        8.0,
+        15.0,
+        30.0,
+        30.0,
+        30.0,
+    ]
+
+
 @pytest.mark.asyncio
 async def test_signed_cloud_client_signs_exact_raw_body_and_path() -> None:
     signed: list[tuple[str, str, bytes]] = []
@@ -447,6 +508,254 @@ async def test_signed_cloud_client_signs_exact_raw_body_and_path() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response_json",
+    [
+        {"accepted": True, "inserted": 1},
+        {"accepted": 1, "inserted": True},
+        {"accepted": 0, "inserted": 0},
+    ],
+)
+async def test_cloud_event_counts_are_strict_integers(response_json) -> None:
+    class Signer:
+        def sign(self, _method, _path, _body):
+            return {"X-Orbbec-Worker-Signature": "redacted"}
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=response_json)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = SignedCloudClient("https://cloud.example", Signer(), client=http)
+    with pytest.raises(CloudRelayError, match="cloud relay request failed"):
+        await client.upload_events(RUN_ID, (_event(1),))
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_invalid_cloud_event_count_never_marks_local_delivery() -> None:
+    class Signer:
+        def sign(self, _method, _path, _body):
+            return {"X-Orbbec-Worker-Signature": "redacted"}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/dispatched"):
+            return httpx.Response(200, json={"status": "accepted"})
+        return httpx.Response(200, json={"accepted": True, "inserted": 1})
+
+    store = FakeStore()
+    store.record_lease(_lease(), 9200, "A" * 43)
+    store.mark_dispatching(RUN_ID)
+    store.mark_dispatched(RUN_ID)
+    store.append_event(_event(1))
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    cloud = SignedCloudClient("https://cloud.example", Signer(), client=http)
+    runtime = _runtime(cloud=cloud, store=store)
+
+    await runtime.recover_local_state()
+    assert await runtime.upload_once() is False
+
+    assert store.delivered == {}
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_id", [1, True, None, {"hex": str(RUN_ID)}])
+async def test_cloud_heartbeat_malformed_ids_are_sanitized(bad_id) -> None:
+    class Signer:
+        def sign(self, _method, _path, _body):
+            return {"X-Orbbec-Worker-Signature": "redacted"}
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"cancel_requested_run_ids": [bad_id]})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = SignedCloudClient("https://cloud.example", Signer(), client=http)
+    with pytest.raises(CloudRelayError, match="cloud relay request failed"):
+        await client.heartbeat()
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("seq", "1"),
+        ("seq", True),
+        ("seq", 1.0),
+        ("event_type", 7),
+        ("created_at", 1_777_777_777),
+        ("created_at", "2026-08-21T04:00:01"),
+        ("payload", ["not", "an", "object"]),
+    ],
+)
+async def test_callback_event_fields_do_not_coerce(field, value) -> None:
+    store = FakeStore()
+    runtime = _runtime(cloud=FakeCloud([_lease()]), store=store)
+    await runtime.lease_once()
+    event = _event(1).model_dump(mode="json")
+    event[field] = value
+
+    result = await runtime.accept_callback(
+        RUN_ID,
+        store.tokens[RUN_ID],
+        json.dumps(event).encode(),
+    )
+
+    assert result is CallbackResult.INVALID
+    assert store.events == {}
+
+
+@pytest.mark.asyncio
+async def test_run_worker_closes_cloud_when_recovery_fails() -> None:
+    class BrokenRecoveryStore(FakeStore):
+        def recoverable_runs(self):
+            raise RuntimeError("database-url=protected")
+
+    cloud = FakeCloud()
+    runtime = _runtime(cloud=cloud, store=BrokenRecoveryStore())
+
+    with pytest.raises(WorkerRuntimeError, match="worker runtime failed"):
+        await run_worker(runtime)
+
+    assert cloud.closed is True
+
+
+@pytest.mark.asyncio
+async def test_run_worker_cleans_handlers_and_cloud_when_callback_bind_fails(
+    monkeypatch,
+) -> None:
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    cloud = FakeCloud()
+    runtime = _runtime(cloud=cloud)
+    runtime.callback_port = listener.getsockname()[1]
+    installed: set[signal.Signals] = set()
+    removed: set[signal.Signals] = set()
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(
+        loop,
+        "add_signal_handler",
+        lambda sig, _callback: installed.add(sig),
+    )
+    monkeypatch.setattr(
+        loop,
+        "remove_signal_handler",
+        lambda sig: removed.add(sig) is None,
+    )
+    try:
+        with pytest.raises(OSError):
+            await run_worker(runtime)
+    finally:
+        listener.close()
+
+    assert removed == installed == {signal.SIGTERM, signal.SIGINT}
+    assert cloud.closed is True
+
+
+@pytest.mark.asyncio
+async def test_run_worker_cancellation_cleans_tasks_handlers_and_cloud(
+    monkeypatch,
+) -> None:
+    cloud = FakeCloud()
+    runtime = _runtime(cloud=cloud)
+    runtime.callback_port = 0
+    installed: set[signal.Signals] = set()
+    removed: set[signal.Signals] = set()
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(
+        loop,
+        "add_signal_handler",
+        lambda sig, _callback: installed.add(sig),
+    )
+    monkeypatch.setattr(
+        loop,
+        "remove_signal_handler",
+        lambda sig: removed.add(sig) is None,
+    )
+    task = asyncio.create_task(run_worker(runtime))
+    await asyncio.wait_for(runtime.callback_ready.wait(), timeout=1)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert removed == installed == {signal.SIGTERM, signal.SIGINT}
+    assert cloud.closed is True
+
+
+def _private_bytes(key: Ed25519PrivateKey) -> bytes:
+    return key.private_bytes(
+        serialization.Encoding.Raw,
+        serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
+    )
+
+
+def test_owner_private_key_rejects_file_and_parent_symlinks(tmp_path: Path) -> None:
+    secret_dir = tmp_path / "secrets"
+    secret_dir.mkdir(mode=0o700)
+    target = secret_dir / "worker.key"
+    target.write_bytes(_private_bytes(Ed25519PrivateKey.generate()))
+    target.chmod(0o600)
+    file_link = secret_dir / "file-link.key"
+    file_link.symlink_to(target)
+    parent_link = tmp_path / "parent-link"
+    parent_link.symlink_to(secret_dir, target_is_directory=True)
+
+    with pytest.raises(WorkerRuntimeError, match="worker runtime failed"):
+        _owner_private_key(file_link)
+    with pytest.raises(WorkerRuntimeError, match="worker runtime failed"):
+        _owner_private_key(parent_link / "worker.key")
+
+
+def test_owner_private_key_reads_the_single_opened_inode(
+    tmp_path: Path, monkeypatch
+) -> None:
+    secret_dir = tmp_path / "secrets"
+    secret_dir.mkdir(mode=0o700)
+    original = Ed25519PrivateKey.generate()
+    replacement = Ed25519PrivateKey.generate()
+    path = secret_dir / "worker.key"
+    path.write_bytes(_private_bytes(original))
+    path.chmod(0o600)
+    original_read = Path.read_bytes
+
+    def replace_before_path_read(candidate: Path) -> bytes:
+        path.unlink()
+        path.write_bytes(_private_bytes(replacement))
+        path.chmod(0o600)
+        return original_read(candidate)
+
+    monkeypatch.setattr(Path, "read_bytes", replace_before_path_read)
+    loaded = _owner_private_key(path)
+    loaded_public = loaded.public_key().public_bytes_raw()
+
+    assert loaded_public == original.public_key().public_bytes_raw()
+
+
+@pytest.mark.asyncio
+async def test_runtime_logs_never_include_protected_values(caplog) -> None:
+    protected = (
+        "protected prompt",
+        "event-payload-secret",
+        "bearer-secret",
+        "signature-secret",
+        "A" * 43,
+        "database-url=protected",
+    )
+    cloud = FakeCloud()
+    cloud.offline.add("lease")
+    runtime = _runtime(cloud=cloud)
+    with caplog.at_level(logging.WARNING, logger="app.execution_relay.worker"):
+        await runtime.lease_once()
+        runtime._safe_log("redaction_test", RuntimeError(" ".join(protected)))
+
+    rendered = caplog.text
+    assert all(value not in rendered for value in protected)
+
+
+@pytest.mark.asyncio
 async def test_callback_server_binds_loopback_and_commits_before_204() -> None:
     cloud = FakeCloud([_lease()])
     store = FakeStore()
@@ -483,3 +792,18 @@ async def test_four_public_loops_stop_cleanly() -> None:
     await asyncio.gather(
         lease_loop(runtime), upload_loop(runtime), heartbeat_loop(runtime)
     )
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_success_waits_exactly_fifteen_seconds() -> None:
+    delays: list[float] = []
+    runtime: WorkerRuntime
+
+    async def capture_sleep(seconds: float) -> None:
+        delays.append(seconds)
+        runtime.stop()
+
+    runtime = _runtime(sleep=capture_sleep)
+    await heartbeat_loop(runtime)
+
+    assert delays == [15.0]

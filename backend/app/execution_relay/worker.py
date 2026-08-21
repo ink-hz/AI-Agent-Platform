@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import json
 import logging
@@ -20,12 +20,12 @@ from uuid import UUID
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import httpx
-from pydantic import ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
 from .metabot_client import MetaBotClient, MetaBotRuntimeMap
 from .models import RelayEvent, RelayLease
 from .worker_auth import WorkerRequestSigner
-from .worker_store import WorkerStore
+from .worker_store import WorkerRunRecovery, WorkerStore
 
 
 _API_PREFIX = "/api/v1/execution-worker"
@@ -58,6 +58,16 @@ class CallbackResult(Enum):
     UNAUTHORIZED = 401
     CONFLICT = 409
     TOO_LARGE = 413
+
+
+class _StrictCallbackEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    run_id: UUID
+    seq: int = Field(gt=0)
+    event_type: str = Field(pattern=_EVENT_TYPE)
+    created_at: AwareDatetime
+    payload: dict[str, object]
 
 
 class ExponentialBackoff:
@@ -178,8 +188,11 @@ class SignedCloudClient:
                 value["cancel_requested_run_ids"], list
             ):
                 raise ValueError
-            return tuple(UUID(item) for item in value["cancel_requested_run_ids"])
-        except (TypeError, ValueError):
+            items = value["cancel_requested_run_ids"]
+            if any(not isinstance(item, str) for item in items):
+                raise ValueError
+            return tuple(UUID(item) for item in items)
+        except Exception:
             raise CloudRelayError() from None
 
     async def mark_dispatched(self, run_id: UUID) -> None:
@@ -199,6 +212,8 @@ class SignedCloudClient:
             value = self._json_object(response)
             if (
                 set(value) != {"accepted", "inserted"}
+                or isinstance(value["accepted"], bool)
+                or not isinstance(value["accepted"], int)
                 or value["accepted"] != len(events)
                 or isinstance(value["inserted"], bool)
                 or not isinstance(value["inserted"], int)
@@ -236,6 +251,7 @@ class _RunContext:
     cloud_dispatched: bool
     terminal_status: str | None = None
     cancel_sent: bool = False
+    transition_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class WorkerRuntime:
@@ -277,7 +293,10 @@ class WorkerRuntime:
         self.stop_event = asyncio.Event()
         self.callback_ready = asyncio.Event()
         self._runs: dict[UUID, _RunContext] = {}
-        self._operation_lock = asyncio.Lock()
+        self._pending_cancellations: set[UUID] = set()
+        self._state_lock = asyncio.Lock()
+        self._lease_lock = asyncio.Lock()
+        self._upload_lock = asyncio.Lock()
 
     def stop(self) -> None:
         self.stop_event.set()
@@ -307,52 +326,45 @@ class WorkerRuntime:
             ),
         )
 
-    def _database_recovery_rows(self) -> tuple[tuple[UUID, str, str], ...]:
-        loader = getattr(self.store, "recoverable_runs", None)
-        if callable(loader):
-            return tuple(loader())
-        connection_factory = getattr(self.store, "_connection", None)
-        if not callable(connection_factory):
-            return ()
-        with connection_factory() as connection:
-            rows = connection.execute(
-                "select run_id,agent_id,state from execution_worker.local_runs "
-                "where state<>'leased' order by leased_at,run_id"
-            ).fetchall()
-        return tuple(
-            (row["run_id"], row["agent_id"], row["state"]) for row in rows
-        )
-
     async def recover_local_state(self) -> None:
         try:
-            rows = await asyncio.to_thread(self._database_recovery_rows)
-            for run_id, agent_id, state in rows:
+            rows = await self._store_call("recoverable_runs")
+            for row in rows:
                 if (
-                    not isinstance(run_id, UUID)
-                    or not isinstance(agent_id, str)
-                    or not isinstance(state, str)
+                    not isinstance(row, WorkerRunRecovery)
+                    or not isinstance(row.run_id, UUID)
+                    or not isinstance(row.agent_id, str)
+                    or not isinstance(row.state, str)
+                    or not isinstance(row.has_events, bool)
                 ):
                     raise WorkerRuntimeError()
-                if state == "dispatching":
+                run_id = row.run_id
+                accepted = (
+                    row.dispatched_at is not None
+                    or row.has_events
+                    or row.state
+                    in {"dispatched", "running", "completed", "failed"}
+                )
+                if row.state == "dispatching":
                     await self._store_call("mark_terminal", run_id, "interrupted")
                     self.recover_run(
                         run_id,
-                        agent_id,
+                        row.agent_id,
                         terminal_status="interrupted",
-                        cloud_dispatched=False,
-                        metabot_accepted=False,
+                        cloud_dispatched=not accepted,
+                        metabot_accepted=accepted,
                     )
-                elif state in {"dispatched", "running"}:
+                elif row.state in {"dispatched", "running"}:
                     self.recover_run(
-                        run_id, agent_id, cloud_dispatched=False
+                        run_id, row.agent_id, cloud_dispatched=False
                     )
-                elif state in _TERMINAL_STATES:
+                elif row.state in _TERMINAL_STATES:
                     self.recover_run(
                         run_id,
-                        agent_id,
-                        terminal_status=state,
-                        cloud_dispatched=state in {"cancelled", "interrupted"},
-                        metabot_accepted=state in {"completed", "failed"},
+                        row.agent_id,
+                        terminal_status=row.state,
+                        cloud_dispatched=not accepted,
+                        metabot_accepted=accepted,
                     )
                 else:
                     raise WorkerRuntimeError()
@@ -381,8 +393,10 @@ class WorkerRuntime:
         return await asyncio.to_thread(getattr(self.store, method), *args)
 
     async def lease_once(self) -> bool:
-        async with self._operation_lock:
-            if self._runs:
+        async with self._lease_lock:
+            async with self._state_lock:
+                at_capacity = bool(self._runs)
+            if at_capacity:
                 return True
             try:
                 lease = await self.cloud.lease()
@@ -404,31 +418,43 @@ class WorkerRuntime:
                 await self._store_call("record_lease", lease, port, token)
                 await self._store_call("mark_dispatching", run_id)
                 context = _RunContext(agent_id, False, False)
-                self._runs[run_id] = context
-                if lease.cancel_requested:
-                    await self._store_call("mark_terminal", run_id, "cancelled")
-                    context.terminal_status = "cancelled"
-                    return True
-                callback_url = (
-                    f"http://127.0.0.1:{self.callback_port}/callbacks/{run_id}/{token}"
-                )
-                await asyncio.to_thread(
-                    self.metabot.start_run, lease.payload, callback_url
-                )
-                context.metabot_accepted = True
-                await self._store_call("mark_dispatched", run_id)
-                try:
-                    await self.cloud.mark_dispatched(run_id)
-                    context.cloud_dispatched = True
-                except Exception as error:
-                    self._safe_log(
-                        "cloud_dispatch_ack_failed",
-                        error,
-                        run_id=run_id,
-                        agent_id=agent_id,
+                async with self._state_lock:
+                    self._runs[run_id] = context
+                async with context.transition_lock:
+                    async with self._state_lock:
+                        cancellation_observed = (
+                            lease.cancel_requested
+                            or run_id in self._pending_cancellations
+                        )
+                        self._pending_cancellations.discard(run_id)
+                    if cancellation_observed or self.stop_event.is_set():
+                        status = (
+                            "cancelled" if cancellation_observed else "interrupted"
+                        )
+                        await self._store_call("mark_terminal", run_id, status)
+                        context.terminal_status = status
+                        return True
+                    callback_url = (
+                        f"http://127.0.0.1:{self.callback_port}/callbacks/"
+                        f"{run_id}/{token}"
                     )
-                    return False
-                return True
+                    await asyncio.to_thread(
+                        self.metabot.start_run, lease.payload, callback_url
+                    )
+                    context.metabot_accepted = True
+                    await self._store_call("mark_dispatched", run_id)
+                    try:
+                        await self.cloud.mark_dispatched(run_id)
+                        context.cloud_dispatched = True
+                    except Exception as error:
+                        self._safe_log(
+                            "cloud_dispatch_ack_failed",
+                            error,
+                            run_id=run_id,
+                            agent_id=agent_id,
+                        )
+                        return False
+                    return True
             except Exception as error:
                 self._safe_log(
                     "dispatch_interrupted",
@@ -451,9 +477,11 @@ class WorkerRuntime:
                 return False
 
     async def upload_once(self) -> bool:
-        async with self._operation_lock:
+        async with self._upload_lock:
             success = True
-            for run_id, context in tuple(self._runs.items()):
+            async with self._state_lock:
+                runs = tuple(self._runs.items())
+            for run_id, context in runs:
                 try:
                     if context.metabot_accepted and not context.cloud_dispatched:
                         await self.cloud.mark_dispatched(run_id)
@@ -465,7 +493,9 @@ class WorkerRuntime:
                     remaining = await self._store_call("contiguous_outbox", run_id, 1)
                     if context.terminal_status is not None and not remaining:
                         await self.cloud.finish(run_id, context.terminal_status)
-                        del self._runs[run_id]
+                        async with self._state_lock:
+                            if self._runs.get(run_id) is context:
+                                del self._runs[run_id]
                 except Exception as error:
                     success = False
                     self._safe_log(
@@ -483,25 +513,33 @@ class WorkerRuntime:
             self._safe_log("heartbeat_failed", error)
             return False
         for run_id in cancel_ids:
-            context = self._runs.get(run_id)
-            if context is None or context.terminal_status is not None:
+            async with self._state_lock:
+                context = self._runs.get(run_id)
+                if context is None:
+                    self._pending_cancellations.add(run_id)
+            if context is None:
                 continue
-            try:
-                if context.metabot_accepted and not context.cancel_sent:
-                    await asyncio.to_thread(
-                        self.metabot.cancel_run, run_id, context.agent_id
+            async with context.transition_lock:
+                if context.terminal_status is not None:
+                    continue
+                try:
+                    if context.metabot_accepted and not context.cancel_sent:
+                        await asyncio.to_thread(
+                            self.metabot.cancel_run, run_id, context.agent_id
+                        )
+                        context.cancel_sent = True
+                    await self._store_call("mark_terminal", run_id, "cancelled")
+                    context.terminal_status = "cancelled"
+                except Exception as error:
+                    if context.terminal_status is not None:
+                        continue
+                    self._safe_log(
+                        "cancel_failed",
+                        error,
+                        run_id=run_id,
+                        agent_id=context.agent_id,
                     )
-                    context.cancel_sent = True
-                await self._store_call("mark_terminal", run_id, "cancelled")
-                context.terminal_status = "cancelled"
-            except Exception as error:
-                self._safe_log(
-                    "cancel_failed",
-                    error,
-                    run_id=run_id,
-                    agent_id=context.agent_id,
-                )
-                return False
+                    return False
         return True
 
     async def accept_callback(
@@ -518,35 +556,25 @@ class WorkerRuntime:
         try:
             if not await self._store_call("callback_token_matches", run_id, token):
                 return CallbackResult.UNAUTHORIZED
-            value = json.loads(body.decode("utf-8"))
-            if not isinstance(value, dict) or set(value) != {
-                "run_id",
-                "seq",
-                "event_type",
-                "created_at",
-                "payload",
-            }:
+            strict_event = _StrictCallbackEvent.model_validate_json(
+                body, strict=True
+            )
+            if strict_event.run_id != run_id:
                 return CallbackResult.INVALID
-            event = RelayEvent.model_validate(value)
-            if (
-                event.run_id != run_id
-                or _EVENT_TYPE.fullmatch(event.event_type) is None
-                or event.created_at.tzinfo is None
-                or event.created_at.utcoffset() is None
-            ):
-                return CallbackResult.INVALID
+            event = RelayEvent.model_validate(strict_event.model_dump())
             inserted = await self._store_call("append_event", event)
             terminal = self._terminal_status(event)
-            if terminal is not None:
+            async with self._state_lock:
                 context = self._runs.get(run_id)
                 if context is None:
-                    context = _RunContext("", True, True)
+                    context = _RunContext("", True, False)
                     self._runs[run_id] = context
+                else:
+                    context.metabot_accepted = True
+            if terminal is not None:
                 if context.terminal_status is None:
                     await self._store_call("mark_terminal", run_id, terminal)
                     context.terminal_status = terminal
-            if inserted and run_id not in self._runs:
-                self._runs[run_id] = _RunContext("", True, True)
             return CallbackResult.ACCEPTED
         except (
             UnicodeError,
@@ -578,8 +606,10 @@ class WorkerRuntime:
         return None
 
     async def interrupt_active(self) -> None:
-        async with self._operation_lock:
-            for run_id, context in tuple(self._runs.items()):
+        async with self._state_lock:
+            runs = tuple(self._runs.items())
+        for run_id, context in runs:
+            async with context.transition_lock:
                 if context.terminal_status is not None:
                     continue
                 if context.metabot_accepted and not context.cancel_sent:
@@ -758,78 +788,138 @@ async def callback_server(runtime: WorkerRuntime) -> None:
 
 
 async def run_worker(runtime: WorkerRuntime) -> None:
-    await runtime.recover_local_state()
     loop = asyncio.get_running_loop()
     shutdown_started = asyncio.Event()
+    installed: list[signal.Signals] = []
+    tasks: set[asyncio.Task[Any]] = set()
+    shutdown_tasks: set[asyncio.Task[Any]] = set()
 
     async def shutdown() -> None:
         if shutdown_started.is_set():
             return
         shutdown_started.set()
+        runtime.stop()
         await runtime.interrupt_active()
         await runtime.upload_once()
-        runtime.stop()
 
     def request_shutdown() -> None:
-        asyncio.create_task(shutdown())
+        task = asyncio.create_task(shutdown())
+        shutdown_tasks.add(task)
 
-    installed: list[signal.Signals] = []
-    for name in (signal.SIGTERM, signal.SIGINT):
-        try:
-            loop.add_signal_handler(name, request_shutdown)
-            installed.append(name)
-        except (NotImplementedError, RuntimeError):
-            pass
-    callback_task = asyncio.create_task(callback_server(runtime))
-    ready_task = asyncio.create_task(runtime.callback_ready.wait())
-    done, _pending = await asyncio.wait(
-        {callback_task, ready_task}, return_when=asyncio.FIRST_COMPLETED
-    )
-    if callback_task in done:
+    try:
+        await runtime.recover_local_state()
+        for name in (signal.SIGTERM, signal.SIGINT):
+            try:
+                loop.add_signal_handler(name, request_shutdown)
+                installed.append(name)
+            except (NotImplementedError, RuntimeError):
+                pass
+        callback_task = asyncio.create_task(callback_server(runtime))
+        ready_task = asyncio.create_task(runtime.callback_ready.wait())
+        tasks.update({callback_task, ready_task})
+        done, _pending = await asyncio.wait(
+            {callback_task, ready_task}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if callback_task in done:
+            await callback_task
         ready_task.cancel()
         await asyncio.gather(ready_task, return_exceptions=True)
-        await callback_task
-    ready_task.cancel()
-    await asyncio.gather(ready_task, return_exceptions=True)
-    tasks = (
-        callback_task,
-        asyncio.create_task(lease_loop(runtime)),
-        asyncio.create_task(upload_loop(runtime)),
-        asyncio.create_task(heartbeat_loop(runtime)),
-    )
-    try:
+        tasks.discard(ready_task)
+        tasks.update(
+            {
+                asyncio.create_task(lease_loop(runtime)),
+                asyncio.create_task(upload_loop(runtime)),
+                asyncio.create_task(heartbeat_loop(runtime)),
+            }
+        )
         await asyncio.gather(*tasks)
     finally:
         runtime.stop()
+        if shutdown_tasks:
+            await asyncio.gather(*tuple(shutdown_tasks), return_exceptions=True)
         for task in tasks:
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         for name in installed:
-            loop.remove_signal_handler(name)
+            try:
+                loop.remove_signal_handler(name)
+            except Exception as error:
+                runtime._safe_log("signal_cleanup_failed", error)
         close = getattr(runtime.cloud, "aclose", None)
         if callable(close):
             await close()
 
 
-def _owner_private_key(path: Path) -> Ed25519PrivateKey:
+def _read_owner_only_bytes(path: Path) -> bytes:
+    parent_descriptor: int | None = None
+    file_descriptor: int | None = None
+    value: bytes | None = None
+    failed = False
     try:
         candidate = Path(path)
         if not candidate.is_absolute():
             raise ValueError
-        parent = candidate.parent.stat()
-        current = candidate.stat()
+        common_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        parent_descriptor = os.open(
+            candidate.parent,
+            common_flags | no_follow | getattr(os, "O_DIRECTORY", 0),
+        )
+        parent = os.fstat(parent_descriptor)
         if (
             not stat.S_ISDIR(parent.st_mode)
             or stat.S_IMODE(parent.st_mode) != 0o700
             or parent.st_uid != os.geteuid()
-            or not stat.S_ISREG(current.st_mode)
+        ):
+            raise ValueError
+        file_descriptor = os.open(
+            candidate.name,
+            common_flags | no_follow,
+            dir_fd=parent_descriptor,
+        )
+        current = os.fstat(file_descriptor)
+        if (
+            not stat.S_ISREG(current.st_mode)
             or stat.S_IMODE(current.st_mode) != 0o600
             or current.st_uid != os.geteuid()
             or current.st_size > 16_384
         ):
             raise ValueError
-        raw = candidate.read_bytes()
+        chunks: list[bytes] = []
+        size = 0
+        while True:
+            chunk = os.read(file_descriptor, min(4096, 16_385 - size))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+            if size > 16_384:
+                raise ValueError
+        value = b"".join(chunks)
+        if not value:
+            raise ValueError
+    except (OSError, TypeError, ValueError):
+        failed = True
+    finally:
+        if file_descriptor is not None:
+            try:
+                os.close(file_descriptor)
+            except Exception:
+                failed = True
+        if parent_descriptor is not None:
+            try:
+                os.close(parent_descriptor)
+            except Exception:
+                failed = True
+    if failed or value is None:
+        raise WorkerRuntimeError() from None
+    return value
+
+
+def _owner_private_key(path: Path) -> Ed25519PrivateKey:
+    try:
+        raw = _read_owner_only_bytes(path)
         if len(raw) == 32:
             return Ed25519PrivateKey.from_private_bytes(raw)
         key = serialization.load_pem_private_key(raw, password=None)
