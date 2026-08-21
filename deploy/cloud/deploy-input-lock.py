@@ -20,6 +20,7 @@ TRANSACTION_LOCK = PRIVATE_ROOT / "deploy-input.transaction.lock"
 RELEASING_PREFIX = "deploy-input.releasing-"
 COMPLETED_PREFIX = "deploy-input.completed-"
 CLEARING_PREFIX = "deploy-input.clearing-"
+PREPARING_PREFIX = "deploy-input.preparing-"
 RELEASE = re.compile(r"[0-9a-f]{40}\Z")
 DEPLOYMENT = re.compile(r"[0-9a-f]{32}\Z")
 
@@ -156,14 +157,57 @@ def _validate_marker(
     return marker_state
 
 
+def _preparing_status(
+    preparing: Path, release_sha: str, deployment_id: str
+) -> str:
+    _directory(preparing, {0o700})
+    entries = {path.name for path in preparing.iterdir()}
+    if not entries <= {STATE.name, STATE_PART.name} or len(entries) > 1:
+        raise DeployInputError
+    if STATE.name in entries:
+        if _validate_marker(preparing, release_sha, deployment_id) is None:
+            raise DeployInputError
+        return "published"
+    if STATE_PART.name not in entries:
+        return "empty"
+    preparing_part = preparing / STATE_PART.name
+    descriptor = os.open(
+        preparing_part, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        metadata = os.fstat(descriptor)
+        expected = _expected(release_sha, deployment_id)
+        raw = os.read(descriptor, len(expected) + 1)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or metadata.st_size != len(raw)
+            or len(raw) > len(expected)
+            or raw != expected[: len(raw)]
+        ):
+            raise DeployInputError
+    finally:
+        os.close(descriptor)
+    return "partial"
+
+
 def _acquire(release_sha: str, deployment_id: str) -> None:
     releasing = _markers(RELEASING_PREFIX)
     completed = _markers(COMPLETED_PREFIX)
     clearing = _markers(CLEARING_PREFIX)
+    preparings = _markers(PREPARING_PREFIX)
+    active_exists = LOCK_ROOT.exists() or LOCK_ROOT.is_symlink()
+    if active_exists:
+        if releasing or completed or clearing or preparings:
+            raise DeployInputError
+        _validate(release_sha, deployment_id)
+        _fsync(PRIVATE_ROOT)
+        return
     if (
         releasing
         or len(completed) + len(clearing) > 1
-        or ((LOCK_ROOT.exists() or LOCK_ROOT.is_symlink()) and (completed or clearing))
+        or (preparings and (completed or clearing))
     ):
         raise DeployInputError
     if completed:
@@ -191,45 +235,43 @@ def _acquire(release_sha: str, deployment_id: str) -> None:
             _fsync(clearing_receipt)
         clearing_receipt.rmdir()
         _fsync(PRIVATE_ROOT)
-    try:
-        LOCK_ROOT.mkdir(mode=0o700)
-    except FileExistsError as error:
-        raise DeployInputError from error
-    created = True
-    try:
-        os.chmod(LOCK_ROOT, 0o700)
+    preparing = _marker(PREPARING_PREFIX, release_sha, deployment_id)
+    if preparings and preparings != {preparing}:
+        raise DeployInputError
+    if preparings:
+        status = _preparing_status(preparing, release_sha, deployment_id)
+    else:
+        preparing.mkdir(mode=0o700)
         _fsync(PRIVATE_ROOT)
+        status = "empty"
+    preparing_state = preparing / STATE.name
+    preparing_part = preparing / STATE_PART.name
+    if status == "partial":
+        preparing_part.unlink()
+        _fsync(preparing)
+        status = "empty"
+    if status == "empty":
         descriptor = os.open(
-            STATE_PART,
+            preparing_part,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
             0o600,
         )
         try:
             os.fchmod(descriptor, 0o600)
             raw = _expected(release_sha, deployment_id)
-            if os.write(descriptor, raw) != len(raw):
-                raise DeployInputError
+            offset = 0
+            while offset < len(raw):
+                written = os.write(descriptor, raw[offset:])
+                if written <= 0:
+                    raise DeployInputError
+                offset += written
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
-        os.replace(STATE_PART, STATE)
-        _fsync(LOCK_ROOT)
-        created = False
-    finally:
-        if created:
-            try:
-                STATE_PART.unlink()
-            except FileNotFoundError:
-                pass
-            try:
-                STATE.unlink()
-            except FileNotFoundError:
-                pass
-            try:
-                LOCK_ROOT.rmdir()
-            except OSError:
-                pass
-            _fsync(PRIVATE_ROOT)
+        os.replace(preparing_part, preparing_state)
+        _fsync(preparing)
+    os.replace(preparing, LOCK_ROOT)
+    _fsync(PRIVATE_ROOT)
 
 
 def _release(release_sha: str, deployment_id: str) -> None:

@@ -210,7 +210,7 @@ def _discard(release_sha: str, deployment_id: str) -> None:
         try:
             target.unlink()
         except FileNotFoundError:
-            return
+            pass
         _fsync_directory(release_root)
     finally:
         os.close(descriptor)

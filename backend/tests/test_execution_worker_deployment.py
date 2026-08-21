@@ -4003,6 +4003,35 @@ def test_cloud_deploy_discard_holds_rotation_lock_and_is_reentrant(
     assert _run_cloud_keyring_installer(paths, "discard").returncode == 0
 
 
+def test_cloud_deploy_discard_response_loss_fsyncs_absent_target(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_keyring_installer_environment(tmp_path)
+    assert _run_cloud_keyring_installer(paths).returncode == 0
+    original = paths["helper"].read_text(encoding="utf-8")
+    needle = "            target.unlink()\n"
+    assert needle in original
+    paths["helper"].write_text(
+        original.replace(
+            needle, needle + "            os.kill(os.getpid(), 9)\n", 1
+        ),
+        encoding="utf-8",
+    )
+
+    killed = _run_cloud_keyring_installer(paths, "discard")
+
+    assert killed.returncode < 0
+    assert not paths["staged"].exists()
+    paths["helper"].write_text(original, encoding="utf-8")
+    discard = original.split("def _discard", 1)[1].split("def _cutover", 1)[0]
+    assert (
+        "        except FileNotFoundError:\n"
+        "            pass\n"
+        "        _fsync_directory(release_root)\n"
+    ) in discard
+    assert _run_cloud_keyring_installer(paths, "discard").returncode == 0
+
+
 def _cloud_deploy_input_lock_environment(tmp_path: Path) -> tuple[Path, Path]:
     platform = tmp_path / "platform"
     private = platform / "private"
@@ -4061,6 +4090,111 @@ def test_cloud_deploy_input_cleanup_requires_exact_owner_token(
     assert _run_cloud_deploy_input_lock(helper, "validate", first_id).returncode == 0
     assert _run_cloud_deploy_input_lock(helper, "release", first_id).returncode == 0
     assert _run_cloud_deploy_input_lock(helper, "acquire", second_id).returncode == 0
+
+
+def test_cloud_deploy_input_acquire_is_idempotent_only_for_exact_active_token(
+    tmp_path: Path,
+) -> None:
+    helper, _platform = _cloud_deploy_input_lock_environment(tmp_path)
+    first_id = "1" * 32
+    second_id = "2" * 32
+    assert _run_cloud_deploy_input_lock(helper, "acquire", first_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "acquire", first_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "acquire", second_id).returncode == 1
+    assert _run_cloud_deploy_input_lock(helper, "validate", first_id).returncode == 0
+
+
+@pytest.mark.parametrize(
+    "killed_after",
+    ["mkdir", "part_open", "part_fsync", "publish", "active_rename"],
+)
+def test_cloud_deploy_input_acquire_recovers_exact_preparing_boundary(
+    tmp_path: Path, killed_after: str
+) -> None:
+    helper, platform = _cloud_deploy_input_lock_environment(tmp_path)
+    first_id = "1" * 32
+    second_id = "2" * 32
+    original = helper.read_text(encoding="utf-8")
+    needle = {
+        "mkdir": "        preparing.mkdir(mode=0o700)\n",
+        "part_open": "            os.fchmod(descriptor, 0o600)\n",
+        "part_fsync": "            os.fsync(descriptor)\n",
+        "publish": "        os.replace(preparing_part, preparing_state)\n",
+        "active_rename": "    os.replace(preparing, LOCK_ROOT)\n",
+    }[killed_after]
+    before_acquire, acquire_and_after = original.split("def _acquire", 1)
+    acquire, after_acquire = acquire_and_after.split("def _release", 1)
+    assert needle in acquire
+    indentation = needle[: len(needle) - len(needle.lstrip())]
+    helper.write_text(
+        before_acquire
+        + "def _acquire"
+        + acquire.replace(
+            needle, needle + indentation + "os.kill(os.getpid(), 9)\n", 1
+        )
+        + "def _release"
+        + after_acquire,
+        encoding="utf-8",
+    )
+
+    killed = _run_cloud_deploy_input_lock(helper, "acquire", first_id)
+
+    assert killed.returncode < 0
+    helper.write_text(original, encoding="utf-8")
+    assert _run_cloud_deploy_input_lock(helper, "acquire", second_id).returncode == 1
+    assert _run_cloud_deploy_input_lock(helper, "acquire", first_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "acquire", first_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "validate", first_id).returncode == 0
+    assert not list((platform / "private").glob("deploy-input.preparing-*"))
+    if killed_after == "active_rename":
+        acquire = original.split("def _acquire", 1)[1].split("def _release", 1)[0]
+        assert (
+            "        _validate(release_sha, deployment_id)\n"
+            "        _fsync(PRIVATE_ROOT)\n"
+            "        return\n"
+        ) in acquire
+
+
+def test_cloud_deploy_input_rejects_multiple_or_anomalous_preparing(
+    tmp_path: Path,
+) -> None:
+    helper, platform = _cloud_deploy_input_lock_environment(tmp_path)
+    private = platform / "private"
+    first_id = "1" * 32
+    exact = private / f"deploy-input.preparing-{'b' * 40}-{first_id}"
+    other = private / f"deploy-input.preparing-{'b' * 40}-{'2' * 32}"
+    exact.mkdir(mode=0o700)
+    other.mkdir(mode=0o700)
+    assert _run_cloud_deploy_input_lock(helper, "acquire", first_id).returncode == 1
+    assert not (private / "deploy-input.lock").exists()
+    other.rmdir()
+    (exact / "unexpected").write_text("x", encoding="utf-8")
+    assert _run_cloud_deploy_input_lock(helper, "acquire", first_id).returncode == 1
+    assert not (private / "deploy-input.lock").exists()
+
+
+@pytest.mark.parametrize("part", [b"{", b"attacker"])
+def test_cloud_deploy_input_only_recovers_valid_preparing_part_prefix(
+    tmp_path: Path, part: bytes
+) -> None:
+    helper, platform = _cloud_deploy_input_lock_environment(tmp_path)
+    private = platform / "private"
+    deployment_id = "1" * 32
+    preparing = private / f"deploy-input.preparing-{'b' * 40}-{deployment_id}"
+    preparing.mkdir(mode=0o700)
+    owner_part = preparing / "owner.json.part"
+    owner_part.write_bytes(part)
+    owner_part.chmod(0o600)
+
+    acquired = _run_cloud_deploy_input_lock(helper, "acquire", deployment_id)
+
+    if part == b"{":
+        assert acquired.returncode == 0
+        assert _run_cloud_deploy_input_lock(helper, "validate", deployment_id).returncode == 0
+    else:
+        assert acquired.returncode == 1
+        assert preparing.exists()
+        assert not (private / "deploy-input.lock").exists()
 
 
 @pytest.mark.parametrize("killed_after", ["active_rename", "completed_rename"])
@@ -4190,6 +4324,9 @@ def test_cloud_deploy_input_runbook_recovers_exact_single_tombstone() -> None:
         encoding="utf-8"
     )
     section = runbook.split("A cloud deploy holds", 1)[1].split("## Status", 1)[0]
+    assert "deploy-input.preparing-*" in section
+    assert "^deploy-input\\.preparing-([0-9a-f]{40})-([0-9a-f]{32})$" in section
+    assert '"$helper" acquire "$release_sha" "$deployment_id"' in section
     assert "deploy-input.releasing-*" in section
     assert '[[ "${#tombstones[@]}" == "1" ]]' in section
     assert "^deploy-input\\.(releasing|completed)-([0-9a-f]{40})-([0-9a-f]{32})$" in section

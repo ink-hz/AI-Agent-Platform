@@ -38,7 +38,8 @@ when no remote operation is uncertain before cutover, or after the exact
 `CLOUD_PLATFORM_DEPLOY_OK` response confirms cutover.
 Do not rerun a deploy or cutover for an existing release after an uncertain
 response. First perform the following read-only audit of the token, current
-release, health, and any deploy journal. Release only that exact recorded token
+release, health, and any deploy journal. An exact audited `preparing` token is
+first completed by the helper, then treated as the active transaction. Release only that exact recorded token
 after confirming there is no live deploy or `remote-stage.sh` process and the
 audited state is consistent with the incident:
 
@@ -52,11 +53,14 @@ installer=/opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py
 [[ "$(/usr/bin/stat -c '%a %U' "$installer")" == "700 root" ]]
 shopt -s nullglob
 tombstones=("$private_root"/deploy-input.releasing-* "$private_root"/deploy-input.completed-*)
+preparings=("$private_root"/deploy-input.preparing-*)
 shopt -u nullglob
 [[ "${#tombstones[@]}" -le 1 ]]
+[[ "${#preparings[@]}" -le 1 ]]
 active_transaction=0
 if [[ -e "$lock_root" || -L "$lock_root" ]]; then
   [[ "${#tombstones[@]}" == "0" ]]
+  [[ "${#preparings[@]}" == "0" ]]
   [[ -d "$lock_root" && ! -L "$lock_root" ]]
   [[ "$(/usr/bin/stat -c '%a %U' "$lock_root")" == "700 root" ]]
   owner="$lock_root/owner.json"
@@ -64,6 +68,48 @@ if [[ -e "$lock_root" || -L "$lock_root" ]]; then
   [[ "$(/usr/bin/stat -c '%a %U' "$owner")" == "600 root" ]]
   release_sha="$(/usr/bin/jq -er 'if keys==["deployment_id","release_sha"] and (.release_sha|test("^[0-9a-f]{40}$")) and (.deployment_id|test("^[0-9a-f]{32}$")) then .release_sha else error("invalid") end' "$owner")"
   deployment_id="$(/usr/bin/jq -er '.deployment_id' "$owner")"
+  active_transaction=1
+elif [[ "${#preparings[@]}" == "1" ]]; then
+  [[ "${#tombstones[@]}" == "0" ]]
+  preparing="${preparings[0]}"
+  [[ -d "$preparing" && ! -L "$preparing" ]]
+  [[ "$(/usr/bin/stat -c '%a %U' "$preparing")" == "700 root" ]]
+  preparing_name="$(/usr/bin/basename "$preparing")"
+  [[ "$preparing_name" =~ ^deploy-input\.preparing-([0-9a-f]{40})-([0-9a-f]{32})$ ]]
+  release_sha="${BASH_REMATCH[1]}"
+  deployment_id="${BASH_REMATCH[2]}"
+  [[ -z "$(/usr/bin/find "$preparing" -mindepth 1 -maxdepth 1 ! -name owner.json ! -name owner.json.part -print -quit)" ]]
+  owner="$preparing/owner.json"
+  owner_part="$preparing/owner.json.part"
+  [[ ! ( ( -e "$owner" || -L "$owner" ) && ( -e "$owner_part" || -L "$owner_part" ) ) ]]
+  if [[ -e "$owner" || -L "$owner" ]]; then
+    [[ -f "$owner" && ! -L "$owner" ]]
+    [[ "$(/usr/bin/stat -c '%a %U' "$owner")" == "600 root" ]]
+    owner_release_sha="$(/usr/bin/jq -er 'if keys==["deployment_id","release_sha"] then .release_sha else error("invalid") end' "$owner")"
+    owner_deployment_id="$(/usr/bin/jq -er '.deployment_id' "$owner")"
+    [[ "$owner_release_sha" == "$release_sha" && "$owner_deployment_id" == "$deployment_id" ]]
+  elif [[ -e "$owner_part" || -L "$owner_part" ]]; then
+    /usr/bin/python3 - "$owner_part" "$release_sha" "$deployment_id" <<'PY'
+import json
+import os
+import pathlib
+import stat
+import sys
+
+path = pathlib.Path(sys.argv[1])
+expected = (json.dumps({"deployment_id": sys.argv[3], "release_sha": sys.argv[2]}, sort_keys=True, separators=(",", ":")) + "\n").encode()
+descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+try:
+    metadata = os.fstat(descriptor)
+    raw = os.read(descriptor, len(expected) + 1)
+finally:
+    os.close(descriptor)
+if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid() or metadata.st_size != len(raw) or len(raw) > len(expected) or raw != expected[:len(raw)]:
+    raise SystemExit(1)
+PY
+  fi
+  "$helper" acquire "$release_sha" "$deployment_id"
+  "$helper" validate "$release_sha" "$deployment_id"
   active_transaction=1
 else
   [[ "${#tombstones[@]}" == "1" ]]
