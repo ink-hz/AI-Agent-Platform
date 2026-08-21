@@ -29,6 +29,7 @@ CLOUD_ACCEPTANCE = CLOUD / "accept-dingtalk-production.sh"
 CLOUD_ROTATOR = CLOUD / "execution-worker-key-rotation.py"
 CLOUD_KEYRING_INSTALLER = CLOUD / "install-execution-worker-keyring.py"
 CLOUD_REMOTE_STAGE = CLOUD / "remote-stage.sh"
+CLOUD_DEPLOY_INPUT_LOCK = CLOUD / "deploy-input-lock.py"
 GENERATOR = LOCAL / "generate-worker-key.py"
 ROTATOR = LOCAL / "rotate-worker-key.py"
 BOOTSTRAP = LOCAL / "bootstrap-worker-database.sh"
@@ -52,7 +53,7 @@ def test_local_worker_command_assets_are_executable() -> None:
 
 
 def test_cloud_worker_key_mutation_helpers_are_executable_python() -> None:
-    for path in (CLOUD_ROTATOR, CLOUD_KEYRING_INSTALLER):
+    for path in (CLOUD_ROTATOR, CLOUD_KEYRING_INSTALLER, CLOUD_DEPLOY_INPUT_LOCK):
         assert os.access(path, os.X_OK)
         compile(path.read_text(encoding="utf-8"), str(path), "exec")
 
@@ -3245,6 +3246,12 @@ if "--inspect-execution-worker" in arguments:
     status = "revoked" if statuses and statuses == {"revoked"} else "active"
     print(json.dumps({"worker_id": "agentops-mac-primary", "status": status}, sort_keys=True))
     raise SystemExit(0)
+if "--inspect-execution-worker-inventory" in arguments:
+    print(json.dumps([
+        {"key_id": key_id, "status": value["status"], "public_key_sha256": value["fingerprint"]}
+        for key_id, value in sorted(database.items())
+    ], sort_keys=True))
+    raise SystemExit(0)
 if "add-key" in arguments:
     action = "add"
     key_id = "worker-v2"
@@ -3554,6 +3561,34 @@ def test_cloud_finalize_cleanup_recovers_after_each_unlink(
     assert not paths["previous"].exists()
 
 
+def test_cloud_no_state_finalize_rejects_dual_active_inventory(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_rotation_test_environment(tmp_path)
+    assert _run_cloud_rotation(paths, "prepare").returncode == 0
+    assert _run_cloud_rotation(paths, "activate").returncode == 0
+    paths["state"].unlink()
+    paths["previous"].unlink()
+    paths["staged"].unlink()
+
+    finalized = _run_cloud_rotation(paths, "finalize")
+
+    assert finalized.returncode == 1
+
+
+def test_cloud_no_state_rollback_rejects_unrelated_active_key(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_rotation_test_environment(tmp_path)
+    database = json.loads(paths["database"].read_text())
+    database["worker-v3"] = {"status": "active", "fingerprint": "3" * 64}
+    paths["database"].write_text(json.dumps(database), encoding="utf-8")
+
+    rolled_back = _run_cloud_rotation(paths, "rollback")
+
+    assert rolled_back.returncode == 1
+
+
 def test_runbook_public_handoff_validators_execute_with_exact_schema_and_base64(
     tmp_path: Path,
 ) -> None:
@@ -3645,8 +3680,8 @@ def test_runbook_public_handoff_shell_blocks_fail_before_atomic_rename(
 
     assert failed_agent.returncode != 0
     assert handoff.read_bytes() == b"old-handoff\n"
+    assert not (handoff_root / "current.json.part").exists()
 
-    (handoff_root / "current.json.part").unlink(missing_ok=True)
     neo_secret_root = tmp_path / "neo-secrets"
     neo_secret_root.mkdir(mode=0o700)
     neo_keyring = neo_secret_root / "execution-worker-public-keyring.json"
@@ -3667,6 +3702,7 @@ def test_runbook_public_handoff_shell_blocks_fail_before_atomic_rename(
 
     assert failed_neo.returncode != 0
     assert neo_keyring.read_bytes() == b"old-neo-keyring\n"
+    assert not (neo_secret_root / "execution-worker-public-keyring.json.part").exists()
 
 
 def test_cloud_worker_revocation_fails_closed_on_rotation_state_and_shared_lock(
@@ -3743,6 +3779,20 @@ def _cloud_keyring_installer_environment(tmp_path: Path):
     )
     helper.write_text(source, encoding="utf-8")
     helper.chmod(0o700)
+    deployment_id = "e" * 32
+    deploy_input = private / "deploy-input.lock"
+    deploy_input.mkdir(mode=0o700)
+    deploy_owner = deploy_input / "owner.json"
+    deploy_owner.write_text(
+        json.dumps(
+            {"deployment_id": deployment_id, "release_sha": "b" * 40},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    deploy_owner.chmod(0o600)
     public = bytes([7]) * 32
     document = (
         json.dumps(
@@ -3764,10 +3814,12 @@ def _cloud_keyring_installer_environment(tmp_path: Path):
         "document": document,
         "keyring": private / "execution-worker-public-keyring.json",
         "state": private / "execution-worker-key-rotation-state.json",
+        "deploy_state": private / "execution-worker-keyring-deploy-state.json",
         "lock": private / "execution-worker-key-rotation.lock",
         "staged": platform / "staging" / ("b" * 40) / "execution-worker-public-keyring.json",
         "ready": ready,
         "release": release,
+        "deployment_id": deployment_id,
     }
 
 
@@ -3775,6 +3827,7 @@ def _run_cloud_keyring_installer(paths, action: str = "stage"):
     arguments = [sys.executable, str(paths["helper"]), action, "b" * 40]
     if action == "cutover":
         arguments.append("c" * 64)
+    arguments.append(paths["deployment_id"])
     return subprocess.run(
         arguments,
         input=paths["document"] if action == "stage" else None,
@@ -3810,7 +3863,14 @@ def test_cloud_deploy_cutover_holds_shared_lock_and_fails_on_active_state(
     assert active.returncode == 1
     paths["state"].unlink()
     process = subprocess.Popen(
-        [sys.executable, str(paths["helper"]), "cutover", "b" * 40, "c" * 64],
+        [
+            sys.executable,
+            str(paths["helper"]),
+            "cutover",
+            "b" * 40,
+            "c" * 64,
+            paths["deployment_id"],
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env={
@@ -3835,6 +3895,115 @@ def test_cloud_deploy_cutover_holds_shared_lock_and_fails_on_active_state(
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
     finally:
         os.close(descriptor)
+
+
+def test_cloud_deploy_stage_cannot_replace_same_release_during_cutover(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_keyring_installer_environment(tmp_path)
+    assert _run_cloud_keyring_installer(paths).returncode == 0
+    original = paths["staged"].read_bytes()
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(paths["helper"]),
+            "cutover",
+            "b" * 40,
+            "c" * 64,
+            paths["deployment_id"],
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    _wait_for_file(paths["ready"])
+    replacement = paths["document"].replace(b"worker-v2", b"worker-v3")
+
+    concurrent_stage = subprocess.run(
+        [sys.executable, str(paths["helper"]), "stage", "b" * 40],
+        input=replacement,
+        capture_output=True,
+    )
+
+    assert concurrent_stage.returncode == 1
+    assert paths["staged"].read_bytes() == original
+    paths["release"].touch()
+    stdout, stderr = process.communicate(timeout=5)
+    assert process.returncode == 0, (stdout, stderr)
+
+
+def test_cloud_deploy_stage_rejects_completed_deploy_journal_without_mutation(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_keyring_installer_environment(tmp_path)
+    assert _run_cloud_keyring_installer(paths).returncode == 0
+    original = paths["staged"].read_bytes()
+    paths["deploy_state"].write_text('{"phase":"completed"}\n', encoding="utf-8")
+    paths["deploy_state"].chmod(0o600)
+
+    repeated = _run_cloud_keyring_installer(paths)
+
+    assert repeated.returncode == 1
+    assert paths["staged"].read_bytes() == original
+
+
+def _cloud_deploy_input_lock_environment(tmp_path: Path) -> tuple[Path, Path]:
+    platform = tmp_path / "platform"
+    private = platform / "private"
+    platform.mkdir(mode=0o700)
+    private.mkdir(mode=0o700)
+    helper = tmp_path / "deploy-input-lock.py"
+    source = CLOUD_DEPLOY_INPUT_LOCK.read_text(encoding="utf-8")
+    source = source.replace("REQUIRED_UID = 0", f"REQUIRED_UID = {os.getuid()}")
+    source = source.replace(
+        'PLATFORM_ROOT = Path("/opt/orbbec-agent-platform")',
+        f"PLATFORM_ROOT = Path({str(platform)!r})",
+    )
+    helper.write_text(source, encoding="utf-8")
+    helper.chmod(0o700)
+    return helper, platform
+
+
+def _run_cloud_deploy_input_lock(helper: Path, action: str, deployment_id: str):
+    return subprocess.run(
+        [sys.executable, str(helper), action, "b" * 40, deployment_id],
+        text=True,
+        capture_output=True,
+    )
+
+
+def test_cloud_concurrent_deploy_fails_before_any_fixed_part_write(
+    tmp_path: Path,
+) -> None:
+    helper, platform = _cloud_deploy_input_lock_environment(tmp_path)
+    first_id = "1" * 32
+    second_id = "2" * 32
+    assert _run_cloud_deploy_input_lock(helper, "acquire", first_id).returncode == 0
+
+    second = _run_cloud_deploy_input_lock(helper, "acquire", second_id)
+
+    assert second.returncode == 1
+    assert not list(platform.rglob("*.part"))
+    deploy = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
+    acquire = deploy.index('/usr/bin/python3 - acquire "$release_sha" "$deployment_id"')
+    assert acquire < deploy.index("deploy-input-lock.py.part")
+    assert acquire < deploy.index("remote-stage.sh.part")
+
+
+def test_cloud_deploy_input_cleanup_requires_exact_owner_token(
+    tmp_path: Path,
+) -> None:
+    helper, _platform = _cloud_deploy_input_lock_environment(tmp_path)
+    first_id = "1" * 32
+    second_id = "2" * 32
+    assert _run_cloud_deploy_input_lock(helper, "acquire", first_id).returncode == 0
+
+    wrong_release = _run_cloud_deploy_input_lock(helper, "release", second_id)
+    still_blocked = _run_cloud_deploy_input_lock(helper, "acquire", second_id)
+
+    assert wrong_release.returncode == still_blocked.returncode == 1
+    assert _run_cloud_deploy_input_lock(helper, "validate", first_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "release", first_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "acquire", second_id).returncode == 0
 
 
 def test_cloud_deploy_real_git_archive_extracts_root_only_sensitive_assets(
@@ -3876,6 +4045,7 @@ def test_cloud_remote_stage_journals_before_switch_and_restores_state_last(
     restore = source.index("if ! restore_worker_keyring; then")
     service_rollback = source.index('if [[ "$api_stopped" -eq 1 ]]', restore)
     assert inherited_lock < archive_read
+    assert source.index("completed_deploy_recovered") < archive_read
     assert journal < switch
     assert restore < service_rollback
     cleanup = source.split("cleanup_worker_keyring_deploy() {", 1)[1].split("}\n", 1)[0]
@@ -3940,6 +4110,106 @@ restore_worker_keyring
 
     assert restored.returncode == 0, restored.stderr
     assert canonical.read_bytes() == b"old-keyring\n"
+    assert not state.exists() and not previous.exists() and not staged.exists()
+
+
+@pytest.mark.parametrize(
+    "killed_after", ["state_part", "previous", "staged", "state"]
+)
+def test_cloud_remote_completed_cleanup_recovers_after_each_unlink(
+    tmp_path: Path, killed_after: str
+) -> None:
+    source = CLOUD_REMOTE_STAGE.read_text(encoding="utf-8")
+    private = tmp_path / "private"
+    stage = tmp_path / "stage"
+    private.mkdir(mode=0o700)
+    stage.mkdir(mode=0o700)
+    canonical = private / "execution-worker-public-keyring.json"
+    previous = private / "execution-worker-public-keyring.deploy.previous.json"
+    staged = stage / "execution-worker-public-keyring.json"
+    state = private / "execution-worker-keyring-deploy-state.json"
+    public = bytes([8]) * 32
+    document = (
+        json.dumps(
+            {
+                "worker_id": "agentops-mac-primary",
+                "key_id": "worker-v2",
+                "public_key_base64url": base64.urlsafe_b64encode(public)
+                .decode()
+                .rstrip("="),
+                "allowed_agent_ids": AGENTS,
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode()
+    canonical.write_bytes(document)
+    previous.write_bytes(b"old-keyring\n")
+    staged.write_bytes(document)
+    for path in (canonical, previous, staged):
+        path.chmod(0o600)
+    release_sha = "d" * 40
+    state.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "phase": "completed",
+                "release_sha": release_sha,
+                "previous_sha256": hashlib.sha256(previous.read_bytes()).hexdigest(),
+                "next_sha256": hashlib.sha256(document).hexdigest(),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    state.chmod(0o600)
+    current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
+
+    def shell_functions(value: str) -> str:
+        functions = value.split("fsync_private() {", 1)[1].split(
+            '\nif [[ -e "$deploy_state"', 1
+        )[0]
+        functions = "fsync_private() {" + functions
+        functions = functions.replace(
+            "/usr/bin/stat -c '%a %U'", "/usr/bin/stat -f '%Lp %Su'"
+        ).replace("600 root", f"600 {current_user}")
+        return functions.replace(
+            "/usr/bin/install -o root -g root -m 600", "/usr/bin/install -m 600"
+        )
+
+    needle = {
+        "state_part": '  /bin/rm -f -- "$deploy_state_part"\n',
+        "previous": '  /bin/rm -f -- "$worker_keyring_previous"\n',
+        "staged": '  /bin/rm -f -- "$staged_worker_keyring"\n',
+        "state": '  /bin/rm -f -- "$deploy_state"\n',
+    }[killed_after]
+    assert needle in source
+    killed_source = source.replace(
+        needle, needle + "  /bin/kill -9 $$\n", 1
+    )
+
+    def run(value: str) -> subprocess.CompletedProcess[str]:
+        shell = f"""set -euo pipefail
+private_path={str(private)!r}
+deploy_state={str(state)!r}
+deploy_state_part={str(private / 'execution-worker-keyring-deploy-state.json.part')!r}
+worker_keyring={str(canonical)!r}
+worker_keyring_part={str(private / 'execution-worker-public-keyring.json.part')!r}
+worker_keyring_previous={str(previous)!r}
+staged_worker_keyring={str(staged)!r}
+release_sha={release_sha}
+{shell_functions(value)}
+completed_worker_key_active() {{ return 0; }}
+restore_worker_keyring
+"""
+        return subprocess.run(["/bin/bash", "-c", shell], capture_output=True, text=True)
+
+    killed = run(killed_source)
+    assert killed.returncode < 0
+    recovered = run(source)
+    assert recovered.returncode == 0, recovered.stderr
+    assert canonical.read_bytes() == document
     assert not state.exists() and not previous.exists() and not staged.exists()
 
 

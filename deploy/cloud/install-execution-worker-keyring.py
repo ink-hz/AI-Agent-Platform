@@ -17,8 +17,14 @@ PRIVATE_ROOT = PLATFORM_ROOT / "private"
 STAGING_ROOT = PLATFORM_ROOT / "staging"
 REMOTE_STAGE = Path("/opt/orbbec-agent-platform/bin/remote-stage.sh")
 STATE = PRIVATE_ROOT / "execution-worker-key-rotation-state.json"
+DEPLOY_STATE = PRIVATE_ROOT / "execution-worker-keyring-deploy-state.json"
+DEPLOY_STATE_PART = PRIVATE_ROOT / "execution-worker-keyring-deploy-state.json.part"
+DEPLOY_BACKUP = PRIVATE_ROOT / "execution-worker-public-keyring.deploy.previous.json"
+DEPLOY_INPUT_ROOT = PRIVATE_ROOT / "deploy-input.lock"
+DEPLOY_INPUT_STATE = DEPLOY_INPUT_ROOT / "owner.json"
 LOCK = PRIVATE_ROOT / "execution-worker-key-rotation.lock"
 RELEASE = re.compile(r"[0-9a-f]{40}\Z")
+DEPLOYMENT = re.compile(r"[0-9a-f]{32}\Z")
 AGENTS = (
     "hr-bot",
     "fae-bot",
@@ -102,6 +108,20 @@ def _validate_document(raw: bytes) -> None:
         raise InstallError
 
 
+def _validate_deploy_input(release_sha: str, deployment_id: str) -> None:
+    _directory(DEPLOY_INPUT_ROOT, {0o700})
+    raw = _secure_value(DEPLOY_INPUT_STATE)
+    if raw != (
+        json.dumps(
+            {"deployment_id": deployment_id, "release_sha": release_sha},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode():
+        raise InstallError
+
+
 def _lock() -> int:
     descriptor = os.open(
         LOCK,
@@ -123,60 +143,72 @@ def _lock() -> int:
         raise
 
 
-def _stage(release_sha: str) -> None:
-    STAGING_ROOT.mkdir(mode=0o700, exist_ok=True)
-    os.chmod(STAGING_ROOT, 0o700)
-    _directory(STAGING_ROOT, {0o700})
-    release_root = STAGING_ROOT / release_sha
-    release_root.mkdir(mode=0o700, exist_ok=True)
-    os.chmod(release_root, 0o700)
-    _directory(release_root, {0o700})
-    target = release_root / "execution-worker-public-keyring.json"
-    part = release_root / ".execution-worker-public-keyring.json.part"
-    raw = sys.stdin.buffer.read(65_537)
-    if not raw or len(raw) > 65_536:
-        raise InstallError
-    _validate_document(raw)
-    _unlink_part(part)
-    output = os.open(
-        part,
-        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
-        0o600,
-    )
-    try:
-        os.fchmod(output, 0o600)
-        offset = 0
-        while offset < len(raw):
-            written = os.write(output, raw[offset:])
-            if written <= 0:
-                raise InstallError
-            offset += written
-        os.fsync(output)
-    finally:
-        os.close(output)
-    os.replace(part, target)
-    _fsync_directory(release_root)
-
-
-def _cutover(release_sha: str, digest: str) -> None:
-    staged = STAGING_ROOT / release_sha / "execution-worker-public-keyring.json"
-    _validate_document(_secure_value(staged))
-    remote = REMOTE_STAGE.lstat()
-    if (
-        not stat.S_ISREG(remote.st_mode)
-        or REMOTE_STAGE.is_symlink()
-        or stat.S_IMODE(remote.st_mode) != 0o700
-        or remote.st_uid != os.getuid()
-    ):
-        raise InstallError
+def _stage(release_sha: str, deployment_id: str) -> None:
     descriptor = _lock()
     try:
+        _validate_deploy_input(release_sha, deployment_id)
+        if any(
+            path.exists() or path.is_symlink()
+            for path in (STATE, DEPLOY_STATE, DEPLOY_STATE_PART, DEPLOY_BACKUP)
+        ):
+            raise InstallError
+        STAGING_ROOT.mkdir(mode=0o700, exist_ok=True)
+        os.chmod(STAGING_ROOT, 0o700)
+        _directory(STAGING_ROOT, {0o700})
+        release_root = STAGING_ROOT / release_sha
+        release_root.mkdir(mode=0o700, exist_ok=True)
+        os.chmod(release_root, 0o700)
+        _directory(release_root, {0o700})
+        target = release_root / "execution-worker-public-keyring.json"
+        part = release_root / ".execution-worker-public-keyring.json.part"
+        raw = sys.stdin.buffer.read(65_537)
+        if not raw or len(raw) > 65_536:
+            raise InstallError
+        _validate_document(raw)
+        _unlink_part(part)
+        output = os.open(
+            part,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        try:
+            os.fchmod(output, 0o600)
+            offset = 0
+            while offset < len(raw):
+                written = os.write(output, raw[offset:])
+                if written <= 0:
+                    raise InstallError
+                offset += written
+            os.fsync(output)
+        finally:
+            os.close(output)
+        os.replace(part, target)
+        _fsync_directory(release_root)
+    finally:
+        os.close(descriptor)
+
+
+def _cutover(release_sha: str, digest: str, deployment_id: str) -> None:
+    staged = STAGING_ROOT / release_sha / "execution-worker-public-keyring.json"
+    descriptor = _lock()
+    try:
+        _validate_deploy_input(release_sha, deployment_id)
         if STATE.exists() or STATE.is_symlink():
+            raise InstallError
+        if not (DEPLOY_STATE.exists() or DEPLOY_STATE.is_symlink()):
+            _validate_document(_secure_value(staged))
+        remote = REMOTE_STAGE.lstat()
+        if (
+            not stat.S_ISREG(remote.st_mode)
+            or REMOTE_STAGE.is_symlink()
+            or stat.S_IMODE(remote.st_mode) != 0o700
+            or remote.st_uid != os.getuid()
+        ):
             raise InstallError
         os.set_inheritable(descriptor, True)
         os.execve(
             "/bin/bash",
-            ["/bin/bash", str(REMOTE_STAGE), release_sha, digest],
+            ["/bin/bash", str(REMOTE_STAGE), release_sha, digest, deployment_id],
             {
                 "PATH": "/usr/bin:/bin",
                 "LC_ALL": "C.UTF-8",
@@ -215,18 +247,19 @@ def main() -> int:
             os.getuid() != REQUIRED_UID
             or not values
             or values[0] not in {"stage", "cutover"}
-            or len(values) != (2 if values[0] == "stage" else 3)
+            or len(values) != (3 if values[0] == "stage" else 4)
             or RELEASE.fullmatch(values[1]) is None
+            or DEPLOYMENT.fullmatch(values[-1]) is None
             or (values[0] == "cutover" and re.fullmatch(r"[0-9a-f]{64}", values[2]) is None)
         ):
             raise InstallError
         _directory(PLATFORM_ROOT, {0o700, 0o755})
         _directory(PRIVATE_ROOT, {0o700})
         if values[0] == "stage":
-            _stage(values[1])
+            _stage(values[1], values[2])
             print("EXECUTION_WORKER_KEYRING_STAGED")
         else:
-            _cutover(values[1], values[2])
+            _cutover(values[1], values[2], values[3])
         return 0
     except Exception:
         print("EXECUTION_WORKER_KEYRING_INSTALL_FAILED", file=sys.stderr)

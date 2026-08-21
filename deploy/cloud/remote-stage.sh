@@ -14,20 +14,53 @@ deploy_state_part="$private_path/execution-worker-keyring-deploy-state.json.part
 worker_keyring="$private_path/execution-worker-public-keyring.json"
 worker_keyring_part="$private_path/execution-worker-public-keyring.json.part"
 worker_keyring_previous="$private_path/execution-worker-public-keyring.deploy.previous.json"
+deploy_input_root="$private_path/deploy-input.lock"
+deploy_input_state="$deploy_input_root/owner.json"
 
 fail() {
   echo "CLOUD_PLATFORM_DEPLOY_FAILED" >&2
   exit 1
 }
 
-[[ $# -eq 2 ]] || fail
+[[ $# -eq 3 ]] || fail
 release_sha="$1"
 expected_digest="$2"
-[[ "$release_sha" =~ ^[0-9a-f]{40}$ && "$expected_digest" =~ ^[0-9a-f]{64}$ ]] || fail
+deployment_id="$3"
+[[ "$release_sha" =~ ^[0-9a-f]{40}$ && "$expected_digest" =~ ^[0-9a-f]{64}$ && "$deployment_id" =~ ^[0-9a-f]{32}$ ]] || fail
 release_path="$releases_path/$release_sha"
 stage_path="$staging_path/$release_sha"
 archive_path="$stage_path/release.tar.gz"
 
+/usr/bin/python3 - "$deploy_input_root" "$deploy_input_state" "$release_sha" "$deployment_id" <<'PY' || fail
+import json
+import os
+import pathlib
+import stat
+import sys
+
+root, state = map(pathlib.Path, sys.argv[1:3])
+release_sha, deployment_id = sys.argv[3:]
+root_metadata = root.lstat()
+state_descriptor = os.open(state, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+try:
+    state_metadata = os.fstat(state_descriptor)
+    raw = os.read(state_descriptor, 1025)
+finally:
+    os.close(state_descriptor)
+expected = (json.dumps({"deployment_id": deployment_id, "release_sha": release_sha}, sort_keys=True, separators=(",", ":")) + "\n").encode()
+if (
+    not stat.S_ISDIR(root_metadata.st_mode)
+    or root.is_symlink()
+    or stat.S_IMODE(root_metadata.st_mode) != 0o700
+    or root_metadata.st_uid != os.getuid()
+    or not stat.S_ISREG(state_metadata.st_mode)
+    or stat.S_IMODE(state_metadata.st_mode) != 0o600
+    or state_metadata.st_uid != os.getuid()
+    or state_metadata.st_size != len(raw)
+    or raw != expected
+):
+    raise SystemExit(1)
+PY
 /usr/bin/install -d -m 700 "$private_path" "$releases_path" "$stage_path"
 staged_worker_keyring="$stage_path/execution-worker-public-keyring.json"
 [[ "${PLATFORM_EXECUTION_WORKER_DEPLOY_LOCK_FD:-}" =~ ^[0-9]+$ ]] || fail
@@ -101,15 +134,6 @@ fi
 forbidden_bind_ipv4="0.0.0.0:8080"
 forbidden_bind_ipv6="[::]:8080"
 
-/bin/dd of="$archive_path.part" status=none
-actual_digest="$(/usr/bin/sha256sum "$archive_path.part" | /usr/bin/awk '{print $1}')"
-[[ "$actual_digest" == "$expected_digest" ]] || fail
-/bin/mv -f "$archive_path.part" "$archive_path"
-if /usr/bin/tar -tzf "$archive_path" | /usr/bin/grep -Eq '(^/|(^|/)\.\.(/|$))'; then
-  fail
-fi
-[[ ! -e "$release_path" ]] || fail
-/usr/bin/install -d -m 700 "$release_path"
 rollback_required=1
 api_stopped=0
 fsync_private() {
@@ -144,15 +168,106 @@ write_deploy_state() {
   fsync_private
 }
 cleanup_worker_keyring_deploy() {
-  /bin/rm -f -- "$deploy_state_part" "$worker_keyring_previous" "$staged_worker_keyring"
+  /bin/rm -f -- "$deploy_state_part"
+  fsync_private
+  /bin/rm -f -- "$worker_keyring_previous"
+  fsync_private
+  /bin/rm -f -- "$staged_worker_keyring"
   fsync_private
   /bin/rm -f -- "$deploy_state"
   fsync_private
+}
+deploy_phase() {
+  /usr/bin/python3 - "$deploy_state" "$release_sha" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+release_sha = sys.argv[2]
+value = json.loads(path.read_bytes())
+if (
+    not isinstance(value, dict)
+    or set(value) != {"schema_version", "phase", "release_sha", "previous_sha256", "next_sha256"}
+    or value["schema_version"] != 1
+    or value["phase"] not in {"keyring_switching", "keyring_switched", "completed"}
+    or value["release_sha"] != release_sha
+    or any(not isinstance(value[name], str) or re.fullmatch(r"[0-9a-f]{64}", value[name]) is None for name in ("previous_sha256", "next_sha256"))
+):
+    raise SystemExit(1)
+print(value["phase"])
+PY
+}
+completed_deploy_identity() {
+  /usr/bin/python3 - "$deploy_state" "$deploy_state_part" "$worker_keyring" \
+    "$worker_keyring_previous" "$staged_worker_keyring" "$release_sha" <<'PY'
+import base64
+import hashlib
+import json
+import os
+import pathlib
+import re
+import stat
+import sys
+
+state_path, state_part, canonical, previous, staged = map(pathlib.Path, sys.argv[1:6])
+release_sha = sys.argv[6]
+state_raw = state_path.read_bytes()
+value = json.loads(state_raw)
+if value["phase"] != "completed" or value["release_sha"] != release_sha:
+    raise SystemExit(1)
+for path, digest in (
+    (canonical, value["next_sha256"]),
+    (previous, value["previous_sha256"]),
+    (staged, value["next_sha256"]),
+):
+    if path == canonical or path.exists() or path.is_symlink():
+        metadata = path.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise SystemExit(1)
+if state_part.exists() or state_part.is_symlink():
+    metadata = state_part.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid() or state_part.read_bytes() != state_raw:
+        raise SystemExit(1)
+document = json.loads(canonical.read_bytes())
+agents = ["hr-bot", "fae-bot", "marketing-prospecting-bot", "marketing-inbound-bot", "marketing-voice-bot", "marketing-intelligence-bot", "marketing-gtm-bot"]
+if not isinstance(document, dict) or set(document) != {"worker_id", "key_id", "public_key_base64url", "allowed_agent_ids"} or document["worker_id"] != "agentops-mac-primary" or re.fullmatch(r"worker-v[1-9][0-9]*", document["key_id"]) is None or document["allowed_agent_ids"] != agents or re.fullmatch(r"[A-Za-z0-9_-]{43}", document["public_key_base64url"]) is None:
+    raise SystemExit(1)
+public = base64.b64decode(document["public_key_base64url"] + "=", altchars=b"-_", validate=True)
+if len(public) != 32:
+    raise SystemExit(1)
+print(document["key_id"], hashlib.sha256(public).hexdigest())
+PY
+}
+completed_worker_key_active() {
+  key_id="$1"
+  fingerprint="$2"
+  current_compose="$root_path/current/deploy/cloud/compose.yaml"
+  [[ -f "$current_compose" && ! -L "$current_compose" && -f "$environment_path" && ! -L "$environment_path" ]] || return 1
+  container_id="$(/usr/bin/docker compose --env-file "$environment_path" -f "$current_compose" ps -q platform-api)" || return 1
+  [[ -n "$container_id" && "$container_id" != *$'\n'* ]] || return 1
+  current_image="$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$container_id")" || return 1
+  [[ -n "$current_image" && "$current_image" != *$'\n'* ]] || return 1
+  result="$(/usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 \
+    -v "$private_path:/run/control-secrets:ro" \
+    -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url \
+    "$current_image" python -c 'import json,psycopg,sys; from app.execution_relay.register_worker import _secret_file; worker_id,key_id=sys.argv[1:]; connection=psycopg.connect(_secret_file()); row=connection.execute("select status,encode(sha256(public_key),'"'"'hex'"'"') from platform_control.execution_worker_keys where worker_id=%s and key_id=%s",(worker_id,key_id)).fetchone(); connection.close(); print(json.dumps({"key_id":key_id,"status":"absent" if row is None else row[0],"public_key_sha256":None if row is None else row[1]},sort_keys=True,separators=(",",":")))' \
+    agentops-mac-primary "$key_id")" || return 1
+  /usr/bin/python3 -c 'import json,sys; value=json.load(sys.stdin); expected_key,expected_fingerprint=sys.argv[1:]; raise SystemExit(0 if value=={"key_id":expected_key,"status":"active","public_key_sha256":expected_fingerprint} else 1)' \
+    "$key_id" "$fingerprint" <<<"$result"
 }
 restore_worker_keyring() {
   if [[ -e "$deploy_state" || -L "$deploy_state" ]]; then
     [[ -f "$deploy_state" && ! -L "$deploy_state" ]] || return 1
     [[ "$(/usr/bin/stat -c '%a %U' "$deploy_state")" == "600 root" ]] || return 1
+    phase="$(deploy_phase)" || return 1
+    if [[ "$phase" == "completed" ]]; then
+      read -r completed_key_id completed_fingerprint < <(completed_deploy_identity) || return 1
+      completed_worker_key_active "$completed_key_id" "$completed_fingerprint" || return 1
+      cleanup_worker_keyring_deploy || return 1
+      return 0
+    fi
     [[ -f "$worker_keyring_previous" && ! -L "$worker_keyring_previous" ]] || return 1
     [[ "$(/usr/bin/stat -c '%a %U' "$worker_keyring_previous")" == "600 root" ]] || return 1
     /usr/bin/python3 - "$deploy_state" "$worker_keyring_previous" "$staged_worker_keyring" "$release_sha" <<'PY' || return 1
@@ -169,7 +284,7 @@ if (
     not isinstance(value, dict)
     or set(value) != {"schema_version", "phase", "release_sha", "previous_sha256", "next_sha256"}
     or value["schema_version"] != 1
-    or value["phase"] not in {"keyring_switching", "keyring_switched", "completed"}
+    or value["phase"] not in {"keyring_switching", "keyring_switched"}
     or value["release_sha"] != release_sha
     or any(not isinstance(value[name], str) or re.fullmatch(r"[0-9a-f]{64}", value[name]) is None for name in ("previous_sha256", "next_sha256"))
     or hashlib.sha256(previous_path.read_bytes()).hexdigest() != value["previous_sha256"]
@@ -189,9 +304,27 @@ PY
     fsync_private || return 1
   fi
 }
+completed_deploy_recovered=0
+if [[ -e "$deploy_state" && ! -L "$deploy_state" && "$(deploy_phase 2>/dev/null || true)" == "completed" ]]; then
+  restore_worker_keyring || fail
+  completed_deploy_recovered=1
+fi
 if [[ -e "$deploy_state" || -L "$deploy_state" || -e "$deploy_state_part" || -L "$deploy_state_part" || -e "$worker_keyring_previous" || -L "$worker_keyring_previous" ]]; then
   fail
 fi
+if [[ "$completed_deploy_recovered" == "1" ]]; then
+  echo "CLOUD_PLATFORM_DEPLOY_RECOVERED release=$release_sha"
+  exit 0
+fi
+/bin/dd of="$archive_path.part" status=none
+actual_digest="$(/usr/bin/sha256sum "$archive_path.part" | /usr/bin/awk '{print $1}')"
+[[ "$actual_digest" == "$expected_digest" ]] || fail
+/bin/mv -f "$archive_path.part" "$archive_path"
+if /usr/bin/tar -tzf "$archive_path" | /usr/bin/grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+  fail
+fi
+[[ ! -e "$release_path" ]] || fail
+/usr/bin/install -d -m 700 "$release_path"
 rollback() {
   if [[ "$rollback_required" -ne 1 ]]; then
     return
@@ -460,7 +593,7 @@ if /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Eq "^(${forb
 fi
 
 write_deploy_state completed
-cleanup_worker_keyring_deploy
+restore_worker_keyring
 rollback_required=0
 trap - EXIT
 echo "CLOUD_PLATFORM_DEPLOY_OK release=$release_sha mode=dingtalk"

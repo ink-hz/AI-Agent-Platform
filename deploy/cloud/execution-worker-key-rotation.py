@@ -93,6 +93,24 @@ with psycopg.connect(_secret_file()) as connection:
     ).fetchone()
 print(json.dumps({"worker_id": worker_id, "status": "absent" if row is None else row[0]}, sort_keys=True))
 """
+KEY_INVENTORY_SCRIPT = r"""
+import json
+import psycopg
+import sys
+from app.execution_relay.register_worker import _secret_file
+
+worker_id = sys.argv[2]
+with psycopg.connect(_secret_file()) as connection:
+    rows = connection.execute(
+        "select key_id,status,encode(sha256(public_key),'hex') "
+        "from platform_control.execution_worker_keys where worker_id=%s order by key_id",
+        (worker_id,),
+    ).fetchall()
+print(json.dumps([
+    {"key_id": row[0], "status": row[1], "public_key_sha256": row[2]}
+    for row in rows
+], sort_keys=True, separators=(",", ":")))
+"""
 HOST_ENV = {"PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8"}
 
 
@@ -395,6 +413,38 @@ def _inspect_worker() -> str:
     return value["status"]
 
 
+def _inventory() -> dict[str, tuple[str, str]]:
+    result = _container(
+        ["python", "-c", KEY_INVENTORY_SCRIPT, "--inspect-execution-worker-inventory", WORKER_ID]
+    )
+    value = json.loads(result.stdout)
+    inventory: dict[str, tuple[str, str]] = {}
+    if not isinstance(value, list):
+        raise RotationError
+    for item in value:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"key_id", "status", "public_key_sha256"}
+            or not isinstance(item["key_id"], str)
+            or KEY_ID.fullmatch(item["key_id"]) is None
+            or item["key_id"] in inventory
+            or item["status"] not in {"active", "revoked"}
+            or not isinstance(item["public_key_sha256"], str)
+            or re.fullmatch(r"[0-9a-f]{64}", item["public_key_sha256"]) is None
+        ):
+            raise RotationError
+        inventory[item["key_id"]] = (item["status"], item["public_key_sha256"])
+    return inventory
+
+
+def _expect_unique_active_key(key_id: str, fingerprint: str) -> None:
+    inventory = _inventory()
+    if inventory.get(key_id) != ("active", fingerprint):
+        raise RotationError
+    if any(status != "revoked" for current, (status, _fingerprint) in inventory.items() if current != key_id):
+        raise RotationError
+
+
 def _maintenance(arguments: list[str]) -> None:
     result = _container(
         ["python", "-m", "app.execution_relay.register_worker", *arguments]
@@ -521,7 +571,7 @@ def _rollback(target: str) -> None:
         current_id, _raw, _digest, current_fingerprint = _document(KEYRING)
         if current_id == target:
             raise RotationError
-        _expect_status(current_id, "active", current_fingerprint)
+        _expect_unique_active_key(current_id, current_fingerprint)
         status, fingerprint = _inspect(target)
         if status == "absent" and fingerprint is None:
             return
@@ -582,7 +632,7 @@ def _finalize(target: str) -> None:
         _key_id, _raw, _digest, fingerprint = _document(KEYRING)
         if _key_id != target:
             raise RotationError
-        _expect_status(target, "active", fingerprint)
+        _expect_unique_active_key(target, fingerprint)
         return
     value = _state()
     if value["to_key_id"] != target or value["phase"] not in {"old_revoked", "finalizing"}:

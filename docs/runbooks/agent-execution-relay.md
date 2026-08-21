@@ -28,6 +28,31 @@ Any other output or exit status is a failed release gate. `accept.sh` performs
 live health, signed execution, crash recovery, revocation, Session, FAE, replica,
 fingerprint and listener checks; it does not consume operator-authored evidence.
 
+A cloud deploy holds the persistent root-only
+`/opt/orbbec-agent-platform/private/deploy-input.lock` transaction from before
+the first fixed upload through cutover. A second deploy fails before writing any
+fixed `.part`. If the local deploy process is killed, the transaction is
+deliberately left fail-closed. Do not remove it automatically. After confirming
+there is no live deploy or `remote-stage.sh` process and auditing the exact
+owner record, release only that recorded transaction with the deployed fixed
+helper:
+
+```bash
+set -euo pipefail
+lock_root=/opt/orbbec-agent-platform/private/deploy-input.lock
+owner="$lock_root/owner.json"
+helper=/opt/orbbec-agent-platform/bin/deploy-input-lock.py
+[[ -d "$lock_root" && ! -L "$lock_root" && -f "$owner" && ! -L "$owner" ]]
+[[ "$(/usr/bin/stat -c '%a %U' "$lock_root")" == "700 root" ]]
+[[ "$(/usr/bin/stat -c '%a %U' "$owner")" == "600 root" ]]
+[[ "$(/usr/bin/stat -c '%a %U' "$helper")" == "700 root" ]]
+! /usr/bin/pgrep -f 'deploy/cloud/deploy.sh|/opt/orbbec-agent-platform/bin/remote-stage.sh'
+release_sha="$(/usr/bin/jq -er 'if keys==["deployment_id","release_sha"] and (.release_sha|test("^[0-9a-f]{40}$")) and (.deployment_id|test("^[0-9a-f]{32}$")) then .release_sha else error("invalid") end' "$owner")"
+deployment_id="$(/usr/bin/jq -er '.deployment_id' "$owner")"
+"$helper" validate "$release_sha" "$deployment_id"
+"$helper" release "$release_sha" "$deployment_id"
+```
+
 ## Status
 
 ```bash
@@ -158,24 +183,38 @@ document through a fixed part and verifies its identity and fingerprint:
 
 ```bash
 set -euo pipefail
+umask 077
 source_public=/Users/agentops/AgentRuntime/execution-worker-public.json
 source_root=/Users/agentops/AgentRuntime
 handoff_root=/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public
 handoff=/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public/current.json
 [[ -d "$source_root" && ! -L "$source_root" ]]
-/usr/bin/test "$([ -d "$source_root" ] && /usr/bin/stat -f '%Lp %Su' "$source_root")" = "700 agentops"
+/bin/test "$([ -d "$source_root" ] && /usr/bin/stat -f '%Lp %Su' "$source_root")" = "700 agentops"
 [[ -f "$source_public" && ! -L "$source_public" ]]
-/usr/bin/test "$([ -f "$source_public" ] && /usr/bin/stat -f '%Lp %Su' "$source_public")" = "600 agentops"
+/bin/test "$([ -f "$source_public" ] && /usr/bin/stat -f '%Lp %Su' "$source_public")" = "600 agentops"
 [[ -d "$handoff_root" && ! -L "$handoff_root" ]]
-/usr/bin/test "$([ -d "$handoff_root" ] && /usr/bin/stat -f '%Lp %Su' "$handoff_root")" = "755 agentops"
+/bin/test "$([ -d "$handoff_root" ] && /usr/bin/stat -f '%Lp %Su' "$handoff_root")" = "755 agentops"
 [[ ! -e "$handoff.part" && ! -L "$handoff.part" ]]
 if [[ -e "$handoff" || -L "$handoff" ]]; then
   [[ -f "$handoff" && ! -L "$handoff" ]]
-  /usr/bin/test "$([ -f "$handoff" ] && /usr/bin/stat -f '%Lp %Su' "$handoff")" = "444 agentops"
+  /bin/test "$([ -f "$handoff" ] && /usr/bin/stat -f '%Lp %Su' "$handoff")" = "444 agentops"
 fi
+handoff_part_owned=0
+cleanup_handoff_part() {
+  if [[ "$handoff_part_owned" == "1" ]]; then
+    [[ -f "$handoff.part" && ! -L "$handoff.part" ]]
+    handoff_part_metadata="$(/usr/bin/stat -f '%Lp %Su' "$handoff.part")"
+    [[ "$handoff_part_metadata" == "600 agentops" || "$handoff_part_metadata" == "444 agentops" ]]
+    /bin/rm -f -- "$handoff.part"
+  fi
+}
+trap cleanup_handoff_part EXIT
+(set -C; : > "$handoff.part")
+handoff_part_owned=1
+/bin/chmod 600 "$handoff.part"
 /usr/bin/install -m 600 "$source_public" "$handoff.part"
 [[ -f "$handoff.part" && ! -L "$handoff.part" ]]
-/usr/bin/test "$([ -f "$handoff.part" ] && /usr/bin/stat -f '%Lp %Su' "$handoff.part")" = "600 agentops"
+/bin/test "$([ -f "$handoff.part" ] && /usr/bin/stat -f '%Lp %Su' "$handoff.part")" = "600 agentops"
 /Users/agentops/AgentRuntime/platform/backend/.venv/bin/python - "$source_public" "$handoff.part" worker-v2 <<'PY'
 import base64, hashlib, json, pathlib, re, sys
 source, staged = map(pathlib.Path, sys.argv[1:3])
@@ -194,6 +233,8 @@ print(hashlib.sha256(public).hexdigest())
 PY
 /bin/chmod 444 "$handoff.part"
 /bin/mv -f "$handoff.part" "$handoff"
+handoff_part_owned=0
+trap - EXIT
 ```
 
 As `neo`, copy that public file into a neo-owned secret boundary and verify the
@@ -201,25 +242,38 @@ same bytes, identity, and fingerprint before the atomic rename:
 
 ```bash
 set -euo pipefail
+umask 077
 handoff=/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public/current.json
 handoff_root=/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public
 neo_secret_root="/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/secrets"
 neo_keyring="$neo_secret_root/execution-worker-public-keyring.json"
 [[ -d "$handoff_root" && ! -L "$handoff_root" ]]
-/usr/bin/test "$([ -d "$handoff_root" ] && /usr/bin/stat -f '%Lp %Su' "$handoff_root")" = "755 agentops"
+/bin/test "$([ -d "$handoff_root" ] && /usr/bin/stat -f '%Lp %Su' "$handoff_root")" = "755 agentops"
 [[ -f "$handoff" && ! -L "$handoff" ]]
 /usr/bin/install -d -m 700 "$neo_secret_root"
 [[ -d "$neo_secret_root" && ! -L "$neo_secret_root" ]]
-/usr/bin/test "$(/usr/bin/stat -f '%Lp %Su' "$neo_secret_root")" = "700 neo"
-/usr/bin/test "$(/usr/bin/stat -f '%Lp %Su' "$handoff")" = "444 agentops"
+/bin/test "$(/usr/bin/stat -f '%Lp %Su' "$neo_secret_root")" = "700 neo"
+/bin/test "$(/usr/bin/stat -f '%Lp %Su' "$handoff")" = "444 agentops"
 [[ ! -e "$neo_keyring.part" && ! -L "$neo_keyring.part" ]]
 if [[ -e "$neo_keyring" || -L "$neo_keyring" ]]; then
   [[ -f "$neo_keyring" && ! -L "$neo_keyring" ]]
-  /usr/bin/test "$([ -f "$neo_keyring" ] && /usr/bin/stat -f '%Lp %Su' "$neo_keyring")" = "600 neo"
+  /bin/test "$([ -f "$neo_keyring" ] && /usr/bin/stat -f '%Lp %Su' "$neo_keyring")" = "600 neo"
 fi
+neo_part_owned=0
+cleanup_neo_part() {
+  if [[ "$neo_part_owned" == "1" ]]; then
+    [[ -f "$neo_keyring.part" && ! -L "$neo_keyring.part" ]]
+    /bin/test "$(/usr/bin/stat -f '%Lp %Su' "$neo_keyring.part")" = "600 neo"
+    /bin/rm -f -- "$neo_keyring.part"
+  fi
+}
+trap cleanup_neo_part EXIT
+(set -C; : > "$neo_keyring.part")
+neo_part_owned=1
+/bin/chmod 600 "$neo_keyring.part"
 /usr/bin/install -m 600 "$handoff" "$neo_keyring.part"
 [[ -f "$neo_keyring.part" && ! -L "$neo_keyring.part" ]]
-/usr/bin/test "$([ -f "$neo_keyring.part" ] && /usr/bin/stat -f '%Lp %Su' "$neo_keyring.part")" = "600 neo"
+/bin/test "$([ -f "$neo_keyring.part" ] && /usr/bin/stat -f '%Lp %Su' "$neo_keyring.part")" = "600 neo"
 /usr/bin/cmp -s "$handoff" "$neo_keyring.part"
 /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python - "$neo_keyring.part" worker-v2 <<'PY'
 import base64, hashlib, json, pathlib, re, sys
@@ -235,6 +289,8 @@ if len(public) != 32 or base64.urlsafe_b64encode(public).decode().rstrip("=") !=
 print(hashlib.sha256(public).hexdigest())
 PY
 /bin/mv -f "$neo_keyring.part" "$neo_keyring"
+neo_part_owned=0
+trap - EXIT
 ```
 
 Set neo's owner-only deploy configuration
