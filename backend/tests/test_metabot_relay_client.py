@@ -418,3 +418,26 @@ def test_bearer_path_swap_after_open_reads_only_opened_descriptor(
 
     assert swapped is True
     assert client._bearer_secret == "original-secret"
+
+
+def test_bearer_descriptor_close_failures_are_sanitized_and_independent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runtime_map = MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json"))
+    secret = _secret_file(tmp_path)
+    original_close = metabot_client.os.close
+    closed: list[int] = []
+
+    def first_close_fails(descriptor: int) -> None:
+        closed.append(descriptor)
+        original_close(descriptor)
+        if len(closed) == 1:
+            raise OSError("raw close failure")
+
+    monkeypatch.setattr(metabot_client.os, "close", first_close_fails)
+    with pytest.raises(MetaBotClientError) as error:
+        MetaBotClient(runtime_map, secret)
+
+    assert str(error.value) == "metabot configuration invalid"
+    assert error.value.__cause__ is None
+    assert len(closed) == 2

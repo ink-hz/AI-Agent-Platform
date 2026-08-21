@@ -148,6 +148,11 @@ def test_schema_is_versioned_idempotent_constrained_and_grant_free(
     assert "platform_control" not in sql
 
     with psycopg.connect(worker_database) as connection:
+        connection.execute(SCHEMA.read_text(encoding="utf-8"))
+        assert connection.execute(
+            "select (select count(*) from execution_worker.local_runs),"
+            "(select count(*) from execution_worker.event_outbox)"
+        ).fetchone() == (0, 0)
         tables = connection.execute(
             "select table_name from information_schema.tables "
             "where table_schema='execution_worker' order by table_name"
@@ -237,6 +242,65 @@ def test_schema_reapply_rejects_wrong_version_or_incompatible_layout(
         )
         with pytest.raises(psycopg.Error):
             connection.execute(sql)
+        connection.rollback()
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "statements",
+    [
+        (
+            "alter table execution_worker.local_runs drop constraint "
+            "local_runs_metabot_port_check",
+            "alter table execution_worker.local_runs add constraint "
+            "local_runs_metabot_port_check check (metabot_port <= 65535)",
+        ),
+        (
+            "alter table execution_worker.event_outbox drop constraint "
+            "event_outbox_seq_check",
+            "alter table execution_worker.event_outbox add constraint "
+            "event_outbox_seq_check check (seq < 0)",
+        ),
+        (
+            "alter table execution_worker.event_outbox drop constraint "
+            "event_outbox_event_json_check",
+            "alter table execution_worker.event_outbox add constraint "
+            "event_outbox_event_json_check check "
+            "(jsonb_typeof(event_json) <> 'object')",
+        ),
+        (
+            "alter table execution_worker.local_runs drop constraint "
+            "local_runs_job_id_key",
+            "alter table execution_worker.local_runs add constraint "
+            "local_runs_job_id_key unique (agent_id)",
+        ),
+        (
+            "alter table execution_worker.event_outbox drop constraint "
+            "event_outbox_pkey",
+            "alter table execution_worker.event_outbox add constraint "
+            "event_outbox_pkey primary key (seq,run_id)",
+        ),
+        (
+            "alter table execution_worker.event_outbox drop constraint "
+            "event_outbox_run_id_fkey",
+            "alter table execution_worker.event_outbox add constraint "
+            "event_outbox_run_id_fkey foreign key (run_id) "
+            "references execution_worker.local_runs(job_id)",
+        ),
+        (
+            "alter table execution_worker.local_runs add constraint "
+            "local_runs_agent_id_key unique (agent_id)",
+        ),
+    ],
+)
+def test_schema_behavioral_validation_rejects_false_positive_layouts(
+    worker_database: str, statements: tuple[str, ...]
+) -> None:
+    with psycopg.connect(worker_database) as connection:
+        for statement in statements:
+            connection.execute(statement)
+        with pytest.raises(psycopg.Error, match="incompatible execution worker schema"):
+            connection.execute(SCHEMA.read_text(encoding="utf-8"))
         connection.rollback()
 
 
@@ -404,6 +468,48 @@ def test_event_replay_is_type_sensitive_and_conflicts_leave_state_unchanged(
 
 
 @pytest.mark.postgres
+def test_event_replay_uses_postgresql_jsonb_numeric_equality(
+    worker_database: str, dsn_file: Path
+) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    store.record_lease(_lease(), 9101, "callback-secret")
+    store.mark_dispatching(RUN_ID)
+    original = _event(
+        1,
+        payload={
+            "numbers": {
+                "exponent": 100.0,
+                "large_finite": 1e300,
+            }
+        },
+    )
+    assert store.append_event(original) is True
+    with psycopg.connect(worker_database) as connection:
+        connection.execute(
+            "update execution_worker.event_outbox set event_json="
+            "jsonb_set(jsonb_set(event_json,'{payload,numbers,exponent}',"
+            "'1e2'::jsonb),'{payload,numbers,large_finite}','1e300'::jsonb) "
+            "where run_id=%s and seq=1",
+            (RUN_ID,),
+        )
+
+    assert store.append_event(original) is False
+    with pytest.raises(WorkerStoreError, match="worker store conflict"):
+        store.append_event(
+            original.model_copy(
+                update={
+                    "payload": {
+                        "numbers": {
+                            "exponent": True,
+                            "large_finite": 1e300,
+                        }
+                    }
+                }
+            )
+        )
+
+
+@pytest.mark.postgres
 def test_illegal_transitions_are_sanitized_and_never_reset_dispatching(
     worker_database: str, dsn_file: Path
 ) -> None:
@@ -512,3 +618,24 @@ def test_dsn_path_swap_after_open_reads_only_opened_descriptor(
 
     assert swapped is True
     assert store._database_url == worker_database
+
+
+def test_dsn_descriptor_close_failures_are_sanitized_and_independent(
+    dsn_file: Path, monkeypatch
+) -> None:
+    original_close = worker_store.os.close
+    closed: list[int] = []
+
+    def first_close_fails(descriptor: int) -> None:
+        closed.append(descriptor)
+        original_close(descriptor)
+        if len(closed) == 1:
+            raise OSError("raw close failure")
+
+    monkeypatch.setattr(worker_store.os, "close", first_close_fails)
+    with pytest.raises(WorkerStoreError) as error:
+        WorkerStore.from_dsn_file(dsn_file)
+
+    assert str(error.value) == "worker store configuration invalid"
+    assert error.value.__cause__ is None
+    assert len(closed) == 2

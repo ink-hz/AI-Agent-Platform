@@ -42,6 +42,8 @@ def _configuration_error() -> MetaBotClientError:
 def _read_secret_file(path: Path) -> str:
     parent_descriptor: int | None = None
     file_descriptor: int | None = None
+    secret: str | None = None
+    failed = False
     try:
         candidate = Path(path)
         if not candidate.is_absolute():
@@ -93,14 +95,22 @@ def _read_secret_file(path: Path) -> str:
             or "\n" in secret
         ):
             raise ValueError
-        return secret
     except (OSError, UnicodeError, TypeError, ValueError):
-        raise _configuration_error() from None
+        failed = True
     finally:
         if file_descriptor is not None:
-            os.close(file_descriptor)
+            try:
+                os.close(file_descriptor)
+            except Exception:
+                failed = True
         if parent_descriptor is not None:
-            os.close(parent_descriptor)
+            try:
+                os.close(parent_descriptor)
+            except Exception:
+                failed = True
+    if failed or secret is None:
+        raise _configuration_error() from None
+    return secret
 
 
 @dataclass(frozen=True)

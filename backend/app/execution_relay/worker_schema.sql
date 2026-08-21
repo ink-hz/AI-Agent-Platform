@@ -120,69 +120,174 @@ begin
        'event_json:jsonb:NO',
        'delivered_at:timestamp with time zone:YES'
      ]
-     or (select count(*) from pg_constraint
-         where conrelid = 'execution_worker.local_runs'::regclass
-           and contype = 'p') <> 1
-     or (select count(*) from pg_constraint
-         where conrelid = 'execution_worker.local_runs'::regclass
-           and contype = 'u') <> 1
-     or (select count(*) from pg_constraint
-         where conrelid = 'execution_worker.local_runs'::regclass
-           and contype = 'c') <> 4
-     or (select count(*) from pg_constraint
-         where conrelid = 'execution_worker.event_outbox'::regclass
-           and contype = 'p') <> 1
-     or (select count(*) from pg_constraint
-         where conrelid = 'execution_worker.event_outbox'::regclass
-           and contype = 'f') <> 1
-     or (select count(*) from pg_constraint
-         where conrelid = 'execution_worker.event_outbox'::regclass
-           and contype = 'c') <> 2 then
+     or (select array_agg(a.attname::text order by key.ordinality)
+         from pg_constraint c
+         cross join lateral unnest(c.conkey)
+           with ordinality as key(attnum,ordinality)
+         join pg_attribute a
+           on a.attrelid = c.conrelid and a.attnum = key.attnum
+         where c.conrelid = 'execution_worker.local_runs'::regclass
+           and c.conname = 'local_runs_pkey' and c.contype = 'p')
+        is distinct from array['run_id']
+     or (select array_agg(a.attname::text order by key.ordinality)
+         from pg_constraint c
+         cross join lateral unnest(c.conkey)
+           with ordinality as key(attnum,ordinality)
+         join pg_attribute a
+           on a.attrelid = c.conrelid and a.attnum = key.attnum
+         where c.conrelid = 'execution_worker.local_runs'::regclass
+           and c.conname = 'local_runs_job_id_key' and c.contype = 'u')
+        is distinct from array['job_id']
+     or (select array_agg(a.attname::text order by key.ordinality)
+         from pg_constraint c
+         cross join lateral unnest(c.conkey)
+           with ordinality as key(attnum,ordinality)
+         join pg_attribute a
+           on a.attrelid = c.conrelid and a.attnum = key.attnum
+         where c.conrelid = 'execution_worker.event_outbox'::regclass
+           and c.conname = 'event_outbox_pkey' and c.contype = 'p')
+        is distinct from array['run_id','seq']
+     or (select array_agg(a.attname::text order by key.ordinality)
+         from pg_constraint c
+         cross join lateral unnest(c.conkey)
+           with ordinality as key(attnum,ordinality)
+         join pg_attribute a
+           on a.attrelid = c.conrelid and a.attnum = key.attnum
+         where c.conrelid = 'execution_worker.event_outbox'::regclass
+           and c.conname = 'event_outbox_run_id_fkey' and c.contype = 'f')
+        is distinct from array['run_id']
+     or (select array_agg(a.attname::text order by key.ordinality)
+         from pg_constraint c
+         cross join lateral unnest(c.confkey)
+           with ordinality as key(attnum,ordinality)
+         join pg_attribute a
+           on a.attrelid = c.confrelid and a.attnum = key.attnum
+         where c.conrelid = 'execution_worker.event_outbox'::regclass
+           and c.conname = 'event_outbox_run_id_fkey'
+           and c.contype = 'f'
+           and c.confrelid = 'execution_worker.local_runs'::regclass)
+        is distinct from array['run_id'] then
     raise exception 'incompatible execution worker schema layout';
-  end if;
-
-  if not exists (
-       select 1 from pg_constraint
-       where conrelid = 'execution_worker.local_runs'::regclass
-         and conname = 'local_runs_metabot_port_check'
-         and pg_get_constraintdef(oid) like '%metabot_port%'
-         and pg_get_constraintdef(oid) like '%65535%'
-     )
-     or not exists (
-       select 1 from pg_constraint
-       where conrelid = 'execution_worker.local_runs'::regclass
-         and conname = 'local_runs_callback_token_hash_check'
-         and pg_get_constraintdef(oid) like '%octet_length%'
-         and pg_get_constraintdef(oid) like '%32%'
-     )
-     or not exists (
-       select 1 from pg_constraint
-       where conrelid = 'execution_worker.local_runs'::regclass
-         and conname = 'local_runs_state_check'
-         and pg_get_constraintdef(oid) like '%leased%'
-         and pg_get_constraintdef(oid) like '%interrupted%'
-     )
-     or not exists (
-       select 1 from pg_constraint
-       where conrelid = 'execution_worker.local_runs'::regclass
-         and conname = 'local_runs_agent_id_check'
-         and pg_get_constraintdef(oid) like '%length%'
-     )
-     or not exists (
-       select 1 from pg_constraint
-       where conrelid = 'execution_worker.event_outbox'::regclass
-         and conname = 'event_outbox_seq_check'
-         and pg_get_constraintdef(oid) like '%seq%'
-         and pg_get_constraintdef(oid) like '%0%'
-     )
-     or not exists (
-       select 1 from pg_constraint
-       where conrelid = 'execution_worker.event_outbox'::regclass
-         and conname = 'event_outbox_event_json_check'
-         and pg_get_constraintdef(oid) like '%jsonb_typeof%'
-         and pg_get_constraintdef(oid) like '%object%'
-     ) then
-    raise exception 'incompatible execution worker constraints';
   end if;
 end
 $worker_schema_layout$;
+
+do $worker_schema_behavior$
+declare
+  probe_run uuid := md5(random()::text || clock_timestamp()::text)::uuid;
+  probe_job uuid := md5(random()::text || clock_timestamp()::text || 'job')::uuid;
+  probe_run_two uuid := md5(random()::text || clock_timestamp()::text || 'run2')::uuid;
+  probe_job_two uuid := md5(random()::text || clock_timestamp()::text || 'job2')::uuid;
+  probe_hash bytea := decode(repeat('00',32),'hex');
+begin
+  begin
+    insert into execution_worker.local_runs(
+      run_id,job_id,agent_id,metabot_port,callback_token_hash,state,leased_at
+    ) values (
+      probe_run,probe_job,'schema-probe',1,probe_hash,'leased',now()
+    );
+    insert into execution_worker.local_runs(
+      run_id,job_id,agent_id,metabot_port,callback_token_hash,state,leased_at
+    ) values (
+      probe_run_two,probe_job_two,'schema-probe',65535,
+      probe_hash,'leased',now()
+    );
+
+    begin
+      insert into execution_worker.local_runs values (
+        md5(probe_run::text || 'port-zero')::uuid,
+        md5(probe_job::text || 'port-zero')::uuid,
+        'schema-probe-port-zero',0,probe_hash,'leased',now(),null,null
+      );
+      raise exception 'invalid port accepted';
+    exception when check_violation then null;
+    end;
+
+    begin
+      insert into execution_worker.local_runs values (
+        md5(probe_run::text || 'port-high')::uuid,
+        md5(probe_job::text || 'port-high')::uuid,
+        'schema-probe-port-high',65536,probe_hash,'leased',now(),null,null
+      );
+      raise exception 'invalid port accepted';
+    exception when check_violation then null;
+    end;
+
+    begin
+      insert into execution_worker.local_runs values (
+        md5(probe_run::text || 'state')::uuid,
+        md5(probe_job::text || 'state')::uuid,
+        'schema-probe-state',1,probe_hash,'unknown',now(),null,null
+      );
+      raise exception 'invalid state accepted';
+    exception when check_violation then null;
+    end;
+
+    begin
+      insert into execution_worker.local_runs values (
+        md5(probe_run::text || 'hash')::uuid,
+        md5(probe_job::text || 'hash')::uuid,
+        'schema-probe-hash',1,decode(repeat('00',31),'hex'),
+        'leased',now(),null,null
+      );
+      raise exception 'invalid hash accepted';
+    exception when check_violation then null;
+    end;
+
+    begin
+      insert into execution_worker.local_runs values (
+        probe_run,md5(probe_job::text || 'duplicate-run')::uuid,
+        'schema-probe-duplicate-run',1,probe_hash,'leased',now(),null,null
+      );
+      raise exception 'duplicate run accepted';
+    exception when unique_violation then null;
+    end;
+
+    begin
+      insert into execution_worker.local_runs values (
+        md5(probe_run::text || 'duplicate-job')::uuid,probe_job,
+        'schema-probe-duplicate-job',1,probe_hash,'leased',now(),null,null
+      );
+      raise exception 'duplicate job accepted';
+    exception when unique_violation then null;
+    end;
+
+    insert into execution_worker.event_outbox(run_id,seq,event_json)
+    values (probe_run,1,'{}'::jsonb);
+
+    begin
+      insert into execution_worker.event_outbox(run_id,seq,event_json)
+      values (probe_run,0,'{}'::jsonb);
+      raise exception 'invalid sequence accepted';
+    exception when check_violation then null;
+    end;
+
+    begin
+      insert into execution_worker.event_outbox(run_id,seq,event_json)
+      values (probe_run,2,'true'::jsonb);
+      raise exception 'scalar event accepted';
+    exception when check_violation then null;
+    end;
+
+    begin
+      insert into execution_worker.event_outbox(run_id,seq,event_json)
+      values (probe_run,1,'{}'::jsonb);
+      raise exception 'duplicate event accepted';
+    exception when unique_violation then null;
+    end;
+
+    begin
+      insert into execution_worker.event_outbox(run_id,seq,event_json)
+      values (md5(probe_run::text || 'unknown')::uuid,1,'{}'::jsonb);
+      raise exception 'unknown run accepted';
+    exception when foreign_key_violation then null;
+    end;
+
+    delete from execution_worker.event_outbox where run_id = probe_run;
+    delete from execution_worker.local_runs
+    where run_id in (probe_run,probe_run_two);
+  exception when others then
+    raise exception 'incompatible execution worker schema';
+  end;
+end
+$worker_schema_behavior$;

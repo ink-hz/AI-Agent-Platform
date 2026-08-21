@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable
 import hashlib
 import hmac
-import json
 import os
 from pathlib import Path
 import stat
@@ -29,19 +28,11 @@ class WorkerStoreError(RuntimeError):
     """Stable worker-store failure that never includes protected values."""
 
 
-def _canonical_event_json(value: dict[str, object]) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-
-
 def _read_owner_only_file(path: Path) -> str:
     parent_descriptor: int | None = None
     file_descriptor: int | None = None
+    value: str | None = None
+    failed = False
     try:
         candidate = Path(path)
         if not candidate.is_absolute():
@@ -88,14 +79,22 @@ def _read_owner_only_file(path: Path) -> str:
         value = b"".join(chunks).decode("utf-8").strip()
         if not value or "\x00" in value or "\n" in value or "\r" in value:
             raise ValueError
-        return value
     except (OSError, UnicodeError, TypeError, ValueError):
-        raise WorkerStoreError(_CONFIGURATION_INVALID) from None
+        failed = True
     finally:
         if file_descriptor is not None:
-            os.close(file_descriptor)
+            try:
+                os.close(file_descriptor)
+            except Exception:
+                failed = True
         if parent_descriptor is not None:
-            os.close(parent_descriptor)
+            try:
+                os.close(parent_descriptor)
+            except Exception:
+                failed = True
+    if failed or value is None:
+        raise WorkerStoreError(_CONFIGURATION_INVALID) from None
+    return value
 
 
 class WorkerStore:
@@ -279,14 +278,13 @@ class WorkerStore:
                 if run is None:
                     raise ValueError
                 existing = connection.execute(
-                    "select event_json from execution_worker.event_outbox "
+                    "select event_json=%s::jsonb as exact_replay "
+                    "from execution_worker.event_outbox "
                     "where run_id=%s and seq=%s",
-                    (event.run_id, event.seq),
+                    (Jsonb(event_json), event.run_id, event.seq),
                 ).fetchone()
                 if existing is not None:
-                    if _canonical_event_json(
-                        existing["event_json"]
-                    ) == _canonical_event_json(event_json):
+                    if existing["exact_replay"]:
                         return False
                     raise ValueError
                 if run["state"] not in {"dispatching", "dispatched", "running"}:
