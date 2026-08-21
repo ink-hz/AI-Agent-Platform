@@ -4,21 +4,22 @@
 
 **Goal:** Build the secure, durable outbound execution channel that lets the cloud Agent Platform dispatch real work to the seven MetaBot Agents kept on the local `agentops` host and receive their ordered events without exposing a local inbound port.
 
-**Architecture:** The cloud control database owns encrypted relay jobs and events. One local Python worker long-polls authenticated HTTPS endpoints, persists every lease and callback event in local SQLite, calls the existing loopback MetaBot `/api/core-chat/runs` API, and uploads ordered events. The cloud never connects to the Mac and never stores the MetaBot API secret; unknown dispatch state is interrupted, never automatically replayed.
+**Architecture:** The cloud control database owns encrypted relay jobs and events. One local Python worker long-polls authenticated HTTPS endpoints, persists every lease and callback event in a dedicated `agent_execution_worker` database on the existing local PostgreSQL 17 instance, calls the existing loopback MetaBot `/api/core-chat/runs` API, and uploads ordered events. The cloud never connects to the Mac and never stores the MetaBot API secret; unknown dispatch state is interrupted, never automatically replayed.
 
-**Tech Stack:** Python 3.11, FastAPI, Pydantic 2, psycopg 3, PostgreSQL 17, httpx, cryptography/Ed25519/AES-GCM, SQLite, pytest, LaunchAgent, existing MetaBot Core Chat HTTP protocol.
+**Tech Stack:** Python 3.11, FastAPI, Pydantic 2, psycopg 3, PostgreSQL 17 (cloud control database plus a dedicated database on the existing local instance), httpx, cryptography/Ed25519/AES-GCM, pytest, LaunchAgent, existing MetaBot Core Chat HTTP protocol.
 
 ## Global Constraints
 
 - MetaBot and the seven professional Agents remain on the local `agentops` host for this release.
 - Run exactly one local execution worker for `hr-bot`, `fae-bot`, and the five `marketing-*-bot` Agents.
-- The worker initiates every network connection; do not publish ports 9101–9108 or add SSH/reverse-tunnel access from cloud to local.
+- The worker initiates every off-host connection; local MetaBot loopback requests and callbacks are allowed. Do not publish ports 9101–9108 or add SSH/reverse-tunnel access from cloud to local.
 - The cloud must not receive or store the local MetaBot API secret.
 - Every cloud-stored task payload and event payload is AES-256-GCM encrypted with an explicit `key_version`.
 - Worker authentication uses a dedicated, revocable Ed25519 device key; it must not reuse DingTalk, SSH, MetaBot, replica-signing, or content-encryption keys.
 - A task that may already have reached MetaBot is never automatically dispatched again.
 - Worker or network failure is explicit; do not switch Agent, model, provider, or execution host as fallback.
-- Local callback and outbox state survive worker restarts in SQLite.
+- Local callback and outbox state survive worker restarts in the dedicated `agent_execution_worker` PostgreSQL database.
+- Reuse the existing local PostgreSQL 17 instance, but use a dedicated database and least-privilege login role; do not add SQLite or store worker state in Flywheel business schemas.
 - The existing sanitized management-replica sync remains unchanged.
 - All new production secrets are owner-only regular files with mode `0600`; parent directories use `0700`.
 - No browser UI or Agent Brain behavior is implemented in this prerequisite increment.
@@ -37,7 +38,7 @@ backend/app/execution_relay/
 ├── worker_auth.py       Ed25519 canonical request signing and verification
 ├── repository.py        PostgreSQL queue, lease, transition and event operations
 ├── routes.py            machine-authenticated cloud relay endpoints
-├── worker_store.py      local SQLite run/outbox durability
+├── worker_store.py      local PostgreSQL run/outbox durability
 ├── metabot_client.py    loopback MetaBot Core Chat client
 └── worker.py            long-poll, callback receiver, upload and heartbeat runtime
 ```
@@ -55,7 +56,7 @@ Deployment files live under `deploy/local-execution-worker/`; production cloud w
 
 **Interfaces:**
 - Consumes: numbered immutable control migrations and the existing `platform_control_app` role.
-- Produces: `platform_control.execution_workers`, `execution_worker_keys`, `execution_jobs`, `execution_events`, and `execution_worker_nonces` with no business-record `DELETE` grant to the application role.
+- Produces: `platform_control.execution_workers`, `execution_worker_keys`, `execution_jobs`, `execution_events`, and `execution_worker_nonces`, plus audited maintenance functions for worker/key lifecycle and a bounded runtime heartbeat function. The application role receives no direct worker/key mutation grant and no business-record `DELETE` grant.
 
 - [ ] **Step 1: Write the failing migration tests**
 
@@ -164,7 +165,17 @@ create table platform_control.execution_worker_nonces (
 );
 ```
 
-Add indexes on `(status, created_at)`, `(lease_worker_id, status)`, and nonce expiry. Grant the application role only the required `SELECT, INSERT, UPDATE` on worker/key/job/event tables and `SELECT, INSERT, DELETE` only on `execution_worker_nonces`; nonce deletion is bounded authentication housekeeping, not business-record deletion. Revoke all from `public` and every other runtime role.
+Add indexes on `(status, created_at)`, `(lease_worker_id, status)`, and nonce expiry. Grant the application role `SELECT` on worker/key tables, the required `SELECT, INSERT, UPDATE` on job/event tables, and `SELECT, INSERT, DELETE` only on `execution_worker_nonces`; nonce deletion is bounded authentication housekeeping, not business-record deletion. The application role receives no direct `INSERT`, `UPDATE`, or `DELETE` on worker/key tables.
+
+Migration 027 must also create versioned `SECURITY DEFINER` functions with pinned `search_path`, revoked `PUBLIC` execution, explicit input validation, and atomic sanitized audit append:
+
+- `register_execution_worker_v27(worker_id, key_id, public_key, allowed_agent_ids, change_reference, request_id)`;
+- `add_execution_worker_key_v27(worker_id, key_id, public_key, change_reference, request_id)`;
+- `revoke_execution_worker_key_v27(worker_id, key_id, change_reference, request_id)`;
+- `revoke_execution_worker_v27(worker_id, change_reference, request_id)`;
+- `touch_execution_worker_v27(worker_id)` for the runtime heartbeat timestamp only.
+
+The four lifecycle functions are executable only by `platform_control_maintenance` (and the matching preview role in preview), validate uppercase change references and key/worker formats, serialize conflicting mutations, reject key-ID reuse with different bytes, and append an `audit_events` row in the same transaction containing only worker ID, key ID, public-key fingerprint, allowed Agent IDs and reference. `touch_execution_worker_v27` is executable only by the application role and may update only `last_seen_at` for an active worker. Revoke all relay-object privileges from `PUBLIC` and every unrelated runtime role. Migration tests must prove these grants and atomic audit behavior rather than checking only table existence.
 
 - [ ] **Step 4: Run the migration tests and verify GREEN**
 
@@ -428,6 +439,7 @@ git commit -m "feat(relay): expose signed worker API"
 
 **Files:**
 - Create: `backend/app/execution_relay/worker_store.py`
+- Create: `backend/app/execution_relay/worker_schema.sql`
 - Create: `backend/app/execution_relay/metabot_client.py`
 - Create: `backend/tests/test_execution_worker_store.py`
 - Create: `backend/tests/test_metabot_relay_client.py`
@@ -436,32 +448,32 @@ git commit -m "feat(relay): expose signed worker API"
 - Consumes: existing MetaBot Core Chat routes and runtime contract schema version 2.
 - Produces: `WorkerStore`, `MetaBotRuntimeMap`, and `MetaBotClient` for the worker runtime.
 
-- [ ] **Step 1: Write failing SQLite durability tests**
+- [ ] **Step 1: Write failing PostgreSQL durability tests**
 
-The local database owns:
+The dedicated local `agent_execution_worker` database owns an `execution_worker` schema containing:
 
 ```sql
-create table local_runs (
-  run_id text primary key,
-  job_id text not null unique,
-  agent_id text not null,
+create table execution_worker.local_runs (
+  run_id uuid primary key,
+  job_id uuid not null unique,
+  agent_id varchar(128) not null,
   metabot_port integer not null,
-  callback_token text not null,
-  state text not null,
-  leased_at text not null,
-  dispatched_at text,
-  terminal_at text
+  callback_token_hash bytea not null,
+  state varchar(32) not null,
+  leased_at timestamptz not null,
+  dispatched_at timestamptz,
+  terminal_at timestamptz
 );
-create table event_outbox (
-  run_id text not null,
+create table execution_worker.event_outbox (
+  run_id uuid not null references execution_worker.local_runs(run_id),
   seq integer not null,
-  event_json text not null,
-  delivered_at text,
+  event_json jsonb not null,
+  delivered_at timestamptz,
   primary key(run_id,seq)
 );
 ```
 
-Test transactionally recording a lease, marking `dispatching` before the HTTP call, deduplicating callback events, reading only contiguous undelivered events, marking delivery, and recovering state after reopening the SQLite file.
+Test transactionally recording a lease, marking `dispatching` before the HTTP call, deduplicating callback events, reading only contiguous undelivered events, marking delivery, and recovering state after closing and reopening the PostgreSQL connection. The test database is isolated from both the cloud control database and Flywheel business schemas.
 
 - [ ] **Step 2: Write failing MetaBot client tests**
 
@@ -496,9 +508,9 @@ Expected: FAIL because the worker modules are missing.
 
 `MetaBotRuntimeMap.from_contract(path)` must require schema version 2, select exactly the seven approved bot IDs, require loopback ports 1–65535, reject duplicates, and ignore `feishu-default`, `codex-assistant`, and `test-bot`. Expose:
 
-Expose `WorkerStore.record_lease(lease: RelayLease, port: int, callback_token: str) -> None`, `mark_dispatching(run_id: UUID) -> None`, `mark_dispatched(run_id: UUID) -> None`, `append_event(event: RelayEvent) -> bool`, `contiguous_outbox(run_id: UUID, limit: int = 100) -> tuple[RelayEvent, ...]`, `mark_delivered(run_id: UUID, through_seq: int) -> None`, and `mark_terminal(run_id: UUID, status: str) -> None`.
+Expose `WorkerStore.from_dsn_file(path: Path)`, `record_lease(lease: RelayLease, port: int, callback_token: str) -> None`, `mark_dispatching(run_id: UUID) -> None`, `mark_dispatched(run_id: UUID) -> None`, `append_event(event: RelayEvent) -> bool`, `contiguous_outbox(run_id: UUID, limit: int = 100) -> tuple[RelayEvent, ...]`, `mark_delivered(run_id: UUID, through_seq: int) -> None`, and `mark_terminal(run_id: UUID, status: str) -> None`.
 
-Enable SQLite WAL, `foreign_keys=on`, `busy_timeout=5000`, full synchronous writes, and mode `0600` for the database file.
+Use psycopg transactions, row locks and uniqueness constraints for crash safety and deduplication. Read the local PostgreSQL DSN only from an absolute regular mode-`0600` file in a mode-`0700` parent directory; never place it in the plist, process arguments or logs. The runtime role receives only the required `USAGE`, `SELECT`, `INSERT`, and narrowly required `UPDATE` grants on the `execution_worker` schema and its two tables; it receives no database creation, role management, schema DDL, Flywheel schema, or cloud control-plane privileges.
 
 - [ ] **Step 5: Implement MetaBot client and run tests GREEN**
 
@@ -509,7 +521,7 @@ Run Step 3. Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/app/execution_relay/worker_store.py backend/app/execution_relay/metabot_client.py backend/tests/test_execution_worker_store.py backend/tests/test_metabot_relay_client.py
+git add backend/app/execution_relay/worker_store.py backend/app/execution_relay/worker_schema.sql backend/app/execution_relay/metabot_client.py backend/tests/test_execution_worker_store.py backend/tests/test_metabot_relay_client.py
 git commit -m "feat(relay): persist local runs and call MetaBot"
 ```
 
@@ -573,6 +585,7 @@ git commit -m "feat(relay): run durable outbound executor"
 
 **Files:**
 - Create: `deploy/local-execution-worker/generate-worker-key.py`
+- Create: `deploy/local-execution-worker/bootstrap-worker-database.sh`
 - Create: `backend/app/execution_relay/register_worker.py`
 - Create: `deploy/local-execution-worker/com.orbbec.agent-execution-worker.plist.template`
 - Create: `deploy/local-execution-worker/install.sh`
@@ -591,6 +604,7 @@ Assert:
 
 - no plist contains a private key, MetaBot bearer, database URL or inline secret;
 - the worker runs as `agentops`, not `neo` or `root`;
+- the worker reuses the existing local PostgreSQL 17 instance through a dedicated database and role, and does not create a SQLite file;
 - the worker has no `KeepAlive.NetworkState` loop that spawns duplicates;
 - the callback binds loopback;
 - cloud Compose mounts the content keyring read-only and does not publish a new port;
@@ -629,9 +643,11 @@ Expected: FAIL because deployment assets are missing.
 
 If the private key exists, rerunning preserves it and prints only the public fingerprint. Registration in cloud is an audited migration/maintenance action using the public document; the private key never leaves the Mac.
 
-Implement `python -m app.execution_relay.register_worker register PUBLIC_JSON CHANGE_REFERENCE`, `add-key WORKER_ID PUBLIC_JSON CHANGE_REFERENCE`, `revoke-key WORKER_ID KEY_ID CHANGE_REFERENCE`, and `revoke-worker WORKER_ID CHANGE_REFERENCE`. The command reads the maintenance DSN only from `PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE`, requires an uppercase reference matching `^[A-Z][A-Z0-9_-]{7,63}$`, changes exactly one worker or key in a transaction, and appends a sanitized audit event containing only worker ID, key ID, public fingerprint, allowed Agent IDs and reference. `add-key` creates a bounded dual-acceptance window; after the new key is deployed and accepted, `revoke-key` retires the previous key. Reusing a key ID with different bytes is rejected.
+Implement `python -m app.execution_relay.register_worker register PUBLIC_JSON CHANGE_REFERENCE`, `add-key WORKER_ID PUBLIC_JSON CHANGE_REFERENCE`, `revoke-key WORKER_ID KEY_ID CHANGE_REFERENCE`, and `revoke-worker WORKER_ID CHANGE_REFERENCE`. The command reads the maintenance DSN only from `PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE`, requires an uppercase reference matching `^[A-Z][A-Z0-9_-]{7,63}$`, and calls only the versioned migration-027 maintenance functions so the mutation and sanitized audit event are atomic. It must not issue direct `INSERT`, `UPDATE`, or `DELETE` against worker/key tables. Audit content is limited to worker ID, key ID, public fingerprint, allowed Agent IDs and reference. `add-key` creates a bounded dual-acceptance window; after the new key is deployed and accepted, `revoke-key` retires the previous key. Reusing a key ID with different bytes is rejected.
 
 - [ ] **Step 4: Implement install and cloud wiring**
+
+`bootstrap-worker-database.sh` idempotently creates the dedicated `agent_execution_worker` database, an owner/migrator role and a runtime role on the already-running local PostgreSQL 17 instance, then applies `worker_schema.sql`. It must not create or restart a PostgreSQL service and must not grant access to Flywheel schemas. It reads the existing local PostgreSQL owner DSN and the generated runtime DSN only from absolute mode-`0600` files, never from arguments or logs. The resulting runtime DSN file is owned by `agentops`, mode `0600`, under a mode-`0700` directory. Re-running verifies grants and schema version without rotating credentials or destroying pending outbox rows.
 
 The installed worker environment contains only absolute file paths and non-secret settings:
 
@@ -639,7 +655,7 @@ The installed worker environment contains only absolute file paths and non-secre
 PLATFORM_WORKER_ID=agentops-mac-primary
 PLATFORM_WORKER_KEY_ID=worker-v1
 PLATFORM_WORKER_PRIVATE_KEY_FILE=/Users/agentops/AgentRuntime/private/execution-worker-ed25519.key
-PLATFORM_WORKER_STATE_DB=/Users/agentops/AgentRuntime/execution-worker/state.sqlite3
+PLATFORM_WORKER_DATABASE_URL_FILE=/Users/agentops/AgentRuntime/private/execution-worker-postgres-dsn
 PLATFORM_WORKER_CALLBACK_PORT=9120
 PLATFORM_WORKER_CLOUD_URL=https://agent.orbbec.com.cn
 PLATFORM_METABOT_RUNTIME_CONTRACT=/Users/agentops/AgentRuntime/metabot/runtime-contract.json
@@ -684,7 +700,7 @@ The acceptance script must prove:
 4. a synthetic `hr-bot` job reaches the real MetaBot API and returns ordered state plus terminal events;
 5. a synthetic `marketing-intelligence-bot` job does the same;
 6. identical event re-upload is idempotent;
-7. killing the worker after local completion retains events in SQLite and uploads them after restart;
+7. killing the worker after local completion retains events in the dedicated local PostgreSQL database and uploads them after restart;
 8. killing the worker after `dispatching` never produces a second MetaBot POST;
 9. revoking the worker key makes lease and upload return `401` while existing Session/history APIs remain available;
 10. FAE external domain and existing management-replica synchronization remain unchanged.
@@ -700,7 +716,7 @@ Expected: FAIL because acceptance and runbook files are missing.
 
 - [ ] **Step 3: Write acceptance and recovery procedures**
 
-The runbook must include exact commands for status, log inspection, key rotation, worker revocation, local spool backup, stuck-job inspection, explicit interruption, restart, rollback and removal. It must state that `dispatching|dispatched|running` jobs are never requeued automatically; recovery either resumes event upload from the same local state or terminalizes the run as `interrupted`.
+The runbook must include exact commands for status, log inspection, key rotation, worker revocation, dedicated local PostgreSQL backup/restore, stuck-job inspection, explicit interruption, restart, rollback and removal. It must state that `dispatching|dispatched|running` jobs are never requeued automatically; recovery either resumes event upload from the same local state or terminalizes the run as `interrupted`. Removal must target only the `agent_execution_worker` database and its dedicated roles, require an explicit confirmation flag, and never touch the existing PostgreSQL service or Flywheel databases.
 
 `accept.sh` prints one final machine-readable line only after every gate passes:
 

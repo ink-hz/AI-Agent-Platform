@@ -131,7 +131,7 @@ HR / FAE / Marketing MetaBot Agents
 Worker durable event spool --HTTPS--> Cloud Platform
 ```
 
-Worker 使用独立、可撤销、版本化的设备签名身份，不使用个人 SSH 凭据。云端不保存本地 MetaBot API Secret，本机不开放新的公网监听。Worker 在本地 SQLite 中持久化领取状态和待回传事件；短暂断网后继续上传。任务一旦可能已经交给 MetaBot，状态不明时不得自动重跑，只能明确标记为中断并由用户发起新的执行。
+Worker 使用独立、可撤销、版本化的设备签名身份，不使用个人 SSH 凭据。云端不保存本地 MetaBot API Secret，本机不开放新的公网监听。Worker 复用本机现有 PostgreSQL 17 实例，在独立的 `agent_execution_worker` 数据库中持久化领取状态和待回传事件；使用独立最小权限角色，不与 Flywheel 业务表混放，也不新增 SQLite。短暂断网后继续上传。任务一旦可能已经交给 MetaBot，状态不明时不得自动重跑，只能明确标记为中断并由用户发起新的执行。
 
 这条在线执行通道不改变现有管理副本同步的脱敏规则。历史观测数据仍按原有本地到云端的脱敏签名批次同步；只有用户通过 Platform 明确提交给专业 Agent 的 Platform-owned 消息、附件引用和执行事件进入在线任务通道。
 
