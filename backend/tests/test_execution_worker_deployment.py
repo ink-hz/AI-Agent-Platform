@@ -37,6 +37,11 @@ AGENTS = [
 ]
 
 
+def test_local_worker_command_assets_are_executable() -> None:
+    for path in (GENERATOR, BOOTSTRAP, INSTALLER):
+        assert os.access(path, os.X_OK)
+
+
 def _mode(path: Path) -> int:
     return path.stat().st_mode & 0o777
 
