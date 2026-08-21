@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 import hashlib
 import hmac
+import json
 import os
 from pathlib import Path
 import stat
@@ -18,6 +19,7 @@ from .models import RelayEvent, RelayLease
 
 _CONFLICT = "worker store conflict"
 _CONFIGURATION_INVALID = "worker store configuration invalid"
+_OWNER_FILE_LIMIT = 16_384
 _TERMINAL_STATES = frozenset(
     {"completed", "failed", "cancelled", "interrupted"}
 )
@@ -27,28 +29,73 @@ class WorkerStoreError(RuntimeError):
     """Stable worker-store failure that never includes protected values."""
 
 
+def _canonical_event_json(value: dict[str, object]) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
 def _read_owner_only_file(path: Path) -> str:
+    parent_descriptor: int | None = None
+    file_descriptor: int | None = None
     try:
         candidate = Path(path)
         if not candidate.is_absolute():
             raise ValueError
-        file_status = candidate.lstat()
-        parent_status = candidate.parent.lstat()
+        common_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        parent_descriptor = os.open(
+            candidate.parent,
+            common_flags | no_follow | getattr(os, "O_DIRECTORY", 0),
+        )
+        parent_status = os.fstat(parent_descriptor)
+        if (
+            not stat.S_ISDIR(parent_status.st_mode)
+            or stat.S_IMODE(parent_status.st_mode) != 0o700
+            or parent_status.st_uid != os.geteuid()
+        ):
+            raise ValueError
+        file_descriptor = os.open(
+            candidate.name,
+            common_flags | no_follow,
+            dir_fd=parent_descriptor,
+        )
+        file_status = os.fstat(file_descriptor)
         if (
             not stat.S_ISREG(file_status.st_mode)
             or stat.S_IMODE(file_status.st_mode) != 0o600
-            or file_status.st_uid != os.getuid()
-            or not stat.S_ISDIR(parent_status.st_mode)
-            or stat.S_IMODE(parent_status.st_mode) != 0o700
-            or parent_status.st_uid != os.getuid()
+            or file_status.st_uid != os.geteuid()
+            or file_status.st_size > _OWNER_FILE_LIMIT
         ):
             raise ValueError
-        value = candidate.read_text(encoding="utf-8").strip()
+        chunks: list[bytes] = []
+        size = 0
+        while True:
+            chunk = os.read(
+                file_descriptor,
+                min(4096, _OWNER_FILE_LIMIT + 1 - size),
+            )
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+            if size > _OWNER_FILE_LIMIT:
+                raise ValueError
+        value = b"".join(chunks).decode("utf-8").strip()
         if not value or "\x00" in value or "\n" in value or "\r" in value:
             raise ValueError
         return value
     except (OSError, UnicodeError, TypeError, ValueError):
         raise WorkerStoreError(_CONFIGURATION_INVALID) from None
+    finally:
+        if file_descriptor is not None:
+            os.close(file_descriptor)
+        if parent_descriptor is not None:
+            os.close(parent_descriptor)
 
 
 class WorkerStore:
@@ -237,7 +284,9 @@ class WorkerStore:
                     (event.run_id, event.seq),
                 ).fetchone()
                 if existing is not None:
-                    if existing["event_json"] == event_json:
+                    if _canonical_event_json(
+                        existing["event_json"]
+                    ) == _canonical_event_json(event_json):
                         return False
                     raise ValueError
                 if run["state"] not in {"dispatching", "dispatched", "running"}:

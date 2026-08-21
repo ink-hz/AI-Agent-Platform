@@ -16,6 +16,7 @@ from uuid import UUID
 import psycopg
 import pytest
 
+from app.execution_relay import worker_store
 from app.execution_relay.models import RelayEvent, RelayJobPayload, RelayLease
 from app.execution_relay.worker_store import WorkerStore, WorkerStoreError
 
@@ -151,11 +152,15 @@ def test_schema_is_versioned_idempotent_constrained_and_grant_free(
             "select table_name from information_schema.tables "
             "where table_schema='execution_worker' order by table_name"
         ).fetchall()
-        assert tables == [("event_outbox",), ("local_runs",)]
+        assert tables == [
+            ("event_outbox",),
+            ("local_runs",),
+            ("schema_migrations",),
+        ]
         version = connection.execute(
-            "select obj_description('execution_worker'::regnamespace, 'pg_namespace')"
+            "select singleton,version from execution_worker.schema_migrations"
         ).fetchone()
-        assert version == ("agent execution worker schema version 1",)
+        assert version == (True, 1)
         with pytest.raises(psycopg.errors.CheckViolation):
             connection.execute(
                 "insert into execution_worker.local_runs "
@@ -171,6 +176,68 @@ def test_schema_is_versioned_idempotent_constrained_and_grant_free(
                 "values (%s,%s,'hr-bot',9101,%s,'unknown',now())",
                 (RUN_ID, JOB_ID, b"short"),
             )
+
+
+@pytest.mark.postgres
+def test_schema_refuses_unversioned_preexisting_target_tables(
+    worker_database: str,
+) -> None:
+    with psycopg.connect(worker_database) as connection:
+        connection.execute("drop schema execution_worker cascade")
+        connection.execute("create schema execution_worker")
+        connection.execute(
+            "create table execution_worker.local_runs ("
+            "run_id uuid primary key,job_id uuid not null unique,"
+            "agent_id varchar(128) not null,metabot_port integer not null,"
+            "callback_token_hash bytea not null,state varchar(32) not null,"
+            "leased_at timestamptz not null,dispatched_at timestamptz,"
+            "terminal_at timestamptz)"
+        )
+        connection.execute(
+            "create table execution_worker.event_outbox ("
+            "run_id uuid not null references execution_worker.local_runs(run_id),"
+            "seq integer not null,event_json jsonb not null,"
+            "delivered_at timestamptz,primary key(run_id,seq))"
+        )
+        with pytest.raises(psycopg.Error):
+            connection.execute(SCHEMA.read_text(encoding="utf-8"))
+        connection.rollback()
+
+
+@pytest.mark.postgres
+def test_schema_reapply_rejects_wrong_version_or_incompatible_layout(
+    worker_database: str,
+) -> None:
+    sql = SCHEMA.read_text(encoding="utf-8")
+    with psycopg.connect(worker_database) as connection:
+        connection.execute(
+            "update execution_worker.schema_migrations set version=2"
+        )
+        with pytest.raises(psycopg.Error):
+            connection.execute(sql)
+        connection.rollback()
+
+    with psycopg.connect(worker_database) as connection:
+        connection.execute(
+            "alter table execution_worker.local_runs "
+            "alter column metabot_port type bigint"
+        )
+        with pytest.raises(psycopg.Error):
+            connection.execute(sql)
+        connection.rollback()
+
+    with psycopg.connect(worker_database) as connection:
+        connection.execute(
+            "alter table execution_worker.local_runs "
+            "drop constraint local_runs_metabot_port_check"
+        )
+        connection.execute(
+            "alter table execution_worker.local_runs add constraint "
+            "local_runs_metabot_port_check check (true)"
+        )
+        with pytest.raises(psycopg.Error):
+            connection.execute(sql)
+        connection.rollback()
 
 
 @pytest.mark.postgres
@@ -282,6 +349,61 @@ def test_dispatch_and_event_outbox_are_atomic_contiguous_and_durable(
 
 
 @pytest.mark.postgres
+def test_event_replay_is_type_sensitive_and_conflicts_leave_state_unchanged(
+    worker_database: str, dsn_file: Path
+) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    store.record_lease(_lease(), 9101, "callback-secret")
+    store.mark_dispatching(RUN_ID)
+    original = _event(
+        1,
+        payload={
+            "nested": {
+                "enabled": True,
+                "items": [{"accepted": False}, 1],
+            }
+        },
+    )
+    assert store.append_event(original) is True
+
+    conflicting_replays = (
+        _event(
+            1,
+            payload={
+                "nested": {
+                    "enabled": 1,
+                    "items": [{"accepted": False}, 1],
+                }
+            },
+        ),
+        _event(
+            1,
+            payload={
+                "nested": {
+                    "enabled": True,
+                    "items": [{"accepted": 0}, 1],
+                }
+            },
+        ),
+    )
+    for replay in conflicting_replays:
+        with pytest.raises(WorkerStoreError, match="worker store conflict"):
+            store.append_event(replay)
+
+    with psycopg.connect(worker_database) as connection:
+        row = connection.execute(
+            "select r.state,"
+            "(select count(*) from execution_worker.event_outbox c "
+            " where c.run_id=r.run_id),o.event_json "
+            "from execution_worker.local_runs r "
+            "join execution_worker.event_outbox o on o.run_id=r.run_id "
+            "where r.run_id=%s",
+            (RUN_ID,),
+        ).fetchone()
+    assert row == ("running", 1, original.model_dump(mode="json"))
+
+
+@pytest.mark.postgres
 def test_illegal_transitions_are_sanitized_and_never_reset_dispatching(
     worker_database: str, dsn_file: Path
 ) -> None:
@@ -336,3 +458,57 @@ def test_dsn_file_must_be_absolute_regular_0600_below_0700_parent(
         WorkerStore.from_dsn_file(dsn)
     parent.chmod(0o700)
     assert stat.S_IMODE(dsn.stat().st_mode) == 0o600
+
+    file_link = parent / "worker-link.dsn"
+    file_link.symlink_to(dsn)
+    with pytest.raises(WorkerStoreError, match="worker store configuration invalid"):
+        WorkerStore.from_dsn_file(file_link)
+
+    real_parent = tmp_path / "real-secrets"
+    real_parent.mkdir(mode=0o700)
+    real_dsn = real_parent / "worker.dsn"
+    real_dsn.write_text(worker_database, encoding="utf-8")
+    real_dsn.chmod(0o600)
+    parent_link = tmp_path / "linked-secrets"
+    parent_link.symlink_to(real_parent, target_is_directory=True)
+    with pytest.raises(WorkerStoreError, match="worker store configuration invalid"):
+        WorkerStore.from_dsn_file(parent_link / "worker.dsn")
+
+    directory_path = parent / "not-a-file"
+    directory_path.mkdir(mode=0o700)
+    with pytest.raises(WorkerStoreError, match="worker store configuration invalid"):
+        WorkerStore.from_dsn_file(directory_path)
+
+    oversized = parent / "oversized.dsn"
+    oversized.write_text("x" * 16_385, encoding="utf-8")
+    oversized.chmod(0o600)
+    with pytest.raises(WorkerStoreError, match="worker store configuration invalid"):
+        WorkerStore.from_dsn_file(oversized)
+
+
+def test_dsn_path_swap_after_open_reads_only_opened_descriptor(
+    worker_database: str, tmp_path: Path, monkeypatch
+) -> None:
+    parent = tmp_path / "secrets"
+    parent.mkdir(mode=0o700)
+    dsn = parent / "worker.dsn"
+    dsn.write_text(worker_database, encoding="utf-8")
+    dsn.chmod(0o600)
+    original_open = worker_store.os.open
+    swapped = False
+
+    def swapping_open(path, flags, *args, **kwargs):
+        nonlocal swapped
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if path == dsn.name:
+            dsn.unlink()
+            dsn.write_text("postgresql://attacker/changed", encoding="utf-8")
+            dsn.chmod(0o600)
+            swapped = True
+        return descriptor
+
+    monkeypatch.setattr(worker_store.os, "open", swapping_open)
+    store = WorkerStore.from_dsn_file(dsn)
+
+    assert swapped is True
+    assert store._database_url == worker_database

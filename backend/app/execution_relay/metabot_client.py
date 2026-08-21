@@ -28,6 +28,7 @@ _APPROVED_AGENT_IDS = frozenset(
 )
 _CONFIGURATION_INVALID = "metabot configuration invalid"
 _REQUEST_FAILED = "metabot request failed"
+_OWNER_FILE_LIMIT = 16_384
 
 
 class MetaBotClientError(RuntimeError):
@@ -39,22 +40,52 @@ def _configuration_error() -> MetaBotClientError:
 
 
 def _read_secret_file(path: Path) -> str:
+    parent_descriptor: int | None = None
+    file_descriptor: int | None = None
     try:
         candidate = Path(path)
         if not candidate.is_absolute():
             raise ValueError
-        file_status = candidate.lstat()
-        parent_status = candidate.parent.lstat()
+        common_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        parent_descriptor = os.open(
+            candidate.parent,
+            common_flags | no_follow | getattr(os, "O_DIRECTORY", 0),
+        )
+        parent_status = os.fstat(parent_descriptor)
+        if (
+            not stat.S_ISDIR(parent_status.st_mode)
+            or stat.S_IMODE(parent_status.st_mode) != 0o700
+            or parent_status.st_uid != os.geteuid()
+        ):
+            raise ValueError
+        file_descriptor = os.open(
+            candidate.name,
+            common_flags | no_follow,
+            dir_fd=parent_descriptor,
+        )
+        file_status = os.fstat(file_descriptor)
         if (
             not stat.S_ISREG(file_status.st_mode)
             or stat.S_IMODE(file_status.st_mode) != 0o600
-            or file_status.st_uid != os.getuid()
-            or not stat.S_ISDIR(parent_status.st_mode)
-            or stat.S_IMODE(parent_status.st_mode) != 0o700
-            or parent_status.st_uid != os.getuid()
+            or file_status.st_uid != os.geteuid()
+            or file_status.st_size > _OWNER_FILE_LIMIT
         ):
             raise ValueError
-        secret = candidate.read_text(encoding="utf-8").strip()
+        chunks: list[bytes] = []
+        size = 0
+        while True:
+            chunk = os.read(
+                file_descriptor,
+                min(4096, _OWNER_FILE_LIMIT + 1 - size),
+            )
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+            if size > _OWNER_FILE_LIMIT:
+                raise ValueError
+        secret = b"".join(chunks).decode("utf-8").strip()
         if (
             not secret
             or "\x00" in secret
@@ -65,6 +96,11 @@ def _read_secret_file(path: Path) -> str:
         return secret
     except (OSError, UnicodeError, TypeError, ValueError):
         raise _configuration_error() from None
+    finally:
+        if file_descriptor is not None:
+            os.close(file_descriptor)
+        if parent_descriptor is not None:
+            os.close(parent_descriptor)
 
 
 @dataclass(frozen=True)
@@ -72,7 +108,20 @@ class MetaBotRuntimeMap:
     _ports: Mapping[str, int]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "_ports", MappingProxyType(dict(self._ports)))
+        try:
+            ports = dict(self._ports)
+            if set(ports) != _APPROVED_AGENT_IDS:
+                raise ValueError
+            if any(
+                isinstance(port, bool)
+                or not isinstance(port, int)
+                or not 1 <= port <= 65535
+                for port in ports.values()
+            ) or len(set(ports.values())) != len(ports):
+                raise ValueError
+        except (TypeError, ValueError):
+            raise _configuration_error() from None
+        object.__setattr__(self, "_ports", MappingProxyType(ports))
 
     @classmethod
     def from_contract(cls, path: Path) -> MetaBotRuntimeMap:

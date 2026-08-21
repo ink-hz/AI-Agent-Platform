@@ -8,6 +8,7 @@ import httpx
 import pytest
 import respx
 
+from app.execution_relay import metabot_client
 from app.execution_relay.metabot_client import (
     MetaBotClient,
     MetaBotClientError,
@@ -125,6 +126,26 @@ def test_runtime_map_rejects_duplicate_approved_name(tmp_path: Path) -> None:
         MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json", entries=entries))
 
 
+def test_direct_runtime_map_construction_enforces_and_freezes_invariants() -> None:
+    valid = {
+        name: 9200 + index for index, name in enumerate(APPROVED_BOTS)
+    }
+    runtime_map = MetaBotRuntimeMap(valid)
+    valid["hr-bot"] = 65000
+    assert runtime_map.port_for("hr-bot") == 9200
+
+    invalid_maps = (
+        {name: 9200 + index for index, name in enumerate(APPROVED_BOTS[:-1])},
+        {**{name: 9200 + index for index, name in enumerate(APPROVED_BOTS)}, "other": 9400},
+        {name: 9200 for name in APPROVED_BOTS},
+        {**{name: 9200 + index for index, name in enumerate(APPROVED_BOTS)}, "hr-bot": True},
+        {**{name: 9200 + index for index, name in enumerate(APPROVED_BOTS)}, "hr-bot": 0},
+    )
+    for ports in invalid_maps:
+        with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
+            MetaBotRuntimeMap(ports)
+
+
 @respx.mock
 def test_start_run_sends_exact_contract_to_exact_loopback_port(tmp_path: Path) -> None:
     runtime_map = MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json"))
@@ -156,6 +177,78 @@ def test_start_run_sends_exact_contract_to_exact_loopback_port(tmp_path: Path) -
     }
 
 
+def test_http_client_policy_disables_environment_proxies_and_uses_ten_seconds(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, url, json):
+            return httpx.Response(
+                202,
+                json={
+                    "status": "accepted",
+                    "runId": str(RUN_ID),
+                    "targetBot": "hr-bot",
+                },
+            )
+
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:65530")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:65530")
+    monkeypatch.setattr(metabot_client.httpx, "Client", FakeClient)
+    client = MetaBotClient(
+        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json")),
+        _secret_file(tmp_path),
+    )
+
+    client.start_run(_payload(), CALLBACK_URL)
+
+    timeout = captured["timeout"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert (timeout.connect, timeout.read, timeout.write, timeout.pool) == (
+        10.0,
+        10.0,
+        10.0,
+        10.0,
+    )
+    assert captured["trust_env"] is False
+    assert captured["follow_redirects"] is False
+    assert "proxy" not in captured
+
+
+@respx.mock
+def test_start_redirect_is_not_followed_or_sent_to_second_host(
+    tmp_path: Path,
+) -> None:
+    first = respx.post("http://127.0.0.1:9200/api/core-chat/runs").mock(
+        return_value=httpx.Response(
+            302, headers={"Location": "http://127.0.0.1:9400/stolen"}
+        )
+    )
+    second = respx.post("http://127.0.0.1:9400/stolen").mock(
+        return_value=httpx.Response(202)
+    )
+    client = MetaBotClient(
+        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json")),
+        _secret_file(tmp_path),
+    )
+
+    with pytest.raises(MetaBotClientError, match="metabot request failed"):
+        client.start_run(_payload(), CALLBACK_URL)
+
+    assert first.call_count == 1
+    assert second.call_count == 0
+
+
 @respx.mock
 def test_cancel_run_uses_same_agent_port_and_requires_matching_200(
     tmp_path: Path,
@@ -172,6 +265,41 @@ def test_cancel_run_uses_same_agent_port_and_requires_matching_200(
     assert route.calls.last.request.headers["Authorization"] == (
         "Bearer local-bearer-secret"
     )
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(202, json={"runId": str(RUN_ID)}),
+        httpx.Response(200, json={"runId": str(UUID(int=0))}),
+        httpx.Response(200, content=b"not-json"),
+        httpx.Response(
+            302, headers={"Location": "http://127.0.0.1:9400/cancel"}
+        ),
+    ],
+)
+@respx.mock
+def test_cancel_run_rejects_every_negative_response_contract(
+    tmp_path: Path, response: httpx.Response
+) -> None:
+    route = respx.post(
+        f"http://127.0.0.1:9200/api/core-chat/runs/{RUN_ID}/cancel"
+    ).mock(return_value=response)
+    redirected = respx.post("http://127.0.0.1:9400/cancel").mock(
+        return_value=httpx.Response(200, json={"runId": str(RUN_ID)})
+    )
+    client = MetaBotClient(
+        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json")),
+        _secret_file(tmp_path),
+    )
+
+    with pytest.raises(MetaBotClientError) as error:
+        client.cancel_run(RUN_ID, "hr-bot")
+
+    assert str(error.value) == "metabot request failed"
+    assert error.value.__cause__ is None
+    assert route.call_count == 1
+    assert redirected.call_count == 0
 
 
 @pytest.mark.parametrize(
@@ -228,6 +356,65 @@ def test_transport_failure_is_sanitized_and_not_retried(tmp_path: Path) -> None:
 def test_bearer_secret_requires_absolute_regular_0600_file(tmp_path: Path) -> None:
     runtime_map = MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json"))
     secret = _secret_file(tmp_path)
+
+    with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
+        MetaBotClient(runtime_map, Path("relative.token"))
     secret.chmod(0o640)
     with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
         MetaBotClient(runtime_map, secret)
+    secret.chmod(0o600)
+    secret.parent.chmod(0o750)
+    with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
+        MetaBotClient(runtime_map, secret)
+    secret.parent.chmod(0o700)
+
+    secret_link = secret.parent / "linked.token"
+    secret_link.symlink_to(secret)
+    with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
+        MetaBotClient(runtime_map, secret_link)
+
+    real_parent = tmp_path / "real-secret-parent"
+    real_parent.mkdir(mode=0o700)
+    real_secret = real_parent / "token"
+    real_secret.write_text("secret", encoding="utf-8")
+    real_secret.chmod(0o600)
+    parent_link = tmp_path / "linked-secret-parent"
+    parent_link.symlink_to(real_parent, target_is_directory=True)
+    with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
+        MetaBotClient(runtime_map, parent_link / "token")
+
+    directory_secret = secret.parent / "directory-token"
+    directory_secret.mkdir(mode=0o700)
+    with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
+        MetaBotClient(runtime_map, directory_secret)
+
+    oversized = secret.parent / "oversized.token"
+    oversized.write_text("x" * 16_385, encoding="utf-8")
+    oversized.chmod(0o600)
+    with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
+        MetaBotClient(runtime_map, oversized)
+
+
+def test_bearer_path_swap_after_open_reads_only_opened_descriptor(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runtime_map = MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json"))
+    secret = _secret_file(tmp_path, "original-secret")
+    original_open = metabot_client.os.open
+    swapped = False
+
+    def swapping_open(path, flags, *args, **kwargs):
+        nonlocal swapped
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if path == secret.name:
+            secret.unlink()
+            secret.write_text("replacement-secret", encoding="utf-8")
+            secret.chmod(0o600)
+            swapped = True
+        return descriptor
+
+    monkeypatch.setattr(metabot_client.os, "open", swapping_open)
+    client = MetaBotClient(runtime_map, secret)
+
+    assert swapped is True
+    assert client._bearer_secret == "original-secret"
