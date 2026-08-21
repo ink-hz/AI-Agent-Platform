@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timezone
 import json
+import re
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -206,6 +207,81 @@ class ExecutionRelayRepository:
                 return RelayLease(
                     job_id=row["job_id"],
                     payload=RelayJobPayload.model_validate(value),
+                    lease_expires_at=updated["lease_expires_at"],
+                    cancel_requested=row["cancel_requested"],
+                )
+        except ExecutionRelayError:
+            raise
+        except ValidationError:
+            raise ExecutionRelayError("execution relay unavailable") from None
+        except ContentCryptoError:
+            raise ExecutionRelayError("execution relay unavailable") from None
+        except psycopg.Error:
+            raise ExecutionRelayError("execution relay unavailable") from None
+
+    def lease_acceptance(
+        self,
+        worker_id: str,
+        allowed_agents: tuple[str, ...],
+        lease_seconds: int,
+        run_id: UUID,
+    ) -> RelayLease:
+        if (
+            not isinstance(worker_id, str)
+            or re.fullmatch(r"relay-acceptance-[0-9a-f]{16}", worker_id) is None
+            or not isinstance(run_id, UUID)
+            or isinstance(lease_seconds, bool)
+            or not isinstance(lease_seconds, int)
+            or lease_seconds <= 0
+        ):
+            raise ExecutionRelayConflict()
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                worker_agents = self._active_worker(cursor, worker_id)
+                permitted = tuple(
+                    agent for agent in worker_agents if agent in allowed_agents
+                )
+                row = cursor.execute(
+                    "select job_id,run_id,agent_id,payload_ciphertext,"
+                    "encryption_key_version,cancel_requested,status "
+                    "from platform_control.execution_jobs "
+                    "where run_id=%s for update",
+                    (run_id,),
+                ).fetchone()
+                if (
+                    row is None
+                    or row["status"] != "queued"
+                    or row["agent_id"] not in permitted
+                ):
+                    raise ExecutionRelayConflict()
+                value = self.content_codec.unseal_json(
+                    f"execution-job:{row['job_id']}:{row['run_id']}",
+                    SealedContent(
+                        bytes(row["payload_ciphertext"]),
+                        row["encryption_key_version"],
+                    ),
+                )
+                payload = RelayJobPayload.model_validate(value)
+                if (
+                    payload.run_id != run_id
+                    or payload.agent_id != row["agent_id"]
+                    or payload.prompt
+                    != f"relay acceptance synthetic run {run_id}"
+                ):
+                    raise ExecutionRelayConflict()
+                updated = cursor.execute(
+                    "update platform_control.execution_jobs set "
+                    "status='leased',lease_worker_id=%s,"
+                    "lease_expires_at=now()+(%s * interval '1 second'),"
+                    "updated_at=now() where job_id=%s and status='queued' "
+                    "returning lease_expires_at",
+                    (worker_id, lease_seconds, row["job_id"]),
+                ).fetchone()
+                if updated is None:
+                    raise ExecutionRelayConflict()
+                return RelayLease(
+                    job_id=row["job_id"],
+                    payload=payload,
                     lease_expires_at=updated["lease_expires_at"],
                     cancel_requested=row["cancel_requested"],
                 )

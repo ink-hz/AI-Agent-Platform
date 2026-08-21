@@ -310,6 +310,9 @@ def test_gate_09_uses_unique_worker_real_signing_revokes_and_keeps_sessions(tmp_
         "/api/v1/execution-worker/lease",
         f"/api/v1/execution-worker/runs/{RUN_ID}/events",
     ]
+    assert json.loads(boundary.signed_calls[0][2]) == {
+        "acceptance_run_id": str(RUN_ID)
+    }
     assert boundary.session_cookies == [b"__Host-platform_session=bounded-test-cookie"]
     assert boundary.external_fae_calls == 1
     maintenance = [
@@ -496,6 +499,9 @@ def test_enqueue_and_terminal_response_loss_prove_terminal_before_revoke(
         "/api/v1/execution-worker/lease",
         f"/api/v1/execution-worker/runs/{RUN_ID}/terminal",
     ]
+    assert json.loads(boundary.signed_calls[0][2]) == {
+        "acceptance_run_id": str(RUN_ID)
+    }
 
     boundary = Boundary()
     boundary.lose_terminal_response = True

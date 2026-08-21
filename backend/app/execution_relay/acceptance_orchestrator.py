@@ -1321,6 +1321,11 @@ def run_gates_09_to_10(
     cleanup_failed = False
     body_error = None
     before = _final_remote_action(config, runner, "regression-probe")
+    lease_body = json.dumps(
+        {"acceptance_run_id": str(run_id)},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
 
     def terminal_evidence() -> bool:
         evidence = _remote_action(config, runner, "inspect", str(run_id))
@@ -1358,7 +1363,7 @@ def run_gates_09_to_10(
             if status == "cancel_requested":
                 cleanup_lease = signed_requester(
                     worker_id, "worker-v1", key, "POST",
-                    "/api/v1/execution-worker/lease", b"{}",
+                    "/api/v1/execution-worker/lease", lease_body,
                 )
                 if not lease_is_target(cleanup_lease, cancel_requested=True):
                     return False
@@ -1392,7 +1397,7 @@ def run_gates_09_to_10(
         enqueue_attempted = True
         _remote_action(config, runner, "enqueue", "hr-bot", str(run_id), str(conversation_id), str(message_id))
         empty = b"{}"
-        lease = signed_requester(worker_id, "worker-v1", key, "POST", "/api/v1/execution-worker/lease", empty)
+        lease = signed_requester(worker_id, "worker-v1", key, "POST", "/api/v1/execution-worker/lease", lease_body)
         if not lease_is_target(lease, cancel_requested=False): raise _gate_error()
         event = RelayEvent(run_id=run_id, seq=1, event_type="run.interrupted", created_at=datetime.now(timezone.utc), payload={"status":"interrupted"})
         events_body = json.dumps({"events":[event.model_dump(mode="json")]}, sort_keys=True, separators=(",",":"), default=str).encode()
@@ -1406,7 +1411,7 @@ def run_gates_09_to_10(
         result = _final_remote_action(config, runner, "revoke-disposable", worker_id, revoke_ref)
         if result != {"status":"revoked","worker_id":worker_id}: raise _gate_error()
         revoked = True
-        lease_status = signed_requester(worker_id,"worker-v1",key,"POST","/api/v1/execution-worker/lease",empty).status_code
+        lease_status = signed_requester(worker_id,"worker-v1",key,"POST","/api/v1/execution-worker/lease",lease_body).status_code
         upload_status = signed_requester(worker_id,"worker-v1",key,"POST",f"/api/v1/execution-worker/runs/{run_id}/events",events_body).status_code
         sessions = session_probe(cookie)
         after = _final_remote_action(config, runner, "regression-probe")

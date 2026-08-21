@@ -4,6 +4,7 @@ from collections import deque
 from dataclasses import dataclass
 import json
 import math
+import re
 from threading import Lock
 import time
 from typing import Callable, Literal
@@ -34,6 +35,12 @@ _NO_STORE = {"Cache-Control": "no-store"}
 
 class _EmptyBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class _LeaseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    acceptance_run_id: UUID | None = None
 
 
 class _StrictRelayEvent(RelayEvent):
@@ -187,15 +194,39 @@ def build_execution_relay_router(
         authenticated_body = await authenticated(request)
         if isinstance(authenticated_body, JSONResponse):
             return authenticated_body
-        if _validated(_EmptyBody, authenticated_body.body) is None:
-            return _error(422, "request validation failed")
-        try:
-            result = await run_in_threadpool(
-                repository.lease,
-                authenticated_body.identity.worker_id,
-                authenticated_body.identity.allowed_agent_ids,
-                lease_seconds,
+        parsed = _validated(_LeaseBody, authenticated_body.body)
+        if (
+            parsed is None
+            or (
+                "acceptance_run_id" in parsed.model_fields_set
+                and parsed.acceptance_run_id is None
             )
+        ):
+            return _error(422, "request validation failed")
+        acceptance_worker = re.fullmatch(
+            r"relay-acceptance-[0-9a-f]{16}",
+            authenticated_body.identity.worker_id,
+        ) is not None
+        try:
+            if parsed.acceptance_run_id is None:
+                if acceptance_worker:
+                    return _error(403, "targeted acceptance lease required")
+                result = await run_in_threadpool(
+                    repository.lease,
+                    authenticated_body.identity.worker_id,
+                    authenticated_body.identity.allowed_agent_ids,
+                    lease_seconds,
+                )
+            else:
+                if not acceptance_worker:
+                    return _error(403, "targeted acceptance lease forbidden")
+                result = await run_in_threadpool(
+                    repository.lease_acceptance,
+                    authenticated_body.identity.worker_id,
+                    authenticated_body.identity.allowed_agent_ids,
+                    lease_seconds,
+                    parsed.acceptance_run_id,
+                )
         except ExecutionRelayError as error:
             return _repository_error(error)
         if result is None:

@@ -43,14 +43,15 @@ CONTROL_DSN = (
 
 
 class FakeVerifier:
-    def __init__(self) -> None:
+    def __init__(self, worker_id: str = "worker-1") -> None:
         self.calls: list[tuple[str, str, bytes]] = []
+        self.worker_id = worker_id
 
     def verify(self, method, path_with_query, body, headers):
         self.calls.append((method, path_with_query, body))
         if headers.get("x-orbbec-worker-signature") != "valid":
             raise WorkerAuthenticationError()
-        return WorkerIdentity("worker-1", "worker-v1", ("hr-bot", "fae-bot"))
+        return WorkerIdentity(self.worker_id, "worker-v1", ("hr-bot", "fae-bot"))
 
 
 class FakeRepository:
@@ -68,6 +69,12 @@ class FakeRepository:
 
     def lease(self, worker_id, allowed_agents, lease_seconds):
         self._record("lease", worker_id, allowed_agents, lease_seconds)
+        return self.lease_result
+
+    def lease_acceptance(self, worker_id, allowed_agents, lease_seconds, run_id):
+        self._record(
+            "lease_acceptance", worker_id, allowed_agents, lease_seconds, run_id
+        )
         return self.lease_result
 
     def heartbeat(self, worker_id):
@@ -104,9 +111,11 @@ class BrowserAuth:
         return (SimpleNamespace(internal_user_id=uuid4()), b"csrf")
 
 
-def _client(*, limit: int = 120, trusted_proxy: bool = False):
+def _client(
+    *, limit: int = 120, trusted_proxy: bool = False, worker_id: str = "worker-1"
+):
     repository = FakeRepository()
-    verifier = FakeVerifier()
+    verifier = FakeVerifier(worker_id)
     auth = BrowserAuth()
     if trusted_proxy:
         auth.trusted_proxy_networks = (ip_network("127.0.0.1/32"),)
@@ -377,6 +386,43 @@ def test_valid_worker_lease_uses_only_authenticated_allowed_agents():
     assert repository.calls == [
         ("lease", "worker-1", ("hr-bot", "fae-bot"), 45)
     ]
+
+
+def test_targeted_acceptance_lease_is_disposable_only_and_exact() -> None:
+    worker_id = "relay-acceptance-0123456789abcdef"
+    client, repository, verifier, _auth = _client(worker_id=worker_id)
+
+    response = client.post(
+        "/api/v1/execution-worker/lease",
+        json={"acceptance_run_id": str(RUN_ID)},
+        headers=VALID_HEADERS,
+    )
+
+    assert response.status_code == 204
+    assert repository.calls == [
+        ("lease_acceptance", worker_id, ("hr-bot", "fae-bot"), 45, RUN_ID)
+    ]
+    assert verifier.calls[0][2] == (
+        b'{"acceptance_run_id":"12345678-1234-4234-9234-123456789abc"}'
+    )
+
+    generic = client.post(
+        "/api/v1/execution-worker/lease", json={}, headers=VALID_HEADERS
+    )
+    assert generic.status_code == 403
+    assert repository.calls == [
+        ("lease_acceptance", worker_id, ("hr-bot", "fae-bot"), 45, RUN_ID)
+    ]
+
+    client, repository, _verifier, _auth = _client(worker_id="worker-1")
+    forbidden = client.post(
+        "/api/v1/execution-worker/lease",
+        json={"acceptance_run_id": str(RUN_ID)},
+        headers=VALID_HEADERS,
+    )
+    assert forbidden.status_code == 403
+    assert forbidden.headers["cache-control"] == "no-store"
+    assert repository.calls == []
 
 
 def test_empty_lease_returns_204_with_no_store():

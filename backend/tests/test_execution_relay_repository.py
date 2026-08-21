@@ -186,6 +186,66 @@ def test_lease_skips_locked_rows_and_intersects_both_agent_allowlists(
 
 
 @pytest.mark.postgres
+def test_targeted_acceptance_lease_leaves_older_real_hr_job_queued(
+    relay_database, repository
+) -> None:
+    older = _payload("hr-bot")
+    acceptance_run = uuid4()
+    targeted = RelayJobPayload(
+        run_id=acceptance_run,
+        conversation_id=uuid4(),
+        trigger_message_id=uuid4(),
+        agent_id="hr-bot",
+        prompt=f"relay acceptance synthetic run {acceptance_run}",
+        max_turns=2,
+    )
+    older_job = repository.enqueue(older)
+    targeted_job = repository.enqueue(targeted)
+    with psycopg.connect(relay_database["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.execution_workers "
+            "(worker_id,allowed_agent_ids,status) values "
+            "('relay-acceptance-0123456789abcdef',array['hr-bot'],'active')"
+        )
+
+    lease = repository.lease_acceptance(
+        "relay-acceptance-0123456789abcdef", ("hr-bot",), 45, acceptance_run
+    )
+
+    assert lease is not None
+    assert lease.job_id == targeted_job
+    assert lease.payload == targeted
+    assert _job_row(relay_database, older.run_id)[0] == older_job
+    assert _job_row(relay_database, older.run_id)[5] == "queued"
+    assert _job_row(relay_database, acceptance_run)[5] == "leased"
+
+
+@pytest.mark.postgres
+def test_targeted_acceptance_lease_rejects_production_worker_and_wrong_prompt_atomically(
+    relay_database, repository
+) -> None:
+    run_id = uuid4()
+    wrong_prompt = _payload("hr-bot", run_id=run_id)
+    repository.enqueue(wrong_prompt)
+
+    with pytest.raises(ExecutionRelayConflict):
+        repository.lease_acceptance("worker-a", ("hr-bot",), 45, run_id)
+    assert _job_row(relay_database, run_id)[5] == "queued"
+
+    with psycopg.connect(relay_database["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.execution_workers "
+            "(worker_id,allowed_agent_ids,status) values "
+            "('relay-acceptance-fedcba9876543210',array['hr-bot'],'active')"
+        )
+    with pytest.raises(ExecutionRelayConflict):
+        repository.lease_acceptance(
+            "relay-acceptance-fedcba9876543210", ("hr-bot",), 45, run_id
+        )
+    assert _job_row(relay_database, run_id)[5] == "queued"
+
+
+@pytest.mark.postgres
 def test_concurrent_lease_never_returns_one_job_twice(
     relay_database, repository
 ) -> None:
