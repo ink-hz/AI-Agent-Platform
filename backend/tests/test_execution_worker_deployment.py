@@ -4155,6 +4155,54 @@ def test_cloud_deploy_input_acquire_recovers_exact_preparing_boundary(
         ) in acquire
 
 
+def test_cloud_deploy_input_published_recovery_fsyncs_preparing_before_active(
+    tmp_path: Path,
+) -> None:
+    helper, platform = _cloud_deploy_input_lock_environment(tmp_path)
+    deployment_id = "1" * 32
+    original = helper.read_text(encoding="utf-8")
+    before_acquire, acquire_and_after = original.split("def _acquire", 1)
+    acquire, after_acquire = acquire_and_after.split("def _release", 1)
+    published = "        os.replace(preparing_part, preparing_state)\n"
+    assert published in acquire
+    helper.write_text(
+        before_acquire
+        + "def _acquire"
+        + acquire.replace(
+            published,
+            published + "        os.kill(os.getpid(), 9)\n",
+            1,
+        )
+        + "def _release"
+        + after_acquire,
+        encoding="utf-8",
+    )
+    killed = _run_cloud_deploy_input_lock(helper, "acquire", deployment_id)
+    assert killed.returncode < 0
+    private = platform / "private"
+    preparing = private / f"deploy-input.preparing-{'b' * 40}-{deployment_id}"
+    assert (preparing / "owner.json").exists()
+    trace = tmp_path / "fsync-trace"
+    fsync_definition = "def _fsync(path: Path) -> None:\n"
+    traced = original.replace(
+        fsync_definition,
+        fsync_definition
+        + f"    with open({str(trace)!r}, 'a', encoding='utf-8') as output:\n"
+        + "        output.write(str(path) + '\\n')\n",
+        1,
+    )
+    helper.write_text(traced, encoding="utf-8")
+
+    recovered = _run_cloud_deploy_input_lock(helper, "acquire", deployment_id)
+
+    assert recovered.returncode == 0, recovered.stderr
+    assert trace.read_text(encoding="utf-8").splitlines()[-2:] == [
+        str(preparing),
+        str(private),
+    ]
+    assert _run_cloud_deploy_input_lock(helper, "validate", deployment_id).returncode == 0
+
+
 def test_cloud_deploy_input_rejects_multiple_or_anomalous_preparing(
     tmp_path: Path,
 ) -> None:

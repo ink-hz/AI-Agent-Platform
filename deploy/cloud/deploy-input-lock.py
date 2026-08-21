@@ -269,7 +269,7 @@ def _acquire(release_sha: str, deployment_id: str) -> None:
         finally:
             os.close(descriptor)
         os.replace(preparing_part, preparing_state)
-        _fsync(preparing)
+    _fsync(preparing)
     os.replace(preparing, LOCK_ROOT)
     _fsync(PRIVATE_ROOT)
 
