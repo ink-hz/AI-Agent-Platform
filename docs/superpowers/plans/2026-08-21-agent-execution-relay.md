@@ -258,6 +258,8 @@ Expose `ExecutionRelayRepository.enqueue(payload: RelayJobPayload) -> UUID`, `le
 
 `lease()` uses one transaction with `FOR UPDATE SKIP LOCKED`, requires an active worker, intersects the worker database allowlist with the request allowlist, and leases only `queued` jobs. It must never lease `dispatched`, `running`, or terminal jobs. `append_events()` uses `ON CONFLICT (run_id,seq) DO NOTHING`, verifies the existing encrypted row has the same event type on duplicates, advances `leased|dispatched` to `running`, and never changes a terminal job back to running.
 
+Use exact purpose-bound subjects `execution-job:{job_id}:{run_id}` for job payloads and `execution-event:{run_id}:{seq}` for event payloads. A duplicate `(run_id, seq)` is idempotent only when `event_type`, `created_at`, and the decrypted logical payload exactly match the existing row; any mismatch raises a conflict without advancing job state. Perform the duplicate check and state transition in the same transaction.
+
 - [ ] **Step 5: Run unit and PostgreSQL tests and verify GREEN**
 
 ```bash
