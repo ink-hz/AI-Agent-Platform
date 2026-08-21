@@ -316,6 +316,7 @@ if [[ "$completed_deploy_recovered" == "1" ]]; then
   echo "CLOUD_PLATFORM_DEPLOY_RECOVERED release=$release_sha"
   exit 0
 fi
+[[ ! -e "$release_path" ]] || fail
 /bin/dd of="$archive_path.part" status=none
 actual_digest="$(/usr/bin/sha256sum "$archive_path.part" | /usr/bin/awk '{print $1}')"
 [[ "$actual_digest" == "$expected_digest" ]] || fail
@@ -323,7 +324,6 @@ actual_digest="$(/usr/bin/sha256sum "$archive_path.part" | /usr/bin/awk '{print 
 if /usr/bin/tar -tzf "$archive_path" | /usr/bin/grep -Eq '(^/|(^|/)\.\.(/|$))'; then
   fail
 fi
-[[ ! -e "$release_path" ]] || fail
 /usr/bin/install -d -m 700 "$release_path"
 rollback() {
   if [[ "$rollback_required" -ne 1 ]]; then

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import fcntl
 import os
 from pathlib import Path
 import re
@@ -15,6 +16,8 @@ PRIVATE_ROOT = PLATFORM_ROOT / "private"
 LOCK_ROOT = PRIVATE_ROOT / "deploy-input.lock"
 STATE = LOCK_ROOT / "owner.json"
 STATE_PART = LOCK_ROOT / "owner.json.part"
+TRANSACTION_LOCK = PRIVATE_ROOT / "deploy-input.transaction.lock"
+RELEASING_PREFIX = "deploy-input.releasing-"
 RELEASE = re.compile(r"[0-9a-f]{40}\Z")
 DEPLOYMENT = re.compile(r"[0-9a-f]{32}\Z")
 
@@ -74,9 +77,73 @@ def _validate(release_sha: str, deployment_id: str) -> None:
         raise DeployInputError
 
 
+def _transaction_lock() -> int:
+    try:
+        descriptor = os.open(
+            TRANSACTION_LOCK,
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        os.fchmod(descriptor, 0o600)
+    except FileExistsError:
+        descriptor = os.open(
+            TRANSACTION_LOCK,
+            os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+        )
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+        ):
+            raise DeployInputError
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _tombstone(release_sha: str, deployment_id: str) -> Path:
+    return PRIVATE_ROOT / f"{RELEASING_PREFIX}{release_sha}-{deployment_id}"
+
+
+def _validate_tombstone(
+    tombstone: Path, release_sha: str, deployment_id: str
+) -> Path | None:
+    _directory(tombstone, {0o700})
+    entries = {path.name for path in tombstone.iterdir()}
+    if not entries <= {STATE.name}:
+        raise DeployInputError
+    tombstone_state = tombstone / STATE.name
+    if not entries:
+        return None
+    descriptor = os.open(
+        tombstone_state, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        metadata = os.fstat(descriptor)
+        raw = os.read(descriptor, 1025)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or metadata.st_size != len(raw)
+            or raw != _expected(release_sha, deployment_id)
+        ):
+            raise DeployInputError
+    finally:
+        os.close(descriptor)
+    return tombstone_state
+
+
 def _acquire(release_sha: str, deployment_id: str) -> None:
-    PRIVATE_ROOT.mkdir(mode=0o700, exist_ok=True)
-    _directory(PRIVATE_ROOT, {0o700})
+    if any(
+        path.name.startswith(RELEASING_PREFIX)
+        for path in PRIVATE_ROOT.iterdir()
+    ):
+        raise DeployInputError
     try:
         LOCK_ROOT.mkdir(mode=0o700)
     except FileExistsError as error:
@@ -119,11 +186,32 @@ def _acquire(release_sha: str, deployment_id: str) -> None:
 
 
 def _release(release_sha: str, deployment_id: str) -> None:
-    _validate(release_sha, deployment_id)
-    STATE.unlink()
-    _fsync(LOCK_ROOT)
-    LOCK_ROOT.rmdir()
-    _fsync(PRIVATE_ROOT)
+    tombstone = _tombstone(release_sha, deployment_id)
+    tombstones = {
+        path
+        for path in PRIVATE_ROOT.iterdir()
+        if path.name.startswith(RELEASING_PREFIX)
+    }
+    if tombstones and tombstones != {tombstone}:
+        raise DeployInputError
+    active_exists = LOCK_ROOT.exists() or LOCK_ROOT.is_symlink()
+    tombstone_exists = tombstone.exists() or tombstone.is_symlink()
+    if active_exists and tombstone_exists:
+        raise DeployInputError
+    if active_exists:
+        _validate(release_sha, deployment_id)
+        os.replace(LOCK_ROOT, tombstone)
+        _fsync(PRIVATE_ROOT)
+        tombstone_exists = True
+    if tombstone_exists:
+        tombstone_state = _validate_tombstone(
+            tombstone, release_sha, deployment_id
+        )
+        if tombstone_state is not None:
+            tombstone_state.unlink()
+            _fsync(tombstone)
+        tombstone.rmdir()
+        _fsync(PRIVATE_ROOT)
 
 
 def main(arguments: list[str] | None = None) -> int:
@@ -138,10 +226,17 @@ def main(arguments: list[str] | None = None) -> int:
         ):
             raise DeployInputError
         _directory(PLATFORM_ROOT, {0o700, 0o755})
+        PRIVATE_ROOT.mkdir(mode=0o700, exist_ok=True)
+        _directory(PRIVATE_ROOT, {0o700})
         action, release_sha, deployment_id = values
-        {"acquire": _acquire, "validate": _validate, "release": _release}[action](
-            release_sha, deployment_id
-        )
+        transaction = _transaction_lock()
+        try:
+            {"acquire": _acquire, "validate": _validate, "release": _release}[
+                action
+            ](release_sha, deployment_id)
+        finally:
+            fcntl.flock(transaction, fcntl.LOCK_UN)
+            os.close(transaction)
         print(f"CLOUD_DEPLOY_INPUT_OK action={action}")
         return 0
     except Exception:

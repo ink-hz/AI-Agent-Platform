@@ -50,10 +50,13 @@ remote_master_sha="$(git rev-parse refs/remotes/origin/master 2>/dev/null || tru
 
 artifact_root="$(mktemp -d)"
 deploy_input_acquired=0
+cutover_started=0
+cutover_confirmed=0
 cleanup() {
   exit_status=$?
   trap - EXIT
-  if [[ "$deploy_input_acquired" == "1" ]]; then
+  if [[ "$deploy_input_acquired" == "1" &&
+        ( "$cutover_started" == "0" || "$cutover_confirmed" == "1" ) ]]; then
     if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
       /usr/bin/python3 - release "$release_sha" "$deployment_id" \
       < "$repository_root/deploy/cloud/deploy-input-lock.py" >/dev/null; then
@@ -136,8 +139,12 @@ if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
   < "$CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING"; then
   fail
 fi
-if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
+cutover_started=1
+if ! cutover_output="$(/usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
   "/opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py" cutover "$release_sha" "$artifact_digest" "$deployment_id" \
-  < "$artifact_path"; then
+  < "$artifact_path")"; then
   fail
 fi
+[[ "$cutover_output" == "CLOUD_PLATFORM_DEPLOY_OK release=$release_sha mode=dingtalk" ]] || fail
+/usr/bin/printf '%s\n' "$cutover_output"
+cutover_confirmed=1

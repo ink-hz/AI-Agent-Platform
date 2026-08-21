@@ -32,24 +32,80 @@ A cloud deploy holds the persistent root-only
 `/opt/orbbec-agent-platform/private/deploy-input.lock` transaction from before
 the first fixed upload through cutover. A second deploy fails before writing any
 fixed `.part`. If the local deploy process is killed, the transaction is
-deliberately left fail-closed. Do not remove it automatically. After confirming
-there is no live deploy or `remote-stage.sh` process and auditing the exact
-owner record, release only that recorded transaction with the deployed fixed
-helper:
+deliberately left fail-closed. Failures before cutover starts release it, but an
+SSH error, disconnect, or missing/changed success response after cutover starts
+retains it. Only the exact `CLOUD_PLATFORM_DEPLOY_OK` response confirms cutover.
+Do not rerun a deploy or cutover for an existing release after an uncertain
+response. First perform the following read-only audit of the token, current
+release, health, and any deploy journal. Release only that exact recorded token
+after confirming there is no live deploy or `remote-stage.sh` process and the
+audited state is consistent with the incident:
 
 ```bash
 set -euo pipefail
-lock_root=/opt/orbbec-agent-platform/private/deploy-input.lock
-owner="$lock_root/owner.json"
+private_root=/opt/orbbec-agent-platform/private
+lock_root="$private_root/deploy-input.lock"
 helper=/opt/orbbec-agent-platform/bin/deploy-input-lock.py
-[[ -d "$lock_root" && ! -L "$lock_root" && -f "$owner" && ! -L "$owner" ]]
-[[ "$(/usr/bin/stat -c '%a %U' "$lock_root")" == "700 root" ]]
-[[ "$(/usr/bin/stat -c '%a %U' "$owner")" == "600 root" ]]
 [[ "$(/usr/bin/stat -c '%a %U' "$helper")" == "700 root" ]]
+shopt -s nullglob
+tombstones=("$private_root"/deploy-input.releasing-*)
+shopt -u nullglob
+[[ "${#tombstones[@]}" -le 1 ]]
+active_transaction=0
+if [[ -e "$lock_root" || -L "$lock_root" ]]; then
+  [[ "${#tombstones[@]}" == "0" ]]
+  [[ -d "$lock_root" && ! -L "$lock_root" ]]
+  [[ "$(/usr/bin/stat -c '%a %U' "$lock_root")" == "700 root" ]]
+  owner="$lock_root/owner.json"
+  [[ -f "$owner" && ! -L "$owner" ]]
+  [[ "$(/usr/bin/stat -c '%a %U' "$owner")" == "600 root" ]]
+  release_sha="$(/usr/bin/jq -er 'if keys==["deployment_id","release_sha"] and (.release_sha|test("^[0-9a-f]{40}$")) and (.deployment_id|test("^[0-9a-f]{32}$")) then .release_sha else error("invalid") end' "$owner")"
+  deployment_id="$(/usr/bin/jq -er '.deployment_id' "$owner")"
+  active_transaction=1
+else
+  [[ "${#tombstones[@]}" == "1" ]]
+  tombstone="${tombstones[0]}"
+  [[ -d "$tombstone" && ! -L "$tombstone" ]]
+  [[ "$(/usr/bin/stat -c '%a %U' "$tombstone")" == "700 root" ]]
+  tombstone_name="$(/usr/bin/basename "$tombstone")"
+  [[ "$tombstone_name" =~ ^deploy-input\.releasing-([0-9a-f]{40})-([0-9a-f]{32})$ ]]
+  release_sha="${BASH_REMATCH[1]}"
+  deployment_id="${BASH_REMATCH[2]}"
+  [[ -z "$(/usr/bin/find "$tombstone" -mindepth 1 -maxdepth 1 ! -name owner.json -print -quit)" ]]
+  owner="$tombstone/owner.json"
+  if [[ -e "$owner" || -L "$owner" ]]; then
+    [[ -f "$owner" && ! -L "$owner" ]]
+    [[ "$(/usr/bin/stat -c '%a %U' "$owner")" == "600 root" ]]
+    owner_release_sha="$(/usr/bin/jq -er 'if keys==["deployment_id","release_sha"] then .release_sha else error("invalid") end' "$owner")"
+    owner_deployment_id="$(/usr/bin/jq -er '.deployment_id' "$owner")"
+    [[ "$owner_release_sha" == "$release_sha" ]]
+    [[ "$owner_deployment_id" == "$deployment_id" ]]
+  else
+    [[ ! -e "$owner" && ! -L "$owner" ]]
+  fi
+fi
 ! /usr/bin/pgrep -f 'deploy/cloud/deploy.sh|/opt/orbbec-agent-platform/bin/remote-stage.sh'
-release_sha="$(/usr/bin/jq -er 'if keys==["deployment_id","release_sha"] and (.release_sha|test("^[0-9a-f]{40}$")) and (.deployment_id|test("^[0-9a-f]{32}$")) then .release_sha else error("invalid") end' "$owner")"
-deployment_id="$(/usr/bin/jq -er '.deployment_id' "$owner")"
-"$helper" validate "$release_sha" "$deployment_id"
+/usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null
+deploy_state=/opt/orbbec-agent-platform/private/execution-worker-keyring-deploy-state.json
+deploy_state_part="$deploy_state.part"
+deploy_backup=/opt/orbbec-agent-platform/private/execution-worker-public-keyring.deploy.previous.json
+staged_keyring="/opt/orbbec-agent-platform/staging/$release_sha/execution-worker-public-keyring.json"
+for residual in "$deploy_state" "$deploy_state_part" "$deploy_backup" "$staged_keyring"; do
+  [[ ! -e "$residual" && ! -L "$residual" ]]
+done
+target_release="/opt/orbbec-agent-platform/releases/$release_sha"
+current_release="$(/usr/bin/readlink -f /opt/orbbec-agent-platform/current)"
+if [[ "$current_release" == "$target_release" ]]; then
+  deploy_outcome=completed
+else
+  [[ "$current_release" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ ]]
+  [[ ! -e "$target_release" && ! -L "$target_release" ]]
+  deploy_outcome=rolled-back
+fi
+[[ "$deploy_outcome" == "completed" || "$deploy_outcome" == "rolled-back" ]]
+if [[ "$active_transaction" == "1" ]]; then
+  "$helper" validate "$release_sha" "$deployment_id"
+fi
 "$helper" release "$release_sha" "$deployment_id"
 ```
 

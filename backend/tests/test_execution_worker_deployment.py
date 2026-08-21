@@ -3919,7 +3919,13 @@ def test_cloud_deploy_stage_cannot_replace_same_release_during_cutover(
     replacement = paths["document"].replace(b"worker-v2", b"worker-v3")
 
     concurrent_stage = subprocess.run(
-        [sys.executable, str(paths["helper"]), "stage", "b" * 40],
+        [
+            sys.executable,
+            str(paths["helper"]),
+            "stage",
+            "b" * 40,
+            paths["deployment_id"],
+        ],
         input=replacement,
         capture_output=True,
     )
@@ -4004,6 +4010,121 @@ def test_cloud_deploy_input_cleanup_requires_exact_owner_token(
     assert _run_cloud_deploy_input_lock(helper, "validate", first_id).returncode == 0
     assert _run_cloud_deploy_input_lock(helper, "release", first_id).returncode == 0
     assert _run_cloud_deploy_input_lock(helper, "acquire", second_id).returncode == 0
+
+
+@pytest.mark.parametrize("killed_after", ["rename", "unlink", "rmdir"])
+def test_cloud_deploy_input_release_recovers_after_each_persistent_boundary(
+    tmp_path: Path, killed_after: str
+) -> None:
+    helper, _platform = _cloud_deploy_input_lock_environment(tmp_path)
+    deployment_id = "1" * 32
+    assert _run_cloud_deploy_input_lock(helper, "acquire", deployment_id).returncode == 0
+    original = helper.read_text(encoding="utf-8")
+    needle = {
+        "rename": "        os.replace(LOCK_ROOT, tombstone)\n",
+        "unlink": "            tombstone_state.unlink()\n",
+        "rmdir": "        tombstone.rmdir()\n",
+    }[killed_after]
+    assert needle in original
+    indentation = needle[: len(needle) - len(needle.lstrip())]
+    helper.write_text(
+        original.replace(
+            needle, needle + indentation + "os.kill(os.getpid(), 9)\n", 1
+        ),
+        encoding="utf-8",
+    )
+
+    killed = _run_cloud_deploy_input_lock(helper, "release", deployment_id)
+
+    assert killed.returncode < 0
+    helper.write_text(original, encoding="utf-8")
+    if killed_after == "rename":
+        assert _run_cloud_deploy_input_lock(helper, "release", "2" * 32).returncode == 1
+    assert _run_cloud_deploy_input_lock(helper, "release", deployment_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "release", deployment_id).returncode == 0
+    assert _run_cloud_deploy_input_lock(helper, "acquire", "2" * 32).returncode == 0
+
+
+def test_cloud_deploy_retains_input_token_until_exact_cutover_success() -> None:
+    deploy = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
+    cleanup = deploy.split("cleanup() {", 1)[1].split("}\ntrap cleanup EXIT", 1)[0]
+    assert 'cutover_started=0' in deploy
+    assert 'cutover_confirmed=0' in deploy
+    assert '"$cutover_started" == "0" || "$cutover_confirmed" == "1"' in cleanup
+    started = deploy.index("cutover_started=1")
+    cutover = deploy.index("install-execution-worker-keyring.py\" cutover")
+    exact = deploy.index('CLOUD_PLATFORM_DEPLOY_OK release=$release_sha mode=dingtalk')
+    confirmed = deploy.index("cutover_confirmed=1")
+    assert started < cutover < exact < confirmed
+
+
+def test_cloud_deploy_input_runbook_recovers_exact_single_tombstone() -> None:
+    runbook = (ROOT / "docs/runbooks/agent-execution-relay.md").read_text(
+        encoding="utf-8"
+    )
+    section = runbook.split("A cloud deploy holds", 1)[1].split("## Status", 1)[0]
+    assert "deploy-input.releasing-*" in section
+    assert '[[ "${#tombstones[@]}" == "1" ]]' in section
+    assert "^deploy-input\\.releasing-([0-9a-f]{40})-([0-9a-f]{32})$" in section
+    assert '[[ ! -e "$owner" && ! -L "$owner" ]]' in section
+    assert '[[ "$owner_release_sha" == "$release_sha" ]]' in section
+    assert '[[ "$owner_deployment_id" == "$deployment_id" ]]' in section
+    assert "deploy_outcome=completed" in section
+    assert "deploy_outcome=rolled-back" in section
+    assert '[[ ! -e "$target_release" && ! -L "$target_release" ]]' in section
+    assert 'for residual in "$deploy_state" "$deploy_state_part" "$deploy_backup" "$staged_keyring"' in section
+
+
+@pytest.mark.parametrize(
+    ("cutover_started", "cutover_confirmed", "released"),
+    [(0, 0, True), (1, 0, False), (1, 1, True)],
+    ids=["pre-cutover-failure", "uncertain-cutover", "confirmed-cutover"],
+)
+def test_cloud_deploy_exit_cleanup_executes_fail_closed_release_policy(
+    tmp_path: Path,
+    cutover_started: int,
+    cutover_confirmed: int,
+    released: bool,
+) -> None:
+    deploy = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
+    cleanup = "cleanup() {" + deploy.split("cleanup() {", 1)[1].split(
+        "}\ntrap cleanup EXIT", 1
+    )[0] + "}\n"
+    marker = tmp_path / "released"
+    fake_ssh = tmp_path / "ssh"
+    fake_ssh.write_text(
+        "#!/bin/bash\n/bin/cat >/dev/null\n/usr/bin/touch \"$RELEASE_MARKER\"\n",
+        encoding="utf-8",
+    )
+    fake_ssh.chmod(0o700)
+    cleanup = cleanup.replace("/usr/bin/ssh", str(fake_ssh))
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+    shell = f"""set -u
+artifact_root={str(artifact)!r}
+deploy_input_acquired=1
+cutover_started={cutover_started}
+cutover_confirmed={cutover_confirmed}
+ssh_options=(test-option)
+CLOUD_ADMIN_HOST=cloud.example
+release_sha={'b' * 40}
+deployment_id={'1' * 32}
+repository_root={str(ROOT)!r}
+{cleanup}
+false
+cleanup
+"""
+
+    result = subprocess.run(
+        ["/bin/bash", "-c", shell],
+        text=True,
+        capture_output=True,
+        env={**os.environ, "RELEASE_MARKER": str(marker)},
+    )
+
+    assert result.returncode == 1
+    assert marker.exists() is released
+    assert not artifact.exists()
 
 
 def test_cloud_deploy_real_git_archive_extracts_root_only_sensitive_assets(
@@ -4111,6 +4232,34 @@ restore_worker_keyring
     assert restored.returncode == 0, restored.stderr
     assert canonical.read_bytes() == b"old-keyring\n"
     assert not state.exists() and not previous.exists() and not staged.exists()
+
+
+def test_cloud_cutover_retry_for_existing_release_fails_before_archive_mutation(
+    tmp_path: Path,
+) -> None:
+    source = CLOUD_REMOTE_STAGE.read_text(encoding="utf-8")
+    body = source.split('if [[ "$completed_deploy_recovered" == "1" ]]', 1)[1]
+    body = 'if [[ "$completed_deploy_recovered" == "1" ]]' + body.split(
+        "rollback() {", 1
+    )[0]
+    release = tmp_path / ("b" * 40)
+    release.mkdir(mode=0o700)
+    archive = tmp_path / "release.tar.gz"
+    shell = f"""set -euo pipefail
+fail() {{ exit 73; }}
+completed_deploy_recovered=0
+release_path={str(release)!r}
+archive_path={str(archive)!r}
+expected_digest={'c' * 64}
+{body}
+"""
+
+    retried = subprocess.run(
+        ["/bin/bash", "-c", shell], input=b"replacement-archive", capture_output=True
+    )
+
+    assert retried.returncode == 73
+    assert not archive.exists() and not Path(str(archive) + ".part").exists()
 
 
 @pytest.mark.parametrize(
