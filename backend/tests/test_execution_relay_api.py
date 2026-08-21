@@ -672,7 +672,13 @@ def _relay_app_config(tmp_path, *, enabled: bool):
 
 
 def _create_relay_app(
-    tmp_path, monkeypatch, *, enabled: bool, probe, owned_identity: bool = False
+    tmp_path,
+    monkeypatch,
+    *,
+    enabled: bool,
+    probe,
+    owned_identity: bool = False,
+    identity_prefix: str = "/",
 ):
     from app.main import create_app
 
@@ -691,11 +697,15 @@ def _create_relay_app(
             1, "platform-content-encryption", {1: b"k" * 32}
         ),
     )
+    identity_auth = None
+    if not owned_identity:
+        identity_auth = BrowserAuth()
+        identity_auth.route_prefix = identity_prefix
     return create_app(
         registry_path=str(registry),
         cluster_contract_path=str(contract),
         start_poller=False,
-        identity_auth=None if owned_identity else BrowserAuth(),
+        identity_auth=identity_auth,
     )
 
 
@@ -713,6 +723,38 @@ def test_create_app_disabled_does_not_probe_or_mount_relay(tmp_path, monkeypatch
     assert app.state.execution_relay_repository is None
     assert response.status_code == 404
     assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("identity_prefix", ["/", "/_preview/dingtalk-r1/"])
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("PROPFIND", "/api/v1/execution-worker"),
+        ("CUSTOM", "/api/v1/execution-worker/%6cease"),
+    ],
+)
+def test_relay_disabled_reserves_every_method_before_dingtalk_session(
+    tmp_path, monkeypatch, identity_prefix, method, path
+):
+    def forbidden_probe(_dsn):
+        raise AssertionError("disabled relay must not probe")
+
+    app = _create_relay_app(
+        tmp_path,
+        monkeypatch,
+        enabled=False,
+        probe=forbidden_probe,
+        identity_prefix=identity_prefix,
+    )
+    client = TestClient(app)
+    client.cookies.set("session", "valid")
+
+    response = client.request(method, path, json={})
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "not found"}
+    assert response.headers["cache-control"] == "no-store"
+    assert app.state.identity_auth.authenticate_calls == 0
 
 
 def test_create_app_enabled_probes_mounts_and_exposes_repository(
@@ -778,8 +820,10 @@ def test_relay_probe_failure_precedes_owned_identity_client_build(
     [
         ("GET", "/api/v1/execution-worker"),
         ("POST", "/api/v1/execution-worker"),
+        ("PROPFIND", "/api/v1/execution-worker"),
         ("GET", "/api/v1/execution-worker/lease"),
         ("POST", "/api/v1/execution-worker/heartbeat"),
+        ("CUSTOM", "/api/v1/execution-worker/%6cease"),
         ("GET", "/api/v1/execution-worker/future"),
         ("POST", "/api/v1/execution-worker/future"),
     ],
@@ -819,3 +863,31 @@ def test_identity_and_relay_disabled_reserve_worker_namespace_before_spa(
     assert response.json() == {"detail": "not found"}
     assert response.headers["cache-control"] == "no-store"
     assert "SPA MUST NOT SERVE" not in response.text
+
+
+def test_identity_and_relay_disabled_do_not_reserve_adjacent_spa_path(
+    tmp_path, monkeypatch
+):
+    from app.main import create_app
+
+    static = tmp_path / "adjacent-static"
+    static.mkdir()
+    (static / "index.html").write_text(
+        "<main>ADJACENT SPA PATH</main>", encoding="utf-8"
+    )
+    registry = tmp_path / "adjacent-registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "adjacent-contract.json"
+    contract.write_text('{"bots": []}', encoding="utf-8")
+    config = replace(load_config(), static_dir=str(static))
+    monkeypatch.setattr("app.main.load_config", lambda: config)
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+    )
+    response = TestClient(app).get("/api/v1/execution-workerx")
+
+    assert response.status_code == 200
+    assert "ADJACENT SPA PATH" in response.text

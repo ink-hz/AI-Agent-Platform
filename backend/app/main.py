@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 import psycopg
 from psycopg.rows import dict_row
 
@@ -29,7 +28,10 @@ from .cloud_replica.management_repository import (
 )
 from .control_room import routes as control_room_routes
 from .control_room.service import ControlRoomService
-from .control_plane.middleware import IdentitySecurityMiddleware
+from .control_plane.middleware import (
+    DisabledExecutionWorkerNamespaceMiddleware,
+    IdentitySecurityMiddleware,
+)
 from .control_plane.authorization import (
     AuthorizationReadAuditWriter,
     AuthorizationRepository,
@@ -680,37 +682,6 @@ def create_app(
     app.include_router(review_routes.router)
     if execution_relay_router is not None:
         app.include_router(execution_relay_router)
-    elif not identity_enabled:
-        reserved_methods = [
-            "GET",
-            "HEAD",
-            "POST",
-            "PUT",
-            "PATCH",
-            "DELETE",
-            "OPTIONS",
-            "TRACE",
-            "CONNECT",
-        ]
-
-        @app.api_route(
-            "/api/v1/execution-worker",
-            methods=reserved_methods,
-            include_in_schema=False,
-        )
-        @app.api_route(
-            "/api/v1/execution-worker/{worker_path:path}",
-            methods=reserved_methods,
-            include_in_schema=False,
-        )
-        def disabled_execution_worker_namespace(
-            worker_path: str | None = None,
-        ) -> JSONResponse:
-            return JSONResponse(
-                {"detail": "not found"},
-                status_code=404,
-                headers={"Cache-Control": "no-store"},
-            )
     if identity_enabled:
         app.include_router(routes_manage.router)
         def request_auth_context(request: Request):
@@ -755,6 +726,8 @@ def create_app(
             authorization=authorization_service,
             routes=tuple(app.router.routes),
         )
+    if not config.execution_relay_enabled:
+        app.add_middleware(DisabledExecutionWorkerNamespaceMiddleware)
 
     return app
 

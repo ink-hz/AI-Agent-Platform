@@ -64,6 +64,25 @@ def _has_canonical_ascii_raw_path(scope, path: str) -> bool:
         return False
 
 
+class DisabledExecutionWorkerNamespaceMiddleware:
+    """Reserve the worker namespace when the signed relay is not mounted."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and _is_execution_worker_namespace(
+            scope.get("path", "")
+        ):
+            await JSONResponse(
+                {"detail": "not found"},
+                status_code=404,
+                headers=_NO_STORE,
+            )(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 def _unprefixed(path: str, prefix: str) -> str | None:
     if prefix == "/":
         return path
