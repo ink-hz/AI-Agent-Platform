@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
+from ipaddress import ip_network
 import json
+import threading
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -10,6 +13,9 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.control_plane.middleware import IdentitySecurityMiddleware
+from app.control_plane.crypto import IdentityKeyring
+from app.control_plane.models import IdentityMode
+from app.config import load_config
 from app.execution_relay.models import RelayEvent, RelayJobPayload, RelayLease
 from app.execution_relay.repository import (
     ExecutionRelayConflict,
@@ -17,7 +23,10 @@ from app.execution_relay.repository import (
     ExecutionRelayNotFound,
     ExecutionRelayWorkerUnavailable,
 )
-from app.execution_relay.routes import build_execution_relay_router
+from app.execution_relay.routes import (
+    ExecutionWorkerRequestLimiter,
+    build_execution_relay_router,
+)
 from app.execution_relay.worker_auth import (
     WorkerAuthenticationError,
     WorkerIdentity,
@@ -27,6 +36,10 @@ from app.execution_relay.worker_auth import (
 RUN_ID = UUID("12345678-1234-4234-9234-123456789abc")
 OTHER_RUN_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 VALID_HEADERS = {"X-Orbbec-Worker-Signature": "valid"}
+CONTROL_DSN = (
+    "postgresql://platform_control_app:secret@localhost/"
+    "agent_platform_control"
+)
 
 
 class FakeVerifier:
@@ -73,10 +86,13 @@ class FakeRepository:
 
 
 class BrowserAuth:
+    mode = IdentityMode.PRODUCTION
     route_prefix = "/"
     cookie_name = "session"
     csrf_cookie_name = "csrf"
     public_base_url = "https://agent.example.test"
+    app_key = "public-app-key"
+    corp_id = "public-corp-id"
     trusted_proxy_networks = ()
     rate_limiter = None
 
@@ -88,10 +104,12 @@ class BrowserAuth:
         return (SimpleNamespace(internal_user_id=uuid4()), b"csrf")
 
 
-def _client(*, limit: int = 120):
+def _client(*, limit: int = 120, trusted_proxy: bool = False):
     repository = FakeRepository()
     verifier = FakeVerifier()
     auth = BrowserAuth()
+    if trusted_proxy:
+        auth.trusted_proxy_networks = (ip_network("127.0.0.1/32"),)
     app = FastAPI()
     app.include_router(
         build_execution_relay_router(
@@ -108,7 +126,7 @@ def _client(*, limit: int = 120):
         public_assets=frozenset(),
         routes=tuple(app.router.routes),
     )
-    return TestClient(app), repository, verifier, auth
+    return TestClient(app, client=("127.0.0.1", 50000)), repository, verifier, auth
 
 
 def _event(run_id: UUID = RUN_ID, *, seq: int = 1) -> dict[str, object]:
@@ -160,6 +178,91 @@ def test_browser_cookie_and_origin_do_not_authorize_or_gate_machine_route():
     assert accepted.json() == {"cancel_requested_run_ids": [str(RUN_ID)]}
     assert repository.calls == [("heartbeat", "worker-1")]
     assert auth.authenticate_calls == 0
+
+
+@pytest.mark.parametrize("with_cookie", [False, True])
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/api/v1/execution-worker/lease"),
+        ("POST", "/api/v1/execution-worker/future"),
+        ("POST", "/api/v1/execution-worker"),
+        ("POST", "/api/v1/execution-worker/lease/"),
+    ],
+)
+def test_non_exact_worker_namespace_is_generic_no_store_404(
+    method, path, with_cookie
+):
+    client, repository, verifier, auth = _client()
+    if with_cookie:
+        client.cookies.set("session", "valid")
+
+    response = client.request(method, path, json={})
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "not found"}
+    assert response.headers["cache-control"] == "no-store"
+    assert repository.calls == []
+    assert verifier.calls == []
+    assert auth.authenticate_calls == 0
+
+
+@pytest.mark.parametrize("with_cookie", [False, True])
+def test_percent_encoded_worker_alias_is_generic_no_store_404(with_cookie):
+    client, repository, verifier, auth = _client()
+    if with_cookie:
+        client.cookies.set("session", "valid")
+
+    response = client.post(
+        "/api/v1/execution-worker/%6cease",
+        json={},
+        headers=VALID_HEADERS,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "not found"}
+    assert response.headers["cache-control"] == "no-store"
+    assert repository.calls == []
+    assert verifier.calls == []
+    assert auth.authenticate_calls == 0
+
+
+def test_similar_non_namespace_path_keeps_dingtalk_protection():
+    client, repository, verifier, auth = _client()
+
+    response = client.post("/api/v1/execution-workerx", json={})
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "authentication required"}
+    assert repository.calls == []
+    assert verifier.calls == []
+    assert auth.authenticate_calls == 0
+
+
+def test_worker_boundary_preserves_trusted_proxy_rejection_before_signature():
+    client, repository, verifier, _auth = _client(trusted_proxy=True)
+
+    rejected = client.post(
+        "/api/v1/execution-worker/heartbeat",
+        json={},
+        headers=VALID_HEADERS,
+    )
+    accepted = client.post(
+        "/api/v1/execution-worker/heartbeat",
+        json={},
+        headers={
+            **VALID_HEADERS,
+            "X-Real-IP": "203.0.113.7",
+            "X-Forwarded-Proto": "https",
+            "Forwarded": "",
+        },
+    )
+
+    assert rejected.status_code == 400
+    assert rejected.headers["cache-control"] == "no-store"
+    assert accepted.status_code == 200
+    assert len(verifier.calls) == 1
+    assert repository.calls == [("heartbeat", "worker-1")]
 
 
 def test_signature_covers_raw_body_before_signed_malformed_json_is_rejected():
@@ -364,6 +467,57 @@ def test_invalid_signatures_do_not_consume_authenticated_worker_quota():
     assert len(repository.calls) == 2
 
 
+def test_limiter_clock_sampling_is_serialized_with_bucket_updates():
+    older_started = threading.Event()
+    newer_sampled = threading.Event()
+
+    def clock() -> float:
+        if threading.current_thread().name == "older-request":
+            older_started.set()
+            newer_sampled.wait(timeout=0.25)
+            return 10.0
+        newer_sampled.set()
+        return 20.0
+
+    limiter = ExecutionWorkerRequestLimiter(limit=3, clock=clock)
+    older = threading.Thread(
+        name="older-request", target=limiter.check, args=("worker-1",)
+    )
+    newer = threading.Thread(
+        name="newer-request", target=limiter.check, args=("worker-1",)
+    )
+
+    older.start()
+    assert older_started.wait(timeout=1)
+    newer.start()
+    older.join(timeout=1)
+    newer.join(timeout=1)
+
+    assert not older.is_alive() and not newer.is_alive()
+    assert list(limiter._buckets["worker-1"]) == [10.0, 20.0]
+
+
+def test_verifier_and_repository_calls_run_through_threadpool(monkeypatch):
+    calls = []
+
+    async def traced(function, *args, **kwargs):
+        calls.append(function.__name__)
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "app.execution_relay.routes.run_in_threadpool", traced
+    )
+    client, repository, _verifier, _auth = _client()
+
+    response = client.post(
+        "/api/v1/execution-worker/heartbeat", json={}, headers=VALID_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert calls == ["verify", "heartbeat"]
+    assert repository.calls == [("heartbeat", "worker-1")]
+
+
 def test_failure_bodies_never_reflect_signed_or_event_content():
     client, repository, _verifier, _auth = _client()
     repository.error = ExecutionRelayError("ciphertext nonce-signature protected-delta")
@@ -379,3 +533,192 @@ def test_failure_bodies_never_reflect_signed_or_event_content():
     assert "protected" not in response.text
     assert "signature" not in response.text
     assert "ciphertext" not in response.text
+
+
+class _ProbeCursor:
+    def __init__(self, rows):
+        self._rows = iter(rows)
+        self.queries = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def execute(self, query):
+        self.queries.append(query)
+        return self
+
+    def fetchone(self):
+        return next(self._rows)
+
+
+class _ProbeConnection:
+    def __init__(self, rows):
+        self.cursor_value = _ProbeCursor(rows)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def cursor(self):
+        return self.cursor_value
+
+
+def _ready_rows(*, schema=True, privileges=True):
+    schema_value = "present" if schema else None
+    return (
+        {
+            "workers": schema_value,
+            "worker_keys": schema_value,
+            "jobs": schema_value,
+            "events": schema_value,
+            "nonces": schema_value,
+            "touch_worker": schema_value,
+        },
+        {"ready": privileges},
+    )
+
+
+@pytest.mark.parametrize(
+    "connect",
+    [
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError("postgresql://secret@database leaked")
+        ),
+        lambda *_args, **_kwargs: _ProbeConnection(
+            _ready_rows(schema=False)
+        ),
+        lambda *_args, **_kwargs: _ProbeConnection(
+            _ready_rows(privileges=False)
+        ),
+    ],
+)
+def test_relay_database_readiness_fails_closed_and_sanitized(connect):
+    from app.main import _check_execution_relay_database
+
+    with pytest.raises(RuntimeError) as caught:
+        _check_execution_relay_database(CONTROL_DSN, connect=connect)
+
+    assert str(caught.value) == "execution relay database unavailable"
+    assert caught.value.__cause__ is None
+    assert "secret" not in repr(caught.value)
+
+
+def test_relay_database_readiness_checks_schema_function_and_privileges():
+    from app.main import _check_execution_relay_database
+
+    connection = _ProbeConnection(_ready_rows())
+
+    _check_execution_relay_database(
+        CONTROL_DSN, connect=lambda *_args, **_kwargs: connection
+    )
+
+    combined = " ".join(connection.cursor_value.queries).lower()
+    for name in (
+        "execution_workers",
+        "execution_worker_keys",
+        "execution_jobs",
+        "execution_events",
+        "execution_worker_nonces",
+        "touch_execution_worker_v27",
+        "has_table_privilege",
+        "has_function_privilege",
+    ):
+        assert name in combined
+
+
+def _relay_app_config(tmp_path, *, enabled: bool):
+    base = load_config()
+    return replace(
+        base,
+        static_dir=str(tmp_path / "missing-static"),
+        execution_relay_enabled=enabled,
+        content_encryption_keyring_file="content-keyring" if enabled else "",
+        control_plane=replace(
+            base.control_plane,
+            mode=IdentityMode.PRODUCTION,
+            control_database_url_file="control-dsn",
+            audit_database_url_file="",
+            public_base_url="https://agent.example.test",
+            route_prefix="/",
+            cookie_name="__Host-platform_session",
+        ),
+    )
+
+
+def _create_relay_app(tmp_path, monkeypatch, *, enabled: bool, probe):
+    from app.main import create_app
+
+    registry = tmp_path / "registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "contract.json"
+    contract.write_text('{"bots": []}', encoding="utf-8")
+    config = _relay_app_config(tmp_path, enabled=enabled)
+    dsn = CONTROL_DSN
+    monkeypatch.setattr("app.main.load_config", lambda: config)
+    monkeypatch.setattr("app.main.read_secret_file", lambda _path: dsn)
+    monkeypatch.setattr("app.main._check_execution_relay_database", probe)
+    monkeypatch.setattr(
+        "app.main.IdentityKeyring.from_file",
+        lambda *_args, **_kwargs: IdentityKeyring(
+            1, "platform-content-encryption", {1: b"k" * 32}
+        ),
+    )
+    return create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        identity_auth=BrowserAuth(),
+    )
+
+
+def test_create_app_disabled_does_not_probe_or_mount_relay(tmp_path, monkeypatch):
+    def forbidden_probe(_dsn):
+        raise AssertionError("disabled relay must not probe")
+
+    app = _create_relay_app(
+        tmp_path, monkeypatch, enabled=False, probe=forbidden_probe
+    )
+    response = TestClient(app).post(
+        "/api/v1/execution-worker/heartbeat", json={}, headers=VALID_HEADERS
+    )
+
+    assert app.state.execution_relay_repository is None
+    assert response.status_code == 404
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_create_app_enabled_probes_mounts_and_exposes_repository(
+    tmp_path, monkeypatch
+):
+    probes = []
+    app = _create_relay_app(
+        tmp_path,
+        monkeypatch,
+        enabled=True,
+        probe=lambda dsn: probes.append(dsn),
+    )
+    response = TestClient(app).post(
+        "/api/v1/execution-worker/heartbeat", json={}
+    )
+
+    assert probes == [CONTROL_DSN]
+    assert app.state.execution_relay_repository is not None
+    assert response.status_code == 401
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_create_app_enabled_aborts_before_mount_when_probe_fails(
+    tmp_path, monkeypatch
+):
+    def unavailable(_dsn):
+        raise RuntimeError("execution relay database unavailable")
+
+    with pytest.raises(RuntimeError, match="execution relay database unavailable"):
+        _create_relay_app(
+            tmp_path, monkeypatch, enabled=True, probe=unavailable
+        )

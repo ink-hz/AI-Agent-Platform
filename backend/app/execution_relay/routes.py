@@ -11,6 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse, Response
 
 from .models import RelayEvent
@@ -70,9 +71,9 @@ class ExecutionWorkerRequestLimiter:
         self._lock = Lock()
 
     def check(self, worker_id: str) -> int | None:
-        now = self._clock()
-        cutoff = now - self._window_seconds
         with self._lock:
+            now = self._clock()
+            cutoff = now - self._window_seconds
             bucket = self._buckets.setdefault(worker_id, deque())
             while bucket and bucket[0] <= cutoff:
                 bucket.popleft()
@@ -126,7 +127,8 @@ async def _authenticate(
     if body is None:
         return _error(413, "request body too large")
     try:
-        identity = verifier.verify(
+        identity = await run_in_threadpool(
+            verifier.verify,
             request.method,
             _path_with_query(request),
             body,
@@ -188,7 +190,8 @@ def build_execution_relay_router(
         if _validated(_EmptyBody, authenticated_body.body) is None:
             return _error(422, "request validation failed")
         try:
-            result = repository.lease(
+            result = await run_in_threadpool(
+                repository.lease,
                 authenticated_body.identity.worker_id,
                 authenticated_body.identity.allowed_agent_ids,
                 lease_seconds,
@@ -207,7 +210,8 @@ def build_execution_relay_router(
         if _validated(_EmptyBody, authenticated_body.body) is None:
             return _error(422, "request validation failed")
         try:
-            run_ids = repository.heartbeat(
+            run_ids = await run_in_threadpool(
+                repository.heartbeat,
                 authenticated_body.identity.worker_id
             )
         except ExecutionRelayError as error:
@@ -225,7 +229,8 @@ def build_execution_relay_router(
         if _validated(_EmptyBody, authenticated_body.body) is None:
             return _error(422, "request validation failed")
         try:
-            repository.mark_dispatched(
+            await run_in_threadpool(
+                repository.mark_dispatched,
                 authenticated_body.identity.worker_id, run_id
             )
         except ExecutionRelayError as error:
@@ -244,7 +249,8 @@ def build_execution_relay_router(
             RelayEvent.model_validate(event.model_dump()) for event in parsed.events
         )
         try:
-            inserted = repository.append_events(
+            inserted = await run_in_threadpool(
+                repository.append_events,
                 authenticated_body.identity.worker_id, relay_events
             )
         except ExecutionRelayError as error:
@@ -263,7 +269,8 @@ def build_execution_relay_router(
         if parsed is None:
             return _error(422, "request validation failed")
         try:
-            repository.finish(
+            await run_in_threadpool(
+                repository.finish,
                 authenticated_body.identity.worker_id, run_id, parsed.status
             )
         except ExecutionRelayError as error:

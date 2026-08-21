@@ -34,6 +34,7 @@ _WORKER_RUN_ROUTE = re.compile(
     r"/api/v1/execution-worker/runs/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/"
     r"(?:dispatched|events|terminal)\Z"
 )
+_WORKER_NAMESPACE = "/api/v1/execution-worker"
 
 
 def is_execution_worker_request(method: str, path: str) -> bool:
@@ -45,6 +46,22 @@ def is_execution_worker_request(method: str, path: str) -> bool:
         }
         or _WORKER_RUN_ROUTE.fullmatch(path) is not None
     )
+
+
+def _is_execution_worker_namespace(path: str) -> bool:
+    return path == _WORKER_NAMESPACE or path.startswith(
+        _WORKER_NAMESPACE + "/"
+    )
+
+
+def _has_canonical_ascii_raw_path(scope, path: str) -> bool:
+    raw_path = scope.get("raw_path")
+    if not isinstance(raw_path, bytes):
+        return False
+    try:
+        return raw_path.decode("ascii") == path
+    except UnicodeDecodeError:
+        return False
 
 
 def _unprefixed(path: str, prefix: str) -> str | None:
@@ -167,6 +184,12 @@ class IdentitySecurityMiddleware:
                 response_headers["Pragma"] = "no-cache"
             await send(message)
 
+        async def worker_send(message):
+            if message["type"] == "http.response.start":
+                response_headers = MutableHeaders(scope=message)
+                response_headers["Cache-Control"] = "no-store"
+            await protected_send(message)
+
         public = is_public_request(
             method,path,self.auth.route_prefix,self.public_assets
         )
@@ -186,12 +209,17 @@ class IdentitySecurityMiddleware:
                 return
             scope.setdefault("state", {})["edge_source"] = edge_source
 
-        worker_request = (
-            self.auth.route_prefix == "/"
-            and is_execution_worker_request(method, path)
-        )
-        if worker_request:
-            await self.app(scope, receive, protected_send)
+        if self.auth.route_prefix == "/" and _is_execution_worker_namespace(path):
+            if not _has_canonical_ascii_raw_path(
+                scope, path
+            ) or not is_execution_worker_request(method, path):
+                await JSONResponse(
+                    {"detail": "not found"},
+                    status_code=404,
+                    headers=_NO_STORE,
+                )(scope, receive, protected_send)
+                return
+            await self.app(scope, receive, worker_send)
             return
 
         if public and method not in _SAFE_METHODS and not _origin_matches(

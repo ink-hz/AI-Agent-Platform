@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+import psycopg
+from psycopg.rows import dict_row
 
 from .attachments import routes as attachment_routes
 from .attachments.logging import install_attachment_ticket_redaction
@@ -46,6 +48,7 @@ from .control_plane.auth import (
 )
 from .control_plane.crypto import IdentityKeyring, ProviderIdentityCodec
 from .control_plane.dingtalk import DingTalkClient
+from .control_plane.dsn import validate_control_dsn
 from .control_plane.identity import IdentityResolver
 from .control_plane.rate_limit import ControlRateLimiter
 from .fleet import routes as fleet_routes
@@ -100,6 +103,70 @@ async def cancel_tasks(tasks: list[asyncio.Task]) -> None:
         task.cancel()
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def _check_execution_relay_database(
+    control_database_url: str,
+    *,
+    connect=psycopg.connect,
+) -> None:
+    try:
+        dsn = validate_control_dsn(control_database_url, purpose="app")
+        if dsn.environment != "production":
+            raise ValueError
+        with connect(
+            control_database_url,
+            connect_timeout=3,
+            options="-c statement_timeout=10000 -c timezone=UTC",
+            row_factory=dict_row,
+        ) as connection, connection.cursor() as cursor:
+            objects = cursor.execute(
+                "select "
+                "to_regclass('platform_control.execution_workers') as workers,"
+                "to_regclass('platform_control.execution_worker_keys') "
+                "as worker_keys,"
+                "to_regclass('platform_control.execution_jobs') as jobs,"
+                "to_regclass('platform_control.execution_events') as events,"
+                "to_regclass('platform_control.execution_worker_nonces') "
+                "as nonces,"
+                "to_regprocedure("
+                "'platform_control.touch_execution_worker_v27(text)') "
+                "as touch_worker"
+            ).fetchone()
+            if not objects or any(value is None for value in objects.values()):
+                raise ValueError
+            privileges = cursor.execute(
+                "select ("
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_workers','select') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_worker_keys','select') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_jobs','select') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_jobs','insert') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_jobs','update') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_events','select') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_events','insert') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_events','update') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_worker_nonces','select') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_worker_nonces','insert') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_worker_nonces','delete') and "
+                "has_function_privilege(current_user,"
+                "'platform_control.touch_execution_worker_v27(text)',"
+                "'execute')) as ready"
+            ).fetchone()
+            if not privileges or privileges.get("ready") is not True:
+                raise ValueError
+    except Exception:
+        raise RuntimeError("execution relay database unavailable") from None
 
 
 def build_cloud_replica_services(
@@ -374,6 +441,7 @@ def create_app(
         control_database_url = read_secret_file(
             config.control_plane.control_database_url_file
         )
+        _check_execution_relay_database(control_database_url)
         content_keyring = IdentityKeyring.from_file(
             config.content_encryption_keyring_file,
             expected_purpose="platform-content-encryption",
