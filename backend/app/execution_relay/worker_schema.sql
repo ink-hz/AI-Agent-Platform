@@ -16,9 +16,12 @@ end
 $worker_schema_guard$;
 
 create table if not exists execution_worker.schema_migrations (
-  singleton boolean primary key default true check (singleton),
-  version integer not null check (version > 0),
-  applied_at timestamptz not null default now()
+  singleton boolean default true,
+  version integer not null,
+  applied_at timestamptz not null default now(),
+  constraint schema_migrations_pkey primary key (singleton),
+  constraint schema_migrations_singleton_check check (singleton),
+  constraint schema_migrations_version_check check (version > 0)
 );
 
 do $worker_schema_version$
@@ -42,13 +45,23 @@ end
 $worker_schema_version$;
 
 create table if not exists execution_worker.local_runs (
-  run_id uuid primary key,
-  job_id uuid not null unique,
-  agent_id varchar(128) not null check (length(agent_id) > 0),
-  metabot_port integer not null check (metabot_port between 1 and 65535),
-  callback_token_hash bytea not null
+  run_id uuid,
+  job_id uuid not null,
+  agent_id varchar(128) not null,
+  metabot_port integer not null,
+  callback_token_hash bytea not null,
+  state varchar(32) not null,
+  leased_at timestamptz not null,
+  dispatched_at timestamptz,
+  terminal_at timestamptz,
+  constraint local_runs_pkey primary key (run_id),
+  constraint local_runs_job_id_key unique (job_id),
+  constraint local_runs_agent_id_check check (length(agent_id) > 0),
+  constraint local_runs_metabot_port_check
+    check (metabot_port between 1 and 65535),
+  constraint local_runs_callback_token_hash_check
     check (octet_length(callback_token_hash) = 32),
-  state varchar(32) not null check (
+  constraint local_runs_state_check check (
     state in (
       'leased',
       'dispatching',
@@ -59,27 +72,44 @@ create table if not exists execution_worker.local_runs (
       'cancelled',
       'interrupted'
     )
-  ),
-  leased_at timestamptz not null,
-  dispatched_at timestamptz,
-  terminal_at timestamptz
+  )
 );
 
 create table if not exists execution_worker.event_outbox (
-  run_id uuid not null
-    references execution_worker.local_runs(run_id),
-  seq integer not null check (seq > 0),
-  event_json jsonb not null
-    check (jsonb_typeof(event_json) = 'object'),
+  run_id uuid not null,
+  seq integer not null,
+  event_json jsonb not null,
   delivered_at timestamptz,
-  primary key (run_id, seq)
+  constraint event_outbox_pkey primary key (run_id, seq),
+  constraint event_outbox_run_id_fkey foreign key (run_id)
+    references execution_worker.local_runs(run_id),
+  constraint event_outbox_seq_check check (seq > 0),
+  constraint event_outbox_event_json_check
+    check (jsonb_typeof(event_json) = 'object')
 );
 
 do $worker_schema_layout$
 declare
+  migration_columns text[];
   local_columns text[];
   outbox_columns text[];
+  migration_constraints text[];
+  local_constraints text[];
+  outbox_constraints text[];
 begin
+  select array_agg(
+    format(
+      '%s:%s:%s:%s',
+      column_name,
+      data_type,
+      is_nullable,
+      coalesce(character_maximum_length,0)
+    ) order by ordinal_position
+  ) into migration_columns
+  from information_schema.columns
+  where table_schema = 'execution_worker'
+    and table_name = 'schema_migrations';
+
   select array_agg(
     format(
       '%s:%s:%s:%s',
@@ -103,7 +133,69 @@ begin
   from information_schema.columns
   where table_schema = 'execution_worker' and table_name = 'event_outbox';
 
-  if local_columns is distinct from array[
+  select array_agg(
+    format(
+      '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s',
+      c.conname,
+      c.contype,
+      c.convalidated,
+      c.condeferrable,
+      c.condeferred,
+      case when c.contype = 'f' then c.confupdtype::text else '-' end,
+      case when c.contype = 'f' then c.confdeltype::text else '-' end,
+      case when c.contype = 'f' then c.confmatchtype::text else '-' end,
+      case when c.contype = 'c'
+        then pg_get_constraintdef(c.oid,true) else '' end,
+      coalesce(pg_get_expr(c.conbin,c.conrelid,true),'')
+    ) order by c.conname
+  ) into migration_constraints
+  from pg_constraint c
+  where c.conrelid = 'execution_worker.schema_migrations'::regclass;
+
+  select array_agg(
+    format(
+      '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s',
+      c.conname,
+      c.contype,
+      c.convalidated,
+      c.condeferrable,
+      c.condeferred,
+      case when c.contype = 'f' then c.confupdtype::text else '-' end,
+      case when c.contype = 'f' then c.confdeltype::text else '-' end,
+      case when c.contype = 'f' then c.confmatchtype::text else '-' end,
+      case when c.contype = 'c'
+        then pg_get_constraintdef(c.oid,true) else '' end,
+      coalesce(pg_get_expr(c.conbin,c.conrelid,true),'')
+    ) order by c.conname
+  ) into local_constraints
+  from pg_constraint c
+  where c.conrelid = 'execution_worker.local_runs'::regclass;
+
+  select array_agg(
+    format(
+      '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s',
+      c.conname,
+      c.contype,
+      c.convalidated,
+      c.condeferrable,
+      c.condeferred,
+      case when c.contype = 'f' then c.confupdtype::text else '-' end,
+      case when c.contype = 'f' then c.confdeltype::text else '-' end,
+      case when c.contype = 'f' then c.confmatchtype::text else '-' end,
+      case when c.contype = 'c'
+        then pg_get_constraintdef(c.oid,true) else '' end,
+      coalesce(pg_get_expr(c.conbin,c.conrelid,true),'')
+    ) order by c.conname
+  ) into outbox_constraints
+  from pg_constraint c
+  where c.conrelid = 'execution_worker.event_outbox'::regclass;
+
+  if migration_columns is distinct from array[
+       'singleton:boolean:NO:0',
+       'version:integer:NO:0',
+       'applied_at:timestamp with time zone:NO:0'
+     ]
+     or local_columns is distinct from array[
        'run_id:uuid:NO:0',
        'job_id:uuid:NO:0',
        'agent_id:character varying:NO:128',
@@ -120,6 +212,34 @@ begin
        'event_json:jsonb:NO',
        'delivered_at:timestamp with time zone:YES'
      ]
+     or migration_constraints is distinct from array[
+       'schema_migrations_pkey|p|t|f|f|-|-|-||',
+       'schema_migrations_singleton_check|c|t|f|f|-|-|-|CHECK (singleton)|singleton',
+       'schema_migrations_version_check|c|t|f|f|-|-|-|CHECK (version > 0)|version > 0'
+     ]
+     or local_constraints is distinct from array[
+       'local_runs_agent_id_check|c|t|f|f|-|-|-|CHECK (length(agent_id::text) > 0)|length(agent_id::text) > 0',
+       'local_runs_callback_token_hash_check|c|t|f|f|-|-|-|CHECK (octet_length(callback_token_hash) = 32)|octet_length(callback_token_hash) = 32',
+       'local_runs_job_id_key|u|t|f|f|-|-|-||',
+       'local_runs_metabot_port_check|c|t|f|f|-|-|-|CHECK (metabot_port >= 1 AND metabot_port <= 65535)|metabot_port >= 1 AND metabot_port <= 65535',
+       'local_runs_pkey|p|t|f|f|-|-|-||',
+       'local_runs_state_check|c|t|f|f|-|-|-|CHECK (state::text = ANY (ARRAY[''leased''::character varying, ''dispatching''::character varying, ''dispatched''::character varying, ''running''::character varying, ''completed''::character varying, ''failed''::character varying, ''cancelled''::character varying, ''interrupted''::character varying]::text[]))|state::text = ANY (ARRAY[''leased''::character varying, ''dispatching''::character varying, ''dispatched''::character varying, ''running''::character varying, ''completed''::character varying, ''failed''::character varying, ''cancelled''::character varying, ''interrupted''::character varying]::text[])'
+     ]
+     or outbox_constraints is distinct from array[
+       'event_outbox_event_json_check|c|t|f|f|-|-|-|CHECK (jsonb_typeof(event_json) = ''object''::text)|jsonb_typeof(event_json) = ''object''::text',
+       'event_outbox_pkey|p|t|f|f|-|-|-||',
+       'event_outbox_run_id_fkey|f|t|f|f|a|a|s||',
+       'event_outbox_seq_check|c|t|f|f|-|-|-|CHECK (seq > 0)|seq > 0'
+     ]
+     or (select array_agg(a.attname::text order by key.ordinality)
+         from pg_constraint c
+         cross join lateral unnest(c.conkey)
+           with ordinality as key(attnum,ordinality)
+         join pg_attribute a
+           on a.attrelid = c.conrelid and a.attnum = key.attnum
+         where c.conrelid = 'execution_worker.schema_migrations'::regclass
+           and c.conname = 'schema_migrations_pkey' and c.contype = 'p')
+        is distinct from array['singleton']
      or (select array_agg(a.attname::text order by key.ordinality)
          from pg_constraint c
          cross join lateral unnest(c.conkey)

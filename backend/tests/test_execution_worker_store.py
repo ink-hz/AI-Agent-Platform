@@ -291,6 +291,28 @@ def test_schema_reapply_rejects_wrong_version_or_incompatible_layout(
             "alter table execution_worker.local_runs add constraint "
             "local_runs_agent_id_key unique (agent_id)",
         ),
+        (
+            "alter table execution_worker.local_runs drop constraint "
+            "local_runs_state_check",
+            "alter table execution_worker.local_runs add constraint "
+            "local_runs_state_check check (state = 'leased')",
+        ),
+        (
+            "alter table execution_worker.local_runs drop constraint "
+            "local_runs_metabot_port_check",
+            "alter table execution_worker.local_runs add constraint "
+            "local_runs_metabot_port_check check (metabot_port in (1,65535))",
+        ),
+        (
+            "alter table execution_worker.event_outbox drop constraint "
+            "event_outbox_seq_check",
+            "alter table execution_worker.event_outbox add constraint "
+            "event_outbox_seq_check check (seq = 1)",
+        ),
+        (
+            "alter table execution_worker.local_runs add constraint "
+            "local_runs_agent_port_key unique (agent_id,metabot_port)",
+        ),
     ],
 )
 def test_schema_behavioral_validation_rejects_false_positive_layouts(
@@ -302,6 +324,103 @@ def test_schema_behavioral_validation_rejects_false_positive_layouts(
         with pytest.raises(psycopg.Error, match="incompatible execution worker schema"):
             connection.execute(SCHEMA.read_text(encoding="utf-8"))
         connection.rollback()
+
+
+def _seed_worker_rows(connection) -> tuple[tuple[object, ...], tuple[object, ...]]:
+    run_id = UUID("00000000-0000-4000-8000-000000000151")
+    job_id = UUID("00000000-0000-4000-8000-000000000152")
+    connection.execute(
+        "insert into execution_worker.local_runs "
+        "(run_id,job_id,agent_id,metabot_port,callback_token_hash,state,"
+        "leased_at,dispatched_at,terminal_at) values "
+        "(%s,%s,'hr-bot',9101,%s,'running',%s,%s,null)",
+        (run_id, job_id, bytes(range(32)), NOW, NOW + timedelta(seconds=1)),
+    )
+    connection.execute(
+        "insert into execution_worker.event_outbox "
+        "(run_id,seq,event_json,delivered_at) values (%s,1,%s::jsonb,%s)",
+        (
+            run_id,
+            json.dumps(
+                {
+                    "run_id": str(run_id),
+                    "seq": 1,
+                    "event_type": "turn",
+                    "created_at": NOW.isoformat(),
+                    "payload": {"nested": [True, 1, "seeded"]},
+                }
+            ),
+            NOW + timedelta(seconds=2),
+        ),
+    )
+    local_row = connection.execute(
+        "select run_id,job_id,agent_id,metabot_port,callback_token_hash,state,"
+        "leased_at,dispatched_at,terminal_at "
+        "from execution_worker.local_runs where run_id=%s",
+        (run_id,),
+    ).fetchone()
+    outbox_row = connection.execute(
+        "select run_id,seq,event_json,delivered_at "
+        "from execution_worker.event_outbox where run_id=%s and seq=1",
+        (run_id,),
+    ).fetchone()
+    return local_row, outbox_row
+
+
+@pytest.mark.postgres
+def test_schema_successful_reapply_preserves_seeded_rows_field_for_field(
+    worker_database: str,
+) -> None:
+    with psycopg.connect(worker_database) as connection:
+        before = _seed_worker_rows(connection)
+        connection.execute(SCHEMA.read_text(encoding="utf-8"))
+        run_id = before[0][0]
+        after = (
+            connection.execute(
+                "select run_id,job_id,agent_id,metabot_port,callback_token_hash,"
+                "state,leased_at,dispatched_at,terminal_at "
+                "from execution_worker.local_runs where run_id=%s",
+                (run_id,),
+            ).fetchone(),
+            connection.execute(
+                "select run_id,seq,event_json,delivered_at "
+                "from execution_worker.event_outbox where run_id=%s and seq=1",
+                (run_id,),
+            ).fetchone(),
+        )
+        assert after == before
+
+
+@pytest.mark.postgres
+def test_schema_failed_reapply_rolls_back_and_preserves_seeded_rows(
+    worker_database: str,
+) -> None:
+    with psycopg.connect(worker_database) as connection:
+        before = _seed_worker_rows(connection)
+    with psycopg.connect(worker_database) as connection:
+        connection.execute(
+            "alter table execution_worker.local_runs add constraint "
+            "local_runs_agent_port_key unique (agent_id,metabot_port)"
+        )
+        with pytest.raises(psycopg.Error, match="incompatible execution worker schema"):
+            connection.execute(SCHEMA.read_text(encoding="utf-8"))
+        connection.rollback()
+    with psycopg.connect(worker_database) as connection:
+        run_id = before[0][0]
+        after = (
+            connection.execute(
+                "select run_id,job_id,agent_id,metabot_port,callback_token_hash,"
+                "state,leased_at,dispatched_at,terminal_at "
+                "from execution_worker.local_runs where run_id=%s",
+                (run_id,),
+            ).fetchone(),
+            connection.execute(
+                "select run_id,seq,event_json,delivered_at "
+                "from execution_worker.event_outbox where run_id=%s and seq=1",
+                (run_id,),
+            ).fetchone(),
+        )
+        assert after == before
 
 
 @pytest.mark.postgres
