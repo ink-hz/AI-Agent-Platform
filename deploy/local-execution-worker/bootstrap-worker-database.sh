@@ -102,48 +102,6 @@ owner_psql() {
     -h "$owner_host" -p "$owner_port" -U "$owner_user" "$@"
 }
 
-cleanup_needed=0
-cleanup_membership_once() {
-  owner_psql -d postgres >/dev/null 2>&1 <<'SQL'
-select format('revoke agent_execution_worker_migrator from %I', current_user) \gexec
-do $membership_cleanup_verification$
-declare
-  membership_count integer;
-begin
-  select count(*) into membership_count
-    from pg_auth_members membership
-    join pg_roles granted_role on granted_role.oid=membership.roleid
-    join pg_roles member_role on member_role.oid=membership.member
-   where granted_role.rolname='agent_execution_worker_migrator'
-     and member_role.rolname=current_user;
-  if membership_count <> 0 then
-    raise exception 'temporary execution worker membership remains';
-  end if;
-end
-$membership_cleanup_verification$;
-SQL
-}
-cleanup_membership() {
-  for cleanup_attempt in 1 2; do
-    if cleanup_membership_once; then
-      return 0
-    fi
-  done
-  return 1
-}
-database_exit() {
-  selected_status=$?
-  trap - EXIT
-  if [[ "$cleanup_needed" == "1" ]]; then
-    if ! cleanup_membership; then
-      echo "EXECUTION_WORKER_DATABASE_MEMBERSHIP_ROLLBACK_FAILED" >&2
-      exit 1
-    fi
-  fi
-  exit "$selected_status"
-}
-trap database_exit EXIT
-
 # Read-only collision audit. Invalid existing roles, memberships, database ownership,
 # or ACLs fail before role grants or schema/outbox access.
 owner_psql -d postgres >/dev/null <<'SQL'
@@ -151,6 +109,13 @@ do $preflight$
 declare
   selected record;
 begin
+  if not exists (
+    select 1 from pg_roles
+    where rolname=current_user and rolsuper
+  ) then
+    raise exception 'owner dsn role must be superuser';
+  end if;
+
   for selected in
     select role.rolname,role.rolcanlogin,role.rolsuper,role.rolcreatedb,
            role.rolcreaterole,role.rolreplication,role.rolbypassrls,
@@ -192,7 +157,8 @@ begin
        and not (
          granted_role.rolname='agent_execution_worker_owner'
          and member_role.rolname='agent_execution_worker_migrator'
-         and membership.grantor=(select oid from pg_roles where rolname=current_user)
+         and membership.grantor=10
+         and exists (select 1 from pg_authid where oid=10 and rolsuper)
          and not membership.admin_option
          and not membership.inherit_option
          and membership.set_option
@@ -274,6 +240,15 @@ begin
   ) then
     raise exception 'execution worker database or acl collision';
   end if;
+
+  if exists (
+    select 1 from pg_database database
+    where database.datallowconn
+      and database.datname <> 'agent_execution_worker'
+      and database.datname !~ '^[A-Za-z0-9_]+$'
+  ) then
+    raise exception 'unsafe database name collision';
+  end if;
 end
 $preflight$;
 SQL
@@ -281,7 +256,7 @@ SQL
 # Dedicated worker roles must be absent from every other connectable database.
 # Database names outside the conservative local naming contract fail closed.
 other_databases="$(owner_psql -d postgres -A -t -c \
-  "select datname from pg_database where not datistemplate and datallowconn and datname <> 'agent_execution_worker' order by datname")" || fail
+  "select datname from pg_database where datallowconn and datname <> 'agent_execution_worker' order by datname")" || fail
 for database_name in $other_databases; do
   [[ "$database_name" =~ ^[A-Za-z0-9_]+$ ]] || fail
   PGDATABASE="$database_name" owner_psql >/dev/null <<'SQL'
@@ -376,7 +351,278 @@ commit;
 SQL
 done
 
-cleanup_needed=1
+# An open target database is either an untouched post-CREATE partial state or the
+# exact worker schema. Audit it read-only before any grants, DDL, or outbox access.
+target_database_open="$(owner_psql -d postgres -A -t -c \
+  "select coalesce((select datallowconn::integer from pg_database where datname='agent_execution_worker'),0)")" || fail
+if [[ "$target_database_open" == "1" ]]; then
+  owner_psql -d agent_execution_worker >/dev/null <<'SQL'
+begin read only;
+do $target_database_inventory$
+begin
+  if exists (
+    select 1 from pg_namespace
+    where nspname <> 'public'
+      and nspname <> 'execution_worker'
+      and nspname <> 'information_schema'
+      and nspname !~ '^pg_'
+  ) then
+    raise exception 'target database inventory collision';
+  end if;
+
+  if exists (
+    select 1 from pg_largeobject_metadata
+  ) or exists (
+    select 1 from pg_extension where extname <> 'plpgsql'
+  ) or exists (
+    select 1 from pg_publication
+  ) or exists (
+    select 1 from pg_subscription
+    where subdbid=(select oid from pg_database where datname=current_database())
+  ) then
+    raise exception 'target database inventory collision';
+  end if;
+
+  if exists (select 1 from pg_foreign_data_wrapper)
+  or exists (select 1 from pg_foreign_server)
+  or exists (select 1 from pg_user_mapping)
+  or exists (select 1 from pg_event_trigger)
+  or exists (
+    select 1 from pg_language object
+    where object.lanowner in (
+      select oid from pg_roles where rolname like 'agent_execution_worker_%'
+    ) or exists (
+      select 1 from aclexplode(object.lanacl) acl
+      where acl.grantee in (
+        select oid from pg_roles where rolname like 'agent_execution_worker_%'
+      )
+    )
+  ) then
+    raise exception 'target database inventory collision';
+  end if;
+
+  if exists (
+    select 1 from pg_class relation
+    join pg_namespace namespace on namespace.oid=relation.relnamespace
+    where namespace.nspname in ('public','execution_worker')
+      and not (
+        namespace.nspname='execution_worker'
+        and concat(relation.relkind,':',relation.relname) in (
+          'r:schema_migrations','r:local_runs','r:event_outbox',
+          'i:schema_migrations_pkey','i:local_runs_pkey',
+          'i:local_runs_job_id_key','i:event_outbox_pkey'
+        )
+      )
+  ) or exists (
+    select 1 from pg_proc object
+    join pg_namespace namespace on namespace.oid=object.pronamespace
+    where namespace.nspname in ('public','execution_worker')
+  ) or exists (
+    select 1 from pg_collation object
+    join pg_namespace namespace on namespace.oid=object.collnamespace
+    where namespace.nspname in ('public','execution_worker')
+  ) or exists (
+    select 1 from pg_conversion object
+    join pg_namespace namespace on namespace.oid=object.connamespace
+    where namespace.nspname in ('public','execution_worker')
+  ) or exists (
+    select 1 from pg_operator object
+    join pg_namespace namespace on namespace.oid=object.oprnamespace
+    where namespace.nspname in ('public','execution_worker')
+  ) or exists (
+    select 1 from pg_opclass object
+    join pg_namespace namespace on namespace.oid=object.opcnamespace
+    where namespace.nspname in ('public','execution_worker')
+  ) or exists (
+    select 1 from pg_opfamily object
+    join pg_namespace namespace on namespace.oid=object.opfnamespace
+    where namespace.nspname in ('public','execution_worker')
+  ) or exists (
+    select 1 from pg_statistic_ext object
+    join pg_namespace namespace on namespace.oid=object.stxnamespace
+    where namespace.nspname in ('public','execution_worker')
+  ) or exists (
+    select 1 from pg_policy
+  ) or exists (
+    select 1 from pg_trigger where not tgisinternal
+  ) then
+    raise exception 'target database inventory collision';
+  end if;
+
+  if exists (
+    select 1 from pg_type object
+    join pg_namespace namespace on namespace.oid=object.typnamespace
+    where namespace.nspname in ('public','execution_worker')
+      and not (
+        namespace.nspname='execution_worker'
+        and (
+          object.typrelid in (
+            select relation.oid from pg_class relation
+            join pg_namespace relation_namespace on relation_namespace.oid=relation.relnamespace
+            where relation_namespace.nspname='execution_worker'
+              and relation.relkind='r'
+              and relation.relname in ('schema_migrations','local_runs','event_outbox')
+          )
+          or object.typelem in (
+            select row_type.oid from pg_type row_type
+            join pg_class relation on relation.oid=row_type.typrelid
+            join pg_namespace relation_namespace on relation_namespace.oid=relation.relnamespace
+            where relation_namespace.nspname='execution_worker'
+              and relation.relkind='r'
+              and relation.relname in ('schema_migrations','local_runs','event_outbox')
+          )
+        )
+      )
+  ) then
+    raise exception 'target database inventory collision';
+  end if;
+  if exists (
+    select 1 from pg_type object
+    join pg_namespace namespace on namespace.oid=object.typnamespace
+    where namespace.nspname in ('public','execution_worker')
+      and object.typacl is not null
+  ) then
+    raise exception 'target database inventory collision';
+  end if;
+
+  if exists (select 1 from pg_namespace where nspname='execution_worker') then
+    if (select nspowner from pg_namespace where nspname='execution_worker') <>
+       (select oid from pg_roles where rolname='agent_execution_worker_owner') then
+      raise exception 'target database inventory collision';
+    end if;
+    if exists (
+      select 1 from pg_class relation
+      join pg_namespace namespace on namespace.oid=relation.relnamespace
+      where namespace.nspname='execution_worker'
+        and relation.relowner <> (
+          select oid from pg_roles where rolname='agent_execution_worker_owner'
+        )
+    ) or exists (
+      select 1 from pg_type object
+      join pg_namespace namespace on namespace.oid=object.typnamespace
+      where namespace.nspname='execution_worker'
+        and object.typowner <> (
+          select oid from pg_roles where rolname='agent_execution_worker_owner'
+        )
+    ) then
+      raise exception 'target database inventory collision';
+    end if;
+    if exists (
+      select 1 from pg_namespace namespace,
+      lateral aclexplode(
+        coalesce(namespace.nspacl,acldefault('n',namespace.nspowner))
+      ) acl
+      left join pg_roles grantee on grantee.oid=acl.grantee
+      left join pg_roles grantor on grantor.oid=acl.grantor
+      where namespace.nspname='execution_worker'
+        and not (
+          grantee.rolname='agent_execution_worker_owner'
+          or (
+            grantee.rolname='agent_execution_worker_runtime'
+            and grantor.rolname='agent_execution_worker_owner'
+            and acl.privilege_type='USAGE'
+            and not acl.is_grantable
+          )
+        )
+    ) then
+      raise exception 'target database inventory collision';
+    end if;
+
+    if exists (
+      select 1
+      from pg_class relation
+      join pg_namespace namespace on namespace.oid=relation.relnamespace
+      cross join lateral aclexplode(
+        coalesce(relation.relacl,acldefault('r',relation.relowner))
+      ) acl
+      join pg_roles grantee on grantee.oid=acl.grantee
+      join pg_roles grantor on grantor.oid=acl.grantor
+      where namespace.nspname='execution_worker'
+        and relation.relkind='r'
+        and grantee.rolname='agent_execution_worker_runtime'
+        and not (
+          not acl.is_grantable
+          and grantor.rolname='agent_execution_worker_owner'
+          and concat(relation.relname,':',acl.privilege_type) in (
+            'event_outbox:INSERT','event_outbox:SELECT',
+            'local_runs:INSERT','local_runs:SELECT','schema_migrations:SELECT'
+          )
+        )
+    ) then
+      raise exception 'target database inventory collision';
+    end if;
+    if exists (
+      select 1 from pg_class relation
+      join pg_namespace namespace on namespace.oid=relation.relnamespace
+      cross join lateral aclexplode(
+        coalesce(relation.relacl,acldefault('r',relation.relowner))
+      ) acl
+      left join pg_roles grantee on grantee.oid=acl.grantee
+      where namespace.nspname='execution_worker' and relation.relkind='r'
+        and coalesce(grantee.rolname,'PUBLIC') not in (
+          'agent_execution_worker_owner','agent_execution_worker_runtime'
+        )
+    ) then
+      raise exception 'target database inventory collision';
+    end if;
+
+    if exists (
+      select 1
+      from pg_attribute attribute
+      join pg_class relation on relation.oid=attribute.attrelid
+      join pg_namespace namespace on namespace.oid=relation.relnamespace
+      cross join lateral aclexplode(attribute.attacl) acl
+      join pg_roles grantee on grantee.oid=acl.grantee
+      join pg_roles grantor on grantor.oid=acl.grantor
+      where namespace.nspname='execution_worker'
+        and not (
+          grantee.rolname='agent_execution_worker_runtime'
+          and acl.privilege_type='UPDATE'
+          and not acl.is_grantable
+          and grantor.rolname='agent_execution_worker_owner'
+          and concat(relation.relname,':',attribute.attname) in (
+            'event_outbox:delivered_at','local_runs:dispatched_at',
+            'local_runs:state','local_runs:terminal_at'
+          )
+        )
+    ) then
+      raise exception 'target database inventory collision';
+    end if;
+  elsif exists (
+    select 1 from pg_class relation
+    join pg_namespace namespace on namespace.oid=relation.relnamespace
+    where namespace.nspname='public'
+  ) or exists (
+    select 1 from pg_type object
+    join pg_namespace namespace on namespace.oid=object.typnamespace
+    where namespace.nspname='public'
+  ) then
+    raise exception 'target database inventory collision';
+  end if;
+  if exists (
+    select 1 from pg_namespace namespace,
+    lateral aclexplode(
+      coalesce(namespace.nspacl,acldefault('n',namespace.nspowner))
+    ) acl
+    left join pg_roles grantee on grantee.oid=acl.grantee
+    where namespace.nspname='public'
+      and not (
+        grantee.rolname='pg_database_owner'
+        or (
+          acl.grantee=0
+          and acl.privilege_type='USAGE'
+          and not acl.is_grantable
+        )
+      )
+  ) then
+    raise exception 'target database inventory collision';
+  end if;
+end
+$target_database_inventory$;
+commit;
+SQL
+fi
+
 owner_psql -d postgres >/dev/null <<SQL
 select 'create role agent_execution_worker_owner nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls'
 where not exists (select 1 from pg_roles where rolname='agent_execution_worker_owner') \gexec
@@ -388,12 +634,9 @@ select format(
 )
 where not exists (select 1 from pg_roles where rolname='agent_execution_worker_runtime') \gexec
 select format('alter role agent_execution_worker_runtime password %L', '$runtime_password') \gexec
-select format('grant agent_execution_worker_owner to agent_execution_worker_migrator with admin false granted by %I', current_user) \gexec
-select format('grant agent_execution_worker_owner to agent_execution_worker_migrator with inherit false granted by %I', current_user) \gexec
-select format('grant agent_execution_worker_owner to agent_execution_worker_migrator with set true granted by %I', current_user) \gexec
-select format('grant agent_execution_worker_migrator to %I with admin false granted by %I', current_user, current_user) \gexec
-select format('grant agent_execution_worker_migrator to %I with inherit false granted by %I', current_user, current_user) \gexec
-select format('grant agent_execution_worker_migrator to %I with set true granted by %I', current_user, current_user) \gexec
+grant agent_execution_worker_owner to agent_execution_worker_migrator with admin false;
+grant agent_execution_worker_owner to agent_execution_worker_migrator with inherit false;
+grant agent_execution_worker_owner to agent_execution_worker_migrator with set true;
 select 'create database agent_execution_worker owner agent_execution_worker_owner template template0 encoding ''UTF8'' allow_connections false'
 where not exists (select 1 from pg_database where datname='agent_execution_worker') \gexec
 revoke all on database agent_execution_worker from public;
@@ -417,10 +660,7 @@ grant select on execution_worker.schema_migrations to agent_execution_worker_run
 reset role;
 SQL
 
-cleanup_membership
-cleanup_needed=0
-
-# Exact persistent-state audit after the temporary current_user grant is removed.
+# Exact persistent-state audit.
 owner_psql -d agent_execution_worker >/dev/null <<'SQL'
 do $verify$
 declare
@@ -463,7 +703,8 @@ begin
       and not (
         granted_role.rolname='agent_execution_worker_owner'
         and member_role.rolname='agent_execution_worker_migrator'
-        and membership.grantor=(select oid from pg_roles where rolname=current_user)
+        and membership.grantor=10
+        and exists (select 1 from pg_authid where oid=10 and rolsuper)
         and not membership.admin_option
         and not membership.inherit_option
         and membership.set_option
@@ -473,7 +714,8 @@ begin
         join pg_roles member_role on member_role.oid=membership.member
         where granted_role.rolname='agent_execution_worker_owner'
           and member_role.rolname='agent_execution_worker_migrator'
-          and membership.grantor=(select oid from pg_roles where rolname=current_user)
+          and membership.grantor=10
+          and exists (select 1 from pg_authid where oid=10 and rolsuper)
           and not membership.admin_option
           and not membership.inherit_option
           and membership.set_option) <> 1 then
@@ -541,6 +783,18 @@ begin
   ) then
     raise exception 'execution worker table ownership mismatch';
   end if;
+  select array_agg(concat(relation.relkind,':',relation.relname)
+                   order by relation.relkind,relation.relname)
+    into actual
+    from pg_class relation
+    join pg_namespace namespace on namespace.oid=relation.relnamespace
+   where namespace.nspname='execution_worker';
+  if actual is distinct from array[
+    'i:event_outbox_pkey','i:local_runs_job_id_key','i:local_runs_pkey',
+    'i:schema_migrations_pkey','r:event_outbox','r:local_runs','r:schema_migrations'
+  ] then
+    raise exception 'execution worker relation inventory mismatch';
+  end if;
   if exists (
     select 1 from pg_class relation
     join pg_namespace namespace on namespace.oid=relation.relnamespace
@@ -553,30 +807,54 @@ begin
   ) then
     raise exception 'execution worker unexpected table grant';
   end if;
-  select array_agg(concat(table_name,':',privilege_type) order by table_name,privilege_type)
+  select array_agg(concat(table_name,':',privilege_type,':',is_grantable)
+                   order by table_name,privilege_type,is_grantable)
     into actual
     from information_schema.role_table_grants
    where grantee='agent_execution_worker_runtime' and table_schema='execution_worker';
   if actual is distinct from array[
-    'event_outbox:INSERT','event_outbox:SELECT',
-    'local_runs:INSERT','local_runs:SELECT',
-    'schema_migrations:SELECT'
+    'event_outbox:INSERT:NO','event_outbox:SELECT:NO',
+    'local_runs:INSERT:NO','local_runs:SELECT:NO',
+    'schema_migrations:SELECT:NO'
   ] then
     raise exception 'execution worker runtime table grant mismatch';
   end if;
-  select array_agg(concat(table_name,':',column_name) order by table_name,column_name)
+  select array_agg(concat(table_name,':',column_name,':',is_grantable)
+                   order by table_name,column_name,is_grantable)
     into actual
     from information_schema.role_column_grants
    where grantee='agent_execution_worker_runtime'
      and table_schema='execution_worker'
      and privilege_type='UPDATE';
   if actual is distinct from array[
-    'event_outbox:delivered_at',
-    'local_runs:dispatched_at',
-    'local_runs:state',
-    'local_runs:terminal_at'
+    'event_outbox:delivered_at:NO',
+    'local_runs:dispatched_at:NO',
+    'local_runs:state:NO',
+    'local_runs:terminal_at:NO'
   ] then
     raise exception 'execution worker runtime column grant mismatch';
+  end if;
+  select array_agg(
+           concat(relation.relname,':',attribute.attname,':',grantee.rolname,':',
+                  acl.privilege_type,':',acl.is_grantable,':',grantor.rolname)
+           order by relation.relname,attribute.attname,grantee.rolname,
+                    acl.privilege_type,acl.is_grantable
+         )
+    into actual
+    from pg_attribute attribute
+    join pg_class relation on relation.oid=attribute.attrelid
+    join pg_namespace namespace on namespace.oid=relation.relnamespace
+    cross join lateral aclexplode(attribute.attacl) acl
+    join pg_roles grantee on grantee.oid=acl.grantee
+    join pg_roles grantor on grantor.oid=acl.grantor
+   where namespace.nspname='execution_worker';
+  if actual is distinct from array[
+    'event_outbox:delivered_at:agent_execution_worker_runtime:UPDATE:f:agent_execution_worker_owner',
+    'local_runs:dispatched_at:agent_execution_worker_runtime:UPDATE:f:agent_execution_worker_owner',
+    'local_runs:state:agent_execution_worker_runtime:UPDATE:f:agent_execution_worker_owner',
+    'local_runs:terminal_at:agent_execution_worker_runtime:UPDATE:f:agent_execution_worker_owner'
+  ] then
+    raise exception 'execution worker direct column acl mismatch';
   end if;
   if exists (
     select 1 from pg_default_acl object
