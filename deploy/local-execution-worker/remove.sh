@@ -209,6 +209,7 @@ preflight=$(owner_psql -d postgres <<'SQL'
 do $preflight$
 declare
   selected record;
+  actual text[];
   target_database oid;
   owner_role oid;
   migrator_role oid;
@@ -240,8 +241,35 @@ begin
       raise exception 'execution worker role attribute mismatch';
     end if;
   end loop;
-  if (select datdba from pg_database where oid=target_database) <> owner_role then
-    raise exception 'execution worker database owner mismatch';
+  if exists (
+    select 1 from pg_database database
+    where database.oid=target_database
+      and (
+        database.datdba <> owner_role
+        or database.datistemplate
+        or not database.datallowconn
+        or pg_encoding_to_char(database.encoding) <> 'UTF8'
+      )
+  ) then
+    raise exception 'execution worker target database identity or acl mismatch';
+  end if;
+  select array_agg(
+           concat(coalesce(grantee.rolname,'PUBLIC'),':',acl.privilege_type,':',acl.is_grantable)
+           order by coalesce(grantee.rolname,'PUBLIC'),acl.privilege_type
+         )
+    into actual
+    from pg_database database,
+    lateral aclexplode(coalesce(database.datacl,acldefault('d',database.datdba))) acl
+    left join pg_roles grantee on grantee.oid=acl.grantee
+   where database.oid=target_database;
+  if actual is distinct from array[
+    'agent_execution_worker_migrator:CONNECT:f',
+    'agent_execution_worker_owner:CONNECT:f',
+    'agent_execution_worker_owner:CREATE:f',
+    'agent_execution_worker_owner:TEMPORARY:f',
+    'agent_execution_worker_runtime:CONNECT:f'
+  ] then
+    raise exception 'execution worker target database identity or acl mismatch';
   end if;
   if not exists (
     select 1 from pg_auth_members membership

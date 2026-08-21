@@ -412,6 +412,71 @@ def test_removal_cross_database_dependency_fails_before_any_mutation(
 
 
 @pytest.mark.postgres
+@pytest.mark.parametrize("collision", ["external-connect", "external-owner"])
+def test_removal_target_database_identity_or_acl_fails_before_any_mutation(
+    control_database, tmp_path: Path, collision: str
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    sentinel_role = "execution_worker_removal_sentinel"
+    _drop_worker_test_state(admin_url)
+    with psycopg.connect(admin_url, autocommit=True) as connection:
+        connection.execute(
+            psycopg.sql.SQL("drop role if exists {}").format(
+                psycopg.sql.Identifier(sentinel_role)
+            )
+        )
+    try:
+        paths = _removal_test_environment(control_database, tmp_path)
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            connection.execute(
+                psycopg.sql.SQL("create role {} nologin").format(
+                    psycopg.sql.Identifier(sentinel_role)
+                )
+            )
+            statement = (
+                "grant connect on database agent_execution_worker to {}"
+                if collision == "external-connect"
+                else "alter database agent_execution_worker owner to {}"
+            )
+            connection.execute(
+                psycopg.sql.SQL(statement).format(
+                    psycopg.sql.Identifier(sentinel_role)
+                )
+            )
+        before = {name: path.read_bytes() for name, path in paths["assets"].items()}
+        residuals = {
+            path.name: path.read_bytes() for path in paths["acceptance"].iterdir()
+        }
+
+        result = _run_remover(paths)
+
+        assert result.returncode != 0
+        assert "execution worker target database identity or acl mismatch" in result.stderr
+        assert result.stderr.endswith("EXECUTION_WORKER_REMOVAL_FAILED\n")
+        assert not paths["bootout_marker"].exists()
+        assert {name: path.read_bytes() for name, path in paths["assets"].items()} == before
+        assert {
+            path.name: path.read_bytes() for path in paths["acceptance"].iterdir()
+        } == residuals
+        with psycopg.connect(admin_url) as connection:
+            assert connection.execute(
+                "select count(*) from pg_database where datname='agent_execution_worker'"
+            ).fetchone() == (1,)
+            assert connection.execute(
+                "select count(*) from pg_roles where rolname=any(%s)",
+                (list(WORKER_ROLES),),
+            ).fetchone() == (3,)
+    finally:
+        _drop_worker_test_state(admin_url)
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            connection.execute(
+                psycopg.sql.SQL("drop role if exists {}").format(
+                    psycopg.sql.Identifier(sentinel_role)
+                )
+            )
+
+
+@pytest.mark.postgres
 def test_removal_rejects_custom_dump_from_another_database_before_any_mutation(
     control_database, tmp_path: Path
 ) -> None:
