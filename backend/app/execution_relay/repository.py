@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from app.control_plane.dsn import validate_control_dsn
 
-from .content_crypto import ContentCodec, SealedContent
+from .content_crypto import ContentCodec, ContentCryptoError, SealedContent
 from .models import RelayEvent, RelayJobPayload, RelayLease
 
 
@@ -131,11 +131,11 @@ class ExecutionRelayRepository:
 
     def enqueue(self, payload: RelayJobPayload) -> UUID:
         job_id = uuid4()
-        sealed = self.content_codec.seal_json(
-            f"execution-job:{job_id}:{payload.run_id}",
-            payload.model_dump(mode="json"),
-        )
         try:
+            sealed = self.content_codec.seal_json(
+                f"execution-job:{job_id}:{payload.run_id}",
+                payload.model_dump(mode="json"),
+            )
             with self._connection() as connection, connection.cursor() as cursor:
                 cursor.execute(
                     "insert into platform_control.execution_jobs "
@@ -151,6 +151,8 @@ class ExecutionRelayRepository:
                     ),
                 )
             return job_id
+        except ContentCryptoError:
+            raise ExecutionRelayError("execution relay unavailable") from None
         except psycopg.errors.UniqueViolation:
             raise ExecutionRelayConflict() from None
         except psycopg.Error:
@@ -210,6 +212,8 @@ class ExecutionRelayRepository:
         except ExecutionRelayError:
             raise
         except ValidationError:
+            raise ExecutionRelayError("execution relay unavailable") from None
+        except ContentCryptoError:
             raise ExecutionRelayError("execution relay unavailable") from None
         except psycopg.Error:
             raise ExecutionRelayError("execution relay unavailable") from None
@@ -342,6 +346,8 @@ class ExecutionRelayRepository:
                 return inserted
         except ExecutionRelayError:
             raise
+        except ContentCryptoError:
+            raise ExecutionRelayError("execution relay unavailable") from None
         except (TypeError, ValueError, UnicodeError):
             raise ExecutionRelayConflict() from None
         except psycopg.Error:

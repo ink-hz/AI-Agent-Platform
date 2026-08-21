@@ -9,7 +9,11 @@ import psycopg
 import pytest
 
 from app.control_plane.crypto import IdentityKeyring
-from app.execution_relay.content_crypto import ContentCodec, SealedContent
+from app.execution_relay.content_crypto import (
+    ContentCodec,
+    ContentCryptoError,
+    SealedContent,
+)
 from app.execution_relay.models import RelayEvent, RelayJobPayload
 from app.execution_relay.repository import (
     ExecutionRelayConflict,
@@ -132,6 +136,27 @@ def test_enqueue_encrypts_payload_with_job_and_run_bound_subject(
 
 
 @pytest.mark.postgres
+def test_enqueue_collapses_codec_sealing_failure_to_repository_boundary(
+    relay_database, repository, monkeypatch
+) -> None:
+    def fail_seal(subject, value):
+        raise ContentCryptoError("protected codec failure detail")
+
+    monkeypatch.setattr(repository.content_codec, "seal_json", fail_seal)
+
+    with pytest.raises(ExecutionRelayError) as raised:
+        repository.enqueue(_payload())
+
+    assert type(raised.value) is ExecutionRelayError
+    assert str(raised.value) == "execution relay unavailable"
+    assert "protected codec failure detail" not in repr(raised.value)
+    with psycopg.connect(relay_database["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_control.execution_jobs"
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
 def test_lease_skips_locked_rows_and_intersects_both_agent_allowlists(
     relay_database, repository
 ) -> None:
@@ -230,12 +255,64 @@ def test_lease_collapses_malformed_decrypted_payload_without_leaking_it(
 
 
 @pytest.mark.postgres
+def test_lease_collapses_corrupt_stored_ciphertext_to_repository_boundary(
+    relay_database, repository
+) -> None:
+    payload = _payload()
+    repository.enqueue(payload)
+    row = _job_row(relay_database, payload.run_id)
+    corrupted = bytes(row[3][:-1]) + bytes([row[3][-1] ^ 1])
+    with psycopg.connect(relay_database["admin"]) as connection:
+        connection.execute(
+            "update platform_control.execution_jobs "
+            "set payload_ciphertext=%s where run_id=%s",
+            (corrupted, payload.run_id),
+        )
+
+    with pytest.raises(ExecutionRelayError) as raised:
+        repository.lease("worker-a", ("hr-bot",), 45)
+
+    assert type(raised.value) is ExecutionRelayError
+    assert str(raised.value) == "execution relay unavailable"
+    assert "content decrypt failed" not in repr(raised.value)
+    assert _job_row(relay_database, payload.run_id)[5] == "queued"
+
+
+@pytest.mark.postgres
+def test_lease_collapses_unknown_stored_key_version_to_repository_boundary(
+    relay_database, repository
+) -> None:
+    payload = _payload()
+    repository.enqueue(payload)
+    with psycopg.connect(relay_database["admin"]) as connection:
+        connection.execute(
+            "update platform_control.execution_jobs "
+            "set encryption_key_version=999 where run_id=%s",
+            (payload.run_id,),
+        )
+
+    with pytest.raises(ExecutionRelayError) as raised:
+        repository.lease("worker-a", ("hr-bot",), 45)
+
+    assert type(raised.value) is ExecutionRelayError
+    assert str(raised.value) == "execution relay unavailable"
+    assert "key version" not in repr(raised.value)
+    assert _job_row(relay_database, payload.run_id)[5] == "queued"
+
+
+@pytest.mark.postgres
 def test_mark_dispatched_is_owner_bound_and_replay_safe(
     relay_database, repository
 ) -> None:
     payload = _payload()
     repository.enqueue(payload)
     repository.lease("worker-a", ("hr-bot",), 45)
+    with psycopg.connect(relay_database["admin"]) as connection:
+        connection.execute(
+            "update platform_control.execution_jobs "
+            "set lease_expires_at=now()-interval '1 minute' where run_id=%s",
+            (payload.run_id,),
+        )
 
     repository.mark_dispatched("worker-a", payload.run_id)
     repository.mark_dispatched("worker-a", payload.run_id)
@@ -275,6 +352,61 @@ def test_append_events_accepts_exact_duplicates_and_counts_only_new_rows(
         f"execution-event:{payload.run_id}:1",
         SealedContent(bytes(rows[0][2]), rows[0][3]),
     ) == first.payload
+
+
+@pytest.mark.postgres
+def test_append_events_collapses_codec_serialization_failure_atomically(
+    relay_database, repository
+) -> None:
+    payload = _payload()
+    repository.enqueue(payload)
+    repository.lease("worker-a", ("hr-bot",), 45)
+    unserializable = _event(
+        payload.run_id, 1, payload={"protected": object()}
+    )
+
+    with pytest.raises(ExecutionRelayError) as raised:
+        repository.append_events("worker-a", (unserializable,))
+
+    assert type(raised.value) is ExecutionRelayError
+    assert str(raised.value) == "execution relay unavailable"
+    assert "content encrypt failed" not in repr(raised.value)
+    assert _job_row(relay_database, payload.run_id)[5] == "leased"
+    with psycopg.connect(relay_database["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_control.execution_events"
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_append_events_collapses_corrupt_duplicate_ciphertext_atomically(
+    relay_database, repository
+) -> None:
+    payload = _payload()
+    repository.enqueue(payload)
+    repository.lease("worker-a", ("hr-bot",), 45)
+    event = _event(payload.run_id, 1)
+    repository.append_events("worker-a", (event,))
+    with psycopg.connect(relay_database["admin"]) as connection:
+        row = connection.execute(
+            "select payload_ciphertext from platform_control.execution_events "
+            "where run_id=%s and seq=1",
+            (payload.run_id,),
+        ).fetchone()
+        corrupted = bytes(row[0][:-1]) + bytes([row[0][-1] ^ 1])
+        connection.execute(
+            "update platform_control.execution_events "
+            "set payload_ciphertext=%s where run_id=%s and seq=1",
+            (corrupted, payload.run_id),
+        )
+
+    with pytest.raises(ExecutionRelayError) as raised:
+        repository.append_events("worker-a", (event,))
+
+    assert type(raised.value) is ExecutionRelayError
+    assert str(raised.value) == "execution relay unavailable"
+    assert "content decrypt failed" not in repr(raised.value)
+    assert _job_row(relay_database, payload.run_id)[5] == "running"
 
 
 @pytest.mark.postgres
@@ -409,6 +541,27 @@ def test_finish_enforces_sources_cancel_flag_owner_and_terminal_idempotency(
         repository.finish("worker-a", payload.run_id, "failed")
     row = _job_row(relay_database, payload.run_id)
     assert row[5] == "completed"
+    assert row[11] is not None
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("status", "dispatch_first"),
+    (("failed", True), ("interrupted", False)),
+)
+def test_finish_accepts_each_remaining_legal_terminal_transition(
+    relay_database, repository, status, dispatch_first
+) -> None:
+    payload = _payload()
+    repository.enqueue(payload)
+    repository.lease("worker-a", ("hr-bot",), 45)
+    if dispatch_first:
+        repository.mark_dispatched("worker-a", payload.run_id)
+
+    repository.finish("worker-a", payload.run_id, status)
+
+    row = _job_row(relay_database, payload.run_id)
+    assert row[5] == status
     assert row[11] is not None
 
 
