@@ -411,6 +411,64 @@ def test_removal_cross_database_dependency_fails_before_any_mutation(
         _drop_worker_test_state(admin_url, sentinel_database)
 
 
+@pytest.mark.postgres
+def test_removal_rejects_custom_dump_from_another_database_before_any_mutation(
+    control_database, tmp_path: Path
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    wrong_database = "execution_worker_wrong_backup"
+    _drop_worker_test_state(admin_url, wrong_database)
+    try:
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            connection.execute(
+                psycopg.sql.SQL("create database {}").format(
+                    psycopg.sql.Identifier(wrong_database)
+                )
+            )
+        wrong_url = (
+            f"postgresql://control_test_admin@127.0.0.1:"
+            f"{control_database['port']}/{wrong_database}"
+        )
+        with psycopg.connect(wrong_url, autocommit=True) as connection:
+            connection.execute("create table unrelated_backup(value integer)")
+            connection.execute("insert into unrelated_backup values (7)")
+        paths = _removal_test_environment(control_database, tmp_path)
+        pg_dump = subprocess.check_output(
+            ["/bin/sh", "-c", "command -v pg_dump"], text=True
+        ).strip()
+        subprocess.run(
+            [
+                pg_dump,
+                "--format=custom",
+                "--file",
+                str(paths["backup"]),
+                wrong_url,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        paths["backup"].chmod(0o600)
+        before = {name: path.read_bytes() for name, path in paths["assets"].items()}
+
+        result = _run_remover(paths)
+
+        assert result.returncode != 0
+        assert result.stderr.endswith("EXECUTION_WORKER_REMOVAL_FAILED\n")
+        assert not paths["bootout_marker"].exists()
+        assert {name: path.read_bytes() for name, path in paths["assets"].items()} == before
+        with psycopg.connect(admin_url) as connection:
+            assert connection.execute(
+                "select count(*) from pg_database where datname='agent_execution_worker'"
+            ).fetchone() == (1,)
+            assert connection.execute(
+                "select count(*) from pg_roles where rolname=any(%s)",
+                (list(WORKER_ROLES),),
+            ).fetchone() == (3,)
+    finally:
+        _drop_worker_test_state(admin_url, wrong_database)
+
+
 def test_key_generator_is_idempotent_private_and_exact(tmp_path: Path) -> None:
     private_dir = tmp_path / "private"
     private_dir.mkdir(mode=0o700)

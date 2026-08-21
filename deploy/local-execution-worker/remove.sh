@@ -107,7 +107,35 @@ IFS=$'\t' read -r owner_host owner_port owner_user owner_password < <(
   secure_input "$owner_dsn_file" dsn 2>/dev/null
 ) || fail
 secure_input "$backup_file" dump >/dev/null 2>&1 || fail
-"$pg_restore_bin" --list "$backup_file" >/dev/null 2>&1 || fail
+backup_toc="$("$pg_restore_bin" --list "$backup_file" 2>/dev/null)" || fail
+BACKUP_TOC="$backup_toc" "$python_bin" - <<'PY' >/dev/null 2>&1 || fail
+import os
+import re
+
+toc = os.environ["BACKUP_TOC"].splitlines()
+if ";     dbname: agent_execution_worker" not in toc:
+    raise SystemExit(1)
+pattern = re.compile(
+    r"^[0-9]+; [0-9]+ [0-9]+ (TABLE DATA|TABLE|SCHEMA) (\S+) (\S+) (\S+)$"
+)
+identity = {
+    tuple(match.groups())
+    for line in toc
+    if (match := pattern.fullmatch(line)) is not None
+}
+owner = "agent_execution_worker_owner"
+expected = {
+    ("SCHEMA", "-", "execution_worker", owner),
+    *(('TABLE', 'execution_worker', table, owner) for table in (
+        "schema_migrations", "local_runs", "event_outbox"
+    )),
+    *(('TABLE DATA', 'execution_worker', table, owner) for table in (
+        "schema_migrations", "local_runs", "event_outbox"
+    )),
+}
+if identity != expected:
+    raise SystemExit(1)
+PY
 
 "$python_bin" - "$runtime_root" "$private_root" "$log_root" "$plist" \
   "$private_key" "$public_document" "$runtime_dsn" "$stdout_log" \
