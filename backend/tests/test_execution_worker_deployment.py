@@ -26,6 +26,7 @@ GENERATOR = LOCAL / "generate-worker-key.py"
 BOOTSTRAP = LOCAL / "bootstrap-worker-database.sh"
 PLIST = LOCAL / "com.orbbec.agent-execution-worker.plist.template"
 INSTALLER = LOCAL / "install.sh"
+REMOVER = LOCAL / "remove.sh"
 AGENTS = [
     "hr-bot",
     "fae-bot",
@@ -38,12 +39,83 @@ AGENTS = [
 
 
 def test_local_worker_command_assets_are_executable() -> None:
-    for path in (GENERATOR, BOOTSTRAP, INSTALLER):
+    for path in (GENERATOR, BOOTSTRAP, INSTALLER, REMOVER):
         assert os.access(path, os.X_OK)
 
 
 def _mode(path: Path) -> int:
     return path.stat().st_mode & 0o777
+
+
+def test_removal_wrapper_has_exact_confirmation_private_inputs_and_no_recursive_scope() -> None:
+    script = REMOVER.read_text(encoding="utf-8")
+    lowered = script.lower()
+
+    assert script.startswith("#!/bin/bash\nset -euo pipefail\numask 077\n")
+    assert '[[ $# -eq 3' in script
+    assert '"$3" == "--confirm-remove-agent-execution-worker"' in script
+    assert '"$1" == /*' in script and '"$2" == /*' in script
+    assert '"$(/usr/bin/id -un)" == "agentops"' in script
+    assert "O_NOFOLLOW" in script and "dir_fd=" in script and "os.fstat" in script
+    assert "0o700" in script and "0o600" in script
+    assert "agent_execution_worker.dump" in script
+    assert "pg_shdepend" in lowered and "pg_auth_members" in lowered
+    assert "cross-database dependency" in lowered
+    for attribute in (
+        "rolcanlogin",
+        "rolsuper",
+        "rolcreatedb",
+        "rolcreaterole",
+        "rolreplication",
+        "rolbypassrls",
+        "rolinherit",
+        "rolconnlimit",
+        "rolvaliduntil",
+        "rolconfig",
+    ):
+        assert attribute in script
+    assert "membership.roleid=owner_role and membership.member=migrator_role" in script
+    assert "or not exists (" in script
+    assert "except\n    select 1 from pg_auth_members" not in lowered
+    for exact in (
+        "drop database agent_execution_worker",
+        "drop role agent_execution_worker_runtime",
+        "drop role agent_execution_worker_migrator",
+        "drop role agent_execution_worker_owner",
+    ):
+        assert lowered.count(exact) == 1
+    for forbidden in (
+        "rm -r",
+        "rm --recursive",
+        "brew services",
+        "pg_ctl",
+        "launchctl unload postgresql",
+        "drop database flywheel",
+        "drop database postgres",
+        "drop database template",
+        "runtime_root/platform",
+        "runtime_root/metabot",
+        'rm -f -- "$runtime_root"',
+        'rm -f -- "$private_root"',
+    ):
+        assert forbidden not in lowered
+    subprocess.run(["/bin/bash", "-n", str(REMOVER)], check=True)
+
+
+def test_removal_preflight_precedes_every_local_mutation() -> None:
+    script = REMOVER.read_text(encoding="utf-8")
+    preflight = script.index("EXECUTION_WORKER_REMOVAL_PREFLIGHT_OK")
+    for mutation in (
+        '/bin/launchctl bootout',
+        'drop database agent_execution_worker',
+        '/bin/rm -f -- "$plist"',
+        '/bin/rm -f -- "$private_key"',
+        '/bin/rm -f -- "$public_document"',
+        '/bin/rm -f -- "$runtime_dsn"',
+        '/bin/rm -f -- "$stdout_log"',
+        '/bin/rm -f -- "$stderr_log"',
+    ):
+        assert script.index(mutation) > preflight
 
 
 WORKER_ROLES = (
@@ -118,6 +190,225 @@ def _drop_worker_test_state(admin_url: str, *extra_databases: str) -> None:
                     psycopg.sql.Identifier(role)
                 )
             )
+
+
+def _removal_test_environment(control_database, tmp_path: Path):
+    current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
+    runtime = tmp_path / "AgentRuntime"
+    runtime.mkdir(mode=0o700)
+    bootstrap_paths = _bootstrap_test_environment(control_database, runtime)
+    bootstrap = _run_bootstrap(bootstrap_paths)
+    assert bootstrap.returncode == 0, bootstrap.stderr
+
+    private = runtime / "private"
+    log = runtime / "log"
+    launch_agents = tmp_path / "Library/LaunchAgents"
+    log.mkdir(mode=0o700)
+    launch_agents.mkdir(parents=True, mode=0o700)
+    owner_dsn = bootstrap_paths[1]
+    runtime_dsn = private / "execution-worker-postgres-dsn"
+    bootstrap_paths[2].replace(runtime_dsn)
+    backup = private / "agent_execution_worker.dump"
+    pg_dump = subprocess.check_output(
+        ["/bin/sh", "-c", "command -v pg_dump"], text=True
+    ).strip()
+    subprocess.run(
+        [
+            pg_dump,
+            "--format=custom",
+            "--file",
+            str(backup),
+            f"postgresql://control_test_admin:secret@127.0.0.1:"
+            f"{control_database['port']}/agent_execution_worker",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    backup.chmod(0o600)
+
+    assets = {
+        "plist": launch_agents / "com.orbbec.agent-execution-worker.plist",
+        "private_key": private / "execution-worker-ed25519.key",
+        "public_document": runtime / "execution-worker-public.json",
+        "runtime_dsn": runtime_dsn,
+        "stdout_log": log / "execution-worker.out.log",
+        "stderr_log": log / "execution-worker.err.log",
+    }
+    for name, path in assets.items():
+        if name != "runtime_dsn":
+            path.write_text(f"{name}\n", encoding="utf-8")
+            path.chmod(0o600)
+    acceptance = private / "execution-relay-acceptance"
+    acceptance.mkdir(mode=0o700)
+    for name in ("control.json", "state.json", "completion-paused", "dispatching-paused"):
+        residual = acceptance / name
+        residual.write_text(f"{name}\n", encoding="utf-8")
+        residual.chmod(0o600)
+    shared_sentinel = private / "metabot-api-token"
+    shared_sentinel.write_text("must-survive\n", encoding="utf-8")
+    shared_sentinel.chmod(0o600)
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir(mode=0o700)
+    bootout_marker = tmp_path / "worker-booted-out"
+    fake_launchctl = fake_bin / "launchctl"
+    fake_launchctl.write_text(
+        "#!/bin/bash\n"
+        "set -euo pipefail\n"
+        "if [[ \"$1\" == \"print\" ]]; then exit 0; fi\n"
+        f"if [[ \"$1\" == \"bootout\" ]]; then /usr/bin/touch {bootout_marker}; exit 0; fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_launchctl.chmod(0o700)
+
+    remover = runtime / "platform/deploy/local-execution-worker/remove.sh"
+    source = REMOVER.read_text(encoding="utf-8")
+    source = source.replace("/Users/agentops/AgentRuntime", str(runtime))
+    source = source.replace(
+        "/Users/agentops/Library/LaunchAgents", str(launch_agents)
+    )
+    source = source.replace("/bin/launchctl", str(fake_launchctl))
+    source = source.replace("agentops", current_user)
+    remover.write_text(source, encoding="utf-8")
+    remover.chmod(0o700)
+    environment = {
+        **bootstrap_paths[3],
+        "PLATFORM_LOCAL_POSTGRES17_PG_RESTORE": subprocess.check_output(
+            ["/bin/sh", "-c", "command -v pg_restore"], text=True
+        ).strip(),
+    }
+    return {
+        "runtime": runtime,
+        "private": private,
+        "owner_dsn": owner_dsn,
+        "backup": backup,
+        "assets": assets,
+        "acceptance": acceptance,
+        "shared_sentinel": shared_sentinel,
+        "bootout_marker": bootout_marker,
+        "remover": remover,
+        "environment": environment,
+    }
+
+
+def _run_remover(paths):
+    return subprocess.run(
+        [
+            "/bin/bash",
+            str(paths["remover"]),
+            str(paths["owner_dsn"]),
+            str(paths["backup"]),
+            "--confirm-remove-agent-execution-worker",
+        ],
+        text=True,
+        capture_output=True,
+        env=paths["environment"],
+    )
+
+
+@pytest.mark.postgres
+def test_removal_wrapper_drops_only_dedicated_database_roles_and_files(
+    control_database, tmp_path: Path
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    sentinel_database = "flywheel_removal_sentinel"
+    _drop_worker_test_state(admin_url, sentinel_database)
+    try:
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            connection.execute(
+                psycopg.sql.SQL("create database {}").format(
+                    psycopg.sql.Identifier(sentinel_database)
+                )
+            )
+        sentinel_url = (
+            f"postgresql://control_test_admin@127.0.0.1:"
+            f"{control_database['port']}/{sentinel_database}"
+        )
+        with psycopg.connect(sentinel_url, autocommit=True) as connection:
+            connection.execute("create table removal_sentinel(value integer)")
+            connection.execute("insert into removal_sentinel values (42)")
+
+        paths = _removal_test_environment(control_database, tmp_path)
+        result = _run_remover(paths)
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "EXECUTION_WORKER_REMOVED\n"
+        assert paths["bootout_marker"].is_file()
+        assert all(not path.exists() for path in paths["assets"].values())
+        assert not paths["acceptance"].exists()
+        assert paths["shared_sentinel"].read_text(encoding="utf-8") == "must-survive\n"
+        assert paths["runtime"].is_dir() and paths["private"].is_dir()
+        with psycopg.connect(admin_url) as connection:
+            assert connection.execute(
+                "select datname from pg_database "
+                "where datname in ('agent_execution_worker','flywheel_removal_sentinel') "
+                "order by datname"
+            ).fetchall() == [(sentinel_database,)]
+            assert connection.execute(
+                "select count(*) from pg_roles where rolname=any(%s)",
+                (list(WORKER_ROLES),),
+            ).fetchone() == (0,)
+            assert connection.execute("select current_database()").fetchone() == (
+                "postgres",
+            )
+        with psycopg.connect(sentinel_url) as connection:
+            assert connection.execute(
+                "select value from removal_sentinel"
+            ).fetchone() == (42,)
+    finally:
+        _drop_worker_test_state(admin_url, sentinel_database)
+
+
+@pytest.mark.postgres
+def test_removal_cross_database_dependency_fails_before_any_mutation(
+    control_database, tmp_path: Path
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    sentinel_database = "flywheel_removal_dependency"
+    _drop_worker_test_state(admin_url, sentinel_database)
+    try:
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            connection.execute(
+                psycopg.sql.SQL("create database {}").format(
+                    psycopg.sql.Identifier(sentinel_database)
+                )
+            )
+        paths = _removal_test_environment(control_database, tmp_path)
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            connection.execute(
+                psycopg.sql.SQL("grant connect on database {} to {}").format(
+                    psycopg.sql.Identifier(sentinel_database),
+                    psycopg.sql.Identifier("agent_execution_worker_runtime"),
+                )
+            )
+        before = {name: path.read_bytes() for name, path in paths["assets"].items()}
+        residuals = {
+            path.name: path.read_bytes() for path in paths["acceptance"].iterdir()
+        }
+
+        result = _run_remover(paths)
+
+        assert result.returncode != 0
+        assert "execution worker cross-database dependency" in result.stderr
+        assert result.stderr.endswith("EXECUTION_WORKER_REMOVAL_FAILED\n")
+        assert not paths["bootout_marker"].exists()
+        assert {name: path.read_bytes() for name, path in paths["assets"].items()} == before
+        assert {
+            path.name: path.read_bytes() for path in paths["acceptance"].iterdir()
+        } == residuals
+        assert paths["shared_sentinel"].read_text(encoding="utf-8") == "must-survive\n"
+        with psycopg.connect(admin_url) as connection:
+            assert connection.execute(
+                "select count(*) from pg_database where datname='agent_execution_worker'"
+            ).fetchone() == (1,)
+            assert connection.execute(
+                "select count(*) from pg_roles where rolname=any(%s)",
+                (list(WORKER_ROLES),),
+            ).fetchone() == (3,)
+    finally:
+        _drop_worker_test_state(admin_url, sentinel_database)
 
 
 def test_key_generator_is_idempotent_private_and_exact(tmp_path: Path) -> None:

@@ -182,6 +182,33 @@ def test_runbook_has_exact_operations_and_never_requeues_unknown_dispatch() -> N
     assert "terminal" in lowered and "interrupted" in lowered
 
 
+def test_runbook_cloud_maintenance_commands_use_deployed_container_boundary() -> None:
+    runbook = _runbook()
+    maintenance = runbook.split("## Key rotation", 1)[1].split("## Backup", 1)[0]
+    assert "/opt/orbbec-agent-platform/private/control-maintenance-database-url" in maintenance
+    assert "docker run --rm --pull=never" in maintenance
+    assert "orbbec-agent-platform-internal" in maintenance
+    assert "PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE" in maintenance
+    assert "register_worker add-key" in maintenance
+    assert "register_worker revoke-key" in maintenance
+    assert "register_worker revoke-worker" in maintenance
+    assert "-m 700" in maintenance and "-m 600" in maintenance
+    assert "/run/worker-registration" in maintenance
+    assert not re.search(r"(?m)^python -m app\.execution_relay\.register_worker", maintenance)
+
+
+def test_runbook_limits_acceptance_cli_and_uses_controlled_production_cancel() -> None:
+    interruption = _runbook().split("## Explicit interruption", 1)[1].split(
+        "## Restart", 1
+    )[0]
+    lowered = interruption.lower()
+    assert "PLATFORM_EXECUTION_RELAY_ACCEPTANCE_ENABLED=1" in interruption
+    assert "active acceptance environment" in lowered
+    assert "request_cancel" in interruption and "cancel_requested" in interruption
+    assert "ordinary production" in lowered
+    assert "update platform_control.execution_jobs" not in lowered
+
+
 def test_removal_requires_exact_confirmation_and_only_dedicated_objects() -> None:
     removal = _runbook().split("## Removal", 1)[1]
     lowered = removal.lower()
@@ -205,6 +232,8 @@ def test_removal_requires_exact_confirmation_and_only_dedicated_objects() -> Non
         assert forbidden not in lowered
     assert "never" in lowered and "flywheel" in lowered
     assert "postgresql service" in lowered
+    assert "remove.sh" in removal
+    assert "agent_execution_worker.dump" in removal
 
 
 def test_docs_link_release_gate_and_keep_user_routes_disabled() -> None:

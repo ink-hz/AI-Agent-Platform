@@ -52,26 +52,64 @@ into tickets.
 
 ## Key rotation
 
-Generate the new private/public pair in the owner-only runtime directory. On the
-cloud host, use only the audited maintenance CLI:
+Generate the new private/public pair in the owner-only runtime directory, then
+transfer the reviewed public document to the cloud host as
+`/root/execution-worker-public-v2.json` mode 0600. On the cloud host, use the
+currently deployed Platform image, internal network, and host maintenance DSN.
+The maintenance DSN is exactly
+`/opt/orbbec-agent-platform/private/control-maintenance-database-url`.
+The two audited subcommands below are `register_worker add-key` and
+`register_worker revoke-key`.
+The registration document must be inside its own mode-0700 directory because
+the maintenance CLI validates the document's parent as well as the file:
 
 ```bash
-python -m app.execution_relay.register_worker add-key agentops-mac-primary /run/private/execution-worker-public-v2.json RELAY_KEY_ROTATION_2026
-python -m app.execution_relay.register_worker revoke-key agentops-mac-primary worker-v1 RELAY_KEY_ROTATION_2026
+platform_root=/opt/orbbec-agent-platform
+release="$(/usr/bin/readlink -f "$platform_root/current")"
+environment="$platform_root/private/platform.env"
+compose=(/usr/bin/docker compose --env-file "$environment" -f "$release/deploy/cloud/compose.yaml")
+api_id="$("${compose[@]}" ps -q platform-api)"
+image="$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$api_id")"
+maintenance_dsn="$platform_root/private/control-maintenance-database-url"
+registration_root="$platform_root/private/execution-worker-key-rotation"
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' "$platform_root/private")" = "700 root"
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' "$maintenance_dsn")" = "600 root"
+/usr/bin/install -d -o root -g root -m 700 "$registration_root"
+/usr/bin/install -o root -g root -m 600 /root/execution-worker-public-v2.json "$registration_root/worker.json"
+maintenance=(/usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 -v "$platform_root/private:/run/control-secrets:ro" -v "$registration_root:/run/worker-registration:ro" -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url "$image" python -m app.execution_relay.register_worker)
+"${maintenance[@]}" add-key agentops-mac-primary /run/worker-registration/worker.json RELAY_KEY_ROTATION_2026
 ```
 
-Deploy and verify the new signer between those commands. Never overwrite a key
-ID with different bytes and never revoke the old key before the new Worker has
-produced an accepted heartbeat.
+Deploy and verify the new signer before revoking the old key. After the new
+Worker has produced an accepted heartbeat, run:
+
+```bash
+"${maintenance[@]}" revoke-key agentops-mac-primary worker-v1 RELAY_KEY_ROTATION_2026
+/bin/rm -f -- "$registration_root/worker.json"
+/bin/rmdir -- "$registration_root"
+```
+
+Never overwrite a key ID with different bytes and never revoke the old key
+before the accepted heartbeat.
 
 ## Worker revocation
 
 ```bash
-python -m app.execution_relay.register_worker revoke-worker agentops-mac-primary RELAY_WORKER_REVOKE_2026
+platform_root=/opt/orbbec-agent-platform
+release="$(/usr/bin/readlink -f "$platform_root/current")"
+environment="$platform_root/private/platform.env"
+compose=(/usr/bin/docker compose --env-file "$environment" -f "$release/deploy/cloud/compose.yaml")
+api_id="$("${compose[@]}" ps -q platform-api)"
+image="$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$api_id")"
+maintenance_dsn="$platform_root/private/control-maintenance-database-url"
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' "$platform_root/private")" = "700 root"
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' "$maintenance_dsn")" = "600 root"
+/usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 -v "$platform_root/private:/run/control-secrets:ro" -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url "$image" python -m app.execution_relay.register_worker revoke-worker agentops-mac-primary RELAY_WORKER_REVOKE_2026
 ```
 
 Revocation is audited and immediately makes signed lease/upload calls return
 401. It does not delete Sessions or event history.
+The container command above invokes `register_worker revoke-worker`.
 
 ## Backup
 
@@ -118,21 +156,21 @@ resumes upload from the same local outbox or terminalizes that same run as
 
 ## Explicit interruption
 
-For an acceptance-tagged run, use the bounded cloud command:
+`acceptance_cli` is permitted only while the release gate has created an active acceptance environment with
+`PLATFORM_EXECUTION_RELAY_ACCEPTANCE_ENABLED=1`, its marker, database URL, and
+content keyring. Inside that bounded environment the orchestrator executes:
 
 ```bash
-python -m app.execution_relay.acceptance_cli interrupt RUN_UUID
+docker exec --user 10001:10001 -e PLATFORM_EXECUTION_RELAY_ACCEPTANCE_ENABLED=1 -e PLATFORM_EXECUTION_RELAY_ACCEPTANCE_ROOT=/run/secrets/execution-relay-acceptance -e PLATFORM_EXECUTION_RELAY_ACCEPTANCE_MARKER_FILE=/run/secrets/execution-relay-acceptance/enabled -e PLATFORM_CONTROL_DATABASE_URL_FILE=/run/secrets/execution-relay-acceptance/control-database-url -e PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE=/run/secrets/execution-relay-acceptance/content-keyring PLATFORM_API_CONTAINER python -m app.execution_relay.acceptance_cli interrupt RUN_UUID
 ```
 
-For ordinary production jobs, request cancellation through the controlled
-repository/API path. A database owner may use the following only after recording
-an incident and proving the run cannot be recovered:
-
-```sql
-update platform_control.execution_jobs
-set status='interrupted', terminal_at=now(), updated_at=now()
-where run_id='RUN_UUID' and status=any(array['dispatching','dispatched','running']);
-```
+Never use that CLI for an ordinary production job or reconstruct its acceptance
+environment. Production interruption must use the owner-authorized control-plane
+cancel workflow that calls `ExecutionRelayRepository.request_cancel`; a successful
+request records `cancel_requested=true`, and the active Worker observes it through
+its signed heartbeat. If that controlled workflow is unavailable, record the
+incident and leave the job and outbox intact rather than issuing owner SQL or
+forcing `status='interrupted'`.
 
 Never change a terminal run and never create a replacement run automatically.
 
@@ -153,9 +191,21 @@ stopped and explicitly terminalize affected runs as `interrupted`.
 
 ## Removal
 
-Removal requires the literal flag `--confirm-remove-agent-execution-worker` in
-the operator wrapper. After backing up and revoking the cloud Worker, stop and
-remove only its LaunchAgent and execute, as the PostgreSQL cluster owner:
+Removal requires an existing verified custom-format backup at the exact
+mode-0600 path shown below and the literal confirmation flag. After revoking the
+cloud Worker, run the owner-only wrapper as `agentops`:
+
+```bash
+/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/remove.sh \
+  /Users/agentops/AgentRuntime/private/postgres-owner-dsn \
+  /Users/agentops/AgentRuntime/private/agent_execution_worker.dump \
+  --confirm-remove-agent-execution-worker
+```
+
+The wrapper completes its role, membership, ACL, and cross-database dependency
+preflight before bootout or unlink. It removes only the dedicated LaunchAgent,
+execution-worker key/public/DSN, dedicated logs, and known acceptance residual
+files. It then executes only:
 
 ```sql
 drop database agent_execution_worker;
