@@ -1429,9 +1429,8 @@ def run_gates_09_to_10(
                 terminal_proven = prove_cleanup_terminal()
                 if not terminal_proven:
                     cleanup_failed = True
-            if not enqueue_attempted or terminal_proven:
-                try: _final_remote_action(config, runner, "revoke-disposable", worker_id, "RELAY_ACCEPT_REVOKE_" + token.upper())
-                except Exception: cleanup_failed = True
+            try: _final_remote_action(config, runner, "revoke-disposable", worker_id, "RELAY_ACCEPT_REVOKE_" + token.upper())
+            except Exception: cleanup_failed = True
         if setup_attempted:
             try: _remote_action(config, runner, "cleanup")
             except Exception: cleanup_failed = True

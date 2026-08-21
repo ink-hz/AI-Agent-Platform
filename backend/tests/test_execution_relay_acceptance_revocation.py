@@ -505,7 +505,7 @@ def test_enqueue_and_terminal_response_loss_prove_terminal_before_revoke(
     assert boundary.revoked is True
 
 
-def test_terminal_proof_failure_blocks_revoke_and_restore_failure_wins(
+def test_terminal_proof_failure_still_revokes_after_attempt_and_restore_failure_wins(
     tmp_path: Path,
 ) -> None:
     config, cookie, launchagent = _fixture(tmp_path)
@@ -515,7 +515,12 @@ def test_terminal_proof_failure_blocks_revoke_and_restore_failure_wins(
     boundary.fail_interrupt = True
     with pytest.raises(subject.AcceptanceGateError, match="acceptance cleanup failed"):
         _run(config, cookie, launchagent, boundary)
-    assert boundary.revoked is False
+    assert boundary.revoked is True
+    actions = [
+        boundary._action(call[0])[0]
+        for call in boundary.calls if call[0][0] == "/usr/bin/ssh"
+    ]
+    assert actions.index("revoke-disposable") > actions.index("interrupt")
 
     boundary = Boundary()
     boundary.lose_enqueue_response = True
