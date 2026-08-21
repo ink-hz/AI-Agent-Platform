@@ -926,16 +926,16 @@ def run_gates_04_to_08(
         body_error = error
         result = None
     finally:
+        try:
+            _stop_child(foreground, kill_process, signal.SIGTERM)
+        except Exception:
+            cleanup_failed = True
         for run_id in run_ids:
             if remote_ready and run_id not in terminal:
                 try:
                     _remote_action(config, runner, "interrupt", str(run_id))
                 except Exception:
                     cleanup_failed = True
-        try:
-            _stop_child(foreground, kill_process, signal.SIGTERM)
-        except Exception:
-            cleanup_failed = True
         if remote_ready:
             try:
                 if _remote_action(config, runner, "cleanup") != {"status": "removed"}:
@@ -1086,7 +1086,7 @@ def run_gates_09_to_10(
     public = Ed25519PrivateKey.from_private_bytes(key).public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     encoded = base64.urlsafe_b64encode(public).decode().rstrip("=")
     run_id, conversation_id, message_id = (uuid_factory() for _ in range(3))
-    domain = f"gui/{uid}"; disposable_registered = revoked = stopped = setup = False; cleanup_failed = False; body_error = None
+    domain = f"gui/{uid}"; disposable_registered = revoked = stopped = setup = enqueued = terminalized = False; cleanup_failed = False; body_error = None
     before = _final_remote_action(config, runner, "regression-probe")
     try:
         _remote_action(config, runner, "setup"); setup = True
@@ -1097,6 +1097,7 @@ def run_gates_09_to_10(
         if result != {"status":"registered","worker_id":worker_id}: raise _gate_error()
         disposable_registered = True
         _remote_action(config, runner, "enqueue", "hr-bot", str(run_id), str(conversation_id), str(message_id))
+        enqueued = True
         empty = b"{}"
         lease = signed_requester(worker_id, "worker-v1", key, "POST", "/api/v1/execution-worker/lease", empty)
         if lease.status_code != 200: raise _gate_error()
@@ -1105,6 +1106,7 @@ def run_gates_09_to_10(
         for path, body in ((f"/api/v1/execution-worker/runs/{run_id}/dispatched", empty), (f"/api/v1/execution-worker/runs/{run_id}/events", events_body), (f"/api/v1/execution-worker/runs/{run_id}/terminal", b'{"status":"interrupted"}')):
             response = signed_requester(worker_id, "worker-v1", key, "POST", path, body)
             if response.status_code != 200: raise _gate_error()
+        terminalized = True
         revoke_ref = "RELAY_ACCEPT_REVOKE_" + token.upper()
         result = _final_remote_action(config, runner, "revoke-disposable", worker_id, revoke_ref)
         if result != {"status":"revoked","worker_id":worker_id}: raise _gate_error()
@@ -1118,6 +1120,9 @@ def run_gates_09_to_10(
     except BaseException as error:
         body_error = error; result_final = None
     finally:
+        if setup and enqueued and not terminalized:
+            try: _remote_action(config, runner, "interrupt", str(run_id))
+            except Exception: cleanup_failed = True
         if disposable_registered and not revoked:
             try: _final_remote_action(config, runner, "revoke-disposable", worker_id, "RELAY_ACCEPT_REVOKE_" + token.upper())
             except Exception: cleanup_failed = True
@@ -1147,6 +1152,7 @@ def main(arguments: list[str] | None = None) -> int:
         initial = run_gates_01_to_03(config, current_user=user, uid=uid)
         execution = run_gates_04_to_08(config, current_user=user, uid=uid)
         final = run_gates_09_to_10(config, current_user=user, uid=uid)
+        final_boundary = run_gates_01_to_03(config, current_user=user, uid=uid)
         if (
             initial.worker_id != _WORKER_ID
             or initial.public_ports_added != 0
@@ -1155,6 +1161,9 @@ def main(arguments: list[str] | None = None) -> int:
             or final.upload_status != 401
             or final.sessions_status != 200
             or final.history_status != 200
+            or final_boundary.public_ports_added != 0
+            or final_boundary.registered_public_key_sha256
+            != initial.registered_public_key_sha256
         ):
             raise _gate_error()
         return 0
