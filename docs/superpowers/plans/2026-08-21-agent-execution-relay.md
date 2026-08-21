@@ -488,6 +488,8 @@ create table execution_worker.event_outbox (
 );
 ```
 
+`worker_schema.sql` is versioned and idempotent, constrains run state to `leased|dispatching|dispatched|running|completed|failed|cancelled|interrupted`, constrains ports and 32-byte callback-token hashes, and grants no role/database privileges itself; Task 7's bootstrap applies least-privilege grants for the dedicated local database roles. It must never reference Flywheel or cloud control schemas.
+
 Test transactionally recording a lease, marking `dispatching` before the HTTP call, deduplicating callback events, reading only contiguous undelivered events, marking delivery, and recovering state after closing and reopening the PostgreSQL connection. The test database is isolated from both the cloud control database and Flywheel business schemas.
 
 - [ ] **Step 2: Write failing MetaBot client tests**
@@ -525,11 +527,15 @@ Expected: FAIL because the worker modules are missing.
 
 Expose `WorkerStore.from_dsn_file(path: Path)`, `record_lease(lease: RelayLease, port: int, callback_token: str) -> None`, `mark_dispatching(run_id: UUID) -> None`, `mark_dispatched(run_id: UUID) -> None`, `append_event(event: RelayEvent) -> bool`, `contiguous_outbox(run_id: UUID, limit: int = 100) -> tuple[RelayEvent, ...]`, `mark_delivered(run_id: UUID, through_seq: int) -> None`, and `mark_terminal(run_id: UUID, status: str) -> None`.
 
+Store only SHA-256 of the callback token. Add `callback_token_matches(run_id: UUID, token: str) -> bool` using constant-time comparison. `record_lease` is idempotent only for the exact same job/run/Agent/port/token hash; every mismatch is a sanitized store conflict. Legal local transitions are `leased -> dispatching -> dispatched -> running -> terminal`, with `interrupted` also allowed from `dispatching|dispatched|running` and `cancelled` from `dispatching|dispatched|running`. The first newly appended event advances `dispatching|dispatched` to `running`; exact logical event replay returns `False`, while sequence gaps or conflicting duplicates fail atomically. `contiguous_outbox` returns only the ordered undelivered prefix and `mark_delivered` may advance only across existing contiguous rows. No method automatically returns `dispatching` to `leased` or deletes an outbox row.
+
 Use psycopg transactions, row locks and uniqueness constraints for crash safety and deduplication. Read the local PostgreSQL DSN only from an absolute regular mode-`0600` file in a mode-`0700` parent directory; never place it in the plist, process arguments or logs. The runtime role receives only the required `USAGE`, `SELECT`, `INSERT`, and narrowly required `UPDATE` grants on the `execution_worker` schema and its two tables; it receives no database creation, role management, schema DDL, Flywheel schema, or cloud control-plane privileges.
 
 - [ ] **Step 5: Implement MetaBot client and run tests GREEN**
 
 Read the MetaBot bearer secret from an absolute owner-only mode-0600 file supplied to the worker. Never invoke Keychain or `security`. Redact authorization and prompt bodies from exceptions and logs.
+
+`MetaBotRuntimeMap` requires all seven approved names exactly once in schema-v2 `bots[*].name` with `instance.apiPort` on loopback, and ignores every other bot/test entry. `MetaBotClient.start_run` accepts success only for HTTP `202` with JSON `status="accepted"` and matching `runId`/`targetBot`; `cancel_run` accepts only HTTP `200` with matching `runId`. It never retries, follows redirects, uses proxies, or accepts a non-loopback destination. All transport, timeout, redirect, JSON and response-contract failures collapse to sanitized `MetaBotClientError("metabot request failed")`.
 
 Run Step 3. Expected: PASS.
 
