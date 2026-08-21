@@ -109,6 +109,34 @@ Agent 大脑是 Platform 内受控的规划与编排能力，不是一个拥有�
 
 浏览器只连接 Platform。它不能提交可信的 `user_id`、角色、部门、上游地址、模型、Agent 权限或内部任务状态。Platform 根据服务端 Session 和 Registry 决定允许暴露与调用的能力。
 
+### 4.1 第一阶段生产拓扑
+
+第一阶段不把 MetaBot 或专业 Agent 迁移到云端。七个专业 Agent 继续运行在本地 `agentops` 账户和既有回环端口，云端 Platform 不建立到本机的入站连接、SSH 登录或反向隧道。
+
+一个由 `agentops` 运行的 Agent Execution Worker 主动通过 HTTPS 长轮询云端 Platform：
+
+```text
+Cloud Platform durable job queue
+        |
+        | HTTPS lease; connection initiated locally
+        v
+Local Agent Execution Worker
+        |
+        | loopback MetaBot Core Chat API
+        v
+HR / FAE / Marketing MetaBot Agents
+        |
+        | loopback callbacks
+        v
+Worker durable event spool --HTTPS--> Cloud Platform
+```
+
+Worker 使用独立、可撤销、版本化的设备签名身份，不使用个人 SSH 凭据。云端不保存本地 MetaBot API Secret，本机不开放新的公网监听。Worker 在本地 SQLite 中持久化领取状态和待回传事件；短暂断网后继续上传。任务一旦可能已经交给 MetaBot，状态不明时不得自动重跑，只能明确标记为中断并由用户发起新的执行。
+
+这条在线执行通道不改变现有管理副本同步的脱敏规则。历史观测数据仍按原有本地到云端的脱敏签名批次同步；只有用户通过 Platform 明确提交给专业 Agent 的 Platform-owned 消息、附件引用和执行事件进入在线任务通道。
+
+未来将 Agent Runtime 迁移到公司内网常驻服务器或云端时，只替换 Worker/Adapter 部署目标，不改变浏览器 API、Mission 数据模型、权限或 Agent 大脑协议。
+
 ## 5. Agent 大脑职责边界
 
 Agent 大脑可以：
@@ -408,6 +436,8 @@ Mission 属于当前用户
 - 取消、超时、权限撤销、Adapter 不可用和格式校验失败使用不同错误状态；
 - 用户刷新或网络断开后从最后已接受事件序号恢复，不创建新 Mission；
 - Platform 先持久化任务与事件，再向浏览器展示已接受状态。
+
+本地执行节点离线时，Platform 明确显示“专业 Agent 执行通道离线”。它可以继续提供账号、历史 Session 和 Agent 大脑通用对话能力，但不得把依赖专业 Agent 的任务标记为成功，也不得改用其他模型兜底。Agent 已完成而公网暂时中断时，Worker 将结果保留在本地事件队列，连接恢复后按事件序号幂等回传。
 
 ## 15. FAE 边界
 
