@@ -46,6 +46,7 @@ class Boundary:
         self.calls: list[tuple[tuple[str, ...], bytes | None, int]] = []
         self.signed_calls: list[tuple[str, str, bytes]] = []
         self.session_cookies: list[bytes] = []
+        self.external_fae_calls = 0
         self.revoked = False
         self.registered = False
         self.enqueued = False
@@ -58,6 +59,13 @@ class Boundary:
         self.fail_setup = False
         self.fail_bootout = False
         self.lose_registration_response = False
+        self.lose_enqueue_response = False
+        self.lose_terminal_response = False
+        self.fail_inspect = False
+        self.fail_interrupt = False
+        self.fail_kickstart = False
+        self.job_status: str | None = None
+        self.cancel_requested = False
         self.regression = self._regression()
         self.final_regression = self._regression()
 
@@ -98,6 +106,8 @@ class Boundary:
         self.calls.append((arguments, input_bytes, timeout))
         if arguments[0] == "/bin/launchctl":
             if self.fail_bootout and arguments[1] == "bootout":
+                return subject.CommandResult(1, b"")
+            if self.fail_kickstart and arguments[1] == "kickstart":
                 return subject.CommandResult(1, b"")
             return subject.CommandResult(0, b"pid = 4242\n")
         if arguments[0] != "/usr/bin/ssh":
@@ -153,6 +163,9 @@ class Boundary:
             )
         if action == "enqueue":
             self.enqueued = True
+            self.job_status = "queued"
+            if self.lose_enqueue_response:
+                return subject.CommandResult(1, b"")
             return subject.CommandResult(
                 0,
                 json.dumps({
@@ -162,21 +175,34 @@ class Boundary:
                 }).encode(),
             )
         if action == "interrupt":
+            if self.fail_interrupt:
+                return subject.CommandResult(1, b"")
+            if self.job_status == "queued":
+                self.cancel_requested = True
+                return subject.CommandResult(
+                    0,
+                    json.dumps({"run_id": values[0], "status": "cancel_requested"}).encode(),
+                )
+            self.job_status = "interrupted"
             return subject.CommandResult(
                 0,
                 json.dumps({"run_id": values[0], "status": "interrupted"}).encode(),
             )
         if action == "inspect":
+            if self.fail_inspect:
+                return subject.CommandResult(1, b"")
+            status = self.job_status or "missing"
+            is_terminal = status in {"completed", "failed", "cancelled", "interrupted"}
             return subject.CommandResult(
                 0,
                 json.dumps({
                     "run_id": values[0],
                     "agent_id": "hr-bot",
-                    "status": "interrupted",
-                    "event_count": 1,
-                    "first_seq": 1,
-                    "last_seq": 1,
-                    "ordered_terminal": True,
+                    "status": status,
+                    "event_count": 1 if is_terminal else 0,
+                    "first_seq": 1 if is_terminal else None,
+                    "last_seq": 1 if is_terminal else None,
+                    "ordered_terminal": is_terminal,
                 }).encode(),
             )
         raise AssertionError((action, values))
@@ -197,6 +223,8 @@ class Boundary:
         self.signed_calls.append((path, worker_id, body))
         if path.endswith("/lease"):
             status = self.post_lease_status if self.revoked else 200
+            if status == 200:
+                self.job_status = "leased"
             return subject.SignedGateResponse(
                 status,
                 {} if status == 401 else {
@@ -210,10 +238,11 @@ class Boundary:
                         "max_turns": 2,
                     },
                     "lease_expires_at": "2026-08-21T01:00:00Z",
-                    "cancel_requested": False,
+                    "cancel_requested": self.cancel_requested,
                 },
             )
         if path.endswith("/dispatched"):
+            self.job_status = "dispatched"
             return subject.SignedGateResponse(200, {"status": "accepted"})
         if path.endswith("/events"):
             status = self.post_upload_status if self.revoked else self.pre_upload_status
@@ -222,12 +251,19 @@ class Boundary:
                 {} if status == 401 else {"accepted": 1, "inserted": 1},
             )
         if path.endswith("/terminal"):
+            self.job_status = json.loads(body)["status"]
+            if self.lose_terminal_response:
+                return subject.SignedGateResponse(500, {})
             return subject.SignedGateResponse(200, {"status": "accepted"})
         raise AssertionError(path)
 
     def session_probe(self, cookie: bytes) -> subject.SessionProbeResult:
         self.session_cookies.append(cookie)
         return subject.SessionProbeResult(self.session_status, self.history_status)
+
+    def external_fae_probe(self) -> subject.ExternalFaeProbeResult:
+        self.external_fae_calls += 1
+        return subject.ExternalFaeProbeResult(200, "c" * 64)
 
 
 def _run(
@@ -242,6 +278,7 @@ def _run(
         runner=boundary.runner,
         signed_requester=boundary.signed_request,
         session_probe=boundary.session_probe,
+        external_fae_probe=boundary.external_fae_probe,
         token_factory=lambda: "0123456789abcdef",
         disposable_key_factory=lambda: b"K" * 32,
         uuid_factory=lambda: next(values),
@@ -274,6 +311,7 @@ def test_gate_09_uses_unique_worker_real_signing_revokes_and_keeps_sessions(tmp_
         f"/api/v1/execution-worker/runs/{RUN_ID}/events",
     ]
     assert boundary.session_cookies == [b"__Host-platform_session=bounded-test-cookie"]
+    assert boundary.external_fae_calls == 1
     maintenance = [
         boundary._action(call[0])
         for call in boundary.calls
@@ -348,6 +386,28 @@ def test_gate_10_allows_healthy_replica_generation_to_advance(tmp_path: Path) ->
     _run(config, cookie, launchagent, boundary)
 
 
+@pytest.mark.parametrize(
+    "management_count,management_max_updated_at",
+    (
+        (3, "2026-08-21T00:01:00Z"),
+        (4, "2026-08-20T23:59:00Z"),
+        (0, None),
+    ),
+)
+def test_gate_10_rejects_management_replica_regression(
+    tmp_path: Path,
+    management_count: int,
+    management_max_updated_at: str | None,
+) -> None:
+    config, cookie, launchagent = _fixture(tmp_path)
+    boundary = Boundary()
+    boundary.final_regression["management_count"] = management_count
+    boundary.final_regression["management_max_updated_at"] = management_max_updated_at
+    with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
+        _run(config, cookie, launchagent, boundary)
+    assert boundary.revoked is True
+
+
 def test_gate_10_requires_exact_fae_and_monotonic_current_replica(tmp_path: Path) -> None:
     config, cookie, launchagent = _fixture(tmp_path)
     boundary = Boundary()
@@ -418,6 +478,52 @@ def test_partial_setup_failed_bootout_and_lost_registration_are_compensated(
     with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
         _run(config, cookie, launchagent, boundary)
     assert boundary.registered is True and boundary.revoked is True
+
+
+def test_enqueue_and_terminal_response_loss_prove_terminal_before_revoke(
+    tmp_path: Path,
+) -> None:
+    config, cookie, launchagent = _fixture(tmp_path)
+
+    boundary = Boundary()
+    boundary.lose_enqueue_response = True
+    with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
+        _run(config, cookie, launchagent, boundary)
+    assert boundary.job_status == "cancelled"
+    assert boundary.revoked is True
+    paths = [path for path, _worker, _body in boundary.signed_calls]
+    assert paths == [
+        "/api/v1/execution-worker/lease",
+        f"/api/v1/execution-worker/runs/{RUN_ID}/terminal",
+    ]
+
+    boundary = Boundary()
+    boundary.lose_terminal_response = True
+    with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
+        _run(config, cookie, launchagent, boundary)
+    assert boundary.job_status == "interrupted"
+    assert boundary.revoked is True
+
+
+def test_terminal_proof_failure_blocks_revoke_and_restore_failure_wins(
+    tmp_path: Path,
+) -> None:
+    config, cookie, launchagent = _fixture(tmp_path)
+    boundary = Boundary()
+    boundary.pre_upload_status = 500
+    boundary.fail_inspect = True
+    boundary.fail_interrupt = True
+    with pytest.raises(subject.AcceptanceGateError, match="acceptance cleanup failed"):
+        _run(config, cookie, launchagent, boundary)
+    assert boundary.revoked is False
+
+    boundary = Boundary()
+    boundary.lose_enqueue_response = True
+    boundary.fail_kickstart = True
+    with pytest.raises(subject.AcceptanceGateError, match="acceptance cleanup failed"):
+        _run(config, cookie, launchagent, boundary)
+    assert boundary.job_status == "cancelled"
+    assert boundary.revoked is True
 
 
 def test_final_remote_script_uses_private_registration_directory_and_real_replica_probe() -> None:

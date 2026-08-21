@@ -130,6 +130,12 @@ class SessionProbeResult:
 
 
 @dataclass(frozen=True)
+class ExternalFaeProbeResult:
+    status_code: int
+    body_sha256: str
+
+
+@dataclass(frozen=True)
 class FinalGateResult:
     disposable_worker_id: str
     lease_status: int
@@ -148,6 +154,8 @@ class ReplicaGeneration:
 class RegressionSnapshot:
     fae_identity: tuple[str, str, str, str, str]
     generations: tuple[tuple[str, ReplicaGeneration], ...]
+    management_count: int
+    management_max_updated_at: datetime | None
 
 
 CommandRunner = Callable[..., CommandResult]
@@ -1151,7 +1159,11 @@ def _parse_regression_snapshot(value: dict[str, object]) -> RegressionSnapshot:
         "management_max_updated_at",
     }
     try:
-        if set(value) != keys or value["schema_version"] != 1:
+        if (
+            set(value) != keys
+            or value["schema_version"] != 1
+            or isinstance(value["schema_version"], bool)
+        ):
             raise _gate_error()
         if (
             value["fae_external_domain_healthy"] is not True
@@ -1208,11 +1220,16 @@ def _parse_regression_snapshot(value: dict[str, object]) -> RegressionSnapshot:
         ):
             raise _gate_error()
         management_updated = value["management_max_updated_at"]
-        if management_updated is not None:
-            _regression_timestamp(management_updated)
+        parsed_management_updated = (
+            None if management_updated is None else _regression_timestamp(management_updated)
+        )
+        if (management_count == 0) != (parsed_management_updated is None):
+            raise _gate_error()
         return RegressionSnapshot(
             fae_identity=(fae_id, fae_image, fae_started, "healthy", fae_hash),
             generations=tuple(sorted(parsed_generations)),
+            management_count=management_count,
+            management_max_updated_at=parsed_management_updated,
         )
     except AcceptanceGateError:
         raise
@@ -1222,14 +1239,14 @@ def _parse_regression_snapshot(value: dict[str, object]) -> RegressionSnapshot:
 
 def _require_monotonic_regression(
     before_value: dict[str, object], after_value: dict[str, object]
-) -> None:
+) -> RegressionSnapshot:
     before = _parse_regression_snapshot(before_value)
     after = _parse_regression_snapshot(after_value)
     if before.fae_identity != after.fae_identity:
         raise _gate_error()
     before_generations = dict(before.generations)
     after_generations = dict(after.generations)
-    if set(before_generations) != set(after_generations):
+    if not set(before_generations).issubset(after_generations):
         raise _gate_error()
     for source, earlier in before_generations.items():
         later = after_generations[source]
@@ -1238,16 +1255,37 @@ def _require_monotonic_regression(
             or later.committed_at < earlier.committed_at
         ):
             raise _gate_error()
+    if after.management_count < before.management_count:
+        raise _gate_error()
+    if (
+        before.management_max_updated_at is not None
+        and (
+            after.management_max_updated_at is None
+            or after.management_max_updated_at < before.management_max_updated_at
+        )
+    ):
+        raise _gate_error()
     # Management projections may legitimately advance during acceptance. Their
     # query success and bounded shape above prove the replica remains readable;
     # generation monotonicity proves management_replica_synchronization_unchanged
     # was not replaced by a stale or rolled-back source.
+    return after
+
+
+def _default_external_fae_probe() -> ExternalFaeProbeResult:
+    with httpx.Client(timeout=10, follow_redirects=False, trust_env=False) as client:
+        response = client.get("https://fae.orbbec.com.cn/")
+    return ExternalFaeProbeResult(
+        status_code=response.status_code,
+        body_sha256=hashlib.sha256(response.content).hexdigest(),
+    )
 
 
 def run_gates_09_to_10(
     config_path: Path, *, runner: CommandRunner = _run_command,
     signed_requester: Callable[..., SignedGateResponse] = _default_signed_request,
     session_probe: Callable[[bytes], SessionProbeResult] = _default_session_probe,
+    external_fae_probe: Callable[[], ExternalFaeProbeResult] = _default_external_fae_probe,
     token_factory: Callable[[], str] = lambda: os.urandom(8).hex(),
     disposable_key_factory: Callable[[], bytes] = lambda: os.urandom(32),
     uuid_factory: Callable[[], UUID] = uuid4,
@@ -1278,11 +1316,65 @@ def run_gates_09_to_10(
     stopped = False
     setup = False
     setup_attempted = False
-    enqueued = False
-    terminalized = False
+    enqueue_attempted = False
+    terminal_proven = False
     cleanup_failed = False
     body_error = None
     before = _final_remote_action(config, runner, "regression-probe")
+
+    def terminal_evidence() -> bool:
+        evidence = _remote_action(config, runner, "inspect", str(run_id))
+        return (
+            evidence.get("run_id") == str(run_id)
+            and evidence.get("agent_id") == "hr-bot"
+            and evidence.get("status")
+            in {"completed", "failed", "cancelled", "interrupted"}
+        )
+
+    def lease_is_target(
+        response: SignedGateResponse, *, cancel_requested: bool
+    ) -> bool:
+        payload = response.json_body.get("payload")
+        return (
+            response.status_code == 200
+            and isinstance(payload, dict)
+            and payload.get("run_id") == str(run_id)
+            and payload.get("conversation_id") == str(conversation_id)
+            and payload.get("trigger_message_id") == str(message_id)
+            and payload.get("agent_id") == "hr-bot"
+            and payload.get("prompt") == f"relay acceptance synthetic run {run_id}"
+            and response.json_body.get("cancel_requested") is cancel_requested
+        )
+
+    def prove_cleanup_terminal() -> bool:
+        try:
+            if terminal_evidence():
+                return True
+        except Exception:
+            pass
+        try:
+            interrupted = _remote_action(config, runner, "interrupt", str(run_id))
+            status = interrupted.get("status")
+            if status == "cancel_requested":
+                cleanup_lease = signed_requester(
+                    worker_id, "worker-v1", key, "POST",
+                    "/api/v1/execution-worker/lease", b"{}",
+                )
+                if not lease_is_target(cleanup_lease, cancel_requested=True):
+                    return False
+                cleanup_terminal = signed_requester(
+                    worker_id, "worker-v1", key, "POST",
+                    f"/api/v1/execution-worker/runs/{run_id}/terminal",
+                    b'{"status":"cancelled"}',
+                )
+                if cleanup_terminal.status_code != 200 or cleanup_terminal.json_body != {"status": "accepted"}:
+                    return False
+            elif status != "interrupted":
+                return False
+            return terminal_evidence()
+        except Exception:
+            return False
+
     try:
         setup_attempted = True
         setup_result = _remote_action(config, runner, "setup")
@@ -1297,17 +1389,19 @@ def run_gates_09_to_10(
         result = _final_remote_action(config, runner, "register-disposable", worker_id, "worker-v1", encoded, "hr-bot", reference)
         if result != {"status":"registered","worker_id":worker_id}: raise _gate_error()
         disposable_registered = True
+        enqueue_attempted = True
         _remote_action(config, runner, "enqueue", "hr-bot", str(run_id), str(conversation_id), str(message_id))
-        enqueued = True
         empty = b"{}"
         lease = signed_requester(worker_id, "worker-v1", key, "POST", "/api/v1/execution-worker/lease", empty)
-        if lease.status_code != 200: raise _gate_error()
+        if not lease_is_target(lease, cancel_requested=False): raise _gate_error()
         event = RelayEvent(run_id=run_id, seq=1, event_type="run.interrupted", created_at=datetime.now(timezone.utc), payload={"status":"interrupted"})
         events_body = json.dumps({"events":[event.model_dump(mode="json")]}, sort_keys=True, separators=(",",":"), default=str).encode()
         for path, body in ((f"/api/v1/execution-worker/runs/{run_id}/dispatched", empty), (f"/api/v1/execution-worker/runs/{run_id}/events", events_body), (f"/api/v1/execution-worker/runs/{run_id}/terminal", b'{"status":"interrupted"}')):
             response = signed_requester(worker_id, "worker-v1", key, "POST", path, body)
             if response.status_code != 200: raise _gate_error()
-        terminalized = True
+        if not terminal_evidence():
+            raise _gate_error()
+        terminal_proven = True
         revoke_ref = "RELAY_ACCEPT_REVOKE_" + token.upper()
         result = _final_remote_action(config, runner, "revoke-disposable", worker_id, revoke_ref)
         if result != {"status":"revoked","worker_id":worker_id}: raise _gate_error()
@@ -1318,17 +1412,26 @@ def run_gates_09_to_10(
         after = _final_remote_action(config, runner, "regression-probe")
         if lease_status != 401 or upload_status != 401 or sessions.sessions_status != 200 or sessions.history_status != 200:
             raise _gate_error()
-        _require_monotonic_regression(before, after)
+        regression = _require_monotonic_regression(before, after)
+        external_fae = external_fae_probe()
+        if (
+            external_fae.status_code != 200
+            or _HEX_SHA256.fullmatch(external_fae.body_sha256) is None
+            or external_fae.body_sha256 != regression.fae_identity[4]
+        ):
+            raise _gate_error()
         result_final = FinalGateResult(worker_id, lease_status, upload_status, sessions.sessions_status, sessions.history_status)
     except BaseException as error:
         body_error = error; result_final = None
     finally:
-        if setup and enqueued and not terminalized:
-            try: _remote_action(config, runner, "interrupt", str(run_id))
-            except Exception: cleanup_failed = True
         if registration_attempted and not revoked:
-            try: _final_remote_action(config, runner, "revoke-disposable", worker_id, "RELAY_ACCEPT_REVOKE_" + token.upper())
-            except Exception: cleanup_failed = True
+            if enqueue_attempted and not terminal_proven:
+                terminal_proven = prove_cleanup_terminal()
+                if not terminal_proven:
+                    cleanup_failed = True
+            if not enqueue_attempted or terminal_proven:
+                try: _final_remote_action(config, runner, "revoke-disposable", worker_id, "RELAY_ACCEPT_REVOKE_" + token.upper())
+                except Exception: cleanup_failed = True
         if setup_attempted:
             try: _remote_action(config, runner, "cleanup")
             except Exception: cleanup_failed = True
