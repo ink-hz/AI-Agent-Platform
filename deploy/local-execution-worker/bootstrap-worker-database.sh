@@ -152,10 +152,13 @@ declare
   selected record;
 begin
   for selected in
-    select rolname,rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,
-           rolreplication,rolbypassrls,rolinherit
-      from pg_roles
-     where rolname in (
+    select role.rolname,role.rolcanlogin,role.rolsuper,role.rolcreatedb,
+           role.rolcreaterole,role.rolreplication,role.rolbypassrls,
+           role.rolinherit,role.rolconnlimit,role.rolvaliduntil,role.rolconfig,
+           auth.rolpassword
+      from pg_roles role
+      join pg_authid auth on auth.oid=role.oid
+     where role.rolname in (
        'agent_execution_worker_owner',
        'agent_execution_worker_migrator',
        'agent_execution_worker_runtime'
@@ -164,13 +167,17 @@ begin
     if (selected.rolname = 'agent_execution_worker_runtime' and
         row(selected.rolcanlogin,selected.rolsuper,selected.rolcreatedb,
             selected.rolcreaterole,selected.rolreplication,
-            selected.rolbypassrls,selected.rolinherit)
-        is distinct from row(true,false,false,false,false,false,false))
+            selected.rolbypassrls,selected.rolinherit,selected.rolconnlimit,
+            selected.rolvaliduntil is null,selected.rolconfig is null,
+            selected.rolpassword like 'SCRAM-SHA-256$%')
+        is distinct from row(true,false,false,false,false,false,false,-1,true,true,true))
        or (selected.rolname <> 'agent_execution_worker_runtime' and
         row(selected.rolcanlogin,selected.rolsuper,selected.rolcreatedb,
             selected.rolcreaterole,selected.rolreplication,
-            selected.rolbypassrls,selected.rolinherit)
-        is distinct from row(false,false,false,false,false,false,false)) then
+            selected.rolbypassrls,selected.rolinherit,selected.rolconnlimit,
+            selected.rolvaliduntil is null,selected.rolconfig is null,
+            selected.rolpassword is null)
+        is distinct from row(false,false,false,false,false,false,false,-1,true,true,true)) then
       raise exception 'execution worker role attribute collision';
     end if;
   end loop;
@@ -185,9 +192,45 @@ begin
        and not (
          granted_role.rolname='agent_execution_worker_owner'
          and member_role.rolname='agent_execution_worker_migrator'
+         and membership.grantor=(select oid from pg_roles where rolname=current_user)
+         and not membership.admin_option
+         and not membership.inherit_option
+         and membership.set_option
        )
   ) then
     raise exception 'execution worker role membership collision';
+  end if;
+
+  if exists (
+    select 1 from pg_db_role_setting setting
+    join pg_roles role on role.oid=setting.setrole
+    where role.rolname in (
+      'agent_execution_worker_owner',
+      'agent_execution_worker_migrator',
+      'agent_execution_worker_runtime'
+    )
+  ) then
+    raise exception 'execution worker role configuration collision';
+  end if;
+
+  if exists (
+    select 1 from pg_tablespace object
+    where object.spcowner in (
+      select oid from pg_roles where rolname like 'agent_execution_worker_%'
+    ) or exists (
+      select 1 from aclexplode(object.spcacl) acl
+      where acl.grantee in (
+        select oid from pg_roles where rolname like 'agent_execution_worker_%'
+      )
+    )
+  ) or exists (
+    select 1 from pg_parameter_acl object,
+    lateral aclexplode(object.paracl) acl
+    where acl.grantee in (
+      select oid from pg_roles where rolname like 'agent_execution_worker_%'
+    )
+  ) then
+    raise exception 'cross-database worker privilege collision';
   end if;
 
   if exists (
@@ -196,7 +239,6 @@ begin
        and (
          database.datdba <> (select oid from pg_roles where rolname='agent_execution_worker_owner')
          or database.datistemplate
-         or not database.datallowconn
          or pg_encoding_to_char(database.encoding) <> 'UTF8'
          or exists (
            select 1
@@ -212,7 +254,21 @@ begin
                 and acl.privilege_type='CONNECT'
                 and not acl.is_grantable
               )
+              or (
+                not database.datallowconn
+                and acl.grantee=0
+                and acl.privilege_type in ('CONNECT','TEMPORARY')
+                and not acl.is_grantable
+              )
             )
+         )
+         or (
+           database.datallowconn
+           and exists (
+             select 1
+             from aclexplode(coalesce(database.datacl,acldefault('d',database.datdba))) acl
+             where acl.grantee=0
+           )
          )
        )
   ) then
@@ -221,6 +277,104 @@ begin
 end
 $preflight$;
 SQL
+
+# Dedicated worker roles must be absent from every other connectable database.
+# Database names outside the conservative local naming contract fail closed.
+other_databases="$(owner_psql -d postgres -A -t -c \
+  "select datname from pg_database where not datistemplate and datallowconn and datname <> 'agent_execution_worker' order by datname")" || fail
+for database_name in $other_databases; do
+  [[ "$database_name" =~ ^[A-Za-z0-9_]+$ ]] || fail
+  PGDATABASE="$database_name" owner_psql >/dev/null <<'SQL'
+begin read only;
+do $cross_database_audit$
+begin
+  if exists (
+    select 1 from pg_database database
+    where database.datname=current_database()
+      and (
+        database.datdba in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+        or exists (
+          select 1 from aclexplode(database.datacl) acl
+          where acl.grantee in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+        )
+      )
+  ) or exists (
+    select 1 from pg_namespace object
+    where object.nspowner in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       or exists (
+         select 1 from aclexplode(object.nspacl) acl
+         where acl.grantee in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       )
+  ) or exists (
+    select 1 from pg_class object
+    where object.relowner in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       or exists (
+         select 1 from aclexplode(object.relacl) acl
+         where acl.grantee in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       )
+       or exists (
+         select 1 from pg_attribute column_value,
+         lateral aclexplode(column_value.attacl) acl
+         where column_value.attrelid=object.oid
+           and acl.grantee in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       )
+  ) or exists (
+    select 1 from pg_proc object
+    where object.proowner in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       or exists (
+         select 1 from aclexplode(object.proacl) acl
+         where acl.grantee in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       )
+  ) or exists (
+    select 1 from pg_type object
+    where object.typowner in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       or exists (
+         select 1 from aclexplode(object.typacl) acl
+         where acl.grantee in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       )
+  ) or exists (
+    select 1 from pg_language object
+    where object.lanowner in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       or exists (
+         select 1 from aclexplode(object.lanacl) acl
+         where acl.grantee in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       )
+  ) or exists (
+    select 1 from pg_foreign_data_wrapper object
+    where object.fdwowner in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       or exists (
+         select 1 from aclexplode(object.fdwacl) acl
+         where acl.grantee in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       )
+  ) or exists (
+    select 1 from pg_foreign_server object
+    where object.srvowner in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       or exists (
+         select 1 from aclexplode(object.srvacl) acl
+         where acl.grantee in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       )
+  ) or exists (
+    select 1 from pg_largeobject_metadata object
+    where object.lomowner in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       or exists (
+         select 1 from aclexplode(object.lomacl) acl
+         where acl.grantee in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       )
+  ) or exists (
+    select 1 from pg_default_acl object
+    where object.defaclrole in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       or exists (
+         select 1 from aclexplode(object.defaclacl) acl
+         where acl.grantee in (select oid from pg_roles where rolname like 'agent_execution_worker_%')
+       )
+  ) then
+    raise exception 'cross-database worker privilege collision';
+  end if;
+end
+$cross_database_audit$;
+commit;
+SQL
+done
 
 cleanup_needed=1
 owner_psql -d postgres >/dev/null <<SQL
@@ -234,12 +388,17 @@ select format(
 )
 where not exists (select 1 from pg_roles where rolname='agent_execution_worker_runtime') \gexec
 select format('alter role agent_execution_worker_runtime password %L', '$runtime_password') \gexec
-grant agent_execution_worker_owner to agent_execution_worker_migrator;
-select format('grant agent_execution_worker_migrator to %I', current_user) \gexec
-select 'create database agent_execution_worker owner agent_execution_worker_owner template template0 encoding ''UTF8'''
+select format('grant agent_execution_worker_owner to agent_execution_worker_migrator with admin false granted by %I', current_user) \gexec
+select format('grant agent_execution_worker_owner to agent_execution_worker_migrator with inherit false granted by %I', current_user) \gexec
+select format('grant agent_execution_worker_owner to agent_execution_worker_migrator with set true granted by %I', current_user) \gexec
+select format('grant agent_execution_worker_migrator to %I with admin false granted by %I', current_user, current_user) \gexec
+select format('grant agent_execution_worker_migrator to %I with inherit false granted by %I', current_user, current_user) \gexec
+select format('grant agent_execution_worker_migrator to %I with set true granted by %I', current_user, current_user) \gexec
+select 'create database agent_execution_worker owner agent_execution_worker_owner template template0 encoding ''UTF8'' allow_connections false'
 where not exists (select 1 from pg_database where datname='agent_execution_worker') \gexec
 revoke all on database agent_execution_worker from public;
 grant connect on database agent_execution_worker to agent_execution_worker_migrator, agent_execution_worker_runtime;
+alter database agent_execution_worker allow_connections true;
 SQL
 
 owner_psql -d agent_execution_worker >/dev/null <<SQL
@@ -250,8 +409,10 @@ revoke all on schema execution_worker from public;
 grant usage on schema execution_worker to agent_execution_worker_runtime;
 revoke all on all tables in schema execution_worker from public;
 revoke all on all tables in schema execution_worker from agent_execution_worker_runtime;
-grant select,insert,update on execution_worker.local_runs to agent_execution_worker_runtime;
-grant select,insert,update on execution_worker.event_outbox to agent_execution_worker_runtime;
+grant select,insert on execution_worker.local_runs to agent_execution_worker_runtime;
+grant update(state,dispatched_at,terminal_at) on execution_worker.local_runs to agent_execution_worker_runtime;
+grant select,insert on execution_worker.event_outbox to agent_execution_worker_runtime;
+grant update(delivered_at) on execution_worker.event_outbox to agent_execution_worker_runtime;
 grant select on execution_worker.schema_migrations to agent_execution_worker_runtime;
 reset role;
 SQL
@@ -271,12 +432,51 @@ begin
     raise exception 'execution worker roles missing';
   end if;
   if exists (
+    select 1 from pg_roles role
+    where role.rolname in (
+      'agent_execution_worker_owner','agent_execution_worker_migrator','agent_execution_worker_runtime'
+    ) and (
+      role.rolsuper or role.rolcreatedb or role.rolcreaterole or role.rolreplication
+      or role.rolbypassrls or role.rolinherit or role.rolconnlimit <> -1
+      or role.rolvaliduntil is not null or role.rolconfig is not null
+      or (role.rolname='agent_execution_worker_runtime' and (
+        not role.rolcanlogin or (select rolpassword from pg_authid where oid=role.oid) not like 'SCRAM-SHA-256$%'
+      ))
+      or (role.rolname<>'agent_execution_worker_runtime' and (
+        role.rolcanlogin or (select rolpassword from pg_authid where oid=role.oid) is not null
+      ))
+    )
+  ) or exists (
+    select 1 from pg_db_role_setting setting
+    join pg_roles role on role.oid=setting.setrole
+    where role.rolname in (
+      'agent_execution_worker_owner','agent_execution_worker_migrator','agent_execution_worker_runtime'
+    )
+  ) then
+    raise exception 'execution worker role attribute mismatch';
+  end if;
+  if exists (
     select 1 from pg_auth_members membership
     join pg_roles granted_role on granted_role.oid=membership.roleid
     join pg_roles member_role on member_role.oid=membership.member
     where (granted_role.rolname like 'agent_execution_worker_%' or member_role.rolname like 'agent_execution_worker_%')
-      and not (granted_role.rolname='agent_execution_worker_owner' and member_role.rolname='agent_execution_worker_migrator')
-  ) or not pg_has_role('agent_execution_worker_migrator','agent_execution_worker_owner','MEMBER') then
+      and not (
+        granted_role.rolname='agent_execution_worker_owner'
+        and member_role.rolname='agent_execution_worker_migrator'
+        and membership.grantor=(select oid from pg_roles where rolname=current_user)
+        and not membership.admin_option
+        and not membership.inherit_option
+        and membership.set_option
+      )
+  ) or (select count(*) from pg_auth_members membership
+        join pg_roles granted_role on granted_role.oid=membership.roleid
+        join pg_roles member_role on member_role.oid=membership.member
+        where granted_role.rolname='agent_execution_worker_owner'
+          and member_role.rolname='agent_execution_worker_migrator'
+          and membership.grantor=(select oid from pg_roles where rolname=current_user)
+          and not membership.admin_option
+          and not membership.inherit_option
+          and membership.set_option) <> 1 then
     raise exception 'execution worker role membership mismatch';
   end if;
   if (select datdba from pg_database where datname=current_database()) <>
@@ -358,11 +558,42 @@ begin
     from information_schema.role_table_grants
    where grantee='agent_execution_worker_runtime' and table_schema='execution_worker';
   if actual is distinct from array[
-    'event_outbox:INSERT','event_outbox:SELECT','event_outbox:UPDATE',
-    'local_runs:INSERT','local_runs:SELECT','local_runs:UPDATE',
+    'event_outbox:INSERT','event_outbox:SELECT',
+    'local_runs:INSERT','local_runs:SELECT',
     'schema_migrations:SELECT'
   ] then
     raise exception 'execution worker runtime table grant mismatch';
+  end if;
+  select array_agg(concat(table_name,':',column_name) order by table_name,column_name)
+    into actual
+    from information_schema.role_column_grants
+   where grantee='agent_execution_worker_runtime'
+     and table_schema='execution_worker'
+     and privilege_type='UPDATE';
+  if actual is distinct from array[
+    'event_outbox:delivered_at',
+    'local_runs:dispatched_at',
+    'local_runs:state',
+    'local_runs:terminal_at'
+  ] then
+    raise exception 'execution worker runtime column grant mismatch';
+  end if;
+  if exists (
+    select 1 from pg_default_acl object
+    where object.defaclrole in (
+      select oid from pg_roles where rolname in (
+        'agent_execution_worker_owner','agent_execution_worker_migrator','agent_execution_worker_runtime'
+      )
+    ) or exists (
+      select 1 from aclexplode(object.defaclacl) acl
+      where acl.grantee in (
+        select oid from pg_roles where rolname in (
+          'agent_execution_worker_owner','agent_execution_worker_migrator','agent_execution_worker_runtime'
+        )
+      )
+    )
+  ) then
+    raise exception 'execution worker default acl mismatch';
   end if;
   if exists (
     select 1 from information_schema.role_usage_grants

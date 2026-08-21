@@ -53,14 +53,18 @@ import re
 import sys
 
 value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert set(value) == {"worker_id", "key_id", "public_key_base64url", "allowed_agent_ids"}
-assert value["worker_id"] == "agentops-mac-primary"
-assert value["key_id"] == "worker-v1"
+if set(value) != {"worker_id", "key_id", "public_key_base64url", "allowed_agent_ids"}:
+    raise SystemExit(1)
+if value["worker_id"] != "agentops-mac-primary" or value["key_id"] != "worker-v1":
+    raise SystemExit(1)
 expected_agents = ['hr-bot', 'fae-bot', 'marketing-prospecting-bot', 'marketing-inbound-bot', 'marketing-voice-bot', 'marketing-intelligence-bot', 'marketing-gtm-bot']
-assert value["allowed_agent_ids"] == expected_agents
+if value["allowed_agent_ids"] != expected_agents:
+    raise SystemExit(1)
 public_key = base64.urlsafe_b64decode(value["public_key_base64url"] + "=")
-assert len(public_key) == 32
-assert base64.urlsafe_b64encode(public_key).decode().rstrip("=") == value["public_key_base64url"]
+if len(public_key) != 32:
+    raise SystemExit(1)
+if base64.urlsafe_b64encode(public_key).decode().rstrip("=") != value["public_key_base64url"]:
+    raise SystemExit(1)
 print(
     value["worker_id"],
     value["key_id"],
@@ -111,7 +115,7 @@ trap cleanup EXIT
 /usr/bin/curl --noproxy '*' -fsS --max-time 8 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 \
   https://agent.orbbec.com.cn/api/health |
-  /usr/bin/python3 -c 'import json,sys; assert json.load(sys.stdin)=={"status":"ok"}' || fail
+  /usr/bin/python3 -c 'import json,sys; raise SystemExit(json.load(sys.stdin)!={"status":"ok"})' || fail
 
 /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Fxq '127.0.0.1:8080' || fail
 ! /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Eq '^(0\.0\.0\.0|\[::\]):(8080|5432)$' || fail

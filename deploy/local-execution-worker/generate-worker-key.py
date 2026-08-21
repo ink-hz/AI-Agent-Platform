@@ -51,6 +51,8 @@ def _secure_parent(path: Path) -> int:
 
 def _private_bytes(path: Path) -> bytes:
     parent_fd = _secure_parent(path)
+    temporary = f".{path.name}.{secrets.token_hex(16)}.part"
+    created = False
     try:
         try:
             descriptor = os.open(path.name, _FILE_READ_FLAGS, dir_fd=parent_fd)
@@ -58,7 +60,7 @@ def _private_bytes(path: Path) -> bytes:
             key = Ed25519PrivateKey.generate()
             value = key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
             descriptor = os.open(
-                path.name,
+                temporary,
                 os.O_WRONLY
                 | os.O_CREAT
                 | os.O_EXCL
@@ -66,31 +68,59 @@ def _private_bytes(path: Path) -> bytes:
                 0o600,
                 dir_fd=parent_fd,
             )
+            created = True
             try:
                 os.fchmod(descriptor, 0o600)
                 _write_all(descriptor, value)
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
+            try:
+                os.link(
+                    temporary,
+                    path.name,
+                    src_dir_fd=parent_fd,
+                    dst_dir_fd=parent_fd,
+                    follow_symlinks=False,
+                )
+            except FileExistsError:
+                return _private_bytes_from_parent(parent_fd, path.name)
+            finally:
+                os.unlink(temporary, dir_fd=parent_fd)
+                created = False
             os.fsync(parent_fd)
             return value
-        try:
-            metadata = os.fstat(descriptor)
-            if (
-                not stat.S_ISREG(metadata.st_mode)
-                or stat.S_IMODE(metadata.st_mode) != 0o600
-                or metadata.st_uid != os.getuid()
-                or metadata.st_size != 32
-            ):
-                raise ValueError
-            value = os.read(descriptor, 33)
-            if len(value) != 32 or os.read(descriptor, 1):
-                raise ValueError
-            return value
-        finally:
-            os.close(descriptor)
+        return _private_bytes_from_descriptor(descriptor)
     finally:
+        if created:
+            try:
+                os.unlink(temporary, dir_fd=parent_fd)
+            except FileNotFoundError:
+                pass
         os.close(parent_fd)
+
+
+def _private_bytes_from_parent(parent_fd: int, name: str) -> bytes:
+    descriptor = os.open(name, _FILE_READ_FLAGS, dir_fd=parent_fd)
+    return _private_bytes_from_descriptor(descriptor)
+
+
+def _private_bytes_from_descriptor(descriptor: int) -> bytes:
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or metadata.st_size != 32
+        ):
+            raise ValueError
+        value = os.read(descriptor, 33)
+        if len(value) != 32 or os.read(descriptor, 1):
+            raise ValueError
+        return value
+    finally:
+        os.close(descriptor)
 
 
 def _write_all(descriptor: int, value: bytes) -> None:

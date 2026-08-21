@@ -46,6 +46,78 @@ def _mode(path: Path) -> int:
     return path.stat().st_mode & 0o777
 
 
+WORKER_ROLES = (
+    "agent_execution_worker_owner",
+    "agent_execution_worker_migrator",
+    "agent_execution_worker_runtime",
+)
+
+
+def _bootstrap_test_environment(control_database, tmp_path: Path):
+    current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
+    platform = tmp_path / "platform"
+    local = platform / "deploy/local-execution-worker"
+    schema_target = platform / "backend/app/execution_relay/worker_schema.sql"
+    local.mkdir(parents=True)
+    schema_target.parent.mkdir(parents=True)
+    schema_target.write_bytes(
+        (ROOT / "backend/app/execution_relay/worker_schema.sql").read_bytes()
+    )
+    copied = local / BOOTSTRAP.name
+    copied.write_text(
+        BOOTSTRAP.read_text(encoding="utf-8").replace("agentops", current_user),
+        encoding="utf-8",
+    )
+    copied.chmod(0o700)
+    private = tmp_path / "private"
+    private.mkdir(mode=0o700)
+    owner_dsn = private / "owner-dsn"
+    owner_dsn.write_text(
+        f"postgresql://control_test_admin:secret@127.0.0.1:{control_database['port']}/postgres\n"
+    )
+    owner_dsn.chmod(0o600)
+    runtime_dsn = private / "runtime-dsn"
+    environment = {
+        **os.environ,
+        "PLATFORM_LOCAL_POSTGRES17_PSQL": subprocess.check_output(
+            ["/bin/sh", "-c", "command -v psql"], text=True
+        ).strip(),
+        "PLATFORM_LOCAL_PYTHON3": sys.executable,
+    }
+    return copied, owner_dsn, runtime_dsn, environment
+
+
+def _run_bootstrap(paths, *, check: bool = False):
+    copied, owner_dsn, runtime_dsn, environment = paths
+    return subprocess.run(
+        ["/bin/bash", str(copied), str(owner_dsn), str(runtime_dsn)],
+        text=True,
+        capture_output=True,
+        env=environment,
+        check=check,
+    )
+
+
+def _drop_worker_test_state(admin_url: str, *extra_databases: str) -> None:
+    with psycopg.connect(admin_url, autocommit=True) as connection:
+        for database in (*extra_databases, "agent_execution_worker"):
+            connection.execute(
+                psycopg.sql.SQL("drop database if exists {}").format(
+                    psycopg.sql.Identifier(database)
+                )
+            )
+        for role in (
+            *WORKER_ROLES,
+            "execution_worker_intruder",
+            "execution_worker_second_admin",
+        ):
+            connection.execute(
+                psycopg.sql.SQL("drop role if exists {}").format(
+                    psycopg.sql.Identifier(role)
+                )
+            )
+
+
 def test_key_generator_is_idempotent_private_and_exact(tmp_path: Path) -> None:
     private_dir = tmp_path / "private"
     private_dir.mkdir(mode=0o700)
@@ -146,6 +218,63 @@ def test_key_generator_forces_exact_modes_under_restrictive_caller_umask(
 
     assert result.returncode == 0, result.stderr
     assert _mode(private) == _mode(public) == 0o600
+
+
+def test_key_generator_first_private_write_failure_is_atomic_and_retryable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    private_dir = tmp_path / "private"
+    public_dir = tmp_path / "public"
+    private_dir.mkdir(mode=0o700)
+    public_dir.mkdir(mode=0o700)
+    private = private_dir / "worker.key"
+    public = public_dir / "worker.json"
+    spec = importlib.util.spec_from_file_location("atomic_worker_key", GENERATOR)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    original_write = module.os.write
+    failed = False
+
+    def fail_first_write(descriptor: int, value: bytes) -> int:
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError("injected private-key write failure")
+        return original_write(descriptor, value)
+
+    monkeypatch.setattr(module.os, "write", fail_first_write)
+    assert module.main([str(private), str(public)]) == 1
+    assert not private.exists()
+    assert list(private_dir.iterdir()) == []
+
+    monkeypatch.setattr(module.os, "write", original_write)
+    assert module.main([str(private), str(public)]) == 0
+    assert len(private.read_bytes()) == 32
+
+
+def test_key_generator_concurrent_first_generation_publishes_one_complete_key(
+    tmp_path: Path,
+) -> None:
+    private_dir = tmp_path / "private"
+    public_dir = tmp_path / "public"
+    private_dir.mkdir(mode=0o700)
+    public_dir.mkdir(mode=0o700)
+    private = private_dir / "worker.key"
+    public = public_dir / "worker.json"
+    command = [sys.executable, str(GENERATOR), str(private), str(public)]
+
+    processes = [
+        subprocess.Popen(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        for _ in range(8)
+    ]
+    results = [process.communicate(timeout=20) for process in processes]
+
+    assert [process.returncode for process in processes] == [0] * len(processes)
+    assert len({stdout for stdout, _stderr in results}) == 1
+    assert all(stderr == "" for _stdout, stderr in results)
+    assert len(private.read_bytes()) == 32
+    assert list(private_dir.iterdir()) == [private]
 
 
 def test_registration_cli_uses_only_v27_maintenance_functions(
@@ -507,7 +636,9 @@ def test_local_database_bootstrap_reuses_postgres17_without_flywheel_or_sqlite()
     assert "parent.st_uid != os.getuid()" in script
     assert "postgresql://agent_execution_worker_runtime:" in script
     assert "if [[ ! -e \"$runtime_dsn_file\" ]]" in script
-    assert "grant select,insert,update" in lowered
+    assert "grant select,insert on execution_worker.local_runs" in lowered
+    assert "grant update(state,dispatched_at,terminal_at)" in lowered
+    assert "grant update(delivered_at)" in lowered
     assert not re.search(r"grant[^\n;]*flywheel", lowered)
     for forbidden in (
         "sqlite",
@@ -533,13 +664,33 @@ def test_local_database_bootstrap_fails_closed_on_roles_memberships_and_acls() -
         "rolreplication",
         "rolbypassrls",
         "rolinherit",
+        "rolconnlimit",
+        "rolvaliduntil",
+        "rolconfig",
     ):
         assert attribute in script
     assert "pg_auth_members" in script
+    for membership_field in (
+        "grantor",
+        "admin_option",
+        "inherit_option",
+        "set_option",
+    ):
+        assert membership_field in script
+    assert "with admin false" in script
+    assert "with inherit false" in script
+    assert "with set true" in script
+    assert "granted by %i', current_user" in script
+    assert script.count("with admin false granted by %i") == 2
+    assert script.count("with inherit false granted by %i") == 2
+    assert script.count("with set true granted by %i") == 2
     assert "datacl" in script and "datdba" in script
     assert "aclexplode" in script
     assert "information_schema.role_table_grants" in script
+    assert "information_schema.role_column_grants" in script
     assert "information_schema.role_usage_grants" in script
+    assert "pg_default_acl" in script
+    assert "cross-database worker privilege collision" in script
     assert "public" in script and "acl.grantee=0" in script
     assert "execution worker database grant mismatch" in script
     assert "execution worker unexpected schema grant" in script
@@ -784,6 +935,437 @@ def test_database_preflight_rejects_privilege_collisions_before_outbox_access(
                         psycopg.sql.Identifier(role)
                     )
                 )
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "collision",
+    [
+        "membership-admin",
+        "membership-inherit",
+        "membership-set",
+        "membership-grantor",
+        "runtime-connlimit",
+        "runtime-validuntil",
+        "runtime-config",
+        "runtime-database-config",
+    ],
+)
+def test_bootstrap_rejects_exact_role_and_membership_collisions_before_outbox(
+    control_database, tmp_path: Path, collision: str
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    paths = _bootstrap_test_environment(control_database, tmp_path)
+    _drop_worker_test_state(admin_url)
+    try:
+        first = _run_bootstrap(paths)
+        assert first.returncode == 0, first.stderr
+        runtime_dsn = paths[2]
+        with psycopg.connect(runtime_dsn.read_text().strip()) as runtime:
+            run_id = uuid.uuid4()
+            runtime.execute(
+                "insert into execution_worker.local_runs("
+                "run_id,job_id,agent_id,metabot_port,callback_token_hash,state,leased_at"
+                ") values (%s,%s,'hr-bot',9101,%s,'leased',now())",
+                (run_id, uuid.uuid4(), b"r" * 32),
+            )
+            runtime.execute(
+                "insert into execution_worker.event_outbox(run_id,seq,event_json) "
+                "values (%s,1,'{\"marker\":true}')",
+                (run_id,),
+            )
+            runtime.commit()
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            if collision == "membership-admin":
+                connection.execute(
+                    "grant agent_execution_worker_owner to agent_execution_worker_migrator "
+                    "with admin true"
+                )
+            elif collision == "membership-inherit":
+                connection.execute(
+                    "grant agent_execution_worker_owner to agent_execution_worker_migrator "
+                    "with inherit true"
+                )
+            elif collision == "membership-set":
+                connection.execute(
+                    "grant agent_execution_worker_owner to agent_execution_worker_migrator "
+                    "with set false"
+                )
+            elif collision == "membership-grantor":
+                connection.execute(
+                    "create role execution_worker_intruder nologin noinherit"
+                )
+                connection.execute(
+                    "grant agent_execution_worker_owner to execution_worker_intruder "
+                    "with admin true"
+                )
+                connection.execute("set role execution_worker_intruder")
+                connection.execute(
+                    "grant agent_execution_worker_owner to agent_execution_worker_migrator "
+                    "with admin false granted by execution_worker_intruder"
+                )
+                connection.execute("reset role")
+            elif collision == "runtime-connlimit":
+                connection.execute(
+                    "alter role agent_execution_worker_runtime connection limit 2"
+                )
+            elif collision == "runtime-validuntil":
+                connection.execute(
+                    "alter role agent_execution_worker_runtime valid until '2030-01-01'"
+                )
+            elif collision == "runtime-config":
+                connection.execute(
+                    "alter role agent_execution_worker_runtime set statement_timeout='1s'"
+                )
+            else:
+                connection.execute(
+                    "alter role agent_execution_worker_runtime in database postgres "
+                    "set statement_timeout='1s'"
+                )
+
+        rerun = _run_bootstrap(paths)
+
+        assert rerun.returncode != 0
+        assert "role" in rerun.stderr.lower()
+        with psycopg.connect(runtime_dsn.read_text().strip()) as runtime:
+            assert runtime.execute(
+                "select event_json from execution_worker.event_outbox"
+            ).fetchone() == ({"marker": True},)
+    finally:
+        _drop_worker_test_state(admin_url)
+
+
+@pytest.mark.postgres
+def test_bootstrap_persists_exact_pg17_roles_and_membership_options(
+    control_database, tmp_path: Path
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    paths = _bootstrap_test_environment(control_database, tmp_path)
+    _drop_worker_test_state(admin_url)
+    try:
+        result = _run_bootstrap(paths)
+        assert result.returncode == 0, result.stderr
+        with psycopg.connect(admin_url) as connection:
+            roles = connection.execute(
+                "select role.rolname,role.rolcanlogin,role.rolsuper,role.rolinherit,role.rolcreatedb,"
+                "role.rolcreaterole,role.rolreplication,role.rolbypassrls,role.rolconnlimit,"
+                "role.rolvaliduntil is null,role.rolconfig is null,"
+                "case when role.rolname='agent_execution_worker_runtime' "
+                    "then auth.rolpassword like 'SCRAM-SHA-256$%%' else auth.rolpassword is null end "
+                "from pg_roles role join pg_authid auth on auth.oid=role.oid "
+                "where role.rolname=any(%s) order by role.rolname",
+                (list(WORKER_ROLES),),
+            ).fetchall()
+            assert roles == [
+                ("agent_execution_worker_migrator", False, False, False, False, False, False, False, -1, True, True, True),
+                ("agent_execution_worker_owner", False, False, False, False, False, False, False, -1, True, True, True),
+                ("agent_execution_worker_runtime", True, False, False, False, False, False, False, -1, True, True, True),
+            ]
+            memberships = connection.execute(
+                "select granted.rolname,member.rolname,grantor.rolname,"
+                "membership.admin_option,membership.inherit_option,membership.set_option "
+                "from pg_auth_members membership "
+                "join pg_roles granted on granted.oid=membership.roleid "
+                "join pg_roles member on member.oid=membership.member "
+                "join pg_roles grantor on grantor.oid=membership.grantor "
+                "where granted.rolname like 'agent_execution_worker_%' "
+                "or member.rolname like 'agent_execution_worker_%'"
+            ).fetchall()
+            assert memberships == [
+                (
+                    "agent_execution_worker_owner",
+                    "agent_execution_worker_migrator",
+                    connection.info.user,
+                    False,
+                    False,
+                    True,
+                )
+            ]
+            assert connection.execute(
+                "select count(*) from pg_db_role_setting setting "
+                "join pg_roles role on role.oid=setting.setrole "
+                "where role.rolname=any(%s)",
+                (list(WORKER_ROLES),),
+            ).fetchone() == (0,)
+    finally:
+        _drop_worker_test_state(admin_url)
+
+
+@pytest.mark.postgres
+def test_bootstrap_rejects_owner_dsn_identity_change_before_outbox(
+    control_database, tmp_path: Path
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    paths = _bootstrap_test_environment(control_database, tmp_path)
+    _drop_worker_test_state(admin_url)
+    try:
+        first = _run_bootstrap(paths)
+        assert first.returncode == 0, first.stderr
+        with psycopg.connect(paths[2].read_text().strip()) as runtime:
+            run_id = uuid.uuid4()
+            runtime.execute(
+                "insert into execution_worker.local_runs("
+                "run_id,job_id,agent_id,metabot_port,callback_token_hash,state,leased_at"
+                ") values (%s,%s,'hr-bot',9101,%s,'leased',now())",
+                (run_id, uuid.uuid4(), b"i" * 32),
+            )
+            runtime.execute(
+                "insert into execution_worker.event_outbox(run_id,seq,event_json) "
+                "values (%s,1,'{\"identity_marker\":true}')",
+                (run_id,),
+            )
+            runtime.commit()
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            connection.execute(
+                "create role execution_worker_second_admin login superuser "
+                "password 'second-admin-secret'"
+            )
+        paths[1].write_text(
+            "postgresql://execution_worker_second_admin:second-admin-secret@"
+            f"127.0.0.1:{control_database['port']}/postgres\n"
+        )
+        paths[1].chmod(0o600)
+
+        rerun = _run_bootstrap(paths)
+
+        assert rerun.returncode != 0
+        assert "role membership collision" in rerun.stderr
+        with psycopg.connect(paths[2].read_text().strip()) as runtime:
+            assert runtime.execute(
+                "select event_json from execution_worker.event_outbox where run_id=%s",
+                (run_id,),
+            ).fetchone() == ({"identity_marker": True},)
+    finally:
+        _drop_worker_test_state(admin_url)
+
+
+@pytest.mark.postgres
+def test_bootstrap_self_heals_database_left_locked_before_public_revoke(
+    control_database, tmp_path: Path
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    paths = _bootstrap_test_environment(control_database, tmp_path)
+    _drop_worker_test_state(admin_url)
+    try:
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            connection.execute(
+                "create role agent_execution_worker_owner nologin noinherit "
+                "nosuperuser nocreatedb nocreaterole noreplication nobypassrls"
+            )
+            connection.execute(
+                "create role agent_execution_worker_migrator nologin noinherit "
+                "nosuperuser nocreatedb nocreaterole noreplication nobypassrls"
+            )
+            connection.execute(
+                "create role agent_execution_worker_runtime login noinherit "
+                "nosuperuser nocreatedb nocreaterole noreplication nobypassrls "
+                "password 'partial-bootstrap-password'"
+            )
+            connection.execute(
+                "grant agent_execution_worker_owner to agent_execution_worker_migrator "
+                "with admin false"
+            )
+            connection.execute(
+                "grant agent_execution_worker_owner to agent_execution_worker_migrator "
+                "with inherit false"
+            )
+            connection.execute(
+                "grant agent_execution_worker_owner to agent_execution_worker_migrator "
+                "with set true granted by current_user"
+            )
+            connection.execute(
+                "create database agent_execution_worker "
+                "owner agent_execution_worker_owner template template0 encoding 'UTF8' "
+                "allow_connections false"
+            )
+
+        result = _run_bootstrap(paths)
+
+        assert result.returncode == 0, result.stderr
+        with psycopg.connect(admin_url) as connection:
+            assert connection.execute(
+                "select datallowconn from pg_database "
+                "where datname='agent_execution_worker'"
+            ).fetchone() == (True,)
+    finally:
+        _drop_worker_test_state(admin_url)
+
+
+@pytest.mark.postgres
+def test_bootstrap_rejects_open_default_acl_database_as_collision(
+    control_database, tmp_path: Path
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    paths = _bootstrap_test_environment(control_database, tmp_path)
+    _drop_worker_test_state(admin_url)
+    try:
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            connection.execute(
+                "create role agent_execution_worker_owner nologin noinherit "
+                "nosuperuser nocreatedb nocreaterole noreplication nobypassrls"
+            )
+            connection.execute(
+                "create role agent_execution_worker_migrator nologin noinherit "
+                "nosuperuser nocreatedb nocreaterole noreplication nobypassrls"
+            )
+            connection.execute(
+                "create role agent_execution_worker_runtime login noinherit "
+                "nosuperuser nocreatedb nocreaterole noreplication nobypassrls "
+                "password 'malicious-collision-password'"
+            )
+            connection.execute(
+                "grant agent_execution_worker_owner to agent_execution_worker_migrator "
+                "with admin false"
+            )
+            connection.execute(
+                "grant agent_execution_worker_owner to agent_execution_worker_migrator "
+                "with inherit false"
+            )
+            connection.execute(
+                "grant agent_execution_worker_owner to agent_execution_worker_migrator "
+                "with set true granted by current_user"
+            )
+            connection.execute(
+                "create database agent_execution_worker "
+                "owner agent_execution_worker_owner template template0 encoding 'UTF8'"
+            )
+
+        result = _run_bootstrap(paths)
+
+        assert result.returncode != 0
+        assert "database or acl collision" in result.stderr
+        with psycopg.connect(admin_url) as connection:
+            assert connection.execute(
+                "select datallowconn from pg_database "
+                "where datname='agent_execution_worker'"
+            ).fetchone() == (True,)
+    finally:
+        _drop_worker_test_state(admin_url)
+
+
+@pytest.mark.postgres
+def test_bootstrap_grants_only_required_runtime_update_columns(
+    control_database, tmp_path: Path
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    paths = _bootstrap_test_environment(control_database, tmp_path)
+    _drop_worker_test_state(admin_url)
+    try:
+        result = _run_bootstrap(paths)
+        assert result.returncode == 0, result.stderr
+        with psycopg.connect(paths[2].read_text().strip()) as runtime:
+            table_grants = runtime.execute(
+                "select table_name,privilege_type "
+                "from information_schema.role_table_grants "
+                "where grantee=current_user and table_schema='execution_worker' "
+                "order by table_name,privilege_type"
+            ).fetchall()
+            column_updates = runtime.execute(
+                "select table_name,column_name "
+                "from information_schema.role_column_grants "
+                "where grantee=current_user and table_schema='execution_worker' "
+                "and privilege_type='UPDATE' order by table_name,column_name"
+            ).fetchall()
+            assert all(privilege != "UPDATE" for _table, privilege in table_grants)
+            assert column_updates == [
+                ("event_outbox", "delivered_at"),
+                ("local_runs", "dispatched_at"),
+                ("local_runs", "state"),
+                ("local_runs", "terminal_at"),
+            ]
+            assert runtime.execute(
+                "select count(*) from pg_default_acl acl "
+                "where acl.defaclrole in (select oid from pg_roles where rolname=any(%s)) "
+                "or exists (select 1 from aclexplode(acl.defaclacl) item "
+                "where item.grantee in (select oid from pg_roles where rolname=any(%s)))",
+                (list(WORKER_ROLES), list(WORKER_ROLES)),
+            ).fetchone() == (0,)
+    finally:
+        _drop_worker_test_state(admin_url)
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "collision",
+    ["database-owner", "database-acl", "table-acl", "column-acl", "default-acl"],
+)
+def test_bootstrap_rejects_worker_privilege_in_any_other_database(
+    control_database, tmp_path: Path, collision: str
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    extra_database = "flywheel_collision_test"
+    paths = _bootstrap_test_environment(control_database, tmp_path)
+    _drop_worker_test_state(admin_url, extra_database)
+    try:
+        first = _run_bootstrap(paths)
+        assert first.returncode == 0, first.stderr
+        with psycopg.connect(paths[2].read_text().strip()) as runtime:
+            run_id = uuid.uuid4()
+            runtime.execute(
+                "insert into execution_worker.local_runs("
+                "run_id,job_id,agent_id,metabot_port,callback_token_hash,state,leased_at"
+                ") values (%s,%s,'hr-bot',9101,%s,'leased',now())",
+                (run_id, uuid.uuid4(), b"c" * 32),
+            )
+            runtime.execute(
+                "insert into execution_worker.event_outbox(run_id,seq,event_json) "
+                "values (%s,1,'{\"cross_database_marker\":true}')",
+                (run_id,),
+            )
+            runtime.commit()
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            if collision == "database-owner":
+                connection.execute(
+                    "create database flywheel_collision_test "
+                    "owner agent_execution_worker_owner"
+                )
+            else:
+                connection.execute("create database flywheel_collision_test")
+                if collision == "database-acl":
+                    connection.execute(
+                        "grant connect on database flywheel_collision_test "
+                        "to agent_execution_worker_runtime"
+                    )
+        if collision in {"table-acl", "column-acl", "default-acl"}:
+            extra_url = (
+                f"postgresql://control_test_admin@127.0.0.1:"
+                f"{control_database['port']}/{extra_database}"
+            )
+            with psycopg.connect(extra_url, autocommit=True) as connection:
+                connection.execute("create table collision_table(value integer)")
+                if collision == "table-acl":
+                    connection.execute(
+                        "grant select on collision_table "
+                        "to agent_execution_worker_runtime"
+                    )
+                elif collision == "column-acl":
+                    connection.execute(
+                        "grant update(value) on collision_table "
+                        "to agent_execution_worker_runtime"
+                    )
+                else:
+                    connection.execute(
+                        "alter default privileges grant select on tables "
+                        "to agent_execution_worker_runtime"
+                    )
+
+        rerun = _run_bootstrap(paths)
+
+        assert rerun.returncode != 0
+        assert "cross-database worker privilege collision" in rerun.stderr
+        with psycopg.connect(paths[2].read_text().strip()) as runtime:
+            assert runtime.execute(
+                "select event_json from execution_worker.event_outbox "
+                "where run_id=%s",
+                (run_id,),
+            ).fetchone() == ({"cross_database_marker": True},)
+        with psycopg.connect(admin_url) as connection:
+            assert connection.execute(
+                "select 1 from pg_database where datname=%s",
+                (extra_database,),
+            ).fetchone() == (1,)
+    finally:
+        _drop_worker_test_state(admin_url, extra_database)
 
 
 def test_local_database_bootstrap_normalizes_localhost_runtime_dsn() -> None:
@@ -1131,6 +1713,12 @@ def test_production_acceptance_requires_exact_agent_order_and_database_value() -
     assert "allowed_agent_ids" in script
     assert "array_to_json(worker.allowed_agent_ids)::text" in script
     assert "expected_agents_json" in script
+
+
+def test_production_acceptance_uses_explicit_python_conditions() -> None:
+    script = (CLOUD / "accept-dingtalk-production.sh").read_text(encoding="utf-8")
+
+    assert not re.search(r"\bassert\b", script)
 
 
 @pytest.mark.parametrize(
