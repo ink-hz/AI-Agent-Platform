@@ -64,6 +64,10 @@ from .health.platform import (
     build_public_platform_health,
 )
 from .health.poller import HealthCache, poll_loop
+from .execution_relay.content_crypto import ContentCodec
+from .execution_relay.repository import ExecutionRelayRepository
+from .execution_relay.routes import build_execution_relay_router
+from .execution_relay.worker_auth import WorkerRequestVerifier
 from .local_secrets import read_secret_file
 from .observability import routes as observability_routes
 from .observability.repository import (
@@ -364,6 +368,27 @@ def create_app(
     )
     if identity_enabled and identity_auth is None:
         identity_auth = build_identity_auth(config)
+    execution_relay_repository = None
+    execution_relay_router = None
+    if config.execution_relay_enabled:
+        control_database_url = read_secret_file(
+            config.control_plane.control_database_url_file
+        )
+        content_keyring = IdentityKeyring.from_file(
+            config.content_encryption_keyring_file,
+            expected_purpose="platform-content-encryption",
+            expected_key_length=32,
+        )
+        execution_relay_repository = ExecutionRelayRepository(
+            control_database_url,
+            content_codec=ContentCodec(content_keyring),
+        )
+        execution_relay_router = build_execution_relay_router(
+            execution_relay_repository,
+            WorkerRequestVerifier(control_database_url),
+            lease_seconds=config.execution_relay_lease_seconds,
+            max_body_bytes=config.execution_relay_max_body_bytes,
+        )
     cloud_mode = is_cloud_mode(config)
     runtime_pollers_enabled = start_poller and not cloud_mode
     path = registry_path or config.registry_path
@@ -527,6 +552,7 @@ def create_app(
     app.state.attachment_service = attachment_service
     app.state.replica_repository = replica_repository
     app.state.identity_auth = identity_auth
+    app.state.execution_relay_repository = execution_relay_repository
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
         control_database_url = read_secret_file(
@@ -577,6 +603,8 @@ def create_app(
     app.include_router(operations_routes.router)
     app.include_router(registry_routes.router)
     app.include_router(review_routes.router)
+    if execution_relay_router is not None:
+        app.include_router(execution_relay_router)
     if identity_enabled:
         app.include_router(routes_manage.router)
         def request_auth_context(request: Request):

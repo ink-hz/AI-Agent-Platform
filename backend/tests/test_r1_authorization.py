@@ -14,7 +14,10 @@ from app.control_plane.authorization import (
     require_exact_viewer_agent,
 )
 from app.control_plane.models import AuthContext, Role
-from app.control_plane.middleware import IdentitySecurityMiddleware
+from app.control_plane.middleware import (
+    IdentitySecurityMiddleware,
+    is_execution_worker_request,
+)
 from test_control_plane_migration import control_database
 
 
@@ -237,3 +240,21 @@ def test_database_scope_check_and_viewer_read_audit_are_exact_and_immutable(
         "privileged_read",
     )
     assert row[3] == {"agent_id": "hr-bot", "scope_kind": "exact_agent"}
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "expected"),
+    [
+        ("POST", "/api/v1/execution-worker/lease", True),
+        ("POST", "/api/v1/execution-worker/heartbeat", True),
+        ("POST", f"/api/v1/execution-worker/runs/{uuid4()}/events", True),
+        ("GET", "/api/v1/execution-worker/lease", False),
+        ("POST", "/api/v1/execution-worker/lease/", False),
+        ("POST", "/api/v1/execution-worker/runs/not-a-uuid/events", False),
+        ("POST", f"/prefix/api/v1/execution-worker/runs/{uuid4()}/events", False),
+        ("POST", f"/api/v1/execution-worker/runs/{str(uuid4()).upper()}/events", False),
+        ("POST", f"/api/v1/execution-worker/runs/{uuid4()}/future", False),
+    ],
+)
+def test_execution_worker_public_boundary_is_exact(method, path, expected):
+    assert is_execution_worker_request(method, path) is expected

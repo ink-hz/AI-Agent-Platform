@@ -1,3 +1,5 @@
+import base64
+import json
 import os
 
 import pytest
@@ -253,4 +255,129 @@ def test_enabled_attachments_reject_inline_database_credentials(
     )
 
     with pytest.raises(RuntimeError, match="mode 0600"):
+        load_config()
+
+
+RELAY_ENV = (
+    "PLATFORM_EXECUTION_RELAY_ENABLED",
+    "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE",
+    "PLATFORM_EXECUTION_RELAY_LEASE_SECONDS",
+    "PLATFORM_EXECUTION_RELAY_MAX_BODY_BYTES",
+)
+
+
+def _private_file(path, value: str) -> str:
+    path.write_text(value, encoding="utf-8")
+    path.chmod(0o600)
+    return str(path)
+
+
+def _enable_production_identity(monkeypatch, tmp_path) -> None:
+    files = {
+        "PLATFORM_CONTROL_DATABASE_URL_FILE": "postgresql://platform_control_app:secret@db/platform",
+        "PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE": "postgresql://platform_audit_append:secret@db/platform",
+        "PLATFORM_DINGTALK_APP_SECRET_FILE": "dingtalk-secret",
+        "PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE": "identity-encryption",
+        "PLATFORM_IDENTITY_HMAC_KEYRING_FILE": "identity-hmac",
+        "PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE": "rate-hmac",
+    }
+    for name, content in files.items():
+        monkeypatch.setenv(
+            name,
+            _private_file(tmp_path / name.lower(), content),
+        )
+    monkeypatch.setenv("PLATFORM_IDENTITY_MODE", "production")
+    monkeypatch.setenv("PLATFORM_PUBLIC_BASE_URL", "https://agent.example.test")
+    monkeypatch.setenv("PLATFORM_ROUTE_PREFIX", "/")
+    monkeypatch.setenv("PLATFORM_COOKIE_NAME", "__Host-platform_session")
+    monkeypatch.setenv("PLATFORM_DINGTALK_APP_KEY", "app-key")
+    monkeypatch.setenv("PLATFORM_DINGTALK_AGENT_ID", "agent-id")
+    monkeypatch.setenv("PLATFORM_DINGTALK_CORP_ID", "corp-id")
+
+
+def _content_keyring(path, *, purpose="platform-content-encryption") -> str:
+    document = {
+        "purpose": purpose,
+        "active_version": 1,
+        "keys": {"1": base64.b64encode(b"k" * 32).decode("ascii")},
+    }
+    return _private_file(path, json.dumps(document))
+
+
+def test_execution_relay_defaults_disabled_without_content_keyring(monkeypatch):
+    for name in RELAY_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+    config = load_config()
+
+    assert config.execution_relay_enabled is False
+    assert config.content_encryption_keyring_file == ""
+    assert config.execution_relay_lease_seconds == 45
+    assert config.execution_relay_max_body_bytes == 1_048_576
+
+
+def test_execution_relay_enabled_accepts_only_production_root_and_valid_keyring(
+    monkeypatch, tmp_path
+):
+    _enable_production_identity(monkeypatch, tmp_path)
+    keyring = _content_keyring(tmp_path / "content-keyring.json")
+    monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE", keyring)
+    monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_LEASE_SECONDS", "30")
+    monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_MAX_BODY_BYTES", "524288")
+
+    config = load_config()
+
+    assert config.execution_relay_enabled is True
+    assert config.content_encryption_keyring_file == keyring
+    assert config.execution_relay_lease_seconds == 30
+    assert config.execution_relay_max_body_bytes == 524_288
+
+
+def test_execution_relay_enabled_requires_production_identity(monkeypatch, tmp_path):
+    monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_ENABLED", "1")
+    monkeypatch.setenv(
+        "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE",
+        _content_keyring(tmp_path / "content-keyring.json"),
+    )
+    monkeypatch.setenv("PLATFORM_IDENTITY_MODE", "disabled")
+
+    with pytest.raises(ValueError, match="production identity"):
+        load_config()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda monkeypatch, path: monkeypatch.setenv(
+            "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE", "relative/keyring"
+        ), "absolute"),
+        (lambda monkeypatch, path: os.chmod(path, 0o644), "0600"),
+        (lambda monkeypatch, path: path.write_text(
+            json.dumps({
+                "purpose": "wrong-purpose",
+                "active_version": 1,
+                "keys": {"1": base64.b64encode(b"k" * 32).decode("ascii")},
+            }),
+            encoding="utf-8",
+        ), "content encryption keyring"),
+        (lambda monkeypatch, path: monkeypatch.setenv(
+            "PLATFORM_EXECUTION_RELAY_LEASE_SECONDS", "0"
+        ), "positive"),
+        (lambda monkeypatch, path: monkeypatch.setenv(
+            "PLATFORM_EXECUTION_RELAY_MAX_BODY_BYTES", "1048577"
+        ), "1048576"),
+    ],
+)
+def test_execution_relay_enabled_fails_closed_on_unsafe_configuration(
+    monkeypatch, tmp_path, mutation, message
+):
+    _enable_production_identity(monkeypatch, tmp_path)
+    keyring_path = tmp_path / "content-keyring.json"
+    _content_keyring(keyring_path)
+    monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE", str(keyring_path))
+    mutation(monkeypatch, keyring_path)
+
+    with pytest.raises((ValueError, RuntimeError), match=message):
         load_config()

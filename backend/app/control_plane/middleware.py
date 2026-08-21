@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import re
 from urllib.parse import urlsplit
 
 from starlette.datastructures import Headers, MutableHeaders, QueryParams
@@ -29,6 +30,21 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
         "/api/v1/manage/system-health",
     }
 )
+_WORKER_RUN_ROUTE = re.compile(
+    r"/api/v1/execution-worker/runs/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/"
+    r"(?:dispatched|events|terminal)\Z"
+)
+
+
+def is_execution_worker_request(method: str, path: str) -> bool:
+    return method == "POST" and (
+        path
+        in {
+            "/api/v1/execution-worker/lease",
+            "/api/v1/execution-worker/heartbeat",
+        }
+        or _WORKER_RUN_ROUTE.fullmatch(path) is not None
+    )
 
 
 def _unprefixed(path: str, prefix: str) -> str | None:
@@ -169,6 +185,14 @@ class IdentitySecurityMiddleware:
                 )(scope, receive, protected_send)
                 return
             scope.setdefault("state", {})["edge_source"] = edge_source
+
+        worker_request = (
+            self.auth.route_prefix == "/"
+            and is_execution_worker_request(method, path)
+        )
+        if worker_request:
+            await self.app(scope, receive, protected_send)
+            return
 
         if public and method not in _SAFE_METHODS and not _origin_matches(
             headers.get("origin"), self.auth.public_base_url,

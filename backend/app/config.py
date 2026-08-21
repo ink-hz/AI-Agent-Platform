@@ -8,6 +8,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from .control_plane.models import ControlPlaneConfig, IdentityMode
+from .control_plane.crypto import IdentityCryptoError, IdentityKeyring
 from .local_secrets import SecretFileUnavailable, read_secret_file
 
 
@@ -62,6 +63,10 @@ class Config:
     replica_encryption_key_file: str
     replica_signing_public_key_file: str
     replica_stale_seconds: int
+    execution_relay_enabled: bool
+    content_encryption_keyring_file: str
+    execution_relay_lease_seconds: int
+    execution_relay_max_body_bytes: int
     control_plane: ControlPlaneConfig
 
 
@@ -459,6 +464,53 @@ def _validate_cloud_config(config: Config) -> None:
     )
 
 
+def _execution_relay_settings() -> tuple[bool, str, int, int]:
+    enabled = _enabled("PLATFORM_EXECUTION_RELAY_ENABLED")
+    if not enabled:
+        return False, "", 45, 1_048_576
+    keyring_file = os.getenv(
+        "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE", ""
+    ).strip()
+    if not keyring_file:
+        raise ValueError(
+            "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE is required when "
+            "execution relay is enabled"
+        )
+    lease_seconds = _positive_environment_int(
+        "PLATFORM_EXECUTION_RELAY_LEASE_SECONDS", 45
+    )
+    max_body_bytes = _positive_environment_int(
+        "PLATFORM_EXECUTION_RELAY_MAX_BODY_BYTES", 1_048_576
+    )
+    if max_body_bytes > 1_048_576:
+        raise ValueError(
+            "PLATFORM_EXECUTION_RELAY_MAX_BODY_BYTES must not exceed 1048576"
+        )
+    return enabled, keyring_file, lease_seconds, max_body_bytes
+
+
+def _validate_execution_relay_config(config: Config) -> None:
+    if not config.execution_relay_enabled:
+        return
+    if (
+        config.control_plane.mode is not IdentityMode.PRODUCTION
+        or config.control_plane.route_prefix != "/"
+    ):
+        raise ValueError("execution relay requires production identity at root")
+    _validate_private_file(
+        config.content_encryption_keyring_file,
+        "content encryption keyring",
+    )
+    try:
+        IdentityKeyring.from_file(
+            config.content_encryption_keyring_file,
+            expected_purpose="platform-content-encryption",
+            expected_key_length=32,
+        )
+    except IdentityCryptoError:
+        raise RuntimeError("content encryption keyring unavailable") from None
+
+
 def is_cloud_mode(config: Config) -> bool:
     return config.deployment_mode == "cloud-replica"
 
@@ -478,6 +530,12 @@ def _feedback_closure_outbox_dir() -> str:
 
 
 def load_config() -> Config:
+    (
+        execution_relay_enabled,
+        content_encryption_keyring_file,
+        execution_relay_lease_seconds,
+        execution_relay_max_body_bytes,
+    ) = _execution_relay_settings()
     config = Config(
         deployment_mode=os.getenv("PLATFORM_DEPLOYMENT_MODE", "local"),
         cloud_auth_mode=os.getenv("PLATFORM_CLOUD_AUTH_MODE", "ssh-tunnel"),
@@ -582,8 +640,13 @@ def load_config() -> Config:
         replica_stale_seconds=int(
             os.getenv("PLATFORM_REPLICA_STALE_SECONDS", "900")
         ),
+        execution_relay_enabled=execution_relay_enabled,
+        content_encryption_keyring_file=content_encryption_keyring_file,
+        execution_relay_lease_seconds=execution_relay_lease_seconds,
+        execution_relay_max_body_bytes=execution_relay_max_body_bytes,
         control_plane=_load_control_plane_config(),
     )
     _validate_cloud_config(config)
     _validate_attachment_config(config)
+    _validate_execution_relay_config(config)
     return config
