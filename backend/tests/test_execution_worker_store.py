@@ -24,6 +24,7 @@ from app.execution_relay import worker_store
 from app.execution_relay.metabot_client import MetaBotClient, MetaBotRuntimeMap
 from app.execution_relay.models import RelayEvent, RelayJobPayload, RelayLease
 from app.execution_relay.worker import (
+    CallbackResult,
     SignedCloudClient,
     WorkerRuntime,
     callback_server,
@@ -145,6 +146,16 @@ def _event(seq: int, *, payload: dict[str, object] | None = None) -> RelayEvent:
         event_type="turn",
         created_at=NOW + timedelta(seconds=seq),
         payload=payload or {"text": f"event-{seq}"},
+    )
+
+
+def _terminal_event(status: str = "completed") -> RelayEvent:
+    return RelayEvent(
+        run_id=RUN_ID,
+        seq=1,
+        event_type="run.terminal",
+        created_at=NOW + timedelta(seconds=1),
+        payload={"status": status},
     )
 
 
@@ -578,6 +589,138 @@ def test_recovery_rows_preserve_acceptance_and_outbox_facts(dsn_file: Path) -> N
     assert rows[0].state == "interrupted"
     assert rows[0].dispatched_at is None
     assert rows[0].has_events is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+@pytest.mark.parametrize("losing_status", ["cancelled", "interrupted"])
+async def test_terminal_callback_race_has_one_database_and_http_fact(
+    dsn_file: Path, worker_database: str, losing_status: str
+) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    token = "C" * 43
+    store.record_lease(_lease(), 9101, token)
+    store.mark_dispatching(RUN_ID)
+    barrier = Barrier(2)
+    atomic_calls = 0
+
+    class BarrierStore:
+        def __getattr__(self, name):
+            return getattr(store, name)
+
+        def append_terminal_event(self, event, status):
+            nonlocal atomic_calls
+            barrier.wait(timeout=2)
+            atomic_calls += 1
+            return store.append_terminal_event(event, status)
+
+        def mark_terminal(self, run_id, status):
+            barrier.wait(timeout=2)
+            return store.mark_terminal(run_id, status)
+
+    class Cloud:
+        async def heartbeat(self):
+            return (RUN_ID,)
+
+    class MetaBot:
+        def cancel_run(self, _run_id, _agent_id):
+            return None
+
+    class RuntimeMap:
+        def port_for(self, _agent_id):
+            return 9101
+
+    runtime = WorkerRuntime(
+        worker_id="worker-a",
+        cloud=Cloud(),
+        store=BarrierStore(),
+        runtime_map=RuntimeMap(),
+        metabot=MetaBot(),
+        callback_port=9120,
+    )
+    runtime.recover_run(RUN_ID, "hr-bot")
+    callback = asyncio.create_task(
+        runtime.accept_callback(
+            RUN_ID, token, _terminal_event().model_dump_json().encode()
+        )
+    )
+    competitor = asyncio.create_task(
+        runtime.heartbeat_once()
+        if losing_status == "cancelled"
+        else runtime.interrupt_active()
+    )
+    callback_result, _competitor_result = await asyncio.gather(
+        callback, competitor
+    )
+    assert atomic_calls == 1
+
+    with psycopg.connect(worker_database) as connection:
+        state = connection.execute(
+            "select state from execution_worker.local_runs where run_id=%s",
+            (RUN_ID,),
+        ).fetchone()[0]
+        rows = connection.execute(
+            "select event_json from execution_worker.event_outbox "
+            "where run_id=%s",
+            (RUN_ID,),
+        ).fetchall()
+    if state == "completed":
+        assert callback_result is CallbackResult.ACCEPTED
+        assert rows == [(_terminal_event().model_dump(mode="json"),)]
+    else:
+        assert state == losing_status
+        assert callback_result is CallbackResult.CONFLICT
+        assert rows == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+async def test_concurrent_exact_terminal_callbacks_are_both_idempotent_204(
+    dsn_file: Path, worker_database: str
+) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    token = "D" * 43
+    store.record_lease(_lease(), 9101, token)
+    store.mark_dispatching(RUN_ID)
+    barrier = Barrier(2)
+    atomic_calls = 0
+
+    class BarrierStore:
+        def __getattr__(self, name):
+            return getattr(store, name)
+
+        def append_terminal_event(self, event, status):
+            nonlocal atomic_calls
+            barrier.wait(timeout=2)
+            atomic_calls += 1
+            return store.append_terminal_event(event, status)
+
+    runtime = WorkerRuntime(
+        worker_id="worker-a",
+        cloud=object(),
+        store=BarrierStore(),
+        runtime_map=object(),
+        metabot=object(),
+        callback_port=9120,
+    )
+    runtime.recover_run(RUN_ID, "hr-bot")
+    body = _terminal_event().model_dump_json().encode()
+
+    results = await asyncio.gather(
+        runtime.accept_callback(RUN_ID, token, body),
+        runtime.accept_callback(RUN_ID, token, body),
+    )
+
+    assert atomic_calls == 2
+    assert results == [CallbackResult.ACCEPTED, CallbackResult.ACCEPTED]
+    with psycopg.connect(worker_database) as connection:
+        row = connection.execute(
+            "select r.state,count(o.seq) from execution_worker.local_runs r "
+            "left join execution_worker.event_outbox o on o.run_id=r.run_id "
+            "where r.run_id=%s group by r.state",
+            (RUN_ID,),
+        ).fetchone()
+    assert row == ("completed", 1)
 
 
 @pytest.mark.asyncio

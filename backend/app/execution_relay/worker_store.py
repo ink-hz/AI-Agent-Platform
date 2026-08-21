@@ -377,6 +377,58 @@ class WorkerStore:
         except (ValueError, psycopg.Error):
             raise self._conflict() from None
 
+    def append_terminal_event(self, event: RelayEvent, status: str) -> bool:
+        try:
+            if not isinstance(event, RelayEvent) or status not in _TERMINAL_STATES:
+                raise ValueError
+            event_json = event.model_dump(mode="json")
+            with self._connection() as connection:
+                run = connection.execute(
+                    "select state from execution_worker.local_runs "
+                    "where run_id=%s for update",
+                    (event.run_id,),
+                ).fetchone()
+                if run is None:
+                    raise ValueError
+                existing = connection.execute(
+                    "select event_json=%s::jsonb as exact_replay "
+                    "from execution_worker.event_outbox "
+                    "where run_id=%s and seq=%s",
+                    (Jsonb(event_json), event.run_id, event.seq),
+                ).fetchone()
+                if existing is not None:
+                    if existing["exact_replay"] and run["state"] == status:
+                        return False
+                    raise ValueError
+                if run["state"] not in {
+                    "dispatching",
+                    "dispatched",
+                    "running",
+                }:
+                    raise ValueError
+                last = connection.execute(
+                    "select coalesce(max(seq),0) as seq "
+                    "from execution_worker.event_outbox where run_id=%s",
+                    (event.run_id,),
+                ).fetchone()
+                if event.seq != last["seq"] + 1:
+                    raise ValueError
+                connection.execute(
+                    "insert into execution_worker.event_outbox "
+                    "(run_id,seq,event_json) values (%s,%s,%s::jsonb)",
+                    (event.run_id, event.seq, Jsonb(event_json)),
+                )
+                connection.execute(
+                    "update execution_worker.local_runs "
+                    "set state=%s,terminal_at=now() where run_id=%s",
+                    (status, event.run_id),
+                )
+            return True
+        except WorkerStoreError:
+            raise
+        except (ValueError, psycopg.Error):
+            raise self._conflict() from None
+
     def contiguous_outbox(
         self, run_id: UUID, limit: int = 100
     ) -> tuple[RelayEvent, ...]:

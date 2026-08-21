@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import httpx
 import pytest
 
+from app.execution_relay import worker as worker_module
 from app.execution_relay.models import RelayEvent, RelayJobPayload, RelayLease
 from app.execution_relay.worker_store import WorkerRunRecovery
 from app.execution_relay.worker import (
@@ -105,6 +106,25 @@ class FakeStore:
         rows.append(event)
         self.calls.append(("event", event.run_id, event.seq))
         self.states[event.run_id] = "running"
+        return True
+
+    def append_terminal_event(self, event, status):
+        rows = self.events.setdefault(event.run_id, [])
+        if event.seq <= len(rows):
+            if rows[event.seq - 1] == event and self.states[event.run_id] == status:
+                return False
+            raise RuntimeError("worker store conflict")
+        if event.seq != len(rows) + 1 or self.states[event.run_id] not in {
+            "dispatching",
+            "dispatched",
+            "running",
+        }:
+            raise RuntimeError("worker store conflict")
+        rows.append(event)
+        self.calls.append(("event", event.run_id, event.seq))
+        self.calls.append(("local_terminal", event.run_id, status))
+        self.terminals[event.run_id] = status
+        self.states[event.run_id] = status
         return True
 
     def contiguous_outbox(self, run_id, limit=100):
@@ -376,6 +396,56 @@ async def test_cancel_observed_while_lease_commits_prevents_metabot_start() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("start_error", [None, TimeoutError("bounded timeout")])
+async def test_run_worker_waits_for_cancelled_blocking_start_and_converges(
+    monkeypatch, start_error
+) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingMetaBot(FakeMetaBot):
+        def start_run(self, payload, callback_url):
+            self.calls.append(("start", payload.run_id, callback_url))
+            entered.set()
+            assert release.wait(timeout=2)
+            if start_error is not None:
+                raise start_error
+
+    cloud = FakeCloud([_lease()])
+    store = FakeStore()
+    metabot = BlockingMetaBot()
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+    runtime.callback_port = 0
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(loop, "add_signal_handler", lambda *_args: None)
+    monkeypatch.setattr(loop, "remove_signal_handler", lambda *_args: True)
+    runner = asyncio.create_task(run_worker(runtime))
+    try:
+        await asyncio.wait_for(runtime.callback_ready.wait(), timeout=1)
+        assert await asyncio.to_thread(entered.wait, 1)
+        runner.cancel()
+        await asyncio.sleep(0)
+        runner.cancel()
+        await asyncio.sleep(0.05)
+
+        assert runner.done() is False
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(runner, timeout=1)
+
+    assert len([call for call in metabot.calls if call[0] == "start"]) == 1
+    expected_cancels = 1 if start_error is None else 0
+    assert len([call for call in metabot.calls if call[0] == "cancel"]) == (
+        expected_cancels
+    )
+    assert store.terminals[RUN_ID] == "interrupted"
+    if start_error is None:
+        assert RUN_ID in store.dispatched
+    assert cloud.closed is True
+
+
+@pytest.mark.asyncio
 async def test_interrupt_marks_active_run_and_does_not_repost() -> None:
     cloud = FakeCloud([_lease()])
     metabot = FakeMetaBot()
@@ -504,6 +574,55 @@ async def test_signed_cloud_client_signs_exact_raw_body_and_path() -> None:
     }
     assert json.loads(signed[4][2]) == {"status": "completed"}
     await client.aclose()
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case",
+    [
+        "string_max_turns",
+        "boolean_max_turns",
+        "naive_expiry",
+        "top_extra",
+        "payload_extra",
+        "integer_cancel",
+        "integer_run_id",
+    ],
+)
+async def test_cloud_lease_is_strict_and_never_reaches_store_or_metabot(case) -> None:
+    response_json = _lease().model_dump(mode="json")
+    if case == "string_max_turns":
+        response_json["payload"]["max_turns"] = "24"
+    elif case == "boolean_max_turns":
+        response_json["payload"]["max_turns"] = True
+    elif case == "naive_expiry":
+        response_json["lease_expires_at"] = "2026-08-21T04:00:45"
+    elif case == "top_extra":
+        response_json["extra"] = "forbidden"
+    elif case == "payload_extra":
+        response_json["payload"]["extra"] = "forbidden"
+    elif case == "integer_cancel":
+        response_json["cancel_requested"] = 1
+    else:
+        response_json["payload"]["run_id"] = 101
+
+    class Signer:
+        def sign(self, _method, _path, _body):
+            return {"X-Orbbec-Worker-Signature": "redacted"}
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=response_json)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    cloud = SignedCloudClient("https://cloud.example", Signer(), client=http)
+    store = FakeStore()
+    metabot = FakeMetaBot()
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+
+    assert await runtime.lease_once() is False
+    assert store.calls == []
+    assert metabot.calls == []
     await http.aclose()
 
 
@@ -732,6 +851,53 @@ def test_owner_private_key_reads_the_single_opened_inode(
     loaded_public = loaded.public_key().public_bytes_raw()
 
     assert loaded_public == original.public_key().public_bytes_raw()
+
+
+def test_build_runtime_rejects_bad_port_before_owned_cloud_client(monkeypatch) -> None:
+    values = {
+        "PLATFORM_WORKER_ID": "worker-a",
+        "PLATFORM_WORKER_KEY_ID": "worker-v1",
+        "PLATFORM_WORKER_PRIVATE_KEY_FILE": "/private/worker.key",
+        "PLATFORM_WORKER_DATABASE_URL_FILE": "/private/worker.dsn",
+        "PLATFORM_WORKER_CALLBACK_PORT": "70000",
+        "PLATFORM_WORKER_CLOUD_URL": "https://cloud.example",
+        "PLATFORM_METABOT_RUNTIME_CONTRACT": "/runtime.json",
+        "PLATFORM_METABOT_API_SECRET_FILE": "/private/metabot-token",
+    }
+    cloud_constructions = 0
+
+    class Cloud:
+        def __init__(self, *_args):
+            nonlocal cloud_constructions
+            cloud_constructions += 1
+
+    monkeypatch.setattr(
+        worker_module,
+        "_required_environment",
+        lambda name: values[name],
+    )
+    monkeypatch.setattr(
+        worker_module,
+        "_owner_private_key",
+        lambda _path: Ed25519PrivateKey.generate(),
+    )
+    monkeypatch.setattr(
+        worker_module.WorkerStore,
+        "from_dsn_file",
+        lambda _path: object(),
+    )
+    monkeypatch.setattr(
+        worker_module.MetaBotRuntimeMap,
+        "from_contract",
+        lambda _path: object(),
+    )
+    monkeypatch.setattr(worker_module, "MetaBotClient", lambda *_args: object())
+    monkeypatch.setattr(worker_module, "SignedCloudClient", Cloud)
+
+    with pytest.raises(WorkerRuntimeError, match="worker runtime failed"):
+        worker_module.build_runtime_from_environment()
+
+    assert cloud_constructions == 0
 
 
 @pytest.mark.asyncio

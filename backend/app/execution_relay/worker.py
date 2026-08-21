@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import timezone
 from enum import Enum
 import json
 import logging
@@ -23,7 +24,7 @@ import httpx
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
 from .metabot_client import MetaBotClient, MetaBotRuntimeMap
-from .models import RelayEvent, RelayLease
+from .models import RelayEvent, RelayJobPayload, RelayLease
 from .worker_auth import WorkerRequestSigner
 from .worker_store import WorkerRunRecovery, WorkerStore
 
@@ -68,6 +69,26 @@ class _StrictCallbackEvent(BaseModel):
     event_type: str = Field(pattern=_EVENT_TYPE)
     created_at: AwareDatetime
     payload: dict[str, object]
+
+
+class _StrictLeasePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    run_id: UUID
+    conversation_id: UUID
+    trigger_message_id: UUID
+    agent_id: str
+    prompt: str
+    max_turns: int = Field(ge=1, le=24)
+
+
+class _StrictRelayLease(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    job_id: UUID
+    payload: _StrictLeasePayload
+    lease_expires_at: AwareDatetime
+    cancel_requested: bool
 
 
 class ExponentialBackoff:
@@ -176,8 +197,15 @@ class SignedCloudClient:
                 raise CloudRelayError()
             return None
         try:
-            return RelayLease.model_validate(self._json_object(response))
-        except (ValueError, ValidationError):
+            strict_lease = _StrictRelayLease.model_validate_json(
+                response.content, strict=True
+            )
+            value = strict_lease.model_dump()
+            value["lease_expires_at"] = strict_lease.lease_expires_at.astimezone(
+                timezone.utc
+            )
+            return RelayLease.model_validate(value)
+        except (TypeError, ValueError, ValidationError):
             raise CloudRelayError() from None
 
     async def heartbeat(self) -> tuple[UUID, ...]:
@@ -290,6 +318,7 @@ class WorkerRuntime:
         self.token_factory = token_factory
         self.jitter = jitter
         self.logger = logger
+        self.shutdown_event = asyncio.Event()
         self.stop_event = asyncio.Event()
         self.callback_ready = asyncio.Event()
         self._runs: dict[UUID, _RunContext] = {}
@@ -299,7 +328,11 @@ class WorkerRuntime:
         self._upload_lock = asyncio.Lock()
 
     def stop(self) -> None:
+        self.shutdown_event.set()
         self.stop_event.set()
+
+    def begin_shutdown(self) -> None:
+        self.shutdown_event.set()
 
     def recover_run(
         self,
@@ -427,7 +460,7 @@ class WorkerRuntime:
                             or run_id in self._pending_cancellations
                         )
                         self._pending_cancellations.discard(run_id)
-                    if cancellation_observed or self.stop_event.is_set():
+                    if cancellation_observed or self.shutdown_event.is_set():
                         status = (
                             "cancelled" if cancellation_observed else "interrupted"
                         )
@@ -438,23 +471,26 @@ class WorkerRuntime:
                         f"http://127.0.0.1:{self.callback_port}/callbacks/"
                         f"{run_id}/{token}"
                     )
-                    await asyncio.to_thread(
-                        self.metabot.start_run, lease.payload, callback_url
-                    )
-                    context.metabot_accepted = True
-                    await self._store_call("mark_dispatched", run_id)
-                    try:
-                        await self.cloud.mark_dispatched(run_id)
-                        context.cloud_dispatched = True
-                    except Exception as error:
-                        self._safe_log(
-                            "cloud_dispatch_ack_failed",
-                            error,
-                            run_id=run_id,
-                            agent_id=agent_id,
+                    dispatch_task = asyncio.create_task(
+                        self._dispatch_run(
+                            lease.payload,
+                            callback_url,
+                            context,
                         )
-                        return False
-                    return True
+                    )
+                    cancelled = False
+                    while not dispatch_task.done():
+                        try:
+                            await asyncio.shield(dispatch_task)
+                        except asyncio.CancelledError:
+                            cancelled = True
+                            self.begin_shutdown()
+                    result = dispatch_task.result()
+                    if cancelled:
+                        raise asyncio.CancelledError
+                    return result
+            except asyncio.CancelledError:
+                raise
             except Exception as error:
                 self._safe_log(
                     "dispatch_interrupted",
@@ -475,6 +511,85 @@ class WorkerRuntime:
                             agent_id=agent_id,
                         )
                 return False
+
+    async def _dispatch_run(
+        self,
+        payload: RelayJobPayload,
+        callback_url: str,
+        context: _RunContext,
+    ) -> bool:
+        run_id = payload.run_id
+        agent_id = payload.agent_id
+        try:
+            await asyncio.to_thread(self.metabot.start_run, payload, callback_url)
+            context.metabot_accepted = True
+            await self._store_call("mark_dispatched", run_id)
+        except Exception as error:
+            self._safe_log(
+                "dispatch_interrupted",
+                error,
+                run_id=run_id,
+                agent_id=agent_id,
+            )
+            if context.metabot_accepted and not context.cancel_sent:
+                try:
+                    await asyncio.to_thread(
+                        self.metabot.cancel_run, run_id, context.agent_id
+                    )
+                    context.cancel_sent = True
+                except Exception as cancel_error:
+                    self._safe_log(
+                        "shutdown_cancel_failed",
+                        cancel_error,
+                        run_id=run_id,
+                        agent_id=agent_id,
+                    )
+            await self._commit_interrupted(run_id, context)
+            return False
+        if self.shutdown_event.is_set():
+            if not context.cancel_sent:
+                try:
+                    await asyncio.to_thread(
+                        self.metabot.cancel_run, run_id, context.agent_id
+                    )
+                    context.cancel_sent = True
+                except Exception as error:
+                    self._safe_log(
+                        "shutdown_cancel_failed",
+                        error,
+                        run_id=run_id,
+                        agent_id=agent_id,
+                    )
+            await self._commit_interrupted(run_id, context)
+            return True
+        try:
+            await self.cloud.mark_dispatched(run_id)
+            context.cloud_dispatched = True
+            return True
+        except Exception as error:
+            self._safe_log(
+                "cloud_dispatch_ack_failed",
+                error,
+                run_id=run_id,
+                agent_id=agent_id,
+            )
+            return False
+
+    async def _commit_interrupted(
+        self, run_id: UUID, context: _RunContext
+    ) -> None:
+        if context.terminal_status is not None:
+            return
+        try:
+            await self._store_call("mark_terminal", run_id, "interrupted")
+            context.terminal_status = "interrupted"
+        except Exception as error:
+            self._safe_log(
+                "interrupt_commit_failed",
+                error,
+                run_id=run_id,
+                agent_id=context.agent_id,
+            )
 
     async def upload_once(self) -> bool:
         async with self._upload_lock:
@@ -562,8 +677,13 @@ class WorkerRuntime:
             if strict_event.run_id != run_id:
                 return CallbackResult.INVALID
             event = RelayEvent.model_validate(strict_event.model_dump())
-            inserted = await self._store_call("append_event", event)
             terminal = self._terminal_status(event)
+            if terminal is None:
+                await self._store_call("append_event", event)
+            else:
+                await self._store_call(
+                    "append_terminal_event", event, terminal
+                )
             async with self._state_lock:
                 context = self._runs.get(run_id)
                 if context is None:
@@ -572,9 +692,7 @@ class WorkerRuntime:
                 else:
                     context.metabot_accepted = True
             if terminal is not None:
-                if context.terminal_status is None:
-                    await self._store_call("mark_terminal", run_id, terminal)
-                    context.terminal_status = terminal
+                context.terminal_status = terminal
             return CallbackResult.ACCEPTED
         except (
             UnicodeError,
@@ -637,11 +755,11 @@ class WorkerRuntime:
                     )
 
     async def pause(self, seconds: float) -> None:
-        if self.stop_event.is_set():
+        if self.shutdown_event.is_set() or self.stop_event.is_set():
             return
         if self.sleep is asyncio.sleep:
             try:
-                await asyncio.wait_for(self.stop_event.wait(), timeout=seconds)
+                await asyncio.wait_for(self.shutdown_event.wait(), timeout=seconds)
             except asyncio.TimeoutError:
                 pass
         else:
@@ -650,7 +768,7 @@ class WorkerRuntime:
 
 async def lease_loop(runtime: WorkerRuntime) -> None:
     backoff = ExponentialBackoff(jitter=runtime.jitter)
-    while not runtime.stop_event.is_set():
+    while not runtime.shutdown_event.is_set():
         succeeded = await runtime.lease_once()
         if succeeded:
             backoff.reset()
@@ -661,7 +779,7 @@ async def lease_loop(runtime: WorkerRuntime) -> None:
 
 async def upload_loop(runtime: WorkerRuntime) -> None:
     backoff = ExponentialBackoff(jitter=runtime.jitter)
-    while not runtime.stop_event.is_set():
+    while not runtime.shutdown_event.is_set():
         succeeded = await runtime.upload_once()
         if succeeded:
             backoff.reset()
@@ -672,7 +790,7 @@ async def upload_loop(runtime: WorkerRuntime) -> None:
 
 async def heartbeat_loop(runtime: WorkerRuntime) -> None:
     backoff = ExponentialBackoff(jitter=runtime.jitter)
-    while not runtime.stop_event.is_set():
+    while not runtime.shutdown_event.is_set():
         succeeded = await runtime.heartbeat_once()
         if succeeded:
             backoff.reset()
@@ -791,16 +909,19 @@ async def run_worker(runtime: WorkerRuntime) -> None:
     loop = asyncio.get_running_loop()
     shutdown_started = asyncio.Event()
     installed: list[signal.Signals] = []
-    tasks: set[asyncio.Task[Any]] = set()
+    callback_task: asyncio.Task[None] | None = None
+    ready_task: asyncio.Task[bool] | None = None
+    worker_tasks: set[asyncio.Task[None]] = set()
     shutdown_tasks: set[asyncio.Task[Any]] = set()
 
     async def shutdown() -> None:
         if shutdown_started.is_set():
             return
         shutdown_started.set()
-        runtime.stop()
+        runtime.begin_shutdown()
         await runtime.interrupt_active()
         await runtime.upload_once()
+        runtime.stop()
 
     def request_shutdown() -> None:
         task = asyncio.create_task(shutdown())
@@ -816,7 +937,6 @@ async def run_worker(runtime: WorkerRuntime) -> None:
                 pass
         callback_task = asyncio.create_task(callback_server(runtime))
         ready_task = asyncio.create_task(runtime.callback_ready.wait())
-        tasks.update({callback_task, ready_task})
         done, _pending = await asyncio.wait(
             {callback_task, ready_task}, return_when=asyncio.FIRST_COMPLETED
         )
@@ -824,31 +944,52 @@ async def run_worker(runtime: WorkerRuntime) -> None:
             await callback_task
         ready_task.cancel()
         await asyncio.gather(ready_task, return_exceptions=True)
-        tasks.discard(ready_task)
-        tasks.update(
+        ready_task = None
+        worker_tasks.update(
             {
                 asyncio.create_task(lease_loop(runtime)),
                 asyncio.create_task(upload_loop(runtime)),
                 asyncio.create_task(heartbeat_loop(runtime)),
             }
         )
-        await asyncio.gather(*tasks)
+        await asyncio.gather(callback_task, *worker_tasks)
     finally:
-        runtime.stop()
-        if shutdown_tasks:
-            await asyncio.gather(*tuple(shutdown_tasks), return_exceptions=True)
-        for task in tasks:
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        for name in installed:
+        async def cleanup() -> None:
+            runtime.begin_shutdown()
+            if ready_task is not None and not ready_task.done():
+                ready_task.cancel()
+            for task in worker_tasks:
+                if not task.done():
+                    task.cancel()
+            if ready_task is not None:
+                await asyncio.gather(ready_task, return_exceptions=True)
+            if worker_tasks:
+                await asyncio.gather(*worker_tasks, return_exceptions=True)
+            if shutdown_tasks:
+                await asyncio.gather(
+                    *tuple(shutdown_tasks), return_exceptions=True
+                )
+            await runtime.interrupt_active()
+            await runtime.upload_once()
+            runtime.stop()
+            if callback_task is not None:
+                await asyncio.gather(callback_task, return_exceptions=True)
+            for name in installed:
+                try:
+                    loop.remove_signal_handler(name)
+                except Exception as error:
+                    runtime._safe_log("signal_cleanup_failed", error)
+            close = getattr(runtime.cloud, "aclose", None)
+            if callable(close):
+                await close()
+
+        cleanup_task = asyncio.create_task(cleanup())
+        while not cleanup_task.done():
             try:
-                loop.remove_signal_handler(name)
-            except Exception as error:
-                runtime._safe_log("signal_cleanup_failed", error)
-        close = getattr(runtime.cloud, "aclose", None)
-        if callable(close):
-            await close()
+                await asyncio.shield(cleanup_task)
+            except asyncio.CancelledError:
+                continue
+        cleanup_task.result()
 
 
 def _read_owner_only_bytes(path: Path) -> bytes:
@@ -948,6 +1089,8 @@ def build_runtime_from_environment() -> WorkerRuntime:
             Path(_required_environment("PLATFORM_WORKER_DATABASE_URL_FILE"))
         )
         callback_port = int(_required_environment("PLATFORM_WORKER_CALLBACK_PORT"))
+        if not 1 <= callback_port <= 65535:
+            raise WorkerRuntimeError()
         runtime_map = MetaBotRuntimeMap.from_contract(
             Path(_required_environment("PLATFORM_METABOT_RUNTIME_CONTRACT"))
         )
