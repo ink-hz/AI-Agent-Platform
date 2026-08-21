@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.orbbec.agent-execution-worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python</string>
+    <string>-m</string>
+    <string>app.execution_relay.worker</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/agentops/AgentRuntime/platform/backend</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PLATFORM_WORKER_ID</key><string>agentops-mac-primary</string>
+    <key>PLATFORM_WORKER_KEY_ID</key><string>worker-v1</string>
+    <key>PLATFORM_WORKER_PRIVATE_KEY_FILE</key><string>/Users/agentops/AgentRuntime/private/execution-worker-ed25519.key</string>
+    <key>PLATFORM_WORKER_DATABASE_URL_FILE</key><string>/Users/agentops/AgentRuntime/private/execution-worker-postgres-dsn</string>
+    <key>PLATFORM_WORKER_CALLBACK_PORT</key><string>9120</string>
+    <key>PLATFORM_WORKER_CLOUD_URL</key><string>https://agent.orbbec.com.cn</string>
+    <key>PLATFORM_METABOT_RUNTIME_CONTRACT</key><string>/Users/agentops/AgentRuntime/metabot/runtime-contract.json</string>
+    <key>PLATFORM_METABOT_API_SECRET_FILE</key><string>/Users/agentops/AgentRuntime/private/metabot-api-token</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/agentops/AgentRuntime/log/execution-worker.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/agentops/AgentRuntime/log/execution-worker.err.log</string>
+</dict>
+</plist>

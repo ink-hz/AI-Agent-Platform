@@ -20,16 +20,21 @@ set -a
 # shellcheck disable=SC1090
 source "$config_path"
 set +a
-for required_name in CLOUD_ADMIN_HOST CLOUD_ADMIN_KEY CLOUD_SIGNING_PUBLIC_KEY CLOUD_BACKUP_PUBLIC_KEY; do
+for required_name in CLOUD_ADMIN_HOST CLOUD_ADMIN_KEY CLOUD_SIGNING_PUBLIC_KEY CLOUD_BACKUP_PUBLIC_KEY CLOUD_CONTENT_ENCRYPTION_KEYRING CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING; do
   [[ -n "${!required_name:-}" ]] || fail
 done
 if [[ "$CLOUD_ADMIN_KEY" != /* || "$CLOUD_SIGNING_PUBLIC_KEY" != /* || "$CLOUD_BACKUP_PUBLIC_KEY" != /* ||
+      "$CLOUD_CONTENT_ENCRYPTION_KEYRING" != /* || "$CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING" != /* ||
       ! -f "$CLOUD_ADMIN_KEY" || -L "$CLOUD_ADMIN_KEY" ||
       ! -f "$CLOUD_SIGNING_PUBLIC_KEY" || -L "$CLOUD_SIGNING_PUBLIC_KEY" ||
       ! -f "$CLOUD_BACKUP_PUBLIC_KEY" || -L "$CLOUD_BACKUP_PUBLIC_KEY" ||
+      ! -f "$CLOUD_CONTENT_ENCRYPTION_KEYRING" || -L "$CLOUD_CONTENT_ENCRYPTION_KEYRING" ||
+      ! -f "$CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING" || -L "$CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING" ||
       "$(/usr/bin/stat -f '%Lp' "$CLOUD_ADMIN_KEY")" != "600" ||
       "$(/usr/bin/stat -f '%Lp' "$CLOUD_SIGNING_PUBLIC_KEY")" != "600" ||
       "$(/usr/bin/stat -f '%z' "$CLOUD_SIGNING_PUBLIC_KEY")" != "32" ||
+      "$(/usr/bin/stat -f '%Lp' "$CLOUD_CONTENT_ENCRYPTION_KEYRING")" != "600" ||
+      "$(/usr/bin/stat -f '%Lp' "$CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING")" != "600" ||
       "$(/usr/bin/stat -f '%Lp' "$CLOUD_BACKUP_PUBLIC_KEY")" != "600" ||
       "$(/usr/bin/stat -f '%z' "$CLOUD_BACKUP_PUBLIC_KEY")" != "32" ]]; then
   fail
@@ -88,6 +93,16 @@ fi
 if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
   'umask 077; install -d -m 700 /opt/orbbec-agent-platform/private; /bin/cat > /opt/orbbec-agent-platform/private/replica-signing-public-key.part; chmod 600 /opt/orbbec-agent-platform/private/replica-signing-public-key.part; mv -f /opt/orbbec-agent-platform/private/replica-signing-public-key.part /opt/orbbec-agent-platform/private/replica-signing-public-key' \
   < "$CLOUD_SIGNING_PUBLIC_KEY"; then
+  fail
+fi
+if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
+  'umask 077; install -d -m 700 /opt/orbbec-agent-platform/private; /bin/cat > /opt/orbbec-agent-platform/private/content-encryption-keyring.part; chmod 600 /opt/orbbec-agent-platform/private/content-encryption-keyring.part; mv -f /opt/orbbec-agent-platform/private/content-encryption-keyring.part /opt/orbbec-agent-platform/private/content-encryption-keyring' \
+  < "$CLOUD_CONTENT_ENCRYPTION_KEYRING"; then
+  fail
+fi
+if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
+  'umask 077; install -d -m 700 /opt/orbbec-agent-platform/private; /bin/cat > /opt/orbbec-agent-platform/private/execution-worker-public-keyring.json.part; chmod 600 /opt/orbbec-agent-platform/private/execution-worker-public-keyring.json.part; mv -f /opt/orbbec-agent-platform/private/execution-worker-public-keyring.json.part /opt/orbbec-agent-platform/private/execution-worker-public-keyring.json' \
+  < "$CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING"; then
   fail
 fi
 if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \

@@ -15,11 +15,13 @@ environment_path="$platform_root/private/platform.env"
 compose_path="$release_path/deploy/cloud/compose.yaml"
 cutover_state="$platform_root/private/dingtalk-production-cutover"
 agent_config=/etc/nginx/sites-available/agent-domain.conf
+worker_public_keyring="$platform_root/private/execution-worker-public-keyring.json"
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail
-for path in "$environment_path" "$compose_path" "$cutover_state" "$agent_config"; do
+for path in "$environment_path" "$compose_path" "$cutover_state" "$agent_config" "$worker_public_keyring"; do
   [[ -f "$path" && ! -L "$path" ]] || fail
 done
 [[ "$(/usr/bin/stat -c '%a %U' "$cutover_state")" == "600 root" ]] || fail
+[[ "$(/usr/bin/stat -c '%a %U' "$worker_public_keyring")" == "600 root" ]] || fail
 set -a
 # shellcheck disable=SC1090
 source "$cutover_state"
@@ -41,6 +43,40 @@ readiness="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
     (select count(*) from platform_control.worker_heartbeats where worker_name='dingtalk-directory-event' and status='healthy' and last_seen_at > clock_timestamp() - interval '2 minutes')
   )")" || fail
 [[ "$readiness" == "1:1:1" ]] || fail
+
+worker_identity="$(/usr/bin/python3 - "$worker_public_keyring" <<'PY'
+import base64
+import hashlib
+import json
+import pathlib
+import re
+import sys
+
+value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert set(value) == {"worker_id", "key_id", "public_key_base64url", "allowed_agent_ids"}
+assert value["worker_id"] == "agentops-mac-primary"
+assert value["key_id"] == "worker-v1"
+assert len(value["allowed_agent_ids"]) == 7
+assert len(set(value["allowed_agent_ids"])) == 7
+public_key = base64.urlsafe_b64decode(value["public_key_base64url"] + "=")
+assert len(public_key) == 32
+print(value["worker_id"], value["key_id"], hashlib.sha256(public_key).hexdigest())
+PY
+)" || fail
+read -r expected_worker_id expected_key_id public_key_sha256 <<<"$worker_identity"
+[[ "$expected_worker_id" == "agentops-mac-primary" && "$expected_key_id" == "worker-v1" && "$public_key_sha256" =~ ^[0-9a-f]{64}$ ]] || fail
+relay_identity="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
+  -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c \
+  "select concat(worker.status, ':', worker_key.status, ':',
+    worker.last_seen_at > clock_timestamp() - interval '60 seconds', ':',
+    encode(sha256(worker_key.public_key), 'hex'))
+   from platform_control.execution_workers worker
+   join platform_control.execution_worker_keys worker_key using(worker_id)
+   where worker.worker_id='agentops-mac-primary'
+     and worker_key.key_id='worker-v1'
+     and worker.status='active'
+     and worker_key.status='active'")" || fail
+[[ "$relay_identity" == "active:active:t:$public_key_sha256" ]] || fail
 
 /usr/sbin/nginx -t >/dev/null 2>&1 || fail
 ! /usr/bin/grep -Fq 'auth_basic "Orbbec Agent Platform";' "$agent_config" || fail
@@ -72,6 +108,8 @@ trap cleanup EXIT
 
 /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Fxq '127.0.0.1:8080' || fail
 ! /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Eq '^(0\.0\.0\.0|\[::\]):(8080|5432)$' || fail
+# The seven MetaBot listeners 9101-9108 must never be publicly reachable.
+! /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Eq '^(0\.0\.0\.0|\[::\]):910[1-8]$' || fail
 [[ "$FAE_ID" == "$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)" ]] || fail
 [[ "$FAE_STARTED_AT" == "$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)" ]] || fail
 [[ "$(/usr/bin/docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ai-fae-backend)" == "healthy" ]] || fail

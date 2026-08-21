@@ -68,6 +68,9 @@ services:
       PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE: /run/secrets/identity-encryption-keyring
       PLATFORM_IDENTITY_HMAC_KEYRING_FILE: /run/secrets/identity-hmac-keyring
       PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE: /run/secrets/rate-limit-hmac-keyring
+      PLATFORM_EXECUTION_RELAY_ENABLED: "1"
+      PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE: /run/secrets/content-encryption-keyring
+      PLATFORM_EXECUTION_WORKER_PUBLIC_KEYRING_FILE: /run/secrets/execution-worker-public-keyring.json
       PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS: "21600"
       PLATFORM_IDENTITY_WARNING_AFTER_SECONDS: "28800"
       PLATFORM_IDENTITY_HARD_STALE_AFTER_SECONDS: "86400"

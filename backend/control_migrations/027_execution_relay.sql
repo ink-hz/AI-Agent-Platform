@@ -516,6 +516,14 @@ begin
     end if;
     return;
   end if;
+  if (
+    select count(*)
+    from platform_control.execution_worker_keys
+    where worker_id = selected_worker_id and status = 'active'
+  ) >= 2 then
+    raise check_violation using
+      message = 'execution worker dual key window exceeded';
+  end if;
   insert into platform_control.execution_worker_keys (
     worker_id, key_id, public_key, status
   ) values (

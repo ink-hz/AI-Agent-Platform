@@ -24,6 +24,8 @@ required_private=(
   replica-database-url
   replica-encryption-key
   replica-signing-public-key
+  content-encryption-keyring
+  execution-worker-public-keyring.json
 )
 for name in "${required_private[@]}"; do
   path="$private_path/$name"
@@ -94,6 +96,7 @@ done
     cp /source/control-database-url /source/control-audit-database-url /target/
     cp /source/dingtalk-app-key /source/dingtalk-agent-id /source/dingtalk-corp-id /source/dingtalk-app-secret /target/
     cp /source/identity-encryption-keyring /source/identity-hmac-keyring /source/rate-limit-hmac-keyring /target/
+    cp /source/content-encryption-keyring /source/execution-worker-public-keyring.json /target/
     chown 10001:10001 /target/*
     chmod 600 /target/*
   '
