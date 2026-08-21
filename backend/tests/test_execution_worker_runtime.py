@@ -446,6 +446,79 @@ async def test_run_worker_waits_for_cancelled_blocking_start_and_converges(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("terminal", "expected_status", "expected_cancels"),
+    [
+        (None, "interrupted", 1),
+        ("completed", "completed", 0),
+    ],
+)
+async def test_cancelled_worker_keeps_callback_listener_until_start_converges(
+    monkeypatch, terminal, expected_status, expected_cancels
+) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingMetaBot(FakeMetaBot):
+        def start_run(self, payload, callback_url):
+            self.calls.append(("start", payload.run_id, callback_url))
+            entered.set()
+            assert release.wait(timeout=2)
+
+    cloud = FakeCloud([_lease()])
+    store = FakeStore()
+    metabot = BlockingMetaBot()
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+    runtime.callback_port = 0
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(loop, "add_signal_handler", lambda *_args: None)
+    monkeypatch.setattr(loop, "remove_signal_handler", lambda *_args: True)
+    runner = asyncio.create_task(run_worker(runtime))
+    event = _event(1, terminal=terminal)
+    try:
+        await asyncio.wait_for(runtime.callback_ready.wait(), timeout=1)
+        assert await asyncio.to_thread(entered.wait, 1)
+        runner.cancel()
+        await asyncio.sleep(0)
+        runner.cancel()
+        await asyncio.sleep(0)
+        assert runner.done() is False
+
+        reader, writer = await asyncio.open_connection(
+            "127.0.0.1", runtime.callback_port
+        )
+        body = event.model_dump_json().encode()
+        writer.write(
+            f"POST /callbacks/{RUN_ID}/{store.tokens[RUN_ID]} HTTP/1.1\r\n".encode()
+            + b"Host: 127.0.0.1\r\nContent-Type: application/json\r\n"
+            + f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+            + body
+        )
+        await writer.drain()
+        response = await asyncio.wait_for(reader.read(), timeout=1)
+        writer.close()
+        await writer.wait_closed()
+
+        assert response.startswith(b"HTTP/1.1 204")
+        assert store.events[RUN_ID] == [event]
+        assert runner.done() is False
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(runner, timeout=1)
+
+    assert store.terminals[RUN_ID] == expected_status
+    assert len([call for call in metabot.calls if call[0] == "cancel"]) == (
+        expected_cancels
+    )
+    with pytest.raises(OSError):
+        await asyncio.wait_for(
+            asyncio.open_connection("127.0.0.1", runtime.callback_port),
+            timeout=1,
+        )
+
+
+@pytest.mark.asyncio
 async def test_interrupt_marks_active_run_and_does_not_repost() -> None:
     cloud = FakeCloud([_lease()])
     metabot = FakeMetaBot()

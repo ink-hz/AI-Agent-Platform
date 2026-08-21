@@ -547,6 +547,8 @@ class WorkerRuntime:
             await self._commit_interrupted(run_id, context)
             return False
         if self.shutdown_event.is_set():
+            if context.terminal_status is not None:
+                return True
             if not context.cancel_sent:
                 try:
                     await asyncio.to_thread(
@@ -952,7 +954,7 @@ async def run_worker(runtime: WorkerRuntime) -> None:
                 asyncio.create_task(heartbeat_loop(runtime)),
             }
         )
-        await asyncio.gather(callback_task, *worker_tasks)
+        await asyncio.shield(asyncio.gather(callback_task, *worker_tasks))
     finally:
         async def cleanup() -> None:
             runtime.begin_shutdown()
