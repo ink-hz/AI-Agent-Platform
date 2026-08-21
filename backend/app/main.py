@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 import psycopg
 from psycopg.rows import dict_row
 
@@ -136,7 +137,9 @@ def _check_execution_relay_database(
             if not objects or any(value is None for value in objects.values()):
                 raise ValueError
             privileges = cursor.execute(
-                "select ("
+                "select "
+                "has_schema_privilege(current_user,"
+                "'platform_control','usage') as schema_usage,("
                 "has_table_privilege(current_user,"
                 "'platform_control.execution_workers','select') and "
                 "has_table_privilege(current_user,"
@@ -163,7 +166,11 @@ def _check_execution_relay_database(
                 "'platform_control.touch_execution_worker_v27(text)',"
                 "'execute')) as ready"
             ).fetchone()
-            if not privileges or privileges.get("ready") is not True:
+            if (
+                not privileges
+                or privileges.get("schema_usage") is not True
+                or privileges.get("ready") is not True
+            ):
                 raise ValueError
     except Exception:
         raise RuntimeError("execution relay database unavailable") from None
@@ -433,8 +440,6 @@ def create_app(
         identity_auth is not None
         or config.control_plane.mode is not IdentityMode.DISABLED
     )
-    if identity_enabled and identity_auth is None:
-        identity_auth = build_identity_auth(config)
     execution_relay_repository = None
     execution_relay_router = None
     if config.execution_relay_enabled:
@@ -457,6 +462,8 @@ def create_app(
             lease_seconds=config.execution_relay_lease_seconds,
             max_body_bytes=config.execution_relay_max_body_bytes,
         )
+    if identity_enabled and identity_auth is None:
+        identity_auth = build_identity_auth(config)
     cloud_mode = is_cloud_mode(config)
     runtime_pollers_enabled = start_poller and not cloud_mode
     path = registry_path or config.registry_path
@@ -673,6 +680,37 @@ def create_app(
     app.include_router(review_routes.router)
     if execution_relay_router is not None:
         app.include_router(execution_relay_router)
+    elif not identity_enabled:
+        reserved_methods = [
+            "GET",
+            "HEAD",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "OPTIONS",
+            "TRACE",
+            "CONNECT",
+        ]
+
+        @app.api_route(
+            "/api/v1/execution-worker",
+            methods=reserved_methods,
+            include_in_schema=False,
+        )
+        @app.api_route(
+            "/api/v1/execution-worker/{worker_path:path}",
+            methods=reserved_methods,
+            include_in_schema=False,
+        )
+        def disabled_execution_worker_namespace(
+            worker_path: str | None = None,
+        ) -> JSONResponse:
+            return JSONResponse(
+                {"detail": "not found"},
+                status_code=404,
+                headers={"Cache-Control": "no-store"},
+            )
     if identity_enabled:
         app.include_router(routes_manage.router)
         def request_auth_context(request: Request):

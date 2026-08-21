@@ -539,11 +539,13 @@ class _ProbeCursor:
     def __init__(self, rows):
         self._rows = iter(rows)
         self.queries = []
+        self.exited = False
 
     def __enter__(self):
         return self
 
     def __exit__(self, *_args):
+        self.exited = True
         return None
 
     def execute(self, query):
@@ -557,18 +559,20 @@ class _ProbeCursor:
 class _ProbeConnection:
     def __init__(self, rows):
         self.cursor_value = _ProbeCursor(rows)
+        self.exited = False
 
     def __enter__(self):
         return self
 
     def __exit__(self, *_args):
+        self.exited = True
         return None
 
     def cursor(self):
         return self.cursor_value
 
 
-def _ready_rows(*, schema=True, privileges=True):
+def _ready_rows(*, schema=True, schema_usage=True, privileges=True):
     schema_value = "present" if schema else None
     return (
         {
@@ -579,7 +583,7 @@ def _ready_rows(*, schema=True, privileges=True):
             "nonces": schema_value,
             "touch_worker": schema_value,
         },
-        {"ready": privileges},
+        {"schema_usage": schema_usage, "ready": privileges},
     )
 
 
@@ -625,10 +629,27 @@ def test_relay_database_readiness_checks_schema_function_and_privileges():
         "execution_events",
         "execution_worker_nonces",
         "touch_execution_worker_v27",
+        "has_schema_privilege",
         "has_table_privilege",
         "has_function_privilege",
     ):
         assert name in combined
+    assert connection.cursor_value.exited is True
+    assert connection.exited is True
+
+
+def test_relay_database_readiness_closes_contexts_when_schema_usage_missing():
+    from app.main import _check_execution_relay_database
+
+    connection = _ProbeConnection(_ready_rows(schema_usage=False))
+
+    with pytest.raises(RuntimeError, match="execution relay database unavailable"):
+        _check_execution_relay_database(
+            CONTROL_DSN, connect=lambda *_args, **_kwargs: connection
+        )
+
+    assert connection.cursor_value.exited is True
+    assert connection.exited is True
 
 
 def _relay_app_config(tmp_path, *, enabled: bool):
@@ -650,7 +671,9 @@ def _relay_app_config(tmp_path, *, enabled: bool):
     )
 
 
-def _create_relay_app(tmp_path, monkeypatch, *, enabled: bool, probe):
+def _create_relay_app(
+    tmp_path, monkeypatch, *, enabled: bool, probe, owned_identity: bool = False
+):
     from app.main import create_app
 
     registry = tmp_path / "registry.yaml"
@@ -672,7 +695,7 @@ def _create_relay_app(tmp_path, monkeypatch, *, enabled: bool, probe):
         registry_path=str(registry),
         cluster_contract_path=str(contract),
         start_poller=False,
-        identity_auth=BrowserAuth(),
+        identity_auth=None if owned_identity else BrowserAuth(),
     )
 
 
@@ -722,3 +745,77 @@ def test_create_app_enabled_aborts_before_mount_when_probe_fails(
         _create_relay_app(
             tmp_path, monkeypatch, enabled=True, probe=unavailable
         )
+
+
+def test_relay_probe_failure_precedes_owned_identity_client_build(
+    tmp_path, monkeypatch
+):
+    identity_builds = []
+
+    def build_identity(config):
+        identity_builds.append(config)
+        return BrowserAuth()
+
+    def unavailable(_dsn):
+        raise RuntimeError("execution relay database unavailable")
+
+    monkeypatch.setattr("app.main.build_identity_auth", build_identity)
+
+    with pytest.raises(RuntimeError, match="execution relay database unavailable"):
+        _create_relay_app(
+            tmp_path,
+            monkeypatch,
+            enabled=True,
+            probe=unavailable,
+            owned_identity=True,
+        )
+
+    assert identity_builds == []
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/api/v1/execution-worker"),
+        ("POST", "/api/v1/execution-worker"),
+        ("GET", "/api/v1/execution-worker/lease"),
+        ("POST", "/api/v1/execution-worker/heartbeat"),
+        ("GET", "/api/v1/execution-worker/future"),
+        ("POST", "/api/v1/execution-worker/future"),
+    ],
+)
+def test_identity_and_relay_disabled_reserve_worker_namespace_before_spa(
+    tmp_path, monkeypatch, method, path
+):
+    from app.main import create_app
+
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text(
+        "<main>SPA MUST NOT SERVE WORKER PATHS</main>", encoding="utf-8"
+    )
+    registry = tmp_path / "disabled-registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "disabled-contract.json"
+    contract.write_text('{"bots": []}', encoding="utf-8")
+    config = replace(
+        load_config(),
+        static_dir=str(static),
+        execution_relay_enabled=False,
+        content_encryption_keyring_file="",
+    )
+    monkeypatch.setattr("app.main.load_config", lambda: config)
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+    )
+    response = TestClient(app).request(method, path, json={})
+
+    assert app.state.identity_auth is None
+    assert app.state.execution_relay_repository is None
+    assert response.status_code == 404
+    assert response.json() == {"detail": "not found"}
+    assert response.headers["cache-control"] == "no-store"
+    assert "SPA MUST NOT SERVE" not in response.text
