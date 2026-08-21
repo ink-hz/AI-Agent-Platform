@@ -376,6 +376,8 @@ POST /api/v1/execution-worker/runs/{run_id}/terminal
 
 Assert these routes do not require a DingTalk cookie or browser `Origin`, but reject a missing/invalid worker signature with `401` before repository access. Assert every other method or path under `/api/v1/execution-worker` remains `403` or `404`. Browser cookies must not authorize machine routes. A valid worker can lease only its allowed Agents. Event batches are capped at 100 events and 1 MiB encoded JSON.
 
+The exact strict request bodies (`extra="forbid"`) are `{}` for lease, heartbeat and dispatched; `{"events":[RelayEvent, ...]}` for events; and `{"status":"completed|failed|cancelled|interrupted"}` for terminal. Path `run_id` must match every event `run_id`. Query parameters are not accepted. Verify the raw body signature first, then decode and validate JSON. Exact responses are a serialized `RelayLease`, `{"cancel_requested_run_ids":[...]}`, `{"status":"accepted"}`, `{"accepted":N,"inserted":M}`, and `{"status":"accepted"}` respectively.
+
 - [ ] **Step 2: Run tests and verify RED**
 
 ```bash
@@ -407,6 +409,8 @@ def is_execution_worker_request(method: str, path: str) -> bool:
 
 Machine routes still pass through trusted-proxy address resolution, coarse authenticated-machine rate limits and their route-level signature verifier.
 
+Apply one shared process-local coarse limiter only after signature verification: at most 120 accepted machine requests per rolling 60 seconds per `worker_id`, returning `429` with `Retry-After` and no repository call. Invalid signatures must not consume a worker bucket. This is defense in depth for the single-process first release; Nginx connection/request limits remain an independent deployment gate in Task 7.
+
 - [ ] **Step 4: Add configuration and app wiring**
 
 Add these required production settings when `PLATFORM_EXECUTION_RELAY_ENABLED=1`:
@@ -426,9 +430,14 @@ Parse the raw request body once, verify its signature before JSON decoding, vali
 - `200` plus a lease, or `204` when no job is available;
 - `200` for idempotent duplicate event uploads;
 - `409` for an illegal state transition;
+- `404` for a missing or wrong-owner run without exposing identifiers;
 - `401` for worker authentication failure;
 - `413` for an oversized body;
+- `422` for signed malformed JSON, extra fields, query parameters, mismatched run IDs, or event batches outside `1..100`;
+- `429` for the authenticated per-worker coarse limit;
 - `503` for repository or crypto unavailability.
+
+Map a repository `ExecutionRelayWorkerUnavailable` that occurs after successful signature verification back to `401`, because revocation may race the request. All relay responses use `Cache-Control: no-store` and never reflect signatures, nonces, ciphertext, prompts, event payloads or database errors in failure bodies.
 
 Run Step 2. Expected: PASS.
 
