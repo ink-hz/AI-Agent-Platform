@@ -28,6 +28,7 @@ _WORKER_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 _KEY_ID = re.compile(r"worker-v[1-9][0-9]*\Z")
 _TIMESTAMP = re.compile(r"(?:0|[1-9][0-9]*)\Z")
 _BASE64URL = re.compile(r"[A-Za-z0-9_-]+\Z")
+_HTTP_METHOD = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Z]+\Z")
 _HEADER_WORKER_ID = "X-Orbbec-Worker-Id"
 _HEADER_KEY_ID = "X-Orbbec-Worker-Key-Id"
 _HEADER_TIMESTAMP = "X-Orbbec-Worker-Timestamp"
@@ -40,6 +41,9 @@ _REQUIRED_HEADERS = (
     _HEADER_NONCE,
     _HEADER_SIGNATURE,
 )
+_REQUIRED_HEADER_NAMES = {
+    name.lower(): name for name in _REQUIRED_HEADERS
+}
 
 
 class WorkerAuthenticationError(RuntimeError):
@@ -88,6 +92,17 @@ def _base64url_decode(value: str, *, expected_size: int) -> bytes:
     return decoded
 
 
+def _canonical_fields_are_valid(method: object, path_with_query: object) -> bool:
+    return (
+        isinstance(method, str)
+        and _HTTP_METHOD.fullmatch(method) is not None
+        and isinstance(path_with_query, str)
+        and not any(
+            separator in path_with_query for separator in "\r\n\0"
+        )
+    )
+
+
 def _canonical_request(
     method: str,
     path_with_query: str,
@@ -95,7 +110,7 @@ def _canonical_request(
     timestamp: str,
     nonce: str,
 ) -> bytes:
-    if not isinstance(method, str) or not isinstance(path_with_query, str):
+    if not _canonical_fields_are_valid(method, path_with_query):
         raise ValueError
     body_digest = hashlib.sha256(body).hexdigest()
     return (
@@ -111,20 +126,23 @@ def _canonical_request(
 def _required_header_values(headers: Mapping[str, str]) -> dict[str, str]:
     if not isinstance(headers, Mapping):
         raise ValueError
-    normalized: dict[str, str] = {}
-    for name, value in headers.items():
-        if not isinstance(name, str) or not isinstance(value, str):
-            raise ValueError
-        lowered = name.lower()
-        if lowered in normalized:
-            raise ValueError
-        normalized[lowered] = value
     values: dict[str, str] = {}
-    for name in _REQUIRED_HEADERS:
-        value = normalized.get(name.lower())
-        if value is None or not value:
+    for name, value in headers.items():
+        if not isinstance(name, str):
             raise ValueError
-        values[name] = value
+        canonical_name = _REQUIRED_HEADER_NAMES.get(name.lower())
+        if canonical_name is None:
+            continue
+        if (
+            canonical_name in values
+            or not isinstance(value, str)
+            or not value
+        ):
+            raise ValueError
+        values[canonical_name] = value
+    for name in _REQUIRED_HEADERS:
+        if name not in values:
+            raise ValueError
     return values
 
 
@@ -161,7 +179,9 @@ class WorkerRequestSigner:
         *,
         now: datetime | None = None,
     ) -> dict[str, str]:
-        if not isinstance(body, bytes):
+        if not isinstance(body, bytes) or not _canonical_fields_are_valid(
+            method, path_with_query
+        ):
             raise ValueError("worker signing request invalid")
         timestamp_value = int(_utc_datetime(now).timestamp())
         if timestamp_value < 0:

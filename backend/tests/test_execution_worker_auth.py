@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 import psycopg
 import pytest
+from starlette.datastructures import Headers
 
 from app.execution_relay import worker_auth
 from app.execution_relay.worker_auth import (
@@ -44,6 +45,24 @@ def _assert_authentication_failure(call, *protected_values: str) -> None:
     assert str(error.value) == "worker authentication failed"
     for value in protected_values:
         assert value not in str(error.value)
+
+
+def _raw_headers(
+    values: dict[str, str],
+    *,
+    transform=lambda name: name,
+    extra: tuple[tuple[str, str], ...] = (),
+) -> Headers:
+    return Headers(
+        raw=[
+            (transform(name).encode("ascii"), value.encode("ascii"))
+            for name, value in values.items()
+        ]
+        + [
+            (name.encode("ascii"), value.encode("ascii"))
+            for name, value in extra
+        ]
+    )
 
 
 @pytest.fixture()
@@ -145,6 +164,92 @@ def test_signer_never_emits_a_negative_timestamp(signer) -> None:
         signer.sign("POST", "/request", b"", now=before_unix_epoch)
 
 
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("post", "/request"),
+        ("POST GET", "/request"),
+        ("POST/GET", "/request"),
+        ("POST\rGET", "/request"),
+        ("POST\nGET", "/request"),
+        ("POST\0GET", "/request"),
+        ("", "/request"),
+        ("POST", "/first\r/second"),
+        ("POST", "/first\n/second"),
+        ("POST", "/first\0/second"),
+    ],
+)
+def test_signer_rejects_ambiguous_method_or_path(
+    signer, method: str, path: str
+) -> None:
+    with pytest.raises(ValueError, match="worker signing request invalid"):
+        signer.sign(method, path, b"", now=NOW)
+
+
+def test_signer_preserves_valid_method_and_path_text(
+    auth_database, signer
+) -> None:
+    _, private_key, _ = auth_database
+    path = "/request/%E4%B8%AD?line=%0A&value=a+b%2Fc"
+
+    headers = signer.sign("M-SEARCH", path, b"", now=NOW)
+
+    canonical = (
+        "orbbec-agent-worker-v1\n"
+        "M-SEARCH\n"
+        f"{path}\n"
+        f"{int(NOW.timestamp())}\n"
+        f"{headers['X-Orbbec-Worker-Nonce']}\n"
+        f"{hashlib.sha256(b'').hexdigest()}"
+    ).encode("utf-8")
+    private_key.public_key().verify(
+        _b64decode(headers["X-Orbbec-Worker-Signature"]), canonical
+    )
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("post", "/request"),
+        ("POST\nGET", "/request"),
+        ("POST", "/first\r/second"),
+        ("POST", "/first\n/second"),
+        ("POST", "/first\0/second"),
+    ],
+)
+def test_verifier_rejects_ambiguous_canonical_fields_before_database_access(
+    auth_database, method: str, path: str
+) -> None:
+    environment, _, _ = auth_database
+    database_accessed = False
+
+    def forbidden_connect(*args, **kwargs):
+        nonlocal database_accessed
+        database_accessed = True
+        raise AssertionError("database must not be accessed")
+
+    verifier = WorkerRequestVerifier(
+        environment["urls"]["platform_control_app"],
+        connect=forbidden_connect,
+    )
+    headers = {
+        "X-Orbbec-Worker-Id": "worker-a",
+        "X-Orbbec-Worker-Key-Id": "worker-v1",
+        "X-Orbbec-Worker-Timestamp": str(int(NOW.timestamp())),
+        "X-Orbbec-Worker-Nonce": base64.urlsafe_b64encode(b"n" * 32)
+        .rstrip(b"=")
+        .decode("ascii"),
+        "X-Orbbec-Worker-Signature": base64.urlsafe_b64encode(b"s" * 64)
+        .rstrip(b"=")
+        .decode("ascii"),
+    }
+
+    _assert_authentication_failure(
+        lambda: verifier.verify(method, path, b"", headers, now=NOW)
+    )
+    assert database_accessed is False
+
+
 @pytest.mark.postgres
 def test_valid_signature_returns_frozen_worker_identity(
     signer, verifier
@@ -169,6 +274,83 @@ def test_valid_signature_returns_frozen_worker_identity(
     )
     with pytest.raises(FrozenInstanceError):
         identity.worker_id = "changed"
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "transform",
+    [
+        str.lower,
+        lambda name: "".join(
+            character.upper() if index % 2 else character.lower()
+            for index, character in enumerate(name)
+        ),
+    ],
+    ids=["lowercase", "mixed-case"],
+)
+def test_authentication_header_names_are_case_insensitive(
+    signer, verifier, transform
+) -> None:
+    body = b"case-insensitive-headers"
+    signed = signer.sign(
+        "POST", "/api/v1/execution-worker/heartbeat", body, now=NOW
+    )
+    headers = _raw_headers(signed, transform=transform)
+
+    assert verifier.verify(
+        "POST",
+        "/api/v1/execution-worker/heartbeat",
+        body,
+        headers,
+        now=NOW,
+    ).worker_id == "worker-a"
+
+
+@pytest.mark.postgres
+def test_duplicate_authentication_header_is_rejected(signer, verifier) -> None:
+    body = b"duplicate-auth-header"
+    signed = signer.sign(
+        "POST", "/api/v1/execution-worker/heartbeat", body, now=NOW
+    )
+    headers = _raw_headers(
+        signed,
+        extra=(("x-OrBbEc-WoRkEr-Id", "worker-a"),),
+    )
+
+    _assert_authentication_failure(
+        lambda: verifier.verify(
+            "POST",
+            "/api/v1/execution-worker/heartbeat",
+            body,
+            headers,
+            now=NOW,
+        )
+    )
+
+
+@pytest.mark.postgres
+def test_duplicate_unrelated_headers_are_ignored(signer, verifier) -> None:
+    body = b"duplicate-unrelated-headers"
+    signed = signer.sign(
+        "POST", "/api/v1/execution-worker/heartbeat", body, now=NOW
+    )
+    headers = _raw_headers(
+        signed,
+        extra=(
+            ("Cookie", "first=1"),
+            ("cookie", "second=2"),
+            ("Accept", "application/json"),
+            ("accept", "application/problem+json"),
+        ),
+    )
+
+    assert verifier.verify(
+        "POST",
+        "/api/v1/execution-worker/heartbeat",
+        body,
+        headers,
+        now=NOW,
+    ).worker_id == "worker-a"
 
 
 @pytest.mark.postgres
@@ -370,6 +552,41 @@ def test_key_id_mismatch_fails(auth_database, verifier) -> None:
             now=NOW,
         ),
         headers["X-Orbbec-Worker-Key-Id"],
+        body.decode("ascii"),
+    )
+
+
+@pytest.mark.postgres
+def test_active_worker_with_revoked_key_fails(auth_database, verifier) -> None:
+    environment, _, _ = auth_database
+    revoked_private_key = Ed25519PrivateKey.generate()
+    revoked_public_key = revoked_private_key.public_key().public_bytes(
+        Encoding.Raw, PublicFormat.Raw
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.execution_worker_keys "
+            "(worker_id,key_id,public_key,status,revoked_at) "
+            "values ('worker-a','worker-v2',%s,'revoked',now())",
+            (revoked_public_key,),
+        )
+    signer = WorkerRequestSigner(
+        "worker-a", "worker-v2", revoked_private_key
+    )
+    body = b"revoked-key-request"
+    headers = signer.sign(
+        "POST", "/api/v1/execution-worker/heartbeat", body, now=NOW
+    )
+
+    _assert_authentication_failure(
+        lambda: verifier.verify(
+            "POST",
+            "/api/v1/execution-worker/heartbeat",
+            body,
+            headers,
+            now=NOW,
+        ),
+        headers["X-Orbbec-Worker-Signature"],
         body.decode("ascii"),
     )
 
