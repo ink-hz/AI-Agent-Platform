@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import fcntl
+import hashlib
 import importlib
 import json
 import os
@@ -25,6 +26,8 @@ ROOT = Path(__file__).parents[2]
 LOCAL = ROOT / "deploy" / "local-execution-worker"
 CLOUD = ROOT / "deploy" / "cloud"
 CLOUD_ACCEPTANCE = CLOUD / "accept-dingtalk-production.sh"
+CLOUD_ROTATOR = CLOUD / "execution-worker-key-rotation.py"
+CLOUD_KEYRING_INSTALLER = CLOUD / "install-execution-worker-keyring.py"
 GENERATOR = LOCAL / "generate-worker-key.py"
 ROTATOR = LOCAL / "rotate-worker-key.py"
 BOOTSTRAP = LOCAL / "bootstrap-worker-database.sh"
@@ -45,6 +48,12 @@ AGENTS = [
 def test_local_worker_command_assets_are_executable() -> None:
     for path in (GENERATOR, ROTATOR, BOOTSTRAP, INSTALLER, REMOVER):
         assert os.access(path, os.X_OK)
+
+
+def test_cloud_worker_key_mutation_helpers_are_executable_python() -> None:
+    for path in (CLOUD_ROTATOR, CLOUD_KEYRING_INSTALLER):
+        assert os.access(path, os.X_OK)
+        compile(path.read_text(encoding="utf-8"), str(path), "exec")
 
 
 def _mode(path: Path) -> int:
@@ -139,6 +148,27 @@ def test_removal_preflight_precedes_every_local_mutation() -> None:
     ):
         assert script.index(mutation) > preflight
     assert '/bin/rm -f -- "$rotation_lock"' not in script
+
+
+def test_removal_validates_and_cleans_every_fixed_rotation_part() -> None:
+    script = REMOVER.read_text(encoding="utf-8")
+    fixed_parts = (
+        ".execution-worker-ed25519.key.part",
+        ".execution-worker-public.json.part",
+        ".com.orbbec.agent-execution-worker.plist.part",
+        ".execution-worker-ed25519.next.key.part",
+        ".execution-worker-public.next.json.part",
+        ".com.orbbec.agent-execution-worker.next.plist.part",
+        ".execution-worker-ed25519.previous.key.part",
+        ".execution-worker-public.previous.json.part",
+        ".com.orbbec.agent-execution-worker.previous.plist.part",
+        ".execution-worker-key-rotation-state.json.part",
+    )
+    for fixed_part in fixed_parts:
+        assert script.count(fixed_part) == 1
+    assert '"${rotation_parts[@]}" <<\'PY\'' in script
+    assert 'for part in "${rotation_parts[@]}"; do' in script
+    assert 'metadata.st_size > 1_048_576' in script
 
 
 WORKER_ROLES = (
@@ -649,6 +679,53 @@ def test_key_generator_writes_requested_worker_v2_identity(tmp_path: Path) -> No
     assert result.returncode == 0, result.stderr
     assert json.loads(public.read_text(encoding="utf-8"))["key_id"] == "worker-v2"
     assert _mode(private) == _mode(public) == 0o600
+
+
+def test_rotator_cleans_fixed_private_part_after_real_generator_sigkill(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path)
+    generator = paths["rotator"].with_name(GENERATOR.name)
+    marker = tmp_path / "private-part-durable"
+    source = generator.read_text(encoding="utf-8")
+    source = source.replace(
+        "                os.fsync(descriptor)\n",
+        "                os.fsync(descriptor)\n"
+        f"                Path({str(marker)!r}).touch()\n"
+        "                import time\n"
+        "                while True: time.sleep(0.01)\n",
+        1,
+    )
+    generator.write_text(source, encoding="utf-8")
+    generator.chmod(0o700)
+    next_private = paths["managed"]["next_private"]
+    next_public = paths["managed"]["next_public"]
+    process = subprocess.Popen(
+        [sys.executable, str(generator), str(next_private), str(next_public), "worker-v2"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    _wait_for_file(marker)
+    process.kill()
+    process.communicate(timeout=5)
+    private_parts = tuple(next_private.parent.glob("*execution-worker-ed25519*.part"))
+    assert private_parts
+
+    aborted = _run_rotation(paths, "abort")
+
+    assert aborted.returncode == 0, aborted.stderr
+    assert not tuple(next_private.parent.glob("*execution-worker-ed25519*.part"))
+    assert not next_private.exists() and not next_public.exists()
+
+
+def test_key_generator_and_rotator_use_only_fixed_reserved_parts() -> None:
+    generator = GENERATOR.read_text(encoding="utf-8")
+    rotator = ROTATOR.read_text(encoding="utf-8")
+    assert "secrets.token_hex" not in generator
+    assert "secrets.token_hex" not in rotator
+    assert 'f".{path.name}.part"' in generator
+    assert 'f".{path.name}.part"' in rotator
 
 
 def _rotation_test_environment(tmp_path: Path, *, loaded: bool = True):
@@ -3047,28 +3124,20 @@ def test_cloud_key_rotation_is_locked_and_prepared_before_database_mutation() ->
     section = runbook.split("## Key rotation", 1)[1].split(
         "## Worker revocation", 1
     )[0]
-    add_key = section.index(
-        '"${maintenance[@]}" add-key agentops-mac-primary '
-        '/run/worker-registration/worker.json RELAY_KEY_ROTATION_2026'
+    helper = CLOUD_ROTATOR.read_text(encoding="utf-8")
+    prepare = section.index('"$cloud_rotator" prepare worker-v2')
+    activate = section.index('"$cloud_rotator" activate worker-v2')
+    assert prepare < activate
+    assert helper.index("lock = _acquire_lock()") < helper.index('"prepare": _prepare')
+    assert helper.index('_write_state(state, "prepared")') < helper.index(
+        '"add-key", WORKER_ID'
     )
-    for required_precondition in (
-        'exec 9>>"$rotation_lock"',
-        "/usr/bin/flock -n 9",
-        '/usr/bin/test ! -e "$registration_root"',
-        '/usr/bin/test ! -e "$worker_keyring_previous"',
-        '/usr/bin/test ! -e "$worker_keyring_part"',
-        '/usr/bin/test ! -e "$rotation_state"',
-        '/usr/bin/test ! -e "$rotation_state_part"',
-        '"$worker_keyring" "$worker_keyring_previous"',
-        '/bin/mv -f "$rotation_state_part" "$rotation_state"',
-    ):
-        assert section.index(required_precondition) < add_key
-    assert section.index('/bin/rm -f -- "$rotation_state"') > add_key
+    assert 'if STATE.exists() or STATE.is_symlink()' in helper
+    assert "_validate_document(path, key_id, digest, fingerprint)" in helper
     assert "After an SSH disconnect" in section
-    assert "resume-forward" in section and "resume-rollback" in section
-    assert section.count('/usr/bin/flock -n 9') >= 2
-    assert '/usr/bin/test -f "$rotation_state"' in section
-    assert 'case "$cloud_rotation_phase" in' in section
+    assert '"$cloud_rotator" recover worker-v2' in section
+    assert '"$cloud_rotator" rollback worker-v2' in section
+    assert '"${maintenance[@]}"' not in section
 
 
 def test_cloud_key_rotation_commit_boundary_forbids_unsafe_rollback() -> None:
@@ -3078,20 +3147,445 @@ def test_cloud_key_rotation_commit_boundary_forbids_unsafe_rollback() -> None:
     section = runbook.split("## Key rotation", 1)[1].split(
         "## Worker revocation", 1
     )[0]
-    accepted = section.index("write_cloud_rotation_phase accepted")
-    committing = section.index("write_cloud_rotation_phase committing")
-    revoke_old = section.index(
-        '"${maintenance[@]}" revoke-key agentops-mac-primary worker-v1 '
-        "RELAY_KEY_ROTATION_2026"
-    )
-    old_revoked = section.index("write_cloud_rotation_phase old_revoked")
+    helper = CLOUD_ROTATOR.read_text(encoding="utf-8")
+    accepted = helper.index('_write_state(value, "accepted")')
+    committing = helper.index('_write_state(value, "committing")')
+    revoke_old = helper.index('"revoke-key", WORKER_ID', committing)
+    old_revoked = helper.index('_write_state(value, "old_revoked")')
     assert accepted < committing < revoke_old < old_revoked
-    assert "prepared|accepted)" in section
-    assert "committing|old_revoked)" in section
-    assert "resume-forward only" in section
-    assert "must never use resume-rollback" in section
+    assert 'value["phase"] not in {"accepted", "committing", "old_revoked"}' in helper
+    assert "resume forward only" in section
     assert "If local `finalize` fails, rerun only `finalize worker-v2`" in section
-    assert "do not run local" in section and "`rollback` after the cloud state" in section
+    assert "do not run local" in section and "`rollback`" in section
+
+
+def _cloud_rotation_test_environment(tmp_path: Path):
+    current_uid = os.getuid()
+    platform_root = tmp_path / "platform"
+    private_root = platform_root / "private"
+    incoming_root = tmp_path / "incoming"
+    releases_root = platform_root / "releases"
+    release = releases_root / ("a" * 40)
+    for directory in (platform_root, private_root, incoming_root, releases_root, release):
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory.chmod(0o700)
+    release.chmod(0o755)
+    current = platform_root / "current"
+    current.symlink_to(release)
+    compose = release / "deploy/cloud/compose.yaml"
+    compose.parent.mkdir(parents=True, mode=0o755)
+    (release / "deploy").chmod(0o755)
+    compose.parent.chmod(0o755)
+    compose.write_text("services: {}\n", encoding="utf-8")
+    compose.chmod(0o644)
+    for required in (private_root / "platform.env", private_root / "control-maintenance-database-url"):
+        required.write_text("bounded-test-value\n", encoding="utf-8")
+        required.chmod(0o600)
+
+    def public_document(key_id: str, byte: int) -> tuple[bytes, str]:
+        public = bytes([byte]) * 32
+        encoded = base64.urlsafe_b64encode(public).decode("ascii").rstrip("=")
+        document = {
+            "worker_id": "agentops-mac-primary",
+            "key_id": key_id,
+            "public_key_base64url": encoded,
+            "allowed_agent_ids": AGENTS,
+        }
+        return (json.dumps(document, sort_keys=True) + "\n").encode(), hashlib.sha256(public).hexdigest()
+
+    current, current_fingerprint = public_document("worker-v1", 1)
+    target, target_fingerprint = public_document("worker-v2", 2)
+    keyring = private_root / "execution-worker-public-keyring.json"
+    keyring.write_bytes(current)
+    keyring.chmod(0o600)
+    incoming = incoming_root / "execution-worker-public-worker-v2.json"
+    incoming.write_bytes(target)
+    incoming.chmod(0o600)
+    database = tmp_path / "database.json"
+    database.write_text(
+        json.dumps({"worker-v1": {"status": "active", "fingerprint": current_fingerprint}}),
+        encoding="utf-8",
+    )
+    maintenance_log = tmp_path / "maintenance.log"
+    fail_after = tmp_path / "fail-after"
+    fake_docker = tmp_path / "docker"
+    fake_docker.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+
+arguments = sys.argv[1:]
+if arguments[0] == "compose":
+    print("platform-api-container")
+    raise SystemExit(0)
+if arguments[0] == "inspect":
+    print("platform-api-image")
+    raise SystemExit(0)
+database_path = Path(os.environ["FAKE_ROTATION_DATABASE"])
+database = json.loads(database_path.read_text())
+log = Path(os.environ["FAKE_ROTATION_LOG"])
+if "--inspect-execution-worker-key" in arguments:
+    key_id = arguments[-1]
+    value = database.get(key_id)
+    print(json.dumps({"key_id": key_id, "status": "absent", "public_key_sha256": None} if value is None else {"key_id": key_id, "status": value["status"], "public_key_sha256": value["fingerprint"]}, sort_keys=True))
+    raise SystemExit(0)
+if "add-key" in arguments:
+    action = "add"
+    key_id = "worker-v2"
+    existing = database.get(key_id)
+    fingerprint = os.environ["FAKE_ROTATION_TARGET_FINGERPRINT"]
+    if existing is not None and existing != {"status": "active", "fingerprint": fingerprint}:
+        raise SystemExit(1)
+    database[key_id] = {"status": "active", "fingerprint": fingerprint}
+elif "revoke-key" in arguments:
+    action = "revoke-" + arguments[-2]
+    key_id = arguments[-2]
+    existing = database.get(key_id)
+    if existing is None or existing["status"] != "active":
+        raise SystemExit(1)
+    existing["status"] = "revoked"
+elif "revoke-worker" in arguments:
+    action = "revoke-worker"
+    for existing in database.values():
+        if existing["status"] == "active":
+            existing["status"] = "revoked"
+else:
+    raise SystemExit(1)
+database_path.write_text(json.dumps(database))
+with log.open("a") as stream:
+    stream.write(action + "\\n")
+fail_after = Path(os.environ["FAKE_ROTATION_FAIL_AFTER"])
+if fail_after.exists() and fail_after.read_text().strip() == action:
+    fail_after.unlink()
+    raise SystemExit(71)
+print("EXECUTION_WORKER_MAINTENANCE_OK")
+""",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o700)
+    helper = tmp_path / CLOUD_ROTATOR.name
+    source = CLOUD_ROTATOR.read_text(encoding="utf-8")
+    source = source.replace("REQUIRED_UID = 0", f"REQUIRED_UID = {current_uid}")
+    source = source.replace(
+        'PLATFORM_ROOT = Path("/opt/orbbec-agent-platform")',
+        f"PLATFORM_ROOT = Path({str(platform_root)!r})",
+    )
+    source = source.replace(
+        'INCOMING_ROOT = Path("/root")', f"INCOMING_ROOT = Path({str(incoming_root)!r})"
+    )
+    source = source.replace('DOCKER = "/usr/bin/docker"', f"DOCKER = {str(fake_docker)!r}")
+    source = source.replace(
+        'print("EXECUTION_WORKER_CLOUD_ROTATION_FAILED", file=sys.stderr)',
+        'import traceback; traceback.print_exc()',
+    )
+    helper.write_text(source, encoding="utf-8")
+    helper.chmod(0o700)
+    environment = {
+        **os.environ,
+        "FAKE_ROTATION_DATABASE": str(database),
+        "FAKE_ROTATION_LOG": str(maintenance_log),
+        "FAKE_ROTATION_FAIL_AFTER": str(fail_after),
+        "FAKE_ROTATION_TARGET_FINGERPRINT": target_fingerprint,
+    }
+    return {
+        "helper": helper,
+        "environment": environment,
+        "database": database,
+        "log": maintenance_log,
+        "fail_after": fail_after,
+        "keyring": keyring,
+        "current": current,
+        "target": target,
+        "state": private_root / "execution-worker-key-rotation-state.json",
+        "previous": private_root / "execution-worker-public-keyring.previous.json",
+        "state_part": private_root / "execution-worker-key-rotation-state.json.part",
+        "keyring_part": private_root / "execution-worker-public-keyring.json.part",
+        "staged": private_root / "execution-worker-public-keyring.next.json",
+        "lock": private_root / "execution-worker-key-rotation.lock",
+    }
+
+
+def _run_cloud_rotation(paths, action: str):
+    return subprocess.run(
+        [sys.executable, str(paths["helper"]), action, "worker-v2"],
+        text=True,
+        capture_output=True,
+        env=paths["environment"],
+    )
+
+
+def _run_cloud_worker_revoke(paths):
+    return subprocess.run(
+        [sys.executable, str(paths["helper"]), "revoke-worker"],
+        text=True,
+        capture_output=True,
+        env=paths["environment"],
+    )
+
+
+def test_cloud_rotation_helper_is_root_only_fixed_and_bounded() -> None:
+    source = CLOUD_ROTATOR.read_text(encoding="utf-8")
+    assert source.startswith("#!/usr/bin/env python3\n")
+    assert "REQUIRED_UID = 0" in source
+    assert 'PLATFORM_ROOT = Path("/opt/orbbec-agent-platform")' in source
+    assert 'INCOMING_ROOT = Path("/root")' in source
+    assert 'DOCKER = "/usr/bin/docker"' in source
+    for action in ("prepare", "activate", "mark-accepted", "commit", "rollback", "finalize", "recover"):
+        assert f'"{action}"' in source
+    assert "os.environ" not in source
+    assert "O_NOFOLLOW" in source and "fcntl.flock" in source
+
+
+def test_cloud_rotation_helper_recovers_add_and_commit_response_loss(tmp_path: Path) -> None:
+    paths = _cloud_rotation_test_environment(tmp_path)
+    assert _run_cloud_rotation(paths, "prepare").returncode == 0
+    paths["fail_after"].write_text("add", encoding="utf-8")
+    assert _run_cloud_rotation(paths, "activate").returncode == 1
+    assert json.loads(paths["state"].read_text())["phase"] == "adding"
+    assert _run_cloud_rotation(paths, "recover").returncode == 0
+    assert paths["keyring"].read_bytes() == paths["target"]
+    assert _run_cloud_rotation(paths, "mark-accepted").returncode == 0
+    paths["fail_after"].write_text("revoke-worker-v1", encoding="utf-8")
+    assert _run_cloud_rotation(paths, "commit").returncode == 1
+    assert json.loads(paths["state"].read_text())["phase"] == "committing"
+    assert _run_cloud_rotation(paths, "recover").returncode == 0
+    assert json.loads(paths["state"].read_text())["phase"] == "old_revoked"
+    assert paths["log"].read_text().splitlines() == ["add", "revoke-worker-v1"]
+
+
+def test_cloud_rotation_helper_rollback_is_reentrant_and_never_burns_absent_key(
+    tmp_path: Path,
+) -> None:
+    absent = _cloud_rotation_test_environment(tmp_path / "absent")
+    assert _run_cloud_rotation(absent, "prepare").returncode == 0
+    assert _run_cloud_rotation(absent, "rollback").returncode == 0
+    assert not absent["log"].exists()
+    assert absent["keyring"].read_bytes() == absent["current"]
+    assert not absent["state"].exists() and not absent["previous"].exists()
+
+    active = _cloud_rotation_test_environment(tmp_path / "active")
+    assert _run_cloud_rotation(active, "prepare").returncode == 0
+    assert _run_cloud_rotation(active, "activate").returncode == 0
+    active["fail_after"].write_text("revoke-worker-v2", encoding="utf-8")
+    assert _run_cloud_rotation(active, "rollback").returncode == 1
+    assert json.loads(active["state"].read_text())["phase"] == "revoking"
+    assert active["previous"].read_bytes() == active["current"]
+    assert active["keyring"].read_bytes() == active["current"]
+    assert _run_cloud_rotation(active, "recover").returncode == 0
+    assert active["log"].read_text().splitlines() == ["add", "revoke-worker-v2"]
+    assert not active["state"].exists() and not active["previous"].exists()
+
+
+def test_cloud_rotation_helper_recovers_pre_state_renames_and_zero_byte_parts(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_rotation_test_environment(tmp_path)
+    paths["previous"].write_bytes(paths["current"])
+    paths["previous"].chmod(0o600)
+    paths["staged"].write_bytes(paths["target"])
+    paths["staged"].chmod(0o600)
+    paths["state_part"].touch(mode=0o600)
+    paths["keyring_part"].touch(mode=0o600)
+
+    prepared = _run_cloud_rotation(paths, "prepare")
+
+    assert prepared.returncode == 0, prepared.stderr
+    assert json.loads(paths["state"].read_text())["phase"] == "prepared"
+    assert not paths["state_part"].exists() and not paths["keyring_part"].exists()
+
+
+def test_cloud_rotation_helper_recover_rejects_stable_waiting_phase(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_rotation_test_environment(tmp_path)
+    assert _run_cloud_rotation(paths, "prepare").returncode == 0
+
+    recovered = _run_cloud_rotation(paths, "recover")
+
+    assert recovered.returncode == 1
+    assert json.loads(paths["state"].read_text())["phase"] == "prepared"
+
+
+def test_cloud_rotation_helper_finalize_cleans_missing_residuals_and_state_last(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_rotation_test_environment(tmp_path)
+    for action in ("prepare", "activate", "mark-accepted", "commit"):
+        result = _run_cloud_rotation(paths, action)
+        assert result.returncode == 0, result.stderr
+    paths["previous"].unlink()
+    paths["keyring_part"].touch(mode=0o600)
+
+    finalized = _run_cloud_rotation(paths, "finalize")
+
+    assert finalized.returncode == 0, finalized.stderr
+    assert paths["keyring"].read_bytes() == paths["target"]
+    assert not paths["state"].exists()
+    assert not paths["keyring_part"].exists()
+
+
+def test_runbook_public_handoff_validators_execute_with_exact_schema_and_base64(
+    tmp_path: Path,
+) -> None:
+    runbook = (ROOT / "docs/runbooks/agent-execution-relay.md").read_text(
+        encoding="utf-8"
+    )
+    snippets = [
+        source
+        for source in re.findall(r"<<'PY'\n(.*?)\nPY", runbook, re.DOTALL)
+        if "hashlib.sha256(public).hexdigest()" in source
+    ]
+    assert len(snippets) == 2
+    public = bytes([9]) * 32
+    encoded = base64.urlsafe_b64encode(public).decode().rstrip("=")
+    document = {
+        "worker_id": "agentops-mac-primary",
+        "key_id": "worker-v2",
+        "public_key_base64url": encoded,
+        "allowed_agent_ids": AGENTS,
+    }
+    source_path = tmp_path / "source.json"
+    staged_path = tmp_path / "staged.json"
+    raw = (json.dumps(document) + "\n").encode()
+    source_path.write_bytes(raw)
+    staged_path.write_bytes(raw)
+
+    first = subprocess.run(
+        [sys.executable, "-c", snippets[0], str(source_path), str(staged_path), "worker-v2"],
+        text=True,
+        capture_output=True,
+    )
+    second = subprocess.run(
+        [sys.executable, "-c", snippets[1], str(staged_path), "worker-v2"],
+        text=True,
+        capture_output=True,
+    )
+    fingerprint = hashlib.sha256(public).hexdigest() + "\n"
+    assert first.returncode == second.returncode == 0
+    assert first.stdout == second.stdout == fingerprint
+
+    for mutation in (
+        {**document, "extra": True},
+        {**document, "allowed_agent_ids": list(reversed(AGENTS))},
+        {**document, "public_key_base64url": encoded[:-1] + "B"},
+    ):
+        invalid = (json.dumps(mutation) + "\n").encode()
+        source_path.write_bytes(invalid)
+        staged_path.write_bytes(invalid)
+        for command in (
+            [sys.executable, "-c", snippets[0], str(source_path), str(staged_path), "worker-v2"],
+            [sys.executable, "-c", snippets[1], str(staged_path), "worker-v2"],
+        ):
+            assert subprocess.run(command, capture_output=True).returncode != 0
+
+
+def test_cloud_worker_revocation_fails_closed_on_rotation_state_and_shared_lock(
+    tmp_path: Path,
+) -> None:
+    active = _cloud_rotation_test_environment(tmp_path / "active")
+    assert _run_cloud_rotation(active, "prepare").returncode == 0
+    blocked = _run_cloud_worker_revoke(active)
+    assert blocked.returncode == 1
+    assert json.loads(active["database"].read_text())["worker-v1"]["status"] == "active"
+
+    concurrent = _cloud_rotation_test_environment(tmp_path / "concurrent")
+    descriptor = os.open(concurrent["lock"], os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        blocked = _run_cloud_worker_revoke(concurrent)
+        assert blocked.returncode == 1
+        assert json.loads(concurrent["database"].read_text())["worker-v1"]["status"] == "active"
+    finally:
+        os.close(descriptor)
+
+    revoked = _run_cloud_worker_revoke(concurrent)
+    assert revoked.returncode == 0, revoked.stderr
+    assert json.loads(concurrent["database"].read_text())["worker-v1"]["status"] == "revoked"
+
+
+def _cloud_keyring_installer_environment(tmp_path: Path):
+    platform = tmp_path / "platform"
+    private = platform / "private"
+    platform.mkdir(mode=0o700)
+    private.mkdir(mode=0o700)
+    helper = tmp_path / CLOUD_KEYRING_INSTALLER.name
+    source = CLOUD_KEYRING_INSTALLER.read_text(encoding="utf-8")
+    source = source.replace("REQUIRED_UID = 0", f"REQUIRED_UID = {os.getuid()}")
+    source = source.replace(
+        'PLATFORM_ROOT = Path("/opt/orbbec-agent-platform")',
+        f"PLATFORM_ROOT = Path({str(platform)!r})",
+    )
+    helper.write_text(source, encoding="utf-8")
+    helper.chmod(0o700)
+    public = bytes([7]) * 32
+    document = (
+        json.dumps(
+            {
+                "worker_id": "agentops-mac-primary",
+                "key_id": "worker-v2",
+                "public_key_base64url": base64.urlsafe_b64encode(public)
+                .decode()
+                .rstrip("="),
+                "allowed_agent_ids": AGENTS,
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode()
+    return {
+        "helper": helper,
+        "private": private,
+        "document": document,
+        "keyring": private / "execution-worker-public-keyring.json",
+        "state": private / "execution-worker-key-rotation-state.json",
+        "lock": private / "execution-worker-key-rotation.lock",
+    }
+
+
+def _run_cloud_keyring_installer(paths):
+    return subprocess.run(
+        [sys.executable, str(paths["helper"])],
+        input=paths["document"],
+        capture_output=True,
+    )
+
+
+def test_cloud_deploy_keyring_installer_holds_shared_lock_and_fails_on_active_state(
+    tmp_path: Path,
+) -> None:
+    paths = _cloud_keyring_installer_environment(tmp_path)
+    paths["keyring"].write_bytes(b"old\n")
+    paths["keyring"].chmod(0o600)
+    paths["state"].write_text("{}\n", encoding="utf-8")
+    paths["state"].chmod(0o600)
+
+    active = _run_cloud_keyring_installer(paths)
+
+    assert active.returncode == 1
+    assert paths["keyring"].read_bytes() == b"old\n"
+    paths["state"].unlink()
+    descriptor = os.open(paths["lock"], os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        part = paths["private"] / "execution-worker-public-keyring.json.part"
+        part.write_bytes(b"inflight")
+        part.chmod(0o600)
+        concurrent = _run_cloud_keyring_installer(paths)
+        assert concurrent.returncode == 1
+        assert paths["keyring"].read_bytes() == b"old\n"
+        assert part.read_bytes() == b"inflight"
+    finally:
+        os.close(descriptor)
+
+    part.write_bytes(b"")
+    part.chmod(0o600)
+    installed = _run_cloud_keyring_installer(paths)
+    assert installed.returncode == 0, installed.stderr
+    assert paths["keyring"].read_bytes() == paths["document"]
+    assert _mode(paths["keyring"]) == 0o600
+    assert not part.exists()
 
 
 def test_installer_is_noninteractive_agentops_only_and_permission_gated() -> None:
@@ -3246,10 +3740,14 @@ def test_cloud_compose_enables_relay_with_read_only_keyring_and_no_port() -> Non
 
 def test_cloud_deploy_transfers_only_public_worker_document() -> None:
     script = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
-    lowered = script.lower()
+    installer = CLOUD_KEYRING_INSTALLER.read_text(encoding="utf-8")
+    lowered = (script + installer).lower()
 
     assert "CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING" in script
-    assert "execution-worker-public-keyring.json" in script
+    assert "install-execution-worker-keyring.py" in script
+    assert "execution-worker-public-keyring.json" in installer
+    assert "execution-worker-key-rotation.lock" in installer
+    assert "execution-worker-key-rotation-state.json" in installer
     assert "content-encryption-keyring" in script
     assert "BatchMode=yes" in script
     assert "chmod 600" in script

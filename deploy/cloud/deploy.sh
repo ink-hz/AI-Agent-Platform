@@ -86,6 +86,11 @@ if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
   fail
 fi
 if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
+  'umask 077; install -d -m 700 /opt/orbbec-agent-platform/bin; /bin/cat > /opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py.part; chmod 700 /opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py.part; mv -f /opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py.part /opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py' \
+  < "$repository_root/deploy/cloud/install-execution-worker-keyring.py"; then
+  fail
+fi
+if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
   'umask 077; install -d -m 700 /opt/orbbec-agent-platform/private; /bin/cat > /opt/orbbec-agent-platform/private/backup-recovery-x25519.pub.part; chmod 600 /opt/orbbec-agent-platform/private/backup-recovery-x25519.pub.part; mv -f /opt/orbbec-agent-platform/private/backup-recovery-x25519.pub.part /opt/orbbec-agent-platform/private/backup-recovery-x25519.pub' \
   < "$CLOUD_BACKUP_PUBLIC_KEY"; then
   fail
@@ -101,7 +106,7 @@ if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
   fail
 fi
 if ! /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" \
-  'umask 077; install -d -m 700 /opt/orbbec-agent-platform/private; /bin/cat > /opt/orbbec-agent-platform/private/execution-worker-public-keyring.json.part; chmod 600 /opt/orbbec-agent-platform/private/execution-worker-public-keyring.json.part; mv -f /opt/orbbec-agent-platform/private/execution-worker-public-keyring.json.part /opt/orbbec-agent-platform/private/execution-worker-public-keyring.json' \
+  '/opt/orbbec-agent-platform/bin/install-execution-worker-keyring.py' \
   < "$CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING"; then
   fail
 fi

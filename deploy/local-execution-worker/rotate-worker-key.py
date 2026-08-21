@@ -10,7 +10,6 @@ from pathlib import Path
 import plistlib
 import pwd
 import re
-import secrets
 import stat
 import subprocess
 import sys
@@ -52,6 +51,10 @@ COMPONENTS = ("private", "public", "plist")
 CANONICAL_PATHS = (PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
 NEXT_PATHS = (NEXT_PRIVATE_KEY, NEXT_PUBLIC_DOCUMENT, NEXT_PLIST)
 PREVIOUS_PATHS = (PREVIOUS_PRIVATE_KEY, PREVIOUS_PUBLIC_DOCUMENT, PREVIOUS_PLIST)
+PART_PATHS = tuple(
+    path.parent / f".{path.name}.part"
+    for path in (*CANONICAL_PATHS, *NEXT_PATHS, *PREVIOUS_PATHS, STATE)
+)
 
 
 class RotationError(ValueError):
@@ -92,7 +95,8 @@ def _secure_file(path: Path, *, maximum_size: int = 1_048_576) -> bytes:
 
 def _atomic_write(path: Path, value: bytes) -> None:
     _secure_directory(path.parent)
-    temporary = path.parent / f".{path.name}.{secrets.token_hex(16)}.part"
+    temporary = path.parent / f".{path.name}.part"
+    _unlink_part(temporary)
     descriptor = os.open(
         temporary,
         os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
@@ -134,6 +138,32 @@ def _unlink(path: Path) -> None:
         os.fsync(directory)
     finally:
         os.close(directory)
+
+
+def _unlink_part(path: Path) -> None:
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or path.is_symlink()
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_uid != os.getuid()
+        or metadata.st_size > 1_048_576
+    ):
+        raise RotationError
+    path.unlink()
+    directory = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def _cleanup_parts() -> None:
+    for path in PART_PATHS:
+        _unlink_part(path)
 
 
 def _document(private_path: Path, public_path: Path) -> tuple[str, bytes]:
@@ -624,6 +654,7 @@ def main(arguments: list[str] | None = None) -> int:
         action, target_key_id = values
         lock = _acquire_lock()
         try:
+            _cleanup_parts()
             {
                 "prepare": _prepare,
                 "abort": _abort,

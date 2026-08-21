@@ -165,8 +165,8 @@ def test_runbook_has_exact_operations_and_never_requeues_unknown_dispatch() -> N
     for command in (
         "launchctl print",
         "launchctl kickstart -k",
-        "register_worker add-key",
-        "register_worker revoke-key",
+        "add-key",
+        "revoke-key",
         "register_worker revoke-worker",
         "pg_dump",
         "pg_restore",
@@ -185,15 +185,16 @@ def test_runbook_has_exact_operations_and_never_requeues_unknown_dispatch() -> N
 def test_runbook_cloud_maintenance_commands_use_deployed_container_boundary() -> None:
     runbook = _runbook()
     maintenance = runbook.split("## Key rotation", 1)[1].split("## Backup", 1)[0]
-    assert "/opt/orbbec-agent-platform/private/control-maintenance-database-url" in maintenance
-    assert "docker run --rm --pull=never" in maintenance
-    assert "orbbec-agent-platform-internal" in maintenance
-    assert "PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE" in maintenance
-    assert "register_worker add-key" in maintenance
-    assert "register_worker revoke-key" in maintenance
+    helper = (ROOT / "deploy/cloud/execution-worker-key-rotation.py").read_text()
+    assert 'PLATFORM_ROOT = Path("/opt/orbbec-agent-platform")' in helper
+    assert 'PRIVATE_ROOT / "control-maintenance-database-url"' in helper
+    assert 'DOCKER = "/usr/bin/docker"' in helper
+    assert '"orbbec-agent-platform-internal"' in helper
+    assert "PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE" in helper
+    assert '"add-key", WORKER_ID' in helper
+    assert '"revoke-key", WORKER_ID' in helper
     assert "register_worker revoke-worker" in maintenance
-    assert "-m 700" in maintenance and "-m 600" in maintenance
-    assert "/run/worker-registration" in maintenance
+    assert "execution-worker-key-rotation.py revoke-worker" in maintenance
     assert not re.search(r"(?m)^python -m app\.execution_relay\.register_worker", maintenance)
 
 
@@ -203,14 +204,15 @@ def test_runbook_key_rotation_is_executable_ordered_and_has_exact_rollback() -> 
     )[0]
     ordered = (
         "rotate-worker-key.py prepare worker-v2",
-        '"${maintenance[@]}" add-key agentops-mac-primary',
-        '/usr/bin/test ! -e "$worker_keyring_previous"',
-        '/bin/mv -f "$worker_keyring_part" "$worker_keyring"',
+        '"$cloud_rotator" prepare worker-v2',
+        '"$cloud_rotator" activate worker-v2',
         "rotate-worker-key.py activate worker-v2",
         "accept.sh",
         "accept-dingtalk-production.sh",
-        "revoke-key agentops-mac-primary worker-v1",
+        '"$cloud_rotator" mark-accepted worker-v2',
+        '"$cloud_rotator" commit worker-v2',
         "rotate-worker-key.py finalize worker-v2",
+        '"$cloud_rotator" finalize worker-v2',
     )
     positions = [rotation.index(value) for value in ordered]
     assert positions == sorted(positions)
@@ -219,15 +221,24 @@ def test_runbook_key_rotation_is_executable_ordered_and_has_exact_rollback() -> 
         "execution-worker-public.next.json",
         "execution-worker-key-rotation-state.json",
         "rotate-worker-key.py abort worker-v2",
-        "execution-worker-public-keyring.json.part",
         "rotate-worker-key.py rollback worker-v2",
-        "revoke-key agentops-mac-primary worker-v2",
-        'mv -f "$worker_keyring_previous" "$worker_keyring"',
-        'rm -f -- "$worker_keyring_previous"',
+        '"$cloud_rotator" rollback worker-v2',
+        '"$cloud_rotator" recover worker-v2',
         "from app.execution_relay.acceptance_orchestrator import load_config",
-        'CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING` to the activated canonical current',
+        "/Users/Shared/OrbbecAI-Agent-Platform/execution-worker-public/current.json",
+        "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/secrets/execution-worker-public-keyring.json",
+        "`CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING`",
     ):
         assert required in rotation
+    assert "resume forward only" in rotation
+    assert "do not run local" in rotation and "`rollback`" in rotation
+    for forbidden_manual_transaction in (
+        '"${maintenance[@]}"',
+        "write_cloud_rotation_phase",
+        'mv -f "$worker_keyring_previous"',
+        "revoke-key agentops-mac-primary worker-v2",
+    ):
+        assert forbidden_manual_transaction not in rotation
     assert "/Users/agentops/AgentRuntime/private/cloud-admin-ed25519" not in rotation
     lowered = rotation.lower()
     for forbidden in ("keychain", "/usr/bin/security", "sudo", "password", "private key bytes"):

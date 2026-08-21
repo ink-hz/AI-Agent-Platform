@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import base64
 import errno
+import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
-import secrets
 import stat
 import sys
 
@@ -37,6 +37,7 @@ def _secure_parent(path: Path) -> int:
         raise ValueError
     descriptor = os.open(path.parent, _DIRECTORY_FLAGS)
     try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
         parent = os.fstat(descriptor)
     except Exception:
         os.close(descriptor)
@@ -53,9 +54,10 @@ def _secure_parent(path: Path) -> int:
 
 def _private_bytes(path: Path) -> bytes:
     parent_fd = _secure_parent(path)
-    temporary = f".{path.name}.{secrets.token_hex(16)}.part"
+    temporary = f".{path.name}.part"
     created = False
     try:
+        _cleanup_part(parent_fd, temporary, maximum_size=32)
         try:
             descriptor = os.open(path.name, _FILE_READ_FLAGS, dir_fd=parent_fd)
         except FileNotFoundError:
@@ -88,7 +90,10 @@ def _private_bytes(path: Path) -> bytes:
             except FileExistsError:
                 return _private_bytes_from_parent(parent_fd, path.name)
             finally:
-                os.unlink(temporary, dir_fd=parent_fd)
+                try:
+                    os.unlink(temporary, dir_fd=parent_fd)
+                except FileNotFoundError:
+                    pass
                 created = False
             os.fsync(parent_fd)
             return value
@@ -154,11 +159,32 @@ def _validate_optional_target(parent_fd: int, name: str) -> None:
         os.close(descriptor)
 
 
+def _cleanup_part(parent_fd: int, name: str, *, maximum_size: int) -> None:
+    try:
+        descriptor = os.open(name, _FILE_READ_FLAGS, dir_fd=parent_fd)
+    except FileNotFoundError:
+        return
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or metadata.st_size > maximum_size
+        ):
+            raise ValueError
+    finally:
+        os.close(descriptor)
+    os.unlink(name, dir_fd=parent_fd)
+    os.fsync(parent_fd)
+
+
 def _write_public(path: Path, value: bytes) -> None:
     parent_fd = _secure_parent(path)
-    temporary = f".{path.name}.{secrets.token_hex(16)}.part"
+    temporary = f".{path.name}.part"
     created = False
     try:
+        _cleanup_part(parent_fd, temporary, maximum_size=65_536)
         _validate_optional_target(parent_fd, path.name)
         descriptor = os.open(
             temporary,

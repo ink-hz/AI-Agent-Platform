@@ -30,6 +30,18 @@ previous_public_document=/Users/agentops/AgentRuntime/execution-worker-public.pr
 previous_plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.previous.plist
 rotation_state=/Users/agentops/AgentRuntime/private/execution-worker-key-rotation-state.json
 rotation_lock=/Users/agentops/AgentRuntime/private/execution-worker-key-rotation.lock
+rotation_parts=(
+  "$private_root/.execution-worker-ed25519.key.part"
+  "$runtime_root/.execution-worker-public.json.part"
+  "/Users/agentops/Library/LaunchAgents/.com.orbbec.agent-execution-worker.plist.part"
+  "$private_root/.execution-worker-ed25519.next.key.part"
+  "$runtime_root/.execution-worker-public.next.json.part"
+  "/Users/agentops/Library/LaunchAgents/.com.orbbec.agent-execution-worker.next.plist.part"
+  "$private_root/.execution-worker-ed25519.previous.key.part"
+  "$runtime_root/.execution-worker-public.previous.json.part"
+  "/Users/agentops/Library/LaunchAgents/.com.orbbec.agent-execution-worker.previous.plist.part"
+  "$private_root/.execution-worker-key-rotation-state.json.part"
+)
 label=com.orbbec.agent-execution-worker
 domain="gui/$(/usr/bin/id -u)"
 psql_bin="${PLATFORM_LOCAL_POSTGRES17_PSQL:-/opt/homebrew/opt/postgresql@17/bin/psql}"
@@ -239,7 +251,7 @@ PY
   "$stderr_log" "$acceptance_root" "$next_private_key" \
   "$next_public_document" "$next_plist" "$previous_private_key" \
   "$previous_public_document" "$previous_plist" "$rotation_state" \
-  "$rotation_lock" <<'PY'
+  "$rotation_lock" "${rotation_parts[@]}" <<'PY'
 import os
 import pathlib
 import stat
@@ -248,7 +260,7 @@ import sys
 (
     runtime, private, log, plist, private_key, public, dsn, stdout, stderr,
     acceptance, next_private, next_public, next_plist, previous_private,
-    previous_public, previous_plist, rotation_state, rotation_lock,
+    previous_public, previous_plist, rotation_state, rotation_lock, *rotation_parts,
 ) = map(pathlib.Path, sys.argv[1:])
 for directory in (runtime, private, log, plist.parent):
     metadata = directory.lstat()
@@ -279,6 +291,17 @@ for path in (
             or path.is_symlink()
             or stat.S_IMODE(metadata.st_mode) != 0o600
             or metadata.st_uid != os.getuid()
+        ):
+            raise SystemExit(1)
+for path in rotation_parts:
+    if path.exists() or path.is_symlink():
+        metadata = path.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or path.is_symlink()
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or metadata.st_size > 1_048_576
         ):
             raise SystemExit(1)
 if acceptance.exists() or acceptance.is_symlink():
@@ -460,6 +483,9 @@ SQL
 /bin/rm -f -- "$previous_public_document"
 /bin/rm -f -- "$previous_plist"
 /bin/rm -f -- "$rotation_state"
+for part in "${rotation_parts[@]}"; do
+  /bin/rm -f -- "$part"
+done
 for residual in control.json state.json completion-paused dispatching-paused; do
   if [[ -e "$acceptance_root/$residual" ]]; then
     /bin/rm -f -- "$acceptance_root/$residual"
