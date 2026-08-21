@@ -20,6 +20,8 @@ public_document="$runtime_root/execution-worker-public.json"
 runtime_dsn="$private_root/execution-worker-postgres-dsn"
 target="$HOME/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
+label=com.orbbec.agent-execution-worker
+domain="gui/$(/usr/bin/id -u)"
 
 [[ "$platform_root" == "$(cd "$script_dir/../.." && pwd)" ]] || fail
 [[ -x "$platform_root/backend/.venv/bin/python" ]] || fail
@@ -41,16 +43,111 @@ done
   "$private_key" "$public_document"
 "$script_dir/bootstrap-worker-database.sh" "$owner_dsn_file" "$runtime_dsn"
 
+previous_exists=0
+previous_loaded=0
+if [[ -e "$target" || -L "$target" ]]; then
+  [[ -f "$target" && ! -L "$target" ]] || fail
+  [[ "$(/usr/bin/stat -f '%Lp %Su' "$target")" == "600 agentops" ]] || fail
+  previous_exists=1
+fi
+if /bin/launchctl print "$domain/$label" >/dev/null 2>&1; then
+  previous_loaded=1
+fi
+[[ "$previous_loaded" == "0" || "$previous_exists" == "1" ]] || fail
+
+temporary=""
+previous_plist=""
+cleanup_prepared() {
+  prepared_cleanup_failed=0
+  for prepared_path in "$temporary" "$previous_plist"; do
+    if [[ -n "$prepared_path" && -e "$prepared_path" ]]; then
+      if ! /bin/rm -f -- "$prepared_path"; then
+        prepared_cleanup_failed=1
+      fi
+    fi
+  done
+  if [[ "$prepared_cleanup_failed" == "1" ]]; then
+    echo "EXECUTION_WORKER_INSTALL_PREPARATION_CLEANUP_FAILED" >&2
+  fi
+}
+trap cleanup_prepared EXIT
+
 temporary="$(/usr/bin/mktemp "$HOME/Library/LaunchAgents/.execution-worker.XXXXXX")"
-cleanup() { /bin/rm -f -- "$temporary"; }
-trap cleanup EXIT
 /bin/cp "$script_dir/com.orbbec.agent-execution-worker.plist.template" "$temporary"
 /bin/chmod 600 "$temporary"
 /usr/bin/plutil -lint "$temporary" >/dev/null
+previous_plist="$(/usr/bin/mktemp "$HOME/Library/LaunchAgents/.execution-worker.previous.XXXXXX")"
+if [[ "$previous_exists" == "1" ]]; then
+  /bin/cp "$target" "$previous_plist"
+fi
+
+rollback_install() {
+  rollback_failed=0
+  if /bin/launchctl print "$domain/$label" >/dev/null 2>&1; then
+    if ! /bin/launchctl bootout "$domain/$label" >/dev/null 2>&1; then
+      rollback_failed=1
+    fi
+  fi
+  if [[ "$previous_exists" == "1" ]]; then
+    rollback_temporary="$(/usr/bin/mktemp "$HOME/Library/LaunchAgents/.execution-worker.rollback.XXXXXX")" || rollback_failed=1
+    if [[ "$rollback_failed" == "0" ]]; then
+      if ! /bin/cp "$previous_plist" "$rollback_temporary"; then
+        rollback_failed=1
+      elif ! /bin/chmod 600 "$rollback_temporary"; then
+        rollback_failed=1
+      elif ! /bin/mv -f "$rollback_temporary" "$target"; then
+        rollback_failed=1
+      fi
+    fi
+    if [[ -n "${rollback_temporary:-}" && -e "$rollback_temporary" ]]; then
+      if ! /bin/rm -f -- "$rollback_temporary"; then
+        rollback_failed=1
+      fi
+    fi
+  elif [[ -e "$target" || -L "$target" ]]; then
+    if ! /bin/rm -f -- "$target"; then
+      rollback_failed=1
+    fi
+  fi
+  if [[ "$previous_loaded" == "1" && "$rollback_failed" == "0" ]]; then
+    if ! /bin/launchctl bootstrap "$domain" "$target"; then
+      rollback_failed=1
+    elif ! /bin/launchctl enable "$domain/$label"; then
+      rollback_failed=1
+    fi
+  elif [[ "$previous_loaded" == "0" ]] && /bin/launchctl print "$domain/$label" >/dev/null 2>&1; then
+    rollback_failed=1
+  fi
+  [[ "$rollback_failed" == "0" ]]
+}
+
+install_exit() {
+  selected_status=$?
+  trap - EXIT
+  if [[ "$selected_status" != "0" ]]; then
+    if ! rollback_install; then
+      echo "EXECUTION_WORKER_INSTALL_ROLLBACK_FAILED" >&2
+      /bin/rm -f -- "$temporary" "$previous_plist"
+      exit 1
+    fi
+    if ! /bin/rm -f -- "$temporary" "$previous_plist"; then
+      echo "EXECUTION_WORKER_INSTALL_ROLLBACK_FAILED" >&2
+      exit 1
+    fi
+    echo "EXECUTION_WORKER_INSTALL_FAILED" >&2
+    exit 1
+  fi
+  if ! /bin/rm -f -- "$temporary" "$previous_plist"; then
+    echo "EXECUTION_WORKER_INSTALL_FAILED" >&2
+    exit 1
+  fi
+}
+trap install_exit EXIT
+
 /bin/mv -f "$temporary" "$target"
-trap - EXIT
-domain="gui/$(/usr/bin/id -u)"
-/bin/launchctl bootout "$domain" "$target" >/dev/null 2>&1 || true
+if [[ "$previous_loaded" == "1" ]]; then
+  /bin/launchctl bootout "$domain/$label" >/dev/null 2>&1
+fi
 /bin/launchctl bootstrap "$domain" "$target"
-/bin/launchctl enable "$domain/com.orbbec.agent-execution-worker"
+/bin/launchctl enable "$domain/$label"
 echo "EXECUTION_WORKER_INSTALLED"
