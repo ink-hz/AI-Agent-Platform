@@ -624,6 +624,7 @@ SQL
 fi
 
 owner_psql -d postgres >/dev/null <<SQL
+set password_encryption='scram-sha-256';
 select 'create role agent_execution_worker_owner nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls'
 where not exists (select 1 from pg_roles where rolname='agent_execution_worker_owner') \gexec
 select 'create role agent_execution_worker_migrator nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls'

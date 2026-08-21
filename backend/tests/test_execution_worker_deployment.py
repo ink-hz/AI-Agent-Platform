@@ -1028,6 +1028,70 @@ def test_bootstrap_persists_exact_pg17_roles_and_membership_options(
 
 
 @pytest.mark.postgres
+def test_bootstrap_forces_scram_when_owner_session_defaults_to_md5(
+    control_database, tmp_path: Path
+) -> None:
+    admin_url = control_database["cluster_admin"]
+    paths = _bootstrap_test_environment(control_database, tmp_path)
+    _drop_worker_test_state(admin_url)
+    with psycopg.connect(admin_url, autocommit=True) as connection:
+        connection.execute(
+            "alter role control_test_admin set password_encryption='md5'"
+        )
+    try:
+        with psycopg.connect(admin_url) as connection:
+            assert connection.execute("show password_encryption").fetchone() == ("md5",)
+
+        first = _run_bootstrap(paths)
+
+        assert first.returncode == 0, first.stderr
+        with psycopg.connect(admin_url) as connection:
+            assert connection.execute(
+                "select rolpassword like 'SCRAM-SHA-256$%%' from pg_authid "
+                "where rolname='agent_execution_worker_runtime'"
+            ).fetchone() == (True,)
+        original_runtime_dsn = paths[2].read_bytes()
+        with psycopg.connect(paths[2].read_text().strip()) as runtime:
+            run_id = uuid.uuid4()
+            runtime.execute(
+                "insert into execution_worker.local_runs("
+                "run_id,job_id,agent_id,metabot_port,callback_token_hash,state,leased_at"
+                ") values (%s,%s,'hr-bot',9101,%s,'leased',now())",
+                (run_id, uuid.uuid4(), b"s" * 32),
+            )
+            runtime.execute(
+                "insert into execution_worker.event_outbox(run_id,seq,event_json) "
+                "values (%s,1,'{\"scram_marker\":true}')",
+                (run_id,),
+            )
+            runtime.commit()
+
+        second = _run_bootstrap(paths)
+
+        assert second.returncode == 0, second.stderr
+        assert paths[2].read_bytes() == original_runtime_dsn
+        with psycopg.connect(paths[2].read_text().strip()) as runtime:
+            assert runtime.execute(
+                "select event_json from execution_worker.event_outbox where run_id=%s",
+                (run_id,),
+            ).fetchone() == ({"scram_marker": True},)
+    finally:
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            connection.execute(
+                "alter role control_test_admin reset password_encryption"
+            )
+        _drop_worker_test_state(admin_url)
+
+
+def test_bootstrap_sets_scram_before_role_password_statements() -> None:
+    script = BOOTSTRAP.read_text(encoding="utf-8").lower()
+
+    setting = script.index("set password_encryption='scram-sha-256'")
+    assert setting < script.index("create role agent_execution_worker_runtime")
+    assert setting < script.index("alter role agent_execution_worker_runtime password")
+
+
+@pytest.mark.postgres
 def test_bootstrap_allows_alternate_superuser_rerun_and_preserves_outbox(
     control_database, tmp_path: Path
 ) -> None:
