@@ -55,8 +55,11 @@ class Boundary:
         self.post_upload_status = 401
         self.session_status = 200
         self.history_status = 200
+        self.fail_setup = False
+        self.fail_bootout = False
+        self.lose_registration_response = False
         self.regression = self._regression()
-        self.final_regression = dict(self.regression)
+        self.final_regression = self._regression()
 
     @staticmethod
     def _action(arguments: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
@@ -73,7 +76,16 @@ class Boundary:
             "fae_started_at": "2026-08-01T00:00:00Z",
             "fae_health": "healthy",
             "fae_https_sha256": "c" * 64,
-            "management_replica_synchronization_unchanged": "d" * 64,
+            "platform_health_healthy": True,
+            "replica_freshness": "current",
+            "replica_generations": {
+                "source-a": {
+                    "last_sequence": 100,
+                    "committed_at": "2026-08-21T00:00:00Z",
+                },
+            },
+            "management_count": 4,
+            "management_max_updated_at": "2026-08-21T00:00:00Z",
         }
 
     def runner(
@@ -85,6 +97,8 @@ class Boundary:
     ) -> subject.CommandResult:
         self.calls.append((arguments, input_bytes, timeout))
         if arguments[0] == "/bin/launchctl":
+            if self.fail_bootout and arguments[1] == "bootout":
+                return subject.CommandResult(1, b"")
             return subject.CommandResult(0, b"pid = 4242\n")
         if arguments[0] != "/usr/bin/ssh":
             raise AssertionError(arguments)
@@ -99,6 +113,8 @@ class Boundary:
                 json.dumps(self.regression if count == 1 else self.final_regression).encode(),
             )
         if action == "setup":
+            if self.fail_setup:
+                return subject.CommandResult(1, b"")
             return subject.CommandResult(0, b'{"status":"ready"}')
         if action == "cleanup":
             return subject.CommandResult(0, b'{"status":"removed"}')
@@ -110,6 +126,8 @@ class Boundary:
             assert agents == "hr-bot"
             assert reference.startswith("RELAY_ACCEPT_REGISTER_")
             self.registered = True
+            if self.lose_registration_response:
+                return subject.CommandResult(1, b"")
             return subject.CommandResult(
                 0,
                 json.dumps({"status": "registered", "worker_id": worker_id}).encode(),
@@ -316,7 +334,21 @@ def test_gate_09_rejects_open_cookie_and_noncanonical_disposable_token(tmp_path:
         )
 
 
-def test_gate_10_requires_exact_fae_and_management_replica_snapshot(tmp_path: Path) -> None:
+def test_gate_10_allows_healthy_replica_generation_to_advance(tmp_path: Path) -> None:
+    config, cookie, launchagent = _fixture(tmp_path)
+    boundary = Boundary()
+    boundary.final_regression["replica_generations"] = {
+        "source-a": {
+            "last_sequence": 101,
+            "committed_at": "2026-08-21T00:01:00Z",
+        },
+    }
+    boundary.final_regression["management_count"] = 5
+    boundary.final_regression["management_max_updated_at"] = "2026-08-21T00:01:00Z"
+    _run(config, cookie, launchagent, boundary)
+
+
+def test_gate_10_requires_exact_fae_and_monotonic_current_replica(tmp_path: Path) -> None:
     config, cookie, launchagent = _fixture(tmp_path)
     boundary = Boundary()
     boundary.final_regression["fae_started_at"] = "2026-08-21T00:00:00Z"
@@ -324,11 +356,22 @@ def test_gate_10_requires_exact_fae_and_management_replica_snapshot(tmp_path: Pa
         _run(config, cookie, launchagent, boundary)
     assert boundary.revoked is True
 
-    boundary = Boundary()
-    boundary.final_regression["management_replica_synchronization_unchanged"] = "e" * 64
-    with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
-        _run(config, cookie, launchagent, boundary)
-    assert boundary.revoked is True
+    mutations = (
+        {"replica_freshness": "stale"},
+        {"replica_generations": {
+            "source-a": {
+                "last_sequence": 99,
+                "committed_at": "2026-08-21T00:01:00Z",
+            },
+        }},
+        {"replica_generations": {}},
+    )
+    for mutation in mutations:
+        boundary = Boundary()
+        boundary.final_regression.update(mutation)
+        with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
+            _run(config, cookie, launchagent, boundary)
+        assert boundary.revoked is True
 
 
 def test_unrevoked_disposable_is_audited_revoked_and_cleanup_failure_wins(tmp_path: Path) -> None:
@@ -347,3 +390,70 @@ def test_unrevoked_disposable_is_audited_revoked_and_cleanup_failure_wins(tmp_pa
     assert "revoke-disposable" in actions
     launch = [call[0][1] for call in boundary.calls if call[0][0] == "/bin/launchctl"]
     assert launch[-3:] == ["bootstrap", "enable", "kickstart"]
+
+
+def test_partial_setup_failed_bootout_and_lost_registration_are_compensated(
+    tmp_path: Path,
+) -> None:
+    config, cookie, launchagent = _fixture(tmp_path)
+
+    boundary = Boundary()
+    boundary.fail_setup = True
+    with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
+        _run(config, cookie, launchagent, boundary)
+    assert "cleanup" in [
+        boundary._action(call[0])[0]
+        for call in boundary.calls if call[0][0] == "/usr/bin/ssh"
+    ]
+
+    boundary = Boundary()
+    boundary.fail_bootout = True
+    with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
+        _run(config, cookie, launchagent, boundary)
+    launch = [call[0][1] for call in boundary.calls if call[0][0] == "/bin/launchctl"]
+    assert launch[-3:] == ["bootstrap", "enable", "kickstart"]
+
+    boundary = Boundary()
+    boundary.lose_registration_response = True
+    with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
+        _run(config, cookie, launchagent, boundary)
+    assert boundary.registered is True and boundary.revoked is True
+
+
+def test_final_remote_script_uses_private_registration_directory_and_real_replica_probe() -> None:
+    source = subject._final_remote_script().decode()
+    assert '/usr/bin/install -d -o root -g root -m 700 "$registration_root"' in source
+    assert 'chmod 600 "$document"' in source
+    assert '-v "$registration_root:/run/worker-registration:ro"' in source
+    assert "https://agent.orbbec.com.cn/api/health" in source
+    assert "platform_replica.generations" in source
+    assert "platform_replica.management_projections" in source
+    assert "/api/deployment" not in source
+
+
+def test_main_runs_disposable_before_production_and_finishes_with_invariants(monkeypatch) -> None:
+    calls: list[str] = []
+    initial = subject.InitialGateResult("agentops-mac-primary", "a" * 64, 0)
+    execution = subject.ExecutionGateResult(
+        RUN_ID, RUN_ID, RUN_ID, RUN_ID, 0
+    )
+    final = subject.FinalGateResult(
+        "relay-acceptance-0123456789abcdef", 401, 401, 200, 200
+    )
+
+    monkeypatch.setenv("USER", "agentops")
+    monkeypatch.setattr(
+        subject, "run_gates_09_to_10",
+        lambda *_args, **_kwargs: calls.append("09-10") or final,
+    )
+    monkeypatch.setattr(
+        subject, "run_gates_04_to_08",
+        lambda *_args, **_kwargs: calls.append("04-08") or execution,
+    )
+    monkeypatch.setattr(
+        subject, "run_gates_01_to_03",
+        lambda *_args, **_kwargs: calls.append("01-03") or initial,
+    )
+
+    assert subject.main(["/private/acceptance-config.json"]) == 0
+    assert calls == ["01-03", "09-10", "04-08", "01-03"]

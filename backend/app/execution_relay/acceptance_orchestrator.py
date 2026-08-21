@@ -138,6 +138,18 @@ class FinalGateResult:
     history_status: int
 
 
+@dataclass(frozen=True)
+class ReplicaGeneration:
+    last_sequence: int
+    committed_at: datetime
+
+
+@dataclass(frozen=True)
+class RegressionSnapshot:
+    fae_identity: tuple[str, str, str, str, str]
+    generations: tuple[tuple[str, ReplicaGeneration], ...]
+
+
 CommandRunner = Callable[..., CommandResult]
 
 
@@ -528,9 +540,10 @@ case "$action" in
   cleanup)
     [[ $# -eq 0 ]]
     "${helper[@]}" -ec '
-      test -d /secrets/execution-relay-acceptance
       rm -f /secrets/execution-relay-acceptance/control-database-url /secrets/execution-relay-acceptance/content-keyring /secrets/execution-relay-acceptance/enabled
-      rmdir /secrets/execution-relay-acceptance
+      if test -d /secrets/execution-relay-acceptance; then
+        rmdir /secrets/execution-relay-acceptance
+      fi
     '
     printf '{"status":"removed"}\n'
     ;;
@@ -824,6 +837,7 @@ def run_gates_04_to_08(
     control: Path | None = None
     foreground: Any | None = None
     remote_ready = False
+    setup_attempted = False
     launch_stopped = False
     cleanup_failed = False
     terminal: set[UUID] = set()
@@ -860,18 +874,33 @@ def run_gates_04_to_08(
 
     body_error: BaseException | None = None
     try:
+        setup_attempted = True
         if _remote_action(config, runner, "setup") != {"status": "ready"}:
             raise _gate_error()
         remote_ready = True
         # Gate 04 and Gate 05: real HR and Marketing Intelligence terminal runs.
         enqueue(0, "hr-bot", hr_run)
         first = _inspect_terminal(config, runner, hr_run, ordered=True, sleep=sleep)
-        if first.get("agent_id") != "hr-bot":
+        if (
+            first.get("agent_id") != "hr-bot"
+            or first.get("status") != "completed"
+            or not isinstance(first.get("event_count"), int)
+            or isinstance(first.get("event_count"), bool)
+            or first["event_count"] < 2
+            or first.get("ordered_terminal") is not True
+        ):
             raise _gate_error()
         terminal.add(hr_run)
         enqueue(1, "marketing-intelligence-bot", intelligence_run)
         second = _inspect_terminal(config, runner, intelligence_run, ordered=True, sleep=sleep)
-        if second.get("agent_id") != "marketing-intelligence-bot":
+        if (
+            second.get("agent_id") != "marketing-intelligence-bot"
+            or second.get("status") != "completed"
+            or not isinstance(second.get("event_count"), int)
+            or isinstance(second.get("event_count"), bool)
+            or second["event_count"] < 2
+            or second.get("ordered_terminal") is not True
+        ):
             raise _gate_error()
         terminal.add(intelligence_run)
         # Gate 06: exact stored event replay must be accepted but insert zero rows.
@@ -881,8 +910,8 @@ def run_gates_04_to_08(
             raise _gate_error()
         domain = f"gui/{uid}"
         _require_command(runner, ("/bin/launchctl", "print", f"{domain}/{_LABEL}"), timeout=10)
-        _require_command(runner, ("/bin/launchctl", "bootout", f"{domain}/{_LABEL}"), timeout=20)
         launch_stopped = True
+        _require_command(runner, ("/bin/launchctl", "bootout", f"{domain}/{_LABEL}"), timeout=20)
         control = _write_hook_control(hook_directory, dispatch_run, completion_run)
         foreground = start_foreground()
         # Gate 07: crash after local terminal persistence and resume the same outbox.
@@ -936,7 +965,7 @@ def run_gates_04_to_08(
                     _remote_action(config, runner, "interrupt", str(run_id))
                 except Exception:
                     cleanup_failed = True
-        if remote_ready:
+        if setup_attempted:
             try:
                 if _remote_action(config, runner, "cleanup") != {"status": "removed"}:
                     cleanup_failed = True
@@ -984,37 +1013,72 @@ release="$(readlink -f "$root/current")"
 envfile="$root/private/platform.env"
 compose=(/usr/bin/docker compose --env-file "$envfile" -f "$release/deploy/cloud/compose.yaml")
 api_id="$("${compose[@]}" ps -q platform-api)"
+postgres_id="$("${compose[@]}" ps -q platform-postgres)"
 image="$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$api_id")"
+[[ -n "$api_id" && -n "$postgres_id" && -n "$image" ]]
 case "$action" in
  regression-probe)
   fae_id="$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)"
   fae_image="$(/usr/bin/docker inspect --format '{{.Image}}' ai-fae-backend)"
   fae_started="$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)"
   fae_health="$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' ai-fae-backend)"
-  fae_hash="$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
-  replica_hash="$(/usr/bin/docker exec "$api_id" python -c 'import urllib.request,hashlib;print(hashlib.sha256(urllib.request.urlopen("http://127.0.0.1:8080/api/deployment",timeout=3).read()).hexdigest())')"
-  /usr/bin/python3 - "$fae_id" "$fae_image" "$fae_started" "$fae_health" "$fae_hash" "$replica_hash" <<'PY'
+  fae_hash="$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve fae.orbbec.com.cn:443:127.0.0.1 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
+  platform_health="$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve agent.orbbec.com.cn:443:127.0.0.1 https://agent.orbbec.com.cn/api/health)"
+  /usr/bin/python3 - "$platform_health" <<'PY'
 import json,sys
-a,b,c,d,e,f=sys.argv[1:]
-document={"schema_version":1,"fae_external_domain_healthy":d=="healthy","fae_container_id":a,"fae_image_id":b,"fae_started_at":c,"fae_health":d,"fae_https_sha256":e,"management_replica_synchronization_unchanged":f}
+value=json.loads(sys.argv[1])
+if not isinstance(value,dict) or value.get("status") != "ok": raise SystemExit(1)
+PY
+  replica="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t -U platform_owner -d agent_platform -v ON_ERROR_STOP=1 -c \
+    "select jsonb_build_object(
+      'freshness',case
+        when (select max(committed_at) from platform_replica.generations) >= clock_timestamp() - interval '15 minutes' then 'current'
+        when (select max(committed_at) from platform_replica.generations) is null then 'unavailable'
+        else 'stale' end,
+      'generations',coalesce((select jsonb_object_agg(source_instance_id,jsonb_build_object('last_sequence',last_sequence,'committed_at',committed_at)) from platform_replica.generations),'{}'::jsonb),
+      'management_count',(select count(*) from platform_replica.management_projections),
+      'management_max_updated_at',(select max(updated_at) from platform_replica.management_projections)
+    )")"
+  /usr/bin/python3 - "$fae_id" "$fae_image" "$fae_started" "$fae_health" "$fae_hash" "$replica" <<'PY'
+import json,sys
+a,b,c,d,e,raw=sys.argv[1:]
+replica=json.loads(raw)
+document={"schema_version":1,"fae_external_domain_healthy":d=="healthy","fae_container_id":a,"fae_image_id":b,"fae_started_at":c,"fae_health":d,"fae_https_sha256":e,"platform_health_healthy":True,"replica_freshness":replica["freshness"],"replica_generations":replica["generations"],"management_count":replica["management_count"],"management_max_updated_at":replica["management_max_updated_at"]}
 sys.stdout.write(json.dumps(document,sort_keys=True,separators=(",",":"))+"\n")
 PY
   ;;
  register-disposable)
   worker="$1"; key_id="$2"; public="$3"; agents="$4"; reference="$5"
-  [[ "$worker" =~ ^relay-acceptance-[0-9a-f]{16}$ && "$key_id" == worker-v1 && "$agents" == hr-bot ]]
-  doc="$root/private/.${worker}.json"; umask 077
-  /usr/bin/python3 - "$doc" "$worker" "$public" <<'PY'
-import json,sys
-open(sys.argv[1],"w").write(json.dumps({"worker_id":sys.argv[2],"key_id":"worker-v1","public_key_base64url":sys.argv[3],"allowed_agent_ids":["hr-bot"]}))
+  [[ "$worker" =~ ^relay-acceptance-[0-9a-f]{16}$ && "$key_id" == worker-v1 && "$public" =~ ^[A-Za-z0-9_-]{43}$ && "$agents" == hr-bot && "$reference" =~ ^RELAY_ACCEPT_REGISTER_[A-F0-9]{16}$ ]]
+  registration_root="$root/private/execution-relay-$worker"
+  document="$registration_root/worker.json"
+  cleanup_registration() {
+    [[ ! -L "$registration_root" ]] || return 1
+    /bin/rm -f -- "$document"
+    if [[ -d "$registration_root" ]]; then /bin/rmdir -- "$registration_root"; fi
+  }
+  cleanup_registration
+  /usr/bin/install -d -o root -g root -m 700 "$registration_root"
+  trap cleanup_registration EXIT HUP INT TERM
+  /usr/bin/python3 - "$document" "$worker" "$public" <<'PY'
+import json,os,sys
+descriptor=os.open(sys.argv[1],os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),0o600)
+with os.fdopen(descriptor,"w") as stream:
+    json.dump({"worker_id":sys.argv[2],"key_id":"worker-v1","public_key_base64url":sys.argv[3],"allowed_agent_ids":["hr-bot"]},stream,separators=(",",":"),sort_keys=True)
+    stream.flush(); os.fsync(stream.fileno())
 PY
-  trap 'rm -f -- "$doc"' EXIT
-  /usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 -v "$root/private:/run/control-secrets:ro" -v "$doc:/run/worker.json:ro" -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url "$image" python -m app.execution_relay.register_worker register /run/worker.json "$reference" >/dev/null
+  /bin/chown root:root "$document"
+  /bin/chmod 600 "$document"
+  /usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 -v "$root/private:/run/control-secrets:ro" -v "$registration_root:/run/worker-registration:ro" -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url "$image" python -m app.execution_relay.register_worker register /run/worker-registration/worker.json "$reference" >/dev/null
   printf '{"status":"registered","worker_id":"%s"}\n' "$worker"
   ;;
  revoke-disposable)
-  worker="$1"; reference="$2"; [[ "$worker" =~ ^relay-acceptance-[0-9a-f]{16}$ ]]
+  worker="$1"; reference="$2"; [[ "$worker" =~ ^relay-acceptance-[0-9a-f]{16}$ && "$reference" =~ ^RELAY_ACCEPT_REVOKE_[A-F0-9]{16}$ ]]
   /usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 -v "$root/private:/run/control-secrets:ro" -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url "$image" python -m app.execution_relay.register_worker revoke-worker "$worker" "$reference" >/dev/null
+  registration_root="$root/private/execution-relay-$worker"
+  [[ ! -L "$registration_root" ]]
+  /bin/rm -f -- "$registration_root/worker.json"
+  if [[ -d "$registration_root" ]]; then /bin/rmdir -- "$registration_root"; fi
   printf '{"status":"revoked","worker_id":"%s"}\n' "$worker"
   ;;
  *) exec /bin/bash -s -- "$action" "$@" <<'NOOP'
@@ -1059,6 +1123,127 @@ def _default_session_probe(cookie: bytes) -> SessionProbeResult:
     return SessionProbeResult(sessions.status_code, history.status_code)
 
 
+def _regression_timestamp(value: object) -> datetime:
+    if not isinstance(value, str) or not value or len(value) > 64:
+        raise _gate_error()
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        raise _gate_error() from None
+
+
+def _parse_regression_snapshot(value: dict[str, object]) -> RegressionSnapshot:
+    keys = {
+        "schema_version",
+        "fae_external_domain_healthy",
+        "fae_container_id",
+        "fae_image_id",
+        "fae_started_at",
+        "fae_health",
+        "fae_https_sha256",
+        "platform_health_healthy",
+        "replica_freshness",
+        "replica_generations",
+        "management_count",
+        "management_max_updated_at",
+    }
+    try:
+        if set(value) != keys or value["schema_version"] != 1:
+            raise _gate_error()
+        if (
+            value["fae_external_domain_healthy"] is not True
+            or value["platform_health_healthy"] is not True
+            or value["fae_health"] != "healthy"
+            or value["replica_freshness"] != "current"
+        ):
+            raise _gate_error()
+        fae_id = value["fae_container_id"]
+        fae_image = value["fae_image_id"]
+        fae_started = value["fae_started_at"]
+        fae_hash = value["fae_https_sha256"]
+        if (
+            not isinstance(fae_id, str)
+            or _HEX_SHA256.fullmatch(fae_id) is None
+            or not isinstance(fae_image, str)
+            or not fae_image
+            or len(fae_image) > 256
+            or any(character in fae_image for character in "\r\n\0")
+            or not isinstance(fae_started, str)
+            or not isinstance(fae_hash, str)
+            or _HEX_SHA256.fullmatch(fae_hash) is None
+        ):
+            raise _gate_error()
+        _regression_timestamp(fae_started)
+        generations = value["replica_generations"]
+        if not isinstance(generations, dict) or not generations or len(generations) > 32:
+            raise _gate_error()
+        parsed_generations: list[tuple[str, ReplicaGeneration]] = []
+        for source, generation in generations.items():
+            if (
+                not isinstance(source, str)
+                or not source
+                or len(source) > 128
+                or not isinstance(generation, dict)
+                or set(generation) != {"last_sequence", "committed_at"}
+            ):
+                raise _gate_error()
+            sequence = generation["last_sequence"]
+            if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 0:
+                raise _gate_error()
+            parsed_generations.append((
+                source,
+                ReplicaGeneration(
+                    last_sequence=sequence,
+                    committed_at=_regression_timestamp(generation["committed_at"]),
+                ),
+            ))
+        management_count = value["management_count"]
+        if (
+            not isinstance(management_count, int)
+            or isinstance(management_count, bool)
+            or management_count < 0
+        ):
+            raise _gate_error()
+        management_updated = value["management_max_updated_at"]
+        if management_updated is not None:
+            _regression_timestamp(management_updated)
+        return RegressionSnapshot(
+            fae_identity=(fae_id, fae_image, fae_started, "healthy", fae_hash),
+            generations=tuple(sorted(parsed_generations)),
+        )
+    except AcceptanceGateError:
+        raise
+    except Exception:
+        raise _gate_error() from None
+
+
+def _require_monotonic_regression(
+    before_value: dict[str, object], after_value: dict[str, object]
+) -> None:
+    before = _parse_regression_snapshot(before_value)
+    after = _parse_regression_snapshot(after_value)
+    if before.fae_identity != after.fae_identity:
+        raise _gate_error()
+    before_generations = dict(before.generations)
+    after_generations = dict(after.generations)
+    if set(before_generations) != set(after_generations):
+        raise _gate_error()
+    for source, earlier in before_generations.items():
+        later = after_generations[source]
+        if (
+            later.last_sequence < earlier.last_sequence
+            or later.committed_at < earlier.committed_at
+        ):
+            raise _gate_error()
+    # Management projections may legitimately advance during acceptance. Their
+    # query success and bounded shape above prove the replica remains readable;
+    # generation monotonicity proves management_replica_synchronization_unchanged
+    # was not replaced by a stale or rolled-back source.
+
+
 def run_gates_09_to_10(
     config_path: Path, *, runner: CommandRunner = _run_command,
     signed_requester: Callable[..., SignedGateResponse] = _default_signed_request,
@@ -1086,13 +1271,29 @@ def run_gates_09_to_10(
     public = Ed25519PrivateKey.from_private_bytes(key).public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     encoded = base64.urlsafe_b64encode(public).decode().rstrip("=")
     run_id, conversation_id, message_id = (uuid_factory() for _ in range(3))
-    domain = f"gui/{uid}"; disposable_registered = revoked = stopped = setup = enqueued = terminalized = False; cleanup_failed = False; body_error = None
+    domain = f"gui/{uid}"
+    disposable_registered = False
+    registration_attempted = False
+    revoked = False
+    stopped = False
+    setup = False
+    setup_attempted = False
+    enqueued = False
+    terminalized = False
+    cleanup_failed = False
+    body_error = None
     before = _final_remote_action(config, runner, "regression-probe")
     try:
-        _remote_action(config, runner, "setup"); setup = True
+        setup_attempted = True
+        setup_result = _remote_action(config, runner, "setup")
+        if setup_result != {"status": "ready"}:
+            raise _gate_error()
+        setup = True
         _require_command(runner, ("/bin/launchctl", "print", f"{domain}/{_LABEL}"), timeout=10)
-        _require_command(runner, ("/bin/launchctl", "bootout", f"{domain}/{_LABEL}"), timeout=20); stopped = True
+        stopped = True
+        _require_command(runner, ("/bin/launchctl", "bootout", f"{domain}/{_LABEL}"), timeout=20)
         reference = "RELAY_ACCEPT_REGISTER_" + token.upper()
+        registration_attempted = True
         result = _final_remote_action(config, runner, "register-disposable", worker_id, "worker-v1", encoded, "hr-bot", reference)
         if result != {"status":"registered","worker_id":worker_id}: raise _gate_error()
         disposable_registered = True
@@ -1115,7 +1316,9 @@ def run_gates_09_to_10(
         upload_status = signed_requester(worker_id,"worker-v1",key,"POST",f"/api/v1/execution-worker/runs/{run_id}/events",events_body).status_code
         sessions = session_probe(cookie)
         after = _final_remote_action(config, runner, "regression-probe")
-        if lease_status != 401 or upload_status != 401 or sessions.sessions_status != 200 or sessions.history_status != 200 or before != after: raise _gate_error()
+        if lease_status != 401 or upload_status != 401 or sessions.sessions_status != 200 or sessions.history_status != 200:
+            raise _gate_error()
+        _require_monotonic_regression(before, after)
         result_final = FinalGateResult(worker_id, lease_status, upload_status, sessions.sessions_status, sessions.history_status)
     except BaseException as error:
         body_error = error; result_final = None
@@ -1123,10 +1326,10 @@ def run_gates_09_to_10(
         if setup and enqueued and not terminalized:
             try: _remote_action(config, runner, "interrupt", str(run_id))
             except Exception: cleanup_failed = True
-        if disposable_registered and not revoked:
+        if registration_attempted and not revoked:
             try: _final_remote_action(config, runner, "revoke-disposable", worker_id, "RELAY_ACCEPT_REVOKE_" + token.upper())
             except Exception: cleanup_failed = True
-        if setup:
+        if setup_attempted:
             try: _remote_action(config, runner, "cleanup")
             except Exception: cleanup_failed = True
         if stopped:
@@ -1150,8 +1353,8 @@ def main(arguments: list[str] | None = None) -> int:
         user = os.environ.get("USER", "")
         uid = os.getuid()
         initial = run_gates_01_to_03(config, current_user=user, uid=uid)
-        execution = run_gates_04_to_08(config, current_user=user, uid=uid)
         final = run_gates_09_to_10(config, current_user=user, uid=uid)
+        execution = run_gates_04_to_08(config, current_user=user, uid=uid)
         final_boundary = run_gates_01_to_03(config, current_user=user, uid=uid)
         if (
             initial.worker_id != _WORKER_ID

@@ -334,6 +334,30 @@ def test_gate_06_requires_exact_duplicate_inserted_zero(tmp_path: Path) -> None:
     assert "bootout" not in launch_actions and "bootstrap" not in launch_actions
 
 
+@pytest.mark.parametrize(
+    "evidence",
+    (
+        {"status": "failed", "event_count": 2, "ordered_terminal": True},
+        {"status": "completed", "event_count": 1, "ordered_terminal": True},
+        {"status": "completed", "event_count": 2, "ordered_terminal": False},
+    ),
+)
+def test_gate_04_and_05_require_completed_multi_event_ordered_terminal(
+    tmp_path: Path, evidence: dict[str, object]
+) -> None:
+    config, worker_key, dsn = _fixture(tmp_path)
+    boundary = Boundary(config.parent)
+    boundary.inspect_overrides[RUNS[0]] = {
+        "run_id": str(RUNS[0]),
+        "agent_id": "hr-bot",
+        "first_seq": 1,
+        "last_seq": evidence["event_count"],
+        **evidence,
+    }
+    with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
+        _run(config, worker_key, dsn, boundary)
+
+
 def test_gate_07_requires_terminal_contiguous_retained_outbox(tmp_path: Path) -> None:
     config, worker_key, dsn = _fixture(tmp_path)
     boundary = Boundary(config.parent)
