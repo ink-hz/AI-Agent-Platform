@@ -330,6 +330,10 @@ Expose:
 
 Use raw Ed25519 keys from `cryptography`, URL-safe base64 without padding, `secrets.token_bytes(32)`, `hmac.compare_digest` for stable text comparisons, and an atomic nonce insert before returning success. Delete only expired nonces for that worker inside the same transaction.
 
+Reject bodies larger than exactly `1_048_576` bytes before any database access. Accept only canonical unpadded base64url encodings: 32 decoded bytes for nonce and 64 for signature. Timestamp is canonical unsigned base-10 UNIX seconds and must be within the inclusive ±60-second window. All authentication failures expose only `WorkerAuthenticationError("worker authentication failed")`.
+
+After structural and timestamp validation, call `touch_execution_worker_v27(worker_id)` inside the verifier transaction to validate and lock the active worker against concurrent revocation, then load the exact active `(worker_id, key_id)` public key. Verify the signature before nonce cleanup/insertion. Delete only expired nonces for that worker and atomically insert the new nonce with an expiry covering the entire accepted timestamp window; a conflict is replay failure. Commit before returning `WorkerIdentity`. Never grant direct worker/key mutation to the verifier.
+
 - [ ] **Step 4: Run tests and verify GREEN**
 
 Run Step 2. Expected: PASS.
