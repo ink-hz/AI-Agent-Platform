@@ -17,6 +17,7 @@ _WORKER_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 _KEY_ID = re.compile(r"worker-v[1-9][0-9]*\Z")
 _AGENT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _PUBLIC_KEY = re.compile(r"[A-Za-z0-9_-]{43}\Z")
+_ACCEPTANCE_WORKER_ID = re.compile(r"relay-acceptance-[0-9a-f]{16}\Z")
 _ALLOWED_AGENTS = (
     "hr-bot",
     "fae-bot",
@@ -109,7 +110,14 @@ def _public_document(value: str) -> tuple[str, str, bytes, tuple[str, ...]]:
         or not agents
         or len(agents) != len(set(agents))
         or any(not isinstance(agent, str) or _AGENT_ID.fullmatch(agent) is None for agent in agents)
-        or tuple(agents) != _ALLOWED_AGENTS
+        or (
+            _ACCEPTANCE_WORKER_ID.fullmatch(worker_id) is not None
+            and (key_id != "worker-v1" or tuple(agents) != ("hr-bot",))
+        )
+        or (
+            _ACCEPTANCE_WORKER_ID.fullmatch(worker_id) is None
+            and tuple(agents) != _ALLOWED_AGENTS
+        )
     ):
         raise ValueError
     public_key = base64.b64decode(encoded + "=", altchars=b"-_", validate=True)

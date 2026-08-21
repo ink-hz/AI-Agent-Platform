@@ -23,6 +23,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import httpx
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
+from .acceptance_hooks import WorkerAcceptanceHooks
 from .metabot_client import MetaBotClient, MetaBotRuntimeMap
 from .models import RelayEvent, RelayJobPayload, RelayLease
 from .worker_auth import WorkerRequestSigner
@@ -297,6 +298,7 @@ class WorkerRuntime:
         token_factory: Callable[[], str] = lambda: secrets.token_urlsafe(32),
         jitter: Callable[[float, float], float] = random.uniform,
         logger: logging.Logger = _LOG,
+        acceptance_hooks: Any | None = None,
     ) -> None:
         if (
             not isinstance(worker_id, str)
@@ -318,6 +320,7 @@ class WorkerRuntime:
         self.token_factory = token_factory
         self.jitter = jitter
         self.logger = logger
+        self.acceptance_hooks = acceptance_hooks
         self.shutdown_event = asyncio.Event()
         self.stop_event = asyncio.Event()
         self.callback_ready = asyncio.Event()
@@ -521,7 +524,11 @@ class WorkerRuntime:
         run_id = payload.run_id
         agent_id = payload.agent_id
         try:
+            if self.acceptance_hooks is not None:
+                self.acceptance_hooks.before_metabot_post(run_id)
             await asyncio.to_thread(self.metabot.start_run, payload, callback_url)
+            if self.acceptance_hooks is not None:
+                await self.acceptance_hooks.after_metabot_post(run_id)
             context.metabot_accepted = True
             await self._store_call("mark_dispatched", run_id)
         except Exception as error:
@@ -605,6 +612,11 @@ class WorkerRuntime:
                         context.cloud_dispatched = True
                     events = await self._store_call("contiguous_outbox", run_id, 100)
                     if events:
+                        if (
+                            self.acceptance_hooks is not None
+                            and context.terminal_status is not None
+                        ):
+                            await self.acceptance_hooks.before_terminal_upload(run_id)
                         await self.cloud.upload_events(run_id, events)
                         await self._store_call("mark_delivered", run_id, events[-1].seq)
                     remaining = await self._store_call("contiguous_outbox", run_id, 1)
@@ -984,6 +996,9 @@ async def run_worker(runtime: WorkerRuntime) -> None:
             close = getattr(runtime.cloud, "aclose", None)
             if callable(close):
                 await close()
+            close_hooks = getattr(runtime.acceptance_hooks, "close", None)
+            if callable(close_hooks):
+                close_hooks()
 
         cleanup_task = asyncio.create_task(cleanup())
         while not cleanup_task.done():
@@ -1111,6 +1126,7 @@ def build_runtime_from_environment() -> WorkerRuntime:
             runtime_map=runtime_map,
             metabot=metabot,
             callback_port=callback_port,
+            acceptance_hooks=WorkerAcceptanceHooks.from_environment(),
         )
     except WorkerRuntimeError:
         raise

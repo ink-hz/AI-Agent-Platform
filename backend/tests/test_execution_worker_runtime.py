@@ -219,6 +219,7 @@ def _runtime(
     store: FakeStore | None = None,
     metabot: FakeMetaBot | None = None,
     sleep=None,
+    acceptance_hooks=None,
 ) -> WorkerRuntime:
     return WorkerRuntime(
         worker_id="worker-a",
@@ -230,6 +231,7 @@ def _runtime(
         sleep=sleep or (lambda _seconds: asyncio.sleep(0)),
         token_factory=lambda: "A" * 43,
         jitter=lambda _low, _high: 1.0,
+        acceptance_hooks=acceptance_hooks,
     )
 
 
@@ -262,6 +264,83 @@ async def test_exact_durable_sequence_and_terminal_upload() -> None:
         "lease", "dispatched", "events", "terminal"
     ]
     assert len(metabot.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_acceptance_dispatch_hook_pauses_after_real_post_before_local_dispatch() -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class Hooks:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def before_metabot_post(self, run_id):
+            self.calls.append(("before_post", run_id))
+
+        async def after_metabot_post(self, run_id):
+            self.calls.append(("after_post", run_id))
+            entered.set()
+            await release.wait()
+
+        async def before_terminal_upload(self, run_id):
+            self.calls.append(("before_upload", run_id))
+
+    cloud = FakeCloud([_lease()])
+    store = FakeStore()
+    metabot = FakeMetaBot()
+    hooks = Hooks()
+    runtime = _runtime(
+        cloud=cloud, store=store, metabot=metabot, acceptance_hooks=hooks
+    )
+
+    task = asyncio.create_task(runtime.lease_once())
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    assert len([call for call in metabot.calls if call[0] == "start"]) == 1
+    assert ("dispatched", RUN_ID) not in store.calls
+    assert ("dispatched", RUN_ID) not in cloud.calls
+    release.set()
+    assert await asyncio.wait_for(task, timeout=1) is True
+    assert hooks.calls[:2] == [("before_post", RUN_ID), ("after_post", RUN_ID)]
+
+
+@pytest.mark.asyncio
+async def test_acceptance_completion_hook_pauses_terminal_outbox_before_cloud_upload() -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class Hooks:
+        def before_metabot_post(self, _run_id):
+            pass
+
+        async def after_metabot_post(self, _run_id):
+            pass
+
+        async def before_terminal_upload(self, run_id):
+            entered.set()
+            await release.wait()
+
+    cloud = FakeCloud([_lease()])
+    store = FakeStore()
+    runtime = _runtime(cloud=cloud, store=store, acceptance_hooks=Hooks())
+    await runtime.lease_once()
+    assert (
+        await runtime.accept_callback(
+            RUN_ID,
+            store.tokens[RUN_ID],
+            _event(1, terminal="completed").model_dump_json().encode(),
+        )
+        is CallbackResult.ACCEPTED
+    )
+
+    task = asyncio.create_task(runtime.upload_once())
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    assert store.states[RUN_ID] == "completed"
+    assert store.contiguous_outbox(RUN_ID) == (_event(1, terminal="completed"),)
+    assert not any(call[0] == "events" for call in cloud.calls)
+    release.set()
+    assert await asyncio.wait_for(task, timeout=1) is True
+    assert ("events", RUN_ID, (1,)) in cloud.calls
 
 
 @pytest.mark.asyncio
