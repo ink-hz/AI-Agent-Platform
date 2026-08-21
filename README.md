@@ -5,6 +5,8 @@
 云端采用不可逆脱敏、签名批次和字段级加密的只读副本，首期只监听
 `127.0.0.1:8080` 并通过 SSH tunnel 访问，不修改既有 FAE/Nginx。部署、同步、
 备份、恢复和 18 项验收见 [Cloud Platform sanitized replica runbook](docs/runbooks/cloud-platform.md)。
+本地 MetaBot 执行中继的验收、故障恢复、密钥轮换与安全卸载见
+[Agent execution relay runbook](docs/runbooks/agent-execution-relay.md)。
 
 ## 当前能力
 

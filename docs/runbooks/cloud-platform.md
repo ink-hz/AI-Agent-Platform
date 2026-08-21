@@ -1,5 +1,9 @@
 # Cloud Platform and DingTalk identity runbook
 
+The local-to-cloud execution prerequisite is operated separately through the
+[Agent execution relay runbook](agent-execution-relay.md). Its release gate must
+pass before any user-facing Chat or Agent Brain route is enabled.
+
 This runbook operates the read-only cloud replica and the production DingTalk
 identity boundary of AI Agent Platform. The public employee entry is
 `https://agent.orbbec.com.cn/`; PostgreSQL and the Platform upstream remain
