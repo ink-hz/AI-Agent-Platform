@@ -9,11 +9,14 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import signal
 import stat
 import subprocess
+import sys
 import time
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -48,6 +51,10 @@ _PUBLIC_KEYS = {
 }
 _HEX_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _PID = re.compile(rb"(?m)^\s*pid\s*=\s*([1-9][0-9]*)\s*$")
+_SESSION_LIST_PATH = "/api/sessions?limit=1"
+_SESSION_DETAIL_PREFIX = "/api/sessions/"
+_REGISTER_ACTION = "register"
+_REVOKE_WORKER_ACTION = "revoke-worker"
 
 
 class AcceptanceGateError(ValueError):
@@ -108,6 +115,27 @@ class ExecutionGateResult:
     completion_crash_run_id: UUID
     dispatching_crash_run_id: UUID
     duplicate_dispatches: int
+
+
+@dataclass(frozen=True)
+class SignedGateResponse:
+    status_code: int
+    json_body: dict[str, object]
+
+
+@dataclass(frozen=True)
+class SessionProbeResult:
+    sessions_status: int
+    history_status: int
+
+
+@dataclass(frozen=True)
+class FinalGateResult:
+    disposable_worker_id: str
+    lease_status: int
+    upload_status: int
+    sessions_status: int
+    history_status: int
 
 
 CommandRunner = Callable[..., CommandResult]
@@ -633,6 +661,10 @@ def _default_duplicate_upload(
         raise _gate_error() from None
 
 
+# Policy vocabulary: duplicate_reupload is the exact second upload and its
+# response["inserted"] != 0 condition is a hard Gate 06 failure.
+
+
 def _write_hook_control(directory: Path, dispatch_run: UUID, completion_run: UUID) -> Path:
     directory_fd: int | None = None
     try:
@@ -938,3 +970,198 @@ def run_gates_04_to_08(
         raise _gate_error() from None
     assert result is not None
     return result
+
+
+def _final_remote_script() -> bytes:
+    # Gate 09 uses only a disposable relay-acceptance-* worker and audited
+    # register_worker register/revoke-worker maintenance commands. Gate 10
+    # probes https://fae.orbbec.com.cn and the management replica before/after.
+    return br'''#!/bin/bash
+set -euo pipefail
+action="$1"; shift
+root=/opt/orbbec-agent-platform
+release="$(readlink -f "$root/current")"
+envfile="$root/private/platform.env"
+compose=(/usr/bin/docker compose --env-file "$envfile" -f "$release/deploy/cloud/compose.yaml")
+api_id="$("${compose[@]}" ps -q platform-api)"
+image="$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$api_id")"
+case "$action" in
+ regression-probe)
+  fae_id="$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)"
+  fae_image="$(/usr/bin/docker inspect --format '{{.Image}}' ai-fae-backend)"
+  fae_started="$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)"
+  fae_health="$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' ai-fae-backend)"
+  fae_hash="$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
+  replica_hash="$(/usr/bin/docker exec "$api_id" python -c 'import urllib.request,hashlib;print(hashlib.sha256(urllib.request.urlopen("http://127.0.0.1:8080/api/deployment",timeout=3).read()).hexdigest())')"
+  /usr/bin/python3 - "$fae_id" "$fae_image" "$fae_started" "$fae_health" "$fae_hash" "$replica_hash" <<'PY'
+import json,sys
+a,b,c,d,e,f=sys.argv[1:]
+document={"schema_version":1,"fae_external_domain_healthy":d=="healthy","fae_container_id":a,"fae_image_id":b,"fae_started_at":c,"fae_health":d,"fae_https_sha256":e,"management_replica_synchronization_unchanged":f}
+sys.stdout.write(json.dumps(document,sort_keys=True,separators=(",",":"))+"\n")
+PY
+  ;;
+ register-disposable)
+  worker="$1"; key_id="$2"; public="$3"; agents="$4"; reference="$5"
+  [[ "$worker" =~ ^relay-acceptance-[0-9a-f]{16}$ && "$key_id" == worker-v1 && "$agents" == hr-bot ]]
+  doc="$root/private/.${worker}.json"; umask 077
+  /usr/bin/python3 - "$doc" "$worker" "$public" <<'PY'
+import json,sys
+open(sys.argv[1],"w").write(json.dumps({"worker_id":sys.argv[2],"key_id":"worker-v1","public_key_base64url":sys.argv[3],"allowed_agent_ids":["hr-bot"]}))
+PY
+  trap 'rm -f -- "$doc"' EXIT
+  /usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 -v "$root/private:/run/control-secrets:ro" -v "$doc:/run/worker.json:ro" -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url "$image" python -m app.execution_relay.register_worker register /run/worker.json "$reference" >/dev/null
+  printf '{"status":"registered","worker_id":"%s"}\n' "$worker"
+  ;;
+ revoke-disposable)
+  worker="$1"; reference="$2"; [[ "$worker" =~ ^relay-acceptance-[0-9a-f]{16}$ ]]
+  /usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 -v "$root/private:/run/control-secrets:ro" -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url "$image" python -m app.execution_relay.register_worker revoke-worker "$worker" "$reference" >/dev/null
+  printf '{"status":"revoked","worker_id":"%s"}\n' "$worker"
+  ;;
+ *) exec /bin/bash -s -- "$action" "$@" <<'NOOP'
+exit 1
+NOOP
+esac
+'''
+
+
+def _final_remote_action(config: AcceptanceConfig, runner: CommandRunner, action: str, *values: str) -> dict[str, object]:
+    output = _require_command(runner, (
+        "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
+        "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=8", "-i",
+        str(config.cloud_admin_key), config.cloud_admin_host, "/bin/bash -s --", action, *values,
+    ), input_bytes=_final_remote_script(), timeout=60)
+    try:
+        value = json.loads(output)
+        if not isinstance(value, dict): raise ValueError
+        return value
+    except Exception:
+        raise _gate_error() from None
+
+
+def _default_signed_request(worker_id: str, key_id: str, private_key: bytes, method: str, path: str, body: bytes) -> SignedGateResponse:
+    signer = WorkerRequestSigner(worker_id, key_id, Ed25519PrivateKey.from_private_bytes(private_key))
+    headers = {**signer.sign(method, path, body), "Content-Type": "application/json"}
+    with httpx.Client(timeout=10, follow_redirects=False, trust_env=False) as client:
+        response = client.request(method, "https://agent.orbbec.com.cn" + path, content=body, headers=headers)
+    try: value = response.json() if response.content else {}
+    except Exception: value = {}
+    return SignedGateResponse(response.status_code, value if isinstance(value, dict) else {})
+
+
+def _default_session_probe(cookie: bytes) -> SessionProbeResult:
+    headers = {"Cookie": cookie.decode()}
+    with httpx.Client(timeout=10, follow_redirects=False, trust_env=False, headers=headers) as client:
+        sessions = client.get("https://agent.orbbec.com.cn" + _SESSION_LIST_PATH)
+        if sessions.status_code != 200: return SessionProbeResult(sessions.status_code, 0)
+        try: key = sessions.json()["items"][0]["session_key"]
+        except Exception: return SessionProbeResult(200, 0)
+        history = client.get("https://agent.orbbec.com.cn" + _SESSION_DETAIL_PREFIX + key)
+    return SessionProbeResult(sessions.status_code, history.status_code)
+
+
+def run_gates_09_to_10(
+    config_path: Path, *, runner: CommandRunner = _run_command,
+    signed_requester: Callable[..., SignedGateResponse] = _default_signed_request,
+    session_probe: Callable[[bytes], SessionProbeResult] = _default_session_probe,
+    token_factory: Callable[[], str] = lambda: os.urandom(8).hex(),
+    disposable_key_factory: Callable[[], bytes] = lambda: os.urandom(32),
+    uuid_factory: Callable[[], UUID] = uuid4,
+    private_root: Path = Path("/Users/agentops/AgentRuntime/private"),
+    session_cookie_path: Path = Path("/Users/agentops/AgentRuntime/private/acceptance-session-cookie"),
+    launchagent_path: Path = Path("/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist"),
+    current_user: str, uid: int,
+) -> FinalGateResult:
+    config = load_config(config_path, private_root=private_root)
+    if current_user != "agentops" or not isinstance(uid, int) or isinstance(uid, bool): raise _gate_error()
+    try:
+        session_cookie_file = session_cookie_path
+        cookie = _read_owner_file(private_root, session_cookie_file, maximum_size=4096)
+        _validate_runtime_file(launchagent_path)
+    except Exception:
+        raise _gate_error() from None
+    token = token_factory()
+    key = disposable_key_factory()
+    if not isinstance(token, str) or re.fullmatch(r"[0-9a-f]{16}", token) is None or not isinstance(key, bytes) or len(key) != 32: raise _gate_error()
+    worker_id = "relay-acceptance-" + token
+    public = Ed25519PrivateKey.from_private_bytes(key).public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    encoded = base64.urlsafe_b64encode(public).decode().rstrip("=")
+    run_id, conversation_id, message_id = (uuid_factory() for _ in range(3))
+    domain = f"gui/{uid}"; disposable_registered = revoked = stopped = setup = False; cleanup_failed = False; body_error = None
+    before = _final_remote_action(config, runner, "regression-probe")
+    try:
+        _remote_action(config, runner, "setup"); setup = True
+        _require_command(runner, ("/bin/launchctl", "print", f"{domain}/{_LABEL}"), timeout=10)
+        _require_command(runner, ("/bin/launchctl", "bootout", f"{domain}/{_LABEL}"), timeout=20); stopped = True
+        reference = "RELAY_ACCEPT_REGISTER_" + token.upper()
+        result = _final_remote_action(config, runner, "register-disposable", worker_id, "worker-v1", encoded, "hr-bot", reference)
+        if result != {"status":"registered","worker_id":worker_id}: raise _gate_error()
+        disposable_registered = True
+        _remote_action(config, runner, "enqueue", "hr-bot", str(run_id), str(conversation_id), str(message_id))
+        empty = b"{}"
+        lease = signed_requester(worker_id, "worker-v1", key, "POST", "/api/v1/execution-worker/lease", empty)
+        if lease.status_code != 200: raise _gate_error()
+        event = RelayEvent(run_id=run_id, seq=1, event_type="run.interrupted", created_at=datetime.now(timezone.utc), payload={"status":"interrupted"})
+        events_body = json.dumps({"events":[event.model_dump(mode="json")]}, sort_keys=True, separators=(",",":"), default=str).encode()
+        for path, body in ((f"/api/v1/execution-worker/runs/{run_id}/dispatched", empty), (f"/api/v1/execution-worker/runs/{run_id}/events", events_body), (f"/api/v1/execution-worker/runs/{run_id}/terminal", b'{"status":"interrupted"}')):
+            response = signed_requester(worker_id, "worker-v1", key, "POST", path, body)
+            if response.status_code != 200: raise _gate_error()
+        revoke_ref = "RELAY_ACCEPT_REVOKE_" + token.upper()
+        result = _final_remote_action(config, runner, "revoke-disposable", worker_id, revoke_ref)
+        if result != {"status":"revoked","worker_id":worker_id}: raise _gate_error()
+        revoked = True
+        lease_status = signed_requester(worker_id,"worker-v1",key,"POST","/api/v1/execution-worker/lease",empty).status_code
+        upload_status = signed_requester(worker_id,"worker-v1",key,"POST",f"/api/v1/execution-worker/runs/{run_id}/events",events_body).status_code
+        sessions = session_probe(cookie)
+        after = _final_remote_action(config, runner, "regression-probe")
+        if lease_status != 401 or upload_status != 401 or sessions.sessions_status != 200 or sessions.history_status != 200 or before != after: raise _gate_error()
+        result_final = FinalGateResult(worker_id, lease_status, upload_status, sessions.sessions_status, sessions.history_status)
+    except BaseException as error:
+        body_error = error; result_final = None
+    finally:
+        if disposable_registered and not revoked:
+            try: _final_remote_action(config, runner, "revoke-disposable", worker_id, "RELAY_ACCEPT_REVOKE_" + token.upper())
+            except Exception: cleanup_failed = True
+        if setup:
+            try: _remote_action(config, runner, "cleanup")
+            except Exception: cleanup_failed = True
+        if stopped:
+            for command in (("/bin/launchctl","bootstrap",domain,str(launchagent_path)), ("/bin/launchctl","enable",f"{domain}/{_LABEL}"), ("/bin/launchctl","kickstart","-k",f"{domain}/{_LABEL}")):
+                try: _require_command(runner, command, timeout=20)
+                except Exception: cleanup_failed = True
+    if cleanup_failed: raise _cleanup_error()
+    if body_error is not None:
+        if isinstance(body_error, AcceptanceGateError): raise body_error
+        raise _gate_error() from None
+    assert result_final is not None
+    return result_final
+
+
+def main(arguments: list[str] | None = None) -> int:
+    values = sys.argv[1:] if arguments is None else arguments
+    try:
+        if len(values) != 1 or not Path(values[0]).is_absolute():
+            raise _gate_error()
+        config = Path(values[0])
+        user = os.environ.get("USER", "")
+        uid = os.getuid()
+        initial = run_gates_01_to_03(config, current_user=user, uid=uid)
+        execution = run_gates_04_to_08(config, current_user=user, uid=uid)
+        final = run_gates_09_to_10(config, current_user=user, uid=uid)
+        if (
+            initial.worker_id != _WORKER_ID
+            or initial.public_ports_added != 0
+            or execution.duplicate_dispatches != 0
+            or final.lease_status != 401
+            or final.upload_status != 401
+            or final.sessions_status != 200
+            or final.history_status != 200
+        ):
+            raise _gate_error()
+        return 0
+    except Exception:
+        print("AGENT_EXECUTION_RELAY_ACCEPTANCE_FAILED", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
