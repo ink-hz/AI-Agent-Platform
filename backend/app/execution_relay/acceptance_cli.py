@@ -144,13 +144,17 @@ def _inspect(root: Path, run_id: UUID) -> dict[str, object]:
     }
 
 
-def _interrupt(root: Path, run_id: UUID) -> bool:
+def _interrupt(root: Path, run_id: UUID) -> str:
     job, _database_url = _tagged_payload(root, run_id)
+    if job["status"] == "queued":
+        if _repository(root).request_cancel(run_id) is not True:
+            raise ValueError
+        return "cancel_requested"
     worker_id = job["lease_worker_id"]
     if not isinstance(worker_id, str) or job["status"] not in {"leased", "dispatched", "running"}:
         raise ValueError
     _repository(root).finish(worker_id, run_id, "interrupted")
-    return True
+    return "interrupted"
 
 
 def _uuid(value: str) -> UUID:
@@ -183,9 +187,10 @@ def main(arguments: list[str] | None = None) -> int:
             result = _inspect(root, _uuid(values[1]))
         elif len(values) == 2 and values[0] == "interrupt":
             run_id = _uuid(values[1])
-            if _interrupt(root, run_id) is not True:
+            status = _interrupt(root, run_id)
+            if status not in {"interrupted", "cancel_requested"}:
                 raise ValueError
-            result = {"run_id": str(run_id), "status": "interrupted"}
+            result = {"run_id": str(run_id), "status": status}
         else:
             raise ValueError
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))

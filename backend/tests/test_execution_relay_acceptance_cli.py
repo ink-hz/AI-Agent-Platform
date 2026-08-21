@@ -115,7 +115,7 @@ def test_interrupt_is_bounded_to_acceptance_tagged_exact_run(
     monkeypatch.setattr(
         acceptance_cli,
         "_interrupt",
-        lambda selected_root, run_id: calls.append((selected_root, run_id)) or True,
+        lambda selected_root, run_id: calls.append((selected_root, run_id)) or "interrupted",
     )
     assert acceptance_cli.main(["interrupt", str(RUN_ID)]) == 0
     assert calls == [(root, RUN_ID)]
@@ -123,6 +123,30 @@ def test_interrupt_is_bounded_to_acceptance_tagged_exact_run(
         "run_id": str(RUN_ID),
         "status": "interrupted",
     }
+
+
+def test_interrupt_requests_cancellation_for_tagged_queued_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _enabled(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        acceptance_cli,
+        "_tagged_payload",
+        lambda selected_root, run_id: (
+            {"status": "queued", "lease_worker_id": None},
+            "unused",
+        )
+        if (selected_root, run_id) == (root, RUN_ID)
+        else pytest.fail("wrong tagged run"),
+    )
+
+    class Repository:
+        def request_cancel(self, run_id):
+            assert run_id == RUN_ID
+            return True
+
+    monkeypatch.setattr(acceptance_cli, "_repository", lambda _root: Repository())
+    assert acceptance_cli._interrupt(root, RUN_ID) == "cancel_requested"
 
 
 def test_cli_rejects_bad_root_marker_permissions_extra_args_and_unknown_command(

@@ -3,16 +3,27 @@ from __future__ import annotations
 import base64
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import signal
 import stat
 import subprocess
+import time
+from typing import Any
+from uuid import UUID, uuid4
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+import httpx
+import psycopg
+from psycopg.rows import dict_row
+
+from .models import RelayEvent
+from .worker_auth import WorkerRequestSigner
 
 
 _WORKER_ID = "agentops-mac-primary"
@@ -51,6 +62,10 @@ def _gate_error() -> AcceptanceGateError:
     return AcceptanceGateError("acceptance gate failed")
 
 
+def _cleanup_error() -> AcceptanceGateError:
+    return AcceptanceGateError("acceptance cleanup failed")
+
+
 @dataclass(frozen=True)
 class CommandResult:
     returncode: int
@@ -68,6 +83,31 @@ class InitialGateResult:
     worker_id: str
     registered_public_key_sha256: str
     public_ports_added: int
+
+
+@dataclass(frozen=True)
+class LocalRunState:
+    state: str
+    event_count: int
+    first_seq: int | None
+    last_seq: int | None
+    undelivered_count: int
+
+
+@dataclass(frozen=True)
+class DuplicateUploadResult:
+    status_code: int
+    accepted: int
+    inserted: int
+
+
+@dataclass(frozen=True)
+class ExecutionGateResult:
+    hr_run_id: UUID
+    marketing_intelligence_run_id: UUID
+    completion_crash_run_id: UUID
+    dispatching_crash_run_id: UUID
+    duplicate_dispatches: int
 
 
 CommandRunner = Callable[..., CommandResult]
@@ -417,3 +457,484 @@ def run_gates_01_to_03(
         raise _gate_error() from None
     except Exception:
         raise _gate_error() from None
+
+
+def _remote_cli_script() -> bytes:
+    return br'''#!/bin/bash
+set -euo pipefail
+action="${1:-}"
+shift || true
+platform_root=/opt/orbbec-agent-platform
+release_path="$(/usr/bin/readlink -f "$platform_root/current")"
+environment_path="$platform_root/private/platform.env"
+compose_path="$release_path/deploy/cloud/compose.yaml"
+compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$compose_path")
+api_id="$("${compose[@]}" ps -q platform-api)"
+[[ -n "$api_id" ]]
+api_image="$(/usr/bin/docker inspect --format '{{.Image}}' "$api_id")"
+secret_volume="$(/usr/bin/docker inspect "$api_id" | /usr/bin/python3 -c '
+import json,sys
+value=json.load(sys.stdin)
+items=[m["Name"] for m in value[0]["Mounts"] if m.get("Type")=="volume" and m.get("Destination")=="/run/secrets"]
+if len(items)!=1: raise SystemExit(1)
+print(items[0])
+')"
+[[ -n "$api_image" && -n "$secret_volume" ]]
+helper=(/usr/bin/docker run --rm --pull=never --network none --user 0:0 --entrypoint /bin/sh -v "$secret_volume:/secrets" "$api_image")
+case "$action" in
+  setup)
+    [[ $# -eq 0 ]]
+    "${helper[@]}" -ec '
+      umask 077
+      test ! -e /secrets/execution-relay-acceptance
+      mkdir -m 700 /secrets/execution-relay-acceptance
+      cp /secrets/control-database-url /secrets/execution-relay-acceptance/control-database-url
+      cp /secrets/content-encryption-keyring /secrets/execution-relay-acceptance/content-keyring
+      printf "AGENT_EXECUTION_RELAY_ACCEPTANCE_V1\n" > /secrets/execution-relay-acceptance/enabled
+      chown -R 10001:10001 /secrets/execution-relay-acceptance
+      chmod 700 /secrets/execution-relay-acceptance
+      chmod 600 /secrets/execution-relay-acceptance/*
+    '
+    printf '{"status":"ready"}\n'
+    ;;
+  cleanup)
+    [[ $# -eq 0 ]]
+    "${helper[@]}" -ec '
+      test -d /secrets/execution-relay-acceptance
+      rm -f /secrets/execution-relay-acceptance/control-database-url /secrets/execution-relay-acceptance/content-keyring /secrets/execution-relay-acceptance/enabled
+      rmdir /secrets/execution-relay-acceptance
+    '
+    printf '{"status":"removed"}\n'
+    ;;
+  enqueue|inspect|interrupt)
+    case "$action" in
+      enqueue)
+        [[ $# -eq 4 && "$1" =~ ^(hr-bot|marketing-intelligence-bot)$ ]]
+        for value in "${@:2}"; do [[ "$value" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]; done
+        ;;
+      inspect|interrupt)
+        [[ $# -eq 1 && "$1" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]
+        ;;
+    esac
+    /usr/bin/docker exec --user 10001:10001 \
+      -e PLATFORM_EXECUTION_RELAY_ACCEPTANCE_ENABLED=1 \
+      -e PLATFORM_EXECUTION_RELAY_ACCEPTANCE_ROOT=/run/secrets/execution-relay-acceptance \
+      -e PLATFORM_EXECUTION_RELAY_ACCEPTANCE_MARKER_FILE=/run/secrets/execution-relay-acceptance/enabled \
+      -e PLATFORM_CONTROL_DATABASE_URL_FILE=/run/secrets/execution-relay-acceptance/control-database-url \
+      -e PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE=/run/secrets/execution-relay-acceptance/content-keyring \
+      "$api_id" python -m app.execution_relay.acceptance_cli "$action" "$@"
+    ;;
+  *) exit 1 ;;
+esac
+'''
+
+
+def _remote_action(
+    config: AcceptanceConfig,
+    runner: CommandRunner,
+    action: str,
+    *values: str,
+) -> dict[str, object]:
+    if action not in {"setup", "cleanup", "enqueue", "inspect", "interrupt"}:
+        raise _gate_error()
+    output = _require_command(
+        runner,
+        (
+            "/usr/bin/ssh",
+            "-o", "BatchMode=yes",
+            "-o", "IdentitiesOnly=yes",
+            "-o", "StrictHostKeyChecking=yes",
+            "-o", "ConnectTimeout=8",
+            "-i", str(config.cloud_admin_key),
+            config.cloud_admin_host,
+            "/bin/bash -s --",
+            action,
+            *values,
+        ),
+        input_bytes=_remote_cli_script(),
+        timeout=45,
+    )
+    try:
+        result = json.loads(output)
+        if not isinstance(result, dict):
+            raise ValueError
+        return result
+    except Exception:
+        raise _gate_error() from None
+
+
+def _validate_runtime_file(path: Path, *, executable: bool = False) -> None:
+    try:
+        metadata = path.stat() if executable else path.lstat()
+        if (
+            not path.is_absolute()
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid not in {0, os.geteuid()}
+            or metadata.st_size > 1_048_576
+            or (executable and not os.access(path, os.X_OK))
+            or (not executable and path.is_symlink())
+            or (not executable and stat.S_IMODE(metadata.st_mode) & 0o022 != 0)
+        ):
+            raise ValueError
+    except Exception:
+        raise _gate_error() from None
+
+
+def _default_process_factory(**values: object):
+    environment = values.pop("environment")
+    return subprocess.Popen(env=environment, **values)
+
+
+def _default_kill_process(pid: int, selected_signal: signal.Signals) -> None:
+    os.kill(pid, selected_signal)
+
+
+def _default_local_state(dsn: str, run_id: UUID) -> LocalRunState:
+    with psycopg.connect(dsn, row_factory=dict_row, connect_timeout=3) as connection:
+        row = connection.execute(
+            "select r.state,count(o.seq) event_count,min(o.seq) first_seq,max(o.seq) last_seq,"
+            "count(o.seq) filter(where o.delivered_at is null) undelivered_count "
+            "from execution_worker.local_runs r left join execution_worker.event_outbox o using(run_id) "
+            "where r.run_id=%s group by r.state",
+            (run_id,),
+        ).fetchone()
+    if row is None:
+        raise _gate_error()
+    return LocalRunState(**row)
+
+
+def _default_local_events(dsn: str, run_id: UUID) -> tuple[RelayEvent, ...]:
+    with psycopg.connect(dsn, row_factory=dict_row, connect_timeout=3) as connection:
+        rows = connection.execute(
+            "select run_id,seq,event_type,created_at,payload from execution_worker.event_outbox "
+            "where run_id=%s order by seq", (run_id,)
+        ).fetchall()
+    return tuple(RelayEvent.model_validate(row) for row in rows)
+
+
+def _default_duplicate_upload(
+    run_id: UUID, events: tuple[RelayEvent, ...], private_key: bytes
+) -> DuplicateUploadResult:
+    path = f"/api/v1/execution-worker/runs/{run_id}/events"
+    body = json.dumps(
+        {"events": [event.model_dump(mode="json") for event in events]},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode()
+    signer = WorkerRequestSigner(
+        _WORKER_ID, _KEY_ID, Ed25519PrivateKey.from_private_bytes(private_key)
+    )
+    headers = {**signer.sign("POST", path, body), "Content-Type": "application/json"}
+    with httpx.Client(timeout=10, follow_redirects=False, trust_env=False) as client:
+        response = client.post("https://agent.orbbec.com.cn" + path, content=body, headers=headers)
+    try:
+        value = response.json()
+        return DuplicateUploadResult(response.status_code, value["accepted"], value["inserted"])
+    except Exception:
+        raise _gate_error() from None
+
+
+def _write_hook_control(directory: Path, dispatch_run: UUID, completion_run: UUID) -> Path:
+    directory_fd: int | None = None
+    try:
+        os.mkdir(directory, 0o700)
+        directory_fd = os.open(
+            directory,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+        control = directory / "control.json"
+        descriptor = os.open(
+            control.name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+            dir_fd=directory_fd,
+        )
+        try:
+            value = json.dumps({
+                "schema_version": 1,
+                "dispatching_crash_run_id": str(dispatch_run),
+                "completion_crash_run_id": str(completion_run),
+            }, sort_keys=True, separators=(",", ":")).encode()
+            os.write(descriptor, value)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        state_descriptor = os.open(
+            "state.json",
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+            dir_fd=directory_fd,
+        )
+        try:
+            state = json.dumps({
+                "schema_version": 1,
+                "metabot_posts": {},
+                "dispatch_pause_complete": False,
+                "completion_pause_complete": False,
+            }, sort_keys=True, separators=(",", ":")).encode()
+            os.write(state_descriptor, state)
+            os.fsync(state_descriptor)
+        finally:
+            os.close(state_descriptor)
+        os.fsync(directory_fd)
+        return control
+    except Exception:
+        raise _gate_error() from None
+    finally:
+        if directory_fd is not None:
+            os.close(directory_fd)
+
+
+def _wait_marker(path: Path, run_id: UUID, sleep: Callable[[float], None]) -> None:
+    for _ in range(120):
+        try:
+            if _read_owner_file(path.parent, path).decode() == str(run_id):
+                return
+        except AcceptanceGateError:
+            pass
+        sleep(0.25)
+    raise _gate_error()
+
+
+def _inspect_terminal(
+    config: AcceptanceConfig, runner: CommandRunner, run_id: UUID,
+    *, ordered: bool, sleep: Callable[[float], None]
+) -> dict[str, object]:
+    for _ in range(240):
+        result = _remote_action(config, runner, "inspect", str(run_id))
+        if result.get("status") in {"completed", "failed", "cancelled", "interrupted"}:
+            if ordered and result.get("ordered_terminal") is not True:
+                raise _gate_error()
+            return result
+        sleep(0.5)
+    raise _gate_error()
+
+
+def _stop_child(process: Any, kill_process: Callable[[int, signal.Signals], None], selected: signal.Signals) -> None:
+    if process is None or process.poll() is not None:
+        return
+    kill_process(process.pid, selected)
+    try:
+        process.wait(timeout=10)
+    except Exception:
+        if selected == signal.SIGKILL:
+            raise _cleanup_error() from None
+        try:
+            kill_process(process.pid, signal.SIGKILL)
+            process.wait(timeout=10)
+        except Exception:
+            raise _cleanup_error() from None
+
+
+def _single_dispatch_post(state_path: Path, dispatch_run: UUID, completion_run: UUID) -> bool:
+    try:
+        state = json.loads(_read_owner_file(state_path.parent, state_path))
+        posts = state.get("metabot_posts")
+        return (
+            isinstance(posts, dict)
+            and set(posts).issubset({str(dispatch_run), str(completion_run)})
+            and posts.get(str(dispatch_run)) == 1
+            and all(isinstance(value, int) and not isinstance(value, bool) and value == 1 for value in posts.values())
+        )
+    except Exception:
+        return False
+
+
+def run_gates_04_to_08(
+    config_path: Path,
+    *,
+    runner: CommandRunner = _run_command,
+    process_factory: Callable[..., Any] = _default_process_factory,
+    kill_process: Callable[[int, signal.Signals], None] = _default_kill_process,
+    local_state_reader: Callable[[str, UUID], LocalRunState] = _default_local_state,
+    local_events_reader: Callable[[str, UUID], tuple[RelayEvent, ...]] = _default_local_events,
+    duplicate_uploader: Callable[[UUID, tuple[RelayEvent, ...], bytes], DuplicateUploadResult] = _default_duplicate_upload,
+    sleep: Callable[[float], None] = time.sleep,
+    uuid_factory: Callable[[], UUID] = uuid4,
+    private_root: Path = Path("/Users/agentops/AgentRuntime/private"),
+    worker_private_key_path: Path = Path("/Users/agentops/AgentRuntime/private/execution-worker-ed25519.key"),
+    runtime_dsn_path: Path = Path("/Users/agentops/AgentRuntime/private/execution-worker-postgres-dsn"),
+    hook_directory: Path = Path("/Users/agentops/AgentRuntime/private/execution-relay-acceptance"),
+    backend_root: Path = Path("/Users/agentops/AgentRuntime/platform/backend"),
+    launchagent_path: Path = Path("/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist"),
+    metabot_contract_path: Path = Path("/Users/agentops/AgentRuntime/metabot/runtime-contract.json"),
+    metabot_token_path: Path = Path("/Users/agentops/AgentRuntime/private/metabot-api-token"),
+    current_user: str,
+    uid: int,
+) -> ExecutionGateResult:
+    config = load_config(config_path, private_root=private_root)
+    if current_user != "agentops" or not isinstance(uid, int) or isinstance(uid, bool):
+        raise _gate_error()
+    try:
+        backend_metadata = backend_root.lstat()
+        if (
+            not backend_root.is_absolute()
+            or not stat.S_ISDIR(backend_metadata.st_mode)
+            or backend_root.is_symlink()
+            or backend_metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(backend_metadata.st_mode) & 0o022 != 0
+        ):
+            raise ValueError
+    except Exception:
+        raise _gate_error() from None
+    python = backend_root / ".venv/bin/python"
+    for path, executable in ((python, True), (launchagent_path, False), (metabot_contract_path, False)):
+        _validate_runtime_file(path, executable=executable)
+    worker_key = _read_owner_file(private_root, worker_private_key_path, maximum_size=32)
+    dsn = _read_owner_file(private_root, runtime_dsn_path, maximum_size=16_384).decode().strip()
+    _read_owner_file(private_root, metabot_token_path, maximum_size=16_384)
+    if len(worker_key) != 32 or not dsn:
+        raise _gate_error()
+    run_ids = tuple(uuid_factory() for _ in range(4))
+    extras = tuple(uuid_factory() for _ in range(8))
+    if len(set((*run_ids, *extras))) != 12:
+        raise _gate_error()
+    hr_run, intelligence_run, completion_run, dispatch_run = run_ids
+    control: Path | None = None
+    foreground: Any | None = None
+    remote_ready = False
+    launch_stopped = False
+    cleanup_failed = False
+    terminal: set[UUID] = set()
+
+    def enqueue(index: int, agent: str, run_id: UUID) -> None:
+        result = _remote_action(
+            config, runner, "enqueue", agent, str(run_id),
+            str(extras[index * 2]), str(extras[index * 2 + 1]),
+        )
+        if result != {"job_id": result.get("job_id"), "run_id": str(run_id), "status": "queued"}:
+            raise _gate_error()
+
+    def start_foreground() -> Any:
+        environment = {
+            "HOME": "/Users/agentops",
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "PLATFORM_WORKER_ID": _WORKER_ID,
+            "PLATFORM_WORKER_KEY_ID": _KEY_ID,
+            "PLATFORM_WORKER_PRIVATE_KEY_FILE": str(worker_private_key_path),
+            "PLATFORM_WORKER_DATABASE_URL_FILE": str(runtime_dsn_path),
+            "PLATFORM_WORKER_CALLBACK_PORT": "9120",
+            "PLATFORM_WORKER_CLOUD_URL": "https://agent.orbbec.com.cn",
+            "PLATFORM_METABOT_RUNTIME_CONTRACT": str(metabot_contract_path),
+            "PLATFORM_METABOT_API_SECRET_FILE": str(metabot_token_path),
+            "PLATFORM_WORKER_ACCEPTANCE_HOOKS": "1",
+            "PLATFORM_WORKER_ACCEPTANCE_CONTROL_FILE": str(control),
+        }
+        return process_factory(
+            args=(str(python), "-m", "app.execution_relay.worker"),
+            cwd=str(backend_root), environment=environment,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+    body_error: BaseException | None = None
+    try:
+        if _remote_action(config, runner, "setup") != {"status": "ready"}:
+            raise _gate_error()
+        remote_ready = True
+        # Gate 04 and Gate 05: real HR and Marketing Intelligence terminal runs.
+        enqueue(0, "hr-bot", hr_run)
+        first = _inspect_terminal(config, runner, hr_run, ordered=True, sleep=sleep)
+        if first.get("agent_id") != "hr-bot":
+            raise _gate_error()
+        terminal.add(hr_run)
+        enqueue(1, "marketing-intelligence-bot", intelligence_run)
+        second = _inspect_terminal(config, runner, intelligence_run, ordered=True, sleep=sleep)
+        if second.get("agent_id") != "marketing-intelligence-bot":
+            raise _gate_error()
+        terminal.add(intelligence_run)
+        # Gate 06: exact stored event replay must be accepted but insert zero rows.
+        events = local_events_reader(dsn, hr_run)
+        replay = duplicate_uploader(hr_run, events, worker_key)
+        if replay.status_code != 200 or replay.accepted != len(events) or replay.inserted != 0:
+            raise _gate_error()
+        domain = f"gui/{uid}"
+        _require_command(runner, ("/bin/launchctl", "print", f"{domain}/{_LABEL}"), timeout=10)
+        _require_command(runner, ("/bin/launchctl", "bootout", f"{domain}/{_LABEL}"), timeout=20)
+        launch_stopped = True
+        control = _write_hook_control(hook_directory, dispatch_run, completion_run)
+        foreground = start_foreground()
+        # Gate 07: crash after local terminal persistence and resume the same outbox.
+        enqueue(2, "hr-bot", completion_run)
+        _wait_marker(hook_directory / "completion-paused", completion_run, sleep)
+        before = local_state_reader(dsn, completion_run)
+        if before.state != "completed" or before.event_count < 1 or before.undelivered_count != before.event_count:
+            raise _gate_error()
+        _stop_child(foreground, kill_process, signal.SIGKILL)
+        foreground = start_foreground()
+        completed = _inspect_terminal(config, runner, completion_run, ordered=True, sleep=sleep)
+        if completed.get("status") != "completed":
+            raise _gate_error()
+        terminal.add(completion_run)
+        after = local_state_reader(dsn, completion_run)
+        if after.undelivered_count != 0 or (after.first_seq, after.last_seq) != (1, after.event_count):
+            raise _gate_error()
+        # Gate 08: crash after real MetaBot POST and never dispatch it twice.
+        enqueue(3, "marketing-intelligence-bot", dispatch_run)
+        _wait_marker(hook_directory / "dispatching-paused", dispatch_run, sleep)
+        if not _single_dispatch_post(
+            hook_directory / "state.json", dispatch_run, completion_run
+        ):
+            raise _gate_error()
+        if local_state_reader(dsn, dispatch_run).state != "dispatching":
+            raise _gate_error()
+        _stop_child(foreground, kill_process, signal.SIGKILL)
+        foreground = start_foreground()
+        interrupted = _inspect_terminal(config, runner, dispatch_run, ordered=False, sleep=sleep)
+        if interrupted.get("status") != "interrupted":
+            raise _gate_error()
+        terminal.add(dispatch_run)
+        if local_state_reader(dsn, dispatch_run).state != "interrupted":
+            raise _gate_error()
+        if not _single_dispatch_post(
+            hook_directory / "state.json", dispatch_run, completion_run
+        ):
+            raise _gate_error()
+        result = ExecutionGateResult(hr_run, intelligence_run, completion_run, dispatch_run, 0)
+    except BaseException as error:
+        body_error = error
+        result = None
+    finally:
+        for run_id in run_ids:
+            if remote_ready and run_id not in terminal:
+                try:
+                    _remote_action(config, runner, "interrupt", str(run_id))
+                except Exception:
+                    cleanup_failed = True
+        try:
+            _stop_child(foreground, kill_process, signal.SIGTERM)
+        except Exception:
+            cleanup_failed = True
+        if remote_ready:
+            try:
+                if _remote_action(config, runner, "cleanup") != {"status": "removed"}:
+                    cleanup_failed = True
+            except Exception:
+                cleanup_failed = True
+        if launch_stopped:
+            domain = f"gui/{uid}"
+            for command in (
+                ("/bin/launchctl", "bootstrap", domain, str(launchagent_path)),
+                ("/bin/launchctl", "enable", f"{domain}/{_LABEL}"),
+                ("/bin/launchctl", "kickstart", "-k", f"{domain}/{_LABEL}"),
+            ):
+                try:
+                    _require_command(runner, command, timeout=20)
+                except Exception:
+                    cleanup_failed = True
+        if hook_directory.exists():
+            try:
+                for name in ("control.json", "state.json", "completion-paused", "dispatching-paused"):
+                    path = hook_directory / name
+                    if path.exists() and not path.is_symlink():
+                        path.unlink()
+                hook_directory.rmdir()
+            except Exception:
+                cleanup_failed = True
+    if cleanup_failed:
+        raise _cleanup_error()
+    if body_error is not None:
+        if isinstance(body_error, AcceptanceGateError):
+            raise body_error
+        raise _gate_error() from None
+    assert result is not None
+    return result
