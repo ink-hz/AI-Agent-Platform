@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -47,6 +48,10 @@ STATE = PRIVATE_ROOT / "execution-worker-key-rotation-state.json"
 LOCK = PRIVATE_ROOT / "execution-worker-key-rotation.lock"
 GENERATOR = Path(__file__).with_name("generate-worker-key.py")
 LAUNCHCTL = "/bin/launchctl"
+COMPONENTS = ("private", "public", "plist")
+CANONICAL_PATHS = (PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
+NEXT_PATHS = (NEXT_PRIVATE_KEY, NEXT_PUBLIC_DOCUMENT, NEXT_PLIST)
+PREVIOUS_PATHS = (PREVIOUS_PRIVATE_KEY, PREVIOUS_PUBLIC_DOCUMENT, PREVIOUS_PLIST)
 
 
 class RotationError(ValueError):
@@ -124,6 +129,11 @@ def _unlink(path: Path) -> None:
     if not stat.S_ISREG(metadata.st_mode) or path.is_symlink() or metadata.st_uid != os.getuid():
         raise RotationError
     path.unlink()
+    directory = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def _document(private_path: Path, public_path: Path) -> tuple[str, bytes]:
@@ -185,11 +195,19 @@ def _identity(
 def _loaded() -> bool:
     result = subprocess.run(
         [LAUNCHCTL, "print", f"gui/{os.getuid()}/{LABEL}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         check=False,
     )
-    return result.returncode == 0
+    if result.returncode == 0:
+        return True
+    output = (result.stdout + result.stderr).decode("utf-8", errors="replace")
+    if (
+        f'Could not find service "{LABEL}"' in output
+        and "in domain for user gui:" in output
+    ):
+        return False
+    raise RotationError
 
 
 def _launch(arguments: list[str]) -> None:
@@ -213,19 +231,116 @@ def _set_loaded(desired: bool) -> None:
 
 def _state() -> dict[str, object]:
     value = json.loads(_secure_file(STATE, maximum_size=4096))
+    expected_keys = {
+        "schema_version",
+        "phase",
+        "from_key_id",
+        "to_key_id",
+        "previous_sha256",
+        "next_sha256",
+        "was_loaded",
+    }
     if (
         not isinstance(value, dict)
-        or set(value) != {"schema_version", "from_key_id", "to_key_id", "was_loaded"}
-        or value["schema_version"] != 1
+        or set(value) != expected_keys
+        or type(value["schema_version"]) is not int
+        or value["schema_version"] != 2
+        or value["phase"] not in {
+            "prepared",
+            "activating",
+            "active",
+            "rolled_back",
+            "finalized",
+        }
         or not isinstance(value["from_key_id"], str)
         or KEY_ID.fullmatch(value["from_key_id"]) is None
         or not isinstance(value["to_key_id"], str)
         or KEY_ID.fullmatch(value["to_key_id"]) is None
-        or not isinstance(value["was_loaded"], bool)
         or value["from_key_id"] == value["to_key_id"]
     ):
         raise RotationError
+    for name in ("previous_sha256", "next_sha256"):
+        digests = value[name]
+        if (
+            not isinstance(digests, dict)
+            or set(digests) != set(COMPONENTS)
+            or any(
+                not isinstance(digest, str)
+                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+                for digest in digests.values()
+            )
+        ):
+            raise RotationError
+    if value["phase"] == "prepared":
+        if value["was_loaded"] is not None:
+            raise RotationError
+    elif not isinstance(value["was_loaded"], bool):
+        raise RotationError
     return value
+
+
+def _write_state(value: dict[str, object]) -> None:
+    _atomic_write(
+        STATE,
+        (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode(),
+    )
+
+
+def _digests(values: tuple[bytes, bytes, bytes]) -> dict[str, str]:
+    return {
+        name: hashlib.sha256(value).hexdigest()
+        for name, value in zip(COMPONENTS, values, strict=True)
+    }
+
+
+def _raw_components(paths: tuple[Path, Path, Path]) -> tuple[bytes, bytes, bytes]:
+    values = (
+        _secure_file(paths[0], maximum_size=32),
+        _secure_file(paths[1], maximum_size=65_536),
+        _secure_file(paths[2], maximum_size=65_536),
+    )
+    if len(values[0]) != 32:
+        raise RotationError
+    return values
+
+
+def _matches(values: tuple[bytes, bytes, bytes], expected: object) -> bool:
+    return isinstance(expected, dict) and _digests(values) == expected
+
+
+def _validated_identity(
+    paths: tuple[Path, Path, Path], expected_key_id: object, expected_digests: object
+) -> tuple[bytes, bytes, bytes]:
+    key_id, values = _identity(*paths)
+    if key_id != expected_key_id or not _matches(values, expected_digests):
+        raise RotationError
+    return values
+
+
+def _validate_remaining(
+    paths: tuple[Path, Path, Path], expected_digests: object
+) -> None:
+    if not isinstance(expected_digests, dict):
+        raise RotationError
+    maximum_sizes = (32, 65_536, 65_536)
+    for name, path, maximum_size in zip(
+        COMPONENTS, paths, maximum_sizes, strict=True
+    ):
+        if not path.exists() and not path.is_symlink():
+            continue
+        value = _secure_file(path, maximum_size=maximum_size)
+        if (name == "private" and len(value) != 32) or (
+            hashlib.sha256(value).hexdigest() != expected_digests[name]
+        ):
+            raise RotationError
+
+
+def _cleanup_transaction(value: dict[str, object]) -> None:
+    _validate_remaining(PREVIOUS_PATHS, value["previous_sha256"])
+    _validate_remaining(NEXT_PATHS, value["next_sha256"])
+    for path in (*NEXT_PATHS, *PREVIOUS_PATHS):
+        _unlink(path)
+    _unlink(STATE)
 
 
 def _managed_absent(paths: tuple[Path, ...]) -> None:
@@ -264,7 +379,7 @@ def _acquire_lock() -> int:
 
 
 def _prepare(target_key_id: str) -> None:
-    current_key_id, _current = _identity(PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
+    current_key_id, current = _identity(PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
     if current_key_id == target_key_id:
         raise RotationError
     _managed_absent((
@@ -297,120 +412,201 @@ def _prepare(target_key_id: str) -> None:
         )
         if staged_key_id != target_key_id:
             raise RotationError
+        state = {
+            "schema_version": 2,
+            "phase": "prepared",
+            "from_key_id": current_key_id,
+            "to_key_id": target_key_id,
+            "previous_sha256": _digests(current),
+            "next_sha256": _digests(_staged),
+            "was_loaded": None,
+        }
+        _write_state(state)
     except Exception:
-        for path in (NEXT_PRIVATE_KEY, NEXT_PUBLIC_DOCUMENT, NEXT_PLIST):
-            _unlink(path)
+        if not STATE.exists() and not STATE.is_symlink():
+            for path in NEXT_PATHS:
+                _unlink(path)
         raise
 
 
 def _abort(target_key_id: str) -> None:
-    _managed_absent((
-        PREVIOUS_PRIVATE_KEY,
-        PREVIOUS_PUBLIC_DOCUMENT,
-        PREVIOUS_PLIST,
-        STATE,
-    ))
-    current_key_id, _current = _identity(PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
-    staged_key_id, _staged = _identity(
-        NEXT_PRIVATE_KEY, NEXT_PUBLIC_DOCUMENT, NEXT_PLIST
-    )
-    if current_key_id == target_key_id or staged_key_id != target_key_id:
+    current_key_id, current = _identity(*CANONICAL_PATHS)
+    if current_key_id == target_key_id:
         raise RotationError
-    for path in (NEXT_PRIVATE_KEY, NEXT_PUBLIC_DOCUMENT, NEXT_PLIST):
+    if STATE.exists() or STATE.is_symlink():
+        value = _state()
+        if (
+            value["phase"] != "prepared"
+            or value["to_key_id"] != target_key_id
+            or value["from_key_id"] != current_key_id
+            or not _matches(current, value["previous_sha256"])
+        ):
+            raise RotationError
+        _cleanup_transaction(value)
+        return
+    _managed_absent(PREVIOUS_PATHS)
+    private_exists, public_exists, plist_exists = tuple(
+        path.exists() or path.is_symlink() for path in NEXT_PATHS
+    )
+    if private_exists:
+        private = _secure_file(NEXT_PRIVATE_KEY, maximum_size=32)
+        if len(private) != 32:
+            raise RotationError
+    if public_exists:
+        document = json.loads(_secure_file(NEXT_PUBLIC_DOCUMENT, maximum_size=65_536))
+        if (
+            not isinstance(document, dict)
+            or set(document) != {
+                "worker_id", "key_id", "public_key_base64url", "allowed_agent_ids"
+            }
+            or document["worker_id"] != WORKER_ID
+            or document["key_id"] != target_key_id
+            or document["allowed_agent_ids"] != list(AGENTS)
+            or not isinstance(document["public_key_base64url"], str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{43}", document["public_key_base64url"])
+            is None
+        ):
+            raise RotationError
+        try:
+            public = base64.b64decode(
+                document["public_key_base64url"] + "=",
+                altchars=b"-_",
+                validate=True,
+            )
+        except Exception as error:
+            raise RotationError from error
+        if (
+            len(public) != 32
+            or base64.urlsafe_b64encode(public).decode("ascii").rstrip("=")
+            != document["public_key_base64url"]
+        ):
+            raise RotationError
+    if private_exists and public_exists:
+        staged_key_id, _staged = _document(NEXT_PRIVATE_KEY, NEXT_PUBLIC_DOCUMENT)
+        if staged_key_id != target_key_id:
+            raise RotationError
+    if plist_exists:
+        _plist(NEXT_PLIST, target_key_id)
+    for path in NEXT_PATHS:
         _unlink(path)
 
 
-def _cleanup_previous() -> None:
-    for path in (PREVIOUS_PRIVATE_KEY, PREVIOUS_PUBLIC_DOCUMENT, PREVIOUS_PLIST, STATE):
-        _unlink(path)
-
-
-def _restore_previous(values: dict[str, object]) -> None:
-    from_key_id = values["from_key_id"]
-    previous_key_id, previous = _identity(
-        PREVIOUS_PRIVATE_KEY, PREVIOUS_PUBLIC_DOCUMENT, PREVIOUS_PLIST
+def _ensure_previous(value: dict[str, object]) -> tuple[bytes, bytes, bytes]:
+    canonical = _raw_components(CANONICAL_PATHS)
+    expected = value["previous_sha256"]
+    if not isinstance(expected, dict):
+        raise RotationError
+    _validate_remaining(PREVIOUS_PATHS, expected)
+    for name, canonical_value, previous_path in zip(
+        COMPONENTS, canonical, PREVIOUS_PATHS, strict=True
+    ):
+        if (
+            not previous_path.exists()
+            and not previous_path.is_symlink()
+            and hashlib.sha256(canonical_value).hexdigest() != expected[name]
+        ):
+            raise RotationError
+    for canonical_value, previous_path in zip(
+        canonical, PREVIOUS_PATHS, strict=True
+    ):
+        if previous_path.exists() or previous_path.is_symlink():
+            continue
+        _atomic_write(previous_path, canonical_value)
+    return _validated_identity(
+        PREVIOUS_PATHS, value["from_key_id"], value["previous_sha256"]
     )
-    if previous_key_id != from_key_id:
-        raise RotationError
-    _set_loaded(False)
-    for path, value in zip((PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST), previous, strict=True):
-        _atomic_write(path, value)
-    restored_key_id, _restored = _identity(PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
-    if restored_key_id != from_key_id:
-        raise RotationError
-    _set_loaded(bool(values["was_loaded"]))
-    _cleanup_previous()
 
 
 def _activate(target_key_id: str) -> None:
-    _managed_absent((PREVIOUS_PRIVATE_KEY, PREVIOUS_PUBLIC_DOCUMENT, PREVIOUS_PLIST, STATE))
-    current_key_id, current = _identity(PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
-    staged_key_id, staged = _identity(NEXT_PRIVATE_KEY, NEXT_PUBLIC_DOCUMENT, NEXT_PLIST)
-    if staged_key_id != target_key_id or current_key_id == target_key_id:
+    value = _state()
+    if value["phase"] != "prepared" or value["to_key_id"] != target_key_id:
         raise RotationError
+    current = _validated_identity(
+        CANONICAL_PATHS, value["from_key_id"], value["previous_sha256"]
+    )
+    staged = _validated_identity(
+        NEXT_PATHS, target_key_id, value["next_sha256"]
+    )
+    _managed_absent(PREVIOUS_PATHS)
     was_loaded = _loaded()
-    state = {
-        "schema_version": 1,
-        "from_key_id": current_key_id,
-        "to_key_id": target_key_id,
-        "was_loaded": was_loaded,
-    }
+    value["phase"] = "activating"
+    value["was_loaded"] = was_loaded
+    _write_state(value)
     try:
-        for path, value in zip(
-            (PREVIOUS_PRIVATE_KEY, PREVIOUS_PUBLIC_DOCUMENT, PREVIOUS_PLIST),
-            current,
-            strict=True,
-        ):
-            _atomic_write(path, value)
-        _atomic_write(
-            STATE,
-            (json.dumps(state, sort_keys=True, separators=(",", ":")) + "\n").encode(),
-        )
+        for path, component in zip(PREVIOUS_PATHS, current, strict=True):
+            _atomic_write(path, component)
         _set_loaded(False)
-        for path, value in zip((PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST), staged, strict=True):
-            _atomic_write(path, value)
-        active_key_id, _active = _identity(PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
-        if active_key_id != target_key_id:
-            raise RotationError
+        for path, component in zip(CANONICAL_PATHS, staged, strict=True):
+            _atomic_write(path, component)
+        _validated_identity(CANONICAL_PATHS, target_key_id, value["next_sha256"])
         _set_loaded(was_loaded)
+        value["phase"] = "active"
+        _write_state(value)
     except Exception:
         try:
-            if STATE.exists() and all(
-                path.exists()
-                for path in (PREVIOUS_PRIVATE_KEY, PREVIOUS_PUBLIC_DOCUMENT, PREVIOUS_PLIST)
-            ):
-                _restore_previous(state)
-            else:
-                _cleanup_previous()
+            _rollback(target_key_id)
         except Exception:
             print("EXECUTION_WORKER_KEY_ROTATION_ROLLBACK_FAILED", file=sys.stderr)
             raise RotationError
         raise
-    for path in (NEXT_PRIVATE_KEY, NEXT_PUBLIC_DOCUMENT, NEXT_PLIST):
-        _unlink(path)
 
 
 def _rollback(target_key_id: str) -> None:
-    state = _state()
-    active_key_id, _active = _identity(PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
-    if state["to_key_id"] != target_key_id or active_key_id != target_key_id:
+    value = _state()
+    if value["to_key_id"] != target_key_id or value["phase"] not in {
+        "activating", "active", "rolled_back"
+    }:
         raise RotationError
-    _restore_previous(state)
+    if value["phase"] == "rolled_back":
+        _validated_identity(
+            CANONICAL_PATHS, value["from_key_id"], value["previous_sha256"]
+        )
+        _validate_remaining(PREVIOUS_PATHS, value["previous_sha256"])
+        _validate_remaining(NEXT_PATHS, value["next_sha256"])
+        _set_loaded(bool(value["was_loaded"]))
+        _cleanup_transaction(value)
+        return
+    staged = _validated_identity(NEXT_PATHS, target_key_id, value["next_sha256"])
+    canonical = _raw_components(CANONICAL_PATHS)
+    previous_digests = value["previous_sha256"]
+    next_digests = value["next_sha256"]
+    if not isinstance(previous_digests, dict) or not isinstance(next_digests, dict):
+        raise RotationError
+    for name, component in zip(COMPONENTS, canonical, strict=True):
+        digest = hashlib.sha256(component).hexdigest()
+        if digest not in {previous_digests[name], next_digests[name]}:
+            raise RotationError
+    previous = _ensure_previous(value)
+    for component, old, new in zip(canonical, previous, staged, strict=True):
+        if component != old and component != new:
+            raise RotationError
+    _set_loaded(False)
+    for path, component in zip(CANONICAL_PATHS, previous, strict=True):
+        _atomic_write(path, component)
+    _validated_identity(
+        CANONICAL_PATHS, value["from_key_id"], value["previous_sha256"]
+    )
+    _set_loaded(bool(value["was_loaded"]))
+    value["phase"] = "rolled_back"
+    _write_state(value)
+    _cleanup_transaction(value)
 
 
 def _finalize(target_key_id: str) -> None:
-    state = _state()
-    active_key_id, _active = _identity(PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
-    previous_key_id, _previous = _identity(
-        PREVIOUS_PRIVATE_KEY, PREVIOUS_PUBLIC_DOCUMENT, PREVIOUS_PLIST
-    )
-    if (
-        state["to_key_id"] != target_key_id
-        or active_key_id != target_key_id
-        or previous_key_id != state["from_key_id"]
-    ):
+    value = _state()
+    if value["to_key_id"] != target_key_id or value["phase"] not in {
+        "active", "finalized"
+    }:
         raise RotationError
-    _cleanup_previous()
+    _validated_identity(CANONICAL_PATHS, target_key_id, value["next_sha256"])
+    if value["phase"] == "active":
+        _validated_identity(
+            PREVIOUS_PATHS, value["from_key_id"], value["previous_sha256"]
+        )
+        _validated_identity(NEXT_PATHS, target_key_id, value["next_sha256"])
+        value["phase"] = "finalized"
+        _write_state(value)
+    _cleanup_transaction(value)
 
 
 def main(arguments: list[str] | None = None) -> int:

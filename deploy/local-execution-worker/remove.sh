@@ -37,9 +37,98 @@ pg_restore_bin="${PLATFORM_LOCAL_POSTGRES17_PG_RESTORE:-/opt/homebrew/opt/postgr
 python_bin="${PLATFORM_LOCAL_PYTHON3:-/usr/bin/python3}"
 
 [[ "$backup_file" == "$private_root/agent_execution_worker.dump" ]] || fail
+[[ -x "$python_bin" ]] || fail
+
+if [[ -z "${PLATFORM_EXECUTION_WORKER_REMOVAL_LOCK_FD:-}" ]]; then
+  "$python_bin" - "$rotation_lock" "$0" "$@" <<'PY' || fail
+import fcntl
+import os
+import stat
+import sys
+
+sys.excepthook = lambda *_arguments: None
+lock_path, script, *arguments = sys.argv[1:]
+if not os.path.isabs(script):
+    raise SystemExit(1)
+parent = os.path.dirname(lock_path)
+name = os.path.basename(lock_path)
+parent_fd = os.open(
+    parent,
+    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+)
+try:
+    parent_metadata = os.fstat(parent_fd)
+    if (
+        not stat.S_ISDIR(parent_metadata.st_mode)
+        or stat.S_IMODE(parent_metadata.st_mode) != 0o700
+        or parent_metadata.st_uid != os.getuid()
+    ):
+        raise SystemExit(1)
+    descriptor = os.open(
+        name,
+        os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+        dir_fd=parent_fd,
+    )
+finally:
+    os.close(parent_fd)
+try:
+    metadata = os.fstat(descriptor)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_uid != os.getuid()
+    ):
+        raise SystemExit(1)
+    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    value = os.read(descriptor, 64)
+    if metadata.st_size == 0:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        os.write(descriptor, b"rotation-lock\n")
+        os.fsync(descriptor)
+    elif value != b"rotation-lock\n" or os.read(descriptor, 1):
+        raise SystemExit(1)
+    named = os.stat(lock_path, follow_symlinks=False)
+    current = os.fstat(descriptor)
+    if (named.st_dev, named.st_ino) != (current.st_dev, current.st_ino):
+        raise SystemExit(1)
+    os.set_inheritable(descriptor, True)
+    environment = dict(os.environ)
+    environment["PLATFORM_EXECUTION_WORKER_REMOVAL_LOCK_FD"] = str(descriptor)
+    os.execve("/bin/bash", ["/bin/bash", script, *arguments], environment)
+finally:
+    os.close(descriptor)
+PY
+  exit 0
+fi
+
+[[ "$PLATFORM_EXECUTION_WORKER_REMOVAL_LOCK_FD" =~ ^[0-9]+$ ]] || fail
+"$python_bin" - "$rotation_lock" "$PLATFORM_EXECUTION_WORKER_REMOVAL_LOCK_FD" 2>/dev/null <<'PY' || fail
+import fcntl
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+descriptor = int(sys.argv[2])
+metadata = os.fstat(descriptor)
+named = os.stat(path, follow_symlinks=False)
+if (
+    not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+    or metadata.st_uid != os.getuid()
+    or (named.st_dev, named.st_ino) != (metadata.st_dev, metadata.st_ino)
+):
+    raise SystemExit(1)
+fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+os.lseek(descriptor, 0, os.SEEK_SET)
+if os.read(descriptor, 64) != b"rotation-lock\n" or os.read(descriptor, 1):
+    raise SystemExit(1)
+PY
+
 [[ -x "$psql_bin" && "$($psql_bin --version)" == psql\ \(PostgreSQL\)\ 17.* ]] || fail
 [[ -x "$pg_restore_bin" && "$($pg_restore_bin --version)" == pg_restore\ \(PostgreSQL\)\ 17.* ]] || fail
-[[ -x "$python_bin" ]] || fail
 
 secure_input() {
   "$python_bin" - "$1" "$2" <<'PY'
@@ -371,7 +460,6 @@ SQL
 /bin/rm -f -- "$previous_public_document"
 /bin/rm -f -- "$previous_plist"
 /bin/rm -f -- "$rotation_state"
-/bin/rm -f -- "$rotation_lock"
 for residual in control.json state.json completion-paused dispatching-paused; do
   if [[ -e "$acceptance_root/$residual" ]]; then
     /bin/rm -f -- "$acceptance_root/$residual"

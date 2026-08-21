@@ -10,6 +10,7 @@ import plistlib
 import re
 import subprocess
 import sys
+import time
 import uuid
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -135,9 +136,9 @@ def test_removal_preflight_precedes_every_local_mutation() -> None:
         '/bin/rm -f -- "$previous_public_document"',
         '/bin/rm -f -- "$previous_plist"',
         '/bin/rm -f -- "$rotation_state"',
-        '/bin/rm -f -- "$rotation_lock"',
     ):
         assert script.index(mutation) > preflight
+    assert '/bin/rm -f -- "$rotation_lock"' not in script
 
 
 WORKER_ROLES = (
@@ -268,7 +269,10 @@ def _removal_test_environment(control_database, tmp_path: Path):
     }
     for name, path in assets.items():
         if name != "runtime_dsn":
-            path.write_text(f"{name}\n", encoding="utf-8")
+            path.write_text(
+                "rotation-lock\n" if name == "rotation_lock" else f"{name}\n",
+                encoding="utf-8",
+            )
             path.chmod(0o600)
     acceptance = private / "execution-relay-acceptance"
     acceptance.mkdir(mode=0o700)
@@ -367,7 +371,13 @@ def test_removal_wrapper_drops_only_dedicated_database_roles_and_files(
         assert result.returncode == 0, result.stderr
         assert result.stdout == "EXECUTION_WORKER_REMOVED\n"
         assert paths["bootout_marker"].is_file()
-        assert all(not path.exists() for path in paths["assets"].values())
+        assert all(
+            not path.exists()
+            for name, path in paths["assets"].items()
+            if name != "rotation_lock"
+        )
+        assert paths["assets"]["rotation_lock"].read_bytes() == b"rotation-lock\n"
+        assert _mode(paths["assets"]["rotation_lock"]) == 0o600
         assert not paths["acceptance"].exists()
         assert paths["shared_sentinel"].read_text(encoding="utf-8") == "must-survive\n"
         assert paths["runtime"].is_dir() and paths["private"].is_dir()
@@ -674,6 +684,7 @@ def _rotation_test_environment(tmp_path: Path, *, loaded: bool = True):
     launch_state = tmp_path / "launch-state"
     launch_state.write_text("loaded" if loaded else "unloaded", encoding="utf-8")
     launch_fail = tmp_path / "launch-fail"
+    launch_error = tmp_path / "launch-error"
     launch_log = tmp_path / "launch-log"
     fake_launchctl = tmp_path / "launchctl"
     fake_launchctl.write_text(
@@ -681,7 +692,18 @@ def _rotation_test_environment(tmp_path: Path, *, loaded: bool = True):
 set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_LAUNCH_LOG"
 case "$1" in
-  print) [[ "$(<"$FAKE_LAUNCH_STATE")" == loaded ]] ;;
+  print)
+    if [[ -e "$FAKE_LAUNCH_ERROR" ]]; then
+      case "$(<"$FAKE_LAUNCH_ERROR")" in
+        permission) printf 'Not privileged to inspect domain\n' >&2; exit 77 ;;
+        transient) printf 'Input/output error\n' >&2; exit 74 ;;
+      esac
+    fi
+    if [[ "$(<"$FAKE_LAUNCH_STATE")" == loaded ]]; then exit 0; fi
+    printf 'Could not find service "%s" in domain for user gui: %s\n' \
+      'com.orbbec.agent-execution-worker' "$(/usr/bin/id -u)" >&2
+    exit 113
+    ;;
   bootout) printf unloaded > "$FAKE_LAUNCH_STATE" ;;
   bootstrap)
     if [[ -e "$FAKE_LAUNCH_FAIL" ]]; then
@@ -714,6 +736,7 @@ esac
         **os.environ,
         "FAKE_LAUNCH_STATE": str(launch_state),
         "FAKE_LAUNCH_FAIL": str(launch_fail),
+        "FAKE_LAUNCH_ERROR": str(launch_error),
         "FAKE_LAUNCH_LOG": str(launch_log),
     }
     managed = {
@@ -731,6 +754,8 @@ esac
         "environment": environment,
         "launch_state": launch_state,
         "launch_fail": launch_fail,
+        "launch_error": launch_error,
+        "launch_log": launch_log,
         "rotation_lock": private / "execution-worker-key-rotation.lock",
         "canonical_private": canonical_private,
         "canonical_public": canonical_public,
@@ -787,7 +812,7 @@ def test_local_key_rotation_prepare_activate_finalize_is_consistent_and_atomic(
     assert paths["managed"]["previous_plist"].read_bytes() == original[
         "canonical_plist"
     ]
-    assert not any(paths["managed"][name].exists() for name in (
+    assert all(paths["managed"][name].is_file() for name in (
         "next_private", "next_public", "next_plist"
     ))
     finalized = _run_rotation(paths, "finalize")
@@ -819,7 +844,7 @@ def test_local_key_rotation_activation_failure_restores_exact_previous_state(
     assert not any(paths["managed"][name].exists() for name in (
         "previous_private", "previous_public", "previous_plist", "state"
     ))
-    assert all(paths["managed"][name].is_file() for name in (
+    assert not any(paths["managed"][name].exists() for name in (
         "next_private", "next_public", "next_plist"
     ))
 
@@ -893,6 +918,342 @@ def test_local_key_rotation_rejects_concurrent_operation_without_changes(
         _assert_rotation_identity(paths, "worker-v1")
     finally:
         os.close(descriptor)
+
+
+def _remover_for_rotation_lock_test(
+    paths, tmp_path: Path, *, block_psql: bool
+) -> tuple[Path, Path, Path, dict[str, str], Path, Path]:
+    runtime = paths["canonical_public"].parent
+    launch_agents = paths["canonical_plist"].parent
+    current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
+    remover = runtime / "platform/deploy/local-execution-worker/remove.sh"
+    source = REMOVER.read_text(encoding="utf-8")
+    source = source.replace("/Users/agentops/AgentRuntime", str(runtime))
+    source = source.replace("/Users/agentops/Library/LaunchAgents", str(launch_agents))
+    source = source.replace("agentops", current_user)
+    remover.write_text(source, encoding="utf-8")
+    remover.chmod(0o700)
+    owner_dsn = runtime / "private/removal-owner-dsn"
+    owner_dsn.write_text(
+        "postgresql://owner:secret@127.0.0.1:5432/postgres\n", encoding="utf-8"
+    )
+    owner_dsn.chmod(0o600)
+    backup = runtime / "private/agent_execution_worker.dump"
+    backup.write_bytes(b"bounded-backup\n")
+    backup.chmod(0o600)
+    ready = tmp_path / "remove-lock-ready"
+    release = tmp_path / "remove-lock-release"
+    invoked = tmp_path / "remove-psql-invoked"
+    fake_psql = tmp_path / "psql"
+    if block_psql:
+        body = (
+            f"/usr/bin/touch {ready}\n"
+            f"while [[ ! -e {release} ]]; do /bin/sleep 0.01; done\n"
+            "exit 1\n"
+        )
+    else:
+        body = f"/usr/bin/touch {invoked}\nexit 1\n"
+    fake_psql.write_text("#!/bin/bash\nset -euo pipefail\n" + body, encoding="utf-8")
+    fake_psql.chmod(0o700)
+    environment = {
+        **os.environ,
+        "PLATFORM_LOCAL_PYTHON3": sys.executable,
+        "PLATFORM_LOCAL_POSTGRES17_PSQL": str(fake_psql),
+        "PLATFORM_LOCAL_POSTGRES17_PG_RESTORE": str(fake_psql),
+    }
+    return remover, owner_dsn, backup, environment, ready, release
+
+
+def _wait_for_file(path: Path) -> None:
+    deadline = time.monotonic() + 5
+    while not path.exists():
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"timed out waiting for {path}")
+        time.sleep(0.01)
+
+
+def test_remove_holds_rotation_lock_before_preflight_and_blocks_rotator(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path / "runtime")
+    original = _rotation_components(paths, "canonical")
+    remover, owner_dsn, backup, environment, ready, release = (
+        _remover_for_rotation_lock_test(paths, tmp_path, block_psql=True)
+    )
+    process = subprocess.Popen(
+        [
+            "/bin/bash", str(remover), str(owner_dsn), str(backup),
+            "--confirm-remove-agent-execution-worker",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=environment,
+    )
+    try:
+        _wait_for_file(ready)
+        concurrent = _run_rotation(paths, "prepare")
+        assert concurrent.returncode == 1
+        assert concurrent.stderr == "EXECUTION_WORKER_KEY_ROTATION_FAILED\n"
+        assert _rotation_components(paths, "canonical") == original
+        assert not any(path.exists() for path in paths["managed"].values())
+        assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+    finally:
+        release.touch()
+        _stdout, stderr = process.communicate(timeout=5)
+    assert process.returncode == 1
+    assert stderr.endswith("EXECUTION_WORKER_REMOVAL_FAILED\n")
+
+
+def test_rotator_holds_rotation_lock_and_remove_performs_zero_preflight_or_mutation(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path / "runtime")
+    original = _rotation_components(paths, "canonical")
+    generator_ready = tmp_path / "generator-ready"
+    generator_release = tmp_path / "generator-release"
+    generator = paths["rotator"].with_name(GENERATOR.name)
+    generator.write_text(
+        "from pathlib import Path\nimport time\n"
+        f"Path({str(generator_ready)!r}).touch()\n"
+        f"while not Path({str(generator_release)!r}).exists(): time.sleep(0.01)\n"
+        "raise SystemExit(1)\n",
+        encoding="utf-8",
+    )
+    generator.chmod(0o700)
+    remover, owner_dsn, backup, environment, _ready, _release = (
+        _remover_for_rotation_lock_test(paths, tmp_path, block_psql=False)
+    )
+    psql_invoked = tmp_path / "remove-psql-invoked"
+    rotation = subprocess.Popen(
+        [sys.executable, str(paths["rotator"]), "prepare", "worker-v2"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=paths["environment"],
+    )
+    try:
+        _wait_for_file(generator_ready)
+        removed = subprocess.run(
+            [
+                "/bin/bash", str(remover), str(owner_dsn), str(backup),
+                "--confirm-remove-agent-execution-worker",
+            ],
+            text=True,
+            capture_output=True,
+            env=environment,
+            timeout=5,
+        )
+        assert removed.returncode == 1
+        assert removed.stderr == "EXECUTION_WORKER_REMOVAL_FAILED\n"
+        assert not psql_invoked.exists()
+        assert _rotation_components(paths, "canonical") == original
+        assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+    finally:
+        generator_release.touch()
+        rotation.communicate(timeout=5)
+
+
+def _rotation_components(paths, prefix: str) -> tuple[bytes, bytes, bytes]:
+    names = (
+        f"{prefix}_private",
+        f"{prefix}_public",
+        f"{prefix}_plist",
+    )
+    if prefix == "canonical":
+        return tuple(paths[name].read_bytes() for name in names)
+    return tuple(paths["managed"][name].read_bytes() for name in names)
+
+
+def _write_rotation_phase(paths, phase: str, was_loaded: bool | None) -> None:
+    state_path = paths["managed"]["state"]
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["phase"] = phase
+    state["was_loaded"] = was_loaded
+    state_path.write_text(
+        json.dumps(state, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    state_path.chmod(0o600)
+
+
+@pytest.mark.parametrize(
+    "replaced_components",
+    [0, 1, 2, 3],
+    ids=["after-state", "after-private", "after-public", "before-launch"],
+)
+def test_local_key_rotation_new_process_rollback_recovers_every_durable_boundary(
+    tmp_path: Path, replaced_components: int
+) -> None:
+    paths = _rotation_test_environment(tmp_path, loaded=True)
+    original = _rotation_components(paths, "canonical")
+    assert _run_rotation(paths, "prepare").returncode == 0
+    staged = _rotation_components(paths, "next")
+    _write_rotation_phase(paths, "activating", True)
+    if replaced_components:
+        for name, value in zip(
+            ("previous_private", "previous_public", "previous_plist"),
+            original,
+            strict=True,
+        ):
+            paths["managed"][name].write_bytes(value)
+            paths["managed"][name].chmod(0o600)
+        paths["launch_state"].write_text("unloaded", encoding="utf-8")
+    for name, value in list(zip(
+        ("canonical_private", "canonical_public", "canonical_plist"),
+        staged,
+        strict=True,
+    ))[:replaced_components]:
+        paths[name].write_bytes(value)
+        paths[name].chmod(0o600)
+
+    rolled_back = _run_rotation(paths, "rollback")
+
+    assert rolled_back.returncode == 0, rolled_back.stderr
+    assert _rotation_components(paths, "canonical") == original
+    assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+    assert not any(path.exists() for path in paths["managed"].values())
+
+
+def test_local_key_rotation_mixed_recovery_rejects_unjournaled_component(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path, loaded=True)
+    assert _run_rotation(paths, "prepare").returncode == 0
+    original = _rotation_components(paths, "canonical")
+    staged = _rotation_components(paths, "next")
+    _write_rotation_phase(paths, "activating", True)
+    for name, value in zip(
+        ("previous_private", "previous_public", "previous_plist"),
+        original,
+        strict=True,
+    ):
+        paths["managed"][name].write_bytes(value)
+        paths["managed"][name].chmod(0o600)
+    paths["canonical_private"].write_bytes(staged[0])
+    paths["canonical_public"].write_bytes(b"{}\n")
+    paths["launch_state"].write_text("unloaded", encoding="utf-8")
+    before = _rotation_components(paths, "canonical")
+
+    rolled_back = _run_rotation(paths, "rollback")
+
+    assert rolled_back.returncode == 1
+    assert rolled_back.stderr == "EXECUTION_WORKER_KEY_ROTATION_FAILED\n"
+    assert _rotation_components(paths, "canonical") == before
+    assert paths["launch_state"].read_text(encoding="utf-8") == "unloaded"
+
+
+def test_local_key_rotation_corrupt_boundary_fails_before_creating_previous(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path, loaded=True)
+    assert _run_rotation(paths, "prepare").returncode == 0
+    _write_rotation_phase(paths, "activating", True)
+    paths["canonical_public"].write_bytes(b"{}\n")
+    paths["canonical_public"].chmod(0o600)
+    before = {
+        name: path.read_bytes()
+        for name, path in paths["managed"].items()
+        if path.exists()
+    }
+
+    rolled_back = _run_rotation(paths, "rollback")
+
+    assert rolled_back.returncode == 1
+    assert not any(
+        paths["managed"][name].exists()
+        for name in ("previous_private", "previous_public", "previous_plist")
+    )
+    assert {
+        name: path.read_bytes()
+        for name, path in paths["managed"].items()
+        if path.exists()
+    } == before
+
+
+@pytest.mark.parametrize("remaining", [1, 2], ids=["private-only", "private-public"])
+def test_local_key_rotation_abort_cleans_partial_prepare_without_state(
+    tmp_path: Path, remaining: int
+) -> None:
+    paths = _rotation_test_environment(tmp_path)
+    original = _rotation_components(paths, "canonical")
+    assert _run_rotation(paths, "prepare").returncode == 0
+    paths["managed"]["state"].unlink()
+    for name in ("next_private", "next_public", "next_plist")[remaining:]:
+        paths["managed"][name].unlink()
+
+    aborted = _run_rotation(paths, "abort")
+
+    assert aborted.returncode == 0, aborted.stderr
+    assert _rotation_components(paths, "canonical") == original
+    assert not any(path.exists() for path in paths["managed"].values())
+
+
+def test_local_key_rotation_abort_and_finalize_cleanup_are_retryable(
+    tmp_path: Path,
+) -> None:
+    abort_paths = _rotation_test_environment(tmp_path / "abort")
+    assert _run_rotation(abort_paths, "prepare").returncode == 0
+    abort_paths["managed"]["next_private"].unlink()
+    assert _run_rotation(abort_paths, "abort").returncode == 0
+    assert not any(path.exists() for path in abort_paths["managed"].values())
+
+    finalize_paths = _rotation_test_environment(tmp_path / "finalize")
+    assert _run_rotation(finalize_paths, "prepare").returncode == 0
+    assert _run_rotation(finalize_paths, "activate").returncode == 0
+    _write_rotation_phase(finalize_paths, "finalized", True)
+    finalize_paths["managed"]["previous_private"].unlink()
+    finalize_paths["managed"]["next_public"].unlink()
+
+    finalized = _run_rotation(finalize_paths, "finalize")
+
+    assert finalized.returncode == 0, finalized.stderr
+    _assert_rotation_identity(finalize_paths, "worker-v2")
+    assert not any(path.exists() for path in finalize_paths["managed"].values())
+
+
+def test_local_key_rotation_rejects_boolean_schema_version_without_changes(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path)
+    assert _run_rotation(paths, "prepare").returncode == 0
+    state_path = paths["managed"]["state"]
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["schema_version"] = True
+    state_path.write_text(json.dumps(state) + "\n", encoding="utf-8")
+    state_path.chmod(0o600)
+    before = {
+        name: path.read_bytes()
+        for name, path in paths["managed"].items()
+        if path.exists()
+    }
+
+    aborted = _run_rotation(paths, "abort")
+
+    assert aborted.returncode == 1
+    assert {
+        name: path.read_bytes()
+        for name, path in paths["managed"].items()
+        if path.exists()
+    } == before
+
+
+@pytest.mark.parametrize("launch_error", ["permission", "transient"])
+def test_local_key_rotation_launchctl_inspection_errors_fail_closed(
+    tmp_path: Path, launch_error: str
+) -> None:
+    paths = _rotation_test_environment(tmp_path, loaded=True)
+    original = _rotation_components(paths, "canonical")
+    assert _run_rotation(paths, "prepare").returncode == 0
+    paths["launch_error"].write_text(launch_error, encoding="utf-8")
+
+    activated = _run_rotation(paths, "activate")
+
+    assert activated.returncode == 1
+    assert activated.stderr == "EXECUTION_WORKER_KEY_ROTATION_FAILED\n"
+    assert _rotation_components(paths, "canonical") == original
+    assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+    assert json.loads(paths["managed"]["state"].read_text())["phase"] == "prepared"
 
 
 @pytest.mark.parametrize("target", ["private-parent", "private-file", "public-parent"])
@@ -2677,6 +3038,60 @@ def test_local_key_rotator_is_strict_bounded_and_noninteractive() -> None:
     for forbidden in ("keychain", "/usr/bin/security", "sudo", "osascript", "password"):
         assert forbidden not in lowered
     compile(source, str(ROTATOR), "exec")
+
+
+def test_cloud_key_rotation_is_locked_and_prepared_before_database_mutation() -> None:
+    runbook = (ROOT / "docs/runbooks/agent-execution-relay.md").read_text(
+        encoding="utf-8"
+    )
+    section = runbook.split("## Key rotation", 1)[1].split(
+        "## Worker revocation", 1
+    )[0]
+    add_key = section.index(
+        '"${maintenance[@]}" add-key agentops-mac-primary '
+        '/run/worker-registration/worker.json RELAY_KEY_ROTATION_2026'
+    )
+    for required_precondition in (
+        'exec 9>>"$rotation_lock"',
+        "/usr/bin/flock -n 9",
+        '/usr/bin/test ! -e "$registration_root"',
+        '/usr/bin/test ! -e "$worker_keyring_previous"',
+        '/usr/bin/test ! -e "$worker_keyring_part"',
+        '/usr/bin/test ! -e "$rotation_state"',
+        '/usr/bin/test ! -e "$rotation_state_part"',
+        '"$worker_keyring" "$worker_keyring_previous"',
+        '/bin/mv -f "$rotation_state_part" "$rotation_state"',
+    ):
+        assert section.index(required_precondition) < add_key
+    assert section.index('/bin/rm -f -- "$rotation_state"') > add_key
+    assert "After an SSH disconnect" in section
+    assert "resume-forward" in section and "resume-rollback" in section
+    assert section.count('/usr/bin/flock -n 9') >= 2
+    assert '/usr/bin/test -f "$rotation_state"' in section
+    assert 'case "$cloud_rotation_phase" in' in section
+
+
+def test_cloud_key_rotation_commit_boundary_forbids_unsafe_rollback() -> None:
+    runbook = (ROOT / "docs/runbooks/agent-execution-relay.md").read_text(
+        encoding="utf-8"
+    )
+    section = runbook.split("## Key rotation", 1)[1].split(
+        "## Worker revocation", 1
+    )[0]
+    accepted = section.index("write_cloud_rotation_phase accepted")
+    committing = section.index("write_cloud_rotation_phase committing")
+    revoke_old = section.index(
+        '"${maintenance[@]}" revoke-key agentops-mac-primary worker-v1 '
+        "RELAY_KEY_ROTATION_2026"
+    )
+    old_revoked = section.index("write_cloud_rotation_phase old_revoked")
+    assert accepted < committing < revoke_old < old_revoked
+    assert "prepared|accepted)" in section
+    assert "committing|old_revoked)" in section
+    assert "resume-forward only" in section
+    assert "must never use resume-rollback" in section
+    assert "If local `finalize` fails, rerun only `finalize worker-v2`" in section
+    assert "do not run local" in section and "`rollback` after the cloud state" in section
 
 
 def test_installer_is_noninteractive_agentops_only_and_permission_gated() -> None:

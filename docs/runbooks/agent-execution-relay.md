@@ -78,8 +78,9 @@ PY
 
 The fixed local transaction state is
 `/Users/agentops/AgentRuntime/private/execution-worker-key-rotation-state.json`.
-The prepare and activate actions never use an interactive credential store and
-never expose secret material.
+`prepare` writes it only after all three next assets are complete. The prepare
+and activate actions never use an interactive credential store and never
+expose secret material.
 If the rotation is abandoned before cloud `add-key`, delete only the validated
 fixed next assets with:
 
@@ -94,6 +95,7 @@ registration document has its own mode-0700 parent because the maintenance CLI
 validates both parent and file:
 
 ```bash
+set -euo pipefail
 platform_root=/opt/orbbec-agent-platform
 release="$(/usr/bin/readlink -f "$platform_root/current")"
 environment="$platform_root/private/platform.env"
@@ -105,18 +107,54 @@ registration_root="$platform_root/private/execution-worker-key-rotation"
 worker_keyring="$platform_root/private/execution-worker-public-keyring.json"
 worker_keyring_previous="$platform_root/private/execution-worker-public-keyring.previous.json"
 worker_keyring_part="$platform_root/private/execution-worker-public-keyring.json.part"
+rotation_lock="$platform_root/private/execution-worker-key-rotation.lock"
+rotation_state="$platform_root/private/execution-worker-key-rotation.state"
+rotation_state_part="$platform_root/private/execution-worker-key-rotation.state.part"
+write_cloud_rotation_phase() {
+  next_phase="$1"
+  expected_phase="$2"
+  case "$next_phase:$expected_phase" in
+    prepared:absent|accepted:prepared|committing:accepted|old_revoked:committing) ;;
+    *) return 1 ;;
+  esac
+  /usr/bin/test ! -e "$rotation_state_part"
+  if [[ "$expected_phase" = absent ]]; then
+    /usr/bin/test ! -e "$rotation_state"
+  else
+    /usr/bin/test "$expected_phase" = "$(/usr/bin/sed -n '2s/^phase=//p' "$rotation_state")"
+    /usr/bin/test "$(/bin/cat "$rotation_state")" = "$(printf '%s\n' schema_version=1 "phase=$expected_phase" from_key_id=worker-v1 to_key_id=worker-v2)"
+  fi
+  printf '%s\n' schema_version=1 "phase=$next_phase" from_key_id=worker-v1 to_key_id=worker-v2 >"$rotation_state_part"
+  /bin/chmod 600 "$rotation_state_part"
+  /bin/mv -f "$rotation_state_part" "$rotation_state"
+}
 /usr/bin/test "$(/usr/bin/stat -c '%a %U' "$platform_root/private")" = "700 root"
 /usr/bin/test "$(/usr/bin/stat -c '%a %U' "$maintenance_dsn")" = "600 root"
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' "$worker_keyring")" = "600 root"
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' /root/execution-worker-public-v2.json)" = "600 root"
+umask 077
+exec 9>>"$rotation_lock"
+/usr/bin/flock -n 9
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' "$rotation_lock")" = "600 root"
+/usr/bin/test ! -e "$registration_root"
+/usr/bin/test ! -e "$worker_keyring_previous"
+/usr/bin/test ! -e "$worker_keyring_part"
+/usr/bin/test ! -e "$rotation_state"
+/usr/bin/test ! -e "$rotation_state_part"
+/usr/bin/install -o root -g root -m 600 "$worker_keyring" "$worker_keyring_previous"
 /usr/bin/install -d -o root -g root -m 700 "$registration_root"
 /usr/bin/install -o root -g root -m 600 /root/execution-worker-public-v2.json "$registration_root/worker.json"
 maintenance=(/usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 -v "$platform_root/private:/run/control-secrets:ro" -v "$registration_root:/run/worker-registration:ro" -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url "$image" python -m app.execution_relay.register_worker)
+write_cloud_rotation_phase prepared absent
 # Audited maintenance action: register_worker add-key.
 "${maintenance[@]}" add-key agentops-mac-primary /run/worker-registration/worker.json RELAY_KEY_ROTATION_2026
-/usr/bin/test ! -e "$worker_keyring_previous"
-/usr/bin/install -o root -g root -m 600 "$worker_keyring" "$worker_keyring_previous"
 /usr/bin/install -o root -g root -m 600 "$registration_root/worker.json" "$worker_keyring_part"
 /bin/mv -f "$worker_keyring_part" "$worker_keyring"
 ```
+
+Keep this cloud shell open: file descriptor 9 holds the cloud rotation lock
+through the local activation and either cloud finalize or cloud rollback. Do
+not start a deploy, a second rotation, or a worker removal while it is held.
 
 Back on the `agentops` Mac, atomically activate the prepared identity. The
 wrapper stops the LaunchAgent before replacing the canonical private key,
@@ -135,13 +173,16 @@ database key, fingerprint, and heartbeat:
 
 ```bash
 /opt/orbbec-agent-platform/current/deploy/cloud/accept-dingtalk-production.sh
+write_cloud_rotation_phase accepted prepared
 ```
 
 Only after both acceptance commands succeed, revoke the old key on the cloud
 host with `register_worker revoke-key`:
 
 ```bash
+write_cloud_rotation_phase committing accepted
 "${maintenance[@]}" revoke-key agentops-mac-primary worker-v1 RELAY_KEY_ROTATION_2026
+write_cloud_rotation_phase old_revoked committing
 ```
 
 Then finalize on the Mac, and remove the retained cloud backup and registration
@@ -152,7 +193,14 @@ assets on the cloud host:
 /bin/rm -f -- "$worker_keyring_previous"
 /bin/rm -f -- "$registration_root/worker.json"
 /bin/rmdir -- "$registration_root"
+/bin/rm -f -- "$rotation_state"
+/usr/bin/flock -u 9
+exec 9>&-
 ```
+
+If local `finalize` fails, rerun only `finalize worker-v2` until it either
+completes or fails closed for operator investigation; do not run local
+`rollback` after the cloud state reached `committing` or `old_revoked`.
 
 Before any later Platform deploy, set the owner-only deploy configuration's
 `CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING` to the activated canonical current
@@ -161,25 +209,177 @@ prevents a later deploy from writing the retired `worker-v1` document back to
 the cloud keyring.
 
 If local activation, either acceptance command, or the fresh heartbeat and
-fingerprint comparison fails after cloud `add-key`, roll back before any retry.
-On the Mac, the state file exists only after an activation that needs explicit
-rollback:
+fingerprint comparison fails after cloud `add-key`, roll back before any retry,
+and only while the cloud phase is `prepared` or `accepted`.
+On the Mac, inspect the persisted phase: `prepared` is aborted, while
+`activating`, `active`, or `rolled_back` is recovered with rollback:
 
 ```bash
-if /usr/bin/test -f /Users/agentops/AgentRuntime/private/execution-worker-key-rotation-state.json; then
-  /Users/agentops/AgentRuntime/platform/backend/.venv/bin/python /Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/rotate-worker-key.py rollback worker-v2
-fi
+/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python /Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/rotate-worker-key.py rollback worker-v2
 ```
 
 On the cloud host, atomically restore the retained `worker-v1` keyring, revoke
 the failed new key, and remove only the bounded registration directory:
 
 ```bash
+cloud_rotation_phase="$(/usr/bin/sed -n '2s/^phase=//p' "$rotation_state")"
+case "$cloud_rotation_phase" in prepared|accepted) ;; *) exit 1 ;; esac
 /bin/mv -f "$worker_keyring_previous" "$worker_keyring"
 "${maintenance[@]}" revoke-key agentops-mac-primary worker-v2 RELAY_KEY_ROTATION_ROLLBACK_2026
 /bin/rm -f -- "$registration_root/worker.json"
 /bin/rmdir -- "$registration_root"
+/bin/rm -f -- "$rotation_state"
+/usr/bin/flock -u 9
+exec 9>&-
 ```
+
+After an SSH disconnect, the old descriptor is released but the persistent
+state remains. Do not rerun initial preparation. Open a new root shell, rebuild
+`release`, `environment`, `compose`, `image`, `maintenance`, and the fixed path
+variables exactly as above, then reacquire and validate before choosing exactly
+one recovery direction:
+
+```bash
+set -euo pipefail
+platform_root=/opt/orbbec-agent-platform
+release="$(/usr/bin/readlink -f "$platform_root/current")"
+environment="$platform_root/private/platform.env"
+compose=(/usr/bin/docker compose --env-file "$environment" -f "$release/deploy/cloud/compose.yaml")
+api_id="$("${compose[@]}" ps -q platform-api)"
+image="$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$api_id")"
+registration_root="$platform_root/private/execution-worker-key-rotation"
+worker_keyring="$platform_root/private/execution-worker-public-keyring.json"
+worker_keyring_previous="$platform_root/private/execution-worker-public-keyring.previous.json"
+worker_keyring_part="$platform_root/private/execution-worker-public-keyring.json.part"
+rotation_lock="$platform_root/private/execution-worker-key-rotation.lock"
+rotation_state="$platform_root/private/execution-worker-key-rotation.state"
+rotation_state_part="$platform_root/private/execution-worker-key-rotation.state.part"
+maintenance=(/usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 -v "$platform_root/private:/run/control-secrets:ro" -v "$registration_root:/run/worker-registration:ro" -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url "$image" python -m app.execution_relay.register_worker)
+write_cloud_rotation_phase() {
+  next_phase="$1"
+  expected_phase="$2"
+  case "$next_phase:$expected_phase" in
+    accepted:prepared|committing:accepted|old_revoked:committing) ;;
+    *) return 1 ;;
+  esac
+  /usr/bin/test ! -e "$rotation_state_part"
+  /usr/bin/test "$expected_phase" = "$(/usr/bin/sed -n '2s/^phase=//p' "$rotation_state")"
+  /usr/bin/test "$(/bin/cat "$rotation_state")" = "$(printf '%s\n' schema_version=1 "phase=$expected_phase" from_key_id=worker-v1 to_key_id=worker-v2)"
+  printf '%s\n' schema_version=1 "phase=$next_phase" from_key_id=worker-v1 to_key_id=worker-v2 >"$rotation_state_part"
+  /bin/chmod 600 "$rotation_state_part"
+  /bin/mv -f "$rotation_state_part" "$rotation_state"
+}
+umask 077
+exec 9>>"$rotation_lock"
+/usr/bin/flock -n 9
+/usr/bin/test -f "$rotation_state"
+/usr/bin/test ! -e "$rotation_state_part"
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' "$rotation_lock")" = "600 root"
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' "$rotation_state")" = "600 root"
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' "$worker_keyring_previous")" = "600 root"
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' "$registration_root")" = "700 root"
+/usr/bin/test "$(/usr/bin/stat -c '%a %U' "$registration_root/worker.json")" = "600 root"
+cloud_rotation_phase="$(/usr/bin/sed -n '2s/^phase=//p' "$rotation_state")"
+/usr/bin/test "$(/bin/cat "$rotation_state")" = "$(printf '%s\n' schema_version=1 "phase=$cloud_rotation_phase" from_key_id=worker-v1 to_key_id=worker-v2)"
+(/usr/bin/cmp -s "$worker_keyring" "$worker_keyring_previous" || /usr/bin/cmp -s "$worker_keyring" "$registration_root/worker.json")
+case "$cloud_rotation_phase" in
+  prepared|accepted)
+    cloud_recovery=resume-forward # Set exactly resume-forward or resume-rollback.
+    ;;
+  committing|old_revoked)
+    # The old key may already be revoked: resume-forward only.
+    cloud_recovery=resume-forward
+    ;;
+  *) exit 1 ;;
+esac
+case "$cloud_recovery" in
+  resume-forward)
+    if [[ "$cloud_rotation_phase" = prepared ]]; then
+      # add-key is idempotent only for this exact key ID and public key bytes.
+      "${maintenance[@]}" add-key agentops-mac-primary /run/worker-registration/worker.json RELAY_KEY_ROTATION_2026
+      /usr/bin/test ! -e "$worker_keyring_part"
+      /usr/bin/install -o root -g root -m 600 "$registration_root/worker.json" "$worker_keyring_part"
+      /bin/mv -f "$worker_keyring_part" "$worker_keyring"
+      # Keep descriptor 9 open; rerun local/cloud acceptance, then advance to accepted.
+    elif [[ "$cloud_rotation_phase" = accepted ]]; then
+      write_cloud_rotation_phase committing accepted
+      "${maintenance[@]}" revoke-key agentops-mac-primary worker-v1 RELAY_KEY_ROTATION_2026
+      write_cloud_rotation_phase old_revoked committing
+    else
+      key_status="$(
+        /usr/bin/docker run --rm -i --pull=never --network orbbec-agent-platform-internal --user 0:0 \
+          -v "$platform_root/private:/run/control-secrets:ro" \
+          -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url \
+          "$image" python - <<'PY'
+import psycopg
+from app.execution_relay.register_worker import _secret_file
+
+with psycopg.connect(_secret_file()) as connection:
+    rows = connection.execute(
+        "select key_id,status from platform_control.execution_worker_keys "
+        "where worker_id='agentops-mac-primary' "
+        "and key_id in ('worker-v1','worker-v2') order by key_id"
+    ).fetchall()
+print("\n".join(f"{key_id}={status}" for key_id, status in rows))
+PY
+      )"
+      if [[ "$cloud_rotation_phase" = committing ]]; then
+        if [[ "$key_status" = $'worker-v1=active\nworker-v2=active' ]]; then
+          "${maintenance[@]}" revoke-key agentops-mac-primary worker-v1 RELAY_KEY_ROTATION_2026
+        else
+          /usr/bin/test "$key_status" = $'worker-v1=revoked\nworker-v2=active'
+        fi
+        write_cloud_rotation_phase old_revoked committing
+      else
+        /usr/bin/test "$key_status" = $'worker-v1=revoked\nworker-v2=active'
+      fi
+      # old_revoked requires local finalize and cloud cleanup; it must never use resume-rollback.
+    fi
+    ;;
+  resume-rollback)
+    case "$cloud_rotation_phase" in prepared|accepted) ;; *) exit 1 ;; esac
+    # Ensure a possibly interrupted add completed with the exact bytes, then undo it.
+    "${maintenance[@]}" add-key agentops-mac-primary /run/worker-registration/worker.json RELAY_KEY_ROTATION_2026
+    /usr/bin/test ! -e "$worker_keyring_part"
+    /usr/bin/install -o root -g root -m 600 "$worker_keyring_previous" "$worker_keyring_part"
+    /bin/mv -f "$worker_keyring_part" "$worker_keyring"
+    "${maintenance[@]}" revoke-key agentops-mac-primary worker-v2 RELAY_KEY_ROTATION_ROLLBACK_2026
+    /bin/rm -f -- "$registration_root/worker.json"
+    /bin/rmdir -- "$registration_root"
+    /bin/rm -f -- "$worker_keyring_previous"
+    /bin/rm -f -- "$rotation_state"
+    /usr/bin/flock -u 9
+    exec 9>&-
+    ;;
+  *) exit 1 ;;
+esac
+```
+
+If a disconnect occurred before the state rename, `rotation_state` is absent,
+so no database mutation was reached. Rebuild the variables above, reacquire
+descriptor 9, and clean only the fully bounded pre-mutation artifacts:
+
+```bash
+set -euo pipefail
+umask 077
+exec 9>>"$rotation_lock"
+/usr/bin/flock -n 9
+/usr/bin/test ! -e "$rotation_state"
+/usr/bin/test "$(/usr/bin/stat -c '%F %a %U' "$rotation_state_part")" = "regular file 600 root"
+/usr/bin/test "$(/usr/bin/stat -c '%F %a %U' "$worker_keyring_previous")" = "regular file 600 root"
+/usr/bin/test "$(/usr/bin/stat -c '%F %a %U' "$registration_root/worker.json")" = "regular file 600 root"
+/usr/bin/cmp -s "$worker_keyring" "$worker_keyring_previous"
+/bin/rm -f -- "$rotation_state_part"
+/bin/rm -f -- "$worker_keyring_previous"
+/bin/rm -f -- "$registration_root/worker.json"
+/bin/rmdir -- "$registration_root"
+/usr/bin/flock -u 9
+exec 9>&-
+```
+
+Restart initial preparation only after that block succeeds. Any other
+state/part combination fails closed and is an incident; do not delete or
+overwrite it.
 
 Never overwrite a key ID with different bytes and never revoke the old key
 before the accepted heartbeat and matching fingerprint gates.
@@ -294,11 +494,13 @@ cloud Worker, run the owner-only wrapper as `agentops`:
   --confirm-remove-agent-execution-worker
 ```
 
-The wrapper completes its role, membership, ACL, and cross-database dependency
-preflight before bootout or unlink. It removes only the dedicated LaunchAgent,
-execution-worker key/public/DSN, dedicated logs, fixed rotation
-next/previous/state/lock assets, and known acceptance residual files. It then
-executes only:
+The wrapper acquires the same persistent rotation lock before its role,
+membership, ACL, and cross-database dependency preflight, and holds it through
+the final unlink. It removes only the dedicated LaunchAgent, execution-worker
+key/public/DSN, dedicated logs, fixed rotation next/previous/state assets, and
+known acceptance residual files. The owner-only mode-0600 lock file is retained
+so no concurrent process can acquire a replacement inode. It then executes
+only:
 
 ```sql
 drop database agent_execution_worker;
