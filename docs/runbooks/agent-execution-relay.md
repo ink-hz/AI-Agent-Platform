@@ -350,7 +350,7 @@ source, staged = map(pathlib.Path, sys.argv[1:3])
 expected = sys.argv[3]
 left, right = source.read_bytes(), staged.read_bytes()
 value = json.loads(right)
-agents = ["hr-bot", "fae-bot", "marketing-prospecting-bot", "marketing-inbound-bot", "marketing-voice-bot", "marketing-intelligence-bot", "marketing-gtm-bot"]
+agents = ["hr-bot", "fae-bot", "marketing-prospecting-bot", "marketing-inbound-bot", "marketing-voice-bot", "marketing-intelligence-bot", "marketing-gtm-bot", "agent-brain-bot"]
 keys = {"worker_id", "key_id", "public_key_base64url", "allowed_agent_ids"}
 encoded = value.get("public_key_base64url") if isinstance(value, dict) else None
 if left != right or set(value) != keys or value["worker_id"] != "agentops-mac-primary" or value["key_id"] != expected or value["allowed_agent_ids"] != agents or not isinstance(encoded, str) or re.fullmatch(r"[A-Za-z0-9_-]{43}", encoded) is None:
@@ -407,7 +407,7 @@ neo_part_owned=1
 /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python - "$neo_keyring.part" worker-v2 <<'PY'
 import base64, hashlib, json, pathlib, re, sys
 value = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
-agents = ["hr-bot", "fae-bot", "marketing-prospecting-bot", "marketing-inbound-bot", "marketing-voice-bot", "marketing-intelligence-bot", "marketing-gtm-bot"]
+agents = ["hr-bot", "fae-bot", "marketing-prospecting-bot", "marketing-inbound-bot", "marketing-voice-bot", "marketing-intelligence-bot", "marketing-gtm-bot", "agent-brain-bot"]
 keys = {"worker_id", "key_id", "public_key_base64url", "allowed_agent_ids"}
 encoded = value.get("public_key_base64url") if isinstance(value, dict) else None
 if set(value) != keys or value["worker_id"] != "agentops-mac-primary" or value["key_id"] != sys.argv[2] or value["allowed_agent_ids"] != agents or not isinstance(encoded, str) or re.fullmatch(r"[A-Za-z0-9_-]{43}", encoded) is None:

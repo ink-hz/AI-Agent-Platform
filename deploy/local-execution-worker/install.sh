@@ -36,6 +36,50 @@ for secret in "$metabot_secret"; do
   [[ "$(/usr/bin/stat -f '%Lp %Su' "$secret")" == "600 agentops" ]] || fail
 done
 [[ -f "$metabot_contract" && ! -L "$metabot_contract" ]] || fail
+"$platform_root/backend/.venv/bin/python" - "$metabot_contract" <<'PY' || fail
+import json
+import sys
+from pathlib import Path
+
+expected_agents = ['hr-bot', 'fae-bot', 'marketing-prospecting-bot', 'marketing-inbound-bot', 'marketing-voice-bot', 'marketing-intelligence-bot', 'marketing-gtm-bot', 'agent-brain-bot']
+expected_ports = {
+    "hr-bot": 9101,
+    "fae-bot": 9105,
+    "marketing-prospecting-bot": 9102,
+    "marketing-inbound-bot": 9103,
+    "marketing-voice-bot": 9104,
+    "marketing-intelligence-bot": 9108,
+    "marketing-gtm-bot": 9107,
+    "agent-brain-bot": 9110,
+}
+rejected_agents = {
+    "test-bot",
+    "feishu-default",
+    "codex-assistant",
+    "ai-admin-agent",
+    "ai-fae-agent",
+}
+try:
+    value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    if value.get("schemaVersion") != 2 or not isinstance(value.get("bots"), list):
+        raise ValueError
+    selected = {}
+    for entry in value["bots"]:
+        if not isinstance(entry, dict) or entry.get("name") not in expected_ports:
+            continue
+        name = entry["name"]
+        instance = entry.get("instance")
+        if name in selected or not isinstance(instance, dict):
+            raise ValueError
+        selected[name] = instance.get("apiPort")
+    if list(expected_ports) != expected_agents or selected != expected_ports:
+        raise ValueError
+    if rejected_agents & set(selected) or len(set(selected.values())) != len(selected):
+        raise ValueError
+except (AttributeError, OSError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+PY
+echo "EXECUTION_WORKER_RUNTIME_MAP_OK"
 /bin/mkdir -p "$log_root" "$HOME/Library/LaunchAgents"
 /bin/chmod 700 "$log_root" "$HOME/Library/LaunchAgents"
 rotation_lock="$private_root/execution-worker-key-rotation.lock"

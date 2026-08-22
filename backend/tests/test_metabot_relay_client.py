@@ -28,6 +28,7 @@ APPROVED_BOTS = (
     "fae-bot",
     "marketing-gtm-bot",
     "marketing-intelligence-bot",
+    "agent-brain-bot",
 )
 CALLBACK_URL = (
     "http://127.0.0.1:9120/callbacks/"
@@ -39,7 +40,12 @@ EXECUTION_CHAT_ID = "platform-00000000-0000-4000-8000-000000000102-hr-bot"
 
 def _contract(path: Path, *, entries: list[dict[str, object]] | None = None) -> Path:
     bots = entries or [
-        {"name": name, "instance": {"apiPort": 9200 + index}}
+        {
+            "name": name,
+            "instance": {
+                "apiPort": 9110 if name == "agent-brain-bot" else 9200 + index
+            },
+        }
         for index, name in enumerate(APPROVED_BOTS)
     ]
     path.write_text(
@@ -83,6 +89,7 @@ def test_runtime_map_requires_schema_v2_all_approved_bots_and_unique_ports(
     tmp_path: Path,
 ) -> None:
     runtime_map = MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json"))
+    assert runtime_map.port_for("agent-brain-bot") == 9110
     assert runtime_map.port_for("hr-bot") == 9200
     assert set(runtime_map.agent_ids) == set(APPROVED_BOTS)
     for bad_payload in (

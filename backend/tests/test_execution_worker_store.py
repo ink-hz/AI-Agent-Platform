@@ -1030,6 +1030,7 @@ async def test_real_loopback_and_postgres_survive_races_failures_and_restarts(
         "fae-bot",
         "marketing-gtm-bot",
         "marketing-intelligence-bot",
+        "agent-brain-bot",
     )
     used = {metabot_server.server_port}
     ports: dict[str, int] = {"hr-bot": metabot_server.server_port}

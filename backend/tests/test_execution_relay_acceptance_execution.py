@@ -61,6 +61,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
                 "marketing-voice-bot",
                 "marketing-intelligence-bot",
                 "marketing-gtm-bot",
+                "agent-brain-bot",
             ],
         }) + "\n").encode(),
     )

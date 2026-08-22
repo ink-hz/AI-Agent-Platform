@@ -61,7 +61,7 @@ if (
     or re.fullmatch(r"worker-v[1-9][0-9]*", value["key_id"]) is None
 ):
     raise SystemExit(1)
-expected_agents = ['hr-bot', 'fae-bot', 'marketing-prospecting-bot', 'marketing-inbound-bot', 'marketing-voice-bot', 'marketing-intelligence-bot', 'marketing-gtm-bot']
+expected_agents = ['hr-bot', 'fae-bot', 'marketing-prospecting-bot', 'marketing-inbound-bot', 'marketing-voice-bot', 'marketing-intelligence-bot', 'marketing-gtm-bot', 'agent-brain-bot']
 if value["allowed_agent_ids"] != expected_agents:
     raise SystemExit(1)
 public_key = base64.urlsafe_b64decode(value["public_key_base64url"] + "=")

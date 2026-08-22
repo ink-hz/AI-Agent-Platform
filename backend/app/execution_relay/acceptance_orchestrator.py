@@ -41,6 +41,7 @@ _AGENTS = (
     "marketing-voice-bot",
     "marketing-intelligence-bot",
     "marketing-gtm-bot",
+    "agent-brain-bot",
 )
 _CONFIG_KEYS = {"schema_version", "cloud_admin_host", "cloud_admin_key"}
 _PUBLIC_KEYS = {

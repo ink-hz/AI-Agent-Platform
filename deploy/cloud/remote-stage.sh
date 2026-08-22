@@ -231,7 +231,7 @@ if state_part.exists() or state_part.is_symlink():
     if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid() or state_part.read_bytes() != state_raw:
         raise SystemExit(1)
 document = json.loads(canonical.read_bytes())
-agents = ["hr-bot", "fae-bot", "marketing-prospecting-bot", "marketing-inbound-bot", "marketing-voice-bot", "marketing-intelligence-bot", "marketing-gtm-bot"]
+agents = ["hr-bot", "fae-bot", "marketing-prospecting-bot", "marketing-inbound-bot", "marketing-voice-bot", "marketing-intelligence-bot", "marketing-gtm-bot", "agent-brain-bot"]
 if not isinstance(document, dict) or set(document) != {"worker_id", "key_id", "public_key_base64url", "allowed_agent_ids"} or document["worker_id"] != "agentops-mac-primary" or re.fullmatch(r"worker-v[1-9][0-9]*", document["key_id"]) is None or document["allowed_agent_ids"] != agents or re.fullmatch(r"[A-Za-z0-9_-]{43}", document["public_key_base64url"]) is None:
     raise SystemExit(1)
 public = base64.b64decode(document["public_key_base64url"] + "=", altchars=b"-_", validate=True)

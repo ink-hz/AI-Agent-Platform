@@ -24,6 +24,7 @@ _APPROVED_AGENT_IDS = frozenset(
         "fae-bot",
         "marketing-gtm-bot",
         "marketing-intelligence-bot",
+        "agent-brain-bot",
     }
 )
 _CONFIGURATION_INVALID = "metabot configuration invalid"

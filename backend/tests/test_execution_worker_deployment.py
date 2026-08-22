@@ -45,7 +45,30 @@ AGENTS = [
     "marketing-voice-bot",
     "marketing-intelligence-bot",
     "marketing-gtm-bot",
+    "agent-brain-bot",
 ]
+
+
+def _metabot_runtime_contract() -> str:
+    ports = {
+        "hr-bot": 9101,
+        "fae-bot": 9105,
+        "marketing-prospecting-bot": 9102,
+        "marketing-inbound-bot": 9103,
+        "marketing-voice-bot": 9104,
+        "marketing-intelligence-bot": 9108,
+        "marketing-gtm-bot": 9107,
+        "agent-brain-bot": 9110,
+    }
+    return json.dumps(
+        {
+            "schemaVersion": 2,
+            "bots": [
+                {"name": name, "instance": {"apiPort": ports[name]}}
+                for name in AGENTS
+            ],
+        }
+    ) + "\n"
 
 
 def test_local_worker_command_assets_are_executable() -> None:
@@ -4799,6 +4822,23 @@ def test_installer_is_noninteractive_agentops_only_and_permission_gated() -> Non
     subprocess.run(["/bin/bash", "-n", str(INSTALLER)], check=True)
 
 
+def test_installer_requires_exact_agent_brain_runtime_map_before_mutation() -> None:
+    script = INSTALLER.read_text(encoding="utf-8")
+
+    validation = script.index("EXECUTION_WORKER_RUNTIME_MAP_OK")
+    assert validation < script.index('"$script_dir/generate-worker-key.py"')
+    assert validation < script.index('"$script_dir/bootstrap-worker-database.sh"')
+    assert repr(AGENTS) in script
+    for rejected in (
+        "test-bot",
+        "feishu-default",
+        "codex-assistant",
+        "ai-admin-agent",
+        "ai-fae-agent",
+    ):
+        assert rejected in script
+
+
 def test_installer_acquires_rotation_lock_before_generator_or_database() -> None:
     script = INSTALLER.read_text(encoding="utf-8")
     acquired = script.index("PLATFORM_EXECUTION_WORKER_ROTATION_LOCK_FD")
@@ -4829,7 +4869,9 @@ def test_installer_holds_rotation_lock_while_rotator_fails_without_mutation(
     installer.write_text(source, encoding="utf-8")
     installer.chmod(0o700)
     (runtime / "metabot").mkdir(mode=0o700)
-    (runtime / "metabot/runtime-contract.json").write_text("{}\n")
+    (runtime / "metabot/runtime-contract.json").write_text(
+        _metabot_runtime_contract()
+    )
     (private / "metabot-api-token").write_text("token\n")
     (private / "metabot-api-token").chmod(0o600)
     owner_dsn = private / "owner-dsn"
@@ -4916,7 +4958,7 @@ def test_installer_rolls_back_plist_and_exact_loaded_state_with_fake_launchctl(
     owner_dsn.chmod(0o600)
     (private / "metabot-api-token").write_text("token")
     (private / "metabot-api-token").chmod(0o600)
-    (metabot / "runtime-contract.json").write_text("{}")
+    (metabot / "runtime-contract.json").write_text(_metabot_runtime_contract())
     home = tmp_path / "home"
     launch_agents = home / "Library/LaunchAgents"
     launch_agents.mkdir(parents=True)

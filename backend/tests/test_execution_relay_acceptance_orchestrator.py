@@ -21,6 +21,7 @@ AGENTS = [
     "marketing-voice-bot",
     "marketing-intelligence-bot",
     "marketing-gtm-bot",
+    "agent-brain-bot",
 ]
 
 

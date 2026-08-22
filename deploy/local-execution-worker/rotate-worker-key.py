@@ -30,6 +30,7 @@ AGENTS = (
     "marketing-voice-bot",
     "marketing-intelligence-bot",
     "marketing-gtm-bot",
+    "agent-brain-bot",
 )
 RUNTIME_ROOT = Path("/Users/agentops/AgentRuntime")
 PRIVATE_ROOT = RUNTIME_ROOT / "private"
