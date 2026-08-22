@@ -420,7 +420,6 @@ def test_every_identity_response_prevents_browser_or_proxy_caching(
             json={},
             headers={"Origin": auth.public_base_url},
         ),
-        client.get("/api/v1/account", cookies=session_cookies),
         client.post(
             "/api/v1/auth/logout",
             cookies=session_cookies,
@@ -430,6 +429,10 @@ def test_every_identity_response_prevents_browser_or_proxy_caching(
             "/api/v1/manage/system-health", cookies=session_cookies
         ),
     ]
+
+    account = client.get("/api/v1/account", cookies=session_cookies)
+    assert account.headers.get("cache-control") == "private, no-store"
+    assert account.headers.get("pragma") == "no-cache"
 
     for response in responses:
         assert response.headers.get("cache-control") == "no-store", (

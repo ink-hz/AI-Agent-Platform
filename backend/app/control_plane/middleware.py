@@ -147,7 +147,11 @@ class IdentitySecurityMiddleware:
         async def protected_send(message):
             if identity_response and message["type"] == "http.response.start":
                 response_headers = MutableHeaders(scope=message)
-                response_headers["Cache-Control"] = "no-store"
+                response_headers["Cache-Control"] = (
+                    "private, no-store"
+                    if local_path == "/api/v1/account"
+                    else "no-store"
+                )
                 response_headers["Pragma"] = "no-cache"
             await send(message)
 
