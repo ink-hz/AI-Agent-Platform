@@ -37,6 +37,12 @@ class RelayJobState:
     database_now: datetime
 
 
+@dataclass(frozen=True)
+class RelayStopRequest:
+    run_id: UUID
+    status: Literal["completed", "failed", "cancelled", "interrupted"]
+
+
 class ExecutionRelayError(RuntimeError):
     """Stable relay boundary error without identifiers or SQL details."""
 
@@ -667,17 +673,44 @@ class ExecutionRelayRepository:
         except psycopg.Error:
             raise ExecutionRelayError("execution relay unavailable") from None
 
-    def heartbeat(self, worker_id: str) -> tuple[UUID, ...]:
+    def heartbeat(
+        self, worker_id: str, *, lease_seconds: int = 45
+    ) -> tuple[RelayStopRequest, ...]:
+        if (
+            isinstance(lease_seconds, bool)
+            or not isinstance(lease_seconds, int)
+            or lease_seconds <= 0
+        ):
+            raise ValueError("lease seconds invalid")
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 self._active_worker(cursor, worker_id)
+                cursor.execute(
+                    "update platform_control.execution_jobs set "
+                    "lease_expires_at=now()+(%s * interval '1 second') "
+                    "where lease_worker_id=%s and status=any(%s)",
+                    (lease_seconds, worker_id, ["leased", "dispatched", "running"]),
+                )
                 rows = cursor.execute(
-                    "select run_id from platform_control.execution_jobs "
-                    "where lease_worker_id=%s and cancel_requested=true "
-                    "and status=any(%s) order by run_id::text",
-                    (worker_id, ["leased", "dispatched", "running"]),
+                    "select run_id,case when status=any(%s) then 'cancelled' "
+                    "else status end as stop_status "
+                    "from platform_control.execution_jobs "
+                    "where lease_worker_id=%s and ((cancel_requested=true "
+                    "and status=any(%s)) or status=any(%s)) "
+                    "order by run_id::text",
+                    (
+                        ["leased", "dispatched", "running"],
+                        worker_id,
+                        ["leased", "dispatched", "running"],
+                        list(TERMINAL_STATUSES),
+                    ),
                 ).fetchall()
-            return tuple(row["run_id"] for row in rows)
+            return tuple(
+                RelayStopRequest(
+                    run_id=row["run_id"], status=row["stop_status"]
+                )
+                for row in rows
+            )
         except ExecutionRelayError:
             raise
         except psycopg.Error:

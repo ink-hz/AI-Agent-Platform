@@ -14,6 +14,10 @@ from app.fleet.catalog import AgentCatalog
 from .models import AgentCapabilityCard, load_capability_cards
 
 
+class AgentUseAuthorizationUnavailable(RuntimeError):
+    """Stable orchestration-only signal that authorization could not be decided."""
+
+
 class AgentUseAuthorization:
     def __init__(
         self,
@@ -44,7 +48,10 @@ class AgentUseAuthorization:
 
         if not isinstance(auth, AuthContext):
             return ()
-        return self.permitted_agents_for_user_id(auth.internal_user_id)
+        try:
+            return self.permitted_agents_for_user_id(auth.internal_user_id)
+        except AgentUseAuthorizationUnavailable:
+            return ()
 
     def permitted_agents_for_user_id(
         self, internal_user_id
@@ -54,7 +61,7 @@ class AgentUseAuthorization:
         from uuid import UUID
 
         if not isinstance(internal_user_id, UUID):
-            return ()
+            raise AgentUseAuthorizationUnavailable() from None
         agent_ids = tuple(card.agent_id for card in self._cards)
         agent_id_array = list(agent_ids)
         try:
@@ -72,15 +79,15 @@ class AgentUseAuthorization:
                     (internal_user_id, agent_id_array),
                 ).fetchall()
             if len(rows) != len(self._cards):
-                return ()
+                raise AgentUseAuthorizationUnavailable()
             if tuple(row["agent_id"] for row in rows) != agent_ids:
-                return ()
+                raise AgentUseAuthorizationUnavailable()
             if any(type(row["allowed"]) is not bool for row in rows):
-                return ()
+                raise AgentUseAuthorizationUnavailable()
             return tuple(
                 card
                 for card, row in zip(self._cards, rows, strict=True)
                 if row["allowed"]
             )
         except (KeyError, TypeError, ValueError, psycopg.Error):
-            return ()
+            raise AgentUseAuthorizationUnavailable() from None

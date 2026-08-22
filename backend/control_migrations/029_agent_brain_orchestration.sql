@@ -1,7 +1,6 @@
 alter table platform_control.mission_runs
   add column relay_event_cursor integer not null default 0
-    check (relay_event_cursor >= 0),
-  add column reviewed_at timestamptz;
+    check (relay_event_cursor >= 0);
 
 do $constraint$
 declare
@@ -57,7 +56,7 @@ begin
   end case;
 
   execute format(
-    'grant update (relay_event_cursor,reviewed_at) '
+    'grant update (relay_event_cursor) '
     'on platform_control.mission_runs to %I', selected_app
   );
 end

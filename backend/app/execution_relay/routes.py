@@ -243,12 +243,18 @@ def build_execution_relay_router(
         try:
             run_ids = await run_in_threadpool(
                 repository.heartbeat,
-                authenticated_body.identity.worker_id
+                authenticated_body.identity.worker_id,
+                lease_seconds=lease_seconds,
             )
         except ExecutionRelayError as error:
             return _repository_error(error)
         return JSONResponse(
-            {"cancel_requested_run_ids": [str(run_id) for run_id in run_ids]},
+            {
+                "stop_requests": [
+                    {"run_id": str(item.run_id), "status": item.status}
+                    for item in run_ids
+                ]
+            },
             headers=_NO_STORE,
         )
 

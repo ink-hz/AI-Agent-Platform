@@ -17,6 +17,7 @@ import pytest
 
 from app.execution_relay import worker as worker_module
 from app.execution_relay.models import RelayEvent, RelayJobPayload, RelayLease
+from app.execution_relay.repository import RelayStopRequest
 from app.execution_relay.worker_store import WorkerRunRecovery
 from app.execution_relay.worker import (
     CallbackResult,
@@ -504,6 +505,30 @@ async def test_initial_and_heartbeat_cancellation_never_redispatch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_forced_interrupt_heartbeat_stops_cleans_and_releases_capacity() -> None:
+    second_run = UUID("00000000-0000-4000-8000-000000000202")
+    second_lease = _lease().model_copy(
+        update={"payload": _lease().payload.model_copy(update={"run_id": second_run})}
+    )
+    cloud = FakeCloud([_lease(), second_lease])
+    store = FakeStore()
+    metabot = FakeMetaBot()
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+    assert await runtime.lease_once() is True
+    cloud.cancel_ids = (
+        RelayStopRequest(run_id=RUN_ID, status="interrupted"),
+    )
+
+    assert await runtime.heartbeat_once() is True
+    assert store.terminals[RUN_ID] == "interrupted"
+    assert metabot.calls[-1] == ("cancel", RUN_ID, "hr-bot")
+    assert await runtime.upload_once() is True
+    assert RUN_ID not in runtime._runs
+    assert await runtime.lease_once() is True
+    assert second_run in runtime._runs
+
+
+@pytest.mark.asyncio
 async def test_cancel_observed_while_lease_commits_prevents_metabot_start() -> None:
     entered = threading.Event()
     release = threading.Event()
@@ -781,6 +806,42 @@ async def test_signed_cloud_client_signs_exact_raw_body_and_path() -> None:
         "events": [_event(1).model_dump(mode="json")]
     }
     assert json.loads(signed[4][2]) == {"status": "completed"}
+    await client.aclose()
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_cloud_heartbeat_parses_typed_stop_requests_strictly() -> None:
+    class Signer:
+        def sign(self, _method, _path, _body):
+            return {"X-Orbbec-Worker-Signature": "redacted"}
+
+    responses = iter(
+        (
+            {
+                "stop_requests": [
+                    {"run_id": str(RUN_ID), "status": "interrupted"}
+                ]
+            },
+            {
+                "stop_requests": [
+                    {"run_id": str(RUN_ID), "status": "invented"}
+                ]
+            },
+        )
+    )
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=next(responses))
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = SignedCloudClient("https://cloud.example", Signer(), client=http)
+
+    assert await client.heartbeat() == (
+        RelayStopRequest(run_id=RUN_ID, status="interrupted"),
+    )
+    with pytest.raises(CloudRelayError, match="cloud relay request failed"):
+        await client.heartbeat()
     await client.aclose()
     await http.aclose()
 

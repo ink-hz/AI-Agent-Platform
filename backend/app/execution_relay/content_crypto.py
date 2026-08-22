@@ -46,6 +46,17 @@ class ContentCodec:
     def __repr__(self) -> str:
         return "ContentCodec(keyring=<redacted>)"
 
+    def supports_key_version(self, version: object) -> bool:
+        """Report configuration availability without exposing key material."""
+
+        try:
+            if isinstance(version, bool) or not isinstance(version, int):
+                return False
+            self._keyring.key_for_version(version)
+            return True
+        except IdentityCryptoError:
+            return False
+
     @staticmethod
     def _aad(subject: str, version: int) -> bytes:
         normalized = _subject_bytes(subject)

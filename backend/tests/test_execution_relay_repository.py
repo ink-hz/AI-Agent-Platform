@@ -22,6 +22,7 @@ from app.execution_relay.repository import (
     ExecutionRelayRepository,
     ExecutionRelayWorkerUnavailable,
     RelayJobState,
+    RelayStopRequest,
 )
 from test_control_plane_migration import control_database
 
@@ -781,8 +782,9 @@ def test_heartbeat_touches_active_worker_and_returns_sorted_cancellations(
         repository.lease("worker-a", ("hr-bot",), 45)
         repository.request_cancel(payload.run_id)
 
-    assert repository.heartbeat("worker-a") == tuple(
-        sorted((payload.run_id for payload in payloads), key=str)
+    assert repository.heartbeat("worker-a", lease_seconds=45) == tuple(
+        RelayStopRequest(run_id=run_id, status="cancelled")
+        for run_id in sorted((payload.run_id for payload in payloads), key=str)
     )
     with psycopg.connect(relay_database["admin"]) as connection:
         assert connection.execute(
@@ -792,3 +794,47 @@ def test_heartbeat_touches_active_worker_and_returns_sorted_cancellations(
     for worker_id in ("missing", "worker-revoked"):
         with pytest.raises(ExecutionRelayWorkerUnavailable):
             repository.heartbeat(worker_id)
+
+
+@pytest.mark.postgres
+def test_heartbeat_renews_lease_so_progressing_run_can_exceed_initial_lease(
+    relay_database, repository
+) -> None:
+    payload = _payload()
+    repository.enqueue(payload)
+    assert repository.lease("worker-a", ("hr-bot",), 45) is not None
+    repository.mark_dispatched("worker-a", payload.run_id)
+    repository.append_events(
+        "worker-a", (_event(payload.run_id, 1, event_type="agent.state"),)
+    )
+    with psycopg.connect(relay_database["admin"]) as connection:
+        connection.execute(
+            "update platform_control.execution_jobs set "
+            "created_at=now()-interval '60 seconds',"
+            "lease_expires_at=now()-interval '15 seconds' where run_id=%s",
+            (payload.run_id,),
+        )
+
+    assert repository.heartbeat("worker-a", lease_seconds=45) == ()
+    state = repository.job_state(
+        payload.run_id,
+        queued_deadline_seconds=60,
+        running_deadline_seconds=300,
+    )
+    assert state.status == "running"
+    assert state.lease_expires_at > state.database_now
+
+
+@pytest.mark.postgres
+def test_forced_terminal_is_returned_to_assigned_worker(
+    relay_database, repository
+) -> None:
+    payload = _payload()
+    repository.enqueue(payload)
+    assert repository.lease("worker-a", ("hr-bot",), 45) is not None
+    repository.mark_dispatched("worker-a", payload.run_id)
+    assert repository.interrupt(payload.run_id) is True
+
+    assert repository.heartbeat("worker-a", lease_seconds=45) == (
+        RelayStopRequest(run_id=payload.run_id, status="interrupted"),
+    )

@@ -22,6 +22,7 @@ from app.execution_relay.repository import (
     ExecutionRelayError,
     ExecutionRelayNotFound,
     ExecutionRelayWorkerUnavailable,
+    RelayStopRequest,
 )
 from app.execution_relay.routes import (
     ExecutionWorkerRequestLimiter,
@@ -58,7 +59,9 @@ class FakeRepository:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
         self.lease_result = None
-        self.heartbeat_result = (RUN_ID,)
+        self.heartbeat_result = (
+            RelayStopRequest(run_id=RUN_ID, status="cancelled"),
+        )
         self.inserted = 0
         self.error: Exception | None = None
 
@@ -77,8 +80,8 @@ class FakeRepository:
         )
         return self.lease_result
 
-    def heartbeat(self, worker_id):
-        self._record("heartbeat", worker_id)
+    def heartbeat(self, worker_id, *, lease_seconds):
+        self._record("heartbeat", worker_id, lease_seconds)
         return self.heartbeat_result
 
     def mark_dispatched(self, worker_id, run_id):
@@ -184,8 +187,10 @@ def test_browser_cookie_and_origin_do_not_authorize_or_gate_machine_route():
 
     assert denied.status_code == 401
     assert accepted.status_code == 200
-    assert accepted.json() == {"cancel_requested_run_ids": [str(RUN_ID)]}
-    assert repository.calls == [("heartbeat", "worker-1")]
+    assert accepted.json() == {
+        "stop_requests": [{"run_id": str(RUN_ID), "status": "cancelled"}]
+    }
+    assert repository.calls == [("heartbeat", "worker-1", 45)]
     assert auth.authenticate_calls == 0
 
 
@@ -271,7 +276,7 @@ def test_worker_boundary_preserves_trusted_proxy_rejection_before_signature():
     assert rejected.headers["cache-control"] == "no-store"
     assert accepted.status_code == 200
     assert len(verifier.calls) == 1
-    assert repository.calls == [("heartbeat", "worker-1")]
+    assert repository.calls == [("heartbeat", "worker-1", 45)]
 
 
 def test_signature_covers_raw_body_before_signed_malformed_json_is_rejected():
@@ -561,7 +566,7 @@ def test_verifier_and_repository_calls_run_through_threadpool(monkeypatch):
 
     assert response.status_code == 200
     assert calls == ["verify", "heartbeat"]
-    assert repository.calls == [("heartbeat", "worker-1")]
+    assert repository.calls == [("heartbeat", "worker-1", 45)]
 
 
 def test_failure_bodies_never_reflect_signed_or_event_content():

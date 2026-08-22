@@ -3,7 +3,10 @@ from uuid import uuid4
 import psycopg
 import pytest
 
-from app.agent_brain.authorization import AgentUseAuthorization
+from app.agent_brain.authorization import (
+    AgentUseAuthorization,
+    AgentUseAuthorizationUnavailable,
+)
 from app.agent_brain.models import CALLABLE_AGENT_IDS
 from app.control_plane.models import AuthContext, Role
 from test_agent_brain_migration import _insert_grant, _seed_active_directory
@@ -142,6 +145,16 @@ def test_database_failure_fails_closed() -> None:
     authorization = AgentUseAuthorization(APP_DSN, connect=unavailable)
 
     assert authorization.permitted_agents(_auth()) == ()
+
+
+def test_orchestration_authorization_distinguishes_database_failure_from_no_grants() -> None:
+    def unavailable(*_args, **_kwargs):
+        raise psycopg.OperationalError("database unavailable")
+
+    authorization = AgentUseAuthorization(APP_DSN, connect=unavailable)
+
+    with pytest.raises(AgentUseAuthorizationUnavailable):
+        authorization.permitted_agents_for_user_id(uuid4())
 
 
 def _valid_rows() -> list[dict[str, object]]:

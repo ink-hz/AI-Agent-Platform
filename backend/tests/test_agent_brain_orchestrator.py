@@ -15,7 +15,7 @@ from app.agent_brain.orchestrator import (
     build_planning_prompt,
     build_synthesis_prompt,
 )
-from app.agent_brain.repository import MissionRepository
+from app.agent_brain.repository import MissionRepository, MissionRepositoryError
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
 from app.execution_relay.models import RelayEvent
@@ -247,7 +247,6 @@ def test_delegate_executes_one_professional_then_synthesizes(
     relay.terminal(professional_id, "completed", "专业候选人画像")
     service.advance_pending(limit=50)
     service.advance_pending(limit=50)
-    service.advance_pending(limit=50)
     synthesis_id = next(
         run_id
         for run_id, payload in relay.payloads.items()
@@ -269,7 +268,6 @@ def test_delegate_executes_one_professional_then_synthesizes(
         "plan.created",
         "task.dispatched",
         "agent.result",
-        "task.reviewed",
         "synthesis.started",
         "mission.completed",
     ]
@@ -450,6 +448,64 @@ def test_bad_or_missing_mission_content_is_quarantined_without_blocking_batch(
     assert {payload.conversation_id for payload in relay.payloads.values()} == {
         healthy.mission_id
     }
+    corrupt_view = missions.mission_for_owner(owner_id, corrupt.mission_id)
+    missing_view = missions.mission_for_owner(owner_id, missing.mission_id)
+    assert corrupt_view.content_available is False
+    assert missing_view.content_available is False
+    assert corrupt_view.prompt == "[任务内容不可用]"
+    assert missing_view.prompt == "[任务内容不可用]"
+    listed = missions.list_missions_for_owner(owner_id)
+    assert {item.mission_id for item in listed} >= {
+        corrupt.mission_id,
+        missing.mission_id,
+        healthy.mission_id,
+    }
+    assert missions.events_after(owner_id, corrupt.mission_id)[-1].event_type == "mission.failed"
+
+
+@pytest.mark.postgres
+def test_transient_content_read_failure_does_not_quarantine_mission(
+    brain_database, monkeypatch
+):
+    environment, owner_id = brain_database
+    missions = MissionRepository(
+        environment["urls"]["platform_control_app"], content_codec=_codec()
+    )
+    relay = ScriptedRelay()
+    service = MissionOrchestrator(
+        missions,
+        relay,
+        capability_provider=lambda _owner: load_capability_cards(),
+    )
+    mission = missions.create_mission(owner_id, uuid4(), "瞬时失败")
+
+    def unavailable(_owner_id, _mission_id):
+        raise MissionRepositoryError()
+
+    monkeypatch.setattr(missions, "mission_for_orchestration", unavailable)
+
+    assert service.advance_pending(limit=50) == 0
+    assert _mission_row(environment, mission.mission_id)[0] == "planning"
+    assert missions.events_after(owner_id, mission.mission_id) == ()
+
+
+@pytest.mark.postgres
+def test_unavailable_content_key_version_does_not_quarantine_mission(
+    brain_database, orchestrator
+):
+    environment, owner_id = brain_database
+    service, missions, _relay = orchestrator
+    mission = missions.create_mission(owner_id, uuid4(), "密钥暂不可用")
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.mission_messages "
+            "set encryption_key_version=999 where mission_id=%s",
+            (mission.mission_id,),
+        )
+
+    assert service.advance_pending(limit=50) == 0
+    assert _mission_row(environment, mission.mission_id)[0] == "planning"
+    assert missions.events_after(owner_id, mission.mission_id) == ()
 
 
 @pytest.mark.postgres
@@ -724,13 +780,118 @@ def test_real_relay_events_drive_run_lifecycle_and_review_before_synthesis(
     assert service.advance_pending(limit=50) == 1
     events = missions.events_after(owner_id, mission.mission_id)
     event_types = [event.event_type for event in events]
-    assert event_types.index("agent.result") < event_types.index("task.reviewed")
-    reviewed = missions.runs_for_owner(owner_id, mission.mission_id)[-1]
-    assert reviewed.reviewed_at is not None
-    assert reviewed.relay_event_cursor == 3
+    assert "task.reviewed" not in event_types
+    assert event_types.index("agent.result") < event_types.index("synthesis.started")
+    professional_after = missions.runs_for_owner(owner_id, mission.mission_id)[-2]
+    assert professional_after.relay_event_cursor == 3
+    assert missions.runs_for_owner(owner_id, mission.mission_id)[-1].phase == "synthesis"
+
+
+@pytest.mark.postgres
+def test_terminal_race_archives_real_relay_result_instead_of_forcing_interrupt(
+    brain_database, monkeypatch
+):
+    environment, owner_id = brain_database
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.execution_workers "
+            "(worker_id,allowed_agent_ids,status) values "
+            "('brain-race-worker',array['hr-bot'],'active')"
+        )
+    missions = MissionRepository(
+        environment["urls"]["platform_control_app"], content_codec=_codec()
+    )
+    relay = ExecutionRelayRepository(
+        environment["urls"]["platform_control_app"], content_codec=_codec()
+    )
+    current = [next(card for card in load_capability_cards() if card.agent_id == "hr-bot")]
+    service = MissionOrchestrator(
+        missions, relay, capability_provider=lambda _owner: tuple(current)
+    )
+    mission = missions.create_mission(
+        owner_id, uuid4(), "终态竞争", mode="direct_agent", direct_agent_id="hr-bot"
+    )
+    service.advance_pending(limit=50)
+    run = missions.runs_for_owner(owner_id, mission.mission_id)[0]
+    assert relay.lease("brain-race-worker", ("hr-bot",), 45) is not None
+    relay.mark_dispatched("brain-race-worker", run.run_id)
+
+    def terminal_wins(_run_id):
+        relay.append_events(
+            "brain-race-worker",
+            (
+                RelayEvent(
+                    run_id=run.run_id,
+                    seq=1,
+                    event_type="agent.complete",
+                    created_at=datetime.now(timezone.utc),
+                    payload={"text": "竞争中已完成"},
+                ),
+            ),
+        )
+        relay.finish("brain-race-worker", run.run_id, "completed")
+        return False
+
+    monkeypatch.setattr(relay, "interrupt", terminal_wins)
+    current.clear()
 
     assert service.advance_pending(limit=50) == 1
-    assert missions.runs_for_owner(owner_id, mission.mission_id)[-1].phase == "synthesis"
+    assert _mission_row(environment, mission.mission_id)[0] == "completed"
+    assert missions.events_after(owner_id, mission.mission_id)[-1].payload["text"] == "竞争中已完成"
+
+
+@pytest.mark.postgres
+def test_zero_professional_grants_still_allows_brain_direct_answer(
+    brain_database,
+):
+    environment, owner_id = brain_database
+    missions = MissionRepository(
+        environment["urls"]["platform_control_app"], content_codec=_codec()
+    )
+    relay = ScriptedRelay()
+    service = MissionOrchestrator(
+        missions, relay, capability_provider=lambda _owner: ()
+    )
+    mission = missions.create_mission(owner_id, uuid4(), "无需专业 Agent")
+
+    assert service.advance_pending(limit=50) == 1
+    run_id, payload = next(iter(relay.payloads.items()))
+    envelope = json.loads(payload.prompt.split("\n", 1)[1])
+    assert envelope["authorized_capability_cards"] == []
+    relay.terminal(
+        run_id,
+        "completed",
+        '{"kind":"direct","answer":"直接答案","agent_id":null,'
+        '"objective":null,"rationale_summary":"无需委派"}',
+    )
+
+    assert service.advance_pending(limit=50) == 1
+    assert _mission_row(environment, mission.mission_id)[0] == "completed"
+
+
+@pytest.mark.postgres
+def test_exact_32kib_direct_request_persists_compact_run_input(brain_database):
+    environment, owner_id = brain_database
+    missions = MissionRepository(
+        environment["urls"]["platform_control_app"], content_codec=_codec()
+    )
+    relay = ScriptedRelay()
+    card = next(card for card in load_capability_cards() if card.agent_id == "hr-bot")
+    service = MissionOrchestrator(
+        missions, relay, capability_provider=lambda _owner: (card,)
+    )
+    prompt = "x" * (32 * 1024)
+    mission = missions.create_mission(
+        owner_id, uuid4(), prompt, mode="direct_agent", direct_agent_id="hr-bot"
+    )
+
+    assert service.advance_pending(limit=50) == 1
+    run = missions.runs_for_owner(owner_id, mission.mission_id)[0]
+    assert run.input_payload == {
+        "request_source": "mission_message:1",
+        "capability_card": card.model_dump(mode="json"),
+    }
+    assert len(relay.payloads) == 1
 
 
 @pytest.mark.postgres

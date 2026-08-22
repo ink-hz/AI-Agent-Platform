@@ -19,6 +19,7 @@ from app.execution_relay.repository import (
 from .models import AgentCapabilityCard
 from .protocol import BrainProtocolError, parse_brain_decision
 from .repository import (
+    MissionContentUnavailable,
     MissionRecord,
     MissionRepositoryConflict,
     MissionRepositoryError,
@@ -237,8 +238,6 @@ class MissionOrchestrator:
                     "'platform_control.mission_runs','terminal_at','update') "
                     "and has_column_privilege(current_user,"
                     "'platform_control.mission_runs','relay_event_cursor','update') "
-                    "and has_column_privilege(current_user,"
-                    "'platform_control.mission_runs','reviewed_at','update') "
                     "and has_table_privilege(current_user,"
                     "'platform_control.mission_events','select') "
                     "and has_table_privilege(current_user,"
@@ -285,10 +284,10 @@ class MissionOrchestrator:
         advanced = 0
         for claim in claims:
             try:
-                mission = self.missions.mission_for_owner(
+                mission = self.missions.mission_for_orchestration(
                     claim.owner_internal_user_id, claim.mission_id
                 )
-            except MissionRepositoryError:
+            except MissionContentUnavailable:
                 try:
                     if self.missions.quarantine_claim(claim):
                         advanced += 1
@@ -297,6 +296,12 @@ class MissionOrchestrator:
                         "Agent Brain Mission quarantine failed",
                         extra={"mission_id": str(claim.mission_id)},
                     )
+                continue
+            except MissionRepositoryError:
+                logger.exception(
+                    "Agent Brain Mission content read failed",
+                    extra={"mission_id": str(claim.mission_id)},
+                )
                 continue
             try:
                 if self._advance_one(mission):
@@ -380,9 +385,22 @@ class MissionOrchestrator:
         self, mission: MissionRecord, run: MissionRun, reason_code: str
     ) -> bool:
         try:
-            self.relay.interrupt(run.run_id)
+            interrupted = self.relay.interrupt(run.run_id)
         except (ExecutionRelayNotFound, ExecutionRelayConflict, KeyError):
-            pass
+            interrupted = True
+        if not interrupted:
+            state = self._relay_status_optional(run)
+            if state in _TERMINAL_RELAY_STATES:
+                if run.phase == "planning":
+                    return self._advance_planning(
+                        mission, run, self._pinned_cards(run)
+                    )
+                if run.phase == "professional":
+                    return self._advance_professional(mission, run)
+                if run.phase == "direct":
+                    return self._advance_direct(mission, run)
+                return self._advance_synthesis(mission, run)
+            raise ExecutionRelayConflict()
         self.missions.complete_run(
             mission.owner_internal_user_id,
             mission.mission_id,
@@ -504,9 +522,7 @@ class MissionOrchestrator:
                     phase="direct",
                     agent_id=card.agent_id,
                     input_payload={
-                        "user_request": mission.prompt,
-                        "objective": mission.prompt,
-                        "capability_version": card.capability_version,
+                        "request_source": "mission_message:1",
                         "capability_card": _card_payload(card),
                     },
                     objective=mission.prompt,
@@ -539,12 +555,9 @@ class MissionOrchestrator:
 
         planning = runs.get("planning")
         if planning is None:
-            if not cards:
+            if capability_unavailable:
                 return self._terminate_without_run(
-                    mission,
-                    "capability_unavailable"
-                    if capability_unavailable
-                    else "authorization_revoked",
+                    mission, "capability_unavailable"
                 )
             prompt = build_planning_prompt(mission.prompt, cards)
             planning = self.missions.create_run(
@@ -553,8 +566,7 @@ class MissionOrchestrator:
                 phase="planning",
                 agent_id="agent-brain-bot",
                 input_payload={
-                    "user_request": mission.prompt,
-                    "authorized_agent_ids": [card.agent_id for card in cards],
+                    "request_source": "mission_message:1",
                     "capability_cards": [_card_payload(card) for card in cards],
                 },
                 event_type="brain.responding",
@@ -611,9 +623,8 @@ class MissionOrchestrator:
                 phase="professional",
                 agent_id=card.agent_id,
                 input_payload={
-                    "user_request": mission.prompt,
+                    "request_source": "mission_message:1",
                     "objective": parsed.objective,
-                    "capability_version": card.capability_version,
                     "capability_card": _card_payload(card),
                 },
                 objective=parsed.objective,
@@ -648,13 +659,6 @@ class MissionOrchestrator:
                 return True
             return self._advance_professional(mission, professional)
 
-        if professional.reviewed_at is None:
-            return self.missions.review_professional_run(
-                mission.owner_internal_user_id,
-                mission.mission_id,
-                professional.run_id,
-            )
-
         synthesis = runs.get("synthesis")
         if synthesis is None:
             professional_result = str(professional.output_payload["text"])
@@ -668,7 +672,7 @@ class MissionOrchestrator:
                 phase="synthesis",
                 agent_id="agent-brain-bot",
                 input_payload={
-                    "user_request": mission.prompt,
+                    "request_source": "mission_message:1",
                     "professional_result": professional_result,
                     "capability_cards": [
                         _card_payload(card) for card in planning_cards

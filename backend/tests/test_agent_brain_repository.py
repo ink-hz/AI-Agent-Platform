@@ -155,7 +155,14 @@ def test_relay_events_bridge_once_and_move_professional_run_to_running(
             seq=1,
             event_type="agent.state",
             created_at=now,
-            payload={"state": "running", "rawDebug": "must not persist"},
+            payload={
+                "state": "running",
+                "progress": 0.25,
+                "current": 1,
+                "total": 4,
+                "text": "private state detail",
+                "rawDebug": "must not persist",
+            },
         ),
         RelayEvent(
             run_id=professional.run_id,
@@ -183,7 +190,10 @@ def test_relay_events_bridge_once_and_move_professional_run_to_running(
     ]
     assert events[-1].payload == {
         "agent_id": "hr-bot",
-        "text": "正在搜索候选人",
+        "state": "running",
+        "progress": 0.25,
+        "current": 1,
+        "total": 4,
     }
     assert b"must not persist" not in b"".join(
         bytes(row[0])
@@ -197,29 +207,14 @@ def test_relay_events_bridge_once_and_move_professional_run_to_running(
 
 
 @pytest.mark.postgres
-def test_professional_review_is_persisted_once_before_synthesis(
+def test_professional_result_does_not_fabricate_review_checkpoint(
     mission_database, repository
 ) -> None:
     environment, owner_id, _ = mission_database
     mission = repository.create_mission(owner_id, uuid4(), "review")
     _advance_to_synthesis_ready(repository, owner_id, mission.mission_id)
-    professional = repository.runs_for_owner(owner_id, mission.mission_id)[-1]
-
-    assert repository.review_professional_run(
-        owner_id, mission.mission_id, professional.run_id
-    ) is True
-    assert repository.review_professional_run(
-        owner_id, mission.mission_id, professional.run_id
-    ) is False
-
     events = repository.events_after(owner_id, mission.mission_id)
-    assert [event.event_type for event in events].count("task.reviewed") == 1
-    assert _rows(
-        environment,
-        "select reviewed_at is not null from platform_control.mission_runs "
-        "where run_id=%s",
-        (professional.run_id,),
-    ) == [(True,)]
+    assert [event.event_type for event in events].count("task.reviewed") == 0
 
 
 @pytest.mark.postgres
@@ -796,12 +791,11 @@ def test_corrupt_ciphertext_and_database_errors_are_stable_and_non_secret(
             (b"x" * 29, mission.mission_id),
         )
 
-    with pytest.raises(MissionRepositoryError) as raised:
-        repository.mission_for_owner(owner_id, mission.mission_id)
+    tombstone = repository.mission_for_owner(owner_id, mission.mission_id)
 
-    assert type(raised.value) is MissionRepositoryError
-    assert str(raised.value) == "mission repository unavailable"
-    assert "top secret" not in repr(raised.value)
+    assert tombstone.content_available is False
+    assert tombstone.prompt == "[任务内容不可用]"
+    assert "top secret" not in repr(tombstone)
 
 
 @pytest.mark.postgres

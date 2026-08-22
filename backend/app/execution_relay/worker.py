@@ -26,6 +26,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationErro
 from .acceptance_hooks import WorkerAcceptanceHooks
 from .metabot_client import MetaBotClient, MetaBotRuntimeMap
 from .models import RelayEvent, RelayJobPayload, RelayLease
+from .repository import RelayStopRequest
 from .worker_auth import WorkerRequestSigner
 from .worker_store import WorkerRunRecovery, WorkerStore
 
@@ -226,18 +227,32 @@ class SignedCloudClient:
         except (TypeError, ValueError, ValidationError):
             raise CloudRelayError() from None
 
-    async def heartbeat(self) -> tuple[UUID, ...]:
+    async def heartbeat(self) -> tuple[RelayStopRequest, ...]:
         response = await self._post(f"{_API_PREFIX}/heartbeat", {})
         try:
             value = self._json_object(response)
-            if set(value) != {"cancel_requested_run_ids"} or not isinstance(
-                value["cancel_requested_run_ids"], list
+            if set(value) == {"cancel_requested_run_ids"}:
+                items = value["cancel_requested_run_ids"]
+                if not isinstance(items, list) or any(
+                    not isinstance(item, str) for item in items
+                ):
+                    raise ValueError
+                return tuple(
+                    RelayStopRequest(run_id=UUID(item), status="cancelled")
+                    for item in items
+                )
+            if set(value) != {"stop_requests"} or not isinstance(
+                value["stop_requests"], list
             ):
                 raise ValueError
-            items = value["cancel_requested_run_ids"]
-            if any(not isinstance(item, str) for item in items):
-                raise ValueError
-            return tuple(UUID(item) for item in items)
+            requests: list[RelayStopRequest] = []
+            for item in value["stop_requests"]:
+                if not isinstance(item, dict) or set(item) != {"run_id", "status"}:
+                    raise ValueError
+                if item["status"] not in _TERMINAL_STATES:
+                    raise ValueError
+                requests.append(RelayStopRequest(UUID(item["run_id"]), item["status"]))
+            return tuple(requests)
         except Exception:
             raise CloudRelayError() from None
 
@@ -342,7 +357,7 @@ class WorkerRuntime:
         self.stop_event = asyncio.Event()
         self.callback_ready = asyncio.Event()
         self._runs: dict[UUID, _RunContext] = {}
-        self._pending_cancellations: set[UUID] = set()
+        self._pending_stops: dict[UUID, str] = {}
         self._state_lock = asyncio.Lock()
         self._lease_lock = asyncio.Lock()
         self._upload_lock = asyncio.Lock()
@@ -475,13 +490,14 @@ class WorkerRuntime:
                     self._runs[run_id] = context
                 async with context.transition_lock:
                     async with self._state_lock:
-                        cancellation_observed = (
-                            lease.cancel_requested
-                            or run_id in self._pending_cancellations
-                        )
-                        self._pending_cancellations.discard(run_id)
-                    if cancellation_observed or self.shutdown_event.is_set():
-                        status = (
+                        pending_status = self._pending_stops.pop(run_id, None)
+                        cancellation_observed = lease.cancel_requested
+                    if (
+                        pending_status is not None
+                        or cancellation_observed
+                        or self.shutdown_event.is_set()
+                    ):
+                        status = pending_status or (
                             "cancelled" if cancellation_observed else "interrupted"
                         )
                         await self._store_call("mark_terminal", run_id, status)
@@ -658,11 +674,18 @@ class WorkerRuntime:
         except Exception as error:
             self._safe_log("heartbeat_failed", error)
             return False
-        for run_id in cancel_ids:
+        for stop_request in cancel_ids:
+            if isinstance(stop_request, UUID):
+                stop_request = RelayStopRequest(
+                    run_id=stop_request, status="cancelled"
+                )
+            if not isinstance(stop_request, RelayStopRequest):
+                return False
+            run_id = stop_request.run_id
             async with self._state_lock:
                 context = self._runs.get(run_id)
                 if context is None:
-                    self._pending_cancellations.add(run_id)
+                    self._pending_stops[run_id] = stop_request.status
             if context is None:
                 continue
             async with context.transition_lock:
@@ -674,8 +697,10 @@ class WorkerRuntime:
                             self.metabot.cancel_run, run_id, context.agent_id
                         )
                         context.cancel_sent = True
-                    await self._store_call("mark_terminal", run_id, "cancelled")
-                    context.terminal_status = "cancelled"
+                    await self._store_call(
+                        "mark_terminal", run_id, stop_request.status
+                    )
+                    context.terminal_status = stop_request.status
                 except Exception as error:
                     if context.terminal_status is not None:
                         continue
