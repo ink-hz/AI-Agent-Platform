@@ -122,6 +122,7 @@ create table platform_control.mission_tasks (
   started_at timestamptz,
   terminal_at timestamptz,
   unique (mission_id, task_id),
+  unique (mission_id, task_id, agent_id),
   unique (mission_id, task_index),
   check ((status = 'running') = (started_at is not null and terminal_at is null)
     or status <> 'running'),
@@ -133,6 +134,39 @@ create table platform_control.mission_tasks (
 
 create unique index one_mission_child_task
   on platform_control.mission_tasks (mission_id);
+
+create function platform_control.enforce_mission_task_agent_v28()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_control
+as $function$
+declare
+  selected_mode text;
+  selected_direct_agent_id text;
+begin
+  select mission.mode, mission.direct_agent_id
+  into selected_mode, selected_direct_agent_id
+  from platform_control.missions mission
+  where mission.mission_id = new.mission_id;
+  if not found then
+    raise foreign_key_violation using message = 'Mission owner row required';
+  end if;
+  if selected_mode = 'direct_agent'
+     and new.agent_id is distinct from selected_direct_agent_id
+  then
+    raise check_violation using
+      message = 'direct Mission task Agent mismatch';
+  end if;
+  return new;
+end
+$function$;
+
+create constraint trigger enforce_mission_task_agent_v28
+after insert or update of mission_id, agent_id
+on platform_control.mission_tasks
+not deferrable initially immediate
+for each row execute function platform_control.enforce_mission_task_agent_v28();
 
 create table platform_control.mission_runs (
   run_id uuid primary key,
@@ -157,11 +191,15 @@ create table platform_control.mission_runs (
   started_at timestamptz,
   terminal_at timestamptz,
   unique (mission_id, run_id),
-  foreign key (mission_id, task_id)
-    references platform_control.mission_tasks(mission_id, task_id),
+  foreign key (mission_id, task_id, agent_id)
+    references platform_control.mission_tasks(mission_id, task_id, agent_id),
   check (
-    (phase = 'professional' and task_id is not null)
-    or (phase <> 'professional' and task_id is null)
+    (phase in ('professional', 'direct') and task_id is not null)
+    or (
+      phase in ('planning', 'synthesis')
+      and task_id is null
+      and agent_id = 'agent-brain-bot'
+    )
   ),
   check (
     (output_ciphertext is null and output_encryption_key_version is null)
@@ -477,6 +515,8 @@ revoke all on
 from public;
 revoke all on function platform_control.has_agent_use_scope_v28(uuid, text)
 from public;
+revoke all on function platform_control.enforce_mission_task_agent_v28()
+from public;
 revoke all on function platform_control.grant_agent_use_scope_v28(
   uuid, text, text, uuid, uuid, boolean, uuid, text, uuid
 ) from public;
@@ -524,6 +564,10 @@ begin
     execute format(
       'revoke all on function '
       'platform_control.has_agent_use_scope_v28(uuid,text) from %I', role_name
+    );
+    execute format(
+      'revoke all on function '
+      'platform_control.enforce_mission_task_agent_v28() from %I', role_name
     );
     execute format(
       'revoke all on function '

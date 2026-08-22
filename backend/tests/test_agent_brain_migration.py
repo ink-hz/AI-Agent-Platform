@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+import time
 from uuid import UUID, uuid4
 
 import psycopg
@@ -18,6 +21,7 @@ MISSION_TABLES = (
 )
 TASK_2_TABLES = ("agent_use_grants", *MISSION_TABLES)
 V28_FUNCTIONS = (
+    "enforce_mission_task_agent_v28",
     "grant_agent_use_scope_v28",
     "has_agent_use_scope_v28",
     "revoke_agent_use_scope_v28",
@@ -336,6 +340,193 @@ def test_mission_state_matrices_sequences_and_single_lifetime_child_are_enforced
 
 
 @pytest.mark.postgres
+def test_task_and_run_agents_match_direct_and_brain_missions(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as connection:
+        owner_id = uuid4()
+        direct_mission_id = uuid4()
+        direct_task_id = uuid4()
+        brain_mission_id = uuid4()
+        brain_task_id = uuid4()
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values "
+            "(%s,'Agent Integrity Owner','active')",
+            (owner_id,),
+        )
+        connection.execute(
+            "insert into platform_control.missions "
+            "(mission_id,owner_internal_user_id,client_request_id,mode,status,"
+            "direct_agent_id) values "
+            "(%s,%s,%s,'direct_agent','delegated','hr-bot')",
+            (direct_mission_id, owner_id, uuid4()),
+        )
+        with pytest.raises(psycopg.errors.CheckViolation), connection.transaction():
+            connection.execute(
+                "insert into platform_control.mission_tasks "
+                "(task_id,mission_id,agent_id,objective_ciphertext,"
+                "encryption_key_version,status) values "
+                "(%s,%s,'fae-bot',%s,1,'queued')",
+                (uuid4(), direct_mission_id, b"d" * 29),
+            )
+        connection.execute(
+            "insert into platform_control.mission_tasks "
+            "(task_id,mission_id,agent_id,objective_ciphertext,"
+            "encryption_key_version,status) values "
+            "(%s,%s,'hr-bot',%s,1,'queued')",
+            (direct_task_id, direct_mission_id, b"d" * 29),
+        )
+        connection.execute(
+            "insert into platform_control.mission_runs "
+            "(run_id,mission_id,task_id,phase,agent_id,status,input_ciphertext,"
+            "encryption_key_version) values "
+            "(%s,%s,%s,'direct','hr-bot','queued',%s,1)",
+            (uuid4(), direct_mission_id, direct_task_id, b"r" * 29),
+        )
+        with pytest.raises(
+            psycopg.errors.ForeignKeyViolation
+        ), connection.transaction():
+            connection.execute(
+                "insert into platform_control.mission_runs "
+                "(run_id,mission_id,task_id,phase,agent_id,status,"
+                "input_ciphertext,encryption_key_version) values "
+                "(%s,%s,%s,'direct','fae-bot','queued',%s,1)",
+                (uuid4(), direct_mission_id, direct_task_id, b"r" * 29),
+            )
+
+        connection.execute(
+            "insert into platform_control.missions "
+            "(mission_id,owner_internal_user_id,client_request_id,mode,status) "
+            "values (%s,%s,%s,'brain','delegated')",
+            (brain_mission_id, owner_id, uuid4()),
+        )
+        connection.execute(
+            "insert into platform_control.mission_tasks "
+            "(task_id,mission_id,agent_id,objective_ciphertext,"
+            "encryption_key_version,status) values "
+            "(%s,%s,'fae-bot',%s,1,'queued')",
+            (brain_task_id, brain_mission_id, b"b" * 29),
+        )
+        connection.execute(
+            "insert into platform_control.mission_runs "
+            "(run_id,mission_id,task_id,phase,agent_id,status,input_ciphertext,"
+            "encryption_key_version) values "
+            "(%s,%s,%s,'professional','fae-bot','queued',%s,1)",
+            (uuid4(), brain_mission_id, brain_task_id, b"r" * 29),
+        )
+        with pytest.raises(
+            psycopg.errors.ForeignKeyViolation
+        ), connection.transaction():
+            connection.execute(
+                "insert into platform_control.mission_runs "
+                "(run_id,mission_id,task_id,phase,agent_id,status,"
+                "input_ciphertext,encryption_key_version) values "
+                "(%s,%s,%s,'professional','hr-bot','queued',%s,1)",
+                (uuid4(), brain_mission_id, brain_task_id, b"r" * 29),
+            )
+
+        for phase in ("planning", "synthesis"):
+            connection.execute(
+                "insert into platform_control.mission_runs "
+                "(run_id,mission_id,phase,agent_id,status,input_ciphertext,"
+                "encryption_key_version) values "
+                "(%s,%s,%s,'agent-brain-bot','queued',%s,1)",
+                (uuid4(), brain_mission_id, phase, b"r" * 29),
+            )
+        with pytest.raises(psycopg.errors.CheckViolation), connection.transaction():
+            connection.execute(
+                "insert into platform_control.mission_runs "
+                "(run_id,mission_id,phase,agent_id,status,input_ciphertext,"
+                "encryption_key_version) values "
+                "(%s,%s,'planning','hr-bot','queued',%s,1)",
+                (uuid4(), brain_mission_id, b"r" * 29),
+            )
+        with pytest.raises(psycopg.errors.CheckViolation), connection.transaction():
+            connection.execute(
+                "insert into platform_control.mission_runs "
+                "(run_id,mission_id,phase,agent_id,status,input_ciphertext,"
+                "encryption_key_version) values "
+                "(%s,%s,'direct','hr-bot','queued',%s,1)",
+                (uuid4(), direct_mission_id, b"r" * 29),
+            )
+
+
+@pytest.mark.postgres
+def test_task_run_agent_foreign_key_is_concurrency_safe(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    mission_id = uuid4()
+    task_id = uuid4()
+    run_id = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        owner_id = uuid4()
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values "
+            "(%s,'Concurrent Integrity Owner','active')",
+            (owner_id,),
+        )
+        connection.execute(
+            "insert into platform_control.missions "
+            "(mission_id,owner_internal_user_id,client_request_id,mode,status) "
+            "values (%s,%s,%s,'brain','delegated')",
+            (mission_id, owner_id, uuid4()),
+        )
+        connection.execute(
+            "insert into platform_control.mission_tasks "
+            "(task_id,mission_id,agent_id,objective_ciphertext,"
+            "encryption_key_version,status) values "
+            "(%s,%s,'fae-bot',%s,1,'queued')",
+            (task_id, mission_id, b"t" * 29),
+        )
+
+    started = Event()
+
+    def insert_run_for_old_agent() -> type[BaseException] | None:
+        try:
+            with psycopg.connect(environment["admin"]) as connection:
+                connection.execute("set application_name='mission-agent-fk-race'")
+                connection.execute("set lock_timeout='5s'")
+                started.set()
+                connection.execute(
+                    "insert into platform_control.mission_runs "
+                    "(run_id,mission_id,task_id,phase,agent_id,status,"
+                    "input_ciphertext,encryption_key_version) values "
+                    "(%s,%s,%s,'professional','fae-bot','queued',%s,1)",
+                    (run_id, mission_id, task_id, b"r" * 29),
+                )
+        except BaseException as error:
+            return type(error)
+        return None
+
+    with psycopg.connect(environment["admin"]) as writer:
+        writer.execute(
+            "update platform_control.mission_tasks set agent_id='hr-bot' "
+            "where mission_id=%s and task_id=%s",
+            (mission_id, task_id),
+        )
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(insert_run_for_old_agent)
+            assert started.wait(timeout=2)
+            deadline = time.monotonic() + 2
+            lock_observed = False
+            while time.monotonic() < deadline:
+                with psycopg.connect(environment["admin"]) as observer:
+                    lock_observed = observer.execute(
+                        "select coalesce(bool_or(wait_event_type='Lock'),false) "
+                        "from pg_stat_activity "
+                        "where application_name='mission-agent-fk-race'"
+                    ).fetchone()[0]
+                if lock_observed:
+                    break
+                time.sleep(0.01)
+            assert lock_observed is True
+            writer.commit()
+            assert future.result(timeout=2) is psycopg.errors.ForeignKeyViolation
+
+
+@pytest.mark.postgres
 def test_agent_use_scope_tracks_active_generation_and_defaults_to_deny(
     control_database,
 ) -> None:
@@ -503,6 +694,7 @@ def test_grant_shape_acl_and_audited_maintenance_boundary(control_database) -> N
                 ),
             ).fetchall()
             assert function_acl == [
+                ("enforce_mission_task_agent_v28", False, False, False),
                 ("grant_agent_use_scope_v28", False, True, False),
                 ("has_agent_use_scope_v28", True, False, False),
                 ("revoke_agent_use_scope_v28", False, True, False),
@@ -624,6 +816,12 @@ def test_app_updates_only_lifecycle_columns(control_database) -> None:
             mission_id,
         ),
         (
+            "missions",
+            "direct_agent_id=direct_agent_id",
+            "mission_id",
+            mission_id,
+        ),
+        (
             "mission_messages",
             "content_ciphertext=content_ciphertext",
             "mission_id",
@@ -631,6 +829,7 @@ def test_app_updates_only_lifecycle_columns(control_database) -> None:
         ),
         ("mission_tasks", "agent_id=agent_id", "task_id", task_id),
         ("mission_runs", "phase=phase", "run_id", run_id),
+        ("mission_runs", "agent_id=agent_id", "run_id", run_id),
         (
             "mission_events",
             "payload_ciphertext=payload_ciphertext",
