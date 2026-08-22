@@ -413,6 +413,91 @@ def test_cancel_before_lease_converges_to_cancelled(brain_database, orchestrator
 
 
 @pytest.mark.postgres
+@pytest.mark.parametrize("timeout_kind", ["lease", "runtime"])
+def test_cancel_winner_remains_cancelled_when_worker_never_acknowledges_stop(
+    brain_database, timeout_kind
+) -> None:
+    environment, owner_id = brain_database
+    missions = MissionRepository(
+        environment["urls"]["platform_control_app"], content_codec=_codec()
+    )
+    relay = ExecutionRelayRepository(
+        environment["urls"]["platform_control_app"], content_codec=_codec()
+    )
+    service = MissionOrchestrator(
+        missions,
+        relay,
+        capability_provider=lambda _owner: load_capability_cards(),
+    )
+    worker_id = f"no-ack-{uuid4().hex[:12]}"
+    mission = missions.create_mission(
+        owner_id,
+        uuid4(),
+        "取消后 Worker 无响应",
+        mode="direct_agent",
+        direct_agent_id="hr-bot",
+    )
+    try:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "insert into platform_control.execution_workers "
+                "(worker_id,allowed_agent_ids,status) values "
+                "(%s,array['hr-bot'],'active')",
+                (worker_id,),
+            )
+        assert service.advance_pending(limit=50) == 1
+        with psycopg.connect(environment["admin"]) as connection:
+            run_id = connection.execute(
+                "select run_id from platform_control.mission_runs "
+                "where mission_id=%s",
+                (mission.mission_id,),
+            ).fetchone()[0]
+        assert relay.lease(worker_id, ("hr-bot",), 45) is not None
+        relay.mark_dispatched(worker_id, run_id)
+
+        cancelled = missions.request_cancel(owner_id, mission.mission_id)
+        assert cancelled.cancel_requested is True
+        with psycopg.connect(environment["admin"]) as connection:
+            if timeout_kind == "lease":
+                connection.execute(
+                    "update platform_control.execution_jobs set "
+                    "lease_expires_at=now()-interval '1 second',"
+                    "updated_at=now() where run_id=%s",
+                    (run_id,),
+                )
+            else:
+                connection.execute(
+                    "update platform_control.execution_jobs set "
+                    "lease_expires_at=now()+interval '1 minute',"
+                    "updated_at=now()-interval '301 seconds' where run_id=%s",
+                    (run_id,),
+                )
+
+        relay_state = relay.job_state(
+            run_id, queued_deadline_seconds=60, running_deadline_seconds=300
+        )
+        assert relay_state.status == "cancelled"
+        assert service.advance_pending(limit=50) == 1
+        assert _mission_row(environment, mission.mission_id)[0] == "cancelled"
+        assert (
+            missions.events_after(owner_id, mission.mission_id)[-1].event_type
+            == "mission.cancelled"
+        )
+    finally:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_control.execution_jobs where run_id in "
+                "(select run_id from platform_control.mission_runs "
+                "where mission_id=%s)",
+                (mission.mission_id,),
+            )
+            connection.execute(
+                "delete from platform_control.execution_workers where worker_id=%s",
+                (worker_id,),
+            )
+
+
+@pytest.mark.postgres
 @pytest.mark.parametrize("terminal_status", ["completed", "failed"])
 def test_observed_relay_terminal_is_not_overwritten_by_historical_cancel_flag(
     brain_database, orchestrator, terminal_status

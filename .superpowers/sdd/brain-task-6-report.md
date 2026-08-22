@@ -35,6 +35,7 @@ Cancellation and execution enqueue both lock the Mission before updating or crea
 - A leased/dispatched/running job receives a pending `cancelled` stop request.
 - If cancellation wins between Mission run creation and relay enqueue, the relay row is inserted directly in the constraint-valid terminal `cancelled` state and is never leasable.
 - Cancellation and Worker terminalization use the same Mission-then-job lock order. A committed `completed` or `failed` Relay result wins over a later cancel; if cancellation locks first, the Worker observes a pending stop instead.
+- If cancellation wins but the Worker never acknowledges its stop, both lease expiry and runtime expiry atomically terminalize the Relay as `cancelled`; ordinary timeouts remain `interrupted`.
 - The Orchestrator processes an observed Relay terminal result before any historical Mission cancellation flag, so a real terminal result is not rewritten as cancelled.
 - Repeated cancellation is idempotent and does not repeatedly increment the Mission row version.
 
@@ -66,6 +67,7 @@ Representative RED cases caught and drove fixes for:
 - revoked or stale SSE identities surviving after connection establishment;
 - slow consumers receiving or causing tail decryption after revocation;
 - missing and duplicate `seq=1 mission.started` events.
+- a committed cancellation being rewritten from `cancelled` to `interrupted` when an unresponsive Worker reached its lease/runtime timeout.
 
 The first independent review found two Important issues: cancellation/lease atomicity and incomplete SSE concurrency limits. The follow-up main review found terminal-result precedence, long-lived SSE identity revalidation, and the missing initial Mission event. All findings were fixed with RED/GREEN tests. A final independent review found one terminal-tail prefetch gap; its regression failed with two reads after revocation and passed with one read after the guard was moved before the fetch. Final result: **Critical 0, Important 0**.
 
@@ -76,13 +78,13 @@ Mission creation now writes the user message and exactly one encrypted `seq=1 mi
 Focused affected suite:
 
 ```text
-318 passed, 82 warnings in 9.37s
+320 passed, 82 warnings in 9.75s
 ```
 
 Complete backend suite:
 
 ```text
-2232 passed, 1 skipped, 85 warnings in 105.68s
+2234 passed, 1 skipped, 85 warnings in 105.78s
 ```
 
 `git diff --check` passed.

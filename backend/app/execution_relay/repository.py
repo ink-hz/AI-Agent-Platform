@@ -562,7 +562,8 @@ class ExecutionRelayRepository:
             with self._connection() as connection, connection.cursor() as cursor:
                 row = cursor.execute(
                     "select run_id,status,cancel_requested,created_at,updated_at,"
-                    "lease_expires_at,terminal_at,now() as database_now "
+                    "lease_expires_at,terminal_at,stop_requested_status,"
+                    "now() as database_now "
                     "from platform_control.execution_jobs where run_id=%s for update",
                     (run_id,),
                 ).fetchone()
@@ -587,20 +588,31 @@ class ExecutionRelayRepository:
                     )
                 )
                 if queued_expired or running_expired:
+                    expired_status = (
+                        "cancelled"
+                        if row["stop_requested_status"] == "cancelled"
+                        else "interrupted"
+                    )
                     row = cursor.execute(
                         "update platform_control.execution_jobs set "
-                        "status='interrupted',cancel_requested=true,"
+                        "status=%s,cancel_requested=true,"
                         "stop_requested_status=case when lease_worker_id is null "
-                        "then null else 'interrupted' end,"
+                        "then null else %s end,"
                         "stop_acknowledged_at=null,"
                         "terminal_at=now(),updated_at=now() where run_id=%s "
                         "and status=any(%s) returning run_id,status,"
                         "cancel_requested,created_at,updated_at,lease_expires_at,"
                         "terminal_at,now() as database_now",
-                        (run_id, ["queued", "leased", "dispatched", "running"]),
+                        (
+                            expired_status,
+                            expired_status,
+                            run_id,
+                            ["queued", "leased", "dispatched", "running"],
+                        ),
                     ).fetchone()
                     if row is None:
                         raise ExecutionRelayConflict()
+            row.pop("stop_requested_status", None)
             return RelayJobState(**row)
         except ExecutionRelayError:
             raise
