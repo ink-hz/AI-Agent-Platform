@@ -284,3 +284,50 @@ Fresh full backend verification, run once after that review cleared:
 ```
 
 The warnings are the existing Starlette per-request cookie deprecations.
+
+## Fourth-wave orphan-stop convergence closure
+
+The final main review found two remaining Important stop-delivery races. Commits
+`373c4b3`, `017375c`, and `737589e` close them:
+
+- A locally reliable `completed` or `failed` run no longer depends on a MetaBot
+  cancel request. Cloud-forced `cancelled` or `interrupted` immediately replaces
+  the local terminal, removes undelivered outbox rows, ACKs the cloud terminal,
+  and releases Worker capacity. Only a still-active local context requires a
+  successful MetaBot cancellation before convergence.
+- The internal signed Worker protocol now includes a forced-terminal-only
+  `stop-ack` endpoint. An orphan stop is ACKed only when the Worker has no active
+  or in-flight context and its local PostgreSQL store has neither a run nor an
+  outbox fact.
+- The cloud repository revalidates the authenticated active Worker, exact
+  `lease_worker_id` ownership, and current pending stop status under row lock.
+  Another Worker receives not-found, while a stale or mismatched stop receives a
+  conflict. ACK atomically converges the job terminal and removes it from future
+  heartbeat delivery.
+- More than 100 orphan stops drain over bounded heartbeat batches instead of
+  permanently occupying the queue head.
+- Lease claim and run-specific in-flight markers cover both the response-in-
+  flight and local-persistence windows. Cancellation between the lease response
+  and run registration clears both markers, preventing a false permanent
+  in-flight state.
+
+RED evidence included twelve local terminal × cloud forced terminal × simulated
+MetaBot 404/409/unavailable combinations, missing repository/API/client/store
+ACK primitives, and an orphan batch that stopped after the first 100 entries.
+
+Fresh affected verification after all cancellation-window fixes:
+
+```text
+263 passed, 43 warnings in 7.30s
+```
+
+Strict review and two incremental re-reviews all reported no remaining or new
+Critical or Important findings.
+
+Fresh full backend verification, run once after the final review cleared:
+
+```text
+2135 passed, 1 skipped, 46 warnings in 107.11s (0:01:47)
+```
+
+The warnings are the existing Starlette per-request cookie deprecations.
