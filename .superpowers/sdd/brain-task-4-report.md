@@ -181,6 +181,44 @@ The one full backend run for this wave then completed with:
 2044 passed, 1 skipped, 47 warnings in 103.29s (0:01:43)
 ```
 
+## Plan target semantic follow-up
+
+Implementation commit:
+`817aa89d7a0b9a65ef5601885956f9bf55e013b5`.
+
+`plan.created` now names its delegation target `selected_agent_id`, alongside
+the selected objective and user-visible rationale summary. It no longer uses
+`agent_id`, because the event producer is the planning Brain run rather than
+the selected downstream Agent. Actual Agent events (`task.dispatched`,
+`agent.progress`, and `agent.result`) retain locked run-Agent provenance.
+
+Both regressions were observed RED before the one-line schema correction:
+
+```text
+2 failed, 90 deselected
+```
+
+Fresh selected and focused GREEN results:
+
+```text
+2 passed, 90 deselected
+122 passed in 2.33s
+```
+
+The final internal review found no Critical, Important, or Minor findings.
+The required single full backend run completed with one unrelated existing
+rate-limit ceiling failure:
+
+```text
+1 failed, 2045 passed, 1 skipped, 47 warnings in 102.45s (0:01:42)
+```
+
+The failing
+`tests/test_identity_rate_limits.py::test_bucket_key_versions_are_isolated_and_exact_ceilings_hold`
+case then passed in isolation (`1 passed, 1 warning in 1.66s`). This Task 4
+diff does not touch rate-limit code, migrations, fixtures, or tests; no second
+full run was performed.
+
 ## Concerns and next boundary
 
 Task 5 still owns the internal `FOR UPDATE SKIP LOCKED` scan/claim of pending
