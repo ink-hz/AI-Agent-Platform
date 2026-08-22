@@ -97,9 +97,9 @@ boundaries:
 - run input/output and event payloads now accept only canonical JSON values,
   reject non-string keys, non-finite numbers, non-JSON containers, excessive
   depth/items/strings, unpaired surrogates, and encoded payloads over 64 KiB;
-- event payloads use an exact top-level key allowlist per event type, recursive
-  ASCII object keys, and acronym-aware tokenization to reject internal,
-  chain-of-thought, prompt, raw/debug/tool, credential, token, and key fields;
+- event payloads use a closed schema per event type with exact keys, scalar or
+  bounded string-list types, required content, and field-specific limits; no
+  free-form `details` object or deny-list heuristic remains;
 - `complete_run()` validates the locked Mission mode/current status, run phase,
   run outcome, next Mission status, and terminal event type as one tuple;
 - `create_run()` validates the locked Mission mode/current status, requested
@@ -134,6 +134,52 @@ Critical and Important findings:
 The final independent re-review found no Critical or Important issues. The 47
 warnings remain the existing Starlette/httpx cookie and TestClient
 deprecations.
+
+## Closed event contract follow-up
+
+Implementation commit:
+`398de01399a2d0cd1253fd9861a26fe3849e4517`.
+
+The final review wave closed the remaining UI-event and protocol gaps:
+
+- every event type now has a recursively closed payload contract with exact
+  keys, exact scalar/list types, non-empty business content, and explicit
+  string/list/progress limits;
+- the public `append_event()` path accepts only `agent.progress`, requires a
+  bound active professional/direct run, and rejects creation, dispatch,
+  result, review, and terminal events;
+- `task.dispatched`, `agent.progress`, and `agent.result` Agent identity is
+  bound to the locked creation/run Agent; dispatch events cannot repeat a
+  caller-controlled task objective;
+- progress rejects `current > total`, and empty result lists cannot satisfy
+  the visible-result content requirement; and
+- Brain JSON is recursively checked after decoding so every string and object
+  key is UTF-8 encodable, including escaped unpaired-surrogate cases.
+
+The first selected RED run demonstrated the three main review gaps:
+
+```text
+15 failed, 1 passed, 119 deselected
+```
+
+The provenance and business-content follow-up was separately observed RED:
+
+```text
+5 failed, 85 deselected
+```
+
+Fresh focused verification after the final implementation change:
+
+```text
+120 passed in 2.30s
+```
+
+The final internal review reported no Critical, Important, or Minor findings.
+The one full backend run for this wave then completed with:
+
+```text
+2044 passed, 1 skipped, 47 warnings in 103.29s (0:01:43)
+```
 
 ## Concerns and next boundary
 
