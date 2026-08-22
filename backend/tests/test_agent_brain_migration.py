@@ -57,6 +57,48 @@ def test_orchestrator_cursor_is_a_least_privilege_column(
             ).fetchone() == (True, False)
 
 
+@pytest.mark.postgres
+def test_content_key_canary_is_constrained_and_app_write_once(
+    control_database,
+) -> None:
+    for environment in control_database["environments"].values():
+        app_role = next(
+            role for role in environment["roles"] if "control_app" in role
+        )
+        other_roles = [role for role in ROLES if role != app_role]
+        with psycopg.connect(environment["admin"]) as connection:
+            columns = connection.execute(
+                "select column_name,data_type,is_nullable from "
+                "information_schema.columns where table_schema='platform_control' "
+                "and table_name='content_key_canaries' order by column_name"
+            ).fetchall()
+            app_access = connection.execute(
+                "select has_table_privilege(%s,"
+                "'platform_control.content_key_canaries','select'),"
+                "has_table_privilege(%s,"
+                "'platform_control.content_key_canaries','insert'),"
+                "has_table_privilege(%s,"
+                "'platform_control.content_key_canaries','update,delete')",
+                (app_role, app_role, app_role),
+            ).fetchone()
+            other_access = [
+                connection.execute(
+                    "select has_table_privilege(%s,"
+                    "'platform_control.content_key_canaries','select,insert,update,delete')",
+                    (role,),
+                ).fetchone()[0]
+                for role in other_roles
+            ]
+
+        assert columns == [
+            ("canary_ciphertext", "bytea", "NO"),
+            ("created_at", "timestamp with time zone", "NO"),
+            ("key_version", "integer", "NO"),
+        ]
+        assert app_access == (True, True, False)
+        assert other_access == [False] * len(other_roles)
+
+
 def _seed_active_directory(connection, *, user_status: str = "active"):
     generation_id = uuid4()
     user_id = uuid4()

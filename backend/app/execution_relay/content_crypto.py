@@ -57,6 +57,10 @@ class ContentCodec:
         except IdentityCryptoError:
             return False
 
+    @property
+    def active_key_version(self) -> int:
+        return self._keyring.active_version
+
     @staticmethod
     def _aad(subject: str, version: int) -> bytes:
         normalized = _subject_bytes(subject)
@@ -65,10 +69,17 @@ class ContentCodec:
     def seal_json(
         self, subject: str, value: dict[str, object]
     ) -> SealedContent:
+        return self._seal_json_with_version(
+            subject, value, self._keyring.active_version
+        )
+
+    def _seal_json_with_version(
+        self, subject: str, value: dict[str, object], version: int
+    ) -> SealedContent:
         try:
             if not isinstance(value, dict):
                 raise ValueError
-            version = self._keyring.active_version
+            key = self._keyring.key_for_version(version)
             plaintext = json.dumps(
                 value,
                 ensure_ascii=False,
@@ -76,7 +87,7 @@ class ContentCodec:
                 separators=(",", ":"),
             ).encode("utf-8")
             nonce = secrets.token_bytes(12)
-            encrypted = AESGCM(self._keyring.active_key).encrypt(
+            encrypted = AESGCM(key).encrypt(
                 nonce,
                 plaintext,
                 self._aad(subject, version),
@@ -90,6 +101,22 @@ class ContentCodec:
             UnicodeError,
         ):
             raise ContentCryptoError("content encrypt failed") from None
+
+    def seal_key_canary(self, version: int) -> SealedContent:
+        """Create a non-secret proof that this exact configured key is usable."""
+
+        return self._seal_json_with_version(
+            f"content-key-canary:{version}",
+            {"canary": "orbbec-platform-content-key-v1"},
+            version,
+        )
+
+    def verify_key_canary(self, sealed: SealedContent) -> None:
+        value = self.unseal_json(
+            f"content-key-canary:{sealed.key_version}", sealed
+        )
+        if value != {"canary": "orbbec-platform-content-key-v1"}:
+            raise ContentCryptoError("content key canary invalid")
 
     def unseal_json(
         self, subject: str, sealed: SealedContent

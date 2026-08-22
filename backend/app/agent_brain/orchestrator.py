@@ -261,6 +261,7 @@ class MissionOrchestrator:
                 ).fetchone()
                 if ready is None or ready["ready"] is not True:
                     raise RuntimeError
+            self.missions.check_content_keys()
         except Exception:
             raise RuntimeError("Agent Brain unavailable") from None
 
@@ -293,6 +294,11 @@ class MissionOrchestrator:
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
             raise ValueError("advance limit invalid")
         bounded = min(limit, 50)
+        try:
+            self.missions.check_content_keys()
+        except MissionRepositoryError:
+            logger.exception("Agent Brain content key validation failed")
+            return 0
         claims = self.missions.claim_pending(bounded)
         advanced = 0
         for claim in claims:

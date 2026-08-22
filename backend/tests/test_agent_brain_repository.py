@@ -264,6 +264,59 @@ def test_unstructured_relay_events_never_advance_public_acceptance(
 
 
 @pytest.mark.postgres
+def test_text_only_core_chat_state_accepts_once_without_raw_progress(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "text state")
+    professional = _create_queued_professional(
+        repository, owner_id, mission.mission_id
+    )
+    now = datetime.now(timezone.utc)
+    raw_text = "正在读取候选人隐私材料，不可进入公共时间线"
+    states = (
+        RelayEvent(
+            run_id=professional.run_id,
+            seq=1,
+            event_type="agent.state",
+            created_at=now,
+            payload={"text": raw_text},
+        ),
+        RelayEvent(
+            run_id=professional.run_id,
+            seq=2,
+            event_type="agent.state",
+            created_at=now,
+            payload={"text": "still private"},
+        ),
+    )
+
+    assert repository.apply_relay_events(
+        owner_id, mission.mission_id, professional.run_id, states
+    ) == 2
+
+    public_events = repository.events_after(owner_id, mission.mission_id)
+    assert [event.event_type for event in public_events[-2:]] == [
+        "task.dispatched",
+        "agent.accepted",
+    ]
+    assert public_events[-1].payload == {
+        "agent_id": "hr-bot",
+        "text": "专业 Agent 已开始执行",
+    }
+    assert raw_text not in repr(public_events)
+    assert b"still private" not in b"".join(
+        bytes(row[0])
+        for row in _rows(
+            environment,
+            "select payload_ciphertext from platform_control.mission_events "
+            "where mission_id=%s",
+            (mission.mission_id,),
+        )
+    )
+
+
+@pytest.mark.postgres
 def test_professional_result_does_not_fabricate_review_checkpoint(
     mission_database, repository
 ) -> None:

@@ -634,6 +634,7 @@ class MissionRepository:
         self._control_database_url = control_database_url
         self._connect = connect
         self.content_codec = content_codec
+        self._content_keys_ready = False
 
     def __repr__(self) -> str:
         return (
@@ -648,6 +649,118 @@ class MissionRepository:
             options="-c statement_timeout=10000 -c timezone=UTC",
             row_factory=dict_row,
         )
+
+    def _ensure_key_canary(self, cursor: Any, version: int) -> None:
+        if not self.content_codec.supports_key_version(version):
+            raise MissionRepositoryError()
+        row = cursor.execute(
+            "select canary_ciphertext from platform_control.content_key_canaries "
+            "where key_version=%s",
+            (version,),
+        ).fetchone()
+        if row is None:
+            sealed = self.content_codec.seal_key_canary(version)
+            cursor.execute(
+                "insert into platform_control.content_key_canaries "
+                "(key_version,canary_ciphertext) values (%s,%s) "
+                "on conflict (key_version) do nothing",
+                (version, sealed.ciphertext),
+            )
+            row = cursor.execute(
+                "select canary_ciphertext from "
+                "platform_control.content_key_canaries where key_version=%s",
+                (version,),
+            ).fetchone()
+        if row is None:
+            raise MissionRepositoryError()
+        try:
+            self.content_codec.verify_key_canary(
+                SealedContent(bytes(row["canary_ciphertext"]), version)
+            )
+        except (ContentCryptoError, KeyError, TypeError, ValueError):
+            raise MissionRepositoryError() from None
+
+    def _assert_key_canary(self, version: int) -> None:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    "select canary_ciphertext from "
+                    "platform_control.content_key_canaries where key_version=%s",
+                    (version,),
+                ).fetchone()
+            if row is None:
+                raise MissionRepositoryError()
+            self.content_codec.verify_key_canary(
+                SealedContent(bytes(row["canary_ciphertext"]), version)
+            )
+        except MissionRepositoryError:
+            raise
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise MissionRepositoryError() from None
+
+    def check_content_keys(self) -> None:
+        """Validate exact key bytes before any content may be quarantined."""
+
+        if self._content_keys_ready:
+            return
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                versions = {
+                    row["encryption_key_version"]
+                    for row in cursor.execute(
+                        "select distinct encryption_key_version from "
+                        "platform_control.mission_messages"
+                    ).fetchall()
+                }
+                versions.add(self.content_codec.active_key_version)
+                for version in sorted(versions):
+                    canary = cursor.execute(
+                        "select canary_ciphertext from "
+                        "platform_control.content_key_canaries where key_version=%s",
+                        (version,),
+                    ).fetchone()
+                    if canary is None:
+                        samples = cursor.execute(
+                            "select mission_id,message_id,content_ciphertext from "
+                            "platform_control.mission_messages "
+                            "where encryption_key_version=%s "
+                            "order by mission_id,message_id limit 100",
+                            (version,),
+                        ).fetchall()
+                        if samples:
+                            verified = False
+                            for sample in samples:
+                                try:
+                                    self.content_codec.unseal_json(
+                                        _message_subject(
+                                            sample["mission_id"], sample["message_id"]
+                                        ),
+                                        SealedContent(
+                                            bytes(sample["content_ciphertext"]), version
+                                        ),
+                                    )
+                                    verified = True
+                                    break
+                                except ContentCryptoError:
+                                    continue
+                            if not verified:
+                                raise MissionRepositoryError()
+                        self._ensure_key_canary(cursor, version)
+                    else:
+                        self.content_codec.verify_key_canary(
+                            SealedContent(bytes(canary["canary_ciphertext"]), version)
+                        )
+            self._content_keys_ready = True
+        except MissionRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            TypeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise MissionRepositoryError() from None
 
     @staticmethod
     def _owned_mission_for_update(
@@ -664,25 +777,29 @@ class MissionRepository:
         return row
 
     def _mission_from_row(self, row: dict[str, Any]) -> MissionRecord:
+        key_version: int | None = None
         try:
             if row.get("message_id") is None:
                 raise MissionContentUnavailable()
-            if not self.content_codec.supports_key_version(
-                row["encryption_key_version"]
-            ):
+            key_version = row["encryption_key_version"]
+            if not self.content_codec.supports_key_version(key_version):
                 raise MissionRepositoryError()
             value = self.content_codec.unseal_json(
                 _message_subject(row["mission_id"], row["message_id"]),
                 SealedContent(
                     bytes(row["content_ciphertext"]),
-                    row["encryption_key_version"],
+                    key_version,
                 ),
             )
             if set(value) != {"text"} or not isinstance(value["text"], str):
                 raise MissionContentUnavailable()
         except MissionContentUnavailable:
             raise
-        except (ContentCryptoError, KeyError, TypeError, ValueError):
+        except ContentCryptoError:
+            if isinstance(key_version, int):
+                self._assert_key_canary(key_version)
+            raise MissionContentUnavailable() from None
+        except (KeyError, TypeError, ValueError):
             raise MissionContentUnavailable() from None
         return MissionRecord(
             mission_id=row["mission_id"],
@@ -753,6 +870,7 @@ class MissionRepository:
                 _message_subject(mission_id, message_id), {"text": prompt}
             )
             with self._connection() as connection, connection.cursor() as cursor:
+                self._ensure_key_canary(cursor, sealed.key_version)
                 inserted = cursor.execute(
                     "insert into platform_control.missions "
                     "(mission_id,owner_internal_user_id,client_request_id,mode,"
@@ -1610,6 +1728,7 @@ class MissionRepository:
                 for event in new_events:
                     if event.event_type in {"agent.complete", "agent.error"}:
                         continue
+                    public_state = public_phase and event.event_type == "agent.state"
                     public_payload = (
                         self._relay_progress_payload(event, run["agent_id"])
                         if public_phase
@@ -1617,28 +1736,28 @@ class MissionRepository:
                     )
                     if not started:
                         started = True
+                    if public_state and not public_accepted:
+                        event_id = uuid4()
+                        payload = {
+                            "agent_id": run["agent_id"],
+                            "text": "专业 Agent 已开始执行",
+                        }
+                        normalized, _canonical = _canonical_payload(
+                            payload, event_type="agent.accepted"
+                        )
+                        sealed = self.content_codec.seal_json(
+                            _event_subject(mission_id, event_id), normalized
+                        )
+                        self._append_event_locked(
+                            cursor,
+                            mission_id,
+                            run_id,
+                            event_id,
+                            "agent.accepted",
+                            sealed,
+                        )
+                        public_accepted = True
                     if public_payload is not None:
-                        if not public_accepted:
-                            event_id = uuid4()
-                            payload = {
-                                "agent_id": run["agent_id"],
-                                "text": "专业 Agent 已开始执行",
-                            }
-                            normalized, _canonical = _canonical_payload(
-                                payload, event_type="agent.accepted"
-                            )
-                            sealed = self.content_codec.seal_json(
-                                _event_subject(mission_id, event_id), normalized
-                            )
-                            self._append_event_locked(
-                                cursor,
-                                mission_id,
-                                run_id,
-                                event_id,
-                                "agent.accepted",
-                                sealed,
-                            )
-                            public_accepted = True
                         event_id = uuid4()
                         normalized, _canonical = _canonical_payload(
                             public_payload, event_type="agent.progress"

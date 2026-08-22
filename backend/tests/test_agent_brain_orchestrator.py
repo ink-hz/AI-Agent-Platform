@@ -33,6 +33,16 @@ def _codec() -> ContentCodec:
     )
 
 
+def _wrong_codec_same_version() -> ContentCodec:
+    return ContentCodec(
+        IdentityKeyring(
+            active_version=4,
+            purpose="platform-content-encryption",
+            _keys={4: b"x" * 32},
+        )
+    )
+
+
 class ScriptedRelay:
     def __init__(self) -> None:
         self.payloads = {}
@@ -509,6 +519,44 @@ def test_unavailable_content_key_version_does_not_quarantine_mission(
 
 
 @pytest.mark.postgres
+def test_wrong_key_bytes_are_infrastructure_failure_without_mass_quarantine(
+    brain_database,
+):
+    environment, owner_id = brain_database
+    correct = MissionRepository(
+        environment["urls"]["platform_control_app"], content_codec=_codec()
+    )
+    missions = [
+        correct.create_mission(owner_id, uuid4(), prompt)
+        for prompt in ("first protected prompt", "second protected prompt")
+    ]
+    wrong = MissionRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=_wrong_codec_same_version(),
+    )
+    service = MissionOrchestrator(
+        wrong,
+        ScriptedRelay(),
+        capability_provider=lambda _owner: load_capability_cards(),
+    )
+
+    with pytest.raises(RuntimeError, match="Agent Brain unavailable"):
+        service.check_ready()
+    assert service.advance_pending(limit=50) == 0
+
+    assert [_mission_row(environment, item.mission_id)[0] for item in missions] == [
+        "planning",
+        "planning",
+    ]
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_control.mission_events "
+            "where mission_id=any(%s)",
+            ([item.mission_id for item in missions],),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
 def test_restart_after_terminal_upload_resumes_once_without_duplicate_child_run(
     brain_database, orchestrator
 ):
@@ -969,6 +1017,9 @@ def test_synthesis_prompt_includes_professional_result_and_enforces_96kib_cap():
 
 def test_advance_limit_is_bounded_to_fifty():
     class MissionSource:
+        def check_content_keys(self):
+            return None
+
         def claim_pending(self, limit):
             assert limit == 50
             return ()
