@@ -30,6 +30,23 @@ _APPROVED_AGENT_IDS = frozenset(
 _CONFIGURATION_INVALID = "metabot configuration invalid"
 _REQUEST_FAILED = "metabot request failed"
 _OWNER_FILE_LIMIT = 16_384
+_BRAIN_IDENTITY = {
+    "name": "agent-brain-bot",
+    "platform": "web",
+    "platformOnly": True,
+    "engine": "claude",
+    "model": "claude-opus-5",
+    "backend": "pty",
+    "toolPolicy": "none",
+    "workdir": "/Users/agentops/Developer/work/Orbbec-Agent-Team/bots/agent-brain",
+    "instance": {
+        "pm2Name": "metabot-agent-brain",
+        "apiPort": 9110,
+        "stateDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/state",
+        "configPath": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/bots.json",
+        "logDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/logs",
+    },
+}
 
 
 class MetaBotClientError(RuntimeError):
@@ -158,6 +175,18 @@ class MetaBotRuntimeMap:
                 instance = entry.get("instance")
                 if not isinstance(instance, dict):
                     raise ValueError
+                if name == "agent-brain-bot":
+                    for key, expected in _BRAIN_IDENTITY.items():
+                        if key == "instance":
+                            continue
+                        if entry.get(key) != expected:
+                            raise ValueError
+                    expected_instance = _BRAIN_IDENTITY["instance"]
+                    if not isinstance(expected_instance, dict) or any(
+                        instance.get(key) != expected
+                        for key, expected in expected_instance.items()
+                    ):
+                        raise ValueError
                 port = instance.get("apiPort")
                 if (
                     isinstance(port, bool)
@@ -239,7 +268,7 @@ class MetaBotClient:
             ):
                 raise ValueError
             port = self._runtime_map.port_for(payload.agent_id)
-            request_json = {
+            request_json: dict[str, object] = {
                 "runId": str(payload.run_id),
                 "conversationId": str(payload.conversation_id),
                 "triggerMessageId": str(payload.trigger_message_id),
@@ -250,8 +279,11 @@ class MetaBotClient:
                     f"platform-{payload.conversation_id}-{payload.agent_id}"
                 ),
                 "userId": "platform-user",
-                "maxTurns": payload.max_turns,
             }
+            if payload.agent_id == "agent-brain-bot":
+                request_json["toolPolicy"] = "none"
+            else:
+                request_json["maxTurns"] = payload.max_turns
             with self._client() as client:
                 response = client.post(
                     f"http://127.0.0.1:{port}/api/core-chat/runs",

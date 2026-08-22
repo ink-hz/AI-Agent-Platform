@@ -59,6 +59,23 @@ rejected_agents = {
     "ai-admin-agent",
     "ai-fae-agent",
 }
+expected_brain = {
+    "name": "agent-brain-bot",
+    "platform": "web",
+    "platformOnly": True,
+    "engine": "claude",
+    "model": "claude-opus-5",
+    "backend": "pty",
+    "toolPolicy": "none",
+    "workdir": "/Users/agentops/Developer/work/Orbbec-Agent-Team/bots/agent-brain",
+    "instance": {
+        "pm2Name": "metabot-agent-brain",
+        "apiPort": 9110,
+        "stateDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/state",
+        "configPath": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/bots.json",
+        "logDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/logs",
+    },
+}
 try:
     value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     if value.get("schemaVersion") != 2 or not isinstance(value.get("bots"), list):
@@ -71,6 +88,17 @@ try:
         instance = entry.get("instance")
         if name in selected or not isinstance(instance, dict):
             raise ValueError
+        if name == "agent-brain-bot":
+            for key, expected in expected_brain.items():
+                if key == "instance":
+                    continue
+                if entry.get(key) != expected:
+                    raise ValueError
+            if any(
+                instance.get(key) != expected
+                for key, expected in expected_brain["instance"].items()
+            ):
+                raise ValueError
         selected[name] = instance.get("apiPort")
     if list(expected_ports) != expected_agents or selected != expected_ports:
         raise ValueError

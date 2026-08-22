@@ -60,15 +60,31 @@ def _metabot_runtime_contract() -> str:
         "marketing-gtm-bot": 9107,
         "agent-brain-bot": 9110,
     }
-    return json.dumps(
+    bots = [
+        {"name": name, "instance": {"apiPort": ports[name]}}
+        for name in AGENTS
+        if name != "agent-brain-bot"
+    ]
+    bots.append(
         {
-            "schemaVersion": 2,
-            "bots": [
-                {"name": name, "instance": {"apiPort": ports[name]}}
-                for name in AGENTS
-            ],
+            "name": "agent-brain-bot",
+            "platform": "web",
+            "platformOnly": True,
+            "engine": "claude",
+            "model": "claude-opus-5",
+            "backend": "pty",
+            "toolPolicy": "none",
+            "workdir": "/Users/agentops/Developer/work/Orbbec-Agent-Team/bots/agent-brain",
+            "instance": {
+                "pm2Name": "metabot-agent-brain",
+                "apiPort": 9110,
+                "stateDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/state",
+                "configPath": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/bots.json",
+                "logDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/logs",
+            },
         }
-    ) + "\n"
+    )
+    return json.dumps({"schemaVersion": 2, "bots": bots}) + "\n"
 
 
 def test_local_worker_command_assets_are_executable() -> None:
@@ -4837,6 +4853,17 @@ def test_installer_requires_exact_agent_brain_runtime_map_before_mutation() -> N
         "ai-fae-agent",
     ):
         assert rejected in script
+    for exact_brain_value in (
+        '"platform": "web"',
+        '"platformOnly": True',
+        '"engine": "claude"',
+        '"model": "claude-opus-5"',
+        '"backend": "pty"',
+        '"toolPolicy": "none"',
+        '"apiPort": 9110',
+        '"pm2Name": "metabot-agent-brain"',
+    ):
+        assert exact_brain_value in script
 
 
 def test_installer_acquires_rotation_lock_before_generator_or_database() -> None:

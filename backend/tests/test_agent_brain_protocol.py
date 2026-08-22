@@ -29,16 +29,10 @@ DIRECT = {
 }
 
 
-@pytest.mark.parametrize(
-    "rendered",
-    (
-        json.dumps(DELEGATE, ensure_ascii=False),
-        "\n```json\n" + json.dumps(DELEGATE, ensure_ascii=False) + "\n```\n",
-        "```\n" + json.dumps(DELEGATE, ensure_ascii=False) + "\n```",
-    ),
-)
-def test_parser_accepts_only_one_fenced_or_unfenced_final_object(rendered: str) -> None:
-    decision = parse_brain_decision(rendered, allowed_agent_ids=ALLOWED)
+def test_parser_accepts_only_one_exact_unfenced_final_object() -> None:
+    decision = parse_brain_decision(
+        json.dumps(DELEGATE, ensure_ascii=False), allowed_agent_ids=ALLOWED
+    )
 
     assert isinstance(decision, BrainDecision)
     assert isinstance(decision, BaseModel)
@@ -57,6 +51,10 @@ def test_parser_accepts_exact_direct_shape() -> None:
         json.dumps({**DELEGATE, "debug": "hidden"}),
         json.dumps(DELEGATE) + "\n" + json.dumps(DIRECT),
         json.dumps(DELEGATE) + "\nexplanation",
+        " " + json.dumps(DELEGATE),
+        json.dumps(DELEGATE) + "\n",
+        "```json\n" + json.dumps(DELEGATE) + "\n```",
+        "```\n" + json.dumps(DELEGATE) + "\n```",
         "prefix\n" + json.dumps(DELEGATE),
         "```json\n" + json.dumps(DELEGATE) + "\n```\ntrailing",
         "```json\n" + json.dumps(DELEGATE) + "\n",

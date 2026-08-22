@@ -49,18 +49,6 @@ class BrainDecision(BaseModel):
         return self
 
 
-def _json_source(rendered: str) -> str:
-    stripped = rendered.strip()
-    if not stripped.startswith("```"):
-        return stripped
-    first_newline = stripped.find("\n")
-    if first_newline < 0 or stripped[:first_newline] not in {"```", "```json"}:
-        raise ValueError
-    if not stripped.endswith("```"):
-        raise ValueError
-    return stripped[first_newline + 1 : -3].strip()
-
-
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     value: dict[str, object] = {}
     for key, member in pairs:
@@ -97,10 +85,10 @@ def parse_brain_decision(
         allowed = frozenset(allowed_agent_ids)
         if any(not isinstance(agent_id, str) or not agent_id for agent_id in allowed):
             raise ValueError
-        source = _json_source(rendered)
+        source = rendered
         decoder = json.JSONDecoder(object_pairs_hook=_unique_object)
         value, end = decoder.raw_decode(source)
-        if source[end:].strip():
+        if end != len(source):
             raise ValueError
         _require_utf8_json(value)
         decision = BrainDecision.model_validate(value)

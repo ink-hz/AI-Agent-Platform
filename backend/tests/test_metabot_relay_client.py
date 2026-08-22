@@ -40,12 +40,26 @@ EXECUTION_CHAT_ID = "platform-00000000-0000-4000-8000-000000000102-hr-bot"
 
 def _contract(path: Path, *, entries: list[dict[str, object]] | None = None) -> Path:
     bots = entries or [
-        {
+        ({
             "name": name,
+            "platform": "web",
+            "platformOnly": True,
+            "engine": "claude",
+            "model": "claude-opus-5",
+            "backend": "pty",
+            "toolPolicy": "none",
+            "workdir": "/Users/agentops/Developer/work/Orbbec-Agent-Team/bots/agent-brain",
             "instance": {
-                "apiPort": 9110 if name == "agent-brain-bot" else 9200 + index
+                "pm2Name": "metabot-agent-brain",
+                "apiPort": 9110,
+                "stateDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/state",
+                "configPath": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/bots.json",
+                "logDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/logs",
             },
-        }
+        } if name == "agent-brain-bot" else {
+            "name": name,
+            "instance": {"apiPort": 9200 + index},
+        })
         for index, name in enumerate(APPROVED_BOTS)
     ]
     path.write_text(
@@ -107,6 +121,39 @@ def test_runtime_map_requires_schema_v2_all_approved_bots_and_unique_ports(
         path.write_text(json.dumps(bad_payload), encoding="utf-8")
         with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
             MetaBotRuntimeMap.from_contract(path)
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    (
+        (("platform",), "feishu"),
+        (("platformOnly",), False),
+        (("engine",), "codex"),
+        (("model",), "claude-opus-4-8"),
+        (("backend",), "sdk"),
+        (("toolPolicy",), "default"),
+        (("workdir",), "/tmp/brain"),
+        (("instance", "pm2Name"), "other"),
+        (("instance", "apiPort"), 9111),
+        (("instance", "stateDir"), "/tmp/state"),
+        (("instance", "configPath"), "/tmp/config"),
+        (("instance", "logDir"), "/tmp/log"),
+    ),
+)
+def test_runtime_map_rejects_any_agent_brain_identity_drift(
+    tmp_path: Path, path: tuple[str, ...], value: object
+) -> None:
+    contract = json.loads(_contract(tmp_path / "runtime.json").read_text())
+    brain = next(entry for entry in contract["bots"] if entry["name"] == "agent-brain-bot")
+    target = brain
+    for segment in path[:-1]:
+        target = target[segment]
+    target[path[-1]] = value
+    candidate = tmp_path / "drift.json"
+    candidate.write_text(json.dumps(contract), encoding="utf-8")
+
+    with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
+        MetaBotRuntimeMap.from_contract(candidate)
 
 
 @pytest.mark.parametrize("port", [0, 65536, True, "9200"])
@@ -183,6 +230,33 @@ def test_start_run_sends_exact_contract_and_callback_bridge_identity(
         "userId": "platform-user",
         "maxTurns": 24,
     }
+
+
+@respx.mock
+def test_agent_brain_request_declares_no_tools_and_omits_legacy_overrides(
+    tmp_path: Path,
+) -> None:
+    route = respx.post("http://127.0.0.1:9110/api/core-chat/runs").mock(
+        return_value=httpx.Response(
+            202,
+            json={
+                "status": "accepted",
+                "runId": str(RUN_ID),
+                "targetBot": "agent-brain-bot",
+            },
+        )
+    )
+    client = MetaBotClient(
+        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json")),
+        _secret_file(tmp_path),
+    )
+
+    client.start_run(_payload("agent-brain-bot"), CALLBACK_URL)
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["toolPolicy"] == "none"
+    assert "maxTurns" not in body
+    assert "allowedTools" not in body
 
 
 def test_http_client_policy_disables_environment_proxies_and_uses_ten_seconds(
