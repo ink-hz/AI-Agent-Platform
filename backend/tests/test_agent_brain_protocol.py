@@ -115,6 +115,11 @@ def test_parser_rejects_duplicate_object_members() -> None:
         parse_brain_decision(duplicate_kind, allowed_agent_ids=ALLOWED)
 
 
+def test_parser_collapses_unpaired_surrogate_to_stable_error() -> None:
+    with pytest.raises(BrainProtocolError, match="^brain protocol invalid$"):
+        parse_brain_decision("\ud800", allowed_agent_ids=ALLOWED)
+
+
 @pytest.mark.parametrize("invalid", (None, b"{}", "", "[]", "null"))
 def test_parser_collapses_type_and_schema_errors_to_stable_non_secret_error(
     invalid: object,

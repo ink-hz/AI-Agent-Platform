@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+import json
+import math
 import re
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -33,6 +35,246 @@ _MISSION_STATUSES = frozenset(
     }
 )
 _AGENT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+_KEY_TOKEN = re.compile(
+    r"[A-Z]+(?=[A-Z][a-z]|[^A-Za-z]|$)|[A-Z]?[a-z]+|[0-9]+"
+)
+
+MAX_PAYLOAD_BYTES = 64 * 1024
+MAX_PAYLOAD_DEPTH = 16
+MAX_PAYLOAD_ITEMS = 2_048
+MAX_PAYLOAD_STRING_BYTES = 32 * 1024
+MAX_PAYLOAD_KEY_BYTES = 256
+
+_EVENT_PAYLOAD_KEYS = {
+    "mission.started": frozenset({"text", "details"}),
+    "brain.responding": frozenset({"text", "stage", "details"}),
+    "plan.created": frozenset(
+        {"text", "agent_id", "objective", "rationale_summary", "details"}
+    ),
+    "task.dispatched": frozenset(
+        {"text", "agent_id", "objective", "details"}
+    ),
+    "agent.accepted": frozenset({"text", "agent_id", "details"}),
+    "agent.progress": frozenset(
+        {
+            "text",
+            "agent_id",
+            "progress",
+            "current",
+            "total",
+            "index",
+            "state",
+            "stage",
+            "details",
+        }
+    ),
+    "agent.result": frozenset(
+        {
+            "text",
+            "agent_id",
+            "summary",
+            "result",
+            "items",
+            "evidence",
+            "gaps",
+            "rationale_summary",
+            "details",
+        }
+    ),
+    "task.reviewed": frozenset(
+        {"text", "summary", "accepted", "gaps", "details"}
+    ),
+    "synthesis.started": frozenset({"text", "details"}),
+    "mission.completed": frozenset(
+        {"text", "summary", "result", "items", "evidence", "gaps", "details"}
+    ),
+    "mission.failed": frozenset(
+        {
+            "text",
+            "summary",
+            "reason",
+            "reason_code",
+            "code",
+            "partial_result",
+            "details",
+        }
+    ),
+    "mission.cancelled": frozenset(
+        {"text", "reason", "reason_code", "details"}
+    ),
+    "mission.interrupted": frozenset(
+        {"text", "reason", "reason_code", "partial_result", "details"}
+    ),
+}
+
+_VALID_COMPLETIONS = frozenset(
+    {
+        ("brain", "planning", "planning", "completed", "delegated", "plan.created"),
+        (
+            "brain",
+            "planning",
+            "planning",
+            "completed",
+            "completed",
+            "mission.completed",
+        ),
+        ("brain", "planning", "planning", "failed", "failed", "mission.failed"),
+        (
+            "brain",
+            "planning",
+            "planning",
+            "cancelled",
+            "cancelled",
+            "mission.cancelled",
+        ),
+        (
+            "brain",
+            "planning",
+            "planning",
+            "interrupted",
+            "interrupted",
+            "mission.interrupted",
+        ),
+        ("brain", "delegated", "professional", "completed", None, "agent.result"),
+        (
+            "brain",
+            "delegated",
+            "professional",
+            "failed",
+            "failed",
+            "mission.failed",
+        ),
+        (
+            "brain",
+            "delegated",
+            "professional",
+            "failed",
+            "partially_completed",
+            "mission.failed",
+        ),
+        (
+            "brain",
+            "delegated",
+            "professional",
+            "cancelled",
+            "cancelled",
+            "mission.cancelled",
+        ),
+        (
+            "brain",
+            "delegated",
+            "professional",
+            "interrupted",
+            "interrupted",
+            "mission.interrupted",
+        ),
+        (
+            "brain",
+            "delegated",
+            "professional",
+            "interrupted",
+            "partially_completed",
+            "mission.interrupted",
+        ),
+        (
+            "brain",
+            "synthesizing",
+            "synthesis",
+            "completed",
+            "completed",
+            "mission.completed",
+        ),
+        (
+            "brain",
+            "synthesizing",
+            "synthesis",
+            "failed",
+            "failed",
+            "mission.failed",
+        ),
+        (
+            "brain",
+            "synthesizing",
+            "synthesis",
+            "failed",
+            "partially_completed",
+            "mission.failed",
+        ),
+        (
+            "brain",
+            "synthesizing",
+            "synthesis",
+            "cancelled",
+            "cancelled",
+            "mission.cancelled",
+        ),
+        (
+            "brain",
+            "synthesizing",
+            "synthesis",
+            "interrupted",
+            "interrupted",
+            "mission.interrupted",
+        ),
+        (
+            "brain",
+            "synthesizing",
+            "synthesis",
+            "interrupted",
+            "partially_completed",
+            "mission.interrupted",
+        ),
+        (
+            "direct_agent",
+            "delegated",
+            "direct",
+            "completed",
+            "completed",
+            "mission.completed",
+        ),
+        (
+            "direct_agent",
+            "delegated",
+            "direct",
+            "failed",
+            "failed",
+            "mission.failed",
+        ),
+        (
+            "direct_agent",
+            "delegated",
+            "direct",
+            "cancelled",
+            "cancelled",
+            "mission.cancelled",
+        ),
+        (
+            "direct_agent",
+            "delegated",
+            "direct",
+            "interrupted",
+            "interrupted",
+            "mission.interrupted",
+        ),
+    }
+)
+
+_VALID_CREATIONS = frozenset(
+    {
+        ("brain", "planning", "planning", "brain.responding"),
+        ("brain", "delegated", "professional", "task.dispatched"),
+        ("brain", "delegated", "synthesis", "synthesis.started"),
+        ("direct_agent", "delegated", "direct", "task.dispatched"),
+    }
+)
+_CREATION_PREDECESSORS = {
+    "planning": frozenset(),
+    "professional": frozenset({("planning", "completed")}),
+    "synthesis": frozenset(
+        {("planning", "completed"), ("professional", "completed")}
+    ),
+    "direct": frozenset(),
+}
 
 
 class MissionRepositoryError(RuntimeError):
@@ -101,10 +343,115 @@ def _require_uuid(value: object) -> UUID:
     return value
 
 
-def _require_payload(value: object) -> dict[str, object]:
-    if not isinstance(value, dict):
-        raise ValueError("payload required")
-    return value
+def _event_key_forbidden(key: str) -> bool:
+    tokens = tuple(token.casefold() for token in _KEY_TOKEN.findall(key))
+    words = frozenset(tokens)
+    stems = words | frozenset(
+        word[:-1] for word in words if len(word) > 3 and word.endswith("s")
+    )
+    compact = "".join(tokens)
+    if compact in {"chainofthought", "systemprompt", "apikey"}:
+        return True
+    if {"chain", "thought"} <= stems or "reasoning" in stems:
+        return True
+    if {"system", "prompt"} <= stems:
+        return True
+    if stems & {
+        "secret",
+        "token",
+        "credential",
+        "password",
+    }:
+        return True
+    if "debug" in stems:
+        return True
+    if "raw" in stems and stems & {
+        "request",
+        "response",
+        "payload",
+        "tool",
+        "trace",
+    }:
+        return True
+    if "tool" in stems and stems & {
+        "payload",
+        "input",
+        "output",
+        "request",
+        "response",
+        "call",
+        "calls",
+        "trace",
+    }:
+        return True
+    if "internal" in stems:
+        return True
+    if "key" in stems and stems & {"api", "access", "private", "secret"}:
+        return True
+    return False
+
+
+def _canonical_payload(
+    value: object, *, event_type: str | None = None
+) -> tuple[dict[str, object], bytes]:
+    item_count = 0
+    allowed_top_level = (
+        None if event_type is None else _EVENT_PAYLOAD_KEYS.get(event_type)
+    )
+    if event_type is not None and allowed_top_level is None:
+        raise ValueError
+
+    def normalize(node: object, depth: int) -> object:
+        nonlocal item_count
+        if depth > MAX_PAYLOAD_DEPTH:
+            raise ValueError
+        if node is None or type(node) in {bool, int}:
+            return node
+        if type(node) is float:
+            if not math.isfinite(node):
+                raise ValueError
+            return node
+        if type(node) is str:
+            if len(node.encode("utf-8")) > MAX_PAYLOAD_STRING_BYTES:
+                raise ValueError
+            return node
+        if type(node) is list:
+            item_count += len(node)
+            if item_count > MAX_PAYLOAD_ITEMS:
+                raise ValueError
+            return [normalize(member, depth + 1) for member in node]
+        if type(node) is dict:
+            item_count += len(node)
+            if item_count > MAX_PAYLOAD_ITEMS:
+                raise ValueError
+            normalized: dict[str, object] = {}
+            for key, member in node.items():
+                if type(key) is not str:
+                    raise ValueError
+                if len(key.encode("utf-8")) > MAX_PAYLOAD_KEY_BYTES:
+                    raise ValueError
+                if event_type is not None:
+                    if not key.isascii() or _event_key_forbidden(key):
+                        raise ValueError
+                    if depth == 0 and key not in allowed_top_level:
+                        raise ValueError
+                normalized[key] = normalize(member, depth + 1)
+            return normalized
+        raise ValueError
+
+    normalized = normalize(value, 0)
+    if type(normalized) is not dict:
+        raise ValueError
+    encoded = json.dumps(
+        normalized,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    if len(encoded) > MAX_PAYLOAD_BYTES:
+        raise ValueError
+    return normalized, encoded
 
 
 def _require_agent_id(value: object) -> str:
@@ -125,6 +472,50 @@ def _require_expected_mission(
         or row_version < 0
     ):
         raise ValueError("expected Mission state invalid")
+
+
+def _require_locked_completion(
+    mission: dict[str, Any],
+    run: dict[str, Any],
+    run_status: str,
+    mission_status: str | None,
+    event_type: str,
+) -> None:
+    transition = (
+        mission["mode"],
+        mission["status"],
+        run["phase"],
+        run_status,
+        mission_status,
+        event_type,
+    )
+    if transition not in _VALID_COMPLETIONS:
+        raise MissionRepositoryConflict()
+
+
+def _require_locked_creation(
+    cursor: Any,
+    mission: dict[str, Any],
+    mission_id: UUID,
+    phase: str,
+    event_type: str,
+) -> None:
+    transition = (
+        mission["mode"],
+        mission["status"],
+        phase,
+        event_type,
+    )
+    if transition not in _VALID_CREATIONS:
+        raise MissionRepositoryConflict()
+    predecessors = cursor.execute(
+        "select phase,status from platform_control.mission_runs "
+        "where mission_id=%s for update",
+        (mission_id,),
+    ).fetchall()
+    observed = frozenset((row["phase"], row["status"]) for row in predecessors)
+    if len(observed) != len(predecessors) or observed != _CREATION_PREDECESSORS[phase]:
+        raise MissionRepositoryConflict()
 
 
 def _message_subject(mission_id: UUID, message_id: UUID) -> str:
@@ -222,11 +613,13 @@ class MissionRepository:
     ) -> MissionRecord:
         _require_uuid(internal_user_id)
         _require_uuid(client_request_id)
-        if (
-            not isinstance(prompt, str)
-            or not prompt.strip()
-            or len(prompt.encode("utf-8")) > 32 * 1024
-        ):
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("Mission prompt invalid")
+        try:
+            prompt_size = len(prompt.encode("utf-8"))
+        except UnicodeError:
+            raise MissionRepositoryError() from None
+        if prompt_size > 32 * 1024:
             raise ValueError("Mission prompt invalid")
         if mode == "brain":
             if direct_agent_id is not None:
@@ -313,6 +706,7 @@ class MissionRepository:
             KeyError,
             RecursionError,
             TypeError,
+            UnicodeError,
             ValueError,
             psycopg.Error,
         ):
@@ -343,6 +737,7 @@ class MissionRepository:
             KeyError,
             RecursionError,
             TypeError,
+            UnicodeError,
             ValueError,
             psycopg.Error,
         ):
@@ -377,6 +772,7 @@ class MissionRepository:
             KeyError,
             RecursionError,
             TypeError,
+            UnicodeError,
             ValueError,
             psycopg.Error,
         ):
@@ -428,11 +824,13 @@ class MissionRepository:
             _require_uuid(run_id)
         if not isinstance(event_type, str) or not event_type:
             raise ValueError("Mission event type invalid")
-        _require_payload(payload)
         event_id = uuid4()
         try:
+            normalized_payload, _canonical = _canonical_payload(
+                payload, event_type=event_type
+            )
             sealed = self.content_codec.seal_json(
-                _event_subject(mission_id, event_id), payload
+                _event_subject(mission_id, event_id), normalized_payload
             )
             with self._connection() as connection, connection.cursor() as cursor:
                 mission = self._owned_mission_for_update(
@@ -459,7 +857,7 @@ class MissionRepository:
                 run_id=run_id,
                 seq=inserted["seq"],
                 event_type=event_type,
-                payload=payload,
+                payload=normalized_payload,
                 created_at=inserted["created_at"],
             )
         except MissionRepositoryError:
@@ -469,6 +867,7 @@ class MissionRepository:
             KeyError,
             RecursionError,
             TypeError,
+            UnicodeError,
             ValueError,
             psycopg.Error,
         ):
@@ -481,6 +880,7 @@ class MissionRepository:
                 bytes(row["input_ciphertext"]), row["encryption_key_version"]
             ),
         )
+        input_payload, _input_canonical = _canonical_payload(input_payload)
         output_payload = None
         if row["output_ciphertext"] is not None:
             output_payload = self.content_codec.unseal_json(
@@ -490,6 +890,7 @@ class MissionRepository:
                     row["output_encryption_key_version"],
                 ),
             )
+            output_payload, _output_canonical = _canonical_payload(output_payload)
         return MissionRun(
             run_id=row["run_id"],
             mission_id=row["mission_id"],
@@ -566,12 +967,22 @@ class MissionRepository:
                 row["initial_event_key_version"],
             ),
         )
+        recovered_event, recovered_event_canonical = _canonical_payload(
+            recovered_event, event_type=row["initial_event_type"]
+        )
+        _recovered_input, recovered_input_canonical = _canonical_payload(
+            recovered.input_payload
+        )
+        _caller_input, caller_input_canonical = _canonical_payload(input_payload)
+        _caller_event, caller_event_canonical = _canonical_payload(
+            event_payload, event_type=event_type
+        )
         if (
             recovered.agent_id != agent_id
-            or recovered.input_payload != input_payload
+            or recovered_input_canonical != caller_input_canonical
             or recovered_objective != objective
             or row["initial_event_type"] != event_type
-            or recovered_event != event_payload
+            or recovered_event_canonical != caller_event_canonical
         ):
             raise MissionRepositoryConflict()
         return recovered
@@ -593,8 +1004,6 @@ class MissionRepository:
         _require_uuid(internal_user_id)
         _require_uuid(mission_id)
         agent_id = _require_agent_id(agent_id)
-        _require_payload(input_payload)
-        _require_payload(event_payload)
         if not isinstance(event_type, str) or not event_type:
             raise ValueError("Mission event type invalid")
         _require_expected_mission(
@@ -618,11 +1027,15 @@ class MissionRepository:
         run_id = uuid4()
         event_id = uuid4()
         try:
+            normalized_input, _input_canonical = _canonical_payload(input_payload)
+            normalized_event, _event_canonical = _canonical_payload(
+                event_payload, event_type=event_type
+            )
             sealed_input = self.content_codec.seal_json(
-                _run_subject(mission_id, run_id, "input"), input_payload
+                _run_subject(mission_id, run_id, "input"), normalized_input
             )
             sealed_event = self.content_codec.seal_json(
-                _event_subject(mission_id, event_id), event_payload
+                _event_subject(mission_id, event_id), normalized_event
             )
             sealed_objective = (
                 self.content_codec.seal_json(
@@ -640,10 +1053,10 @@ class MissionRepository:
                     mission_id,
                     phase,
                     agent_id=agent_id,
-                    input_payload=input_payload,
+                    input_payload=normalized_input,
                     objective=objective,
                     event_type=event_type,
-                    event_payload=event_payload,
+                    event_payload=normalized_event,
                 )
                 if recovered is not None:
                     return recovered
@@ -654,12 +1067,10 @@ class MissionRepository:
                     raise MissionRepositoryConflict()
                 if mission["status"] in TERMINAL_MISSION_STATUSES:
                     raise MissionRepositoryConflict()
-                if phase == "direct" and (
-                    mission["mode"] != "direct_agent"
-                    or mission["direct_agent_id"] != agent_id
-                ):
-                    raise MissionRepositoryConflict()
-                if phase == "professional" and mission["mode"] != "brain":
+                _require_locked_creation(
+                    cursor, mission, mission_id, phase, event_type
+                )
+                if phase == "direct" and mission["direct_agent_id"] != agent_id:
                     raise MissionRepositoryConflict()
                 if task_id is not None:
                     if cursor.execute(
@@ -726,7 +1137,7 @@ class MissionRepository:
                 updated_at=inserted["updated_at"],
                 started_at=None,
                 terminal_at=None,
-                input_payload=input_payload,
+                input_payload=normalized_input,
             )
         except MissionRepositoryError:
             raise
@@ -735,6 +1146,7 @@ class MissionRepository:
             KeyError,
             RecursionError,
             TypeError,
+            UnicodeError,
             ValueError,
             psycopg.Error,
         ):
@@ -764,17 +1176,19 @@ class MissionRepository:
         _require_expected_mission(
             expected_mission_status, expected_row_version
         )
-        _require_payload(output_payload)
-        _require_payload(event_payload)
         if not isinstance(event_type, str) or not event_type:
             raise ValueError("Mission event type invalid")
         event_id = uuid4()
         try:
+            normalized_output, _output_canonical = _canonical_payload(output_payload)
+            normalized_event, _event_canonical = _canonical_payload(
+                event_payload, event_type=event_type
+            )
             sealed_output = self.content_codec.seal_json(
-                _run_subject(mission_id, run_id, "output"), output_payload
+                _run_subject(mission_id, run_id, "output"), normalized_output
             )
             sealed_event = self.content_codec.seal_json(
-                _event_subject(mission_id, event_id), event_payload
+                _event_subject(mission_id, event_id), normalized_event
             )
             with self._connection() as connection, connection.cursor() as cursor:
                 mission = self._owned_mission_for_update(
@@ -798,6 +1212,9 @@ class MissionRepository:
                     raise MissionRepositoryNotFound()
                 if run["status"] in TERMINAL_RUN_STATUSES:
                     raise MissionRepositoryConflict()
+                _require_locked_completion(
+                    mission, run, status, mission_status, event_type
+                )
                 updated = cursor.execute(
                     "update platform_control.mission_runs set status=%s,"
                     "output_ciphertext=%s,output_encryption_key_version=%s,"
@@ -817,15 +1234,15 @@ class MissionRepository:
                         "and task_id=%s",
                         (status, mission_id, run["task_id"]),
                     )
-                if mission_status is not None:
-                    terminal = mission_status in TERMINAL_MISSION_STATUSES
-                    cursor.execute(
-                        "update platform_control.missions set status=%s,"
-                        "row_version=row_version+1,updated_at=now(),"
-                        "terminal_at=case when %s then now() else null end "
-                        "where mission_id=%s",
-                        (mission_status, terminal, mission_id),
-                    )
+                next_mission_status = mission_status or mission["status"]
+                terminal = next_mission_status in TERMINAL_MISSION_STATUSES
+                cursor.execute(
+                    "update platform_control.missions set status=%s,"
+                    "row_version=row_version+1,updated_at=now(),"
+                    "terminal_at=case when %s then now() else null end "
+                    "where mission_id=%s",
+                    (next_mission_status, terminal, mission_id),
+                )
                 self._append_event_locked(
                     cursor,
                     mission_id,
@@ -840,6 +1257,7 @@ class MissionRepository:
                         bytes(run["input_ciphertext"]), run["encryption_key_version"]
                     ),
                 )
+                input_value, _input_canonical = _canonical_payload(input_value)
             return MissionRun(
                 run_id=run_id,
                 mission_id=mission_id,
@@ -852,7 +1270,7 @@ class MissionRepository:
                 started_at=run["started_at"],
                 terminal_at=updated["terminal_at"],
                 input_payload=input_value,
-                output_payload=output_payload,
+                output_payload=normalized_output,
             )
         except MissionRepositoryError:
             raise
@@ -861,6 +1279,7 @@ class MissionRepository:
             KeyError,
             RecursionError,
             TypeError,
+            UnicodeError,
             ValueError,
             psycopg.Error,
         ):
@@ -914,6 +1333,9 @@ class MissionRepository:
                         row["encryption_key_version"],
                     ),
                 )
+                payload, _canonical = _canonical_payload(
+                    payload, event_type=row["event_type"]
+                )
                 events.append(
                     MissionEvent(
                         event_id=row["event_id"],
@@ -933,6 +1355,7 @@ class MissionRepository:
             KeyError,
             RecursionError,
             TypeError,
+            UnicodeError,
             ValueError,
             psycopg.Error,
         ):

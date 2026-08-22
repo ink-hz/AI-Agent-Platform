@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import inspect
+from threading import Barrier
 from uuid import UUID, uuid4
 
 import psycopg
@@ -69,6 +70,55 @@ def repository(mission_database) -> MissionRepository:
 def _rows(environment, query: str, params=()):
     with psycopg.connect(environment["admin"]) as connection:
         return connection.execute(query, params).fetchall()
+
+
+def _advance_to_delegated(
+    repository: MissionRepository, owner_id: UUID, mission_id: UUID
+) -> None:
+    planning = repository.create_run(
+        owner_id,
+        mission_id,
+        phase="planning",
+        agent_id="agent-brain-bot",
+        input_payload={"prompt": "plan"},
+        event_type="brain.responding",
+        event_payload={"text": "working"},
+    )
+    repository.complete_run(
+        owner_id,
+        mission_id,
+        planning.run_id,
+        status="completed",
+        output_payload={"decision": "delegate"},
+        event_type="plan.created",
+        event_payload={"text": "plan ready"},
+        mission_status="delegated",
+    )
+
+
+def _advance_to_synthesis_ready(
+    repository: MissionRepository, owner_id: UUID, mission_id: UUID
+) -> None:
+    _advance_to_delegated(repository, owner_id, mission_id)
+    professional = repository.create_run(
+        owner_id,
+        mission_id,
+        phase="professional",
+        agent_id="hr-bot",
+        input_payload={"prompt": "professional"},
+        objective="candidate profile",
+        event_type="task.dispatched",
+        event_payload={"agent_id": "hr-bot"},
+    )
+    repository.complete_run(
+        owner_id,
+        mission_id,
+        professional.run_id,
+        status="completed",
+        output_payload={"profile": "ready"},
+        event_type="agent.result",
+        event_payload={"text": "profile ready"},
+    )
 
 
 @pytest.mark.postgres
@@ -242,6 +292,7 @@ def test_run_task_input_output_and_events_use_mission_and_row_bound_subjects(
 ) -> None:
     environment, owner_id, _ = mission_database
     mission = repository.create_mission(owner_id, uuid4(), "delegate this")
+    _advance_to_delegated(repository, owner_id, mission.mission_id)
     run = repository.create_run(
         owner_id,
         mission.mission_id,
@@ -273,7 +324,7 @@ def test_run_task_input_output_and_events_use_mission_and_row_bound_subjects(
         environment,
         "select run_id,input_ciphertext,encryption_key_version,output_ciphertext,"
         "output_encryption_key_version,status from platform_control.mission_runs "
-        "where mission_id=%s",
+        "where mission_id=%s and phase='professional'",
         (mission.mission_id,),
     )[0]
     assert b"minimal input" not in bytes(stored_run[1])
@@ -296,7 +347,12 @@ def test_run_task_input_output_and_events_use_mission_and_row_bound_subjects(
             SealedContent(bytes(stored_run[1]), stored_run[2]),
         )
     events = repository.events_after(owner_id, mission.mission_id)
-    assert [event.event_type for event in events] == ["task.dispatched", "agent.result"]
+    assert [event.event_type for event in events] == [
+        "brain.responding",
+        "plan.created",
+        "task.dispatched",
+        "agent.result",
+    ]
     event_rows = _rows(
         environment,
         "select event_id,payload_ciphertext,encryption_key_version "
@@ -365,6 +421,8 @@ def test_create_run_retry_recovers_one_server_run_and_event(
 ) -> None:
     environment, owner_id, _ = mission_database
     mission = repository.create_mission(owner_id, uuid4(), f"retry {phase}")
+    if phase == "professional":
+        _advance_to_delegated(repository, owner_id, mission.mission_id)
     arguments = {
         "phase": phase,
         "agent_id": agent_id,
@@ -387,7 +445,7 @@ def test_create_run_retry_recovers_one_server_run_and_event(
     assert [
         event.event_type
         for event in repository.events_after(owner_id, mission.mission_id)
-    ] == [event_type]
+    ][-1] == event_type
     with pytest.raises(MissionRepositoryConflict):
         repository.create_run(
             owner_id,
@@ -578,6 +636,7 @@ def test_terminal_run_rejects_late_events_while_mission_remains_active(
         output_payload={"decision": "delegate"},
         event_type="plan.created",
         event_payload={"text": "plan ready"},
+        mission_status="delegated",
     )
 
     with pytest.raises(MissionRepositoryConflict):
@@ -645,3 +704,740 @@ def test_repository_source_owner_scopes_reads_and_generates_ids_internally() -> 
     assert "owner_internal_user_id=%s" in source
     assert " for update" in source.lower()
     assert "ContentCodec" in source
+
+
+@pytest.mark.postgres
+def test_safe_event_payload_accepts_bounded_user_visible_json(
+    mission_database, repository
+) -> None:
+    _environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "safe payload")
+    payload = {
+        "text": "候选人画像已完成",
+        "details": {
+            "items": ["搜索方向", "能力组合"],
+            "score": 0.75,
+            "complete": True,
+            "missing": None,
+        },
+        "rationale_summary": "需要招聘能力",
+    }
+
+    event = repository.append_event(
+        owner_id, mission.mission_id, "agent.result", payload
+    )
+
+    assert event.payload == payload
+    assert repository.events_after(owner_id, mission.mission_id) == (event,)
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "forbidden_key",
+    (
+        "chain_of_thought",
+        "reasoningTrace",
+        "system_prompt",
+        "access_token",
+        "credentials",
+        "raw_response",
+        "debugPayload",
+        "tool_payload",
+        "chain_of_thoughts",
+        "system_prompts",
+        "api_keys",
+        "private_keys",
+        "internal_notes",
+        "internal_context",
+        "APIKeys",
+        "APITokens",
+        "JWTToken",
+        "İnternalNotes",
+        "İNTERNAL_NOTES",
+        "ｉｎｔｅｒｎａｌ_notes",
+    ),
+)
+def test_safe_event_payload_rejects_nested_internal_and_sensitive_keys(
+    mission_database, repository, forbidden_key: str
+) -> None:
+    _environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "unsafe key")
+
+    with pytest.raises(MissionRepositoryError) as raised:
+        repository.append_event(
+            owner_id,
+            mission.mission_id,
+            "agent.progress",
+            {
+                "text": "visible",
+                "details": {"items": [{forbidden_key: "hidden"}]},
+            },
+        )
+
+    assert type(raised.value) is MissionRepositoryError
+    assert str(raised.value) == "mission repository unavailable"
+    assert repository.events_after(owner_id, mission.mission_id) == ()
+
+
+class _NotJson:
+    pass
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {1: "non-string key"},
+        {"items": ("tuple",)},
+        {"items": {"set"}},
+        {"blob": b"bytes"},
+        {"custom": _NotJson()},
+        {"score": float("nan")},
+        {"score": float("inf")},
+        {"text": "x" * (32 * 1024 + 1)},
+        {"items": list(range(2_049))},
+        {"first": "x" * (32 * 1024), "second": "y" * (32 * 1024)},
+    ),
+)
+def test_payload_boundary_rejects_non_json_nonfinite_and_oversized_values(
+    mission_database, repository, payload: object
+) -> None:
+    _environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "invalid payload")
+
+    with pytest.raises(
+        MissionRepositoryError, match="^mission repository unavailable$"
+    ):
+        repository.append_event(
+            owner_id,
+            mission.mission_id,
+            "agent.progress",
+            payload,  # type: ignore[arg-type]
+        )
+
+    assert repository.events_after(owner_id, mission.mission_id) == ()
+
+
+@pytest.mark.postgres
+def test_payload_boundary_rejects_excessive_depth(
+    mission_database, repository
+) -> None:
+    _environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "deep payload")
+    payload: dict[str, object] = {}
+    current = payload
+    for _index in range(17):
+        child: dict[str, object] = {}
+        current["child"] = child
+        current = child
+
+    with pytest.raises(MissionRepositoryError):
+        repository.append_event(
+            owner_id, mission.mission_id, "agent.progress", payload
+        )
+
+
+@pytest.mark.postgres
+def test_run_payloads_and_events_share_strict_canonical_boundary(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "strict run payloads")
+
+    with pytest.raises(MissionRepositoryError):
+        repository.create_run(
+            owner_id,
+            mission.mission_id,
+            phase="planning",
+            agent_id="agent-brain-bot",
+            input_payload={"items": ("coerced",)},
+            event_type="brain.responding",
+            event_payload={"text": "start"},
+        )
+    with pytest.raises(MissionRepositoryError):
+        repository.create_run(
+            owner_id,
+            mission.mission_id,
+            phase="planning",
+            agent_id="agent-brain-bot",
+            input_payload={"prompt": "valid"},
+            event_type="brain.responding",
+            event_payload={"nested": {"systemPrompt": "hidden"}},
+        )
+    assert _rows(
+        environment,
+        "select count(*) from platform_control.mission_runs where mission_id=%s",
+        (mission.mission_id,),
+    ) == [(0,)]
+
+    run = repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase="planning",
+        agent_id="agent-brain-bot",
+        input_payload={"b": [2, 1], "a": "value"},
+        event_type="brain.responding",
+        event_payload={"text": "start", "details": {"b": 2, "a": 1}},
+    )
+    replay = repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase="planning",
+        agent_id="agent-brain-bot",
+        input_payload={"a": "value", "b": [2, 1]},
+        event_type="brain.responding",
+        event_payload={"details": {"a": 1, "b": 2}, "text": "start"},
+    )
+    assert replay.run_id == run.run_id
+
+    with pytest.raises(MissionRepositoryError):
+        repository.complete_run(
+            owner_id,
+            mission.mission_id,
+            run.run_id,
+            status="completed",
+            output_payload={"score": float("nan")},
+            event_type="plan.created",
+            event_payload={"text": "done"},
+            mission_status="delegated",
+        )
+    with pytest.raises(MissionRepositoryError):
+        repository.complete_run(
+            owner_id,
+            mission.mission_id,
+            run.run_id,
+            status="completed",
+            output_payload={"answer": "safe result"},
+            event_type="plan.created",
+            event_payload={"nested": {"rawResponse": "hidden"}},
+            mission_status="delegated",
+        )
+    assert _rows(
+        environment,
+        "select status,output_ciphertext from platform_control.mission_runs "
+        "where run_id=%s",
+        (run.run_id,),
+    ) == [("queued", None)]
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("run_status", "mission_status"),
+    (
+        ("failed", None),
+        ("failed", "completed"),
+        ("failed", "cancelled"),
+        ("cancelled", None),
+        ("cancelled", "failed"),
+        ("interrupted", None),
+        ("interrupted", "completed"),
+        ("completed", "failed"),
+        ("completed", "cancelled"),
+        ("completed", "interrupted"),
+    ),
+)
+def test_complete_run_rejects_contradictory_outcome_combinations(
+    mission_database, repository, run_status: str, mission_status: str | None
+) -> None:
+    environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "outcome matrix")
+    run = repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase="planning",
+        agent_id="agent-brain-bot",
+        input_payload={"prompt": "plan"},
+        event_type="brain.responding",
+        event_payload={"text": "working"},
+    )
+
+    with pytest.raises(MissionRepositoryConflict):
+        repository.complete_run(
+            owner_id,
+            mission.mission_id,
+            run.run_id,
+            status=run_status,  # type: ignore[arg-type]
+            output_payload={"text": "terminal"},
+            event_type="mission.failed",
+            event_payload={"text": "terminal"},
+            mission_status=mission_status,
+        )
+
+    assert _rows(
+        environment,
+        "select status,output_ciphertext from platform_control.mission_runs "
+        "where run_id=%s",
+        (run.run_id,),
+    ) == [("queued", None)]
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("mode", "phase", "run_status", "mission_status", "event_type"),
+    (
+        ("brain", "planning", "failed", "failed", "mission.completed"),
+        ("brain", "planning", "completed", "delegated", "agent.result"),
+        ("brain", "planning", "completed", None, "plan.created"),
+        ("brain", "professional", "completed", "completed", "mission.completed"),
+        ("direct_agent", "direct", "completed", None, "agent.result"),
+    ),
+)
+def test_complete_run_rejects_phase_mode_and_event_mismatches(
+    mission_database,
+    repository,
+    mode: str,
+    phase: str,
+    run_status: str,
+    mission_status: str | None,
+    event_type: str,
+) -> None:
+    environment, owner_id, _ = mission_database
+    direct_agent_id = "hr-bot" if mode == "direct_agent" else None
+    mission = repository.create_mission(
+        owner_id,
+        uuid4(),
+        "full completion tuple",
+        mode=mode,  # type: ignore[arg-type]
+        direct_agent_id=direct_agent_id,
+    )
+    if phase == "professional":
+        _advance_to_delegated(repository, owner_id, mission.mission_id)
+    agent_id = "agent-brain-bot" if phase == "planning" else "hr-bot"
+    run = repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase=phase,  # type: ignore[arg-type]
+        agent_id=agent_id,
+        input_payload={"prompt": "run"},
+        objective="candidate profile" if phase in {"professional", "direct"} else None,
+        event_type="brain.responding" if phase == "planning" else "task.dispatched",
+        event_payload={"text": "working"},
+    )
+
+    with pytest.raises(MissionRepositoryConflict):
+        repository.complete_run(
+            owner_id,
+            mission.mission_id,
+            run.run_id,
+            status=run_status,  # type: ignore[arg-type]
+            output_payload={"text": "terminal"},
+            event_type=event_type,
+            event_payload={"text": "terminal"},
+            mission_status=mission_status,
+        )
+
+    assert _rows(
+        environment,
+        "select status,output_ciphertext from platform_control.mission_runs "
+        "where run_id=%s",
+        (run.run_id,),
+    ) == [("queued", None)]
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("mode", "phase", "event_type"),
+    (
+        ("direct_agent", "planning", "brain.responding"),
+        ("brain", "synthesis", "synthesis.started"),
+        ("brain", "professional", "task.dispatched"),
+        ("brain", "planning", "task.dispatched"),
+        ("direct_agent", "direct", "brain.responding"),
+    ),
+)
+def test_create_run_rejects_invalid_locked_creation_tuple(
+    mission_database,
+    repository,
+    mode: str,
+    phase: str,
+    event_type: str,
+) -> None:
+    environment, owner_id, _ = mission_database
+    mission = repository.create_mission(
+        owner_id,
+        uuid4(),
+        "invalid creation tuple",
+        mode=mode,  # type: ignore[arg-type]
+        direct_agent_id="hr-bot" if mode == "direct_agent" else None,
+    )
+    agent_id = "agent-brain-bot" if phase in {"planning", "synthesis"} else "hr-bot"
+
+    with pytest.raises(MissionRepositoryConflict):
+        repository.create_run(
+            owner_id,
+            mission.mission_id,
+            phase=phase,  # type: ignore[arg-type]
+            agent_id=agent_id,
+            input_payload={"prompt": "run"},
+            objective=(
+                "candidate profile"
+                if phase in {"professional", "direct"}
+                else None
+            ),
+            event_type=event_type,
+            event_payload={"text": "working"},
+        )
+
+    assert _rows(
+        environment,
+        "select count(*) from platform_control.mission_runs where mission_id=%s",
+        (mission.mission_id,),
+    ) == [(0,)]
+
+
+@pytest.mark.postgres
+def test_create_synthesis_requires_completed_professional_predecessor(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "ordered phases")
+    planning = repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase="planning",
+        agent_id="agent-brain-bot",
+        input_payload={"prompt": "plan"},
+        event_type="brain.responding",
+        event_payload={"text": "working"},
+    )
+    repository.complete_run(
+        owner_id,
+        mission.mission_id,
+        planning.run_id,
+        status="completed",
+        output_payload={"decision": "delegate"},
+        event_type="plan.created",
+        event_payload={"text": "plan ready"},
+        mission_status="delegated",
+    )
+    repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase="professional",
+        agent_id="hr-bot",
+        input_payload={"prompt": "professional"},
+        objective="candidate profile",
+        event_type="task.dispatched",
+        event_payload={"agent_id": "hr-bot"},
+    )
+
+    with pytest.raises(MissionRepositoryConflict):
+        repository.create_run(
+            owner_id,
+            mission.mission_id,
+            phase="synthesis",
+            agent_id="agent-brain-bot",
+            input_payload={"prompt": "synthesize"},
+            event_type="synthesis.started",
+            event_payload={"text": "synthesizing"},
+        )
+
+    assert _rows(
+        environment,
+        "select phase,status from platform_control.mission_runs "
+        "where mission_id=%s order by created_at",
+        (mission.mission_id,),
+    ) == [("planning", "completed"), ("professional", "queued")]
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("mode", "phase", "run_status", "mission_status", "event_type"),
+    (
+        ("brain", "planning", "completed", "delegated", "plan.created"),
+        ("brain", "planning", "completed", "completed", "mission.completed"),
+        ("brain", "planning", "failed", "failed", "mission.failed"),
+        ("brain", "planning", "cancelled", "cancelled", "mission.cancelled"),
+        (
+            "brain",
+            "planning",
+            "interrupted",
+            "interrupted",
+            "mission.interrupted",
+        ),
+        ("brain", "professional", "completed", None, "agent.result"),
+        (
+            "brain",
+            "professional",
+            "failed",
+            "partially_completed",
+            "mission.failed",
+        ),
+        (
+            "brain",
+            "professional",
+            "interrupted",
+            "partially_completed",
+            "mission.interrupted",
+        ),
+        ("brain", "synthesis", "completed", "completed", "mission.completed"),
+        (
+            "brain",
+            "synthesis",
+            "failed",
+            "partially_completed",
+            "mission.failed",
+        ),
+        (
+            "direct_agent",
+            "direct",
+            "completed",
+            "completed",
+            "mission.completed",
+        ),
+        ("direct_agent", "direct", "failed", "failed", "mission.failed"),
+        (
+            "direct_agent",
+            "direct",
+            "cancelled",
+            "cancelled",
+            "mission.cancelled",
+        ),
+        (
+            "direct_agent",
+            "direct",
+            "interrupted",
+            "interrupted",
+            "mission.interrupted",
+        ),
+    ),
+)
+def test_complete_run_accepts_explicit_consistent_outcomes(
+    mission_database,
+    repository,
+    mode: str,
+    phase: str,
+    run_status: str,
+    mission_status: str | None,
+    event_type: str,
+) -> None:
+    _environment, owner_id, _ = mission_database
+    direct_agent_id = "hr-bot" if mode == "direct_agent" else None
+    mission = repository.create_mission(
+        owner_id,
+        uuid4(),
+        "valid outcome",
+        mode=mode,  # type: ignore[arg-type]
+        direct_agent_id=direct_agent_id,
+    )
+    if phase == "professional":
+        _advance_to_delegated(repository, owner_id, mission.mission_id)
+    elif phase == "synthesis":
+        _advance_to_synthesis_ready(repository, owner_id, mission.mission_id)
+    agent_id = (
+        "agent-brain-bot" if phase in {"planning", "synthesis"} else "hr-bot"
+    )
+    start_event_type = {
+        "planning": "brain.responding",
+        "professional": "task.dispatched",
+        "synthesis": "synthesis.started",
+        "direct": "task.dispatched",
+    }[phase]
+    run = repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase=phase,  # type: ignore[arg-type]
+        agent_id=agent_id,
+        input_payload={"prompt": "run"},
+        objective=(
+            "candidate profile" if phase in {"professional", "direct"} else None
+        ),
+        event_type=start_event_type,
+        event_payload={"text": "working"},
+    )
+
+    completed = repository.complete_run(
+        owner_id,
+        mission.mission_id,
+        run.run_id,
+        status=run_status,  # type: ignore[arg-type]
+        output_payload={"text": "terminal"},
+        event_type=event_type,
+        event_payload={"text": "terminal"},
+        mission_status=mission_status,
+    )
+
+    assert completed.status == run_status
+
+
+@pytest.mark.postgres
+def test_completion_always_advances_row_version_and_rejects_stale_cas(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "completion version")
+    _advance_to_delegated(repository, owner_id, mission.mission_id)
+    run = repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase="professional",
+        agent_id="hr-bot",
+        input_payload={"prompt": "professional"},
+        objective="candidate profile",
+        event_type="task.dispatched",
+        event_payload={"agent_id": "hr-bot"},
+        expected_mission_status="delegated",
+        expected_row_version=2,
+    )
+
+    repository.complete_run(
+        owner_id,
+        mission.mission_id,
+        run.run_id,
+        status="completed",
+        output_payload={"profile": "ready"},
+        event_type="agent.result",
+        event_payload={"text": "profile ready"},
+        expected_mission_status="delegated",
+        expected_row_version=3,
+    )
+
+    assert _rows(
+        environment,
+        "select status,row_version from platform_control.missions "
+        "where mission_id=%s",
+        (mission.mission_id,),
+    ) == [("delegated", 4)]
+    with pytest.raises(MissionRepositoryConflict):
+        repository.create_run(
+            owner_id,
+            mission.mission_id,
+            phase="synthesis",
+            agent_id="agent-brain-bot",
+            input_payload={"prompt": "synthesize"},
+            event_type="synthesis.started",
+            event_payload={"text": "synthesizing"},
+            expected_mission_status="delegated",
+            expected_row_version=3,
+        )
+
+
+@pytest.mark.postgres
+def test_concurrent_completion_and_transition_use_one_mission_cas_winner(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "concurrent CAS")
+    planning = repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase="planning",
+        agent_id="agent-brain-bot",
+        input_payload={"prompt": "plan"},
+        event_type="brain.responding",
+        event_payload={"text": "working"},
+    )
+    barrier = Barrier(2)
+
+    def complete_planning():
+        barrier.wait()
+        return repository.complete_run(
+            owner_id,
+            mission.mission_id,
+            planning.run_id,
+            status="completed",
+            output_payload={"decision": "delegate"},
+            event_type="plan.created",
+            event_payload={"text": "plan ready"},
+            mission_status="delegated",
+            expected_mission_status="planning",
+            expected_row_version=1,
+        )
+
+    def dispatch_professional():
+        barrier.wait()
+        return repository.create_run(
+            owner_id,
+            mission.mission_id,
+            phase="professional",
+            agent_id="hr-bot",
+            input_payload={"prompt": "professional"},
+            objective="candidate profile",
+            event_type="task.dispatched",
+            event_payload={"agent_id": "hr-bot"},
+            expected_mission_status="planning",
+            expected_row_version=1,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        completion_future = pool.submit(complete_planning)
+        dispatch_future = pool.submit(dispatch_professional)
+        completed = completion_future.result()
+        with pytest.raises(MissionRepositoryConflict):
+            dispatch_future.result()
+
+    assert completed.status == "completed"
+    assert _rows(
+        environment,
+        "select status,row_version from platform_control.missions "
+        "where mission_id=%s",
+        (mission.mission_id,),
+    ) == [("delegated", 2)]
+    assert len(repository.events_after(owner_id, mission.mission_id)) == 2
+
+
+@pytest.mark.postgres
+def test_concurrent_identical_phase_retries_share_one_server_run_id(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "concurrent phase")
+    barrier = Barrier(8)
+
+    def create_phase(_index: int):
+        barrier.wait()
+        return repository.create_run(
+            owner_id,
+            mission.mission_id,
+            phase="planning",
+            agent_id="agent-brain-bot",
+            input_payload={"prompt": "same"},
+            event_type="brain.responding",
+            event_payload={"text": "working"},
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        runs = tuple(pool.map(create_phase, range(8)))
+
+    assert len({run.run_id for run in runs}) == 1
+    assert _rows(
+        environment,
+        "select count(*) from platform_control.mission_runs where mission_id=%s",
+        (mission.mission_id,),
+    ) == [(1,)]
+    with pytest.raises(MissionRepositoryConflict):
+        repository.create_run(
+            owner_id,
+            mission.mission_id,
+            phase="planning",
+            agent_id="agent-brain-bot",
+            input_payload={"prompt": "collision"},
+            event_type="brain.responding",
+            event_payload={"text": "working"},
+        )
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "operation",
+    ("mission_prompt", "event_value", "event_key"),
+)
+def test_unpaired_surrogate_errors_collapse_to_stable_repository_error(
+    mission_database, repository, operation: str
+) -> None:
+    _environment, owner_id, _ = mission_database
+
+    if operation == "mission_prompt":
+        invoke = lambda: repository.create_mission(owner_id, uuid4(), "\ud800")
+    else:
+        mission = repository.create_mission(owner_id, uuid4(), "surrogate")
+        payload = {"text": "\ud800"} if operation == "event_value" else {"\ud800": "x"}
+        invoke = lambda: repository.append_event(
+            owner_id, mission.mission_id, "agent.progress", payload
+        )
+
+    with pytest.raises(MissionRepositoryError) as raised:
+        invoke()
+
+    assert type(raised.value) is MissionRepositoryError
+    assert str(raised.value) == "mission repository unavailable"
