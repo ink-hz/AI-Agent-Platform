@@ -1,10 +1,13 @@
 from uuid import uuid4
 
 import psycopg
+import pytest
 
 from app.agent_brain.authorization import AgentUseAuthorization
 from app.agent_brain.models import CALLABLE_AGENT_IDS
 from app.control_plane.models import AuthContext, Role
+from test_agent_brain_migration import _insert_grant, _seed_active_directory
+from test_control_plane_migration import control_database
 
 
 APP_DSN = (
@@ -22,9 +25,9 @@ class _Rows:
 
 
 class _Connection:
-    def __init__(self, owner, allowed_ids):
+    def __init__(self, owner, response):
         self.owner = owner
-        self.allowed_ids = set(allowed_ids)
+        self.response = response
 
     def __enter__(self):
         return self
@@ -35,12 +38,15 @@ class _Connection:
     def execute(self, sql, params):
         self.owner.queries.append((sql, params))
         actor, agent_ids = params
-        return _Rows(
+        rows = (
             [
-                {"agent_id": agent_id, "allowed": agent_id in self.allowed_ids}
+                {"agent_id": agent_id, "allowed": agent_id in self.response}
                 for agent_id in agent_ids
             ]
+            if isinstance(self.response, set)
+            else self.response
         )
+        return _Rows(rows)
 
 
 class _Decisions:
@@ -73,7 +79,40 @@ def test_permitted_agents_evaluates_every_callable_card_through_v28_scope() -> N
     assert decisions.calls == 1
     sql, params = decisions.queries[0]
     assert "platform_control.has_agent_use_scope_v28" in sql
-    assert params == (auth.internal_user_id, CALLABLE_AGENT_IDS)
+    assert params == (auth.internal_user_id, list(CALLABLE_AGENT_IDS))
+
+
+@pytest.mark.postgres
+def test_postgres_authorization_passes_all_callable_ids_as_text_array(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as connection:
+        user_id, _root, _child, _generation = _seed_active_directory(connection)
+        actor_id = uuid4()
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) "
+            "values (%s,'Grant Actor','active')",
+            (actor_id,),
+        )
+        for agent_id in CALLABLE_AGENT_IDS:
+            _insert_grant(
+                connection,
+                agent_id=agent_id,
+                target_kind="user",
+                actor_id=actor_id,
+                user_id=user_id,
+            )
+
+    authorization = AgentUseAuthorization(
+        environment["urls"]["platform_control_app"]
+    )
+    auth = AuthContext(user_id, Role.MEMBER, uuid4(), False)
+
+    assert tuple(
+        card.agent_id for card in authorization.permitted_agents(auth)
+    ) == CALLABLE_AGENT_IDS
 
 
 def test_management_role_does_not_bypass_agent_use_decision() -> None:
@@ -101,5 +140,38 @@ def test_database_failure_fails_closed() -> None:
         raise psycopg.OperationalError("database unavailable")
 
     authorization = AgentUseAuthorization(APP_DSN, connect=unavailable)
+
+    assert authorization.permitted_agents(_auth()) == ()
+
+
+def _valid_rows() -> list[dict[str, object]]:
+    return [
+        {"agent_id": agent_id, "allowed": True}
+        for agent_id in CALLABLE_AGENT_IDS
+    ]
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        _valid_rows()[:-1],
+        [*_valid_rows(), {"agent_id": "extra-bot", "allowed": True}],
+        [_valid_rows()[1], _valid_rows()[0], *_valid_rows()[2:]],
+        [*_valid_rows()[:-1], _valid_rows()[0]],
+        [*_valid_rows()[:-1], {"agent_id": "unknown-bot", "allowed": True}],
+        [{**_valid_rows()[0], "allowed": 1}, *_valid_rows()[1:]],
+    ],
+    ids=[
+        "missing-id",
+        "extra-id",
+        "reordered-ids",
+        "duplicated-id",
+        "unknown-id",
+        "non-boolean-decision",
+    ],
+)
+def test_malformed_database_decision_rows_fail_closed(rows) -> None:
+    decisions = _Decisions(rows)
+    authorization = AgentUseAuthorization(APP_DSN, connect=decisions.connect)
 
     assert authorization.permitted_agents(_auth()) == ()

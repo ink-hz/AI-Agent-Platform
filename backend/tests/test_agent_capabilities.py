@@ -10,6 +10,7 @@ from app.agent_brain.models import (
     AgentCapabilityCard,
     load_capability_cards,
 )
+from app.fleet.catalog import AgentCatalog
 
 
 APP_DSN = (
@@ -91,6 +92,9 @@ def test_capability_cards_are_immutable_and_contain_only_public_call_contract() 
         lambda agents: agents.append(dict(agents[0])),
         lambda agents: agents.append({**agents[0], "agent_id": "test-bot"}),
         lambda agents: agents[0].update(exclusions=[]),
+        lambda agents: agents[0].pop("exclusions"),
+        lambda agents: agents.pop(),
+        lambda agents: agents[0].update(prompt="private"),
         lambda agents: agents[0].update(max_duration_seconds=0),
         lambda agents: agents[0].update(max_duration_seconds=301),
         lambda agents: agents[0].update(capability_version=0),
@@ -98,7 +102,10 @@ def test_capability_cards_are_immutable_and_contain_only_public_call_contract() 
     ids=[
         "duplicate-id",
         "unknown-id",
-        "missing-exclusions",
+        "empty-exclusions",
+        "omitted-exclusions",
+        "omitted-callable-id",
+        "extra-yaml-field",
         "zero-duration",
         "excessive-duration",
         "non-positive-version",
@@ -114,6 +121,13 @@ def test_invalid_capability_configuration_fails_during_startup(
 
     with pytest.raises(ValueError):
         AgentUseAuthorization(APP_DSN, capability_path=path)
+
+
+def test_inconsistent_injected_fleet_catalog_fails_during_startup() -> None:
+    inconsistent_catalog = AgentCatalog({}, {}, set())
+
+    with pytest.raises(ValueError, match="business catalog"):
+        AgentUseAuthorization(APP_DSN, fleet_catalog=inconsistent_catalog)
 
 
 def test_capability_model_rejects_undeclared_internal_fields() -> None:

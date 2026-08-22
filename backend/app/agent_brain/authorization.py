@@ -45,6 +45,7 @@ class AgentUseAuthorization:
         if not isinstance(auth, AuthContext):
             return ()
         agent_ids = tuple(card.agent_id for card in self._cards)
+        agent_id_array = list(agent_ids)
         try:
             with self._connect(
                 self._control_database_url,
@@ -57,7 +58,7 @@ class AgentUseAuthorization:
                     "platform_control.has_agent_use_scope_v28(%s,requested.agent_id) "
                     "as allowed from unnest(%s::text[]) with ordinality "
                     "requested(agent_id,ordinal) order by requested.ordinal",
-                    (auth.internal_user_id, agent_ids),
+                    (auth.internal_user_id, agent_id_array),
                 ).fetchall()
             if len(rows) != len(self._cards):
                 return ()
