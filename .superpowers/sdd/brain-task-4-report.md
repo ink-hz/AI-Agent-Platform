@@ -86,6 +86,55 @@ creation/CAS readiness, and duplicate JSON members. All were reproduced and
 fixed with focused regressions. Re-review found no remaining Critical or
 Important findings and judged the repository ready for Task 5.
 
+## Follow-up hardening wave
+
+Implementation commit:
+`e9cec9158ef5725c987c8aad3952b40c50a716c1`.
+
+The follow-up review tightened the public event and orchestration persistence
+boundaries:
+
+- run input/output and event payloads now accept only canonical JSON values,
+  reject non-string keys, non-finite numbers, non-JSON containers, excessive
+  depth/items/strings, unpaired surrogates, and encoded payloads over 64 KiB;
+- event payloads use an exact top-level key allowlist per event type, recursive
+  ASCII object keys, and acronym-aware tokenization to reject internal,
+  chain-of-thought, prompt, raw/debug/tool, credential, token, and key fields;
+- `complete_run()` validates the locked Mission mode/current status, run phase,
+  run outcome, next Mission status, and terminal event type as one tuple;
+- `create_run()` validates the locked Mission mode/current status, requested
+  phase, start event, and exact completed predecessor set;
+- every successful run completion increments the Mission `row_version`, even
+  when its status is unchanged; and
+- concurrent identical phase creation recovers one server-generated run ID,
+  while premature phase advancement fails under the same owner Mission lock.
+
+Review regressions were observed RED before each fix:
+
+```text
+29 failed, 63 passed
+11 failed, 8 passed
+10 failed, 14 passed, 64 deselected
+3 failed, 17 passed, 71 deselected
+```
+
+Fresh focused verification after the last implementation change:
+
+```text
+119 passed in 2.19s
+```
+
+Fresh full backend verification, run once after independent review cleared all
+Critical and Important findings:
+
+```text
+2043 passed, 1 skipped, 47 warnings in 105.70s (0:01:45)
+```
+
+The final independent re-review found no Critical or Important issues. The 47
+warnings remain the existing Starlette/httpx cookie and TestClient
+deprecations.
+
 ## Concerns and next boundary
 
 Task 5 still owns the internal `FOR UPDATE SKIP LOCKED` scan/claim of pending
