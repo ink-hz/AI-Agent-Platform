@@ -159,7 +159,7 @@ Update `_terminal_status()` so `agent.complete -> completed` and `agent.error ->
 
 **Interfaces:**
 - Produces: `BrainDecision(kind, answer, agent_id, objective, rationale_summary)` where `kind` is `direct|delegate`.
-- Produces: transactional `create_mission`, `append_event`, `create_run`, `complete_run`, `mission_for_owner`, and `events_after` repository methods.
+- Produces: transactional `create_mission`, `append_event`, `create_run`, `complete_run`, `list_missions_for_owner`, `mission_for_owner`, and `events_after` repository methods.
 
 - [ ] **Step 1: Write parser tests** for a fenced or unfenced final JSON object with the exact schema below. Reject extra keys, multiple JSON objects, an unauthorized `agent_id`, missing delegate objective, direct decisions without an answer, outputs over 64 KiB, and content following the JSON object.
 
@@ -197,6 +197,7 @@ Update `_terminal_status()` so `agent.complete -> completed` and `agent.error ->
 
 ```text
 planning -> direct decision -> completed
+direct_agent -> professional completed -> completed without Brain synthesis
 planning -> delegate -> professional completed -> synthesis -> completed
 planning -> malformed decision -> failed(protocol_invalid)
 professional failed -> partially_completed with explicit failure
@@ -227,6 +228,7 @@ Assert every UI-visible transition appends a Mission event first and every relay
 
 ```text
 GET  /api/v1/catalog/agents
+GET  /api/v1/brain/missions?limit={limit}&before={cursor}
 POST /api/v1/brain/missions
 GET  /api/v1/brain/missions/{mission_id}
 GET  /api/v1/brain/missions/{mission_id}/events?after={seq}
@@ -234,7 +236,7 @@ POST /api/v1/brain/missions/{mission_id}/cancel
 POST /api/v1/agents/{agent_id}/missions
 ```
 
-- [ ] **Step 1: Write failing API tests** for valid DingTalk member, owner, unauthenticated, CSRF failure, wrong Origin, missing Agent grant, another user's Mission, invalid UUID, oversized text, unsupported attachment fields, duplicate idempotency key, cancellation, `after` replay, heartbeat frames, and `Cache-Control: no-store`.
+- [ ] **Step 1: Write failing API tests** for valid DingTalk member, owner, unauthenticated, CSRF failure, wrong Origin, missing Agent grant, another user's Mission, invalid UUID, oversized text, unsupported attachment fields, duplicate idempotency key, owner-only newest-first Mission pagination with an opaque cursor, cancellation, `after` replay, heartbeat frames, and `Cache-Control: no-store`.
 - [ ] **Step 2: Add authorization matrix tests** proving authenticated members may use only self-owned Brain routes and granted Agent routes; management status alone does not bypass Agent-use authorization when starting a user Mission. Cross-user management reads remain under `/admin` APIs and audited separately.
 - [ ] **Step 3: Run `cd backend && .venv/bin/pytest tests/test_agent_brain_api.py tests/test_dingtalk_auth_api.py -q`** and verify RED.
 - [ ] **Step 4: Implement routes** with server UUIDs, `Idempotency-Key` UUID validation, 32 KiB UTF-8 limit, Pydantic `extra="forbid"`, status codes `201/200/401/403/409/413/422/503`, and no internal error text. SSE emits `id: <seq>`, `event: mission`, one-line safe JSON, 15-second comments, and closes on terminal state.
