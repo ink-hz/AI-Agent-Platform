@@ -56,13 +56,58 @@ def _lease(*, cancelled: bool = False) -> RelayLease:
 
 
 def _event(seq: int, *, terminal: str | None = None) -> RelayEvent:
+    event_type = {
+        None: "agent.state",
+        "completed": "agent.complete",
+        "failed": "agent.error",
+    }[terminal]
     return RelayEvent(
         run_id=RUN_ID,
         seq=seq,
-        event_type="run.terminal" if terminal else "turn",
+        event_type=event_type,
         created_at=NOW + timedelta(seconds=seq),
-        payload={"status": terminal} if terminal else {"text": f"event-{seq}"},
+        payload={"text": f"event-{seq}"},
     )
+
+
+def _callback_body(
+    seq: int,
+    *,
+    terminal: str | None = None,
+    run_id: UUID = RUN_ID,
+) -> bytes:
+    event = _event(seq, terminal=terminal)
+    event_type = {
+        None: "state",
+        "completed": "complete",
+        "failed": "error",
+    }[terminal]
+    return json.dumps(
+        {
+            "runId": str(run_id),
+            "seq": seq,
+            "type": event_type,
+            "createdAt": event.created_at.isoformat(),
+            "bridge": {
+                "botName": "hr-bot",
+                "executionChatId": (
+                    "platform-00000000-0000-4000-8000-000000000102-hr-bot"
+                ),
+            },
+            "payload": event.payload,
+        }
+    ).encode()
+
+
+def test_relay_event_requires_timezone_aware_created_at() -> None:
+    with pytest.raises(ValueError):
+        RelayEvent(
+            run_id=RUN_ID,
+            seq=1,
+            event_type="agent.state",
+            created_at=datetime(2026, 8, 21, 4, 0),
+            payload={},
+        )
 
 
 class FakeStore:
@@ -246,7 +291,12 @@ async def test_exact_durable_sequence_and_terminal_upload() -> None:
     token = store.tokens[RUN_ID]
     for event in (_event(1), _event(2, terminal="completed")):
         result = await runtime.accept_callback(
-            RUN_ID, token, event.model_dump_json().encode()
+            RUN_ID,
+            token,
+            _callback_body(
+                event.seq,
+                terminal="completed" if event.event_type == "agent.complete" else None,
+            ),
         )
         assert result is CallbackResult.ACCEPTED
     assert await runtime.upload_once() is True
@@ -328,7 +378,7 @@ async def test_acceptance_completion_hook_pauses_terminal_outbox_before_cloud_up
         await runtime.accept_callback(
             RUN_ID,
             store.tokens[RUN_ID],
-            _event(1, terminal="completed").model_dump_json().encode(),
+            _callback_body(1, terminal="completed"),
         )
         is CallbackResult.ACCEPTED
     )
@@ -363,7 +413,7 @@ async def test_cloud_offline_after_metabot_completion_preserves_outbox() -> None
     await runtime.accept_callback(
         RUN_ID,
         store.tokens[RUN_ID],
-        _event(1, terminal="completed").model_dump_json().encode(),
+        _callback_body(1, terminal="completed"),
     )
     cloud.offline.add("events")
 
@@ -384,7 +434,7 @@ async def test_duplicate_token_mismatch_gap_and_body_schema_are_rejected() -> No
     runtime = _runtime(cloud=FakeCloud([_lease()]), store=store)
     await runtime.lease_once()
     token = store.tokens[RUN_ID]
-    body = _event(1).model_dump_json().encode()
+    body = _callback_body(1)
 
     assert await runtime.accept_callback(RUN_ID, token, body) is CallbackResult.ACCEPTED
     assert await runtime.accept_callback(RUN_ID, token, body) is CallbackResult.ACCEPTED
@@ -394,9 +444,15 @@ async def test_duplicate_token_mismatch_gap_and_body_schema_are_rejected() -> No
     )
     assert (
         await runtime.accept_callback(
-            RUN_ID, token, _event(3).model_dump_json().encode()
+            RUN_ID, token, _callback_body(3)
         )
         is CallbackResult.CONFLICT
+    )
+    assert (
+        await runtime.accept_callback(
+            RUN_ID, token, _callback_body(2, run_id=UUID(int=0))
+        )
+        is CallbackResult.INVALID
     )
     assert (
         await runtime.accept_callback(RUN_ID, token, b'{"seq":1}')
@@ -566,7 +622,7 @@ async def test_cancelled_worker_keeps_callback_listener_until_start_converges(
         reader, writer = await asyncio.open_connection(
             "127.0.0.1", runtime.callback_port
         )
-        body = event.model_dump_json().encode()
+        body = _callback_body(1, terminal=terminal)
         writer.write(
             f"POST /callbacks/{RUN_ID}/{store.tokens[RUN_ID]} HTTP/1.1\r\n".encode()
             + b"Host: 127.0.0.1\r\nContent-Type: application/json\r\n"
@@ -853,9 +909,10 @@ async def test_cloud_heartbeat_malformed_ids_are_sanitized(bad_id) -> None:
         ("seq", "1"),
         ("seq", True),
         ("seq", 1.0),
-        ("event_type", 7),
-        ("created_at", 1_777_777_777),
-        ("created_at", "2026-08-21T04:00:01"),
+        ("type", 7),
+        ("type", "completed"),
+        ("createdAt", 1_777_777_777),
+        ("createdAt", "2026-08-21T04:00:01"),
         ("payload", ["not", "an", "object"]),
     ],
 )
@@ -863,7 +920,7 @@ async def test_callback_event_fields_do_not_coerce(field, value) -> None:
     store = FakeStore()
     runtime = _runtime(cloud=FakeCloud([_lease()]), store=store)
     await runtime.lease_once()
-    event = _event(1).model_dump(mode="json")
+    event = json.loads(_callback_body(1))
     event[field] = value
 
     result = await runtime.accept_callback(
@@ -874,6 +931,64 @@ async def test_callback_event_fields_do_not_coerce(field, value) -> None:
 
     assert result is CallbackResult.INVALID
     assert store.events == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unknown_field",
+    [
+        ("unexpected", True),
+        ("bridge.unexpected", True),
+    ],
+)
+async def test_callback_event_rejects_unknown_fields(unknown_field) -> None:
+    store = FakeStore()
+    runtime = _runtime(cloud=FakeCloud([_lease()]), store=store)
+    await runtime.lease_once()
+    event = json.loads(_callback_body(1))
+    path, value = unknown_field
+    if path.startswith("bridge."):
+        event["bridge"][path.removeprefix("bridge.")] = value
+    else:
+        event[path] = value
+
+    result = await runtime.accept_callback(
+        RUN_ID,
+        store.tokens[RUN_ID],
+        json.dumps(event).encode(),
+    )
+
+    assert result is CallbackResult.INVALID
+    assert store.events == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("terminal", "event_type", "status"),
+    [
+        ("completed", "agent.complete", "completed"),
+        ("failed", "agent.error", "failed"),
+    ],
+)
+async def test_real_core_chat_terminal_callback_is_normalized_and_terminalizes(
+    terminal, event_type, status
+) -> None:
+    store = FakeStore()
+    runtime = _runtime(cloud=FakeCloud([_lease()]), store=store)
+    await runtime.lease_once()
+
+    result = await runtime.accept_callback(
+        RUN_ID,
+        store.tokens[RUN_ID],
+        _callback_body(1, terminal=terminal),
+    )
+
+    assert result is CallbackResult.ACCEPTED
+    assert store.events[RUN_ID] == [
+        _event(1, terminal=terminal).model_copy(update={"event_type": event_type})
+    ]
+    assert store.terminals[RUN_ID] == status
+    assert store.states[RUN_ID] == status
 
 
 @pytest.mark.asyncio
@@ -1083,7 +1198,7 @@ async def test_callback_server_binds_loopback_and_commits_before_204() -> None:
     await asyncio.wait_for(runtime.callback_ready.wait(), timeout=1)
     await runtime.lease_once()
     token = store.tokens[RUN_ID]
-    body = _event(1).model_dump_json().encode()
+    body = _callback_body(1)
 
     reader, writer = await asyncio.open_connection("127.0.0.1", runtime.callback_port)
     writer.write(

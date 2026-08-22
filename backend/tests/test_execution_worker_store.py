@@ -150,13 +150,40 @@ def _event(seq: int, *, payload: dict[str, object] | None = None) -> RelayEvent:
 
 
 def _terminal_event(status: str = "completed") -> RelayEvent:
+    event_type = {
+        "completed": "agent.complete",
+        "failed": "agent.error",
+    }[status]
     return RelayEvent(
         run_id=RUN_ID,
         seq=1,
-        event_type="run.terminal",
+        event_type=event_type,
         created_at=NOW + timedelta(seconds=1),
-        payload={"status": status},
+        payload={"text": f"run {status}"},
     )
+
+
+def _terminal_callback_body(
+    status: str = "completed",
+    *,
+    execution_chat_id: str = (
+        "platform-00000000-0000-4000-8000-000000000102-hr-bot"
+    ),
+) -> bytes:
+    event = _terminal_event(status)
+    return json.dumps(
+        {
+            "runId": str(event.run_id),
+            "seq": event.seq,
+            "type": "complete" if status == "completed" else "error",
+            "createdAt": event.created_at.isoformat(),
+            "bridge": {
+                "botName": "hr-bot",
+                "executionChatId": execution_chat_id,
+            },
+            "payload": event.payload,
+        }
+    ).encode()
 
 
 @pytest.mark.postgres
@@ -641,7 +668,7 @@ async def test_terminal_callback_race_has_one_database_and_http_fact(
     runtime.recover_run(RUN_ID, "hr-bot")
     callback = asyncio.create_task(
         runtime.accept_callback(
-            RUN_ID, token, _terminal_event().model_dump_json().encode()
+            RUN_ID, token, _terminal_callback_body()
         )
     )
     competitor = asyncio.create_task(
@@ -704,7 +731,7 @@ async def test_concurrent_exact_terminal_callbacks_are_both_idempotent_204(
         callback_port=9120,
     )
     runtime.recover_run(RUN_ID, "hr-bot")
-    body = _terminal_event().model_dump_json().encode()
+    body = _terminal_callback_body()
 
     results = await asyncio.gather(
         runtime.accept_callback(RUN_ID, token, body),
@@ -778,17 +805,12 @@ async def test_real_loopback_and_postgres_survive_races_failures_and_restarts(
             request = json.loads(self.rfile.read(length))
             if self.path == "/api/core-chat/runs":
                 trace.append(("metabot_start", request["runId"]))
-                event = RelayEvent(
-                    run_id=RUN_ID,
-                    seq=1,
-                    event_type="run.terminal",
-                    created_at=NOW + timedelta(seconds=1),
-                    payload={"status": "completed"},
-                )
                 with httpx.Client(trust_env=False) as client:
                     response = client.post(
                         request["eventCallbackUrl"],
-                        content=event.model_dump_json().encode(),
+                        content=_terminal_callback_body(
+                            execution_chat_id=request["executionChatId"]
+                        ),
                         headers={"Content-Type": "application/json"},
                     )
                 trace.append(("callback_status", response.status_code))

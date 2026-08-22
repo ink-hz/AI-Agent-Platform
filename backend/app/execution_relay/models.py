@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 
 class RelayJobPayload(BaseModel):
@@ -19,7 +19,7 @@ class RelayEvent(BaseModel):
     run_id: UUID
     seq: int = Field(gt=0)
     event_type: str
-    created_at: datetime
+    created_at: AwareDatetime
     payload: dict[str, object]
 
 

@@ -14,7 +14,7 @@ import re
 import secrets
 import signal
 import stat
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -34,7 +34,6 @@ _API_PREFIX = "/api/v1/execution-worker"
 _CALLBACK_BODY_LIMIT = 1_048_576
 _CALLBACK_HEADER_LIMIT = 16_384
 _CALLBACK_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
-_EVENT_TYPE = re.compile(r"[a-z][a-z0-9_.-]{0,63}\Z")
 _TERMINAL_STATES = frozenset({"completed", "failed", "cancelled", "interrupted"})
 _BACKOFF_SECONDS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0)
 _LOG = logging.getLogger("app.execution_relay.worker")
@@ -62,14 +61,32 @@ class CallbackResult(Enum):
     TOO_LARGE = 413
 
 
+class _CoreChatBridge(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    botName: str = Field(min_length=1, max_length=128)
+    executionChatId: str = Field(min_length=1, max_length=256)
+
+
 class _StrictCallbackEvent(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    run_id: UUID
+    runId: UUID
     seq: int = Field(gt=0)
-    event_type: str = Field(pattern=_EVENT_TYPE)
-    created_at: AwareDatetime
+    type: Literal["state", "question", "file", "log", "complete", "error"]
+    createdAt: AwareDatetime
+    bridge: _CoreChatBridge
     payload: dict[str, object]
+
+
+def _relay_event(value: _StrictCallbackEvent) -> RelayEvent:
+    return RelayEvent(
+        run_id=value.runId,
+        seq=value.seq,
+        event_type=f"agent.{value.type}",
+        created_at=value.createdAt,
+        payload=value.payload,
+    )
 
 
 class _StrictLeasePayload(BaseModel):
@@ -688,9 +705,9 @@ class WorkerRuntime:
             strict_event = _StrictCallbackEvent.model_validate_json(
                 body, strict=True
             )
-            if strict_event.run_id != run_id:
+            if strict_event.runId != run_id:
                 return CallbackResult.INVALID
-            event = RelayEvent.model_validate(strict_event.model_dump())
+            event = _relay_event(strict_event)
             terminal = self._terminal_status(event)
             if terminal is None:
                 await self._store_call("append_event", event)
@@ -721,21 +738,10 @@ class WorkerRuntime:
 
     @staticmethod
     def _terminal_status(event: RelayEvent) -> str | None:
-        status = event.payload.get("status")
-        terminal_type = event.event_type in {
-            "terminal",
-            "run.terminal",
-            "run.completed",
-            "run.failed",
-            "run.cancelled",
-            "run.interrupted",
-        }
-        if terminal_type and isinstance(status, str) and status in _TERMINAL_STATES:
-            return status
-        suffix = event.event_type.removeprefix("run.")
-        if suffix in _TERMINAL_STATES:
-            return suffix
-        return None
+        return {
+            "agent.complete": "completed",
+            "agent.error": "failed",
+        }.get(event.event_type)
 
     async def interrupt_active(self) -> None:
         async with self._state_lock:

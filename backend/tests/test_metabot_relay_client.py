@@ -34,6 +34,7 @@ CALLBACK_URL = (
     "00000000-0000-4000-8000-000000000101/"
     "bm9uLXNlY3JldC10ZXN0LXRva2Vu"
 )
+EXECUTION_CHAT_ID = "platform-00000000-0000-4000-8000-000000000102-hr-bot"
 
 
 def _contract(path: Path, *, entries: list[dict[str, object]] | None = None) -> Path:
@@ -147,7 +148,9 @@ def test_direct_runtime_map_construction_enforces_and_freezes_invariants() -> No
 
 
 @respx.mock
-def test_start_run_sends_exact_contract_to_exact_loopback_port(tmp_path: Path) -> None:
+def test_start_run_sends_exact_contract_and_callback_bridge_identity(
+    tmp_path: Path,
+) -> None:
     runtime_map = MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json"))
     route = respx.post("http://127.0.0.1:9200/api/core-chat/runs").mock(
         return_value=httpx.Response(
@@ -169,9 +172,7 @@ def test_start_run_sends_exact_contract_to_exact_loopback_port(tmp_path: Path) -
         "targetBot": "hr-bot",
         "prompt": "请根据岗位要求形成候选人画像。",
         "eventCallbackUrl": CALLBACK_URL,
-        "executionChatId": (
-            "platform-00000000-0000-4000-8000-000000000102-hr-bot"
-        ),
+        "executionChatId": EXECUTION_CHAT_ID,
         "userId": "platform-user",
         "maxTurns": 24,
     }
