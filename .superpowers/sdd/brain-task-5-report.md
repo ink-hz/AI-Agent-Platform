@@ -110,3 +110,59 @@ Task 5 does not add public Mission APIs, SSE, UI routes, the local
 `agent-brain-bot` runtime, or production deployment flags. Those remain Tasks
 6 through 9. The current worker allowlist will accept `agent-brain-bot` only
 after Task 8 lands, so this feature stays opt-in and fail-closed until then.
+
+## Post-review durability hardening
+
+The first Task 5 review later identified four Important production gaps. They
+were reproduced with RED tests and closed in commits `4c7ef50`, `78c4cb6`, and
+`ca77211`:
+
+- Relay state now carries database-trusted timing metadata. Queued deadlines,
+  lease/runtime deadlines, queued cancellation, and orchestrator interruption
+  atomically converge without requiring a live worker. New progress refreshes
+  the trusted runtime deadline.
+- Every phase persists its immutable capability-card snapshot. Recovery uses
+  that snapshot, while current authorization and capability version are
+  checked before new work continues. Revocation/version change reaches an
+  explicit terminal state; a result already uploaded is still archived.
+- Relay events are bridged idempotently through a persisted per-run cursor into
+  closed-schema `agent.accepted` and `agent.progress` events. MissionRun/Task
+  state follows execution, and `task.reviewed` is committed exactly once
+  before synthesis.
+- The scanner claims only Mission ID and owner ID. Content is owner-scoped and
+  decrypted one Mission at a time; corrupt ciphertext or a missing first
+  message is quarantined with a safe terminal event without blocking healthy
+  Missions in the same batch.
+- Migration 029 adds only `relay_event_cursor` and `reviewed_at` update grants
+  to the app role and relaxes the Relay lease-shape constraint only for
+  workerless cancelled/interrupted terminal jobs.
+
+Hardening RED evidence included four failing Mission isolation/lifecycle tests,
+four failing capability consistency tests, a failing progress-deadline test,
+and two failing Relay/Mission interruption-consistency tests. Each group was
+observed GREEN after its corresponding implementation.
+
+Fresh focused verification after the final fix:
+
+```text
+162 passed in 6.40s
+```
+
+This set includes a real PostgreSQL Relay integration covering planner output,
+professional Agent state/progress/result, the durable review checkpoint, and
+synthesis creation.
+
+The first post-hardening review found two related Important issues: the trusted
+orchestrator lacked an atomic Relay `interrupt()` primitive, so revocation could
+leave Relay `cancelled` while MissionRun was `interrupted`. Commit `78c4cb6`
+added the primitive and aligned both terminal states. Targeted re-review then
+reported no Critical, Important, or Minor findings.
+
+Fresh full backend verification after review and the migration-version assertion
+fix:
+
+```text
+2086 passed, 1 skipped, 47 warnings in 103.40s (0:01:43)
+```
+
+The warnings remain the pre-existing Starlette/httpx deprecations.
