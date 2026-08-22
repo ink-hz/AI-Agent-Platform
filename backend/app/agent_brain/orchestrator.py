@@ -235,6 +235,10 @@ class MissionOrchestrator:
                     "'platform_control.mission_runs','started_at','update') "
                     "and has_column_privilege(current_user,"
                     "'platform_control.mission_runs','terminal_at','update') "
+                    "and has_column_privilege(current_user,"
+                    "'platform_control.mission_runs','relay_event_cursor','update') "
+                    "and has_column_privilege(current_user,"
+                    "'platform_control.mission_runs','reviewed_at','update') "
                     "and has_table_privilege(current_user,"
                     "'platform_control.mission_events','select') "
                     "and has_table_privilege(current_user,"
@@ -277,9 +281,23 @@ class MissionOrchestrator:
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
             raise ValueError("advance limit invalid")
         bounded = min(limit, 50)
-        missions = self.missions.claim_pending(bounded)
+        claims = self.missions.claim_pending(bounded)
         advanced = 0
-        for mission in missions:
+        for claim in claims:
+            try:
+                mission = self.missions.mission_for_owner(
+                    claim.owner_internal_user_id, claim.mission_id
+                )
+            except MissionRepositoryError:
+                try:
+                    if self.missions.quarantine_claim(claim):
+                        advanced += 1
+                except MissionRepositoryError:
+                    logger.exception(
+                        "Agent Brain Mission quarantine failed",
+                        extra={"mission_id": str(claim.mission_id)},
+                    )
+                continue
             try:
                 if self._advance_one(mission):
                     advanced += 1
@@ -308,6 +326,80 @@ class MissionOrchestrator:
             raise MissionRepositoryError()
         return mapped
 
+    @staticmethod
+    def _pinned_card(run: MissionRun) -> AgentCapabilityCard:
+        return AgentCapabilityCard.model_validate(
+            run.input_payload.get("capability_card")
+        )
+
+    @staticmethod
+    def _pinned_cards(run: MissionRun) -> tuple[AgentCapabilityCard, ...]:
+        value = run.input_payload.get("capability_cards")
+        if type(value) is not list:
+            raise MissionRepositoryError()
+        cards = tuple(AgentCapabilityCard.model_validate(item) for item in value)
+        if len({card.agent_id for card in cards}) != len(cards):
+            raise MissionRepositoryError()
+        return cards
+
+    @staticmethod
+    def _capability_issue(
+        pinned: AgentCapabilityCard,
+        current_by_id: dict[str, AgentCapabilityCard],
+    ) -> str | None:
+        current = current_by_id.get(pinned.agent_id)
+        if current is None:
+            return "authorization_revoked"
+        if current.capability_version != pinned.capability_version:
+            return "capability_changed"
+        return None
+
+    def _relay_status_optional(self, run: MissionRun) -> str | None:
+        try:
+            return self._state_name(self.relay.job_state(run.run_id))
+        except (ExecutionRelayNotFound, KeyError):
+            return None
+
+    def _terminate_without_run(
+        self, mission: MissionRecord, reason_code: str
+    ) -> bool:
+        return self.missions.terminate_mission(
+            mission.owner_internal_user_id,
+            mission.mission_id,
+            status="failed",
+            event_type="mission.failed",
+            event_payload={
+                "text": "当前授权或能力版本已变化，任务已安全终止",
+                "reason_code": reason_code,
+            },
+            expected_mission_status=mission.status,
+            expected_row_version=mission.row_version,
+        )
+
+    def _interrupt_for_capability(
+        self, mission: MissionRecord, run: MissionRun, reason_code: str
+    ) -> bool:
+        try:
+            self.relay.request_cancel(run.run_id)
+        except (ExecutionRelayNotFound, ExecutionRelayConflict, KeyError):
+            pass
+        self.missions.complete_run(
+            mission.owner_internal_user_id,
+            mission.mission_id,
+            run.run_id,
+            status="interrupted",
+            output_payload={"reason_code": reason_code},
+            event_type="mission.interrupted",
+            event_payload={
+                "text": "当前授权或能力版本已变化，执行已安全终止",
+                "reason_code": reason_code,
+            },
+            mission_status="interrupted",
+            expected_mission_status=mission.status,
+            expected_row_version=mission.row_version,
+        )
+        return True
+
     def _enqueue(self, mission: MissionRecord, run: MissionRun, prompt: str) -> bool:
         payload = RelayJobPayload(
             run_id=run.run_id,
@@ -325,26 +417,44 @@ class MissionOrchestrator:
             try:
                 self.relay.enqueue(payload)
             except ExecutionRelayConflict:
-                if self.relay.job_state(run.run_id) not in (
+                if self._state_name(self.relay.job_state(run.run_id)) not in (
                     _ACTIVE_RELAY_STATES | _TERMINAL_RELAY_STATES
                 ):
                     raise
             return True
         return False
 
-    def _run_state(self, run: MissionRun) -> tuple[str, tuple[RelayEvent, ...]]:
-        state = self.relay.job_state(run.run_id)
-        if state in _ACTIVE_RELAY_STATES:
-            return state, ()
-        if state not in _TERMINAL_RELAY_STATES:
+    @staticmethod
+    def _state_name(state: object) -> str:
+        value = getattr(state, "status", state)
+        if not isinstance(value, str):
+            raise ExecutionRelayError("execution relay unavailable")
+        return value
+
+    def _run_state(
+        self, mission: MissionRecord, run: MissionRun
+    ) -> tuple[str, tuple[RelayEvent, ...]]:
+        state = self._state_name(self.relay.job_state(run.run_id))
+        if state not in (_ACTIVE_RELAY_STATES | _TERMINAL_RELAY_STATES):
             raise ExecutionRelayError("execution relay unavailable")
         events = self.relay.events(run.run_id)
+        self.missions.apply_relay_events(
+            mission.owner_internal_user_id,
+            mission.mission_id,
+            run.run_id,
+            events,
+        )
         return state, events
 
     def _advance_one(self, mission: MissionRecord) -> bool:
         if mission.status in TERMINAL_MISSION_STATUSES:
             return False
-        cards = self._cards(mission)
+        try:
+            cards = self._cards(mission)
+            capability_unavailable = False
+        except Exception:
+            cards = ()
+            capability_unavailable = True
         card_by_id = {card.agent_id: card for card in cards}
         runs = self._runs(mission)
 
@@ -359,18 +469,34 @@ class MissionOrchestrator:
                 None,
             )
             if active is None:
-                return False
-            state, events = self._run_state(active)
+                return self.missions.terminate_mission(
+                    mission.owner_internal_user_id,
+                    mission.mission_id,
+                    status="cancelled",
+                    event_type="mission.cancelled",
+                    event_payload={
+                        "text": "任务已取消",
+                        "reason_code": "cancelled_by_user",
+                    },
+                    expected_mission_status=mission.status,
+                    expected_row_version=mission.row_version,
+                )
+            state, events = self._run_state(mission, active)
             if state in _ACTIVE_RELAY_STATES:
                 return bool(self.relay.request_cancel(active.run_id))
             return self._complete_terminal(mission, active, state, events, cancelled=True)
 
         if mission.mode == "direct_agent":
-            card = card_by_id.get(mission.direct_agent_id)
-            if card is None:
-                raise MissionRepositoryError()
             direct = runs.get("direct")
             if direct is None:
+                card = card_by_id.get(mission.direct_agent_id)
+                if card is None:
+                    return self._terminate_without_run(
+                        mission,
+                        "capability_unavailable"
+                        if capability_unavailable
+                        else "authorization_revoked",
+                    )
                 prompt = build_professional_prompt(mission.prompt, mission.prompt, card)
                 direct = self.missions.create_run(
                     mission.owner_internal_user_id,
@@ -381,6 +507,7 @@ class MissionOrchestrator:
                         "user_request": mission.prompt,
                         "objective": mission.prompt,
                         "capability_version": card.capability_version,
+                        "capability_card": _card_payload(card),
                     },
                     objective=mission.prompt,
                     event_type="task.dispatched",
@@ -394,8 +521,17 @@ class MissionOrchestrator:
                 self._enqueue(mission, direct, prompt)
                 return True
             if direct.status not in {"completed", "failed", "cancelled", "interrupted"}:
+                state = self._relay_status_optional(direct)
+                if state in _TERMINAL_RELAY_STATES:
+                    return self._advance_direct(mission, direct)
+                pinned = self._pinned_card(direct)
+                issue = self._capability_issue(pinned, card_by_id)
+                if capability_unavailable:
+                    issue = "capability_unavailable"
+                if issue is not None:
+                    return self._interrupt_for_capability(mission, direct, issue)
                 prompt = build_professional_prompt(
-                    mission.prompt, mission.prompt, card
+                    mission.prompt, mission.prompt, pinned
                 )
                 if self._enqueue(mission, direct, prompt):
                     return True
@@ -403,6 +539,13 @@ class MissionOrchestrator:
 
         planning = runs.get("planning")
         if planning is None:
+            if not cards:
+                return self._terminate_without_run(
+                    mission,
+                    "capability_unavailable"
+                    if capability_unavailable
+                    else "authorization_revoked",
+                )
             prompt = build_planning_prompt(mission.prompt, cards)
             planning = self.missions.create_run(
                 mission.owner_internal_user_id,
@@ -412,6 +555,7 @@ class MissionOrchestrator:
                 input_payload={
                     "user_request": mission.prompt,
                     "authorized_agent_ids": [card.agent_id for card in cards],
+                    "capability_cards": [_card_payload(card) for card in cards],
                 },
                 event_type="brain.responding",
                 event_payload={"text": "正在分析需求", "stage": "planning"},
@@ -421,11 +565,25 @@ class MissionOrchestrator:
             self._enqueue(mission, planning, prompt)
             return True
         if planning.status != "completed":
+            pinned_cards = self._pinned_cards(planning)
+            state = self._relay_status_optional(planning)
+            if state not in _TERMINAL_RELAY_STATES:
+                issues = [
+                    self._capability_issue(card, card_by_id)
+                    for card in pinned_cards
+                ]
+                issue = next((item for item in issues if item is not None), None)
+                if capability_unavailable:
+                    issue = "capability_unavailable"
+                if issue is not None:
+                    return self._interrupt_for_capability(mission, planning, issue)
             if self._enqueue(
-                mission, planning, build_planning_prompt(mission.prompt, cards)
+                mission,
+                planning,
+                build_planning_prompt(mission.prompt, pinned_cards),
             ):
                 return True
-            return self._advance_planning(mission, planning, cards)
+            return self._advance_planning(mission, planning, pinned_cards)
         if mission.status == "planning":
             return False
 
@@ -433,12 +591,19 @@ class MissionOrchestrator:
         if professional is None:
             decision = planning.output_payload.get("decision") if planning.output_payload else None
             rendered = json.dumps(decision, ensure_ascii=False, separators=(",", ":"))
+            planning_cards = self._pinned_cards(planning)
             parsed = parse_brain_decision(
-                rendered, allowed_agent_ids=card_by_id.keys()
+                rendered, allowed_agent_ids=(card.agent_id for card in planning_cards)
             )
             if parsed.kind != "delegate":
                 raise MissionRepositoryError()
-            card = card_by_id[parsed.agent_id]
+            pinned_by_id = {card.agent_id: card for card in planning_cards}
+            card = pinned_by_id[parsed.agent_id]
+            issue = self._capability_issue(card, card_by_id)
+            if capability_unavailable:
+                issue = "capability_unavailable"
+            if issue is not None:
+                return self._terminate_without_run(mission, issue)
             prompt = build_professional_prompt(mission.prompt, parsed.objective, card)
             professional = self.missions.create_run(
                 mission.owner_internal_user_id,
@@ -449,6 +614,7 @@ class MissionOrchestrator:
                     "user_request": mission.prompt,
                     "objective": parsed.objective,
                     "capability_version": card.capability_version,
+                    "capability_card": _card_payload(card),
                 },
                 objective=parsed.objective,
                 event_type="task.dispatched",
@@ -462,10 +628,18 @@ class MissionOrchestrator:
             self._enqueue(mission, professional, prompt)
             return True
         if professional.status != "completed":
-            card = card_by_id.get(professional.agent_id)
+            state = self._relay_status_optional(professional)
+            if state in _TERMINAL_RELAY_STATES:
+                return self._advance_professional(mission, professional)
+            card = self._pinned_card(professional)
             objective = professional.input_payload.get("objective")
-            if card is None or type(objective) is not str:
+            if type(objective) is not str:
                 raise MissionRepositoryError()
+            issue = self._capability_issue(card, card_by_id)
+            if capability_unavailable:
+                issue = "capability_unavailable"
+            if issue is not None:
+                return self._interrupt_for_capability(mission, professional, issue)
             if self._enqueue(
                 mission,
                 professional,
@@ -474,10 +648,20 @@ class MissionOrchestrator:
                 return True
             return self._advance_professional(mission, professional)
 
+        if professional.reviewed_at is None:
+            return self.missions.review_professional_run(
+                mission.owner_internal_user_id,
+                mission.mission_id,
+                professional.run_id,
+            )
+
         synthesis = runs.get("synthesis")
         if synthesis is None:
             professional_result = str(professional.output_payload["text"])
-            prompt = build_synthesis_prompt(mission.prompt, professional_result, cards)
+            planning_cards = self._pinned_cards(planning)
+            prompt = build_synthesis_prompt(
+                mission.prompt, professional_result, planning_cards
+            )
             synthesis = self.missions.create_run(
                 mission.owner_internal_user_id,
                 mission.mission_id,
@@ -486,6 +670,9 @@ class MissionOrchestrator:
                 input_payload={
                     "user_request": mission.prompt,
                     "professional_result": professional_result,
+                    "capability_cards": [
+                        _card_payload(card) for card in planning_cards
+                    ],
                 },
                 event_type="synthesis.started",
                 event_payload={"text": "正在整理专业 Agent 的结果"},
@@ -498,10 +685,13 @@ class MissionOrchestrator:
             professional_result = synthesis.input_payload.get("professional_result")
             if type(professional_result) is not str:
                 raise MissionRepositoryError()
+            synthesis_cards = self._pinned_cards(synthesis)
             if self._enqueue(
                 mission,
                 synthesis,
-                build_synthesis_prompt(mission.prompt, professional_result, cards),
+                build_synthesis_prompt(
+                    mission.prompt, professional_result, synthesis_cards
+                ),
             ):
                 return True
         return self._advance_synthesis(mission, synthesis)
@@ -512,7 +702,7 @@ class MissionOrchestrator:
         run: MissionRun,
         cards: Sequence[AgentCapabilityCard],
     ) -> bool:
-        state, events = self._run_state(run)
+        state, events = self._run_state(mission, run)
         if state in _ACTIVE_RELAY_STATES:
             return False
         if state == "completed":
@@ -583,7 +773,7 @@ class MissionOrchestrator:
         return self._complete_terminal(mission, run, state, events)
 
     def _advance_direct(self, mission: MissionRecord, run: MissionRun) -> bool:
-        state, events = self._run_state(run)
+        state, events = self._run_state(mission, run)
         if state in _ACTIVE_RELAY_STATES:
             return False
         if state == "completed":
@@ -608,7 +798,7 @@ class MissionOrchestrator:
         return self._complete_terminal(mission, run, state, events)
 
     def _advance_professional(self, mission: MissionRecord, run: MissionRun) -> bool:
-        state, events = self._run_state(run)
+        state, events = self._run_state(mission, run)
         if state in _ACTIVE_RELAY_STATES:
             return False
         if state == "completed":
@@ -649,7 +839,7 @@ class MissionOrchestrator:
         return self._complete_terminal(mission, run, state, events)
 
     def _advance_synthesis(self, mission: MissionRecord, run: MissionRun) -> bool:
-        state, events = self._run_state(run)
+        state, events = self._run_state(mission, run)
         if state in _ACTIVE_RELAY_STATES:
             return False
         if state == "completed":

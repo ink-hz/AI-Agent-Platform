@@ -28,6 +28,41 @@ V28_FUNCTIONS = (
 )
 
 
+@pytest.mark.postgres
+def test_orchestrator_cursor_and_review_marker_are_least_privilege_columns(
+    control_database,
+) -> None:
+    for environment in control_database["environments"].values():
+        with psycopg.connect(environment["admin"]) as connection:
+            columns = {
+                row[0]: (row[1], row[2])
+                for row in connection.execute(
+                    "select column_name,data_type,column_default "
+                    "from information_schema.columns "
+                    "where table_schema='platform_control' "
+                    "and table_name='mission_runs' "
+                    "and column_name in ('relay_event_cursor','reviewed_at')"
+                ).fetchall()
+            }
+            assert columns["relay_event_cursor"] == ("integer", "0")
+            assert columns["reviewed_at"] == (
+                "timestamp with time zone",
+                None,
+            )
+            app_role = next(
+                role for role in environment["roles"] if "control_app" in role
+            )
+            assert connection.execute(
+                "select has_column_privilege(%s,"
+                "'platform_control.mission_runs','relay_event_cursor','update'),"
+                "has_column_privilege(%s,"
+                "'platform_control.mission_runs','reviewed_at','update'),"
+                "has_table_privilege(%s,"
+                "'platform_control.mission_runs','update')",
+                (app_role, app_role, app_role),
+            ).fetchone() == (True, True, False)
+
+
 def _seed_active_directory(connection, *, user_status: str = "active"):
     generation_id = uuid4()
     user_id = uuid4()
@@ -746,7 +781,9 @@ def test_app_updates_only_lifecycle_columns(control_database) -> None:
         ("mission_tasks", "terminal_at"),
         ("mission_tasks", "updated_at"),
         ("mission_runs", "output_ciphertext"),
-        ("mission_runs", "output_encryption_key_version"),
+            ("mission_runs", "output_encryption_key_version"),
+            ("mission_runs", "relay_event_cursor"),
+            ("mission_runs", "reviewed_at"),
         ("mission_runs", "started_at"),
         ("mission_runs", "status"),
         ("mission_runs", "terminal_at"),

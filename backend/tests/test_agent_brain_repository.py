@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 import inspect
 from threading import Barrier
 from uuid import UUID, uuid4
@@ -14,6 +15,7 @@ from app.agent_brain.repository import (
     MissionRepositoryError,
     MissionRepositoryNotFound,
 )
+from app.execution_relay.models import RelayEvent
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import (
     ContentCodec,
@@ -135,6 +137,89 @@ def _create_queued_professional(
         event_type="task.dispatched",
         event_payload={"agent_id": "hr-bot"},
     )
+
+
+@pytest.mark.postgres
+def test_relay_events_bridge_once_and_move_professional_run_to_running(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "bridge")
+    professional = _create_queued_professional(
+        repository, owner_id, mission.mission_id
+    )
+    now = datetime.now(timezone.utc)
+    relay_events = (
+        RelayEvent(
+            run_id=professional.run_id,
+            seq=1,
+            event_type="agent.state",
+            created_at=now,
+            payload={"state": "running", "rawDebug": "must not persist"},
+        ),
+        RelayEvent(
+            run_id=professional.run_id,
+            seq=2,
+            event_type="agent.log",
+            created_at=now,
+            payload={"text": "正在搜索候选人", "token": "must not persist"},
+        ),
+    )
+
+    assert repository.apply_relay_events(
+        owner_id, mission.mission_id, professional.run_id, relay_events
+    ) == 2
+    assert repository.apply_relay_events(
+        owner_id, mission.mission_id, professional.run_id, relay_events
+    ) == 0
+
+    run = repository.runs_for_owner(owner_id, mission.mission_id)[-1]
+    assert run.status == "running"
+    assert run.relay_event_cursor == 2
+    events = repository.events_after(owner_id, mission.mission_id)
+    assert [event.event_type for event in events[-2:]] == [
+        "agent.accepted",
+        "agent.progress",
+    ]
+    assert events[-1].payload == {
+        "agent_id": "hr-bot",
+        "text": "正在搜索候选人",
+    }
+    assert b"must not persist" not in b"".join(
+        bytes(row[0])
+        for row in _rows(
+            environment,
+            "select payload_ciphertext from platform_control.mission_events "
+            "where mission_id=%s",
+            (mission.mission_id,),
+        )
+    )
+
+
+@pytest.mark.postgres
+def test_professional_review_is_persisted_once_before_synthesis(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "review")
+    _advance_to_synthesis_ready(repository, owner_id, mission.mission_id)
+    professional = repository.runs_for_owner(owner_id, mission.mission_id)[-1]
+
+    assert repository.review_professional_run(
+        owner_id, mission.mission_id, professional.run_id
+    ) is True
+    assert repository.review_professional_run(
+        owner_id, mission.mission_id, professional.run_id
+    ) is False
+
+    events = repository.events_after(owner_id, mission.mission_id)
+    assert [event.event_type for event in events].count("task.reviewed") == 1
+    assert _rows(
+        environment,
+        "select reviewed_at is not null from platform_control.mission_runs "
+        "where run_id=%s",
+        (professional.run_id,),
+    ) == [(True,)]
 
 
 @pytest.mark.postgres

@@ -21,6 +21,7 @@ from app.execution_relay.repository import (
     ExecutionRelayNotFound,
     ExecutionRelayRepository,
     ExecutionRelayWorkerUnavailable,
+    RelayJobState,
 )
 from test_control_plane_migration import control_database
 
@@ -115,6 +116,35 @@ def test_worker_authorization_uses_the_locking_security_definer_function() -> No
 
 
 @pytest.mark.postgres
+def test_new_progress_refreshes_trusted_running_deadline(
+    relay_database, repository
+) -> None:
+    payload = _payload()
+    repository.enqueue(payload)
+    assert repository.lease("worker-a", ("hr-bot",), 120) is not None
+    repository.mark_dispatched("worker-a", payload.run_id)
+    repository.append_events(
+        "worker-a",
+        (_event(payload.run_id, 1, event_type="agent.state"),),
+    )
+    with psycopg.connect(relay_database["admin"]) as connection:
+        connection.execute(
+            "update platform_control.execution_jobs "
+            "set updated_at=now()-interval '1 hour' where run_id=%s",
+            (payload.run_id,),
+        )
+
+    repository.append_events(
+        "worker-a",
+        (_event(payload.run_id, 2, event_type="agent.log"),),
+    )
+
+    assert repository.job_state(
+        payload.run_id, running_deadline_seconds=60
+    ).status == "running"
+
+
+@pytest.mark.postgres
 def test_enqueue_encrypts_payload_with_job_and_run_bound_subject(
     relay_database, repository
 ) -> None:
@@ -170,7 +200,7 @@ def test_orchestrator_readers_return_state_and_decrypted_events_in_sequence(
     repository.append_events("worker-a", (first, second))
     repository.finish("worker-a", payload.run_id, "completed")
 
-    assert repository.job_state(payload.run_id) == "completed"
+    assert repository.job_state(payload.run_id).status == "completed"
     assert repository.events(payload.run_id) == (first, second)
 
 
@@ -182,6 +212,80 @@ def test_orchestrator_reader_missing_run_is_stable_not_found(
         repository.job_state(uuid4())
     with pytest.raises(ExecutionRelayNotFound):
         repository.events(uuid4())
+
+
+@pytest.mark.postgres
+def test_job_state_returns_trusted_timestamps_and_atomically_expires_queued_job(
+    relay_database, repository
+) -> None:
+    payload = _payload("hr-bot")
+    repository.enqueue(payload)
+    with psycopg.connect(relay_database["admin"]) as connection:
+        connection.execute(
+            "update platform_control.execution_jobs set "
+            "created_at=now()-interval '61 seconds',"
+            "updated_at=now()-interval '61 seconds' where run_id=%s",
+            (payload.run_id,),
+        )
+
+    state = repository.job_state(
+        payload.run_id,
+        queued_deadline_seconds=60,
+        running_deadline_seconds=300,
+    )
+
+    assert isinstance(state, RelayJobState)
+    assert state.status == "interrupted"
+    assert state.cancel_requested is True
+    assert state.terminal_at is not None
+    assert state.database_now >= state.created_at
+    assert _job_row(relay_database, payload.run_id)[5] == "interrupted"
+
+
+@pytest.mark.postgres
+def test_job_state_atomically_expires_stale_running_or_lease_deadline(
+    relay_database, repository
+) -> None:
+    payload = _payload("hr-bot")
+    repository.enqueue(payload)
+    lease = repository.lease("worker-a", ("hr-bot",), 45)
+    assert lease is not None
+    repository.mark_dispatched("worker-a", payload.run_id)
+    with psycopg.connect(relay_database["admin"]) as connection:
+        connection.execute(
+            "update platform_control.execution_jobs set status='running',"
+            "lease_expires_at=now()-interval '1 second',"
+            "updated_at=now()-interval '301 seconds' where run_id=%s",
+            (payload.run_id,),
+        )
+
+    state = repository.job_state(
+        payload.run_id,
+        queued_deadline_seconds=60,
+        running_deadline_seconds=300,
+    )
+
+    assert state.status == "interrupted"
+    assert state.terminal_at is not None
+
+
+@pytest.mark.postgres
+def test_cancel_queued_job_is_terminal_without_worker(
+    relay_database, repository
+) -> None:
+    payload = _payload("hr-bot")
+    repository.enqueue(payload)
+
+    assert repository.request_cancel(payload.run_id) is True
+
+    state = repository.job_state(
+        payload.run_id,
+        queued_deadline_seconds=60,
+        running_deadline_seconds=300,
+    )
+    assert state.status == "cancelled"
+    assert state.cancel_requested is True
+    assert state.terminal_at is not None
 
 
 @pytest.mark.postgres
@@ -588,20 +692,18 @@ def test_append_events_is_worker_bound_and_terminal_allows_duplicates_only(
 
 
 @pytest.mark.postgres
-def test_request_cancel_is_idempotent_for_nonterminal_and_false_otherwise(
+def test_request_cancel_terminalizes_queued_and_is_false_after_terminal(
     relay_database, repository
 ) -> None:
     payload = _payload()
     repository.enqueue(payload)
 
     assert repository.request_cancel(payload.run_id) is True
-    assert repository.request_cancel(payload.run_id) is True
-    assert _job_row(relay_database, payload.run_id)[8] is True
-    assert repository.request_cancel(uuid4()) is False
-
-    repository.lease("worker-a", ("hr-bot",), 45)
-    repository.finish("worker-a", payload.run_id, "cancelled")
     assert repository.request_cancel(payload.run_id) is False
+    assert _job_row(relay_database, payload.run_id)[8] is True
+    assert _job_row(relay_database, payload.run_id)[5] == "cancelled"
+    assert repository.request_cancel(uuid4()) is False
+    assert repository.lease("worker-a", ("hr-bot",), 45) is None
 
 
 @pytest.mark.postgres

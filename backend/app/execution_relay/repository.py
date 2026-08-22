@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import json
 import re
 from typing import Any, Literal
@@ -22,6 +23,18 @@ TERMINAL_STATUSES = frozenset(
 )
 ACTIVE_STATUSES = frozenset({"leased", "dispatched", "running"})
 TerminalStatus = Literal["completed", "failed", "cancelled", "interrupted"]
+
+
+@dataclass(frozen=True)
+class RelayJobState:
+    run_id: UUID
+    status: str
+    cancel_requested: bool
+    created_at: datetime
+    updated_at: datetime
+    lease_expires_at: datetime | None
+    terminal_at: datetime | None
+    database_now: datetime
 
 
 class ExecutionRelayError(RuntimeError):
@@ -419,6 +432,12 @@ class ExecutionRelayRepository:
                         "set status='running',updated_at=now() where run_id=%s",
                         (run_id,),
                     )
+                elif job["status"] == "running" and inserted:
+                    cursor.execute(
+                        "update platform_control.execution_jobs "
+                        "set updated_at=now() where run_id=%s",
+                        (run_id,),
+                    )
                 return inserted
         except ExecutionRelayError:
             raise
@@ -432,20 +451,39 @@ class ExecutionRelayRepository:
     def request_cancel(self, run_id: UUID) -> bool:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                row = cursor.execute(
-                    "update platform_control.execution_jobs "
-                    "set cancel_requested=true,updated_at=now() "
-                    "where run_id=%s and status=any(%s) returning run_id",
-                    (
-                        run_id,
-                        ["queued", "leased", "dispatched", "running"],
-                    ),
+                current = cursor.execute(
+                    "select status from platform_control.execution_jobs "
+                    "where run_id=%s for update",
+                    (run_id,),
                 ).fetchone()
+                if current is None or current["status"] in TERMINAL_STATUSES:
+                    return False
+                if current["status"] == "queued":
+                    row = cursor.execute(
+                        "update platform_control.execution_jobs set "
+                        "status='cancelled',cancel_requested=true,"
+                        "terminal_at=now(),updated_at=now() "
+                        "where run_id=%s and status='queued' returning run_id",
+                        (run_id,),
+                    ).fetchone()
+                else:
+                    row = cursor.execute(
+                        "update platform_control.execution_jobs "
+                        "set cancel_requested=true,updated_at=now() "
+                        "where run_id=%s and status=any(%s) returning run_id",
+                        (run_id, ["leased", "dispatched", "running"]),
+                    ).fetchone()
             return row is not None
         except psycopg.Error:
             raise ExecutionRelayError("execution relay unavailable") from None
 
-    def job_state(self, run_id: UUID) -> str:
+    def job_state(
+        self,
+        run_id: UUID,
+        *,
+        queued_deadline_seconds: int = 60,
+        running_deadline_seconds: int = 300,
+    ) -> RelayJobState:
         """Return relay state for the trusted orchestrator only.
 
         This method is intentionally not used by the worker router.  The
@@ -453,18 +491,57 @@ class ExecutionRelayRepository:
         lease and upload operations.
         """
 
-        if not isinstance(run_id, UUID):
+        if (
+            not isinstance(run_id, UUID)
+            or isinstance(queued_deadline_seconds, bool)
+            or not isinstance(queued_deadline_seconds, int)
+            or queued_deadline_seconds <= 0
+            or isinstance(running_deadline_seconds, bool)
+            or not isinstance(running_deadline_seconds, int)
+            or running_deadline_seconds <= 0
+        ):
             raise ExecutionRelayNotFound()
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 row = cursor.execute(
-                    "select status from platform_control.execution_jobs "
-                    "where run_id=%s",
+                    "select run_id,status,cancel_requested,created_at,updated_at,"
+                    "lease_expires_at,terminal_at,now() as database_now "
+                    "from platform_control.execution_jobs where run_id=%s for update",
                     (run_id,),
                 ).fetchone()
-            if row is None:
-                raise ExecutionRelayNotFound()
-            return row["status"]
+                if row is None:
+                    raise ExecutionRelayNotFound()
+                queued_expired = (
+                    row["status"] == "queued"
+                    and row["created_at"]
+                    <= row["database_now"]
+                    - timedelta(seconds=queued_deadline_seconds)
+                )
+                running_expired = (
+                    row["status"] in ACTIVE_STATUSES
+                    and (
+                        (
+                            row["lease_expires_at"] is not None
+                            and row["lease_expires_at"] <= row["database_now"]
+                        )
+                        or row["updated_at"]
+                        <= row["database_now"]
+                        - timedelta(seconds=running_deadline_seconds)
+                    )
+                )
+                if queued_expired or running_expired:
+                    row = cursor.execute(
+                        "update platform_control.execution_jobs set "
+                        "status='interrupted',cancel_requested=true,"
+                        "terminal_at=now(),updated_at=now() where run_id=%s "
+                        "and status=any(%s) returning run_id,status,"
+                        "cancel_requested,created_at,updated_at,lease_expires_at,"
+                        "terminal_at,now() as database_now",
+                        (run_id, ["queued", "leased", "dispatched", "running"]),
+                    ).fetchone()
+                    if row is None:
+                        raise ExecutionRelayConflict()
+            return RelayJobState(**row)
         except ExecutionRelayError:
             raise
         except psycopg.Error:

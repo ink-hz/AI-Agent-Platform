@@ -18,6 +18,7 @@ from app.execution_relay.content_crypto import (
     ContentCryptoError,
     SealedContent,
 )
+from app.execution_relay.models import RelayEvent
 
 
 TERMINAL_MISSION_STATUSES = frozenset(
@@ -363,6 +364,14 @@ class MissionRecord:
 
 
 @dataclass(frozen=True)
+class MissionClaim:
+    """Minimal, non-secret work claim used by the orchestration scanner."""
+
+    mission_id: UUID
+    owner_internal_user_id: UUID
+
+
+@dataclass(frozen=True)
 class MissionEvent:
     event_id: UUID
     mission_id: UUID
@@ -385,6 +394,8 @@ class MissionRun:
     updated_at: datetime
     started_at: datetime | None
     terminal_at: datetime | None
+    relay_event_cursor: int
+    reviewed_at: datetime | None
     input_payload: dict[str, object] = field(repr=False)
     output_payload: dict[str, object] | None = field(default=None, repr=False)
 
@@ -842,7 +853,7 @@ class MissionRepository:
         ):
             raise MissionRepositoryError() from None
 
-    def claim_pending(self, limit: int) -> tuple[MissionRecord, ...]:
+    def claim_pending(self, limit: int) -> tuple[MissionClaim, ...]:
         """Select an internal orchestration batch without blocking peers."""
 
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
@@ -850,16 +861,136 @@ class MissionRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 rows = cursor.execute(
-                    "select m.*,message.message_id,message.content_ciphertext,"
-                    "message.encryption_key_version from platform_control.missions m "
-                    "join platform_control.mission_messages message "
-                    "on message.mission_id=m.mission_id and message.seq=1 "
+                    "select m.mission_id,m.owner_internal_user_id "
+                    "from platform_control.missions m "
                     "where m.status not in "
                     "('completed','partially_completed','failed','cancelled','interrupted') "
                     "order by m.updated_at,m.mission_id for update of m skip locked limit %s",
                     (limit,),
                 ).fetchall()
-                return tuple(self._mission_from_row(row) for row in rows)
+                return tuple(MissionClaim(**row) for row in rows)
+        except MissionRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise MissionRepositoryError() from None
+
+    def quarantine_claim(
+        self,
+        claim: MissionClaim,
+        *,
+        reason_code: str = "mission_content_unavailable",
+    ) -> bool:
+        """Terminalize one unreadable Mission without touching its ciphertext."""
+
+        if not isinstance(claim, MissionClaim):
+            raise ValueError("Mission claim invalid")
+        event_id = uuid4()
+        payload = {
+            "text": "任务内容不可读取，已安全终止",
+            "reason_code": reason_code,
+        }
+        try:
+            normalized, _canonical = _canonical_payload(
+                payload, event_type="mission.failed"
+            )
+            sealed = self.content_codec.seal_json(
+                _event_subject(claim.mission_id, event_id), normalized
+            )
+            with self._connection() as connection, connection.cursor() as cursor:
+                mission = self._owned_mission_for_update(
+                    cursor, claim.owner_internal_user_id, claim.mission_id
+                )
+                if mission["status"] in TERMINAL_MISSION_STATUSES:
+                    return False
+                self._append_event_locked(
+                    cursor,
+                    claim.mission_id,
+                    None,
+                    event_id,
+                    "mission.failed",
+                    sealed,
+                )
+                cursor.execute(
+                    "update platform_control.missions set status='failed',"
+                    "row_version=row_version+1,updated_at=now(),terminal_at=now() "
+                    "where mission_id=%s",
+                    (claim.mission_id,),
+                )
+            return True
+        except MissionRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise MissionRepositoryError() from None
+
+    def terminate_mission(
+        self,
+        internal_user_id: UUID,
+        mission_id: UUID,
+        *,
+        status: Literal["failed", "cancelled", "interrupted"],
+        event_type: Literal[
+            "mission.failed", "mission.cancelled", "mission.interrupted"
+        ],
+        event_payload: dict[str, object],
+        expected_mission_status: str | None = None,
+        expected_row_version: int | None = None,
+    ) -> bool:
+        """Persist a terminal Mission transition that has no phase run."""
+
+        _require_uuid(internal_user_id)
+        _require_uuid(mission_id)
+        _require_expected_mission(expected_mission_status, expected_row_version)
+        if (status, event_type) not in {
+            ("failed", "mission.failed"),
+            ("cancelled", "mission.cancelled"),
+            ("interrupted", "mission.interrupted"),
+        }:
+            raise ValueError("Mission terminal transition invalid")
+        event_id = uuid4()
+        try:
+            normalized, _canonical = _canonical_payload(
+                event_payload, event_type=event_type
+            )
+            sealed = self.content_codec.seal_json(
+                _event_subject(mission_id, event_id), normalized
+            )
+            with self._connection() as connection, connection.cursor() as cursor:
+                mission = self._owned_mission_for_update(
+                    cursor, internal_user_id, mission_id
+                )
+                if mission["status"] in TERMINAL_MISSION_STATUSES:
+                    return False
+                if expected_mission_status is not None and (
+                    mission["status"] != expected_mission_status
+                    or mission["row_version"] != expected_row_version
+                ):
+                    raise MissionRepositoryConflict()
+                self._append_event_locked(
+                    cursor, mission_id, None, event_id, event_type, sealed
+                )
+                cursor.execute(
+                    "update platform_control.missions set status=%s,"
+                    "row_version=row_version+1,updated_at=now(),terminal_at=now() "
+                    "where mission_id=%s",
+                    (status, mission_id),
+                )
+            return True
         except MissionRepositoryError:
             raise
         except (
@@ -1040,6 +1171,8 @@ class MissionRepository:
             updated_at=row["updated_at"],
             started_at=row["started_at"],
             terminal_at=row["terminal_at"],
+            relay_event_cursor=row["relay_event_cursor"],
+            reviewed_at=row["reviewed_at"],
             input_payload=input_payload,
             output_payload=output_payload,
         )
@@ -1276,8 +1409,234 @@ class MissionRepository:
                 updated_at=inserted["updated_at"],
                 started_at=None,
                 terminal_at=None,
+                relay_event_cursor=0,
+                reviewed_at=None,
                 input_payload=normalized_input,
             )
+        except MissionRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise MissionRepositoryError() from None
+
+    @staticmethod
+    def _relay_progress_payload(
+        event: RelayEvent, agent_id: str
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {"agent_id": agent_id}
+        text = event.payload.get("text")
+        if type(text) is str and text.strip():
+            try:
+                if len(text.encode("utf-8")) <= MAX_EVENT_TEXT_BYTES:
+                    payload["text"] = text
+            except UnicodeError:
+                pass
+        state = event.payload.get("state")
+        if type(state) is str and state.strip():
+            try:
+                if len(state.encode("utf-8")) <= 128:
+                    payload["state"] = state
+            except UnicodeError:
+                pass
+        if not ({"text", "state"} & payload.keys()):
+            payload["text"] = "专业 Agent 正在执行"
+        return payload
+
+    def apply_relay_events(
+        self,
+        internal_user_id: UUID,
+        mission_id: UUID,
+        run_id: UUID,
+        events: tuple[RelayEvent, ...],
+    ) -> int:
+        """Bridge new Relay events once, persisting only the public projection."""
+
+        _require_uuid(internal_user_id)
+        _require_uuid(mission_id)
+        _require_uuid(run_id)
+        if not isinstance(events, tuple) or any(
+            not isinstance(event, RelayEvent) for event in events
+        ):
+            raise ValueError("Relay events invalid")
+        allowed_types = {
+            "agent.state",
+            "agent.question",
+            "agent.file",
+            "agent.log",
+            "agent.complete",
+            "agent.error",
+        }
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                mission = self._owned_mission_for_update(
+                    cursor, internal_user_id, mission_id
+                )
+                run = cursor.execute(
+                    "select * from platform_control.mission_runs "
+                    "where mission_id=%s and run_id=%s for update",
+                    (mission_id, run_id),
+                ).fetchone()
+                if run is None:
+                    raise MissionRepositoryNotFound()
+                cursor_value = run["relay_event_cursor"]
+                new_events = [event for event in events if event.seq > cursor_value]
+                expected = cursor_value + 1
+                for event in new_events:
+                    if (
+                        event.run_id != run_id
+                        or event.seq != expected
+                        or event.event_type not in allowed_types
+                    ):
+                        raise MissionRepositoryConflict()
+                    expected += 1
+                if not new_events:
+                    return 0
+                if mission["status"] in TERMINAL_MISSION_STATUSES:
+                    raise MissionRepositoryConflict()
+                if run["status"] in TERMINAL_RUN_STATUSES:
+                    raise MissionRepositoryConflict()
+
+                started = run["status"] == "running"
+                public_phase = run["phase"] in {"professional", "direct"}
+                for event in new_events:
+                    if event.event_type in {"agent.complete", "agent.error"}:
+                        continue
+                    if not started:
+                        if public_phase:
+                            event_id = uuid4()
+                            payload = {
+                                "agent_id": run["agent_id"],
+                                "text": "专业 Agent 已开始执行",
+                            }
+                            normalized, _canonical = _canonical_payload(
+                                payload, event_type="agent.accepted"
+                            )
+                            sealed = self.content_codec.seal_json(
+                                _event_subject(mission_id, event_id), normalized
+                            )
+                            self._append_event_locked(
+                                cursor,
+                                mission_id,
+                                run_id,
+                                event_id,
+                                "agent.accepted",
+                                sealed,
+                            )
+                        started = True
+                        continue
+                    if public_phase:
+                        event_id = uuid4()
+                        payload = self._relay_progress_payload(
+                            event, run["agent_id"]
+                        )
+                        normalized, _canonical = _canonical_payload(
+                            payload, event_type="agent.progress"
+                        )
+                        sealed = self.content_codec.seal_json(
+                            _event_subject(mission_id, event_id), normalized
+                        )
+                        self._append_event_locked(
+                            cursor,
+                            mission_id,
+                            run_id,
+                            event_id,
+                            "agent.progress",
+                            sealed,
+                        )
+
+                run_status = "running" if started else run["status"]
+                cursor.execute(
+                    "update platform_control.mission_runs set status=%s,"
+                    "started_at=case when %s then coalesce(started_at,now()) "
+                    "else started_at end,relay_event_cursor=%s,updated_at=now() "
+                    "where run_id=%s",
+                    (run_status, started, new_events[-1].seq, run_id),
+                )
+                if run["task_id"] is not None and started:
+                    cursor.execute(
+                        "update platform_control.mission_tasks set status='running',"
+                        "started_at=coalesce(started_at,now()),updated_at=now() "
+                        "where mission_id=%s and task_id=%s",
+                        (mission_id, run["task_id"]),
+                    )
+            return len(new_events)
+        except MissionRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise MissionRepositoryError() from None
+
+    def review_professional_run(
+        self, internal_user_id: UUID, mission_id: UUID, run_id: UUID
+    ) -> bool:
+        """Persist the Brain's review checkpoint once before synthesis."""
+
+        _require_uuid(internal_user_id)
+        _require_uuid(mission_id)
+        _require_uuid(run_id)
+        event_id = uuid4()
+        payload = {
+            "text": "专业 Agent 结果已接收，正在进行交付复核",
+            "accepted": True,
+        }
+        try:
+            normalized, _canonical = _canonical_payload(
+                payload, event_type="task.reviewed"
+            )
+            sealed = self.content_codec.seal_json(
+                _event_subject(mission_id, event_id), normalized
+            )
+            with self._connection() as connection, connection.cursor() as cursor:
+                mission = self._owned_mission_for_update(
+                    cursor, internal_user_id, mission_id
+                )
+                if mission["status"] in TERMINAL_MISSION_STATUSES:
+                    raise MissionRepositoryConflict()
+                run = cursor.execute(
+                    "select phase,status,reviewed_at from "
+                    "platform_control.mission_runs where mission_id=%s "
+                    "and run_id=%s for update",
+                    (mission_id, run_id),
+                ).fetchone()
+                if run is None:
+                    raise MissionRepositoryNotFound()
+                if run["phase"] != "professional" or run["status"] != "completed":
+                    raise MissionRepositoryConflict()
+                if run["reviewed_at"] is not None:
+                    return False
+                self._append_event_locked(
+                    cursor,
+                    mission_id,
+                    run_id,
+                    event_id,
+                    "task.reviewed",
+                    sealed,
+                )
+                cursor.execute(
+                    "update platform_control.mission_runs set reviewed_at=now(),"
+                    "updated_at=now() where run_id=%s",
+                    (run_id,),
+                )
+                cursor.execute(
+                    "update platform_control.missions set row_version=row_version+1,"
+                    "updated_at=now() where mission_id=%s",
+                    (mission_id,),
+                )
+            return True
         except MissionRepositoryError:
             raise
         except (
@@ -1343,7 +1702,8 @@ class MissionRepository:
                 run = cursor.execute(
                     "select run_id,mission_id,task_id,phase,agent_id,status,"
                     "input_ciphertext,encryption_key_version,created_at,updated_at,"
-                    "started_at,terminal_at from platform_control.mission_runs "
+                    "started_at,terminal_at,relay_event_cursor,reviewed_at "
+                    "from platform_control.mission_runs "
                     "where mission_id=%s and run_id=%s for update",
                     (mission_id, run_id),
                 ).fetchone()
@@ -1409,6 +1769,8 @@ class MissionRepository:
                 updated_at=updated["updated_at"],
                 started_at=run["started_at"],
                 terminal_at=updated["terminal_at"],
+                relay_event_cursor=run["relay_event_cursor"],
+                reviewed_at=run["reviewed_at"],
                 input_payload=input_value,
                 output_payload=normalized_output,
             )
