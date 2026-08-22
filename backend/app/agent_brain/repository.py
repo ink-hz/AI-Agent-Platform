@@ -58,7 +58,7 @@ _EVENT_PAYLOAD_SCHEMAS = {
     "plan.created": (
         {
             "text": "text",
-            "agent_id": "agent_id",
+            "selected_agent_id": "agent_id",
             "objective": "text",
             "rationale_summary": "text",
         },

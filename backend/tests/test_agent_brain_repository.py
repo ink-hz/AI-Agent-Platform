@@ -1261,6 +1261,84 @@ def test_complete_run_rejects_contradictory_outcome_combinations(
 
 
 @pytest.mark.postgres
+def test_plan_created_accepts_explicit_selected_agent_delegate_payload(
+    mission_database, repository
+) -> None:
+    _environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "delegate plan")
+    planning = repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase="planning",
+        agent_id="agent-brain-bot",
+        input_payload={"prompt": "plan"},
+        event_type="brain.responding",
+        event_payload={"text": "working"},
+    )
+    payload = {
+        "text": "已选择招聘 Agent",
+        "selected_agent_id": "hr-bot",
+        "objective": "定义候选人画像",
+        "rationale_summary": "需要招聘领域能力",
+    }
+
+    completed = repository.complete_run(
+        owner_id,
+        mission.mission_id,
+        planning.run_id,
+        status="completed",
+        output_payload={"decision": "delegate", "agent_id": "hr-bot"},
+        event_type="plan.created",
+        event_payload=payload,
+        mission_status="delegated",
+    )
+
+    assert completed.agent_id == "agent-brain-bot"
+    assert repository.events_after(owner_id, mission.mission_id)[-1].payload == payload
+
+
+@pytest.mark.postgres
+def test_plan_created_rejects_agent_id_as_planning_run_producer_field(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "producer boundary")
+    planning = repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase="planning",
+        agent_id="agent-brain-bot",
+        input_payload={"prompt": "plan"},
+        event_type="brain.responding",
+        event_payload={"text": "working"},
+    )
+
+    with pytest.raises(MissionRepositoryError):
+        repository.complete_run(
+            owner_id,
+            mission.mission_id,
+            planning.run_id,
+            status="completed",
+            output_payload={"decision": "delegate", "agent_id": "hr-bot"},
+            event_type="plan.created",
+            event_payload={
+                "text": "plan ready",
+                "agent_id": "agent-brain-bot",
+                "objective": "candidate profile",
+                "rationale_summary": "needs recruiting capability",
+            },
+            mission_status="delegated",
+        )
+
+    assert _rows(
+        environment,
+        "select status,output_ciphertext from platform_control.mission_runs "
+        "where run_id=%s",
+        (planning.run_id,),
+    ) == [("queued", None)]
+
+
+@pytest.mark.postgres
 @pytest.mark.parametrize(
     ("mode", "phase", "run_status", "mission_status", "event_type"),
     (
