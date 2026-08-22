@@ -380,3 +380,50 @@ Fresh full backend verification after review clearance:
 ```
 
 The warnings remain the existing Starlette/httpx deprecations.
+
+## Sixth-wave real-store recovery compatibility closure
+
+Main review identified that the recovery behavior added in `261a737` was
+covered by a permissive fake Store but incompatible with the real PostgreSQL
+state machine: `recover_local_state()` attempted `leased -> interrupted`, while
+`WorkerStore.mark_terminal()` rejected every terminal transition from `leased`.
+Commit `c044c91` closes that exact integration gap:
+
+- A durable pre-dispatch lease may transition only to the forced terminal
+  states `cancelled` or `interrupted`.
+- Agent-produced `completed` and `failed` remain illegal from `leased` and still
+  require a genuinely running Agent.
+- Real PostgreSQL plus `WorkerRuntime.recover_local_state()` verifies normal,
+  forced-cancelled, and forced-interrupted restart convergence.
+- Each recovered run sends exactly one cloud terminal finalization, releases
+  Worker capacity, emits no orphan stop ACK, and never starts or cancels MetaBot.
+- Existing schema constraints already include all target states, so no migration
+  or database constraint change was required.
+
+The exact integration RED produced five failures: both allowed forced terminal
+transitions were rejected and all three real-Store runtime recovery variants
+failed. The two `completed`/`failed` rejection tests passed during RED, proving
+the intended negative boundary before the implementation changed.
+
+Focused GREEN verification:
+
+```text
+7 passed in 0.75s
+```
+
+Fresh Worker/Relay verification:
+
+```text
+237 passed, 1 warning in 4.84s
+```
+
+Independent strict review reported no Critical, Important, or Minor findings,
+and separately passed eight real-Store-focused tests.
+
+Fresh full backend verification after review clearance:
+
+```text
+2146 passed, 1 skipped, 47 warnings in 105.40s (0:01:45)
+```
+
+The warnings remain the existing Starlette/httpx deprecations.
