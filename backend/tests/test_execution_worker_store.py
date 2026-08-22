@@ -618,6 +618,16 @@ def test_forced_cloud_terminal_replaces_local_terminal_and_discards_outbox(
 
 
 @pytest.mark.postgres
+def test_local_state_probe_distinguishes_missing_and_persisted_run(
+    dsn_file: Path,
+) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    assert store.has_local_state(RUN_ID) is False
+    store.record_lease(_lease(), 9101, "callback-secret")
+    assert store.has_local_state(RUN_ID) is True
+
+
+@pytest.mark.postgres
 def test_callback_winning_dispatch_race_keeps_running_and_records_acceptance(
     worker_database: str, dsn_file: Path
 ) -> None:

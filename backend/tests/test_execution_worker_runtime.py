@@ -193,6 +193,13 @@ class FakeStore:
         self.terminals[run_id] = status
         self.states[run_id] = status
 
+    def has_local_state(self, run_id):
+        return (
+            run_id in self.states
+            or run_id in self.events
+            or run_id in self.tokens
+        )
+
     def recoverable_runs(self):
         return tuple(
             WorkerRunRecovery(
@@ -214,9 +221,14 @@ class FakeMap:
 
 
 class FakeMetaBot:
-    def __init__(self, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        error: Exception | None = None,
+        cancel_error: Exception | None = None,
+    ) -> None:
         self.calls: list[tuple[object, ...]] = []
         self.error = error
+        self.cancel_error = cancel_error
 
     def start_run(self, payload, callback_url):
         self.calls.append(("start", payload.run_id, callback_url))
@@ -225,6 +237,8 @@ class FakeMetaBot:
 
     def cancel_run(self, run_id, agent_id):
         self.calls.append(("cancel", run_id, agent_id))
+        if self.cancel_error:
+            raise self.cancel_error
 
 
 class FakeCloud:
@@ -256,11 +270,25 @@ class FakeCloud:
         if "terminal" in self.offline:
             raise OSError("cloud secret detail")
 
+    async def acknowledge_stop(self, run_id, status):
+        self.calls.append(("stop_ack", run_id, status))
+        if "stop_ack" in self.offline:
+            raise OSError("cloud secret detail")
+        self.cancel_ids = tuple(
+            request
+            for request in self.cancel_ids
+            if not (
+                isinstance(request, RelayStopRequest)
+                and request.run_id == run_id
+                and request.status == status
+            )
+        )
+
     async def heartbeat(self):
         self.calls.append(("heartbeat",))
         if "heartbeat" in self.offline:
             raise OSError("cloud secret detail")
-        return self.cancel_ids
+        return self.cancel_ids[:100]
 
     async def aclose(self):
         self.closed = True
@@ -568,7 +596,7 @@ async def test_cloud_terminal_overrides_local_terminal_and_discards_outbox(
     assert await runtime.heartbeat_once() is True
     assert store.terminals[RUN_ID] == cloud_status
     assert store.contiguous_outbox(RUN_ID) == ()
-    assert metabot.calls[-1] == ("cancel", RUN_ID, "hr-bot")
+    assert [call for call in metabot.calls if call[0] == "cancel"] == []
     assert await runtime.upload_once() is True
     assert ("events", RUN_ID, (1,)) not in cloud.calls
     assert ("terminal", RUN_ID, cloud_status) in cloud.calls
@@ -578,7 +606,61 @@ async def test_cloud_terminal_overrides_local_terminal_and_discards_outbox(
 
 
 @pytest.mark.asyncio
-async def test_unknown_pending_stop_queue_is_bounded() -> None:
+@pytest.mark.parametrize("local_status", ["completed", "failed"])
+@pytest.mark.parametrize("cloud_status", ["interrupted", "cancelled"])
+@pytest.mark.parametrize(
+    "cancel_error",
+    [
+        RuntimeError("MetaBot 404"),
+        RuntimeError("MetaBot 409"),
+        OSError("MetaBot unavailable"),
+    ],
+)
+async def test_reliable_local_terminal_never_depends_on_metabot_cancel(
+    local_status, cloud_status, cancel_error
+) -> None:
+    cloud = FakeCloud([_lease()])
+    store = FakeStore()
+    metabot = FakeMetaBot(cancel_error=cancel_error)
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+    assert await runtime.lease_once() is True
+    assert await runtime.accept_callback(
+        RUN_ID,
+        store.tokens[RUN_ID],
+        _callback_body(1, terminal=local_status),
+    ) is CallbackResult.ACCEPTED
+    cloud.cancel_ids = (
+        RelayStopRequest(run_id=RUN_ID, status=cloud_status),
+    )
+
+    assert await runtime.heartbeat_once() is True
+    assert [call for call in metabot.calls if call[0] == "cancel"] == []
+    assert store.terminals[RUN_ID] == cloud_status
+    assert store.contiguous_outbox(RUN_ID) == ()
+    assert await runtime.upload_once() is True
+    assert ("terminal", RUN_ID, cloud_status) in cloud.calls
+    assert RUN_ID not in runtime._runs
+
+
+@pytest.mark.asyncio
+async def test_active_local_run_requires_successful_metabot_cancel() -> None:
+    cloud = FakeCloud([_lease()])
+    store = FakeStore()
+    metabot = FakeMetaBot(cancel_error=RuntimeError("MetaBot 409"))
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+    assert await runtime.lease_once() is True
+    cloud.cancel_ids = (
+        RelayStopRequest(run_id=RUN_ID, status="cancelled"),
+    )
+
+    assert await runtime.heartbeat_once() is False
+    assert store.states[RUN_ID] == "dispatched"
+    assert RUN_ID in runtime._runs
+    assert ("forced_terminal", RUN_ID, "cancelled") not in store.calls
+
+
+@pytest.mark.asyncio
+async def test_more_than_one_hundred_orphan_stops_are_acked_without_starvation() -> None:
     cloud = FakeCloud()
     cloud.cancel_ids = tuple(
         RelayStopRequest(
@@ -589,8 +671,59 @@ async def test_unknown_pending_stop_queue_is_bounded() -> None:
     )
     runtime = _runtime(cloud=cloud)
 
-    assert await runtime.heartbeat_once() is False
-    assert len(runtime._pending_stops) == 100
+    assert await runtime.heartbeat_once() is True
+    assert len([call for call in cloud.calls if call[0] == "stop_ack"]) == 100
+    assert len(cloud.cancel_ids) == 1
+    assert await runtime.heartbeat_once() is True
+    assert len(runtime._pending_stops) == 0
+    assert len([call for call in cloud.calls if call[0] == "stop_ack"]) == 101
+    assert cloud.cancel_ids == ()
+
+
+@pytest.mark.asyncio
+async def test_unknown_stop_with_local_state_is_not_orphan_acked() -> None:
+    cloud = FakeCloud()
+    store = FakeStore()
+    store.states[RUN_ID] = "leased"
+    cloud.cancel_ids = (
+        RelayStopRequest(run_id=RUN_ID, status="cancelled"),
+    )
+    runtime = _runtime(cloud=cloud, store=store)
+
+    assert await runtime.heartbeat_once() is True
+    assert runtime._pending_stops == {RUN_ID: "cancelled"}
+    assert not any(call[0] == "stop_ack" for call in cloud.calls)
+
+
+@pytest.mark.asyncio
+async def test_inflight_lease_is_never_mistaken_for_an_orphan_stop() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingStore(FakeStore):
+        def record_lease(self, lease, port, token):
+            entered.set()
+            assert release.wait(timeout=2)
+            super().record_lease(lease, port, token)
+
+    cloud = FakeCloud([_lease()])
+    cloud.cancel_ids = (
+        RelayStopRequest(run_id=RUN_ID, status="cancelled"),
+    )
+    store = BlockingStore()
+    metabot = FakeMetaBot()
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+
+    lease_task = asyncio.create_task(runtime.lease_once())
+    assert await asyncio.to_thread(entered.wait, 1)
+    assert await runtime.heartbeat_once() is True
+    assert runtime._pending_stops == {RUN_ID: "cancelled"}
+    assert not any(call[0] == "stop_ack" for call in cloud.calls)
+    release.set()
+    assert await asyncio.wait_for(lease_task, timeout=1) is True
+
+    assert metabot.calls == []
+    assert store.terminals[RUN_ID] == "cancelled"
 
 
 @pytest.mark.asyncio
@@ -858,19 +991,22 @@ async def test_signed_cloud_client_signs_exact_raw_body_and_path() -> None:
     assert await client.heartbeat() == ()
     await client.mark_dispatched(RUN_ID)
     await client.upload_events(RUN_ID, (_event(1),))
+    await client.acknowledge_stop(RUN_ID, "interrupted")
     await client.finish(RUN_ID, "completed")
     assert [path for _method, path, _body in signed] == [
         "/api/v1/execution-worker/lease",
         "/api/v1/execution-worker/heartbeat",
         f"/api/v1/execution-worker/runs/{RUN_ID}/dispatched",
         f"/api/v1/execution-worker/runs/{RUN_ID}/events",
+        f"/api/v1/execution-worker/runs/{RUN_ID}/stop-ack",
         f"/api/v1/execution-worker/runs/{RUN_ID}/terminal",
     ]
     assert signed[0] == ("POST", "/api/v1/execution-worker/lease", b"{}")
     assert json.loads(signed[3][2]) == {
         "events": [_event(1).model_dump(mode="json")]
     }
-    assert json.loads(signed[4][2]) == {"status": "completed"}
+    assert json.loads(signed[4][2]) == {"status": "interrupted"}
+    assert json.loads(signed[5][2]) == {"status": "completed"}
     await client.aclose()
     await http.aclose()
 

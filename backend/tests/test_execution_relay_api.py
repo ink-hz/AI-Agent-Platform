@@ -94,6 +94,9 @@ class FakeRepository:
     def finish(self, worker_id, run_id, status):
         self._record("terminal", worker_id, run_id, status)
 
+    def acknowledge_stop(self, worker_id, run_id, status):
+        self._record("stop_ack", worker_id, run_id, status)
+
 
 class BrowserAuth:
     mode = IdentityMode.PRODUCTION
@@ -305,6 +308,8 @@ def test_signature_covers_raw_body_before_signed_malformed_json_is_rejected():
         (f"/api/v1/execution-worker/runs/{RUN_ID}/dispatched", {"status": "ok"}),
         (f"/api/v1/execution-worker/runs/{RUN_ID}/terminal", {"status": "running"}),
         (f"/api/v1/execution-worker/runs/{RUN_ID}/terminal", {"status": "failed", "extra": 1}),
+        (f"/api/v1/execution-worker/runs/{RUN_ID}/stop-ack", {"status": "completed"}),
+        (f"/api/v1/execution-worker/runs/{RUN_ID}/stop-ack", {"status": "cancelled", "extra": 1}),
         (f"/api/v1/execution-worker/runs/{RUN_ID}/events", {"events": []}),
         (f"/api/v1/execution-worker/runs/{RUN_ID}/events", {"events": [_event()], "extra": 1}),
         (f"/api/v1/execution-worker/runs/{RUN_ID}/events", {"events": [{**_event(), "extra": 1}]}),
@@ -462,14 +467,21 @@ def test_dispatched_events_and_terminal_use_exact_repository_contracts():
         json={"status": "completed"},
         headers=VALID_HEADERS,
     )
+    stop_ack = client.post(
+        f"/api/v1/execution-worker/runs/{RUN_ID}/stop-ack",
+        json={"status": "interrupted"},
+        headers=VALID_HEADERS,
+    )
 
     assert dispatched.json() == {"status": "accepted"}
     assert events.json() == {"accepted": 1, "inserted": 0}
     assert terminal.json() == {"status": "accepted"}
+    assert stop_ack.json() == {"status": "accepted"}
     assert repository.calls == [
         ("dispatched", "worker-1", RUN_ID),
         ("events", "worker-1", (RelayEvent.model_validate(_event()),)),
         ("terminal", "worker-1", RUN_ID, "completed"),
+        ("stop_ack", "worker-1", RUN_ID, "interrupted"),
     ]
 
 

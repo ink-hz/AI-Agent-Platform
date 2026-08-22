@@ -329,6 +329,27 @@ class WorkerStore:
         except (TypeError, ValueError, psycopg.Error):
             raise self._conflict() from None
 
+    def has_local_state(self, run_id: UUID) -> bool:
+        """Return whether this Worker has any durable fact for the run."""
+
+        try:
+            if not isinstance(run_id, UUID):
+                raise ValueError
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select exists(select 1 from execution_worker.local_runs "
+                    "where run_id=%s) or exists(select 1 from "
+                    "execution_worker.event_outbox where run_id=%s) as present",
+                    (run_id, run_id),
+                ).fetchone()
+            if row is None or type(row["present"]) is not bool:
+                raise ValueError
+            return row["present"]
+        except WorkerStoreError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise self._conflict() from None
+
     def append_event(self, event: RelayEvent) -> bool:
         try:
             if not isinstance(event, RelayEvent):

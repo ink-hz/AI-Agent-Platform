@@ -294,6 +294,14 @@ class SignedCloudClient:
         )
         self._require_accepted(response)
 
+    async def acknowledge_stop(self, run_id: UUID, status: str) -> None:
+        if status not in _FORCED_TERMINAL_STATES:
+            raise CloudRelayError()
+        response = await self._post(
+            f"{_API_PREFIX}/runs/{run_id}/stop-ack", {"status": status}
+        )
+        self._require_accepted(response)
+
     def _require_accepted(self, response: httpx.Response) -> None:
         try:
             value = self._json_object(response)
@@ -359,6 +367,7 @@ class WorkerRuntime:
         self.stop_event = asyncio.Event()
         self.callback_ready = asyncio.Event()
         self._runs: dict[UUID, _RunContext] = {}
+        self._inflight_leases: set[UUID] = set()
         self._pending_stops: dict[UUID, str] = {}
         self._state_lock = asyncio.Lock()
         self._lease_lock = asyncio.Lock()
@@ -477,6 +486,8 @@ class WorkerRuntime:
                 return True
             run_id = lease.payload.run_id
             agent_id = lease.payload.agent_id
+            async with self._state_lock:
+                self._inflight_leases.add(run_id)
             try:
                 port = self.runtime_map.port_for(agent_id)
                 token = self.token_factory()
@@ -490,6 +501,7 @@ class WorkerRuntime:
                 context = _RunContext(agent_id, False, False)
                 async with self._state_lock:
                     self._runs[run_id] = context
+                    self._inflight_leases.discard(run_id)
                 async with context.transition_lock:
                     async with self._state_lock:
                         pending_status = self._pending_stops.pop(run_id, None)
@@ -549,6 +561,9 @@ class WorkerRuntime:
                             agent_id=agent_id,
                         )
                 return False
+            finally:
+                async with self._state_lock:
+                    self._inflight_leases.discard(run_id)
 
     async def _dispatch_run(
         self,
@@ -688,18 +703,37 @@ class WorkerRuntime:
             run_id = stop_request.run_id
             async with self._state_lock:
                 context = self._runs.get(run_id)
-                if context is None:
+                inflight = run_id in self._inflight_leases
+            if context is None:
+                try:
+                    has_local_state = await self._store_call(
+                        "has_local_state", run_id
+                    )
+                    if not inflight and not has_local_state:
+                        await self.cloud.acknowledge_stop(
+                            run_id, stop_request.status
+                        )
+                        async with self._state_lock:
+                            self._pending_stops.pop(run_id, None)
+                        continue
+                except Exception as error:
+                    self._safe_log("orphan_stop_ack_failed", error, run_id=run_id)
+                    return False
+                async with self._state_lock:
                     if (
                         run_id not in self._pending_stops
                         and len(self._pending_stops) >= _MAX_PENDING_STOPS
                     ):
                         return False
                     self._pending_stops[run_id] = stop_request.status
-            if context is None:
                 continue
             async with context.transition_lock:
                 try:
-                    if context.metabot_accepted and not context.cancel_sent:
+                    if (
+                        context.terminal_status is None
+                        and context.metabot_accepted
+                        and not context.cancel_sent
+                    ):
                         await asyncio.to_thread(
                             self.metabot.cancel_run, run_id, context.agent_id
                         )

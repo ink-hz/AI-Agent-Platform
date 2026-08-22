@@ -32,7 +32,7 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
 )
 _WORKER_RUN_ROUTE = re.compile(
     r"/api/v1/execution-worker/runs/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/"
-    r"(?:dispatched|events|terminal)\Z"
+    r"(?:dispatched|events|terminal|stop-ack)\Z"
 )
 _WORKER_NAMESPACE = "/api/v1/execution-worker"
 

@@ -59,6 +59,12 @@ class _TerminalBody(BaseModel):
     status: Literal["completed", "failed", "cancelled", "interrupted"]
 
 
+class _StopAckBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["cancelled", "interrupted"]
+
+
 class ExecutionWorkerRequestLimiter:
     """One process-local rolling-window bucket shared by all relay routes."""
 
@@ -309,6 +315,25 @@ def build_execution_relay_router(
             await run_in_threadpool(
                 repository.finish,
                 authenticated_body.identity.worker_id, run_id, parsed.status
+            )
+        except ExecutionRelayError as error:
+            return _repository_error(error)
+        return JSONResponse({"status": "accepted"}, headers=_NO_STORE)
+
+    @router.post("/runs/{run_id}/stop-ack")
+    async def stop_ack(run_id: UUID, request: Request):
+        authenticated_body = await authenticated(request)
+        if isinstance(authenticated_body, JSONResponse):
+            return authenticated_body
+        parsed = _validated(_StopAckBody, authenticated_body.body)
+        if parsed is None:
+            return _error(422, "request validation failed")
+        try:
+            await run_in_threadpool(
+                repository.acknowledge_stop,
+                authenticated_body.identity.worker_id,
+                run_id,
+                parsed.status,
             )
         except ExecutionRelayError as error:
             return _repository_error(error)

@@ -958,3 +958,45 @@ def test_pending_stop_delivery_is_bounded_to_one_hundred(
 
     assert len(requests) == 100
     assert all(item.status == "interrupted" for item in requests)
+    for request in requests:
+        repository.acknowledge_stop(
+            "worker-a", request.run_id, request.status
+        )
+    remaining = repository.heartbeat("worker-a", lease_seconds=45)
+    assert len(remaining) == 1
+    repository.acknowledge_stop(
+        "worker-a", remaining[0].run_id, remaining[0].status
+    )
+    assert repository.heartbeat("worker-a", lease_seconds=45) == ()
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("status", ["cancelled", "interrupted"])
+def test_orphan_stop_ack_converges_only_for_assigned_worker(
+    relay_database, repository, status
+) -> None:
+    payload = _payload()
+    repository.enqueue(payload)
+    assert repository.lease("worker-a", ("hr-bot",), 45) is not None
+    if status == "cancelled":
+        assert repository.request_cancel(payload.run_id) is True
+    else:
+        assert repository.interrupt(payload.run_id) is True
+
+    with pytest.raises(ExecutionRelayNotFound):
+        repository.acknowledge_stop("worker-b", payload.run_id, status)
+    wrong_status = "interrupted" if status == "cancelled" else "cancelled"
+    with pytest.raises(ExecutionRelayConflict):
+        repository.acknowledge_stop(
+            "worker-a", payload.run_id, wrong_status
+        )
+    repository.acknowledge_stop("worker-a", payload.run_id, status)
+
+    assert repository.job_state(payload.run_id).status == status
+    assert repository.heartbeat("worker-a", lease_seconds=45) == ()
+    with psycopg.connect(relay_database["admin"]) as connection:
+        assert connection.execute(
+            "select stop_acknowledged_at is not null from "
+            "platform_control.execution_jobs where run_id=%s",
+            (payload.run_id,),
+        ).fetchone() == (True,)

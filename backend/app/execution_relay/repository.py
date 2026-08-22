@@ -694,6 +694,48 @@ class ExecutionRelayRepository:
         except psycopg.Error:
             raise ExecutionRelayError("execution relay unavailable") from None
 
+    def acknowledge_stop(
+        self,
+        worker_id: str,
+        run_id: UUID,
+        status: TerminalStatus,
+    ) -> None:
+        """Converge an assigned stop when this Worker has no local run state."""
+
+        if status not in {"cancelled", "interrupted"}:
+            raise ExecutionRelayConflict()
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                self._active_worker(cursor, worker_id)
+                row = self._owned_job(cursor, worker_id, run_id)
+                if row["stop_requested_status"] != status:
+                    raise ExecutionRelayConflict()
+                if row["stop_acknowledged_at"] is not None:
+                    if row["status"] != status:
+                        raise ExecutionRelayConflict()
+                    return
+                current = row["status"]
+                legal = (
+                    status == "cancelled"
+                    and row["cancel_requested"]
+                    and current in {*ACTIVE_STATUSES, "cancelled"}
+                ) or (
+                    status == "interrupted" and current == "interrupted"
+                )
+                if not legal:
+                    raise ExecutionRelayConflict()
+                cursor.execute(
+                    "update platform_control.execution_jobs set status=%s,"
+                    "cancel_requested=true,terminal_at=coalesce(terminal_at,now()),"
+                    "stop_acknowledged_at=now(),updated_at=now() "
+                    "where run_id=%s",
+                    (status, run_id),
+                )
+        except ExecutionRelayError:
+            raise
+        except psycopg.Error:
+            raise ExecutionRelayError("execution relay unavailable") from None
+
     def heartbeat(
         self, worker_id: str, *, lease_seconds: int = 45
     ) -> tuple[RelayStopRequest, ...]:
