@@ -483,23 +483,20 @@ class WorkerRuntime:
             try:
                 lease = await self.cloud.lease()
             except asyncio.CancelledError:
-                async with self._state_lock:
-                    self._lease_claim_active = False
+                self._lease_claim_active = False
                 raise
             except Exception as error:
-                async with self._state_lock:
-                    self._lease_claim_active = False
+                self._lease_claim_active = False
                 self._safe_log("lease_failed", error)
                 return False
             if lease is None:
-                async with self._state_lock:
-                    self._lease_claim_active = False
+                self._lease_claim_active = False
                 return True
             run_id = lease.payload.run_id
             agent_id = lease.payload.agent_id
-            async with self._state_lock:
-                self._inflight_leases.add(run_id)
             try:
+                async with self._state_lock:
+                    self._inflight_leases.add(run_id)
                 port = self.runtime_map.port_for(agent_id)
                 token = self.token_factory()
                 if (
@@ -574,9 +571,8 @@ class WorkerRuntime:
                         )
                 return False
             finally:
-                async with self._state_lock:
-                    self._lease_claim_active = False
-                    self._inflight_leases.discard(run_id)
+                self._lease_claim_active = False
+                self._inflight_leases.discard(run_id)
 
     async def _dispatch_run(
         self,

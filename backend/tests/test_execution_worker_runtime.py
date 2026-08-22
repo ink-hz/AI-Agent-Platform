@@ -759,6 +759,35 @@ async def test_lease_response_in_flight_blocks_orphan_ack_classification() -> No
 
 
 @pytest.mark.asyncio
+async def test_cancel_between_lease_response_and_run_registration_clears_claim() -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class BlockingCloud(FakeCloud):
+        async def lease(self):
+            entered.set()
+            await release.wait()
+            return self.leases.pop(0)
+
+    runtime = _runtime(cloud=BlockingCloud([_lease()]))
+    lease_task = asyncio.create_task(runtime.lease_once())
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    await runtime._state_lock.acquire()
+    try:
+        release.set()
+        await asyncio.sleep(0)
+        lease_task.cancel()
+        await asyncio.sleep(0)
+    finally:
+        runtime._state_lock.release()
+    with pytest.raises(asyncio.CancelledError):
+        await lease_task
+
+    assert runtime._lease_claim_active is False
+    assert runtime._inflight_leases == set()
+
+
+@pytest.mark.asyncio
 async def test_cancel_observed_while_lease_commits_prevents_metabot_start() -> None:
     entered = threading.Event()
     release = threading.Event()
