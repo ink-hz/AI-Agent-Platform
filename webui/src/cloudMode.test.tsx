@@ -30,6 +30,22 @@ afterEach(async () => {
 
 
 describe("cloud replica mode", () => {
+  it("returns an expired usage route to login with its safe Mission path", async () => {
+    const meta = document.createElement("meta");
+    meta.name = "platform-identity-mode";
+    meta.content = "enabled";
+    document.head.append(meta);
+    window.history.replaceState({}, "", "/missions/8c13c965-1b60-472e-b275-199987d1d109");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 401 }));
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      "/login?return_path=%2Fmissions%2F8c13c965-1b60-472e-b275-199987d1d109",
+    );
+  });
+
   it("keeps the loaded account across authenticated route transitions", async () => {
     const meta = document.createElement("meta");
     meta.name = "platform-identity-mode";
@@ -57,7 +73,7 @@ describe("cloud replica mode", () => {
     expect(container.textContent).toContain("苍渊");
 
     await act(async () => {
-      navigate("/identity");
+      navigate("/admin/identity");
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -119,7 +135,7 @@ describe("cloud replica mode", () => {
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
 
     await act(async () => root.render(
-      <AppShell route={{ name: "overview" }}><p>内容</p></AppShell>,
+      <AppShell route={{ name: "admin-overview" }}><p>内容</p></AppShell>,
     ));
     await act(async () => await Promise.resolve());
 
@@ -136,7 +152,7 @@ describe("cloud replica mode", () => {
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
 
     await act(async () => root.render(
-      <AppShell route={{ name: "sessions" }}><p>内容</p></AppShell>,
+      <AppShell route={{ name: "admin-sessions" }}><p>内容</p></AppShell>,
     ));
     await act(async () => await Promise.resolve());
 
@@ -153,21 +169,18 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(
       <AppShell route={{ name: "account" }} account={member}><p>内容</p></AppShell>,
     ));
-    expect(container.querySelector(".product-nav")?.textContent).toBe("企业账号");
+    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent历史任务企业账号");
 
     const viewer: Account = {
       ...member, display_name: "观察者", role: "management_viewer",
       observation_agent_ids: ["ai-fae-agent", "hr-bot"],
     };
     await act(async () => root.render(
-      <AppShell route={{ name: "governance" }} account={viewer}><p>内容</p></AppShell>,
+      <AppShell route={{ name: "admin-governance" }} account={viewer}><p>内容</p></AppShell>,
     ));
     const navigation = container.querySelector(".product-nav")?.textContent || "";
-    expect(navigation).toContain("ai-fae-agent 运行");
-    expect(navigation).toContain("hr-bot 复审");
-    expect(navigation).toContain("治理审计");
-    expect(navigation).not.toContain("总览");
-    expect(navigation).not.toContain("Session");
+    expect(navigation).toBe("Agent 大脑专业 Agent历史任务企业账号");
+    expect(navigation).not.toContain("管理中心");
   });
 
   it("shows the server-enforced hard-stale read-only state", async () => {
@@ -178,7 +191,7 @@ describe("cloud replica mode", () => {
     };
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("deployment unavailable"));
     await act(async () => root.render(
-      <AppShell route={{ name: "overview" }} account={owner}><p>内容</p></AppShell>,
+      <AppShell route={{ name: "brain" }} account={owner}><p>内容</p></AppShell>,
     ));
     expect(container.querySelector(".hard-stale-banner")?.textContent).toContain("只读访问");
   });
@@ -195,14 +208,14 @@ describe("cloud replica mode", () => {
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
 
     await act(async () => root.render(
-      <AppShell route={{ name: "identity" }} account={administrator}><p>内容</p></AppShell>,
+      <AppShell route={{ name: "admin-identity" }} account={administrator}><p>内容</p></AppShell>,
     ));
     await act(async () => await Promise.resolve());
 
     const navigation = container.querySelector(".product-nav")?.textContent || "";
-    expect(navigation).toContain("总览");
-    expect(navigation).toContain("Session");
-    expect(navigation).toContain("身份管理");
+    expect(navigation).toContain("Agent 大脑");
+    expect(navigation).toContain("管理中心");
+    expect(container.querySelector(".admin-nav")?.textContent).toContain("身份管理");
     expect(fetchMock).toHaveBeenCalled();
   });
 
@@ -211,7 +224,7 @@ describe("cloud replica mode", () => {
     meta.name = "platform-identity-mode";
     meta.content = "enabled";
     document.head.append(meta);
-    window.history.replaceState({}, "", "/identity");
+    window.history.replaceState({}, "", "/admin/identity");
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.endsWith("/api/v1/account")) return new Response(JSON.stringify({

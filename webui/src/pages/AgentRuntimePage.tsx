@@ -107,7 +107,7 @@ export function AgentRuntimePage({ agentId }: { agentId: string }) {
   if (!agent || !runtime) return <LoadingState label="正在加载运行详情" />;
 
   return <>
-    <PlatformLink className="back-link" href={`/agents/${encodeURIComponent(agent.id)}`}>← 返回 {agent.name}</PlatformLink>
+    <PlatformLink className="back-link" href={`/admin/agents/${encodeURIComponent(agent.id)}`}>← 返回 {agent.name}</PlatformLink>
     <header className="runtime-detail-head">
       <div>
         <h1>{agent.name} 运行详情</h1>

@@ -23,6 +23,11 @@ VIEWER_R1_ROUTES = frozenset({
     ("GET", "/api/v1/manage/audit/governance"),
 })
 
+_MANAGEMENT_SHELL_ROUTES = frozenset({
+    ("GET", "/admin"),
+    ("GET", "/admin/{client_path:path}"),
+})
+
 _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/account"),
     ("POST", "/api/v1/auth/logout"),
@@ -36,6 +41,8 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/account"),
     ("GET", "/agents"),
     ("GET", "/agents/{client_path:path}"),
+    ("GET", "/missions"),
+    ("GET", "/missions/{client_path:path}"),
     ("GET", "/sessions"),
     ("GET", "/sessions/{client_path:path}"),
     ("GET", "/review"),
@@ -87,7 +94,7 @@ _OWNER_ROUTES = frozenset({
     ("DELETE", "/api/v1/manage/admins/{internal_user_id}"),
     ("PUT", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
     ("DELETE", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
-}) | _AUTHENTICATED_SELF_ROUTES
+}) | _MANAGEMENT_SHELL_ROUTES | _AUTHENTICATED_SELF_ROUTES
 
 
 @dataclass(frozen=True)
@@ -144,6 +151,8 @@ class AuthorizationService:
             return self._deny(403, "cloud_review_read_only")
         if auth.role in {Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN}:
             return AuthorizationDecision(True, 200, auth.role.value, None)
+        if key in _MANAGEMENT_SHELL_ROUTES:
+            return AuthorizationDecision(True, 200, "viewer_shell", None)
         if key not in VIEWER_R1_ROUTES:
             return self._deny(403, "viewer_route_denied")
         if route_template == "/api/v1/manage/audit/governance":

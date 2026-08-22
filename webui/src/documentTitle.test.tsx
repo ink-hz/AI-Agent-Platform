@@ -23,14 +23,15 @@ describe("document titles", () => {
   });
 
   it("uses contextual Orbbec Agent Platform titles", () => {
-    expect(routeDocumentTitle({ name: "overview" })).toBe("Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "agents" })).toBe("Agent · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "agent", agentId: "one" })).toBe("Agent 详情 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "agent-runtime", agentId: "one" })).toBe("运行详情 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "sessions" })).toBe("Session · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "session", sessionKey: "one" })).toBe("Session 回放 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "activity" })).toBe("运行记录 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "flywheel" })).toBe(PLATFORM_TITLE);
+    expect(routeDocumentTitle({ name: "brain" })).toBe("Agent 大脑 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "agents" })).toBe("专业 Agent · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "agent", agentId: "one" })).toBe("专业 Agent · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "mission", missionId: "one" })).toBe("任务 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "admin-agent-runtime", agentId: "one" })).toBe("运行详情 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "admin-sessions" })).toBe("Session · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "admin-session", sessionKey: "one" })).toBe("Session 回放 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "admin-activity" })).toBe("运行记录 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "legacy-redirect", to: "/admin/operations" })).toBe(PLATFORM_TITLE);
     expect(routeDocumentTitle({ name: "not-found" })).toBe(PLATFORM_TITLE);
   });
 

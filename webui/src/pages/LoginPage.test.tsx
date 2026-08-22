@@ -42,7 +42,7 @@ describe("LoginPage", () => {
     expect(container.querySelector("input[type=password]")).toBeNull();
     const button = [...container.querySelectorAll("button")].find((item) => item.textContent?.includes("扫码登录"));
     await act(async () => button?.click());
-    expect(onStartQr).toHaveBeenCalledWith("/account");
+    expect(onStartQr).toHaveBeenCalledWith("/");
     expect(storage).not.toHaveBeenCalled();
   });
 
@@ -66,7 +66,7 @@ describe("LoginPage", () => {
     const button = [...container.querySelectorAll("button")].find((item) => item.textContent?.includes("扫码登录"));
     await act(async () => button?.click());
 
-    expect(onStartQr).toHaveBeenCalledWith("/account");
+    expect(onStartQr).toHaveBeenCalledWith("/");
   });
 
   it("falls back to account when the browser URL has a fragment", async () => {
@@ -79,7 +79,7 @@ describe("LoginPage", () => {
 
     expect(window.location.search).toBe("?return_path=/admin/");
     expect(window.location.hash).toBe("#fragment");
-    expect(onStartQr).toHaveBeenCalledWith("/account");
+    expect(onStartQr).toHaveBeenCalledWith("/");
   });
 
   it("treats an empty fragment delimiter as an unsafe QR return URL", async () => {
@@ -92,7 +92,7 @@ describe("LoginPage", () => {
 
     expect(window.location.hash).toBe("");
     expect(window.location.href.endsWith("#")).toBe(true);
-    expect(onStartQr).toHaveBeenCalledWith("/account");
+    expect(onStartQr).toHaveBeenCalledWith("/");
   });
 
   it("renders only a generic callback failure", async () => {
@@ -108,7 +108,7 @@ describe("LoginPage", () => {
     await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={onNavigate} />));
 
     expect(onInClient).toHaveBeenCalledTimes(1);
-    expect(onNavigate).toHaveBeenCalledWith("/account");
+    expect(onNavigate).toHaveBeenCalledWith("/");
   });
 
   it("navigates an in-client login to the exact validated admin return", async () => {
@@ -128,7 +128,7 @@ describe("LoginPage", () => {
     await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={onNavigate} />));
 
     expect(onInClient).toHaveBeenCalledTimes(1);
-    expect(onNavigate).toHaveBeenCalledWith("/account");
+    expect(onNavigate).toHaveBeenCalledWith("/");
   });
 
   it("keeps in-client empty-fragment URLs on the default account page", async () => {
@@ -137,7 +137,7 @@ describe("LoginPage", () => {
     const onNavigate = vi.fn();
     await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={onNavigate} />));
 
-    expect(onNavigate).toHaveBeenCalledWith("/account");
+    expect(onNavigate).toHaveBeenCalledWith("/");
   });
 
   it("does not navigate or update state after a slow in-client login unmounts", async () => {
@@ -172,7 +172,7 @@ describe("LoginPage", () => {
       await pending.promise;
     });
 
-    expect(onNavigate).toHaveBeenCalledWith("/_preview/dingtalk-r1/account");
+    expect(onNavigate).toHaveBeenCalledWith("/_preview/dingtalk-r1/");
   });
 
   it("keeps manual in-client retry after automatic failure", async () => {

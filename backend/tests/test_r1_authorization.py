@@ -83,6 +83,17 @@ def test_member_and_unknown_route_default_deny_but_owner_reads_known_routes():
     ).allowed is True
 
 
+@pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.MANAGEMENT_VIEWER])
+@pytest.mark.parametrize("route", ["/admin", "/admin/{client_path:path}"])
+def test_management_shell_is_not_member_self_service_but_remains_available_to_management_roles(
+    role, route
+):
+    service = AuthorizationService(Grants())
+
+    assert service.decide(AuthContext(uuid4(), role, uuid4(), False), "GET", route, ()).allowed is True
+    assert service.decide(MEMBER, "GET", route, ()).status_code == 403
+
+
 def test_hard_stale_owner_is_read_only_and_cloud_review_mutations_are_disabled():
     service = AuthorizationService(Grants(), cloud_mode=True)
 

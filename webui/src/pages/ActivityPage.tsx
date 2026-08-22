@@ -111,7 +111,7 @@ function filterParams(filters: ActivityFilters): URLSearchParams {
 
 function canonicalActivityPath(filters: ActivityFilters): string {
   const params = filterParams(filters);
-  return params.size ? `/activity?${params}` : "/activity";
+  return params.size ? `/admin/activity?${params}` : "/admin/activity";
 }
 
 function localDateKey(date: Date): string | null {
@@ -195,7 +195,7 @@ export function ActivityPage() {
       window.history.replaceState({}, "", canonical);
     }
     const restore = () => {
-      if (window.location.pathname !== "/activity") return;
+      if (window.location.pathname !== "/admin/activity") return;
       const next = filtersFromSearch(window.location.search);
       const nextPath = canonicalActivityPath(next);
       if (`${window.location.pathname}${window.location.search}` !== nextPath) {

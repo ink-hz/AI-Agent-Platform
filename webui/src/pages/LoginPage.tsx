@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { inClientLogin, inClientLoginAvailable, loginReturnPath, platformPath, routePrefix, startQrLogin } from "../auth";
+import { inClientLogin, inClientLoginAvailable, loginReturnPath, platformPath, routePrefix, startQrLogin, type LoginReturnPath } from "../auth";
 
 
 export interface LoginPageProps {
-  onStartQr?: (returnPath: "/admin/" | "/account") => Promise<string>;
+  onStartQr?: (returnPath: LoginReturnPath) => Promise<string>;
   onInClient?: () => Promise<void>;
   onNavigate?: (target: string) => void;
 }
@@ -16,11 +16,11 @@ export function LoginPage({
   onNavigate = (target) => window.location.assign(target),
 }: LoginPageProps) {
   const [{ returnPath, successTarget }] = useState<{
-    returnPath: "/admin/" | "/account";
+    returnPath: LoginReturnPath;
     successTarget: string;
   }>(() => {
     const selectedReturnPath = window.location.href.includes("#")
-      ? "/account"
+      ? "/"
       : loginReturnPath(window.location.search);
     return {
       returnPath: selectedReturnPath,

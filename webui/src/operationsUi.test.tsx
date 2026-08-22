@@ -205,7 +205,7 @@ describe("DailyBrief", () => {
     expect(html).toContain("严重");
     expect(html).toContain("event-severity-critical");
     expect(html).toContain("event-visibility-business");
-    expect(html).toContain('href="/agents/ai-fae-agent"');
+    expect(html).toContain('href="/admin/agents/ai-fae-agent"');
   });
 
   it("renders recovery and System events with semantic visual hooks", () => {
@@ -244,7 +244,7 @@ describe("ActivityPage", () => {
 
   beforeEach(() => {
     vi.setSystemTime(new Date("2026-07-22T16:30:00Z"));
-    window.history.replaceState({}, "", "/activity");
+    window.history.replaceState({}, "", "/admin/activity");
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -290,7 +290,7 @@ describe("ActivityPage", () => {
   });
 
   it("keeps an explicitly deep-linked System Agent selectable", async () => {
-    window.history.replaceState({}, "", "/activity?agent_id=test-bot");
+    window.history.replaceState({}, "", "/admin/activity?agent_id=test-bot");
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/agents") return Promise.resolve(response(agents));
@@ -330,7 +330,7 @@ describe("ActivityPage", () => {
         .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
 
-    expect(window.location.pathname).toBe("/activity");
+    expect(window.location.pathname).toBe("/admin/activity");
     expect(window.location.search).toContain("date_from=2026-07-22T09%3A30%3A00%2B08%3A00");
     expect(new URLSearchParams(window.location.search).get("date_from")).toBe("2026-07-22T09:30:00+08:00");
     expect(eventPaths[eventPaths.length - 1]).toBe(
@@ -354,7 +354,7 @@ describe("ActivityPage", () => {
     expect(eventPaths).toHaveLength(1);
 
     await act(async () => {
-      window.history.pushState({}, "", "/activity?event_type=runtime_offline&date_from=2026-07-22T09%3A30%3A00%2B08%3A00");
+      window.history.pushState({}, "", "/admin/activity?event_type=runtime_offline&date_from=2026-07-22T09%3A30%3A00%2B08%3A00");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
 
@@ -364,7 +364,7 @@ describe("ActivityPage", () => {
     expect(eventPaths[1]).toContain("date_from=2026-07-22T09%3A30%3A00%2B08%3A00");
 
     await act(async () => {
-      window.history.replaceState({}, "", "/activity?severity=attention");
+      window.history.replaceState({}, "", "/admin/activity?severity=attention");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
 
@@ -395,7 +395,7 @@ describe("ActivityPage", () => {
   });
 
   it("converts an instant deep link to a Shanghai datetime control and canonical request", async () => {
-    window.history.replaceState({}, "", "/activity?date_from=2026-07-22T01%3A30%3A00Z");
+    window.history.replaceState({}, "", "/admin/activity?date_from=2026-07-22T01%3A30%3A00Z");
     const eventPaths: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
@@ -413,7 +413,7 @@ describe("ActivityPage", () => {
   });
 
   it("omits an impossible timestamp from controls, history, and the API request", async () => {
-    window.history.replaceState({}, "", "/activity?date_from=2026-02-30T09%3A30%3A00%2B08%3A00");
+    window.history.replaceState({}, "", "/admin/activity?date_from=2026-02-30T09%3A30%3A00%2B08%3A00");
     const eventPaths: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
@@ -598,7 +598,7 @@ describe("ActivityPage", () => {
   });
 
   it("keeps an explicit System Agent selected while Agent metadata is pending or unavailable", async () => {
-    window.history.replaceState({}, "", "/activity?agent_id=test-bot");
+    window.history.replaceState({}, "", "/admin/activity?agent_id=test-bot");
     const agentRequest = deferred<Response>();
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       if (String(input) === "/api/agents") return agentRequest.promise;
@@ -647,9 +647,10 @@ describe("ActivityPage", () => {
 
     expect(container.querySelector(".topbar")).not.toBeNull();
     expect(container.querySelector(".readonly-tag")).toBeNull();
-    expect(container.querySelector(".product-nav")?.textContent).toBe("总览AgentSession复审闭环运行记录");
+    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent历史任务企业账号管理中心");
     expect(container.querySelector("[role=alert]")?.textContent).toContain("运行记录暂不可用");
-    expect(container.querySelector(".product-nav [aria-current=page]")?.textContent).toBe("运行记录");
+    expect(container.querySelector(".product-nav [aria-current=page]")?.textContent).toBe("管理中心");
+    expect(container.querySelector(".admin-nav")?.textContent).toContain("运行记录");
   });
 
   it("aborts Agent and Activity requests on cleanup and ignores late results", async () => {
@@ -686,7 +687,7 @@ describe("Agent detail activity route", () => {
   let root: Root | null;
 
   beforeEach(() => {
-    window.history.replaceState({}, "", "/agents/hr-bot");
+    window.history.replaceState({}, "", "/admin/agents/hr-bot");
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);

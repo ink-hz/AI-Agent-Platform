@@ -37,30 +37,31 @@ describe("Session navigation context", () => {
   });
 
   it("captures the exact internal URL and scroll position", () => {
-    window.history.replaceState({}, "", "/sessions?agent_id=ai-fae-agent&q=Gemini");
+    window.history.replaceState({}, "", "/admin/sessions?agent_id=ai-fae-agent&q=Gemini");
 
     const state = captureSessionOrigin(640);
 
     expect(state).toEqual({
       sessionOrigin: {
-        path: "/sessions?agent_id=ai-fae-agent&q=Gemini",
+        path: "/admin/sessions?agent_id=ai-fae-agent&q=Gemini",
         scrollY: 640,
       },
     });
     expect(window.history.state).toEqual(state);
-    expect(sessionReturnTarget(state)).toBe("/sessions?agent_id=ai-fae-agent&q=Gemini");
+    expect(sessionReturnTarget(state)).toBe("/admin/sessions?agent_id=ai-fae-agent&q=Gemini");
   });
 
   it("rejects external, protocol-relative, and unsupported return targets", () => {
     expect(sessionReturnTarget({ sessionOrigin: { path: "https://example.com", scrollY: 10 } })).toBeNull();
     expect(sessionReturnTarget({ sessionOrigin: { path: "//example.com", scrollY: 10 } })).toBeNull();
     expect(sessionReturnTarget({ sessionOrigin: { path: "/unknown", scrollY: 10 } })).toBeNull();
+    expect(sessionReturnTarget({ sessionOrigin: { path: "/sessions", scrollY: 10 } })).toBeNull();
   });
 
   it("waits for content readiness before restoring a matching source entry", async () => {
     window.history.replaceState({
-      sessionOrigin: { path: "/sessions?agent_id=ai-fae-agent", scrollY: 640 },
-    }, "", "/sessions?agent_id=ai-fae-agent");
+      sessionOrigin: { path: "/admin/sessions?agent_id=ai-fae-agent", scrollY: 640 },
+    }, "", "/admin/sessions?agent_id=ai-fae-agent");
     Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 2000 });
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
     const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
@@ -77,20 +78,20 @@ describe("Session navigation context", () => {
   });
 
   it("stores source context when a Session drill-down link is followed", async () => {
-    window.history.replaceState({}, "", "/sessions?source_kind=fae");
+    window.history.replaceState({}, "", "/admin/sessions?source_kind=fae");
     Object.defineProperty(window, "scrollY", { configurable: true, value: 420 });
     vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 1);
     await act(async () => root.render(
-      <PlatformLink href="/sessions/fae%3Aone" preserveSessionContext>Open Session</PlatformLink>,
+      <PlatformLink href="/admin/sessions/fae%3Aone" preserveSessionContext>Open Session</PlatformLink>,
     ));
 
     await act(async () => container.querySelector("a")?.dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     ));
 
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/sessions/fae%3Aone");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/sessions/fae%3Aone");
     expect(window.history.state).toEqual({
-      sessionOrigin: { path: "/sessions?source_kind=fae", scrollY: 420 },
+      sessionOrigin: { path: "/admin/sessions?source_kind=fae", scrollY: 420 },
     });
   });
 });

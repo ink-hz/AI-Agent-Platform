@@ -49,5 +49,5 @@ export function sessionsPath(filters: SessionFilters): string {
   if (filters.q) params.set("q", filters.q);
   if (filters.page > 1) params.set("page", String(filters.page));
   const search = params.toString();
-  return search ? `/sessions?${search}` : "/sessions";
+  return search ? `/admin/sessions?${search}` : "/admin/sessions";
 }

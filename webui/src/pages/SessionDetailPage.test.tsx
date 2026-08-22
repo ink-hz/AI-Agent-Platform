@@ -56,7 +56,7 @@ describe("SessionDetailPage return navigation", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
-    window.history.replaceState({}, "", "/sessions/fae%3Asession-1");
+    window.history.replaceState({}, "", "/admin/sessions/fae%3Asession-1");
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(response(session))));
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   });
@@ -74,14 +74,14 @@ describe("SessionDetailPage return navigation", () => {
 
   it("returns to the validated true source", async () => {
     window.history.replaceState({
-      sessionOrigin: { path: "/agents/ai-fae-agent", scrollY: 500 },
-    }, "", "/sessions/fae%3Asession-1");
+      sessionOrigin: { path: "/admin/agents/ai-fae-agent", scrollY: 500 },
+    }, "", "/admin/sessions/fae%3Asession-1");
     const back = vi.spyOn(window.history, "back").mockImplementation(() => undefined);
     await renderPage();
 
     const link = container.querySelector<HTMLAnchorElement>(".back-link")!;
     expect(link.textContent).toBe("← 返回");
-    expect(link.getAttribute("href")).toBe("/agents/ai-fae-agent");
+    expect(link.getAttribute("href")).toBe("/admin/agents/ai-fae-agent");
     await act(async () => link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
     expect(back).toHaveBeenCalledOnce();
   });
@@ -91,7 +91,7 @@ describe("SessionDetailPage return navigation", () => {
 
     const link = container.querySelector<HTMLAnchorElement>(".back-link")!;
     expect(link.textContent).toBe("← 返回 Session 列表");
-    expect(link.getAttribute("href")).toBe("/sessions");
+    expect(link.getAttribute("href")).toBe("/admin/sessions");
     expect(container.textContent).toContain("Session 回放");
     expect(container.textContent).toContain("Gemini 335L troubleshooting");
     expect(container.textContent).not.toContain("SESSION REPLAY");

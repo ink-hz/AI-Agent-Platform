@@ -25,10 +25,9 @@ function supportedPlatformPath(path: string): boolean {
   try {
     const url = new URL(path, window.location.origin);
     if (url.origin !== window.location.origin || `${url.pathname}${url.search}` !== path) return false;
-    return url.pathname === "/"
-      || /^\/agents(?:\/[^/]+)?$/.test(url.pathname)
-      || /^\/sessions(?:\/[^/]+)?$/.test(url.pathname)
-      || url.pathname === "/activity";
+    return /^\/admin\/agents(?:\/[^/]+)?$/.test(url.pathname)
+      || /^\/admin\/sessions(?:\/[^/]+)?$/.test(url.pathname)
+      || url.pathname === "/admin/activity";
   } catch {
     return false;
   }

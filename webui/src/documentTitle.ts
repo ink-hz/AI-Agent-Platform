@@ -8,17 +8,24 @@ export const PLATFORM_TITLE = "Orbbec Agent Platform";
 
 export function routeDocumentTitle(route: Route): string {
   switch (route.name) {
-    case "agents": return `Agent · ${PLATFORM_TITLE}`;
-    case "agent": return `Agent 详情 · ${PLATFORM_TITLE}`;
-    case "agent-runtime": return `运行详情 · ${PLATFORM_TITLE}`;
-    case "sessions": return `Session · ${PLATFORM_TITLE}`;
-    case "session": return `Session 回放 · ${PLATFORM_TITLE}`;
-    case "review": return `复审闭环 · ${PLATFORM_TITLE}`;
-    case "activity": return `运行记录 · ${PLATFORM_TITLE}`;
+    case "brain": return `Agent 大脑 · ${PLATFORM_TITLE}`;
+    case "missions": return `历史任务 · ${PLATFORM_TITLE}`;
+    case "mission": return `任务 · ${PLATFORM_TITLE}`;
+    case "agents": return `专业 Agent · ${PLATFORM_TITLE}`;
+    case "agent": return `专业 Agent · ${PLATFORM_TITLE}`;
+    case "admin-overview": return `管理中心 · ${PLATFORM_TITLE}`;
+    case "admin-agents": return `Agent 管理 · ${PLATFORM_TITLE}`;
+    case "admin-agent": return `Agent 详情 · ${PLATFORM_TITLE}`;
+    case "admin-agent-runtime": return `运行详情 · ${PLATFORM_TITLE}`;
+    case "admin-sessions": return `Session · ${PLATFORM_TITLE}`;
+    case "admin-session": return `Session 回放 · ${PLATFORM_TITLE}`;
+    case "admin-review": return `复审闭环 · ${PLATFORM_TITLE}`;
+    case "admin-activity": return `运行记录 · ${PLATFORM_TITLE}`;
+    case "admin-operations": return `Operations · ${PLATFORM_TITLE}`;
     case "login": return `登录 · ${PLATFORM_TITLE}`;
     case "account": return `企业账号 · ${PLATFORM_TITLE}`;
-    case "identity": return `身份管理 · ${PLATFORM_TITLE}`;
-    case "governance": return `治理审计 · ${PLATFORM_TITLE}`;
+    case "admin-identity": return `身份管理 · ${PLATFORM_TITLE}`;
+    case "admin-governance": return `治理审计 · ${PLATFORM_TITLE}`;
     default: return PLATFORM_TITLE;
   }
 }

@@ -7,43 +7,38 @@ import type { DeploymentInfo } from "./types";
 import { platformPath, type Account } from "./auth";
 
 
-const NAVIGATION = [
-  { label: "总览", path: "/", section: "overview" },
-  { label: "Agent", path: "/agents", section: "agents" },
-  { label: "Session", path: "/sessions", section: "sessions" },
-  { label: "复审闭环", path: "/review", section: "review" },
-  { label: "运行记录", path: "/activity", section: "activity" },
+const USE_NAVIGATION = [
+  { label: "Agent 大脑", path: "/", section: "brain" },
+  { label: "专业 Agent", path: "/agents", section: "agents" },
+  { label: "历史任务", path: "/missions", section: "missions" },
+  { label: "企业账号", path: "/account", section: "account" },
+] as const;
+
+const ADMIN_NAVIGATION = [
+  { label: "总览", path: "/admin", section: "admin" },
+  { label: "Agent", path: "/admin/agents", section: "admin" },
+  { label: "Session", path: "/admin/sessions", section: "admin" },
+  { label: "复审闭环", path: "/admin/review", section: "admin" },
+  { label: "运行记录", path: "/admin/activity", section: "admin" },
+  { label: "数据飞轮", path: "/admin/operations", section: "admin" },
+  { label: "身份管理", path: "/admin/identity", section: "admin" },
+  { label: "治理审计", path: "/admin/governance", section: "admin" },
 ] as const;
 
 
 interface NavigationItem {
   label: string;
   path: string;
-  section: "overview" | "agents" | "sessions" | "review" | "activity" | "account" | "identity" | "governance";
+  section: "brain" | "agents" | "missions" | "account" | "admin";
 }
 
 
 function navigationFor(account?: Account | null): NavigationItem[] {
-  if (!account) return [...NAVIGATION];
-  if (account.role === "member") {
-    return [{ label: "企业账号", path: "/account", section: "account" }];
+  const base: NavigationItem[] = [...USE_NAVIGATION];
+  if (!account || account.role === "platform_owner" || account.role === "platform_admin") {
+    base.push({ label: "管理中心", path: "/admin", section: "admin" });
   }
-  if (account.role === "management_viewer") {
-    return [
-      { label: "企业账号", path: "/account", section: "account" },
-      ...account.observation_agent_ids.flatMap((agentId): NavigationItem[] => [
-        { label: `${agentId} 运行`, path: `/agents/${encodeURIComponent(agentId)}/runtime`, section: "agents" },
-        { label: `${agentId} 复审`, path: `/review?agent_id=${encodeURIComponent(agentId)}`, section: "review" },
-        { label: `${agentId} 记录`, path: `/activity?agent_id=${encodeURIComponent(agentId)}`, section: "activity" },
-      ]),
-      { label: "治理审计", path: "/governance", section: "governance" },
-    ];
-  }
-  return [
-    ...NAVIGATION,
-    { label: "身份管理", path: "/identity", section: "identity" },
-    { label: "企业账号", path: "/account", section: "account" },
-  ];
+  return base;
 }
 
 
@@ -65,9 +60,10 @@ export function AppShell({ route, children, account }: { route: Route; children:
   }, [account]);
   const cloudReplica = deployment?.mode === "cloud-replica" && deployment.read_only;
   const roleNavigation = navigationFor(account);
-  const navigation = cloudReplica
-    ? roleNavigation.filter((item) => item.section !== "review")
-    : roleNavigation;
+  const navigation = roleNavigation;
+  const managementNavigation = (!account || account.role === "platform_owner" || account.role === "platform_admin")
+    ? (cloudReplica ? ADMIN_NAVIGATION.filter((item) => item.path !== "/admin/review") : ADMIN_NAVIGATION)
+    : [];
   const freshnessLabel = deployment?.freshness === "current"
     ? "数据已同步"
     : deployment?.freshness === "stale"
@@ -77,7 +73,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
     <div className="app">
       <header className="topbar">
         <div className="topbar-inner">
-          <a className="brand" href={platformPath(account?.role === "member" ? "/account" : "/")} onClick={(event) => follow(event, account?.role === "member" ? "/account" : "/")}>
+          <a className="brand" href={platformPath("/")} onClick={(event) => follow(event, "/")}>
             <img className="brand-mark" src={platformPath("/favicon.ico")} alt="" aria-hidden="true" />
             <span className="brand-name"><strong>Orbbec</strong> Agent Platform</span>
           </a>
@@ -110,6 +106,12 @@ export function AppShell({ route, children, account }: { route: Route; children:
           }).format(new Date(deployment.last_success_at))}
         </time>}
       </aside>}
+      {current === "admin" && managementNavigation.length > 0 && <nav className="admin-nav" aria-label="管理中心">
+        <div>{managementNavigation.map((item) => <a
+          className={window.location.pathname === platformPath(item.path) ? "is-current" : undefined}
+          href={platformPath(item.path)} key={item.path} onClick={(event) => follow(event, item.path)}
+        >{item.label}</a>)}</div>
+      </nav>}
       <main className="page">{children}</main>
       <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>
     </div>

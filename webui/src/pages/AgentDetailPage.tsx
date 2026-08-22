@@ -80,7 +80,7 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
     return <LoadingState label="正在加载 Agent 详情" />;
   }
   return <>
-    <PlatformLink className="back-link" href="/agents">← 返回 Agent 列表</PlatformLink>
+    <PlatformLink className="back-link" href="/admin/agents">← 返回 Agent 列表</PlatformLink>
     <section className={`agent-profile agent-${agent.accent}`}>
       <div className="profile-identity"><span className="fleet-avatar">{agent.glyph}</span><div><p>{agent.domain}</p><h1>{agent.name}</h1><span>{agent.description}</span></div></div>
       <div className="profile-badges"><span>{agent.source_kind.toUpperCase()}</span><span>{agent.deployment}</span><span className={`freshness freshness-${agent.freshness}`}>{sourceFreshnessLabel(agent.freshness)}</span></div>
@@ -100,13 +100,13 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
               <span>{runtime.runtime.channel ?? "尚未观测到 Channel"}{runtime.runtime.channel ? ` ${channelStatusLabel(runtime.runtime.channel_status)}` : ""}</span>
               <span>{productionRuntime(runtime.lifecycle.production_runtime_seconds)}</span>
             </div>
-            <PlatformLink href={`/agents/${encodeURIComponent(agent.id)}/runtime`}>查看运行详情 →</PlatformLink>
+            <PlatformLink href={`/admin/agents/${encodeURIComponent(agent.id)}/runtime`}>查看运行详情 →</PlatformLink>
           </>}
     </section>
     <section className="detail-section agent-activity-section">
       <div className="section-heading">
         <div><h2>最近运行记录</h2></div>
-        <PlatformLink href={`/activity?agent_id=${encodeURIComponent(agent.id)}`}>查看全部运行记录 →</PlatformLink>
+        <PlatformLink href={`/admin/activity?agent_id=${encodeURIComponent(agent.id)}`}>查看全部运行记录 →</PlatformLink>
       </div>
       {activityUnavailable
         ? <div className="agent-activity-status" role="alert"><strong>运行记录暂不可用</strong><p>Platform 暂时无法读取该 Agent 的运行记录。</p></div>
@@ -116,7 +116,7 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
             ? <p className="agent-activity-status" role="status" aria-live="polite">暂无运行记录。</p>
             : <div className="operational-event-list">{activity.items.slice(0, 8).map((event) => <OperationalEventItem event={event} key={event.event_id} />)}</div>}
     </section>
-    <section className="detail-section"><div className="section-heading"><div><h2>最近 Session</h2></div><PlatformLink href={`/sessions?agent_id=${encodeURIComponent(agent.id)}`}>查看全部 {sessions.total} 个 →</PlatformLink></div>
+    <section className="detail-section"><div className="section-heading"><div><h2>最近 Session</h2></div><PlatformLink href={`/admin/sessions?agent_id=${encodeURIComponent(agent.id)}`}>查看全部 {sessions.total} 个 →</PlatformLink></div>
       {sessions.items.length ? <div className="session-list">{sessions.items.map((session) => <SessionListItem key={session.session_key} session={session} />)}</div> : <EmptyState title="暂无 Session" description="该 Agent 正在运行，但还没有采集到 Session。" />}
     </section>
   </>;

@@ -40,7 +40,7 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  window.history.replaceState({}, "", "/review?issue=issue-1");
+  window.history.replaceState({}, "", "/admin/review?issue=issue-1");
   vi.stubGlobal("fetch", vi.fn((path: string) => {
     if (path.startsWith("/api/review/overview?")) return Promise.resolve(response({ feedback_rows: 79, negative_rows: 51, negative_turns: 50, positive_rows: 28, statuses: { awaiting_review: 1 }, write_available: writeAvailable }));
     if (path.startsWith("/api/review/inbox?")) return Promise.resolve(response([inboxItem]));
@@ -73,7 +73,7 @@ it("shows the original and latest replay answer without force close", async () =
 
 
 it("can attach an inbox answer to an existing canonical issue", async () => {
-  window.history.replaceState({}, "", "/review?turn_key=fae%3Aturn-2");
+  window.history.replaceState({}, "", "/admin/review?turn_key=fae%3Aturn-2");
 
   await act(async () => root.render(<ReviewPage />));
   await act(async () => await Promise.resolve());

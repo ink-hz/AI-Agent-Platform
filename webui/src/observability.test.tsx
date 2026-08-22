@@ -85,7 +85,7 @@ describe("observability directory components", () => {
     expect(html).toContain("Gemini 335L 如何排查？");
     expect(html).toContain("DingTalk");
     expect(html).toContain("3 轮");
-    expect(html).toContain("/sessions/fae%3Asession-1");
+    expect(html).toContain("/admin/sessions/fae%3Asession-1");
   });
 
   it("groups System Agents separately in the complete directory", () => {

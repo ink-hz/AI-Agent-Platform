@@ -52,6 +52,8 @@ class _NoObservationGrants:
         ("GET", "/api/v1/brain/missions/{mission_id}/events"),
         ("POST", "/api/v1/brain/missions/{mission_id}/cancel"),
         ("POST", "/api/v1/agents/{agent_id}/missions"),
+        ("GET", "/missions"),
+        ("GET", "/missions/{client_path:path}"),
     ],
 )
 def test_agent_brain_routes_are_exact_authenticated_self_service_routes(
@@ -343,7 +345,9 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
     assert root.status_code == 200
     assert 'name="platform-identity-mode" content="enabled"' in root.text
     for path in (
-        "/account", "/agents", "/agents/hr-bot/runtime", "/sessions",
+        "/account", "/agents", "/agents/hr-bot", "/missions",
+        "/missions/00000000-0000-0000-0000-000000000001", "/admin",
+        "/admin/agents", "/admin/sessions/fae%3Aone", "/sessions",
         "/sessions/fae%3Aone", "/review", "/activity", "/identity",
         "/governance",
     ):

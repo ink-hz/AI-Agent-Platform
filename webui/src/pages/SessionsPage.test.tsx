@@ -89,7 +89,7 @@ describe("SessionsPage URL state", () => {
     root = createRoot(container);
     sessionPaths = [];
     sessionResult = () => sessionPage();
-    window.history.replaceState({}, "", "/sessions");
+    window.history.replaceState({}, "", "/admin/sessions");
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
@@ -114,7 +114,7 @@ describe("SessionsPage URL state", () => {
   }
 
   it("hydrates filters from the URL and requests the same result", async () => {
-    window.history.replaceState({}, "", "/sessions?agent_id=ai-fae-agent&source_kind=fae&q=Gemini");
+    window.history.replaceState({}, "", "/admin/sessions?agent_id=ai-fae-agent&source_kind=fae&q=Gemini");
 
     await renderPage();
 
@@ -142,7 +142,7 @@ describe("SessionsPage URL state", () => {
     });
 
     expect(`${window.location.pathname}${window.location.search}`).toBe(
-      "/sessions?agent_id=ai-fae-agent&source_kind=fae&q=Gemini+335L",
+      "/admin/sessions?agent_id=ai-fae-agent&source_kind=fae&q=Gemini+335L",
     );
     expect(sessionPaths[sessionPaths.length - 1]).toBe(
       "/api/sessions?agent_id=ai-fae-agent&source_kind=fae&q=Gemini+335L&limit=50",
@@ -151,7 +151,7 @@ describe("SessionsPage URL state", () => {
 
   it("restores controls and requests when browser history changes", async () => {
     await renderPage();
-    window.history.pushState({}, "", "/sessions?agent_id=ai-fae-agent&source_kind=fae&q=restored");
+    window.history.pushState({}, "", "/admin/sessions?agent_id=ai-fae-agent&source_kind=fae&q=restored");
 
     await act(async () => window.dispatchEvent(new PopStateEvent("popstate")));
 
@@ -164,7 +164,7 @@ describe("SessionsPage URL state", () => {
   });
 
   it("requests the selected offset and renders the authorized result range", async () => {
-    window.history.replaceState({}, "", "/sessions?agent_id=ai-fae-agent&page=3");
+    window.history.replaceState({}, "", "/admin/sessions?agent_id=ai-fae-agent&page=3");
     sessionResult = () => sessionPage(123, 100, 23);
 
     await renderPage();
@@ -186,12 +186,12 @@ describe("SessionsPage URL state", () => {
     expect(next).toBeDefined();
     await act(async () => next?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/sessions?page=2");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/sessions?page=2");
     expect(sessionPaths[sessionPaths.length - 1]).toBe("/api/sessions?limit=50&offset=50");
   });
 
   it("resets to page one when a filter changes", async () => {
-    window.history.replaceState({}, "", "/sessions?source_kind=fae&page=3");
+    window.history.replaceState({}, "", "/admin/sessions?source_kind=fae&page=3");
     sessionResult = () => sessionPage(120, 100, 20);
     await renderPage();
 
@@ -200,7 +200,7 @@ describe("SessionsPage URL state", () => {
     });
 
     expect(`${window.location.pathname}${window.location.search}`).toBe(
-      "/sessions?agent_id=ai-fae-agent&source_kind=fae",
+      "/admin/sessions?agent_id=ai-fae-agent&source_kind=fae",
     );
     expect(sessionPaths[sessionPaths.length - 1]).toBe(
       "/api/sessions?agent_id=ai-fae-agent&source_kind=fae&limit=50",
@@ -208,7 +208,7 @@ describe("SessionsPage URL state", () => {
   });
 
   it("replaces an out-of-range page with the last valid page", async () => {
-    window.history.replaceState({}, "", "/sessions?page=9");
+    window.history.replaceState({}, "", "/admin/sessions?page=9");
     sessionResult = (path) => path.includes("offset=400")
       ? sessionPage(120, 400, 0)
       : sessionPage(120, 100, 20);
@@ -216,7 +216,7 @@ describe("SessionsPage URL state", () => {
     await renderPage();
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/sessions?page=3");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/sessions?page=3");
     expect(sessionPaths).toContain("/api/sessions?limit=50&offset=400");
     expect(sessionPaths[sessionPaths.length - 1]).toBe("/api/sessions?limit=50&offset=100");
   });
