@@ -120,6 +120,22 @@ def test_parser_collapses_unpaired_surrogate_to_stable_error() -> None:
         parse_brain_decision("\ud800", allowed_agent_ids=ALLOWED)
 
 
+@pytest.mark.parametrize(
+    "rendered",
+    (
+        '{"kind":"direct","answer":"\\ud800","agent_id":null,'
+        '"objective":null,"rationale_summary":"safe"}',
+        '{"kind":"direct","answer":"safe","agent_id":null,'
+        '"objective":null,"rationale_summary":"safe","\\ud800":"value"}',
+    ),
+)
+def test_parser_rejects_unpaired_surrogates_after_json_decoding(
+    rendered: str,
+) -> None:
+    with pytest.raises(BrainProtocolError, match="^brain protocol invalid$"):
+        parse_brain_decision(rendered, allowed_agent_ids=ALLOWED)
+
+
 @pytest.mark.parametrize("invalid", (None, b"{}", "", "[]", "null"))
 def test_parser_collapses_type_and_schema_errors_to_stable_non_secret_error(
     invalid: object,

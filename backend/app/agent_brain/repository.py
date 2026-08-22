@@ -35,75 +35,127 @@ _MISSION_STATUSES = frozenset(
     }
 )
 _AGENT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
-_KEY_TOKEN = re.compile(
-    r"[A-Z]+(?=[A-Z][a-z]|[^A-Za-z]|$)|[A-Z]?[a-z]+|[0-9]+"
-)
 
 MAX_PAYLOAD_BYTES = 64 * 1024
 MAX_PAYLOAD_DEPTH = 16
 MAX_PAYLOAD_ITEMS = 2_048
 MAX_PAYLOAD_STRING_BYTES = 32 * 1024
 MAX_PAYLOAD_KEY_BYTES = 256
+MAX_EVENT_TEXT_BYTES = 8 * 1024
+MAX_EVENT_LIST_ITEMS = 100
 
-_EVENT_PAYLOAD_KEYS = {
-    "mission.started": frozenset({"text", "details"}),
-    "brain.responding": frozenset({"text", "stage", "details"}),
-    "plan.created": frozenset(
-        {"text", "agent_id", "objective", "rationale_summary", "details"}
+_EVENT_PAYLOAD_SCHEMAS = {
+    "mission.started": (
+        {"text": "text"},
+        frozenset({"text"}),
+        frozenset(),
     ),
-    "task.dispatched": frozenset(
-        {"text", "agent_id", "objective", "details"}
+    "brain.responding": (
+        {"text": "text", "stage": "short_text"},
+        frozenset({"text"}),
+        frozenset(),
     ),
-    "agent.accepted": frozenset({"text", "agent_id", "details"}),
-    "agent.progress": frozenset(
+    "plan.created": (
         {
-            "text",
-            "agent_id",
-            "progress",
-            "current",
-            "total",
-            "index",
-            "state",
-            "stage",
-            "details",
-        }
+            "text": "text",
+            "agent_id": "agent_id",
+            "objective": "text",
+            "rationale_summary": "text",
+        },
+        frozenset({"text"}),
+        frozenset(),
     ),
-    "agent.result": frozenset(
+    "task.dispatched": (
+        {"text": "text", "agent_id": "agent_id"},
+        frozenset({"agent_id"}),
+        frozenset(),
+    ),
+    "agent.accepted": (
+        {"text": "text", "agent_id": "agent_id"},
+        frozenset({"agent_id"}),
+        frozenset(),
+    ),
+    "agent.progress": (
         {
-            "text",
-            "agent_id",
-            "summary",
-            "result",
-            "items",
-            "evidence",
-            "gaps",
-            "rationale_summary",
-            "details",
-        }
+            "text": "text",
+            "agent_id": "agent_id",
+            "progress": "unit_number",
+            "current": "nonnegative_int",
+            "total": "positive_int",
+            "index": "nonnegative_int",
+            "state": "short_text",
+            "stage": "short_text",
+        },
+        frozenset(),
+        frozenset({"text", "progress", "current", "index", "state", "stage"}),
     ),
-    "task.reviewed": frozenset(
-        {"text", "summary", "accepted", "gaps", "details"}
-    ),
-    "synthesis.started": frozenset({"text", "details"}),
-    "mission.completed": frozenset(
-        {"text", "summary", "result", "items", "evidence", "gaps", "details"}
-    ),
-    "mission.failed": frozenset(
+    "agent.result": (
         {
-            "text",
-            "summary",
-            "reason",
-            "reason_code",
-            "code",
-            "partial_result",
-            "details",
-        }
+            "text": "text",
+            "agent_id": "agent_id",
+            "summary": "text",
+            "result": "text",
+            "items": "text_list",
+            "evidence": "text_list",
+            "gaps": "text_list",
+            "rationale_summary": "text",
+        },
+        frozenset(),
+        frozenset({"text", "summary", "result", "items", "evidence", "gaps"}),
     ),
-    "mission.cancelled": frozenset(
-        {"text", "reason", "reason_code", "details"}
+    "task.reviewed": (
+        {
+            "text": "text",
+            "summary": "text",
+            "accepted": "bool",
+            "gaps": "text_list",
+        },
+        frozenset(),
+        frozenset({"text", "summary"}),
     ),
-    "mission.interrupted": frozenset(
-        {"text", "reason", "reason_code", "partial_result", "details"}
+    "synthesis.started": (
+        {"text": "text"},
+        frozenset({"text"}),
+        frozenset(),
+    ),
+    "mission.completed": (
+        {
+            "text": "text",
+            "summary": "text",
+            "result": "text",
+            "items": "text_list",
+            "evidence": "text_list",
+            "gaps": "text_list",
+        },
+        frozenset({"text"}),
+        frozenset(),
+    ),
+    "mission.failed": (
+        {
+            "text": "text",
+            "summary": "text",
+            "reason": "text",
+            "reason_code": "code",
+            "code": "code",
+            "partial_result": "text",
+        },
+        frozenset({"text"}),
+        frozenset(),
+    ),
+    "mission.cancelled": (
+        {"text": "text", "reason": "text", "reason_code": "code"},
+        frozenset({"text"}),
+        frozenset(),
+    ),
+    "mission.interrupted": (
+        {
+            "text": "text",
+            "reason": "text",
+            "reason_code": "code",
+            "partial_result": "text",
+        },
+        frozenset({"text"}),
+        frozenset(),
     ),
 }
 
@@ -343,62 +395,77 @@ def _require_uuid(value: object) -> UUID:
     return value
 
 
-def _event_key_forbidden(key: str) -> bool:
-    tokens = tuple(token.casefold() for token in _KEY_TOKEN.findall(key))
-    words = frozenset(tokens)
-    stems = words | frozenset(
-        word[:-1] for word in words if len(word) > 3 and word.endswith("s")
-    )
-    compact = "".join(tokens)
-    if compact in {"chainofthought", "systemprompt", "apikey"}:
-        return True
-    if {"chain", "thought"} <= stems or "reasoning" in stems:
-        return True
-    if {"system", "prompt"} <= stems:
-        return True
-    if stems & {
-        "secret",
-        "token",
-        "credential",
-        "password",
-    }:
-        return True
-    if "debug" in stems:
-        return True
-    if "raw" in stems and stems & {
-        "request",
-        "response",
-        "payload",
-        "tool",
-        "trace",
-    }:
-        return True
-    if "tool" in stems and stems & {
-        "payload",
-        "input",
-        "output",
-        "request",
-        "response",
-        "call",
-        "calls",
-        "trace",
-    }:
-        return True
-    if "internal" in stems:
-        return True
-    if "key" in stems and stems & {"api", "access", "private", "secret"}:
-        return True
-    return False
+def _validate_event_payload(event_type: str, payload: dict[str, object]) -> None:
+    schema = _EVENT_PAYLOAD_SCHEMAS.get(event_type)
+    if schema is None:
+        raise ValueError
+    fields, required, any_of = schema
+    keys = frozenset(payload)
+    if (
+        not required <= keys
+        or not keys <= frozenset(fields)
+        or (
+            any_of
+            and not any(
+                key in payload and payload[key] != [] for key in any_of
+            )
+        )
+    ):
+        raise ValueError
+    for key, value in payload.items():
+        kind = fields[key]
+        if kind in {"text", "short_text", "code", "agent_id"}:
+            if type(value) is not str or not value.strip():
+                raise ValueError
+            limit = (
+                128
+                if kind in {"short_text", "code", "agent_id"}
+                else MAX_EVENT_TEXT_BYTES
+            )
+            if len(value.encode("utf-8")) > limit:
+                raise ValueError
+            if kind == "agent_id" and _AGENT_ID.fullmatch(value) is None:
+                raise ValueError
+        elif kind == "bool":
+            if type(value) is not bool:
+                raise ValueError
+        elif kind in {"nonnegative_int", "positive_int"}:
+            minimum = 1 if kind == "positive_int" else 0
+            if type(value) is not int or value < minimum:
+                raise ValueError
+        elif kind == "unit_number":
+            if type(value) not in {int, float} or not 0 <= value <= 1:
+                raise ValueError
+        elif kind == "text_list":
+            if type(value) is not list or len(value) > MAX_EVENT_LIST_ITEMS:
+                raise ValueError
+            for member in value:
+                if type(member) is not str or not member.strip():
+                    raise ValueError
+                if len(member.encode("utf-8")) > MAX_EVENT_TEXT_BYTES:
+                    raise ValueError
+        else:
+            raise ValueError
+    if event_type == "agent.progress" and {
+        "current",
+        "total",
+    } <= keys and payload["current"] > payload["total"]:
+        raise ValueError
+
+
+def _require_event_agent(
+    payload: dict[str, object], actual_agent_id: str
+) -> None:
+    claimed_agent_id = payload.get("agent_id")
+    if claimed_agent_id is not None and claimed_agent_id != actual_agent_id:
+        raise MissionRepositoryConflict()
 
 
 def _canonical_payload(
     value: object, *, event_type: str | None = None
 ) -> tuple[dict[str, object], bytes]:
     item_count = 0
-    allowed_top_level = (
-        None if event_type is None else _EVENT_PAYLOAD_KEYS.get(event_type)
-    )
-    if event_type is not None and allowed_top_level is None:
+    if event_type is not None and event_type not in _EVENT_PAYLOAD_SCHEMAS:
         raise ValueError
 
     def normalize(node: object, depth: int) -> object:
@@ -430,11 +497,6 @@ def _canonical_payload(
                     raise ValueError
                 if len(key.encode("utf-8")) > MAX_PAYLOAD_KEY_BYTES:
                     raise ValueError
-                if event_type is not None:
-                    if not key.isascii() or _event_key_forbidden(key):
-                        raise ValueError
-                    if depth == 0 and key not in allowed_top_level:
-                        raise ValueError
                 normalized[key] = normalize(member, depth + 1)
             return normalized
         raise ValueError
@@ -442,6 +504,8 @@ def _canonical_payload(
     normalized = normalize(value, 0)
     if type(normalized) is not dict:
         raise ValueError
+    if event_type is not None:
+        _validate_event_payload(event_type, normalized)
     encoded = json.dumps(
         normalized,
         ensure_ascii=False,
@@ -824,6 +888,8 @@ class MissionRepository:
             _require_uuid(run_id)
         if not isinstance(event_type, str) or not event_type:
             raise ValueError("Mission event type invalid")
+        if event_type != "agent.progress" or run_id is None:
+            raise MissionRepositoryConflict()
         event_id = uuid4()
         try:
             normalized_payload, _canonical = _canonical_payload(
@@ -838,16 +904,19 @@ class MissionRepository:
                 )
                 if mission["status"] in TERMINAL_MISSION_STATUSES:
                     raise MissionRepositoryConflict()
-                if run_id is not None:
-                    run = cursor.execute(
-                        "select status from platform_control.mission_runs "
-                        "where mission_id=%s and run_id=%s for update",
-                        (mission_id, run_id),
-                    ).fetchone()
-                    if run is None:
-                        raise MissionRepositoryNotFound()
-                    if run["status"] in TERMINAL_RUN_STATUSES:
-                        raise MissionRepositoryConflict()
+                run = cursor.execute(
+                    "select phase,agent_id,status from platform_control.mission_runs "
+                    "where mission_id=%s and run_id=%s for update",
+                    (mission_id, run_id),
+                ).fetchone()
+                if run is None:
+                    raise MissionRepositoryNotFound()
+                if (
+                    run["phase"] not in {"professional", "direct"}
+                    or run["status"] not in {"queued", "running"}
+                ):
+                    raise MissionRepositoryConflict()
+                _require_event_agent(normalized_payload, run["agent_id"])
                 inserted = self._append_event_locked(
                     cursor, mission_id, run_id, event_id, event_type, sealed
                 )
@@ -1072,6 +1141,7 @@ class MissionRepository:
                 )
                 if phase == "direct" and mission["direct_agent_id"] != agent_id:
                     raise MissionRepositoryConflict()
+                _require_event_agent(normalized_event, agent_id)
                 if task_id is not None:
                     if cursor.execute(
                         "select task_id from platform_control.mission_tasks "
@@ -1215,6 +1285,7 @@ class MissionRepository:
                 _require_locked_completion(
                     mission, run, status, mission_status, event_type
                 )
+                _require_event_agent(normalized_event, run["agent_id"])
                 updated = cursor.execute(
                     "update platform_control.mission_runs set status=%s,"
                     "output_ciphertext=%s,output_encryption_key_version=%s,"

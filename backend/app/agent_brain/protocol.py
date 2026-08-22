@@ -70,6 +70,18 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return value
 
 
+def _require_utf8_json(value: object) -> None:
+    if isinstance(value, str):
+        value.encode("utf-8")
+    elif type(value) is list:
+        for member in value:
+            _require_utf8_json(member)
+    elif type(value) is dict:
+        for key, member in value.items():
+            key.encode("utf-8")
+            _require_utf8_json(member)
+
+
 def parse_brain_decision(
     rendered: str, *, allowed_agent_ids: Collection[str]
 ) -> BrainDecision:
@@ -90,6 +102,7 @@ def parse_brain_decision(
         value, end = decoder.raw_decode(source)
         if source[end:].strip():
             raise ValueError
+        _require_utf8_json(value)
         decision = BrainDecision.model_validate(value)
         if decision.kind == "delegate" and decision.agent_id not in allowed:
             raise ValueError
