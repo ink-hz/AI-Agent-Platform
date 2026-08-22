@@ -210,7 +210,6 @@ class FakeStore:
                 has_events=bool(self.events.get(run_id)),
             )
             for run_id, state in self.states.items()
-            if state != "leased"
         )
 
 
@@ -968,6 +967,33 @@ async def test_restart_dispatching_interrupts_without_ack_or_repost() -> None:
     assert metabot.calls == []
     assert ("dispatched", RUN_ID) not in cloud.calls
     assert cloud.calls == [("terminal", RUN_ID, "interrupted")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("forced_status", [None, "cancelled", "interrupted"])
+async def test_restart_leased_before_dispatch_never_starts_metabot_and_converges(
+    forced_status,
+) -> None:
+    store = FakeStore()
+    store.record_lease(_lease(), 9200, "A" * 43)
+    cloud = FakeCloud()
+    metabot = FakeMetaBot()
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+
+    await runtime.recover_local_state()
+    if forced_status is not None:
+        cloud.cancel_ids = (
+            RelayStopRequest(run_id=RUN_ID, status=forced_status),
+        )
+        assert await runtime.heartbeat_once() is True
+    assert await runtime.upload_once() is True
+
+    expected = forced_status or "interrupted"
+    assert metabot.calls == []
+    assert store.terminals[RUN_ID] == expected
+    assert ("terminal", RUN_ID, expected) in cloud.calls
+    assert not any(call[0] == "stop_ack" for call in cloud.calls)
+    assert RUN_ID not in runtime._runs
 
 
 @pytest.mark.asyncio

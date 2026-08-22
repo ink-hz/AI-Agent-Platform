@@ -425,7 +425,7 @@ class WorkerRuntime:
                     or row.state
                     in {"dispatched", "running", "completed", "failed"}
                 )
-                if row.state == "dispatching":
+                if row.state in {"leased", "dispatching"}:
                     await self._store_call("mark_terminal", run_id, "interrupted")
                     self.recover_run(
                         run_id,

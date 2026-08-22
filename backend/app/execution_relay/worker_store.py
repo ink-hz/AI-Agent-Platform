@@ -312,7 +312,7 @@ class WorkerStore:
                     "exists(select 1 from execution_worker.event_outbox o "
                     "where o.run_id=r.run_id) as has_events "
                     "from execution_worker.local_runs r "
-                    "where r.state<>'leased' order by r.leased_at,r.run_id"
+                    "order by r.leased_at,r.run_id"
                 ).fetchall()
             return tuple(
                 WorkerRunRecovery(

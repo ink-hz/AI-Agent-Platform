@@ -665,6 +665,22 @@ def test_recovery_rows_preserve_acceptance_and_outbox_facts(dsn_file: Path) -> N
     assert rows[0].has_events is True
 
 
+@pytest.mark.postgres
+def test_pre_dispatch_leased_row_is_recoverable_after_restart(
+    dsn_file: Path,
+) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    store.record_lease(_lease(), 9101, "callback-secret")
+
+    rows = store.recoverable_runs()
+
+    assert len(rows) == 1
+    assert rows[0].run_id == RUN_ID
+    assert rows[0].state == "leased"
+    assert rows[0].dispatched_at is None
+    assert rows[0].has_events is False
+
+
 @pytest.mark.asyncio
 @pytest.mark.postgres
 @pytest.mark.parametrize("losing_status", ["cancelled", "interrupted"])
