@@ -367,6 +367,7 @@ class WorkerRuntime:
         self.stop_event = asyncio.Event()
         self.callback_ready = asyncio.Event()
         self._runs: dict[UUID, _RunContext] = {}
+        self._lease_claim_active = False
         self._inflight_leases: set[UUID] = set()
         self._pending_stops: dict[UUID, str] = {}
         self._state_lock = asyncio.Lock()
@@ -477,12 +478,22 @@ class WorkerRuntime:
                 at_capacity = bool(self._runs)
             if at_capacity:
                 return True
+            async with self._state_lock:
+                self._lease_claim_active = True
             try:
                 lease = await self.cloud.lease()
+            except asyncio.CancelledError:
+                async with self._state_lock:
+                    self._lease_claim_active = False
+                raise
             except Exception as error:
+                async with self._state_lock:
+                    self._lease_claim_active = False
                 self._safe_log("lease_failed", error)
                 return False
             if lease is None:
+                async with self._state_lock:
+                    self._lease_claim_active = False
                 return True
             run_id = lease.payload.run_id
             agent_id = lease.payload.agent_id
@@ -501,6 +512,7 @@ class WorkerRuntime:
                 context = _RunContext(agent_id, False, False)
                 async with self._state_lock:
                     self._runs[run_id] = context
+                    self._lease_claim_active = False
                     self._inflight_leases.discard(run_id)
                 async with context.transition_lock:
                     async with self._state_lock:
@@ -563,6 +575,7 @@ class WorkerRuntime:
                 return False
             finally:
                 async with self._state_lock:
+                    self._lease_claim_active = False
                     self._inflight_leases.discard(run_id)
 
     async def _dispatch_run(
@@ -703,7 +716,10 @@ class WorkerRuntime:
             run_id = stop_request.run_id
             async with self._state_lock:
                 context = self._runs.get(run_id)
-                inflight = run_id in self._inflight_leases
+                inflight = (
+                    self._lease_claim_active
+                    or run_id in self._inflight_leases
+                )
             if context is None:
                 try:
                     has_local_state = await self._store_call(

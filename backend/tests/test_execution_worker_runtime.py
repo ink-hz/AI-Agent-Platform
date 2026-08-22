@@ -727,6 +727,38 @@ async def test_inflight_lease_is_never_mistaken_for_an_orphan_stop() -> None:
 
 
 @pytest.mark.asyncio
+async def test_lease_response_in_flight_blocks_orphan_ack_classification() -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class BlockingCloud(FakeCloud):
+        async def lease(self):
+            self.calls.append(("lease",))
+            entered.set()
+            await release.wait()
+            return self.leases.pop(0)
+
+    cloud = BlockingCloud([_lease()])
+    cloud.cancel_ids = (
+        RelayStopRequest(run_id=RUN_ID, status="cancelled"),
+    )
+    store = FakeStore()
+    metabot = FakeMetaBot()
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+
+    lease_task = asyncio.create_task(runtime.lease_once())
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    assert await runtime.heartbeat_once() is True
+    assert runtime._pending_stops == {RUN_ID: "cancelled"}
+    assert not any(call[0] == "stop_ack" for call in cloud.calls)
+    release.set()
+    assert await asyncio.wait_for(lease_task, timeout=1) is True
+
+    assert metabot.calls == []
+    assert store.terminals[RUN_ID] == "cancelled"
+
+
+@pytest.mark.asyncio
 async def test_cancel_observed_while_lease_commits_prevents_metabot_start() -> None:
     entered = threading.Event()
     release = threading.Event()
