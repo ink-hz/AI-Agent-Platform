@@ -207,6 +207,63 @@ def test_relay_events_bridge_once_and_move_professional_run_to_running(
 
 
 @pytest.mark.postgres
+def test_unstructured_relay_events_never_advance_public_acceptance(
+    mission_database, repository
+) -> None:
+    _environment, owner_id, _ = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "private relay events")
+    professional = _create_queued_professional(
+        repository, owner_id, mission.mission_id
+    )
+    now = datetime.now(timezone.utc)
+    private_events = (
+        RelayEvent(
+            run_id=professional.run_id,
+            seq=1,
+            event_type="agent.log",
+            created_at=now,
+            payload={"text": "private log"},
+        ),
+        RelayEvent(
+            run_id=professional.run_id,
+            seq=2,
+            event_type="agent.question",
+            created_at=now,
+            payload={"text": "private question"},
+        ),
+        RelayEvent(
+            run_id=professional.run_id,
+            seq=3,
+            event_type="agent.file",
+            created_at=now,
+            payload={"text": "private file"},
+        ),
+    )
+
+    assert repository.apply_relay_events(
+        owner_id, mission.mission_id, professional.run_id, private_events
+    ) == 3
+    assert repository.events_after(owner_id, mission.mission_id)[-1].event_type == (
+        "task.dispatched"
+    )
+
+    state = RelayEvent(
+        run_id=professional.run_id,
+        seq=4,
+        event_type="agent.state",
+        created_at=now,
+        payload={"state": "running"},
+    )
+    assert repository.apply_relay_events(
+        owner_id, mission.mission_id, professional.run_id, (state,)
+    ) == 1
+    assert [
+        event.event_type
+        for event in repository.events_after(owner_id, mission.mission_id)[-2:]
+    ] == ["agent.accepted", "agent.progress"]
+
+
+@pytest.mark.postgres
 def test_professional_result_does_not_fabricate_review_checkpoint(
     mission_database, repository
 ) -> None:

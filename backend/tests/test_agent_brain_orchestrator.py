@@ -892,6 +892,18 @@ def test_exact_32kib_direct_request_persists_compact_run_input(brain_database):
         "capability_card": card.model_dump(mode="json"),
     }
     assert len(relay.payloads) == 1
+    relay_payload = next(iter(relay.payloads.values()))
+    serialized = json.dumps(
+        relay_payload.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    assert len(serialized) <= 64 * 1024
+    envelope = json.loads(relay_payload.prompt.split("\n", 1)[1])
+    assert envelope["user_request"] == prompt
+    assert "delegated_objective" not in envelope
+    assert serialized.count(prompt.encode("utf-8")) == 1
 
 
 @pytest.mark.postgres

@@ -1593,11 +1593,32 @@ class MissionRepository:
 
                 started = run["status"] == "running"
                 public_phase = run["phase"] in {"professional", "direct"}
+                public_accepted = False
+                if public_phase:
+                    accepted_row = cursor.execute(
+                        "select exists(select 1 from "
+                        "platform_control.mission_events where mission_id=%s "
+                        "and run_id=%s and event_type='agent.accepted') as accepted",
+                        (mission_id, run_id),
+                    ).fetchone()
+                    if (
+                        accepted_row is None
+                        or type(accepted_row["accepted"]) is not bool
+                    ):
+                        raise MissionRepositoryError()
+                    public_accepted = accepted_row["accepted"]
                 for event in new_events:
                     if event.event_type in {"agent.complete", "agent.error"}:
                         continue
+                    public_payload = (
+                        self._relay_progress_payload(event, run["agent_id"])
+                        if public_phase
+                        else None
+                    )
                     if not started:
-                        if public_phase:
+                        started = True
+                    if public_payload is not None:
+                        if not public_accepted:
                             event_id = uuid4()
                             payload = {
                                 "agent_id": run["agent_id"],
@@ -1617,16 +1638,10 @@ class MissionRepository:
                                 "agent.accepted",
                                 sealed,
                             )
-                        started = True
-                    if public_phase:
-                        payload = self._relay_progress_payload(
-                            event, run["agent_id"]
-                        )
-                        if payload is None:
-                            continue
+                            public_accepted = True
                         event_id = uuid4()
                         normalized, _canonical = _canonical_payload(
-                            payload, event_type="agent.progress"
+                            public_payload, event_type="agent.progress"
                         )
                         sealed = self.content_codec.seal_json(
                             _event_subject(mission_id, event_id), normalized
