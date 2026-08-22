@@ -543,7 +543,7 @@ class WorkerStore:
         expected = (
             frozenset({"running"})
             if status in {"completed", "failed"}
-            else frozenset({"dispatching", "dispatched", "running"})
+            else frozenset({"leased", "dispatching", "dispatched", "running"})
         )
         self._transition(
             run_id,

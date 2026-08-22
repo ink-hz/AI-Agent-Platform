@@ -23,6 +23,7 @@ import httpx
 from app.execution_relay import worker_store
 from app.execution_relay.metabot_client import MetaBotClient, MetaBotRuntimeMap
 from app.execution_relay.models import RelayEvent, RelayJobPayload, RelayLease
+from app.execution_relay.repository import RelayStopRequest
 from app.execution_relay.worker import (
     CallbackResult,
     SignedCloudClient,
@@ -679,6 +680,100 @@ def test_pre_dispatch_leased_row_is_recoverable_after_restart(
     assert rows[0].state == "leased"
     assert rows[0].dispatched_at is None
     assert rows[0].has_events is False
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("status", ["cancelled", "interrupted"])
+def test_pre_dispatch_lease_accepts_only_forced_terminal_states(
+    dsn_file: Path,
+    status: str,
+) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    store.record_lease(_lease(), 9101, "callback-secret")
+
+    store.mark_terminal(RUN_ID, status)
+
+    assert store.recoverable_runs()[0].state == status
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("status", ["completed", "failed"])
+def test_pre_dispatch_lease_rejects_agent_terminal_states(
+    dsn_file: Path,
+    status: str,
+) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    store.record_lease(_lease(), 9101, "callback-secret")
+
+    with pytest.raises(WorkerStoreError, match="worker store conflict"):
+        store.mark_terminal(RUN_ID, status)
+
+    assert store.recoverable_runs()[0].state == "leased"
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+@pytest.mark.parametrize("forced_status", [None, "cancelled", "interrupted"])
+async def test_runtime_recovers_real_pre_dispatch_lease_without_metabot_start(
+    dsn_file: Path,
+    worker_database: str,
+    forced_status: str | None,
+) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    store.record_lease(_lease(), 9101, "callback-secret")
+    cloud_calls: list[tuple[object, ...]] = []
+    metabot_calls: list[tuple[object, ...]] = []
+
+    class Cloud:
+        async def heartbeat(self):
+            if forced_status is None:
+                return ()
+            return (RelayStopRequest(run_id=RUN_ID, status=forced_status),)
+
+        async def mark_dispatched(self, run_id):
+            cloud_calls.append(("dispatched", run_id))
+
+        async def upload_events(self, run_id, events):
+            cloud_calls.append(("events", run_id, events))
+
+        async def finish(self, run_id, status):
+            cloud_calls.append(("terminal", run_id, status))
+
+        async def acknowledge_stop(self, run_id, status):
+            cloud_calls.append(("stop_ack", run_id, status))
+
+    class MetaBot:
+        def start_run(self, payload, callback_url):
+            metabot_calls.append(("start", payload, callback_url))
+
+        def cancel_run(self, run_id, agent_id):
+            metabot_calls.append(("cancel", run_id, agent_id))
+
+    runtime = WorkerRuntime(
+        worker_id="worker-a",
+        cloud=Cloud(),
+        store=store,
+        runtime_map=object(),
+        metabot=MetaBot(),
+        callback_port=9120,
+    )
+
+    await runtime.recover_local_state()
+    if forced_status is not None:
+        assert await runtime.heartbeat_once() is True
+    assert await runtime.upload_once() is True
+
+    expected = forced_status or "interrupted"
+    with psycopg.connect(worker_database) as connection:
+        row = connection.execute(
+            "select state,terminal_at is not null "
+            "from execution_worker.local_runs where run_id=%s",
+            (RUN_ID,),
+        ).fetchone()
+    assert row == (expected, True)
+    assert cloud_calls == [("terminal", RUN_ID, expected)]
+    assert metabot_calls == []
+    assert RUN_ID not in runtime._runs
 
 
 @pytest.mark.asyncio
