@@ -84,6 +84,12 @@ create table platform_control.missions (
   )
 );
 
+comment on table platform_control.missions is
+  'Access is limited to the trusted backend app role. Task 4 must enforce '
+  'owner-scoped repository reads and decryption using the separate keyring; '
+  'Task 6 must enforce authenticated owner-scoped routes. PostgreSQL ciphertext '
+  'alone is not user-readable without that keyring.';
+
 create table platform_control.mission_messages (
   message_id uuid primary key,
   mission_id uuid not null references platform_control.missions(mission_id),
@@ -125,9 +131,8 @@ create table platform_control.mission_tasks (
   )
 );
 
-create unique index one_active_mission_child_task
-  on platform_control.mission_tasks (mission_id)
-  where status in ('queued', 'running');
+create unique index one_mission_child_task
+  on platform_control.mission_tasks (mission_id);
 
 create table platform_control.mission_runs (
   run_id uuid primary key,
@@ -224,7 +229,15 @@ as $function$
     where users.internal_user_id = selected_user_id
       and users.status = 'active'
       and users.locally_invalidated_at is null
-      and selected_agent_id ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+      and selected_agent_id in (
+        'hr-bot',
+        'fae-bot',
+        'marketing-prospecting-bot',
+        'marketing-inbound-bot',
+        'marketing-voice-bot',
+        'marketing-intelligence-bot',
+        'marketing-gtm-bot'
+      )
   )
   select exists (
     select 1
@@ -283,6 +296,7 @@ begin
      or selected_agent_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
      or selected_target_kind not in ('user', 'department', 'all_members')
      or selected_include_descendants is null
+     or selected_change_reference is null
      or selected_change_reference !~ '^[A-Z][A-Z0-9_-]{7,63}$'
      or not (
        (
@@ -383,6 +397,7 @@ begin
      or selected_request_id is null
      or substring(selected_request_id::text from 15 for 1) <> '4'
      or substring(selected_request_id::text from 20 for 1) !~ '^[89ab]$'
+     or selected_change_reference is null
      or selected_change_reference !~ '^[A-Z][A-Z0-9_-]{7,63}$'
   then
     raise check_violation using message = 'agent use revocation input invalid';
@@ -523,16 +538,29 @@ begin
   end loop;
 
   execute format(
-    'grant select,insert,update on platform_control.missions to %I',
+    'grant select,insert on platform_control.missions to %I',
     selected_app
+  );
+  execute format(
+    'grant update (status,cancel_requested,row_version,updated_at,terminal_at) '
+    'on platform_control.missions to %I', selected_app
   );
   execute format(
     'grant select,insert on platform_control.mission_messages to %I',
     selected_app
   );
   execute format(
-    'grant select,insert,update on platform_control.mission_tasks, '
+    'grant select,insert on platform_control.mission_tasks, '
     'platform_control.mission_runs to %I', selected_app
+  );
+  execute format(
+    'grant update (status,updated_at,started_at,terminal_at) '
+    'on platform_control.mission_tasks to %I', selected_app
+  );
+  execute format(
+    'grant update (status,output_ciphertext,output_encryption_key_version,'
+    'updated_at,started_at,terminal_at) on platform_control.mission_runs to %I',
+    selected_app
   );
   execute format(
     'grant select,insert on platform_control.mission_events to %I',
