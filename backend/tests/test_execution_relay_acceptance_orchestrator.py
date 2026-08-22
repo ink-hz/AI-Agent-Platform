@@ -254,6 +254,28 @@ def test_gate_02_rejects_changed_or_forbidden_local_and_cloud_listeners(tmp_path
         )
 
 
+def test_gate_02_allows_existing_metabot_loopback_listeners(tmp_path: Path) -> None:
+    config, public, fingerprint = _fixture(tmp_path)
+    runner = Runner(fingerprint)
+    runner.forbidden_listeners = (
+        b"COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n"
+        b"python 12 agentops 8u IPv4 0x1 0t0 TCP 127.0.0.1:9101 (LISTEN)\n"
+        b"python 13 agentops 8u IPv6 0x2 0t0 TCP [::1]:9102 (LISTEN)\n"
+    )
+
+    result = subject.run_gates_01_to_03(
+        config,
+        runner=runner,
+        private_root=config.parent,
+        private_key_path=config.parent / "execution-worker-ed25519.key",
+        public_document_path=public,
+        current_user="agentops",
+        uid=501,
+    )
+
+    assert result.public_ports_added == 0
+
+
 def test_gate_03_rejects_remote_or_public_document_fingerprint_mismatch(tmp_path: Path) -> None:
     config, public, fingerprint = _fixture(tmp_path)
     runner = Runner("0" * 64)

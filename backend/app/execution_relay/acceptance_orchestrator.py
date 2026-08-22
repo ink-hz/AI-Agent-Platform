@@ -455,8 +455,19 @@ def _check_local_listener(runner: CommandRunner, uid: int) -> None:
         )
     except Exception:
         raise _gate_error() from None
-    if forbidden.returncode not in {0, 1} or forbidden.stdout or forbidden.returncode == 0:
+    if forbidden.returncode not in {0, 1}:
         raise _gate_error()
+    metabot_listeners = [
+        line for line in forbidden.stdout.splitlines() if b"(LISTEN)" in line
+    ]
+    if forbidden.returncode == 1 and forbidden.stdout:
+        raise _gate_error()
+    if forbidden.returncode == 0 and not metabot_listeners:
+        raise _gate_error()
+    for line in metabot_listeners:
+        endpoint = line.rsplit(b" TCP ", 1)[-1].removesuffix(b" (LISTEN)")
+        if not endpoint.startswith((b"127.0.0.1:", b"[::1]:")):
+            raise _gate_error()
 
 
 def run_gates_01_to_03(

@@ -189,9 +189,10 @@ fi
 /usr/sbin/lsof -nP -iTCP:9101-9108 -sTCP:LISTEN
 ```
 
-The Worker PID may listen only on `127.0.0.1:9120`; 9101-9108 must have no
-listener. Cloud status is checked through the release gate rather than by
-printing credentials.
+The Worker PID may listen only on `127.0.0.1:9120`. Existing MetaBot listeners
+on 9101-9108 must bind only to `127.0.0.1` or `::1`; wildcard and non-loopback
+bindings fail the release gate. Cloud status is checked through the release
+gate rather than by printing credentials.
 
 ## Logs
 
