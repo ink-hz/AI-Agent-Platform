@@ -581,6 +581,43 @@ def test_dispatch_and_event_outbox_are_atomic_contiguous_and_durable(
 
 
 @pytest.mark.postgres
+@pytest.mark.parametrize("local_status", ["completed", "failed"])
+@pytest.mark.parametrize("cloud_status", ["interrupted", "cancelled"])
+def test_forced_cloud_terminal_replaces_local_terminal_and_discards_outbox(
+    worker_database: str,
+    dsn_file: Path,
+    local_status: str,
+    cloud_status: str,
+) -> None:
+    store = WorkerStore.from_dsn_file(dsn_file)
+    store.record_lease(_lease(), 9101, "callback-secret")
+    store.mark_dispatching(RUN_ID)
+    store.mark_dispatched(RUN_ID)
+    assert store.append_terminal_event(
+        _terminal_event(local_status), local_status
+    ) is True
+    assert store.contiguous_outbox(RUN_ID) == (_terminal_event(local_status),)
+
+    store.reconcile_forced_terminal(RUN_ID, cloud_status)
+    store.reconcile_forced_terminal(RUN_ID, cloud_status)
+
+    assert store.contiguous_outbox(RUN_ID) == ()
+    with psycopg.connect(worker_database) as connection:
+        row = connection.execute(
+            "select state,terminal_at is not null from "
+            "execution_worker.local_runs where run_id=%s",
+            (RUN_ID,),
+        ).fetchone()
+        outbox_count = connection.execute(
+            "select count(*) from execution_worker.event_outbox "
+            "where run_id=%s and delivered_at is null",
+            (RUN_ID,),
+        ).fetchone()
+    assert row == (cloud_status, True)
+    assert outbox_count == (0,)
+
+
+@pytest.mark.postgres
 def test_callback_winning_dispatch_race_keeps_running_and_records_acceptance(
     worker_database: str, dsn_file: Path
 ) -> None:
@@ -645,6 +682,10 @@ async def test_terminal_callback_race_has_one_database_and_http_fact(
             barrier.wait(timeout=2)
             return store.mark_terminal(run_id, status)
 
+        def reconcile_forced_terminal(self, run_id, status):
+            barrier.wait(timeout=2)
+            return store.reconcile_forced_terminal(run_id, status)
+
     class Cloud:
         async def heartbeat(self):
             return (RUN_ID,)
@@ -696,7 +737,13 @@ async def test_terminal_callback_race_has_one_database_and_http_fact(
         assert rows == [(_terminal_event().model_dump(mode="json"),)]
     else:
         assert state == losing_status
-        assert callback_result is CallbackResult.CONFLICT
+        if losing_status == "interrupted":
+            assert callback_result is CallbackResult.CONFLICT
+        else:
+            assert callback_result in {
+                CallbackResult.ACCEPTED,
+                CallbackResult.CONFLICT,
+            }
         assert rows == []
 
 

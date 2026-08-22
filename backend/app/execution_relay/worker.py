@@ -36,6 +36,8 @@ _CALLBACK_BODY_LIMIT = 1_048_576
 _CALLBACK_HEADER_LIMIT = 16_384
 _CALLBACK_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 _TERMINAL_STATES = frozenset({"completed", "failed", "cancelled", "interrupted"})
+_FORCED_TERMINAL_STATES = frozenset({"cancelled", "interrupted"})
+_MAX_PENDING_STOPS = 100
 _BACKOFF_SECONDS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0)
 _LOG = logging.getLogger("app.execution_relay.worker")
 
@@ -249,7 +251,7 @@ class SignedCloudClient:
             for item in value["stop_requests"]:
                 if not isinstance(item, dict) or set(item) != {"run_id", "status"}:
                     raise ValueError
-                if item["status"] not in _TERMINAL_STATES:
+                if item["status"] not in _FORCED_TERMINAL_STATES:
                     raise ValueError
                 requests.append(RelayStopRequest(UUID(item["run_id"]), item["status"]))
             return tuple(requests)
@@ -681,16 +683,21 @@ class WorkerRuntime:
                 )
             if not isinstance(stop_request, RelayStopRequest):
                 return False
+            if stop_request.status not in _FORCED_TERMINAL_STATES:
+                return False
             run_id = stop_request.run_id
             async with self._state_lock:
                 context = self._runs.get(run_id)
                 if context is None:
+                    if (
+                        run_id not in self._pending_stops
+                        and len(self._pending_stops) >= _MAX_PENDING_STOPS
+                    ):
+                        return False
                     self._pending_stops[run_id] = stop_request.status
             if context is None:
                 continue
             async with context.transition_lock:
-                if context.terminal_status is not None:
-                    continue
                 try:
                     if context.metabot_accepted and not context.cancel_sent:
                         await asyncio.to_thread(
@@ -698,12 +705,10 @@ class WorkerRuntime:
                         )
                         context.cancel_sent = True
                     await self._store_call(
-                        "mark_terminal", run_id, stop_request.status
+                        "reconcile_forced_terminal", run_id, stop_request.status
                     )
                     context.terminal_status = stop_request.status
                 except Exception as error:
-                    if context.terminal_status is not None:
-                        continue
                     self._safe_log(
                         "cancel_failed",
                         error,
@@ -734,6 +739,25 @@ class WorkerRuntime:
                 return CallbackResult.INVALID
             event = _relay_event(strict_event)
             terminal = self._terminal_status(event)
+            async with self._state_lock:
+                context = self._runs.get(run_id)
+            if context is None:
+                if terminal is None:
+                    await self._store_call("append_event", event)
+                else:
+                    await self._store_call(
+                        "append_terminal_event", event, terminal
+                    )
+                async with self._state_lock:
+                    context = self._runs.get(run_id)
+                    if context is None:
+                        context = _RunContext("", True, False)
+                        self._runs[run_id] = context
+                    else:
+                        context.metabot_accepted = True
+                if terminal is not None:
+                    context.terminal_status = terminal
+                return CallbackResult.ACCEPTED
             if terminal is None:
                 await self._store_call("append_event", event)
             else:
@@ -741,14 +765,12 @@ class WorkerRuntime:
                     "append_terminal_event", event, terminal
                 )
             async with self._state_lock:
-                context = self._runs.get(run_id)
-                if context is None:
-                    context = _RunContext("", True, False)
-                    self._runs[run_id] = context
-                else:
-                    context.metabot_accepted = True
-            if terminal is not None:
-                context.terminal_status = terminal
+                context.metabot_accepted = True
+                if (
+                    terminal is not None
+                    and context.terminal_status not in _FORCED_TERMINAL_STATES
+                ):
+                    context.terminal_status = terminal
             return CallbackResult.ACCEPTED
         except (
             UnicodeError,

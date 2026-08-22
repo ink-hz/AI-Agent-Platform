@@ -24,6 +24,7 @@ _OWNER_FILE_LIMIT = 16_384
 _TERMINAL_STATES = frozenset(
     {"completed", "failed", "cancelled", "interrupted"}
 )
+_FORCED_TERMINAL_STATES = frozenset({"cancelled", "interrupted"})
 
 
 class WorkerStoreError(RuntimeError):
@@ -529,3 +530,37 @@ class WorkerStore:
             target=status,
             timestamp_column="terminal_at",
         )
+
+    def reconcile_forced_terminal(self, run_id: UUID, status: str) -> None:
+        """Adopt the cloud terminal and discard events it can no longer accept."""
+
+        try:
+            if not isinstance(run_id, UUID) or status not in _FORCED_TERMINAL_STATES:
+                raise ValueError
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select state from execution_worker.local_runs "
+                    "where run_id=%s for update",
+                    (run_id,),
+                ).fetchone()
+                if row is None or row["state"] not in {
+                    "dispatching",
+                    "dispatched",
+                    "running",
+                    *_TERMINAL_STATES,
+                }:
+                    raise ValueError
+                connection.execute(
+                    "delete from execution_worker.event_outbox "
+                    "where run_id=%s and delivered_at is null",
+                    (run_id,),
+                )
+                connection.execute(
+                    "update execution_worker.local_runs set state=%s,"
+                    "terminal_at=coalesce(terminal_at,now()) where run_id=%s",
+                    (status, run_id),
+                )
+        except WorkerStoreError:
+            raise
+        except (ValueError, psycopg.Error):
+            raise self._conflict() from None

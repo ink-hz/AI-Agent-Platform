@@ -131,7 +131,8 @@ class ExecutionRelayRepository:
     @staticmethod
     def _job_for_update(cursor, run_id: UUID) -> dict[str, Any] | None:
         return cursor.execute(
-            "select job_id,run_id,status,lease_worker_id,cancel_requested "
+            "select job_id,run_id,status,lease_worker_id,cancel_requested,"
+            "stop_requested_status,stop_acknowledged_at "
             "from platform_control.execution_jobs where run_id=%s for update",
             (run_id,),
         ).fetchone()
@@ -475,7 +476,9 @@ class ExecutionRelayRepository:
                 else:
                     row = cursor.execute(
                         "update platform_control.execution_jobs "
-                        "set cancel_requested=true,updated_at=now() "
+                        "set cancel_requested=true,"
+                        "stop_requested_status='cancelled',"
+                        "stop_acknowledged_at=null,updated_at=now() "
                         "where run_id=%s and status=any(%s) returning run_id",
                         (run_id, ["leased", "dispatched", "running"]),
                     ).fetchone()
@@ -502,6 +505,9 @@ class ExecutionRelayRepository:
                 updated = cursor.execute(
                     "update platform_control.execution_jobs set "
                     "status='interrupted',cancel_requested=true,"
+                    "stop_requested_status=case when lease_worker_id is null "
+                    "then null else 'interrupted' end,"
+                    "stop_acknowledged_at=null,"
                     "terminal_at=now(),updated_at=now() where run_id=%s "
                     "and status=any(%s) returning run_id",
                     (run_id, ["queued", "leased", "dispatched", "running"]),
@@ -568,6 +574,9 @@ class ExecutionRelayRepository:
                     row = cursor.execute(
                         "update platform_control.execution_jobs set "
                         "status='interrupted',cancel_requested=true,"
+                        "stop_requested_status=case when lease_worker_id is null "
+                        "then null else 'interrupted' end,"
+                        "stop_acknowledged_at=null,"
                         "terminal_at=now(),updated_at=now() where run_id=%s "
                         "and status=any(%s) returning run_id,status,"
                         "cancel_requested,created_at,updated_at,lease_expires_at,"
@@ -646,9 +655,19 @@ class ExecutionRelayRepository:
                 self._active_worker(cursor, worker_id)
                 row = self._owned_job(cursor, worker_id, run_id)
                 current = row["status"]
+                requested = row["stop_requested_status"]
+                if requested is not None and requested != status:
+                    raise ExecutionRelayConflict()
                 if current in TERMINAL_STATUSES:
                     if current != status:
                         raise ExecutionRelayConflict()
+                    if requested == status and row["stop_acknowledged_at"] is None:
+                        cursor.execute(
+                            "update platform_control.execution_jobs set "
+                            "stop_acknowledged_at=now(),updated_at=now() "
+                            "where run_id=%s",
+                            (run_id,),
+                        )
                     return
                 legal = (
                     status in {"completed", "failed"}
@@ -664,9 +683,11 @@ class ExecutionRelayRepository:
                     raise ExecutionRelayConflict()
                 cursor.execute(
                     "update platform_control.execution_jobs "
-                    "set status=%s,terminal_at=now(),updated_at=now() "
+                    "set status=%s,terminal_at=now(),"
+                    "stop_acknowledged_at=case when stop_requested_status=%s "
+                    "then now() else stop_acknowledged_at end,updated_at=now() "
                     "where run_id=%s",
-                    (status, run_id),
+                    (status, status, run_id),
                 )
         except ExecutionRelayError:
             raise
@@ -692,18 +713,13 @@ class ExecutionRelayRepository:
                     (lease_seconds, worker_id, ["leased", "dispatched", "running"]),
                 )
                 rows = cursor.execute(
-                    "select run_id,case when status=any(%s) then 'cancelled' "
-                    "else status end as stop_status "
+                    "select run_id,stop_requested_status as stop_status "
                     "from platform_control.execution_jobs "
-                    "where lease_worker_id=%s and ((cancel_requested=true "
-                    "and status=any(%s)) or status=any(%s)) "
-                    "order by run_id::text",
-                    (
-                        ["leased", "dispatched", "running"],
-                        worker_id,
-                        ["leased", "dispatched", "running"],
-                        list(TERMINAL_STATUSES),
-                    ),
+                    "where lease_worker_id=%s "
+                    "and stop_requested_status is not null "
+                    "and stop_acknowledged_at is null "
+                    "order by run_id limit 100",
+                    (worker_id,),
                 ).fetchall()
             return tuple(
                 RelayStopRequest(

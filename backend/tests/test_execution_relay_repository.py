@@ -794,6 +794,79 @@ def test_heartbeat_touches_active_worker_and_returns_sorted_cancellations(
     for worker_id in ("missing", "worker-revoked"):
         with pytest.raises(ExecutionRelayWorkerUnavailable):
             repository.heartbeat(worker_id)
+    for payload in payloads:
+        repository.finish("worker-a", payload.run_id, "cancelled")
+    assert repository.heartbeat("worker-a", lease_seconds=45) == ()
+
+
+@pytest.mark.postgres
+def test_stop_delivery_schema_is_constrained_indexed_and_app_only(
+    relay_database,
+) -> None:
+    with psycopg.connect(relay_database["admin"]) as connection:
+        columns = connection.execute(
+            "select column_name,data_type,is_nullable from "
+            "information_schema.columns where table_schema='platform_control' "
+            "and table_name='execution_jobs' and column_name in "
+            "('stop_requested_status','stop_acknowledged_at') "
+            "order by column_name"
+        ).fetchall()
+        constraints = connection.execute(
+            "select conname,convalidated from pg_constraint where conrelid="
+            "'platform_control.execution_jobs'::regclass and conname in "
+            "('execution_jobs_stop_status_v30','execution_jobs_stop_delivery_v30') "
+            "order by conname"
+        ).fetchall()
+        index_definition = connection.execute(
+            "select indexdef from pg_indexes where schemaname='platform_control' "
+            "and indexname='execution_jobs_pending_stop_v30'"
+        ).fetchone()
+        app_role = next(
+            role for role in relay_database["roles"] if "control_app" in role
+        )
+        non_app_roles = [
+            role for role in relay_database["roles"] if role != app_role
+        ]
+        app_access = connection.execute(
+            "select has_column_privilege(%s,'platform_control.execution_jobs',"
+            "'stop_requested_status','update'),has_column_privilege(%s,"
+            "'platform_control.execution_jobs','stop_acknowledged_at','update')",
+            (app_role, app_role),
+        ).fetchone()
+        other_access = [
+            connection.execute(
+                "select has_column_privilege(%s,"
+                "'platform_control.execution_jobs','stop_requested_status','update')",
+                (role,),
+            ).fetchone()[0]
+            for role in non_app_roles
+        ]
+
+    assert columns == [
+        ("stop_acknowledged_at", "timestamp with time zone", "YES"),
+        ("stop_requested_status", "text", "YES"),
+    ]
+    assert constraints == [
+        ("execution_jobs_stop_delivery_v30", True),
+        ("execution_jobs_stop_status_v30", True),
+    ]
+    assert index_definition is not None
+    assert "stop_acknowledged_at IS NULL" in index_definition[0]
+    assert app_access == (True, True)
+    assert other_access == [False] * len(non_app_roles)
+
+    payload = _payload()
+    with psycopg.connect(relay_database["admin"]) as connection:
+        with pytest.raises(psycopg.errors.CheckViolation):
+            connection.execute(
+                "insert into platform_control.execution_jobs "
+                "(job_id,run_id,agent_id,payload_ciphertext,encryption_key_version,"
+                "status,lease_worker_id,lease_expires_at,cancel_requested,terminal_at,"
+                "stop_requested_status) values "
+                "(%s,%s,'hr-bot',%s,3,'completed','worker-a',now(),true,now(),"
+                "'completed')",
+                (uuid4(), payload.run_id, b"opaque"),
+            )
 
 
 @pytest.mark.postgres
@@ -838,3 +911,50 @@ def test_forced_terminal_is_returned_to_assigned_worker(
     assert repository.heartbeat("worker-a", lease_seconds=45) == (
         RelayStopRequest(run_id=payload.run_id, status="interrupted"),
     )
+
+    repository.finish("worker-a", payload.run_id, "interrupted")
+    assert repository.heartbeat("worker-a", lease_seconds=45) == ()
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("status", ["completed", "failed"])
+def test_normal_worker_terminal_is_never_delivered_as_stop(
+    relay_database, repository, status
+) -> None:
+    payload = _payload()
+    repository.enqueue(payload)
+    assert repository.lease("worker-a", ("hr-bot",), 45) is not None
+    repository.mark_dispatched("worker-a", payload.run_id)
+    repository.finish("worker-a", payload.run_id, status)
+
+    assert repository.heartbeat("worker-a", lease_seconds=45) == ()
+
+
+@pytest.mark.postgres
+def test_pending_stop_delivery_is_bounded_to_one_hundred(
+    relay_database, repository
+) -> None:
+    rows = [
+        (
+            uuid4(),
+            uuid4(),
+            b"opaque",
+            "interrupted",
+        )
+        for _index in range(101)
+    ]
+    with psycopg.connect(relay_database["admin"]) as connection:
+        connection.cursor().executemany(
+            "insert into platform_control.execution_jobs "
+            "(job_id,run_id,agent_id,payload_ciphertext,encryption_key_version,"
+            "status,lease_worker_id,lease_expires_at,cancel_requested,terminal_at,"
+            "stop_requested_status) values "
+            "(%s,%s,'hr-bot',%s,3,%s,'worker-a',now()+interval '45 seconds',"
+            "true,now(),%s)",
+            [(*row, row[-1]) for row in rows],
+        )
+
+    requests = repository.heartbeat("worker-a", lease_seconds=45)
+
+    assert len(requests) == 100
+    assert all(item.status == "interrupted" for item in requests)

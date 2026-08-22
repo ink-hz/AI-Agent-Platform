@@ -186,6 +186,13 @@ class FakeStore:
         self.terminals[run_id] = status
         self.states[run_id] = status
 
+    def reconcile_forced_terminal(self, run_id, status):
+        self.calls.append(("forced_terminal", run_id, status))
+        delivered = self.delivered.get(run_id, 0)
+        self.events[run_id] = self.events.get(run_id, [])[:delivered]
+        self.terminals[run_id] = status
+        self.states[run_id] = status
+
     def recoverable_runs(self):
         return tuple(
             WorkerRunRecovery(
@@ -526,6 +533,64 @@ async def test_forced_interrupt_heartbeat_stops_cleans_and_releases_capacity() -
     assert RUN_ID not in runtime._runs
     assert await runtime.lease_once() is True
     assert second_run in runtime._runs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("local_status", ["completed", "failed"])
+@pytest.mark.parametrize("cloud_status", ["interrupted", "cancelled"])
+async def test_cloud_terminal_overrides_local_terminal_and_discards_outbox(
+    local_status, cloud_status
+) -> None:
+    second_run = UUID("00000000-0000-4000-8000-000000000202")
+    second_lease = _lease().model_copy(
+        update={"payload": _lease().payload.model_copy(update={"run_id": second_run})}
+    )
+    cloud = FakeCloud([_lease(), second_lease])
+    store = FakeStore()
+    metabot = FakeMetaBot()
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+    assert await runtime.lease_once() is True
+    assert (
+        await runtime.accept_callback(
+            RUN_ID,
+            store.tokens[RUN_ID],
+            _callback_body(1, terminal=local_status),
+        )
+        is CallbackResult.ACCEPTED
+    )
+    assert store.contiguous_outbox(RUN_ID) == (
+        _event(1, terminal=local_status),
+    )
+    cloud.cancel_ids = (
+        RelayStopRequest(run_id=RUN_ID, status=cloud_status),
+    )
+
+    assert await runtime.heartbeat_once() is True
+    assert store.terminals[RUN_ID] == cloud_status
+    assert store.contiguous_outbox(RUN_ID) == ()
+    assert metabot.calls[-1] == ("cancel", RUN_ID, "hr-bot")
+    assert await runtime.upload_once() is True
+    assert ("events", RUN_ID, (1,)) not in cloud.calls
+    assert ("terminal", RUN_ID, cloud_status) in cloud.calls
+    assert RUN_ID not in runtime._runs
+    assert await runtime.lease_once() is True
+    assert second_run in runtime._runs
+
+
+@pytest.mark.asyncio
+async def test_unknown_pending_stop_queue_is_bounded() -> None:
+    cloud = FakeCloud()
+    cloud.cancel_ids = tuple(
+        RelayStopRequest(
+            run_id=UUID(int=index + 1),
+            status="interrupted",
+        )
+        for index in range(101)
+    )
+    runtime = _runtime(cloud=cloud)
+
+    assert await runtime.heartbeat_once() is False
+    assert len(runtime._pending_stops) == 100
 
 
 @pytest.mark.asyncio
