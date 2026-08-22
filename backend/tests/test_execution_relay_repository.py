@@ -157,6 +157,34 @@ def test_enqueue_collapses_codec_sealing_failure_to_repository_boundary(
 
 
 @pytest.mark.postgres
+def test_orchestrator_readers_return_state_and_decrypted_events_in_sequence(
+    relay_database, repository
+) -> None:
+    payload = _payload("hr-bot")
+    repository.enqueue(payload)
+    lease = repository.lease("worker-a", ("hr-bot",), 45)
+    assert lease is not None
+    repository.mark_dispatched("worker-a", payload.run_id)
+    second = _event(payload.run_id, 2, event_type="agent.complete")
+    first = _event(payload.run_id, 1, event_type="agent.state")
+    repository.append_events("worker-a", (first, second))
+    repository.finish("worker-a", payload.run_id, "completed")
+
+    assert repository.job_state(payload.run_id) == "completed"
+    assert repository.events(payload.run_id) == (first, second)
+
+
+@pytest.mark.postgres
+def test_orchestrator_reader_missing_run_is_stable_not_found(
+    relay_database, repository
+) -> None:
+    with pytest.raises(ExecutionRelayNotFound):
+        repository.job_state(uuid4())
+    with pytest.raises(ExecutionRelayNotFound):
+        repository.events(uuid4())
+
+
+@pytest.mark.postgres
 def test_lease_skips_locked_rows_and_intersects_both_agent_allowlists(
     relay_database, repository
 ) -> None:

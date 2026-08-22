@@ -44,6 +44,17 @@ class AgentUseAuthorization:
 
         if not isinstance(auth, AuthContext):
             return ()
+        return self.permitted_agents_for_user_id(auth.internal_user_id)
+
+    def permitted_agents_for_user_id(
+        self, internal_user_id
+    ) -> tuple[AgentCapabilityCard, ...]:
+        """Re-evaluate a persisted Mission owner's grants for orchestration."""
+
+        from uuid import UUID
+
+        if not isinstance(internal_user_id, UUID):
+            return ()
         agent_ids = tuple(card.agent_id for card in self._cards)
         agent_id_array = list(agent_ids)
         try:
@@ -58,7 +69,7 @@ class AgentUseAuthorization:
                     "platform_control.has_agent_use_scope_v28(%s,requested.agent_id) "
                     "as allowed from unnest(%s::text[]) with ordinality "
                     "requested(agent_id,ordinal) order by requested.ordinal",
-                    (auth.internal_user_id, agent_id_array),
+                    (internal_user_id, agent_id_array),
                 ).fetchall()
             if len(rows) != len(self._cards):
                 return ()

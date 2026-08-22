@@ -74,6 +74,9 @@ from .execution_relay.content_crypto import ContentCodec
 from .execution_relay.repository import ExecutionRelayRepository
 from .execution_relay.routes import build_execution_relay_router
 from .execution_relay.worker_auth import WorkerRequestVerifier
+from .agent_brain.authorization import AgentUseAuthorization
+from .agent_brain.orchestrator import MissionOrchestrator
+from .agent_brain.repository import MissionRepository
 from .local_secrets import read_secret_file
 from .observability import routes as observability_routes
 from .observability.repository import (
@@ -106,6 +109,44 @@ async def cancel_tasks(tasks: list[asyncio.Task]) -> None:
         task.cancel()
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def agent_brain_loop(
+    orchestrator: MissionOrchestrator, *, idle_seconds: float = 1.0
+) -> None:
+    """Run only while this process owns the PostgreSQL advisory leadership."""
+
+    if idle_seconds <= 0:
+        raise ValueError("Agent Brain idle interval must be positive")
+    while True:
+        try:
+            with orchestrator.leader_session() as acquired:
+                if not acquired:
+                    await asyncio.sleep(idle_seconds)
+                    continue
+                while True:
+                    advancement = asyncio.create_task(
+                        asyncio.to_thread(orchestrator.advance_pending, limit=50)
+                    )
+                    try:
+                        advanced = await asyncio.shield(advancement)
+                    except asyncio.CancelledError as cancellation:
+                        try:
+                            await advancement
+                        except Exception:
+                            logger.exception(
+                                "Agent Brain pass failed during shutdown"
+                            )
+                        raise cancellation
+                    if advanced == 0:
+                        await asyncio.sleep(idle_seconds)
+                    else:
+                        await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Agent Brain loop unavailable")
+            await asyncio.sleep(idle_seconds)
 
 
 def _check_execution_relay_database(
@@ -444,6 +485,9 @@ def create_app(
     )
     execution_relay_repository = None
     execution_relay_router = None
+    agent_brain_orchestrator = None
+    control_database_url = None
+    content_codec = None
     if config.execution_relay_enabled:
         control_database_url = read_secret_file(
             config.control_plane.control_database_url_file
@@ -454,9 +498,10 @@ def create_app(
             expected_purpose="platform-content-encryption",
             expected_key_length=32,
         )
+        content_codec = ContentCodec(content_keyring)
         execution_relay_repository = ExecutionRelayRepository(
             control_database_url,
-            content_codec=ContentCodec(content_keyring),
+            content_codec=content_codec,
         )
         execution_relay_router = build_execution_relay_router(
             execution_relay_repository,
@@ -464,6 +509,23 @@ def create_app(
             lease_seconds=config.execution_relay_lease_seconds,
             max_body_bytes=config.execution_relay_max_body_bytes,
         )
+    if config.agent_brain_enabled:
+        if (
+            control_database_url is None
+            or content_codec is None
+            or execution_relay_repository is None
+        ):
+            raise RuntimeError("Agent Brain unavailable")
+        mission_repository = MissionRepository(
+            control_database_url, content_codec=content_codec
+        )
+        agent_use_authorization = AgentUseAuthorization(control_database_url)
+        agent_brain_orchestrator = MissionOrchestrator(
+            mission_repository,
+            execution_relay_repository,
+            capability_provider=agent_use_authorization.permitted_agents_for_user_id,
+        )
+        agent_brain_orchestrator.check_ready()
     if identity_enabled and identity_auth is None:
         identity_auth = build_identity_auth(config)
     cloud_mode = is_cloud_mode(config)
@@ -606,6 +668,8 @@ def create_app(
                         operations_poll_loop(operations_scheduler)
                     )
                 )
+        if agent_brain_orchestrator is not None:
+            tasks.append(asyncio.create_task(agent_brain_loop(agent_brain_orchestrator)))
         try:
             yield
         finally:
@@ -630,6 +694,7 @@ def create_app(
     app.state.replica_repository = replica_repository
     app.state.identity_auth = identity_auth
     app.state.execution_relay_repository = execution_relay_repository
+    app.state.agent_brain_orchestrator = agent_brain_orchestrator
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
         control_database_url = read_secret_file(

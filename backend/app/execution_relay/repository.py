@@ -445,6 +445,82 @@ class ExecutionRelayRepository:
         except psycopg.Error:
             raise ExecutionRelayError("execution relay unavailable") from None
 
+    def job_state(self, run_id: UUID) -> str:
+        """Return relay state for the trusted orchestrator only.
+
+        This method is intentionally not used by the worker router.  The
+        worker continues to access jobs exclusively through its device-auth
+        lease and upload operations.
+        """
+
+        if not isinstance(run_id, UUID):
+            raise ExecutionRelayNotFound()
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    "select status from platform_control.execution_jobs "
+                    "where run_id=%s",
+                    (run_id,),
+                ).fetchone()
+            if row is None:
+                raise ExecutionRelayNotFound()
+            return row["status"]
+        except ExecutionRelayError:
+            raise
+        except psycopg.Error:
+            raise ExecutionRelayError("execution relay unavailable") from None
+
+    def events(self, run_id: UUID) -> tuple[RelayEvent, ...]:
+        """Decrypt ordered relay events for Mission orchestration only."""
+
+        if not isinstance(run_id, UUID):
+            raise ExecutionRelayNotFound()
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                job = cursor.execute(
+                    "select run_id from platform_control.execution_jobs "
+                    "where run_id=%s",
+                    (run_id,),
+                ).fetchone()
+                if job is None:
+                    raise ExecutionRelayNotFound()
+                rows = cursor.execute(
+                    "select seq,event_type,payload_ciphertext,"
+                    "encryption_key_version,created_at "
+                    "from platform_control.execution_events where run_id=%s "
+                    "order by seq",
+                    (run_id,),
+                ).fetchall()
+            events: list[RelayEvent] = []
+            expected = 1
+            for row in rows:
+                if row["seq"] != expected:
+                    raise ExecutionRelayError("execution relay unavailable")
+                value = self.content_codec.unseal_json(
+                    f"execution-event:{run_id}:{row['seq']}",
+                    SealedContent(
+                        bytes(row["payload_ciphertext"]),
+                        row["encryption_key_version"],
+                    ),
+                )
+                events.append(
+                    RelayEvent(
+                        run_id=run_id,
+                        seq=row["seq"],
+                        event_type=row["event_type"],
+                        created_at=row["created_at"],
+                        payload=value,
+                    )
+                )
+                expected += 1
+            return tuple(events)
+        except ExecutionRelayError:
+            raise
+        except (ContentCryptoError, TypeError, ValueError, ValidationError):
+            raise ExecutionRelayError("execution relay unavailable") from None
+        except psycopg.Error:
+            raise ExecutionRelayError("execution relay unavailable") from None
+
     def finish(
         self,
         worker_id: str,

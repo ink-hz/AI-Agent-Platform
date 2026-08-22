@@ -842,6 +842,75 @@ class MissionRepository:
         ):
             raise MissionRepositoryError() from None
 
+    def claim_pending(self, limit: int) -> tuple[MissionRecord, ...]:
+        """Select an internal orchestration batch without blocking peers."""
+
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
+            raise ValueError("Mission claim limit invalid")
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                rows = cursor.execute(
+                    "select m.*,message.message_id,message.content_ciphertext,"
+                    "message.encryption_key_version from platform_control.missions m "
+                    "join platform_control.mission_messages message "
+                    "on message.mission_id=m.mission_id and message.seq=1 "
+                    "where m.status not in "
+                    "('completed','partially_completed','failed','cancelled','interrupted') "
+                    "order by m.updated_at,m.mission_id for update of m skip locked limit %s",
+                    (limit,),
+                ).fetchall()
+                return tuple(self._mission_from_row(row) for row in rows)
+        except MissionRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise MissionRepositoryError() from None
+
+    def runs_for_owner(
+        self, internal_user_id: UUID, mission_id: UUID
+    ) -> tuple[MissionRun, ...]:
+        """Read phase state after applying the Mission owner predicate."""
+
+        _require_uuid(internal_user_id)
+        _require_uuid(mission_id)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                owned = cursor.execute(
+                    "select mission_id from platform_control.missions "
+                    "where mission_id=%s and owner_internal_user_id=%s",
+                    (mission_id, internal_user_id),
+                ).fetchone()
+                if owned is None:
+                    raise MissionRepositoryNotFound()
+                rows = cursor.execute(
+                    "select run_row.* from platform_control.mission_runs run_row "
+                    "join platform_control.missions mission "
+                    "on mission.mission_id=run_row.mission_id "
+                    "where run_row.mission_id=%s and mission.owner_internal_user_id=%s "
+                    "order by run_row.created_at,run_row.run_id",
+                    (mission_id, internal_user_id),
+                ).fetchall()
+            return tuple(self._run_from_row(row) for row in rows)
+        except MissionRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise MissionRepositoryError() from None
+
     @staticmethod
     def _append_event_locked(
         cursor: Any,

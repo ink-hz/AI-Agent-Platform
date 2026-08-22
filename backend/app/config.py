@@ -64,6 +64,7 @@ class Config:
     replica_signing_public_key_file: str
     replica_stale_seconds: int
     execution_relay_enabled: bool
+    agent_brain_enabled: bool
     content_encryption_keyring_file: str
     execution_relay_lease_seconds: int
     execution_relay_max_body_bytes: int
@@ -511,6 +512,18 @@ def _validate_execution_relay_config(config: Config) -> None:
         raise RuntimeError("content encryption keyring unavailable") from None
 
 
+def _validate_agent_brain_config(config: Config) -> None:
+    if not config.agent_brain_enabled:
+        return
+    if (
+        config.control_plane.mode is not IdentityMode.PRODUCTION
+        or not config.execution_relay_enabled
+    ):
+        raise ValueError(
+            "Agent Brain requires production identity and relay"
+        )
+
+
 def is_cloud_mode(config: Config) -> bool:
     return config.deployment_mode == "cloud-replica"
 
@@ -641,6 +654,7 @@ def load_config() -> Config:
             os.getenv("PLATFORM_REPLICA_STALE_SECONDS", "900")
         ),
         execution_relay_enabled=execution_relay_enabled,
+        agent_brain_enabled=_enabled("PLATFORM_AGENT_BRAIN_ENABLED"),
         content_encryption_keyring_file=content_encryption_keyring_file,
         execution_relay_lease_seconds=execution_relay_lease_seconds,
         execution_relay_max_body_bytes=execution_relay_max_body_bytes,
@@ -649,4 +663,5 @@ def load_config() -> Config:
     _validate_cloud_config(config)
     _validate_attachment_config(config)
     _validate_execution_relay_config(config)
+    _validate_agent_brain_config(config)
     return config
