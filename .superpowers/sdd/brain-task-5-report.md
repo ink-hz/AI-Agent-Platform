@@ -166,3 +166,70 @@ fix:
 ```
 
 The warnings remain the pre-existing Starlette/httpx deprecations.
+
+## Second-wave reliability closure
+
+A later strict review found one Critical and four Important gaps in the first
+hardening pass. Commits `f34ac7b`, `04fda49`, and `9981531` close them without
+adding public API or UI scope:
+
+- Worker heartbeats now renew every assigned active lease using the configured
+  lease duration, so a progressing 300-second run is not killed by its initial
+  45-second lease. The cloud heartbeat protocol returns typed forced-terminal
+  requests; the Worker cancels MetaBot, persists the exact terminal state,
+  uploads/finishes it, removes the local active run, and can lease the next job.
+- A capability-interrupt race now rereads the Relay terminal state when the
+  atomic interrupt loses. MissionRun and Mission archive the real
+  completed/failed/cancelled/interrupted outcome instead of fabricating an
+  interruption.
+- Legal zero-Agent authorization remains distinguishable from authorization
+  infrastructure failure. A member with no professional grants can still use
+  Brain direct answers; unavailable authorization fails closed.
+- Run snapshots contain references plus immutable capability data rather than
+  duplicate request text. Direct-Agent prompts contain one request copy, and an
+  exact 32-KiB request produces a serialized Relay payload below 64 KiB. Restart
+  recovery reconstructs the same payload from the encrypted Mission message and
+  compact persisted run snapshot.
+- Public progress accepts only explicit, bounded `agent.state` fields. Raw
+  log/question/file text is never projected, those private events cannot create
+  public acceptance/progress milestones, and the fabricated review checkpoint
+  was removed. The honest sequence is `agent.result` followed by
+  `synthesis.started`.
+- Mission quarantine is restricted to deterministic missing/corrupt content and
+  guarded by the claimed status/row-version CAS. Database failures and unavailable
+  key versions leave the Mission active. Deterministically damaged rows expose a
+  readable tombstone in detail/list views, do not hide healthy history, and keep
+  the safe terminal event readable.
+
+Additional RED evidence included: a progressing lease expiring after 45 seconds,
+forced cloud termination not reaching Worker cleanup, a terminal interrupt race,
+legal empty grants being rejected, an exact 32-KiB direct Relay payload measuring
+67,106 bytes, private relay logs fabricating `agent.accepted`, transient reads
+being quarantined, and one corrupt Mission breaking history reads. The strict
+typed-stop client test also rejected the original acceptance of an invented
+terminal status.
+
+Fresh focused verification after the final fixes:
+
+```text
+307 passed, 1 warning in 8.40s
+```
+
+Fresh adjacent Worker/control regression verification:
+
+```text
+139 passed, 1 warning in 3.38s
+```
+
+The independent re-review reported no Critical or Important findings. It
+specifically verified the actual serialized direct Relay payload boundary,
+restart reconstruction, and that private Relay event classes cannot advance the
+public timeline.
+
+Fresh full backend verification, run once after that review cleared:
+
+```text
+2097 passed, 1 skipped, 47 warnings in 105.18s (0:01:45)
+```
+
+The 47 warnings are the same pre-existing Starlette/httpx deprecations.
