@@ -905,6 +905,15 @@ def test_exact_32kib_direct_request_persists_compact_run_input(brain_database):
     assert "delegated_objective" not in envelope
     assert serialized.count(prompt.encode("utf-8")) == 1
 
+    original_payload = relay_payload
+    relay.payloads.clear()
+    relay.states.clear()
+    restarted = MissionOrchestrator(
+        missions, relay, capability_provider=lambda _owner: (card,)
+    )
+    assert restarted.advance_pending(limit=50) == 1
+    assert next(iter(relay.payloads.values())) == original_payload
+
 
 @pytest.mark.postgres
 def test_scan_uses_skip_locked_and_isolates_one_locked_mission(
