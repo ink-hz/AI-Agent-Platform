@@ -16,7 +16,10 @@ from app.agent_brain.repository import (
     MissionRepositoryNotFound,
 )
 from app.execution_relay.models import RelayEvent, RelayJobPayload
-from app.execution_relay.repository import ExecutionRelayRepository
+from app.execution_relay.repository import (
+    ExecutionRelayConflict,
+    ExecutionRelayRepository,
+)
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import (
     ContentCodec,
@@ -410,6 +413,23 @@ def test_create_mission_generates_server_ids_and_stores_only_bound_ciphertext(
 
 
 @pytest.mark.postgres
+def test_create_mission_atomically_appends_one_replayable_started_event(
+    mission_database, repository
+) -> None:
+    _environment, owner_id, _other_owner_id = mission_database
+    request_id = uuid4()
+
+    created = repository.create_mission(owner_id, request_id, "start now")
+    replay = repository.create_mission(owner_id, request_id, "start now")
+
+    assert replay.mission_id == created.mission_id
+    events = repository.events_after(owner_id, created.mission_id)
+    assert [(event.seq, event.event_type, event.payload) for event in events] == [
+        (1, "mission.started", {"text": "任务已创建"})
+    ]
+
+
+@pytest.mark.postgres
 def test_client_request_id_is_idempotent_per_owner_and_collision_safe(
     mission_database, repository
 ) -> None:
@@ -510,7 +530,7 @@ def test_owner_list_detail_and_event_replay_decrypt_only_owned_rows(
         event_payload={"text": "two"},
         mission_status="completed",
     )
-    first, second = repository.events_after(owner_id, newest.mission_id)
+    started, first, second = repository.events_after(owner_id, newest.mission_id)
 
     listed = repository.list_missions_for_owner(owner_id, limit=20)
 
@@ -521,9 +541,11 @@ def test_owner_list_detail_and_event_replay_decrypt_only_owned_rows(
     assert all(item.owner_internal_user_id == owner_id for item in listed)
     assert repository.mission_for_owner(owner_id, newest.mission_id).prompt == "newest"
     assert repository.events_after(owner_id, newest.mission_id, after=1) == (
+        first,
         second,
     )
-    assert first.seq == 1 and second.seq == 2
+    assert started.event_type == "mission.started"
+    assert first.seq == 2 and second.seq == 3
 
 
 @pytest.mark.postgres
@@ -713,6 +735,106 @@ def test_concurrent_cancel_and_lease_linearize_to_cancelled_or_pending_stop(
 
 
 @pytest.mark.postgres
+@pytest.mark.parametrize("terminal_status", ["completed", "failed"])
+def test_committed_relay_terminal_wins_over_later_mission_cancel(
+    mission_database, repository, terminal_status
+) -> None:
+    environment, owner_id, _other_owner_id = mission_database
+    relay = _relay_for_mission(environment)
+    mission, run = _direct_run(repository, owner_id)
+    worker_id = f"finish-{uuid4().hex[:12]}"
+    try:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "insert into platform_control.execution_workers "
+                "(worker_id,allowed_agent_ids,status) values "
+                "(%s,array['hr-bot'],'active')",
+                (worker_id,),
+            )
+        relay.enqueue(_mission_payload(mission, run))
+        assert relay.lease(worker_id, ("hr-bot",), 45) is not None
+        relay.mark_dispatched(worker_id, run.run_id)
+        relay.finish(worker_id, run.run_id, terminal_status)
+        before_cancel = repository.mission_for_owner(owner_id, mission.mission_id)
+
+        cancelled = repository.request_cancel(owner_id, mission.mission_id)
+
+        assert relay.job_state(run.run_id).status == terminal_status
+        assert cancelled.cancel_requested is False
+        assert cancelled.row_version == before_cancel.row_version
+    finally:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_control.execution_jobs where run_id=%s",
+                (run.run_id,),
+            )
+            connection.execute(
+                "delete from platform_control.execution_workers where worker_id=%s",
+                (worker_id,),
+            )
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("terminal_status", ["completed", "failed"])
+def test_concurrent_relay_finish_and_mission_cancel_have_one_winning_terminal(
+    mission_database, repository, terminal_status
+) -> None:
+    environment, owner_id, _other_owner_id = mission_database
+    relay = _relay_for_mission(environment)
+    mission, run = _direct_run(repository, owner_id)
+    worker_id = f"race-{uuid4().hex[:12]}"
+    barrier = Barrier(2)
+    try:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "insert into platform_control.execution_workers "
+                "(worker_id,allowed_agent_ids,status) values "
+                "(%s,array['hr-bot'],'active')",
+                (worker_id,),
+            )
+        relay.enqueue(_mission_payload(mission, run))
+        assert relay.lease(worker_id, ("hr-bot",), 45) is not None
+        relay.mark_dispatched(worker_id, run.run_id)
+
+        def finish() -> str:
+            barrier.wait(timeout=5)
+            try:
+                relay.finish(worker_id, run.run_id, terminal_status)
+                return "finished"
+            except ExecutionRelayConflict:
+                return "cancelled"
+
+        def cancel():
+            barrier.wait(timeout=5)
+            return repository.request_cancel(owner_id, mission.mission_id)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            finish_result = pool.submit(finish)
+            cancel_result = pool.submit(cancel)
+            outcome = finish_result.result(timeout=10)
+            cancelled = cancel_result.result(timeout=10)
+
+        relay_state = relay.job_state(run.run_id)
+        if outcome == "finished":
+            assert relay_state.status == terminal_status
+            assert cancelled.cancel_requested is False
+        else:
+            assert relay_state.status in {"dispatched", "running"}
+            assert relay_state.cancel_requested is True
+            assert cancelled.cancel_requested is True
+    finally:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_control.execution_jobs where run_id=%s",
+                (run.run_id,),
+            )
+            connection.execute(
+                "delete from platform_control.execution_workers where worker_id=%s",
+                (worker_id,),
+            )
+
+
+@pytest.mark.postgres
 def test_concurrent_event_writers_allocate_monotonic_unique_sequences(
     mission_database, repository
 ) -> None:
@@ -736,9 +858,9 @@ def test_concurrent_event_writers_allocate_monotonic_unique_sequences(
             )
         )
 
-    assert sorted(event.seq for event in events) == list(range(4, 28))
+    assert sorted(event.seq for event in events) == list(range(5, 29))
     replay = repository.events_after(owner_id, mission.mission_id)
-    assert tuple(event.seq for event in replay) == tuple(range(1, 28))
+    assert tuple(event.seq for event in replay) == tuple(range(1, 29))
 
 
 @pytest.mark.postgres
@@ -803,6 +925,7 @@ def test_run_task_input_output_and_events_use_mission_and_row_bound_subjects(
         )
     events = repository.events_after(owner_id, mission.mission_id)
     assert [event.event_type for event in events] == [
+        "mission.started",
         "brain.responding",
         "plan.created",
         "task.dispatched",
@@ -855,7 +978,10 @@ def test_create_run_and_event_are_atomic_on_event_failure(
         "select count(*) from platform_control.mission_runs where mission_id=%s",
         (mission.mission_id,),
     ) == [(0,)]
-    assert repository.events_after(owner_id, mission.mission_id) == ()
+    assert [
+        event.event_type
+        for event in repository.events_after(owner_id, mission.mission_id)
+    ] == ["mission.started"]
 
 
 @pytest.mark.postgres
@@ -960,7 +1086,7 @@ def test_complete_run_and_terminal_event_are_atomic_on_event_failure(
     assert [
         event.event_type
         for event in repository.events_after(owner_id, mission.mission_id)
-    ] == ["brain.responding"]
+    ] == ["mission.started", "brain.responding"]
 
 
 @pytest.mark.postgres
@@ -1110,7 +1236,7 @@ def test_terminal_run_rejects_late_events_while_mission_remains_active(
     assert [
         event.event_type
         for event in repository.events_after(owner_id, mission.mission_id)
-    ] == ["brain.responding", "plan.created"]
+    ] == ["mission.started", "brain.responding", "plan.created"]
 
 
 @pytest.mark.postgres
@@ -1512,7 +1638,10 @@ def test_payload_boundary_rejects_non_json_nonfinite_and_oversized_values(
             event_payload={"text": "working"},
         )
 
-    assert repository.events_after(owner_id, mission.mission_id) == ()
+    assert [
+        event.event_type
+        for event in repository.events_after(owner_id, mission.mission_id)
+    ] == ["mission.started"]
 
 
 @pytest.mark.postgres
@@ -2166,7 +2295,7 @@ def test_concurrent_completion_and_transition_use_one_mission_cas_winner(
         "where mission_id=%s",
         (mission.mission_id,),
     ) == [("delegated", 2)]
-    assert len(repository.events_after(owner_id, mission.mission_id)) == 2
+    assert len(repository.events_after(owner_id, mission.mission_id)) == 3
 
 
 @pytest.mark.postgres

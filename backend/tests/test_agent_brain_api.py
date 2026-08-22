@@ -184,9 +184,16 @@ class FakeAuth:
 
     def __init__(self, context: AuthContext) -> None:
         self.context = context
+        self.active = True
+        self.authenticate_calls = 0
 
     def authenticate(self, token: str):
-        return (self.context, "csrf-value") if token == "valid" else None
+        self.authenticate_calls += 1
+        return (
+            (self.context, "csrf-value")
+            if token == "valid" and self.active
+            else None
+        )
 
     def verify_csrf(self, submitted: str, expected: str) -> bool:
         return submitted == expected == "csrf-value"
@@ -216,6 +223,8 @@ def _app(
             missions,
             agent_use,
             cursor_codec=MissionCursorCodec(AuthSecrets(b"x" * 32, key_version=1)),
+            session_revalidator=auth.authenticate,
+            session_cookie_name=auth.cookie_name,
             heartbeat_seconds=heartbeat_seconds,
             poll_seconds=poll_seconds,
         )
@@ -244,6 +253,13 @@ def _write_credentials(auth: FakeAuth) -> dict:
             "X-CSRF-Token": "csrf-value",
         },
     }
+
+
+def _valid_stream_session(owner: UUID, session_id: UUID):
+    def revalidate(_token: str):
+        return AuthContext(owner, Role.MEMBER, session_id, False), "csrf"
+
+    return revalidate
 
 
 def test_catalog_is_authenticated_no_store_and_contains_only_current_grants() -> None:
@@ -628,7 +644,11 @@ async def test_active_stream_uses_heartbeat_and_releases_concurrency_slot() -> N
         after=0,
         is_disconnected=is_disconnected,
         limiter=limiter,
+        session_revalidator=_valid_stream_session(owner, owner),
+        session_token="valid",
+        expected_session_id=owner,
         heartbeat_seconds=0.001,
+        revalidate_seconds=0.001,
         poll_seconds=0,
     )
     heartbeat = await anext(stream)
@@ -674,6 +694,9 @@ async def test_terminal_transition_between_poll_queries_does_not_drop_final_even
         after=0,
         is_disconnected=connected,
         limiter=MissionStreamLimiter(max_per_owner=1, max_per_mission=1),
+        session_revalidator=_valid_stream_session(owner, owner),
+        session_token="valid",
+        expected_session_id=owner,
         poll_seconds=0,
     )
     frames = [frame async for frame in stream]
@@ -782,6 +805,9 @@ async def test_slow_stream_consumer_prefetch_is_bounded_to_one_hundred_events() 
         after=0,
         is_disconnected=connected,
         limiter=limiter,
+        session_revalidator=_valid_stream_session(owner, owner),
+        session_token="valid",
+        expected_session_id=owner,
         poll_seconds=0,
     )
 
@@ -790,6 +816,290 @@ async def test_slow_stream_consumer_prefetch_is_bounded_to_one_hundred_events() 
     assert limiter.active(owner) == 1
     await stream.aclose()
     assert limiter.active(owner) == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "invalidated",
+    ["logout", "member_inactive", "directory_hard_expiry", "session_replaced"],
+)
+async def test_stream_revalidates_before_events_and_releases_slot_when_identity_invalidates(
+    invalidated: str,
+) -> None:
+    from app.agent_brain.routes import MissionStreamLimiter, mission_event_stream
+
+    owner = uuid4()
+    session_id = uuid4()
+    missions = FakeMissionRepository()
+    mission = missions.create_mission_for_api(owner, uuid4(), "live auth").mission
+    current_session = [
+        (AuthContext(owner, Role.MEMBER, session_id, False), "csrf")
+    ]
+
+    def revalidate(_token: str):
+        return current_session[0]
+
+    async def connected() -> bool:
+        return False
+
+    limiter = MissionStreamLimiter(max_per_owner=1, max_per_mission=1)
+    stream = mission_event_stream(
+        missions,
+        owner,
+        mission.mission_id,
+        after=0,
+        is_disconnected=connected,
+        limiter=limiter,
+        session_revalidator=revalidate,
+        session_token="valid",
+        expected_session_id=session_id,
+        heartbeat_seconds=0.001,
+        revalidate_seconds=0.001,
+        poll_seconds=0,
+    )
+    assert (await anext(stream)).startswith(": heartbeat ")
+    missions.events[mission.mission_id].append(
+        _event(mission.mission_id, 1, "must not leak")
+    )
+    current_session[0] = (
+        (
+            AuthContext(owner, Role.MEMBER, uuid4(), False),
+            "csrf",
+        )
+        if invalidated == "session_replaced"
+        else None
+    )
+    await asyncio.sleep(0.002)
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+    assert limiter.active(owner) == 0
+    assert limiter.active_total() == 0
+
+
+@pytest.mark.anyio
+async def test_stream_rejects_hard_stale_session_before_new_event() -> None:
+    from app.agent_brain.routes import MissionStreamLimiter, mission_event_stream
+
+    owner = uuid4()
+    session_id = uuid4()
+    missions = FakeMissionRepository()
+    mission = missions.create_mission_for_api(owner, uuid4(), "hard stale").mission
+    hard_stale = [False]
+
+    def revalidate(_token: str):
+        return (
+            AuthContext(owner, Role.PLATFORM_OWNER, session_id, hard_stale[0]),
+            "csrf",
+        )
+
+    async def connected() -> bool:
+        return False
+
+    limiter = MissionStreamLimiter(max_per_owner=1, max_per_mission=1)
+    stream = mission_event_stream(
+        missions,
+        owner,
+        mission.mission_id,
+        after=0,
+        is_disconnected=connected,
+        limiter=limiter,
+        session_revalidator=revalidate,
+        session_token="valid",
+        expected_session_id=session_id,
+        heartbeat_seconds=0.001,
+        revalidate_seconds=0.001,
+        poll_seconds=0,
+    )
+    assert (await anext(stream)).startswith(": heartbeat ")
+    missions.events[mission.mission_id].append(
+        _event(mission.mission_id, 1, "must not leak")
+    )
+    hard_stale[0] = True
+    await asyncio.sleep(0.002)
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+    assert limiter.active_total() == 0
+
+
+@pytest.mark.anyio
+async def test_stream_rechecks_ownership_before_yielding_fetched_events() -> None:
+    from app.agent_brain.routes import MissionStreamLimiter, mission_event_stream
+
+    owner = uuid4()
+    session_id = uuid4()
+    missions = FakeMissionRepository()
+    mission = missions.create_mission_for_api(owner, uuid4(), "ownership").mission
+    owns_mission = [True]
+    original_lookup = missions.mission_for_owner
+
+    def lookup(selected_owner: UUID, mission_id: UUID):
+        if not owns_mission[0]:
+            raise MissionRepositoryNotFound()
+        return original_lookup(selected_owner, mission_id)
+
+    missions.mission_for_owner = lookup
+
+    async def connected() -> bool:
+        return False
+
+    limiter = MissionStreamLimiter(max_per_owner=1, max_per_mission=1)
+    stream = mission_event_stream(
+        missions,
+        owner,
+        mission.mission_id,
+        after=0,
+        is_disconnected=connected,
+        limiter=limiter,
+        session_revalidator=_valid_stream_session(owner, session_id),
+        session_token="valid",
+        expected_session_id=session_id,
+        heartbeat_seconds=0.001,
+        revalidate_seconds=0.001,
+        poll_seconds=0,
+    )
+    assert (await anext(stream)).startswith(": heartbeat ")
+    missions.events[mission.mission_id].append(
+        _event(mission.mission_id, 1, "must not leak")
+    )
+    owns_mission[0] = False
+    await asyncio.sleep(0.002)
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+    assert limiter.active_total() == 0
+
+
+@pytest.mark.anyio
+async def test_slow_consumer_is_revalidated_between_prefetched_events() -> None:
+    from app.agent_brain.routes import MissionStreamLimiter, mission_event_stream
+
+    owner = uuid4()
+    session_id = uuid4()
+    active = MissionRecord(
+        mission_id=uuid4(),
+        owner_internal_user_id=owner,
+        client_request_id=uuid4(),
+        mode="brain",
+        direct_agent_id=None,
+        status="planning",
+        cancel_requested=False,
+        row_version=0,
+        created_at=NOW,
+        updated_at=NOW,
+        terminal_at=None,
+        prompt="slow auth",
+    )
+
+    class PrefetchedRepository:
+        def events_after(self, _owner, _mission_id, *, after, limit):
+            if after:
+                return ()
+            return (
+                _event(active.mission_id, 1, "first"),
+                _event(active.mission_id, 2, "must not leak"),
+            )
+
+        def mission_for_owner(self, _owner, _mission_id):
+            return active
+
+    current_session = [
+        (AuthContext(owner, Role.MEMBER, session_id, False), "csrf")
+    ]
+
+    async def connected() -> bool:
+        return False
+
+    limiter = MissionStreamLimiter(max_per_owner=1, max_per_mission=1)
+    stream = mission_event_stream(
+        PrefetchedRepository(),
+        owner,
+        active.mission_id,
+        after=0,
+        is_disconnected=connected,
+        limiter=limiter,
+        session_revalidator=lambda _token: current_session[0],
+        session_token="valid",
+        expected_session_id=session_id,
+        revalidate_seconds=0.001,
+        poll_seconds=0,
+    )
+    assert "id: 1\n" in await anext(stream)
+    current_session[0] = None
+    await asyncio.sleep(0.002)
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+    assert limiter.active_total() == 0
+
+
+@pytest.mark.anyio
+async def test_revoked_slow_terminal_stream_does_not_fetch_or_decrypt_tail() -> None:
+    from app.agent_brain.routes import MissionStreamLimiter, mission_event_stream
+
+    owner = uuid4()
+    session_id = uuid4()
+    terminal = MissionRecord(
+        mission_id=uuid4(),
+        owner_internal_user_id=owner,
+        client_request_id=uuid4(),
+        mode="brain",
+        direct_agent_id=None,
+        status="completed",
+        cancel_requested=False,
+        row_version=1,
+        created_at=NOW,
+        updated_at=NOW,
+        terminal_at=NOW,
+        prompt="terminal tail",
+    )
+
+    class TerminalTailRepository:
+        def __init__(self) -> None:
+            self.event_reads = 0
+
+        def events_after(self, _owner, _mission_id, *, after, limit):
+            self.event_reads += 1
+            return (
+                (_event(terminal.mission_id, 1, "first"),)
+                if self.event_reads == 1
+                else (_event(terminal.mission_id, 2, "must not decrypt"),)
+            )
+
+        def mission_for_owner(self, _owner, _mission_id):
+            return terminal
+
+    repository = TerminalTailRepository()
+    current_session = [
+        (AuthContext(owner, Role.MEMBER, session_id, False), "csrf")
+    ]
+
+    async def connected() -> bool:
+        return False
+
+    limiter = MissionStreamLimiter(max_per_owner=1, max_per_mission=1)
+    stream = mission_event_stream(
+        repository,
+        owner,
+        terminal.mission_id,
+        after=0,
+        is_disconnected=connected,
+        limiter=limiter,
+        session_revalidator=lambda _token: current_session[0],
+        session_token="valid",
+        expected_session_id=session_id,
+        revalidate_seconds=0.001,
+        poll_seconds=0,
+    )
+    assert "id: 1\n" in await anext(stream)
+    current_session[0] = None
+    await asyncio.sleep(0.002)
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+    assert repository.event_reads == 1
+    assert limiter.active_total() == 0
 
 
 @pytest.mark.anyio

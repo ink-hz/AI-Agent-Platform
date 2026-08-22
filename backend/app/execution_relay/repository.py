@@ -669,6 +669,14 @@ class ExecutionRelayRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 self._active_worker(cursor, worker_id)
+                cursor.execute(
+                    "select mission.mission_id "
+                    "from platform_control.mission_runs run_row "
+                    "join platform_control.missions mission "
+                    "on mission.mission_id=run_row.mission_id "
+                    "where run_row.run_id=%s for update of mission",
+                    (run_id,),
+                ).fetchone()
                 row = self._owned_job(cursor, worker_id, run_id)
                 current = row["status"]
                 requested = row["stop_requested_status"]

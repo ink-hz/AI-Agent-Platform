@@ -189,6 +189,7 @@ def test_planning_direct_decision_completes_with_one_visible_terminal_event(
 
     assert _mission_row(environment, mission.mission_id)[0] == "completed"
     assert [event.event_type for event in missions.events_after(owner_id, mission.mission_id)] == [
+        "mission.started",
         "brain.responding",
         "mission.completed",
     ]
@@ -220,6 +221,7 @@ def test_direct_agent_completes_without_brain_synthesis(brain_database, orchestr
     runs = _phase_runs(environment, mission.mission_id)
     assert [(row[1], row[2]) for row in runs] == [("direct", "hr-bot")]
     assert [event.event_type for event in missions.events_after(owner_id, mission.mission_id)] == [
+        "mission.started",
         "task.dispatched",
         "mission.completed",
     ]
@@ -274,6 +276,7 @@ def test_delegate_executes_one_professional_then_synthesizes(
     ]
     assert len({row[0] for row in runs}) == 3
     assert [event.event_type for event in missions.events_after(owner_id, mission.mission_id)] == [
+        "mission.started",
         "brain.responding",
         "plan.created",
         "task.dispatched",
@@ -410,6 +413,42 @@ def test_cancel_before_lease_converges_to_cancelled(brain_database, orchestrator
 
 
 @pytest.mark.postgres
+@pytest.mark.parametrize("terminal_status", ["completed", "failed"])
+def test_observed_relay_terminal_is_not_overwritten_by_historical_cancel_flag(
+    brain_database, orchestrator, terminal_status
+):
+    environment, owner_id = brain_database
+    service, missions, relay = orchestrator
+    mission = missions.create_mission(
+        owner_id,
+        uuid4(),
+        "终态优先",
+        mode="direct_agent",
+        direct_agent_id="hr-bot",
+    )
+    service.advance_pending(limit=50)
+    relay.terminal(
+        next(iter(relay.payloads)),
+        terminal_status,
+        "真实完成结果" if terminal_status == "completed" else "",
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.missions set cancel_requested=true "
+            "where mission_id=%s",
+            (mission.mission_id,),
+        )
+
+    service.advance_pending(limit=50)
+
+    assert _mission_row(environment, mission.mission_id)[0] == terminal_status
+    assert (
+        missions.events_after(owner_id, mission.mission_id)[-1].event_type
+        == f"mission.{terminal_status}"
+    )
+
+
+@pytest.mark.postgres
 def test_cancel_before_any_run_persists_terminal_mission_event(
     brain_database, orchestrator
 ):
@@ -427,7 +466,10 @@ def test_cancel_before_any_run_persists_terminal_mission_event(
 
     assert _mission_row(environment, mission.mission_id)[0] == "cancelled"
     events = missions.events_after(owner_id, mission.mission_id)
-    assert [event.event_type for event in events] == ["mission.cancelled"]
+    assert [event.event_type for event in events] == [
+        "mission.started",
+        "mission.cancelled",
+    ]
 
 
 @pytest.mark.postgres
@@ -496,7 +538,10 @@ def test_transient_content_read_failure_does_not_quarantine_mission(
 
     assert service.advance_pending(limit=50) == 0
     assert _mission_row(environment, mission.mission_id)[0] == "planning"
-    assert missions.events_after(owner_id, mission.mission_id) == ()
+    assert [
+        event.event_type
+        for event in missions.events_after(owner_id, mission.mission_id)
+    ] == ["mission.started"]
 
 
 @pytest.mark.postgres
@@ -515,7 +560,10 @@ def test_unavailable_content_key_version_does_not_quarantine_mission(
 
     assert service.advance_pending(limit=50) == 0
     assert _mission_row(environment, mission.mission_id)[0] == "planning"
-    assert missions.events_after(owner_id, mission.mission_id) == ()
+    assert [
+        event.event_type
+        for event in missions.events_after(owner_id, mission.mission_id)
+    ] == ["mission.started"]
 
 
 @pytest.mark.postgres
@@ -553,7 +601,7 @@ def test_wrong_key_bytes_are_infrastructure_failure_without_mass_quarantine(
             "select count(*) from platform_control.mission_events "
             "where mission_id=any(%s)",
             ([item.mission_id for item in missions],),
-        ).fetchone() == (0,)
+            ).fetchone() == (2,)
 
 
 @pytest.mark.postgres

@@ -521,7 +521,15 @@ class MissionOrchestrator:
             state, events = self._run_state(mission, active)
             if state in _ACTIVE_RELAY_STATES:
                 return bool(self.relay.request_cancel(active.run_id))
-            return self._complete_terminal(mission, active, state, events, cancelled=True)
+            if active.phase == "planning":
+                return self._advance_planning(
+                    mission, active, self._pinned_cards(active)
+                )
+            if active.phase == "professional":
+                return self._advance_professional(mission, active)
+            if active.phase == "direct":
+                return self._advance_direct(mission, active)
+            return self._advance_synthesis(mission, active)
 
         if mission.mode == "direct_agent":
             direct = runs.get("direct")
@@ -915,10 +923,9 @@ class MissionOrchestrator:
         state: str,
         events: tuple[RelayEvent, ...],
         *,
-        cancelled: bool = False,
         partial: bool = False,
     ) -> bool:
-        if cancelled or state == "cancelled":
+        if state == "cancelled":
             status = "cancelled"
             mission_status = "cancelled"
             event_type = "mission.cancelled"

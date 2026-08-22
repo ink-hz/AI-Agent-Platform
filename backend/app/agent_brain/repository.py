@@ -871,9 +871,16 @@ class MissionRepository:
 
         mission_id = uuid4()
         message_id = uuid4()
+        started_event_id = uuid4()
         try:
             sealed = self.content_codec.seal_json(
                 _message_subject(mission_id, message_id), {"text": prompt}
+            )
+            started_payload, _started_canonical = _canonical_payload(
+                {"text": "任务已创建"}, event_type="mission.started"
+            )
+            sealed_started = self.content_codec.seal_json(
+                _event_subject(mission_id, started_event_id), started_payload
             )
             with self._connection() as connection, connection.cursor() as cursor:
                 self._ensure_key_canary(cursor, sealed.key_version)
@@ -903,6 +910,14 @@ class MissionRepository:
                             sealed.ciphertext,
                             sealed.key_version,
                         ),
+                    )
+                    self._append_event_locked(
+                        cursor,
+                        mission_id,
+                        None,
+                        started_event_id,
+                        "mission.started",
+                        sealed_started,
                     )
                     return MissionCreateResult(
                         MissionRecord(
@@ -1128,9 +1143,25 @@ class MissionRepository:
                 mission = self._owned_mission_for_update(
                     cursor, internal_user_id, mission_id
                 )
+                relay_jobs = cursor.execute(
+                    "select job.run_id,job.status "
+                    "from platform_control.mission_runs run_row "
+                    "join platform_control.execution_jobs job "
+                    "on job.run_id=run_row.run_id "
+                    "where run_row.mission_id=%s "
+                    "and run_row.status<>all(%s) "
+                    "order by run_row.created_at,run_row.run_id "
+                    "for update of job",
+                    (mission_id, list(TERMINAL_RUN_STATUSES)),
+                ).fetchall()
+                relay_terminal_observed = any(
+                    job["status"] in TERMINAL_RUN_STATUSES
+                    for job in relay_jobs
+                )
                 if (
                     mission["status"] not in TERMINAL_MISSION_STATUSES
                     and not mission["cancel_requested"]
+                    and not relay_terminal_observed
                 ):
                     cursor.execute(
                         "update platform_control.missions set "
@@ -1138,24 +1169,25 @@ class MissionRepository:
                         "updated_at=now() where mission_id=%s",
                         (mission_id,),
                     )
-                cursor.execute(
-                    "update platform_control.execution_jobs job set "
-                    "status=case when job.status='queued' then 'cancelled' "
-                    "else job.status end,cancel_requested=true,"
-                    "terminal_at=case when job.status='queued' then now() "
-                    "else job.terminal_at end,"
-                    "stop_requested_status=case when job.status='queued' "
-                    "then null else 'cancelled' end,"
-                    "stop_acknowledged_at=null,updated_at=now() "
-                    "from platform_control.mission_runs run_row "
-                    "where run_row.mission_id=%s "
-                    "and run_row.run_id=job.run_id "
-                    "and job.status=any(%s)",
-                    (
-                        mission_id,
-                        ["queued", "leased", "dispatched", "running"],
-                    ),
-                )
+                if not relay_terminal_observed:
+                    cursor.execute(
+                        "update platform_control.execution_jobs job set "
+                        "status=case when job.status='queued' then 'cancelled' "
+                        "else job.status end,cancel_requested=true,"
+                        "terminal_at=case when job.status='queued' then now() "
+                        "else job.terminal_at end,"
+                        "stop_requested_status=case when job.status='queued' "
+                        "then null else 'cancelled' end,"
+                        "stop_acknowledged_at=null,updated_at=now() "
+                        "from platform_control.mission_runs run_row "
+                        "where run_row.mission_id=%s "
+                        "and run_row.run_id=job.run_id "
+                        "and job.status=any(%s)",
+                        (
+                            mission_id,
+                            ["queued", "leased", "dispatched", "running"],
+                        ),
+                    )
             return self.mission_for_owner(internal_user_id, mission_id)
         except MissionRepositoryError:
             raise

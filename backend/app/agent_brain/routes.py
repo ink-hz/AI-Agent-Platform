@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 import hmac
 import json
-from typing import Annotated, AsyncIterator
+from typing import Annotated, AsyncIterator, Callable
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, Response
@@ -311,19 +311,63 @@ async def mission_event_stream(
     after: int,
     is_disconnected,
     limiter: MissionStreamLimiter,
+    session_revalidator: Callable[[str], object],
+    session_token: str,
+    expected_session_id: UUID,
     heartbeat_seconds: float = 15,
+    revalidate_seconds: float = 15,
     poll_seconds: float = 1,
     slot_reserved: bool = False,
 ) -> AsyncIterator[str]:
-    if heartbeat_seconds <= 0 or poll_seconds < 0:
+    if (
+        heartbeat_seconds <= 0
+        or revalidate_seconds <= 0
+        or poll_seconds < 0
+        or not callable(session_revalidator)
+        or not isinstance(session_token, str)
+        or not session_token
+        or not isinstance(expected_session_id, UUID)
+    ):
         raise ValueError("Mission stream timing invalid")
     if not slot_reserved and not limiter.acquire(owner, mission_id):
         raise MissionStreamBusy()
     cursor = after
     last_heartbeat = 0.0
+    last_revalidation = 0.0
+
+    async def access_is_live() -> bool:
+        nonlocal last_revalidation
+        now = asyncio.get_running_loop().time()
+        if (
+            last_revalidation != 0.0
+            and now - last_revalidation < revalidate_seconds
+        ):
+            return True
+        try:
+            live_session = await asyncio.to_thread(
+                session_revalidator, session_token
+            )
+            live_context = live_session[0]
+            if (
+                not isinstance(live_context, AuthContext)
+                or live_context.internal_user_id != owner
+                or live_context.session_id != expected_session_id
+                or live_context.hard_stale_read_only
+            ):
+                return False
+            await asyncio.to_thread(
+                repository.mission_for_owner, owner, mission_id
+            )
+        except Exception:
+            return False
+        last_revalidation = now
+        return True
+
     try:
         while True:
             if await is_disconnected():
+                return
+            if not await access_is_live():
                 return
             try:
                 events = await asyncio.to_thread(
@@ -339,9 +383,13 @@ async def mission_event_stream(
             except MissionRepositoryError:
                 return
             for event in events:
+                if not await access_is_live():
+                    return
                 cursor = event.seq
                 yield _sse_event(event)
             if mission.status in TERMINAL_MISSION_STATUSES:
+                if not await access_is_live():
+                    return
                 try:
                     terminal_tail = await asyncio.to_thread(
                         repository.events_after,
@@ -353,6 +401,8 @@ async def mission_event_stream(
                 except MissionRepositoryError:
                     return
                 for event in terminal_tail:
+                    if not await access_is_live():
+                        return
                     cursor = event.seq
                     yield _sse_event(event)
                 if len(terminal_tail) < 100:
@@ -375,12 +425,19 @@ def build_agent_brain_router(
     agent_use_authorization,
     *,
     cursor_codec: MissionCursorCodec,
+    session_revalidator: Callable[[str], object],
+    session_cookie_name: str,
     heartbeat_seconds: float = 15,
+    revalidate_seconds: float = 15,
     poll_seconds: float = 1,
     max_streams_per_owner: int = 3,
     max_streams_per_mission: int = 2,
     max_streams_global: int = 200,
 ) -> APIRouter:
+    if not callable(session_revalidator):
+        raise ValueError("Mission session revalidator required")
+    if not isinstance(session_cookie_name, str) or not session_cookie_name:
+        raise ValueError("Mission session cookie name required")
     router = APIRouter(tags=["agent-brain"])
     limiter = MissionStreamLimiter(
         max_per_owner=max_streams_per_owner,
@@ -563,6 +620,11 @@ def build_agent_brain_router(
         after: Annotated[int, Query(ge=0)] = 0,
     ):
         context = _auth_context(request)
+        session_token = request.cookies.get(session_cookie_name)
+        if not session_token:
+            raise HTTPException(
+                401, "authentication required", headers=_NO_STORE
+            )
         try:
             await asyncio.to_thread(
                 mission_repository.mission_for_owner,
@@ -583,7 +645,11 @@ def build_agent_brain_router(
                 after=after,
                 is_disconnected=request.is_disconnected,
                 limiter=limiter,
+                session_revalidator=session_revalidator,
+                session_token=session_token,
+                expected_session_id=context.session_id,
                 heartbeat_seconds=heartbeat_seconds,
+                revalidate_seconds=revalidate_seconds,
                 poll_seconds=poll_seconds,
                 slot_reserved=True,
             ),

@@ -34,6 +34,8 @@ Cancellation and execution enqueue both lock the Mission before updating or crea
 - A queued job is atomically converted to terminal `cancelled` without a worker lease.
 - A leased/dispatched/running job receives a pending `cancelled` stop request.
 - If cancellation wins between Mission run creation and relay enqueue, the relay row is inserted directly in the constraint-valid terminal `cancelled` state and is never leasable.
+- Cancellation and Worker terminalization use the same Mission-then-job lock order. A committed `completed` or `failed` Relay result wins over a later cancel; if cancellation locks first, the Worker observes a pending stop instead.
+- The Orchestrator processes an observed Relay terminal result before any historical Mission cancellation flag, so a real terminal result is not rewritten as cancelled.
 - Repeated cancellation is idempotent and does not repeatedly increment the Mission row version.
 
 ## SSE behavior
@@ -41,6 +43,8 @@ Cancellation and execution enqueue both lock the Mission before updating or crea
 - Frames contain `id: <seq>`, `event: mission`, and one-line JSON data.
 - `after` supports replay; heartbeats are comments; terminal Missions close the stream.
 - A second tail read closes the event/terminal-status commit race.
+- The live web Session, member state, directory hard-stale state, Session ID, and Mission ownership are revalidated at most every 15 seconds, before event reads and between prefetched event yields.
+- Logout, Session revocation, inactive membership, directory hard expiry, Session replacement, or ownership loss closes the stream before any subsequent event read/yield and releases all concurrency reservations.
 - Stream reservations are released on normal completion, generator close, and response-start disconnect.
 - Limits are enforced at 3 streams per owner, 2 per owner/Mission, and 200 process-wide.
 - Rejected reservations do not retain zero-count map keys, preventing counter-map growth under global saturation.
@@ -57,21 +61,28 @@ Representative RED cases caught and drove fixes for:
 - cancellation versus lease and the create-run/enqueue gap;
 - missing per-Mission/global SSE limits;
 - rejected SSE reservations accumulating zero-valued counter keys.
+- committed `completed`/`failed` Relay results being overwritten by a later cancel;
+- historical cancellation flags overriding an already observed terminal result;
+- revoked or stale SSE identities surviving after connection establishment;
+- slow consumers receiving or causing tail decryption after revocation;
+- missing and duplicate `seq=1 mission.started` events.
 
-Independent review initially found two Important issues: cancellation/lease atomicity and incomplete SSE concurrency limits. Both were fixed and re-reviewed. Final result: **Critical 0, Important 0**.
+The first independent review found two Important issues: cancellation/lease atomicity and incomplete SSE concurrency limits. The follow-up main review found terminal-result precedence, long-lived SSE identity revalidation, and the missing initial Mission event. All findings were fixed with RED/GREEN tests. A final independent review found one terminal-tail prefetch gap; its regression failed with two reads after revocation and passed with one read after the guard was moved before the fetch. Final result: **Critical 0, Important 0**.
+
+Mission creation now writes the user message and exactly one encrypted `seq=1 mission.started` event in the same transaction. Exact and concurrent idempotent replays do not duplicate the event.
 
 ## Verification
 
 Focused affected suite:
 
 ```text
-303 passed, 82 warnings in 9.13s
+318 passed, 82 warnings in 9.37s
 ```
 
 Complete backend suite:
 
 ```text
-2217 passed, 1 skipped, 85 warnings in 106.43s
+2232 passed, 1 skipped, 85 warnings in 105.68s
 ```
 
 `git diff --check` passed.

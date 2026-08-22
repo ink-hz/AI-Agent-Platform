@@ -758,6 +758,8 @@ def create_app(
                 mission_repository,
                 agent_use_authorization,
                 cursor_codec=MissionCursorCodec(identity_auth.secrets),
+                session_revalidator=identity_auth.authenticate,
+                session_cookie_name=identity_auth.cookie_name,
             )
         )
     if identity_enabled:
