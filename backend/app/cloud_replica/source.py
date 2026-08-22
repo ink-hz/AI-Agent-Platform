@@ -12,6 +12,7 @@ from .models import (
     RawSession,
     RawTraceAggregate,
     RawTurn,
+    ReviewFeedbackTotalsProjection,
     ReviewInboxProjection,
     ReviewIssueProjection,
 )
@@ -41,6 +42,7 @@ limit %(limit)s
 TURN_SQL = """
 select
     turn_key, session_key, turn_index, question, answer, created_at,
+    question_at, answer_at, question_time_status, answer_time_status,
     outcome, fallback_used, duration_ms, trace_key
 from platform_read.turns
 where session_key = any(%(session_keys)s)
@@ -104,6 +106,19 @@ order by min(feedback.created_at),feedback.agent_id,feedback.turn_key
 """.strip()
 
 
+REVIEW_FEEDBACK_TOTALS_SQL = """
+select agent_id,
+  count(*) as feedback_rows,
+  count(*) filter (where sentiment='negative') as negative_rows,
+  count(distinct turn_key) filter (where sentiment='negative') as negative_turns,
+  count(*) filter (where sentiment='positive') as positive_rows
+from platform_read.feedback
+where created_at <= %(through)s
+group by agent_id
+order by agent_id
+""".strip()
+
+
 class ReplicaSource:
     def __init__(
         self,
@@ -133,6 +148,9 @@ class ReplicaSource:
             inbox = list(cursor.execute(
                 REVIEW_INBOX_SQL, {"through": through}
             ).fetchall())
+            totals = list(cursor.execute(
+                REVIEW_FEEDBACK_TOTALS_SQL, {"through": through}
+            ).fetchall())
         values: list[object] = [
             ReviewIssueProjection(
                 issue_id=row["id"], agent_id=row["agent_id"],
@@ -151,6 +169,17 @@ class ReplicaSource:
                 first_feedback_at=row["first_feedback_at"],
             )
             for row in inbox
+        )
+        values.extend(
+            ReviewFeedbackTotalsProjection(
+                agent_id=row["agent_id"],
+                feedback_rows=int(row["feedback_rows"]),
+                negative_rows=int(row["negative_rows"]),
+                negative_turns=int(row["negative_turns"]),
+                positive_rows=int(row["positive_rows"]),
+                observed_at=through,
+            )
+            for row in totals
         )
         if self._operations_repository is not None:
             from app.operations.models import EventFilters
@@ -308,6 +337,10 @@ class ReplicaSource:
                     question=row["question"],
                     answer=row["answer"],
                     created_at=row["created_at"],
+                    question_at=row["question_at"],
+                    answer_at=row["answer_at"],
+                    question_time_status=row["question_time_status"],
+                    answer_time_status=row["answer_time_status"],
                     outcome=row["outcome"],
                     fallback_used=row["fallback_used"],
                     duration_ms=row["duration_ms"],

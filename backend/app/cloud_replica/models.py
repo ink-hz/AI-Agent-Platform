@@ -26,6 +26,10 @@ class RawTurn:
     question: str | None
     answer: str | None
     created_at: datetime
+    question_at: datetime | None = None
+    answer_at: datetime | None = None
+    question_time_status: str | None = None
+    answer_time_status: str | None = None
     outcome: str | None = None
     fallback_used: bool | None = None
     duration_ms: int | None = None
@@ -101,6 +105,10 @@ class SanitizedTurnRecord:
     duration_ms: int | None
     attachments: tuple[SanitizedAttachment, ...]
     trace: SanitizedTraceAggregate | None = None
+    question_at: datetime | None = None
+    answer_at: datetime | None = None
+    question_time_status: str = "unavailable"
+    answer_time_status: str = "unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +158,24 @@ class ReviewInboxProjection:
     turn_key: str
     feedback_count: int
     first_feedback_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewFeedbackTotalsProjection:
+    """Per-Agent feedback totals.
+
+    The Review inbox only carries negative feedback that nobody has triaged
+    yet, so it cannot answer "how much feedback exists". Counting it as the
+    total makes a fully triaged Agent look like an Agent nobody reviewed, and
+    it can never represent positive feedback at all.
+    """
+
+    agent_id: str
+    feedback_rows: int
+    negative_rows: int
+    negative_turns: int
+    positive_rows: int
+    observed_at: datetime
 
 
 @dataclass(frozen=True, slots=True)

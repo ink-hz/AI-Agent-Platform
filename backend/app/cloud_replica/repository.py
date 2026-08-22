@@ -52,6 +52,15 @@ def _time(value: Any) -> datetime:
     raise ValueError
 
 
+def _optional_time(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return _time(value)
+    except (ValueError, TypeError):
+        return None
+
+
 def _calendar_year_after(value: datetime) -> datetime:
     try:
         return value.replace(year=value.year + 1)
@@ -329,9 +338,11 @@ class ReplicaObservabilityRepository:
             question=(turn.get("question") or {}).get("text", ""),
             answer=(turn.get("answer") or {}).get("text", ""),
             created_at=_time(turn["created_at"]),
-            question_at=_time(turn["created_at"]),
-            question_time_status="estimated",
-            answer_time_status="unavailable",
+            question_at=_optional_time(turn.get("question_at"))
+            or _time(turn["created_at"]),
+            question_time_status=turn.get("question_time_status") or "estimated",
+            answer_at=_optional_time(turn.get("answer_at")),
+            answer_time_status=turn.get("answer_time_status") or "unavailable",
             trace_key=turn["key"] if trace else None,
             outcome=turn.get("outcome"),
             fallback_used=bool(turn.get("fallback_used")),

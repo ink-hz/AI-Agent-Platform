@@ -22,6 +22,7 @@ from .models import (
     SanitizedTurnRecord,
     ReviewInboxProjection,
     ReviewIssueProjection,
+    ReviewFeedbackTotalsProjection,
 )
 from .crypto import stable_id
 
@@ -193,6 +194,18 @@ def sanitize_management_projection(
             "first_feedback_at": raw.first_feedback_at,
             "sanitizer_policy_version": policy.version,
         }
+    if isinstance(raw, ReviewFeedbackTotalsProjection):
+        return {
+            "kind": "review_feedback_totals_projection",
+            "key": stable_id("review-feedback-totals", raw.agent_id, identity_key),
+            "agent_id": raw.agent_id,
+            "feedback_rows": max(raw.feedback_rows, 0),
+            "negative_rows": max(raw.negative_rows, 0),
+            "negative_turns": max(raw.negative_turns, 0),
+            "positive_rows": max(raw.positive_rows, 0),
+            "observed_at": raw.observed_at,
+            "sanitizer_policy_version": policy.version,
+        }
     if isinstance(raw, OperationEventProjection):
         summary = sanitize_text(raw.summary, policy, "operation-summary")
         return {
@@ -346,6 +359,16 @@ def sanitize_session(
                 question=question,
                 answer=answer,
                 created_at=turn.created_at,
+                question_at=turn.question_at,
+                answer_at=turn.answer_at,
+                question_time_status=_safe_enum(
+                    turn.question_time_status, {"exact", "estimated", "unavailable"}
+                )
+                or "unavailable",
+                answer_time_status=_safe_enum(
+                    turn.answer_time_status, {"exact", "estimated", "unavailable"}
+                )
+                or "unavailable",
                 outcome=_safe_enum(
                     turn.outcome,
                     {"success", "failed", "partial", "timeout", "unknown"},
