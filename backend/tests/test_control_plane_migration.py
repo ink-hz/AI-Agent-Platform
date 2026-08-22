@@ -54,6 +54,7 @@ INACTIVE_ADMIN_CLEANUP_MIGRATION = (
     MIGRATIONS / "026_inactive_platform_admin_cleanup.sql"
 )
 EXECUTION_RELAY_MIGRATION = MIGRATIONS / "027_execution_relay.sql"
+AGENT_BRAIN_MIGRATION = MIGRATIONS / "028_agent_brain_mvp.sql"
 RELEASE_1_PLAN = (
     Path(__file__).parents[2]
     / "docs/superpowers/plans/2026-08-13-dingtalk-identity-release-1.md"
@@ -114,6 +115,12 @@ TABLES = {
     "execution_jobs",
     "execution_events",
     "execution_worker_nonces",
+    "agent_use_grants",
+    "missions",
+    "mission_messages",
+    "mission_tasks",
+    "mission_runs",
+    "mission_events",
 }
 
 IMMUTABLE_MIGRATION_SHA256 = {
@@ -196,6 +203,9 @@ def test_first_control_migration_exists() -> None:
     )
     assert EXECUTION_RELAY_MIGRATION.is_file(), (
         f"missing execution relay migration: {EXECUTION_RELAY_MIGRATION}"
+    )
+    assert AGENT_BRAIN_MIGRATION.is_file(), (
+        f"missing Agent Brain migration: {AGENT_BRAIN_MIGRATION}"
     )
 
 
@@ -425,7 +435,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 28)
+                    (version, 64) for version in range(1, 29)
                 ]
 
     changed = tmp_path / "migrations"
