@@ -380,7 +380,7 @@ class MissionOrchestrator:
         self, mission: MissionRecord, run: MissionRun, reason_code: str
     ) -> bool:
         try:
-            self.relay.request_cancel(run.run_id)
+            self.relay.interrupt(run.run_id)
         except (ExecutionRelayNotFound, ExecutionRelayConflict, KeyError):
             pass
         self.missions.complete_run(

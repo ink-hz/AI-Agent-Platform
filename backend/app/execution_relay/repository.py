@@ -477,6 +477,35 @@ class ExecutionRelayRepository:
         except psycopg.Error:
             raise ExecutionRelayError("execution relay unavailable") from None
 
+    def interrupt(self, run_id: UUID) -> bool:
+        """Atomically stop a job when the trusted orchestrator must fail closed."""
+
+        if not isinstance(run_id, UUID):
+            raise ExecutionRelayNotFound()
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                current = cursor.execute(
+                    "select status from platform_control.execution_jobs "
+                    "where run_id=%s for update",
+                    (run_id,),
+                ).fetchone()
+                if current is None:
+                    raise ExecutionRelayNotFound()
+                if current["status"] in TERMINAL_STATUSES:
+                    return False
+                updated = cursor.execute(
+                    "update platform_control.execution_jobs set "
+                    "status='interrupted',cancel_requested=true,"
+                    "terminal_at=now(),updated_at=now() where run_id=%s "
+                    "and status=any(%s) returning run_id",
+                    (run_id, ["queued", "leased", "dispatched", "running"]),
+                ).fetchone()
+            return updated is not None
+        except ExecutionRelayError:
+            raise
+        except psycopg.Error:
+            raise ExecutionRelayError("execution relay unavailable") from None
+
     def job_state(
         self,
         run_id: UUID,

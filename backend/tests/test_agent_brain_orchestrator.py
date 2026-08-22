@@ -61,6 +61,12 @@ class ScriptedRelay:
         self.states[run_id] = "cancelled"
         return True
 
+    def interrupt(self, run_id):
+        if self.states.get(run_id) in {"completed", "failed", "cancelled", "interrupted"}:
+            return False
+        self.states[run_id] = "interrupted"
+        return True
+
     def terminal(self, run_id: UUID, status: str, text: str = "") -> None:
         event_type = "agent.complete" if status == "completed" else "agent.error"
         self.states[run_id] = status
@@ -564,6 +570,7 @@ def test_direct_revocation_terminates_instead_of_retrying_forever(brain_database
     terminal = missions.events_after(owner_id, mission.mission_id)[-1]
     assert terminal.event_type == "mission.interrupted"
     assert terminal.payload["reason_code"] == "authorization_revoked"
+    assert relay.states[next(iter(relay.states))] == "interrupted"
     assert service.advance_pending(limit=50) == 0
 
 

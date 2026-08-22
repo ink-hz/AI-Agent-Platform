@@ -289,6 +289,22 @@ def test_cancel_queued_job_is_terminal_without_worker(
 
 
 @pytest.mark.postgres
+def test_orchestrator_interrupt_is_terminal_without_worker_ack(
+    relay_database, repository
+) -> None:
+    payload = _payload("hr-bot")
+    repository.enqueue(payload)
+
+    assert repository.interrupt(payload.run_id) is True
+    assert repository.interrupt(payload.run_id) is False
+
+    state = repository.job_state(payload.run_id)
+    assert state.status == "interrupted"
+    assert state.cancel_requested is True
+    assert state.terminal_at is not None
+
+
+@pytest.mark.postgres
 def test_lease_skips_locked_rows_and_intersects_both_agent_allowlists(
     relay_database, repository
 ) -> None:
