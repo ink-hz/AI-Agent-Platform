@@ -158,17 +158,33 @@ class ExecutionRelayRepository:
                 payload.model_dump(mode="json"),
             )
             with self._connection() as connection, connection.cursor() as cursor:
+                linked_mission = cursor.execute(
+                    "select mission.cancel_requested "
+                    "from platform_control.mission_runs run_row "
+                    "join platform_control.missions mission "
+                    "on mission.mission_id=run_row.mission_id "
+                    "where run_row.run_id=%s for update of mission",
+                    (payload.run_id,),
+                ).fetchone()
+                cancelled = bool(
+                    linked_mission
+                    and linked_mission["cancel_requested"] is True
+                )
                 cursor.execute(
                     "insert into platform_control.execution_jobs "
                     "(job_id,run_id,agent_id,payload_ciphertext,"
-                    "encryption_key_version,status) "
-                    "values (%s,%s,%s,%s,%s,'queued')",
+                    "encryption_key_version,status,cancel_requested,terminal_at) "
+                    "values (%s,%s,%s,%s,%s,%s,%s,"
+                    "case when %s then now() else null end)",
                     (
                         job_id,
                         payload.run_id,
                         payload.agent_id,
                         sealed.ciphertext,
                         sealed.key_version,
+                        "cancelled" if cancelled else "queued",
+                        cancelled,
+                        cancelled,
                     ),
                 )
             return job_id

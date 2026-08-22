@@ -15,7 +15,8 @@ from app.agent_brain.repository import (
     MissionRepositoryError,
     MissionRepositoryNotFound,
 )
-from app.execution_relay.models import RelayEvent
+from app.execution_relay.models import RelayEvent, RelayJobPayload
+from app.execution_relay.repository import ExecutionRelayRepository
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import (
     ContentCodec,
@@ -72,6 +73,44 @@ def repository(mission_database) -> MissionRepository:
 def _rows(environment, query: str, params=()):
     with psycopg.connect(environment["admin"]) as connection:
         return connection.execute(query, params).fetchall()
+
+
+def _relay_for_mission(environment) -> ExecutionRelayRepository:
+    return ExecutionRelayRepository(
+        environment["urls"]["platform_control_app"], content_codec=_codec()
+    )
+
+
+def _mission_payload(mission, run) -> RelayJobPayload:
+    return RelayJobPayload(
+        run_id=run.run_id,
+        conversation_id=mission.mission_id,
+        trigger_message_id=run.run_id,
+        agent_id=run.agent_id,
+        prompt="execute",
+        max_turns=24,
+    )
+
+
+def _direct_run(repository, owner_id):
+    mission = repository.create_mission(
+        owner_id,
+        uuid4(),
+        "cancel race",
+        mode="direct_agent",
+        direct_agent_id="hr-bot",
+    )
+    run = repository.create_run(
+        owner_id,
+        mission.mission_id,
+        phase="direct",
+        agent_id="hr-bot",
+        input_payload={"capability_card": {"agent_id": "hr-bot"}},
+        objective="cancel race",
+        event_type="task.dispatched",
+        event_payload={"agent_id": "hr-bot"},
+    )
+    return mission, run
 
 
 def _advance_to_delegated(
@@ -485,6 +524,192 @@ def test_owner_list_detail_and_event_replay_decrypt_only_owned_rows(
         second,
     )
     assert first.seq == 1 and second.seq == 2
+
+
+@pytest.mark.postgres
+def test_api_creation_reports_new_then_exact_idempotent_replay(
+    mission_database, repository
+) -> None:
+    _environment, owner_id, _other_owner_id = mission_database
+    request_id = uuid4()
+
+    created = repository.create_mission_for_api(
+        owner_id, request_id, "same request"
+    )
+    replay = repository.create_mission_for_api(
+        owner_id, request_id, "same request"
+    )
+
+    assert created.created is True
+    assert replay.created is False
+    assert replay.mission == created.mission
+
+
+@pytest.mark.postgres
+def test_owner_list_supports_stable_keyset_pagination(
+    mission_database, repository
+) -> None:
+    _environment, owner_id, other_owner_id = mission_database
+    created = [
+        repository.create_mission(owner_id, uuid4(), f"mission-{index}")
+        for index in range(4)
+    ]
+    repository.create_mission(other_owner_id, uuid4(), "foreign")
+
+    first = repository.list_missions_for_owner(owner_id, limit=3)
+    boundary = (first[-1].created_at, first[-1].mission_id)
+    second = repository.list_missions_for_owner(
+        owner_id, limit=3, before=boundary
+    )
+
+    assert len(first) == 3
+    assert len(second) == 1
+    assert {item.mission_id for item in (*first, *second)} == {
+        item.mission_id for item in created
+    }
+
+
+@pytest.mark.postgres
+def test_cancel_request_is_owned_and_idempotently_increments_once(
+    mission_database, repository
+) -> None:
+    _environment, owner_id, other_owner_id = mission_database
+    mission = repository.create_mission(owner_id, uuid4(), "cancel me")
+
+    first = repository.request_cancel(owner_id, mission.mission_id)
+    replay = repository.request_cancel(owner_id, mission.mission_id)
+
+    assert first.cancel_requested is True
+    assert first.row_version == mission.row_version + 1
+    assert replay.row_version == first.row_version
+    with pytest.raises(MissionRepositoryNotFound):
+        repository.request_cancel(other_owner_id, mission.mission_id)
+
+
+@pytest.mark.postgres
+def test_cancel_commit_atomically_prevents_an_existing_queued_run_from_leasing(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _other_owner_id = mission_database
+    relay = _relay_for_mission(environment)
+    mission, run = _direct_run(repository, owner_id)
+    worker_id = f"cancel-{uuid4().hex[:12]}"
+    try:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "insert into platform_control.execution_workers "
+                "(worker_id,allowed_agent_ids,status) values "
+                "(%s,array['hr-bot'],'active')",
+                (worker_id,),
+            )
+        relay.enqueue(_mission_payload(mission, run))
+
+        repository.request_cancel(owner_id, mission.mission_id)
+
+        assert relay.lease(worker_id, ("hr-bot",), 45) is None
+        assert relay.job_state(run.run_id).status == "cancelled"
+    finally:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_control.execution_jobs where run_id=%s",
+                (run.run_id,),
+            )
+            connection.execute(
+                "delete from platform_control.execution_workers where worker_id=%s",
+                (worker_id,),
+            )
+
+
+@pytest.mark.postgres
+def test_cancel_between_run_commit_and_enqueue_creates_only_terminal_relay_job(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _other_owner_id = mission_database
+    relay = _relay_for_mission(environment)
+    mission, run = _direct_run(repository, owner_id)
+    worker_id = f"cancel-{uuid4().hex[:12]}"
+    try:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "insert into platform_control.execution_workers "
+                "(worker_id,allowed_agent_ids,status) values "
+                "(%s,array['hr-bot'],'active')",
+                (worker_id,),
+            )
+        repository.request_cancel(owner_id, mission.mission_id)
+
+        relay.enqueue(_mission_payload(mission, run))
+
+        assert relay.lease(worker_id, ("hr-bot",), 45) is None
+        assert relay.job_state(run.run_id).status == "cancelled"
+    finally:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_control.execution_jobs where run_id=%s",
+                (run.run_id,),
+            )
+            connection.execute(
+                "delete from platform_control.execution_workers where worker_id=%s",
+                (worker_id,),
+            )
+
+
+@pytest.mark.postgres
+def test_concurrent_cancel_and_lease_linearize_to_cancelled_or_pending_stop(
+    mission_database, repository
+) -> None:
+    environment, owner_id, _other_owner_id = mission_database
+    relay = _relay_for_mission(environment)
+    mission, run = _direct_run(repository, owner_id)
+    worker_id = f"cancel-{uuid4().hex[:12]}"
+    barrier = Barrier(2)
+    try:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "insert into platform_control.execution_workers "
+                "(worker_id,allowed_agent_ids,status) values "
+                "(%s,array['hr-bot'],'active')",
+                (worker_id,),
+            )
+        relay.enqueue(_mission_payload(mission, run))
+
+        def cancel():
+            barrier.wait(timeout=5)
+            return repository.request_cancel(owner_id, mission.mission_id)
+
+        def lease():
+            barrier.wait(timeout=5)
+            return relay.lease(worker_id, ("hr-bot",), 45)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            cancelled = pool.submit(cancel)
+            leased = pool.submit(lease)
+            cancelled.result(timeout=10)
+            lease_result = leased.result(timeout=10)
+
+        state = relay.job_state(run.run_id)
+        assert state.cancel_requested is True
+        if lease_result is None:
+            assert state.status == "cancelled"
+        else:
+            assert state.status == "leased"
+            with psycopg.connect(environment["admin"]) as connection:
+                stop = connection.execute(
+                    "select stop_requested_status from "
+                    "platform_control.execution_jobs where run_id=%s",
+                    (run.run_id,),
+                ).fetchone()[0]
+            assert stop == "cancelled"
+    finally:
+        with psycopg.connect(environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_control.execution_jobs where run_id=%s",
+                (run.run_id,),
+            )
+            connection.execute(
+                "delete from platform_control.execution_workers where worker_id=%s",
+                (worker_id,),
+            )
 
 
 @pytest.mark.postgres

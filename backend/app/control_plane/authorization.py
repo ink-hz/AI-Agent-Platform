@@ -26,6 +26,13 @@ VIEWER_R1_ROUTES = frozenset({
 _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/account"),
     ("POST", "/api/v1/auth/logout"),
+    ("GET", "/api/v1/catalog/agents"),
+    ("GET", "/api/v1/brain/missions"),
+    ("POST", "/api/v1/brain/missions"),
+    ("GET", "/api/v1/brain/missions/{mission_id}"),
+    ("GET", "/api/v1/brain/missions/{mission_id}/events"),
+    ("POST", "/api/v1/brain/missions/{mission_id}/cancel"),
+    ("POST", "/api/v1/agents/{agent_id}/missions"),
     ("GET", "/account"),
     ("GET", "/agents"),
     ("GET", "/agents/{client_path:path}"),
@@ -156,6 +163,8 @@ class AuthorizationService:
         decision: AuthorizationDecision,
     ) -> None:
         if auth.role is not Role.MANAGEMENT_VIEWER:
+            return
+        if decision.reason not in {"observation_scope", "viewer_governance"}:
             return
         if self.read_audit is None:
             raise RuntimeError("required audit unavailable")

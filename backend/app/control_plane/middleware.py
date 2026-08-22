@@ -35,6 +35,20 @@ _WORKER_RUN_ROUTE = re.compile(
     r"(?:dispatched|events|terminal|stop-ack)\Z"
 )
 _WORKER_NAMESPACE = "/api/v1/execution-worker"
+_DIRECT_AGENT_MISSION_RESPONSE = re.compile(
+    r"/api/v1/agents/[^/]+/missions\Z"
+)
+
+
+def _is_agent_brain_response_path(path: str | None) -> bool:
+    if not isinstance(path, str):
+        return False
+    return (
+        path == "/api/v1/catalog/agents"
+        or path == "/api/v1/brain/missions"
+        or path.startswith("/api/v1/brain/missions/")
+        or _DIRECT_AGENT_MISSION_RESPONSE.fullmatch(path) is not None
+    )
 
 
 def is_execution_worker_request(method: str, path: str) -> bool:
@@ -194,7 +208,10 @@ class IdentitySecurityMiddleware:
         method = scope["method"].upper()
         path = scope.get("path", "")
         local_path = _unprefixed(path, self.auth.route_prefix)
-        identity_response = local_path in _IDENTITY_RESPONSE_PATHS
+        identity_response = (
+            local_path in _IDENTITY_RESPONSE_PATHS
+            or _is_agent_brain_response_path(local_path)
+        )
 
         async def protected_send(message):
             if identity_response and message["type"] == "http.response.start":

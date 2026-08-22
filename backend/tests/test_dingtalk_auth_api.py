@@ -15,6 +15,7 @@ import pytest
 
 from app.control_plane.models import AuthContext, IdentityMode, IssuedWebSession, Role
 from app.control_plane.middleware import IdentitySecurityMiddleware
+from app.control_plane.authorization import AuthorizationService
 from app.main import create_app
 
 
@@ -33,6 +34,48 @@ AI_ADMIN_ACCOUNT_CONTRACT_ROLES = {
     "platform_admin",
     "platform_owner",
 }
+
+
+class _NoObservationGrants:
+    def permits(self, *_args):
+        return False
+
+
+@pytest.mark.parametrize("role", list(Role))
+@pytest.mark.parametrize(
+    ("method", "route"),
+    [
+        ("GET", "/api/v1/catalog/agents"),
+        ("GET", "/api/v1/brain/missions"),
+        ("POST", "/api/v1/brain/missions"),
+        ("GET", "/api/v1/brain/missions/{mission_id}"),
+        ("GET", "/api/v1/brain/missions/{mission_id}/events"),
+        ("POST", "/api/v1/brain/missions/{mission_id}/cancel"),
+        ("POST", "/api/v1/agents/{agent_id}/missions"),
+    ],
+)
+def test_agent_brain_routes_are_exact_authenticated_self_service_routes(
+    role: Role, method: str, route: str
+) -> None:
+    context = AuthContext(uuid4(), role, uuid4(), False)
+    service = AuthorizationService(_NoObservationGrants())
+
+    decision = service.decide(context, method, route, ())
+
+    assert decision.allowed is True
+    assert decision.reason == "self_service"
+
+
+def test_agent_brain_routes_do_not_authorize_nearby_or_worker_paths() -> None:
+    context = AuthContext(uuid4(), Role.MEMBER, uuid4(), False)
+    service = AuthorizationService(_NoObservationGrants())
+
+    assert service.decide(
+        context, "GET", "/api/v1/brain/missions/{mission_id}/debug", ()
+    ).status_code == 403
+    assert service.decide(
+        context, "POST", "/api/v1/execution-worker/lease", ()
+    ).status_code == 403
 
 
 class FakeAuth:

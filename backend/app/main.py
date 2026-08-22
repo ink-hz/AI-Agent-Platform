@@ -77,6 +77,7 @@ from .execution_relay.worker_auth import WorkerRequestVerifier
 from .agent_brain.authorization import AgentUseAuthorization
 from .agent_brain.orchestrator import MissionOrchestrator
 from .agent_brain.repository import MissionRepository
+from .agent_brain.routes import MissionCursorCodec, build_agent_brain_router
 from .local_secrets import read_secret_file
 from .observability import routes as observability_routes
 from .observability.repository import (
@@ -486,6 +487,8 @@ def create_app(
     execution_relay_repository = None
     execution_relay_router = None
     agent_brain_orchestrator = None
+    mission_repository = None
+    agent_use_authorization = None
     control_database_url = None
     content_codec = None
     if config.execution_relay_enabled:
@@ -695,6 +698,8 @@ def create_app(
     app.state.identity_auth = identity_auth
     app.state.execution_relay_repository = execution_relay_repository
     app.state.agent_brain_orchestrator = agent_brain_orchestrator
+    app.state.mission_repository = mission_repository
+    app.state.agent_use_authorization = agent_use_authorization
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
         control_database_url = read_secret_file(
@@ -747,6 +752,14 @@ def create_app(
     app.include_router(review_routes.router)
     if execution_relay_router is not None:
         app.include_router(execution_relay_router)
+    if mission_repository is not None and agent_use_authorization is not None:
+        app.include_router(
+            build_agent_brain_router(
+                mission_repository,
+                agent_use_authorization,
+                cursor_codec=MissionCursorCodec(identity_auth.secrets),
+            )
+        )
     if identity_enabled:
         app.include_router(routes_manage.router)
         def request_auth_context(request: Request):

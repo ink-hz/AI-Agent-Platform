@@ -373,6 +373,12 @@ class MissionRecord:
 
 
 @dataclass(frozen=True)
+class MissionCreateResult:
+    mission: MissionRecord
+    created: bool
+
+
+@dataclass(frozen=True)
 class MissionClaim:
     """Minimal, non-secret work claim used by the orchestration scanner."""
 
@@ -767,7 +773,7 @@ class MissionRepository:
         cursor: Any, internal_user_id: UUID, mission_id: UUID
     ) -> dict[str, Any]:
         row = cursor.execute(
-            "select mission_id,mode,direct_agent_id,status,row_version "
+            "select mission_id,mode,direct_agent_id,status,cancel_requested,row_version "
             "from platform_control.missions where mission_id=%s "
             "and owner_internal_user_id=%s for update",
             (mission_id, internal_user_id),
@@ -834,7 +840,7 @@ class MissionRepository:
             content_available=False,
         )
 
-    def create_mission(
+    def _create_mission_result(
         self,
         internal_user_id: UUID,
         client_request_id: UUID,
@@ -842,7 +848,7 @@ class MissionRepository:
         *,
         mode: Literal["brain", "direct_agent"] = "brain",
         direct_agent_id: str | None = None,
-    ) -> MissionRecord:
+    ) -> MissionCreateResult:
         _require_uuid(internal_user_id)
         _require_uuid(client_request_id)
         if not isinstance(prompt, str) or not prompt.strip():
@@ -898,19 +904,22 @@ class MissionRepository:
                             sealed.key_version,
                         ),
                     )
-                    return MissionRecord(
-                        mission_id=mission_id,
-                        owner_internal_user_id=internal_user_id,
-                        client_request_id=client_request_id,
-                        mode=mode,
-                        direct_agent_id=direct_agent_id,
-                        status=status,
-                        cancel_requested=False,
-                        row_version=0,
-                        created_at=inserted["created_at"],
-                        updated_at=inserted["updated_at"],
-                        terminal_at=None,
-                        prompt=prompt,
+                    return MissionCreateResult(
+                        MissionRecord(
+                            mission_id=mission_id,
+                            owner_internal_user_id=internal_user_id,
+                            client_request_id=client_request_id,
+                            mode=mode,
+                            direct_agent_id=direct_agent_id,
+                            status=status,
+                            cancel_requested=False,
+                            row_version=0,
+                            created_at=inserted["created_at"],
+                            updated_at=inserted["updated_at"],
+                            terminal_at=None,
+                            prompt=prompt,
+                        ),
+                        created=True,
                     )
 
                 existing = cursor.execute(
@@ -931,7 +940,7 @@ class MissionRepository:
                     or replay.direct_agent_id != direct_agent_id
                 ):
                     raise MissionRepositoryConflict()
-                return replay
+                return MissionCreateResult(replay, created=False)
         except MissionRepositoryError:
             raise
         except (
@@ -944,6 +953,42 @@ class MissionRepository:
             psycopg.Error,
         ):
             raise MissionRepositoryError() from None
+
+    def create_mission(
+        self,
+        internal_user_id: UUID,
+        client_request_id: UUID,
+        prompt: str,
+        *,
+        mode: Literal["brain", "direct_agent"] = "brain",
+        direct_agent_id: str | None = None,
+    ) -> MissionRecord:
+        return self._create_mission_result(
+            internal_user_id,
+            client_request_id,
+            prompt,
+            mode=mode,
+            direct_agent_id=direct_agent_id,
+        ).mission
+
+    def create_mission_for_api(
+        self,
+        internal_user_id: UUID,
+        client_request_id: UUID,
+        prompt: str,
+        *,
+        mode: Literal["brain", "direct_agent"] = "brain",
+        direct_agent_id: str | None = None,
+    ) -> MissionCreateResult:
+        """Create or replay one Mission while preserving HTTP idempotency status."""
+
+        return self._create_mission_result(
+            internal_user_id,
+            client_request_id,
+            prompt,
+            mode=mode,
+            direct_agent_id=direct_agent_id,
+        )
 
     def mission_for_owner(
         self, internal_user_id: UUID, mission_id: UUID
@@ -1005,25 +1050,51 @@ class MissionRepository:
             raise MissionRepositoryError() from None
 
     def list_missions_for_owner(
-        self, internal_user_id: UUID, *, limit: int = 50
+        self,
+        internal_user_id: UUID,
+        *,
+        limit: int = 50,
+        before: tuple[datetime, UUID] | None = None,
     ) -> tuple[MissionRecord, ...]:
         _require_uuid(internal_user_id)
         if (
             isinstance(limit, bool)
             or not isinstance(limit, int)
-            or not 1 <= limit <= 100
+            or not 1 <= limit <= 101
         ):
             raise ValueError("Mission list limit invalid")
+        if before is not None and (
+            not isinstance(before, tuple)
+            or len(before) != 2
+            or not isinstance(before[0], datetime)
+            or before[0].tzinfo is None
+            or not isinstance(before[1], UUID)
+        ):
+            raise ValueError("Mission list cursor invalid")
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                rows = cursor.execute(
+                query = (
                     "select m.*,message.message_id,message.content_ciphertext,"
                     "message.encryption_key_version from platform_control.missions m "
                     "left join platform_control.mission_messages message "
                     "on message.mission_id=m.mission_id and message.seq=1 "
                     "where m.owner_internal_user_id=%s "
-                    "order by m.created_at desc,m.mission_id desc limit %s",
-                    (internal_user_id, limit),
+                )
+                parameters: tuple[object, ...]
+                if before is None:
+                    parameters = (internal_user_id, limit)
+                else:
+                    query += "and (m.created_at,m.mission_id)<(%s,%s) "
+                    parameters = (
+                        internal_user_id,
+                        before[0],
+                        before[1],
+                        limit,
+                    )
+                rows = cursor.execute(
+                    query
+                    + "order by m.created_at desc,m.mission_id desc limit %s",
+                    parameters,
                 ).fetchall()
             missions: list[MissionRecord] = []
             for row in rows:
@@ -1043,6 +1114,52 @@ class MissionRepository:
             ValueError,
             psycopg.Error,
         ):
+            raise MissionRepositoryError() from None
+
+    def request_cancel(
+        self, internal_user_id: UUID, mission_id: UUID
+    ) -> MissionRecord:
+        """Set the owned Mission cancellation flag once; terminal replay is stable."""
+
+        _require_uuid(internal_user_id)
+        _require_uuid(mission_id)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                mission = self._owned_mission_for_update(
+                    cursor, internal_user_id, mission_id
+                )
+                if (
+                    mission["status"] not in TERMINAL_MISSION_STATUSES
+                    and not mission["cancel_requested"]
+                ):
+                    cursor.execute(
+                        "update platform_control.missions set "
+                        "cancel_requested=true,row_version=row_version+1,"
+                        "updated_at=now() where mission_id=%s",
+                        (mission_id,),
+                    )
+                cursor.execute(
+                    "update platform_control.execution_jobs job set "
+                    "status=case when job.status='queued' then 'cancelled' "
+                    "else job.status end,cancel_requested=true,"
+                    "terminal_at=case when job.status='queued' then now() "
+                    "else job.terminal_at end,"
+                    "stop_requested_status=case when job.status='queued' "
+                    "then null else 'cancelled' end,"
+                    "stop_acknowledged_at=null,updated_at=now() "
+                    "from platform_control.mission_runs run_row "
+                    "where run_row.mission_id=%s "
+                    "and run_row.run_id=job.run_id "
+                    "and job.status=any(%s)",
+                    (
+                        mission_id,
+                        ["queued", "leased", "dispatched", "running"],
+                    ),
+                )
+            return self.mission_for_owner(internal_user_id, mission_id)
+        except MissionRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error):
             raise MissionRepositoryError() from None
 
     def claim_pending(self, limit: int) -> tuple[MissionClaim, ...]:
