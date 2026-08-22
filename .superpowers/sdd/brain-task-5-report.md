@@ -233,3 +233,54 @@ Fresh full backend verification, run once after that review cleared:
 ```
 
 The 47 warnings are the same pre-existing Starlette/httpx deprecations.
+
+## Third-wave terminal delivery and key-safety closure
+
+A final strict review found one Critical and three Important reliability gaps.
+Commits `da37e17` and `627f51c` close them without expanding the public API or
+UI:
+
+- Cloud-forced `cancelled` and `interrupted` states are durable pending commands
+  with explicit acknowledgement. Only unacknowledged forced terminals are
+  returned by heartbeat, the query and local pending queue are capped at 100,
+  and an acknowledged command is not replayed.
+- A cloud terminal remains authoritative even when the Worker has already
+  recorded local `completed` or `failed`. Reconciliation atomically discards
+  undelivered outbox rows, adopts the cloud state, uploads that terminal, removes
+  the active run, and releases capacity for the next lease. Callback/start
+  concurrency is database-arbitrated and no longer deadlocks synchronous MetaBot
+  callbacks.
+- Migration 030 adds constrained pending/ACK fields plus a partial delivery
+  index while preserving least-privilege app-only access.
+- Migration 031 adds a write-once-per-version encrypted content-key canary.
+  Startup and orchestration validate exact key bytes before content handling.
+  A same-version wrong key is now an infrastructure error and cannot mass-
+  quarantine Missions; an individual decrypt failure becomes a tombstone only
+  after the same key has successfully decrypted its trusted canary.
+- Every legal `agent.state`, including the real Core Chat text-only form,
+  creates exactly one generic `agent.accepted`. Only whitelisted structured
+  fields create `agent.progress`; raw text is never copied, and
+  `agent.log`/`agent.question`/`agent.file` remain private.
+
+RED evidence included all four local `completed`/`failed` × cloud
+`cancelled`/`interrupted` combinations, stop replay after heartbeat, normal
+terminal states incorrectly appearing as stops, an unbounded pending queue,
+same-version wrong keys quarantining two healthy Missions, the missing canary
+schema, and text-only state failing to create acceptance.
+
+Fresh combined affected verification:
+
+```text
+400 passed in 11.09s
+```
+
+The independent strict re-review reported no remaining or new Critical or
+Important findings and separately passed 16 focused tests.
+
+Fresh full backend verification, run once after that review cleared:
+
+```text
+2113 passed, 1 skipped, 46 warnings in 105.84s (0:01:45)
+```
+
+The warnings are the existing Starlette per-request cookie deprecations.
