@@ -415,7 +415,7 @@ def _seed_current_bound_member(environment):
 
 
 @pytest.mark.postgres
-def test_account_snapshot_returns_only_display_name_and_active_exact_scopes(
+def test_account_snapshot_returns_departments_and_active_exact_scopes(
     production_environment,
 ) -> None:
     repository = _db_repository(production_environment)
@@ -438,6 +438,7 @@ def test_account_snapshot_returns_only_display_name_and_active_exact_scopes(
 
     assert repository.account_snapshot(internal_user_id) == {
         "display_name": "Web Session User",
+        "departments": [],
         "observation_agent_ids": ["ai-fae-agent", "hr-bot"],
     }
 

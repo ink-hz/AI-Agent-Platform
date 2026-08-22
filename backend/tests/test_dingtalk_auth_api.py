@@ -22,6 +22,7 @@ AI_ADMIN_ACCOUNT_CONTRACT_FIELDS = {
     "internal_user_id",
     "display_name",
     "role",
+    "departments",
     "observation_agent_ids",
     "directory_freshness",
     "hard_stale_read_only",
@@ -96,6 +97,7 @@ class FakeAuth:
     def account_snapshot(self, context):
         return {
             "display_name": "Platform user",
+            "departments": ["产品中心", "项目管理部"],
             "observation_agent_ids": [],
             "directory_freshness": "hard_stale"
             if context.hard_stale_read_only else "fresh",
@@ -526,6 +528,7 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
         "internal_user_id": str(auth.context.internal_user_id),
         "display_name": "Platform user",
         "role": "platform_owner",
+        "departments": ["产品中心", "项目管理部"],
         "observation_agent_ids": [],
         "directory_freshness": "fresh",
         "hard_stale_read_only": False,

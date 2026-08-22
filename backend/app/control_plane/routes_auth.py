@@ -327,6 +327,7 @@ def build_auth_router(
             "internal_user_id": str(context.internal_user_id),
             "display_name": snapshot["display_name"],
             "role": context.role.value,
+            "departments": snapshot["departments"],
             "observation_agent_ids": snapshot["observation_agent_ids"],
             "directory_freshness": snapshot["directory_freshness"],
             "hard_stale_read_only": context.hard_stale_read_only,

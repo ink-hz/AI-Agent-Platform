@@ -53,6 +53,9 @@ PLATFORM_ADMIN_MUTATION_MIGRATION = (
 INACTIVE_ADMIN_CLEANUP_MIGRATION = (
     MIGRATIONS / "026_inactive_platform_admin_cleanup.sql"
 )
+ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION = (
+    MIGRATIONS / "027_account_department_projection.sql"
+)
 RELEASE_1_PLAN = (
     Path(__file__).parents[2]
     / "docs/superpowers/plans/2026-08-13-dingtalk-identity-release-1.md"
@@ -187,6 +190,10 @@ def test_first_control_migration_exists() -> None:
     assert INACTIVE_ADMIN_CLEANUP_MIGRATION.is_file(), (
         "missing inactive administrator cleanup migration: "
         f"{INACTIVE_ADMIN_CLEANUP_MIGRATION}"
+    )
+    assert ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION.is_file(), (
+        "missing account department projection migration: "
+        f"{ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION}"
     )
 
 
@@ -416,7 +423,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 27)
+                    (version, 64) for version in range(1, 28)
                 ]
 
     changed = tmp_path / "migrations"

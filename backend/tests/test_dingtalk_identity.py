@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import psycopg
+from psycopg.rows import dict_row
 import pytest
 
 import app.control_plane.identity as identity_module
@@ -1522,3 +1523,175 @@ async def test_cancellation_waits_for_database_mutation_to_finish_then_propagate
     release.set()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.postgres
+def test_account_department_projection_is_active_member_only_and_app_role_only(
+    production_environment,
+) -> None:
+    active_user_id = uuid4()
+    no_membership_user_id = uuid4()
+    inactive_user_id = uuid4()
+    historical_user_id = uuid4()
+    historical_generation_id = uuid4()
+    active_generation_id = uuid4()
+
+    def insert_generation(connection, generation_id, members) -> None:
+        connection.execute(
+            "insert into platform_control.directory_generations "
+            "(generation_id,status,member_count,department_count,content_sha256,completed_at) "
+            "values (%s,'complete',%s,%s,%s,now())",
+            (generation_id, len(members), sum(len(values[1]) for values in members), "d" * 64),
+        )
+        for index, (user_id, departments, member_status) in enumerate(members):
+            member_key = uuid4()
+            connection.execute(
+                "insert into platform_control.directory_members "
+                "(generation_id,member_key,internal_user_id,subject_kind,lookup_hmac,"
+                "lookup_key_version,encrypted_provider_id,encryption_key_version,display_name,status) "
+                "values (%s,%s,%s,'dingtalk_corporate',%s,1,%s,1,'Member',%s)",
+                (generation_id, member_key, user_id, bytes([index + 1]) * 32, b"m" * 29, member_status),
+            )
+            for department_index, display_name in enumerate(departments):
+                department_key = uuid4()
+                connection.execute(
+                    "insert into platform_control.directory_departments "
+                    "(generation_id,department_key,lookup_hmac,lookup_key_version,"
+                    "encrypted_provider_id,encryption_key_version,display_name) "
+                    "values (%s,%s,%s,1,%s,1,%s)",
+                    (
+                        generation_id, department_key,
+                        bytes([index * 10 + department_index + 1]) * 32,
+                        b"d" * 29, display_name,
+                    ),
+                )
+                connection.execute(
+                    "insert into platform_control.member_departments "
+                    "(generation_id,member_key,department_key) values (%s,%s,%s)",
+                    (generation_id, member_key, department_key),
+                )
+
+    with psycopg.connect(production_environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values "
+            "(%s,'Active','active'),(%s,'No membership','active'),"
+            "(%s,'Inactive','active'),(%s,'Historical','active')",
+            (active_user_id, no_membership_user_id, inactive_user_id, historical_user_id),
+        )
+        insert_generation(
+            connection,
+            historical_generation_id,
+            ((historical_user_id, ("Legacy department",), "active"),),
+        )
+        insert_generation(
+            connection,
+            active_generation_id,
+            (
+                (active_user_id, (" 产品中心 ", "项目管理部", "产品中心"), "active"),
+                (no_membership_user_id, (), "active"),
+                (inactive_user_id, ("Inactive department",), "inactive"),
+            ),
+        )
+        connection.execute(
+            "update platform_control.directory_state set active_generation_id=%s, "
+            "last_complete_at=now(), updated_at=now() where singleton",
+            (active_generation_id,),
+        )
+
+        signature = "platform_control.read_account_departments_v27(uuid)"
+        assert connection.execute(
+            "select has_function_privilege('public',%s,'execute'), "
+            "has_function_privilege('platform_control_app',%s,'execute'), "
+            "has_function_privilege('platform_control_app_preview',%s,'execute')",
+            (signature, signature, signature),
+        ).fetchone() == (False, True, False)
+        for role in (
+            "platform_control_migrator", "platform_directory_worker",
+            "platform_stream_ingest", "platform_audit_append",
+            "platform_control_maintenance", "platform_control_migrator_preview",
+            "platform_directory_worker_preview", "platform_stream_ingest_preview",
+            "platform_audit_append_preview", "platform_control_maintenance_preview",
+        ):
+            assert connection.execute(
+                "select has_function_privilege(%s,%s,'execute')", (role, signature)
+            ).fetchone() == (False,)
+        for table in (
+            "directory_generations", "directory_state", "directory_members",
+            "directory_departments", "member_departments",
+        ):
+            assert connection.execute(
+                "select has_table_privilege('platform_control_app',%s,'select')",
+                (f"platform_control.{table}",),
+            ).fetchone() == (False,)
+
+    with psycopg.connect(
+        production_environment["urls"]["platform_control_app"], row_factory=dict_row
+    ) as connection:
+        row = connection.execute(
+            "select platform_control.read_account_departments_v27(%s) as departments",
+            (active_user_id,),
+        ).fetchone()
+        assert row["departments"] == ["产品中心", "项目管理部"]
+        assert all(
+            forbidden not in department.lower()
+            for department in row["departments"]
+            for forbidden in ("provider", "mobile", "contact")
+        )
+        for user_id in (no_membership_user_id, inactive_user_id, historical_user_id):
+            row = connection.execute(
+                "select platform_control.read_account_departments_v27(%s) as departments",
+                (user_id,),
+            ).fetchone()
+            assert row["departments"] == []
+        with pytest.raises(
+            psycopg.errors.CheckViolation,
+            match="account department internal user invalid",
+        ):
+            connection.execute(
+                "select platform_control.read_account_departments_v27(null)"
+            )
+
+    invalid_department_id = uuid4()
+    with psycopg.connect(production_environment["admin"]) as connection:
+        member_key = connection.execute(
+            "select member_key from platform_control.directory_members "
+            "where generation_id=%s and internal_user_id=%s",
+            (active_generation_id, active_user_id),
+        ).fetchone()[0]
+        connection.execute(
+            "insert into platform_control.directory_departments "
+            "(generation_id,department_key,lookup_hmac,lookup_key_version,"
+            "encrypted_provider_id,encryption_key_version,display_name) "
+            "values (%s,%s,%s,1,%s,1,'   ')",
+            (active_generation_id, invalid_department_id, b"z" * 32, b"z" * 29),
+        )
+        connection.execute(
+            "insert into platform_control.member_departments "
+            "(generation_id,member_key,department_key) values (%s,%s,%s)",
+            (active_generation_id, member_key, invalid_department_id),
+        )
+    try:
+        with psycopg.connect(
+            production_environment["urls"]["platform_control_app"]
+        ) as connection:
+            with pytest.raises(
+                psycopg.errors.CheckViolation,
+                match="account department display invalid",
+            ):
+                connection.execute(
+                    "select platform_control.read_account_departments_v27(%s)",
+                    (active_user_id,),
+                )
+    finally:
+        with psycopg.connect(production_environment["admin"]) as connection:
+            connection.execute(
+                "delete from platform_control.member_departments "
+                "where generation_id=%s and department_key=%s",
+                (active_generation_id, invalid_department_id),
+            )
+            connection.execute(
+                "delete from platform_control.directory_departments "
+                "where generation_id=%s and department_key=%s",
+                (active_generation_id, invalid_department_id),
+            )
