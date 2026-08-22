@@ -6,6 +6,8 @@ Complete. The Platform now advances encrypted Missions through one durable
 professional-Agent state machine, using the outbound Execution Relay and a
 single PostgreSQL advisory-lock leader.
 
+Implementation commit: `571ab509ef766804abeeef8d597fcd2cf9bce5b7`.
+
 ## Implemented contract
 
 - Added `MissionOrchestrator.advance_pending(limit)` with a hard limit of 50,
