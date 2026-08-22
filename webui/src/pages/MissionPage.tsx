@@ -166,7 +166,11 @@ export function MissionPage({ missionId, account, client = DEFAULT_CLIENT }: {
     {authenticationExpired && <aside className="mission-connection is-offline" role="alert"><strong>企业登录已失效</strong><a href={platformPath(loginPath)}>重新登录以继续读取任务</a></aside>}
     {cancelFailure && <aside className="mission-connection is-offline" role="alert">停止请求暂未送达，请稍后重试。</aside>}
     <section className="mission-request"><span>你的需求</span><p>{mission.prompt}</p></section>
-    <MissionTimeline events={events} />
+    <MissionTimeline
+      directAgentId={mission.direct_agent_id}
+      events={events}
+      missionMode={mission.mode}
+    />
     <footer className="mission-foot">
       <a className="mission-permalink" href={platformPath(`/missions/${encodeURIComponent(mission.mission_id)}`)}>此任务的固定链接</a>
       <span>页面断线不会创建新任务。</span>

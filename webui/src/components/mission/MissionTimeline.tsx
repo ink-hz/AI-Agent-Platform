@@ -1,5 +1,5 @@
 import { MessageMarkdown } from "../MessageMarkdown";
-import type { MissionEvent } from "../../brainTypes";
+import type { MissionEvent, MissionMode } from "../../brainTypes";
 
 
 interface EventPresentation {
@@ -27,6 +27,27 @@ const PRESENTATIONS: Record<string, EventPresentation> = {
   "mission.interrupted": { title: "执行已中断", actor: "Agent 大脑", tone: "failure", markdown: false },
   "mission.cancelled": { title: "任务已停止", actor: "Agent 大脑", tone: "failure", markdown: false },
 };
+
+const DIRECT_AGENT_EVENT_TYPES = new Set([
+  "agent.accepted",
+  "agent.progress",
+  "agent.result",
+  "mission.partially_completed",
+  "mission.completed",
+  "mission.failed",
+  "mission.interrupted",
+  "mission.cancelled",
+]);
+
+function actorForEvent(
+  eventType: string,
+  defaultActor: string,
+  missionMode: MissionMode,
+  directAgentId: string | null,
+): string {
+  if (missionMode !== "direct_agent" || !DIRECT_AGENT_EVENT_TYPES.has(eventType)) return defaultActor;
+  return directAgentId ? `专业 Agent · ${directAgentId}` : "专业 Agent";
+}
 
 function textValue(eventType: string, payload: Record<string, unknown>): string {
   const keys = eventType === "plan.created"
@@ -62,7 +83,15 @@ function formatEventTime(value: string): string {
   }).format(date);
 }
 
-export function MissionTimeline({ events }: { events: MissionEvent[] }) {
+export function MissionTimeline({
+  directAgentId,
+  events,
+  missionMode,
+}: {
+  directAgentId: string | null;
+  events: MissionEvent[];
+  missionMode: MissionMode;
+}) {
   const ordered = [...new Map(events.map((event) => [event.seq, event])).values()]
     .sort((left, right) => left.seq - right.seq);
   if (!ordered.length) {
@@ -73,6 +102,7 @@ export function MissionTimeline({ events }: { events: MissionEvent[] }) {
       const presentation = PRESENTATIONS[event.event_type] ?? {
         title: "任务更新", actor: "Agent 大脑", tone: "neutral", markdown: false,
       };
+      const actor = actorForEvent(event.event_type, presentation.actor, missionMode, directAgentId);
       const text = textValue(event.event_type, event.payload);
       const agentId = typeof event.payload.agent_id === "string"
         ? event.payload.agent_id
@@ -83,7 +113,7 @@ export function MissionTimeline({ events }: { events: MissionEvent[] }) {
         <div className="mission-event-marker" aria-hidden="true" />
         <article>
           <header>
-            <div><span>{presentation.actor}</span><h2 className="mission-event-title">{presentation.title}</h2></div>
+            <div><span>{actor}</span><h2 className="mission-event-title">{presentation.title}</h2></div>
             <time dateTime={event.created_at}>{formatEventTime(event.created_at)}</time>
           </header>
           {agentId && <p className="mission-event-agent">{agentId}</p>}

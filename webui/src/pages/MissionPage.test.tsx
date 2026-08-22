@@ -144,6 +144,35 @@ describe("MissionPage", () => {
     expect(reconnectDelay).not.toHaveBeenCalled();
   });
 
+  it("passes the persisted direct Agent identity into terminal event attribution", async () => {
+    const terminal = {
+      ...active,
+      mode: "direct_agent" as const,
+      direct_agent_id: "hr-bot",
+      status: "completed" as const,
+      terminal_at: "2026-08-22T10:01:00Z",
+    };
+    const client: MissionPageClient = {
+      fetchMission: vi.fn().mockResolvedValue(terminal),
+      cancelMission: vi.fn(),
+      streamMissionEvents: vi.fn().mockImplementation(async (_id, options) => {
+        options.onEvent({
+          event_id: "direct-final", mission_id: active.mission_id, run_id: "run", seq: 8,
+          event_type: "mission.completed", payload: { text: "# 专业 Agent 交付" },
+          created_at: "2026-08-22T10:01:00Z",
+        } satisfies MissionEvent);
+      }),
+      reconnectDelay: vi.fn(),
+    };
+
+    await act(async () => {
+      root.render(<MissionPage missionId={active.mission_id} account={account} client={client} />);
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+
+    expect(container.querySelector(".mission-event header span")?.textContent).toBe("专业 Agent · hr-bot");
+  });
+
   it("aborts an in-flight stop request when the page unmounts", async () => {
     let cancelSignal: AbortSignal | undefined;
     const client: MissionPageClient = {
