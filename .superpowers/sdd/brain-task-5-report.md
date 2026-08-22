@@ -331,3 +331,52 @@ Fresh full backend verification, run once after the final review cleared:
 ```
 
 The warnings are the existing Starlette per-request cookie deprecations.
+
+## Fifth-wave pre-dispatch lease recovery closure
+
+The last remaining Important restart window is closed by commit `261a737`:
+
+- `record_lease` may commit immediately before a process crash, leaving a
+  durable local row in `leased` while neither `mark_dispatching` nor in-memory
+  run registration has happened. Startup recovery now includes that row.
+- Recovery never re-dispatches this ambiguous pre-dispatch lease to MetaBot.
+  It records a safe local `interrupted` terminal and uploads it to release the
+  cloud lease.
+- If the cloud already has a pending forced `cancelled` or `interrupted`
+  command, that authoritative status replaces the recovered local terminal and
+  is uploaded without an orphan stop ACK or a MetaBot start.
+- Existing bounded stop delivery still drains more than 100 entries without
+  starvation, and an unassigned Worker still cannot ACK another Worker's stop.
+
+The exact RED reproduction produced four failures: all three runtime variants
+had no recovered terminal, and the PostgreSQL recovery query returned zero rows
+for a durable `leased` record. After the minimal recovery change, the same
+focused tests passed:
+
+```text
+4 passed in 0.72s
+```
+
+Restart, race, bounded-delivery, wrong-Worker, and real PostgreSQL/loopback
+regressions passed:
+
+```text
+9 passed in 2.91s
+```
+
+Fresh affected verification:
+
+```text
+267 passed, 44 warnings in 7.54s
+```
+
+The independent strict review reported no Critical or Important findings and
+separately passed eight focused tests.
+
+Fresh full backend verification after review clearance:
+
+```text
+2139 passed, 1 skipped, 47 warnings in 105.78s (0:01:45)
+```
+
+The warnings remain the existing Starlette/httpx deprecations.
