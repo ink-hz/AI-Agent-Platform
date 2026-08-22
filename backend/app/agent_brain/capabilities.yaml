@@ -1,0 +1,161 @@
+agents:
+  - agent_id: hr-bot
+    mission: 帮助员工和管理者完成招聘、人事与员工服务任务。
+    capabilities:
+      - 梳理岗位需求与候选人画像
+      - 起草招聘沟通与面试材料
+      - 解答人事流程与员工服务问题
+    exclusions:
+      - 不代替管理者作出录用、解雇或薪酬决定
+      - 不处理未提供依据的个人敏感信息推断
+    required_inputs:
+      - 任务目标
+      - 适用岗位、人员或制度背景
+    example_tasks:
+      - 根据岗位说明梳理候选人能力组合
+      - 为一次结构化面试准备问题清单
+    supports_evidence: true
+    supports_streaming: true
+    supports_cancellation: true
+    supports_idempotency: true
+    max_duration_seconds: 300
+    adapter_id: metabot-core-chat
+    capability_version: 1
+
+  - agent_id: fae-bot
+    mission: 提供产品咨询、问题诊断与现场应用支持。
+    capabilities:
+      - 解答产品规格与适用场景问题
+      - 基于现象组织故障排查路径
+      - 提供 SDK 与集成实施建议
+    exclusions:
+      - 不在缺少证据时宣称已定位根因
+      - 不执行现场设备或生产环境变更
+    required_inputs:
+      - 产品或设备型号
+      - 问题现象与已完成的排查
+    example_tasks:
+      - 为深度相机异常整理分步排查方案
+      - 比较两个产品在给定场景下的适用性
+    supports_evidence: true
+    supports_streaming: true
+    supports_cancellation: true
+    supports_idempotency: true
+    max_duration_seconds: 300
+    adapter_id: metabot-core-chat
+    capability_version: 1
+
+  - agent_id: marketing-prospecting-bot
+    mission: 发现、筛选并规划潜在客户线索的跟进方向。
+    capabilities:
+      - 定义目标客户画像
+      - 设计线索筛选条件
+      - 起草个性化初次触达内容
+    exclusions:
+      - 不发送外部消息或修改客户系统
+      - 不编造联系人或企业事实
+    required_inputs:
+      - 目标市场或客户类型
+      - 产品价值主张
+    example_tasks:
+      - 为机器人视觉产品定义目标客户画像
+      - 为一组已知线索设计优先级规则
+    supports_evidence: true
+    supports_streaming: true
+    supports_cancellation: true
+    supports_idempotency: true
+    max_duration_seconds: 300
+    adapter_id: metabot-core-chat
+    capability_version: 1
+
+  - agent_id: marketing-inbound-bot
+    mission: 处理入站线索、内容触达与客户咨询准备工作。
+    capabilities:
+      - 分类入站需求与购买阶段
+      - 起草咨询回复与后续问题
+      - 规划内容承接路径
+    exclusions:
+      - 不承诺未经确认的价格、交期或服务条款
+      - 不直接发送回复或修改外部系统
+    required_inputs:
+      - 客户咨询内容
+      - 可用产品与政策背景
+    example_tasks:
+      - 将一条客户咨询整理为回复草稿和待确认事项
+      - 为技术白皮书下载线索设计承接步骤
+    supports_evidence: true
+    supports_streaming: true
+    supports_cancellation: true
+    supports_idempotency: true
+    max_duration_seconds: 300
+    adapter_id: metabot-core-chat
+    capability_version: 1
+
+  - agent_id: marketing-voice-bot
+    mission: 为语音触达、通话沟通与结果整理提供支持。
+    capabilities:
+      - 设计通话目标与沟通提纲
+      - 起草合规的电话沟通话术
+      - 将通话信息整理为后续行动
+    exclusions:
+      - 不主动发起真实电话或冒充人工身份
+      - 不对缺失的通话内容作事实补全
+    required_inputs:
+      - 沟通对象与目标
+      - 已知客户背景
+    example_tasks:
+      - 为一次产品回访准备三分钟沟通提纲
+      - 将通话记录整理为异议和后续行动
+    supports_evidence: false
+    supports_streaming: true
+    supports_cancellation: true
+    supports_idempotency: true
+    max_duration_seconds: 300
+    adapter_id: metabot-core-chat
+    capability_version: 1
+
+  - agent_id: marketing-intelligence-bot
+    mission: 收集、比较并整理市场动态与竞争信息。
+    capabilities:
+      - 构建市场与竞争信息框架
+      - 比较已提供来源中的事实与差异
+      - 提炼趋势、风险与信息缺口
+    exclusions:
+      - 不把缺少来源的推断表述为事实
+      - 不获取受限、付费墙后或未经授权的数据
+    required_inputs:
+      - 调研主题与范围
+      - 时效、地区或来源要求
+    example_tasks:
+      - 整理给定竞品资料中的定位差异
+      - 为一个新市场列出调研框架和证据缺口
+    supports_evidence: true
+    supports_streaming: true
+    supports_cancellation: true
+    supports_idempotency: true
+    max_duration_seconds: 300
+    adapter_id: metabot-core-chat
+    capability_version: 1
+
+  - agent_id: marketing-gtm-bot
+    mission: 制定市场进入策略、节奏规划与执行协同方案。
+    capabilities:
+      - 明确细分市场与进入假设
+      - 设计阶段目标、里程碑与责任边界
+      - 组织跨团队执行清单
+    exclusions:
+      - 不批准预算、合同或对外承诺
+      - 不在缺少市场证据时保证商业结果
+    required_inputs:
+      - 产品与目标市场
+      - 商业目标和约束
+    example_tasks:
+      - 为新产品进入一个区域市场制定九十天计划
+      - 将市场目标拆解为跨团队里程碑
+    supports_evidence: true
+    supports_streaming: true
+    supports_cancellation: true
+    supports_idempotency: true
+    max_duration_seconds: 300
+    adapter_id: metabot-core-chat
+    capability_version: 1
