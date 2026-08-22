@@ -98,6 +98,117 @@ FAE:
 Do not delete the cutover state or pre-cutover release until the acceptance
 window closes.
 
+## Agent Brain opt-in release
+
+The use entry is a separate fail-closed release gate. Keep the management root
+available until every dependency is ready, and execute the following order
+without skipping or combining a gate:
+
+1. migrations with Brain disabled;
+2. local `agent-brain-bot` on `127.0.0.1:9110`;
+3. Worker allowlist and key registration;
+4. cloud image with Brain disabled;
+5. relay canary;
+6. enable Brain;
+7. switch `/` from the management entry to Agent 大脑.
+
+The cloud environment flag is `PLATFORM_AGENT_BRAIN_ENABLED`. It is absent or
+`0` during migration, image and relay validation. The authenticated root then
+redirects to `/admin`; only an explicit value of `1` enables Mission APIs and
+the use root. The relay remains separately controlled by
+`PLATFORM_EXECUTION_RELAY_ENABLED=1`.
+
+Create a private JSON acceptance config and four private browser-input files.
+The config, the member and owner Cookie header files, the HR acceptance prompt,
+the interruption prompt and the evidence destination must be owner-only regular
+files with mode `0600`. The acceptance identities must include a
+real DingTalk test member and a different owner or platform administrator. Before enablement,
+require a pre-created `hr-bot` grant for the member and deliberately do not grant
+`marketing-gtm-bot`.
+
+Each Cookie file contains exactly the two browser cookies
+`__Host-platform_session` and `__Host-platform_csrf` on one line. The script
+derives mode-`0600` curl/CDP inputs, supplies the required production Origin,
+and never places either value in command-line arguments or evidence. The JSON
+config has schema version `1` and absolute paths for `cloud_admin_key`,
+`member_cookie_file`, `owner_cookie_file`, `hr_prompt_file`,
+`interruption_prompt_file`, the agentops-owned mode-`0600`
+`relay_acceptance_config`, and the evidence destination, plus
+`cloud_admin_host` fixed to the production administrator host.
+
+Run the staged gate from the reviewed release checkout:
+
+```bash
+deploy/cloud/accept.sh /absolute/private/agent-brain-acceptance.json preflight
+deploy/cloud/accept.sh /absolute/private/agent-brain-acceptance.json release
+deploy/cloud/accept.sh /absolute/private/agent-brain-acceptance.json rollback
+deploy/cloud/accept.sh /absolute/private/agent-brain-acceptance.json restore
+```
+
+`release` performs enablement and real acceptance in one fail-closed process;
+there is no standalone enable action. Any enablement or acceptance failure
+restores `PLATFORM_AGENT_BRAIN_ENABLED=0` and therefore the management root.
+The `accept` action is only for an additional rerun of the same gate and also
+disables Brain on failure. `restore` repeats the complete release gate after a
+successful rollback instead of enabling the flag without acceptance.
+Before the flag can become `1`, `release` runs the existing ten-gate execution
+relay acceptance as `agentops` and requires its exact fixed success marker.
+That canary runs while Brain remains `0`; a missing config or any non-exact
+result leaves the management entry active.
+
+All mutating actions hold both a local private-directory lock and the same
+root-owned cloud private-directory lock used by `deploy/cloud/deploy.sh` for
+their full lifecycle. The common remote lock is acquired atomically before
+either workflow acquires or changes deployment input, so a concurrent Brain
+action or cloud deploy fails closed. An unclean shutdown deliberately leaves a
+stale lock for explicit operator audit; never delete it merely to retry.
+
+### Stale lock recovery
+
+Treat the common lock as stale only after confirming that local
+`deploy/cloud/deploy.sh` and `deploy/cloud/accept.sh` processes and their remote
+SSH/stage processes do not hold either lock open. On the cloud host, read and
+record the owner token, lock ownership and timestamps; then compare the current
+and previous deployment pointers and Brain feature state with the most recent
+deployment and acceptance evidence. Also recheck Platform health and the FAE
+invariance snapshot. If a cutover or remote operation remains uncertain, stop
+and investigate instead of clearing the lock.
+
+After the operator records that audit in the deployment incident log, move only
+the exact
+`/opt/orbbec-agent-platform/private/agent-brain-action.lock` directory to a
+token-named tombstone, verify its `owner` file still contains the recorded
+token, and remove that file and the now-empty tombstone. Never use a recursive
+delete or a wildcard. Run `preflight` again before retrying any mutation.
+
+The acceptance checks the member use root, member denial at `/admin`, owner
+access to `/admin`, a real `hr-bot` ChildRun, stored event parity, Markdown
+rendering in a fresh headless browser process, unauthorized Agent denial,
+explicit interruption after a Worker stop, and no duplicate ChildRun after
+Worker restart. Readiness and child-run discovery poll at five-second intervals
+with fixed total time limits; do not replace them with a busy loop.
+
+The evidence file may contain only release SHAs, container IDs and start times,
+worker key ID, Mission IDs, run IDs, event sequences, listener addresses, FAE
+probe results and rollback paths.
+Do not record prompts, answers, cookies, DingTalk IDs, or secrets. Keep the file
+at mode `0600`.
+Every successful gate writes an immutable UUID-suffixed evidence generation and
+atomically updates the configured evidence path to the newest generation. If a
+current evidence file already exists, it is first retained as a separate
+mode-`0600` previous generation. This allows `accept` and `restore` to rerun
+without overwriting the release or rollback evidence used by the preceding
+step.
+
+Rollback sets the feature flag to `0`, recreates only Platform API/loopback,
+and verifies `/admin`, Sessions, Review and Operations before it reports
+success. Do not drop migration 028. Do not delete Mission data. The rollback
+never restarts or modifies FAE or local MetaBots. The FAE container identity,
+configuration and separate FAE domain/IP Nginx routes remain byte-for-byte
+invariant; only the Agent Platform server block is intentionally replaced.
+After the rollback exercise passes, `restore` returns the
+reviewed release to the enabled state.
+
 ## One-time local preparation
 
 Use an explicit private directory outside the repository:

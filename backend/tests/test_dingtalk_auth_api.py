@@ -16,6 +16,7 @@ import pytest
 from app.control_plane.models import AuthContext, IdentityMode, IssuedWebSession, Role
 from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.control_plane.authorization import AuthorizationService
+from app.control_plane.routes_auth import build_auth_router
 from app.main import create_app
 
 
@@ -193,6 +194,7 @@ def _app(
     auth: FakeAuth,
     *,
     registry_document: str = "version: 1\nagents: []\n",
+    brain_enabled: bool = False,
 ):
     static = tmp_path / "static"
     assets = static / "assets"
@@ -214,6 +216,9 @@ def _app(
     contract = tmp_path / "contract.json"
     contract.write_text(json.dumps({"bots": []}), encoding="utf-8")
     monkeypatch.setenv("PLATFORM_STATIC_DIR", str(static))
+    monkeypatch.setenv(
+        "PLATFORM_AGENT_BRAIN_ENABLED", "1" if brain_enabled else "0"
+    )
     return create_app(
         registry_path=str(registry),
         cluster_contract_path=str(contract),
@@ -338,12 +343,12 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
     tmp_path, monkeypatch
 ) -> None:
     auth = FakeAuth()
-    client = TestClient(_app(tmp_path, monkeypatch, auth))
+    client = TestClient(_app(tmp_path, monkeypatch, auth, brain_enabled=False))
     cookies = {auth.cookie_name: "valid-cookie"}
 
     root = client.get("/", cookies=cookies, follow_redirects=False)
-    assert root.status_code == 200
-    assert 'name="platform-identity-mode" content="enabled"' in root.text
+    assert root.status_code == 302
+    assert root.headers["location"] == "/admin"
     for path in (
         "/account", "/agents", "/agents/hr-bot", "/missions",
         "/missions/00000000-0000-0000-0000-000000000001", "/admin",
@@ -356,6 +361,47 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
         assert "LOGIN SHELL" in response.text
         assert 'name="platform-identity-mode" content="enabled"' in response.text
     assert client.get("/unknown", cookies=cookies).status_code in {403, 404}
+
+
+def test_authenticated_root_serves_brain_shell_only_after_feature_enablement(
+    tmp_path
+) -> None:
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<main>BRAIN SHELL</main>", encoding="utf-8")
+    auth = FakeAuth()
+    app = FastAPI()
+    app.include_router(
+        build_auth_router(
+            auth,
+            static_dir=str(static),
+            public_assets=frozenset(),
+            detailed_health=lambda _request: {},
+            agent_brain_enabled=True,
+        )
+    )
+
+    response = TestClient(app).get(
+        "/", cookies={auth.cookie_name: "valid-cookie"}, follow_redirects=False
+    )
+
+    assert response.status_code == 200
+    assert "BRAIN SHELL" in response.text
+
+
+def test_authenticated_root_preserves_management_entry_while_brain_is_disabled(
+    tmp_path, monkeypatch
+) -> None:
+    auth = FakeAuth()
+    client = TestClient(_app(tmp_path, monkeypatch, auth, brain_enabled=False))
+
+    response = client.get(
+        "/", cookies={auth.cookie_name: "valid-cookie"}, follow_redirects=False
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/admin"
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_manifest_authorized_asset_symlink_never_exposes_outside_content(

@@ -91,11 +91,17 @@ available_bytes="$(/usr/bin/df -B1 --output=avail "$root_path" | /usr/bin/tail -
 
 fae_container_id="$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend 2>/dev/null || true)"
 fae_image="$(/usr/bin/docker inspect --format '{{.Config.Image}}' ai-fae-backend 2>/dev/null || true)"
+fae_image_id="$(/usr/bin/docker inspect --format '{{.Image}}' ai-fae-backend 2>/dev/null || true)"
 fae_started_at="$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend 2>/dev/null || true)"
+fae_restart_count="$(/usr/bin/docker inspect --format '{{.RestartCount}}' ai-fae-backend 2>/dev/null || true)"
+fae_config_digest="$(/usr/bin/docker inspect --format '{{json .Config}}' ai-fae-backend 2>/dev/null | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
+fae_mounts_digest="$(/usr/bin/docker inspect --format '{{json .Mounts}}' ai-fae-backend 2>/dev/null | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
 fae_health_digest="$(/usr/bin/docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ai-fae-backend 2>/dev/null | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
+fae_ip_digest="$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 http://47.106.112.69/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
+fae_domain_digest="$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve fae.orbbec.com.cn:443:127.0.0.1 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
 nginx_digest="$(/usr/sbin/nginx -T 2>&1 | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
 public_listener_digest="$(/usr/bin/ss -H -lnt | /usr/bin/awk '$4 !~ /^(127\.0\.0\.1|\[::1\]):/ {print $4}' | /usr/bin/sort -u | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
-[[ -n "$fae_container_id" && -n "$fae_image" && -n "$fae_started_at" ]] || fail
+[[ -n "$fae_container_id" && -n "$fae_image" && -n "$fae_image_id" && -n "$fae_started_at" && "$fae_restart_count" =~ ^[0-9]+$ ]] || fail
 
 existing_api="$(/usr/bin/docker ps --filter label=com.docker.compose.project=orbbec-agent-platform --filter label=com.docker.compose.service=platform-api --format '{{.ID}}' | /usr/bin/head -1)"
 control_secret_consumer_services=(
@@ -455,10 +461,13 @@ if [[ -n "$previous_release" && -f "$environment_path" ]]; then
     api_stopped=1
   fi
 fi
-/usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\n' \
-  "$image_name" > "$environment_path"
+PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
+[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" || "$PLATFORM_AGENT_BRAIN_ENABLED" == "1" ]] || fail
+/usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\nPLATFORM_AGENT_BRAIN_ENABLED=%s\n' \
+  "$image_name" "$PLATFORM_AGENT_BRAIN_ENABLED" > "$environment_path"
 /bin/chown root:root "$environment_path"
 /bin/chmod 600 "$environment_path"
+export PLATFORM_AGENT_BRAIN_ENABLED
 unset PLATFORM_CLOUD_AUTH_MODE
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$release_path/deploy/cloud/compose.yaml")
 "${compose[@]}" up -d --force-recreate platform-postgres >/dev/null
@@ -495,6 +504,16 @@ write_deploy_state keyring_switched
 identity_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-dingtalk-production-secrets.sh" \
   "$private_path")" || fail
 [[ "$identity_bootstrap_result" == "DINGTALK_PRODUCTION_SECRETS_OK" ]] || fail
+for protected_secret in \
+  control-database-url \
+  control-audit-database-url \
+  content-encryption-keyring \
+  execution-worker-public-keyring.json; do
+  [[ "$(/usr/bin/stat -c '%a %U' "$private_path/$protected_secret")" == "600 root" ]] || fail
+done
+/usr/bin/docker run --rm --network none \
+  -v orbbec-agent-platform-api-secrets:/target:ro alpine:3.22 \
+  sh -ceu 'for name in control-database-url control-audit-database-url content-encryption-keyring execution-worker-public-keyring.json; do test "$(stat -c "%a %u" "/target/$name")" = "600 10001"; done' || fail
 identity_policy_result="$(/usr/bin/docker run --rm --user 0:0 --read-only \
   --security-opt no-new-privileges:true \
   --network orbbec-agent-platform-internal \
@@ -558,7 +577,9 @@ api_environment="$(/usr/bin/docker inspect --format '{{range .Config.Env}}{{prin
 for required_runtime_value in \
   PLATFORM_DEPLOYMENT_MODE=cloud-replica \
   PLATFORM_CLOUD_AUTH_MODE=dingtalk \
-  PLATFORM_IDENTITY_MODE=production; do
+  PLATFORM_IDENTITY_MODE=production \
+  PLATFORM_EXECUTION_RELAY_ENABLED=1 \
+  "PLATFORM_AGENT_BRAIN_ENABLED=$PLATFORM_AGENT_BRAIN_ENABLED"; do
   /usr/bin/grep -Fxq "$required_runtime_value" <<<"$api_environment" || fail
 done
 if [[ -n "$previous_release" ]]; then
@@ -583,8 +604,14 @@ fi
 
 [[ "$fae_container_id" == "$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)" ]] || fail
 [[ "$fae_image" == "$(/usr/bin/docker inspect --format '{{.Config.Image}}' ai-fae-backend)" ]] || fail
+[[ "$fae_image_id" == "$(/usr/bin/docker inspect --format '{{.Image}}' ai-fae-backend)" ]] || fail
 [[ "$fae_started_at" == "$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)" ]] || fail
+[[ "$fae_restart_count" == "$(/usr/bin/docker inspect --format '{{.RestartCount}}' ai-fae-backend)" ]] || fail
+[[ "$fae_config_digest" == "$(/usr/bin/docker inspect --format '{{json .Config}}' ai-fae-backend | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
+[[ "$fae_mounts_digest" == "$(/usr/bin/docker inspect --format '{{json .Mounts}}' ai-fae-backend | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 [[ "$fae_health_digest" == "$(/usr/bin/docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ai-fae-backend | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
+[[ "$fae_ip_digest" == "$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 http://47.106.112.69/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
+[[ "$fae_domain_digest" == "$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve fae.orbbec.com.cn:443:127.0.0.1 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 [[ "$nginx_digest" == "$(/usr/sbin/nginx -T 2>&1 | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 [[ "$public_listener_digest" == "$(/usr/bin/ss -H -lnt | /usr/bin/awk '$4 !~ /^(127\.0\.0\.1|\[::1\]):/ {print $4}' | /usr/bin/sort -u | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Fq '127.0.0.1:8080' || fail

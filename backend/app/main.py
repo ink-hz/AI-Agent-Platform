@@ -736,6 +736,7 @@ def create_app(
                 config,
                 release_sha=release_sha,
             ),
+            agent_brain_enabled=config.agent_brain_enabled,
         ))
 
     @app.get("/api/deployment")
