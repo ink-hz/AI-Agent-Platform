@@ -347,15 +347,20 @@ token, and remove that file and the now-empty tombstone. Never use a recursive
 delete or a wildcard. Run `preflight` again before retrying any mutation.
 
 The acceptance checks the member use root, member denial at `/admin`, owner
-access to `/admin`, a real `hr-bot` ChildRun, stored event parity, Markdown
-rendering in a fresh headless browser process, unauthorized Agent denial,
+access to `/admin`, and owner Conversation metrics. It then creates one
+HR-oriented Brain Conversation, waits for the first real `hr-bot` ChildRun,
+posts a follow-up to the same Conversation, and requires exactly two Turns,
+four Messages, two linked Missions, monotonic persisted events, and two distinct
+completed `hr-bot` runs. Replaying either POST and resuming SSE after the final
+sequence must create no duplicate Turn or ChildRun. The gate also checks
+Markdown rendering on the Conversation page, unauthorized direct-Agent denial,
 explicit interruption after a Worker stop, and no duplicate ChildRun after
 Worker restart. Readiness and child-run discovery poll at five-second intervals
 with fixed total time limits; do not replace them with a busy loop.
 
 The evidence file may contain only release SHAs, container IDs and start times,
-worker key ID, Mission IDs, run IDs, event sequences, listener addresses, FAE
-probe results and rollback paths.
+worker key ID, Conversation/Turn/Mission/run IDs, event sequences and counts,
+listener addresses, FAE probe results and rollback paths.
 Do not record prompts, answers, cookies, DingTalk IDs, or secrets. Keep the file
 at mode `0600`.
 Every successful gate writes an immutable UUID-suffixed evidence generation and
@@ -366,13 +371,16 @@ without overwriting the release or rollback evidence used by the preceding
 step.
 
 Rollback sets the feature flag to `0`, recreates only Platform API/loopback,
-and verifies `/admin`, Sessions, Review and Operations before it reports
-success. Do not drop migration 032 or 033. Do not delete Mission data. The rollback
-never restarts or modifies FAE or local MetaBots. The FAE container identity,
-configuration and separate FAE domain/IP Nginx routes remain byte-for-byte
-invariant; only the Agent Platform server block is intentionally replaced.
-After the rollback exercise passes, `restore` returns the
-reviewed release to the enabled state.
+and verifies `/admin`, Sessions, Review, Operations, and the exact retained
+two-Turn Conversation shape before it reports success. Do not drop migrations
+032 through 038. Do not delete Conversation, Message, Turn, Mission, or run
+data. The rollback never restarts or modifies FAE or local MetaBots. The FAE
+container identity and configuration remain unchanged.
+The separate FAE domain/IP Nginx routes remain byte-for-byte invariant;
+only the Agent Platform server block is intentionally replaced. After the
+rollback exercise passes, `restore` returns
+the reviewed release to the enabled state, appends a third Turn to the same
+Conversation exactly once, and then repeats the complete release gate.
 
 ## One-time local preparation
 

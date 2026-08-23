@@ -699,10 +699,16 @@ class MissionOrchestrator:
                     candidate = self._conversation_context_builder.compaction_candidate(
                         mission.conversation_id, mission.turn_id
                     )
-                except ConversationContextError:
+                    prompt = (
+                        build_summary_prompt(candidate)
+                        if candidate is not None
+                        else None
+                    )
+                except (ConversationContextError, ValueError):
                     return self._terminate_context_failure(mission)
                 if candidate is not None:
-                    prompt = build_summary_prompt(candidate)
+                    if prompt is None:
+                        return self._terminate_context_failure(mission)
                     summary = self.missions.create_run(
                         mission.owner_internal_user_id,
                         mission.mission_id,
@@ -739,7 +745,13 @@ class MissionOrchestrator:
                     return self._fail_summary_run(
                         mission, summary, "context_changed"
                     )
-                if self._enqueue(mission, summary, build_summary_prompt(candidate)):
+                try:
+                    prompt = build_summary_prompt(candidate)
+                except ValueError:
+                    return self._fail_summary_run(
+                        mission, summary, "context_too_large"
+                    )
+                if self._enqueue(mission, summary, prompt):
                     return True
                 return self._advance_summary(mission, summary)
 

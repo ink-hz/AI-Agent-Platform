@@ -187,6 +187,48 @@ def test_invalid_summary_keeps_previous_summary_and_writes_visible_failure(
 
 
 @pytest.mark.postgres
+def test_summary_prompt_overflow_fails_the_turn_visibly(
+    brain_database,
+    monkeypatch,
+) -> None:
+    environment, owner_id = brain_database
+    missions = MissionRepository(
+        environment["urls"]["platform_control_app"], content_codec=_codec()
+    )
+    conversations = ConversationRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=missions.content_codec,
+        mission_repository=missions,
+    )
+    projection = ConversationProjection(conversations)
+    first = conversations.start(owner_id, uuid4(), "A" * 30_000)
+    _complete_mission(environment, conversations, first.mission.mission_id, "B" * 8_000)
+    assert projection.project_terminal(first.mission.mission_id)
+    second = conversations.append_turn(
+        owner_id, first.conversation.conversation_id, uuid4(), "C" * 30_000
+    )
+    monkeypatch.setattr(conversation_context, "MAX_CONTEXT_BYTES", 96 * 1024)
+    import app.agent_brain.orchestrator as orchestrator_module
+
+    monkeypatch.setattr(orchestrator_module, "MAX_BRAIN_PROMPT_BYTES", 128)
+    service = MissionOrchestrator(
+        missions,
+        ScriptedRelay(),
+        capability_provider=lambda _owner: load_capability_cards(),
+        conversation_context_builder=ConversationContextBuilder(conversations),
+        conversation_projection=projection,
+    )
+
+    assert service.advance_pending(limit=50) == 1
+
+    mission = missions.mission_for_owner(owner_id, second.mission.mission_id)
+    assert mission.status == "failed"
+    assert "无法安全整理" in conversations.messages_after(
+        owner_id, first.conversation.conversation_id
+    )[-1].content
+
+
+@pytest.mark.postgres
 def test_direct_agent_follow_up_uses_the_same_summary_phase(
     brain_database,
 ) -> None:

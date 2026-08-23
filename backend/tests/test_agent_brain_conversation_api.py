@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timezone
 import json
 from uuid import UUID, uuid4
 
@@ -9,10 +10,13 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.agent_brain.conversation_projection import ConversationProjection
+from app.agent_brain.conversation_models import ConversationEventRecord
 from app.agent_brain.conversation_routes import (
     ConversationCursorCodec,
     build_conversation_router,
+    conversation_event_stream,
 )
+from app.agent_brain.routes import MissionStreamLimiter
 from app.control_plane.authorization import AuthorizationService
 from app.control_plane.auth import AuthSecrets
 from app.control_plane.middleware import IdentitySecurityMiddleware
@@ -309,6 +313,78 @@ def test_terminal_sse_replays_monotonic_conversation_events_and_closes(
     assert all(item["conversation_id"] == conversation_id for item in data)
     assert all("content" not in item["payload"] for item in data)
     assert any(item["event_type"] == "brain.responding" for item in data)
+
+
+@pytest.mark.anyio
+async def test_terminal_sse_projects_every_batch_before_closing() -> None:
+    owner = uuid4()
+    session_id = uuid4()
+    conversation_id = uuid4()
+    turn_id = uuid4()
+    mission_id = uuid4()
+    all_events = tuple(
+        ConversationEventRecord(
+            event_id=uuid4(),
+            conversation_id=conversation_id,
+            seq=sequence,
+            turn_id=turn_id,
+            mission_id=mission_id,
+            event_type="agent.progress",
+            created_at=datetime.now(timezone.utc),
+            payload={"text": f"进度 {sequence}"},
+        )
+        for sequence in range(1, 206)
+    )
+
+    class BatchedTerminalRepository:
+        def __init__(self) -> None:
+            self.projected = 0
+
+        def conversation_for_owner(self, selected_owner, selected_conversation):
+            assert (selected_owner, selected_conversation) == (owner, conversation_id)
+            return object()
+
+        def sync_mission_events(self, selected_owner, selected_conversation, *, limit):
+            assert (selected_owner, selected_conversation) == (owner, conversation_id)
+            added = min(limit, len(all_events) - self.projected)
+            self.projected += added
+            return added
+
+        def events_after(self, selected_owner, selected_conversation, *, after, limit):
+            assert (selected_owner, selected_conversation) == (owner, conversation_id)
+            return tuple(
+                event
+                for event in all_events[: self.projected]
+                if event.seq > after
+            )[:limit]
+
+        def active_turn_for_owner(self, selected_owner, selected_conversation):
+            assert (selected_owner, selected_conversation) == (owner, conversation_id)
+            return None
+
+    async def connected() -> bool:
+        return False
+
+    repository = BatchedTerminalRepository()
+    context = AuthContext(owner, Role.MEMBER, session_id, False)
+    stream = conversation_event_stream(
+        repository,
+        owner,
+        conversation_id,
+        after=0,
+        is_disconnected=connected,
+        limiter=MissionStreamLimiter(max_per_owner=1, max_per_mission=1),
+        session_revalidator=lambda _token: (context, None),
+        session_token="valid",
+        expected_session_id=session_id,
+        poll_seconds=0,
+    )
+
+    frames = [frame async for frame in stream]
+
+    assert repository.projected == 205
+    assert len(frames) == 205
+    assert frames[-1].startswith("id: 205\n")
 
 
 @pytest.mark.postgres

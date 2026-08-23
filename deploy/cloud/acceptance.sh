@@ -30,16 +30,22 @@ load_config() {
 }
 
 run_local_gate() {
-  local repository_root="$1"
+  local repository_root="$1" backend_python common_git
+  backend_python="$repository_root/backend/.venv/bin/python"
+  if [[ ! -x "$backend_python" ]]; then
+    common_git="$(git -C "$repository_root" rev-parse --path-format=absolute --git-common-dir)" || fail
+    backend_python="$(/usr/bin/dirname "$common_git")/backend/.venv/bin/python"
+  fi
+  [[ -x "$backend_python" ]] || fail
   (
-    cd "$repository_root/backend"
-    PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q
-    cd "$repository_root/webui"
-    npm test
-    npm run build
-    cd "$repository_root"
-    bash -n deploy/cloud/*.sh deploy/install-cloud-sync-launchagent.sh
-    git diff --check
+    cd "$repository_root/backend" || exit 1
+    PYTHONDONTWRITEBYTECODE=1 "$backend_python" -m pytest -q || exit 1
+    cd "$repository_root/webui" || exit 1
+    npm test || exit 1
+    npm run build || exit 1
+    cd "$repository_root" || exit 1
+    bash -n deploy/cloud/*.sh deploy/install-cloud-sync-launchagent.sh || exit 1
+    git diff --check || exit 1
   ) >/dev/null 2>&1 || fail
 }
 

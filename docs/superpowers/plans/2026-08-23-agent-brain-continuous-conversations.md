@@ -684,7 +684,7 @@ git commit -m "feat(brain): bound long conversation context"
 **Interfaces:**
 - Produces fail-closed acceptance for two real Turns in one Conversation, direct Agent, Mission linkage, SSE recovery, authorization, mobile UI, rollback, restore, and FAE invariance.
 
-- [ ] **Step 1: Extend failing acceptance tests**
+- [x] **Step 1: Extend failing acceptance tests**
 
 Require this exact sequence:
 
@@ -703,7 +703,7 @@ restore sends root to Conversation and permits a third Turn
 FAE identity/config/mount/start/restart hashes are invariant
 ```
 
-- [ ] **Step 2: Run all local gates**
+- [x] **Step 2: Run all local gates**
 
 ```bash
 cd backend
@@ -718,7 +718,7 @@ deploy/cloud/acceptance.sh local
 
 Expected: all suites/build pass and `CLOUD_PLATFORM_LOCAL_GATE_OK` is printed.
 
-- [ ] **Step 3: Review, merge latest master, and rerun affected gates**
+- [x] **Step 3: Review, merge latest master, and rerun affected gates**
 
 Use requesting-code-review on the full diff. Resolve every Critical/Important finding. Merge current `origin/master` without rewriting user changes; rerun affected tests and require clean `git diff --check`.
 

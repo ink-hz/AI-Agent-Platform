@@ -343,6 +343,11 @@ def test_remote_stage_bootstrap_transaction_executes_in_order_and_fails_closed(
         f"  [[ {1 if fail_migration else 0} == 0 ]] || exit 81\n"
         "  exit 0\n"
         "fi\n"
+        "if [[ \" $* \" == *' app.agent_brain.conversation_backfill '* ]]; then\n"
+        "  echo backfill >> \"$log\"\n"
+        "  echo 'AGENT_BRAIN_CONVERSATION_BACKFILL_OK scanned=0 created=0 quarantined=0'\n"
+        "  exit 0\n"
+        "fi\n"
         "if [[ \" $* \" == *' app.execution_relay.bootstrap_registration '* ]]; then\n"
         "  [[ \" $* \" == *' -e PLATFORM_AGENT_BRAIN_ENABLED=0 '* ]] || exit 82\n"
         "  echo register >> \"$log\"\n"
@@ -390,7 +395,7 @@ def test_remote_stage_bootstrap_transaction_executes_in_order_and_fails_closed(
         assert lines == ["migrate:0"]
     else:
         assert result.returncode == 0, result.stderr
-        assert lines == ["migrate:0", "control", "register"]
+        assert lines == ["migrate:0", "control", "backfill", "register"]
 
 
 class _GrantConnection:

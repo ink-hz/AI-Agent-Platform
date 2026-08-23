@@ -345,7 +345,7 @@ async def conversation_event_stream(
             if await is_disconnected() or not await access_is_live():
                 return
             try:
-                await asyncio.to_thread(
+                projected = await asyncio.to_thread(
                     repository.sync_mission_events,
                     owner,
                     conversation_id,
@@ -371,6 +371,10 @@ async def conversation_event_stream(
                 cursor = event.seq
                 yield _sse_event(event)
             if active_turn is None:
+                # A terminal Turn can have more Mission events than one projection
+                # batch. Drain every full batch before deciding the stream is done.
+                if projected == 100:
+                    continue
                 if not await access_is_live():
                     return
                 try:

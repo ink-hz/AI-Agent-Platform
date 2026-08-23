@@ -120,14 +120,14 @@ def test_acceptance_is_private_real_idempotent_and_rollback_safe() -> None:
         "remote_feature 0",
         "/api/v1/brain/missions",
         "/api/v1/brain/missions/",
-        "/api/v1/agents/marketing-gtm-bot/missions",
+        "/api/v1/agents/marketing-gtm-bot/conversations",
         "Idempotency-Key",
         "X-CSRF-Token",
-        "mission.started",
+        "conversation.started",
         "task.dispatched",
         "agent.accepted",
         "agent.result",
-        "mission.completed",
+        "turn.completed",
         "mission.interrupted",
         "platform_control.mission_runs",
         "platform_control.mission_events",
@@ -203,7 +203,39 @@ def test_acceptance_sql_uses_the_real_migration_029_run_table() -> None:
     assert "phase in ('professional','direct')" in script
 
 
-def test_task9_rollback_pins_the_latest_agent_brain_migration() -> None:
+def test_acceptance_proves_continuous_conversation_release_and_restore() -> None:
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+
+    for required in (
+        "/api/v1/conversations",
+        "/api/v1/conversations/$conversation_id/messages",
+        "/api/v1/conversations/$conversation_id/events?after=$first_last_seq",
+        "/api/v1/agents/marketing-gtm-bot/conversations",
+        "platform_control.conversation_turns",
+        "platform_control.conversation_messages",
+        "mission.conversation_id=:'conversation'::uuid",
+        "first_turn_id",
+        "second_turn_id",
+        "first_mission_id",
+        "second_mission_id",
+        "conversation_id=%s",
+        "turn_count=2",
+        "message_count=4",
+        "resume_duplicate_turns=0",
+        "restore_conversation",
+        "third_turn_id",
+        "turn_count=3",
+        "message_count=6",
+        "/api/operations/conversation-metrics",
+    ):
+        assert required in script
+    assert script.index("/api/v1/conversations\"") < script.index(
+        "/api/v1/conversations/$conversation_id/messages\""
+    )
+    assert "delete from platform_control.conversations" not in script.lower()
+
+
+def test_rollback_pins_every_deployed_agent_brain_migration() -> None:
     runbook = (ROOT / "docs" / "runbooks" / "cloud-platform.md").read_text(
         encoding="utf-8"
     )
@@ -217,7 +249,7 @@ def test_task9_rollback_pins_the_latest_agent_brain_migration() -> None:
     task9 = plan.split("### Task 9:", 1)[1]
 
     assert LATEST_AGENT_BRAIN_MIGRATION.is_file()
-    assert "Do not drop migration 032 or 033" in runbook
+    assert "Do not drop migrations\n032 through 038" in runbook
     assert "Do not drop migration 032 or 033" in task9
 
 
@@ -308,13 +340,13 @@ def test_runbook_pins_dependency_order_evidence_and_non_destructive_rollback() -
         "mode `0600`",
         "real DingTalk test member",
         "pre-created `hr-bot` grant",
-        "Mission IDs",
+        "Conversation/Turn/Mission/run IDs",
         "event sequences",
         "worker key ID",
         "container IDs and start times",
         "Do not record prompts, answers, cookies, DingTalk IDs, or secrets",
-        "Do not drop migration 032 or 033",
-        "Do not delete Mission data",
+        "Do not drop migrations\n032 through 038",
+        "Do not delete Conversation, Message, Turn, Mission, or run\ndata",
         "FAE container identity",
         "separate FAE domain/IP Nginx routes remain byte-for-byte",
         "only the Agent Platform server block is intentionally replaced",

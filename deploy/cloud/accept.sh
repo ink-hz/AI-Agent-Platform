@@ -436,7 +436,7 @@ PY
 }
 
 verify_markdown_rendering() {
-  local mission_id="$1" browser_cookie_file="$2" workspace="$3"
+  local conversation_id="$1" browser_cookie_file="$2" workspace="$3"
   local chrome=/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome
   local profile="$workspace/chrome-profile" active_port="$profile/DevToolsActivePort"
   [[ -x "$chrome" ]] || fail
@@ -456,7 +456,7 @@ verify_markdown_rendering() {
     "http://127.0.0.1:$chrome_port/json/new?about%3Ablank" > "$workspace/chrome-target.json" || fail
   page_socket="$($python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["webSocketDebuggerUrl"])' "$workspace/chrome-target.json")" || fail
   [[ "$page_socket" == ws://127.0.0.1:* || "$page_socket" == ws://localhost:* ]] || fail
-  /usr/bin/node - "$page_socket" "$browser_cookie_file" "https://agent.orbbec.com.cn/missions/$mission_id" <<'NODE' || fail
+  /usr/bin/node - "$page_socket" "$browser_cookie_file" "https://agent.orbbec.com.cn/conversations/$conversation_id" <<'NODE' || fail
 const fs = require("fs");
 const [socketUrl, cookiePath, missionUrl] = process.argv.slice(2);
 const cookies = JSON.parse(fs.readFileSync(cookiePath, "utf8"));
@@ -585,6 +585,77 @@ accept_real() {
   curl_member=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/member.curl" --max-time 15)
   curl_owner=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" --max-time 15)
 
+  restored_conversation_id=""
+  third_turn_id=""
+  third_mission_id=""
+  restore_conversation() {
+    require_private_file "$evidence_file" 65536
+    read -r restored_conversation_id restored_after < <("$python" - "$evidence_file" <<'PY'
+import pathlib,re,sys
+values={}
+for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    if "=" in line:
+        key,value=line.split("=",1); values[key]=value
+if not re.fullmatch(r"[0-9a-f-]{36}",values.get("conversation_id","")): raise SystemExit(1)
+if not values.get("last_event_seq","").isdigit() or int(values["last_event_seq"]) < 1: raise SystemExit(1)
+print(values["conversation_id"],values["last_event_seq"])
+PY
+    ) || fail
+    "$python" - "$temporary/restore-follow-up.json" <<'PY'
+import json,pathlib,sys
+pathlib.Path(sys.argv[1]).write_text(json.dumps({"text":"继续这个对话：请把前两轮结果收敛为一份可直接执行的行动清单。"},ensure_ascii=False,separators=(",",":")),encoding="utf-8")
+PY
+    /bin/chmod 600 "$temporary/restore-follow-up.json"
+    third_key="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+    [[ "$("${curl_member[@]}" -o "$temporary/restore-response.json" -w '%{http_code}' -X POST \
+      -H 'Content-Type: application/json' -H "Idempotency-Key: $third_key" \
+      --data-binary "@$temporary/restore-follow-up.json" "$base/api/v1/conversations/$restored_conversation_id/messages")" == "201" ]] || fail
+    IFS=, read -r third_turn_id third_mission_id < <("$python" - "$temporary/restore-response.json" "$restored_conversation_id" <<'PY'
+import json,sys,uuid
+value=json.load(open(sys.argv[1],encoding="utf-8"))
+if value["conversation"].get("conversation_id") != sys.argv[2]: raise SystemExit(1)
+print(f'{uuid.UUID(value["turn"]["turn_id"])},{uuid.UUID(value["turn"]["mission_id"])}')
+PY
+    ) || fail
+    [[ "$("${curl_member[@]}" -o "$temporary/restore-replay.json" -w '%{http_code}' -X POST \
+      -H 'Content-Type: application/json' -H "Idempotency-Key: $third_key" \
+      --data-binary "@$temporary/restore-follow-up.json" "$base/api/v1/conversations/$restored_conversation_id/messages")" == "200" ]] || fail
+    [[ "$("$python" -c 'import json,sys; print(json.load(open(sys.argv[1]))["turn"]["turn_id"])' "$temporary/restore-replay.json")" == "$third_turn_id" ]] || fail
+    "${curl_member[@]}" --max-time 900 -H 'Accept: text/event-stream' \
+      "$base/api/v1/conversations/$restored_conversation_id/events?after=$restored_after" > "$temporary/restore-events.sse" || fail
+    "$python" - "$temporary/restore-events.sse" "$restored_conversation_id" "$((restored_after + 1))" <<'PY' || fail
+import json,sys
+events=[]
+for frame in open(sys.argv[1],encoding="utf-8").read().replace("\r\n","\n").split("\n\n"):
+    if not frame or frame.startswith(":"): continue
+    lines=frame.splitlines(); ids=[x[4:] for x in lines if x.startswith("id: ")]; data=[x[6:] for x in lines if x.startswith("data: ")]
+    if len(ids)!=1 or len(data)!=1: raise SystemExit(1)
+    value=json.loads(data[0])
+    if value.get("seq") != int(ids[0]) or value.get("conversation_id") != sys.argv[2]: raise SystemExit(1)
+    events.append((value["seq"],value["event_type"]))
+start=int(sys.argv[3])
+if not events or [x[0] for x in events] != list(range(start,events[-1][0]+1)): raise SystemExit(1)
+if "turn.completed" not in [kind for _,kind in events]: raise SystemExit(1)
+PY
+    [[ "$("${curl_member[@]}" -o "$temporary/restore-messages.json" -w '%{http_code}' "$base/api/v1/conversations/$restored_conversation_id/messages")" == "200" ]] || fail
+    "$python" - "$temporary/restore-messages.json" "$restored_conversation_id" "$third_turn_id" "$third_mission_id" <<'PY' || fail
+import json,sys
+items=json.load(open(sys.argv[1],encoding="utf-8")).get("items")
+if not isinstance(items,list) or len(items)!=6: raise SystemExit(1)
+if [item.get("role") for item in items] != ["user","assistant"]*3: raise SystemExit(1)
+if any(item.get("conversation_id") != sys.argv[2] for item in items): raise SystemExit(1)
+if items[-2].get("turn_id") != sys.argv[3] or items[-2].get("mission_id") != sys.argv[4]: raise SystemExit(1)
+PY
+    restore_shape="$(remote /bin/bash -s -- "$restored_conversation_id" <<'REMOTE'
+set -euo pipefail
+conversation="$1"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"; postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
+docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v conversation="$conversation" -c "select concat('turn_count=',count(*),',message_count=',(select count(*) from platform_control.conversation_messages where conversation_id=:'conversation'::uuid),',mission_count=',(select count(*) from platform_control.missions mission where mission.conversation_id=:'conversation'::uuid)) from platform_control.conversation_turns where conversation_id=:'conversation'::uuid;"
+REMOTE
+    )" || fail
+    [[ "$restore_shape" == "turn_count=3,message_count=6,mission_count=3" ]] || fail
+  }
+  if [[ "$action" == "restore" ]]; then restore_conversation; fi
+
   member_account="$temporary/member-account.json"
   owner_account="$temporary/owner-account.json"
   [[ "$("${curl_member[@]}" -o "$member_account" -w '%{http_code}' "$base/api/v1/account")" == "200" ]] || fail
@@ -610,7 +681,7 @@ PY
   for owner_path in /admin/sessions /admin/review /admin/activity; do
     [[ "$("${curl_owner[@]}" -o /dev/null -w '%{http_code}' "$base$owner_path")" == "200" ]] || fail
   done
-  for owner_api in '/api/sessions?limit=1' '/api/review/overview?agent_id=hr-bot' '/api/operations/brief'; do
+  for owner_api in '/api/sessions?limit=1' '/api/review/overview?agent_id=hr-bot' '/api/operations/brief' '/api/operations/conversation-metrics'; do
     [[ "$("${curl_owner[@]}" -o "$temporary/owner-api.json" -w '%{http_code}' "$base$owner_api")" == "200" ]] || fail
     "$python" -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$temporary/owner-api.json" || fail
   done
@@ -631,49 +702,122 @@ PY
     /bin/chmod 600 "$2"
   }
   make_body "$hr_prompt_file" "$temporary/hr.json"
-  mission_key="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
-  [[ "$("${curl_member[@]}" -o "$temporary/mission.json" -w '%{http_code}' -X POST \
-    -H 'Content-Type: application/json' -H "Idempotency-Key: $mission_key" \
-    --data-binary "@$temporary/hr.json" "$base/api/v1/brain/missions")" == "201" ]] || fail
-  mission_id="$("$python" -c 'import json,sys,uuid; value=json.load(open(sys.argv[1])); print(uuid.UUID(value["mission_id"]))' "$temporary/mission.json")" || fail
-  [[ "$("${curl_member[@]}" -o "$temporary/mission-replay.json" -w '%{http_code}' -X POST \
-    -H 'Content-Type: application/json' -H "Idempotency-Key: $mission_key" \
-    --data-binary "@$temporary/hr.json" "$base/api/v1/brain/missions")" == "200" ]] || fail
-  replay_mission_id="$("$python" -c 'import json,sys,uuid; value=json.load(open(sys.argv[1])); print(uuid.UUID(value["mission_id"]))' "$temporary/mission-replay.json")" || fail
-  [[ "$replay_mission_id" == "$mission_id" ]] || fail
+  first_key="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+  [[ "$("${curl_member[@]}" -o "$temporary/conversation.json" -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/json' -H "Idempotency-Key: $first_key" \
+    --data-binary "@$temporary/hr.json" "$base/api/v1/conversations")" == "201" ]] || fail
+  IFS=, read -r conversation_id first_turn_id first_mission_id < <("$python" - "$temporary/conversation.json" <<'PY'
+import json,sys,uuid
+value=json.load(open(sys.argv[1],encoding="utf-8"))
+conversation=uuid.UUID(value["conversation"]["conversation_id"])
+turn=uuid.UUID(value["turn"]["turn_id"])
+mission=uuid.UUID(value["turn"]["mission_id"])
+if value["message"].get("mission_id") != str(mission): raise SystemExit(1)
+print(f"{conversation},{turn},{mission}")
+PY
+  ) || fail
+  [[ "$("${curl_member[@]}" -o "$temporary/conversation-replay.json" -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/json' -H "Idempotency-Key: $first_key" \
+    --data-binary "@$temporary/hr.json" "$base/api/v1/conversations")" == "200" ]] || fail
+  [[ "$("$python" -c 'import json,sys; v=json.load(open(sys.argv[1])); print(v["turn"]["turn_id"])' "$temporary/conversation-replay.json")" == "$first_turn_id" ]] || fail
   [[ "$("${curl_member[@]}" -o /dev/null -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' -H "Idempotency-Key: $(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')" \
-    --data-binary "@$temporary/hr.json" "$base/api/v1/agents/marketing-gtm-bot/missions")" == "403" ]] || fail
+    --data-binary "@$temporary/hr.json" "$base/api/v1/agents/marketing-gtm-bot/conversations")" == "403" ]] || fail
   "${curl_member[@]}" --max-time 900 -H 'Accept: text/event-stream' \
-    "$base/api/v1/brain/missions/$mission_id/events?after=0" > "$temporary/events.sse" || fail
-  event_summary="$("$python" - "$temporary/events.sse" <<'PY'
+    "$base/api/v1/conversations/$conversation_id/events?after=0" > "$temporary/first-events.sse" || fail
+  IFS='|' read -r first_last_seq first_event_summary < <("$python" - "$temporary/first-events.sse" "$conversation_id" 1 <<'PY'
 import json,sys
 events=[]
 for frame in open(sys.argv[1],encoding="utf-8").read().replace("\r\n","\n").split("\n\n"):
     if not frame or frame.startswith(":"): continue
     lines=frame.splitlines(); ids=[x[4:] for x in lines if x.startswith("id: ")]; data=[x[6:] for x in lines if x.startswith("data: ")]
     if len(ids)!=1 or len(data)!=1: raise SystemExit(1)
-    value=json.loads(data[0]);
-    if value.get("seq") != int(ids[0]): raise SystemExit(1)
-    events.append((value["seq"],value["event_type"],value.get("run_id")))
-if [x[0] for x in events] != list(range(1,len(events)+1)): raise SystemExit(1)
+    value=json.loads(data[0])
+    if value.get("seq") != int(ids[0]) or value.get("conversation_id") != sys.argv[2]: raise SystemExit(1)
+    events.append((value["seq"],value["event_type"]))
+start=int(sys.argv[3])
+if not events or [x[0] for x in events] != list(range(start,events[-1][0]+1)): raise SystemExit(1)
 types=[x[1] for x in events]
-for required in ("mission.started","task.dispatched","agent.accepted","agent.result","mission.completed"):
+for required in ("conversation.started","turn.accepted","task.dispatched","agent.accepted","agent.result","turn.completed"):
     if required not in types: raise SystemExit(1)
-print(",".join(f"{seq}:{kind}" for seq,kind,_ in events))
+print(f"{events[-1][0]}|"+",".join(f"{seq}:{kind}" for seq,kind in events))
 PY
   )" || fail
-  db_summary="$(remote /bin/bash -s -- "$mission_id" <<'REMOTE'
+  "$python" - "$temporary/follow-up.json" <<'PY'
+import json,pathlib,sys
+pathlib.Path(sys.argv[1]).write_text(json.dumps({"text":"继续：请基于上一轮结果给出三条可执行的 GitHub 搜索式，并说明筛选信号。"},ensure_ascii=False,separators=(",",":")),encoding="utf-8")
+PY
+  /bin/chmod 600 "$temporary/follow-up.json"
+  second_key="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+  [[ "$("${curl_member[@]}" -o "$temporary/follow-up-response.json" -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/json' -H "Idempotency-Key: $second_key" \
+    --data-binary "@$temporary/follow-up.json" "$base/api/v1/conversations/$conversation_id/messages")" == "201" ]] || fail
+  IFS=, read -r second_turn_id second_mission_id < <("$python" - "$temporary/follow-up-response.json" "$conversation_id" <<'PY'
+import json,sys,uuid
+value=json.load(open(sys.argv[1],encoding="utf-8"))
+if value["conversation"].get("conversation_id") != sys.argv[2]: raise SystemExit(1)
+turn=uuid.UUID(value["turn"]["turn_id"]); mission=uuid.UUID(value["turn"]["mission_id"])
+print(f"{turn},{mission}")
+PY
+  ) || fail
+  [[ "$second_turn_id" != "$first_turn_id" && "$second_mission_id" != "$first_mission_id" ]] || fail
+  [[ "$("${curl_member[@]}" -o "$temporary/follow-up-replay.json" -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/json' -H "Idempotency-Key: $second_key" \
+    --data-binary "@$temporary/follow-up.json" "$base/api/v1/conversations/$conversation_id/messages")" == "200" ]] || fail
+  [[ "$("$python" -c 'import json,sys; print(json.load(open(sys.argv[1]))["turn"]["turn_id"])' "$temporary/follow-up-replay.json")" == "$second_turn_id" ]] || fail
+  "${curl_member[@]}" --max-time 900 -H 'Accept: text/event-stream' \
+    "$base/api/v1/conversations/$conversation_id/events?after=$first_last_seq" > "$temporary/second-events.sse" || fail
+  IFS='|' read -r second_last_seq second_event_summary < <("$python" - "$temporary/second-events.sse" "$conversation_id" "$((first_last_seq + 1))" <<'PY'
+import json,sys
+events=[]
+for frame in open(sys.argv[1],encoding="utf-8").read().replace("\r\n","\n").split("\n\n"):
+    if not frame or frame.startswith(":"): continue
+    lines=frame.splitlines(); ids=[x[4:] for x in lines if x.startswith("id: ")]; data=[x[6:] for x in lines if x.startswith("data: ")]
+    if len(ids)!=1 or len(data)!=1: raise SystemExit(1)
+    value=json.loads(data[0])
+    if value.get("seq") != int(ids[0]) or value.get("conversation_id") != sys.argv[2]: raise SystemExit(1)
+    events.append((value["seq"],value["event_type"]))
+start=int(sys.argv[3])
+if not events or [x[0] for x in events] != list(range(start,events[-1][0]+1)): raise SystemExit(1)
+types=[x[1] for x in events]
+for required in ("turn.accepted","task.dispatched","agent.accepted","agent.result","turn.completed"):
+    if required not in types: raise SystemExit(1)
+print(f"{events[-1][0]}|"+",".join(f"{seq}:{kind}" for seq,kind in events))
+PY
+  )" || fail
+  [[ "$("${curl_member[@]}" --max-time 30 -o "$temporary/resume.sse" -w '%{http_code}' -H 'Accept: text/event-stream' \
+    "$base/api/v1/conversations/$conversation_id/events?after=$second_last_seq")" == "200" ]] || fail
+  [[ ! -s "$temporary/resume.sse" ]] || fail
+  [[ "$("${curl_member[@]}" -o "$temporary/messages.json" -w '%{http_code}' "$base/api/v1/conversations/$conversation_id/messages")" == "200" ]] || fail
+  "$python" - "$temporary/messages.json" "$conversation_id" "$first_turn_id" "$second_turn_id" "$first_mission_id" "$second_mission_id" <<'PY' || fail
+import json,sys
+items=json.load(open(sys.argv[1],encoding="utf-8")).get("items")
+if not isinstance(items,list) or len(items)!=4: raise SystemExit(1)
+if [item.get("role") for item in items] != ["user","assistant","user","assistant"]: raise SystemExit(1)
+if any(item.get("conversation_id") != sys.argv[2] for item in items): raise SystemExit(1)
+if [items[0].get("turn_id"),items[2].get("turn_id")] != [sys.argv[3],sys.argv[4]]: raise SystemExit(1)
+if [items[0].get("mission_id"),items[2].get("mission_id")] != [sys.argv[5],sys.argv[6]]: raise SystemExit(1)
+PY
+  [[ "$("${curl_member[@]}" -o "$temporary/history.json" -w '%{http_code}' "$base/api/v1/conversations?limit=100")" == "200" ]] || fail
+  "$python" - "$temporary/history.json" "$conversation_id" <<'PY' || fail
+import json,sys
+items=json.load(open(sys.argv[1],encoding="utf-8")).get("items",[])
+if sum(item.get("conversation_id")==sys.argv[2] for item in items) != 1: raise SystemExit(1)
+PY
+  conversation_db_summary="$(remote /bin/bash -s -- "$conversation_id" <<'REMOTE'
 set -euo pipefail
-mission="$1"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"
+conversation="$1"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"
 postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
-docker exec "$postgres" psql -X -A -t -F ',' -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v mission="$mission" -c "select event.seq,event.event_type from platform_control.mission_events event where event.mission_id=:'mission'::uuid order by event.seq; select concat(run.agent_id,':',run.status,':',run.run_id) from platform_control.mission_runs run where run.mission_id=:'mission'::uuid and run.phase in ('professional','direct') order by run.created_at;"
+docker exec "$postgres" psql -X -A -t -F ',' -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v conversation="$conversation" -c "select concat('turn_count=',count(*),',message_count=',(select count(*) from platform_control.conversation_messages where conversation_id=:'conversation'::uuid),',mission_count=',(select count(*) from platform_control.missions mission where mission.conversation_id=:'conversation'::uuid)) from platform_control.conversation_turns where conversation_id=:'conversation'::uuid; select concat(run.agent_id,':',run.status,':',run.run_id) from platform_control.mission_runs run join platform_control.missions mission on mission.mission_id=run.mission_id where mission.conversation_id=:'conversation'::uuid and run.phase in ('professional','direct') order by run.created_at;"
 REMOTE
   )" || fail
-  /usr/bin/grep -Eq 'hr-bot:(completed|succeeded):[0-9a-f-]{36}' <<<"$db_summary" || fail
-  stored_events="$(/usr/bin/awk -F, 'NF==2 && $1 ~ /^[0-9]+$/ {printf "%s%s:%s", separator,$1,$2; separator=","}' <<<"$db_summary")"
-  [[ "$stored_events" == "$event_summary" ]] || fail
-  verify_markdown_rendering "$mission_id" "$temporary/member.browser.json" "$temporary"
+  /usr/bin/grep -Fxq 'turn_count=2,message_count=4,mission_count=2' <<<"$conversation_db_summary" || fail
+  [[ "$(/usr/bin/grep -Ec 'hr-bot:(completed|succeeded):[0-9a-f-]{36}' <<<"$conversation_db_summary")" == "2" ]] || fail
+  resume_duplicate_turns=0
+  verify_markdown_rendering "$conversation_id" "$temporary/member.browser.json" "$temporary"
+  mission_id="$first_mission_id"
+  event_summary="$first_event_summary,$second_event_summary"
+  db_summary="$conversation_db_summary"
 
   make_body "$interruption_prompt_file" "$temporary/interruption.json"
   interrupted_key="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
@@ -757,9 +901,14 @@ REMOTE
   [[ ! -e "$evidence_generation" && ! -L "$evidence_generation" && ! -e "$evidence_previous" && ! -L "$evidence_previous" && ! -e "$evidence_current_part" && ! -L "$evidence_current_part" ]] || fail
   {
     /usr/bin/printf '%s\n' "$remote_evidence"
-    /usr/bin/printf 'mission_id=%s\nchild_run_id=%s\nevents=%s\ninterrupted_mission_id=%s\ninterrupted_child_run_id=%s\nduplicate_child_runs=%s\n' \
-      "$mission_id" "$(/usr/bin/grep -Eo 'hr-bot:(completed|succeeded):[0-9a-f-]{36}' <<<"$db_summary" | /usr/bin/awk -F: '{print $3}')" "$event_summary" \
+    /usr/bin/printf 'conversation_id=%s\nfirst_turn_id=%s\nsecond_turn_id=%s\nfirst_mission_id=%s\nsecond_mission_id=%s\nlast_event_seq=%s\nturn_count=2\nmessage_count=4\nresume_duplicate_turns=%s\nmission_id=%s\nchild_run_id=%s\nevents=%s\ninterrupted_mission_id=%s\ninterrupted_child_run_id=%s\nduplicate_child_runs=%s\n' \
+      "$conversation_id" "$first_turn_id" "$second_turn_id" "$first_mission_id" "$second_mission_id" "$second_last_seq" "$resume_duplicate_turns" \
+      "$mission_id" "$(/usr/bin/grep -Eo 'hr-bot:(completed|succeeded):[0-9a-f-]{36}' <<<"$db_summary" | /usr/bin/sed -n '1s/.*://p')" "$event_summary" \
       "$interrupted_mission_id" "$child_run_id" "$duplicate_count"
+    if [[ -n "$restored_conversation_id" ]]; then
+      /usr/bin/printf 'restored_conversation_id=%s\nthird_turn_id=%s\nthird_mission_id=%s\nrestore_turn_count=3\nrestore_message_count=6\n' \
+        "$restored_conversation_id" "$third_turn_id" "$third_mission_id"
+    fi
     /usr/bin/printf 'metabot_release_sha=%s\nagent_team_release_sha=%s\nlocal_listener_table=%s\nrollback=PLATFORM_AGENT_BRAIN_ENABLED=0\n' \
       "$metabot_release_sha" "$agent_team_release_sha" "$local_listener_table"
     /usr/bin/printf 'acceptance_status=complete\n'
@@ -833,7 +982,7 @@ case "$action" in
     for owner_path in /admin /admin/sessions /admin/review /admin/activity; do
       [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" -o /dev/null -w '%{http_code}' --max-time 15 "https://agent.orbbec.com.cn$owner_path")" == "200" ]] || fail
     done
-    for owner_api in '/api/sessions?limit=1' '/api/review/overview?agent_id=hr-bot' '/api/operations/brief'; do
+    for owner_api in '/api/sessions?limit=1' '/api/review/overview?agent_id=hr-bot' '/api/operations/brief' '/api/operations/conversation-metrics'; do
       [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" -o "$temporary/owner-api.json" -w '%{http_code}' --max-time 15 "https://agent.orbbec.com.cn$owner_api")" == "200" ]] || fail
       "$python" -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$temporary/owner-api.json" || fail
     done
@@ -843,24 +992,24 @@ case "$action" in
       /usr/bin/nc -z -w 2 127.0.0.1 "$port" || fail
     done
     require_private_file "$evidence_file" 65536
-    read -r preserved_mission preserved_interrupted < <("$python" - "$evidence_file" <<'PY'
+    read -r preserved_conversation preserved_first preserved_second preserved_interrupted < <("$python" - "$evidence_file" <<'PY'
 import pathlib,re,sys
 values={}
 for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
     if "=" in line:
         key,value=line.split("=",1); values[key]=value
-for key in ("mission_id","interrupted_mission_id"):
+for key in ("conversation_id","first_mission_id","second_mission_id","interrupted_mission_id"):
     if not re.fullmatch(r"[0-9a-f-]{36}", values.get(key,"")): raise SystemExit(1)
-print(values["mission_id"], values["interrupted_mission_id"])
+print(values["conversation_id"], values["first_mission_id"], values["second_mission_id"], values["interrupted_mission_id"])
 PY
     ) || fail
-    preserved_count="$(remote /bin/bash -s -- "$preserved_mission" "$preserved_interrupted" <<'REMOTE'
+    preserved_shape="$(remote /bin/bash -s -- "$preserved_conversation" "$preserved_first" "$preserved_second" "$preserved_interrupted" <<'REMOTE'
 set -euo pipefail
-first="$1"; second="$2"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"; postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
-docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v first="$first" -v second="$second" -c "select count(*) from platform_control.missions where mission_id in (:'first'::uuid,:'second'::uuid);"
+conversation="$1"; first="$2"; second="$3"; interrupted="$4"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"; postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
+docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v conversation="$conversation" -v first="$first" -v second="$second" -v interrupted="$interrupted" -c "select concat('turn_count=',(select count(*) from platform_control.conversation_turns where conversation_id=:'conversation'::uuid),',message_count=',(select count(*) from platform_control.conversation_messages where conversation_id=:'conversation'::uuid),',mission_count=',(select count(*) from platform_control.missions where mission_id in (:'first'::uuid,:'second'::uuid,:'interrupted'::uuid)));"
 REMOTE
     )" || fail
-    [[ "$preserved_count" == "2" ]] || fail
+    [[ "$preserved_shape" == "turn_count=2,message_count=4,mission_count=3" ]] || fail
     trap - EXIT
     /bin/rm -rf -- "$temporary"
     release_action_lock || fail

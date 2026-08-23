@@ -30,6 +30,38 @@ afterEach(async () => {
 
 
 describe("cloud replica mode", () => {
+  it("opens the authenticated cloud root as the continuous Agent Brain composer", async () => {
+    const meta = document.createElement("meta");
+    meta.name = "platform-identity-mode";
+    meta.content = "enabled";
+    document.head.append(meta);
+    window.history.replaceState({}, "", "/");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/account")) return new Response(JSON.stringify({
+        internal_user_id: "member", display_name: "成员", role: "member",
+        departments: [], gender: null,
+        observation_agent_ids: [], directory_freshness: "fresh",
+        hard_stale_read_only: false, csrf_token: "csrf",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (url.includes("/api/v1/conversations")) return new Response(JSON.stringify({
+        items: [], next_cursor: null,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({
+        mode: "local", read_only: false, auth: "dingtalk",
+        freshness: "current", last_success_at: null,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(container.querySelector("#brain-heading")?.textContent).toBe("Agent 大脑");
+    expect(container.querySelector<HTMLTextAreaElement>("#brain-request")?.disabled).toBe(false);
+    expect(container.textContent).toContain("开始对话");
+    expect(container.textContent).not.toContain("Agent 集群总览");
+  });
+
   it("returns an expired usage route to login with its safe Mission path", async () => {
     const meta = document.createElement("meta");
     meta.name = "platform-identity-mode";

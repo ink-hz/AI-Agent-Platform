@@ -19,7 +19,7 @@ def test_acceptance_gate_names_all_eighteen_criteria_and_has_stable_success():
 def test_acceptance_stops_on_local_verification_and_requires_private_evidence():
     script = ACCEPTANCE.read_text(encoding="utf-8")
 
-    assert "python -m pytest -q" in script
+    assert '"$backend_python" -m pytest -q' in script
     assert "npm test" in script
     assert "npm run build" in script
     assert "bash -n" in script
@@ -29,6 +29,15 @@ def test_acceptance_stops_on_local_verification_and_requires_private_evidence():
     assert "CANARY_ABSENT" in script
     assert "BACKFILL_RECONCILED" in script
     assert "RESTORE_DRILL_OK" in script
+    local_gate = script.split("run_local_gate() {", 1)[1].split("\n}\n", 1)[0]
+    for command in (
+        'PYTHONDONTWRITEBYTECODE=1 "$backend_python" -m pytest -q',
+        "npm test",
+        "npm run build",
+        "bash -n deploy/cloud/*.sh deploy/install-cloud-sync-launchagent.sh",
+        "git diff --check",
+    ):
+        assert f"{command} || exit 1" in local_gate
 
 
 def test_runbook_covers_tunnel_sync_backup_restore_rollback_and_later_domain():
