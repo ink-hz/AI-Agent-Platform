@@ -14,7 +14,7 @@ safe_path=/Users/agentops/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/
 
 fixed_config() {
   [[ -f "$config" && ! -L "$config" \
-    && "$(/usr/bin/stat -f '%Lp %Su' "$config")" == "644 agentops" ]]
+    && "$(/usr/bin/stat -f '%Lp %Su' "$config")" == "600 agentops" ]]
 }
 
 pm2_clean() {

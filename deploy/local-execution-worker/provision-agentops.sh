@@ -198,6 +198,13 @@ for path in stage.rglob("*"):
     meta=path.lstat()
     if path.is_symlink() or not (stat.S_ISDIR(meta.st_mode) or stat.S_ISREG(meta.st_mode)):
         raise SystemExit(1)
+for relative,expected_mode in (
+    ("deploy/local-execution-worker/worker-pm2.sh",0o700),
+    ("deploy/local-execution-worker/execution-worker.ecosystem.config.cjs",0o600),
+):
+    path=stage/relative; meta=path.lstat()
+    if path.is_symlink() or not stat.S_ISREG(meta.st_mode) or meta.st_uid!=os.getuid() or stat.S_IMODE(meta.st_mode)!=expected_mode:
+        raise SystemExit(1)
 marker=stage/".platform-release.json"
 marker.write_text(json.dumps({"schema_version":1,"release_sha":release,"archive_sha256":archive},sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
 os.chmod(marker,0o600)
@@ -269,7 +276,7 @@ PY
     [[ -x "$snapshot" && ! -L "$snapshot" ]] || fail
     [[ "$(/usr/bin/stat -f '%Su' "$snapshot")" == agentops ]] || fail
     [[ -x "$worker_supervisor" && ! -L "$worker_supervisor" ]] || fail
-    [[ "$(/usr/bin/stat -f '%Lp %Su' "$worker_supervisor")" == "755 agentops" ]] || fail
+    [[ "$(/usr/bin/stat -f '%Lp %Su' "$worker_supervisor")" == "700 agentops" ]] || fail
     [[ ! -e "$receipt" && ! -L "$receipt" ]] || fail
     [[ ! -e "$owner_dsn" && ! -L "$owner_dsn" ]] || fail
     nonbrain_snapshot > "$before"; /bin/chmod 600 "$before"

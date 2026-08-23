@@ -1176,13 +1176,23 @@ def test_agentops_stage_retries_after_interrupted_venv_without_mutable_worktree(
     def build_release_archive(content: bytes) -> tuple[bytes, str]:
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode="w") as archive:
-            for name, raw in (
-                ("backend/requirements.txt", b""),
-                ("committed-release.txt", content),
+            for name, raw, mode in (
+                ("backend/requirements.txt", b"", 0o600),
+                ("committed-release.txt", content, 0o600),
+                (
+                    "deploy/local-execution-worker/worker-pm2.sh",
+                    b"#!/bin/bash\n",
+                    0o755,
+                ),
+                (
+                    "deploy/local-execution-worker/execution-worker.ecosystem.config.cjs",
+                    b"module.exports = {};\n",
+                    0o644,
+                ),
             ):
                 info = tarfile.TarInfo(name)
                 info.size = len(raw)
-                info.mode = 0o600
+                info.mode = mode
                 archive.addfile(info, io.BytesIO(raw))
         raw = buffer.getvalue()
         return raw, hashlib.sha256(raw).hexdigest()
@@ -1317,6 +1327,42 @@ def test_agentops_stage_retries_after_interrupted_venv_without_mutable_worktree(
     assert (platform / "committed-release.txt").read_bytes() == b"must-roll-back\n"
     assert not (runtime / ".platform.previous-release").exists()
     assert private_sentinel.read_text(encoding="utf-8") == "private\n"
+
+
+def test_real_release_archive_extracts_worker_pm2_contract_modes_under_umask_077(
+    tmp_path: Path,
+) -> None:
+    release = tmp_path / "release"
+    release.mkdir(mode=0o700)
+    archive = subprocess.Popen(
+        ["/usr/bin/git", "archive", "HEAD"],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+    )
+    assert archive.stdout is not None
+    extracted = subprocess.run(
+        [
+            "/bin/bash",
+            "-c",
+            'umask 077; exec /usr/bin/tar -xf - -C "$1"',
+            "extract-worker-contract",
+            str(release),
+        ],
+        stdin=archive.stdout,
+        capture_output=True,
+    )
+    archive.stdout.close()
+    assert archive.wait(timeout=5) == 0
+    assert extracted.returncode == 0, extracted.stderr.decode()
+
+    worker = release / "deploy/local-execution-worker/worker-pm2.sh"
+    config = release / "deploy/local-execution-worker/execution-worker.ecosystem.config.cjs"
+    assert _mode(worker) == 0o700
+    assert _mode(config) == 0o600
+    provision = AGENTOPS.read_text(encoding="utf-8")
+    supervisor = (LOCAL / "worker-pm2.sh").read_text(encoding="utf-8")
+    assert '== "700 agentops"' in provision
+    assert '== "600 agentops"' in supervisor
 
 
 def _agentops_install_harness(

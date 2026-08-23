@@ -156,6 +156,11 @@ dump. Failure restores both. Success first proves that the PM2 PID is the sole
 and that every PM2 process other than Brain and this Worker is invariant; only
 then does it run `pm2 save` and commit the receipt.
 
+The agentops release stage runs with `umask 077`, so the real Git archive
+extracts `worker-pm2.sh` as owner-only mode `0700` and the ecosystem config as
+owner-only mode `0600`. Stage, prepare, and the PM2 wrapper require those exact
+modes; group/other access or a mode mismatch fails before Worker mutation.
+
 Create a private JSON acceptance config and four private browser-input files.
 The config, the member and owner Cookie header files, the HR acceptance prompt,
 the interruption prompt and the evidence destination must be owner-only regular

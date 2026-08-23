@@ -5023,6 +5023,7 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
     copied = tmp_path / "worker-pm2.sh"
     state.write_text("absent", encoding="utf-8")
     config.write_text("module.exports = {};\n", encoding="utf-8")
+    config.chmod(0o600)
     fake_pm2.write_text(
         "#!/bin/bash\nset -euo pipefail\n"
         f"state={str(state)!r}\nlog={str(log)!r}\n"
@@ -5050,8 +5051,8 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
         "cd /Users/agentops || fail",
         f"cd {tmp_path} || fail",
     ).replace(
-        '== "644 agentops"',
-        f'== "644 {current_user}"',
+        '== "600 agentops"',
+        f'== "600 {current_user}"',
     ).replace(
         "pm2=/Users/agentops/.npm-global/bin/pm2", f"pm2={fake_pm2}"
     ).replace(
