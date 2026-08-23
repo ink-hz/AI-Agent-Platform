@@ -6,7 +6,8 @@ Date: 2026-08-23 (Asia/Shanghai)
 
 The first-production bootstrap gaps identified by the Task 9 read-only audit
 are implemented in commits `5709694` (`fix(cloud): close Agent Brain bootstrap
-gaps`) and `290f7aa` (`fix(bootstrap): harden first production cleanup`). No
+gaps`), `290f7aa` (`fix(bootstrap): harden first production cleanup`) and
+`609ec2a` (`fix(bootstrap): bind first production to real host`). No
 production deployment, local Worker installation, cloud mutation or push was
 performed.
 
@@ -23,7 +24,9 @@ The four pre-existing user-owned dirty reports remain untouched and uncommitted:
 
 - `deploy/local-execution-worker/provision.sh` is a Neo-owned coordinator with
   no arguments and fixed commands/paths.
-- It uses Neo's PostgreSQL 17 private socket to create a random temporary
+- It uses Neo's fixed PostgreSQL 17 private socket, port 5432 and role `neo`,
+  after removing inherited PostgreSQL connection variables and proving the
+  connected user/port, to create a random temporary
   SCRAM login SUPERUSER. The password and owner DSN are sent only on stdin and
   are never printed or included in child process arguments.
 - A managed HBA block is inserted before broader host rules. It contains a
@@ -31,13 +34,20 @@ The four pre-existing user-owned dirty reports remain untouched and uncommitted:
   exactly one permanent rule for database `agent_execution_worker`, role
   `agent_execution_worker_runtime`, address `127.0.0.1/32`, auth
   `scram-sha-256`.
-- The wrapper validates `pg_hba_file_rules`, reload success and byte-exact HBA
-  restoration on failure. HBA publication and rollback are atomic; a backup is
-  retained if rollback cannot be proven. Cleanup is armed before role creation,
+- The wrapper holds a fixed Neo-owned lock across helper staging and the HBA
+  transaction. It validates `pg_hba_file_rules`, reload success and byte-exact
+  HBA restoration on failure. HBA publication and rollback are atomic and
+  compare the expected digest, so a concurrent owner edit is preserved rather
+  than overwritten; a backup is retained if rollback cannot be proven. Cleanup
+  is armed before role creation,
   so a response-lost-after-commit still drops the temporary role. Its trap asks
   the fixed agentops helper to remove the owner DSN on success and failure.
-- `provision-agentops.sh` creates the fixed mode-0700 runtime/private/log tree,
-  copies the reviewed Platform tree, creates its venv, and copies the existing
+- `provision-agentops.sh` runs only as `agentops` with the exact
+  `/Users/agentops` HOME and user launchd domain. The Neo coordinator installs
+  the helper and PM2 snapshot utility from reviewed commit objects, transfers a
+  pinned `git archive`, and rejects any unapproved dirty source path. The helper
+  creates the fixed mode-0700 runtime/private/log tree, stages the complete
+  reviewed Platform release, creates its venv with retry-safe cleanup, and copies the existing
   file-backed MetaBot API token to one fixed mode-0600 Worker secret. It does
   not call Keychain.
 - It invokes the existing Worker installer, verifies exact Agent Brain and all
@@ -47,6 +57,11 @@ The four pre-existing user-owned dirty reports remain untouched and uncommitted:
 - The complete reviewed Platform tree is checksum-compared on rerun rather than
   trusting a four-file subset. Secret files use exclusive no-follow creation
   and short-write-safe loops.
+- Worker replacement uses a private, atomically published receipt containing
+  the byte-verified prior plist and loaded state. `commit` keeps that receipt so
+  a lost response can still roll back. Only after Neo-side final checks and
+  cleanup does the idempotent `finalize` remove it and permit the sole success
+  marker.
 
 ### First cloud Worker registration
 
@@ -60,6 +75,9 @@ The four pre-existing user-owned dirty reports remain untouched and uncommitted:
 - `remote-stage.sh` now requires Brain disabled, runs migrations first, invokes
   this bootstrap against the staged public Worker document, and verifies a
   sanitized status/fingerprint before starting the API services.
+- Both remote bootstrap helpers must be regular, non-symlink executable files
+  immediately after MANIFEST verification and before secrets, build, service
+  stop or migration mutations.
 
 ### Content keyring
 
@@ -71,8 +89,10 @@ The four pre-existing user-owned dirty reports remain untouched and uncommitted:
   owned by the caller and mode 0700. Publication uses a fixed
   O_EXCL/O_NOFOLLOW mode-0600 part and exclusive hard-link publication, so it
   cannot overwrite a raced target.
-- Existing files are never regenerated and are validated through
-  `IdentityKeyring` plus the production `ContentCodec`.
+- Existing files are never regenerated and are validated through the same
+  already-open parent directory file descriptor, then passed directly through
+  `IdentityKeyring` plus the production `ContentCodec`; validation never
+  reopens an attacker-swappable absolute path.
 - Output contains only `CREATED`/`VALID` plus SHA-256 public fingerprint.
 
 ### Audited acceptance grant
@@ -102,7 +122,10 @@ The four pre-existing user-owned dirty reports remain untouched and uncommitted:
 
 Red was observed first as
 `ModuleNotFoundError: app.agent_brain.acceptance_grant` from the new bootstrap
-suite. The final focused bootstrap suite reports `42 passed` and covers real
+suite. Later hardening tests were also observed red for inherited PG endpoint
+selection, receipt-copy failure, lost commit response and a non-executable
+remote helper before their production fixes. The final bootstrap suite reports
+`50 passed` and covers real
 temporary PostgreSQL clusters, function privilege boundaries, exact replay,
 mismatch, NULL rejection, response loss, keyring unsafe paths, executable HBA
 success/failure cleanup, secret-argv exclusion, PM2 mutation, listener identity,
@@ -110,10 +133,10 @@ launchd correlation and config-injection harnesses.
 
 Fresh verification:
 
-- Full backend: `2322 passed, 1 skipped`; exit 0. The one skip is
+- Full backend: `2329 passed, 1 skipped`; exit 0. The one skip is
   repository-defined and expected in this branch.
-- Affected deployment, relay, migration and Agent Brain suites: `456 passed`;
-  exit 0.
+- Final post-review affected bootstrap/cloud/crypto/Worker deployment gate:
+  `281 passed`; exit 0.
 - Web UI: `40` files, `311` tests passed.
 - Web UI production build: succeeded (`tsc -b`, Vite; 1347 modules).
 - `bash -n deploy/cloud/*.sh deploy/local-execution-worker/*.sh`: passed.
@@ -121,7 +144,9 @@ Fresh verification:
 - New-path embedded-secret scan: passed; no private key, DingTalk credential or
   long API-token literal. Runtime passwords, DSNs, Cookies and keys are never
   printed or included in child process arguments.
-- Independent review after all fixes: `0 Critical, 0 Important, 0 Minor`.
+- Independent review after all fixes: `0 Critical, 0 Important, 0 Minor`; its
+  independent gates were bootstrap `50 passed`, cloud/crypto `69 passed`, and
+  Worker deployment `211 passed`.
 - Docker Compose rendering could not be repeated in this workstation process
   because the `docker` CLI is not installed (`command not found`). The compose
   file was not changed by Task 9B; this remains a deployment-host preflight.
