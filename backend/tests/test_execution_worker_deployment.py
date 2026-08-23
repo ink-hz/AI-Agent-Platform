@@ -4666,6 +4666,18 @@ def test_cloud_remote_stage_journals_before_switch_and_restores_state_last(
     cleanup = source.split("cleanup_worker_keyring_deploy() {", 1)[1].split("}\n", 1)[0]
     assert cleanup.index('"$worker_keyring_previous"') < cleanup.index('"$deploy_state"')
 
+
+def test_cloud_worker_activation_probe_uses_read_only_app_role(
+    tmp_path: Path,
+) -> None:
+    source = CLOUD_REMOTE_STAGE.read_text(encoding="utf-8")
+    probe = source.split("completed_worker_key_active() {", 1)[1].split(
+        "restore_worker_keyring() {", 1
+    )[0]
+
+    assert "PLATFORM_CONTROL_DATABASE_URL_FILE=/run/control-secrets/control-database-url" in probe
+    assert "PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE" not in probe
+
     private = tmp_path / "private"
     stage = tmp_path / "stage"
     private.mkdir(mode=0o700)

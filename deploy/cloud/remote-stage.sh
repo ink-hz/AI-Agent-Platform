@@ -257,8 +257,8 @@ completed_worker_key_active() {
   [[ -n "$current_image" && "$current_image" != *$'\n'* ]] || return 1
   result="$(/usr/bin/docker run --rm --pull=never --network orbbec-agent-platform-internal --user 0:0 \
     -v "$private_path:/run/control-secrets:ro" \
-    -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url \
-    "$current_image" python -c 'import json,psycopg,sys; from app.execution_relay.register_worker import _secret_file; worker_id,key_id=sys.argv[1:]; connection=psycopg.connect(_secret_file()); row=connection.execute("select status,encode(sha256(public_key),'"'"'hex'"'"') from platform_control.execution_worker_keys where worker_id=%s and key_id=%s",(worker_id,key_id)).fetchone(); connection.close(); print(json.dumps({"key_id":key_id,"status":"absent" if row is None else row[0],"public_key_sha256":None if row is None else row[1]},sort_keys=True,separators=(",",":")))' \
+    -e PLATFORM_CONTROL_DATABASE_URL_FILE=/run/control-secrets/control-database-url \
+    "$current_image" python -c 'import json,os,pathlib,psycopg,sys; worker_id,key_id=sys.argv[1:]; dsn=pathlib.Path(os.environ["PLATFORM_CONTROL_DATABASE_URL_FILE"]).read_text().strip(); connection=psycopg.connect(dsn); row=connection.execute("select status,encode(sha256(public_key),'"'"'hex'"'"') from platform_control.execution_worker_keys where worker_id=%s and key_id=%s",(worker_id,key_id)).fetchone(); connection.close(); print(json.dumps({"key_id":key_id,"status":"absent" if row is None else row[0],"public_key_sha256":None if row is None else row[1]},sort_keys=True,separators=(",",":")))' \
     agentops-mac-primary "$key_id")" || return 1
   /usr/bin/python3 -c 'import json,sys; value=json.load(sys.stdin); expected_key,expected_fingerprint=sys.argv[1:]; raise SystemExit(0 if value=={"key_id":expected_key,"status":"active","public_key_sha256":expected_fingerprint} else 1)' \
     "$key_id" "$fingerprint" <<<"$result"
