@@ -370,6 +370,9 @@ class MissionRecord:
     terminal_at: datetime | None
     prompt: str = field(repr=False)
     content_available: bool = True
+    conversation_id: UUID | None = None
+    turn_id: UUID | None = None
+    triggering_message_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -820,6 +823,9 @@ class MissionRepository:
             updated_at=row["updated_at"],
             terminal_at=row["terminal_at"],
             prompt=value["text"],
+            conversation_id=row.get("conversation_id"),
+            turn_id=row.get("turn_id"),
+            triggering_message_id=row.get("triggering_message_id"),
         )
 
     @staticmethod
@@ -838,6 +844,9 @@ class MissionRepository:
             terminal_at=row["terminal_at"],
             prompt="[任务内容不可用]",
             content_available=False,
+            conversation_id=row.get("conversation_id"),
+            turn_id=row.get("turn_id"),
+            triggering_message_id=row.get("triggering_message_id"),
         )
 
     def _create_mission_result(
@@ -985,6 +994,118 @@ class MissionRepository:
             mode=mode,
             direct_agent_id=direct_agent_id,
         ).mission
+
+    def insert_for_conversation(
+        self,
+        cursor: Any,
+        *,
+        mission_id: UUID,
+        mission_message_id: UUID,
+        started_event_id: UUID,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        turn_id: UUID,
+        triggering_message_id: UUID,
+        prompt: str,
+        mode: Literal["brain", "direct_agent"] = "brain",
+        direct_agent_id: str | None = None,
+    ) -> MissionRecord:
+        """Insert one linked Mission inside the caller's open transaction."""
+
+        for value in (
+            mission_id,
+            mission_message_id,
+            started_event_id,
+            internal_user_id,
+            conversation_id,
+            turn_id,
+            triggering_message_id,
+        ):
+            _require_uuid(value)
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("Mission prompt invalid")
+        try:
+            prompt_size = len(prompt.encode("utf-8"))
+        except UnicodeError:
+            raise MissionRepositoryError() from None
+        if prompt_size > 32 * 1024:
+            raise ValueError("Mission prompt invalid")
+        if mode == "brain":
+            if direct_agent_id is not None:
+                raise ValueError("Brain Mission cannot name a direct Agent")
+            status = "planning"
+        elif mode == "direct_agent":
+            direct_agent_id = _require_agent_id(direct_agent_id)
+            status = "delegated"
+        else:
+            raise ValueError("Mission mode invalid")
+
+        sealed = self.content_codec.seal_json(
+            _message_subject(mission_id, mission_message_id), {"text": prompt}
+        )
+        started_payload, _canonical = _canonical_payload(
+            {"text": "任务已创建"}, event_type="mission.started"
+        )
+        sealed_started = self.content_codec.seal_json(
+            _event_subject(mission_id, started_event_id), started_payload
+        )
+        self._ensure_key_canary(cursor, sealed.key_version)
+        inserted = cursor.execute(
+            "insert into platform_control.missions "
+            "(mission_id,owner_internal_user_id,client_request_id,mode,"
+            "direct_agent_id,status,conversation_id,turn_id,triggering_message_id) "
+            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "returning created_at,updated_at",
+            (
+                mission_id,
+                internal_user_id,
+                turn_id,
+                mode,
+                direct_agent_id,
+                status,
+                conversation_id,
+                turn_id,
+                triggering_message_id,
+            ),
+        ).fetchone()
+        if inserted is None:
+            raise MissionRepositoryError()
+        cursor.execute(
+            "insert into platform_control.mission_messages "
+            "(message_id,mission_id,seq,role,content_ciphertext,"
+            "encryption_key_version) values (%s,%s,1,'user',%s,%s)",
+            (
+                mission_message_id,
+                mission_id,
+                sealed.ciphertext,
+                sealed.key_version,
+            ),
+        )
+        self._append_event_locked(
+            cursor,
+            mission_id,
+            None,
+            started_event_id,
+            "mission.started",
+            sealed_started,
+        )
+        return MissionRecord(
+            mission_id=mission_id,
+            owner_internal_user_id=internal_user_id,
+            client_request_id=turn_id,
+            mode=mode,
+            direct_agent_id=direct_agent_id,
+            status=status,
+            cancel_requested=False,
+            row_version=0,
+            created_at=inserted["created_at"],
+            updated_at=inserted["updated_at"],
+            terminal_at=None,
+            prompt=prompt,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            triggering_message_id=triggering_message_id,
+        )
 
     def create_mission_for_api(
         self,
