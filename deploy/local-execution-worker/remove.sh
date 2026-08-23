@@ -15,7 +15,7 @@ backup_file="$2"
 runtime_root=/Users/agentops/AgentRuntime
 private_root=/Users/agentops/AgentRuntime/private
 log_root=/Users/agentops/AgentRuntime/log
-plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist
+plist=/Users/agentops/AgentRuntime/private/execution-worker-key-binding.plist
 private_key=/Users/agentops/AgentRuntime/private/execution-worker-ed25519.key
 public_document=/Users/agentops/AgentRuntime/execution-worker-public.json
 runtime_dsn=/Users/agentops/AgentRuntime/private/execution-worker-postgres-dsn
@@ -24,26 +24,25 @@ stderr_log=/Users/agentops/AgentRuntime/log/execution-worker.err.log
 acceptance_root=/Users/agentops/AgentRuntime/private/execution-relay-acceptance
 next_private_key=/Users/agentops/AgentRuntime/private/execution-worker-ed25519.next.key
 next_public_document=/Users/agentops/AgentRuntime/execution-worker-public.next.json
-next_plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.next.plist
+next_plist=/Users/agentops/AgentRuntime/private/execution-worker-key-binding.next.plist
 previous_private_key=/Users/agentops/AgentRuntime/private/execution-worker-ed25519.previous.key
 previous_public_document=/Users/agentops/AgentRuntime/execution-worker-public.previous.json
-previous_plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.previous.plist
+previous_plist=/Users/agentops/AgentRuntime/private/execution-worker-key-binding.previous.plist
 rotation_state=/Users/agentops/AgentRuntime/private/execution-worker-key-rotation-state.json
 rotation_lock=/Users/agentops/AgentRuntime/private/execution-worker-key-rotation.lock
 rotation_parts=(
   "$private_root/.execution-worker-ed25519.key.part"
   "$runtime_root/.execution-worker-public.json.part"
-  "/Users/agentops/Library/LaunchAgents/.com.orbbec.agent-execution-worker.plist.part"
+  "$private_root/.execution-worker-key-binding.plist.part"
   "$private_root/.execution-worker-ed25519.next.key.part"
   "$runtime_root/.execution-worker-public.next.json.part"
-  "/Users/agentops/Library/LaunchAgents/.com.orbbec.agent-execution-worker.next.plist.part"
+  "$private_root/.execution-worker-key-binding.next.plist.part"
   "$private_root/.execution-worker-ed25519.previous.key.part"
   "$runtime_root/.execution-worker-public.previous.json.part"
-  "/Users/agentops/Library/LaunchAgents/.com.orbbec.agent-execution-worker.previous.plist.part"
+  "$private_root/.execution-worker-key-binding.previous.plist.part"
   "$private_root/.execution-worker-key-rotation-state.json.part"
 )
-label=com.orbbec.agent-execution-worker
-domain="gui/$(/usr/bin/id -u)"
+worker_supervisor=/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh
 psql_bin="${PLATFORM_LOCAL_POSTGRES17_PSQL:-/opt/homebrew/opt/postgresql@17/bin/psql}"
 pg_restore_bin="${PLATFORM_LOCAL_POSTGRES17_PG_RESTORE:-/opt/homebrew/opt/postgresql@17/bin/pg_restore}"
 python_bin="${PLATFORM_LOCAL_PYTHON3:-/usr/bin/python3}"
@@ -334,7 +333,7 @@ owner_psql() {
 }
 
 # This read-only inventory rejects every cross-database dependency before any
-# LaunchAgent, file, database, or role mutation.
+# PM2 Worker, file, database, or role mutation.
 preflight=$(owner_psql -d postgres <<'SQL'
 do $preflight$
 declare
@@ -459,9 +458,9 @@ SQL
 ) || fail
 [[ "$preflight" == "EXECUTION_WORKER_REMOVAL_PREFLIGHT_OK" ]] || fail
 
-if /bin/launchctl print "$domain/$label" >/dev/null 2>&1; then
-  /bin/launchctl bootout "$domain/$label" >/dev/null 2>&1 || fail
-fi
+[[ -x "$worker_supervisor" && ! -L "$worker_supervisor" ]] || fail
+"$worker_supervisor" restore absent >/dev/null || fail
+"$worker_supervisor" save >/dev/null || fail
 
 owner_psql -d postgres >/dev/null <<'SQL'
 drop database agent_execution_worker with (force);

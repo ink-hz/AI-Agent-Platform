@@ -21,6 +21,7 @@ public_document="$runtime_root/execution-worker-public.json"
 runtime_dsn="$private_root/execution-worker-postgres-dsn"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 worker_supervisor="$script_dir/worker-pm2.sh"
+key_manifest="$private_root/execution-worker-key-binding.plist"
 
 [[ "$platform_root" == "$(cd "$script_dir/../.." && pwd)" ]] || fail
 [[ -x "$platform_root/backend/.venv/bin/python" ]] || fail
@@ -153,5 +154,11 @@ PY
 "$platform_root/backend/.venv/bin/python" "$script_dir/generate-worker-key.py" \
   "$private_key" "$public_document"
 "$script_dir/bootstrap-worker-database.sh" "$owner_dsn_file" "$runtime_dsn"
+key_manifest_part="$key_manifest.part.$$"
+[[ ! -e "$key_manifest_part" && ! -L "$key_manifest_part" ]] || fail
+/bin/cp "$script_dir/execution-worker-key-binding.plist.template" "$key_manifest_part"
+/bin/chmod 600 "$key_manifest_part"
+/usr/bin/plutil -lint "$key_manifest_part" >/dev/null
+/bin/mv -f "$key_manifest_part" "$key_manifest"
 "$worker_supervisor" start || fail
 echo "EXECUTION_WORKER_INSTALLED"

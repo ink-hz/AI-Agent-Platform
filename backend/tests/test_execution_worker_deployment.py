@@ -35,7 +35,7 @@ CLOUD_DEPLOY_INPUT_LOCK = CLOUD / "deploy-input-lock.py"
 GENERATOR = LOCAL / "generate-worker-key.py"
 ROTATOR = LOCAL / "rotate-worker-key.py"
 BOOTSTRAP = LOCAL / "bootstrap-worker-database.sh"
-PLIST = LOCAL / "com.orbbec.agent-execution-worker.plist.template"
+PLIST = LOCAL / "execution-worker-key-binding.plist.template"
 INSTALLER = LOCAL / "install.sh"
 WORKER_PM2 = LOCAL / "worker-pm2.sh"
 WORKER_PM2_CONFIG = LOCAL / "execution-worker.ecosystem.config.cjs"
@@ -120,10 +120,10 @@ def test_removal_wrapper_has_exact_confirmation_private_inputs_and_no_recursive_
     for rotation_asset in (
         "execution-worker-ed25519.next.key",
         "execution-worker-public.next.json",
-        "com.orbbec.agent-execution-worker.next.plist",
+        "execution-worker-key-binding.next.plist",
         "execution-worker-ed25519.previous.key",
         "execution-worker-public.previous.json",
-        "com.orbbec.agent-execution-worker.previous.plist",
+        "execution-worker-key-binding.previous.plist",
         "execution-worker-key-rotation-state.json",
         "execution-worker-key-rotation.lock",
     ):
@@ -175,7 +175,8 @@ def test_removal_preflight_precedes_every_local_mutation() -> None:
     script = REMOVER.read_text(encoding="utf-8")
     preflight = script.index("EXECUTION_WORKER_REMOVAL_PREFLIGHT_OK")
     for mutation in (
-        '/bin/launchctl bootout',
+        '"$worker_supervisor" restore absent',
+        '"$worker_supervisor" save',
         'drop database agent_execution_worker',
         '/bin/rm -f -- "$plist"',
         '/bin/rm -f -- "$private_key"',
@@ -200,13 +201,13 @@ def test_removal_validates_and_cleans_every_fixed_rotation_part() -> None:
     fixed_parts = (
         ".execution-worker-ed25519.key.part",
         ".execution-worker-public.json.part",
-        ".com.orbbec.agent-execution-worker.plist.part",
+        ".execution-worker-key-binding.plist.part",
         ".execution-worker-ed25519.next.key.part",
         ".execution-worker-public.next.json.part",
-        ".com.orbbec.agent-execution-worker.next.plist.part",
+        ".execution-worker-key-binding.next.plist.part",
         ".execution-worker-ed25519.previous.key.part",
         ".execution-worker-public.previous.json.part",
-        ".com.orbbec.agent-execution-worker.previous.plist.part",
+        ".execution-worker-key-binding.previous.plist.part",
         ".execution-worker-key-rotation-state.json.part",
     )
     for fixed_part in fixed_parts:
@@ -326,7 +327,7 @@ def _removal_test_environment(control_database, tmp_path: Path):
     backup.chmod(0o600)
 
     assets = {
-        "plist": launch_agents / "com.orbbec.agent-execution-worker.plist",
+        "plist": private / "execution-worker-key-binding.plist",
         "private_key": private / "execution-worker-ed25519.key",
         "public_document": runtime / "execution-worker-public.json",
         "runtime_dsn": runtime_dsn,
@@ -334,11 +335,10 @@ def _removal_test_environment(control_database, tmp_path: Path):
         "stderr_log": log / "execution-worker.err.log",
         "next_private_key": private / "execution-worker-ed25519.next.key",
         "next_public_document": runtime / "execution-worker-public.next.json",
-        "next_plist": launch_agents / "com.orbbec.agent-execution-worker.next.plist",
+        "next_plist": private / "execution-worker-key-binding.next.plist",
         "previous_private_key": private / "execution-worker-ed25519.previous.key",
         "previous_public_document": runtime / "execution-worker-public.previous.json",
-        "previous_plist": launch_agents
-        / "com.orbbec.agent-execution-worker.previous.plist",
+        "previous_plist": private / "execution-worker-key-binding.previous.plist",
         "rotation_state": private / "execution-worker-key-rotation-state.json",
         "rotation_lock": private / "execution-worker-key-rotation.lock",
     }
@@ -359,19 +359,18 @@ def _removal_test_environment(control_database, tmp_path: Path):
     shared_sentinel.write_text("must-survive\n", encoding="utf-8")
     shared_sentinel.chmod(0o600)
 
-    fake_bin = tmp_path / "fake-bin"
-    fake_bin.mkdir(mode=0o700)
     bootout_marker = tmp_path / "worker-booted-out"
-    fake_launchctl = fake_bin / "launchctl"
-    fake_launchctl.write_text(
+    fake_supervisor = runtime / "platform/deploy/local-execution-worker/worker-pm2.sh"
+    fake_supervisor.parent.mkdir(parents=True, exist_ok=True)
+    fake_supervisor.write_text(
         "#!/bin/bash\n"
         "set -euo pipefail\n"
-        "if [[ \"$1\" == \"print\" ]]; then exit 0; fi\n"
-        f"if [[ \"$1\" == \"bootout\" ]]; then /usr/bin/touch {bootout_marker}; exit 0; fi\n"
+        f"if [[ \"$1\" == restore && \"$2\" == absent ]]; then /usr/bin/touch {bootout_marker}; exit 0; fi\n"
+        "if [[ \"$1\" == save ]]; then exit 0; fi\n"
         "exit 1\n",
         encoding="utf-8",
     )
-    fake_launchctl.chmod(0o700)
+    fake_supervisor.chmod(0o700)
 
     remover = runtime / "platform/deploy/local-execution-worker/remove.sh"
     source = REMOVER.read_text(encoding="utf-8")
@@ -379,7 +378,6 @@ def _removal_test_environment(control_database, tmp_path: Path):
     source = source.replace(
         "/Users/agentops/Library/LaunchAgents", str(launch_agents)
     )
-    source = source.replace("/bin/launchctl", str(fake_launchctl))
     source = source.replace("agentops", current_user)
     remover.write_text(source, encoding="utf-8")
     remover.chmod(0o700)
@@ -794,7 +792,7 @@ def _rotation_test_environment(tmp_path: Path, *, loaded: bool = True):
         capture_output=True,
     )
     assert generated.returncode == 0, generated.stderr
-    canonical_plist = launch_agents / "com.orbbec.agent-execution-worker.plist"
+    canonical_plist = private / "execution-worker-key-binding.plist"
     canonical_plist.write_text(
         PLIST.read_text(encoding="utf-8").replace(
             "/Users/agentops/AgentRuntime", str(runtime)
@@ -808,34 +806,30 @@ def _rotation_test_environment(tmp_path: Path, *, loaded: bool = True):
     launch_fail = tmp_path / "launch-fail"
     launch_error = tmp_path / "launch-error"
     launch_log = tmp_path / "launch-log"
-    fake_launchctl = tmp_path / "launchctl"
+    fake_launchctl = local / "worker-pm2.sh"
     fake_launchctl.write_text(
         """#!/bin/bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_LAUNCH_LOG"
 case "$1" in
-  print)
+  state)
     if [[ -e "$FAKE_LAUNCH_ERROR" ]]; then
       case "$(<"$FAKE_LAUNCH_ERROR")" in
         permission) printf 'Not privileged to inspect domain\n' >&2; exit 77 ;;
         transient) printf 'Input/output error\n' >&2; exit 74 ;;
       esac
     fi
-    if [[ "$(<"$FAKE_LAUNCH_STATE")" == loaded ]]; then exit 0; fi
-    printf 'Could not find service "%s" in domain for user gui: %s\n' \
-      'com.orbbec.agent-execution-worker' "$(/usr/bin/id -u)" >&2
-    exit 113
+    if [[ "$(<"$FAKE_LAUNCH_STATE")" == loaded ]]; then printf 'online\n'; else printf 'absent\n'; fi
     ;;
-  bootout) printf unloaded > "$FAKE_LAUNCH_STATE" ;;
-  bootstrap)
+  stop) printf unloaded > "$FAKE_LAUNCH_STATE" ;;
+  restore)
+    [[ "$2" == online ]]
     if [[ -e "$FAKE_LAUNCH_FAIL" ]]; then
       /bin/rm -f -- "$FAKE_LAUNCH_FAIL"
       exit 71
     fi
     printf loaded > "$FAKE_LAUNCH_STATE"
     ;;
-  enable) ;;
-  kickstart) [[ "$(<"$FAKE_LAUNCH_STATE")" == loaded ]] ;;
   *) exit 72 ;;
 esac
 """,
@@ -848,7 +842,6 @@ esac
     source = source.replace(
         "/Users/agentops/Library/LaunchAgents", str(launch_agents)
     )
-    source = source.replace("/bin/launchctl", str(fake_launchctl))
     source = source.replace(
         'REQUIRED_USER = "agentops"', f'REQUIRED_USER = "{current_user}"'
     )
@@ -864,11 +857,10 @@ esac
     managed = {
         "next_private": private / "execution-worker-ed25519.next.key",
         "next_public": runtime / "execution-worker-public.next.json",
-        "next_plist": launch_agents / "com.orbbec.agent-execution-worker.next.plist",
+        "next_plist": private / "execution-worker-key-binding.next.plist",
         "previous_private": private / "execution-worker-ed25519.previous.key",
         "previous_public": runtime / "execution-worker-public.previous.json",
-        "previous_plist": launch_agents
-        / "com.orbbec.agent-execution-worker.previous.plist",
+        "previous_plist": private / "execution-worker-key-binding.previous.plist",
         "state": private / "execution-worker-key-rotation-state.json",
     }
     return {
@@ -3100,33 +3092,20 @@ def test_database_bootstrap_first_run_and_localhost_rerun_preserve_password_and_
                 )
 
 
-def test_launchagent_is_agentops_loopback_and_bounded() -> None:
+def test_key_binding_manifest_is_non_executable_and_bounded() -> None:
     value = plistlib.loads(PLIST.read_bytes())
     raw = PLIST.read_text(encoding="utf-8")
 
-    assert value["Label"] == "com.orbbec.agent-execution-worker"
-    assert value["RunAtLoad"] is True
-    assert value["KeepAlive"] is True
-    assert value["ThrottleInterval"] >= 10
-    assert value["ProcessType"] == "Background"
-    assert value["ProgramArguments"][-2:] == [
-        "-m",
-        "app.execution_relay.worker",
-    ]
-    assert value["ProgramArguments"][0].startswith("/Users/agentops/")
+    assert value["Label"] == "orbbec-agent-execution-worker"
+    assert set(value) == {"Label", "EnvironmentVariables"}
     environment = value["EnvironmentVariables"]
     assert environment == {
         "PLATFORM_WORKER_ID": "agentops-mac-primary",
         "PLATFORM_WORKER_KEY_ID": "worker-v1",
         "PLATFORM_WORKER_PRIVATE_KEY_FILE": "/Users/agentops/AgentRuntime/private/execution-worker-ed25519.key",
-        "PLATFORM_WORKER_DATABASE_URL_FILE": "/Users/agentops/AgentRuntime/private/execution-worker-postgres-dsn",
-        "PLATFORM_WORKER_CALLBACK_PORT": "9120",
-        "PLATFORM_WORKER_CLOUD_URL": "https://agent.orbbec.com.cn",
-        "PLATFORM_METABOT_RUNTIME_CONTRACT": "/Users/agentops/AgentRuntime/metabot/runtime-contract.json",
-        "PLATFORM_METABOT_API_SECRET_FILE": "/Users/agentops/AgentRuntime/private/metabot-api-token",
     }
-    assert "NetworkState" not in raw
-    assert value["StandardOutPath"] != value["StandardErrorPath"]
+    for launch_key in ("ProgramArguments", "RunAtLoad", "KeepAlive", "ProcessType"):
+        assert launch_key not in value
     for forbidden in ("begin private key", "postgresql://", "bearer ", "password="):
         assert forbidden not in raw.lower()
 
@@ -3152,10 +3131,10 @@ def test_local_key_rotator_is_strict_bounded_and_noninteractive() -> None:
     for asset in (
         "execution-worker-ed25519.next.key",
         "execution-worker-public.next.json",
-        'f"{LABEL}.next.plist"',
+        'execution-worker-key-binding.next.plist',
         "execution-worker-ed25519.previous.key",
         "execution-worker-public.previous.json",
-        'f"{LABEL}.previous.plist"',
+        'execution-worker-key-binding.previous.plist',
         "execution-worker-key-rotation-state.json",
         "execution-worker-key-rotation.lock",
     ):
@@ -5059,7 +5038,8 @@ def test_worker_pm2_config_has_only_the_fixed_worker_runtime() -> None:
     assert "args: ['-m', 'app.execution_relay.worker']" in source
     assert "cwd: '/Users/agentops/AgentRuntime/platform/backend'" in source
     assert "PLATFORM_WORKER_CALLBACK_PORT: '9120'" in source
-    assert "PLATFORM_WORKER_KEY_ID: 'worker-v1'" in source
+    assert "PLATFORM_WORKER_KEY_ID: workerDocument.key_id" in source
+    assert "readFileSync" in source and "execution-worker-public.json" in source
     assert "process.env" not in source
     assert "exec_mode" not in source
     assert stat.S_IMODE(WORKER_PM2_CONFIG.stat().st_mode) == 0o644

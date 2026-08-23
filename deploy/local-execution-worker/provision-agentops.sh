@@ -24,6 +24,7 @@ brain_before="$private/worker-provision-brain-before.txt"
 receipt="$private/worker-provision-receipt"
 worker_supervisor="$platform/deploy/local-execution-worker/worker-pm2.sh"
 pm2_dump=/Users/agentops/.pm2/dump.pm2
+key_manifest="$private/execution-worker-key-binding.plist"
 
 safe_remove_tree() {
   [[ $# -eq 1 ]] || return 1
@@ -96,10 +97,24 @@ rollback_worker() {
   [[ -d "$receipt" && ! -L "$receipt" ]] || return 0
   [[ "$(/usr/bin/stat -f '%Lp %Su' "$receipt")" == "700 agentops" ]] || return 1
   [[ -f "$receipt/prepared" && ! -L "$receipt/prepared" && "$(<"$receipt/prepared")" == v1 ]] || return 1
+  [[ -f "$receipt/state" && ! -L "$receipt/state" ]] || return 1
   prior_state="$(<"$receipt/state")" || return 1
   [[ "$prior_state" == absent || "$prior_state" == online || "$prior_state" == stopped ]] || return 1
   "$worker_supervisor" restore "$prior_state" >/dev/null || return 1
-  if [[ -f "$receipt/previous.dump" && ! -L "$receipt/previous.dump" ]]; then
+  if [[ -e "$receipt/previous.manifest" || -L "$receipt/previous.manifest" ]]; then
+    [[ -f "$receipt/previous.manifest" && ! -L "$receipt/previous.manifest" ]] || return 1
+    manifest_part="$key_manifest.rollback.$$"
+    [[ ! -e "$manifest_part" && ! -L "$manifest_part" ]] || return 1
+    /bin/cp "$receipt/previous.manifest" "$manifest_part" || return 1
+    /bin/chmod 600 "$manifest_part" || return 1
+    /bin/mv -f "$manifest_part" "$key_manifest" || return 1
+    /usr/bin/cmp -s "$receipt/previous.manifest" "$key_manifest" || return 1
+  else
+    /bin/rm -f -- "$key_manifest" || return 1
+    [[ ! -e "$key_manifest" && ! -L "$key_manifest" ]] || return 1
+  fi
+  if [[ -e "$receipt/previous.dump" || -L "$receipt/previous.dump" ]]; then
+    [[ -f "$receipt/previous.dump" && ! -L "$receipt/previous.dump" ]] || return 1
     [[ -f "$receipt/previous.dump.mode" && ! -L "$receipt/previous.dump.mode" ]] || return 1
     prior_dump_mode="$(<"$receipt/previous.dump.mode")" || return 1
     [[ "$prior_dump_mode" =~ ^6[04][04]$ ]] || return 1
@@ -316,6 +331,13 @@ else: os.close(fd)
     [[ "$prior_state" == absent || "$prior_state" == online || "$prior_state" == stopped ]] || fail
     printf '%s\n' "$prior_state" > "$receipt_part/state"
     /bin/chmod 600 "$receipt_part/state"
+    if [[ -e "$key_manifest" || -L "$key_manifest" ]]; then
+      [[ -f "$key_manifest" && ! -L "$key_manifest" \
+        && "$(/usr/bin/stat -f '%Lp %Su' "$key_manifest")" == "600 agentops" ]] || fail
+      /bin/cp "$key_manifest" "$receipt_part/previous.manifest"
+      /bin/chmod 600 "$receipt_part/previous.manifest"
+      /usr/bin/cmp -s "$key_manifest" "$receipt_part/previous.manifest" || fail
+    fi
     if [[ -e "$pm2_dump" || -L "$pm2_dump" ]]; then
       [[ -f "$pm2_dump" && ! -L "$pm2_dump" ]] || fail
       prior_dump_mode="$(/usr/bin/stat -f '%Lp' "$pm2_dump")" || fail

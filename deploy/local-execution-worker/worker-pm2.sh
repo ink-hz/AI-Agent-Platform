@@ -81,7 +81,9 @@ case "$1" in
     [[ "$(state)" == "$2" ]] || fail
     ;;
   save)
-    [[ $# -eq 1 && "$(state)" == online ]] || fail
+    [[ $# -eq 1 ]] || fail
+    current_state="$(state)" || fail
+    [[ "$current_state" == absent || "$current_state" == online || "$current_state" == stopped ]] || fail
     pm2_clean save >/dev/null
     ;;
   *) fail ;;

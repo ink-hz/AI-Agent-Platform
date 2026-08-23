@@ -1,3 +1,17 @@
+const fs = require('node:fs');
+
+const workerDocument = JSON.parse(fs.readFileSync(
+  '/Users/agentops/AgentRuntime/execution-worker-public.json',
+  'utf8',
+));
+if (
+  workerDocument.worker_id !== 'agentops-mac-primary'
+  || typeof workerDocument.key_id !== 'string'
+  || !/^worker-v[1-9][0-9]*$/.test(workerDocument.key_id)
+) {
+  throw new Error('invalid execution Worker identity');
+}
+
 module.exports = {
   apps: [{
     name: 'orbbec-agent-execution-worker',
@@ -12,7 +26,7 @@ module.exports = {
     error_file: '/Users/agentops/AgentRuntime/log/execution-worker.err.log',
     env: {
       PLATFORM_WORKER_ID: 'agentops-mac-primary',
-      PLATFORM_WORKER_KEY_ID: 'worker-v1',
+      PLATFORM_WORKER_KEY_ID: workerDocument.key_id,
       PLATFORM_WORKER_PRIVATE_KEY_FILE: '/Users/agentops/AgentRuntime/private/execution-worker-ed25519.key',
       PLATFORM_WORKER_DATABASE_URL_FILE: '/Users/agentops/AgentRuntime/private/execution-worker-postgres-dsn',
       PLATFORM_WORKER_CALLBACK_PORT: '9120',

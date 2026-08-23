@@ -20,7 +20,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 REQUIRED_USER = "agentops"
 WORKER_ID = "agentops-mac-primary"
-LABEL = "com.orbbec.agent-execution-worker"
+LABEL = "orbbec-agent-execution-worker"
 KEY_ID = re.compile(r"worker-v[1-9][0-9]*\Z")
 AGENTS = (
     "hr-bot",
@@ -34,20 +34,19 @@ AGENTS = (
 )
 RUNTIME_ROOT = Path("/Users/agentops/AgentRuntime")
 PRIVATE_ROOT = RUNTIME_ROOT / "private"
-LAUNCH_ROOT = Path("/Users/agentops/Library/LaunchAgents")
 PRIVATE_KEY = PRIVATE_ROOT / "execution-worker-ed25519.key"
 PUBLIC_DOCUMENT = RUNTIME_ROOT / "execution-worker-public.json"
-PLIST = LAUNCH_ROOT / f"{LABEL}.plist"
+PLIST = PRIVATE_ROOT / "execution-worker-key-binding.plist"
 NEXT_PRIVATE_KEY = PRIVATE_ROOT / "execution-worker-ed25519.next.key"
 NEXT_PUBLIC_DOCUMENT = RUNTIME_ROOT / "execution-worker-public.next.json"
-NEXT_PLIST = LAUNCH_ROOT / f"{LABEL}.next.plist"
+NEXT_PLIST = PRIVATE_ROOT / "execution-worker-key-binding.next.plist"
 PREVIOUS_PRIVATE_KEY = PRIVATE_ROOT / "execution-worker-ed25519.previous.key"
 PREVIOUS_PUBLIC_DOCUMENT = RUNTIME_ROOT / "execution-worker-public.previous.json"
-PREVIOUS_PLIST = LAUNCH_ROOT / f"{LABEL}.previous.plist"
+PREVIOUS_PLIST = PRIVATE_ROOT / "execution-worker-key-binding.previous.plist"
 STATE = PRIVATE_ROOT / "execution-worker-key-rotation-state.json"
 LOCK = PRIVATE_ROOT / "execution-worker-key-rotation.lock"
 GENERATOR = Path(__file__).with_name("generate-worker-key.py")
-LAUNCHCTL = "/bin/launchctl"
+SUPERVISOR = RUNTIME_ROOT / "platform/deploy/local-execution-worker/worker-pm2.sh"
 COMPONENTS = ("private", "public", "plist")
 CANONICAL_PATHS = (PRIVATE_KEY, PUBLIC_DOCUMENT, PLIST)
 NEXT_PATHS = (NEXT_PRIVATE_KEY, NEXT_PUBLIC_DOCUMENT, NEXT_PLIST)
@@ -226,25 +225,21 @@ def _identity(
 
 def _loaded() -> bool:
     result = subprocess.run(
-        [LAUNCHCTL, "print", f"gui/{os.getuid()}/{LABEL}"],
+        [str(SUPERVISOR), "state"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
-    if result.returncode == 0:
+    if result.returncode == 0 and result.stdout == b"online\n":
         return True
-    output = (result.stdout + result.stderr).decode("utf-8", errors="replace")
-    if (
-        f'Could not find service "{LABEL}"' in output
-        and "in domain for user gui:" in output
-    ):
+    if result.returncode == 0 and result.stdout in {b"absent\n", b"stopped\n"}:
         return False
     raise RotationError
 
 
-def _launch(arguments: list[str]) -> None:
+def _supervise(arguments: list[str]) -> None:
     subprocess.run(
-        [LAUNCHCTL, *arguments],
+        [str(SUPERVISOR), *arguments],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=True,
@@ -252,13 +247,10 @@ def _launch(arguments: list[str]) -> None:
 
 
 def _set_loaded(desired: bool) -> None:
-    domain = f"gui/{os.getuid()}"
     if _loaded():
-        _launch(["bootout", f"{domain}/{LABEL}"])
+        _supervise(["stop"])
     if desired:
-        _launch(["bootstrap", domain, str(PLIST)])
-        _launch(["enable", f"{domain}/{LABEL}"])
-        _launch(["kickstart", "-k", f"{domain}/{LABEL}"])
+        _supervise(["restore", "online"])
 
 
 def _state() -> dict[str, object]:
@@ -656,8 +648,18 @@ def main(arguments: list[str] | None = None) -> int:
             or KEY_ID.fullmatch(values[1]) is None
         ):
             raise RotationError
-        for directory in (RUNTIME_ROOT, PRIVATE_ROOT, LAUNCH_ROOT):
+        for directory in (RUNTIME_ROOT, PRIVATE_ROOT):
             _secure_directory(directory)
+        supervisor_metadata = SUPERVISOR.lstat()
+        if (
+            SUPERVISOR.is_symlink()
+            or not stat.S_ISREG(supervisor_metadata.st_mode)
+            or supervisor_metadata.st_uid != os.getuid()
+            or not 0 < supervisor_metadata.st_size <= 65_536
+            or stat.S_IMODE(supervisor_metadata.st_mode) & 0o022
+            or not os.access(SUPERVISOR, os.X_OK)
+        ):
+            raise RotationError
         action, target_key_id = values
         lock = _acquire_lock()
         ACTIVE_LOCK_FD = lock

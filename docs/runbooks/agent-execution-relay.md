@@ -263,16 +263,17 @@ and cleans only the exact fixed prior/staged artifacts. `activate` records
 inspects the exact database row and fingerprint instead of adding again.
 
 Back on the `agentops` Mac, atomically activate the prepared identity. The
-wrapper stops the LaunchAgent before replacing the canonical private key,
-public document and plist; an immediate failure restores all three and the
-exact previous loaded state:
+wrapper stops only the fixed PM2 Worker before replacing the canonical private
+key, public document and non-loaded key-binding plist; an immediate failure
+restores all three and the exact previous online/non-online state. The plist is
+rotation metadata only and is never used as a service definition:
 
 ```bash
 /Users/agentops/AgentRuntime/platform/backend/.venv/bin/python /Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/rotate-worker-key.py activate worker-v2
 /Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/accept.sh /Users/agentops/AgentRuntime/private/acceptance-config.json
 ```
 
-Gate01-08 reads the canonical public document, verifies the installed plist and
+Gate01-08 reads the canonical public document, verifies the installed key manifest and
 private key use the same `worker-v2`, and queries that exact registered key and
 fresh heartbeat. On the cloud host, independently verify the canonical keyring,
 database key, fingerprint, and heartbeat:
@@ -577,7 +578,8 @@ cloud Worker, run the owner-only wrapper as `agentops`:
 
 The wrapper acquires the same persistent rotation lock before its role,
 membership, ACL, and cross-database dependency preflight, and holds it through
-the final unlink. It removes only the dedicated LaunchAgent, execution-worker
+the final unlink. It first deletes only the fixed PM2 Worker and saves the PM2
+process list, then removes the non-loaded key-binding plist, execution-worker
 key/public/DSN, dedicated logs, fixed rotation next/previous/state assets, and
 known acceptance residual files. The owner-only mode-0600 lock file is retained
 so no concurrent process can acquire a replacement inode. It then executes
