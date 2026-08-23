@@ -4869,6 +4869,8 @@ def test_installer_is_noninteractive_agentops_only_and_permission_gated() -> Non
     assert "execution-worker-public.json" in script
     assert "plistlib" in script
     assert '/bin/cp "$script_dir/execution-worker-key-binding.plist.template"' not in script
+    assert 'key_manifest_part="$private_root/.execution-worker-key-binding.plist.part"' in script
+    assert 'key_manifest_part="$key_manifest.part.$$"' not in script
     assert "stat -f '%lp %su'" in lowered
     for forbidden in (
         "/usr/bin/security",

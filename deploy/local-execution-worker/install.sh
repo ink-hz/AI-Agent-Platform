@@ -154,8 +154,14 @@ PY
 "$platform_root/backend/.venv/bin/python" "$script_dir/generate-worker-key.py" \
   "$private_key" "$public_document"
 "$script_dir/bootstrap-worker-database.sh" "$owner_dsn_file" "$runtime_dsn"
-key_manifest_part="$key_manifest.part.$$"
-[[ ! -e "$key_manifest_part" && ! -L "$key_manifest_part" ]] || fail
+key_manifest_part="$private_root/.execution-worker-key-binding.plist.part"
+if [[ -e "$key_manifest_part" || -L "$key_manifest_part" ]]; then
+  [[ -f "$key_manifest_part" && ! -L "$key_manifest_part" ]] || fail
+  [[ "$(/usr/bin/stat -f '%Lp %Su' "$key_manifest_part")" == "600 agentops" ]] || fail
+  key_manifest_part_size="$(/usr/bin/stat -f '%z' "$key_manifest_part")"
+  [[ "$key_manifest_part_size" =~ ^[0-9]+$ && "$key_manifest_part_size" -le 65536 ]] || fail
+  /bin/rm -f -- "$key_manifest_part"
+fi
 "$platform_root/backend/.venv/bin/python" - \
   "$public_document" \
   "$script_dir/execution-worker-key-binding.plist.template" \
