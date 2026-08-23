@@ -383,7 +383,7 @@ def _db_repository(environment):
     )
 
 
-def _seed_current_bound_member(environment):
+def _seed_current_bound_member(environment, *, gender="female"):
     generation_id = uuid4()
     internal_user_id = uuid4()
     with psycopg.connect(environment["admin"]) as connection:
@@ -403,9 +403,12 @@ def _seed_current_bound_member(environment):
             "insert into platform_control.directory_members "
             "(generation_id,member_key,internal_user_id,subject_kind,lookup_hmac,"
             "lookup_key_version,encrypted_provider_id,encryption_key_version,display_name,status,"
-            "union_lookup_hmac,union_lookup_key_version) "
-            "values (%s,%s,%s,'employee',%s,1,%s,1,'Web Session User','active',%s,1)",
-            (generation_id, uuid4(), internal_user_id, b"c" * 32, b"cipher", b"u" * 32),
+            "union_lookup_hmac,union_lookup_key_version,gender) "
+            "values (%s,%s,%s,'employee',%s,1,%s,1,'Web Session User','active',%s,1,%s)",
+            (
+                generation_id, uuid4(), internal_user_id, b"c" * 32,
+                b"cipher", b"u" * 32, gender,
+            ),
         )
         connection.execute(
             "update platform_control.directory_state set active_generation_id=%s,last_complete_at=now(),updated_at=now() where singleton",
@@ -436,11 +439,28 @@ def test_account_snapshot_returns_departments_and_active_exact_scopes(
             ),
         )
 
-    assert repository.account_snapshot(internal_user_id) == {
+    snapshot = repository.account_snapshot(internal_user_id)
+    gender = snapshot.pop("gender", object())
+    if gender != "female":
+        pytest.fail("account gender repository projection mismatch")
+    assert snapshot == {
         "display_name": "Web Session User",
         "departments": [],
         "observation_agent_ids": ["ai-fae-agent", "hr-bot"],
     }
+
+
+@pytest.mark.postgres
+def test_account_snapshot_preserves_null_gender(production_environment) -> None:
+    repository = _db_repository(production_environment)
+    internal_user_id, _ = _seed_current_bound_member(
+        production_environment,
+        gender=None,
+    )
+
+    snapshot = repository.account_snapshot(internal_user_id)
+
+    assert snapshot["gender"] is None
 
 
 @pytest.mark.postgres

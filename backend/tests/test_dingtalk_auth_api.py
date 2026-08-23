@@ -23,6 +23,7 @@ AI_ADMIN_ACCOUNT_CONTRACT_FIELDS = {
     "display_name",
     "role",
     "departments",
+    "gender",
     "observation_agent_ids",
     "directory_freshness",
     "hard_stale_read_only",
@@ -59,6 +60,7 @@ class FakeAuth:
         self.provider_calls = 0
         self.return_paths: dict[str, str] = {}
         self.started_count = 0
+        self.gender = "female"
 
     def start_qr(self, return_path):
         from app.control_plane.auth import StartedLogin
@@ -98,6 +100,7 @@ class FakeAuth:
         return {
             "display_name": "Platform user",
             "departments": ["产品中心", "项目管理部"],
+            "gender": self.gender,
             "observation_agent_ids": [],
             "directory_freshness": "hard_stale"
             if context.hard_stale_read_only else "fresh",
@@ -526,8 +529,12 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
 
     account = client.get("/api/v1/account", cookies=cookies)
     assert account.status_code == 200
-    assert set(account.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
-    assert account.json() == {
+    payload = account.json()
+    assert set(payload) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
+    gender = payload.pop("gender")
+    if gender != "female":
+        pytest.fail("account gender projection mismatch")
+    assert payload == {
         "internal_user_id": str(auth.context.internal_user_id),
         "display_name": "Platform user",
         "role": "platform_owner",
@@ -592,6 +599,49 @@ def test_account_serializes_every_ai_admin_contract_role_with_exact_fields(
     assert response.status_code == 200
     assert set(response.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
     assert response.json()["role"] == role.value
+
+
+def test_account_returns_null_gender_without_changing_private_cache_contract(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    auth.gender = None
+    response = TestClient(_app(tmp_path, monkeypatch, auth)).get(
+        "/api/v1/account",
+        cookies={auth.cookie_name: "valid-cookie"},
+    )
+
+    assert response.status_code == 200
+    assert set(response.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
+    assert response.json()["gender"] is None
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["pragma"] == "no-cache"
+
+
+def test_account_failure_is_privacy_safe(tmp_path, monkeypatch, caplog) -> None:
+    from app.control_plane.auth import AuthenticationError
+
+    auth = FakeAuth()
+
+    def fail_account_snapshot(_context):
+        raise AuthenticationError(
+            "employee record contained provider and gender details"
+        )
+
+    auth.account_snapshot = fail_account_snapshot
+    with caplog.at_level("INFO"):
+        response = TestClient(_app(tmp_path, monkeypatch, auth)).get(
+            "/api/v1/account",
+            cookies={auth.cookie_name: "valid-cookie"},
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "account unavailable"}
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    for forbidden in ("employee record", "provider", "gender details"):
+        if forbidden in log_text:
+            pytest.fail("account failure log exposed identity detail")
 
 
 def test_unknown_stored_role_fails_closed() -> None:

@@ -697,7 +697,9 @@ class WebSessionRepository:
                     "select users.display_name, coalesce(scopes.agent_ids, "
                     "array[]::text[]) as observation_agent_ids, "
                     "platform_control.read_account_departments_v27("
-                    "users.internal_user_id) as departments from "
+                    "users.internal_user_id) as departments, "
+                    "platform_control.read_account_gender_v29("
+                    "users.internal_user_id) as gender from "
                     "platform_control.internal_users users left join lateral "
                     "(select array_agg(grants.agent_id order by grants.agent_id) "
                     "as agent_ids from platform_control.observation_grants grants "
@@ -711,6 +713,7 @@ class WebSessionRepository:
             return {
                 "display_name": row["display_name"],
                 "departments": list(row["departments"]),
+                "gender": row["gender"],
                 "observation_agent_ids": list(row["observation_agent_ids"]),
             }
         except AuthenticationError:

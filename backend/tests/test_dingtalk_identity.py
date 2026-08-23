@@ -1940,3 +1940,176 @@ def test_account_department_projection_is_active_member_only_and_app_role_only(
                 "where generation_id=%s and department_key=%s",
                 (active_generation_id, invalid_department_id),
             )
+
+
+@pytest.mark.postgres
+def test_account_gender_projection_uses_only_one_active_current_member(
+    production_environment,
+) -> None:
+    male_user_id = uuid4()
+    female_user_id = uuid4()
+    null_user_id = uuid4()
+    inactive_user_id = uuid4()
+    historical_user_id = uuid4()
+    multiple_user_id = uuid4()
+    invalid_user_id = uuid4()
+    historical_generation_id = uuid4()
+    active_generation_id = uuid4()
+
+    def insert_generation(connection, generation_id, members) -> None:
+        connection.execute(
+            "insert into platform_control.directory_generations "
+            "(generation_id,status,member_count,department_count,content_sha256,completed_at) "
+            "values (%s,'complete',%s,0,%s,now())",
+            (generation_id, len(members), "d" * 64),
+        )
+        for index, (user_id, status, gender) in enumerate(members):
+            connection.execute(
+                "insert into platform_control.directory_members "
+                "(generation_id,member_key,internal_user_id,subject_kind,lookup_hmac,"
+                "lookup_key_version,encrypted_provider_id,encryption_key_version,"
+                "display_name,status,gender) values "
+                "(%s,%s,%s,'dingtalk_corporate',%s,1,%s,1,'Member',%s,%s)",
+                (
+                    generation_id, uuid4(), user_id,
+                    bytes([index + 1]) * 32, b"m" * 29, status, gender,
+                ),
+            )
+
+    with psycopg.connect(production_environment["admin"]) as connection:
+        for user_id in (
+            male_user_id, female_user_id, null_user_id, inactive_user_id,
+            historical_user_id, multiple_user_id, invalid_user_id,
+        ):
+            connection.execute(
+                "insert into platform_control.internal_users "
+                "(internal_user_id,display_name,status) values (%s,'Member','active')",
+                (user_id,),
+            )
+        insert_generation(
+            connection,
+            historical_generation_id,
+            (
+                (female_user_id, "active", "male"),
+                (historical_user_id, "active", "female"),
+            ),
+        )
+        insert_generation(
+            connection,
+            active_generation_id,
+            (
+                (male_user_id, "active", "male"),
+                (female_user_id, "active", "female"),
+                (null_user_id, "active", None),
+                (inactive_user_id, "inactive", "female"),
+                (multiple_user_id, "active", "male"),
+                (multiple_user_id, "active", "female"),
+                (invalid_user_id, "active", None),
+            ),
+        )
+        connection.execute(
+            "update platform_control.directory_state set active_generation_id=%s, "
+            "last_complete_at=now(),updated_at=now() where singleton",
+            (active_generation_id,),
+        )
+
+    def read_gender(user_id):
+        with psycopg.connect(
+            production_environment["urls"]["platform_control_app"],
+            row_factory=dict_row,
+        ) as connection:
+            return connection.execute(
+                "select platform_control.read_account_gender_v29(%s) as gender",
+                (user_id,),
+            ).fetchone()["gender"]
+
+    def assert_gender(actual, expected) -> None:
+        if actual != expected:
+            pytest.fail("account gender projection mismatch")
+
+    assert_gender(read_gender(male_user_id), "male")
+    assert_gender(read_gender(female_user_id), "female")
+    assert_gender(read_gender(null_user_id), None)
+    assert_gender(read_gender(uuid4()), None)
+    assert_gender(read_gender(inactive_user_id), None)
+    assert_gender(read_gender(historical_user_id), None)
+
+    for rejected_user_id in (None, multiple_user_id):
+        with pytest.raises(
+            psycopg.errors.CheckViolation,
+            match="account gender projection invalid",
+        ):
+            read_gender(rejected_user_id)
+
+    with psycopg.connect(production_environment["admin"]) as connection:
+        connection.execute(
+            "alter table platform_control.directory_members "
+            "drop constraint directory_member_gender_v28"
+        )
+        connection.execute(
+            "update platform_control.directory_members set gender='invalid-stored-value' "
+            "where generation_id=%s and internal_user_id=%s",
+            (active_generation_id, invalid_user_id),
+        )
+    try:
+        with pytest.raises(
+            psycopg.errors.CheckViolation,
+            match="account gender projection invalid",
+        ) as error:
+            read_gender(invalid_user_id)
+        if "invalid-stored-value" in str(error.value):
+            pytest.fail("account gender projection error exposed stored data")
+    finally:
+        with psycopg.connect(production_environment["admin"]) as connection:
+            connection.execute(
+                "update platform_control.directory_members set gender=null "
+                "where generation_id=%s and internal_user_id=%s",
+                (active_generation_id, invalid_user_id),
+            )
+            connection.execute(
+                "alter table platform_control.directory_members "
+                "add constraint directory_member_gender_v28 "
+                "check (gender is null or gender in ('male','female'))"
+            )
+
+
+@pytest.mark.postgres
+def test_account_gender_projection_has_exact_environment_app_grant(
+    control_database,
+) -> None:
+    signature = "platform_control.read_account_gender_v29(uuid)"
+    all_roles = tuple(
+        role
+        for environment in control_database["environments"].values()
+        for role in environment["roles"]
+    )
+
+    for environment in control_database["environments"].values():
+        matched_app = environment["roles"][1]
+        with psycopg.connect(environment["admin"]) as connection:
+            metadata = connection.execute(
+                "select proc.prosecdef,proc.proconfig from pg_proc proc "
+                "where proc.oid=to_regprocedure(%s)",
+                (signature,),
+            ).fetchone()
+            assert metadata == (True, ["search_path=pg_catalog, platform_control"])
+            assert connection.execute(
+                "select has_function_privilege('public',%s,'execute')",
+                (signature,),
+            ).fetchone() == (False,)
+            for role in all_roles:
+                assert connection.execute(
+                    "select has_function_privilege(%s,%s,'execute')",
+                    (role, signature),
+                ).fetchone() == (role == matched_app,)
+            assert connection.execute(
+                "select has_table_privilege(%s,"
+                "'platform_control.directory_members','select')",
+                (matched_app,),
+            ).fetchone() == (False,)
+
+        with psycopg.connect(environment["urls"][matched_app]) as connection:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute(
+                    "select gender from platform_control.directory_members limit 1"
+                )

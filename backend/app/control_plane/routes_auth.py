@@ -328,6 +328,7 @@ def build_auth_router(
             "display_name": snapshot["display_name"],
             "role": context.role.value,
             "departments": snapshot["departments"],
+            "gender": snapshot["gender"],
             "observation_agent_ids": snapshot["observation_agent_ids"],
             "directory_freshness": snapshot["directory_freshness"],
             "hard_stale_read_only": context.hard_stale_read_only,

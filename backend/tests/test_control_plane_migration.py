@@ -59,6 +59,9 @@ ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION = (
 DIRECTORY_MEMBER_GENDER_MIGRATION = (
     MIGRATIONS / "028_directory_member_gender.sql"
 )
+ACCOUNT_GENDER_PROJECTION_MIGRATION = (
+    MIGRATIONS / "029_account_gender_projection.sql"
+)
 RELEASE_1_PLAN = (
     Path(__file__).parents[2]
     / "docs/superpowers/plans/2026-08-13-dingtalk-identity-release-1.md"
@@ -201,6 +204,10 @@ def test_first_control_migration_exists() -> None:
     assert DIRECTORY_MEMBER_GENDER_MIGRATION.is_file(), (
         "missing directory member gender migration: "
         f"{DIRECTORY_MEMBER_GENDER_MIGRATION}"
+    )
+    assert ACCOUNT_GENDER_PROJECTION_MIGRATION.is_file(), (
+        "missing account gender projection migration: "
+        f"{ACCOUNT_GENDER_PROJECTION_MIGRATION}"
     )
 
 
@@ -430,7 +437,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 29)
+                    (version, 64) for version in range(1, 30)
                 ]
 
     changed = tmp_path / "migrations"
