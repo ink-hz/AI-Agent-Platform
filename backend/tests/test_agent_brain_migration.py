@@ -20,7 +20,7 @@ MISSION_TABLES = (
     "mission_events",
 )
 TASK_2_TABLES = ("agent_use_grants", *MISSION_TABLES)
-V28_FUNCTIONS = (
+V29_FUNCTIONS = (
     "enforce_mission_task_agent_v29",
     "grant_agent_use_scope_v29",
     "has_agent_use_scope_v29",
@@ -760,7 +760,7 @@ def test_grant_shape_acl_and_audited_maintenance_boundary(control_database) -> N
                     app_role,
                     maintenance_role,
                     [
-                        *V28_FUNCTIONS,
+                        *V29_FUNCTIONS,
                     ],
                 ),
             ).fetchall()
@@ -793,7 +793,7 @@ def test_grant_shape_acl_and_audited_maintenance_boundary(control_database) -> N
                             "select has_table_privilege(%s,%s,%s)",
                             (role, qualified_table, privilege),
                         ).fetchone() == (False,)
-                for function_name in V28_FUNCTIONS:
+                for function_name in V29_FUNCTIONS:
                     assert connection.execute(
                         "select has_function_privilege(%s,proc.oid,'execute') "
                         "from pg_proc proc where proc.pronamespace="
