@@ -62,6 +62,9 @@ DIRECTORY_MEMBER_GENDER_MIGRATION = (
 ACCOUNT_GENDER_PROJECTION_MIGRATION = (
     MIGRATIONS / "035_account_gender_projection.sql"
 )
+AGENT_BRAIN_CONVERSATION_MIGRATION = (
+    MIGRATIONS / "036_agent_brain_conversations.sql"
+)
 EXECUTION_RELAY_MIGRATION = MIGRATIONS / "028_execution_relay.sql"
 AGENT_BRAIN_MIGRATION = MIGRATIONS / "029_agent_brain_mvp.sql"
 AGENT_BRAIN_ORCHESTRATION_MIGRATION = (
@@ -140,6 +143,10 @@ TABLES = {
     "mission_tasks",
     "mission_runs",
     "mission_events",
+    "conversations",
+    "conversation_messages",
+    "conversation_turns",
+    "conversation_events",
     "content_key_canaries",
 }
 
@@ -232,6 +239,10 @@ def test_first_control_migration_exists() -> None:
     assert ACCOUNT_GENDER_PROJECTION_MIGRATION.is_file(), (
         "missing account gender projection migration: "
         f"{ACCOUNT_GENDER_PROJECTION_MIGRATION}"
+    )
+    assert AGENT_BRAIN_CONVERSATION_MIGRATION.is_file(), (
+        "missing Agent Brain Conversation migration: "
+        f"{AGENT_BRAIN_CONVERSATION_MIGRATION}"
     )
     assert EXECUTION_RELAY_MIGRATION.is_file(), (
         f"missing execution relay migration: {EXECUTION_RELAY_MIGRATION}"
@@ -487,7 +498,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 36)
+                    (version, 64) for version in range(1, 37)
                 ]
 
     changed = tmp_path / "migrations"
