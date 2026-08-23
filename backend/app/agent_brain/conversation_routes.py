@@ -327,6 +327,12 @@ async def conversation_event_stream(
             if await is_disconnected() or not await access_is_live():
                 return
             try:
+                await asyncio.to_thread(
+                    repository.sync_mission_events,
+                    owner,
+                    conversation_id,
+                    limit=100,
+                )
                 events = await asyncio.to_thread(
                     repository.events_after,
                     owner,

@@ -33,6 +33,8 @@ import { MissionPage } from "./pages/MissionPage";
 import { MissionsPage } from "./pages/MissionsPage";
 import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
 import { AgentUsePage } from "./pages/AgentUsePage";
+import { ConversationPage } from "./pages/ConversationPage";
+import { ConversationsPage } from "./pages/ConversationsPage";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -66,7 +68,7 @@ function AccessState({
 
 
 function viewerRouteAllowed(account: Account, route: ReturnType<typeof useRoute>): boolean {
-  if (["brain", "missions", "mission", "agents", "agent", "account"].includes(route.name)) return true;
+  if (["brain", "conversations", "conversation", "missions", "mission", "agents", "agent", "account"].includes(route.name)) return true;
   if (route.name === "admin-governance") return true;
   if (route.name === "admin-agent-runtime") return account.observation_agent_ids.includes(route.agentId);
   if (route.name === "admin-review" || route.name === "admin-activity") {
@@ -84,6 +86,8 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
       window.location.replace(platformPath("/login"));
     }} /> : <PendingPage title="企业账号" description="身份模式未启用。" />;
     case "brain": return account ? <BrainPage account={account} /> : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
+    case "conversations": return <ConversationsPage />;
+    case "conversation": return account ? <ConversationPage account={account} conversationId={route.conversationId} key={route.conversationId} /> : <PendingPage title="历史对话" description="请启用企业身份后查看。" />;
     case "missions": return <MissionsPage />;
     case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
     case "agents": return <AgentUseDirectoryPage />;
@@ -144,7 +148,7 @@ export default function App() {
   if (failure === "directory") return <AccessState title="暂时无法确认企业账号" description="企业通讯录同步可能延迟，请稍后重试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
   if (failure) return <AccessState title="暂时无法进入平台" description="连接服务时遇到短暂问题，请重新尝试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
   if (!legacyMode && account) {
-    const usageRoute = ["brain", "missions", "mission", "agents", "agent", "account", "legacy-redirect"].includes(route.name);
+    const usageRoute = ["brain", "conversations", "conversation", "missions", "mission", "agents", "agent", "account", "legacy-redirect"].includes(route.name);
     const allowed = usageRoute || account.role === "platform_owner" || account.role === "platform_admin"
       || (account.role === "management_viewer" && viewerRouteAllowed(account, route));
     if (!allowed) {

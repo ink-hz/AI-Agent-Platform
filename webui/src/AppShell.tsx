@@ -10,7 +10,7 @@ import { platformPath, type Account } from "./auth";
 const USE_NAVIGATION = [
   { label: "Agent 大脑", path: "/", section: "brain" },
   { label: "专业 Agent", path: "/agents", section: "agents" },
-  { label: "历史任务", path: "/missions", section: "missions" },
+  { label: "历史对话", path: "/conversations", section: "conversations" },
   { label: "企业账号", path: "/account", section: "account" },
 ] as const;
 
@@ -29,7 +29,7 @@ const ADMIN_NAVIGATION = [
 interface NavigationItem {
   label: string;
   path: string;
-  section: "brain" | "agents" | "missions" | "account" | "admin";
+  section: "brain" | "conversations" | "agents" | "missions" | "account" | "admin";
 }
 
 

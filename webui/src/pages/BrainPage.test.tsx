@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Account } from "../auth";
-import type { Mission, MissionPage } from "../brainTypes";
+import type { ConversationPage, ConversationSubmissionResult } from "../conversationTypes";
 import { BrainPage, type BrainPageClient } from "./BrainPage";
 
 
@@ -16,11 +16,22 @@ const account: Account = {
   hard_stale_read_only: false, csrf_token: "csrf",
 };
 
-const mission: Mission = {
-  mission_id: "4e2ac19d-00cc-43ca-a953-f678b8bf7029",
-  mode: "brain", direct_agent_id: null, status: "planning", cancel_requested: false,
-  row_version: 1, created_at: "2026-08-22T10:00:00Z", updated_at: "2026-08-22T10:00:00Z",
-  terminal_at: null, prompt: "找视觉人才", content_available: true,
+const result: ConversationSubmissionResult = {
+  conversation: {
+    conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", mode: "brain", direct_agent_id: null,
+    status: "active", title: "找视觉人才", summary_through_seq: 0,
+    created_at: "2026-08-22T10:00:00Z", updated_at: "2026-08-22T10:00:00Z", archived_at: null,
+  },
+  message: {
+    message_id: "message", conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", seq: 1,
+    role: "user", content: "找视觉人才", turn_id: "turn", mission_id: "mission",
+    delivery_status: "accepted", created_at: "2026-08-22T10:00:00Z", completed_at: null,
+  },
+  turn: {
+    turn_id: "turn", conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", user_message_id: "message",
+    assistant_message_id: null, mission_id: "mission", status: "accepted",
+    created_at: "2026-08-22T10:00:00Z", updated_at: "2026-08-22T10:00:00Z",
+  },
 };
 
 function deferred<T>() {
@@ -48,29 +59,29 @@ describe("BrainPage", () => {
 
   it("is immediately usable after account load and shows only the focused first viewport", async () => {
     const client: BrainPageClient = {
-      listMissions: vi.fn().mockResolvedValue({ items: [], next_cursor: null } satisfies MissionPage),
+      listConversations: vi.fn().mockResolvedValue({ items: [], next_cursor: null } satisfies ConversationPage),
       createSubmission: vi.fn(),
     };
-    await act(async () => root.render(<BrainPage account={account} client={client} onOpenMission={vi.fn()} />));
+    await act(async () => root.render(<BrainPage account={account} client={client} onOpenConversation={vi.fn()} />));
 
     expect(container.querySelector("h1")?.textContent).toBe("Agent 大脑");
     expect(container.querySelector("textarea")?.disabled).toBe(false);
     expect(container.querySelectorAll(".brain-example")).toHaveLength(3);
-    expect(container.textContent).toContain("最近任务");
+    expect(container.textContent).toContain("最近对话");
     expect(container.textContent).toContain("专业 Agent");
     expect(container.textContent).not.toContain("累计对话");
     expect(container.textContent).not.toContain("运行摘要");
   });
 
-  it("submits once while pending and opens the persisted Mission URL", async () => {
-    const pending = deferred<Mission>();
+  it("submits once while pending and opens the persisted Conversation URL", async () => {
+    const pending = deferred<ConversationSubmissionResult>();
     const send = vi.fn(() => pending.promise);
-    const onOpenMission = vi.fn();
+    const onOpenConversation = vi.fn();
     const client: BrainPageClient = {
-      listMissions: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
+      listConversations: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
       createSubmission: vi.fn().mockReturnValue({ idempotencyKey: "request", send }),
     };
-    await act(async () => root.render(<BrainPage account={account} client={client} onOpenMission={onOpenMission} />));
+    await act(async () => root.render(<BrainPage account={account} client={client} onOpenConversation={onOpenConversation} />));
     const textarea = container.querySelector("textarea")!;
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
@@ -81,26 +92,26 @@ describe("BrainPage", () => {
     await act(async () => { submit.click(); submit.click(); });
     expect(send).toHaveBeenCalledTimes(1);
 
-    await act(async () => { pending.resolve(mission); await pending.promise; });
-    expect(onOpenMission).toHaveBeenCalledWith("/missions/4e2ac19d-00cc-43ca-a953-f678b8bf7029");
+    await act(async () => { pending.resolve(result); await pending.promise; });
+    expect(onOpenConversation).toHaveBeenCalledWith("/conversations/8c13c965-1b60-472e-b275-199987d1d109");
   });
 
   it("retries a failed submission with the same retained operation", async () => {
     const send = vi.fn()
       .mockRejectedValueOnce(new TypeError("offline"))
-      .mockResolvedValueOnce(mission);
+      .mockResolvedValueOnce(result);
     const createSubmission = vi.fn().mockReturnValue({ idempotencyKey: "same", send });
     const client: BrainPageClient = {
-      listMissions: vi.fn().mockResolvedValue({ items: [], next_cursor: null }), createSubmission,
+      listConversations: vi.fn().mockResolvedValue({ items: [], next_cursor: null }), createSubmission,
     };
-    await act(async () => root.render(<BrainPage account={account} client={client} onOpenMission={vi.fn()} />));
+    await act(async () => root.render(<BrainPage account={account} client={client} onOpenConversation={vi.fn()} />));
     const textarea = container.querySelector("textarea")!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "找视觉人才");
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => container.querySelector<HTMLButtonElement>(".brain-submit")?.click());
-    expect(container.textContent).toContain("任务暂未提交成功");
+    expect(container.textContent).toContain("对话暂未创建成功");
     await act(async () => container.querySelector<HTMLButtonElement>(".brain-retry")?.click());
 
     expect(createSubmission).toHaveBeenCalledTimes(1);
@@ -110,9 +121,9 @@ describe("BrainPage", () => {
   it("blocks text that exceeds 32 KiB after UTF-8 encoding", async () => {
     const createSubmission = vi.fn();
     const client: BrainPageClient = {
-      listMissions: vi.fn().mockResolvedValue({ items: [], next_cursor: null }), createSubmission,
+      listConversations: vi.fn().mockResolvedValue({ items: [], next_cursor: null }), createSubmission,
     };
-    await act(async () => root.render(<BrainPage account={account} client={client} onOpenMission={vi.fn()} />));
+    await act(async () => root.render(<BrainPage account={account} client={client} onOpenConversation={vi.fn()} />));
     const textarea = container.querySelector("textarea")!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "人".repeat(11_000));

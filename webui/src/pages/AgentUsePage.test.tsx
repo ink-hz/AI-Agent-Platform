@@ -5,7 +5,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Account } from "../auth";
-import type { AgentCapabilityCard, Mission } from "../brainTypes";
+import type { AgentCapabilityCard } from "../brainTypes";
+import type { ConversationSubmissionResult } from "../conversationTypes";
 import { AgentUseDirectoryPage } from "./AgentUseDirectoryPage";
 import { AgentUsePage } from "./AgentUsePage";
 
@@ -25,11 +26,22 @@ const card: AgentCapabilityCard = {
   supports_cancellation: true, supports_idempotency: true, max_duration_seconds: 300,
   data_classification: "internal", adapter_id: "metabot-core-chat", capability_version: 1,
 };
-const mission: Mission = {
-  mission_id: "4e2ac19d-00cc-43ca-a953-f678b8bf7029", mode: "direct_agent", direct_agent_id: "hr-bot",
-  status: "delegated", cancel_requested: false, row_version: 1,
-  created_at: "2026-08-22T10:00:00Z", updated_at: "2026-08-22T10:00:00Z", terminal_at: null,
-  prompt: "找人", content_available: true,
+const result: ConversationSubmissionResult = {
+  conversation: {
+    conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", mode: "direct_agent", direct_agent_id: "hr-bot",
+    title: "找人", status: "active", summary_through_seq: 0, created_at: "2026-08-22T10:00:00Z",
+    updated_at: "2026-08-22T10:00:00Z", archived_at: null,
+  },
+  message: {
+    message_id: "message", conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", seq: 1, role: "user",
+    content: "找人", turn_id: "turn", mission_id: "mission", delivery_status: "accepted",
+    created_at: "2026-08-22T10:00:00Z", completed_at: null,
+  },
+  turn: {
+    turn_id: "turn", conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", user_message_id: "message",
+    assistant_message_id: null, mission_id: "mission", status: "accepted",
+    created_at: "2026-08-22T10:00:00Z", updated_at: "2026-08-22T10:00:00Z",
+  },
 };
 
 
@@ -52,13 +64,13 @@ describe("professional Agent use pages", () => {
     expect(container.querySelector("a[href='/agents/hr-bot']")).not.toBeNull();
   });
 
-  it("starts a direct Agent Mission through the platform API contract", async () => {
-    const send = vi.fn().mockResolvedValue(mission);
+  it("starts a direct Agent Conversation through the platform API contract", async () => {
+    const send = vi.fn().mockResolvedValue(result);
     const createSubmission = vi.fn().mockReturnValue({ idempotencyKey: "same", send });
-    const onOpenMission = vi.fn();
+    const onOpenConversation = vi.fn();
     await act(async () => root.render(<AgentUsePage
       account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([card])}
-      createSubmission={createSubmission} onOpenMission={onOpenMission}
+      createSubmission={createSubmission} onOpenConversation={onOpenConversation}
     />));
     const textarea = container.querySelector("textarea")!;
     await act(async () => {
@@ -69,12 +81,12 @@ describe("professional Agent use pages", () => {
 
     expect(createSubmission).toHaveBeenCalledWith("找视觉人才", "csrf", "hr-bot");
     expect(send).toHaveBeenCalledTimes(1);
-    expect(onOpenMission).toHaveBeenCalledWith(`/missions/${mission.mission_id}`);
+    expect(onOpenConversation).toHaveBeenCalledWith(`/conversations/${result.conversation.conversation_id}`);
   });
 
   it("recovers when navigation changes from an unavailable Agent to an authorized one", async () => {
     const loadCatalog = vi.fn().mockResolvedValue([card]);
-    const props = { account, loadCatalog, createSubmission: vi.fn(), onOpenMission: vi.fn() };
+    const props = { account, loadCatalog, createSubmission: vi.fn(), onOpenConversation: vi.fn() };
 
     await act(async () => root.render(<AgentUsePage {...props} agentId="missing-bot" />));
     expect(container.textContent).toContain("暂时无法读取");
@@ -88,7 +100,7 @@ describe("professional Agent use pages", () => {
     const createSubmission = vi.fn();
     await act(async () => root.render(<AgentUsePage
       account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([card])}
-      createSubmission={createSubmission} onOpenMission={vi.fn()}
+      createSubmission={createSubmission} onOpenConversation={vi.fn()}
     />));
     const textarea = container.querySelector("textarea")!;
     await act(async () => {

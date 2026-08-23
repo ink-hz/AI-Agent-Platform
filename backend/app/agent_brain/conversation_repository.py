@@ -30,6 +30,18 @@ from app.execution_relay.content_crypto import (
 
 
 _AGENT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+_PROJECTED_MISSION_EVENT_TYPES = (
+    "brain.responding",
+    "plan.created",
+    "task.dispatched",
+    "agent.accepted",
+    "agent.progress",
+    "agent.result",
+    "task.reviewed",
+    "synthesis.started",
+)
+
+
 class ConversationRepositoryError(RuntimeError):
     """Stable persistence failure that never exposes SQL or protected content."""
 
@@ -53,6 +65,10 @@ def message_subject(conversation_id: UUID, message_id: UUID) -> str:
 
 def event_subject(conversation_id: UUID, event_id: UUID) -> str:
     return f"conversation:{conversation_id}:event:{event_id}:payload"
+
+
+def _mission_event_subject(mission_id: UUID, event_id: UUID) -> str:
+    return f"mission:{mission_id}:event:{event_id}:payload"
 
 
 def _summary_subject(conversation_id: UUID, key_version: int) -> str:
@@ -388,8 +404,11 @@ class ConversationRepository:
         mission_id: UUID | None,
         event_type: str,
         payload: dict[str, object],
+        *,
+        event_id: UUID | None = None,
+        created_at: datetime | None = None,
     ) -> ConversationEventRecord:
-        event_id = uuid4()
+        event_id = event_id or uuid4()
         sealed = self.content_codec.seal_json(
             event_subject(conversation_id, event_id), payload
         )
@@ -401,8 +420,8 @@ class ConversationRepository:
         row = cursor.execute(
             "insert into platform_control.conversation_events "
             "(event_id,conversation_id,seq,turn_id,mission_id,event_type,"
-            "payload_ciphertext,encryption_key_version) "
-            "values (%s,%s,%s,%s,%s,%s,%s,%s) returning *",
+            "payload_ciphertext,encryption_key_version,created_at) "
+            "values (%s,%s,%s,%s,%s,%s,%s,%s,coalesce(%s,now())) returning *",
             (
                 event_id,
                 conversation_id,
@@ -412,6 +431,7 @@ class ConversationRepository:
                 event_type,
                 sealed.ciphertext,
                 sealed.key_version,
+                created_at,
             ),
         ).fetchone()
         return self._event_from_row(row)
@@ -746,6 +766,85 @@ class ConversationRepository:
                 ).fetchone() is None:
                     raise ConversationRepositoryNotFound()
             return tuple(self._event_from_row(row) for row in rows)
+        except ConversationRepositoryError:
+            raise
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def sync_mission_events(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        *,
+        limit: int = 100,
+    ) -> int:
+        """Persist safe Mission execution events in the Conversation stream."""
+
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 100
+        ):
+            raise ValueError("Mission event projection limit invalid")
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                owned = cursor.execute(
+                    "select conversation_id from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if owned is None:
+                    raise ConversationRepositoryNotFound()
+                rows = cursor.execute(
+                    "select event.event_id,event.mission_id,event.event_type,"
+                    "event.payload_ciphertext,event.encryption_key_version,"
+                    "event.created_at,turn.turn_id "
+                    "from platform_control.mission_events event "
+                    "join platform_control.missions mission "
+                    "on mission.mission_id=event.mission_id "
+                    "join platform_control.conversation_turns turn "
+                    "on turn.conversation_id=mission.conversation_id "
+                    "and turn.turn_id=mission.turn_id "
+                    "where mission.conversation_id=%s "
+                    "and mission.owner_internal_user_id=%s "
+                    "and event.event_type=any(%s) "
+                    "and not exists (select 1 from "
+                    "platform_control.conversation_events projected "
+                    "where projected.event_id=event.event_id) "
+                    "order by turn.created_at,event.seq,event.event_id limit %s",
+                    (
+                        conversation_id,
+                        internal_user_id,
+                        list(_PROJECTED_MISSION_EVENT_TYPES),
+                        limit,
+                    ),
+                ).fetchall()
+                for row in rows:
+                    payload = self.content_codec.unseal_json(
+                        _mission_event_subject(
+                            row["mission_id"], row["event_id"]
+                        ),
+                        SealedContent(
+                            bytes(row["payload_ciphertext"]),
+                            row["encryption_key_version"],
+                        ),
+                    )
+                    if not isinstance(payload, dict):
+                        raise ConversationRepositoryError()
+                    self._append_event_locked(
+                        cursor,
+                        conversation_id,
+                        row["turn_id"],
+                        row["mission_id"],
+                        row["event_type"],
+                        payload,
+                        event_id=row["event_id"],
+                        created_at=row["created_at"],
+                    )
+            return len(rows)
         except ConversationRepositoryError:
             raise
         except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):

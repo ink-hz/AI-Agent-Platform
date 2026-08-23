@@ -24,6 +24,19 @@ function block(header: string): string {
   throw new Error(`unclosed CSS block: ${header}`);
 }
 
+function lastBlock(header: string): string {
+  const start = styles.lastIndexOf(header);
+  if (start < 0) throw new Error(`missing CSS block: ${header}`);
+  const openingBrace = styles.indexOf("{", start);
+  let depth = 0;
+  for (let index = openingBrace; index < styles.length; index += 1) {
+    if (styles[index] === "{") depth += 1;
+    if (styles[index] === "}") depth -= 1;
+    if (depth === 0) return styles.slice(start, index + 1);
+  }
+  throw new Error(`unclosed CSS block: ${header}`);
+}
+
 
 describe("Executive Operations visual contract", () => {
   it("uses a Chinese-first product typeface and removes template-era chrome", () => {
@@ -187,6 +200,16 @@ describe("Executive Operations visual contract", () => {
     const mobile = block("@media (max-width: 720px)");
     expect(mobile).toContain(".message-block { grid-template-columns: 1fr; gap: 8px; padding: 19px; }");
     expect(mobile).toContain(".message-label { align-items: center; flex-direction: row; justify-content: space-between; }");
+  });
+
+  it("keeps continuous Conversation content and composer usable on mobile", () => {
+    expect(rule(".conversation-page")).toContain("width: min(860px, 100%)");
+    expect(rule(".conversation-composer")).toContain("position: sticky");
+    expect(rule(".conversation-message")).toContain("overflow-wrap: anywhere");
+    const mobile = lastBlock("@media (max-width: 720px)");
+    expect(mobile).toContain(".conversation-header { align-items: stretch; flex-direction: column; }");
+    expect(mobile).toContain(".conversation-composer-actions { align-items: stretch; flex-direction: column; }");
+    expect(mobile).toContain(".conversation-send { width: 100%; }");
   });
 
   it("keeps attachment names and cards readable on narrow screens", () => {

@@ -279,6 +279,60 @@ def test_direct_agent_replay_cannot_change_agent(
 
 
 @pytest.mark.postgres
+def test_mission_execution_events_are_idempotently_projected_into_conversation(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner_id, _ = conversation_database
+    started = repository.start(owner_id, uuid4(), "为候选人制定搜索方案")
+    run = repository._missions.create_run(
+        owner_id,
+        started.mission.mission_id,
+        phase="planning",
+        agent_id="agent-brain-bot",
+        input_payload={"prompt": "plan"},
+        event_type="brain.responding",
+        event_payload={"text": "正在分析需要哪些专业能力"},
+    )
+    repository._missions.complete_run(
+        owner_id,
+        started.mission.mission_id,
+        run.run_id,
+        status="completed",
+        output_payload={"decision": "delegate"},
+        event_type="plan.created",
+        event_payload={
+            "text": "交给 HR Agent 搜寻候选人",
+            "selected_agent_id": "hr-bot",
+        },
+        mission_status="delegated",
+    )
+
+    first = repository.sync_mission_events(
+        owner_id, started.conversation.conversation_id
+    )
+    second = repository.sync_mission_events(
+        owner_id, started.conversation.conversation_id
+    )
+    events = repository.events_after(
+        owner_id, started.conversation.conversation_id
+    )
+
+    assert first == 2
+    assert second == 0
+    projected = [
+        event for event in events
+        if event.event_type in {"brain.responding", "plan.created"}
+    ]
+    assert [event.event_type for event in projected] == [
+        "brain.responding",
+        "plan.created",
+    ]
+    assert projected[1].payload["selected_agent_id"] == "hr-bot"
+    assert len({event.event_id for event in projected}) == 2
+
+
+@pytest.mark.postgres
 def test_mission_insert_failure_rolls_back_entire_start(
     conversation_database,
     repository,

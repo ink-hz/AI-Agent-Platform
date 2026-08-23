@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { Account } from "../auth";
-import { createMissionSubmission, listMissions, missionInputTooLarge, type MissionSubmission } from "../brainApi";
-import type { MissionPage } from "../brainTypes";
+import { conversationInputTooLarge, listConversations, startConversation, type ConversationSubmission } from "../conversationApi";
+import type { ConversationPage } from "../conversationTypes";
 import { PlatformLink } from "../components/PlatformLink";
 import { navigate } from "../router";
 
@@ -14,42 +14,34 @@ const EXAMPLES = [
 ] as const;
 
 export interface BrainPageClient {
-  listMissions(signal?: AbortSignal): Promise<MissionPage>;
-  createSubmission(text: string, csrfToken: string): MissionSubmission;
+  listConversations(signal?: AbortSignal): Promise<ConversationPage>;
+  createSubmission(text: string, csrfToken: string): ConversationSubmission;
 }
 
-const DEFAULT_CLIENT: BrainPageClient = { listMissions, createSubmission: createMissionSubmission };
-
-function missionStatus(status: string): string {
-  const labels: Record<string, string> = {
-    planning: "分析中", delegated: "执行中", synthesizing: "整理中", completed: "已完成",
-    partially_completed: "部分完成", failed: "未完成", cancelled: "已停止", interrupted: "已中断",
-  };
-  return labels[status] ?? "处理中";
-}
+const DEFAULT_CLIENT: BrainPageClient = { listConversations, createSubmission: startConversation };
 
 export function BrainPage({
   account,
   client = DEFAULT_CLIENT,
-  onOpenMission = (path) => navigate(path),
+  onOpenConversation = (path) => navigate(path),
 }: {
   account: Account;
   client?: BrainPageClient;
-  onOpenMission?: (path: string) => void;
+  onOpenConversation?: (path: string) => void;
 }) {
   const [text, setText] = useState("");
-  const [recent, setRecent] = useState<MissionPage | null>(null);
+  const [recent, setRecent] = useState<ConversationPage | null>(null);
   const [recentUnavailable, setRecentUnavailable] = useState(false);
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState(false);
-  const retained = useRef<{ text: string; submission: MissionSubmission } | null>(null);
+  const retained = useRef<{ text: string; submission: ConversationSubmission } | null>(null);
   const submitController = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
-  const inputTooLarge = missionInputTooLarge(text.trim());
+  const inputTooLarge = conversationInputTooLarge(text.trim());
 
   useEffect(() => {
     const controller = new AbortController();
-    client.listMissions(controller.signal).then(setRecent).catch(() => {
+    client.listConversations(controller.signal).then(setRecent).catch(() => {
       if (!controller.signal.aborted) setRecentUnavailable(true);
     });
     return () => {
@@ -73,9 +65,9 @@ export function BrainPage({
     setPending(true);
     setFailure(false);
     try {
-      const mission = await selected.submission.send(controller.signal);
+      const result = await selected.submission.send(controller.signal);
       retained.current = null;
-      onOpenMission(`/missions/${encodeURIComponent(mission.mission_id)}`);
+      onOpenConversation(`/conversations/${encodeURIComponent(result.conversation.conversation_id)}`);
     } catch {
       if (!controller.signal.aborted) setFailure(true);
     } finally {
@@ -116,26 +108,26 @@ export function BrainPage({
         <div className="brain-composer-actions">
           <span>首版支持纯文本任务；需要专业能力时最多调用一个已授权 Agent。</span>
           <button className="brain-submit" disabled={!text.trim() || inputTooLarge || pending || account.hard_stale_read_only} type="submit">
-            {pending ? "正在提交…" : "开始任务"}
+            {pending ? "正在创建…" : "开始对话"}
           </button>
         </div>
       </form>
       {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
       {failure && <div className="brain-submit-error" role="alert">
-        <span>任务暂未提交成功。网络恢复后可使用同一次请求安全重试。</span>
+        <span>对话暂未创建成功。网络恢复后可使用同一次请求安全重试。</span>
         <button className="brain-retry" disabled={pending} onClick={() => void send()} type="button">重新提交</button>
       </div>}
       <div className="brain-examples" aria-label="任务示例">
         {EXAMPLES.map((example) => <button className="brain-example" key={example} onClick={() => setText(example)} type="button">{example}</button>)}
       </div>
     </section>
-    <section className="brain-recent" aria-labelledby="recent-missions-heading">
-      <header><div><p>YOUR WORK</p><h2 id="recent-missions-heading">最近任务</h2></div><PlatformLink href="/missions">查看全部</PlatformLink></header>
-      {recentUnavailable ? <p className="brain-recent-state" role="status">最近任务暂时无法读取，不影响创建新任务。</p>
-        : recent === null ? <p className="brain-recent-state" role="status">正在读取最近任务…</p>
-        : recent.items.length === 0 ? <p className="brain-recent-state">还没有任务，从上面的输入框开始。</p>
-        : <div className="brain-recent-list">{recent.items.slice(0, 5).map((mission) => <PlatformLink href={`/missions/${encodeURIComponent(mission.mission_id)}`} key={mission.mission_id}>
-          <span>{mission.prompt}</span><b>{missionStatus(mission.status)}</b>
+    <section className="brain-recent" aria-labelledby="recent-conversations-heading">
+      <header><div><p>YOUR WORK</p><h2 id="recent-conversations-heading">最近对话</h2></div><PlatformLink href="/conversations">查看全部</PlatformLink></header>
+      {recentUnavailable ? <p className="brain-recent-state" role="status">最近对话暂时无法读取，不影响创建新对话。</p>
+        : recent === null ? <p className="brain-recent-state" role="status">正在读取最近对话…</p>
+        : recent.items.length === 0 ? <p className="brain-recent-state">还没有对话，从上面的输入框开始。</p>
+        : <div className="brain-recent-list">{recent.items.slice(0, 5).map((conversation) => <PlatformLink href={`/conversations/${encodeURIComponent(conversation.conversation_id)}`} key={conversation.conversation_id}>
+          <span>{conversation.title}</span><b>{conversation.status === "archived" ? "已归档" : "可继续"}</b>
         </PlatformLink>)}</div>}
       <PlatformLink className="brain-agent-link" href="/agents">也可以直接使用专业 Agent →</PlatformLink>
     </section>

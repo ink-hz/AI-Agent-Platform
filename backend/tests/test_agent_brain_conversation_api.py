@@ -267,9 +267,27 @@ def test_terminal_sse_replays_monotonic_conversation_events_and_closes(
     client = TestClient(app)
     started = _post(client, auth, "/api/v1/conversations", "事件流")
     conversation_id = started.json()["conversation"]["conversation_id"]
-    _fail_and_project(
-        repository, owner, UUID(started.json()["turn"]["mission_id"])
+    mission_id = UUID(started.json()["turn"]["mission_id"])
+    planning = repository._missions.create_run(
+        owner,
+        mission_id,
+        phase="planning",
+        agent_id="agent-brain-bot",
+        input_payload={"prompt": "plan"},
+        event_type="brain.responding",
+        event_payload={"text": "正在分析"},
     )
+    repository._missions.complete_run(
+        owner,
+        mission_id,
+        planning.run_id,
+        status="failed",
+        output_payload={"reason": "test"},
+        event_type="mission.failed",
+        event_payload={"text": "本轮执行失败", "reason_code": "test_failure"},
+        mission_status="failed",
+    )
+    assert ConversationProjection(repository).project_terminal(mission_id)
 
     response = client.get(
         f"/api/v1/conversations/{conversation_id}/events?after=1",
@@ -290,6 +308,7 @@ def test_terminal_sse_replays_monotonic_conversation_events_and_closes(
     ]
     assert all(item["conversation_id"] == conversation_id for item in data)
     assert all("content" not in item["payload"] for item in data)
+    assert any(item["event_type"] == "brain.responding" for item in data)
 
 
 @pytest.mark.postgres

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { Account } from "../auth";
-import { createMissionSubmission, fetchAgentCatalog, missionInputTooLarge, type MissionSubmission } from "../brainApi";
+import { fetchAgentCatalog } from "../brainApi";
+import { conversationInputTooLarge, startConversation, type ConversationSubmission } from "../conversationApi";
 import type { AgentCapabilityCard } from "../brainTypes";
 import { ErrorState, LoadingState } from "../components/DataState";
 import { PlatformLink } from "../components/PlatformLink";
@@ -12,24 +13,24 @@ export function AgentUsePage({
   account,
   agentId,
   loadCatalog = fetchAgentCatalog,
-  createSubmission = createMissionSubmission,
-  onOpenMission = (path) => navigate(path),
+  createSubmission = startConversation,
+  onOpenConversation = (path) => navigate(path),
 }: {
   account: Account;
   agentId: string;
   loadCatalog?: (signal?: AbortSignal) => Promise<AgentCapabilityCard[]>;
-  createSubmission?: (text: string, csrfToken: string, agentId?: string) => MissionSubmission;
-  onOpenMission?: (path: string) => void;
+  createSubmission?: (text: string, csrfToken: string, agentId?: string) => ConversationSubmission;
+  onOpenConversation?: (path: string) => void;
 }) {
   const [card, setCard] = useState<AgentCapabilityCard | null>(null);
   const [loadFailure, setLoadFailure] = useState(false);
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState(false);
-  const retained = useRef<{ text: string; submission: MissionSubmission } | null>(null);
+  const retained = useRef<{ text: string; submission: ConversationSubmission } | null>(null);
   const inFlight = useRef(false);
   const controllerRef = useRef<AbortController | null>(null);
-  const inputTooLarge = missionInputTooLarge(text.trim());
+  const inputTooLarge = conversationInputTooLarge(text.trim());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -66,9 +67,9 @@ export function AgentUsePage({
     setPending(true);
     setFailure(false);
     try {
-      const mission = await selected.submission.send(controller.signal);
+      const result = await selected.submission.send(controller.signal);
       retained.current = null;
-      onOpenMission(`/missions/${encodeURIComponent(mission.mission_id)}`);
+      onOpenConversation(`/conversations/${encodeURIComponent(result.conversation.conversation_id)}`);
     } catch {
       if (!controller.signal.aborted) setFailure(true);
     } finally {
@@ -101,9 +102,9 @@ export function AgentUsePage({
           if (retained.current?.text !== next.trim()) retained.current = null;
           setFailure(false);
         }} />
-      <div><span>仅支持纯文本；任务会保存在你的历史记录中。</span><button disabled={!text.trim() || inputTooLarge || pending || account.hard_stale_read_only} type="submit">{pending ? "正在提交…" : "开始任务"}</button></div>
+      <div><span>仅支持纯文本；后续可以在同一对话中继续追问。</span><button disabled={!text.trim() || inputTooLarge || pending || account.hard_stale_read_only} type="submit">{pending ? "正在创建…" : "开始对话"}</button></div>
     </form>
     {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
-    {failure && <div className="brain-submit-error" role="alert"><span>任务暂未提交成功，可安全重试。</span><button onClick={() => void send()} type="button">重新提交</button></div>}
+    {failure && <div className="brain-submit-error" role="alert"><span>对话暂未创建成功，可安全重试。</span><button onClick={() => void send()} type="button">重新提交</button></div>}
   </div>;
 }
