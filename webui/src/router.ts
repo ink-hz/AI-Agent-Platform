@@ -7,6 +7,8 @@ export type Route =
   | { name: "login" }
   | { name: "account" }
   | { name: "brain" }
+  | { name: "conversations" }
+  | { name: "conversation"; conversationId: string }
   | { name: "missions" }
   | { name: "mission"; missionId: string }
   | { name: "agents" }
@@ -25,7 +27,7 @@ export type Route =
   | { name: "legacy-redirect"; to: string }
   | { name: "not-found" };
 
-export type RouteSection = "brain" | "agents" | "missions" | "account" | "admin";
+export type RouteSection = "brain" | "conversations" | "agents" | "missions" | "account" | "admin";
 
 export type NavigateOptions = {
   replace?: boolean;
@@ -55,6 +57,7 @@ export function parseRoute(pathname: string): Route {
   if (clean === "/login") return { name: "login" };
   if (clean === "/account") return { name: "account" };
   if (clean === "/") return { name: "brain" };
+  if (clean === "/conversations") return { name: "conversations" };
   if (clean === "/missions") return { name: "missions" };
   if (clean === "/agents") return { name: "agents" };
 
@@ -88,6 +91,11 @@ export function parseRoute(pathname: string): Route {
     const missionId = decode(mission[1]);
     return missionId ? { name: "mission", missionId } : { name: "not-found" };
   }
+  const conversation = /^\/conversations\/([^/]+)$/.exec(clean);
+  if (conversation) {
+    const conversationId = decode(conversation[1]);
+    return conversationId ? { name: "conversation", conversationId } : { name: "not-found" };
+  }
   const agent = /^\/agents\/([^/]+)$/.exec(clean);
   if (agent) {
     const agentId = decode(agent[1]);
@@ -114,6 +122,8 @@ export function routePath(route: Route): string {
     case "login": return "/login";
     case "account": return "/account";
     case "brain": return "/";
+    case "conversations": return "/conversations";
+    case "conversation": return `/conversations/${encodeURIComponent(route.conversationId)}`;
     case "missions": return "/missions";
     case "mission": return `/missions/${encodeURIComponent(route.missionId)}`;
     case "agents": return "/agents";
@@ -137,6 +147,7 @@ export function routePath(route: Route): string {
 
 export function routeSection(route: Route): RouteSection | null {
   if (route.name === "brain") return "brain";
+  if (route.name === "conversations" || route.name === "conversation") return "conversations";
   if (route.name === "agents" || route.name === "agent") return "agents";
   if (route.name === "missions" || route.name === "mission") return "missions";
   if (route.name === "account") return "account";

@@ -8,6 +8,11 @@ import { parseRoute, routePath, routeSection } from "./router";
 describe("Agent Brain route boundary", () => {
   it("makes use routes the primary product surface", () => {
     expect(parseRoute("/")).toEqual({ name: "brain" });
+    expect(parseRoute("/conversations")).toEqual({ name: "conversations" });
+    expect(parseRoute("/conversations/8c13c965-1b60-472e-b275-199987d1d109")).toEqual({
+      name: "conversation",
+      conversationId: "8c13c965-1b60-472e-b275-199987d1d109",
+    });
     expect(parseRoute("/missions")).toEqual({ name: "missions" });
     expect(parseRoute("/missions/8c13c965-1b60-472e-b275-199987d1d109")).toEqual({
       name: "mission",
@@ -16,6 +21,7 @@ describe("Agent Brain route boundary", () => {
     expect(parseRoute("/agents")).toEqual({ name: "agents" });
     expect(parseRoute("/agents/hr-bot")).toEqual({ name: "agent", agentId: "hr-bot" });
     expect(routeSection({ name: "mission", missionId: "one" })).toBe("missions");
+    expect(routeSection({ name: "conversation", conversationId: "one" })).toBe("conversations");
   });
 
   it("places every management page beneath the admin namespace", () => {
@@ -48,6 +54,8 @@ describe("Agent Brain route boundary", () => {
 
   it("generates canonical paths instead of legacy management URLs", () => {
     expect(routePath({ name: "brain" })).toBe("/");
+    expect(routePath({ name: "conversations" })).toBe("/conversations");
+    expect(routePath({ name: "conversation", conversationId: "a/b" })).toBe("/conversations/a%2Fb");
     expect(routePath({ name: "missions" })).toBe("/missions");
     expect(routePath({ name: "mission", missionId: "a/b" })).toBe("/missions/a%2Fb");
     expect(routePath({ name: "admin-review" })).toBe("/admin/review");
