@@ -4,9 +4,8 @@ import asyncio
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 import inspect
-import json
 import logging
 import re
 import time
@@ -33,7 +32,6 @@ _LOG_SECRETS: ContextVar[tuple[str, ...]] = ContextVar(
 )
 _Parsed = TypeVar("_Parsed")
 DINGTALK_GENDER_ATTRIBUTE = "性别"
-_HRM_GENDER_BATCH_SIZE = 50
 DingTalkGender = Literal["male", "female"]
 GenderAttributeStatus = Literal["valid", "missing", "invalid"]
 
@@ -148,42 +146,20 @@ async def hydrate_authoritative_members(
     client: DingTalkClient,
     discovered: dict[str, DingTalkMember],
 ) -> dict[str, DingTalkMember]:
-    """Hydrate HR gender and each identity once from authoritative APIs."""
+    """Hydrate each discovered userid once from the authoritative detail API."""
     authoritative: dict[str, DingTalkMember] = {}
     userids = sorted(discovered)
-    genders = await client.get_member_genders(tuple(userids))
-    if set(genders) != set(userids):
-        raise DingTalkDirectorySnapshotError("member_conflict")
     for offset in range(0, len(userids), DIRECTORY_FETCH_CONCURRENCY):
         selected = userids[offset : offset + DIRECTORY_FETCH_CONCURRENCY]
-        results = await asyncio.gather(
-            *(client.get_member(userid) for userid in selected),
-            return_exceptions=True,
+        details = await asyncio.gather(
+            *(client.get_member(userid) for userid in selected)
         )
-        for userid, result in zip(selected, results, strict=True):
-            if isinstance(result, asyncio.CancelledError):
-                raise result
-            if isinstance(result, DingTalkProviderError) and result.error_code == "88":
-                # Some tenants throttle simultaneous legacy contact reads with
-                # code 88. Retry only failed identity reads, one at a time. HRM
-                # permission code 88 is raised above before detail hydration.
-                detail = await client.get_member(userid)
-            elif isinstance(result, BaseException):
-                raise result
-            else:
-                detail = result
+        for userid, detail in zip(selected, details, strict=True):
             if member_identity_snapshot(detail) != member_identity_snapshot(
                 discovered[userid]
             ):
                 raise DingTalkDirectorySnapshotError("member_conflict")
             authoritative[userid] = detail
-    for userid in userids:
-        gender, status = genders[userid]
-        authoritative[userid] = replace(
-            authoritative[userid],
-            gender=gender,
-            gender_attribute_status=status,
-        )
     return authoritative
 
 
@@ -282,7 +258,6 @@ class DingTalkClient:
         "_api_base_url",
         "_app_key",
         "_app_secret",
-        "_agent_id",
         "_client",
         "_corp_id",
         "_login_flow",
@@ -303,7 +278,6 @@ class DingTalkClient:
         app_key: str,
         app_secret: str,
         corp_id: str,
-        agent_id: int | None = None,
         login_flow: str,
         api_base_url: str = "https://api.dingtalk.com",
         oapi_base_url: str = "https://oapi.dingtalk.com",
@@ -314,12 +288,6 @@ class DingTalkClient:
     ) -> None:
         for value in (app_key, app_secret, corp_id):
             _required_string(value)
-        if agent_id is not None and (
-            isinstance(agent_id, bool)
-            or not isinstance(agent_id, int)
-            or agent_id <= 0
-        ):
-            raise ValueError("DingTalk agent ID invalid")
         if login_flow not in _LOGIN_FLOWS:
             raise ValueError("DingTalk login flow invalid")
         for value in (api_base_url, oapi_base_url):
@@ -331,7 +299,6 @@ class DingTalkClient:
         _install_provider_log_filter()
         object.__setattr__(self, "_app_key", app_key)
         object.__setattr__(self, "_app_secret", app_secret)
-        object.__setattr__(self, "_agent_id", agent_id)
         object.__setattr__(self, "_corp_id", corp_id)
         object.__setattr__(self, "_login_flow", login_flow)
         object.__setattr__(self, "_api_base_url", api_base_url.rstrip("/"))
@@ -739,160 +706,6 @@ class DingTalkClient:
     async def get_member(self, userid: str) -> DingTalkMember:
         member, _ = await self._get_member(userid)
         return member
-
-    async def get_member_genders(
-        self, userids: tuple[str, ...]
-    ) -> dict[str, tuple[DingTalkGender | None, GenderAttributeStatus]]:
-        """Read the HR-maintained gender field without exposing roster material."""
-        if self._agent_id is None:
-            raise ValueError("DingTalk agent ID required")
-        if userids == ():
-            return {}
-        if (
-            not isinstance(userids, tuple)
-            or len(userids) > MAX_MEMBERS
-            or len(set(userids)) != len(userids)
-        ):
-            raise ValueError("DingTalk member set invalid")
-        for userid in userids:
-            _required_string(userid)
-            if "," in userid:
-                raise ValueError("DingTalk member set invalid")
-
-        metadata = await self._legacy_read(
-            "/topapi/smartwork/hrm/roster/meta/get",
-            {"agentid": self._agent_id},
-        )
-
-        def parse_gender_metadata() -> tuple[
-            str, dict[tuple[str, str], DingTalkGender]
-        ]:
-            groups = metadata.payload.get("result")
-            if not isinstance(groups, list):
-                raise ValueError
-            matches: list[dict[str, Any]] = []
-            for group in groups:
-                source = _required_object(group)
-                fields = source.get("field_meta_info_list")
-                if not isinstance(fields, list):
-                    raise ValueError
-                for item in fields:
-                    field = _required_object(item)
-                    if field.get("field_name") == DINGTALK_GENDER_ATTRIBUTE:
-                        matches.append(field)
-            if len(matches) != 1:
-                raise ValueError
-            field = matches[0]
-            field_code = _required_string(field.get("field_code"))
-            if field.get("field_type") != "DDSelectField":
-                raise ValueError
-            option_text = _required_string(field.get("option_text"), maximum=4096)
-            options = json.loads(option_text)
-            if not isinstance(options, list) or len(options) != 2:
-                raise ValueError
-            normalized: dict[tuple[str, str], DingTalkGender] = {}
-            seen_labels: set[str] = set()
-            seen_values: set[str] = set()
-            expected: dict[str, DingTalkGender] = {"男": "male", "女": "female"}
-            for item in options:
-                option = _required_object(item)
-                if set(option) != {"label", "value"}:
-                    raise ValueError
-                label = _required_string(option.get("label"))
-                value = _required_string(option.get("value"))
-                gender = expected.get(label)
-                if (
-                    gender is None
-                    or label in seen_labels
-                    or value in seen_values
-                ):
-                    raise ValueError
-                seen_labels.add(label)
-                seen_values.add(value)
-                normalized[(label, value)] = gender
-            if seen_labels != set(expected):
-                raise ValueError
-            return field_code, normalized
-
-        gender_metadata = _parse_provider_value(parse_gender_metadata)
-        if gender_metadata is None:
-            raise self._error(
-                "DingTalk HR roster metadata invalid",
-                request_id=metadata.request_id,
-                error_code="invalid_hrm_metadata",
-            )
-        field_code, gender_options = gender_metadata
-
-        genders: dict[
-            str, tuple[DingTalkGender | None, GenderAttributeStatus]
-        ] = {}
-        for offset in range(0, len(userids), _HRM_GENDER_BATCH_SIZE):
-            selected = userids[offset : offset + _HRM_GENDER_BATCH_SIZE]
-            response = await self._legacy_read(
-                "/topapi/smartwork/hrm/employee/v2/list",
-                {
-                    "agentid": self._agent_id,
-                    "userid_list": ",".join(selected),
-                    "field_filter_list": field_code,
-                },
-            )
-
-            def parse_batch() -> dict[
-                str, tuple[DingTalkGender | None, GenderAttributeStatus]
-            ]:
-                rows = response.payload.get("result")
-                if not isinstance(rows, list):
-                    raise ValueError
-                parsed: dict[
-                    str, tuple[DingTalkGender | None, GenderAttributeStatus]
-                ] = {}
-                for item in rows:
-                    row = _required_object(item)
-                    userid = _required_string(row.get("userid"))
-                    if userid not in selected or userid in parsed:
-                        raise ValueError
-                    fields = row.get("field_data_list")
-                    if not isinstance(fields, list):
-                        raise ValueError
-                    matches = [
-                        _required_object(field)
-                        for field in fields
-                        if _required_object(field).get("field_code") == field_code
-                    ]
-                    if len(matches) != 1:
-                        raise ValueError
-                    values = matches[0].get("field_value_list")
-                    if not isinstance(values, list):
-                        raise ValueError
-                    if not values:
-                        parsed[userid] = (None, "missing")
-                        continue
-                    if len(values) != 1:
-                        parsed[userid] = (None, "invalid")
-                        continue
-                    value = _required_object(values[0])
-                    label = value.get("label")
-                    raw_value = value.get("value")
-                    if not isinstance(label, str) or not isinstance(raw_value, str):
-                        parsed[userid] = (None, "invalid")
-                        continue
-                    gender = gender_options.get((label, raw_value))
-                    parsed[userid] = (
-                        (gender, "valid") if gender is not None else (None, "invalid")
-                    )
-                if set(parsed) != set(selected):
-                    raise ValueError
-                return parsed
-
-            batch = _parse_provider_value(parse_batch)
-            if batch is None:
-                raise self._error(
-                    "DingTalk HR roster response invalid",
-                    request_id=response.request_id,
-                    error_code="invalid_hrm_response",
-                )
-            genders.update(batch)
-        return genders
 
     async def _get_member(self, userid: str) -> tuple[DingTalkMember, str]:
         _required_string(userid)

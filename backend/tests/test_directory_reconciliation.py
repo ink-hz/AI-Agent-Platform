@@ -12,12 +12,7 @@ import pytest
 import psycopg
 
 from app.control_plane.crypto import IdentityKeyring, ProviderIdentityCodec
-from app.control_plane.dingtalk import (
-    DingTalkDepartment,
-    DingTalkMember,
-    DingTalkProviderError,
-    hydrate_authoritative_members,
-)
+from app.control_plane.dingtalk import DingTalkDepartment, DingTalkMember
 from app.control_plane.identity import IdentityResolver
 from test_control_plane_migration import control_database
 
@@ -124,9 +119,6 @@ class FakeClient:
             "u-1", "union-1", "Alice", True, (2, 3), "female", "valid"
         )
 
-    async def get_member_genders(self, userids):
-        return {userid: ("female", "valid") for userid in userids}
-
 
 @pytest.mark.asyncio
 async def test_reconciliation_fetches_before_staging_and_promotes_once() -> None:
@@ -164,12 +156,6 @@ async def test_reconciliation_stages_gender_only_from_one_authoritative_detail()
                     "u-1", "union-1", "Alice", True, (2, 3), None, "missing"
                 )
 
-        async def get_member(self, userid):
-            self.detail_calls[userid] += 1
-            return DingTalkMember(
-                "u-1", "union-1", "Alice", True, (2, 3), "male", "valid"
-            )
-
     client = ListWithoutGenderClient()
     repository = FakeRepository()
 
@@ -177,72 +163,6 @@ async def test_reconciliation_stages_gender_only_from_one_authoritative_detail()
 
     assert repository.staged[result.generation_id]["members"][0].gender == "female"
     assert client.detail_calls == Counter({"u-1": 1})
-
-
-@pytest.mark.asyncio
-async def test_identity_detail_hydration_uses_bounded_concurrency_and_retries_88_serially() -> None:
-    class ConcurrencySensitiveClient:
-        def __init__(self):
-            self.active = 0
-            self.peak = 0
-            self.calls: Counter[str] = Counter()
-
-        async def get_member_genders(self, userids):
-            return {userid: ("female", "valid") for userid in userids}
-
-        async def get_member(self, userid):
-            self.calls[userid] += 1
-            self.active += 1
-            self.peak = max(self.peak, self.active)
-            try:
-                await asyncio.sleep(0)
-                if self.active > 1:
-                    raise DingTalkProviderError(
-                        "DingTalk request failed", request_id="safe", error_code="88"
-                    )
-                return discovered[userid]
-            finally:
-                self.active -= 1
-
-    discovered = {
-        f"u-{index}": DingTalkMember(
-            f"u-{index}", f"union-{index}", f"M-{index}", True, (1,)
-        )
-        for index in range(6)
-    }
-    client = ConcurrencySensitiveClient()
-
-    hydrated = await hydrate_authoritative_members(client, discovered)
-
-    assert set(hydrated) == set(discovered)
-    assert 1 < client.peak <= 4
-    assert all(1 <= count <= 2 for count in client.calls.values())
-
-
-@pytest.mark.asyncio
-async def test_hrm_permission_failure_never_reads_details_or_changes_active(caplog) -> None:
-    from app.control_plane.directory import DirectoryReconciliationError
-
-    class PermissionDeniedClient(FakeClient):
-        async def get_member_genders(self, userids):
-            raise DingTalkProviderError(
-                "DingTalk request failed", request_id="safe", error_code="88"
-            )
-
-    caplog.set_level(logging.INFO)
-    previous = UUID("00000000-0000-0000-0000-000000000001")
-    repository = FakeRepository(active_generation=previous)
-    client = PermissionDeniedClient()
-
-    with pytest.raises(DirectoryReconciliationError, match="provider_failed") as caught:
-        await _reconciler(client, repository).run_full("scheduled")
-
-    assert caught.value.__cause__ is None
-    assert client.detail_calls == Counter()
-    assert repository.calls == []
-    assert repository.active_generation == previous
-    assert "u-1" not in caplog.text
-    assert "union-1" not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -353,9 +273,6 @@ async def test_representative_sizing_harness_is_below_ten_minutes() -> None:
             self.detail_calls += 1
             index = userid.removeprefix("u-")
             return DingTalkMember(userid, f"x-{index}", f"M-{index}", True, (1,))
-
-        async def get_member_genders(self, userids):
-            return {userid: ("male", "valid") for userid in userids}
 
     started = time.monotonic()
     result = await _reconciler(SizingClient(), FakeRepository()).run_full("scheduled")

@@ -105,7 +105,7 @@ done
   -v orbbec-agent-platform-directory-secrets:/target \
   -v "$private_path:/source:ro" alpine:3.22 sh -ceu '
     rm -f /target/*
-    cp /source/control-directory-worker-database-url /source/dingtalk-app-key /source/dingtalk-agent-id /source/dingtalk-corp-id /source/dingtalk-app-secret /target/
+    cp /source/control-directory-worker-database-url /source/dingtalk-app-key /source/dingtalk-corp-id /source/dingtalk-app-secret /target/
     cp /source/identity-encryption-keyring /source/identity-hmac-keyring /target/
     chown 10001:10001 /target/*
     chmod 600 /target/*

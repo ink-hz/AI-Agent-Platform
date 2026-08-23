@@ -27,7 +27,6 @@ def test_worker_runtime_reads_credentials_only_from_private_files(
             "postgresql://platform_stream_ingest:secret@db/agent_platform_control"
         ),
         "PLATFORM_DINGTALK_APP_KEY_FILE": "app-key",
-        "PLATFORM_DINGTALK_AGENT_ID_FILE": "123456",
         "PLATFORM_DINGTALK_CORP_ID_FILE": "corp-id",
         "PLATFORM_DINGTALK_APP_SECRET_FILE": "app-secret",
     }
@@ -46,7 +45,6 @@ def test_worker_runtime_reads_credentials_only_from_private_files(
     settings = load_worker_settings()
 
     assert settings.app_key == "app-key"
-    assert settings.agent_id == 123456
     assert settings.corp_id == "corp-id"
     assert settings.app_secret == "app-secret"
     assert settings.directory_database_url.endswith("/agent_platform_control")

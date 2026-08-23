@@ -121,7 +121,6 @@ def main() -> int:
             app_key=settings.app_key,
             app_secret=settings.app_secret,
             corp_id=settings.corp_id,
-            agent_id=settings.agent_id,
             login_flow="in_client",
         )
         coverage = asyncio.run(collect_gender_coverage(client))
