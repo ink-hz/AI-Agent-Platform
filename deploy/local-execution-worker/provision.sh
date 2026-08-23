@@ -325,7 +325,7 @@ raw=original; start=raw.find((begin+"\n").encode()); finish=raw.find((end+"\n").
 if (start==-1)!=(finish==-1) or (start!=-1 and (raw.find((begin+"\n").encode(),start+1)!=-1 or raw.find((end+"\n").encode(),finish+1)!=-1 or finish<start)): raise SystemExit(1)
 if start!=-1: raw=raw[:start]+raw[finish+len(end)+1:]
 lines=[begin]
-if mode=="temporary": lines.append(f"host postgres {role} 127.0.0.1/32 scram-sha-256")
+if mode=="temporary": lines.append(f"host all {role} 127.0.0.1/32 scram-sha-256")
 lines += ["host agent_execution_worker agent_execution_worker_runtime 127.0.0.1/32 scram-sha-256",end]
 raw=("\n".join(lines)+"\n").encode()+raw
 digest=hashlib.sha256(raw).hexdigest()+"\n"
@@ -419,7 +419,7 @@ validate_hba() {
   result="$("${psql_command[@]}" -XAt -v ON_ERROR_STOP=1 -d postgres -c "select concat(
     count(*) filter (where error is not null), ':',
     count(*) filter (where database=array['agent_execution_worker'] and user_name=array['agent_execution_worker_runtime'] and address='127.0.0.1' and netmask='255.255.255.255' and auth_method='scram-sha-256'), ':',
-    count(*) filter (where database=array['postgres'] and user_name=array['$temp_role'] and address='127.0.0.1' and netmask='255.255.255.255' and auth_method='scram-sha-256')
+    count(*) filter (where database=array['all'] and user_name=array['$temp_role'] and address='127.0.0.1' and netmask='255.255.255.255' and auth_method='scram-sha-256')
     ) from pg_hba_file_rules")" || return 1
   [[ "$result" == "0:1:$expected_temporary" ]]
 }

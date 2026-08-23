@@ -8,13 +8,17 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
+import socket
 import subprocess
 import sys
 import tarfile
+import tempfile
 from uuid import UUID, uuid4
 
 import pytest
 import psycopg
+from psycopg import sql
 
 from app.agent_brain.acceptance_grant import AcceptanceGrantInput, AcceptanceGrantRepository
 from app.control_plane.crypto import IdentityKeyring
@@ -667,7 +671,7 @@ def test_local_provisioning_wrapper_has_narrow_hba_transaction_and_fixed_sudo() 
     assert "directory.is_symlink()" in source and "st_uid!=os.getuid()" in source
     assert "# BEGIN ORBBEC AGENT EXECUTION WORKER" in source
     assert "host agent_execution_worker agent_execution_worker_runtime 127.0.0.1/32 scram-sha-256" in source
-    assert "host postgres" in source and "scram-sha-256" in source
+    assert "host all {role} 127.0.0.1/32 scram-sha-256" in source
     assert "trap cleanup ERR EXIT" in source
     assert "drop role if exists" in source.lower()
     assert "pg_reload_conf" in source
@@ -764,6 +768,76 @@ def test_real_host_agentops_account_socket_home_and_launchd_domain() -> None:
     assert argv_safety.returncode == 0 and argv_safety.stdout == argv_probe
 
 
+def test_temporary_bootstrap_hba_connects_to_other_audit_database() -> None:
+    initdb = shutil.which("initdb")
+    pg_ctl = shutil.which("pg_ctl")
+    if not initdb or not pg_ctl:
+        pytest.skip("disposable PostgreSQL binaries are unavailable")
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = int(listener.getsockname()[1])
+    root = Path(tempfile.mkdtemp(prefix="brain-hba-", dir="/tmp"))
+    data = root / "data"
+    socket_dir = root / "socket"
+    socket_dir.mkdir()
+    subprocess.run(
+        [
+            initdb, "-D", str(data), "--auth=trust", "--encoding=UTF8",
+            "--no-locale", "--username=bootstrap_test_admin",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [
+            pg_ctl, "-D", str(data), "-l", str(root / "postgres.log"),
+            "-o", f"-F -h 127.0.0.1 -p {port} -k {socket_dir}", "start",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    admin_dsn = f"postgresql://bootstrap_test_admin@127.0.0.1:{port}/postgres"
+    role = "agent_execution_bootstrap_0123456789abcdef"
+    password = "bootstrap-test-password"
+    try:
+        with psycopg.connect(admin_dsn, autocommit=True) as connection:
+            connection.execute("set password_encryption='scram-sha-256'")
+            connection.execute(
+                sql.SQL("create role {} login password {}").format(
+                    sql.Identifier(role), sql.Literal(password)
+                )
+            )
+            connection.execute("create database flywheel_audit")
+        (data / "pg_hba.conf").write_text(
+            "local all bootstrap_test_admin trust\n"
+            f"host all {role} 127.0.0.1/32 scram-sha-256\n"
+            "host all all 127.0.0.1/32 reject\n",
+            encoding="utf-8",
+        )
+        with psycopg.connect(admin_dsn, autocommit=True) as connection:
+            assert connection.execute("select pg_reload_conf()").fetchone() == (True,)
+        with psycopg.connect(
+            host="127.0.0.1",
+            port=port,
+            dbname="flywheel_audit",
+            user=role,
+            password=password,
+        ) as connection:
+            assert connection.execute("select current_database()").fetchone() == (
+                "flywheel_audit",
+            )
+    finally:
+        subprocess.run(
+            [pg_ctl, "-D", str(data), "stop", "-m", "immediate"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _provision_harness(
     tmp_path: Path,
     *,
@@ -805,7 +879,7 @@ def _provision_harness(
         f"  *'show hba_file'*) echo {hba};;\n"
         "  *'select pg_reload_conf()'*) if [[ \"${FAKE_FAIL_STAGE:-}\" == reload && ! -e \"$FAKE_RELOAD_MARKER\" ]]; then : > \"$FAKE_RELOAD_MARKER\"; echo f; else echo t; fi;;\n"
         "  *'select count(*) from pg_hba_file_rules where error is not null'*) echo 0;;\n"
-        "  *'pg_hba_file_rules'*) if grep -q '^host postgres agent_execution_bootstrap_' \"$FAKE_HBA\"; then [[ \"${FAKE_FAIL_STAGE:-}\" == validate ]] && echo 0:0:1 || echo 0:1:1; elif [[ \"${FAKE_FINALIZE_FAIL:-0}\" == 1 ]]; then echo 0:0:0; else echo 0:1:0; fi;;\n"
+        "  *'pg_hba_file_rules'*) if grep -q '^host all agent_execution_bootstrap_' \"$FAKE_HBA\"; then [[ \"${FAKE_FAIL_STAGE:-}\" == validate ]] && echo 0:0:1 || echo 0:1:1; elif [[ \"${FAKE_FINALIZE_FAIL:-0}\" == 1 ]]; then echo 0:0:0; else echo 0:1:0; fi;;\n"
         "  *) :;;\n"
         "esac\n",
         encoding="utf-8",
@@ -820,6 +894,7 @@ def _provision_harness(
         "\"$FAKE_HBA\"; exit 71; fi; "
         "if [[ \"${FAKE_FAIL_STAGE:-}\" == concurrent-edit ]]; then "
         "printf '# concurrent owner edit\\n' >> \"$FAKE_HBA\"; exit 71; fi; "
+        "grep -Eq '^host all agent_execution_bootstrap_[0-9a-f]{16} 127\\.0\\.0\\.1/32 scram-sha-256$' \"$FAKE_HBA\"; "
         "echo EXECUTION_WORKER_AGENTOPS_READY"
     )
     fake_helper.write_text(
