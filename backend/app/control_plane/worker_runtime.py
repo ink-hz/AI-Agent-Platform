@@ -38,6 +38,7 @@ _INLINE_SECRETS = (
 @dataclass(frozen=True)
 class WorkerSettings:
     app_key: str = field(repr=False)
+    agent_id: int | None = field(repr=False)
     corp_id: str = field(repr=False)
     app_secret: str = field(repr=False)
     encryption_keyring_file: Path
@@ -65,6 +66,18 @@ def load_worker_settings(service: str | None = None) -> WorkerSettings:
     app_key = read_secret_file(
         str(_required_file_environment("PLATFORM_DINGTALK_APP_KEY_FILE"))
     )
+    agent_id = None
+    if service in {None, "directory"}:
+        agent_id_raw = read_secret_file(
+            str(_required_file_environment("PLATFORM_DINGTALK_AGENT_ID_FILE"))
+        )
+        if (
+            not agent_id_raw.isascii()
+            or not agent_id_raw.isdigit()
+            or int(agent_id_raw) <= 0
+        ):
+            raise ValueError("DingTalk agent ID invalid")
+        agent_id = int(agent_id_raw)
     corp_id = read_secret_file(
         str(_required_file_environment("PLATFORM_DINGTALK_CORP_ID_FILE"))
     )
@@ -103,6 +116,7 @@ def load_worker_settings(service: str | None = None) -> WorkerSettings:
     )
     return WorkerSettings(
         app_key=app_key,
+        agent_id=agent_id,
         corp_id=corp_id,
         app_secret=app_secret,
         encryption_keyring_file=encryption_file,
@@ -122,7 +136,11 @@ def _encryption_keyring(settings: WorkerSettings) -> IdentityKeyring:
 
 def build_directory_services():
     settings = load_worker_settings("directory")
-    if settings.directory_database_url is None or settings.hmac_keyring_file is None:
+    if (
+        settings.directory_database_url is None
+        or settings.hmac_keyring_file is None
+        or settings.agent_id is None
+    ):
         raise RuntimeError("directory worker configuration unavailable")
     encryption = _encryption_keyring(settings)
     lookup = IdentityKeyring.from_file(
@@ -135,6 +153,7 @@ def build_directory_services():
         app_key=settings.app_key,
         app_secret=settings.app_secret,
         corp_id=settings.corp_id,
+        agent_id=settings.agent_id,
         login_flow="in_client",
     )
     repository = DirectoryWorkerRepository(settings.directory_database_url)

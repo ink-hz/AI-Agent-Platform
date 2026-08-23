@@ -47,6 +47,14 @@ dingtalk-owner-userid
 backup-recovery-x25519.pub
 ```
 
+The DingTalk internal application must also have the
+`查询钉钉HRM个人信息的权限` capability. Gender is read from the
+organization-maintained Smart HR roster field named exactly `性别`; the standard
+contact-directory detail response and its optional extension map are not a
+gender authority. The release probe fails closed when the HR permission is
+absent, the field metadata is ambiguous, or any active employee has a missing
+or invalid roster value.
+
 The deployment generates production control DSNs and independent versioned
 identity keyrings. Generate the content keyring once, validate it with the
 production codec, and put a second encrypted copy in the approved offline backup:

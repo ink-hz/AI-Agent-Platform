@@ -76,11 +76,36 @@ class FakeDingTalkClient:
                     return member
         raise RuntimeError("provider detail unavailable")
 
+    async def get_member_genders(self, userids: tuple[str, ...]):
+        result = {}
+        for userid in userids:
+            for members in (
+                self.members_by_department or {
+                    1: [
+                        DingTalkMember("employee-1", "union-1", "One", True, (1,), "male", "valid"),
+                        DingTalkMember("employee-4", "union-4", "Inactive", False, (1,), None, "invalid"),
+                    ],
+                    2: [
+                        DingTalkMember("employee-1", "union-1", "One", True, (1,), "male", "valid"),
+                        DingTalkMember("employee-2", "union-2", "Two", True, (2,), None, "missing"),
+                    ],
+                    3: [
+                        DingTalkMember("employee-3", "union-3", "Three", True, (3,), None, "invalid"),
+                    ],
+                }
+            ).values():
+                match = next((member for member in members if member.userid == userid), None)
+                if match is not None:
+                    result[userid] = (match.gender, match.gender_attribute_status)
+                    break
+        return result
+
 
 class FakeSettings:
     app_key = "test-app-key"
     app_secret = "test-app-secret"
     corp_id = "test-corp"
+    agent_id = 123456
 
 
 @pytest.mark.asyncio
@@ -111,7 +136,7 @@ async def test_collect_gender_coverage_counts_unique_active_members_only() -> No
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_probe_uses_list_only_for_unique_userid_discovery_and_detail_for_gender() -> None:
+async def test_probe_uses_authoritative_detail_for_identity_and_hrm_for_gender() -> None:
     respx.post(f"{API}/v1.0/oauth2/accessToken").mock(
         return_value=httpx.Response(
             200, json={"accessToken": "provider-token", "expireIn": 7200}
@@ -173,15 +198,47 @@ async def test_probe_uses_list_only_for_unique_userid_discovery_and_detail_for_g
                 "errmsg": "ok",
                 "result": {
                     **list_payload,
-                    "extension": {"性别": "女"},
+                    "extension": {"性别": "男"},
                 },
             },
         )
+    )
+    metadata = respx.post(f"{OAPI}/topapi/smartwork/hrm/roster/meta/get").mock(
+        return_value=httpx.Response(200, json={
+            "errcode": 0,
+            "errmsg": "ok",
+            "result": [{
+                "field_meta_info_list": [{
+                    "field_code": "sys00-gender",
+                    "field_name": "性别",
+                    "field_type": "DDSelectField",
+                    "option_text": json.dumps([
+                        {"label": "男", "value": "0"},
+                        {"label": "女", "value": "1"},
+                    ]),
+                }],
+            }],
+        })
+    )
+    roster = respx.post(f"{OAPI}/topapi/smartwork/hrm/employee/v2/list").mock(
+        return_value=httpx.Response(200, json={
+            "errcode": 0,
+            "errmsg": "ok",
+            "result": [{
+                "userid": "employee-1",
+                "field_data_list": [{
+                    "field_code": "sys00-gender",
+                    "field_name": "性别",
+                    "field_value_list": [{"item_index": 0, "label": "女", "value": "1"}],
+                }],
+            }],
+        })
     )
     client = DingTalkClient(
         app_key="test-app-key",
         app_secret="test-app-secret",
         corp_id="test-corp",
+        agent_id=123456,
         login_flow="in_client",
         api_base_url=API,
         oapi_base_url=OAPI,
@@ -194,11 +251,18 @@ async def test_probe_uses_list_only_for_unique_userid_discovery_and_detail_for_g
     assert departments.call_count == 2
     assert member_lists.call_count == 2
     assert details.call_count == 1
+    assert metadata.call_count == 1
+    assert roster.call_count == 1
     assert all(
         "extension" not in json.loads(call.request.content)
         for call in member_lists.calls
     )
     assert json.loads(details.calls[0].request.content)["userid"] == "employee-1"
+    assert json.loads(roster.calls[0].request.content) == {
+        "agentid": 123456,
+        "userid_list": "employee-1",
+        "field_filter_list": "sys00-gender",
+    }
 
 
 @pytest.mark.asyncio
