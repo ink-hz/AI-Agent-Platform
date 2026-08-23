@@ -85,6 +85,7 @@ function client(overrides: Partial<ConversationPageClient> = {}): ConversationPa
     })),
     streamEvents: vi.fn().mockImplementation(async (_id, options) => options.onEvent(event)),
     cancelCurrentTurn: vi.fn(),
+    submitFeedback: vi.fn(),
     reconnectDelay: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -204,5 +205,31 @@ describe("ConversationPage", () => {
     await act(async () => root.render(<ConversationPage account={account} client={pageClient} conversationId={conversationId} />));
 
     expect(container.querySelector(".conversation-assistant header strong")?.textContent).toBe("HR Agent");
+  });
+
+  it("submits one rating for the selected assistant answer", async () => {
+    const submitFeedback = vi.fn().mockResolvedValue({
+      feedback_id: "feedback-1", conversation_id: conversationId,
+      message_id: "message-2", turn_id: "turn-1", mission_id: "mission-1",
+      rating: "helpful", created_at: "2026-08-23T10:03:00Z",
+    });
+    const pageClient = client({ submitFeedback } as unknown as Partial<ConversationPageClient>);
+    await act(async () => root.render(
+      <ConversationPage account={account} client={pageClient} conversationId={conversationId} />,
+    ));
+
+    const helpful = container.querySelector<HTMLButtonElement>(
+      "button[aria-label='这个回答有帮助']",
+    );
+    expect(helpful).not.toBeNull();
+    await act(async () => helpful?.click());
+
+    expect(submitFeedback).toHaveBeenCalledWith(
+      "message-2", "helpful", account.csrf_token, expect.any(AbortSignal),
+    );
+    expect(container.textContent).toContain("已记录你的反馈");
+    expect(container.querySelector<HTMLButtonElement>(
+      "button[aria-label='这个回答没有帮助']",
+    )?.disabled).toBe(true);
   });
 });

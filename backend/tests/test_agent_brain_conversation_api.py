@@ -327,3 +327,59 @@ def test_hard_stale_owner_can_read_but_cannot_mutate(
     blocked = _post(client, auth, "/api/v1/conversations", "禁止写入")
     assert blocked.status_code == 503
     assert blocked.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.postgres
+def test_feedback_api_binds_only_the_owned_assistant_message(
+    conversation_database,
+    repository,
+) -> None:
+    environment, owner, other = conversation_database
+    from test_agent_brain_conversation_context import _complete_mission
+
+    started = repository.start(owner, uuid4(), "给出候选人搜索方案")
+    _complete_mission(
+        environment,
+        repository,
+        started.mission.mission_id,
+        "最终候选人搜索方案",
+    )
+    assert ConversationProjection(repository).project_terminal(
+        started.mission.mission_id
+    )
+    assistant = repository.messages_after(
+        owner, started.conversation.conversation_id
+    )[-1]
+    app, auth, _agent_use = _app(owner, repository)
+    client = TestClient(app)
+
+    response = client.post(
+        f"/api/v1/messages/{assistant.message_id}/feedback",
+        **_write_credentials(auth),
+        json={"rating": "helpful"},
+    )
+
+    assert response.status_code == 201
+    assert response.json() == {
+        "feedback_id": response.json()["feedback_id"],
+        "conversation_id": str(started.conversation.conversation_id),
+        "message_id": str(assistant.message_id),
+        "turn_id": str(started.turn.turn_id),
+        "mission_id": str(started.mission.mission_id),
+        "rating": "helpful",
+        "created_at": response.json()["created_at"],
+    }
+    assert "最终候选人搜索方案" not in response.text
+    assert client.post(
+        f"/api/v1/messages/{assistant.message_id}/feedback",
+        cookies=_credentials(auth)["cookies"],
+        json={"rating": "helpful"},
+    ).status_code == 403
+
+    foreign_app, foreign_auth, _ = _app(other, repository)
+    denied = TestClient(foreign_app).post(
+        f"/api/v1/messages/{assistant.message_id}/feedback",
+        **_write_credentials(foreign_auth),
+        json={"rating": "helpful"},
+    )
+    assert denied.status_code == 404

@@ -5,6 +5,8 @@ import type {
   ConversationDeliveryStatus,
   ConversationDetail,
   ConversationEvent,
+  ConversationFeedback,
+  ConversationFeedbackRating,
   ConversationMessage,
   ConversationMessageRole,
   ConversationMode,
@@ -37,6 +39,10 @@ const DETAIL_KEYS = new Set(["conversation", "current_turn"]);
 const PAGE_KEYS = new Set(["items", "next_cursor"]);
 const MESSAGE_PAGE_KEYS = new Set(["items"]);
 const CANCEL_KEYS = new Set(["conversation_id", "mission_id", "cancel_requested"]);
+const FEEDBACK_KEYS = new Set([
+  "feedback_id", "conversation_id", "message_id", "turn_id", "mission_id",
+  "rating", "created_at",
+]);
 
 const CONVERSATION_MODES = new Set<ConversationMode>(["brain", "direct_agent"]);
 const CONVERSATION_STATUSES = new Set<ConversationStatus>(["active", "archived"]);
@@ -233,6 +239,21 @@ function parseCancelResult(value: unknown): ConversationCancelResult {
 }
 
 
+function parseFeedback(value: unknown): ConversationFeedback {
+  if (!isObject(value) || !hasExactKeys(value, FEEDBACK_KEYS)
+    || !isNonEmptyString(value.feedback_id)
+    || !isNonEmptyString(value.conversation_id)
+    || !isNonEmptyString(value.message_id)
+    || !isNonEmptyString(value.turn_id)
+    || !isNullableString(value.mission_id)
+    || (value.rating !== "helpful" && value.rating !== "unhelpful")
+    || !isNonEmptyString(value.created_at)) {
+    throw new Error("Conversation feedback response invalid");
+  }
+  return value as unknown as ConversationFeedback;
+}
+
+
 export function conversationInputTooLarge(text: string): boolean {
   return new TextEncoder().encode(text).byteLength > MAX_CONVERSATION_INPUT_BYTES;
 }
@@ -368,6 +389,33 @@ export async function archiveConversation(
   const result = parseConversation(await response.json());
   if (result.conversation_id !== conversationId || result.status !== "archived") {
     throw new Error("Conversation archive response invalid");
+  }
+  return result;
+}
+
+
+export async function submitConversationFeedback(
+  messageId: string,
+  rating: ConversationFeedbackRating,
+  csrfToken: string,
+  signal?: AbortSignal,
+): Promise<ConversationFeedback> {
+  const response = await checked(await fetch(platformPath(
+    `/api/v1/messages/${encodeURIComponent(messageId)}/feedback`,
+  ), {
+    method: "POST",
+    credentials: "include",
+    signal,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-CSRF-Token": csrfToken,
+    },
+    body: JSON.stringify({ rating }),
+  }));
+  const result = parseFeedback(await response.json());
+  if (result.message_id !== messageId || result.rating !== rating) {
+    throw new Error("Conversation feedback response invalid");
   }
   return result;
 }

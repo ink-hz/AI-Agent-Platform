@@ -1,3 +1,5 @@
+from datetime import datetime
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -223,3 +225,34 @@ def test_read_only_service_keeps_get_available_and_rejects_writes():
     }
     assert write_response.status_code == 503
     assert write_response.json()["detail"] == "feedback review unavailable"
+
+
+def test_conversation_feedback_projection_exposes_links_without_message_content(
+    client,
+    app,
+):
+    app.state.conversation_repository = SimpleNamespace(
+        list_feedback=lambda limit, offset: (
+            (
+                SimpleNamespace(
+                    feedback_id=UUID("00000000-0000-0000-0000-000000000010"),
+                    conversation_id=UUID("00000000-0000-0000-0000-000000000011"),
+                    message_id=UUID("00000000-0000-0000-0000-000000000012"),
+                    turn_id=UUID("00000000-0000-0000-0000-000000000013"),
+                    mission_id=UUID("00000000-0000-0000-0000-000000000014"),
+                    rating="unhelpful",
+                    created_at=datetime.fromisoformat(
+                        "2026-08-23T10:00:00+00:00"
+                    ),
+                ),
+            ),
+            1,
+        )
+    )
+
+    response = client.get("/api/review/conversation-feedback?limit=20&offset=0")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["rating"] == "unhelpful"
+    assert "content" not in response.json()["items"][0]

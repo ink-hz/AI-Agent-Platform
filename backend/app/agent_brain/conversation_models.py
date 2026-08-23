@@ -15,6 +15,7 @@ MessageDeliveryStatus = Literal["accepted", "streaming", "completed", "failed"]
 TurnStatus = Literal[
     "accepted", "running", "completed", "failed", "cancelled", "interrupted"
 ]
+FeedbackRating = Literal["helpful", "unhelpful"]
 
 
 @dataclass(frozen=True)
@@ -80,3 +81,35 @@ class ConversationCreateResult:
     turn: ConversationTurnRecord
     mission: MissionRecord
     created: bool
+
+
+@dataclass(frozen=True)
+class ConversationFeedbackRecord:
+    feedback_id: UUID
+    owner_internal_user_id: UUID
+    conversation_id: UUID
+    message_id: UUID
+    turn_id: UUID
+    mission_id: UUID | None
+    rating: FeedbackRating
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class ConversationFeedbackResult:
+    feedback: ConversationFeedbackRecord
+    created: bool
+
+
+@dataclass(frozen=True)
+class ConversationMetrics:
+    conversations: int
+    multi_turn_conversations: int
+    multi_turn_rate: float
+    turns: int
+    completed_turns: int
+    turn_completion_rate: float
+    missions: int
+    rated_missions: int
+    helpful_missions: int
+    mission_quality_rate: float | None

@@ -7,6 +7,7 @@ import {
   fetchConversation,
   fetchConversationMessages,
   streamConversationEvents,
+  submitConversationFeedback,
   type ConversationStreamOptions,
   type ConversationSubmission,
 } from "../conversationApi";
@@ -14,6 +15,8 @@ import type {
   ConversationCancelResult,
   ConversationDetail,
   ConversationEvent,
+  ConversationFeedback,
+  ConversationFeedbackRating,
   ConversationMessage,
 } from "../conversationTypes";
 import { TERMINAL_CONVERSATION_TURN_STATUSES } from "../conversationTypes";
@@ -31,6 +34,7 @@ export interface ConversationPageClient {
   createMessageSubmission(conversationId: string, text: string, csrfToken: string): ConversationSubmission;
   streamEvents(conversationId: string, options: ConversationStreamOptions): Promise<void>;
   cancelCurrentTurn(conversationId: string, csrfToken: string, signal?: AbortSignal): Promise<ConversationCancelResult>;
+  submitFeedback(messageId: string, rating: ConversationFeedbackRating, csrfToken: string, signal?: AbortSignal): Promise<ConversationFeedback>;
   reconnectDelay(signal: AbortSignal): Promise<void>;
 }
 
@@ -40,6 +44,7 @@ const DEFAULT_CLIENT: ConversationPageClient = {
   createMessageSubmission: createConversationMessageSubmission,
   streamEvents: streamConversationEvents,
   cancelCurrentTurn,
+  submitFeedback: submitConversationFeedback,
   reconnectDelay,
 };
 
@@ -82,6 +87,7 @@ export function ConversationPage({
   const [sendFailure, setSendFailure] = useState(false);
   const [cancelFailure, setCancelFailure] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
+  const [feedback, setFeedback] = useState<Record<string, ConversationFeedbackRating | "pending" | "error">>({});
   const [streamEpoch, setStreamEpoch] = useState(0);
   const retained = useRef<{ text: string; submission: ConversationSubmission } | null>(null);
   const writeController = useRef<AbortController | null>(null);
@@ -92,6 +98,7 @@ export function ConversationPage({
     const controller = new AbortController();
     setDetail(null); setMessages([]); setEvents([]); setLoading(true); setLoadFailure(false);
     setText(""); setSendFailure(false); setCancelFailure(false); setCancelRequested(false);
+    setFeedback({});
     retained.current = null; eventCursor.current = 0;
     void Promise.all([
       client.fetchConversation(conversationId, controller.signal),
@@ -189,6 +196,20 @@ export function ConversationPage({
     }
   };
 
+  const rate = async (messageId: string, rating: ConversationFeedbackRating) => {
+    if (account.hard_stale_read_only || feedback[messageId] === "pending") return;
+    const controller = new AbortController();
+    setFeedback((current) => ({ ...current, [messageId]: "pending" }));
+    try {
+      const result = await client.submitFeedback(
+        messageId, rating, account.csrf_token, controller.signal,
+      );
+      setFeedback((current) => ({ ...current, [messageId]: result.rating }));
+    } catch {
+      setFeedback((current) => ({ ...current, [messageId]: "error" }));
+    }
+  };
+
   if (loading) return <section className="conversation-load-state" aria-live="polite"><h1>正在打开对话</h1><p>正在读取已保存的消息与执行记录。</p></section>;
   if (loadFailure || !detail) return <section className="conversation-load-state" role="alert"><h1>暂时无法读取对话</h1><p>对话仍安全保存在平台，请稍后刷新。</p></section>;
   const active = turnIsActive(detail);
@@ -208,6 +229,8 @@ export function ConversationPage({
         ? professionalAgentLabel(detail.conversation.direct_agent_id) ?? "专业 Agent"
         : "Agent 大脑"}
       messages={messages}
+      feedback={feedback}
+      onFeedback={account.hard_stale_read_only ? undefined : (messageId, rating) => void rate(messageId, rating)}
     />
     {active && <section className="conversation-running" aria-live="polite">
       <span>{cancelRequested ? "正在停止本轮执行…" : "Agent 正在处理本轮需求…"}</span>

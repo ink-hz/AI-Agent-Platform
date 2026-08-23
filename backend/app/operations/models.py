@@ -86,6 +86,19 @@ class OperationsBrief(BaseModel):
     changes: list[OperationalEvent]
 
 
+class ConversationMetrics(BaseModel):
+    conversations: int = Field(ge=0)
+    multi_turn_conversations: int = Field(ge=0)
+    multi_turn_rate: float = Field(ge=0, le=1)
+    turns: int = Field(ge=0)
+    completed_turns: int = Field(ge=0)
+    turn_completion_rate: float = Field(ge=0, le=1)
+    missions: int = Field(ge=0)
+    rated_missions: int = Field(ge=0)
+    helpful_missions: int = Field(ge=0)
+    mission_quality_rate: float | None = Field(default=None, ge=0, le=1)
+
+
 class UsageOccurrence(BaseModel):
     turn_key: str
     agent_id: str

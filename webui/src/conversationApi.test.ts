@@ -12,6 +12,7 @@ import {
   listConversations,
   startConversation,
   streamConversationEvents,
+  submitConversationFeedback,
 } from "./conversationApi";
 
 
@@ -167,6 +168,36 @@ describe("continuous Conversation API", () => {
     ]);
     expect(fetchMock.mock.calls[3][1]).toMatchObject({ method: "POST", headers: { "X-CSRF-Token": "csrf" } });
     expect(fetchMock.mock.calls[4][1]).toMatchObject({ method: "POST", headers: { "X-CSRF-Token": "csrf" } });
+  });
+
+  it("submits strict per-assistant-message feedback", async () => {
+    const feedback = {
+      feedback_id: "feedback-1",
+      conversation_id: CONVERSATION_ID,
+      message_id: MESSAGE_ID,
+      turn_id: TURN_ID,
+      mission_id: MISSION_ID,
+      rating: "helpful",
+      created_at: "2026-08-23T10:03:00Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(feedback, 201));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(submitConversationFeedback(MESSAGE_ID, "helpful", "csrf"))
+      .resolves.toEqual(feedback);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/messages/${MESSAGE_ID}/feedback`,
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        headers: expect.objectContaining({ "X-CSRF-Token": "csrf" }),
+        body: JSON.stringify({ rating: "helpful" }),
+      }),
+    );
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ ...feedback, content: "must reject" })));
+    await expect(submitConversationFeedback(MESSAGE_ID, "helpful", "csrf"))
+      .rejects.toThrow("feedback response invalid");
   });
 
   it.each([

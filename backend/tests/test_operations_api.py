@@ -1,6 +1,7 @@
 import inspect
 import json
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -177,3 +178,39 @@ def test_operations_routes_are_async_and_service_contract_is_synchronous():
 def test_event_filters_contract_remains_typed():
     filters = EventFilters(severity="critical")
     assert filters.severity == "critical"
+
+
+def test_conversation_metrics_keep_conversations_turns_and_quality_distinct(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    client.app.state.conversation_repository = SimpleNamespace(
+        conversation_metrics=lambda: SimpleNamespace(
+            conversations=2,
+            multi_turn_conversations=1,
+            multi_turn_rate=0.5,
+            turns=3,
+            completed_turns=2,
+            turn_completion_rate=2 / 3,
+            missions=3,
+            rated_missions=1,
+            helpful_missions=1,
+            mission_quality_rate=1.0,
+        )
+    )
+
+    response = client.get("/api/operations/conversation-metrics")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "conversations": 2,
+        "multi_turn_conversations": 1,
+        "multi_turn_rate": 0.5,
+        "turns": 3,
+        "completed_turns": 2,
+        "turn_completion_rate": pytest.approx(2 / 3),
+        "missions": 3,
+        "rated_missions": 1,
+        "helpful_missions": 1,
+        "mission_quality_rate": 1.0,
+    }

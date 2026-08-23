@@ -4,8 +4,10 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.observability.models import Page
+from app.agent_brain.conversation_repository import ConversationRepositoryError
 
 from .models import (
+    ConversationMetrics,
     EventFilters,
     EventSeverity,
     OperationsBrief,
@@ -21,6 +23,15 @@ def _service(request: Request):
     if service is None:
         raise HTTPException(status_code=503, detail="operations unavailable")
     return service
+
+
+def _conversation_repository(request: Request):
+    repository = getattr(request.app.state, "conversation_repository", None)
+    if repository is None:
+        raise HTTPException(
+            status_code=503, detail="conversation metrics unavailable"
+        )
+    return repository
 
 
 @router.get("/brief", response_model=OperationsBrief)
@@ -52,3 +63,17 @@ async def events(
         limit,
         offset,
     )
+
+
+@router.get("/conversation-metrics", response_model=ConversationMetrics)
+async def conversation_metrics(request: Request):
+    try:
+        return await asyncio.to_thread(
+            _conversation_repository(request).conversation_metrics
+        )
+    except HTTPException:
+        raise
+    except ConversationRepositoryError:
+        raise HTTPException(
+            status_code=503, detail="conversation metrics unavailable"
+        ) from None

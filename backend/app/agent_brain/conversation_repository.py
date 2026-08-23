@@ -12,6 +12,9 @@ from psycopg.rows import dict_row
 from app.agent_brain.conversation_models import (
     ConversationCreateResult,
     ConversationEventRecord,
+    ConversationFeedbackRecord,
+    ConversationFeedbackResult,
+    ConversationMetrics,
     ConversationMessageRecord,
     ConversationRecord,
     ConversationTurnRecord,
@@ -727,6 +730,151 @@ class ConversationRepository:
         except ConversationRepositoryError:
             raise
         except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def create_feedback(
+        self,
+        internal_user_id: UUID,
+        message_id: UUID,
+        rating: Literal["helpful", "unhelpful"],
+    ) -> ConversationFeedbackResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(message_id)
+        if rating not in {"helpful", "unhelpful"}:
+            raise ValueError("Conversation feedback rating invalid")
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                target = cursor.execute(
+                    "select message.conversation_id,message.role,turn.turn_id,"
+                    "turn.mission_id from platform_control.conversation_messages message "
+                    "join platform_control.conversations conversation "
+                    "on conversation.conversation_id=message.conversation_id "
+                    "left join platform_control.conversation_turns turn "
+                    "on turn.conversation_id=message.conversation_id "
+                    "and turn.assistant_message_id=message.message_id "
+                    "where message.message_id=%s "
+                    "and conversation.owner_internal_user_id=%s for update of message",
+                    (message_id, internal_user_id),
+                ).fetchone()
+                if target is None:
+                    raise ConversationRepositoryNotFound()
+                if target["role"] != "assistant" or target["turn_id"] is None:
+                    raise ConversationRepositoryConflict()
+                existing = cursor.execute(
+                    "select * from platform_control.conversation_feedback "
+                    "where owner_internal_user_id=%s and message_id=%s",
+                    (internal_user_id, message_id),
+                ).fetchone()
+                if existing is not None:
+                    if existing["rating"] != rating:
+                        raise ConversationRepositoryConflict()
+                    row = existing
+                    created = False
+                else:
+                    row = cursor.execute(
+                        "insert into platform_control.conversation_feedback "
+                        "(feedback_id,owner_internal_user_id,conversation_id,"
+                        "message_id,turn_id,mission_id,rating) "
+                        "values (%s,%s,%s,%s,%s,%s,%s) returning *",
+                        (
+                            uuid4(),
+                            internal_user_id,
+                            target["conversation_id"],
+                            message_id,
+                            target["turn_id"],
+                            target["mission_id"],
+                            rating,
+                        ),
+                    ).fetchone()
+                    created = True
+            return ConversationFeedbackResult(
+                feedback=ConversationFeedbackRecord(**row),
+                created=created,
+            )
+        except ConversationRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def conversation_metrics(self) -> ConversationMetrics:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    "with per_conversation as ("
+                    "select conversation.conversation_id,"
+                    "count(turn.turn_id)::bigint as turn_count,"
+                    "count(turn.turn_id) filter "
+                    "(where turn.status='completed')::bigint as completed_count "
+                    "from platform_control.conversations conversation "
+                    "left join platform_control.conversation_turns turn "
+                    "on turn.conversation_id=conversation.conversation_id "
+                    "group by conversation.conversation_id"
+                    "), conversation_totals as ("
+                    "select count(*)::bigint as conversations,"
+                    "count(*) filter (where turn_count >= 2)::bigint "
+                    "as multi_turn_conversations,"
+                    "coalesce(sum(turn_count),0)::bigint as turns,"
+                    "coalesce(sum(completed_count),0)::bigint as completed_turns "
+                    "from per_conversation"
+                    "), mission_totals as ("
+                    "select count(*)::bigint as missions from platform_control.missions"
+                    "), quality_totals as ("
+                    "select count(distinct mission_id)::bigint as rated_missions,"
+                    "count(distinct mission_id) filter (where rating='helpful')::bigint "
+                    "as helpful_missions from platform_control.conversation_feedback "
+                    "where mission_id is not null"
+                    ") select * from conversation_totals cross join mission_totals "
+                    "cross join quality_totals"
+                ).fetchone()
+            conversations = int(row["conversations"])
+            multi_turn = int(row["multi_turn_conversations"])
+            turns = int(row["turns"])
+            completed = int(row["completed_turns"])
+            rated = int(row["rated_missions"])
+            helpful = int(row["helpful_missions"])
+            return ConversationMetrics(
+                conversations=conversations,
+                multi_turn_conversations=multi_turn,
+                multi_turn_rate=(multi_turn / conversations if conversations else 0.0),
+                turns=turns,
+                completed_turns=completed,
+                turn_completion_rate=(completed / turns if turns else 0.0),
+                missions=int(row["missions"]),
+                rated_missions=rated,
+                helpful_missions=helpful,
+                mission_quality_rate=(helpful / rated if rated else None),
+            )
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def list_feedback(
+        self, limit: int = 100, offset: int = 0
+    ) -> tuple[tuple[ConversationFeedbackRecord, ...], int]:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 200
+            or isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or offset < 0
+        ):
+            raise ValueError("Conversation feedback page invalid")
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                rows = cursor.execute(
+                    "select * from platform_control.conversation_feedback "
+                    "order by created_at desc,feedback_id limit %s offset %s",
+                    (limit, offset),
+                ).fetchall()
+                total = cursor.execute(
+                    "select count(*)::bigint as total from "
+                    "platform_control.conversation_feedback"
+                ).fetchone()["total"]
+            return (
+                tuple(ConversationFeedbackRecord(**row) for row in rows),
+                int(total),
+            )
+        except (KeyError, TypeError, ValueError, psycopg.Error):
             raise ConversationRepositoryError() from None
 
     def events_after(

@@ -582,7 +582,7 @@ git commit -m "feat(brain): backfill Mission history into conversations"
 - Produces feedback targeting assistant Message/Turn while retaining Mission/Run links.
 - Produces Conversation count, multi-turn rate, Turn completion rate, and Mission quality.
 
-- [ ] **Step 1: Write failing feedback/operations tests**
+- [x] **Step 1: Write failing feedback/operations tests**
 
 ```python
 def test_feedback_binds_owned_assistant_message(client, member, conversation):
@@ -597,18 +597,18 @@ def test_feedback_binds_owned_assistant_message(client, member, conversation):
 
 Prove another owner is denied, content is absent from audit details, and two Turns count as one multi-turn Conversation.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 ```bash
 cd backend
 .venv/bin/pytest tests/test_feedback_api.py tests/test_operations_api.py -q
 ```
 
-- [ ] **Step 3: Implement scoped projection and UI control**
+- [x] **Step 3: Implement scoped projection and UI control**
 
 Resolve assistant Message through owner-scoped Conversation lookup, derive Turn/Mission links server-side, retain Mission feedback compatibility, and count Conversation/Turn/Mission separately. Add per-assistant-message feedback without exposing IDs from another owner.
 
-- [ ] **Step 4: Run backend/frontend tests and commit**
+- [x] **Step 4: Run backend/frontend tests and commit**
 
 ```bash
 cd backend && .venv/bin/pytest tests/test_feedback_api.py tests/test_operations_api.py -q

@@ -13,6 +13,7 @@ CONVERSATION_TABLES = (
     "conversation_messages",
     "conversation_turns",
     "conversation_events",
+    "conversation_feedback",
 )
 
 
@@ -62,6 +63,22 @@ def test_conversation_schema_separates_history_from_mission_state(
                 "created_at",
                 "completed_at",
             }
+            assert columns["conversation_feedback"] >= {
+                "feedback_id",
+                "owner_internal_user_id",
+                "conversation_id",
+                "message_id",
+                "turn_id",
+                "mission_id",
+                "rating",
+                "created_at",
+            }
+            assert not columns["conversation_feedback"] & {
+                "content",
+                "comment",
+                "question",
+                "answer",
+            }
             assert not columns["conversation_messages"] & {
                 "content",
                 "prompt",
@@ -91,6 +108,8 @@ def test_conversation_schema_separates_history_from_mission_state(
             for value in ("'brain'", "'direct_agent'", "'active'", "'archived'"):
                 assert value in constraints
             for value in ("'user'", "'assistant'", "'system'"):
+                assert value in constraints
+            for value in ("'helpful'", "'unhelpful'"):
                 assert value in constraints
             for value in (
                 "'accepted'",

@@ -6,7 +6,7 @@ import binascii
 from datetime import datetime
 import hmac
 import json
-from typing import Annotated, AsyncIterator, Callable
+from typing import Annotated, AsyncIterator, Callable, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, Response
@@ -55,6 +55,12 @@ class ConversationTextBody(BaseModel):
         if not value.strip():
             raise ValueError("Conversation text required")
         return value
+
+
+class ConversationFeedbackBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    rating: Literal["helpful", "unhelpful"]
 
 
 class ConversationCursorCodec:
@@ -251,6 +257,18 @@ def _event_payload(record: ConversationEventRecord) -> dict[str, object]:
         "mission_id": str(record.mission_id) if record.mission_id else None,
         "event_type": record.event_type,
         "payload": record.payload,
+        "created_at": record.created_at.isoformat(),
+    }
+
+
+def _feedback_payload(record) -> dict[str, object]:
+    return {
+        "feedback_id": str(record.feedback_id),
+        "conversation_id": str(record.conversation_id),
+        "message_id": str(record.message_id),
+        "turn_id": str(record.turn_id),
+        "mission_id": str(record.mission_id) if record.mission_id else None,
+        "rating": record.rating,
         "created_at": record.created_at.isoformat(),
     }
 
@@ -617,6 +635,28 @@ def build_conversation_router(
         response.status_code = 201 if result.created else 200
         response.headers.update(_NO_STORE)
         return _create_payload(result)
+
+    @router.post("/api/v1/messages/{message_id}/feedback", status_code=201)
+    async def submit_feedback(
+        message_id: UUID,
+        body: ConversationFeedbackBody,
+        request: Request,
+        response: Response,
+    ):
+        context = _auth_context(request)
+        _ensure_writable(context)
+        try:
+            result = await asyncio.to_thread(
+                repository.create_feedback,
+                context.internal_user_id,
+                message_id,
+                body.rating,
+            )
+        except ConversationRepositoryError as error:
+            raise _repository_http_error(error) from None
+        response.status_code = 201 if result.created else 200
+        response.headers.update(_NO_STORE)
+        return _feedback_payload(result.feedback)
 
     @router.post("/api/v1/conversations/{conversation_id}/turns/current/cancel")
     async def cancel_current_turn(

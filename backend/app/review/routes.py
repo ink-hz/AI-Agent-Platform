@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.agent_brain.conversation_repository import ConversationRepositoryError
 
 from .repository import (
     ConcurrentUpdate,
@@ -156,6 +159,13 @@ def _service(request: Request):
     return request.app.state.review_service
 
 
+def _conversation_repository(request: Request):
+    repository = getattr(request.app.state, "conversation_repository", None)
+    if repository is None:
+        raise HTTPException(503, "conversation feedback unavailable")
+    return repository
+
+
 async def _invoke(awaitable):
     try:
         return await awaitable
@@ -220,6 +230,41 @@ async def turn_summaries(
     return await _invoke(
         _service(request).turn_summaries(turn_keys=unique_keys)
     )
+
+
+@router.get("/conversation-feedback")
+async def conversation_feedback(
+    request: Request,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    try:
+        items, total = await asyncio.to_thread(
+            _conversation_repository(request).list_feedback,
+            limit,
+            offset,
+        )
+    except HTTPException:
+        raise
+    except ConversationRepositoryError:
+        raise HTTPException(503, "conversation feedback unavailable") from None
+    return {
+        "items": [
+            {
+                "feedback_id": str(item.feedback_id),
+                "conversation_id": str(item.conversation_id),
+                "message_id": str(item.message_id),
+                "turn_id": str(item.turn_id),
+                "mission_id": str(item.mission_id) if item.mission_id else None,
+                "rating": item.rating,
+                "created_at": item.created_at.isoformat(),
+            }
+            for item in items
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/issues/{issue_id}")

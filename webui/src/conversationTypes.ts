@@ -79,6 +79,18 @@ export interface ConversationCancelResult {
   cancel_requested: true;
 }
 
+export type ConversationFeedbackRating = "helpful" | "unhelpful";
+
+export interface ConversationFeedback {
+  feedback_id: string;
+  conversation_id: string;
+  message_id: string;
+  turn_id: string;
+  mission_id: string | null;
+  rating: ConversationFeedbackRating;
+  created_at: string;
+}
+
 export const TERMINAL_CONVERSATION_TURN_STATUSES = new Set<ConversationTurnStatus>([
   "completed", "failed", "cancelled", "interrupted",
 ]);

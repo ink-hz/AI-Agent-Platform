@@ -32,6 +32,7 @@ def _codec() -> ContentCodec:
 
 def _clear_conversations(connection) -> None:
     connection.execute("set constraints all deferred")
+    connection.execute("delete from platform_control.conversation_feedback")
     connection.execute("delete from platform_control.conversation_events")
     connection.execute("delete from platform_control.mission_events")
     connection.execute("delete from platform_control.mission_runs")
@@ -330,6 +331,149 @@ def test_mission_execution_events_are_idempotently_projected_into_conversation(
     ]
     assert projected[1].payload["selected_agent_id"] == "hr-bot"
     assert len({event.event_id for event in projected}) == 2
+
+
+@pytest.mark.postgres
+def test_feedback_resolves_owned_assistant_message_without_copying_content(
+    conversation_database,
+    repository,
+) -> None:
+    environment, owner_id, other_owner_id = conversation_database
+    started = repository.start(owner_id, uuid4(), "给出一份候选人搜索方案")
+    from test_agent_brain_conversation_context import _complete_mission
+
+    _complete_mission(
+        environment,
+        repository,
+        started.mission.mission_id,
+        "候选人搜索方案",
+    )
+    from app.agent_brain.conversation_projection import ConversationProjection
+
+    assert ConversationProjection(repository).project_terminal(
+        started.mission.mission_id
+    )
+    messages = repository.messages_after(
+        owner_id, started.conversation.conversation_id
+    )
+    assistant = next(message for message in messages if message.role == "assistant")
+
+    result = repository.create_feedback(
+        owner_id, assistant.message_id, "unhelpful"
+    )
+    replay = repository.create_feedback(
+        owner_id, assistant.message_id, "unhelpful"
+    )
+
+    assert result.created is True
+    assert replay.created is False
+    assert replay.feedback.feedback_id == result.feedback.feedback_id
+    assert result.feedback.conversation_id == started.conversation.conversation_id
+    assert result.feedback.turn_id == started.turn.turn_id
+    assert result.feedback.mission_id == started.mission.mission_id
+    with pytest.raises(ConversationRepositoryNotFound):
+        repository.create_feedback(
+            other_owner_id, assistant.message_id, "unhelpful"
+        )
+    with pytest.raises(ConversationRepositoryConflict):
+        repository.create_feedback(owner_id, assistant.message_id, "helpful")
+    with pytest.raises(ConversationRepositoryConflict):
+        repository.create_feedback(owner_id, started.message.message_id, "helpful")
+
+    with psycopg.connect(environment["admin"]) as connection:
+        row = connection.execute(
+            "select * from platform_control.conversation_feedback "
+            "where feedback_id=%s",
+            (result.feedback.feedback_id,),
+        ).fetchone()
+    assert row is not None
+    assert "候选人搜索方案" not in repr(row)
+    listed, total = repository.list_feedback(limit=20, offset=0)
+    assert total == 1
+    assert listed == (result.feedback,)
+
+
+@pytest.mark.postgres
+def test_concurrent_feedback_replays_one_append_only_rating(
+    conversation_database,
+    repository,
+) -> None:
+    environment, owner_id, _ = conversation_database
+    from app.agent_brain.conversation_projection import ConversationProjection
+    from test_agent_brain_conversation_context import _complete_mission
+
+    started = repository.start(owner_id, uuid4(), "并发反馈")
+    _complete_mission(
+        environment, repository, started.mission.mission_id, "并发反馈结果"
+    )
+    assert ConversationProjection(repository).project_terminal(
+        started.mission.mission_id
+    )
+    assistant = repository.messages_after(
+        owner_id, started.conversation.conversation_id
+    )[-1]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                lambda _index: repository.create_feedback(
+                    owner_id, assistant.message_id, "helpful"
+                ),
+                range(2),
+            )
+        )
+
+    assert sorted(result.created for result in results) == [False, True]
+    assert len({result.feedback.feedback_id for result in results}) == 1
+
+
+@pytest.mark.postgres
+def test_conversation_metrics_separate_conversations_turns_and_rated_quality(
+    conversation_database,
+    repository,
+) -> None:
+    environment, owner_id, _ = conversation_database
+    from app.agent_brain.conversation_projection import ConversationProjection
+    from test_agent_brain_conversation_context import _complete_mission
+
+    first = repository.start(owner_id, uuid4(), "第一段第一轮")
+    _complete_mission(environment, repository, first.mission.mission_id, "第一轮完成")
+    assert ConversationProjection(repository).project_terminal(first.mission.mission_id)
+    first_answer = repository.messages_after(
+        owner_id, first.conversation.conversation_id
+    )[-1]
+    repository.create_feedback(owner_id, first_answer.message_id, "helpful")
+
+    second_turn = repository.append_turn(
+        owner_id, first.conversation.conversation_id, uuid4(), "第一段第二轮"
+    )
+    repository._missions.terminate_mission(
+        owner_id,
+        second_turn.mission.mission_id,
+        status="failed",
+        event_type="mission.failed",
+        event_payload={"text": "第二轮失败", "reason_code": "test_failure"},
+    )
+    assert ConversationProjection(repository).project_terminal(
+        second_turn.mission.mission_id
+    )
+
+    second = repository.start(owner_id, uuid4(), "第二段第一轮")
+    _complete_mission(environment, repository, second.mission.mission_id, "另一轮完成")
+    assert ConversationProjection(repository).project_terminal(second.mission.mission_id)
+
+    metrics = repository.conversation_metrics()
+
+    assert metrics.conversations == 2
+    assert metrics.multi_turn_conversations == 1
+    assert metrics.multi_turn_rate == 0.5
+    assert metrics.turns == 3
+    assert metrics.completed_turns == 2
+    assert metrics.turn_completion_rate == pytest.approx(2 / 3)
+    assert metrics.missions == 3
+    assert metrics.rated_missions == 1
+    assert metrics.helpful_missions == 1
+    assert metrics.mission_quality_rate == 1.0
 
 
 @pytest.mark.postgres

@@ -65,6 +65,9 @@ ACCOUNT_GENDER_PROJECTION_MIGRATION = (
 AGENT_BRAIN_CONVERSATION_MIGRATION = (
     MIGRATIONS / "036_agent_brain_conversations.sql"
 )
+CONVERSATION_FEEDBACK_MIGRATION = (
+    MIGRATIONS / "037_conversation_feedback.sql"
+)
 EXECUTION_RELAY_MIGRATION = MIGRATIONS / "028_execution_relay.sql"
 AGENT_BRAIN_MIGRATION = MIGRATIONS / "029_agent_brain_mvp.sql"
 AGENT_BRAIN_ORCHESTRATION_MIGRATION = (
@@ -147,6 +150,7 @@ TABLES = {
     "conversation_messages",
     "conversation_turns",
     "conversation_events",
+    "conversation_feedback",
     "content_key_canaries",
 }
 
@@ -498,7 +502,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 37)
+                    (version, 64) for version in range(1, 38)
                 ]
 
     changed = tmp_path / "migrations"
