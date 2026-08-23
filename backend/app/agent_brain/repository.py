@@ -2284,3 +2284,47 @@ class MissionRepository:
             psycopg.Error,
         ):
             raise MissionRepositoryError() from None
+
+    def terminal_delivery_for_projection(
+        self, cursor: Any, mission_id: UUID
+    ) -> tuple[str, str]:
+        """Read the final public Mission event inside a projection transaction."""
+
+        _require_uuid(mission_id)
+        try:
+            row = cursor.execute(
+                "select event_id,mission_id,event_type,payload_ciphertext,"
+                "encryption_key_version from platform_control.mission_events "
+                "where mission_id=%s and event_type in ("
+                "'mission.completed','mission.failed','mission.cancelled',"
+                "'mission.interrupted') order by seq desc limit 1",
+                (mission_id,),
+            ).fetchone()
+            if row is None:
+                raise MissionRepositoryError()
+            payload = self.content_codec.unseal_json(
+                _event_subject(row["mission_id"], row["event_id"]),
+                SealedContent(
+                    bytes(row["payload_ciphertext"]),
+                    row["encryption_key_version"],
+                ),
+            )
+            payload, _canonical = _canonical_payload(
+                payload, event_type=row["event_type"]
+            )
+            text = payload.get("text")
+            if not isinstance(text, str) or not text.strip():
+                raise MissionRepositoryError()
+            return row["event_type"], text
+        except MissionRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise MissionRepositoryError() from None

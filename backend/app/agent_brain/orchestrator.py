@@ -16,6 +16,8 @@ from app.execution_relay.repository import (
     ExecutionRelayNotFound,
 )
 
+from .conversation_context import ConversationContext, ConversationContextBuilder
+from .conversation_projection import ConversationProjection
 from .models import AgentCapabilityCard
 from .protocol import BrainProtocolError, parse_brain_decision
 from .repository import (
@@ -80,8 +82,29 @@ def _envelope(**sections: object) -> str:
         raise ValueError("prompt invalid") from None
 
 
+def _request_sections(
+    user_request: str | ConversationContext,
+) -> dict[str, object]:
+    if isinstance(user_request, str):
+        return {"user_request": user_request}
+    if not isinstance(user_request, ConversationContext) or not user_request.messages:
+        raise ValueError("conversation context invalid")
+    current = user_request.messages[-1]
+    if current.role != "user":
+        raise ValueError("conversation context invalid")
+    return {
+        "conversation_summary": user_request.summary,
+        "conversation_messages": [
+            {"role": message.role, "content": message.content}
+            for message in user_request.messages
+        ],
+        "user_request": current.content,
+    }
+
+
 def build_planning_prompt(
-    user_request: str, cards: Sequence[AgentCapabilityCard]
+    user_request: str | ConversationContext,
+    cards: Sequence[AgentCapabilityCard],
 ) -> str:
     return _envelope(
         role_instruction=(
@@ -91,12 +114,12 @@ def build_planning_prompt(
         ),
         output_json_schema=_DECISION_SCHEMA,
         authorized_capability_cards=[_card_payload(card) for card in cards],
-        user_request=user_request,
+        **_request_sections(user_request),
     )
 
 
 def build_professional_prompt(
-    user_request: str,
+    user_request: str | ConversationContext,
     objective: str,
     card: AgentCapabilityCard,
 ) -> str:
@@ -108,12 +131,14 @@ def build_professional_prompt(
         ),
         output_json_schema=None,
         authorized_capability_cards=[_card_payload(card)],
-        user_request=user_request,
         delegated_objective=objective,
+        **_request_sections(user_request),
     )
 
 
-def build_direct_prompt(user_request: str, card: AgentCapabilityCard) -> str:
+def build_direct_prompt(
+    user_request: str | ConversationContext, card: AgentCapabilityCard
+) -> str:
     return _envelope(
         role_instruction=(
             "Execute the user's request using your professional capabilities. "
@@ -122,12 +147,12 @@ def build_direct_prompt(user_request: str, card: AgentCapabilityCard) -> str:
         ),
         output_json_schema=None,
         authorized_capability_cards=[_card_payload(card)],
-        user_request=user_request,
+        **_request_sections(user_request),
     )
 
 
 def build_synthesis_prompt(
-    user_request: str,
+    user_request: str | ConversationContext,
     professional_result: str,
     cards: Sequence[AgentCapabilityCard],
 ) -> str:
@@ -139,8 +164,8 @@ def build_synthesis_prompt(
         ),
         output_json_schema=None,
         authorized_capability_cards=[_card_payload(card) for card in cards],
-        user_request=user_request,
         professional_result=professional_result,
+        **_request_sections(user_request),
     )
 
 
@@ -177,12 +202,28 @@ class MissionOrchestrator:
         relay_repository: Any,
         *,
         capability_provider: Callable[[UUID], Sequence[AgentCapabilityCard]],
+        conversation_context_builder: ConversationContextBuilder | None = None,
+        conversation_projection: ConversationProjection | None = None,
     ) -> None:
         if not callable(capability_provider):
             raise ValueError("capability provider required")
+        if (conversation_context_builder is None) != (
+            conversation_projection is None
+        ):
+            raise ValueError("Conversation runtime boundary incomplete")
+        if conversation_context_builder is not None and not isinstance(
+            conversation_context_builder, ConversationContextBuilder
+        ):
+            raise ValueError("Conversation context builder invalid")
+        if conversation_projection is not None and not isinstance(
+            conversation_projection, ConversationProjection
+        ):
+            raise ValueError("Conversation projection invalid")
         self.missions = mission_repository
         self.relay = relay_repository
         self._capability_provider = capability_provider
+        self._conversation_context_builder = conversation_context_builder
+        self._conversation_projection = conversation_projection
 
     def check_ready(self) -> None:
         """Fail closed unless every Mission table and app privilege exists."""
@@ -299,8 +340,15 @@ class MissionOrchestrator:
         except MissionRepositoryError:
             logger.exception("Agent Brain content key validation failed")
             return 0
-        claims = self.missions.claim_pending(bounded)
         advanced = 0
+        if self._conversation_projection is not None:
+            try:
+                advanced += self._conversation_projection.project_pending(
+                    limit=bounded
+                )
+            except Exception:
+                logger.exception("Agent Brain Conversation projection recovery failed")
+        claims = self.missions.claim_pending(bounded)
         for claim in claims:
             try:
                 mission = self.missions.mission_for_orchestration(
@@ -324,6 +372,10 @@ class MissionOrchestrator:
                 continue
             try:
                 if self._advance_one(mission):
+                    if self._conversation_projection is not None:
+                        self._conversation_projection.project_terminal(
+                            mission.mission_id
+                        )
                     advanced += 1
             except (MissionRepositoryConflict, ExecutionRelayConflict):
                 continue
@@ -334,6 +386,19 @@ class MissionOrchestrator:
                 )
                 continue
         return advanced
+
+    def _request(self, mission: MissionRecord) -> str | ConversationContext:
+        if mission.conversation_id is None and mission.turn_id is None:
+            return mission.prompt
+        if (
+            mission.conversation_id is None
+            or mission.turn_id is None
+            or self._conversation_context_builder is None
+        ):
+            raise MissionRepositoryError()
+        return self._conversation_context_builder.build(
+            mission.conversation_id, mission.turn_id
+        )
 
     def _cards(self, mission: MissionRecord) -> tuple[AgentCapabilityCard, ...]:
         cards = tuple(self._capability_provider(mission.owner_internal_user_id))
@@ -542,7 +607,7 @@ class MissionOrchestrator:
                         if capability_unavailable
                         else "authorization_revoked",
                     )
-                prompt = build_direct_prompt(mission.prompt, card)
+                prompt = build_direct_prompt(self._request(mission), card)
                 direct = self.missions.create_run(
                     mission.owner_internal_user_id,
                     mission.mission_id,
@@ -573,7 +638,7 @@ class MissionOrchestrator:
                     issue = "capability_unavailable"
                 if issue is not None:
                     return self._interrupt_for_capability(mission, direct, issue)
-                prompt = build_direct_prompt(mission.prompt, pinned)
+                prompt = build_direct_prompt(self._request(mission), pinned)
                 if self._enqueue(mission, direct, prompt):
                     return True
             return self._advance_direct(mission, direct)
@@ -584,7 +649,7 @@ class MissionOrchestrator:
                 return self._terminate_without_run(
                     mission, "capability_unavailable"
                 )
-            prompt = build_planning_prompt(mission.prompt, cards)
+            prompt = build_planning_prompt(self._request(mission), cards)
             planning = self.missions.create_run(
                 mission.owner_internal_user_id,
                 mission.mission_id,
@@ -617,7 +682,7 @@ class MissionOrchestrator:
             if self._enqueue(
                 mission,
                 planning,
-                build_planning_prompt(mission.prompt, pinned_cards),
+                build_planning_prompt(self._request(mission), pinned_cards),
             ):
                 return True
             return self._advance_planning(mission, planning, pinned_cards)
@@ -641,7 +706,9 @@ class MissionOrchestrator:
                 issue = "capability_unavailable"
             if issue is not None:
                 return self._terminate_without_run(mission, issue)
-            prompt = build_professional_prompt(mission.prompt, parsed.objective, card)
+            prompt = build_professional_prompt(
+                self._request(mission), parsed.objective, card
+            )
             professional = self.missions.create_run(
                 mission.owner_internal_user_id,
                 mission.mission_id,
@@ -679,7 +746,7 @@ class MissionOrchestrator:
             if self._enqueue(
                 mission,
                 professional,
-                build_professional_prompt(mission.prompt, objective, card),
+                build_professional_prompt(self._request(mission), objective, card),
             ):
                 return True
             return self._advance_professional(mission, professional)
@@ -689,7 +756,7 @@ class MissionOrchestrator:
             professional_result = str(professional.output_payload["text"])
             planning_cards = self._pinned_cards(planning)
             prompt = build_synthesis_prompt(
-                mission.prompt, professional_result, planning_cards
+                self._request(mission), professional_result, planning_cards
             )
             synthesis = self.missions.create_run(
                 mission.owner_internal_user_id,
@@ -719,7 +786,7 @@ class MissionOrchestrator:
                 mission,
                 synthesis,
                 build_synthesis_prompt(
-                    mission.prompt, professional_result, synthesis_cards
+                    self._request(mission), professional_result, synthesis_cards
                 ),
             ):
                 return True

@@ -8,6 +8,9 @@ from uuid import UUID, uuid4
 import psycopg
 import pytest
 
+from app.agent_brain.conversation_context import ConversationContextBuilder
+from app.agent_brain.conversation_projection import ConversationProjection
+from app.agent_brain.conversation_repository import ConversationRepository
 from app.agent_brain.models import load_capability_cards
 from app.agent_brain.orchestrator import (
     MAX_BRAIN_PROMPT_BYTES,
@@ -96,6 +99,8 @@ def brain_database(control_database):
     environment = control_database["environments"]["production"]
     owner_id = uuid4()
     with psycopg.connect(environment["admin"]) as connection:
+        connection.execute("set constraints all deferred")
+        connection.execute("delete from platform_control.conversation_events")
         connection.execute("delete from platform_control.execution_events")
         connection.execute("delete from platform_control.execution_jobs")
         connection.execute("delete from platform_control.mission_events")
@@ -103,6 +108,9 @@ def brain_database(control_database):
         connection.execute("delete from platform_control.mission_tasks")
         connection.execute("delete from platform_control.mission_messages")
         connection.execute("delete from platform_control.missions")
+        connection.execute("delete from platform_control.conversation_messages")
+        connection.execute("delete from platform_control.conversation_turns")
+        connection.execute("delete from platform_control.conversations")
         connection.execute(
             "insert into platform_control.internal_users "
             "(internal_user_id,display_name,status) values (%s,'Brain Owner','active')",
@@ -110,6 +118,8 @@ def brain_database(control_database):
         )
     yield environment, owner_id
     with psycopg.connect(environment["admin"]) as connection:
+        connection.execute("set constraints all deferred")
+        connection.execute("delete from platform_control.conversation_events")
         connection.execute("delete from platform_control.execution_events")
         connection.execute("delete from platform_control.execution_jobs")
         connection.execute("delete from platform_control.mission_events")
@@ -117,6 +127,9 @@ def brain_database(control_database):
         connection.execute("delete from platform_control.mission_tasks")
         connection.execute("delete from platform_control.mission_messages")
         connection.execute("delete from platform_control.missions")
+        connection.execute("delete from platform_control.conversation_messages")
+        connection.execute("delete from platform_control.conversation_turns")
+        connection.execute("delete from platform_control.conversations")
 
 
 @pytest.fixture()
@@ -284,6 +297,75 @@ def test_delegate_executes_one_professional_then_synthesizes(
         "synthesis.started",
         "mission.completed",
     ]
+
+
+@pytest.mark.postgres
+def test_follow_up_planning_receives_prior_conversation_exchange(
+    brain_database,
+) -> None:
+    environment, owner_id = brain_database
+    codec = _codec()
+    missions = MissionRepository(
+        environment["urls"]["platform_control_app"], content_codec=codec
+    )
+    conversations = ConversationRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=codec,
+        mission_repository=missions,
+    )
+    relay = ScriptedRelay()
+    service = MissionOrchestrator(
+        missions,
+        relay,
+        capability_provider=lambda _owner_id: load_capability_cards(),
+        conversation_context_builder=ConversationContextBuilder(conversations),
+        conversation_projection=ConversationProjection(conversations),
+    )
+    first = conversations.start(owner_id, uuid4(), "定义候选人画像")
+
+    assert service.advance_pending(limit=50) == 1
+    first_run_id = next(iter(relay.payloads))
+    relay.terminal(
+        first_run_id,
+        "completed",
+        json.dumps(
+            {
+                "kind": "direct",
+                "answer": "第一轮结果",
+                "agent_id": None,
+                "objective": None,
+                "rationale_summary": "可以直接完成",
+            },
+            ensure_ascii=False,
+        ),
+    )
+    assert service.advance_pending(limit=50) == 1
+    assert [
+        message.content
+        for message in conversations.messages_after(
+            owner_id, first.conversation.conversation_id
+        )
+    ] == ["定义候选人画像", "第一轮结果"]
+
+    conversations.append_turn(
+        owner_id,
+        first.conversation.conversation_id,
+        uuid4(),
+        "继续，给我搜索式",
+    )
+    assert service.advance_pending(limit=50) == 1
+    second_payload = next(
+        payload
+        for run_id, payload in relay.payloads.items()
+        if run_id != first_run_id
+    )
+    envelope = json.loads(second_payload.prompt.split("\n", 1)[1])
+    assert envelope["conversation_messages"] == [
+        {"role": "user", "content": "定义候选人画像"},
+        {"role": "assistant", "content": "第一轮结果"},
+        {"role": "user", "content": "继续，给我搜索式"},
+    ]
+    assert envelope["user_request"] == "继续，给我搜索式"
 
 
 @pytest.mark.postgres

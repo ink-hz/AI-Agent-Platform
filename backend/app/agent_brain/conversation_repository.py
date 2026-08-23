@@ -50,6 +50,10 @@ def message_subject(conversation_id: UUID, message_id: UUID) -> str:
     return f"conversation:{conversation_id}:message:{message_id}:content"
 
 
+def event_subject(conversation_id: UUID, event_id: UUID) -> str:
+    return f"conversation:{conversation_id}:event:{event_id}:payload"
+
+
 def _summary_subject(conversation_id: UUID, key_version: int) -> str:
     return f"conversation:{conversation_id}:summary:v{key_version}"
 
