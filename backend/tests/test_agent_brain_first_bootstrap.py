@@ -1405,7 +1405,8 @@ def _agentops_install_harness(
     install = local / "install.sh"
     install.write_text(
         "#!/bin/bash\nset -euo pipefail\n"
-        "[[ \"${FAKE_FAILURE:-}\" != install ]]\n",
+        "[[ \"${FAKE_FAILURE:-}\" != install ]] || exit 1\n"
+        "\"$FAKE_INSTALL_SUPERVISOR\" start\n",
         encoding="utf-8",
     )
     install.chmod(0o700)
@@ -1477,9 +1478,14 @@ def _agentops_install_harness(
         "printf '{\"phase\":\"starting\"}\\n'; "
         "elif [[ \"${FAKE_FAILURE:-}\" == worker-crash || \"${FAKE_FAILURE:-}\" == worker-waiting-restart ]]; then "
         "printf '{\"phase\":\"failed\"}\\n'; else "
+        "printf 'online\\n' > \"$FAKE_WORKER_STATE\"; "
         "printf '{\"phase\":\"online\",\"pid\":%s}\\n' \"${FAKE_WORKER_PM2_PID:-200}\"; fi;;\n"
         " save) printf 'SAVED-PM2-DUMP\\n' > \"$FAKE_PM2_DUMP\";;\n"
-        " start) printf 'online\\n' > \"$FAKE_WORKER_STATE\";;\n"
+        " start) if [[ \"${FAKE_FAILURE:-}\" == worker-launching ]]; then "
+        "printf 'launching\\n' > \"$FAKE_WORKER_STATE\"; "
+        "elif [[ \"${FAKE_FAILURE:-}\" == worker-waiting-restart ]]; then "
+        "printf 'waiting restart\\n' > \"$FAKE_WORKER_STATE\"; else "
+        "printf 'online\\n' > \"$FAKE_WORKER_STATE\"; fi;;\n"
         " stop) printf 'stopped\\n' > \"$FAKE_WORKER_STATE\";;\n"
         " *) exit 4;; esac\n",
         encoding="utf-8",
@@ -1527,6 +1533,7 @@ def _agentops_install_harness(
         "FAKE_LSOF_COUNT": str(lsof_count),
         "FAKE_READINESS_COUNT": str(readiness_count),
         "FAKE_CLOCK": str(fake_clock),
+        "FAKE_INSTALL_SUPERVISOR": str(fake_supervisor),
     }
     result = subprocess.run(
         ["/bin/bash", str(copied), "install"],
@@ -1598,6 +1605,7 @@ def test_agentops_worker_readiness_retries_only_absent_listener_and_bounds_wait(
     launching = _agentops_install_harness(tmp_path / "launching", "worker-launching")
     assert launching[0].returncode == 0, launching[0].stderr
     assert Path(launching[4]["FAKE_READINESS_COUNT"]).read_text().strip() == "3"
+    assert launching[2].read_text(encoding="utf-8") == "online\n"
 
     waiting = _agentops_install_harness(
         tmp_path / "waiting-restart", "worker-waiting-restart"

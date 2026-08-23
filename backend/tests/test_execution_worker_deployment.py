@@ -5033,22 +5033,24 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
     fake_pm2 = package_bin / "pm2"
     (npm_bin / "pm2").symlink_to("../lib/node_modules/pm2/bin/pm2")
     state = tmp_path / "state"
+    start_phase = tmp_path / "start-phase"
     log = tmp_path / "calls"
     config = tmp_path / "execution-worker.ecosystem.config.cjs"
     copied = tmp_path / "worker-pm2.sh"
     state.write_text("absent", encoding="utf-8")
+    start_phase.write_text("online", encoding="utf-8")
     config.write_text("module.exports = {};\n", encoding="utf-8")
     config.chmod(0o600)
     fake_pm2.write_text(
         "#!/bin/bash\nset -euo pipefail\n"
-        f"state={str(state)!r}\nlog={str(log)!r}\n"
+        f"state={str(state)!r}\nstart_phase={str(start_phase)!r}\nlog={str(log)!r}\n"
         "echo \"$*\" >> \"$log\"\n"
         "case \"$1\" in\n"
         "  jlist)\n"
         "    if [[ \"$(<\"$state\")\" == absent ]]; then echo '[]'; else\n"
         "      printf '[{\"name\":\"orbbec-agent-execution-worker\",\"pid\":43210,\"pm2_env\":{\"status\":\"%s\",\"pm_exec_path\":\"/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python\",\"pm_cwd\":\"/Users/agentops/AgentRuntime/platform/backend\",\"args\":[\"-m\",\"app.execution_relay.worker\"]}}]\\n' \"$(<\"$state\")\"; fi ;;\n"
         "  delete) printf absent > \"$state\" ;;\n"
-        "  start) printf online > \"$state\" ;;\n"
+        "  start) /bin/cat \"$start_phase\" > \"$state\" ;;\n"
         "  stop) printf stopped > \"$state\" ;;\n"
         "  save) ;;\n"
         "  *) exit 91 ;;\n"
@@ -5119,6 +5121,12 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
         assert run("state").stdout.strip() == prior
     assert run("restore", "online").returncode == 0
     assert run("save").returncode == 0
+    start_phase.write_text("launching", encoding="utf-8")
+    assert run("start").returncode == 0
+    assert json.loads(run("readiness").stdout) == {"phase": "starting"}
+    state.write_text("online", encoding="utf-8")
+    assert json.loads(run("readiness").stdout) == {"phase": "online", "pid": 43210}
+    start_phase.write_text("online", encoding="utf-8")
     assert run("start", "different-config").returncode == 1
     assert run("restore", "invalid-name").returncode == 1
     calls = log.read_text(encoding="utf-8")

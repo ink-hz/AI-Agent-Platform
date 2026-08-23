@@ -82,6 +82,25 @@ delete_worker() {
   pm2_clean delete "$name" >/dev/null 2>&1 || [[ "$(state)" == absent ]]
 }
 
+readiness() {
+  pm2_clean jlist | /usr/bin/jq -ce --arg name "$name" '
+    [.[] | select(.name == $name)]
+    | if length == 0 then {phase:"failed"}
+      elif any(.[];
+        .pm2_env.pm_exec_path != "/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python"
+        or .pm2_env.pm_cwd != "/Users/agentops/AgentRuntime/platform/backend"
+        or .pm2_env.args != ["-m","app.execution_relay.worker"])
+      then error("worker PM2 identity mismatch")
+      elif length != 1 then {phase:"failed"}
+      elif .[0].pm2_env.status == "online"
+        and (.[0].pid | type) == "number" and .[0].pid > 0
+      then {phase:"online",pid:.[0].pid}
+      elif .[0].pm2_env.status == "launching"
+      then {phase:"starting"}
+      else {phase:"failed"}
+      end'
+}
+
 case "$1" in
   state)
     [[ $# -eq 1 ]] || fail
@@ -103,28 +122,18 @@ case "$1" in
     ;;
   readiness)
     [[ $# -eq 1 ]] || fail
-    pm2_clean jlist | /usr/bin/jq -ce --arg name "$name" '
-      [.[] | select(.name == $name)]
-      | if length == 0 then {phase:"failed"}
-        elif any(.[];
-          .pm2_env.pm_exec_path != "/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python"
-          or .pm2_env.pm_cwd != "/Users/agentops/AgentRuntime/platform/backend"
-          or .pm2_env.args != ["-m","app.execution_relay.worker"])
-        then error("worker PM2 identity mismatch")
-        elif length != 1 then {phase:"failed"}
-        elif .[0].pm2_env.status == "online"
-          and (.[0].pid | type) == "number" and .[0].pid > 0
-        then {phase:"online",pid:.[0].pid}
-        elif .[0].pm2_env.status == "launching"
-        then {phase:"starting"}
-        else {phase:"failed"}
-        end'
+    readiness
     ;;
   start)
     [[ $# -eq 1 ]] && fixed_config || fail
     delete_worker
     pm2_clean start "$config" --only "$name" --update-env >/dev/null
-    [[ "$(state)" == online ]] || fail
+    start_readiness="$(readiness)" || fail
+    /usr/bin/jq -e '
+      (keys == ["phase"] and .phase == "starting")
+      or (keys == ["phase","pid"] and .phase == "online"
+        and (.pid | type) == "number" and .pid > 0)
+    ' <<<"$start_readiness" >/dev/null || fail
     ;;
   stop)
     [[ $# -eq 1 && "$(state)" == online ]] || fail
