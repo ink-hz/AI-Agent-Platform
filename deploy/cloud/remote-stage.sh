@@ -462,7 +462,9 @@ if [[ -n "$previous_release" && -f "$environment_path" ]]; then
   fi
 fi
 PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
-[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" || "$PLATFORM_AGENT_BRAIN_ENABLED" == "1" ]] || fail
+# A first-production deploy only establishes schema, Worker identity and the
+# disabled image. The separately audited acceptance transaction owns enablement.
+[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail
 /usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\nPLATFORM_AGENT_BRAIN_ENABLED=%s\n' \
   "$image_name" "$PLATFORM_AGENT_BRAIN_ENABLED" > "$environment_path"
 /bin/chown root:root "$environment_path"
@@ -489,6 +491,17 @@ postgres_container="$("${compose[@]}" ps -q platform-postgres)"
 control_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-control-db.sh" \
   "$release_path" "$private_path" "$image_name" "$postgres_container")" || fail
 [[ "$control_bootstrap_result" == "CONTROL_DATABASE_CREDENTIALS_READY version=2" ]] || fail
+worker_bootstrap_result="$(/usr/bin/docker run --rm --user 0:0 --read-only \
+  --security-opt no-new-privileges:true \
+  --network orbbec-agent-platform-internal \
+  --tmpfs /tmp:rw,noexec,nosuid,size=8m \
+  -v "$private_path:/run/control-secrets:ro" \
+  -v "$stage_path:/run/bootstrap:ro" \
+  -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url \
+  -e PLATFORM_AGENT_BRAIN_ENABLED=0 \
+  "$image_name" python -m app.execution_relay.bootstrap_registration \
+  /run/bootstrap/execution-worker-public-keyring.json)" || fail
+[[ "$worker_bootstrap_result" =~ ^EXECUTION_WORKER_BOOTSTRAP_OK\ status=(registered|existing)\ fingerprint=[0-9a-f]{64}$ ]] || fail
 /usr/bin/test ! -e "$worker_keyring_previous" || fail
 /usr/bin/install -o root -g root -m 600 "$worker_keyring" "$worker_keyring_previous"
 fsync_file "$worker_keyring_previous"

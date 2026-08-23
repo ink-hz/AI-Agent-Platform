@@ -65,6 +65,9 @@ EXECUTION_STOP_DELIVERY_MIGRATION = (
     MIGRATIONS / "031_execution_stop_delivery.sql"
 )
 CONTENT_KEY_CANARIES_MIGRATION = MIGRATIONS / "032_content_key_canaries.sql"
+FIRST_PRODUCTION_BOOTSTRAP_MIGRATION = (
+    MIGRATIONS / "033_first_production_bootstrap.sql"
+)
 RELEASE_1_PLAN = (
     Path(__file__).parents[2]
     / "docs/superpowers/plans/2026-08-13-dingtalk-identity-release-1.md"
@@ -470,7 +473,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 33)
+                    (version, 64) for version in range(1, 34)
                 ]
 
     changed = tmp_path / "migrations"

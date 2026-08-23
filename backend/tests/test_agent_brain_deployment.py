@@ -12,7 +12,7 @@ MISSION_SCHEMA_MIGRATION = (
     ROOT / "backend" / "control_migrations" / "029_agent_brain_mvp.sql"
 )
 LATEST_AGENT_BRAIN_MIGRATION = (
-    ROOT / "backend" / "control_migrations" / "032_content_key_canaries.sql"
+    ROOT / "backend" / "control_migrations" / "033_first_production_bootstrap.sql"
 )
 
 
@@ -49,7 +49,7 @@ def test_remote_stage_requires_mode_0600_control_content_and_feature_state() -> 
     assert '"600 10001"' in stage
     assert "PLATFORM_EXECUTION_RELAY_ENABLED=1" in stage
     assert 'PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"' in stage
-    assert '[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" || "$PLATFORM_AGENT_BRAIN_ENABLED" == "1" ]] || fail' in stage
+    assert '[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail' in stage
 
 
 def test_formal_nginx_is_dingtalk_only_and_stream_safe() -> None:
@@ -216,8 +216,8 @@ def test_task9_rollback_pins_the_latest_agent_brain_migration() -> None:
     task9 = plan.split("### Task 9:", 1)[1]
 
     assert LATEST_AGENT_BRAIN_MIGRATION.is_file()
-    assert "Do not drop migration 032" in runbook
-    assert "Do not drop migration 032" in task9
+    assert "Do not drop migration 032 or 033" in runbook
+    assert "Do not drop migration 032 or 033" in task9
 
 
 def test_enable_failure_executes_real_fail_closed_brain_and_lock_cleanup(
@@ -333,7 +333,7 @@ def test_runbook_pins_dependency_order_evidence_and_non_destructive_rollback() -
         "worker key ID",
         "container IDs and start times",
         "Do not record prompts, answers, cookies, DingTalk IDs, or secrets",
-        "Do not drop migration 032",
+        "Do not drop migration 032 or 033",
         "Do not delete Mission data",
         "FAE container identity",
         "separate FAE domain/IP Nginx routes remain byte-for-byte",

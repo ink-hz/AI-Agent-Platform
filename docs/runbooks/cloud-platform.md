@@ -47,10 +47,27 @@ dingtalk-owner-userid
 backup-recovery-x25519.pub
 ```
 
-The deployment generates production control DSNs and four independent
-versioned keyrings. It never reads macOS Keychain and never accepts credentials
-through process arguments. Do not print or copy secret contents into a shell
-history.
+The deployment generates production control DSNs and independent versioned
+identity keyrings. Generate the content keyring once, validate it with the
+production codec, and put a second encrypted copy in the approved offline backup:
+
+```bash
+backend/.venv/bin/python deploy/cloud/generate-content-keyring.py \
+  /absolute/private/content-encryption-keyring
+```
+
+The deploy environment references private files by absolute path only:
+
+```text
+CLOUD_CONTENT_ENCRYPTION_KEYRING=/absolute/private/content-encryption-keyring
+CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING=/absolute/private/execution-worker-public.json
+```
+
+The keyring parent is mode `0700` and the file is mode `0600`. Back up the
+content keyring before first deployment; losing it makes encrypted Missions
+unreadable. The generator never prints key material. Deployment never reads
+macOS Keychain and never accepts credentials through process arguments. Do not
+print or copy secret contents into shell history.
 
 Run the reviewed clean release through the normal deploy command. Success is:
 
@@ -118,6 +135,17 @@ redirects to `/admin`; only an explicit value of `1` enables Mission APIs and
 the use root. The relay remains separately controlled by
 `PLATFORM_EXECUTION_RELAY_ENABLED=1`.
 
+Provision the local Worker from Neo's reviewed checkout before creating the
+acceptance inputs:
+
+```bash
+deploy/local-execution-worker/provision.sh
+```
+
+This wrapper uses Neo's private PostgreSQL socket only for a temporary
+bootstrap role, leaves only the narrow SCRAM runtime HBA rule, and installs the
+Worker as `agentops` without a password, GUI, Keychain or copied SSH key.
+
 Create a private JSON acceptance config and four private browser-input files.
 The config, the member and owner Cookie header files, the HR acceptance prompt,
 the interruption prompt and the evidence destination must be owner-only regular
@@ -133,8 +161,31 @@ and never places either value in command-line arguments or evidence. The JSON
 config has schema version `1` and absolute paths for `cloud_admin_key`,
 `member_cookie_file`, `owner_cookie_file`, `hr_prompt_file`,
 `interruption_prompt_file`, the agentops-owned mode-`0600`
-`relay_acceptance_config`, and the evidence destination, plus
-`cloud_admin_host` fixed to the production administrator host.
+`relay_acceptance_config`, and the evidence destination. The config uses schema
+version `2`; cloud root access is fixed inside the Neo-owned release coordinator
+to `/Users/neo/.ssh/orbbec_aliyun_ed25519`. That key is never copied to or made
+readable by `agentops`.
+
+Before release, persist predeclared `grant_id` and `request_id` UUIDs with the
+authenticated owner/member account results (or their stable
+`internal_user_id` values) in a private JSON file. Apply the audited
+`acceptance-grant` maintenance helper in the deployed container. It grants only
+`hr-bot`, verifies `marketing-gtm-bot` remains denied, and rejects names or
+DingTalk provider identifiers.
+
+The private document is schema version `1` with exact keys `actor`, `member`,
+`grant_id`, and `request_id`. `actor` and `member` are either stable UUID
+strings or the corresponding `/api/v1/account` results. Run the helper through
+the root-owned maintenance DSN volume:
+
+```bash
+docker run --rm --read-only --network orbbec-agent-platform-internal \
+  -v /opt/orbbec-agent-platform/private:/run/control-secrets:ro \
+  -v /absolute/private/acceptance-grant.json:/run/input/grant.json:ro \
+  -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url \
+  "$PLATFORM_IMAGE" python -m app.agent_brain.acceptance_grant \
+  /run/input/grant.json
+```
 
 Run the staged gate from the reviewed release checkout:
 
@@ -202,7 +253,7 @@ step.
 
 Rollback sets the feature flag to `0`, recreates only Platform API/loopback,
 and verifies `/admin`, Sessions, Review and Operations before it reports
-success. Do not drop migration 032. Do not delete Mission data. The rollback
+success. Do not drop migration 032 or 033. Do not delete Mission data. The rollback
 never restarts or modifies FAE or local MetaBots. The FAE container identity,
 configuration and separate FAE domain/IP Nginx routes remain byte-for-byte
 invariant; only the Agent Platform server block is intentionally replaced.

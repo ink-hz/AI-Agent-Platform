@@ -327,7 +327,7 @@ git diff --check
 Expected: all tests PASS, production build succeeds, scripts parse, and no diff errors.
 - [ ] **Step 4: Deploy in dependency order**: Platform migrations with Brain disabled; local `agent-brain-bot`; local worker allowlist/key registration; cloud Platform image with Brain disabled; real relay canary; enable Brain; switch `/` UI. Stop immediately on any failed gate and keep the existing management entry active.
 - [ ] **Step 5: Run public and local acceptance** from fresh processes, record release SHAs, container IDs/start times, worker key ID, Mission/run IDs, event sequences, listener table, FAE probes, and rollback paths without recording prompts, answers, cookies, DingTalk IDs, or secrets.
-- [ ] **Step 6: Exercise rollback** by disabling the Brain feature and restoring the previous UI route; verify `/admin`, existing Sessions/Review/Operations, FAE domain, legacy IP access, and local MetaBots. Do not drop migration 032 or delete Missions.
+- [ ] **Step 6: Exercise rollback** by disabling the Brain feature and restoring the previous UI route; verify `/admin`, existing Sessions/Review/Operations, FAE domain, legacy IP access, and local MetaBots. Do not drop migration 032 or 033 or delete Missions.
 - [ ] **Step 7: Commit deployment assets** with `git commit -m "feat(cloud): release Agent Brain use entry"`, then merge/push only after the real acceptance record is complete.
 
 ---

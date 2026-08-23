@@ -8,6 +8,7 @@ fail() {
 }
 
 [[ $# -eq 2 && "$1" == /* ]] || fail
+[[ "$(/usr/bin/id -un)" == "neo" ]] || fail
 config_path="$1"
 action="$2"
 [[ "$action" == "preflight" || "$action" == "release" || "$action" == "accept" || "$action" == "rollback" || "$action" == "restore" ]] || fail
@@ -29,26 +30,23 @@ path = pathlib.Path(sys.argv[1])
 field = sys.argv[2]
 value = json.loads(path.read_bytes())
 keys = {
-    "schema_version", "cloud_admin_host", "cloud_admin_key",
+    "schema_version",
     "member_cookie_file", "owner_cookie_file", "hr_prompt_file",
     "interruption_prompt_file", "relay_acceptance_config", "evidence_file",
 }
-if not isinstance(value, dict) or set(value) != keys or value["schema_version"] != 1:
+if not isinstance(value, dict) or set(value) != keys or value["schema_version"] != 2:
     raise SystemExit(1)
 selected = value.get(field)
 if not isinstance(selected, str) or not selected or "\n" in selected or "\r" in selected or "\0" in selected:
     raise SystemExit(1)
-if field == "cloud_admin_host":
-    if selected != "root@47.106.112.69":
-        raise SystemExit(1)
-elif not pathlib.Path(selected).is_absolute():
+if not pathlib.Path(selected).is_absolute():
     raise SystemExit(1)
 print(selected)
 PY
 }
 
-cloud_admin_host="$(config_value cloud_admin_host)" || fail
-cloud_admin_key="$(config_value cloud_admin_key)" || fail
+cloud_admin_host=root@47.106.112.69
+cloud_admin_key=/Users/neo/.ssh/orbbec_aliyun_ed25519
 member_cookie_file="$(config_value member_cookie_file)" || fail
 owner_cookie_file="$(config_value owner_cookie_file)" || fail
 hr_prompt_file="$(config_value hr_prompt_file)" || fail
@@ -65,6 +63,7 @@ require_private_file() {
 }
 
 require_private_file "$cloud_admin_key" 16384
+[[ "$cloud_admin_key" == /Users/neo/.ssh/orbbec_aliyun_ed25519 ]] || fail
 ssh_options=(
   -i "$cloud_admin_key"
   -o BatchMode=yes
