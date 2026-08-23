@@ -165,6 +165,12 @@ uses the fixed regular package executable at
 `.npm-global/lib/node_modules/pm2/bin/pm2` after verifying agentops ownership,
 execute permission, no symlink at the canonical file, and no group/other-write
 permission on its package ancestors.
+After PM2 starts the Worker, provision allows dependency import and socket bind
+up to a fixed 60-second deadline, polling every 5 seconds. Every poll must
+still return the exact online PM2 Worker identity. Only an absent 9120 listener
+is retryable; a crashed or ambiguous PM2 process, a non-loopback or duplicate
+listener, or a listener PID different from the PM2 PID fails immediately and
+restores the prior Worker state and PM2 dump.
 
 Create a private JSON acceptance config and four private browser-input files.
 The config, the member and owner Cookie header files, the HR acceptance prompt,

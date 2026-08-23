@@ -1430,11 +1430,17 @@ def _agentops_install_harness(
     )
     snapshot.chmod(0o700)
     fake_lsof = tmp_path / "lsof"
+    lsof_count = tmp_path / "lsof-count"
+    lsof_count.write_text("0\n", encoding="utf-8")
     fake_lsof.write_text(
-        "#!/bin/bash\n"
+        "#!/bin/bash\nset -euo pipefail\n"
         "case \"$*\" in *9110*) printf 'p%s\\nn127.0.0.1:9110\\n' \"${FAKE_BRAIN_PID:-100}\"; "
         "[[ \"${FAKE_WILDCARD:-0}\" == 1 ]] && printf 'p300\\nn*:9110\\n' || true;; "
-        "*9120*) printf 'p%s\\nn127.0.0.1:9120\\n' \"${FAKE_WORKER_PID:-200}\";; *) exit 1;; esac\n",
+        "*9120*) count=\"$(<\"$FAKE_LSOF_COUNT\")\"; count=$((count + 1)); "
+        "printf '%s\\n' \"$count\" > \"$FAKE_LSOF_COUNT\"; "
+        "[[ \"${FAKE_FAILURE:-}\" != worker-timeout ]] || exit 1; "
+        "[[ \"${FAKE_FAILURE:-}\" != worker-delayed || \"$count\" -ge 3 ]] || exit 1; "
+        "printf 'p%s\\nn127.0.0.1:9120\\n' \"${FAKE_WORKER_PID:-200}\";; *) exit 1;; esac\n",
         encoding="utf-8",
     )
     fake_lsof.chmod(0o700)
@@ -1444,7 +1450,8 @@ def _agentops_install_harness(
         "case \"$1\" in\n"
         " state) /bin/cat \"$FAKE_WORKER_STATE\";;\n"
         " restore) printf '%s\\n' \"$2\" > \"$FAKE_WORKER_STATE\";;\n"
-        " inspect) printf '{\"pid\":%s}\\n' \"${FAKE_WORKER_PM2_PID:-200}\";;\n"
+        " inspect) [[ \"${FAKE_FAILURE:-}\" != worker-crash ]] || exit 9; "
+        "printf '{\"pid\":%s}\\n' \"${FAKE_WORKER_PM2_PID:-200}\";;\n"
         " save) printf 'SAVED-PM2-DUMP\\n' > \"$FAKE_PM2_DUMP\";;\n"
         " start) printf 'online\\n' > \"$FAKE_WORKER_STATE\";;\n"
         " stop) printf 'stopped\\n' > \"$FAKE_WORKER_STATE\";;\n"
@@ -1473,6 +1480,11 @@ def _agentops_install_harness(
     source = source.replace('== "700 agentops"', f'== "700 {current_user}"')
     source = source.replace('== "600 agentops"', f'== "600 {current_user}"')
     source = source.replace("/usr/sbin/lsof", str(fake_lsof))
+    source = source.replace("readiness_timeout_seconds=60", "readiness_timeout_seconds=1")
+    source = source.replace(
+        '/bin/sleep "$readiness_interval_seconds"',
+        "/bin/sleep 0.01",
+    )
     if failure == "receipt-copy":
         source = source.replace(
             '/bin/cp "$pm2_dump" "$receipt_part/previous.dump"',
@@ -1489,6 +1501,7 @@ def _agentops_install_harness(
         "FAKE_WILDCARD": "1" if failure == "wildcard-listener" else "0",
         "FAKE_PM2_DUMP": str(pm2_dump),
         "FAKE_WORKER_STATE": str(worker_state),
+        "FAKE_LSOF_COUNT": str(lsof_count),
     }
     result = subprocess.run(
         ["/bin/bash", str(copied), "install"],
@@ -1509,6 +1522,9 @@ def _agentops_install_harness(
         "worker-listener",
         "wildcard-listener",
         "worker-pm2",
+        "worker-timeout",
+        "worker-delayed",
+        "worker-crash",
         "receipt-copy",
     ],
 )
@@ -1516,12 +1532,41 @@ def test_agentops_install_executable_process_identity_gates(
     tmp_path: Path, failure: str
 ) -> None:
     result, pm2_dump, worker_state, _, _ = _agentops_install_harness(tmp_path, failure)
-    assert (result.returncode == 0) is (failure == "")
+    assert (result.returncode == 0) is (failure in {"", "worker-delayed"})
     assert "opaque" not in result.stdout + result.stderr
-    if failure:
+    if failure and failure != "worker-delayed":
         assert pm2_dump.read_text(encoding="utf-8") == "OLD-PM2-DUMP\n"
         assert stat.S_IMODE(pm2_dump.stat().st_mode) == 0o644
         assert worker_state.read_text(encoding="utf-8") == "online\n"
+
+
+def test_agentops_worker_readiness_retries_only_absent_listener_and_bounds_wait(
+    tmp_path: Path,
+) -> None:
+    delayed = _agentops_install_harness(tmp_path / "delayed", "worker-delayed")
+    assert delayed[0].returncode == 0, delayed[0].stderr
+    assert Path(delayed[4]["FAKE_LSOF_COUNT"]).read_text().strip() == "3"
+
+    timed_out = _agentops_install_harness(tmp_path / "timeout", "worker-timeout")
+    assert timed_out[0].returncode != 0
+    assert int(Path(timed_out[4]["FAKE_LSOF_COUNT"]).read_text()) > 1
+
+    mismatched = _agentops_install_harness(tmp_path / "mismatch", "worker-listener")
+    assert mismatched[0].returncode != 0
+    assert Path(mismatched[4]["FAKE_LSOF_COUNT"]).read_text().strip() == "1"
+
+    crashed = _agentops_install_harness(tmp_path / "crash", "worker-crash")
+    assert crashed[0].returncode != 0
+    assert Path(crashed[4]["FAKE_LSOF_COUNT"]).read_text().strip() == "0"
+
+
+def test_agentops_worker_readiness_uses_fixed_interval_and_deadline() -> None:
+    source = AGENTOPS.read_text(encoding="utf-8")
+
+    assert "readiness_interval_seconds=5" in source
+    assert "readiness_timeout_seconds=60" in source
+    assert '/bin/sleep "$readiness_interval_seconds"' in source
+    assert 'worker_identity="$("$worker_supervisor" inspect)" || fail' in source
 
 
 def test_agentops_commit_response_loss_can_rollback_then_finalize_is_idempotent(

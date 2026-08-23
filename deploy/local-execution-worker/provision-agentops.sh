@@ -376,12 +376,33 @@ else: os.close(fd)
     /usr/bin/cmp -s "$brain_before" "$brain_after" || fail
     brain_pid="$(/usr/bin/jq -er '.pid' "$brain_before")" || fail
     brain_listener="$(/usr/sbin/lsof -nP -iTCP:9110 -sTCP:LISTEN -Fpn | /usr/bin/awk '/^p/{pid=substr($0,2)} /^n/{print pid "," substr($0,2)}')" || fail
-    worker_listener="$(/usr/sbin/lsof -nP -iTCP:9120 -sTCP:LISTEN -Fpn | /usr/bin/awk '/^p/{pid=substr($0,2)} /^n/{print pid "," substr($0,2)}')" || fail
-    [[ "$brain_listener" == "$brain_pid,127.0.0.1:9110" && "$worker_listener" =~ ^[1-9][0-9]*,127\.0\.0\.1:9120$ ]] || fail
-    worker_listener_pid="${worker_listener%%,*}"
-    worker_identity="$("$worker_supervisor" inspect)" || fail
-    worker_pm2_pid="$(/usr/bin/jq -er '.pid' <<<"$worker_identity")" || fail
-    [[ "$worker_pm2_pid" == "$worker_listener_pid" ]] || fail
+    [[ "$brain_listener" == "$brain_pid,127.0.0.1:9110" ]] || fail
+    readiness_interval_seconds=5
+    readiness_timeout_seconds=60
+    readiness_started="$(/bin/date +%s)" || fail
+    [[ "$readiness_started" =~ ^[0-9]+$ ]] || fail
+    readiness_deadline=$((readiness_started + readiness_timeout_seconds))
+    while true; do
+      worker_identity="$("$worker_supervisor" inspect)" || fail
+      worker_pm2_pid="$(/usr/bin/jq -er '.pid' <<<"$worker_identity")" || fail
+      [[ "$worker_pm2_pid" =~ ^[1-9][0-9]*$ ]] || fail
+      worker_listener_status=0
+      if worker_listener="$(/usr/sbin/lsof -nP -iTCP:9120 -sTCP:LISTEN -Fpn 2>/dev/null | /usr/bin/awk '/^p/{pid=substr($0,2)} /^n/{print pid "," substr($0,2)}')"; then
+        worker_listener_status=0
+      else
+        worker_listener_status="$?"
+      fi
+      if [[ "$worker_listener_status" == 0 ]]; then
+        [[ "$worker_listener" =~ ^[1-9][0-9]*,127\.0\.0\.1:9120$ ]] || fail
+        worker_listener_pid="${worker_listener%%,*}"
+        [[ "$worker_pm2_pid" == "$worker_listener_pid" ]] || fail
+        break
+      fi
+      [[ "$worker_listener_status" == 1 && -z "$worker_listener" ]] || fail
+      readiness_now="$(/bin/date +%s)" || fail
+      [[ "$readiness_now" =~ ^[0-9]+$ && "$readiness_now" -lt "$readiness_deadline" ]] || fail
+      /bin/sleep "$readiness_interval_seconds"
+    done
     install_ok=1
     echo EXECUTION_WORKER_AGENTOPS_READY
     ;;
