@@ -39,8 +39,11 @@ def _fixture(tmp_path: Path, *, key_id: str = "worker-v1") -> tuple[Path, Path, 
     fingerprint = hashlib.sha256(public_value).hexdigest()
     key_path = private / "execution-worker-ed25519.key"
     public_path = private / "execution-worker-public.json"
+    supervisor = private / "worker-pm2.sh"
     ssh_key = private / "cloud-admin-ed25519"
     _secure_write(key_path, private_value)
+    supervisor.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    supervisor.chmod(0o700)
     _secure_write(ssh_key, b"bounded test key")
     _secure_write(
         public_path,
@@ -93,8 +96,13 @@ class Runner:
         timeout: int,
     ) -> subject.CommandResult:
         self.calls.append((arguments, input_bytes, timeout))
-        if arguments[0] == "/bin/launchctl":
-            return subject.CommandResult(0, b"pid = 4242\nstate = running\n")
+        if arguments[-1:] == ("inspect",):
+            return subject.CommandResult(
+                0,
+                b'{"name":"orbbec-agent-execution-worker","pid":4242,'
+                b'"status":"online","pm_exec_path":"/fixed/python",'
+                b'"pm_cwd":"/fixed/backend","args":["-m","app.execution_relay.worker"]}\n',
+            )
         if arguments[0] == "/usr/sbin/lsof":
             if "-p" in arguments:
                 return subject.CommandResult(0, self.worker_listeners)
@@ -152,6 +160,7 @@ def test_gate_01_to_03_uses_pinned_ssh_and_process_owned_listener_probe(tmp_path
         private_root=config_path.parent,
         private_key_path=config_path.parent / "execution-worker-ed25519.key",
         public_document_path=public_path,
+        worker_supervisor_path=config_path.parent / "worker-pm2.sh",
         current_user="agentops",
         uid=501,
     )
@@ -206,6 +215,7 @@ def test_gate_01_fails_when_any_live_cloud_probe_is_false(tmp_path: Path, field:
             private_root=config.parent,
             private_key_path=config.parent / "execution-worker-ed25519.key",
             public_document_path=public,
+            worker_supervisor_path=config.parent / "worker-pm2.sh",
             current_user="agentops",
             uid=501,
         )
@@ -222,6 +232,7 @@ def test_gate_02_rejects_changed_or_forbidden_local_and_cloud_listeners(tmp_path
             private_root=config.parent,
             private_key_path=config.parent / "execution-worker-ed25519.key",
             public_document_path=public,
+            worker_supervisor_path=config.parent / "worker-pm2.sh",
             current_user="agentops",
             uid=501,
         )
@@ -235,6 +246,7 @@ def test_gate_02_rejects_changed_or_forbidden_local_and_cloud_listeners(tmp_path
             private_root=config.parent,
             private_key_path=config.parent / "execution-worker-ed25519.key",
             public_document_path=public,
+            worker_supervisor_path=config.parent / "worker-pm2.sh",
             current_user="agentops",
             uid=501,
         )
@@ -250,6 +262,7 @@ def test_gate_02_rejects_changed_or_forbidden_local_and_cloud_listeners(tmp_path
             private_root=config.parent,
             private_key_path=config.parent / "execution-worker-ed25519.key",
             public_document_path=public,
+            worker_supervisor_path=config.parent / "worker-pm2.sh",
             current_user="agentops",
             uid=501,
         )
@@ -270,6 +283,7 @@ def test_gate_02_allows_existing_metabot_loopback_listeners(tmp_path: Path) -> N
         private_root=config.parent,
         private_key_path=config.parent / "execution-worker-ed25519.key",
         public_document_path=public,
+        worker_supervisor_path=config.parent / "worker-pm2.sh",
         current_user="agentops",
         uid=501,
     )
@@ -287,6 +301,7 @@ def test_gate_03_rejects_remote_or_public_document_fingerprint_mismatch(tmp_path
             private_root=config.parent,
             private_key_path=config.parent / "execution-worker-ed25519.key",
             public_document_path=public,
+            worker_supervisor_path=config.parent / "worker-pm2.sh",
             current_user="agentops",
             uid=501,
         )
@@ -302,6 +317,7 @@ def test_gate_03_rejects_remote_or_public_document_fingerprint_mismatch(tmp_path
             private_root=config.parent,
             private_key_path=config.parent / "execution-worker-ed25519.key",
             public_document_path=public,
+            worker_supervisor_path=config.parent / "worker-pm2.sh",
             current_user="agentops",
             uid=501,
         )
@@ -317,6 +333,7 @@ def test_gate_rejects_wrong_user_malformed_remote_json_and_failed_command(tmp_pa
             private_root=config.parent,
             private_key_path=config.parent / "execution-worker-ed25519.key",
             public_document_path=public,
+            worker_supervisor_path=config.parent / "worker-pm2.sh",
             current_user="neo",
             uid=501,
         )
@@ -330,6 +347,7 @@ def test_gate_rejects_wrong_user_malformed_remote_json_and_failed_command(tmp_pa
             private_root=config.parent,
             private_key_path=config.parent / "execution-worker-ed25519.key",
             public_document_path=public,
+            worker_supervisor_path=config.parent / "worker-pm2.sh",
             current_user="agentops",
             uid=501,
         )
@@ -338,7 +356,7 @@ def test_gate_rejects_wrong_user_malformed_remote_json_and_failed_command(tmp_pa
     original = runner.__call__
 
     def failed(arguments, *, input_bytes=None, timeout):
-        if arguments[0] == "/bin/launchctl":
+        if arguments[-1:] == ("inspect",):
             return subject.CommandResult(1, b"")
         return original(arguments, input_bytes=input_bytes, timeout=timeout)
 
@@ -349,6 +367,7 @@ def test_gate_rejects_wrong_user_malformed_remote_json_and_failed_command(tmp_pa
             private_root=config.parent,
             private_key_path=config.parent / "execution-worker-ed25519.key",
             public_document_path=public,
+            worker_supervisor_path=config.parent / "worker-pm2.sh",
             current_user="agentops",
             uid=501,
         )

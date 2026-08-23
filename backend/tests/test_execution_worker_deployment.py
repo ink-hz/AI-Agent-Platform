@@ -10,6 +10,7 @@ from pathlib import Path
 import plistlib
 import re
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -36,6 +37,8 @@ ROTATOR = LOCAL / "rotate-worker-key.py"
 BOOTSTRAP = LOCAL / "bootstrap-worker-database.sh"
 PLIST = LOCAL / "com.orbbec.agent-execution-worker.plist.template"
 INSTALLER = LOCAL / "install.sh"
+WORKER_PM2 = LOCAL / "worker-pm2.sh"
+WORKER_PM2_CONFIG = LOCAL / "execution-worker.ecosystem.config.cjs"
 REMOVER = LOCAL / "remove.sh"
 AGENTS = [
     "hr-bot",
@@ -88,7 +91,7 @@ def _metabot_runtime_contract() -> str:
 
 
 def test_local_worker_command_assets_are_executable() -> None:
-    for path in (GENERATOR, ROTATOR, BOOTSTRAP, INSTALLER, REMOVER):
+    for path in (GENERATOR, ROTATOR, BOOTSTRAP, INSTALLER, WORKER_PM2, REMOVER):
         assert os.access(path, os.X_OK)
 
 
@@ -4819,8 +4822,9 @@ def test_installer_is_noninteractive_agentops_only_and_permission_gated() -> Non
     lowered = script.lower()
 
     assert '"$(/usr/bin/id -un)" == "agentops"' in script
-    assert "plutil -lint" in script
-    assert "launchctl bootstrap" in script
+    assert 'worker_supervisor="$script_dir/worker-pm2.sh"' in script
+    assert '"$worker_supervisor" start' in script
+    assert "launchctl" not in lowered
     assert "bootstrap-worker-database.sh" in script
     assert "generate-worker-key.py" in script
     assert "stat -f '%lp %su'" in lowered
@@ -4925,6 +4929,9 @@ def test_installer_holds_rotation_lock_while_rotator_fails_without_mutation(
         encoding="utf-8",
     )
     python.chmod(0o700)
+    worker_supervisor = local / "worker-pm2.sh"
+    worker_supervisor.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+    worker_supervisor.chmod(0o700)
     before = _rotation_components(paths, "canonical")
     process = subprocess.Popen(
         ["/bin/bash", str(installer), str(owner_dsn)],
@@ -4943,127 +4950,119 @@ def test_installer_holds_rotation_lock_while_rotator_fails_without_mutation(
     process.communicate(timeout=5)
 
 
-def test_installer_preserves_loaded_state_and_has_strict_rollback() -> None:
-    script = INSTALLER.read_text(encoding="utf-8")
+def test_agentops_provision_owns_exact_pm2_state_and_dump_rollback() -> None:
+    installer = INSTALLER.read_text(encoding="utf-8")
+    provision = (LOCAL / "provision-agentops.sh").read_text(encoding="utf-8")
 
-    assert "previous_plist" in script
-    assert "previous_loaded" in script
-    assert "launchctl print" in script
-    assert "rollback_install" in script
-    assert "trap install_exit EXIT" in script
-    assert "execution_worker_install_rollback_failed" in script.lower()
-    assert "|| true" not in script
-    assert script.index("previous_plist") < script.index("launchctl bootout")
+    assert "launchctl" not in installer.lower()
+    assert "previous.dump" in provision
+    assert "prior_state" in provision
+    assert '"$worker_supervisor" restore "$prior_state"' in provision
+    assert '"$worker_supervisor" save' in provision
+    assert '"$prior_state" == absent' in provision
+    assert '"$prior_state" == online' in provision
+    assert '"$prior_state" == stopped' in provision
+    assert provision.index('"$worker_supervisor" save') < provision.index(
+        'printf \'v1\\n\' > "$receipt/committed.part"'
+    )
 
 
-@pytest.mark.parametrize(
-    ("old_plist", "old_loaded"),
-    [(True, True), (True, False), (False, False)],
-    ids=["old-loaded", "old-unloaded", "fresh"],
-)
-def test_installer_rolls_back_plist_and_exact_loaded_state_with_fake_launchctl(
-    tmp_path: Path, old_plist: bool, old_loaded: bool
+def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
+    tmp_path: Path,
 ) -> None:
-    runtime = tmp_path / "runtime"
-    platform = runtime / "platform"
-    local = platform / "deploy/local-execution-worker"
-    python = platform / "backend/.venv/bin/python"
-    local.mkdir(parents=True)
-    python.parent.mkdir(parents=True)
-    python.write_text(
-        "#!/bin/bash\n"
-        f"if [[ \"${{1:-}}\" == - ]]; then exec {sys.executable} \"$@\"; fi\n"
-        "exit 0\n",
-        encoding="utf-8",
-    )
-    python.chmod(0o700)
-    (local / "bootstrap-worker-database.sh").write_text(
-        "#!/bin/bash\nexit 0\n", encoding="utf-8"
-    )
-    (local / "bootstrap-worker-database.sh").chmod(0o700)
-    (local / PLIST.name).write_bytes(PLIST.read_bytes())
-    private = runtime / "private"
-    metabot = runtime / "metabot"
-    private.mkdir(parents=True, mode=0o700)
-    metabot.mkdir(mode=0o700)
-    runtime.chmod(0o700)
-    private.chmod(0o700)
-    owner_dsn = private / "owner-dsn"
-    owner_dsn.write_text("postgresql://owner:secret@127.0.0.1:5432/postgres\n")
-    owner_dsn.chmod(0o600)
-    (private / "metabot-api-token").write_text("token")
-    (private / "metabot-api-token").chmod(0o600)
-    (metabot / "runtime-contract.json").write_text(_metabot_runtime_contract())
-    home = tmp_path / "home"
-    launch_agents = home / "Library/LaunchAgents"
-    launch_agents.mkdir(parents=True)
-    target = launch_agents / "com.orbbec.agent-execution-worker.plist"
-    old_value = b"<?xml version='1.0'?><plist><!-- OLD --><dict/></plist>\n"
-    if old_plist:
-        target.write_bytes(old_value)
-        target.chmod(0o600)
-    state = tmp_path / "launchctl-state"
-    state.write_text("loaded" if old_loaded else "unloaded")
-    log = tmp_path / "launchctl-log"
-    fake_launchctl = tmp_path / "launchctl"
-    fake_launchctl.write_text(
-        """#!/bin/bash
-set -eu
-echo "$1" >> "$FAKE_LAUNCHCTL_LOG"
-case "$1" in
-  print) [[ "$(<"$FAKE_LAUNCHCTL_STATE")" == loaded ]] ;;
-  bootout) printf unloaded > "$FAKE_LAUNCHCTL_STATE" ;;
-  bootstrap)
-    if [[ "${FAIL_NEW_BOOTSTRAP:-0}" == 1 ]] && ! grep -q OLD "$3"; then exit 19; fi
-    printf loaded > "$FAKE_LAUNCHCTL_STATE"
-    ;;
-  enable) ;;
-  *) exit 20 ;;
-esac
-""",
-        encoding="utf-8",
-    )
-    fake_launchctl.chmod(0o700)
-    installer_source = INSTALLER.read_text(encoding="utf-8")
-    installer_source = installer_source.replace(
-        "runtime_root=/Users/agentops/AgentRuntime", f"runtime_root={runtime}"
-    ).replace(
-        '[[ "${HOME:-}" == /Users/agentops ]] || fail',
-        f'[[ "${{HOME:-}}" == {home} ]] || fail',
-    ).replace(
-        "/Users/agentops/Library/LaunchAgents",
-        str(launch_agents),
-    ).replace("/bin/launchctl", str(fake_launchctl))
-    installer_source = installer_source.replace(
-        '"$(/usr/bin/id -un)" == "agentops"',
-        f'"$(/usr/bin/id -un)" == "{subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()}"',
-    )
+    source = WORKER_PM2.read_text(encoding="utf-8")
     current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
-    installer_source = installer_source.replace("700 agentops", f"700 {current_user}")
-    installer_source = installer_source.replace("600 agentops", f"600 {current_user}")
-    copied_installer = local / "install.sh"
-    copied_installer.write_text(installer_source, encoding="utf-8")
-    copied_installer.chmod(0o700)
-
-    result = subprocess.run(
-        ["/bin/bash", str(copied_installer), str(owner_dsn)],
-        text=True,
-        capture_output=True,
-        env={
-            **os.environ,
-            "HOME": str(home),
-            "FAKE_LAUNCHCTL_STATE": str(state),
-            "FAKE_LAUNCHCTL_LOG": str(log),
-            "FAIL_NEW_BOOTSTRAP": "1",
-        },
+    fake_pm2 = tmp_path / "pm2"
+    state = tmp_path / "state"
+    log = tmp_path / "calls"
+    config = tmp_path / "execution-worker.ecosystem.config.cjs"
+    copied = tmp_path / "worker-pm2.sh"
+    state.write_text("absent", encoding="utf-8")
+    config.write_text("module.exports = {};\n", encoding="utf-8")
+    fake_pm2.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        f"state={str(state)!r}\nlog={str(log)!r}\n"
+        "echo \"$*\" >> \"$log\"\n"
+        "case \"$1\" in\n"
+        "  jlist)\n"
+        "    if [[ \"$(<\"$state\")\" == absent ]]; then echo '[]'; else\n"
+        "      printf '[{\"name\":\"orbbec-agent-execution-worker\",\"pid\":43210,\"pm2_env\":{\"status\":\"%s\",\"pm_exec_path\":\"/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python\",\"pm_cwd\":\"/Users/agentops/AgentRuntime/platform/backend\",\"args\":[\"-m\",\"app.execution_relay.worker\"]}}]\\n' \"$(<\"$state\")\"; fi ;;\n"
+        "  delete) printf absent > \"$state\" ;;\n"
+        "  start) printf online > \"$state\" ;;\n"
+        "  stop) printf stopped > \"$state\" ;;\n"
+        "  save) ;;\n"
+        "  *) exit 91 ;;\n"
+        "esac\n",
+        encoding="utf-8",
     )
+    fake_pm2.chmod(0o700)
+    source = source.replace(
+        '"$(/usr/bin/id -un)" == agentops',
+        f'"$(/usr/bin/id -un)" == {current_user}',
+    ).replace(
+        '"${HOME:-}" == /Users/agentops',
+        f'"${{HOME:-}}" == {tmp_path}',
+    ).replace(
+        "cd /Users/agentops || fail",
+        f"cd {tmp_path} || fail",
+    ).replace(
+        '== "644 agentops"',
+        f'== "644 {current_user}"',
+    ).replace(
+        "pm2=/Users/agentops/.npm-global/bin/pm2", f"pm2={fake_pm2}"
+    ).replace(
+        "config=/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/execution-worker.ecosystem.config.cjs",
+        f"config={config}",
+    )
+    copied.write_text(source, encoding="utf-8")
+    copied.chmod(0o700)
+    environment = {**os.environ, "HOME": str(tmp_path)}
 
-    assert result.returncode == 1
-    assert state.read_text() == ("loaded" if old_loaded else "unloaded")
-    if old_plist:
-        assert target.read_bytes() == old_value
-    else:
-        assert not target.exists()
+    def run(*arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(copied), *arguments],
+            text=True,
+            capture_output=True,
+            env=environment,
+        )
+
+    assert run("state").stdout.strip() == "absent"
+    assert run("start").returncode == 0
+    identity = json.loads(run("inspect").stdout)
+    assert identity == {
+        "name": "orbbec-agent-execution-worker",
+        "pid": 43210,
+        "status": "online",
+        "pm_exec_path": "/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python",
+        "pm_cwd": "/Users/agentops/AgentRuntime/platform/backend",
+        "args": ["-m", "app.execution_relay.worker"],
+    }
+    assert run("stop").returncode == 0
+    assert run("state").stdout.strip() == "stopped"
+    for prior in ("absent", "online", "stopped"):
+        assert run("restore", prior).returncode == 0
+        assert run("state").stdout.strip() == prior
+    assert run("restore", "online").returncode == 0
+    assert run("save").returncode == 0
+    assert run("start", "different-config").returncode == 1
+    assert run("restore", "invalid-name").returncode == 1
+    calls = log.read_text(encoding="utf-8")
+    assert "start " + str(config) + " --only orbbec-agent-execution-worker --update-env" in calls
+    assert "different-config" not in calls
+
+
+def test_worker_pm2_config_has_only_the_fixed_worker_runtime() -> None:
+    source = WORKER_PM2_CONFIG.read_text(encoding="utf-8")
+
+    assert "name: 'orbbec-agent-execution-worker'" in source
+    assert "script: '/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python'" in source
+    assert "args: ['-m', 'app.execution_relay.worker']" in source
+    assert "cwd: '/Users/agentops/AgentRuntime/platform/backend'" in source
+    assert "PLATFORM_WORKER_CALLBACK_PORT: '9120'" in source
+    assert "PLATFORM_WORKER_KEY_ID: 'worker-v1'" in source
+    assert "process.env" not in source
+    assert "exec_mode" not in source
+    assert stat.S_IMODE(WORKER_PM2_CONFIG.stat().st_mode) == 0o644
 
 
 def test_cloud_compose_enables_relay_with_read_only_keyring_and_no_port() -> None:

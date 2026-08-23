@@ -548,18 +548,10 @@ accept_real() {
   temporary="$(/usr/bin/mktemp -d)"
   chrome_pid=""
   worker_stopped=0
-  agentops_uid="$(/usr/bin/id -u agentops)"
-  worker_label=com.orbbec.agent-execution-worker
-  worker_domain="user/$agentops_uid"
-  worker_plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist
+  worker_supervisor=/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh
   restore_worker() {
     [[ "$worker_stopped" == "1" ]] || return 0
-    if run_agentops /bin/launchctl print "$worker_domain/$worker_label" >/dev/null 2>&1; then
-      run_agentops /bin/launchctl bootout "$worker_domain/$worker_label" >/dev/null 2>&1 || return 1
-    fi
-    run_agentops /bin/launchctl bootstrap "$worker_domain" "$worker_plist" >/dev/null || return 1
-    run_agentops /bin/launchctl enable "$worker_domain/$worker_label" >/dev/null || return 1
-    run_agentops /bin/launchctl kickstart -k "$worker_domain/$worker_label" >/dev/null || return 1
+    run_agentops "$worker_supervisor" restore online >/dev/null || return 1
     for _attempt in $(/usr/bin/seq 1 12); do
       if /usr/bin/nc -z -w 2 127.0.0.1 9120 >/dev/null 2>&1; then worker_stopped=0; return 0; fi
       /bin/sleep 5
@@ -703,7 +695,7 @@ REMOTE
     /bin/sleep 5
   done
   [[ "$child_run_id" =~ ^[0-9a-f-]{36}$ && "$child_run_state" == "running" ]] || fail
-  run_agentops /bin/launchctl bootout "$worker_domain/$worker_label" >/dev/null || fail
+  run_agentops "$worker_supervisor" stop >/dev/null || fail
   worker_stopped=1
   for _attempt in $(/usr/bin/seq 1 12); do
     ! /usr/bin/nc -z -w 2 127.0.0.1 9120 >/dev/null 2>&1 && break

@@ -22,9 +22,8 @@ snapshot="$deploy_tools/reliability/sanitized-pm2.sh"
 before="$private/worker-provision-nonbrain-before.json"
 brain_before="$private/worker-provision-brain-before.txt"
 receipt="$private/worker-provision-receipt"
-worker_plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist
-worker_label=com.orbbec.agent-execution-worker
-worker_domain="user/$(/usr/bin/id -u)"
+worker_supervisor="$platform/deploy/local-execution-worker/worker-pm2.sh"
+pm2_dump=/Users/agentops/.pm2/dump.pm2
 
 safe_remove_tree() {
   [[ $# -eq 1 ]] || return 1
@@ -73,7 +72,7 @@ brain_snapshot() {
 
 nonbrain_snapshot() {
   "$snapshot" jlist | /usr/bin/jq -ceS '
-    map(select(.name != "metabot-agent-brain"))
+    map(select(.name != "metabot-agent-brain" and .name != "orbbec-agent-execution-worker"))
     | if any(.[];
         (.name | type) != "string" or (.pid | type) != "number"
         or (.pm_id | type) != "number"
@@ -98,30 +97,24 @@ rollback_worker() {
   [[ "$(/usr/bin/stat -f '%Lp %Su' "$receipt")" == "700 agentops" ]] || return 1
   [[ -f "$receipt/prepared" && ! -L "$receipt/prepared" && "$(<"$receipt/prepared")" == v1 ]] || return 1
   prior_state="$(<"$receipt/state")" || return 1
-  [[ "$prior_state" == loaded || "$prior_state" == unloaded ]] || return 1
-  if /bin/launchctl print "$worker_domain/$worker_label" >/dev/null 2>&1; then
-    /bin/launchctl bootout "$worker_domain/$worker_label" >/dev/null 2>&1 || return 1
-  fi
-  if [[ -f "$receipt/previous.plist" && ! -L "$receipt/previous.plist" ]]; then
-    previous_part="$worker_plist.rollback.$$"
-    [[ ! -e "$previous_part" && ! -L "$previous_part" ]] || return 1
-    /bin/cp "$receipt/previous.plist" "$previous_part" || return 1
-    /bin/chmod 600 "$previous_part" || return 1
-    /bin/mv -f "$previous_part" "$worker_plist" || return 1
-    /usr/bin/cmp -s "$receipt/previous.plist" "$worker_plist" || return 1
+  [[ "$prior_state" == absent || "$prior_state" == online || "$prior_state" == stopped ]] || return 1
+  "$worker_supervisor" restore "$prior_state" >/dev/null || return 1
+  if [[ -f "$receipt/previous.dump" && ! -L "$receipt/previous.dump" ]]; then
+    [[ -f "$receipt/previous.dump.mode" && ! -L "$receipt/previous.dump.mode" ]] || return 1
+    prior_dump_mode="$(<"$receipt/previous.dump.mode")" || return 1
+    [[ "$prior_dump_mode" =~ ^6[04][04]$ ]] || return 1
+    dump_part="$pm2_dump.rollback.$$"
+    [[ ! -e "$dump_part" && ! -L "$dump_part" ]] || return 1
+    /bin/cp "$receipt/previous.dump" "$dump_part" || return 1
+    /bin/chmod "$prior_dump_mode" "$dump_part" || return 1
+    /bin/mv -f "$dump_part" "$pm2_dump" || return 1
+    /usr/bin/cmp -s "$receipt/previous.dump" "$pm2_dump" || return 1
   else
-    /bin/rm -f -- "$worker_plist" || return 1
-    [[ ! -e "$worker_plist" && ! -L "$worker_plist" ]] || return 1
+    [[ ! -e "$receipt/previous.dump.mode" && ! -L "$receipt/previous.dump.mode" ]] || return 1
+    /bin/rm -f -- "$pm2_dump" || return 1
+    [[ ! -e "$pm2_dump" && ! -L "$pm2_dump" ]] || return 1
   fi
-  if [[ "$prior_state" == loaded ]]; then
-    /bin/launchctl bootstrap "$worker_domain" "$worker_plist" >/dev/null || return 1
-    /bin/launchctl enable "$worker_domain/$worker_label" >/dev/null || return 1
-  fi
-  if [[ "$prior_state" == loaded ]]; then
-    /bin/launchctl print "$worker_domain/$worker_label" >/dev/null 2>&1 || return 1
-  else
-    ! /bin/launchctl print "$worker_domain/$worker_label" >/dev/null 2>&1 || return 1
-  fi
+  [[ "$("$worker_supervisor" state)" == "$prior_state" ]] || return 1
   safe_remove_tree "$receipt" || return 1
 }
 
@@ -260,6 +253,8 @@ PY
     [[ $# -eq 0 && -d "$platform/backend/.venv" && ! -L "$platform" ]] || fail
     [[ -x "$snapshot" && ! -L "$snapshot" ]] || fail
     [[ "$(/usr/bin/stat -f '%Su' "$snapshot")" == agentops ]] || fail
+    [[ -x "$worker_supervisor" && ! -L "$worker_supervisor" ]] || fail
+    [[ "$(/usr/bin/stat -f '%Lp %Su' "$worker_supervisor")" == "755 agentops" ]] || fail
     [[ ! -e "$receipt" && ! -L "$receipt" ]] || fail
     [[ ! -e "$owner_dsn" && ! -L "$owner_dsn" ]] || fail
     nonbrain_snapshot > "$before"; /bin/chmod 600 "$before"
@@ -317,17 +312,19 @@ else: os.close(fd)
     }
     trap receipt_exit ERR EXIT
     /bin/mkdir -m 700 "$receipt_part"
-    if /bin/launchctl print "$worker_domain/$worker_label" >/dev/null 2>&1; then
-      printf 'loaded\n' > "$receipt_part/state"
-    else
-      printf 'unloaded\n' > "$receipt_part/state"
-    fi
+    prior_state="$("$worker_supervisor" state)" || fail
+    [[ "$prior_state" == absent || "$prior_state" == online || "$prior_state" == stopped ]] || fail
+    printf '%s\n' "$prior_state" > "$receipt_part/state"
     /bin/chmod 600 "$receipt_part/state"
-    if [[ -e "$worker_plist" || -L "$worker_plist" ]]; then
-      [[ -f "$worker_plist" && ! -L "$worker_plist" ]] || fail
-      /bin/cp "$worker_plist" "$receipt_part/previous.plist"
-      /bin/chmod 600 "$receipt_part/previous.plist"
-      /usr/bin/cmp -s "$worker_plist" "$receipt_part/previous.plist" || fail
+    if [[ -e "$pm2_dump" || -L "$pm2_dump" ]]; then
+      [[ -f "$pm2_dump" && ! -L "$pm2_dump" ]] || fail
+      prior_dump_mode="$(/usr/bin/stat -f '%Lp' "$pm2_dump")" || fail
+      [[ "$prior_dump_mode" =~ ^6[04][04]$ ]] || fail
+      /bin/cp "$pm2_dump" "$receipt_part/previous.dump"
+      /bin/chmod 600 "$receipt_part/previous.dump"
+      /usr/bin/cmp -s "$pm2_dump" "$receipt_part/previous.dump" || fail
+      printf '%s\n' "$prior_dump_mode" > "$receipt_part/previous.dump.mode"
+      /bin/chmod 600 "$receipt_part/previous.dump.mode"
     fi
     printf 'v1\n' > "$receipt_part/prepared"
     /bin/chmod 600 "$receipt_part/prepared"
@@ -353,9 +350,9 @@ else: os.close(fd)
     worker_listener="$(/usr/sbin/lsof -nP -iTCP:9120 -sTCP:LISTEN -Fpn | /usr/bin/awk '/^p/{pid=substr($0,2)} /^n/{print pid "," substr($0,2)}')" || fail
     [[ "$brain_listener" == "$brain_pid,127.0.0.1:9110" && "$worker_listener" =~ ^[1-9][0-9]*,127\.0\.0\.1:9120$ ]] || fail
     worker_listener_pid="${worker_listener%%,*}"
-    launchd_state="$(/bin/launchctl print "$worker_domain/$worker_label")" || fail
-    launchd_pid="$(/usr/bin/awk '$1=="pid" && $2=="=" {gsub(/;/,"",$3);print $3}' <<<"$launchd_state")"
-    [[ "$launchd_pid" == "$worker_listener_pid" ]] || fail
+    worker_identity="$("$worker_supervisor" inspect)" || fail
+    worker_pm2_pid="$(/usr/bin/jq -er '.pid' <<<"$worker_identity")" || fail
+    [[ "$worker_pm2_pid" == "$worker_listener_pid" ]] || fail
     install_ok=1
     echo EXECUTION_WORKER_AGENTOPS_READY
     ;;
@@ -364,6 +361,11 @@ else: os.close(fd)
       && "$(/usr/bin/stat -f '%Lp %Su' "$receipt")" == "700 agentops" \
       && -f "$receipt/prepared" && ! -L "$receipt/prepared" \
       && "$(<"$receipt/prepared")" == v1 ]] || fail
+    "$worker_supervisor" save || fail
+    /bin/chmod 600 "$pm2_dump" || fail
+    [[ "$("$worker_supervisor" state)" == online \
+      && -f "$pm2_dump" && ! -L "$pm2_dump" \
+      && "$(/usr/bin/stat -f '%Lp %Su' "$pm2_dump")" == "600 agentops" ]] || fail
     cleanup_ephemeral || fail
     if [[ ! -e "$receipt/committed" && ! -L "$receipt/committed" ]]; then
       /bin/rm -f -- "$receipt/committed.part"
@@ -397,9 +399,13 @@ else: os.close(fd)
       && -f "$receipt/committed" && ! -L "$receipt/committed" \
       && "$(<"$receipt/committed")" == v1 ]] || fail
     prior_state="$(<"$receipt/state")" || fail
-    [[ "$prior_state" == loaded || "$prior_state" == unloaded ]] || fail
-    if [[ -e "$receipt/previous.plist" || -L "$receipt/previous.plist" ]]; then
-      [[ -f "$receipt/previous.plist" && ! -L "$receipt/previous.plist" ]] || fail
+    [[ "$prior_state" == absent || "$prior_state" == online || "$prior_state" == stopped ]] || fail
+    if [[ -e "$receipt/previous.dump" || -L "$receipt/previous.dump" ]]; then
+      [[ -f "$receipt/previous.dump" && ! -L "$receipt/previous.dump" ]] || fail
+      [[ -f "$receipt/previous.dump.mode" && ! -L "$receipt/previous.dump.mode" \
+        && "$(<"$receipt/previous.dump.mode")" =~ ^6[04][04]$ ]] || fail
+    else
+      [[ ! -e "$receipt/previous.dump.mode" && ! -L "$receipt/previous.dump.mode" ]] || fail
     fi
     safe_remove_tree "$receipt" || fail
     echo EXECUTION_WORKER_AGENTOPS_FINALIZED

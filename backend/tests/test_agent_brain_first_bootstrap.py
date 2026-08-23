@@ -10,6 +10,7 @@ import re
 import shlex
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tarfile
@@ -692,7 +693,9 @@ def test_local_provisioning_wrapper_has_narrow_hba_transaction_and_fixed_sudo() 
     assert ".platform-release.json" in helper
     assert '"$snapshot" jlist' in helper
     assert "restart_time" in helper and "pm_exec_path" in helper
-    assert "worker_listener_pid" in helper and "launchd_pid" in helper
+    assert "worker_listener_pid" in helper and "worker_pm2_pid" in helper
+    assert "orbbec-agent-execution-worker" in helper
+    assert "launchctl" not in helper
     assert "--checksum" in helper and "--delete" in helper
     assert "for relative in" not in helper
     assert "os.O_EXCL" in helper
@@ -702,15 +705,16 @@ def test_local_provisioning_wrapper_has_narrow_hba_transaction_and_fixed_sudo() 
     assert '/usr/bin/printf "set password_encryption' not in source
     assert source.index("EXECUTION_WORKER_PROVISION_OK") < source.index("exit 0")
     assert 'echo EXECUTION_WORKER_PROVISION_OK' not in source.split("trap cleanup ERR EXIT", 1)[1]
-    assert 'domain="user/$(/usr/bin/id -u)"' in INSTALL.read_text(encoding="utf-8")
+    assert "launchctl" not in INSTALL.read_text(encoding="utf-8")
+    assert "worker-pm2.sh" in INSTALL.read_text(encoding="utf-8")
     accept_source = ACCEPT.read_text(encoding="utf-8")
-    assert 'worker_domain="user/$agentops_uid"' in accept_source
-    assert '"$worker_domain/$worker_label"' in accept_source
+    assert "launchctl" not in accept_source
+    assert "worker-pm2.sh" in accept_source
     subprocess.run(["/bin/bash", "-n", str(PROVISION)], check=True)
     subprocess.run(["/bin/bash", "-n", str(AGENTOPS)], check=True)
 
 
-def test_real_host_agentops_account_socket_home_and_launchd_domain() -> None:
+def test_real_host_agentops_account_socket_home_and_argv_boundary() -> None:
     socket = Path("/Users/neo/FlywheelData/socket/.s.PGSQL.5432")
     psql = Path("/opt/homebrew/opt/postgresql@17/bin/psql")
     if not socket.exists() or not psql.exists() or not Path("/Users/agentops").is_dir():
@@ -742,13 +746,6 @@ def test_real_host_agentops_account_socket_home_and_launchd_domain() -> None:
         text=True,
         capture_output=True,
     )
-    launchd = subprocess.run(
-        [
-            *base, "/bin/launchctl", "print", "user/502",
-        ],
-        text=True,
-        capture_output=True,
-    )
     working_directory = subprocess.run(
         [*base, "/bin/pwd", "-P"],
         text=True,
@@ -762,7 +759,6 @@ def test_real_host_agentops_account_socket_home_and_launchd_domain() -> None:
     )
     assert account.returncode == 0 and account.stdout.strip() == "/Users/agentops"
     assert identity.returncode == 0 and identity.stdout.strip() == "agentops"
-    assert launchd.returncode == 0, launchd.stderr
     assert working_directory.returncode == 0
     assert working_directory.stdout.strip() == "/Users/agentops"
     assert argv_safety.returncode == 0 and argv_safety.stdout == argv_probe
@@ -1353,15 +1349,14 @@ def _agentops_install_harness(
     brain_before = private / "worker-provision-brain-before.txt"
     brain_before.write_text(json.dumps(brain, sort_keys=True, separators=(",", ":")) + "\n")
     brain_before.chmod(0o600)
-    worker_plist = tmp_path / "com.orbbec.agent-execution-worker.plist"
-    worker_plist.write_text("OLD-WORKER-PLIST\n", encoding="utf-8")
-    worker_plist.chmod(0o600)
-    launchd_state = tmp_path / "launchd-state"
-    launchd_state.write_text("loaded\n", encoding="utf-8")
+    pm2_dump = tmp_path / "dump.pm2"
+    pm2_dump.write_text("OLD-PM2-DUMP\n", encoding="utf-8")
+    pm2_dump.chmod(0o644)
+    worker_state = tmp_path / "worker-state"
+    worker_state.write_text("online\n", encoding="utf-8")
     install = local / "install.sh"
     install.write_text(
         "#!/bin/bash\nset -euo pipefail\n"
-        "printf 'NEW-WORKER-PLIST\\n' > \"$FAKE_WORKER_PLIST\"\n"
         "[[ \"${FAKE_FAILURE:-}\" != install ]]\n",
         encoding="utf-8",
     )
@@ -1397,18 +1392,20 @@ def _agentops_install_harness(
         encoding="utf-8",
     )
     fake_lsof.chmod(0o700)
-    fake_launchctl = tmp_path / "launchctl"
-    fake_launchctl.write_text(
+    fake_supervisor = tmp_path / "worker-pm2.sh"
+    fake_supervisor.write_text(
         "#!/bin/bash\nset -euo pipefail\n"
         "case \"$1\" in\n"
-        " print) [[ \"$(<\"$FAKE_LAUNCHD_STATE\")\" == loaded ]] || exit 3; "
-        "echo '    pid = '${FAKE_LAUNCHD_PID:-200}';';;\n"
-        " bootout) printf 'unloaded\\n' > \"$FAKE_LAUNCHD_STATE\";;\n"
-        " bootstrap) printf 'loaded\\n' > \"$FAKE_LAUNCHD_STATE\";;\n"
-        " enable) :;; *) exit 4;; esac\n",
+        " state) /bin/cat \"$FAKE_WORKER_STATE\";;\n"
+        " restore) printf '%s\\n' \"$2\" > \"$FAKE_WORKER_STATE\";;\n"
+        " inspect) printf '{\"pid\":%s}\\n' \"${FAKE_WORKER_PM2_PID:-200}\";;\n"
+        " save) printf 'SAVED-PM2-DUMP\\n' > \"$FAKE_PM2_DUMP\";;\n"
+        " start) printf 'online\\n' > \"$FAKE_WORKER_STATE\";;\n"
+        " stop) printf 'stopped\\n' > \"$FAKE_WORKER_STATE\";;\n"
+        " *) exit 4;; esac\n",
         encoding="utf-8",
     )
-    fake_launchctl.chmod(0o700)
+    fake_supervisor.chmod(0o700)
     copied = tmp_path / "provision-agentops.sh"
     source = AGENTOPS.read_text(encoding="utf-8")
     source = source.replace('"$(/usr/bin/id -un)" == "agentops"', f'"$(/usr/bin/id -un)" == "{current_user}"')
@@ -1423,15 +1420,16 @@ def _agentops_install_harness(
         f"snapshot={snapshot}",
     )
     source = source.replace(
-        "worker_plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist",
-        f"worker_plist={worker_plist}",
+        'worker_supervisor="$platform/deploy/local-execution-worker/worker-pm2.sh"',
+        f"worker_supervisor={fake_supervisor}",
     )
+    source = source.replace("pm2_dump=/Users/agentops/.pm2/dump.pm2", f"pm2_dump={pm2_dump}")
     source = source.replace('== "700 agentops"', f'== "700 {current_user}"')
+    source = source.replace('== "600 agentops"', f'== "600 {current_user}"')
     source = source.replace("/usr/sbin/lsof", str(fake_lsof))
-    source = source.replace("/bin/launchctl", str(fake_launchctl))
     if failure == "receipt-copy":
         source = source.replace(
-            '/bin/cp "$worker_plist" "$receipt_part/previous.plist"',
+            '/bin/cp "$pm2_dump" "$receipt_part/previous.dump"',
             "/usr/bin/false",
         )
     copied.write_text(source, encoding="utf-8")
@@ -1441,10 +1439,10 @@ def _agentops_install_harness(
         "FAKE_FAILURE": failure,
         "FAKE_BRAIN_PID": "999" if failure == "brain-listener" else "100",
         "FAKE_WORKER_PID": "201" if failure == "worker-listener" else "200",
-        "FAKE_LAUNCHD_PID": "202" if failure == "launchd" else "200",
+        "FAKE_WORKER_PM2_PID": "202" if failure == "worker-pm2" else "200",
         "FAKE_WILDCARD": "1" if failure == "wildcard-listener" else "0",
-        "FAKE_WORKER_PLIST": str(worker_plist),
-        "FAKE_LAUNCHD_STATE": str(launchd_state),
+        "FAKE_PM2_DUMP": str(pm2_dump),
+        "FAKE_WORKER_STATE": str(worker_state),
     }
     result = subprocess.run(
         ["/bin/bash", str(copied), "install"],
@@ -1452,7 +1450,7 @@ def _agentops_install_harness(
         capture_output=True,
         env=env,
     )
-    return result, worker_plist, launchd_state, copied, env
+    return result, pm2_dump, worker_state, copied, env
 
 
 @pytest.mark.parametrize(
@@ -1464,25 +1462,26 @@ def _agentops_install_harness(
         "brain-listener",
         "worker-listener",
         "wildcard-listener",
-        "launchd",
+        "worker-pm2",
         "receipt-copy",
     ],
 )
 def test_agentops_install_executable_process_identity_gates(
     tmp_path: Path, failure: str
 ) -> None:
-    result, worker_plist, launchd_state, _, _ = _agentops_install_harness(tmp_path, failure)
+    result, pm2_dump, worker_state, _, _ = _agentops_install_harness(tmp_path, failure)
     assert (result.returncode == 0) is (failure == "")
     assert "opaque" not in result.stdout + result.stderr
     if failure:
-        assert worker_plist.read_text(encoding="utf-8") == "OLD-WORKER-PLIST\n"
-        assert launchd_state.read_text(encoding="utf-8") == "loaded\n"
+        assert pm2_dump.read_text(encoding="utf-8") == "OLD-PM2-DUMP\n"
+        assert stat.S_IMODE(pm2_dump.stat().st_mode) == 0o644
+        assert worker_state.read_text(encoding="utf-8") == "online\n"
 
 
 def test_agentops_commit_response_loss_can_rollback_then_finalize_is_idempotent(
     tmp_path: Path,
 ) -> None:
-    result, worker_plist, launchd_state, helper, env = _agentops_install_harness(
+    result, pm2_dump, worker_state, helper, env = _agentops_install_harness(
         tmp_path, ""
     )
     assert result.returncode == 0, result.stderr
@@ -1512,8 +1511,9 @@ def test_agentops_commit_response_loss_can_rollback_then_finalize_is_idempotent(
         env=env,
     )
     assert rolled_back.returncode == 0, rolled_back.stderr
-    assert worker_plist.read_text(encoding="utf-8") == "OLD-WORKER-PLIST\n"
-    assert launchd_state.read_text(encoding="utf-8") == "loaded\n"
+    assert pm2_dump.read_text(encoding="utf-8") == "OLD-PM2-DUMP\n"
+    assert stat.S_IMODE(pm2_dump.stat().st_mode) == 0o644
+    assert worker_state.read_text(encoding="utf-8") == "online\n"
     assert not receipt.exists()
 
     for _ in range(2):

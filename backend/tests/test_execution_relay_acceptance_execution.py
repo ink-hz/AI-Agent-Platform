@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-import plistlib
 import signal
 from uuid import UUID
 
@@ -74,18 +73,9 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     python.chmod(0o700)
     contract = tmp_path / "runtime-contract.json"
     _secure_write(contract, b'{"bots":[]}\n')
-    launchagent = tmp_path / "worker.plist"
-    _secure_write(
-        launchagent,
-        plistlib.dumps({
-            "Label": "com.orbbec.agent-execution-worker",
-            "EnvironmentVariables": {
-                "PLATFORM_WORKER_ID": "agentops-mac-primary",
-                "PLATFORM_WORKER_KEY_ID": "worker-v2",
-                "PLATFORM_WORKER_PRIVATE_KEY_FILE": str(worker_key),
-            },
-        }),
-    )
+    supervisor = tmp_path / "worker-pm2.sh"
+    supervisor.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    supervisor.chmod(0o700)
     config = private / "acceptance-config.json"
     _secure_write(
         config,
@@ -124,7 +114,7 @@ class Boundary:
         self.enqueued: list[tuple[str, UUID]] = []
         self.inspect_overrides: dict[UUID, dict[str, object]] = {}
         self.fail_remote_cleanup = False
-        self.fail_kickstart = False
+        self.fail_restore = False
         self.replay_inserted = 0
         self.replayed: list[tuple[UUID, tuple[RelayEvent, ...]]] = []
         self.replay_key_ids: list[str] = []
@@ -143,10 +133,17 @@ class Boundary:
         timeout: int,
     ) -> subject.CommandResult:
         self.calls.append((arguments, input_bytes, timeout))
-        if arguments[0] == "/bin/launchctl":
-            if self.fail_kickstart and "kickstart" in arguments:
+        if arguments[0].endswith("worker-pm2.sh"):
+            if arguments[1] == "restore" and self.fail_restore:
                 return subject.CommandResult(1, b"")
-            return subject.CommandResult(0, b"pid = 4242\n")
+            if arguments[1] == "inspect":
+                return subject.CommandResult(
+                    0,
+                    b'{"name":"orbbec-agent-execution-worker","pid":4242,'
+                    b'"status":"online","pm_exec_path":"/fixed/python",'
+                    b'"pm_cwd":"/fixed/backend","args":["-m","app.execution_relay.worker"]}\n',
+                )
+            return subject.CommandResult(0, b"")
         if arguments[0] == "/usr/sbin/lsof":
             pid = arguments[arguments.index("-p") + 1]
             return subject.CommandResult(
@@ -302,7 +299,7 @@ def _run(
         runtime_dsn_path=dsn,
         hook_directory=config.parent / "execution-relay-acceptance",
         backend_root=config.parent.parent / "backend",
-        launchagent_path=config.parent.parent / "worker.plist",
+        worker_supervisor_path=config.parent.parent / "worker-pm2.sh",
         metabot_contract_path=config.parent.parent / "runtime-contract.json",
         metabot_token_path=config.parent / "metabot-api-token",
         current_user="agentops",
@@ -360,9 +357,12 @@ def test_gate_04_to_08_runs_real_cli_crashes_exact_children_and_restores(tmp_pat
     assert boundary.replayed[0][0] == RUNS[0]
     assert boundary.replay_key_ids == ["worker-v2"]
     assert [event.seq for event in boundary.replayed[0][1]] == [1, 2]
-    launch_actions = [call[0][1] for call in boundary.calls if call[0][0] == "/bin/launchctl"]
-    assert launch_actions[0:2] == ["print", "bootout"]
-    assert launch_actions[-3:] == ["bootstrap", "enable", "kickstart"]
+    worker_actions = [
+        call[0][1]
+        for call in boundary.calls
+        if call[0][0].endswith("worker-pm2.sh")
+    ]
+    assert worker_actions == ["inspect", "stop", "restore"]
     remote_actions = [
         boundary._remote_action(call[0])[0]
         for call in boundary.calls
@@ -372,21 +372,19 @@ def test_gate_04_to_08_runs_real_cli_crashes_exact_children_and_restores(tmp_pat
     assert remote_actions[-1] == "cleanup"
 
 
-def test_gate_04_to_08_rejects_plist_identity_mismatch_before_bootout(
+def test_gate_04_to_08_rejects_non_executable_supervisor_before_stop(
     tmp_path: Path,
 ) -> None:
     config, worker_key, dsn = _fixture(tmp_path)
-    launchagent = config.parent.parent / "worker.plist"
-    value = plistlib.loads(launchagent.read_bytes())
-    value["EnvironmentVariables"]["PLATFORM_WORKER_KEY_ID"] = "worker-v1"
-    _secure_write(launchagent, plistlib.dumps(value))
+    supervisor = config.parent.parent / "worker-pm2.sh"
+    supervisor.chmod(0o600)
     boundary = Boundary(config.parent)
 
     with pytest.raises(ValueError, match="acceptance gate failed"):
         _run(config, worker_key, dsn, boundary)
 
     assert not any(
-        call[0][0] == "/bin/launchctl" and call[0][1] == "bootout"
+        call[0][0].endswith("worker-pm2.sh") and call[0][1] == "stop"
         for call in boundary.calls
     )
 
@@ -397,8 +395,12 @@ def test_gate_06_requires_exact_duplicate_inserted_zero(tmp_path: Path) -> None:
     boundary.replay_inserted = 1
     with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
         _run(config, worker_key, dsn, boundary)
-    launch_actions = [call[0][1] for call in boundary.calls if call[0][0] == "/bin/launchctl"]
-    assert "bootout" not in launch_actions and "bootstrap" not in launch_actions
+    worker_actions = [
+        call[0][1]
+        for call in boundary.calls
+        if call[0][0].endswith("worker-pm2.sh")
+    ]
+    assert "stop" not in worker_actions and "restore" not in worker_actions
 
 
 @pytest.mark.parametrize(
@@ -475,12 +477,16 @@ def test_gate_08_requires_persistent_single_post_and_interrupted_cloud(tmp_path:
         _run(config, worker_key, dsn, boundary)
 
 
-def test_cleanup_failure_overrides_success_and_still_attempts_launchagent_restore(tmp_path: Path) -> None:
+def test_cleanup_failure_overrides_success_and_still_attempts_pm2_restore(tmp_path: Path) -> None:
     config, worker_key, dsn = _fixture(tmp_path)
     boundary = Boundary(config.parent)
     boundary.fail_remote_cleanup = True
-    boundary.fail_kickstart = True
+    boundary.fail_restore = True
     with pytest.raises(subject.AcceptanceGateError, match="acceptance cleanup failed"):
         _run(config, worker_key, dsn, boundary)
-    launch_actions = [call[0][1] for call in boundary.calls if call[0][0] == "/bin/launchctl"]
-    assert "bootstrap" in launch_actions and "enable" in launch_actions and "kickstart" in launch_actions
+    worker_actions = [
+        call[0][1]
+        for call in boundary.calls
+        if call[0][0].endswith("worker-pm2.sh")
+    ]
+    assert "stop" in worker_actions and "restore" in worker_actions

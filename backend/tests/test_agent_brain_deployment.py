@@ -131,8 +131,9 @@ def test_acceptance_is_private_real_idempotent_and_rollback_safe() -> None:
         "mission.interrupted",
         "platform_control.mission_runs",
         "platform_control.mission_events",
-        "launchctl bootout",
-        "launchctl bootstrap",
+        "worker-pm2.sh",
+        '"$worker_supervisor" stop',
+        '"$worker_supervisor" restore online',
         "127.0.0.1:9110",
         "fae.orbbec.com.cn",
         "http://47.106.112.69/",
@@ -188,7 +189,7 @@ def test_acceptance_is_private_real_idempotent_and_rollback_safe() -> None:
     assert "platform_control.child_runs" not in script
     assert "evidence_generation" in script
     assert "evidence_previous" in script
-    assert "launchctl print" in script
+    assert "launchctl" not in script
 
 
 def test_acceptance_sql_uses_the_real_migration_029_run_table() -> None:
@@ -251,40 +252,23 @@ enable_with_rollback
     ]
 
 
-@pytest.mark.parametrize("initially_loaded", [False, True])
-def test_worker_restore_executes_real_loaded_and_unloaded_paths(
-    tmp_path: Path, initially_loaded: bool
-) -> None:
+def test_worker_restore_executes_fixed_pm2_online_path(tmp_path: Path) -> None:
     script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
     function = "restore_worker() {" + script.split("  restore_worker() {", 1)[1].split(
         "\n  }\n  cleanup_accept_resources()", 1
     )[0] + "\n}\n"
     log = tmp_path / "calls"
-    fake_sudo = tmp_path / "sudo"
     fake_nc = tmp_path / "nc"
-    fake_sudo.write_text(
-        "#!/bin/bash\n"
-        "echo \"$*\" >> \"$HARNESS_LOG\"\n"
-        "if [[ \"$*\" == *\"launchctl print\"* ]]; then "
-        "[[ \"$WORKER_INITIALLY_LOADED\" == 1 ]]; fi\n",
-        encoding="utf-8",
-    )
     fake_nc.write_text(
         "#!/bin/bash\necho \"nc:$*\" >> \"$HARNESS_LOG\"\nexit 0\n",
         encoding="utf-8",
     )
-    fake_sudo.chmod(0o700)
     fake_nc.chmod(0o700)
-    function = function.replace("/usr/bin/sudo", str(fake_sudo)).replace(
-        "/usr/bin/nc", str(fake_nc)
-    )
+    function = function.replace("/usr/bin/nc", str(fake_nc))
     shell = f"""set -eEuo pipefail
 worker_stopped=1
-agentops_uid=501
-worker_label=com.orbbec.agent-execution-worker
-worker_domain=user/501
-worker_plist=/private/worker.plist
-run_agentops() {{ {fake_sudo} "$@"; }}
+worker_supervisor=/fixed/worker-pm2.sh
+run_agentops() {{ echo "$*" >> {str(log)!r}; }}
 {function}
 restore_worker
 [[ "$worker_stopped" == 0 ]]
@@ -294,19 +278,13 @@ restore_worker
         ["/bin/bash", "-c", shell],
         text=True,
         capture_output=True,
-        env={
-            **os.environ,
-            "HARNESS_LOG": str(log),
-            "WORKER_INITIALLY_LOADED": "1" if initially_loaded else "0",
-        },
+        env={**os.environ, "HARNESS_LOG": str(log)},
     )
 
     assert result.returncode == 0, result.stderr
     calls = log.read_text(encoding="utf-8")
-    assert ("launchctl bootout" in calls) is initially_loaded
-    assert "launchctl bootstrap" in calls
-    assert "launchctl enable" in calls
-    assert "launchctl kickstart -k" in calls
+    assert "/fixed/worker-pm2.sh restore online" in calls
+    assert "launchctl" not in calls
     assert "nc:-z -w 2 127.0.0.1 9120" in calls
 
 

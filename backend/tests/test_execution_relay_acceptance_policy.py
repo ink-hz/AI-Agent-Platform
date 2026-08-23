@@ -76,7 +76,9 @@ def test_orchestrator_directly_enqueues_crashes_restarts_and_checks_idempotence(
     lowered = source.lower()
     assert "acceptance_cli" in source and '"enqueue"' in source and '"inspect"' in source
     assert "dispatching-paused" in source and "completion-paused" in source
-    assert "SIGKILL" in source and "launchctl" in source and "kickstart" in source
+    assert "SIGKILL" in source and "worker-pm2.sh" in source
+    assert '"stop"' in source and '"restore", "online"' in source
+    assert "launchctl" not in source
     assert "metabot_posts" in source and "duplicate_reupload" in source
     assert 'response["inserted"] != 0' in source
     assert "execution_worker.event_outbox" in source
@@ -163,8 +165,8 @@ def test_runbook_has_exact_operations_and_never_requeues_unknown_dispatch() -> N
     ):
         assert heading in lowered
     for command in (
-        "launchctl print",
-        "launchctl kickstart -k",
+        "worker-pm2.sh inspect",
+        "worker-pm2.sh restore online",
         "add-key",
         "revoke-key",
         "register_worker revoke-worker",

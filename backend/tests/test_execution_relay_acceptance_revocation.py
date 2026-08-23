@@ -36,9 +36,10 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
             "cloud_admin_key": str(ssh_key),
         }) + "\n").encode(),
     )
-    launchagent = tmp_path / "worker.plist"
-    _secure_write(launchagent, b"test plist")
-    return config, cookie, launchagent
+    supervisor = tmp_path / "worker-pm2.sh"
+    supervisor.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    supervisor.chmod(0o700)
+    return config, cookie, supervisor
 
 
 class Boundary:
@@ -57,13 +58,13 @@ class Boundary:
         self.session_status = 200
         self.history_status = 200
         self.fail_setup = False
-        self.fail_bootout = False
+        self.fail_stop = False
         self.lose_registration_response = False
         self.lose_enqueue_response = False
         self.lose_terminal_response = False
         self.fail_inspect = False
         self.fail_interrupt = False
-        self.fail_kickstart = False
+        self.fail_restore = False
         self.job_status: str | None = None
         self.cancel_requested = False
         self.regression = self._regression()
@@ -104,12 +105,19 @@ class Boundary:
         timeout: int,
     ) -> subject.CommandResult:
         self.calls.append((arguments, input_bytes, timeout))
-        if arguments[0] == "/bin/launchctl":
-            if self.fail_bootout and arguments[1] == "bootout":
+        if arguments[0].endswith("worker-pm2.sh"):
+            if self.fail_stop and arguments[1] == "stop":
                 return subject.CommandResult(1, b"")
-            if self.fail_kickstart and arguments[1] == "kickstart":
+            if self.fail_restore and arguments[1] == "restore":
                 return subject.CommandResult(1, b"")
-            return subject.CommandResult(0, b"pid = 4242\n")
+            if arguments[1] == "inspect":
+                return subject.CommandResult(
+                    0,
+                    b'{"name":"orbbec-agent-execution-worker","pid":4242,'
+                    b'"status":"online","pm_exec_path":"/fixed/python",'
+                    b'"pm_cwd":"/fixed/backend","args":["-m","app.execution_relay.worker"]}\n',
+                )
+            return subject.CommandResult(0, b"")
         if arguments[0] != "/usr/bin/ssh":
             raise AssertionError(arguments)
         action, values = self._action(arguments)
@@ -269,7 +277,7 @@ class Boundary:
 def _run(
     config: Path,
     cookie: Path,
-    launchagent: Path,
+    supervisor: Path,
     boundary: Boundary,
 ) -> subject.FinalGateResult:
     values = iter((RUN_ID, CONVERSATION_ID, MESSAGE_ID))
@@ -284,7 +292,7 @@ def _run(
         uuid_factory=lambda: next(values),
         private_root=config.parent,
         session_cookie_path=cookie,
-        launchagent_path=launchagent,
+        worker_supervisor_path=supervisor,
         current_user="agentops",
         uid=501,
     )
@@ -369,7 +377,7 @@ def test_gate_09_rejects_open_cookie_and_noncanonical_disposable_token(tmp_path:
             uuid_factory=lambda: RUN_ID,
             private_root=config.parent,
             session_cookie_path=cookie,
-            launchagent_path=launchagent,
+            worker_supervisor_path=launchagent,
             current_user="agentops",
             uid=501,
         )
@@ -451,8 +459,12 @@ def test_unrevoked_disposable_is_audited_revoked_and_cleanup_failure_wins(tmp_pa
     ]
     assert "register-disposable" in actions
     assert "revoke-disposable" in actions
-    launch = [call[0][1] for call in boundary.calls if call[0][0] == "/bin/launchctl"]
-    assert launch[-3:] == ["bootstrap", "enable", "kickstart"]
+    worker = [
+        call[0][1]
+        for call in boundary.calls
+        if call[0][0].endswith("worker-pm2.sh")
+    ]
+    assert worker[-1] == "restore"
 
 
 def test_partial_setup_failed_bootout_and_lost_registration_are_compensated(
@@ -470,11 +482,15 @@ def test_partial_setup_failed_bootout_and_lost_registration_are_compensated(
     ]
 
     boundary = Boundary()
-    boundary.fail_bootout = True
+    boundary.fail_stop = True
     with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
         _run(config, cookie, launchagent, boundary)
-    launch = [call[0][1] for call in boundary.calls if call[0][0] == "/bin/launchctl"]
-    assert launch[-3:] == ["bootstrap", "enable", "kickstart"]
+    worker = [
+        call[0][1]
+        for call in boundary.calls
+        if call[0][0].endswith("worker-pm2.sh")
+    ]
+    assert worker[-1] == "restore"
 
     boundary = Boundary()
     boundary.lose_registration_response = True
@@ -530,7 +546,7 @@ def test_terminal_proof_failure_still_revokes_after_attempt_and_restore_failure_
 
     boundary = Boundary()
     boundary.lose_enqueue_response = True
-    boundary.fail_kickstart = True
+    boundary.fail_restore = True
     with pytest.raises(subject.AcceptanceGateError, match="acceptance cleanup failed"):
         _run(config, cookie, launchagent, boundary)
     assert boundary.job_status == "cancelled"

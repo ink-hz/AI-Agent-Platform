@@ -144,7 +144,17 @@ deploy/local-execution-worker/provision.sh
 
 This wrapper uses Neo's private PostgreSQL socket only for a temporary
 bootstrap role, leaves only the narrow SCRAM runtime HBA rule, and installs the
-Worker as `agentops` without a password, GUI, Keychain or copied SSH key.
+Worker as `agentops` without a password, GUI, Keychain or copied SSH key. The
+Worker is the fixed PM2 process `orbbec-agent-execution-worker`, launched only
+through
+`/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh`
+and the fixed `execution-worker.ecosystem.config.cjs`; the provision path does
+not call `launchctl`. Before mutation it records the exact prior Worker state
+(`absent`, `online`, or `stopped`) and an owner-only copy of the existing PM2
+dump. Failure restores both. Success first proves that the PM2 PID is the sole
+`127.0.0.1:9120` listener, that Agent Brain is byte-for-byte process invariant,
+and that every PM2 process other than Brain and this Worker is invariant; only
+then does it run `pm2 save` and commit the receipt.
 
 Create a private JSON acceptance config and four private browser-input files.
 The config, the member and owner Cookie header files, the HR acceptance prompt,

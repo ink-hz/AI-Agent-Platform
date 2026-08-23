@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import plistlib
 import re
 import secrets
 import signal
@@ -31,7 +30,9 @@ from .worker_auth import WorkerRequestSigner
 
 
 _WORKER_ID = "agentops-mac-primary"
-_LABEL = "com.orbbec.agent-execution-worker"
+_WORKER_SUPERVISOR = Path(
+    "/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh"
+)
 _CLOUD_HOST = "root@47.106.112.69"
 _AGENTS = (
     "hr-bot",
@@ -52,7 +53,6 @@ _PUBLIC_KEYS = {
 }
 _HEX_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _PRODUCTION_KEY_ID = re.compile(r"worker-v[1-9][0-9]*\Z")
-_PID = re.compile(rb"(?m)^\s*pid\s*=\s*([1-9][0-9]*)\s*$")
 _SESSION_LIST_PATH = "/api/sessions?limit=1"
 _SESSION_DETAIL_PREFIX = "/api/sessions/"
 _REGISTER_ACTION = "register"
@@ -417,16 +417,33 @@ def _parse_cloud(value: bytes, fingerprint: str) -> None:
         raise _gate_error() from None
 
 
-def _check_local_listener(runner: CommandRunner, uid: int) -> None:
-    launch = _require_command(
-        runner,
-        ("/bin/launchctl", "print", f"gui/{uid}/{_LABEL}"),
-        timeout=10,
+def _worker_pid(runner: CommandRunner, worker_supervisor_path: Path) -> str:
+    raw = _require_command(
+        runner, (str(worker_supervisor_path), "inspect"), timeout=10
     )
-    match = _PID.search(launch)
-    if match is None:
-        raise _gate_error()
-    pid = match.group(1).decode("ascii")
+    try:
+        value = json.loads(raw)
+        if (
+            not isinstance(value, dict)
+            or set(value) != {
+                "name", "pid", "status", "pm_exec_path", "pm_cwd", "args"
+            }
+            or value["name"] != "orbbec-agent-execution-worker"
+            or value["status"] != "online"
+            or not isinstance(value["pid"], int)
+            or isinstance(value["pid"], bool)
+            or value["pid"] < 1
+        ):
+            raise ValueError
+        return str(value["pid"])
+    except Exception:
+        raise _gate_error() from None
+
+
+def _check_local_listener(
+    runner: CommandRunner, worker_supervisor_path: Path
+) -> None:
+    pid = _worker_pid(runner, worker_supervisor_path)
     owned = _require_command(
         runner,
         (
@@ -482,6 +499,7 @@ def run_gates_01_to_03(
     public_document_path: Path = Path(
         "/Users/agentops/AgentRuntime/execution-worker-public.json"
     ),
+    worker_supervisor_path: Path = _WORKER_SUPERVISOR,
     current_user: str,
     uid: int,
 ) -> InitialGateResult:
@@ -489,10 +507,11 @@ def run_gates_01_to_03(
         if current_user != "agentops" or isinstance(uid, bool) or not isinstance(uid, int) or uid < 1:
             raise _gate_error()
         config = load_config(config_path, private_root=private_root)
+        _validate_runtime_file(worker_supervisor_path, executable=True)
         key_id, fingerprint = _local_identity(
             private_root, private_key_path, public_document_path
         )
-        _check_local_listener(runner, uid)
+        _check_local_listener(runner, worker_supervisor_path)
         remote = _require_command(
             runner,
             (
@@ -637,36 +656,15 @@ def _remote_action(
 
 def _validate_runtime_file(path: Path, *, executable: bool = False) -> None:
     try:
-        metadata = path.stat() if executable else path.lstat()
+        metadata = path.lstat()
         if (
             not path.is_absolute()
             or not stat.S_ISREG(metadata.st_mode)
+            or path.is_symlink()
             or metadata.st_uid not in {0, os.geteuid()}
             or metadata.st_size > 1_048_576
             or (executable and not os.access(path, os.X_OK))
-            or (not executable and path.is_symlink())
             or (not executable and stat.S_IMODE(metadata.st_mode) & 0o022 != 0)
-        ):
-            raise ValueError
-    except Exception:
-        raise _gate_error() from None
-
-
-def _validate_launchagent_identity(
-    path: Path, *, key_id: str, private_key_path: Path
-) -> None:
-    try:
-        value = plistlib.loads(
-            _read_owner_file(path.parent, path, maximum_size=65_536)
-        )
-        environment = value.get("EnvironmentVariables") if isinstance(value, dict) else None
-        if (
-            value.get("Label") != _LABEL
-            or not isinstance(environment, dict)
-            or environment.get("PLATFORM_WORKER_ID") != _WORKER_ID
-            or environment.get("PLATFORM_WORKER_KEY_ID") != key_id
-            or environment.get("PLATFORM_WORKER_PRIVATE_KEY_FILE")
-            != str(private_key_path)
         ):
             raise ValueError
     except Exception:
@@ -853,7 +851,7 @@ def run_gates_04_to_08(
     runtime_dsn_path: Path = Path("/Users/agentops/AgentRuntime/private/execution-worker-postgres-dsn"),
     hook_directory: Path = Path("/Users/agentops/AgentRuntime/private/execution-relay-acceptance"),
     backend_root: Path = Path("/Users/agentops/AgentRuntime/platform/backend"),
-    launchagent_path: Path = Path("/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist"),
+    worker_supervisor_path: Path = _WORKER_SUPERVISOR,
     metabot_contract_path: Path = Path("/Users/agentops/AgentRuntime/metabot/runtime-contract.json"),
     metabot_token_path: Path = Path("/Users/agentops/AgentRuntime/private/metabot-api-token"),
     current_user: str,
@@ -875,16 +873,11 @@ def run_gates_04_to_08(
     except Exception:
         raise _gate_error() from None
     python = backend_root / ".venv/bin/python"
-    for path, executable in ((python, True), (launchagent_path, False), (metabot_contract_path, False)):
+    for path, executable in ((python, True), (worker_supervisor_path, True), (metabot_contract_path, False)):
         _validate_runtime_file(path, executable=executable)
     worker_key = _read_owner_file(private_root, worker_private_key_path, maximum_size=32)
     worker_key_id, _worker_fingerprint = _local_identity(
         private_root, worker_private_key_path, worker_public_document_path
-    )
-    _validate_launchagent_identity(
-        launchagent_path,
-        key_id=worker_key_id,
-        private_key_path=worker_private_key_path,
     )
     dsn = _read_owner_file(private_root, runtime_dsn_path, maximum_size=16_384).decode().strip()
     _read_owner_file(private_root, metabot_token_path, maximum_size=16_384)
@@ -899,7 +892,7 @@ def run_gates_04_to_08(
     foreground: Any | None = None
     remote_ready = False
     setup_attempted = False
-    launch_stopped = False
+    worker_stopped = False
     cleanup_failed = False
     terminal: set[UUID] = set()
 
@@ -969,10 +962,9 @@ def run_gates_04_to_08(
         replay = duplicate_uploader(hr_run, events, worker_key_id, worker_key)
         if replay.status_code != 200 or replay.accepted != len(events) or replay.inserted != 0:
             raise _gate_error()
-        domain = f"gui/{uid}"
-        _require_command(runner, ("/bin/launchctl", "print", f"{domain}/{_LABEL}"), timeout=10)
-        launch_stopped = True
-        _require_command(runner, ("/bin/launchctl", "bootout", f"{domain}/{_LABEL}"), timeout=20)
+        _worker_pid(runner, worker_supervisor_path)
+        worker_stopped = True
+        _require_command(runner, (str(worker_supervisor_path), "stop"), timeout=20)
         control = _write_hook_control(hook_directory, dispatch_run, completion_run)
         foreground = start_foreground()
         # Gate 07: crash after local terminal persistence and resume the same outbox.
@@ -1032,17 +1024,13 @@ def run_gates_04_to_08(
                     cleanup_failed = True
             except Exception:
                 cleanup_failed = True
-        if launch_stopped:
-            domain = f"gui/{uid}"
-            for command in (
-                ("/bin/launchctl", "bootstrap", domain, str(launchagent_path)),
-                ("/bin/launchctl", "enable", f"{domain}/{_LABEL}"),
-                ("/bin/launchctl", "kickstart", "-k", f"{domain}/{_LABEL}"),
-            ):
-                try:
-                    _require_command(runner, command, timeout=20)
-                except Exception:
-                    cleanup_failed = True
+        if worker_stopped:
+            try:
+                _require_command(
+                    runner, (str(worker_supervisor_path), "restore", "online"), timeout=20
+                )
+            except Exception:
+                cleanup_failed = True
         if hook_directory.exists():
             try:
                 for name in ("control.json", "state.json", "completion-paused", "dispatching-paused"):
@@ -1344,7 +1332,7 @@ def run_gates_09_to_10(
     uuid_factory: Callable[[], UUID] = uuid4,
     private_root: Path = Path("/Users/agentops/AgentRuntime/private"),
     session_cookie_path: Path = Path("/Users/agentops/AgentRuntime/private/acceptance-session-cookie"),
-    launchagent_path: Path = Path("/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist"),
+    worker_supervisor_path: Path = _WORKER_SUPERVISOR,
     current_user: str, uid: int,
 ) -> FinalGateResult:
     config = load_config(config_path, private_root=private_root)
@@ -1352,7 +1340,7 @@ def run_gates_09_to_10(
     try:
         session_cookie_file = session_cookie_path
         cookie = _read_owner_file(private_root, session_cookie_file, maximum_size=4096)
-        _validate_runtime_file(launchagent_path)
+        _validate_runtime_file(worker_supervisor_path, executable=True)
     except Exception:
         raise _gate_error() from None
     token = token_factory()
@@ -1362,7 +1350,6 @@ def run_gates_09_to_10(
     public = Ed25519PrivateKey.from_private_bytes(key).public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     encoded = base64.urlsafe_b64encode(public).decode().rstrip("=")
     run_id, conversation_id, message_id = (uuid_factory() for _ in range(3))
-    domain = f"gui/{uid}"
     disposable_registered = False
     registration_attempted = False
     revoked = False
@@ -1439,9 +1426,9 @@ def run_gates_09_to_10(
         if setup_result != {"status": "ready"}:
             raise _gate_error()
         setup = True
-        _require_command(runner, ("/bin/launchctl", "print", f"{domain}/{_LABEL}"), timeout=10)
+        _worker_pid(runner, worker_supervisor_path)
         stopped = True
-        _require_command(runner, ("/bin/launchctl", "bootout", f"{domain}/{_LABEL}"), timeout=20)
+        _require_command(runner, (str(worker_supervisor_path), "stop"), timeout=20)
         reference = "RELAY_ACCEPT_REGISTER_" + token.upper()
         registration_attempted = True
         result = _final_remote_action(config, runner, "register-disposable", worker_id, "worker-v1", encoded, "hr-bot", reference)
@@ -1493,9 +1480,12 @@ def run_gates_09_to_10(
             try: _remote_action(config, runner, "cleanup")
             except Exception: cleanup_failed = True
         if stopped:
-            for command in (("/bin/launchctl","bootstrap",domain,str(launchagent_path)), ("/bin/launchctl","enable",f"{domain}/{_LABEL}"), ("/bin/launchctl","kickstart","-k",f"{domain}/{_LABEL}")):
-                try: _require_command(runner, command, timeout=20)
-                except Exception: cleanup_failed = True
+            try:
+                _require_command(
+                    runner, (str(worker_supervisor_path), "restore", "online"), timeout=20
+                )
+            except Exception:
+                cleanup_failed = True
     if cleanup_failed: raise _cleanup_error()
     if body_error is not None:
         if isinstance(body_error, AcceptanceGateError): raise body_error

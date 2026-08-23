@@ -184,7 +184,8 @@ fi
 ## Status
 
 ```bash
-/bin/launchctl print "gui/$(/usr/bin/id -u)/com.orbbec.agent-execution-worker"
+/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh state
+/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh inspect
 /usr/sbin/lsof -nP -iTCP:9120 -sTCP:LISTEN
 /usr/sbin/lsof -nP -iTCP:9101-9108 -sTCP:LISTEN
 ```
@@ -497,7 +498,7 @@ Stop only the execution Worker, restore into a separately prepared empty
 exact runtime grants before restart:
 
 ```bash
-/bin/launchctl bootout "gui/$(/usr/bin/id -u)/com.orbbec.agent-execution-worker"
+/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh stop
 /opt/homebrew/opt/postgresql@17/bin/pg_restore --exit-on-error --clean --if-exists --dbname=agent_execution_worker /Users/agentops/AgentRuntime/private/agent_execution_worker.dump
 ```
 
@@ -546,17 +547,20 @@ Never change a terminal run and never create a replacement run automatically.
 ## Restart
 
 ```bash
-/bin/launchctl kickstart -k "gui/$(/usr/bin/id -u)/com.orbbec.agent-execution-worker"
+/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh restore online
 ```
 
 After restart, run Status and confirm the same undelivered outbox drains.
 
 ## Rollback
 
-Boot out the Worker, restore the previously reviewed code/config/key files, then
-bootstrap the saved LaunchAgent plist. Do not roll back the local database past
-an accepted MetaBot dispatch. If compatibility is uncertain, leave the Worker
-stopped and explicitly terminalize affected runs as `interrupted`.
+Stop the Worker with the fixed PM2 wrapper, restore the previously reviewed
+code/config/key files, then restore the receipt's exact prior
+`absent|online|stopped` state and prior PM2 dump. The provision coordinator does
+this automatically for every failure before commit. Do not roll back the local
+database past an accepted MetaBot dispatch. If compatibility is uncertain,
+leave the Worker stopped and explicitly terminalize affected runs as
+`interrupted`.
 
 ## Removal
 
