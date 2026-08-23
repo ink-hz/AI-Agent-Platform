@@ -14,9 +14,11 @@ container, which reads its existing file-backed secrets internally:
 ```bash
 environment_path=/opt/orbbec-agent-platform/private/platform.env
 compose_path=/opt/orbbec-agent-platform/current/deploy/cloud/compose.yaml
-gender_probe_json="$(docker compose --env-file "$environment_path" \
-  -f "$compose_path" run --rm --no-deps platform-directory \
-  python -m app.control_plane.gender_probe)" || exit 1
+compose=(docker compose --env-file "$environment_path" -f "$compose_path")
+directory_id="$("${compose[@]}" ps -q platform-directory)"
+test -n "$directory_id" || exit 1
+test "$(docker inspect --format '{{.State.Health.Status}}' "$directory_id")" = healthy || exit 1
+gender_probe_json="$(docker exec "$directory_id" python -m app.control_plane.gender_probe)" || exit 1
 python3 -c \
   'import json,sys; assert json.loads(sys.stdin.read()).get("ready") is True' \
   <<<"$gender_probe_json" || exit 1
@@ -25,12 +27,17 @@ unset gender_probe_json
 
 A nonzero container exit or JSON `ready` other than literal `true` stops the
 release. Do not print the captured JSON and do not copy secrets to the
-controller. Require a completed active generation with source schema version exactly `2`.
-The database gate emits only
-`active:valid:null_invalid`: `active` is positive and equals `valid`, every
-active member satisfies `gender in ('male','female')`, and the null/invalid count is zero.
-Evidence contains only fixed aggregate counts/status, never
-employee names, gender values, provider identifiers, mobile numbers,
+controller. Require a completed active generation with source schema version exactly `2`. Before any Nginx replacement or reload,
+`publish-dingtalk-production.sh` uses `docker exec` to run one consistent SQL snapshot. The single gate covers the owner-bootstrap-aware owner count, the
+fresh complete active schema-v2 generation, directory-event heartbeat, and
+gender coverage. It emits only
+`owner:fresh_generation:heartbeat:active:valid:null_invalid` and requires
+`active > 0`, `active = valid`, `null_invalid = 0`, and every active member to
+satisfy `gender in ('male','female')`. Its coverage segment remains the fixed
+aggregate `active:valid:null_invalid`, and the null/invalid count is zero. Post-cutover
+`accept-dingtalk-production.sh` rechecks the same one consistent SQL snapshot
+through `docker exec`. Evidence contains only fixed aggregate counts/status,
+never employee names, gender values, provider identifiers, mobile numbers,
 ciphertext, raw rows, or provider payloads.
 
 Only after this reconciliation may Platform publish/cutover and the
@@ -59,8 +66,9 @@ On the cloud host, after owner binding and publication:
 /opt/orbbec-agent-platform/current/deploy/cloud/accept-dingtalk-production.sh
 ```
 
-The automated acceptance requires all five Platform services healthy, one
-active owner, a completed schema-v2 directory generation newer than eight
+The automated acceptance requires all five Platform services healthy, the
+required owner state (one active owner, or zero only during the explicit
+owner-bootstrap stage), a completed schema-v2 directory generation newer than eight
 hours, aggregate valid gender coverage for every active member, a recent
 healthy directory-event heartbeat, a public login shell without shared Basic Auth,
 unauthenticated account rejection, preserved independent `/admin`

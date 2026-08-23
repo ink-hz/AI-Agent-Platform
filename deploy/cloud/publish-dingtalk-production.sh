@@ -43,22 +43,66 @@ for service in platform-api platform-loopback platform-directory platform-dingta
   [[ -n "$container_id" ]] || fail
   [[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$container_id")" == "healthy" ]] || fail
 done
+directory_id="$("${compose[@]}" ps -q platform-directory)"
+[[ -n "$directory_id" ]] || fail
+[[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$directory_id")" == "healthy" ]] || fail
+gender_probe_json="$(/usr/bin/docker exec "$directory_id" \
+  python -m app.control_plane.gender_probe)" || fail
+/usr/bin/python3 -c \
+  'import json,sys; assert json.loads(sys.stdin.read()).get("ready") is True' \
+  <<<"$gender_probe_json" || fail
+unset gender_probe_json
+
 api_id="$("${compose[@]}" ps -q platform-api)"
 /usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_id" |
   /usr/bin/grep -Fxq 'PLATFORM_IDENTITY_MODE=production' || fail
 postgres_id="$("${compose[@]}" ps -q platform-postgres)"
-readiness="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
+directory_gate_sql="$(/bin/cat <<'SQL'
+WITH active_generation AS (
+  SELECT state.active_generation_id, state.last_complete_at,
+         generation.status, generation.source_schema_version
+  FROM platform_control.directory_state AS state
+  LEFT JOIN platform_control.directory_generations AS generation
+    ON generation.generation_id=state.active_generation_id
+  WHERE state.singleton
+), gender_coverage AS (
+  SELECT
+    count(*) filter (where member.status='active') AS active_gender_count,
+    count(*) filter (where member.status='active' and member.gender in ('male','female')) AS valid_gender_count,
+    count(*) filter (where member.status='active' and (member.gender is null or member.gender not in ('male','female'))) AS null_invalid_gender_count
+  FROM active_generation
+  LEFT JOIN platform_control.directory_members AS member
+    ON member.generation_id=active_generation.active_generation_id
+)
+SELECT concat(
+  (select count(*) from platform_control.internal_users where role='platform_owner' and status='active'), ':',
+  (select count(*) from active_generation where active_generation_id is not null and status='complete' and source_schema_version=2 and last_complete_at > clock_timestamp() - interval '8 hours'), ':',
+  (select count(*) from platform_control.worker_heartbeats where worker_name='dingtalk-directory-event' and status='healthy' and last_seen_at > clock_timestamp() - interval '2 minutes'), ':',
+  active_gender_count, ':', valid_gender_count, ':', null_invalid_gender_count
+) FROM gender_coverage
+SQL
+)"
+directory_gates="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
   -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c \
-  "select concat(
-    (select count(*) from platform_control.internal_users where role='platform_owner' and status='active'), ':',
-    (select count(*) from platform_control.directory_state where singleton and active_generation_id is not null and last_complete_at > clock_timestamp() - interval '8 hours'), ':',
-    (select count(*) from platform_control.worker_heartbeats where worker_name='dingtalk-directory-event' and status='healthy' and last_seen_at > clock_timestamp() - interval '2 minutes')
-  )")" || fail
-expected_readiness="1:1:1"
+  "$directory_gate_sql")" || fail
+IFS=: read -r owner_count fresh_generation_count heartbeat_count \
+  active_gender_count valid_gender_count null_invalid_gender_count <<<"$directory_gates"
+expected_owner_count="1"
 if [[ "$owner_bootstrap" == "1" ]]; then
-  expected_readiness="0:1:1"
+  expected_owner_count="0"
 fi
-[[ "$readiness" == "$expected_readiness" ]] || fail
+[[ "$owner_count" =~ ^[0-9]+$ \
+  && "$fresh_generation_count" =~ ^[0-9]+$ \
+  && "$heartbeat_count" =~ ^[0-9]+$ \
+  && "$active_gender_count" =~ ^[0-9]+$ \
+  && "$valid_gender_count" =~ ^[0-9]+$ \
+  && "$null_invalid_gender_count" =~ ^[0-9]+$ \
+  && "$owner_count" == "$expected_owner_count" \
+  && "$fresh_generation_count" == "1" \
+  && "$heartbeat_count" == "1" \
+  && "$active_gender_count" -gt 0 \
+  && "$active_gender_count" -eq "$valid_gender_count" \
+  && "$null_invalid_gender_count" -eq 0 ]] || fail
 
 timestamp="$(/usr/bin/date -u +%Y%m%dT%H%M%SZ)"
 backup_path="/root/nginx-backups/agent-platform-dingtalk-$timestamp"

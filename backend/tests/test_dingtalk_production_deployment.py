@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import yaml
@@ -5,6 +6,87 @@ import yaml
 
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
+
+
+def _normalized_shell(script: str) -> str:
+    without_line_continuations = re.sub(r"\\\s*\n", " ", script)
+    return " ".join(without_line_continuations.split())
+
+
+def _assert_no_directory_compose_run(script: str) -> None:
+    normalized = _normalized_shell(script)
+    compose_run = re.compile(
+        r'(?:"?\$\{compose\[@\]\}"?|(?:/usr/bin/)?docker\s+compose)'
+        r"(?:(?!\|\||&&|;).)*?\brun\b"
+        r"(?:(?!\|\||&&|;).)*?"
+        r"(?:\bplatform-directory\b|app\.control_plane\.gender_probe)"
+    )
+    match = compose_run.search(normalized)
+    assert match is None, f"directory probe must not use Compose run: {match.group(0)!r}"
+
+
+def _assert_owner_count_mapping(script: str, bootstrap_variable: str) -> None:
+    block = re.compile(
+        rf'^expected_owner_count="(?P<default>[^"]+)"\n'
+        rf'if \[\[ "\${re.escape(bootstrap_variable)}" == "1" \]\]; then\n'
+        rf'  expected_owner_count="(?P<bootstrap>[^"]+)"\n'
+        r"fi$",
+        re.MULTILINE,
+    )
+    matches = list(block.finditer(script))
+    assert len(matches) == 1, "owner count must be set by one explicit bootstrap block"
+    assert matches[0].group("default") == "1"
+    assert matches[0].group("bootstrap") == "0"
+    fail_closed_gate = re.search(
+        r"\[\[(?P<body>.*?)\]\] \|\| fail",
+        script[matches[0].end():],
+        re.DOTALL,
+    )
+    assert fail_closed_gate is not None
+    assert (
+        '"$owner_count" == "$expected_owner_count"'
+        in fail_closed_gate.group("body")
+    )
+
+
+def _directory_gate_sql(script: str) -> str:
+    heredoc = re.compile(
+        r'^directory_gate_sql="\$\(/bin/cat <<\'SQL\'\n'
+        r"(?P<sql>.*?)\nSQL\n\)\"$",
+        re.MULTILINE | re.DOTALL,
+    )
+    matches = list(heredoc.finditer(script))
+    assert len(matches) == 1, "release script must define one directory gate SQL heredoc"
+    return matches[0].group("sql")
+
+
+def _assert_single_snapshot_directory_gate(script: str) -> None:
+    sql = _directory_gate_sql(script)
+    assert ";" not in sql, "directory gate must be one SQL statement"
+
+    final_selects = list(
+        re.finditer(
+            r"^SELECT concat\(\n(?P<body>.*?)\n\) FROM gender_coverage$",
+            sql,
+            re.MULTILINE | re.DOTALL,
+        )
+    )
+    assert len(final_selects) == 1, "directory gate must have one final aggregate SELECT"
+    assert len(re.findall(r"^SELECT\b", sql, re.MULTILINE)) == 1
+    final_select = final_selects[0].group(0)
+    assert final_select.count("':'") == 5
+
+    components = (
+        "from platform_control.internal_users where role='platform_owner' and status='active'",
+        "from active_generation where active_generation_id is not null and status='complete' and source_schema_version=2 and last_complete_at > clock_timestamp() - interval '8 hours'",
+        "from platform_control.worker_heartbeats where worker_name='dingtalk-directory-event' and status='healthy' and last_seen_at > clock_timestamp() - interval '2 minutes'",
+        "active_gender_count",
+        "valid_gender_count",
+        "null_invalid_gender_count",
+    )
+    positions = [final_select.find(component) for component in components]
+    assert all(position >= 0 for position in positions)
+    assert positions == sorted(positions), "all six gates must feed the final aggregate"
 
 
 def test_production_compose_runs_identity_and_least_privilege_workers():
@@ -134,7 +216,8 @@ def test_cutover_supports_a_fail_closed_first_owner_login_stage():
     )
 
     assert "--allow-unbound-owner" in publish
-    assert 'expected_readiness="0:1:1"' in publish
+    assert 'expected_owner_count="1"' in publish
+    assert 'expected_owner_count="0"' in publish
     assert 'OWNER_BOOTSTRAP=%q' in publish
     assert "DINGTALK_PRODUCTION_OWNER_LOGIN_REQUIRED" in publish
     assert "dingtalk_nginx_transaction.py" in publish
@@ -232,37 +315,132 @@ def test_production_acceptance_covers_platform_identity_workers_and_fae_invarian
         assert forbidden not in script
 
 
-def test_production_acceptance_gates_on_private_gender_probe_and_schema_v2_coverage():
-    script = (CLOUD / "accept-dingtalk-production.sh").read_text(
+def test_release_probes_never_use_compose_run_for_the_directory_service():
+    for name in (
+        "publish-dingtalk-production.sh",
+        "accept-dingtalk-production.sh",
+    ):
+        _assert_no_directory_compose_run(
+            (CLOUD / name).read_text(encoding="utf-8")
+        )
+
+
+def test_release_owner_count_mapping_preserves_the_explicit_bootstrap_stage():
+    publish = (CLOUD / "publish-dingtalk-production.sh").read_text(encoding="utf-8")
+    acceptance = (CLOUD / "accept-dingtalk-production.sh").read_text(
         encoding="utf-8"
     )
 
-    for required in (
-        'gender_probe_json="$("${compose[@]}" run --rm --no-deps',
-        "platform-directory python -m app.control_plane.gender_probe",
-        'json.loads(sys.stdin.read()).get("ready") is True',
-        "generation.status='complete'",
-        "generation.source_schema_version=2",
-        "member.status='active'",
-        "member.gender in ('male','female')",
-        "member.gender is null or member.gender not in ('male','female')",
-        "gender_coverage=",
-    ):
-        assert required in script
+    _assert_owner_count_mapping(publish, "owner_bootstrap")
+    _assert_owner_count_mapping(acceptance, "OWNER_BOOTSTRAP")
 
+
+def test_release_directory_gate_is_one_six_component_snapshot():
+    for name in (
+        "publish-dingtalk-production.sh",
+        "accept-dingtalk-production.sh",
+    ):
+        _assert_single_snapshot_directory_gate(
+            (CLOUD / name).read_text(encoding="utf-8")
+        )
+
+
+def test_publish_gates_cutover_on_the_running_directory_container_before_nginx_changes():
+    script = (CLOUD / "publish-dingtalk-production.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'directory_id="$("${compose[@]}" ps -q platform-directory)"' in script
+    assert 'docker inspect --format \'{{.State.Health.Status}}\' "$directory_id"' in script
+    assert 'gender_probe_json="$(/usr/bin/docker exec "$directory_id"' in script
+    assert "python -m app.control_plane.gender_probe" in script
+    assert 'python -m app.control_plane.gender_probe)" || fail' in script
+    assert 'json.loads(sys.stdin.read()).get("ready") is True' in script
+    assert '<<<"$gender_probe_json" || fail' in script
+    assert script.index("python -m app.control_plane.gender_probe") < script.index(
+        '/usr/bin/install -o root -g root -m 644 "$rendered"'
+    )
     assert script.index("python -m app.control_plane.gender_probe") < script.index(
         "/usr/sbin/nginx -t"
     )
-    for forbidden in (
-        'echo "$gender_probe_json"',
-        "select member.display_name",
-        "select member.gender",
-        "encrypted_provider_id",
-        "union_encrypted_provider_id",
-        "provider_id",
-        "mobile",
-    ):
-        assert forbidden not in script
+    assert script.index('docker inspect --format \'{{.State.Health.Status}}\' "$directory_id"') < script.index(
+        "python -m app.control_plane.gender_probe"
+    )
+    _assert_no_directory_compose_run(script)
+    assert 'echo "$gender_probe_json"' not in script
+
+
+def test_publish_and_accept_recheck_one_snapshot_of_all_directory_release_gates():
+    publish = (CLOUD / "publish-dingtalk-production.sh").read_text(encoding="utf-8")
+    acceptance = (CLOUD / "accept-dingtalk-production.sh").read_text(
+        encoding="utf-8"
+    )
+
+    for script in (publish, acceptance):
+        assert 'directory_id="$("${compose[@]}" ps -q platform-directory)"' in script
+        assert 'docker inspect --format \'{{.State.Health.Status}}\' "$directory_id"' in script
+        assert 'gender_probe_json="$(/usr/bin/docker exec "$directory_id"' in script
+        assert 'python -m app.control_plane.gender_probe)" || fail' in script
+        assert '<<<"$gender_probe_json" || fail' in script
+        _assert_no_directory_compose_run(script)
+        _assert_single_snapshot_directory_gate(script)
+        assert script.count('/usr/bin/docker exec "$postgres_id" psql') == 1
+        for required in (
+            "status='complete'",
+            "source_schema_version=2",
+            "last_complete_at > clock_timestamp() - interval '8 hours'",
+            "worker_name='dingtalk-directory-event'",
+            "member.status='active'",
+            "member.gender in ('male','female')",
+            "member.gender is null or member.gender not in ('male','female')",
+            "owner_count",
+            "fresh_generation_count",
+            "heartbeat_count",
+            "active_gender_count",
+            "valid_gender_count",
+            "null_invalid_gender_count",
+        ):
+            assert required in script
+        assert script.index('docker inspect --format \'{{.State.Health.Status}}\' "$directory_id"') < script.index(
+            "python -m app.control_plane.gender_probe"
+        )
+        for forbidden in (
+            'echo "$gender_probe_json"',
+            "select member.display_name",
+            "select member.gender",
+            "encrypted_provider_id",
+            "union_encrypted_provider_id",
+            "provider_id",
+            "mobile",
+        ):
+            assert forbidden not in script
+
+    assert '[[ "$OWNER_BOOTSTRAP" == "0" || "$OWNER_BOOTSTRAP" == "1" ]]' in acceptance
+    _assert_owner_count_mapping(publish, "owner_bootstrap")
+    _assert_owner_count_mapping(acceptance, "OWNER_BOOTSTRAP")
+
+
+def test_release_runbooks_use_candidate_probe_and_one_snapshot_release_gate():
+    cloud = (ROOT / "docs" / "runbooks" / "cloud-platform.md").read_text(
+        encoding="utf-8"
+    )
+    acceptance = (
+        ROOT / "docs" / "runbooks" / "dingtalk-r1-acceptance.md"
+    ).read_text(encoding="utf-8")
+
+    for text in (cloud, acceptance):
+        assert 'docker compose --env-file "$environment_path"' in text
+        assert 'ps -q platform-directory' in text
+        assert 'docker exec "$directory_id" python -m app.control_plane.gender_probe' in text
+        assert "one consistent SQL snapshot" in text
+        assert "owner-bootstrap-aware owner count" in text
+        assert "active > 0" in text
+        assert "active = valid" in text
+        assert "null_invalid = 0" in text
+        assert (
+            "run --rm --no-deps platform-directory "
+            "python -m app.control_plane.gender_probe"
+        ) not in " ".join(text.split())
 
 
 def test_release_runbooks_require_platform_first_gender_gates_and_reverse_rollback():

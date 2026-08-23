@@ -63,9 +63,11 @@ file-backed secrets stay inside that service:
 ```bash
 environment_path=/opt/orbbec-agent-platform/private/platform.env
 compose_path=/opt/orbbec-agent-platform/current/deploy/cloud/compose.yaml
-gender_probe_json="$(docker compose --env-file "$environment_path" \
-  -f "$compose_path" run --rm --no-deps platform-directory \
-  python -m app.control_plane.gender_probe)" || exit 1
+compose=(docker compose --env-file "$environment_path" -f "$compose_path")
+directory_id="$("${compose[@]}" ps -q platform-directory)"
+test -n "$directory_id" || exit 1
+test "$(docker inspect --format '{{.State.Health.Status}}' "$directory_id")" = healthy || exit 1
+gender_probe_json="$(docker exec "$directory_id" python -m app.control_plane.gender_probe)" || exit 1
 python3 -c \
   'import json,sys; assert json.loads(sys.stdin.read()).get("ready") is True' \
   <<<"$gender_probe_json" || exit 1
@@ -74,14 +76,18 @@ unset gender_probe_json
 
 Both the container command and the JSON `ready` boolean are fail-closed gates.
 Do not print the captured JSON or load any secret on the controller. Wait for a
-completed active directory generation with source schema version exactly `2`,
-then run the aggregate database gate used by
-`accept-dingtalk-production.sh`. Its only permitted result is
-`active:valid:null_invalid`; `active` must be positive and equal `valid`, every
-active member must satisfy `gender in ('male','female')`, and the null/invalid count is zero.
-Acceptance evidence must contain only these fixed aggregate
-counts/status. It must not contain employee names, gender values, provider identifiers,
-mobile numbers, ciphertext, raw rows, or provider payloads.
+completed active directory generation with source schema version exactly `2`.
+Before Nginx is changed, `publish-dingtalk-production.sh` runs one consistent SQL snapshot through `docker exec` against the candidate PostgreSQL container.
+That single release gate includes the owner-bootstrap-aware owner count, one
+completed active schema-v2 generation fresh within eight hours, a recent
+healthy directory-event heartbeat, and coverage. Its fixed aggregate format is
+`owner:fresh_generation:heartbeat:active:valid:null_invalid`; it requires
+`active > 0`, `active = valid`, `null_invalid = 0`, and every active member to
+satisfy `gender in ('male','female')`. Its coverage segment remains the fixed
+aggregate `active:valid:null_invalid`, and the null/invalid count is zero. The
+acceptance script rechecks the same single snapshot after cutover. Acceptance evidence must contain only fixed
+aggregate counts/status. It must not contain employee names, gender values,
+provider identifiers, mobile numbers, ciphertext, raw rows, or provider payloads.
 
 After the probe and complete schema-v2 reconciliation pass, verify the
 directory/event heartbeat. Bind the sole owner with the exact private DingTalk
