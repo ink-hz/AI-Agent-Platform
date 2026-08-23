@@ -5092,7 +5092,9 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
         )
 
     assert run("state").stdout.strip() == "absent"
+    assert json.loads(run("readiness").stdout) == {"phase": "failed"}
     assert run("start").returncode == 0
+    assert json.loads(run("readiness").stdout) == {"phase": "online", "pid": 43210}
     identity = json.loads(run("inspect").stdout)
     assert identity == {
         "name": "orbbec-agent-execution-worker",
@@ -5104,6 +5106,14 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
     }
     assert run("stop").returncode == 0
     assert run("state").stdout.strip() == "stopped"
+    assert json.loads(run("readiness").stdout) == {"phase": "failed"}
+    state.write_text("launching", encoding="utf-8")
+    assert json.loads(run("readiness").stdout) == {"phase": "starting"}
+    state.write_text("waiting restart", encoding="utf-8")
+    assert json.loads(run("readiness").stdout) == {"phase": "failed"}
+    state.write_text("errored", encoding="utf-8")
+    assert json.loads(run("readiness").stdout) == {"phase": "failed"}
+    state.write_text("stopped", encoding="utf-8")
     for prior in ("absent", "online", "stopped"):
         assert run("restore", prior).returncode == 0
         assert run("state").stdout.strip() == prior
@@ -5136,6 +5146,10 @@ def test_worker_pm2_uses_canonical_npm_package_executable() -> None:
     assert "path.is_symlink()" in source
     assert "metadata.st_uid != os.getuid()" in source
     assert "stat.S_IMODE(metadata.st_mode) & 0o022" in source
+    assert "readiness)" in source
+    assert '"launching"' in source
+    assert 'phase:"starting"' in source
+    assert 'phase:"failed"' in source
 
 
 def test_worker_pm2_config_has_only_the_fixed_worker_runtime() -> None:

@@ -167,10 +167,13 @@ execute permission, no symlink at the canonical file, and no group/other-write
 permission on its package ancestors.
 After PM2 starts the Worker, provision allows dependency import and socket bind
 up to a fixed 60-second deadline, polling every 5 seconds. Every poll must
-still return the exact online PM2 Worker identity. Only an absent 9120 listener
-is retryable; a crashed or ambiguous PM2 process, a non-loopback or duplicate
-listener, or a listener PID different from the PM2 PID fails immediately and
-restores the prior Worker state and PM2 dump.
+still return the exact PM2 Worker identity. PM2 `launching` is the only startup
+phase that may wait without probing the listener; once online, only an absent
+9120 listener is retryable. `waiting restart`, errored, stopped, absent or
+ambiguous PM2 state, a non-loopback or duplicate listener, or a listener PID
+different from the PM2 PID fails immediately. The deadline begins as soon as
+the installer returns from PM2 start and is checked again before accepting a
+listener; failure restores the prior Worker state and PM2 dump.
 
 Create a private JSON acceptance config and four private browser-input files.
 The config, the member and owner Cookie header files, the HR acceptance prompt,

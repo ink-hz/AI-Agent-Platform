@@ -101,6 +101,25 @@ case "$1" in
               args:.[0].pm2_env.args}
         else error("worker PM2 identity mismatch") end'
     ;;
+  readiness)
+    [[ $# -eq 1 ]] || fail
+    pm2_clean jlist | /usr/bin/jq -ce --arg name "$name" '
+      [.[] | select(.name == $name)]
+      | if length == 0 then {phase:"failed"}
+        elif any(.[];
+          .pm2_env.pm_exec_path != "/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python"
+          or .pm2_env.pm_cwd != "/Users/agentops/AgentRuntime/platform/backend"
+          or .pm2_env.args != ["-m","app.execution_relay.worker"])
+        then error("worker PM2 identity mismatch")
+        elif length != 1 then {phase:"failed"}
+        elif .[0].pm2_env.status == "online"
+          and (.[0].pid | type) == "number" and .[0].pid > 0
+        then {phase:"online",pid:.[0].pid}
+        elif .[0].pm2_env.status == "launching"
+        then {phase:"starting"}
+        else {phase:"failed"}
+        end'
+    ;;
   start)
     [[ $# -eq 1 ]] && fixed_config || fail
     delete_worker

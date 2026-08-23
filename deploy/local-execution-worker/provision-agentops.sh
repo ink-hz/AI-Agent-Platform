@@ -368,6 +368,11 @@ else: os.close(fd)
     }
     trap install_exit ERR EXIT
     "$platform/deploy/local-execution-worker/install.sh" "$owner_dsn" || fail
+    readiness_interval_seconds=5
+    readiness_timeout_seconds=60
+    readiness_started="$(/bin/date +%s)" || fail
+    [[ "$readiness_started" =~ ^[0-9]+$ ]] || fail
+    readiness_deadline=$((readiness_started + readiness_timeout_seconds))
     after="$private/worker-provision-nonbrain-after.json"
     nonbrain_snapshot > "$after"; /bin/chmod 600 "$after"
     /usr/bin/cmp -s "$before" "$after" || fail
@@ -377,21 +382,34 @@ else: os.close(fd)
     brain_pid="$(/usr/bin/jq -er '.pid' "$brain_before")" || fail
     brain_listener="$(/usr/sbin/lsof -nP -iTCP:9110 -sTCP:LISTEN -Fpn | /usr/bin/awk '/^p/{pid=substr($0,2)} /^n/{print pid "," substr($0,2)}')" || fail
     [[ "$brain_listener" == "$brain_pid,127.0.0.1:9110" ]] || fail
-    readiness_interval_seconds=5
-    readiness_timeout_seconds=60
-    readiness_started="$(/bin/date +%s)" || fail
-    [[ "$readiness_started" =~ ^[0-9]+$ ]] || fail
-    readiness_deadline=$((readiness_started + readiness_timeout_seconds))
     while true; do
-      worker_identity="$("$worker_supervisor" inspect)" || fail
-      worker_pm2_pid="$(/usr/bin/jq -er '.pid' <<<"$worker_identity")" || fail
-      [[ "$worker_pm2_pid" =~ ^[1-9][0-9]*$ ]] || fail
+      readiness_now="$(/bin/date +%s)" || fail
+      [[ "$readiness_now" =~ ^[0-9]+$ && "$readiness_now" -lt "$readiness_deadline" ]] || fail
+      worker_readiness="$("$worker_supervisor" readiness)" || fail
+      readiness_phase="$(/usr/bin/jq -er '
+        if keys == ["phase"] and (.phase == "starting" or .phase == "failed")
+          then .phase
+        elif keys == ["phase","pid"] and .phase == "online"
+          and (.pid | type) == "number" and .pid > 0
+          then .phase
+        else error("invalid worker readiness") end
+      ' <<<"$worker_readiness")" || fail
+      [[ "$readiness_phase" != failed ]] || fail
+      if [[ "$readiness_phase" == starting ]]; then
+        readiness_now="$(/bin/date +%s)" || fail
+        [[ "$readiness_now" =~ ^[0-9]+$ && "$readiness_now" -lt "$readiness_deadline" ]] || fail
+        /bin/sleep "$readiness_interval_seconds"
+        continue
+      fi
+      worker_pm2_pid="$(/usr/bin/jq -er '.pid' <<<"$worker_readiness")" || fail
       worker_listener_status=0
       if worker_listener="$(/usr/sbin/lsof -nP -iTCP:9120 -sTCP:LISTEN -Fpn 2>/dev/null | /usr/bin/awk '/^p/{pid=substr($0,2)} /^n/{print pid "," substr($0,2)}')"; then
         worker_listener_status=0
       else
         worker_listener_status="$?"
       fi
+      readiness_now="$(/bin/date +%s)" || fail
+      [[ "$readiness_now" =~ ^[0-9]+$ && "$readiness_now" -lt "$readiness_deadline" ]] || fail
       if [[ "$worker_listener_status" == 0 ]]; then
         [[ "$worker_listener" =~ ^[1-9][0-9]*,127\.0\.0\.1:9120$ ]] || fail
         worker_listener_pid="${worker_listener%%,*}"
@@ -399,8 +417,6 @@ else: os.close(fd)
         break
       fi
       [[ "$worker_listener_status" == 1 && -z "$worker_listener" ]] || fail
-      readiness_now="$(/bin/date +%s)" || fail
-      [[ "$readiness_now" =~ ^[0-9]+$ && "$readiness_now" -lt "$readiness_deadline" ]] || fail
       /bin/sleep "$readiness_interval_seconds"
     done
     install_ok=1
