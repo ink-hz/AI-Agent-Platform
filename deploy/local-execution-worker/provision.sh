@@ -10,6 +10,7 @@ metabot_repository=/Users/neo/Developer/work/Orbbec-Agent-Team
 git=/usr/bin/git
 psql_bin=/opt/homebrew/opt/postgresql@17/bin/psql
 psql_socket=/Users/neo/FlywheelData/socket
+agentops_runtime=/Users/agentops/AgentRuntime
 agentops_helper=/Users/agentops/AgentRuntime/deploy-tools/provision-agentops.sh
 agentops_pm2_tool=/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh
 agentops_path=/Users/agentops/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -27,10 +28,24 @@ run_agentops() {
 install_agentops_tool() {
   target="$1" expected="$2" source="$3"
   run_agentops /usr/bin/python3 -c '
-import hashlib,os,pathlib,sys
-target=pathlib.Path(sys.argv[1]); expected=sys.argv[2]; raw=sys.stdin.buffer.read(262145)
+import hashlib,os,pathlib,stat,sys
+target=pathlib.Path(sys.argv[1]); expected=sys.argv[2]; runtime=pathlib.Path(sys.argv[4]); raw=sys.stdin.buffer.read(262145)
 if not raw or len(raw)>262144 or hashlib.sha256(raw).hexdigest()!=expected: raise SystemExit(1)
-target.parent.mkdir(parents=True,exist_ok=True); os.chmod(target.parent,0o700)
+deploy_tools=runtime/"deploy-tools"
+allowed={deploy_tools/"provision-agentops.sh",deploy_tools/"reliability"/"sanitized-pm2.sh"}
+if target not in allowed: raise SystemExit(1)
+home=runtime.parent; home_meta=home.lstat()
+if home.is_symlink() or not stat.S_ISDIR(home_meta.st_mode) or home_meta.st_uid!=os.getuid() or stat.S_IMODE(home_meta.st_mode)&0o022: raise SystemExit(1)
+directories=[runtime,deploy_tools]
+if target.parent!=deploy_tools: directories.append(target.parent)
+for directory in directories:
+ try: directory.mkdir(mode=0o700)
+ except FileExistsError: pass
+ meta=directory.lstat()
+ if directory.is_symlink() or not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=os.getuid() or stat.S_IMODE(meta.st_mode)!=0o700: raise SystemExit(1)
+if target.exists() or target.is_symlink():
+ meta=target.lstat()
+ if target.is_symlink() or not stat.S_ISREG(meta.st_mode) or meta.st_uid!=os.getuid(): raise SystemExit(1)
 part=target.with_name("."+target.name+".part")
 try:
  fd=os.open(part,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),0o700)
@@ -40,10 +55,13 @@ try:
   os.fsync(fd)
  finally: os.close(fd)
  os.replace(part,target); os.chmod(target,0o700)
+ parent_fd=os.open(target.parent,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))
+ try: os.fsync(parent_fd)
+ finally: os.close(parent_fd)
 finally:
  try: os.unlink(part)
  except FileNotFoundError: pass
-' "$target" "$expected" < "$source"
+' "$target" "$expected" "$source" "$agentops_runtime" < "$source"
 }
 
 release_archive=""
@@ -59,6 +77,7 @@ agentops_staged=0
 role_created=0
 hba_changed=0
 worker_pending=0
+worker_committed=0
 success=0
 cleanup_running=0
 temp_password=""
@@ -109,9 +128,19 @@ cleanup() {
         restore_hba >/dev/null 2>&1 || status=1
         reload_hba >/dev/null 2>&1 || status=1
       fi
+    else
+      worker_committed=1
     fi
   elif [[ "$agentops_staged" == 1 ]]; then
     run_agentops "$agentops_helper" cleanup >/dev/null 2>&1 || status=1
+  fi
+
+  if [[ "$status" == 0 && "$final_ok" == 1 && "$worker_committed" == 1 ]]; then
+    if ! run_agentops "$agentops_helper" finalize >/dev/null 2>&1; then
+      temp_password=""
+      echo EXECUTION_WORKER_FINALIZE_RETRY_REQUIRED >&2
+      exit 1
+    fi
   fi
 
   backup_removable=1
@@ -134,9 +163,6 @@ cleanup() {
   fi
   temp_password=""
   if [[ "$status" == 0 && "$final_ok" == 1 && "$backup_removable" == 1 ]]; then
-    if ! run_agentops "$agentops_helper" finalize >/dev/null 2>&1; then
-      exit 1
-    fi
     echo EXECUTION_WORKER_PROVISION_OK
     exit 0
   fi
@@ -234,14 +260,16 @@ lines += ["host agent_execution_worker agent_execution_worker_runtime 127.0.0.1/
 raw=("\n".join(lines)+"\n").encode()+raw
 digest=hashlib.sha256(raw).hexdigest()+"\n"
 state_part=state.with_name("."+state.name+".part")
+try: os.unlink(state_part)
+except FileNotFoundError: pass
 fd=os.open(state_part,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),0o600)
 try:
  view=memoryview(digest.encode("ascii"))
  while view: view=view[os.write(fd,view):]
  os.fsync(fd)
 finally: os.close(fd)
-os.replace(state_part,state)
 part=path.with_name("."+path.name+".agent-worker.part")
+path_published=False; state_published=False
 try:
  fd=os.open(part,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),stat.S_IMODE(meta.st_mode))
  try:
@@ -251,12 +279,35 @@ try:
  finally: os.close(fd)
  current=path.lstat()
  if (current.st_dev,current.st_ino)!=(meta.st_dev,meta.st_ino) or path.read_bytes()!=original: raise SystemExit(1)
- os.replace(part,path); os.chmod(path,stat.S_IMODE(meta.st_mode))
+ os.replace(part,path); path_published=True; os.chmod(path,stat.S_IMODE(meta.st_mode))
+ directory=os.open(path.parent,os.O_RDONLY|getattr(os,"O_DIRECTORY",0))
+ try: os.fsync(directory)
+ finally: os.close(directory)
+ os.replace(state_part,state); state_published=True
  directory=os.open(path.parent,os.O_RDONLY|getattr(os,"O_DIRECTORY",0))
  try: os.fsync(directory)
  finally: os.close(directory)
 except BaseException:
  try: os.unlink(part)
+ except FileNotFoundError: pass
+ if path_published and not state_published:
+  recovery=path.with_name("."+path.name+".agent-worker.recover.part")
+  try:
+   recovery_fd=os.open(recovery,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),stat.S_IMODE(meta.st_mode))
+   try:
+    view=memoryview(original)
+    while view: view=view[os.write(recovery_fd,view):]
+    os.fsync(recovery_fd)
+   finally: os.close(recovery_fd)
+   if path.read_bytes()!=raw: raise SystemExit(1)
+   os.replace(recovery,path); os.chmod(path,stat.S_IMODE(meta.st_mode))
+  except BaseException:
+   try: os.unlink(recovery)
+   except FileNotFoundError: pass
+   try: os.replace(state_part,state)
+   except FileNotFoundError: pass
+   raise
+ try: os.unlink(state_part)
  except FileNotFoundError: pass
  raise
 PY

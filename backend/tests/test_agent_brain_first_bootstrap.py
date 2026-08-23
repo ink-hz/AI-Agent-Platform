@@ -656,6 +656,14 @@ def test_local_provisioning_wrapper_has_narrow_hba_transaction_and_fixed_sudo() 
     assert '-p 5432 -U neo' in source
     assert "current_setting('port')" in source
     assert '"$agentops_helper" finalize' in source
+    assert source.index("os.replace(part,path); path_published=True") < source.index(
+        "os.replace(state_part,state)"
+    )
+    assert source.index('"$agentops_helper" finalize') < source.index(
+        "backup_removable=1"
+    )
+    assert "allowed={deploy_tools/\"provision-agentops.sh\"" in source
+    assert "directory.is_symlink()" in source and "st_uid!=os.getuid()" in source
     assert "# BEGIN ORBBEC AGENT EXECUTION WORKER" in source
     assert "host agent_execution_worker agent_execution_worker_runtime 127.0.0.1/32 scram-sha-256" in source
     assert "host postgres" in source and "scram-sha-256" in source
@@ -744,7 +752,9 @@ def _provision_harness(
     tmp_path: Path,
     *,
     fail_install: bool,
-    fail_finalize: bool = False,
+    fail_permanent_validate: bool = False,
+    fail_helper_finalize: bool = False,
+    unsafe_tool_parent: bool = False,
     fail_stage: str = "",
     original: bytes = b"# user-owned header\nlocal all all trust\n",
 ):
@@ -758,6 +768,7 @@ def _provision_harness(
     pm2_source.chmod(0o700)
     runtime_root = tmp_path / "runtime-root"
     runtime_root.mkdir()
+    agentops_runtime = tmp_path / "agentops-runtime"
     hba = tmp_path / "pg_hba.conf"
     hba.write_bytes(original)
     hba.chmod(0o600)
@@ -798,6 +809,8 @@ def _provision_harness(
         "#!/bin/bash\nset -euo pipefail\n"
         f"HARNESS_LOG={shlex.quote(str(log))}\n"
         f"FAKE_FAIL_STAGE={shlex.quote(fail_stage)}\n"
+        f"FAKE_HELPER_FINALIZE_FAIL={1 if fail_helper_finalize else 0}\n"
+        f"FAKE_FINALIZE_MARKER={shlex.quote(str(tmp_path / 'helper-finalize-failed-once'))}\n"
         f"FAKE_HBA={shlex.quote(str(hba))}\n"
         f"FAKE_RESTORE_TARGET={shlex.quote(str(tmp_path / 'restore-target'))}\n"
         "printf 'helper:%s\\n' \"$1\" >> \"$HARNESS_LOG\"\n"
@@ -805,7 +818,9 @@ def _provision_harness(
         " stage) /bin/cat >/dev/null; echo EXECUTION_WORKER_AGENTOPS_STAGED;;\n"
         " prepare) IFS= read -r secret; [[ \"$secret\" == postgresql://* ]]; [[ \"${FAKE_FAIL_STAGE:-}\" != prepare ]];;\n"
         f" install) {install_action};;\n"
-        " commit) :;; finalize) :;; rollback) :;; cleanup) :;; *) exit 72;; esac\n",
+        " commit) :;;\n"
+        " finalize) if [[ \"$FAKE_HELPER_FINALIZE_FAIL\" == 1 && ! -e \"$FAKE_FINALIZE_MARKER\" ]]; then : > \"$FAKE_FINALIZE_MARKER\"; exit 75; fi;;\n"
+        " rollback) :;; cleanup) :;; *) exit 72;; esac\n",
         encoding="utf-8",
     )
     fake_helper.chmod(0o700)
@@ -828,11 +843,14 @@ def _provision_harness(
     ).replace(
         "psql_socket=/Users/neo/FlywheelData/socket", f"psql_socket={runtime_root}"
     ).replace(
+        "agentops_runtime=/Users/agentops/AgentRuntime",
+        f"agentops_runtime={agentops_runtime}",
+    ).replace(
         "agentops_helper=/Users/agentops/AgentRuntime/deploy-tools/provision-agentops.sh",
-        f"agentops_helper={fake_helper}",
+        f"agentops_helper={agentops_runtime / 'deploy-tools/provision-agentops.sh'}",
     ).replace(
         "agentops_pm2_tool=/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh",
-        f"agentops_pm2_tool={tmp_path / 'agentops-tools/reliability/sanitized-pm2.sh'}",
+        f"agentops_pm2_tool={agentops_runtime / 'deploy-tools/reliability/sanitized-pm2.sh'}",
     ).replace(
         "/Users/neo/FlywheelData", str(runtime_root)
     ).replace(
@@ -842,6 +860,12 @@ def _provision_harness(
         source = source.replace(
             "try: os.fsync(directory)",
             'try: raise OSError("injected post-rename failure")',
+            1,
+        )
+    if fail_stage == "permanent-prerename":
+        source = source.replace(
+            " os.replace(part,path); path_published=True; os.chmod(path,stat.S_IMODE(meta.st_mode))",
+            "\n if mode=='permanent': raise OSError('injected permanent pre-rename failure')\n os.replace(part,path); path_published=True; os.chmod(path,stat.S_IMODE(meta.st_mode))",
             1,
         )
     copied.write_text(source, encoding="utf-8")
@@ -860,6 +884,11 @@ def _provision_harness(
     restore_target = tmp_path / "restore-target"
     restore_target.write_text("do-not-touch", encoding="utf-8")
     reload_marker = tmp_path / "reload-marker"
+    if unsafe_tool_parent:
+        agentops_runtime.mkdir()
+        escape = tmp_path / "unsafe-tool-escape"
+        escape.mkdir()
+        (agentops_runtime / "deploy-tools").symlink_to(escape, target_is_directory=True)
     result = subprocess.run(
         ["/bin/bash", str(copied)],
         text=True,
@@ -868,7 +897,8 @@ def _provision_harness(
             **os.environ,
             "HARNESS_LOG": str(log),
             "FAKE_HBA": str(hba),
-            "FAKE_FINALIZE_FAIL": "1" if fail_finalize else "0",
+            "FAKE_FINALIZE_FAIL": "1" if fail_permanent_validate else "0",
+            "FAKE_HELPER_FINALIZE_FAIL": "1" if fail_helper_finalize else "0",
             "FAKE_FAIL_STAGE": fail_stage,
             "FAKE_RELOAD_MARKER": str(reload_marker),
             "FAKE_RESTORE_TARGET": str(restore_target),
@@ -890,10 +920,22 @@ def test_local_provision_success_removes_bootstrap_hba_and_role(tmp_path: Path) 
     calls = log.read_text(encoding="utf-8")
     assert "helper:prepare" in calls and "helper:install" in calls
     assert "helper:commit" in calls and "helper:finalize" in calls and "drop-role" in calls
-    assert (tmp_path / "agentops-tools/reliability/sanitized-pm2.sh").read_text(
+    assert (tmp_path / "agentops-runtime/deploy-tools/reliability/sanitized-pm2.sh").read_text(
         encoding="utf-8"
     ) == "#!/bin/bash\nexit 0\n"
     assert "postgresql://" not in result.stdout + result.stderr + calls
+
+
+def test_local_provision_rejects_symlinked_agentops_deploy_tools_parent(
+    tmp_path: Path,
+) -> None:
+    result, hba, original, log = _provision_harness(
+        tmp_path, fail_install=False, unsafe_tool_parent=True
+    )
+    assert result.returncode != 0
+    assert hba.read_bytes() == original
+    assert not any((tmp_path / "unsafe-tool-escape").iterdir())
+    assert "helper:stage" not in log.read_text(encoding="utf-8")
 
 
 def test_local_provision_preserves_non_managed_bytes_without_trailing_newline(
@@ -922,17 +964,45 @@ def test_local_provision_failure_restores_hba_and_cleans_bootstrap(tmp_path: Pat
     assert "postgresql://" not in result.stdout + result.stderr + calls
 
 
-def test_local_provision_finalize_failure_removes_temporary_hba_and_restores(
+def test_local_provision_permanent_validation_failure_restores_original_hba(
     tmp_path: Path,
 ) -> None:
     result, hba, original, log = _provision_harness(
-        tmp_path, fail_install=False, fail_finalize=True
+        tmp_path, fail_install=False, fail_permanent_validate=True
     )
     assert result.returncode != 0
     assert hba.read_bytes() == original
     calls = log.read_text(encoding="utf-8")
     assert "helper:rollback" in calls and "helper:cleanup" in calls and "drop-role" in calls
     assert "postgresql://" not in result.stdout + result.stderr + calls
+
+
+def test_local_provision_helper_finalize_failure_retains_transaction_for_retry(
+    tmp_path: Path,
+) -> None:
+    result, hba, original, log = _provision_harness(
+        tmp_path, fail_install=False, fail_helper_finalize=True
+    )
+    assert result.returncode != 0
+    assert hba.read_bytes() != original
+    assert b"host postgres agent_execution_bootstrap_" not in hba.read_bytes()
+    assert b"host agent_execution_worker agent_execution_worker_runtime" in hba.read_bytes()
+    calls = log.read_text(encoding="utf-8")
+    assert "helper:commit" in calls and "helper:finalize" in calls
+    assert "helper:rollback" not in calls and "helper:cleanup" not in calls
+    assert (tmp_path / "runtime-root/.agent-worker-hba.lock").is_dir()
+    assert list(tmp_path.glob(".pg_hba.agent-worker.*"))
+    assert list((tmp_path / "runtime-root").glob(".agent-platform-release.*"))
+    retry = subprocess.run(
+        [
+            "/bin/bash",
+            str(tmp_path / "agentops-runtime/deploy-tools/provision-agentops.sh"),
+            "finalize",
+        ],
+        text=True,
+        capture_output=True,
+    )
+    assert retry.returncode == 0, retry.stderr
 
 
 @pytest.mark.parametrize(
@@ -942,6 +1012,7 @@ def test_local_provision_finalize_failure_removes_temporary_hba_and_restores(
         "role-response-loss",
         "write",
         "postrename",
+        "permanent-prerename",
         "reload",
         "validate",
         "prepare",
