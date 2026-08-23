@@ -302,6 +302,51 @@ class MissionOrchestrator:
                 ).fetchone()
                 if ready is None or ready["ready"] is not True:
                     raise RuntimeError
+                if self._conversation_context_builder is not None:
+                    conversation_objects = cursor.execute(
+                        "select "
+                        "to_regclass('platform_control.conversations') as conversations,"
+                        "to_regclass('platform_control.conversation_messages') as messages,"
+                        "to_regclass('platform_control.conversation_turns') as turns,"
+                        "to_regclass('platform_control.conversation_events') as events"
+                    ).fetchone()
+                    if conversation_objects is None or any(
+                        value is None for value in conversation_objects.values()
+                    ):
+                        raise RuntimeError
+                    conversation_ready = cursor.execute(
+                        "select "
+                        "has_table_privilege(current_user,"
+                        "'platform_control.conversations','select') and "
+                        "has_table_privilege(current_user,"
+                        "'platform_control.conversations','insert') and "
+                        "has_column_privilege(current_user,"
+                        "'platform_control.conversations','status','update') and "
+                        "has_column_privilege(current_user,"
+                        "'platform_control.conversations','updated_at','update') and "
+                        "has_table_privilege(current_user,"
+                        "'platform_control.conversation_messages','select') and "
+                        "has_table_privilege(current_user,"
+                        "'platform_control.conversation_messages','insert') and "
+                        "has_column_privilege(current_user,"
+                        "'platform_control.conversation_messages',"
+                        "'delivery_status','update') and "
+                        "has_table_privilege(current_user,"
+                        "'platform_control.conversation_turns','select') and "
+                        "has_table_privilege(current_user,"
+                        "'platform_control.conversation_turns','insert') and "
+                        "has_column_privilege(current_user,"
+                        "'platform_control.conversation_turns','status','update') and "
+                        "has_table_privilege(current_user,"
+                        "'platform_control.conversation_events','select') and "
+                        "has_table_privilege(current_user,"
+                        "'platform_control.conversation_events','insert') as ready"
+                    ).fetchone()
+                    if (
+                        conversation_ready is None
+                        or conversation_ready["ready"] is not True
+                    ):
+                        raise RuntimeError
             self.missions.check_content_keys()
         except Exception:
             raise RuntimeError("Agent Brain unavailable") from None

@@ -75,6 +75,13 @@ from .execution_relay.repository import ExecutionRelayRepository
 from .execution_relay.routes import build_execution_relay_router
 from .execution_relay.worker_auth import WorkerRequestVerifier
 from .agent_brain.authorization import AgentUseAuthorization
+from .agent_brain.conversation_context import ConversationContextBuilder
+from .agent_brain.conversation_projection import ConversationProjection
+from .agent_brain.conversation_repository import ConversationRepository
+from .agent_brain.conversation_routes import (
+    ConversationCursorCodec,
+    build_conversation_router,
+)
 from .agent_brain.orchestrator import MissionOrchestrator
 from .agent_brain.repository import MissionRepository
 from .agent_brain.routes import MissionCursorCodec, build_agent_brain_router
@@ -488,6 +495,7 @@ def create_app(
     execution_relay_router = None
     agent_brain_orchestrator = None
     mission_repository = None
+    conversation_repository = None
     agent_use_authorization = None
     control_database_url = None
     content_codec = None
@@ -522,11 +530,22 @@ def create_app(
         mission_repository = MissionRepository(
             control_database_url, content_codec=content_codec
         )
+        conversation_repository = ConversationRepository(
+            control_database_url,
+            content_codec=content_codec,
+            mission_repository=mission_repository,
+        )
         agent_use_authorization = AgentUseAuthorization(control_database_url)
         agent_brain_orchestrator = MissionOrchestrator(
             mission_repository,
             execution_relay_repository,
             capability_provider=agent_use_authorization.permitted_agents_for_user_id,
+            conversation_context_builder=ConversationContextBuilder(
+                conversation_repository
+            ),
+            conversation_projection=ConversationProjection(
+                conversation_repository
+            ),
         )
         agent_brain_orchestrator.check_ready()
     if identity_enabled and identity_auth is None:
@@ -699,6 +718,7 @@ def create_app(
     app.state.execution_relay_repository = execution_relay_repository
     app.state.agent_brain_orchestrator = agent_brain_orchestrator
     app.state.mission_repository = mission_repository
+    app.state.conversation_repository = conversation_repository
     app.state.agent_use_authorization = agent_use_authorization
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
@@ -759,6 +779,15 @@ def create_app(
                 mission_repository,
                 agent_use_authorization,
                 cursor_codec=MissionCursorCodec(identity_auth.secrets),
+                session_revalidator=identity_auth.authenticate,
+                session_cookie_name=identity_auth.cookie_name,
+            )
+        )
+        app.include_router(
+            build_conversation_router(
+                conversation_repository,
+                agent_use_authorization,
+                cursor_codec=ConversationCursorCodec(identity_auth.secrets),
                 session_revalidator=identity_auth.authenticate,
                 session_cookie_name=identity_auth.cookie_name,
             )

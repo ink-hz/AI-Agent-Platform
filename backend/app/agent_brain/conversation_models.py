@@ -62,6 +62,18 @@ class ConversationTurnRecord:
 
 
 @dataclass(frozen=True)
+class ConversationEventRecord:
+    event_id: UUID
+    conversation_id: UUID
+    seq: int
+    turn_id: UUID | None
+    mission_id: UUID | None
+    event_type: str
+    created_at: datetime
+    payload: dict[str, object] = field(repr=False)
+
+
+@dataclass(frozen=True)
 class ConversationCreateResult:
     conversation: ConversationRecord
     message: ConversationMessageRecord

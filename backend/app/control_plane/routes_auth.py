@@ -194,6 +194,8 @@ def build_auth_router(
     @router.get("/agents/{client_path:path}", include_in_schema=False)
     @router.get("/missions", include_in_schema=False)
     @router.get("/missions/{client_path:path}", include_in_schema=False)
+    @router.get("/conversations", include_in_schema=False)
+    @router.get("/conversations/{client_path:path}", include_in_schema=False)
     @router.get("/admin", include_in_schema=False)
     @router.get("/admin/{client_path:path}", include_in_schema=False)
     @router.get("/sessions", include_in_schema=False)

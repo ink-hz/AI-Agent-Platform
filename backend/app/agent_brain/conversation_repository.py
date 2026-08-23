@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 
 from app.agent_brain.conversation_models import (
     ConversationCreateResult,
+    ConversationEventRecord,
     ConversationMessageRecord,
     ConversationRecord,
     ConversationTurnRecord,
@@ -194,6 +195,27 @@ class ConversationRepository:
             content=value["text"],
         )
 
+    def _event_from_row(self, row: dict[str, Any]) -> ConversationEventRecord:
+        value = self.content_codec.unseal_json(
+            event_subject(row["conversation_id"], row["event_id"]),
+            SealedContent(
+                bytes(row["payload_ciphertext"]),
+                row["encryption_key_version"],
+            ),
+        )
+        if not isinstance(value, dict):
+            raise ConversationRepositoryError()
+        return ConversationEventRecord(
+            event_id=row["event_id"],
+            conversation_id=row["conversation_id"],
+            seq=row["seq"],
+            turn_id=row["turn_id"],
+            mission_id=row["mission_id"],
+            event_type=row["event_type"],
+            created_at=row["created_at"],
+            payload=value,
+        )
+
     @staticmethod
     def _turn_from_row(row: dict[str, Any]) -> ConversationTurnRecord:
         return ConversationTurnRecord(
@@ -315,6 +337,37 @@ class ConversationRepository:
             mode=conversation_row["mode"],
             direct_agent_id=conversation_row["direct_agent_id"],
         )
+        common_payload = {
+            "turn_id": str(turn_id),
+            "mission_id": str(mission_id),
+            "message_id": str(message_id),
+            "status": "accepted",
+        }
+        if message_seq == 1:
+            self._append_event_locked(
+                cursor,
+                conversation_id,
+                turn_id,
+                mission_id,
+                "conversation.started",
+                common_payload,
+            )
+        self._append_event_locked(
+            cursor,
+            conversation_id,
+            turn_id,
+            mission_id,
+            "message.accepted",
+            common_payload,
+        )
+        self._append_event_locked(
+            cursor,
+            conversation_id,
+            turn_id,
+            mission_id,
+            "turn.accepted",
+            common_payload,
+        )
         conversation_row = cursor.execute(
             "update platform_control.conversations set updated_at=now() "
             "where conversation_id=%s returning *",
@@ -326,6 +379,42 @@ class ConversationRepository:
             self._turn_from_row(turn_row),
             mission,
         )
+
+    def _append_event_locked(
+        self,
+        cursor: Any,
+        conversation_id: UUID,
+        turn_id: UUID | None,
+        mission_id: UUID | None,
+        event_type: str,
+        payload: dict[str, object],
+    ) -> ConversationEventRecord:
+        event_id = uuid4()
+        sealed = self.content_codec.seal_json(
+            event_subject(conversation_id, event_id), payload
+        )
+        sequence = cursor.execute(
+            "select coalesce(max(seq),0)+1 as next_seq from "
+            "platform_control.conversation_events where conversation_id=%s",
+            (conversation_id,),
+        ).fetchone()["next_seq"]
+        row = cursor.execute(
+            "insert into platform_control.conversation_events "
+            "(event_id,conversation_id,seq,turn_id,mission_id,event_type,"
+            "payload_ciphertext,encryption_key_version) "
+            "values (%s,%s,%s,%s,%s,%s,%s,%s) returning *",
+            (
+                event_id,
+                conversation_id,
+                sequence,
+                turn_id,
+                mission_id,
+                event_type,
+                sealed.ciphertext,
+                sealed.key_version,
+            ),
+        ).fetchone()
+        return self._event_from_row(row)
 
     def start(
         self,
@@ -618,6 +707,100 @@ class ConversationRepository:
         except ConversationRepositoryError:
             raise
         except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def events_after(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        *,
+        after: int = 0,
+        limit: int = 500,
+    ) -> tuple[ConversationEventRecord, ...]:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        if (
+            isinstance(after, bool)
+            or not isinstance(after, int)
+            or after < 0
+            or isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 500
+        ):
+            raise ValueError("Conversation event cursor invalid")
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                rows = cursor.execute(
+                    "select event.* from platform_control.conversation_events event "
+                    "join platform_control.conversations conversation "
+                    "on conversation.conversation_id=event.conversation_id "
+                    "where event.conversation_id=%s "
+                    "and conversation.owner_internal_user_id=%s and event.seq>%s "
+                    "order by event.seq limit %s",
+                    (conversation_id, internal_user_id, after, limit),
+                ).fetchall()
+                if not rows and cursor.execute(
+                    "select 1 from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s",
+                    (conversation_id, internal_user_id),
+                ).fetchone() is None:
+                    raise ConversationRepositoryNotFound()
+            return tuple(self._event_from_row(row) for row in rows)
+        except ConversationRepositoryError:
+            raise
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def latest_turn_for_owner(
+        self, internal_user_id: UUID, conversation_id: UUID
+    ) -> ConversationTurnRecord | None:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                owned = cursor.execute(
+                    "select 1 from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if owned is None:
+                    raise ConversationRepositoryNotFound()
+                row = cursor.execute(
+                    "select * from platform_control.conversation_turns "
+                    "where conversation_id=%s order by created_at desc,turn_id desc "
+                    "limit 1",
+                    (conversation_id,),
+                ).fetchone()
+            return self._turn_from_row(row) if row is not None else None
+        except ConversationRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def active_turn_for_owner(
+        self, internal_user_id: UUID, conversation_id: UUID
+    ) -> ConversationTurnRecord | None:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                owned = cursor.execute(
+                    "select 1 from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if owned is None:
+                    raise ConversationRepositoryNotFound()
+                row = cursor.execute(
+                    "select * from platform_control.conversation_turns "
+                    "where conversation_id=%s and status in ('accepted','running') "
+                    "limit 1",
+                    (conversation_id,),
+                ).fetchone()
+            return self._turn_from_row(row) if row is not None else None
+        except ConversationRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error):
             raise ConversationRepositoryError() from None
 
     def list_for_owner(

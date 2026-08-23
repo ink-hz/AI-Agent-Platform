@@ -55,8 +55,19 @@ class _NoObservationGrants:
         ("GET", "/api/v1/brain/missions/{mission_id}/events"),
         ("POST", "/api/v1/brain/missions/{mission_id}/cancel"),
         ("POST", "/api/v1/agents/{agent_id}/missions"),
+        ("POST", "/api/v1/conversations"),
+        ("GET", "/api/v1/conversations"),
+        ("GET", "/api/v1/conversations/{conversation_id}"),
+        ("GET", "/api/v1/conversations/{conversation_id}/messages"),
+        ("POST", "/api/v1/conversations/{conversation_id}/messages"),
+        ("GET", "/api/v1/conversations/{conversation_id}/events"),
+        ("POST", "/api/v1/conversations/{conversation_id}/turns/current/cancel"),
+        ("POST", "/api/v1/conversations/{conversation_id}/archive"),
+        ("POST", "/api/v1/agents/{agent_id}/conversations"),
         ("GET", "/missions"),
         ("GET", "/missions/{client_path:path}"),
+        ("GET", "/conversations"),
+        ("GET", "/conversations/{client_path:path}"),
     ],
 )
 def test_agent_brain_routes_are_exact_authenticated_self_service_routes(
@@ -77,6 +88,9 @@ def test_agent_brain_routes_do_not_authorize_nearby_or_worker_paths() -> None:
 
     assert service.decide(
         context, "GET", "/api/v1/brain/missions/{mission_id}/debug", ()
+    ).status_code == 403
+    assert service.decide(
+        context, "GET", "/api/v1/conversations/{conversation_id}/debug", ()
     ).status_code == 403
     assert service.decide(
         context, "POST", "/api/v1/execution-worker/lease", ()
@@ -355,8 +369,9 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
     assert root.status_code == 302
     assert root.headers["location"] == "/admin"
     for path in (
-        "/account", "/agents", "/agents/hr-bot", "/missions",
+        "/account", "/agents", "/agents/hr-bot", "/missions", "/conversations",
         "/missions/00000000-0000-0000-0000-000000000001", "/admin",
+        "/conversations/00000000-0000-0000-0000-000000000001",
         "/admin/agents", "/admin/sessions/fae%3Aone", "/sessions",
         "/sessions/fae%3Aone", "/review", "/activity", "/identity",
         "/governance",

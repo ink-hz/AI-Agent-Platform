@@ -38,6 +38,9 @@ _WORKER_NAMESPACE = "/api/v1/execution-worker"
 _DIRECT_AGENT_MISSION_RESPONSE = re.compile(
     r"/api/v1/agents/[^/]+/missions\Z"
 )
+_DIRECT_AGENT_CONVERSATION_RESPONSE = re.compile(
+    r"/api/v1/agents/[^/]+/conversations\Z"
+)
 
 
 def _is_agent_brain_response_path(path: str | None) -> bool:
@@ -47,7 +50,10 @@ def _is_agent_brain_response_path(path: str | None) -> bool:
         path == "/api/v1/catalog/agents"
         or path == "/api/v1/brain/missions"
         or path.startswith("/api/v1/brain/missions/")
+        or path == "/api/v1/conversations"
+        or path.startswith("/api/v1/conversations/")
         or _DIRECT_AGENT_MISSION_RESPONSE.fullmatch(path) is not None
+        or _DIRECT_AGENT_CONVERSATION_RESPONSE.fullmatch(path) is not None
     )
 
 
