@@ -269,6 +269,22 @@ def test_remote_stage_migrates_brain_disabled_then_bootstraps_worker_exactly() -
     assert "execution-worker-public-keyring.json" in source
 
 
+def test_remote_stage_seeds_missing_worker_keyring_backup_from_staged_document() -> None:
+    source = REMOTE_STAGE.read_text(encoding="utf-8")
+    registration = source.index("app.execution_relay.bootstrap_registration")
+    missing_gate = source.index(
+        'if [[ -e "$worker_keyring" || -L "$worker_keyring" ]]',
+        registration,
+    )
+    seed = source.index(
+        '"$staged_worker_keyring" "$worker_keyring_previous"', missing_gate
+    )
+    journal = source.index("write_deploy_state keyring_switching", seed)
+    publish = source.index('"$staged_worker_keyring" "$worker_keyring_part"', journal)
+
+    assert registration < missing_gate < seed < journal < publish
+
+
 def test_remote_stage_rejects_non_executable_bootstrap_helpers_before_mutation(
     tmp_path: Path,
 ) -> None:

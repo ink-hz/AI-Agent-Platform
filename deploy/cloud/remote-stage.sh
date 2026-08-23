@@ -508,7 +508,11 @@ worker_bootstrap_result="$(/usr/bin/docker run --rm --user 0:0 --read-only \
   /run/bootstrap/execution-worker-public-keyring.json)" || fail
 [[ "$worker_bootstrap_result" =~ ^EXECUTION_WORKER_BOOTSTRAP_OK\ status=(registered|existing)\ fingerprint=[0-9a-f]{64}$ ]] || fail
 /usr/bin/test ! -e "$worker_keyring_previous" || fail
-/usr/bin/install -o root -g root -m 600 "$worker_keyring" "$worker_keyring_previous"
+if [[ -e "$worker_keyring" || -L "$worker_keyring" ]]; then
+  /usr/bin/install -o root -g root -m 600 "$worker_keyring" "$worker_keyring_previous"
+else
+  /usr/bin/install -o root -g root -m 600 "$staged_worker_keyring" "$worker_keyring_previous"
+fi
 fsync_file "$worker_keyring_previous"
 fsync_private
 previous_keyring_sha="$(/usr/bin/sha256sum "$worker_keyring_previous" | /usr/bin/awk '{print $1}')"
