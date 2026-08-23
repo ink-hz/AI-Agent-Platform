@@ -55,7 +55,35 @@ CLOUD_PLATFORM_DEPLOY_OK release=<commit> mode=dingtalk
 ```
 
 Deployment starts the formal services while the existing root Basic Auth is
-still present. Wait for the first atomic directory generation and verify the
+still present. Platform deploys first; the AI ADMIN strict consumer remains on
+its previous release until every gate below passes. Before Platform
+publish/cutover, run the gender probe inside the directory container so its
+file-backed secrets stay inside that service:
+
+```bash
+environment_path=/opt/orbbec-agent-platform/private/platform.env
+compose_path=/opt/orbbec-agent-platform/current/deploy/cloud/compose.yaml
+gender_probe_json="$(docker compose --env-file "$environment_path" \
+  -f "$compose_path" run --rm --no-deps platform-directory \
+  python -m app.control_plane.gender_probe)" || exit 1
+python3 -c \
+  'import json,sys; assert json.loads(sys.stdin.read()).get("ready") is True' \
+  <<<"$gender_probe_json" || exit 1
+unset gender_probe_json
+```
+
+Both the container command and the JSON `ready` boolean are fail-closed gates.
+Do not print the captured JSON or load any secret on the controller. Wait for a
+completed active directory generation with source schema version exactly `2`,
+then run the aggregate database gate used by
+`accept-dingtalk-production.sh`. Its only permitted result is
+`active:valid:null_invalid`; `active` must be positive and equal `valid`, every
+active member must satisfy `gender in ('male','female')`, and the null/invalid count is zero.
+Acceptance evidence must contain only these fixed aggregate
+counts/status. It must not contain employee names, gender values, provider identifiers,
+mobile numbers, ciphertext, raw rows, or provider payloads.
+
+After the probe and complete schema-v2 reconciliation pass, verify the
 directory/event heartbeat. Bind the sole owner with the exact private DingTalk
 userid; never select the owner by display name:
 
@@ -93,6 +121,11 @@ FAE:
 
 Do not delete the cutover state or pre-cutover release until the acceptance
 window closes.
+
+Deploy the AI ADMIN strict consumer only after Platform publish and the
+authenticated account proof have passed. Rollback AI ADMIN first, then perform
+the Platform compatibility rollback; retain the synchronized nullable column
+and do not delete directory data.
 
 ## One-time local preparation
 

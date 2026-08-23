@@ -230,3 +230,73 @@ def test_production_acceptance_covers_platform_identity_workers_and_fae_invarian
         "/admin/?view=services",
     ):
         assert forbidden not in script
+
+
+def test_production_acceptance_gates_on_private_gender_probe_and_schema_v2_coverage():
+    script = (CLOUD / "accept-dingtalk-production.sh").read_text(
+        encoding="utf-8"
+    )
+
+    for required in (
+        'gender_probe_json="$("${compose[@]}" run --rm --no-deps',
+        "platform-directory python -m app.control_plane.gender_probe",
+        'json.loads(sys.stdin.read()).get("ready") is True',
+        "generation.status='complete'",
+        "generation.source_schema_version=2",
+        "member.status='active'",
+        "member.gender in ('male','female')",
+        "member.gender is null or member.gender not in ('male','female')",
+        "gender_coverage=",
+    ):
+        assert required in script
+
+    assert script.index("python -m app.control_plane.gender_probe") < script.index(
+        "/usr/sbin/nginx -t"
+    )
+    for forbidden in (
+        'echo "$gender_probe_json"',
+        "select member.display_name",
+        "select member.gender",
+        "encrypted_provider_id",
+        "union_encrypted_provider_id",
+        "provider_id",
+        "mobile",
+    ):
+        assert forbidden not in script
+
+
+def test_release_runbooks_require_platform_first_gender_gates_and_reverse_rollback():
+    cloud = (ROOT / "docs" / "runbooks" / "cloud-platform.md").read_text(
+        encoding="utf-8"
+    )
+    acceptance = (
+        ROOT / "docs" / "runbooks" / "dingtalk-r1-acceptance.md"
+    ).read_text(encoding="utf-8")
+
+    for text in (cloud, acceptance):
+        for required in (
+            "python -m app.control_plane.gender_probe",
+            "`ready`",
+            "source schema version exactly `2`",
+            "`active:valid:null_invalid`",
+            "`gender in ('male','female')`",
+            "null/invalid count is zero",
+        ):
+            assert required in text
+        for forbidden in (
+            "employee names",
+            "gender values",
+            "provider identifiers",
+            "mobile numbers",
+            "ciphertext",
+            "raw rows",
+            "provider payloads",
+        ):
+            assert forbidden in text
+
+    assert cloud.index("python -m app.control_plane.gender_probe") < cloud.index(
+        "publish-dingtalk-production.sh"
+    )
+    assert "Platform deploys first" in cloud
+    assert "AI ADMIN strict consumer" in cloud
+    assert "Rollback AI ADMIN first" in cloud

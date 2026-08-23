@@ -26,6 +26,13 @@ source "$cutover_state"
 set +a
 
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$compose_path")
+gender_probe_json="$("${compose[@]}" run --rm --no-deps \
+  platform-directory python -m app.control_plane.gender_probe)" || fail
+/usr/bin/python3 -c \
+  'import json,sys; assert json.loads(sys.stdin.read()).get("ready") is True' \
+  <<<"$gender_probe_json" || fail
+unset gender_probe_json
+
 for service in platform-postgres platform-api platform-loopback platform-directory platform-dingtalk-stream; do
   container_id="$("${compose[@]}" ps -q "$service")"
   [[ -n "$container_id" ]] || fail
@@ -37,10 +44,26 @@ readiness="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
   -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c \
   "select concat(
     (select count(*) from platform_control.internal_users where role='platform_owner' and status='active'), ':',
-    (select count(*) from platform_control.directory_state where singleton and active_generation_id is not null and last_complete_at > clock_timestamp() - interval '8 hours'), ':',
+    (select count(*) from platform_control.directory_state state join platform_control.directory_generations generation on generation.generation_id=state.active_generation_id where state.singleton and generation.status='complete' and generation.source_schema_version=2 and state.last_complete_at > clock_timestamp() - interval '8 hours'), ':',
     (select count(*) from platform_control.worker_heartbeats where worker_name='dingtalk-directory-event' and status='healthy' and last_seen_at > clock_timestamp() - interval '2 minutes')
   )")" || fail
 [[ "$readiness" == "1:1:1" ]] || fail
+
+gender_coverage="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
+  -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c \
+  "select concat(
+    count(*) filter (where member.status='active'), ':',
+    count(*) filter (where member.status='active' and member.gender in ('male','female')), ':',
+    count(*) filter (where member.status='active' and (member.gender is null or member.gender not in ('male','female')))
+  ) from platform_control.directory_state state join platform_control.directory_members member on member.generation_id=state.active_generation_id where state.singleton")" || fail
+IFS=: read -r active_gender_count valid_gender_count null_invalid_gender_count \
+  <<<"$gender_coverage"
+[[ "$active_gender_count" =~ ^[0-9]+$ \
+  && "$valid_gender_count" =~ ^[0-9]+$ \
+  && "$null_invalid_gender_count" =~ ^[0-9]+$ \
+  && "$active_gender_count" -gt 0 \
+  && "$active_gender_count" -eq "$valid_gender_count" \
+  && "$null_invalid_gender_count" -eq 0 ]] || fail
 
 /usr/sbin/nginx -t >/dev/null 2>&1 || fail
 ! /usr/bin/grep -Fq 'auth_basic "Orbbec Agent Platform";' "$agent_config" || fail
@@ -80,4 +103,4 @@ trap cleanup EXIT
 
 trap - EXIT
 cleanup
-echo "DINGTALK_PRODUCTION_ACCEPTANCE_OK release=$release_sha"
+echo "DINGTALK_PRODUCTION_ACCEPTANCE_OK release=$release_sha gender_coverage=$gender_coverage"
