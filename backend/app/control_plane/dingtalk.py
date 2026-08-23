@@ -9,7 +9,7 @@ import inspect
 import logging
 import re
 import time
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from uuid import uuid4
 
 import httpx
@@ -30,6 +30,9 @@ _LOG_SECRETS: ContextVar[tuple[str, ...]] = ContextVar(
     "dingtalk_log_secrets", default=()
 )
 _Parsed = TypeVar("_Parsed")
+DINGTALK_GENDER_ATTRIBUTE = "性别"
+DingTalkGender = Literal["male", "female"]
+GenderAttributeStatus = Literal["valid", "missing", "invalid"]
 
 
 def _redact_log_value(value: object) -> str:
@@ -86,6 +89,10 @@ class DingTalkMember:
     display_name: str = field(repr=False)
     active: bool
     department_ids: tuple[int, ...]
+    gender: DingTalkGender | None = field(default=None, repr=False)
+    gender_attribute_status: GenderAttributeStatus = field(
+        default="missing", repr=False
+    )
 
 
 @dataclass(frozen=True)
@@ -166,6 +173,27 @@ def _required_boolean(value: object) -> bool:
     if not isinstance(value, bool):
         raise ValueError
     return value
+
+
+def _gender_attribute(
+    payload: dict[str, Any],
+) -> tuple[DingTalkGender | None, GenderAttributeStatus]:
+    if "extension" not in payload:
+        return None, "missing"
+    extension = payload["extension"]
+    if not isinstance(extension, dict):
+        return None, "invalid"
+    if DINGTALK_GENDER_ATTRIBUTE not in extension:
+        return None, "missing"
+    raw = extension[DINGTALK_GENDER_ATTRIBUTE]
+    if type(raw) is not str:
+        return None, "invalid"
+    normalized = raw.strip()
+    if normalized == "男":
+        return "male", "valid"
+    if normalized == "女":
+        return "female", "valid"
+    return None, "invalid"
 
 
 def _optional_integer(value: object) -> int | None:
@@ -584,12 +612,15 @@ class DingTalkClient:
             if not isinstance(raw_departments, list):
                 raise ValueError
             departments = tuple(_required_integer(item) for item in raw_departments)
+            gender, gender_attribute_status = _gender_attribute(result)
             return DingTalkMember(
                 userid=_required_string(result.get("userid")),
                 unionid=_required_string(result.get("unionid")),
                 display_name=_required_string(result.get("name"), maximum=256),
                 active=_required_boolean(result.get("active")),
                 department_ids=departments,
+                gender=gender,
+                gender_attribute_status=gender_attribute_status,
             )
 
         member = _parse_provider_value(parse_member)

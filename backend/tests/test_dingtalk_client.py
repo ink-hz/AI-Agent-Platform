@@ -277,6 +277,127 @@ async def test_get_member_preserves_inactive_state_and_strictly_parses_response(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("extension", "gender", "status"),
+    [
+        ({"性别": "男"}, "male", "valid"),
+        ({"性别": " 女 "}, "female", "valid"),
+        ({}, None, "missing"),
+        ({"性别": ""}, None, "invalid"),
+        ({"性别": "未知"}, None, "invalid"),
+        ({"性别": ["男"]}, None, "invalid"),
+    ],
+)
+@respx.mock
+async def test_member_normalizes_only_the_configured_gender_attribute(
+    extension, gender, status
+) -> None:
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/v2/user/get").mock(
+        return_value=httpx.Response(200, json={"errcode": 0, "errmsg": "ok", "result": {
+            "userid": "employee-1",
+            "unionid": "union-1",
+            "name": "Employee",
+            "active": True,
+            "dept_id_list": [1],
+            "extension": extension,
+        }})
+    )
+    client = _client()
+    member = await client.get_member("employee-1")
+    assert member.gender == gender
+    assert member.gender_attribute_status == status
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    "extension, status",
+    [(pytest.param(None, "missing", id="absent")), ([], "invalid")],
+)
+async def test_member_gender_attribute_requires_an_object_extension(
+    extension, status
+) -> None:
+    result = {
+        "userid": "employee-1",
+        "unionid": "union-1",
+        "name": "Employee",
+        "active": True,
+        "dept_id_list": [1],
+    }
+    if extension is not None:
+        result["extension"] = extension
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/v2/user/get").mock(
+        return_value=httpx.Response(200, json={"errcode": 0, "errmsg": "ok", "result": result})
+    )
+
+    member = await _client().get_member("employee-1")
+
+    assert member.gender is None
+    assert member.gender_attribute_status == status
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_member_list_normalizes_gender_without_retaining_extension() -> None:
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/v2/user/list").mock(
+        return_value=httpx.Response(200, json={"errcode": 0, "errmsg": "ok", "result": {
+            "has_more": False,
+            "next_cursor": 0,
+            "list": [{
+                "userid": "employee-1",
+                "unionid": "union-1",
+                "name": "Employee",
+                "active": True,
+                "dept_id_list": [1],
+                "extension": {"性别": "女", "other": "discarded"},
+            }],
+        }})
+    )
+
+    members = [member async for member in _client().iter_department_members(1)]
+
+    assert members[0].gender == "female"
+    assert members[0].gender_attribute_status == "valid"
+    assert not hasattr(members[0], "extension")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_invalid_member_gender_extension_never_appears_in_errors_or_logs(caplog) -> None:
+    extension = {"性别": "男", "other": "女"}
+    private_values = (
+        "男",
+        "女",
+        "Employee Sensitive",
+        "employee-sensitive",
+        "union-sensitive",
+    )
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/v2/user/get").mock(
+        return_value=httpx.Response(200, json={"errcode": 0, "errmsg": "ok", "result": {
+            "userid": "employee-sensitive",
+            "unionid": "union-sensitive",
+            "name": "Employee Sensitive",
+            "active": True,
+            "dept_id_list": [1],
+            "extension": extension,
+        }})
+    )
+    caplog.set_level(logging.WARNING)
+
+    with pytest.raises(DingTalkProviderError) as caught:
+        await _client().get_member("different-employee")
+
+    rendered = str(caught.value) + repr(caught.value) + caplog.text
+    assert all(value not in rendered for value in private_values)
+    assert repr(extension) not in rendered
+
+
+@pytest.mark.asyncio
 @respx.mock
 async def test_department_tree_and_member_pages_are_typed_async_iterators() -> None:
     respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
