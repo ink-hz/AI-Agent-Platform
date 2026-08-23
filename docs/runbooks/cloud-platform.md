@@ -174,6 +174,10 @@ ambiguous PM2 state, a non-loopback or duplicate listener, or a listener PID
 different from the PM2 PID fails immediately. The deadline begins as soon as
 the installer returns from PM2 start and is checked again before accepting a
 listener; failure restores the prior Worker state and PM2 dump.
+Rollback restoration of a previously online Worker applies the same strict
+identity mapping and a separate fixed 60-second `launching`-to-`online` wait;
+failed PM2 states or expiration fail the rollback instead of claiming that the
+prior state was restored.
 
 Create a private JSON acceptance config and four private browser-input files.
 The config, the member and owner Cookie header files, the HR acceptance prompt,

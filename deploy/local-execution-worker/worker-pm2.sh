@@ -101,6 +101,32 @@ readiness() {
       end'
 }
 
+wait_until_online() {
+  restore_interval_seconds=5
+  restore_timeout_seconds=60
+  restore_started="$(/bin/date +%s)" || return 1
+  [[ "$restore_started" =~ ^[0-9]+$ ]] || return 1
+  restore_deadline=$((restore_started + restore_timeout_seconds))
+  while true; do
+    restore_now="$(/bin/date +%s)" || return 1
+    [[ "$restore_now" =~ ^[0-9]+$ && "$restore_now" -lt "$restore_deadline" ]] || return 1
+    restore_readiness="$(readiness)" || return 1
+    restore_phase="$(/usr/bin/jq -er '
+      if keys == ["phase"] and (.phase == "starting" or .phase == "failed")
+        then .phase
+      elif keys == ["phase","pid"] and .phase == "online"
+        and (.pid | type) == "number" and .pid > 0
+        then .phase
+      else error("invalid worker readiness") end
+    ' <<<"$restore_readiness")" || return 1
+    [[ "$restore_phase" != failed ]] || return 1
+    [[ "$restore_phase" != online ]] || return 0
+    restore_now="$(/bin/date +%s)" || return 1
+    [[ "$restore_now" =~ ^[0-9]+$ && "$restore_now" -lt "$restore_deadline" ]] || return 1
+    /bin/sleep "$restore_interval_seconds"
+  done
+}
+
 case "$1" in
   state)
     [[ $# -eq 1 ]] || fail
@@ -148,7 +174,11 @@ case "$1" in
       fixed_config || fail
       delete_worker
       pm2_clean start "$config" --only "$name" --update-env >/dev/null
-      [[ "$2" == online ]] || pm2_clean stop "$name" >/dev/null
+      if [[ "$2" == online ]]; then
+        wait_until_online || fail
+      else
+        pm2_clean stop "$name" >/dev/null
+      fi
     fi
     [[ "$(state)" == "$2" ]] || fail
     ;;
