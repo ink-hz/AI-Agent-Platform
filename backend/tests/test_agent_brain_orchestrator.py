@@ -100,6 +100,7 @@ def brain_database(control_database):
     owner_id = uuid4()
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute("set constraints all deferred")
+        connection.execute("delete from platform_control.conversation_feedback")
         connection.execute("delete from platform_control.conversation_events")
         connection.execute("delete from platform_control.execution_events")
         connection.execute("delete from platform_control.execution_jobs")
@@ -119,6 +120,7 @@ def brain_database(control_database):
     yield environment, owner_id
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute("set constraints all deferred")
+        connection.execute("delete from platform_control.conversation_feedback")
         connection.execute("delete from platform_control.conversation_events")
         connection.execute("delete from platform_control.execution_events")
         connection.execute("delete from platform_control.execution_jobs")
@@ -1340,5 +1342,45 @@ def test_conversation_runtime_readiness_fails_closed_without_table_access(
         with psycopg.connect(environment["admin"], autocommit=True) as connection:
             connection.execute(
                 "grant select on platform_control.conversations "
+                "to platform_control_app"
+            )
+
+
+@pytest.mark.postgres
+def test_conversation_summary_readiness_requires_narrow_update_grants(
+    brain_database,
+) -> None:
+    environment, _owner_id = brain_database
+    codec = _codec()
+    missions = MissionRepository(
+        environment["urls"]["platform_control_app"], content_codec=codec
+    )
+    conversations = ConversationRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=codec,
+        mission_repository=missions,
+    )
+    service = MissionOrchestrator(
+        missions,
+        ScriptedRelay(),
+        capability_provider=lambda _owner_id: load_capability_cards(),
+        conversation_context_builder=ConversationContextBuilder(conversations),
+        conversation_projection=ConversationProjection(conversations),
+    )
+    columns = (
+        "summary_ciphertext,summary_key_version,summary_through_seq"
+    )
+    with psycopg.connect(environment["admin"], autocommit=True) as connection:
+        connection.execute(
+            f"revoke update ({columns}) on platform_control.conversations "
+            "from platform_control_app"
+        )
+    try:
+        with pytest.raises(RuntimeError, match="Agent Brain unavailable"):
+            service.check_ready()
+    finally:
+        with psycopg.connect(environment["admin"], autocommit=True) as connection:
+            connection.execute(
+                f"grant update ({columns}) on platform_control.conversations "
                 "to platform_control_app"
             )

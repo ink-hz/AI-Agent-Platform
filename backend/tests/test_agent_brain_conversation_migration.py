@@ -241,3 +241,21 @@ def test_conversation_tables_are_environment_scoped_and_never_deletable(
                     "from unnest(%s::text[]) table_name",
                     (role, list(CONVERSATION_TABLES)),
                 ).fetchone() == (True,)
+
+
+@pytest.mark.postgres
+def test_agent_brain_run_schema_supports_internal_summary_phase(
+    control_database,
+) -> None:
+    for environment in control_database["environments"].values():
+        with psycopg.connect(environment["admin"]) as connection:
+            constraints = "\n".join(
+                row[0]
+                for row in connection.execute(
+                    "select pg_get_constraintdef(oid) from pg_constraint "
+                    "where connamespace='platform_control'::regnamespace "
+                    "and conrelid='platform_control.mission_runs'::regclass "
+                    "and contype='c'"
+                )
+            )
+        assert "'summary'::text" in constraints

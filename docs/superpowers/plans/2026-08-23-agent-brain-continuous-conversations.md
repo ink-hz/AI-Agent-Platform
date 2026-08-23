@@ -630,7 +630,7 @@ git commit -m "feat(brain): observe and review conversation turns"
 - Produces encrypted summary plus `summary_through_seq`.
 - Uses only the existing Agent Brain runtime; adds no cloud model client.
 
-- [ ] **Step 1: Write failing summary tests**
+- [x] **Step 1: Write failing summary tests**
 
 ```python
 def test_summary_compacts_only_completed_turns(summarizer, long_conversation):
@@ -644,14 +644,14 @@ def test_summary_compacts_only_completed_turns(summarizer, long_conversation):
 
 Reject extra fields, wrong sequence, output over 32 KiB, and unavailable runtime. Failure keeps the previous summary and writes an explicit system message.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 ```bash
 cd backend
 .venv/bin/pytest tests/test_agent_brain_conversation_summary.py tests/test_agent_brain_conversation_context.py -q
 ```
 
-- [ ] **Step 3: Implement strict summary protocol**
+- [x] **Step 3: Implement strict summary protocol**
 
 Accept exactly:
 
@@ -661,11 +661,11 @@ Accept exactly:
 
 Require `through_seq` to equal a Platform-selected completed assistant sequence. Encrypt with `conversation:{conversation_id}:summary:v{key_version}` and update summary fields atomically.
 
-- [ ] **Step 4: Trigger compaction before over-budget planning**
+- [x] **Step 4: Trigger compaction before over-budget planning**
 
 Enqueue one Brain summary phase before planning. On success continue the same Turn; on failure mark it failed with a user-visible message without dropping the current request or reading unrelated history.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```bash
 git add backend/app/agent_brain/conversation_context.py backend/app/agent_brain/conversation_repository.py backend/app/agent_brain/orchestrator.py backend/tests/test_agent_brain_conversation_summary.py

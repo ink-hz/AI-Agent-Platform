@@ -847,6 +847,91 @@ class ConversationRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise ConversationRepositoryError() from None
 
+    def store_summary(
+        self,
+        conversation_id: UUID,
+        current_turn_id: UUID,
+        through_seq: int,
+        summary: str,
+    ) -> ConversationRecord:
+        _require_uuid(conversation_id)
+        _require_uuid(current_turn_id)
+        if (
+            isinstance(through_seq, bool)
+            or not isinstance(through_seq, int)
+            or through_seq <= 0
+            or not isinstance(summary, str)
+            or not summary.strip()
+        ):
+            raise ValueError("Conversation summary invalid")
+        try:
+            if len(summary.encode("utf-8")) > 32 * 1024:
+                raise ValueError("Conversation summary invalid")
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    "select conversation.*,message.seq as current_user_seq "
+                    "from platform_control.conversations conversation "
+                    "join platform_control.conversation_turns turn "
+                    "on turn.conversation_id=conversation.conversation_id "
+                    "and turn.turn_id=%s "
+                    "join platform_control.conversation_messages message "
+                    "on message.conversation_id=turn.conversation_id "
+                    "and message.message_id=turn.user_message_id "
+                    "where conversation.conversation_id=%s for update of conversation",
+                    (current_turn_id, conversation_id),
+                ).fetchone()
+                if row is None:
+                    raise ConversationRepositoryNotFound()
+                selected = cursor.execute(
+                    "select max(message.seq) as through_seq from "
+                    "platform_control.conversation_messages message "
+                    "join platform_control.conversation_turns turn "
+                    "on turn.conversation_id=message.conversation_id "
+                    "and turn.assistant_message_id=message.message_id "
+                    "where message.conversation_id=%s and message.role='assistant' "
+                    "and message.delivery_status='completed' "
+                    "and message.seq<%s and turn.status='completed'",
+                    (conversation_id, row["current_user_seq"]),
+                ).fetchone()["through_seq"]
+                if selected != through_seq:
+                    raise ConversationRepositoryConflict()
+                existing = self._conversation_from_row(row)
+                if existing.summary_through_seq == through_seq:
+                    if existing.summary != summary:
+                        raise ConversationRepositoryConflict()
+                    return existing
+                if existing.summary_through_seq >= through_seq:
+                    raise ConversationRepositoryConflict()
+                key_version = self.content_codec.active_key_version
+                sealed = self.content_codec.seal_json(
+                    _summary_subject(conversation_id, key_version),
+                    {"summary": summary},
+                )
+                updated = cursor.execute(
+                    "update platform_control.conversations set "
+                    "summary_ciphertext=%s,summary_key_version=%s,"
+                    "summary_through_seq=%s,updated_at=now() "
+                    "where conversation_id=%s returning *",
+                    (
+                        sealed.ciphertext,
+                        sealed.key_version,
+                        through_seq,
+                        conversation_id,
+                    ),
+                ).fetchone()
+            return self._conversation_from_row(updated)
+        except ConversationRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise ConversationRepositoryError() from None
+
     def list_feedback(
         self, limit: int = 100, offset: int = 0
     ) -> tuple[tuple[ConversationFeedbackRecord, ...], int]:

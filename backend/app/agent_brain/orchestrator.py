@@ -16,7 +16,15 @@ from app.execution_relay.repository import (
     ExecutionRelayNotFound,
 )
 
-from .conversation_context import ConversationContext, ConversationContextBuilder
+from .conversation_context import (
+    ConversationCompactionCandidate,
+    ConversationContext,
+    ConversationContextBuilder,
+    ConversationContextError,
+    ConversationSummaryProtocolError,
+    parse_summary_result,
+)
+from .conversation_repository import ConversationRepositoryError
 from .conversation_projection import ConversationProjection
 from .models import AgentCapabilityCard
 from .protocol import BrainProtocolError, parse_brain_decision
@@ -57,6 +65,16 @@ _DECISION_SCHEMA = {
         "agent_id": {"type": ["string", "null"]},
         "objective": {"type": ["string", "null"]},
         "rationale_summary": {"type": "string"},
+    },
+}
+
+_SUMMARY_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["summary", "through_seq"],
+    "properties": {
+        "summary": {"type": "string"},
+        "through_seq": {"type": "integer", "minimum": 1},
     },
 }
 
@@ -115,6 +133,26 @@ def build_planning_prompt(
         output_json_schema=_DECISION_SCHEMA,
         authorized_capability_cards=[_card_payload(card) for card in cards],
         **_request_sections(user_request),
+    )
+
+
+def build_summary_prompt(candidate: ConversationCompactionCandidate) -> str:
+    if not isinstance(candidate, ConversationCompactionCandidate):
+        raise ValueError("conversation summary candidate invalid")
+    return _envelope(
+        role_instruction=(
+            "Summarize the durable user-visible conversation facts, decisions, "
+            "constraints, open questions, and delivered results. Return exactly "
+            "one JSON object matching output_json_schema. Do not invent facts, "
+            "include secrets, or reveal hidden reasoning."
+        ),
+        output_json_schema=_SUMMARY_SCHEMA,
+        previous_summary=candidate.previous_summary,
+        conversation_messages=[
+            {"role": message.role, "content": message.content}
+            for message in candidate.messages
+        ],
+        through_seq=candidate.through_seq,
     )
 
 
@@ -324,6 +362,15 @@ class MissionOrchestrator:
                         "'platform_control.conversations','status','update') and "
                         "has_column_privilege(current_user,"
                         "'platform_control.conversations','updated_at','update') and "
+                        "has_column_privilege(current_user,"
+                        "'platform_control.conversations',"
+                        "'summary_ciphertext','update') and "
+                        "has_column_privilege(current_user,"
+                        "'platform_control.conversations',"
+                        "'summary_key_version','update') and "
+                        "has_column_privilege(current_user,"
+                        "'platform_control.conversations',"
+                        "'summary_through_seq','update') and "
                         "has_table_privilege(current_user,"
                         "'platform_control.conversation_messages','select') and "
                         "has_table_privilege(current_user,"
@@ -639,7 +686,62 @@ class MissionOrchestrator:
                 return self._advance_professional(mission, active)
             if active.phase == "direct":
                 return self._advance_direct(mission, active)
+            if active.phase == "summary":
+                return self._advance_summary(mission, active)
             return self._advance_synthesis(mission, active)
+
+        summary = runs.get("summary")
+        if self._conversation_context_builder is not None and (
+            mission.conversation_id is not None and mission.turn_id is not None
+        ):
+            if summary is None and not runs:
+                try:
+                    candidate = self._conversation_context_builder.compaction_candidate(
+                        mission.conversation_id, mission.turn_id
+                    )
+                except ConversationContextError:
+                    return self._terminate_context_failure(mission)
+                if candidate is not None:
+                    prompt = build_summary_prompt(candidate)
+                    summary = self.missions.create_run(
+                        mission.owner_internal_user_id,
+                        mission.mission_id,
+                        phase="summary",
+                        agent_id="agent-brain-bot",
+                        input_payload={"through_seq": candidate.through_seq},
+                        event_type="brain.responding",
+                        event_payload={
+                            "text": "正在整理较长对话的上下文",
+                            "stage": "summary",
+                        },
+                        expected_mission_status=mission.status,
+                        expected_row_version=mission.row_version,
+                    )
+                    self._enqueue(mission, summary, prompt)
+                    return True
+            if summary is not None and summary.status != "completed":
+                state = self._relay_status_optional(summary)
+                if state in _TERMINAL_RELAY_STATES:
+                    return self._advance_summary(mission, summary)
+                try:
+                    candidate = self._conversation_context_builder.compaction_candidate(
+                        mission.conversation_id, mission.turn_id
+                    )
+                except ConversationContextError:
+                    return self._fail_summary_run(
+                        mission, summary, "context_unavailable"
+                    )
+                if (
+                    candidate is None
+                    or summary.input_payload.get("through_seq")
+                    != candidate.through_seq
+                ):
+                    return self._fail_summary_run(
+                        mission, summary, "context_changed"
+                    )
+                if self._enqueue(mission, summary, build_summary_prompt(candidate)):
+                    return True
+                return self._advance_summary(mission, summary)
 
         if mission.mode == "direct_agent":
             direct = runs.get("direct")
@@ -912,6 +1014,85 @@ class MissionOrchestrator:
                 )
             return True
         return self._complete_terminal(mission, run, state, events)
+
+    def _advance_summary(self, mission: MissionRecord, run: MissionRun) -> bool:
+        state, events = self._run_state(mission, run)
+        if state in _ACTIVE_RELAY_STATES:
+            return False
+        if state != "completed":
+            return self._complete_terminal(mission, run, state, events)
+        rendered = _terminal_text(events, state)
+        through_seq = run.input_payload.get("through_seq")
+        if type(through_seq) is not int:
+            return self._fail_summary_run(mission, run, "protocol_invalid")
+        try:
+            result = parse_summary_result(rendered, expected_through_seq=through_seq)
+        except ConversationSummaryProtocolError:
+            return self._fail_summary_run(mission, run, "protocol_invalid")
+        if (
+            mission.conversation_id is None
+            or mission.turn_id is None
+            or self._conversation_context_builder is None
+        ):
+            return self._fail_summary_run(mission, run, "context_unavailable")
+        try:
+            self._conversation_context_builder.repository.store_summary(
+                mission.conversation_id,
+                mission.turn_id,
+                result.through_seq,
+                result.summary,
+            )
+        except ConversationRepositoryError:
+            return self._fail_summary_run(mission, run, "summary_store_failed")
+        self.missions.complete_run(
+            mission.owner_internal_user_id,
+            mission.mission_id,
+            run.run_id,
+            status="completed",
+            output_payload={
+                "summary": result.summary,
+                "through_seq": result.through_seq,
+            },
+            event_type="brain.responding",
+            event_payload={"text": "较长对话上下文已整理", "stage": "summary"},
+            expected_mission_status=mission.status,
+            expected_row_version=mission.row_version,
+        )
+        return True
+
+    def _terminate_context_failure(self, mission: MissionRecord) -> bool:
+        return self.missions.terminate_mission(
+            mission.owner_internal_user_id,
+            mission.mission_id,
+            status="failed",
+            event_type="mission.failed",
+            event_payload={
+                "text": "较长对话上下文无法安全整理，请新建对话后重试",
+                "reason_code": "context_unavailable",
+            },
+            expected_mission_status=mission.status,
+            expected_row_version=mission.row_version,
+        )
+
+    def _fail_summary_run(
+        self, mission: MissionRecord, run: MissionRun, reason_code: str
+    ) -> bool:
+        self.missions.complete_run(
+            mission.owner_internal_user_id,
+            mission.mission_id,
+            run.run_id,
+            status="failed",
+            output_payload={"reason_code": reason_code},
+            event_type="mission.failed",
+            event_payload={
+                "text": "较长对话上下文无法安全整理，请新建对话后重试",
+                "reason_code": reason_code,
+            },
+            mission_status="failed",
+            expected_mission_status=mission.status,
+            expected_row_version=mission.row_version,
+        )
+        return True
 
     def _advance_direct(self, mission: MissionRecord, run: MissionRun) -> bool:
         state, events = self._run_state(mission, run)

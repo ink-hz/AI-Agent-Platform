@@ -163,6 +163,14 @@ _EVENT_PAYLOAD_SCHEMAS = {
 
 _VALID_COMPLETIONS = frozenset(
     {
+        ("brain", "planning", "summary", "completed", None, "brain.responding"),
+        ("brain", "planning", "summary", "failed", "failed", "mission.failed"),
+        ("brain", "planning", "summary", "cancelled", "cancelled", "mission.cancelled"),
+        ("brain", "planning", "summary", "interrupted", "interrupted", "mission.interrupted"),
+        ("direct_agent", "delegated", "summary", "completed", None, "brain.responding"),
+        ("direct_agent", "delegated", "summary", "failed", "failed", "mission.failed"),
+        ("direct_agent", "delegated", "summary", "cancelled", "cancelled", "mission.cancelled"),
+        ("direct_agent", "delegated", "summary", "interrupted", "interrupted", "mission.interrupted"),
         ("brain", "planning", "planning", "completed", "delegated", "plan.created"),
         (
             "brain",
@@ -315,19 +323,22 @@ _VALID_COMPLETIONS = frozenset(
 
 _VALID_CREATIONS = frozenset(
     {
+        ("brain", "planning", "summary", "brain.responding"),
         ("brain", "planning", "planning", "brain.responding"),
         ("brain", "delegated", "professional", "task.dispatched"),
         ("brain", "delegated", "synthesis", "synthesis.started"),
         ("direct_agent", "delegated", "direct", "task.dispatched"),
+        ("direct_agent", "delegated", "summary", "brain.responding"),
     }
 )
 _CREATION_PREDECESSORS = {
-    "planning": frozenset(),
-    "professional": frozenset({("planning", "completed")}),
-    "synthesis": frozenset(
-        {("planning", "completed"), ("professional", "completed")}
-    ),
-    "direct": frozenset(),
+    "summary": frozenset({frozenset()}),
+    "planning": frozenset({frozenset(), frozenset({("summary", "completed")})}),
+    "professional": frozenset({frozenset({("planning", "completed")})}),
+    "synthesis": frozenset({
+        frozenset({("planning", "completed"), ("professional", "completed")})
+    }),
+    "direct": frozenset({frozenset(), frozenset({("summary", "completed")})}),
 }
 
 
@@ -608,7 +619,10 @@ def _require_locked_creation(
         (mission_id,),
     ).fetchall()
     observed = frozenset((row["phase"], row["status"]) for row in predecessors)
-    if len(observed) != len(predecessors) or observed != _CREATION_PREDECESSORS[phase]:
+    if (
+        len(observed) != len(predecessors)
+        or observed not in _CREATION_PREDECESSORS[phase]
+    ):
         raise MissionRepositoryConflict()
 
 
@@ -1729,7 +1743,7 @@ class MissionRepository:
         internal_user_id: UUID,
         mission_id: UUID,
         *,
-        phase: Literal["planning", "professional", "synthesis", "direct"],
+        phase: Literal["summary", "planning", "professional", "synthesis", "direct"],
         agent_id: str,
         input_payload: dict[str, object],
         event_type: str,
@@ -1746,7 +1760,7 @@ class MissionRepository:
         _require_expected_mission(
             expected_mission_status, expected_row_version
         )
-        if phase in {"planning", "synthesis"}:
+        if phase in {"summary", "planning", "synthesis"}:
             if agent_id != "agent-brain-bot" or objective is not None:
                 raise ValueError("Brain run shape invalid")
             task_id = None

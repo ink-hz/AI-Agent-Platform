@@ -75,6 +75,62 @@ def test_context_never_reads_another_conversation(
     assert "另一段" not in rendered
 
 
+@pytest.mark.postgres
+def test_compaction_covers_only_completed_exchange_and_keeps_current_request(
+    conversation_database,
+    repository,
+) -> None:
+    environment, owner_id, _ = conversation_database
+    first = repository.start(owner_id, uuid4(), "A" * 30_000)
+    _complete_mission(
+        environment, repository, first.mission.mission_id, "B" * 8_000
+    )
+    assert ConversationProjection(repository).project_terminal(
+        first.mission.mission_id
+    )
+    second = repository.append_turn(
+        owner_id,
+        first.conversation.conversation_id,
+        uuid4(),
+        "C" * 30_000,
+    )
+    builder = ConversationContextBuilder(repository)
+
+    candidate = builder.compaction_candidate(
+        first.conversation.conversation_id, second.turn.turn_id
+    )
+
+    assert candidate is not None
+    assert candidate.through_seq == 2
+    assert [message.role for message in candidate.messages] == [
+        "user",
+        "assistant",
+    ]
+    assert all("C" not in message.content for message in candidate.messages)
+
+    repository.store_summary(
+        first.conversation.conversation_id,
+        second.turn.turn_id,
+        candidate.through_seq,
+        "已确认第一轮的大体方向。",
+    )
+    context = builder.build(
+        first.conversation.conversation_id, second.turn.turn_id
+    )
+    assert context.summary == "已确认第一轮的大体方向。"
+    assert [message.content for message in context.messages] == ["C" * 30_000]
+    assert context.estimated_utf8_bytes <= MAX_CONTEXT_BYTES
+
+    with psycopg.connect(environment["admin"]) as connection:
+        row = connection.execute(
+            "select summary_ciphertext,summary_through_seq from "
+            "platform_control.conversations where conversation_id=%s",
+            (first.conversation.conversation_id,),
+        ).fetchone()
+    assert row[1] == 2
+    assert "已确认".encode() not in bytes(row[0])
+
+
 def _complete_mission(environment, repository, mission_id, text: str) -> None:
     from app.agent_brain.repository import _canonical_payload, _event_subject
 

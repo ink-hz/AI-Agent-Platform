@@ -68,6 +68,9 @@ AGENT_BRAIN_CONVERSATION_MIGRATION = (
 CONVERSATION_FEEDBACK_MIGRATION = (
     MIGRATIONS / "037_conversation_feedback.sql"
 )
+AGENT_BRAIN_SUMMARY_PHASE_MIGRATION = (
+    MIGRATIONS / "038_agent_brain_summary_phase.sql"
+)
 EXECUTION_RELAY_MIGRATION = MIGRATIONS / "028_execution_relay.sql"
 AGENT_BRAIN_MIGRATION = MIGRATIONS / "029_agent_brain_mvp.sql"
 AGENT_BRAIN_ORCHESTRATION_MIGRATION = (
@@ -502,7 +505,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 38)
+                    (version, 64) for version in range(1, 39)
                 ]
 
     changed = tmp_path / "migrations"
