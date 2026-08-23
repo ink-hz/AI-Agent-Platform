@@ -15,6 +15,7 @@ from uuid import uuid4
 import httpx
 
 from .directory_limits import (
+    DIRECTORY_FETCH_CONCURRENCY,
     DIRECTORY_PAGE_SIZE,
     MAX_DEPARTMENTS,
     MAX_DISPLAY_NAME_LENGTH,
@@ -125,6 +126,41 @@ class DingTalkProviderError(RuntimeError):
         super().__init__(
             f"{message}; request_id={request_id}; code={self.error_code}"
         )
+
+
+class DingTalkDirectorySnapshotError(RuntimeError):
+    """A stable directory snapshot failure containing no identity material."""
+
+
+def member_identity_snapshot(member: DingTalkMember) -> tuple[object, ...]:
+    return (
+        member.userid,
+        member.unionid,
+        member.display_name,
+        member.active,
+        tuple(sorted(member.department_ids)),
+    )
+
+
+async def hydrate_authoritative_members(
+    client: DingTalkClient,
+    discovered: dict[str, DingTalkMember],
+) -> dict[str, DingTalkMember]:
+    """Hydrate each discovered userid once from the authoritative detail API."""
+    authoritative: dict[str, DingTalkMember] = {}
+    userids = sorted(discovered)
+    for offset in range(0, len(userids), DIRECTORY_FETCH_CONCURRENCY):
+        selected = userids[offset : offset + DIRECTORY_FETCH_CONCURRENCY]
+        details = await asyncio.gather(
+            *(client.get_member(userid) for userid in selected)
+        )
+        for userid, detail in zip(selected, details, strict=True):
+            if member_identity_snapshot(detail) != member_identity_snapshot(
+                discovered[userid]
+            ):
+                raise DingTalkDirectorySnapshotError("member_conflict")
+            authoritative[userid] = detail
+    return authoritative
 
 
 def _safe_error_code(value: object) -> str:

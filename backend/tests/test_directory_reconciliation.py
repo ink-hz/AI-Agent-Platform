@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import logging
@@ -92,6 +93,7 @@ class FakeClient:
         self.fail = fail
         self.conflict = conflict
         self.gender_conflict = gender_conflict
+        self.detail_calls: Counter[str] = Counter()
 
     async def iter_departments(self):
         yield DingTalkDepartment(2, 1, "Engineering")
@@ -110,6 +112,12 @@ class FakeClient:
             yield DingTalkMember(
                 "u-1", "union-1", name, True, (2, 3), gender, "valid"
             )
+
+    async def get_member(self, userid):
+        self.detail_calls[userid] += 1
+        return DingTalkMember(
+            "u-1", "union-1", "Alice", True, (2, 3), "female", "valid"
+        )
 
 
 @pytest.mark.asyncio
@@ -137,6 +145,24 @@ async def test_reconciliation_fetches_before_staging_and_promotes_once() -> None
     assert _codec().unseal(member.corporate) == IdentityResolver.corporate_provider_id(
         "test-corp", "u-1"
     )
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_stages_gender_only_from_one_authoritative_detail() -> None:
+    class ListWithoutGenderClient(FakeClient):
+        async def iter_department_members(self, department_id):
+            if department_id in (2, 3):
+                yield DingTalkMember(
+                    "u-1", "union-1", "Alice", True, (2, 3), None, "missing"
+                )
+
+    client = ListWithoutGenderClient()
+    repository = FakeRepository()
+
+    result = await _reconciler(client, repository).run_full("startup")
+
+    assert repository.staged[result.generation_id]["members"][0].gender == "female"
+    assert client.detail_calls == Counter({"u-1": 1})
 
 
 @pytest.mark.asyncio
@@ -232,6 +258,9 @@ async def test_representative_sizing_harness_is_below_ten_minutes() -> None:
     from app.control_plane.directory import DirectoryReconciler
 
     class SizingClient:
+        def __init__(self):
+            self.detail_calls = 0
+
         async def iter_departments(self):
             for department_id in range(2, 102):
                 yield DingTalkDepartment(department_id, 1, f"D-{department_id}")
@@ -240,6 +269,11 @@ async def test_representative_sizing_harness_is_below_ten_minutes() -> None:
             if department_id == 1:
                 for index in range(5000):
                     yield DingTalkMember(f"u-{index}", f"x-{index}", f"M-{index}", True, (1,))
+
+        async def get_member(self, userid):
+            self.detail_calls += 1
+            index = userid.removeprefix("u-")
+            return DingTalkMember(userid, f"x-{index}", f"M-{index}", True, (1,))
 
     started = time.monotonic()
     result = await _reconciler(SizingClient(), FakeRepository()).run_full("scheduled")
@@ -259,6 +293,25 @@ async def test_logs_contain_only_safe_run_metadata(caplog) -> None:
     assert "Alice" not in rendered
     assert "generation_id=" in rendered
     assert "member_count=1" in rendered
+    assert "gender_valid_count=1" in rendered
+    assert "gender_missing_count=0" in rendered
+    assert "gender_invalid_count=0" in rendered
+
+
+def test_staged_member_repr_omits_trusted_gender() -> None:
+    from app.control_plane.directory import StagedMember
+
+    protected = _codec().seal("employee", "private-member")
+    staged = StagedMember(
+        UUID("00000000-0000-0000-0000-000000000001"),
+        protected,
+        protected,
+        "Display",
+        "active",
+        "female",
+    )
+
+    assert "gender" not in repr(staged)
 
 
 @pytest.fixture

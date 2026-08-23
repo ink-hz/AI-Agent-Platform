@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 
+import httpx
 import pytest
+import respx
 
-from app.control_plane.dingtalk import DingTalkDepartment, DingTalkMember
+from app.control_plane.dingtalk import DingTalkClient, DingTalkDepartment, DingTalkMember
 from app.control_plane.gender_probe import GenderProbeError, collect_gender_coverage
+
+
+API = "https://api.test.invalid"
+OAPI = "https://oapi.test.invalid"
 
 
 class FakeDingTalkClient:
@@ -20,6 +27,7 @@ class FakeDingTalkClient:
         self.conflict = conflict
         self.members_by_department = members_by_department
         self.closed = False
+        self.detail_calls: Counter[str] = Counter()
 
     async def aclose(self) -> None:
         self.closed = True
@@ -46,6 +54,28 @@ class FakeDingTalkClient:
                 yield DingTalkMember("employee-1", "union-1", "Changed", True, (1,), "male", "valid")
             yield DingTalkMember("employee-3", "union-3", "Three", True, (3,), None, "invalid")
 
+    async def get_member(self, userid: str) -> DingTalkMember:
+        self.detail_calls[userid] += 1
+        for members in (
+            self.members_by_department or {
+                1: [
+                    DingTalkMember("employee-1", "union-1", "One", True, (1,), "male", "valid"),
+                    DingTalkMember("employee-4", "union-4", "Inactive", False, (1,), None, "invalid"),
+                ],
+                2: [
+                    DingTalkMember("employee-1", "union-1", "One", True, (1,), "male", "valid"),
+                    DingTalkMember("employee-2", "union-2", "Two", True, (2,), None, "missing"),
+                ],
+                3: [
+                    DingTalkMember("employee-3", "union-3", "Three", True, (3,), None, "invalid"),
+                ],
+            }
+        ).values():
+            for member in members:
+                if member.userid == userid:
+                    return member
+        raise RuntimeError("provider detail unavailable")
+
 
 class FakeSettings:
     app_key = "test-app-key"
@@ -69,6 +99,127 @@ async def test_collect_gender_coverage_counts_unique_active_members_only() -> No
         "ready": False,
     }
     assert "employee-1" not in json.dumps(coverage.as_public_dict(), ensure_ascii=False)
+    assert fake_client.detail_calls == Counter(
+        {
+            "employee-1": 1,
+            "employee-2": 1,
+            "employee-3": 1,
+            "employee-4": 1,
+        }
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_probe_uses_list_only_for_unique_userid_discovery_and_detail_for_gender() -> None:
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(
+        return_value=httpx.Response(
+            200, json={"accessToken": "provider-token", "expireIn": 7200}
+        )
+    )
+    departments = respx.post(f"{OAPI}/topapi/v2/department/listsub").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "errcode": 0,
+                    "errmsg": "ok",
+                    "result": [{"dept_id": 2, "parent_id": 1, "name": "Team"}],
+                },
+            ),
+            httpx.Response(200, json={"errcode": 0, "errmsg": "ok", "result": []}),
+        ]
+    )
+    list_payload = {
+        "userid": "employee-1",
+        "unionid": "union-1",
+        "name": "Employee",
+        "active": True,
+        "dept_id_list": [1, 2],
+    }
+    member_lists = respx.post(f"{OAPI}/topapi/v2/user/list").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "errcode": 0,
+                    "errmsg": "ok",
+                    "result": {
+                        "has_more": False,
+                        "next_cursor": 0,
+                        "list": [list_payload],
+                    },
+                },
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "errcode": 0,
+                    "errmsg": "ok",
+                    "result": {
+                        "has_more": False,
+                        "next_cursor": 0,
+                        "list": [list_payload],
+                    },
+                },
+            ),
+        ]
+    )
+    details = respx.post(f"{OAPI}/topapi/v2/user/get").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "errcode": 0,
+                "errmsg": "ok",
+                "result": {
+                    **list_payload,
+                    "extension": {"性别": "女"},
+                },
+            },
+        )
+    )
+    client = DingTalkClient(
+        app_key="test-app-key",
+        app_secret="test-app-secret",
+        corp_id="test-corp",
+        login_flow="in_client",
+        api_base_url=API,
+        oapi_base_url=OAPI,
+    )
+
+    coverage = await collect_gender_coverage(client)
+
+    assert coverage.active_employee_count == coverage.valid_count == 1
+    assert coverage.ready is True
+    assert departments.call_count == 2
+    assert member_lists.call_count == 2
+    assert details.call_count == 1
+    assert all(
+        "extension" not in json.loads(call.request.content)
+        for call in member_lists.calls
+    )
+    assert json.loads(details.calls[0].request.content)["userid"] == "employee-1"
+
+
+@pytest.mark.asyncio
+async def test_probe_fails_closed_when_authoritative_detail_conflicts_with_list() -> None:
+    class ConflictingDetailClient(FakeDingTalkClient):
+        async def get_member(self, userid: str) -> DingTalkMember:
+            member = await super().get_member(userid)
+            if userid == "employee-1":
+                return DingTalkMember(
+                    member.userid,
+                    "different-union",
+                    member.display_name,
+                    member.active,
+                    member.department_ids,
+                    member.gender,
+                    member.gender_attribute_status,
+                )
+            return member
+
+    with pytest.raises(GenderProbeError, match="member_conflict"):
+        await collect_gender_coverage(ConflictingDetailClient())
 
 
 @pytest.mark.asyncio

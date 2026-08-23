@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
 import hashlib
@@ -16,8 +16,10 @@ from .crypto import ProtectedProviderId, ProviderIdentityCodec
 from .dingtalk import (
     DingTalkClient,
     DingTalkDepartment,
+    DingTalkDirectorySnapshotError,
     DingTalkGender,
     DingTalkMember,
+    hydrate_authoritative_members,
 )
 from .directory_limits import (
     DIRECTORY_FETCH_CONCURRENCY,
@@ -87,7 +89,7 @@ class StagedMember:
     union: ProtectedProviderId
     display_name: str
     status: str
-    gender: DingTalkGender | None
+    gender: DingTalkGender | None = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -380,6 +382,11 @@ class DirectoryReconciler:
                 if len(members) > MAX_MEMBERS:
                     raise DirectoryReconciliationError("member_count_bound")
 
+        try:
+            members = await hydrate_authoritative_members(self._client, members)
+        except DingTalkDirectorySnapshotError:
+            raise DirectoryReconciliationError("member_conflict") from None
+
         protected_departments: dict[int, StagedDepartment] = {}
         for department_id in sorted(by_id):
             item = by_id[department_id]
@@ -506,15 +513,27 @@ class DirectoryReconciler:
             )
             raise DirectoryReconciliationError("staging_failed") from None
         duration = time.monotonic() - started
+        gender_status_counts = {
+            "valid": 0,
+            "missing": 0,
+            "invalid": 0,
+        }
+        for member in members.values():
+            if member.active:
+                gender_status_counts[member.gender_attribute_status] += 1
         _LOG.info(
             "directory reconciliation completed generation_id=%s run_id=%s "
-            "duration_ms=%d member_count=%d department_count=%d membership_count=%d",
+            "duration_ms=%d member_count=%d department_count=%d membership_count=%d "
+            "gender_valid_count=%d gender_missing_count=%d gender_invalid_count=%d",
             generation_id,
             run_id,
             int(duration * 1000),
             len(staged_members),
             len(protected_departments),
             len(memberships),
+            gender_status_counts["valid"],
+            gender_status_counts["missing"],
+            gender_status_counts["invalid"],
         )
         return DirectoryReconciliationResult(
             generation_id,

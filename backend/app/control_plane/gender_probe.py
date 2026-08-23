@@ -5,8 +5,18 @@ from dataclasses import dataclass
 import json
 import sys
 
-from .dingtalk import DINGTALK_GENDER_ATTRIBUTE, DingTalkClient, DingTalkMember
-from .directory_limits import MAX_DEPARTMENTS, MAX_MEMBERS
+from .dingtalk import (
+    DINGTALK_GENDER_ATTRIBUTE,
+    DingTalkClient,
+    DingTalkDirectorySnapshotError,
+    DingTalkMember,
+    hydrate_authoritative_members,
+    member_identity_snapshot,
+)
+from .directory_limits import (
+    MAX_DEPARTMENTS,
+    MAX_MEMBERS,
+)
 from .worker_runtime import load_worker_settings
 
 
@@ -57,15 +67,24 @@ async def collect_gender_coverage(client: DingTalkClient) -> GenderCoverage:
                 if len(department_ids) > MAX_DEPARTMENTS:
                     raise GenderProbeError("department_count_bound")
 
-            members: dict[str, DingTalkMember] = {}
+            discovered: dict[str, DingTalkMember] = {}
             for department_id in department_ids:
                 async for member in client.iter_department_members(department_id):
-                    previous = members.get(member.userid)
-                    if previous is not None and previous != member:
+                    previous = discovered.get(member.userid)
+                    if (
+                        previous is not None
+                        and member_identity_snapshot(previous)
+                        != member_identity_snapshot(member)
+                    ):
                         raise GenderProbeError("member_conflict")
-                    members[member.userid] = member
-                    if len(members) > MAX_MEMBERS:
+                    discovered[member.userid] = member
+                    if len(discovered) > MAX_MEMBERS:
                         raise GenderProbeError("member_count_bound")
+
+            try:
+                members = await hydrate_authoritative_members(client, discovered)
+            except DingTalkDirectorySnapshotError:
+                raise GenderProbeError("member_conflict") from None
 
             valid_count = 0
             missing_count = 0
