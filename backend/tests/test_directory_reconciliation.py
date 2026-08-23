@@ -46,7 +46,10 @@ class FakeRepository:
         self.staged = {}
 
     def create_staging_generation(self, generation_id, run_id, kind, member_count, department_count, membership_count, closure_count, source_schema_version, expected_digest, **kwargs):
-        self.calls.append(("create", generation_id, member_count, department_count, membership_count))
+        self.calls.append((
+            "create", generation_id, member_count, department_count,
+            membership_count, source_schema_version,
+        ))
         self.staged[generation_id] = {"departments": [], "members": [], "memberships": [], "closure": [], "failed": None}
 
     def stage_departments(self, generation_id, rows, **kwargs):
@@ -85,9 +88,10 @@ class FakeRepository:
 
 
 class FakeClient:
-    def __init__(self, *, fail=False, conflict=False):
+    def __init__(self, *, fail=False, conflict=False, gender_conflict=False):
         self.fail = fail
         self.conflict = conflict
+        self.gender_conflict = gender_conflict
 
     async def iter_departments(self):
         yield DingTalkDepartment(2, 1, "Engineering")
@@ -97,10 +101,15 @@ class FakeClient:
         if self.fail and department_id == 2:
             raise RuntimeError("provider 429 body must not escape")
         if department_id == 2:
-            yield DingTalkMember("u-1", "union-1", "Alice", True, (2, 3))
+            yield DingTalkMember(
+                "u-1", "union-1", "Alice", True, (2, 3), "female", "valid"
+            )
         if department_id == 3:
             name = "Conflicting" if self.conflict else "Alice"
-            yield DingTalkMember("u-1", "union-1", name, True, (2, 3))
+            gender = "male" if self.gender_conflict else "female"
+            yield DingTalkMember(
+                "u-1", "union-1", name, True, (2, 3), gender, "valid"
+            )
 
 
 @pytest.mark.asyncio
@@ -110,6 +119,7 @@ async def test_reconciliation_fetches_before_staging_and_promotes_once() -> None
     repository = FakeRepository()
     result = await _reconciler(FakeClient(), repository).run_full("startup")
     assert repository.calls[0][0] == "create"
+    assert repository.calls[0][5] == 2
     assert repository.calls[-1][0] == "promote"
     assert repository.active_generation == result.generation_id
     staged = repository.staged[result.generation_id]
@@ -121,6 +131,7 @@ async def test_reconciliation_fetches_before_staging_and_promotes_once() -> None
     assert member.corporate.subject_kind == "employee"
     assert member.union.subject_kind == "employee_union"
     assert member.corporate.lookup_key_version == member.union.lookup_key_version == 1
+    assert member.gender == "female"
     assert b"u-1" not in member.corporate.ciphertext
     assert b"union-1" not in member.union.ciphertext
     assert _codec().unseal(member.corporate) == IdentityResolver.corporate_provider_id(
@@ -148,6 +159,18 @@ async def test_conflicting_duplicate_user_is_rejected_before_database_write() ->
     repository = FakeRepository()
     with pytest.raises(DirectoryReconciliationError, match="member_conflict"):
         await _reconciler(FakeClient(conflict=True), repository).run_full()
+    assert repository.calls == []
+
+
+@pytest.mark.asyncio
+async def test_conflicting_duplicate_member_gender_is_rejected_before_database_write() -> None:
+    from app.control_plane.directory import DirectoryReconciliationError
+
+    repository = FakeRepository()
+    with pytest.raises(DirectoryReconciliationError, match="member_conflict"):
+        await _reconciler(
+            FakeClient(gender_conflict=True), repository
+        ).run_full()
     assert repository.calls == []
 
 
@@ -283,10 +306,13 @@ def test_worker_has_only_narrow_directory_functions(production_directory) -> Non
             "has_function_privilege(current_user,'platform_control."
             "create_directory_staging_generation_v20(uuid,uuid,text,integer,integer,integer,integer,integer,text)','execute'),"
             "has_function_privilege(current_user,'platform_control."
+            "create_directory_staging_generation_v28(uuid,uuid,text,integer,integer,integer,integer,integer,text)','execute'),"
+            "has_function_privilege(current_user,'platform_control."
             "promote_verified_directory_generation(uuid)','execute')"
         )
         assert cursor.fetchone() == (
-            "platform_directory_worker", "agent_platform_control", False, True, True
+            "platform_directory_worker", "agent_platform_control",
+            False, True, True, True,
         )
         cursor.execute(
             "select proname,has_function_privilege(current_user,oid,'execute'),"
@@ -297,8 +323,10 @@ def test_worker_has_only_narrow_directory_functions(production_directory) -> Non
             "and proname=any(%s) order by proname",
             ([
                 "create_directory_staging_generation_v20",
+                "create_directory_staging_generation_v28",
                 "stage_directory_department",
                 "stage_directory_member_v19",
+                "stage_directory_member_v28",
                 "stage_directory_membership",
                 "stage_department_closure",
                 "finalize_directory_staging_generation",
@@ -308,7 +336,7 @@ def test_worker_has_only_narrow_directory_functions(production_directory) -> Non
             ],),
         )
         rows = cursor.fetchall()
-        assert len(rows) == 9
+        assert len(rows) == 11
         assert all(
             worker and not app and not cross and not public and security_definer
             and config == ["search_path=pg_catalog, platform_control"]
@@ -317,7 +345,7 @@ def test_worker_has_only_narrow_directory_functions(production_directory) -> Non
     with psycopg.connect(app_url) as connection, connection.cursor() as cursor:
         cursor.execute(
             "select has_function_privilege(current_user,'platform_control."
-            "create_directory_staging_generation_v20(uuid,uuid,text,integer,integer,integer,integer,integer,text)','execute')"
+            "create_directory_staging_generation_v28(uuid,uuid,text,integer,integer,integer,integer,integer,text)','execute')"
         )
         assert cursor.fetchone()[0] is False
 
@@ -448,7 +476,7 @@ async def test_real_postgres_atomic_promotion_and_staging_isolation(
     generation = UUID("10000000-0000-0000-0000-000000000001")
     repository.create_staging_generation(
         generation, UUID("20000000-0000-0000-0000-000000000001"),
-        "scheduled", 0, 1, 0, 1, 1, "0" * 64,
+        "scheduled", 0, 1, 0, 1, 2, "0" * 64,
     )
     with psycopg.connect(environment["admin"]) as connection, connection.cursor() as cursor:
         cursor.execute(
@@ -572,7 +600,7 @@ def test_cycle_and_declared_count_mismatch_fail_before_promotion(
     generation = UUID("60000000-0000-0000-0000-000000000003")
     repository.create_staging_generation(
         generation, UUID("60000000-0000-0000-0000-000000000004"),
-        "scheduled", 0, 2, 0, 2, 1, "0" * 64,
+        "scheduled", 0, 2, 0, 2, 2, "0" * 64,
     )
     repository.stage_departments(generation, (
         StagedDepartment(first, second, codec.seal("department", "cycle-1"), "One"),
@@ -585,7 +613,7 @@ def test_cycle_and_declared_count_mismatch_fail_before_promotion(
     mismatch = UUID("70000000-0000-0000-0000-000000000001")
     repository.create_staging_generation(
         mismatch, UUID("70000000-0000-0000-0000-000000000002"),
-        "scheduled", 1, 1, 0, 1, 1, "0" * 64,
+        "scheduled", 1, 1, 0, 1, 2, "0" * 64,
     )
     root = UUID("70000000-0000-0000-0000-000000000003")
     repository.stage_departments(mismatch, (StagedDepartment(root, None, codec.seal("department", "mismatch-root"), "Root"),))
@@ -692,19 +720,55 @@ def test_versioned_canonical_digest_has_golden_vector_and_covers_ciphertext() ->
     digest = canonical_directory_digest(
         DIRECTORY_SOURCE_SCHEMA_VERSION,
         (StagedDepartment(dept_key, None, department, "研发"),),
-        (StagedMember(member_key, corporate, union, "Alice", "active"),),
+        (StagedMember(member_key, corporate, union, "Alice", "active", "female"),),
         ((member_key, dept_key),),
         ((dept_key, dept_key, 0),),
     )
-    assert digest == "a8e83fb0ab9a26f2916cd83ac67c7d97b93f9ad1a650a6a79648881ca2f7d605"
+    assert digest == "1c4829418990392bede2f2f2fb5bd0da8cdae27000fa1e3833a8a18d10a281fc"
     changed = type(corporate)(corporate.subject_kind, corporate.lookup_hmac, 1, b"x" * 29, 1)
     assert canonical_directory_digest(
         DIRECTORY_SOURCE_SCHEMA_VERSION,
         (StagedDepartment(dept_key, None, department, "研发"),),
-        (StagedMember(member_key, changed, union, "Alice", "active"),),
+        (StagedMember(member_key, changed, union, "Alice", "active", "female"),),
         ((member_key, dept_key),),
         ((dept_key, dept_key, 0),),
     ) != digest
+
+
+def test_schema_v2_canonical_digest_distinguishes_member_gender() -> None:
+    from app.control_plane.directory import (
+        StagedDepartment,
+        StagedMember,
+        canonical_directory_digest,
+    )
+
+    codec = _codec()
+    department = StagedDepartment(
+        UUID("10000000-0000-4000-8000-000000000001"),
+        None,
+        codec.seal("department", "gender-digest"),
+        "Engineering",
+    )
+    member_key = UUID("20000000-0000-4000-8000-000000000001")
+    corporate = codec.seal("employee", "gender-user")
+    union = codec.seal("employee_union", "gender-union")
+    memberships = ((member_key, department.department_key),)
+    closure = ((department.department_key, department.department_key, 0),)
+    male = StagedMember(
+        member_key, corporate, union, "Alice", "active", "male"
+    )
+    female = StagedMember(
+        member_key, corporate, union, "Alice", "active", "female"
+    )
+    missing = StagedMember(
+        member_key, corporate, union, "Alice", "active", None
+    )
+
+    digests = {
+        canonical_directory_digest(2, (department,), (member,), memberships, closure)
+        for member in (male, female, missing)
+    }
+    assert len(digests) == 3
 
 
 @pytest.mark.postgres
@@ -714,6 +778,7 @@ def test_python_and_postgres_canonical_digest_are_identical(
     from app.control_plane.directory import (
         DIRECTORY_SOURCE_SCHEMA_VERSION,
         StagedDepartment,
+        StagedMember,
         canonical_directory_digest,
     )
 
@@ -727,21 +792,38 @@ def test_python_and_postgres_canonical_digest_are_identical(
         UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
         None, protected, "Cross Language",
     )
+    corporate = codec.seal("employee", "cross-language-member")
+    union = codec.seal("employee_union", "cross-language-union")
+    member = StagedMember(
+        UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+        corporate,
+        union,
+        "Cross Language Member",
+        "active",
+        "female",
+    )
+    memberships = ((member.member_key, department.department_key),)
     closure = ((department.department_key, department.department_key, 0),)
     expected = canonical_directory_digest(
-        DIRECTORY_SOURCE_SCHEMA_VERSION, (department,), (), (), closure
+        DIRECTORY_SOURCE_SCHEMA_VERSION,
+        (department,),
+        (member,),
+        memberships,
+        closure,
     )
     generation = UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
     repository.create_staging_generation(
         generation, UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
-        "scheduled", 0, 1, 0, 1, DIRECTORY_SOURCE_SCHEMA_VERSION, expected,
+        "scheduled", 1, 1, 1, 1, DIRECTORY_SOURCE_SCHEMA_VERSION, expected,
     )
     repository.stage_departments(generation, (department,))
+    repository.stage_members(generation, (member,))
+    repository.stage_memberships(generation, memberships)
     repository.stage_closure(generation, closure)
     assert repository.finalize_staging_generation(generation) == expected
     with psycopg.connect(environment["admin"]) as connection:
         assert connection.execute(
-            "select platform_control.directory_generation_checksum_v20(%s)",
+            "select platform_control.directory_generation_checksum_v28(%s)",
             (generation,),
         ).fetchone() == (expected,)
 

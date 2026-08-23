@@ -47,6 +47,16 @@ def _provider_value(corp_id: str, userid: str) -> str:
     return IdentityResolver.corporate_provider_id(corp_id, userid)
 
 
+def _set_directory_key_policy(environment) -> None:
+    with psycopg.connect(
+        environment["urls"]["platform_control_maintenance"]
+    ) as connection:
+        connection.execute(
+            "select platform_control.set_provider_identity_key_policy("
+            "'dingtalk', array[1,2])"
+        )
+
+
 def _seed_generation(
     environment,
     codec,
@@ -92,13 +102,7 @@ def _seed_generation(
 
 def _resolver(environment, tmp_path: Path, member: DingTalkMember) -> IdentityResolver:
     codec = _codec(tmp_path)
-    with psycopg.connect(
-        environment["urls"]["platform_control_maintenance"]
-    ) as connection:
-        connection.execute(
-            "select platform_control.set_provider_identity_key_policy("
-            "'dingtalk', array[1,2])"
-        )
+    _set_directory_key_policy(environment)
     _seed_generation(environment, codec, member)
     return IdentityResolver(
         environment["urls"]["platform_control_app"],
@@ -151,7 +155,10 @@ def _identity_state(environment):
         ).fetchone()
 
 
-def _stage_and_promote_generation(environment, codec, members, *, promote=True) -> UUID:
+def _stage_and_promote_generation(
+    environment, codec, members, *, finalize=True, promote=True
+) -> UUID:
+    _set_directory_key_policy(environment)
     generation_id = uuid4()
     run_id = uuid4()
     worker_url = environment["urls"]["platform_directory_worker"]
@@ -169,6 +176,7 @@ def _stage_and_promote_generation(environment, codec, members, *, promote=True) 
         staged_member = StagedMember(
             uuid4(), corporate, union, member.display_name,
             "active" if member.active else "inactive",
+            member.gender,
         )
         staged_members.append(staged_member)
         memberships.append((staged_member.member_key, root_key))
@@ -179,7 +187,7 @@ def _stage_and_promote_generation(environment, codec, members, *, promote=True) 
     )
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v20("
+            "select platform_control.create_directory_staging_generation_v28("
             "%s,%s,'scheduled',%s,1,%s,1,%s,%s)",
             (generation_id, run_id, len(members), len(members),
              DIRECTORY_SOURCE_SCHEMA_VERSION, digest),
@@ -196,8 +204,8 @@ def _stage_and_promote_generation(environment, codec, members, *, promote=True) 
         )
         for staged_member in staged_members:
             connection.execute(
-                "select platform_control.stage_directory_member_v19("
-                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "select platform_control.stage_directory_member_v28("
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     generation_id, staged_member.member_key,
                     staged_member.corporate.lookup_hmac,
@@ -209,16 +217,18 @@ def _stage_and_promote_generation(environment, codec, members, *, promote=True) 
                     staged_member.union.ciphertext,
                     staged_member.union.encryption_key_version,
                     staged_member.display_name, staged_member.status,
+                    staged_member.gender,
                 ),
             )
             connection.execute(
                 "select platform_control.stage_directory_membership(%s,%s,%s)",
                 (generation_id, staged_member.member_key, root_key),
             )
-        connection.execute(
-            "select platform_control.finalize_directory_staging_generation(%s)",
-            (generation_id,),
-        )
+        if finalize:
+            connection.execute(
+                "select platform_control.finalize_directory_staging_generation(%s)",
+                (generation_id,),
+            )
         if promote:
             connection.execute(
                 "select platform_control.promote_verified_directory_generation(%s)",
@@ -383,13 +393,14 @@ async def test_new_generation_with_transition_candidate_only_pair_is_denied(
         DIRECTORY_SOURCE_SCHEMA_VERSION,
         (StagedDepartment(root_key, None, root, "Root"),),
         (StagedMember(
-            member_key, corporate_v1, union_v1, member.display_name, "active"
+            member_key, corporate_v1, union_v1, member.display_name, "active",
+            member.gender,
         ),),
         ((member_key, root_key),), ((root_key, root_key, 0),),
     )
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v20("
+            "select platform_control.create_directory_staging_generation_v28("
             "%s,%s,'scheduled',1,1,1,1,%s,%s)",
             (generation_id, uuid4(), DIRECTORY_SOURCE_SCHEMA_VERSION, digest),
         )
@@ -400,13 +411,13 @@ async def test_new_generation_with_transition_candidate_only_pair_is_denied(
              root.ciphertext, root.encryption_key_version),
         )
         connection.execute(
-            "select platform_control.stage_directory_member_v19("
-            "%s,%s,%s,1,%s,%s,%s,1,%s,%s,%s,'active')",
+            "select platform_control.stage_directory_member_v28("
+            "%s,%s,%s,1,%s,%s,%s,1,%s,%s,%s,'active',%s)",
             (
                 generation_id, member_key, old_corporate,
                 corporate.ciphertext, corporate.encryption_key_version,
                 old_union, union.ciphertext, union.encryption_key_version,
-                member.display_name,
+                member.display_name, member.gender,
             ),
         )
         connection.execute(
@@ -1046,6 +1057,7 @@ def test_directory_worker_can_stage_pair_facts_only_through_narrow_boundary(
     production_environment,
     tmp_path: Path,
 ) -> None:
+    _set_directory_key_policy(production_environment)
     worker_url = production_environment["urls"]["platform_directory_worker"]
     codec = _codec(tmp_path)
     corporate = codec.seal(
@@ -1056,27 +1068,27 @@ def test_directory_worker_can_stage_pair_facts_only_through_narrow_boundary(
     generation_id, member_key = uuid4(), uuid4()
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v20("
+            "select platform_control.create_directory_staging_generation_v28("
             "%s,%s,'scheduled',1,1,1,1,%s,%s)",
             (generation_id, uuid4(), DIRECTORY_SOURCE_SCHEMA_VERSION, "0" * 64),
         )
         result = connection.execute(
-            "select platform_control.stage_directory_member_v19("
-            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "select platform_control.stage_directory_member_v28("
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 generation_id, member_key,
                 corporate.lookup_hmac, corporate.lookup_key_version,
                 corporate.ciphertext, corporate.encryption_key_version,
                 union.lookup_hmac, union.lookup_key_version,
                 union.ciphertext, union.encryption_key_version,
-                "Worker Member", "active",
+                "Worker Member", "active", "female",
             ),
         ).fetchone()
     assert result == (member_key,)
 
     with psycopg.connect(production_environment["admin"]) as connection:
         assert connection.execute(
-            "select internal_user_id,lookup_hmac,lookup_key_version,"
+            "select internal_user_id,lookup_hmac,lookup_key_version,gender,"
             "union_lookup_hmac,union_lookup_key_version from "
             "platform_control.directory_members where generation_id=%s "
             "and member_key=%s",
@@ -1085,9 +1097,242 @@ def test_directory_worker_can_stage_pair_facts_only_through_narrow_boundary(
             None,
             corporate.lookup_hmac,
             corporate.lookup_key_version,
+            "female",
             union.lookup_hmac,
             union.lookup_key_version,
         )
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("gender", "attribute_status"),
+    (("male", "valid"), ("female", "valid"), (None, "missing")),
+    ids=("male", "female", "missing"),
+)
+def test_schema_v2_gender_round_trip_checksum_and_promotion(
+    production_environment,
+    tmp_path: Path,
+    gender: str | None,
+    attribute_status: str,
+) -> None:
+    member = DingTalkMember(
+        f"gender-{gender or 'missing'}",
+        f"gender-union-{gender or 'missing'}",
+        "Gender Member",
+        True,
+        (1,),
+        gender,
+        attribute_status,
+    )
+    generation_id = _stage_and_promote_generation(
+        production_environment, _codec(tmp_path), (member,)
+    )
+
+    with psycopg.connect(
+        production_environment["admin"], row_factory=dict_row
+    ) as admin:
+        row = admin.execute(
+            "select member.gender,generation.source_schema_version,"
+            "generation.status,generation.expected_content_sha256,"
+            "generation.content_sha256,"
+            "platform_control.directory_generation_checksum_v28("
+            "generation.generation_id) as database_checksum,"
+            "state.active_generation_id "
+            "from platform_control.directory_members member "
+            "join platform_control.directory_generations generation "
+            "using (generation_id) cross join platform_control.directory_state state "
+            "where member.generation_id=%s",
+            (generation_id,),
+        ).fetchone()
+    assert row["gender"] == gender
+    assert row["source_schema_version"] == 2
+    assert row["status"] == "complete"
+    assert row["expected_content_sha256"] == row["database_checksum"]
+    assert row["content_sha256"] == row["database_checksum"]
+    assert row["active_generation_id"] == generation_id
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("gender", ("", "unknown"), ids=("blank", "unknown"))
+def test_schema_v2_member_staging_rejects_invalid_gender_without_partial_row(
+    production_environment,
+    tmp_path: Path,
+    gender: str,
+) -> None:
+    _set_directory_key_policy(production_environment)
+    worker_url = production_environment["urls"]["platform_directory_worker"]
+    codec = _codec(tmp_path)
+    corporate = codec.seal("employee", f"invalid-gender-{gender or 'blank'}")
+    union = codec.seal("employee_union", f"invalid-union-{gender or 'blank'}")
+    generation_id = uuid4()
+    with psycopg.connect(worker_url) as connection:
+        with connection.transaction():
+            connection.execute(
+                "select platform_control.create_directory_staging_generation_v28("
+                "%s,%s,'scheduled',1,1,1,1,2,%s)",
+                (generation_id, uuid4(), "0" * 64),
+            )
+        with pytest.raises(psycopg.errors.CheckViolation):
+            with connection.transaction():
+                connection.execute(
+                    "select platform_control.stage_directory_member_v28("
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        generation_id,
+                        uuid4(),
+                        corporate.lookup_hmac,
+                        corporate.lookup_key_version,
+                        corporate.ciphertext,
+                        corporate.encryption_key_version,
+                        union.lookup_hmac,
+                        union.lookup_key_version,
+                        union.ciphertext,
+                        union.encryption_key_version,
+                        "Invalid Gender",
+                        "active",
+                        gender,
+                    ),
+                )
+
+    with psycopg.connect(production_environment["admin"]) as admin:
+        assert admin.execute(
+            "select count(*) from platform_control.directory_members "
+            "where generation_id=%s",
+            (generation_id,),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_schema_v1_creation_finalization_and_promotion_remain_compatible(
+    production_environment,
+    tmp_path: Path,
+) -> None:
+    _set_directory_key_policy(production_environment)
+    worker_url = production_environment["urls"]["platform_directory_worker"]
+    codec = _codec(tmp_path)
+    generation_id, root_key, member_key = uuid4(), uuid4(), uuid4()
+    root = codec.seal("department", "schema-v1-root")
+    corporate = codec.seal("employee", "schema-v1-member")
+    union = codec.seal("employee_union", "schema-v1-union")
+
+    with psycopg.connect(worker_url) as worker:
+        worker.execute(
+            "select platform_control.create_directory_staging_generation_v20("
+            "%s,%s,'scheduled',1,1,1,1,1,%s)",
+            (generation_id, uuid4(), "0" * 64),
+        )
+        worker.execute(
+            "select platform_control.stage_directory_department("
+            "%s,%s,null,%s,%s,%s,%s,'Schema V1')",
+            (
+                generation_id,
+                root_key,
+                root.lookup_hmac,
+                root.lookup_key_version,
+                root.ciphertext,
+                root.encryption_key_version,
+            ),
+        )
+        worker.execute(
+            "select platform_control.stage_directory_member_v19("
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'Schema V1','active')",
+            (
+                generation_id,
+                member_key,
+                corporate.lookup_hmac,
+                corporate.lookup_key_version,
+                corporate.ciphertext,
+                corporate.encryption_key_version,
+                union.lookup_hmac,
+                union.lookup_key_version,
+                union.ciphertext,
+                union.encryption_key_version,
+            ),
+        )
+        worker.execute(
+            "select platform_control.stage_directory_membership(%s,%s,%s)",
+            (generation_id, member_key, root_key),
+        )
+        worker.execute(
+            "select platform_control.stage_department_closure(%s,%s,%s,0)",
+            (generation_id, root_key, root_key),
+        )
+
+    with psycopg.connect(production_environment["admin"]) as admin:
+        expected = admin.execute(
+            "select platform_control.directory_generation_checksum_v20(%s)",
+            (generation_id,),
+        ).fetchone()[0]
+        admin.execute(
+            "update platform_control.directory_generations "
+            "set expected_content_sha256=%s where generation_id=%s",
+            (expected, generation_id),
+        )
+
+    with psycopg.connect(worker_url) as worker:
+        assert worker.execute(
+            "select platform_control.finalize_directory_staging_generation(%s)",
+            (generation_id,),
+        ).fetchone() == (expected,)
+        assert worker.execute(
+            "select platform_control.promote_verified_directory_generation(%s)",
+            (generation_id,),
+        ).fetchone() == (generation_id,)
+
+    with psycopg.connect(production_environment["admin"]) as admin:
+        assert admin.execute(
+            "select generation.source_schema_version,generation.status,member.gender,"
+            "state.active_generation_id from platform_control.directory_generations "
+            "generation join platform_control.directory_members member "
+            "using (generation_id) cross join platform_control.directory_state state "
+            "where generation.generation_id=%s",
+            (generation_id,),
+        ).fetchone() == (1, "complete", None, generation_id)
+
+
+@pytest.mark.postgres
+def test_gender_tampering_after_staging_rejects_finalization(
+    production_environment,
+    tmp_path: Path,
+) -> None:
+    member = DingTalkMember(
+        "gender-tamper", "gender-tamper-union", "Gender Tamper", True,
+        (1,), "male", "valid",
+    )
+    with psycopg.connect(production_environment["admin"]) as admin:
+        active_before = admin.execute(
+            "select active_generation_id from platform_control.directory_state "
+            "where singleton"
+        ).fetchone()[0]
+    generation_id = _stage_and_promote_generation(
+        production_environment,
+        _codec(tmp_path),
+        (member,),
+        finalize=False,
+        promote=False,
+    )
+    with psycopg.connect(production_environment["admin"]) as admin:
+        admin.execute(
+            "update platform_control.directory_members set gender='female' "
+            "where generation_id=%s",
+            (generation_id,),
+        )
+
+    worker_url = production_environment["urls"]["platform_directory_worker"]
+    with psycopg.connect(worker_url) as worker:
+        with pytest.raises(psycopg.errors.CheckViolation):
+            worker.execute(
+                "select platform_control.finalize_directory_staging_generation(%s)",
+                (generation_id,),
+            )
+    with psycopg.connect(production_environment["admin"]) as admin:
+        assert admin.execute(
+            "select generation.status,generation.content_sha256,"
+            "state.active_generation_id from platform_control.directory_generations "
+            "generation cross join platform_control.directory_state state "
+            "where generation.generation_id=%s",
+            (generation_id,),
+        ).fetchone() == ("staging", None, active_before)
 
 
 @pytest.mark.postgres
@@ -1108,20 +1353,20 @@ def test_directory_pair_rejects_mixed_key_versions_without_partial_row(
     ))[1]
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v20("
+            "select platform_control.create_directory_staging_generation_v28("
             "%s,%s,'scheduled',1,1,1,1,%s,%s)",
             (generation_id, uuid4(), DIRECTORY_SOURCE_SCHEMA_VERSION, "0" * 64),
         )
         with pytest.raises(psycopg.errors.CheckViolation):
             connection.execute(
-                "select platform_control.stage_directory_member_v19("
-                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "select platform_control.stage_directory_member_v28("
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     generation_id, uuid4(),
                     corporate.lookup_hmac, corporate.lookup_key_version,
                     corporate.ciphertext, corporate.encryption_key_version,
                     old_union_hmac, 1, union.ciphertext,
-                    union.encryption_key_version, "Mixed Key", "active",
+                    union.encryption_key_version, "Mixed Key", "active", None,
                 ),
             )
     with psycopg.connect(production_environment["admin"]) as connection:
@@ -1150,7 +1395,7 @@ def test_directory_promotion_rejects_incomplete_generation_without_state_change(
         ).fetchone()
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v20("
+            "select platform_control.create_directory_staging_generation_v28("
             "%s,%s,'scheduled',%s,1,0,1,%s,%s)",
             (generation_id, uuid4(), declared_members,
              DIRECTORY_SOURCE_SCHEMA_VERSION, "0" * 64),

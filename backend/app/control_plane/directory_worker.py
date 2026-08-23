@@ -104,7 +104,7 @@ class DirectoryWorkerRepository:
         timeout_seconds: float = 20.0,
     ) -> None:
         self._call(
-            "select platform_control.create_directory_staging_generation_v20("
+            "select platform_control.create_directory_staging_generation_v28("
             "%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 generation_id,
@@ -147,8 +147,8 @@ class DirectoryWorkerRepository:
         timeout_seconds: float = 20.0,
     ) -> None:
         self._batch(
-            "select platform_control.stage_directory_member_v19("
-            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "select platform_control.stage_directory_member_v28("
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 (
                     generation_id,
@@ -163,6 +163,7 @@ class DirectoryWorkerRepository:
                     row.union.encryption_key_version,
                     row.display_name,
                     row.status,
+                    row.gender,
                 )
                 for row in rows
             ), timeout_seconds=timeout_seconds,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -117,3 +118,68 @@ def test_directory_service_cancels_peer_and_closes_provider(monkeypatch: pytest.
         asyncio.run(worker_runtime.serve_directory())
     assert "events-cancelled" in events
     assert events[-1] == "closed"
+
+
+def test_directory_repository_stages_schema_v2_member_gender() -> None:
+    from app.control_plane.crypto import ProtectedProviderId
+    from app.control_plane.directory import StagedMember
+    from app.control_plane.directory_worker import DirectoryWorkerRepository
+
+    corporate = ProtectedProviderId("employee", b"c" * 32, 1, b"c" * 29, 1)
+    union = ProtectedProviderId("employee_union", b"u" * 32, 1, b"u" * 29, 1)
+    row = StagedMember(
+        UUID("10000000-0000-4000-8000-000000000001"),
+        corporate,
+        union,
+        "Alice",
+        "active",
+        "female",
+    )
+    repository = DirectoryWorkerRepository(
+        "postgresql://platform_directory_worker@127.0.0.1/agent_platform_control"
+    )
+    captured = []
+    repository._batch = lambda query, parameters, **kwargs: captured.append(
+        (query, tuple(parameters))
+    )
+
+    repository.stage_members(
+        UUID("20000000-0000-4000-8000-000000000001"), (row,)
+    )
+
+    query, parameters = captured[0]
+    assert query == (
+        "select platform_control.stage_directory_member_v28("
+        "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+    )
+    assert parameters[0][-1] == "female"
+
+
+def test_directory_repository_creates_schema_v2_generation() -> None:
+    from app.control_plane.directory_worker import DirectoryWorkerRepository
+
+    repository = DirectoryWorkerRepository(
+        "postgresql://platform_directory_worker@127.0.0.1/agent_platform_control"
+    )
+    captured = []
+    repository._call = lambda query, parameters, **kwargs: captured.append(
+        (query, parameters)
+    )
+
+    repository.create_staging_generation(
+        UUID("30000000-0000-4000-8000-000000000001"),
+        UUID("40000000-0000-4000-8000-000000000001"),
+        "scheduled",
+        1,
+        1,
+        1,
+        1,
+        2,
+        "a" * 64,
+    )
+
+    query, parameters = captured[0]
+    assert query.startswith(
+        "select platform_control.create_directory_staging_generation_v28("
+    )
+    assert parameters[7] == 2

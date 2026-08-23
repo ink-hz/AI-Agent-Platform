@@ -1,6 +1,6 @@
 """Single source of truth for bounded DingTalk directory reconciliation."""
 
-DIRECTORY_SOURCE_SCHEMA_VERSION = 1
+DIRECTORY_SOURCE_SCHEMA_VERSION = 2
 MAX_DEPARTMENTS = 20_000
 MAX_MEMBERS = 200_000
 MAX_MEMBERSHIPS = 1_000_000

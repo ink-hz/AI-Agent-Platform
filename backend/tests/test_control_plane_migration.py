@@ -56,6 +56,9 @@ INACTIVE_ADMIN_CLEANUP_MIGRATION = (
 ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION = (
     MIGRATIONS / "027_account_department_projection.sql"
 )
+DIRECTORY_MEMBER_GENDER_MIGRATION = (
+    MIGRATIONS / "028_directory_member_gender.sql"
+)
 RELEASE_1_PLAN = (
     Path(__file__).parents[2]
     / "docs/superpowers/plans/2026-08-13-dingtalk-identity-release-1.md"
@@ -194,6 +197,10 @@ def test_first_control_migration_exists() -> None:
     assert ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION.is_file(), (
         "missing account department projection migration: "
         f"{ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION}"
+    )
+    assert DIRECTORY_MEMBER_GENDER_MIGRATION.is_file(), (
+        "missing directory member gender migration: "
+        f"{DIRECTORY_MEMBER_GENDER_MIGRATION}"
     )
 
 
@@ -423,7 +430,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 28)
+                    (version, 64) for version in range(1, 29)
                 ]
 
     changed = tmp_path / "migrations"
@@ -461,6 +468,40 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                         psycopg.sql.Identifier(environment["roles"][0]),
                     )
                 )
+
+
+@pytest.mark.postgres
+def test_directory_gender_functions_have_exact_environment_grants(
+    control_database,
+) -> None:
+    protected_functions = {
+        "create_directory_staging_generation_v28": True,
+        "directory_generation_checksum_v28": False,
+        "stage_directory_member_v28": True,
+        "validate_directory_generation_v28": False,
+    }
+    for environment in control_database["environments"].values():
+        matched_worker = environment["roles"][2]
+        with psycopg.connect(environment["admin"]) as connection:
+            rows = connection.execute(
+                "select proc.proname,role_name,"
+                "has_function_privilege(role_name,proc.oid,'execute'),"
+                "has_function_privilege('public',proc.oid,'execute'),"
+                "proc.prosecdef,proc.proconfig "
+                "from pg_proc proc cross join unnest(%s::text[]) role_name "
+                "where proc.pronamespace='platform_control'::regnamespace "
+                "and proc.proname=any(%s) order by proc.proname,role_name",
+                (list(ROLES), list(protected_functions)),
+            ).fetchall()
+
+        assert len(rows) == len(protected_functions) * len(ROLES)
+        for name, role, can_execute, public, security_definer, config in rows:
+            assert can_execute is (
+                protected_functions[name] and role == matched_worker
+            )
+            assert public is False
+            assert security_definer is True
+            assert config == ["search_path=pg_catalog, platform_control"]
 
 
 @pytest.mark.postgres

@@ -13,7 +13,12 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from .crypto import ProtectedProviderId, ProviderIdentityCodec
-from .dingtalk import DingTalkClient, DingTalkDepartment, DingTalkMember
+from .dingtalk import (
+    DingTalkClient,
+    DingTalkDepartment,
+    DingTalkGender,
+    DingTalkMember,
+)
 from .directory_limits import (
     DIRECTORY_FETCH_CONCURRENCY,
     DIRECTORY_SOURCE_SCHEMA_VERSION,
@@ -82,6 +87,7 @@ class StagedMember:
     union: ProtectedProviderId
     display_name: str
     status: str
+    gender: DingTalkGender | None
 
 
 @dataclass(frozen=True)
@@ -248,7 +254,7 @@ def canonical_directory_digest(
         ))
     for row in sorted(members, key=lambda item: item.member_key.bytes):
         records.append(_canonical_record(
-            b"M", row.member_key, row.display_name, row.status,
+            b"M", row.member_key, row.display_name, row.status, row.gender,
             row.corporate.lookup_key_version, row.corporate.lookup_hmac,
             row.corporate.encryption_key_version, row.corporate.ciphertext,
             row.union.lookup_key_version, row.union.lookup_hmac,
@@ -360,7 +366,8 @@ class DirectoryReconciler:
                 )
                 normalized = DingTalkMember(
                     member.userid, member.unionid, member.display_name,
-                    member.active, departments_for_member,
+                    member.active, departments_for_member, member.gender,
+                    member.gender_attribute_status,
                 )
                 previous = members.get(member.userid)
                 if previous is not None and previous != normalized:
@@ -419,6 +426,7 @@ class DirectoryReconciler:
                     union,
                     member.display_name,
                     "active" if member.active else "inactive",
+                    member.gender,
                 )
             )
         memberships = tuple(
