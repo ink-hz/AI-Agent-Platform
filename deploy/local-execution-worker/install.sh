@@ -8,6 +8,7 @@ fail() {
 }
 
 [[ $# -eq 1 && "$1" == /* && "$(/usr/bin/id -un)" == "agentops" ]] || fail
+[[ "${HOME:-}" == /Users/agentops ]] || fail
 owner_dsn_file="$1"
 runtime_root=/Users/agentops/AgentRuntime
 platform_root="$runtime_root/platform"
@@ -18,10 +19,10 @@ metabot_secret="$private_root/metabot-api-token"
 private_key="$private_root/execution-worker-ed25519.key"
 public_document="$runtime_root/execution-worker-public.json"
 runtime_dsn="$private_root/execution-worker-postgres-dsn"
-target="$HOME/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist"
+target=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 label=com.orbbec.agent-execution-worker
-domain="gui/$(/usr/bin/id -u)"
+domain="user/$(/usr/bin/id -u)"
 
 [[ "$platform_root" == "$(cd "$script_dir/../.." && pwd)" ]] || fail
 [[ -x "$platform_root/backend/.venv/bin/python" ]] || fail
@@ -108,8 +109,8 @@ except (AttributeError, OSError, TypeError, ValueError, json.JSONDecodeError):
     raise SystemExit(1)
 PY
 echo "EXECUTION_WORKER_RUNTIME_MAP_OK"
-/bin/mkdir -p "$log_root" "$HOME/Library/LaunchAgents"
-/bin/chmod 700 "$log_root" "$HOME/Library/LaunchAgents"
+/bin/mkdir -p "$log_root" /Users/agentops/Library/LaunchAgents
+/bin/chmod 700 "$log_root" /Users/agentops/Library/LaunchAgents
 rotation_lock="$private_root/execution-worker-key-rotation.lock"
 if [[ -z "${PLATFORM_EXECUTION_WORKER_ROTATION_LOCK_FD:-}" ]]; then
   "$platform_root/backend/.venv/bin/python" - "$rotation_lock" "$0" "$@" <<'PY' || fail
@@ -183,11 +184,11 @@ cleanup_prepared() {
 }
 trap cleanup_prepared EXIT
 
-temporary="$(/usr/bin/mktemp "$HOME/Library/LaunchAgents/.execution-worker.XXXXXX")"
+temporary="$(/usr/bin/mktemp "/Users/agentops/Library/LaunchAgents/.execution-worker.XXXXXX")"
 /bin/cp "$script_dir/com.orbbec.agent-execution-worker.plist.template" "$temporary"
 /bin/chmod 600 "$temporary"
 /usr/bin/plutil -lint "$temporary" >/dev/null
-previous_plist="$(/usr/bin/mktemp "$HOME/Library/LaunchAgents/.execution-worker.previous.XXXXXX")"
+previous_plist="$(/usr/bin/mktemp "/Users/agentops/Library/LaunchAgents/.execution-worker.previous.XXXXXX")"
 if [[ "$previous_exists" == "1" ]]; then
   /bin/cp "$target" "$previous_plist"
 fi
@@ -200,7 +201,7 @@ rollback_install() {
     fi
   fi
   if [[ "$previous_exists" == "1" ]]; then
-    rollback_temporary="$(/usr/bin/mktemp "$HOME/Library/LaunchAgents/.execution-worker.rollback.XXXXXX")" || rollback_failed=1
+    rollback_temporary="$(/usr/bin/mktemp "/Users/agentops/Library/LaunchAgents/.execution-worker.rollback.XXXXXX")" || rollback_failed=1
     if [[ "$rollback_failed" == "0" ]]; then
       if ! /bin/cp "$previous_plist" "$rollback_temporary"; then
         rollback_failed=1

@@ -387,6 +387,11 @@ if /usr/bin/find "$release_path" -type l -print -quit | /usr/bin/grep -q .; then
   fail
 fi
 (cd "$release_path" && /usr/bin/sha256sum --check MANIFEST.sha256 >/dev/null) || fail
+for bootstrap_helper in \
+  "$release_path/deploy/cloud/bootstrap-control-db.sh" \
+  "$release_path/deploy/cloud/bootstrap-dingtalk-production-secrets.sh"; do
+  [[ -f "$bootstrap_helper" && ! -L "$bootstrap_helper" && -x "$bootstrap_helper" ]] || fail
+done
 
 signing_public="$private_path/replica-signing-public-key"
 [[ -f "$signing_public" && ! -L "$signing_public" && "$(/usr/bin/stat -c '%a %U %s' "$signing_public")" == "600 root 32" ]] || fail

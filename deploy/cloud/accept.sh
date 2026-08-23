@@ -76,6 +76,13 @@ remote() {
   /usr/bin/ssh "${ssh_options[@]}" "$cloud_admin_host" "$@"
 }
 
+run_agentops() {
+  /usr/bin/sudo -n -u agentops /usr/bin/env -i \
+    HOME=/Users/agentops USER=agentops LOGNAME=agentops \
+    PATH=/Users/agentops/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
+    "$@"
+}
+
 action_lock_token=""
 action_lock_acquired=0
 local_action_lock="$(/usr/bin/dirname "$config_path")/.agent-brain-action.lock"
@@ -177,7 +184,7 @@ run_relay_canary() {
   [[ "$(/usr/bin/stat -f '%Lp %Su' "$relay_acceptance_config")" == "600 agentops" ]] || fail
   relay_accept=/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/accept.sh
   [[ -x "$relay_accept" && ! -L "$relay_accept" ]] || fail
-  relay_result="$(/usr/bin/sudo -n -u agentops "$relay_accept" "$relay_acceptance_config")" || fail
+  relay_result="$(run_agentops "$relay_accept" "$relay_acceptance_config")" || fail
   [[ "$relay_result" == "AGENT_EXECUTION_RELAY_OK worker=agentops-mac-primary agents=7 public_ports_added=0 duplicate_dispatches=0" ]] || fail
 }
 
@@ -543,15 +550,16 @@ accept_real() {
   worker_stopped=0
   agentops_uid="$(/usr/bin/id -u agentops)"
   worker_label=com.orbbec.agent-execution-worker
+  worker_domain="user/$agentops_uid"
   worker_plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist
   restore_worker() {
     [[ "$worker_stopped" == "1" ]] || return 0
-    if /usr/bin/sudo -n -u agentops /bin/launchctl print "gui/$agentops_uid/$worker_label" >/dev/null 2>&1; then
-      /usr/bin/sudo -n -u agentops /bin/launchctl bootout "gui/$agentops_uid/$worker_label" >/dev/null 2>&1 || return 1
+    if run_agentops /bin/launchctl print "$worker_domain/$worker_label" >/dev/null 2>&1; then
+      run_agentops /bin/launchctl bootout "$worker_domain/$worker_label" >/dev/null 2>&1 || return 1
     fi
-    /usr/bin/sudo -n -u agentops /bin/launchctl bootstrap "gui/$agentops_uid" "$worker_plist" >/dev/null || return 1
-    /usr/bin/sudo -n -u agentops /bin/launchctl enable "gui/$agentops_uid/$worker_label" >/dev/null || return 1
-    /usr/bin/sudo -n -u agentops /bin/launchctl kickstart -k "gui/$agentops_uid/$worker_label" >/dev/null || return 1
+    run_agentops /bin/launchctl bootstrap "$worker_domain" "$worker_plist" >/dev/null || return 1
+    run_agentops /bin/launchctl enable "$worker_domain/$worker_label" >/dev/null || return 1
+    run_agentops /bin/launchctl kickstart -k "$worker_domain/$worker_label" >/dev/null || return 1
     for _attempt in $(/usr/bin/seq 1 12); do
       if /usr/bin/nc -z -w 2 127.0.0.1 9120 >/dev/null 2>&1; then worker_stopped=0; return 0; fi
       /bin/sleep 5
@@ -695,7 +703,7 @@ REMOTE
     /bin/sleep 5
   done
   [[ "$child_run_id" =~ ^[0-9a-f-]{36}$ && "$child_run_state" == "running" ]] || fail
-  /usr/bin/sudo -n -u agentops /bin/launchctl bootout "gui/$agentops_uid/$worker_label" >/dev/null || fail
+  run_agentops /bin/launchctl bootout "$worker_domain/$worker_label" >/dev/null || fail
   worker_stopped=1
   for _attempt in $(/usr/bin/seq 1 12); do
     ! /usr/bin/nc -z -w 2 127.0.0.1 9120 >/dev/null 2>&1 && break
@@ -745,8 +753,8 @@ printf 'release_sha=%s\napi_container_id=%s\napi_started_at=%s\nworker_key_id=%s
   "$(sha256sum /etc/nginx/sites-available/agent-domain.conf | awk '{print $1}')"
 REMOTE
   )" || fail
-  metabot_release_sha="$(/usr/bin/sudo -n -u agentops /usr/bin/git -C /Users/agentops/AgentRuntime/metabot rev-parse HEAD)" || fail
-  agent_team_release_sha="$(/usr/bin/sudo -n -u agentops /usr/bin/git -C /Users/agentops/Developer/work/Orbbec-Agent-Team rev-parse HEAD)" || fail
+  metabot_release_sha="$(run_agentops /usr/bin/git -C /Users/agentops/AgentRuntime/metabot rev-parse HEAD)" || fail
+  agent_team_release_sha="$(run_agentops /usr/bin/git -C /Users/agentops/Developer/work/Orbbec-Agent-Team rev-parse HEAD)" || fail
   [[ "$metabot_release_sha" =~ ^[0-9a-f]{40}$ && "$agent_team_release_sha" =~ ^[0-9a-f]{40}$ ]] || fail
   local_listener_table="$(/usr/sbin/lsof -nP -iTCP -sTCP:LISTEN | /usr/bin/awk 'NR>1 && $9 ~ /^127\.0\.0\.1:(9101|9102|9103|9104|9105|9107|9108|9110|9120)$/ {print $9}' | /usr/bin/sort -u | /usr/bin/paste -sd, -)"
   [[ "$local_listener_table" == *"127.0.0.1:9110"* && "$local_listener_table" == *"127.0.0.1:9120"* ]] || fail

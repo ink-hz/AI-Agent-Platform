@@ -3,20 +3,52 @@ set -eEuo pipefail
 umask 077
 
 fail() { echo EXECUTION_WORKER_AGENTOPS_PROVISION_FAILED >&2; exit 1; }
-[[ $# -eq 1 && "$(/usr/bin/id -un)" == "agentops" ]] || fail
+[[ $# -ge 1 && "$(/usr/bin/id -un)" == "agentops" ]] || fail
+[[ "${HOME:-}" == /Users/agentops && "${USER:-}" == agentops && "${LOGNAME:-}" == agentops ]] || fail
+cd /Users/agentops || fail
+
 action="$1"
+shift
 runtime=/Users/agentops/AgentRuntime
 platform="$runtime/platform"
 private="$runtime/private"
 log="$runtime/log"
+deploy_tools="$runtime/deploy-tools"
 contract_source="$runtime/metabot/runtime-contract.json"
 token_source="/Users/agentops/Library/Application Support/MetaBotReliability/api-secret"
 owner_dsn="$private/postgres-owner-dsn"
 token_target="$private/metabot-api-token"
-helper_source="$(cd "$(dirname "$0")/../.." && pwd)"
-snapshot=/Users/agentops/Developer/work/Orbbec-Agent-Team/scripts/reliability/sanitized-pm2.sh
+snapshot="$deploy_tools/reliability/sanitized-pm2.sh"
 before="$private/worker-provision-nonbrain-before.json"
 brain_before="$private/worker-provision-brain-before.txt"
+receipt="$private/worker-provision-receipt"
+worker_plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist
+worker_label=com.orbbec.agent-execution-worker
+worker_domain="user/$(/usr/bin/id -u)"
+
+safe_remove_tree() {
+  [[ $# -eq 1 ]] || return 1
+  /usr/bin/python3 - "$runtime" "$1" <<'PY'
+import os, pathlib, shutil, stat, sys
+root, target = map(pathlib.Path, sys.argv[1:])
+root_meta = root.lstat()
+if root.is_symlink() or not stat.S_ISDIR(root_meta.st_mode) or root_meta.st_uid != os.getuid():
+    raise SystemExit(1)
+try:
+    relative = target.relative_to(root)
+except ValueError:
+    raise SystemExit(1)
+if not relative.parts or relative.parts[0] not in {
+    "private", "platform", "deploy-tools"
+} and not relative.parts[0].startswith(".platform"):
+    raise SystemExit(1)
+if target.exists() or target.is_symlink():
+    meta = target.lstat()
+    if target.is_symlink() or not stat.S_ISDIR(meta.st_mode) or meta.st_uid != os.getuid():
+        raise SystemExit(1)
+    shutil.rmtree(target)
+PY
+}
 
 brain_snapshot() {
   "$snapshot" jlist | /usr/bin/jq -ceS '
@@ -30,12 +62,9 @@ brain_snapshot() {
          or (.[0].pm2_env.pm_cwd | type) != "string"
        then error("Agent Brain process is not exactly inspectable")
        else .[0] | {
-         name,pid,pm_id,
-         status:.pm2_env.status,
-         restart_time:.pm2_env.restart_time,
-         created_at:.pm2_env.created_at,
-         pm_exec_path:.pm2_env.pm_exec_path,
-         pm_cwd:.pm2_env.pm_cwd,
+         name,pid,pm_id,status:.pm2_env.status,
+         restart_time:.pm2_env.restart_time,created_at:.pm2_env.created_at,
+         pm_exec_path:.pm2_env.pm_exec_path,pm_cwd:.pm2_env.pm_cwd,
          args:(.pm2_env.args // [])
        }
        end
@@ -46,8 +75,7 @@ nonbrain_snapshot() {
   "$snapshot" jlist | /usr/bin/jq -ceS '
     map(select(.name != "metabot-agent-brain"))
     | if any(.[];
-        (.name | type) != "string"
-        or (.pid | type) != "number"
+        (.name | type) != "string" or (.pid | type) != "number"
         or (.pm_id | type) != "number"
         or (.pm2_env.status != "online" and .pm2_env.status != "stopped")
         or (.pm2_env.restart_time | type) != "number"
@@ -56,132 +84,295 @@ nonbrain_snapshot() {
         or (.pm2_env.pm_cwd | type) != "string")
       then error("non-Brain PM2 process is not exactly inspectable")
       else map({
-        name,pid,pm_id,
-        status:.pm2_env.status,
-        restart_time:.pm2_env.restart_time,
-        created_at:.pm2_env.created_at,
-        pm_exec_path:.pm2_env.pm_exec_path,
-        pm_cwd:.pm2_env.pm_cwd,
+        name,pid,pm_id,status:.pm2_env.status,
+        restart_time:.pm2_env.restart_time,created_at:.pm2_env.created_at,
+        pm_exec_path:.pm2_env.pm_exec_path,pm_cwd:.pm2_env.pm_cwd,
         args:(.pm2_env.args // [])
       }) | sort_by(.name,.pm_id)
       end
   '
 }
 
+rollback_worker() {
+  [[ -d "$receipt" && ! -L "$receipt" ]] || return 0
+  [[ "$(/usr/bin/stat -f '%Lp %Su' "$receipt")" == "700 agentops" ]] || return 1
+  [[ -f "$receipt/prepared" && ! -L "$receipt/prepared" && "$(<"$receipt/prepared")" == v1 ]] || return 1
+  prior_state="$(<"$receipt/state")" || return 1
+  [[ "$prior_state" == loaded || "$prior_state" == unloaded ]] || return 1
+  if /bin/launchctl print "$worker_domain/$worker_label" >/dev/null 2>&1; then
+    /bin/launchctl bootout "$worker_domain/$worker_label" >/dev/null 2>&1 || return 1
+  fi
+  if [[ -f "$receipt/previous.plist" && ! -L "$receipt/previous.plist" ]]; then
+    previous_part="$worker_plist.rollback.$$"
+    [[ ! -e "$previous_part" && ! -L "$previous_part" ]] || return 1
+    /bin/cp "$receipt/previous.plist" "$previous_part" || return 1
+    /bin/chmod 600 "$previous_part" || return 1
+    /bin/mv -f "$previous_part" "$worker_plist" || return 1
+    /usr/bin/cmp -s "$receipt/previous.plist" "$worker_plist" || return 1
+  else
+    /bin/rm -f -- "$worker_plist" || return 1
+    [[ ! -e "$worker_plist" && ! -L "$worker_plist" ]] || return 1
+  fi
+  if [[ "$prior_state" == loaded ]]; then
+    /bin/launchctl bootstrap "$worker_domain" "$worker_plist" >/dev/null || return 1
+    /bin/launchctl enable "$worker_domain/$worker_label" >/dev/null || return 1
+  fi
+  if [[ "$prior_state" == loaded ]]; then
+    /bin/launchctl print "$worker_domain/$worker_label" >/dev/null 2>&1 || return 1
+  else
+    ! /bin/launchctl print "$worker_domain/$worker_label" >/dev/null 2>&1 || return 1
+  fi
+  safe_remove_tree "$receipt" || return 1
+}
+
+cleanup_ephemeral() {
+  /bin/rm -f -- "$owner_dsn" "$before" "$private/worker-provision-nonbrain-after.json" \
+    "$brain_before" "$private/worker-provision-brain-after.txt"
+}
+
 case "$action" in
-  prepare)
-    [[ ! -e "$owner_dsn" && ! -L "$owner_dsn" ]] || fail
-    /bin/mkdir -p "$runtime" "$private" "$log"
-    /bin/chmod 700 "$runtime" "$private" "$log"
-    [[ -x "$snapshot" ]] || fail
-    nonbrain_snapshot > "$before"
-    /bin/chmod 600 "$before"
-    brain_snapshot > "$brain_before"
-    /bin/chmod 600 "$brain_before"
-    if [[ ! -d "$platform" ]]; then
-      stage="$runtime/.platform.first-bootstrap"
-      [[ ! -e "$stage" && ! -L "$stage" ]] || fail
-      /bin/mkdir -m 700 "$stage"
-      /usr/bin/rsync -rlpt --delete \
-        --exclude .git --exclude .worktrees --exclude .venv --exclude node_modules \
-        --exclude __pycache__ --exclude '*.pyc' --exclude .pytest_cache \
-        "$helper_source/" "$stage/" || fail
-      /bin/mv "$stage" "$platform"
-    fi
-    [[ -d "$platform/backend" && ! -L "$platform" ]] || fail
-    platform_delta="$(/usr/bin/rsync -rlpni --checksum --delete --omit-dir-times \
-      --exclude .git --exclude .worktrees --exclude .venv --exclude node_modules \
-      --exclude __pycache__ --exclude '*.pyc' --exclude .pytest_cache \
-      "$helper_source/" "$platform/")" || fail
-    [[ -z "$platform_delta" ]] || fail
-    if [[ ! -x "$platform/backend/.venv/bin/python" ]]; then
-      /opt/homebrew/bin/python3.11 -m venv "$platform/backend/.venv" || fail
-      "$platform/backend/.venv/bin/python" -m pip install --disable-pip-version-check \
-        -r "$platform/backend/requirements.txt" >/dev/null || fail
-    fi
-    "$platform/backend/.venv/bin/python" - "$token_source" "$token_target" "$contract_source" <<'PY' || fail
-import os, pathlib, stat, sys
-source, target, contract = map(pathlib.Path, sys.argv[1:])
-for path, maximum in ((source, 16384), (contract, 65536)):
-    meta = path.lstat()
-    if path.is_symlink() or not stat.S_ISREG(meta.st_mode) or stat.S_IMODE(meta.st_mode) != 0o600 or meta.st_uid != os.getuid() or meta.st_size <= 0 or meta.st_size > maximum:
-        raise SystemExit(1)
-flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-fd = os.open(source, flags)
+  stage)
+    [[ $# -eq 2 && "$1" =~ ^[0-9a-f]{40}$ && "$2" =~ ^[0-9a-f]{64}$ ]] || fail
+    release_sha="$1"
+    archive_sha="$2"
+    /bin/mkdir -p "$runtime" "$private" "$log" "$deploy_tools"
+    /bin/chmod 700 "$runtime" "$private" "$log" "$deploy_tools"
+    stage="$runtime/.platform.first-bootstrap.$release_sha"
+    archive="$runtime/.platform-release.$release_sha.tar"
+    venv_stage="$platform/backend/.venv.first-bootstrap.$release_sha"
+    stage_complete=0
+    stage_exit() {
+      stage_status="$?"; trap - ERR EXIT
+      if [[ "$stage_complete" != 1 ]]; then
+        safe_remove_tree "$stage" >/dev/null 2>&1 || stage_status=1
+        safe_remove_tree "$venv_stage" >/dev/null 2>&1 || stage_status=1
+        /bin/rm -f -- "$archive" || stage_status=1
+      fi
+      exit "$stage_status"
+    }
+    trap stage_exit ERR EXIT
+    safe_remove_tree "$stage" || fail
+    if [[ -d "$venv_stage" && ! -L "$venv_stage" ]]; then safe_remove_tree "$venv_stage" || fail; fi
+    /bin/rm -f -- "$archive"
+    /usr/bin/python3 -c '
+import hashlib,os,pathlib,stat,sys
+target=pathlib.Path(sys.argv[1]); expected=sys.argv[2]; total=0
+fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),0o600)
+digest=hashlib.sha256()
 try:
-    raw = os.read(fd, 16385)
-finally:
-    os.close(fd)
-if len(raw) > 16384 or not raw:
-    raise SystemExit(1)
-if target.exists():
-    meta = target.lstat()
-    if target.is_symlink() or not stat.S_ISREG(meta.st_mode) or stat.S_IMODE(meta.st_mode) != 0o600 or meta.st_uid != os.getuid() or target.read_bytes() != raw:
+  while True:
+    chunk=sys.stdin.buffer.read(65536)
+    if not chunk: break
+    total += len(chunk)
+    if total > 67108864: raise OSError("archive too large")
+    digest.update(chunk); view=memoryview(chunk)
+    while view: view=view[os.write(fd,view):]
+  os.fsync(fd)
+except BaseException:
+  os.close(fd); target.unlink(missing_ok=True); raise
+else: os.close(fd)
+if digest.hexdigest()!=expected: target.unlink(missing_ok=True); raise SystemExit(1)
+' "$archive" "$archive_sha" || fail
+    /bin/mkdir -m 700 "$stage"
+    /usr/bin/tar -xf "$archive" -C "$stage" || fail
+    /usr/bin/python3 - "$stage" "$release_sha" "$archive_sha" <<'PY' || fail
+import json,os,pathlib,stat,sys
+stage=pathlib.Path(sys.argv[1]); release,archive=sys.argv[2:]
+for path in stage.rglob("*"):
+    meta=path.lstat()
+    if path.is_symlink() or not (stat.S_ISDIR(meta.st_mode) or stat.S_ISREG(meta.st_mode)):
         raise SystemExit(1)
+marker=stage/".platform-release.json"
+marker.write_text(json.dumps({"schema_version":1,"release_sha":release,"archive_sha256":archive},sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
+os.chmod(marker,0o600)
+PY
+    if [[ ! -e "$platform" && ! -L "$platform" ]]; then
+      /bin/mv "$stage" "$platform"
+    else
+      [[ -d "$platform" && ! -L "$platform" ]] || fail
+      /usr/bin/cmp -s "$stage/.platform-release.json" "$platform/.platform-release.json" || fail
+      platform_delta="$(/usr/bin/rsync -rlpni --checksum --delete --omit-dir-times \
+        --exclude .platform-release.json --exclude .venv --exclude __pycache__ \
+        --exclude '*.pyc' --exclude .pytest_cache \
+        "$stage/" "$platform/")" || fail
+      [[ -z "$platform_delta" ]] || fail
+      safe_remove_tree "$stage" || fail
+    fi
+    /bin/rm -f -- "$archive"
+    venv="$platform/backend/.venv"
+    venv_marker="$venv/.orbbec-release"
+    if [[ -d "$venv" && ! -L "$venv" ]]; then
+      if [[ ! -f "$venv_marker" || "$(<"$venv_marker")" != "$release_sha" ]]; then
+        safe_remove_tree "$venv" || fail
+      fi
+    elif [[ -e "$venv" || -L "$venv" ]]; then
+      fail
+    fi
+    if [[ ! -d "$venv" ]]; then
+      safe_remove_tree "$venv_stage" || fail
+      /opt/homebrew/bin/python3.11 -m venv "$venv_stage" || fail
+      "$venv_stage/bin/python" -m pip install --disable-pip-version-check \
+        -r "$platform/backend/requirements.txt" >/dev/null || fail
+      "$venv_stage/bin/python" -m pip check >/dev/null || fail
+      printf '%s\n' "$release_sha" > "$venv_stage/.orbbec-release"
+      /bin/chmod 600 "$venv_stage/.orbbec-release"
+      /bin/mv "$venv_stage" "$venv"
+    fi
+    [[ -x "$venv/bin/python" && "$(<"$venv_marker")" == "$release_sha" ]] || fail
+    "$venv/bin/python" -m pip check >/dev/null || fail
+    stage_complete=1
+    trap - ERR EXIT
+    echo EXECUTION_WORKER_AGENTOPS_STAGED
+    ;;
+  prepare)
+    [[ $# -eq 0 && -d "$platform/backend/.venv" && ! -L "$platform" ]] || fail
+    [[ -x "$snapshot" && ! -L "$snapshot" ]] || fail
+    [[ "$(/usr/bin/stat -f '%Su' "$snapshot")" == agentops ]] || fail
+    [[ ! -e "$receipt" && ! -L "$receipt" ]] || fail
+    [[ ! -e "$owner_dsn" && ! -L "$owner_dsn" ]] || fail
+    nonbrain_snapshot > "$before"; /bin/chmod 600 "$before"
+    brain_snapshot > "$brain_before"; /bin/chmod 600 "$brain_before"
+    "$platform/backend/.venv/bin/python" - "$token_source" "$token_target" "$contract_source" <<'PY' || fail
+import os,pathlib,stat,sys
+source,target,contract=map(pathlib.Path,sys.argv[1:])
+for path,maximum in ((source,16384),(contract,65536)):
+    meta=path.lstat()
+    if path.is_symlink() or not stat.S_ISREG(meta.st_mode) or stat.S_IMODE(meta.st_mode)!=0o600 or meta.st_uid!=os.getuid() or not 0<meta.st_size<=maximum: raise SystemExit(1)
+fd=os.open(source,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0))
+try: raw=os.read(fd,16385)
+finally: os.close(fd)
+if not raw or len(raw)>16384: raise SystemExit(1)
+if target.exists():
+    meta=target.lstat()
+    if target.is_symlink() or not stat.S_ISREG(meta.st_mode) or stat.S_IMODE(meta.st_mode)!=0o600 or meta.st_uid!=os.getuid() or target.read_bytes()!=raw: raise SystemExit(1)
 else:
-    out = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    out=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),0o600)
     try:
-        view = memoryview(raw)
-        while view:
-            view = view[os.write(out, view):]
+        view=memoryview(raw)
+        while view: view=view[os.write(out,view):]
         os.fsync(out)
     except BaseException:
-        os.close(out)
-        target.unlink(missing_ok=True)
-        raise
-    else:
-        os.close(out)
+        os.close(out); target.unlink(missing_ok=True); raise
+    else: os.close(out)
 PY
     "$platform/backend/.venv/bin/python" -c '
-import os, pathlib, stat, sys
-
-target = pathlib.Path(sys.argv[1])
-raw = sys.stdin.buffer.read(16385)
-if not raw or len(raw) > 16384:
-    raise SystemExit(1)
-flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-descriptor = os.open(target, flags, 0o600)
+import os,pathlib,stat,sys
+target=pathlib.Path(sys.argv[1]); raw=sys.stdin.buffer.read(16385)
+if not raw or len(raw)>16384: raise SystemExit(1)
+fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),0o600)
 try:
-    metadata = os.fstat(descriptor)
-    if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid():
-        raise OSError("unsafe owner DSN target")
-    written = 0
-    while written < len(raw):
-        written += os.write(descriptor, raw[written:])
-    os.fsync(descriptor)
+  view=memoryview(raw)
+  while view: view=view[os.write(fd,view):]
+  os.fsync(fd)
 except BaseException:
-    os.close(descriptor)
-    target.unlink(missing_ok=True)
-    raise
-else:
-    os.close(descriptor)
+  os.close(fd); target.unlink(missing_ok=True); raise
+else: os.close(fd)
 ' "$owner_dsn" || fail
+    echo EXECUTION_WORKER_AGENTOPS_PREPARED
     ;;
   install)
-    [[ -f "$owner_dsn" && ! -L "$owner_dsn" ]] || fail
+    [[ $# -eq 0 && -f "$owner_dsn" && ! -L "$owner_dsn" ]] || fail
+    [[ ! -e "$receipt" && ! -L "$receipt" ]] || fail
+    receipt_part="$private/.worker-provision-receipt.part"
+    safe_remove_tree "$receipt_part" || fail
+    receipt_published=0
+    receipt_exit() {
+      status="$?"; trap - ERR EXIT
+      if [[ "$receipt_published" != 1 ]]; then
+        safe_remove_tree "$receipt_part" >/dev/null 2>&1 || status=1
+      fi
+      exit "$status"
+    }
+    trap receipt_exit ERR EXIT
+    /bin/mkdir -m 700 "$receipt_part"
+    if /bin/launchctl print "$worker_domain/$worker_label" >/dev/null 2>&1; then
+      printf 'loaded\n' > "$receipt_part/state"
+    else
+      printf 'unloaded\n' > "$receipt_part/state"
+    fi
+    /bin/chmod 600 "$receipt_part/state"
+    if [[ -e "$worker_plist" || -L "$worker_plist" ]]; then
+      [[ -f "$worker_plist" && ! -L "$worker_plist" ]] || fail
+      /bin/cp "$worker_plist" "$receipt_part/previous.plist"
+      /bin/chmod 600 "$receipt_part/previous.plist"
+      /usr/bin/cmp -s "$worker_plist" "$receipt_part/previous.plist" || fail
+    fi
+    printf 'v1\n' > "$receipt_part/prepared"
+    /bin/chmod 600 "$receipt_part/prepared"
+    /bin/mv "$receipt_part" "$receipt"
+    receipt_published=1
+    trap - ERR EXIT
+    install_ok=0
+    install_exit() {
+      status="$?"; trap - ERR EXIT
+      if [[ "$install_ok" != 1 ]]; then rollback_worker >/dev/null 2>&1 || status=1; fi
+      exit "$status"
+    }
+    trap install_exit ERR EXIT
     "$platform/deploy/local-execution-worker/install.sh" "$owner_dsn" || fail
     after="$private/worker-provision-nonbrain-after.json"
-    nonbrain_snapshot > "$after"
-    /bin/chmod 600 "$after"
+    nonbrain_snapshot > "$after"; /bin/chmod 600 "$after"
     /usr/bin/cmp -s "$before" "$after" || fail
     brain_after="$private/worker-provision-brain-after.txt"
-    brain_snapshot > "$brain_after"
-    /bin/chmod 600 "$brain_after"
+    brain_snapshot > "$brain_after"; /bin/chmod 600 "$brain_after"
     /usr/bin/cmp -s "$brain_before" "$brain_after" || fail
     brain_pid="$(/usr/bin/jq -er '.pid' "$brain_before")" || fail
     brain_listener="$(/usr/sbin/lsof -nP -iTCP:9110 -sTCP:LISTEN -Fpn | /usr/bin/awk '/^p/{pid=substr($0,2)} /^n/{print pid "," substr($0,2)}')" || fail
     worker_listener="$(/usr/sbin/lsof -nP -iTCP:9120 -sTCP:LISTEN -Fpn | /usr/bin/awk '/^p/{pid=substr($0,2)} /^n/{print pid "," substr($0,2)}')" || fail
     [[ "$brain_listener" == "$brain_pid,127.0.0.1:9110" && "$worker_listener" =~ ^[1-9][0-9]*,127\.0\.0\.1:9120$ ]] || fail
     worker_listener_pid="${worker_listener%%,*}"
-    uid="$(/usr/bin/id -u)"
-    launchd_state="$(/bin/launchctl print "gui/$uid/com.orbbec.agent-execution-worker")" || fail
-    launchd_pid="$(/usr/bin/awk '$1 == "pid" && $2 == "=" {gsub(/;/,"",$3); print $3}' <<<"$launchd_state")"
+    launchd_state="$(/bin/launchctl print "$worker_domain/$worker_label")" || fail
+    launchd_pid="$(/usr/bin/awk '$1=="pid" && $2=="=" {gsub(/;/,"",$3);print $3}' <<<"$launchd_state")"
     [[ "$launchd_pid" == "$worker_listener_pid" ]] || fail
-    /bin/rm -f -- "$owner_dsn" "$before" "$after" "$brain_before" "$brain_after"
+    install_ok=1
     echo EXECUTION_WORKER_AGENTOPS_READY
     ;;
+  commit)
+    [[ $# -eq 0 && -d "$receipt" && ! -L "$receipt" \
+      && "$(/usr/bin/stat -f '%Lp %Su' "$receipt")" == "700 agentops" \
+      && -f "$receipt/prepared" && ! -L "$receipt/prepared" \
+      && "$(<"$receipt/prepared")" == v1 ]] || fail
+    cleanup_ephemeral || fail
+    if [[ ! -e "$receipt/committed" && ! -L "$receipt/committed" ]]; then
+      /bin/rm -f -- "$receipt/committed.part"
+      printf 'v1\n' > "$receipt/committed.part"
+      /bin/chmod 600 "$receipt/committed.part"
+      /bin/mv "$receipt/committed.part" "$receipt/committed"
+    fi
+    [[ -f "$receipt/committed" && ! -L "$receipt/committed" \
+      && "$(<"$receipt/committed")" == v1 ]] || fail
+    echo EXECUTION_WORKER_AGENTOPS_COMMITTED
+    ;;
+  finalize)
+    [[ $# -eq 0 ]] || fail
+    if [[ ! -e "$receipt" && ! -L "$receipt" ]]; then
+      echo EXECUTION_WORKER_AGENTOPS_FINALIZED
+      exit 0
+    fi
+    [[ -d "$receipt" && ! -L "$receipt" \
+      && "$(/usr/bin/stat -f '%Lp %Su' "$receipt")" == "700 agentops" \
+      && -f "$receipt/prepared" && ! -L "$receipt/prepared" \
+      && "$(<"$receipt/prepared")" == v1 \
+      && -f "$receipt/committed" && ! -L "$receipt/committed" \
+      && "$(<"$receipt/committed")" == v1 ]] || fail
+    prior_state="$(<"$receipt/state")" || fail
+    [[ "$prior_state" == loaded || "$prior_state" == unloaded ]] || fail
+    if [[ -e "$receipt/previous.plist" || -L "$receipt/previous.plist" ]]; then
+      [[ -f "$receipt/previous.plist" && ! -L "$receipt/previous.plist" ]] || fail
+    fi
+    safe_remove_tree "$receipt" || fail
+    echo EXECUTION_WORKER_AGENTOPS_FINALIZED
+    ;;
+  rollback)
+    [[ $# -eq 0 ]] || fail
+    rollback_worker || fail
+    cleanup_ephemeral || fail
+    echo EXECUTION_WORKER_AGENTOPS_ROLLED_BACK
+    ;;
   cleanup)
-    /bin/rm -f -- "$owner_dsn"
+    [[ $# -eq 0 ]] || fail
+    rollback_worker || fail
+    cleanup_ephemeral || fail
     ;;
   *) fail ;;
 esac

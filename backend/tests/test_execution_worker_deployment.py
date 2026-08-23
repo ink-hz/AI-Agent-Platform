@@ -4886,6 +4886,14 @@ def test_installer_holds_rotation_lock_while_rotator_fails_without_mutation(
     installer = local / "install.sh"
     source = INSTALLER.read_text(encoding="utf-8")
     source = source.replace("runtime_root=/Users/agentops/AgentRuntime", f"runtime_root={runtime}")
+    harness_home = paths["canonical_plist"].parents[2]
+    source = source.replace(
+        '[[ "${HOME:-}" == /Users/agentops ]] || fail',
+        f'[[ "${{HOME:-}}" == {harness_home} ]] || fail',
+    ).replace(
+        "/Users/agentops/Library/LaunchAgents",
+        str(paths["canonical_plist"].parent),
+    )
     source = source.replace(
         '"$(/usr/bin/id -un)" == "agentops"',
         f'"$(/usr/bin/id -un)" == "{subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()}"',
@@ -5019,6 +5027,12 @@ esac
     installer_source = INSTALLER.read_text(encoding="utf-8")
     installer_source = installer_source.replace(
         "runtime_root=/Users/agentops/AgentRuntime", f"runtime_root={runtime}"
+    ).replace(
+        '[[ "${HOME:-}" == /Users/agentops ]] || fail',
+        f'[[ "${{HOME:-}}" == {home} ]] || fail',
+    ).replace(
+        "/Users/agentops/Library/LaunchAgents",
+        str(launch_agents),
     ).replace("/bin/launchctl", str(fake_launchctl))
     installer_source = installer_source.replace(
         '"$(/usr/bin/id -un)" == "agentops"',

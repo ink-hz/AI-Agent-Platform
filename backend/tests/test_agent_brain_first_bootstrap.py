@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
+import tarfile
 from uuid import UUID, uuid4
 
 import pytest
@@ -32,6 +36,7 @@ PROVISION = LOCAL / "provision.sh"
 AGENTOPS = LOCAL / "provision-agentops.sh"
 ACCEPT = CLOUD / "accept.sh"
 REMOTE_STAGE = CLOUD / "remote-stage.sh"
+INSTALL = LOCAL / "install.sh"
 
 AGENTS = (
     "hr-bot",
@@ -86,6 +91,9 @@ def test_content_keyring_generator_is_atomic_idempotent_and_codec_valid(
     )
     assert ContentCodec(keyring).active_key_version == 1
     assert document["keys"]["1"] not in first.stdout + second.stdout
+    source = CONTENT.read_text(encoding="utf-8")
+    assert "IdentityKeyring.from_file" not in source
+    assert "_validate_at(" in source
 
 
 @pytest.mark.parametrize(
@@ -254,6 +262,114 @@ def test_remote_stage_migrates_brain_disabled_then_bootstraps_worker_exactly() -
     assert migration < registration < api_start
     assert "PLATFORM_AGENT_BRAIN_ENABLED=0" in source[: registration + 1]
     assert "execution-worker-public-keyring.json" in source
+
+
+def test_remote_stage_rejects_non_executable_bootstrap_helpers_before_mutation(
+    tmp_path: Path,
+) -> None:
+    source = REMOTE_STAGE.read_text(encoding="utf-8")
+    manifest_gate = '(cd "$release_path" && /usr/bin/sha256sum --check MANIFEST.sha256 >/dev/null) || fail'
+    mutation = 'image_name="orbbec-agent-platform:$release_sha"'
+    gate = source.split(manifest_gate, 1)[1].split("signing_public=", 1)[0]
+    assert source.index(manifest_gate) < source.index("bootstrap-control-db.sh")
+    assert source.index("bootstrap-dingtalk-production-secrets.sh") < source.index(mutation)
+
+    release = tmp_path / "release"
+    cloud = release / "deploy/cloud"
+    cloud.mkdir(parents=True)
+    for name in (
+        "bootstrap-control-db.sh",
+        "bootstrap-dingtalk-production-secrets.sh",
+    ):
+        helper = cloud / name
+        helper.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+        helper.chmod(0o700)
+    (cloud / "bootstrap-control-db.sh").chmod(0o600)
+    result = subprocess.run(
+        [
+            "/bin/bash",
+            "-c",
+            "set -eEuo pipefail\nfail() { exit 91; }\n"
+            f"release_path={shlex.quote(str(release))}\n{gate}",
+        ],
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 91
+
+
+@pytest.mark.parametrize("fail_migration", [False, True])
+def test_remote_stage_bootstrap_transaction_executes_in_order_and_fails_closed(
+    tmp_path: Path, fail_migration: bool
+) -> None:
+    source = REMOTE_STAGE.read_text(encoding="utf-8")
+    start = 'PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"'
+    block = start + source.split(start, 1)[1].split(
+        '/usr/bin/test ! -e "$worker_keyring_previous"', 1
+    )[0]
+    fake_docker = tmp_path / "docker"
+    log = tmp_path / "transaction.log"
+    fake_docker.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        f"log={shlex.quote(str(log))}\n"
+        "if [[ \"$1\" == compose ]]; then\n"
+        "  case \" $* \" in *' ps -q platform-postgres '*) echo postgres-id;; esac\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [[ \"$1\" == inspect ]]; then echo healthy; exit 0; fi\n"
+        "if [[ \" $* \" == *' app.cloud_replica.cli migrate '* ]]; then\n"
+        "  printf 'migrate:%s\\n' \"${PLATFORM_AGENT_BRAIN_ENABLED:-unset}\" >> \"$log\"\n"
+        f"  [[ {1 if fail_migration else 0} == 0 ]] || exit 81\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [[ \" $* \" == *' app.execution_relay.bootstrap_registration '* ]]; then\n"
+        "  [[ \" $* \" == *' -e PLATFORM_AGENT_BRAIN_ENABLED=0 '* ]] || exit 82\n"
+        "  echo register >> \"$log\"\n"
+        "  echo 'EXECUTION_WORKER_BOOTSTRAP_OK status=registered fingerprint="
+        + "f" * 64
+        + "'\n  exit 0\nfi\nexit 83\n",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o700)
+    release = tmp_path / "release"
+    bootstrap = release / "deploy/cloud/bootstrap-control-db.sh"
+    bootstrap.parent.mkdir(parents=True)
+    bootstrap.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        f"echo control >> {shlex.quote(str(log))}\n"
+        "echo 'CONTROL_DATABASE_CREDENTIALS_READY version=2'\n",
+        encoding="utf-8",
+    )
+    bootstrap.chmod(0o700)
+    private = tmp_path / "private"
+    stage = tmp_path / "stage"
+    private.mkdir()
+    stage.mkdir()
+    environment_path = tmp_path / "release.env"
+    script = "\n".join(
+        (
+            "set -eEuo pipefail",
+            "fail() { exit 91; }",
+            f"image_name=image:test",
+            f"environment_path={shlex.quote(str(environment_path))}",
+            f"release_path={shlex.quote(str(release))}",
+            f"private_path={shlex.quote(str(private))}",
+            f"stage_path={shlex.quote(str(stage))}",
+            block.replace("/usr/bin/docker", str(fake_docker)).replace(
+                '/bin/chown root:root "$environment_path"', ":"
+            ),
+        )
+    )
+
+    result = subprocess.run(["/bin/bash", "-c", script], text=True, capture_output=True)
+
+    lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+    if fail_migration:
+        assert result.returncode != 0
+        assert lines == ["migrate:0"]
+    else:
+        assert result.returncode == 0, result.stderr
+        assert lines == ["migrate:0", "control", "register"]
 
 
 class _GrantConnection:
@@ -531,6 +647,15 @@ def test_local_provisioning_wrapper_has_narrow_hba_transaction_and_fixed_sudo() 
     combined = source + helper
 
     assert source.startswith("#!/bin/bash\nset -eEuo pipefail\numask 077\n")
+    assert "/Users/neo/FlywheelData/socket" in source
+    assert "/Users/agentops/AgentRuntime/deploy-tools/provision-agentops.sh" in source
+    assert "/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh" in source
+    assert " archive --format=tar" in source and "release_sha" in source
+    assert '"$metabot_release_sha:scripts/reliability/sanitized-pm2.sh"' in source
+    assert "HOME=/Users/agentops" in source
+    assert '-p 5432 -U neo' in source
+    assert "current_setting('port')" in source
+    assert '"$agentops_helper" finalize' in source
     assert "# BEGIN ORBBEC AGENT EXECUTION WORKER" in source
     assert "host agent_execution_worker agent_execution_worker_runtime 127.0.0.1/32 scram-sha-256" in source
     assert "host postgres" in source and "scram-sha-256" in source
@@ -548,18 +673,71 @@ def test_local_provisioning_wrapper_has_narrow_hba_transaction_and_fixed_sudo() 
     assert "/Users/agentops/Library/Application Support/MetaBotReliability/api-secret" in helper
     assert "127\\.0\\.0\\.1:9120" in helper
     assert "snapshot-except metabot-agent-brain" not in helper
+    assert 'deploy_tools="$runtime/deploy-tools"' in helper
+    assert 'snapshot="$deploy_tools/reliability/sanitized-pm2.sh"' in helper
+    assert "helper_source=" not in helper
+    assert ".platform-release.json" in helper
     assert '"$snapshot" jlist' in helper
     assert "restart_time" in helper and "pm_exec_path" in helper
     assert "worker_listener_pid" in helper and "launchd_pid" in helper
     assert "--checksum" in helper and "--delete" in helper
     assert "for relative in" not in helper
     assert "os.O_EXCL" in helper
-    assert 'getattr(os, "O_NOFOLLOW", 0)' in helper
+    assert "O_NOFOLLOW" in helper
     assert '/bin/cat > "$owner_dsn"' not in helper
     assert "/usr/bin/printf '%s\\n' \"$owner_dsn\"" not in source
     assert '/usr/bin/printf "set password_encryption' not in source
+    assert source.index("EXECUTION_WORKER_PROVISION_OK") < source.index("exit 0")
+    assert 'echo EXECUTION_WORKER_PROVISION_OK' not in source.split("trap cleanup ERR EXIT", 1)[1]
+    assert 'domain="user/$(/usr/bin/id -u)"' in INSTALL.read_text(encoding="utf-8")
+    accept_source = ACCEPT.read_text(encoding="utf-8")
+    assert 'worker_domain="user/$agentops_uid"' in accept_source
+    assert '"$worker_domain/$worker_label"' in accept_source
     subprocess.run(["/bin/bash", "-n", str(PROVISION)], check=True)
     subprocess.run(["/bin/bash", "-n", str(AGENTOPS)], check=True)
+
+
+def test_real_host_agentops_account_socket_home_and_launchd_domain() -> None:
+    socket = Path("/Users/neo/FlywheelData/socket/.s.PGSQL.5432")
+    psql = Path("/opt/homebrew/opt/postgresql@17/bin/psql")
+    if not socket.exists() or not psql.exists() or not Path("/Users/agentops").is_dir():
+        pytest.skip("production dual-account host boundary is unavailable")
+    postgres = subprocess.run(
+        [
+            str(psql), "-h", str(socket.parent), "-p", "5432", "-U", "neo",
+            "-XAt", "-d", "postgres", "-c",
+            "select current_user || ':' || current_setting('port')",
+        ],
+        text=True,
+        capture_output=True,
+        env={**os.environ, "PGPORT": "65432", "PGUSER": "wrong-user"},
+    )
+    assert postgres.returncode == 0 and postgres.stdout.strip() == "neo:5432"
+    base = [
+        "/usr/bin/sudo", "-n", "-u", "agentops", "/usr/bin/env", "-i",
+        "HOME=/Users/agentops", "USER=agentops", "LOGNAME=agentops",
+        "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+    ]
+    account = subprocess.run(
+        [*base, "/usr/bin/printenv", "HOME"],
+        text=True,
+        capture_output=True,
+    )
+    identity = subprocess.run(
+        [*base, "/usr/bin/id", "-un"],
+        text=True,
+        capture_output=True,
+    )
+    launchd = subprocess.run(
+        [
+            *base, "/bin/launchctl", "print", "user/502",
+        ],
+        text=True,
+        capture_output=True,
+    )
+    assert account.returncode == 0 and account.stdout.strip() == "/Users/agentops"
+    assert identity.returncode == 0 and identity.stdout.strip() == "agentops"
+    assert launchd.returncode == 0, launchd.stderr
 
 
 def _provision_harness(
@@ -574,6 +752,12 @@ def _provision_harness(
     root = tmp_path / "repo"
     local = root / "deploy/local-execution-worker"
     local.mkdir(parents=True)
+    pm2_source = root / "scripts/reliability/sanitized-pm2.sh"
+    pm2_source.parent.mkdir(parents=True)
+    pm2_source.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+    pm2_source.chmod(0o700)
+    runtime_root = tmp_path / "runtime-root"
+    runtime_root.mkdir()
     hba = tmp_path / "pg_hba.conf"
     hba.write_bytes(original)
     hba.chmod(0o600)
@@ -588,6 +772,7 @@ def _provision_harness(
         "[[ \"$sql\" == set\\ password_encryption* && \"${FAKE_FAIL_STAGE:-}\" == role ]] && exit 73; "
         "if [[ \"$sql\" == set\\ password_encryption* && \"${FAKE_FAIL_STAGE:-}\" == role-response-loss ]]; then echo role-created-before-loss >> \"$HARNESS_LOG\"; exit 74; fi; fi\n"
         "case \"$*\" in\n"
+        "  *\"select current_user || ':' || current_setting('port')\"*) echo neo:5432;;\n"
         "  *'show port'*) echo 5432;;\n"
         f"  *'show hba_file'*) echo {hba};;\n"
         "  *'select pg_reload_conf()'*) if [[ \"${FAKE_FAIL_STAGE:-}\" == reload && ! -e \"$FAKE_RELOAD_MARKER\" ]]; then : > \"$FAKE_RELOAD_MARKER\"; echo f; else echo t; fi;;\n"
@@ -604,15 +789,23 @@ def _provision_harness(
         if fail_install
         else "if [[ \"${FAKE_FAIL_STAGE:-}\" == restore ]]; then "
         "/bin/rm -f \"$FAKE_HBA\"; /bin/ln -s \"$FAKE_RESTORE_TARGET\" "
-        "\"$FAKE_HBA\"; exit 71; fi; echo EXECUTION_WORKER_AGENTOPS_READY"
+        "\"$FAKE_HBA\"; exit 71; fi; "
+        "if [[ \"${FAKE_FAIL_STAGE:-}\" == concurrent-edit ]]; then "
+        "printf '# concurrent owner edit\\n' >> \"$FAKE_HBA\"; exit 71; fi; "
+        "echo EXECUTION_WORKER_AGENTOPS_READY"
     )
     fake_helper.write_text(
         "#!/bin/bash\nset -euo pipefail\n"
+        f"HARNESS_LOG={shlex.quote(str(log))}\n"
+        f"FAKE_FAIL_STAGE={shlex.quote(fail_stage)}\n"
+        f"FAKE_HBA={shlex.quote(str(hba))}\n"
+        f"FAKE_RESTORE_TARGET={shlex.quote(str(tmp_path / 'restore-target'))}\n"
         "printf 'helper:%s\\n' \"$1\" >> \"$HARNESS_LOG\"\n"
         "case \"$1\" in\n"
+        " stage) /bin/cat >/dev/null; echo EXECUTION_WORKER_AGENTOPS_STAGED;;\n"
         " prepare) IFS= read -r secret; [[ \"$secret\" == postgresql://* ]]; [[ \"${FAKE_FAIL_STAGE:-}\" != prepare ]];;\n"
         f" install) {install_action};;\n"
-        " cleanup) :;; *) exit 72;; esac\n",
+        " commit) :;; finalize) :;; rollback) :;; cleanup) :;; *) exit 72;; esac\n",
         encoding="utf-8",
     )
     fake_helper.chmod(0o700)
@@ -628,7 +821,22 @@ def _provision_harness(
     source = PROVISION.read_text(encoding="utf-8")
     source = source.replace('"$(/usr/bin/id -un)" == "neo"', f'"$(/usr/bin/id -un)" == "{current_user}"')
     source = source.replace(
-        "psql=/opt/homebrew/opt/postgresql@17/bin/psql", f"psql={fake_psql}"
+        "psql_bin=/opt/homebrew/opt/postgresql@17/bin/psql", f"psql_bin={fake_psql}"
+    ).replace(
+        "metabot_repository=/Users/neo/Developer/work/Orbbec-Agent-Team",
+        f"metabot_repository={root}",
+    ).replace(
+        "psql_socket=/Users/neo/FlywheelData/socket", f"psql_socket={runtime_root}"
+    ).replace(
+        "agentops_helper=/Users/agentops/AgentRuntime/deploy-tools/provision-agentops.sh",
+        f"agentops_helper={fake_helper}",
+    ).replace(
+        "agentops_pm2_tool=/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh",
+        f"agentops_pm2_tool={tmp_path / 'agentops-tools/reliability/sanitized-pm2.sh'}",
+    ).replace(
+        "/Users/neo/FlywheelData", str(runtime_root)
+    ).replace(
+        '-S "$psql_socket/.s.PGSQL.5432"', '-x "$psql_bin"'
     ).replace("/usr/bin/sudo", str(fake_sudo))
     if fail_stage == "postrename":
         source = source.replace(
@@ -638,6 +846,15 @@ def _provision_harness(
         )
     copied.write_text(source, encoding="utf-8")
     copied.chmod(0o700)
+    subprocess.run(["/usr/bin/git", "init", "-q", str(root)], check=True)
+    subprocess.run(["/usr/bin/git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(
+        [
+            "/usr/bin/git", "-C", str(root), "-c", "user.name=Task9B",
+            "-c", "user.email=task9b@example.invalid", "commit", "-qm", "fixture",
+        ],
+        check=True,
+    )
     if fail_stage == "write":
         (tmp_path / ".pg_hba.conf.agent-worker.part").write_text("occupied")
     restore_target = tmp_path / "restore-target"
@@ -672,7 +889,10 @@ def test_local_provision_success_removes_bootstrap_hba_and_role(tmp_path: Path) 
     assert hba.read_bytes() == expected
     calls = log.read_text(encoding="utf-8")
     assert "helper:prepare" in calls and "helper:install" in calls
-    assert "helper:cleanup" in calls and "drop-role" in calls
+    assert "helper:commit" in calls and "helper:finalize" in calls and "drop-role" in calls
+    assert (tmp_path / "agentops-tools/reliability/sanitized-pm2.sh").read_text(
+        encoding="utf-8"
+    ) == "#!/bin/bash\nexit 0\n"
     assert "postgresql://" not in result.stdout + result.stderr + calls
 
 
@@ -698,7 +918,7 @@ def test_local_provision_failure_restores_hba_and_cleans_bootstrap(tmp_path: Pat
     assert result.returncode != 0
     assert hba.read_bytes() == original
     calls = log.read_text(encoding="utf-8")
-    assert "helper:cleanup" in calls and "drop-role" in calls
+    assert "helper:rollback" in calls and "helper:cleanup" in calls and "drop-role" in calls
     assert "postgresql://" not in result.stdout + result.stderr + calls
 
 
@@ -711,7 +931,7 @@ def test_local_provision_finalize_failure_removes_temporary_hba_and_restores(
     assert result.returncode != 0
     assert hba.read_bytes() == original
     calls = log.read_text(encoding="utf-8")
-    assert "helper:cleanup" in calls and "drop-role" in calls
+    assert "helper:rollback" in calls and "helper:cleanup" in calls and "drop-role" in calls
     assert "postgresql://" not in result.stdout + result.stderr + calls
 
 
@@ -756,7 +976,92 @@ def test_local_provision_preserves_backup_when_atomic_restore_is_impossible(
     assert "drop-role" in log.read_text(encoding="utf-8")
 
 
-def _agentops_install_harness(tmp_path: Path, failure: str) -> subprocess.CompletedProcess:
+def test_local_provision_never_overwrites_concurrent_hba_owner_edit(tmp_path: Path) -> None:
+    result, hba, original, log = _provision_harness(
+        tmp_path, fail_install=False, fail_stage="concurrent-edit"
+    )
+    assert result.returncode != 0
+    assert hba.read_bytes().endswith(b"# concurrent owner edit\n")
+    assert hba.read_bytes() != original
+    assert list(tmp_path.glob(".pg_hba.agent-worker.*"))
+    assert "EXECUTION_WORKER_HBA_BACKUP_PRESERVED" in result.stderr
+    calls = log.read_text(encoding="utf-8")
+    assert "helper:rollback" in calls and "drop-role" in calls
+
+
+def test_agentops_stage_retries_after_interrupted_venv_without_mutable_worktree(
+    tmp_path: Path,
+) -> None:
+    current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    release_sha = "a" * 40
+    archive_buffer = io.BytesIO()
+    with tarfile.open(fileobj=archive_buffer, mode="w") as archive:
+        for name, raw in (
+            ("backend/requirements.txt", b""),
+            ("committed-release.txt", b"reviewed-commit\n"),
+        ):
+            info = tarfile.TarInfo(name)
+            info.size = len(raw)
+            info.mode = 0o600
+            archive.addfile(info, io.BytesIO(raw))
+    archive_raw = archive_buffer.getvalue()
+    archive_sha = hashlib.sha256(archive_raw).hexdigest()
+
+    stale = runtime / f".platform.first-bootstrap.{release_sha}"
+    stale.mkdir()
+    (stale / "stale").write_text("interrupted", encoding="utf-8")
+    transient_marker = tmp_path / "venv-failed-once"
+    fake_python = tmp_path / "python3.11"
+    fake_python.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        f"if [[ ! -e {shlex.quote(str(transient_marker))} ]]; then "
+        f": > {shlex.quote(str(transient_marker))}; exit 71; fi\n"
+        "exec /opt/homebrew/bin/python3.11 \"$@\"\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o700)
+    copied = tmp_path / "provision-agentops.sh"
+    source = AGENTOPS.read_text(encoding="utf-8")
+    source = source.replace(
+        '"$(/usr/bin/id -un)" == "agentops"',
+        f'"$(/usr/bin/id -un)" == "{current_user}"',
+    ).replace(
+        '[[ "${HOME:-}" == /Users/agentops && "${USER:-}" == agentops && "${LOGNAME:-}" == agentops ]] || fail',
+        '[[ -n "${HOME:-}" && -n "${USER:-}" && -n "${LOGNAME:-}" ]] || fail',
+    ).replace(
+        "cd /Users/agentops || fail", f"cd {shlex.quote(str(tmp_path))} || fail"
+    ).replace(
+        "runtime=/Users/agentops/AgentRuntime", f"runtime={runtime}"
+    ).replace(
+        "/opt/homebrew/bin/python3.11", str(fake_python)
+    )
+    copied.write_text(source, encoding="utf-8")
+    copied.chmod(0o700)
+    command = ["/bin/bash", str(copied), "stage", release_sha, archive_sha]
+
+    first = subprocess.run(command, input=archive_raw, capture_output=True)
+
+    platform = runtime / "platform"
+    venv_stage = platform / "backend" / f".venv.first-bootstrap.{release_sha}"
+    staged_archive = runtime / f".platform-release.{release_sha}.tar"
+    assert first.returncode != 0
+    assert (platform / "committed-release.txt").read_bytes() == b"reviewed-commit\n"
+    assert not stale.exists() and not venv_stage.exists() and not staged_archive.exists()
+
+    second = subprocess.run(command, input=archive_raw, capture_output=True)
+
+    assert second.returncode == 0, second.stderr.decode()
+    assert b"EXECUTION_WORKER_AGENTOPS_STAGED" in second.stdout
+    assert (platform / "committed-release.txt").read_bytes() == b"reviewed-commit\n"
+    assert (platform / "backend/.venv/.orbbec-release").read_text().strip() == release_sha
+    assert not stale.exists() and not venv_stage.exists() and not staged_archive.exists()
+
+
+def _agentops_install_harness(
+    tmp_path: Path, failure: str
+) -> tuple[subprocess.CompletedProcess, Path, Path, Path, dict[str, str]]:
     current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
     runtime = tmp_path / "runtime"
     private = runtime / "private"
@@ -784,9 +1089,16 @@ def _agentops_install_harness(tmp_path: Path, failure: str) -> subprocess.Comple
     brain_before = private / "worker-provision-brain-before.txt"
     brain_before.write_text(json.dumps(brain, sort_keys=True, separators=(",", ":")) + "\n")
     brain_before.chmod(0o600)
+    worker_plist = tmp_path / "com.orbbec.agent-execution-worker.plist"
+    worker_plist.write_text("OLD-WORKER-PLIST\n", encoding="utf-8")
+    worker_plist.chmod(0o600)
+    launchd_state = tmp_path / "launchd-state"
+    launchd_state.write_text("loaded\n", encoding="utf-8")
     install = local / "install.sh"
     install.write_text(
-        "#!/bin/bash\n[[ \"${FAKE_FAILURE:-}\" != install ]]\n",
+        "#!/bin/bash\nset -euo pipefail\n"
+        "printf 'NEW-WORKER-PLIST\\n' > \"$FAKE_WORKER_PLIST\"\n"
+        "[[ \"${FAKE_FAILURE:-}\" != install ]]\n",
         encoding="utf-8",
     )
     install.chmod(0o700)
@@ -823,20 +1135,41 @@ def _agentops_install_harness(tmp_path: Path, failure: str) -> subprocess.Comple
     fake_lsof.chmod(0o700)
     fake_launchctl = tmp_path / "launchctl"
     fake_launchctl.write_text(
-        "#!/bin/bash\necho '    pid = '${FAKE_LAUNCHD_PID:-200}';'\n",
+        "#!/bin/bash\nset -euo pipefail\n"
+        "case \"$1\" in\n"
+        " print) [[ \"$(<\"$FAKE_LAUNCHD_STATE\")\" == loaded ]] || exit 3; "
+        "echo '    pid = '${FAKE_LAUNCHD_PID:-200}';';;\n"
+        " bootout) printf 'unloaded\\n' > \"$FAKE_LAUNCHD_STATE\";;\n"
+        " bootstrap) printf 'loaded\\n' > \"$FAKE_LAUNCHD_STATE\";;\n"
+        " enable) :;; *) exit 4;; esac\n",
         encoding="utf-8",
     )
     fake_launchctl.chmod(0o700)
     copied = tmp_path / "provision-agentops.sh"
     source = AGENTOPS.read_text(encoding="utf-8")
     source = source.replace('"$(/usr/bin/id -un)" == "agentops"', f'"$(/usr/bin/id -un)" == "{current_user}"')
+    source = source.replace(
+        '[[ "${HOME:-}" == /Users/agentops && "${USER:-}" == agentops && "${LOGNAME:-}" == agentops ]] || fail',
+        '[[ -n "${HOME:-}" && -n "${USER:-}" && -n "${LOGNAME:-}" ]] || fail',
+    )
+    source = source.replace("cd /Users/agentops || fail", f"cd {shlex.quote(str(tmp_path))} || fail")
     source = source.replace("runtime=/Users/agentops/AgentRuntime", f"runtime={runtime}")
     source = source.replace(
-        "snapshot=/Users/agentops/Developer/work/Orbbec-Agent-Team/scripts/reliability/sanitized-pm2.sh",
+        'snapshot="$deploy_tools/reliability/sanitized-pm2.sh"',
         f"snapshot={snapshot}",
     )
+    source = source.replace(
+        "worker_plist=/Users/agentops/Library/LaunchAgents/com.orbbec.agent-execution-worker.plist",
+        f"worker_plist={worker_plist}",
+    )
+    source = source.replace('== "700 agentops"', f'== "700 {current_user}"')
     source = source.replace("/usr/sbin/lsof", str(fake_lsof))
     source = source.replace("/bin/launchctl", str(fake_launchctl))
+    if failure == "receipt-copy":
+        source = source.replace(
+            '/bin/cp "$worker_plist" "$receipt_part/previous.plist"',
+            "/usr/bin/false",
+        )
     copied.write_text(source, encoding="utf-8")
     copied.chmod(0o700)
     env = {
@@ -846,13 +1179,16 @@ def _agentops_install_harness(tmp_path: Path, failure: str) -> subprocess.Comple
         "FAKE_WORKER_PID": "201" if failure == "worker-listener" else "200",
         "FAKE_LAUNCHD_PID": "202" if failure == "launchd" else "200",
         "FAKE_WILDCARD": "1" if failure == "wildcard-listener" else "0",
+        "FAKE_WORKER_PLIST": str(worker_plist),
+        "FAKE_LAUNCHD_STATE": str(launchd_state),
     }
-    return subprocess.run(
+    result = subprocess.run(
         ["/bin/bash", str(copied), "install"],
         text=True,
         capture_output=True,
         env=env,
     )
+    return result, worker_plist, launchd_state, copied, env
 
 
 @pytest.mark.parametrize(
@@ -865,14 +1201,58 @@ def _agentops_install_harness(tmp_path: Path, failure: str) -> subprocess.Comple
         "worker-listener",
         "wildcard-listener",
         "launchd",
+        "receipt-copy",
     ],
 )
 def test_agentops_install_executable_process_identity_gates(
     tmp_path: Path, failure: str
 ) -> None:
-    result = _agentops_install_harness(tmp_path, failure)
+    result, worker_plist, launchd_state, _, _ = _agentops_install_harness(tmp_path, failure)
     assert (result.returncode == 0) is (failure == "")
     assert "opaque" not in result.stdout + result.stderr
+    if failure:
+        assert worker_plist.read_text(encoding="utf-8") == "OLD-WORKER-PLIST\n"
+        assert launchd_state.read_text(encoding="utf-8") == "loaded\n"
+
+
+def test_agentops_commit_response_loss_can_rollback_then_finalize_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    result, worker_plist, launchd_state, helper, env = _agentops_install_harness(
+        tmp_path, ""
+    )
+    assert result.returncode == 0, result.stderr
+
+    committed = subprocess.run(
+        ["/bin/bash", str(helper), "commit"],
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+    assert committed.returncode == 0, committed.stderr
+    receipt = tmp_path / "runtime/private/worker-provision-receipt"
+    assert (receipt / "committed").read_text(encoding="utf-8") == "v1\n"
+
+    # A lost coordinator response must leave enough state for the caller to abort.
+    rolled_back = subprocess.run(
+        ["/bin/bash", str(helper), "rollback"],
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+    assert rolled_back.returncode == 0, rolled_back.stderr
+    assert worker_plist.read_text(encoding="utf-8") == "OLD-WORKER-PLIST\n"
+    assert launchd_state.read_text(encoding="utf-8") == "loaded\n"
+    assert not receipt.exists()
+
+    for _ in range(2):
+        finalized = subprocess.run(
+            ["/bin/bash", str(helper), "finalize"],
+            text=True,
+            capture_output=True,
+            env=env,
+        )
+        assert finalized.returncode == 0, finalized.stderr
 
 
 def test_acceptance_coordinator_keeps_cloud_key_neo_owned_and_commands_fixed() -> None:

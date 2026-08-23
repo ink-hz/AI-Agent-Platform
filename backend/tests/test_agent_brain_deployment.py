@@ -282,7 +282,9 @@ def test_worker_restore_executes_real_loaded_and_unloaded_paths(
 worker_stopped=1
 agentops_uid=501
 worker_label=com.orbbec.agent-execution-worker
+worker_domain=user/501
 worker_plist=/private/worker.plist
+run_agentops() {{ {fake_sudo} "$@"; }}
 {function}
 restore_worker
 [[ "$worker_stopped" == 0 ]]

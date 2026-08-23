@@ -47,29 +47,25 @@ def _safe_directory(path: Path) -> int:
         raise
 
 
-def _validate(path: Path) -> tuple[bytes, str]:
-    parent_fd = _safe_directory(path.parent)
+def _validate_at(parent_fd: int, name: str) -> tuple[bytes, str]:
+    descriptor = os.open(
+        name,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        dir_fd=parent_fd,
+    )
     try:
-        descriptor = os.open(
-            path.name,
-            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
-            dir_fd=parent_fd,
-        )
-        try:
-            metadata = os.fstat(descriptor)
-            raw = os.read(descriptor, 65_537)
-            if (
-                not stat.S_ISREG(metadata.st_mode)
-                or stat.S_IMODE(metadata.st_mode) != 0o600
-                or metadata.st_uid != os.getuid()
-                or len(raw) > 65_536
-                or os.read(descriptor, 1)
-            ):
-                raise ValueError
-        finally:
-            os.close(descriptor)
+        metadata = os.fstat(descriptor)
+        raw = os.read(descriptor, 65_537)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or len(raw) > 65_536
+            or os.read(descriptor, 1)
+        ):
+            raise ValueError
     finally:
-        os.close(parent_fd)
+        os.close(descriptor)
     document = json.loads(raw.decode("utf-8"))
     if (
         not isinstance(document, dict)
@@ -92,10 +88,11 @@ def _validate(path: Path) -> tuple[bytes, str]:
     from app.execution_relay.content_crypto import ContentCodec
 
     ContentCodec(
-        IdentityKeyring.from_file(
-            path,
-            expected_purpose="platform-content-encryption",
-            expected_key_length=32,
+        IdentityKeyring(
+            active_version=1,
+            purpose="platform-content-encryption",
+            _keys={1: key},
+            transition_versions=None,
         )
     )
     return key, hashlib.sha256(key).hexdigest()
@@ -105,8 +102,13 @@ def _create(path: Path) -> str:
     parent_fd = _safe_directory(path.parent)
     part = f".{path.name}.part"
     try:
-        if os.path.lexists(path):
-            _key, fingerprint = _validate(path)
+        try:
+            os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+            exists = True
+        except FileNotFoundError:
+            exists = False
+        if exists:
+            _key, fingerprint = _validate_at(parent_fd, path.name)
             return f"CONTENT_KEYRING_VALID fingerprint={fingerprint}"
         descriptor = os.open(
             part,
@@ -146,6 +148,8 @@ def _create(path: Path) -> str:
         )
         os.unlink(part, dir_fd=parent_fd)
         os.fsync(parent_fd)
+        _key, fingerprint = _validate_at(parent_fd, path.name)
+        return f"CONTENT_KEYRING_CREATED fingerprint={fingerprint}"
     except Exception:
         try:
             os.unlink(part, dir_fd=parent_fd)
@@ -154,8 +158,6 @@ def _create(path: Path) -> str:
         raise
     finally:
         os.close(parent_fd)
-    _key, fingerprint = _validate(path)
-    return f"CONTENT_KEYRING_CREATED fingerprint={fingerprint}"
 
 
 def main(argv: list[str] | None = None) -> int:
