@@ -748,8 +748,8 @@ def test_cleanup_deletes_only_expired_nonces_for_authenticated_worker(
 def test_verifier_uses_locking_heartbeat_without_direct_worker_mutation() -> None:
     source = inspect.getsource(WorkerRequestVerifier.verify).lower()
 
-    assert "touch_execution_worker_v27" in source
-    assert source.index("touch_execution_worker_v27") < source.index(
+    assert "touch_execution_worker_v28" in source
+    assert source.index("touch_execution_worker_v28") < source.index(
         "execution_worker_keys"
     )
     assert source.index(".verify(") < source.index(

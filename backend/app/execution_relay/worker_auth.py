@@ -264,7 +264,7 @@ class WorkerRequestVerifier:
             identity: WorkerIdentity | None = None
             with self._connection() as connection, connection.cursor() as cursor:
                 cursor.execute(
-                    "select platform_control.touch_execution_worker_v27(%s)",
+                    "select platform_control.touch_execution_worker_v28(%s)",
                     (worker_id,),
                 )
                 row = cursor.execute(

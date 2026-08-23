@@ -202,7 +202,7 @@ step.
 
 Rollback sets the feature flag to `0`, recreates only Platform API/loopback,
 and verifies `/admin`, Sessions, Review and Operations before it reports
-success. Do not drop migration 028. Do not delete Mission data. The rollback
+success. Do not drop migration 032. Do not delete Mission data. The rollback
 never restarts or modifies FAE or local MetaBots. The FAE container identity,
 configuration and separate FAE domain/IP Nginx routes remain byte-for-byte
 invariant; only the Agent Platform server block is intentionally replaced.

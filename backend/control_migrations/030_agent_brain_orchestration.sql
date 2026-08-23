@@ -27,7 +27,7 @@ end
 $constraint$;
 
 alter table platform_control.execution_jobs
-  add constraint execution_jobs_lease_shape_v29 check (
+  add constraint execution_jobs_lease_shape_v30 check (
     (
       status = 'queued'
       and lease_worker_id is null

@@ -135,7 +135,7 @@ create table platform_control.mission_tasks (
 create unique index one_mission_child_task
   on platform_control.mission_tasks (mission_id);
 
-create function platform_control.enforce_mission_task_agent_v28()
+create function platform_control.enforce_mission_task_agent_v29()
 returns trigger
 language plpgsql
 security definer
@@ -162,11 +162,11 @@ begin
 end
 $function$;
 
-create constraint trigger enforce_mission_task_agent_v28
+create constraint trigger enforce_mission_task_agent_v29
 after insert or update of mission_id, agent_id
 on platform_control.mission_tasks
 not deferrable initially immediate
-for each row execute function platform_control.enforce_mission_task_agent_v28();
+for each row execute function platform_control.enforce_mission_task_agent_v29();
 
 create table platform_control.mission_runs (
   run_id uuid primary key,
@@ -244,7 +244,7 @@ create index missions_status_updated
 create index mission_runs_mission_phase
   on platform_control.mission_runs (mission_id, phase, created_at);
 
-create function platform_control.has_agent_use_scope_v28(
+create function platform_control.has_agent_use_scope_v29(
   selected_user_id uuid,
   selected_agent_id text
 ) returns boolean
@@ -307,7 +307,7 @@ as $function$
   )
 $function$;
 
-create function platform_control.grant_agent_use_scope_v28(
+create function platform_control.grant_agent_use_scope_v29(
   selected_grant_id uuid,
   selected_agent_id text,
   selected_target_kind text,
@@ -415,7 +415,7 @@ begin
 end
 $function$;
 
-create function platform_control.revoke_agent_use_scope_v28(
+create function platform_control.revoke_agent_use_scope_v29(
   selected_grant_id uuid,
   selected_actor_id uuid,
   selected_change_reference text,
@@ -513,14 +513,14 @@ revoke all on
   platform_control.mission_runs,
   platform_control.mission_events
 from public;
-revoke all on function platform_control.has_agent_use_scope_v28(uuid, text)
+revoke all on function platform_control.has_agent_use_scope_v29(uuid, text)
 from public;
-revoke all on function platform_control.enforce_mission_task_agent_v28()
+revoke all on function platform_control.enforce_mission_task_agent_v29()
 from public;
-revoke all on function platform_control.grant_agent_use_scope_v28(
+revoke all on function platform_control.grant_agent_use_scope_v29(
   uuid, text, text, uuid, uuid, boolean, uuid, text, uuid
 ) from public;
-revoke all on function platform_control.revoke_agent_use_scope_v28(
+revoke all on function platform_control.revoke_agent_use_scope_v29(
   uuid, uuid, text, uuid
 ) from public;
 
@@ -563,20 +563,20 @@ begin
     );
     execute format(
       'revoke all on function '
-      'platform_control.has_agent_use_scope_v28(uuid,text) from %I', role_name
+      'platform_control.has_agent_use_scope_v29(uuid,text) from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.enforce_mission_task_agent_v28() from %I', role_name
+      'platform_control.enforce_mission_task_agent_v29() from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.grant_agent_use_scope_v28('
+      'platform_control.grant_agent_use_scope_v29('
       'uuid,text,text,uuid,uuid,boolean,uuid,text,uuid) from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.revoke_agent_use_scope_v28('
+      'platform_control.revoke_agent_use_scope_v29('
       'uuid,uuid,text,uuid) from %I', role_name
     );
   end loop;
@@ -612,17 +612,17 @@ begin
   );
   execute format(
     'grant execute on function '
-    'platform_control.has_agent_use_scope_v28(uuid,text) to %I', selected_app
+    'platform_control.has_agent_use_scope_v29(uuid,text) to %I', selected_app
   );
   execute format(
     'grant execute on function '
-    'platform_control.grant_agent_use_scope_v28('
+    'platform_control.grant_agent_use_scope_v29('
     'uuid,text,text,uuid,uuid,boolean,uuid,text,uuid) to %I',
     selected_maintenance
   );
   execute format(
     'grant execute on function '
-    'platform_control.revoke_agent_use_scope_v28('
+    'platform_control.revoke_agent_use_scope_v29('
     'uuid,uuid,text,uuid) to %I', selected_maintenance
   );
 end

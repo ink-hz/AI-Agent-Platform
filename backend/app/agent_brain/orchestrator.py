@@ -256,7 +256,7 @@ class MissionOrchestrator:
                     "and has_table_privilege(current_user,"
                     "'platform_control.mission_events','insert') "
                     "and has_function_privilege(current_user,"
-                    "'platform_control.has_agent_use_scope_v28(uuid,text)','execute') "
+                    "'platform_control.has_agent_use_scope_v29(uuid,text)','execute') "
                     "as ready"
                 ).fetchone()
                 if ready is None or ready["ready"] is not True:

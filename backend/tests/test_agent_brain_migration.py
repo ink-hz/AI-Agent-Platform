@@ -21,10 +21,10 @@ MISSION_TABLES = (
 )
 TASK_2_TABLES = ("agent_use_grants", *MISSION_TABLES)
 V28_FUNCTIONS = (
-    "enforce_mission_task_agent_v28",
-    "grant_agent_use_scope_v28",
-    "has_agent_use_scope_v28",
-    "revoke_agent_use_scope_v28",
+    "enforce_mission_task_agent_v29",
+    "grant_agent_use_scope_v29",
+    "has_agent_use_scope_v29",
+    "revoke_agent_use_scope_v29",
 )
 
 
@@ -674,7 +674,7 @@ def test_agent_use_scope_tracks_active_generation_and_defaults_to_deny(
             )
 
         decisions = connection.execute(
-            "select agent_id,platform_control.has_agent_use_scope_v28(%s,agent_id) "
+            "select agent_id,platform_control.has_agent_use_scope_v29(%s,agent_id) "
             "from unnest(%s::text[]) agent_id order by agent_id",
             (
                 direct_user,
@@ -715,7 +715,7 @@ def test_agent_use_scope_tracks_active_generation_and_defaults_to_deny(
             (direct_user,),
         )
         assert connection.execute(
-            "select platform_control.has_agent_use_scope_v28("
+            "select platform_control.has_agent_use_scope_v29("
             "%s,'marketing-inbound-bot')",
             (direct_user,),
         ).fetchone() == (False,)
@@ -765,10 +765,10 @@ def test_grant_shape_acl_and_audited_maintenance_boundary(control_database) -> N
                 ),
             ).fetchall()
             assert function_acl == [
-                ("enforce_mission_task_agent_v28", False, False, False),
-                ("grant_agent_use_scope_v28", False, True, False),
-                ("has_agent_use_scope_v28", True, False, False),
-                ("revoke_agent_use_scope_v28", False, True, False),
+                ("enforce_mission_task_agent_v29", False, False, False),
+                ("grant_agent_use_scope_v29", False, True, False),
+                ("has_agent_use_scope_v29", True, False, False),
+                ("revoke_agent_use_scope_v29", False, True, False),
             ]
 
             public_acl = connection.execute(
@@ -943,7 +943,7 @@ def test_maintenance_grant_and_revoke_are_idempotent_and_audited(
         with psycopg.connect(maintenance_url) as connection:
             with pytest.raises(psycopg.errors.CheckViolation):
                 connection.execute(
-                    "select platform_control.grant_agent_use_scope_v28("
+                    "select platform_control.grant_agent_use_scope_v29("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         grant_id,
@@ -971,12 +971,12 @@ def test_maintenance_grant_and_revoke_are_idempotent_and_audited(
             grant_request_id,
         )
         assert connection.execute(
-            "select platform_control.grant_agent_use_scope_v28("
+            "select platform_control.grant_agent_use_scope_v29("
             "%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             parameters,
         ).fetchone() == (grant_id,)
         assert connection.execute(
-            "select platform_control.grant_agent_use_scope_v28("
+            "select platform_control.grant_agent_use_scope_v29("
             "%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             parameters,
         ).fetchone() == (grant_id,)
@@ -985,18 +985,18 @@ def test_maintenance_grant_and_revoke_are_idempotent_and_audited(
         with psycopg.connect(maintenance_url) as connection:
             with pytest.raises(psycopg.errors.CheckViolation):
                 connection.execute(
-                    "select platform_control.revoke_agent_use_scope_v28("
+                    "select platform_control.revoke_agent_use_scope_v29("
                     "%s,%s,%s,%s)",
                     (grant_id, owner_id, invalid_reference, uuid4()),
                 )
 
     with psycopg.connect(maintenance_url) as connection:
         assert connection.execute(
-            "select platform_control.revoke_agent_use_scope_v28(%s,%s,%s,%s)",
+            "select platform_control.revoke_agent_use_scope_v29(%s,%s,%s,%s)",
             (grant_id, owner_id, "AGENT_REVOKE_001", revoke_request_id),
         ).fetchone() == (grant_id,)
         assert connection.execute(
-            "select platform_control.revoke_agent_use_scope_v28(%s,%s,%s,%s)",
+            "select platform_control.revoke_agent_use_scope_v29(%s,%s,%s,%s)",
             (grant_id, owner_id, "AGENT_REVOKE_001", revoke_request_id),
         ).fetchone() == (grant_id,)
 

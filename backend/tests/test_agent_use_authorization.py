@@ -68,7 +68,7 @@ def _auth(role: Role = Role.MEMBER) -> AuthContext:
     return AuthContext(uuid4(), role, uuid4(), False)
 
 
-def test_permitted_agents_evaluates_every_callable_card_through_v28_scope() -> None:
+def test_permitted_agents_evaluates_every_callable_card_through_v29_scope() -> None:
     decisions = _Decisions({"hr-bot", "marketing-gtm-bot"})
     auth = _auth()
     authorization = AgentUseAuthorization(APP_DSN, connect=decisions.connect)
@@ -81,7 +81,7 @@ def test_permitted_agents_evaluates_every_callable_card_through_v28_scope() -> N
     )
     assert decisions.calls == 1
     sql, params = decisions.queries[0]
-    assert "platform_control.has_agent_use_scope_v28" in sql
+    assert "platform_control.has_agent_use_scope_v29" in sql
     assert params == (auth.internal_user_id, list(CALLABLE_AGENT_IDS))
 
 

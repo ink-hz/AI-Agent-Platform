@@ -110,7 +110,7 @@ def _job_row(relay_database, run_id: UUID):
 def test_worker_authorization_uses_the_locking_security_definer_function() -> None:
     source = inspect.getsource(ExecutionRelayRepository._active_worker).lower()
 
-    assert "touch_execution_worker_v27" in source
+    assert "touch_execution_worker_v28" in source
     assert "update platform_control.execution_workers" not in source
     assert "for share" not in source
     assert "for update" not in source
@@ -814,12 +814,12 @@ def test_stop_delivery_schema_is_constrained_indexed_and_app_only(
         constraints = connection.execute(
             "select conname,convalidated from pg_constraint where conrelid="
             "'platform_control.execution_jobs'::regclass and conname in "
-            "('execution_jobs_stop_status_v30','execution_jobs_stop_delivery_v30') "
+            "('execution_jobs_stop_status_v31','execution_jobs_stop_delivery_v31') "
             "order by conname"
         ).fetchall()
         index_definition = connection.execute(
             "select indexdef from pg_indexes where schemaname='platform_control' "
-            "and indexname='execution_jobs_pending_stop_v30'"
+            "and indexname='execution_jobs_pending_stop_v31'"
         ).fetchone()
         app_role = next(
             role for role in relay_database["roles"] if "control_app" in role
@@ -847,8 +847,8 @@ def test_stop_delivery_schema_is_constrained_indexed_and_app_only(
         ("stop_requested_status", "text", "YES"),
     ]
     assert constraints == [
-        ("execution_jobs_stop_delivery_v30", True),
-        ("execution_jobs_stop_status_v30", True),
+        ("execution_jobs_stop_delivery_v31", True),
+        ("execution_jobs_stop_status_v31", True),
     ]
     assert index_definition is not None
     assert "stop_acknowledged_at IS NULL" in index_definition[0]

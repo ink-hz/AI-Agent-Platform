@@ -691,7 +691,7 @@ def test_relay_database_readiness_checks_schema_function_and_privileges():
         "execution_jobs",
         "execution_events",
         "execution_worker_nonces",
-        "touch_execution_worker_v27",
+        "touch_execution_worker_v28",
         "has_schema_privilege",
         "has_table_privilege",
         "has_function_privilege",

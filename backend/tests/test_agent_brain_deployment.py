@@ -8,7 +8,12 @@ import yaml
 
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
-MIGRATION = ROOT / "backend" / "control_migrations" / "028_agent_brain_mvp.sql"
+MISSION_SCHEMA_MIGRATION = (
+    ROOT / "backend" / "control_migrations" / "029_agent_brain_mvp.sql"
+)
+LATEST_AGENT_BRAIN_MIGRATION = (
+    ROOT / "backend" / "control_migrations" / "032_content_key_canaries.sql"
+)
 
 
 def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
@@ -186,8 +191,8 @@ def test_acceptance_is_private_real_idempotent_and_rollback_safe() -> None:
     assert "launchctl print" in script
 
 
-def test_acceptance_sql_uses_the_real_migration_028_run_table() -> None:
-    migration = MIGRATION.read_text(encoding="utf-8")
+def test_acceptance_sql_uses_the_real_migration_029_run_table() -> None:
+    migration = MISSION_SCHEMA_MIGRATION.read_text(encoding="utf-8")
     script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
 
     assert "create table platform_control.mission_runs" in migration
@@ -195,6 +200,24 @@ def test_acceptance_sql_uses_the_real_migration_028_run_table() -> None:
     assert "platform_control.mission_runs" in script
     assert "platform_control.child_runs" not in script
     assert "phase in ('professional','direct')" in script
+
+
+def test_task9_rollback_pins_the_latest_agent_brain_migration() -> None:
+    runbook = (ROOT / "docs" / "runbooks" / "cloud-platform.md").read_text(
+        encoding="utf-8"
+    )
+    plan = (
+        ROOT
+        / "docs"
+        / "superpowers"
+        / "plans"
+        / "2026-08-22-agent-brain-minimum-use-entry.md"
+    ).read_text(encoding="utf-8")
+    task9 = plan.split("### Task 9:", 1)[1]
+
+    assert LATEST_AGENT_BRAIN_MIGRATION.is_file()
+    assert "Do not drop migration 032" in runbook
+    assert "Do not drop migration 032" in task9
 
 
 def test_enable_failure_executes_real_fail_closed_brain_and_lock_cleanup(
@@ -310,7 +333,7 @@ def test_runbook_pins_dependency_order_evidence_and_non_destructive_rollback() -
         "worker key ID",
         "container IDs and start times",
         "Do not record prompts, answers, cookies, DingTalk IDs, or secrets",
-        "Do not drop migration 028",
+        "Do not drop migration 032",
         "Do not delete Mission data",
         "FAE container identity",
         "separate FAE domain/IP Nginx routes remain byte-for-byte",

@@ -156,7 +156,7 @@ def main(arguments: list[str] | None = None) -> int:
                 _reference(values[2]),
                 _request_id(),
             )
-            function = "register_execution_worker_v27"
+            function = "register_execution_worker_v28"
             placeholders = "%s,%s,%s,%s,%s,%s"
         elif command == "add-key" and len(values) == 4:
             worker_id, key_id, public_key, _agents = _public_document(values[2])
@@ -169,7 +169,7 @@ def main(arguments: list[str] | None = None) -> int:
                 _reference(values[3]),
                 _request_id(),
             )
-            function = "add_execution_worker_key_v27"
+            function = "add_execution_worker_key_v28"
             placeholders = "%s,%s,%s,%s,%s"
         elif command == "revoke-key" and len(values) == 4:
             if _WORKER_ID.fullmatch(values[1]) is None or _KEY_ID.fullmatch(values[2]) is None:
@@ -180,13 +180,13 @@ def main(arguments: list[str] | None = None) -> int:
                 _reference(values[3]),
                 _request_id(),
             )
-            function = "revoke_execution_worker_key_v27"
+            function = "revoke_execution_worker_key_v28"
             placeholders = "%s,%s,%s,%s"
         elif command == "revoke-worker" and len(values) == 3:
             if _WORKER_ID.fullmatch(values[1]) is None:
                 raise ValueError
             parameters = (values[1], _reference(values[2]), _request_id())
-            function = "revoke_execution_worker_v27"
+            function = "revoke_execution_worker_v28"
             placeholders = "%s,%s,%s"
         else:
             raise ValueError

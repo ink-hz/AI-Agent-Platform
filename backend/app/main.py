@@ -175,7 +175,7 @@ def _check_execution_relay_database(
                 "to_regclass('platform_control.execution_worker_nonces') "
                 "as nonces,"
                 "to_regprocedure("
-                "'platform_control.touch_execution_worker_v27(text)') "
+                "'platform_control.touch_execution_worker_v28(text)') "
                 "as touch_worker"
             ).fetchone()
             if not objects or any(value is None for value in objects.values()):
@@ -207,7 +207,7 @@ def _check_execution_relay_database(
                 "has_table_privilege(current_user,"
                 "'platform_control.execution_worker_nonces','delete') and "
                 "has_function_privilege(current_user,"
-                "'platform_control.touch_execution_worker_v27(text)',"
+                "'platform_control.touch_execution_worker_v28(text)',"
                 "'execute')) as ready"
             ).fetchone()
             if (

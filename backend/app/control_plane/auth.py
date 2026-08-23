@@ -709,7 +709,9 @@ class WebSessionRepository:
             with self._connection() as connection:
                 row = connection.execute(
                     "select users.display_name, coalesce(scopes.agent_ids, "
-                    "array[]::text[]) as observation_agent_ids from "
+                    "array[]::text[]) as observation_agent_ids, "
+                    "platform_control.read_account_departments_v27("
+                    "users.internal_user_id) as departments from "
                     "platform_control.internal_users users left join lateral "
                     "(select array_agg(grants.agent_id order by grants.agent_id) "
                     "as agent_ids from platform_control.observation_grants grants "
@@ -722,6 +724,7 @@ class WebSessionRepository:
                 raise AuthenticationError("account unavailable")
             return {
                 "display_name": row["display_name"],
+                "departments": list(row["departments"]),
                 "observation_agent_ids": list(row["observation_agent_ids"]),
             }
         except AuthenticationError:

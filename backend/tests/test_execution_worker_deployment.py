@@ -1508,7 +1508,7 @@ def test_key_generator_concurrent_first_generation_publishes_one_complete_key(
     assert _mode(private_dir / "execution-worker-key-rotation.lock") == 0o600
 
 
-def test_registration_cli_uses_only_v27_maintenance_functions(
+def test_registration_cli_uses_only_v28_maintenance_functions(
     tmp_path: Path, monkeypatch
 ) -> None:
     module = importlib.import_module("app.execution_relay.register_worker")
@@ -1563,10 +1563,10 @@ def test_registration_cli_uses_only_v27_maintenance_functions(
         re.sub(r"\s+", " ", query).strip().split("(", 1)[0]
         for query, _parameters in calls
     ] == [
-        "select platform_control.register_execution_worker_v27",
-        "select platform_control.add_execution_worker_key_v27",
-        "select platform_control.revoke_execution_worker_key_v27",
-        "select platform_control.revoke_execution_worker_v27",
+        "select platform_control.register_execution_worker_v28",
+        "select platform_control.add_execution_worker_key_v28",
+        "select platform_control.revoke_execution_worker_key_v28",
+        "select platform_control.revoke_execution_worker_v28",
     ]
     assert all(parameters[-2] == f"OPS_2026082{index}" for index, (_, parameters) in enumerate(calls, 1))
     source = (ROOT / "backend/app/execution_relay/register_worker.py").read_text(
@@ -1579,7 +1579,7 @@ def test_registration_cli_uses_only_v27_maintenance_functions(
 
 
 @pytest.mark.postgres
-def test_v27_maintenance_bounds_dual_key_acceptance_and_rejects_reuse(
+def test_v28_maintenance_bounds_dual_key_acceptance_and_rejects_reuse(
     control_database,
 ) -> None:
     maintenance = control_database["environments"]["production"]["urls"][
@@ -1588,23 +1588,23 @@ def test_v27_maintenance_bounds_dual_key_acceptance_and_rejects_reuse(
     worker_id = "agentops-mac-primary"
     with psycopg.connect(maintenance) as connection:
         connection.execute(
-            "select platform_control.register_execution_worker_v27(%s,%s,%s,%s,%s,%s)",
+            "select platform_control.register_execution_worker_v28(%s,%s,%s,%s,%s,%s)",
             (worker_id, "worker-v1", b"a" * 32, AGENTS, "OPS_20260821", uuid.uuid4()),
         )
         connection.execute(
-            "select platform_control.add_execution_worker_key_v27(%s,%s,%s,%s,%s)",
+            "select platform_control.add_execution_worker_key_v28(%s,%s,%s,%s,%s)",
             (worker_id, "worker-v2", b"b" * 32, "OPS_20260822", uuid.uuid4()),
         )
         connection.commit()
         with pytest.raises(psycopg.errors.CheckViolation):
             connection.execute(
-                "select platform_control.add_execution_worker_key_v27(%s,%s,%s,%s,%s)",
+                "select platform_control.add_execution_worker_key_v28(%s,%s,%s,%s,%s)",
                 (worker_id, "worker-v3", b"c" * 32, "OPS_20260823", uuid.uuid4()),
             )
         connection.rollback()
         with pytest.raises(psycopg.errors.CheckViolation):
             connection.execute(
-                "select platform_control.add_execution_worker_key_v27(%s,%s,%s,%s,%s)",
+                "select platform_control.add_execution_worker_key_v28(%s,%s,%s,%s,%s)",
                 (worker_id, "worker-v1", b"z" * 32, "OPS_20260824", uuid.uuid4()),
             )
 

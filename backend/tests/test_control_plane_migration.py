@@ -53,8 +53,18 @@ PLATFORM_ADMIN_MUTATION_MIGRATION = (
 INACTIVE_ADMIN_CLEANUP_MIGRATION = (
     MIGRATIONS / "026_inactive_platform_admin_cleanup.sql"
 )
-EXECUTION_RELAY_MIGRATION = MIGRATIONS / "027_execution_relay.sql"
-AGENT_BRAIN_MIGRATION = MIGRATIONS / "028_agent_brain_mvp.sql"
+ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION = (
+    MIGRATIONS / "027_account_department_projection.sql"
+)
+EXECUTION_RELAY_MIGRATION = MIGRATIONS / "028_execution_relay.sql"
+AGENT_BRAIN_MIGRATION = MIGRATIONS / "029_agent_brain_mvp.sql"
+AGENT_BRAIN_ORCHESTRATION_MIGRATION = (
+    MIGRATIONS / "030_agent_brain_orchestration.sql"
+)
+EXECUTION_STOP_DELIVERY_MIGRATION = (
+    MIGRATIONS / "031_execution_stop_delivery.sql"
+)
+CONTENT_KEY_CANARIES_MIGRATION = MIGRATIONS / "032_content_key_canaries.sql"
 RELEASE_1_PLAN = (
     Path(__file__).parents[2]
     / "docs/superpowers/plans/2026-08-13-dingtalk-identity-release-1.md"
@@ -202,11 +212,26 @@ def test_first_control_migration_exists() -> None:
         "missing inactive administrator cleanup migration: "
         f"{INACTIVE_ADMIN_CLEANUP_MIGRATION}"
     )
+    assert ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION.is_file(), (
+        "missing account department projection migration: "
+        f"{ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION}"
+    )
     assert EXECUTION_RELAY_MIGRATION.is_file(), (
         f"missing execution relay migration: {EXECUTION_RELAY_MIGRATION}"
     )
     assert AGENT_BRAIN_MIGRATION.is_file(), (
         f"missing Agent Brain migration: {AGENT_BRAIN_MIGRATION}"
+    )
+    assert AGENT_BRAIN_ORCHESTRATION_MIGRATION.is_file(), (
+        "missing Agent Brain orchestration migration: "
+        f"{AGENT_BRAIN_ORCHESTRATION_MIGRATION}"
+    )
+    assert EXECUTION_STOP_DELIVERY_MIGRATION.is_file(), (
+        "missing execution stop-delivery migration: "
+        f"{EXECUTION_STOP_DELIVERY_MIGRATION}"
+    )
+    assert CONTENT_KEY_CANARIES_MIGRATION.is_file(), (
+        f"missing content-key canary migration: {CONTENT_KEY_CANARIES_MIGRATION}"
     )
 
 
@@ -222,6 +247,15 @@ def test_control_migrations_001_through_019_are_byte_immutable() -> None:
             )
         )
     } == IMMUTABLE_MIGRATION_SHA256
+
+
+def test_origin_account_department_projection_is_byte_immutable() -> None:
+    import hashlib
+
+    assert (
+        hashlib.sha256(ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION.read_bytes()).hexdigest()
+        == "531d5b31b615bec5b17860816ff955a927bdfe4c5010909c9ab9b750a1d11fc3"
+    )
 
 
 def test_task6_and_task8_share_exported_directory_identity_lock_contract() -> None:
@@ -436,7 +470,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 32)
+                    (version, 64) for version in range(1, 33)
                 ]
 
     changed = tmp_path / "migrations"

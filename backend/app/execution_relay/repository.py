@@ -113,7 +113,7 @@ class ExecutionRelayRepository:
     def _active_worker(cursor, worker_id: str) -> tuple[str, ...]:
         try:
             cursor.execute(
-                "select platform_control.touch_execution_worker_v27(%s)",
+                "select platform_control.touch_execution_worker_v28(%s)",
                 (worker_id,),
             )
         except psycopg.errors.CheckViolation:

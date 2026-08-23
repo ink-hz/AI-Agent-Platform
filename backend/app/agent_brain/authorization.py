@@ -73,7 +73,7 @@ class AgentUseAuthorization:
             ) as connection:
                 rows = connection.execute(
                     "select requested.agent_id,"
-                    "platform_control.has_agent_use_scope_v28(%s,requested.agent_id) "
+                    "platform_control.has_agent_use_scope_v29(%s,requested.agent_id) "
                     "as allowed from unnest(%s::text[]) with ordinality "
                     "requested(agent_id,ordinal) order by requested.ordinal",
                     (internal_user_id, agent_id_array),

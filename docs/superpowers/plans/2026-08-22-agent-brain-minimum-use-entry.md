@@ -100,18 +100,18 @@ Update `_terminal_status()` so `agent.complete -> completed` and `agent.error ->
 ### Task 2: Add Agent-use grants and encrypted Mission storage
 
 **Files:**
-- Create: `backend/control_migrations/028_agent_brain_mvp.sql`
+- Create: `backend/control_migrations/029_agent_brain_mvp.sql`
 - Modify: `backend/tests/test_control_plane_migration.py`
 - Create: `backend/tests/test_agent_brain_migration.py`
 
 **Interfaces:**
 - Produces: `agent_use_grants`, `missions`, `mission_messages`, `mission_tasks`, `mission_runs`, and `mission_events` in `platform_control`.
-- Produces: `has_agent_use_scope_v28(user_id, agent_id)` and least-privilege app grants.
+- Produces: `has_agent_use_scope_v29(user_id, agent_id)` and least-privilege app grants.
 
 - [ ] **Step 1: Write failing PostgreSQL migration tests** requiring UUID server IDs, FK ownership to `internal_users`, encrypted `bytea` content plus positive `encryption_key_version`, `(mission_id, seq)` uniqueness, one active child task per Mission, constrained statuses, no plaintext prompt/response columns, and no application-role `DELETE` grants.
 - [ ] **Step 2: Add authorization tests** for active direct-user, department, ancestor-department, and all-member grants; also prove inactive users, revoked grants, missing grants, excluded Agents, and stale fabricated department IDs are denied.
 - [ ] **Step 3: Run `cd backend && .venv/bin/pytest tests/test_control_plane_migration.py tests/test_agent_brain_migration.py -q`** and verify RED.
-- [ ] **Step 4: Implement migration 028** with these state constraints:
+- [ ] **Step 4: Implement migration 029** with these state constraints:
 
 ```sql
 -- missions.mode: brain | direct_agent
@@ -125,7 +125,7 @@ Update `_terminal_status()` so `agent.complete -> completed` and `agent.error ->
 --   mission.cancelled | mission.interrupted
 ```
 
-`agent_use_grants.target_kind` is exactly `user|department|all_members`; check constraints require only the matching target column. Use the existing active directory generation and department closure tables inside `has_agent_use_scope_v28`. Revoke all privileges from `PUBLIC`, grant the app role only required `SELECT/INSERT/UPDATE`, and expose audited maintenance functions for grant/revoke rather than direct application writes.
+`agent_use_grants.target_kind` is exactly `user|department|all_members`; check constraints require only the matching target column. Use the existing active directory generation and department closure tables inside `has_agent_use_scope_v29`. Revoke all privileges from `PUBLIC`, grant the app role only required `SELECT/INSERT/UPDATE`, and expose audited maintenance functions for grant/revoke rather than direct application writes.
 - [ ] **Step 5: Run the focused tests and verify GREEN**, then inspect grants with `information_schema.role_table_grants`.
 - [ ] **Step 6: Commit** with `git commit -m "feat(brain): add grants and Mission schema"`.
 
@@ -141,12 +141,12 @@ Update `_terminal_status()` so `agent.complete -> completed` and `agent.error ->
 
 **Interfaces:**
 - Produces: `AgentCapabilityCard` and `AgentUseAuthorization.permitted_agents(auth) -> tuple[AgentCapabilityCard, ...]`.
-- Consumes: `has_agent_use_scope_v28`, the business catalog, and the exact seven callable Agent IDs.
+- Consumes: `has_agent_use_scope_v29`, the business catalog, and the exact seven callable Agent IDs.
 
 - [ ] **Step 1: Write failing tests** that require only `hr-bot`, `fae-bot`, `marketing-prospecting-bot`, `marketing-inbound-bot`, `marketing-voice-bot`, `marketing-intelligence-bot`, and `marketing-gtm-bot`; explicitly reject `feishu-default`, `test-bot`, `codex-assistant`, `ai-fae-agent`, and `ai-admin-agent`.
 - [ ] **Step 2: Add tests** proving capability cards contain `mission`, `capabilities`, `exclusions`, `required_inputs`, `example_tasks`, `max_duration_seconds`, and `capability_version`, while excluding Prompt, model, port, credentials, and adapter URL.
 - [ ] **Step 3: Run `cd backend && .venv/bin/pytest tests/test_agent_use_authorization.py tests/test_agent_capabilities.py -q`** and verify RED.
-- [ ] **Step 4: Implement immutable Pydantic models and YAML loading**. Validate duplicate IDs, unknown IDs, missing exclusions, duration outside `1..300`, and non-positive versions at startup. Evaluate every card through `has_agent_use_scope_v28`; do not cache the final user decision.
+- [ ] **Step 4: Implement immutable Pydantic models and YAML loading**. Validate duplicate IDs, unknown IDs, missing exclusions, duration outside `1..300`, and non-positive versions at startup. Evaluate every card through `has_agent_use_scope_v29`; do not cache the final user decision.
 - [ ] **Step 5: Run focused tests and commit** with `git commit -m "feat(brain): add authorized capability catalog"`.
 
 ### Task 4: Implement encrypted Mission repository and strict Brain protocol
@@ -327,7 +327,7 @@ git diff --check
 Expected: all tests PASS, production build succeeds, scripts parse, and no diff errors.
 - [ ] **Step 4: Deploy in dependency order**: Platform migrations with Brain disabled; local `agent-brain-bot`; local worker allowlist/key registration; cloud Platform image with Brain disabled; real relay canary; enable Brain; switch `/` UI. Stop immediately on any failed gate and keep the existing management entry active.
 - [ ] **Step 5: Run public and local acceptance** from fresh processes, record release SHAs, container IDs/start times, worker key ID, Mission/run IDs, event sequences, listener table, FAE probes, and rollback paths without recording prompts, answers, cookies, DingTalk IDs, or secrets.
-- [ ] **Step 6: Exercise rollback** by disabling the Brain feature and restoring the previous UI route; verify `/admin`, existing Sessions/Review/Operations, FAE domain, legacy IP access, and local MetaBots. Do not drop migration 028 or delete Missions.
+- [ ] **Step 6: Exercise rollback** by disabling the Brain feature and restoring the previous UI route; verify `/admin`, existing Sessions/Review/Operations, FAE domain, legacy IP access, and local MetaBots. Do not drop migration 032 or delete Missions.
 - [ ] **Step 7: Commit deployment assets** with `git commit -m "feat(cloud): release Agent Brain use entry"`, then merge/push only after the real acceptance record is complete.
 
 ---

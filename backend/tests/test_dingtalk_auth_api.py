@@ -24,6 +24,7 @@ AI_ADMIN_ACCOUNT_CONTRACT_FIELDS = {
     "internal_user_id",
     "display_name",
     "role",
+    "departments",
     "observation_agent_ids",
     "directory_freshness",
     "hard_stale_read_only",
@@ -142,6 +143,7 @@ class FakeAuth:
     def account_snapshot(self, context):
         return {
             "display_name": "Platform user",
+            "departments": ["产品中心", "项目管理部"],
             "observation_agent_ids": [],
             "directory_freshness": "hard_stale"
             if context.hard_stale_read_only else "fresh",
@@ -511,7 +513,6 @@ def test_every_identity_response_prevents_browser_or_proxy_caching(
             json={},
             headers={"Origin": auth.public_base_url},
         ),
-        client.get("/api/v1/account", cookies=session_cookies),
         client.post(
             "/api/v1/auth/logout",
             cookies=session_cookies,
@@ -521,6 +522,10 @@ def test_every_identity_response_prevents_browser_or_proxy_caching(
             "/api/v1/manage/system-health", cookies=session_cookies
         ),
     ]
+
+    account = client.get("/api/v1/account", cookies=session_cookies)
+    assert account.headers.get("cache-control") == "private, no-store"
+    assert account.headers.get("pragma") == "no-cache"
 
     for response in responses:
         assert response.headers.get("cache-control") == "no-store", (
@@ -619,6 +624,7 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
         "internal_user_id": str(auth.context.internal_user_id),
         "display_name": "Platform user",
         "role": "platform_owner",
+        "departments": ["产品中心", "项目管理部"],
         "observation_agent_ids": [],
         "directory_freshness": "fresh",
         "hard_stale_read_only": False,

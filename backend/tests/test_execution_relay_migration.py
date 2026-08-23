@@ -17,10 +17,10 @@ RELAY_TABLES = {
     "execution_worker_nonces",
 }
 LIFECYCLE_FUNCTIONS = {
-    "register_execution_worker_v27",
-    "add_execution_worker_key_v27",
-    "revoke_execution_worker_key_v27",
-    "revoke_execution_worker_v27",
+    "register_execution_worker_v28",
+    "add_execution_worker_key_v28",
+    "revoke_execution_worker_key_v28",
+    "revoke_execution_worker_v28",
 }
 ALL_RUNTIME_ROLES = (
     "platform_control_migrator",
@@ -197,17 +197,17 @@ def test_execution_relay_functions_are_hardened_and_role_bounded(
                     sorted(
                         LIFECYCLE_FUNCTIONS
                         | {
-                            "append_execution_worker_audit_v27",
-                            "replay_execution_worker_audit_v27",
-                            "touch_execution_worker_v27",
+                            "append_execution_worker_audit_v28",
+                            "replay_execution_worker_audit_v28",
+                            "touch_execution_worker_v28",
                         }
                     ),
                 ),
             ).fetchall()
         assert {row[0] for row in functions} == LIFECYCLE_FUNCTIONS | {
-            "append_execution_worker_audit_v27",
-            "replay_execution_worker_audit_v27",
-            "touch_execution_worker_v27",
+            "append_execution_worker_audit_v28",
+            "replay_execution_worker_audit_v28",
+            "touch_execution_worker_v28",
         }
         for name, oid, security_definer, settings, maintenance_execute, app_execute, public_execute in functions:
             assert security_definer is True
@@ -215,14 +215,14 @@ def test_execution_relay_functions_are_hardened_and_role_bounded(
             assert public_execute is False
             if name in LIFECYCLE_FUNCTIONS:
                 assert (maintenance_execute, app_execute) == (True, False)
-            elif name == "touch_execution_worker_v27":
+            elif name == "touch_execution_worker_v28":
                 assert (maintenance_execute, app_execute) == (False, True)
             else:
                 assert (maintenance_execute, app_execute) == (False, False)
             with psycopg.connect(environment["admin"]) as connection:
                 allowed_role = (
                     roles[1]
-                    if name == "touch_execution_worker_v27"
+                    if name == "touch_execution_worker_v28"
                     else roles[5] if name in LIFECYCLE_FUNCTIONS else None
                 )
                 privileges = dict(
@@ -259,8 +259,8 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
         request_id,
     )
     with psycopg.connect(maintenance_url) as connection:
-        _call(connection, "register_execution_worker_v27", args)
-        _call(connection, "register_execution_worker_v27", args)
+        _call(connection, "register_execution_worker_v28", args)
+        _call(connection, "register_execution_worker_v28", args)
 
     with psycopg.connect(environment["admin"]) as connection:
         assert connection.execute(
@@ -300,14 +300,14 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
         with pytest.raises(psycopg.errors.CheckViolation, match="identity collision"):
             _call(
                 connection,
-                "register_execution_worker_v27",
+                "register_execution_worker_v28",
                 (*args[:-2], "OPS_20260822", request_id),
             )
         connection.rollback()
         with pytest.raises(psycopg.errors.CheckViolation, match="identity collision"):
             _call(
                 connection,
-                "register_execution_worker_v27",
+                "register_execution_worker_v28",
                 (
                     worker_id,
                     first_key_id,
@@ -320,7 +320,7 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
         connection.rollback()
         collision_calls = (
             (
-                "add_execution_worker_key_v27",
+                "add_execution_worker_key_v28",
                 (
                     "worker.missing",
                     "worker-v2",
@@ -330,7 +330,7 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
                 ),
             ),
             (
-                "revoke_execution_worker_key_v27",
+                "revoke_execution_worker_key_v28",
                 (
                     "worker.missing",
                     "worker-v2",
@@ -339,7 +339,7 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
                 ),
             ),
             (
-                "revoke_execution_worker_v27",
+                "revoke_execution_worker_v28",
                 ("worker.missing", "OPS_20260822", request_id),
             ),
         )
@@ -353,7 +353,7 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
         with pytest.raises(psycopg.errors.CheckViolation, match="audit input invalid"):
             _call(
                 connection,
-                "add_execution_worker_key_v27",
+                "add_execution_worker_key_v28",
                 (
                     worker_id,
                     "worker-v2",
@@ -367,7 +367,7 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
             with pytest.raises(psycopg.errors.CheckViolation):
                 _call(
                     connection,
-                    "add_execution_worker_key_v27",
+                    "add_execution_worker_key_v28",
                     (
                         worker_id,
                         "worker-v2",
@@ -380,7 +380,7 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
         with pytest.raises(psycopg.errors.CheckViolation):
             _call(
                 connection,
-                "add_execution_worker_key_v27",
+                "add_execution_worker_key_v28",
                 (
                     worker_id,
                     first_key_id,
@@ -396,7 +396,7 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
         add_request = uuid.uuid4()
         _call(
             connection,
-            "add_execution_worker_key_v27",
+            "add_execution_worker_key_v28",
             (
                 worker_id,
                 second_key_id,
@@ -407,7 +407,7 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
         )
         _call(
             connection,
-            "add_execution_worker_key_v27",
+            "add_execution_worker_key_v28",
             (
                 worker_id,
                 second_key_id,
@@ -419,7 +419,7 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
         revoke_key_request = uuid.uuid4()
         _call(
             connection,
-            "revoke_execution_worker_key_v27",
+            "revoke_execution_worker_key_v28",
             (
                 worker_id,
                 second_key_id,
@@ -429,7 +429,7 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
         )
         _call(
             connection,
-            "revoke_execution_worker_key_v27",
+            "revoke_execution_worker_key_v28",
             (
                 worker_id,
                 second_key_id,
@@ -440,12 +440,12 @@ def test_execution_worker_lifecycle_is_validated_audited_and_idempotent(
         revoke_worker_request = uuid.uuid4()
         _call(
             connection,
-            "revoke_execution_worker_v27",
+            "revoke_execution_worker_v28",
             (worker_id, "OPS_20260823", revoke_worker_request),
         )
         _call(
             connection,
-            "revoke_execution_worker_v27",
+            "revoke_execution_worker_v28",
             (worker_id, "OPS_20260823", revoke_worker_request),
         )
 
@@ -534,7 +534,7 @@ def test_execution_worker_audit_failure_rolls_back_mutation(control_database) ->
             with pytest.raises(psycopg.errors.CheckViolation, match="forced relay"):
                 _call(
                     connection,
-                    "register_execution_worker_v27",
+                    "register_execution_worker_v28",
                     (
                         worker_id,
                         "worker-v1",
@@ -577,7 +577,7 @@ def test_execution_worker_heartbeat_only_touches_active_last_seen_at(
     with psycopg.connect(maintenance_url) as connection:
         _call(
             connection,
-            "register_execution_worker_v27",
+            "register_execution_worker_v28",
             (
                 worker_id,
                 "worker-v1",
@@ -588,7 +588,7 @@ def test_execution_worker_heartbeat_only_touches_active_last_seen_at(
             ),
         )
     with psycopg.connect(app_url) as connection:
-        _call(connection, "touch_execution_worker_v27", (worker_id,))
+        _call(connection, "touch_execution_worker_v28", (worker_id,))
     with psycopg.connect(environment["admin"]) as connection:
         assert connection.execute(
             "select last_seen_at is not null,status,allowed_agent_ids "
@@ -598,9 +598,9 @@ def test_execution_worker_heartbeat_only_touches_active_last_seen_at(
     with psycopg.connect(maintenance_url) as connection:
         _call(
             connection,
-            "revoke_execution_worker_v27",
+            "revoke_execution_worker_v28",
             (worker_id, "OPS_20260822", uuid.uuid4()),
         )
     with psycopg.connect(app_url) as connection:
         with pytest.raises(psycopg.errors.CheckViolation):
-            _call(connection, "touch_execution_worker_v27", (worker_id,))
+            _call(connection, "touch_execution_worker_v28", (worker_id,))

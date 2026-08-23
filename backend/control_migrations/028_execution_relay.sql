@@ -80,7 +80,7 @@ create index execution_jobs_worker_status
 create index execution_worker_nonces_expiry
   on platform_control.execution_worker_nonces (expires_at);
 
-create function platform_control.append_execution_worker_audit_v27(
+create function platform_control.append_execution_worker_audit_v28(
   selected_request_id uuid,
   selected_event_type text,
   selected_target_type text,
@@ -224,7 +224,7 @@ begin
 end
 $function$;
 
-create function platform_control.replay_execution_worker_audit_v27(
+create function platform_control.replay_execution_worker_audit_v28(
   selected_request_id uuid,
   selected_event_type text,
   selected_target_type text,
@@ -350,7 +350,7 @@ begin
     raise check_violation using
       message = 'execution relay audit identity collision';
   end if;
-  perform platform_control.append_execution_worker_audit_v27(
+  perform platform_control.append_execution_worker_audit_v28(
     selected_request_id, selected_event_type, selected_target_type,
     selected_target_id, stored.sanitized_before_after
   );
@@ -358,7 +358,7 @@ begin
 end
 $function$;
 
-create function platform_control.register_execution_worker_v27(
+create function platform_control.register_execution_worker_v28(
   selected_worker_id text,
   selected_key_id text,
   selected_public_key bytea,
@@ -405,14 +405,14 @@ begin
     'allowed_agent_ids', to_jsonb(selected_allowed_agent_ids),
     'reference', selected_change_reference
   );
-  if platform_control.replay_execution_worker_audit_v27(
+  if platform_control.replay_execution_worker_audit_v28(
     selected_request_id, 'execution_worker_registered', 'execution_worker',
     selected_worker_id, audit_details
   ) then return; end if;
   perform pg_advisory_xact_lock(
     hashtextextended('execution-worker:' || selected_worker_id, 0)
   );
-  audit_inserted := platform_control.append_execution_worker_audit_v27(
+  audit_inserted := platform_control.append_execution_worker_audit_v28(
     selected_request_id, 'execution_worker_registered', 'execution_worker',
     selected_worker_id, audit_details
   );
@@ -437,7 +437,7 @@ begin
 end
 $function$;
 
-create function platform_control.add_execution_worker_key_v27(
+create function platform_control.add_execution_worker_key_v28(
   selected_worker_id text,
   selected_key_id text,
   selected_public_key bytea,
@@ -472,7 +472,7 @@ begin
     'public_key_sha256', encode(sha256(selected_public_key), 'hex'),
     'reference', selected_change_reference
   );
-  if platform_control.replay_execution_worker_audit_v27(
+  if platform_control.replay_execution_worker_audit_v28(
     selected_request_id, 'execution_worker_key_added',
     'execution_worker_key', selected_worker_id || '/' || selected_key_id,
     input_details
@@ -487,7 +487,7 @@ begin
   if not found then
     raise check_violation using message = 'execution worker not found';
   end if;
-  audit_inserted := platform_control.append_execution_worker_audit_v27(
+  audit_inserted := platform_control.append_execution_worker_audit_v28(
     selected_request_id, 'execution_worker_key_added', 'execution_worker_key',
     selected_worker_id || '/' || selected_key_id,
     jsonb_build_object(
@@ -532,7 +532,7 @@ begin
 end
 $function$;
 
-create function platform_control.revoke_execution_worker_key_v27(
+create function platform_control.revoke_execution_worker_key_v28(
   selected_worker_id text,
   selected_key_id text,
   selected_change_reference text,
@@ -557,7 +557,7 @@ begin
   perform pg_advisory_xact_lock(
     hashtextextended('execution-request:' || selected_request_id::text, 0)
   );
-  if platform_control.replay_execution_worker_audit_v27(
+  if platform_control.replay_execution_worker_audit_v28(
     selected_request_id, 'execution_worker_key_revoked',
     'execution_worker_key', selected_worker_id || '/' || selected_key_id,
     jsonb_build_object(
@@ -580,7 +580,7 @@ begin
   if selected_worker.worker_id is null or selected_key.key_id is null then
     raise check_violation using message = 'execution worker key not found';
   end if;
-  audit_inserted := platform_control.append_execution_worker_audit_v27(
+  audit_inserted := platform_control.append_execution_worker_audit_v28(
     selected_request_id, 'execution_worker_key_revoked',
     'execution_worker_key', selected_worker_id || '/' || selected_key_id,
     jsonb_build_object(
@@ -601,7 +601,7 @@ begin
 end
 $function$;
 
-create function platform_control.revoke_execution_worker_v27(
+create function platform_control.revoke_execution_worker_v28(
   selected_worker_id text,
   selected_change_reference text,
   selected_request_id uuid
@@ -623,7 +623,7 @@ begin
   perform pg_advisory_xact_lock(
     hashtextextended('execution-request:' || selected_request_id::text, 0)
   );
-  if platform_control.replay_execution_worker_audit_v27(
+  if platform_control.replay_execution_worker_audit_v28(
     selected_request_id, 'execution_worker_revoked', 'execution_worker',
     selected_worker_id, jsonb_build_object(
       'worker_id', selected_worker_id,
@@ -640,7 +640,7 @@ begin
   if not found then
     raise check_violation using message = 'execution worker not found';
   end if;
-  audit_inserted := platform_control.append_execution_worker_audit_v27(
+  audit_inserted := platform_control.append_execution_worker_audit_v28(
     selected_request_id, 'execution_worker_revoked', 'execution_worker',
     selected_worker_id, jsonb_build_object(
       'worker_id', selected_worker_id,
@@ -661,7 +661,7 @@ begin
 end
 $function$;
 
-create function platform_control.touch_execution_worker_v27(
+create function platform_control.touch_execution_worker_v28(
   selected_worker_id text
 ) returns void
 language plpgsql
@@ -690,25 +690,25 @@ revoke all on
   platform_control.execution_events,
   platform_control.execution_worker_nonces
 from public;
-revoke all on function platform_control.append_execution_worker_audit_v27(
+revoke all on function platform_control.append_execution_worker_audit_v28(
   uuid, text, text, text, jsonb
 ) from public;
-revoke all on function platform_control.replay_execution_worker_audit_v27(
+revoke all on function platform_control.replay_execution_worker_audit_v28(
   uuid, text, text, text, jsonb
 ) from public;
-revoke all on function platform_control.register_execution_worker_v27(
+revoke all on function platform_control.register_execution_worker_v28(
   text, text, bytea, text[], text, uuid
 ) from public;
-revoke all on function platform_control.add_execution_worker_key_v27(
+revoke all on function platform_control.add_execution_worker_key_v28(
   text, text, bytea, text, uuid
 ) from public;
-revoke all on function platform_control.revoke_execution_worker_key_v27(
+revoke all on function platform_control.revoke_execution_worker_key_v28(
   text, text, text, uuid
 ) from public;
-revoke all on function platform_control.revoke_execution_worker_v27(
+revoke all on function platform_control.revoke_execution_worker_v28(
   text, text, uuid
 ) from public;
-revoke all on function platform_control.touch_execution_worker_v27(text)
+revoke all on function platform_control.touch_execution_worker_v28(text)
 from public;
 
 do $migration$
@@ -750,37 +750,37 @@ begin
     );
     execute format(
       'revoke all on function '
-      'platform_control.append_execution_worker_audit_v27('
+      'platform_control.append_execution_worker_audit_v28('
       'uuid,text,text,text,jsonb) from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.replay_execution_worker_audit_v27('
+      'platform_control.replay_execution_worker_audit_v28('
       'uuid,text,text,text,jsonb) from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.register_execution_worker_v27('
+      'platform_control.register_execution_worker_v28('
       'text,text,bytea,text[],text,uuid) from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.add_execution_worker_key_v27('
+      'platform_control.add_execution_worker_key_v28('
       'text,text,bytea,text,uuid) from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.revoke_execution_worker_key_v27('
+      'platform_control.revoke_execution_worker_key_v28('
       'text,text,text,uuid) from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.revoke_execution_worker_v27(text,text,uuid) from %I',
+      'platform_control.revoke_execution_worker_v28(text,text,uuid) from %I',
       role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.touch_execution_worker_v27(text) from %I', role_name
+      'platform_control.touch_execution_worker_v28(text) from %I', role_name
     );
   end loop;
 
@@ -798,26 +798,26 @@ begin
   );
   execute format(
     'grant execute on function '
-    'platform_control.touch_execution_worker_v27(text) to %I', selected_app
+    'platform_control.touch_execution_worker_v28(text) to %I', selected_app
   );
   execute format(
     'grant execute on function '
-    'platform_control.register_execution_worker_v27('
+    'platform_control.register_execution_worker_v28('
     'text,text,bytea,text[],text,uuid) to %I', selected_maintenance
   );
   execute format(
     'grant execute on function '
-    'platform_control.add_execution_worker_key_v27('
+    'platform_control.add_execution_worker_key_v28('
     'text,text,bytea,text,uuid) to %I', selected_maintenance
   );
   execute format(
     'grant execute on function '
-    'platform_control.revoke_execution_worker_key_v27('
+    'platform_control.revoke_execution_worker_key_v28('
     'text,text,text,uuid) to %I', selected_maintenance
   );
   execute format(
     'grant execute on function '
-    'platform_control.revoke_execution_worker_v27(text,text,uuid) to %I',
+    'platform_control.revoke_execution_worker_v28(text,text,uuid) to %I',
     selected_maintenance
   );
 end

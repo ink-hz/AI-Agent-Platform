@@ -50,7 +50,7 @@ Deployment files live under `deploy/local-execution-worker/`; production cloud w
 ### Task 1: Add the control-plane relay schema and least-privilege grants
 
 **Files:**
-- Create: `backend/control_migrations/027_execution_relay.sql`
+- Create: `backend/control_migrations/028_execution_relay.sql`
 - Modify: `backend/tests/test_control_plane_migration.py`
 - Create: `backend/tests/test_execution_relay_migration.py`
 
@@ -60,7 +60,7 @@ Deployment files live under `deploy/local-execution-worker/`; production cloud w
 
 - [ ] **Step 1: Write the failing migration tests**
 
-Add `027_execution_relay.sql` to the migration existence assertions and add a PostgreSQL test that expects these exact columns and constraints:
+Add `028_execution_relay.sql` to the migration existence assertions and add a PostgreSQL test that expects these exact columns and constraints:
 
 ```python
 RELAY_TABLES = {
@@ -97,9 +97,9 @@ cd backend
 .venv/bin/pytest tests/test_control_plane_migration.py tests/test_execution_relay_migration.py -q
 ```
 
-Expected: FAIL because migration 027 and the four tables do not exist.
+Expected: FAIL because migration 028 and the four tables do not exist.
 
-- [ ] **Step 3: Implement migration 027**
+- [ ] **Step 3: Implement migration 028**
 
 Use this schema contract:
 
@@ -167,15 +167,15 @@ create table platform_control.execution_worker_nonces (
 
 Add indexes on `(status, created_at)`, `(lease_worker_id, status)`, and nonce expiry. Grant the application role `SELECT` on worker/key tables, the required `SELECT, INSERT, UPDATE` on job/event tables, and `SELECT, INSERT, DELETE` only on `execution_worker_nonces`; nonce deletion is bounded authentication housekeeping, not business-record deletion. The application role receives no direct `INSERT`, `UPDATE`, or `DELETE` on worker/key tables.
 
-Migration 027 must also create versioned `SECURITY DEFINER` functions with pinned `search_path`, revoked `PUBLIC` execution, explicit input validation, and atomic sanitized audit append:
+Migration 028 must also create versioned `SECURITY DEFINER` functions with pinned `search_path`, revoked `PUBLIC` execution, explicit input validation, and atomic sanitized audit append:
 
-- `register_execution_worker_v27(worker_id, key_id, public_key, allowed_agent_ids, change_reference, request_id)`;
-- `add_execution_worker_key_v27(worker_id, key_id, public_key, change_reference, request_id)`;
-- `revoke_execution_worker_key_v27(worker_id, key_id, change_reference, request_id)`;
-- `revoke_execution_worker_v27(worker_id, change_reference, request_id)`;
-- `touch_execution_worker_v27(worker_id)` for the runtime heartbeat timestamp only.
+- `register_execution_worker_v28(worker_id, key_id, public_key, allowed_agent_ids, change_reference, request_id)`;
+- `add_execution_worker_key_v28(worker_id, key_id, public_key, change_reference, request_id)`;
+- `revoke_execution_worker_key_v28(worker_id, key_id, change_reference, request_id)`;
+- `revoke_execution_worker_v28(worker_id, change_reference, request_id)`;
+- `touch_execution_worker_v28(worker_id)` for the runtime heartbeat timestamp only.
 
-The four lifecycle functions are executable only by `platform_control_maintenance` (and the matching preview role in preview), validate uppercase change references and key/worker formats, serialize conflicting mutations, reject key-ID reuse with different bytes, and append an `audit_events` row in the same transaction containing only worker ID, key ID, public-key fingerprint, allowed Agent IDs and reference. `touch_execution_worker_v27` is executable only by the application role and may update only `last_seen_at` for an active worker. Revoke all relay-object privileges from `PUBLIC` and every unrelated runtime role. Migration tests must prove these grants and atomic audit behavior rather than checking only table existence.
+The four lifecycle functions are executable only by `platform_control_maintenance` (and the matching preview role in preview), validate uppercase change references and key/worker formats, serialize conflicting mutations, reject key-ID reuse with different bytes, and append an `audit_events` row in the same transaction containing only worker ID, key ID, public-key fingerprint, allowed Agent IDs and reference. `touch_execution_worker_v28` is executable only by the application role and may update only `last_seen_at` for an active worker. Revoke all relay-object privileges from `PUBLIC` and every unrelated runtime role. Migration tests must prove these grants and atomic audit behavior rather than checking only table existence.
 
 - [ ] **Step 4: Run the migration tests and verify GREEN**
 
@@ -184,7 +184,7 @@ Run the command from Step 2. Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/control_migrations/027_execution_relay.sql backend/tests/test_control_plane_migration.py backend/tests/test_execution_relay_migration.py
+git add backend/control_migrations/028_execution_relay.sql backend/tests/test_control_plane_migration.py backend/tests/test_execution_relay_migration.py
 git commit -m "feat(relay): add durable execution queue schema"
 ```
 
@@ -201,7 +201,7 @@ git commit -m "feat(relay): add durable execution queue schema"
 - Create: `backend/tests/test_execution_relay_repository.py`
 
 **Interfaces:**
-- Consumes: `IdentityKeyring.from_file(keyring_path, expected_purpose="platform-content-encryption", expected_key_length=32)` and migration 027.
+- Consumes: `IdentityKeyring.from_file(keyring_path, expected_purpose="platform-content-encryption", expected_key_length=32)` and migration 028.
 - Produces: `RelayJobPayload`, `RelayEvent`, `RelayLease`, `ContentCodec`, and `ExecutionRelayRepository` methods used by routes and future Chat Gateway.
 
 - [ ] **Step 1: Write failing model and crypto tests**
@@ -332,7 +332,7 @@ Use raw Ed25519 keys from `cryptography`, URL-safe base64 without padding, `secr
 
 Reject bodies larger than exactly `1_048_576` bytes before any database access. Accept only canonical unpadded base64url encodings: 32 decoded bytes for nonce and 64 for signature. Timestamp is canonical unsigned base-10 UNIX seconds and must be within the inclusive ±60-second window. All authentication failures expose only `WorkerAuthenticationError("worker authentication failed")`.
 
-After structural and timestamp validation, call `touch_execution_worker_v27(worker_id)` inside the verifier transaction to validate and lock the active worker against concurrent revocation, then load the exact active `(worker_id, key_id)` public key. Verify the signature before nonce cleanup/insertion. Delete only expired nonces for that worker and atomically insert the new nonce with an expiry covering the entire accepted timestamp window; a conflict is replay failure. Commit before returning `WorkerIdentity`. Never grant direct worker/key mutation to the verifier.
+After structural and timestamp validation, call `touch_execution_worker_v28(worker_id)` inside the verifier transaction to validate and lock the active worker against concurrent revocation, then load the exact active `(worker_id, key_id)` public key. Verify the signature before nonce cleanup/insertion. Delete only expired nonces for that worker and atomically insert the new nonce with an expiry covering the entire accepted timestamp window; a conflict is replay failure. Commit before returning `WorkerIdentity`. Never grant direct worker/key mutation to the verifier.
 
 - [ ] **Step 4: Run tests and verify GREEN**
 
