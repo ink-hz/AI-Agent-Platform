@@ -12,6 +12,7 @@ import { MissionPage, type MissionPageClient } from "./MissionPage";
 
 const account: Account = {
   internal_user_id: "member", display_name: "洛奇", role: "member",
+  departments: [], gender: null,
   observation_agent_ids: [], directory_freshness: "fresh",
   hard_stale_read_only: false, csrf_token: "csrf",
 };

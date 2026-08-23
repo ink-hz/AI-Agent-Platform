@@ -10,6 +10,7 @@ import { IdentityManagementPage } from "./IdentityManagementPage";
 
 const owner: Account = {
   internal_user_id: "62a31b32-2a92-47d4-9f79-f0c61bca12aa", display_name: "苍渊",
+  departments: [], gender: null,
   role: "platform_owner", observation_agent_ids: [], directory_freshness: "fresh",
   hard_stale_read_only: false, csrf_token: "csrf",
 };

@@ -56,6 +56,7 @@ describe("cloud replica mode", () => {
       const url = String(input);
       if (url.endsWith("/api/v1/account")) return new Response(JSON.stringify({
         internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
+        departments: [], gender: null,
         observation_agent_ids: [], directory_freshness: "fresh",
         hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -97,6 +98,7 @@ describe("cloud replica mode", () => {
         if (accountReads === 1) return new Response("{}", { status: 500 });
         return new Response(JSON.stringify({
           internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
+          departments: [], gender: null,
           observation_agent_ids: [], directory_freshness: "fresh",
           hard_stale_read_only: false, csrf_token: "csrf",
         }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -163,6 +165,7 @@ describe("cloud replica mode", () => {
   it("derives member and viewer navigation from the server account", async () => {
     const member: Account = {
       internal_user_id: "member", display_name: "成员", role: "member",
+      departments: [], gender: null,
       observation_agent_ids: [], directory_freshness: "fresh",
       hard_stale_read_only: false, csrf_token: "csrf",
     };
@@ -186,6 +189,7 @@ describe("cloud replica mode", () => {
   it("shows the server-enforced hard-stale read-only state", async () => {
     const owner: Account = {
       internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
+      departments: [], gender: null,
       observation_agent_ids: [], directory_freshness: "hard_stale",
       hard_stale_read_only: true, csrf_token: "csrf",
     };
@@ -199,6 +203,7 @@ describe("cloud replica mode", () => {
   it("gives a platform administrator full manager navigation and deployment status", async () => {
     const administrator: Account = {
       internal_user_id: "admin", display_name: "管理员", role: "platform_admin",
+      departments: [], gender: null,
       observation_agent_ids: [], directory_freshness: "fresh",
       hard_stale_read_only: false, csrf_token: "csrf",
     };
@@ -229,6 +234,7 @@ describe("cloud replica mode", () => {
       const url = String(input);
       if (url.endsWith("/api/v1/account")) return new Response(JSON.stringify({
         internal_user_id: "admin", display_name: "管理员", role: "platform_admin",
+        departments: [], gender: null,
         observation_agent_ids: [], directory_freshness: "fresh",
         hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });

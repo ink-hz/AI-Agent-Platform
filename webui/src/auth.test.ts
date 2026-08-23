@@ -47,6 +47,8 @@ function accountResponse(): Response {
     internal_user_id: "owner",
     display_name: "苍渊",
     role: "platform_owner",
+    departments: ["项目管理部"],
+    gender: "male",
     observation_agent_ids: [],
     directory_freshness: "fresh",
     hard_stale_read_only: false,
@@ -81,6 +83,50 @@ describe("login return path", () => {
 
 
 describe("authenticated account bootstrap", () => {
+  it("accepts and projects trusted DingTalk departments and gender", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(accountResponse()));
+
+    await expect(loadAccount("")).resolves.toMatchObject({
+      departments: ["项目管理部"],
+      gender: "male",
+    });
+  });
+
+  it("accepts a nullable trusted gender", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      internal_user_id: "member",
+      display_name: "成员",
+      role: "member",
+      departments: [],
+      gender: null,
+      observation_agent_ids: [],
+      directory_freshness: "fresh",
+      hard_stale_read_only: false,
+      csrf_token: "csrf",
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(loadAccount("")).resolves.toMatchObject({ departments: [], gender: null });
+  });
+
+  it.each([
+    [["项目管理部", 7], "male"],
+    [["项目管理部"], "unknown"],
+  ])("rejects malformed trusted identity fields", async (departments, gender) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      internal_user_id: "member",
+      display_name: "成员",
+      role: "member",
+      departments,
+      gender,
+      observation_agent_ids: [],
+      directory_freshness: "fresh",
+      hard_stale_read_only: false,
+      csrf_token: "csrf",
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(loadAccount("")).rejects.toThrow("account response invalid");
+  });
+
   it("retries one transient gateway failure", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn()
@@ -130,6 +176,8 @@ describe("authenticated account bootstrap", () => {
       internal_user_id: "admin",
       display_name: "平台管理员",
       role: "platform_admin",
+      departments: ["行政部"],
+      gender: "female",
       observation_agent_ids: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
@@ -144,6 +192,8 @@ describe("authenticated account bootstrap", () => {
       internal_user_id: "unknown",
       display_name: "未知角色",
       role: "platform_superuser",
+      departments: [],
+      gender: null,
       observation_agent_ids: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
@@ -159,6 +209,8 @@ describe("authenticated account bootstrap", () => {
       internal_user_id: "62a31b32-2a92-47d4-9f79-f0c61bca12aa",
       display_name: "苍渊",
       role: "platform_owner",
+      departments: ["项目管理部"],
+      gender: "male",
       observation_agent_ids: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
@@ -192,6 +244,8 @@ describe("authenticated account bootstrap", () => {
       internal_user_id: "user",
       display_name: "苍渊",
       role: "platform_owner",
+      departments: ["项目管理部"],
+      gender: "male",
       observation_agent_ids: [],
       directory_freshness: "fresh",
       hard_stale_read_only: false,
@@ -231,6 +285,7 @@ describe("authenticated account bootstrap", () => {
 describe("identity management contract", () => {
   const owner: Account = {
     internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
+    departments: ["项目管理部"], gender: "male",
     observation_agent_ids: [], directory_freshness: "fresh",
     hard_stale_read_only: false, csrf_token: "owner-csrf",
   };

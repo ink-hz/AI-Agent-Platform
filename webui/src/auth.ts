@@ -4,11 +4,14 @@ export type PlatformRole =
   | "platform_admin"
   | "platform_owner";
 export type DirectoryFreshness = "fresh" | "warning" | "hard_stale";
+export type TrustedGender = "male" | "female" | null;
 
 export interface Account {
   internal_user_id: string;
   display_name: string;
   role: PlatformRole;
+  departments: string[];
+  gender: TrustedGender;
   observation_agent_ids: string[];
   directory_freshness: DirectoryFreshness;
   hard_stale_read_only: boolean;
@@ -68,7 +71,7 @@ export class IdentityDisabled extends PlatformApiError {
 
 const PREVIEW_PREFIX = "/_preview/dingtalk-r1";
 const ACCOUNT_KEYS = new Set([
-  "internal_user_id", "display_name", "role", "observation_agent_ids",
+  "internal_user_id", "display_name", "role", "departments", "gender", "observation_agent_ids",
   "directory_freshness", "hard_stale_read_only", "csrf_token",
 ]);
 const MANAGED_USER_KEYS = new Set([
@@ -155,11 +158,16 @@ function parseAccount(value: unknown): Account {
   }
   const role = value.role;
   const freshness = value.directory_freshness;
+  const departments = value.departments;
+  const gender = value.gender;
   const scopes = value.observation_agent_ids;
   if (
     typeof value.internal_user_id !== "string" || !value.internal_user_id
     || typeof value.display_name !== "string" || !value.display_name
     || !isPlatformRole(role)
+    || !Array.isArray(departments)
+    || departments.some((department) => typeof department !== "string" || !department)
+    || (gender !== "male" && gender !== "female" && gender !== null)
     || !Array.isArray(scopes) || scopes.some((scope) => typeof scope !== "string" || !scope)
     || !["fresh", "warning", "hard_stale"].includes(String(freshness))
     || typeof value.hard_stale_read_only !== "boolean"
@@ -171,6 +179,8 @@ function parseAccount(value: unknown): Account {
     internal_user_id: value.internal_user_id,
     display_name: value.display_name,
     role: role as PlatformRole,
+    departments: [...departments] as string[],
+    gender: gender as TrustedGender,
     observation_agent_ids: [...scopes] as string[],
     directory_freshness: freshness as DirectoryFreshness,
     hard_stale_read_only: value.hard_stale_read_only,

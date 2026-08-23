@@ -12,6 +12,7 @@ import { AgentUsePage } from "./AgentUsePage";
 
 const account: Account = {
   internal_user_id: "member", display_name: "磐德", role: "member",
+  departments: [], gender: null,
   observation_agent_ids: [], directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf",
 };
 const card: AgentCapabilityCard = {
