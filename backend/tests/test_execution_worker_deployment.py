@@ -5016,7 +5016,22 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
 ) -> None:
     source = WORKER_PM2.read_text(encoding="utf-8")
     current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
-    fake_pm2 = tmp_path / "pm2"
+    npm_root = tmp_path / ".npm-global"
+    npm_bin = npm_root / "bin"
+    package_bin = npm_root / "lib/node_modules/pm2/bin"
+    npm_bin.mkdir(parents=True, mode=0o700)
+    package_bin.mkdir(parents=True, mode=0o700)
+    for directory in (
+        npm_root,
+        npm_root / "lib",
+        npm_root / "lib/node_modules",
+        npm_root / "lib/node_modules/pm2",
+        package_bin,
+        npm_bin,
+    ):
+        directory.chmod(0o700)
+    fake_pm2 = package_bin / "pm2"
+    (npm_bin / "pm2").symlink_to("../lib/node_modules/pm2/bin/pm2")
     state = tmp_path / "state"
     log = tmp_path / "calls"
     config = tmp_path / "execution-worker.ecosystem.config.cjs"
@@ -5054,7 +5069,12 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
         '== "600 agentops"',
         f'== "600 {current_user}"',
     ).replace(
-        "pm2=/Users/agentops/.npm-global/bin/pm2", f"pm2={fake_pm2}"
+        "pm2_home=/Users/agentops", f"pm2_home={tmp_path}"
+    ).replace(
+        "pm2_root=/Users/agentops/.npm-global", f"pm2_root={npm_root}"
+    ).replace(
+        "pm2=/Users/agentops/.npm-global/lib/node_modules/pm2/bin/pm2",
+        f"pm2={fake_pm2}",
     ).replace(
         "config=/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/execution-worker.ecosystem.config.cjs",
         f"config={config}",
@@ -5094,6 +5114,28 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
     calls = log.read_text(encoding="utf-8")
     assert "start " + str(config) + " --only orbbec-agent-execution-worker --update-env" in calls
     assert "different-config" not in calls
+    assert (npm_bin / "pm2").is_symlink()
+
+    npm_root.chmod(0o770)
+    assert run("state").returncode == 1
+    npm_root.chmod(0o700)
+    external_pm2 = tmp_path / "external-pm2"
+    external_pm2.write_bytes(fake_pm2.read_bytes())
+    external_pm2.chmod(0o700)
+    fake_pm2.unlink()
+    fake_pm2.symlink_to(external_pm2)
+    assert run("state").returncode == 1
+
+
+def test_worker_pm2_uses_canonical_npm_package_executable() -> None:
+    source = WORKER_PM2.read_text(encoding="utf-8")
+
+    assert "pm2=/Users/agentops/.npm-global/lib/node_modules/pm2/bin/pm2" in source
+    assert "pm2=/Users/agentops/.npm-global/bin/pm2" not in source
+    assert "stat.S_ISREG" in source
+    assert "path.is_symlink()" in source
+    assert "metadata.st_uid != os.getuid()" in source
+    assert "stat.S_IMODE(metadata.st_mode) & 0o022" in source
 
 
 def test_worker_pm2_config_has_only_the_fixed_worker_runtime() -> None:

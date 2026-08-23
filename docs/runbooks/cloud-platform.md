@@ -160,6 +160,11 @@ The agentops release stage runs with `umask 077`, so the real Git archive
 extracts `worker-pm2.sh` as owner-only mode `0700` and the ecosystem config as
 owner-only mode `0600`. Stage, prepare, and the PM2 wrapper require those exact
 modes; group/other access or a mode mismatch fails before Worker mutation.
+The wrapper does not execute npm's standard `.npm-global/bin/pm2` symlink. It
+uses the fixed regular package executable at
+`.npm-global/lib/node_modules/pm2/bin/pm2` after verifying agentops ownership,
+execute permission, no symlink at the canonical file, and no group/other-write
+permission on its package ancestors.
 
 Create a private JSON acceptance config and four private browser-input files.
 The config, the member and owner Cookie header files, the HR acceptance prompt,

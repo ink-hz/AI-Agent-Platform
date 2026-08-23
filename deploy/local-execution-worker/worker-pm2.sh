@@ -8,9 +8,53 @@ cd /Users/agentops || fail
 
 name=orbbec-agent-execution-worker
 config=/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/execution-worker.ecosystem.config.cjs
-pm2=/Users/agentops/.npm-global/bin/pm2
+pm2_home=/Users/agentops
+pm2_root=/Users/agentops/.npm-global
+pm2=/Users/agentops/.npm-global/lib/node_modules/pm2/bin/pm2
 safe_path=/Users/agentops/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-[[ -x "$pm2" && ! -L "$pm2" && -x /usr/bin/jq ]] || fail
+
+secure_pm2() {
+  /usr/bin/python3 - "$pm2_home" "$pm2_root" "$pm2" <<'PY'
+import os
+from pathlib import Path
+import stat
+import sys
+
+home, root, executable = map(Path, sys.argv[1:])
+if root != home / ".npm-global" or executable != root / "lib/node_modules/pm2/bin/pm2":
+    raise SystemExit(1)
+directories = (
+    home,
+    root,
+    root / "bin",
+    root / "lib",
+    root / "lib/node_modules",
+    root / "lib/node_modules/pm2",
+    root / "lib/node_modules/pm2/bin",
+)
+for path in directories:
+    metadata = path.lstat()
+    if (
+        path.is_symlink()
+        or not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or stat.S_IMODE(metadata.st_mode) & 0o022
+    ):
+        raise SystemExit(1)
+metadata = executable.lstat()
+if (
+    executable.is_symlink()
+    or not stat.S_ISREG(metadata.st_mode)
+    or metadata.st_uid != os.getuid()
+    or stat.S_IMODE(metadata.st_mode) & 0o022
+    or not stat.S_IMODE(metadata.st_mode) & 0o100
+    or not 0 < metadata.st_size <= 1_048_576
+):
+    raise SystemExit(1)
+PY
+}
+
+[[ -x /usr/bin/jq ]] && secure_pm2 || fail
 
 fixed_config() {
   [[ -f "$config" && ! -L "$config" \
