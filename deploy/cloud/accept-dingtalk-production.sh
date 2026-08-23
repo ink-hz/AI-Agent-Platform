@@ -32,7 +32,7 @@ directory_id="$("${compose[@]}" ps -q platform-directory)"
 gender_probe_json="$(/usr/bin/docker exec "$directory_id" \
   python -m app.control_plane.gender_probe)" || fail
 /usr/bin/python3 -c \
-  'import json,sys; assert json.loads(sys.stdin.read()).get("ready") is True' \
+  'import json,sys; sys.exit(0 if json.loads(sys.stdin.read()).get("ready") is True else 1)' \
   <<<"$gender_probe_json" || fail
 unset gender_probe_json
 
@@ -43,7 +43,6 @@ for service in platform-postgres platform-api platform-loopback platform-directo
 done
 
 postgres_id="$("${compose[@]}" ps -q platform-postgres)"
-[[ "$OWNER_BOOTSTRAP" == "0" || "$OWNER_BOOTSTRAP" == "1" ]] || fail
 directory_gate_sql="$(/bin/cat <<'SQL'
 WITH active_generation AS (
   SELECT state.active_generation_id, state.last_complete_at,
@@ -74,17 +73,13 @@ directory_gates="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
   "$directory_gate_sql")" || fail
 IFS=: read -r owner_count fresh_generation_count heartbeat_count \
   active_gender_count valid_gender_count null_invalid_gender_count <<<"$directory_gates"
-expected_owner_count="1"
-if [[ "$OWNER_BOOTSTRAP" == "1" ]]; then
-  expected_owner_count="0"
-fi
 [[ "$owner_count" =~ ^[0-9]+$ \
   && "$fresh_generation_count" =~ ^[0-9]+$ \
   && "$heartbeat_count" =~ ^[0-9]+$ \
   && "$active_gender_count" =~ ^[0-9]+$ \
   && "$valid_gender_count" =~ ^[0-9]+$ \
   && "$null_invalid_gender_count" =~ ^[0-9]+$ \
-  && "$owner_count" == "$expected_owner_count" \
+  && "$owner_count" == "1" \
   && "$fresh_generation_count" == "1" \
   && "$heartbeat_count" == "1" \
   && "$active_gender_count" -gt 0 \
@@ -117,7 +112,7 @@ trap cleanup EXIT
 /usr/bin/curl --noproxy '*' -fsS --max-time 8 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 \
   https://agent.orbbec.com.cn/api/health |
-  /usr/bin/python3 -c 'import json,sys; assert json.load(sys.stdin)=={"status":"ok"}' || fail
+  /usr/bin/python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)=={"status":"ok"} else 1)' || fail
 
 /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Fxq '127.0.0.1:8080' || fail
 ! /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Eq '^(0\.0\.0\.0|\[::\]):(8080|5432)$' || fail

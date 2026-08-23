@@ -49,7 +49,7 @@ directory_id="$("${compose[@]}" ps -q platform-directory)"
 gender_probe_json="$(/usr/bin/docker exec "$directory_id" \
   python -m app.control_plane.gender_probe)" || fail
 /usr/bin/python3 -c \
-  'import json,sys; assert json.loads(sys.stdin.read()).get("ready") is True' \
+  'import json,sys; sys.exit(0 if json.loads(sys.stdin.read()).get("ready") is True else 1)' \
   <<<"$gender_probe_json" || fail
 unset gender_probe_json
 
@@ -151,7 +151,7 @@ done
 /usr/bin/curl --noproxy '*' -fsS --max-time 4 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 \
   https://agent.orbbec.com.cn/api/health |
-  /usr/bin/python3 -c 'import json,sys; assert json.load(sys.stdin)=={"status":"ok"}' || fail
+  /usr/bin/python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)=={"status":"ok"} else 1)' || fail
 [[ "$fae_id" == "$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)" ]] || fail
 [[ "$fae_started_at" == "$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)" ]] || fail
 /bin/mv -f "$state_path.part" "$state_path"

@@ -69,7 +69,7 @@ test -n "$directory_id" || exit 1
 test "$(docker inspect --format '{{.State.Health.Status}}' "$directory_id")" = healthy || exit 1
 gender_probe_json="$(docker exec "$directory_id" python -m app.control_plane.gender_probe)" || exit 1
 python3 -c \
-  'import json,sys; assert json.loads(sys.stdin.read()).get("ready") is True' \
+  'import json,sys; sys.exit(0 if json.loads(sys.stdin.read()).get("ready") is True else 1)' \
   <<<"$gender_probe_json" || exit 1
 unset gender_probe_json
 ```
@@ -88,6 +88,12 @@ aggregate `active:valid:null_invalid`, and the null/invalid count is zero. The
 acceptance script rechecks the same single snapshot after cutover. Acceptance evidence must contain only fixed
 aggregate counts/status. It must not contain employee names, gender values,
 provider identifiers, mobile numbers, ciphertext, raw rows, or provider payloads.
+
+The pre-cutover bootstrap may have zero active owners only when publish is
+invoked with the explicit `--allow-unbound-owner` flag. After the documented
+owner-binding step, formal post-cutover acceptance requires exactly one active
+owner; the bootstrap flag recorded in cutover state does not relax formal
+acceptance.
 
 After the probe and complete schema-v2 reconciliation pass, verify the
 directory/event heartbeat. Bind the sole owner with the exact private DingTalk

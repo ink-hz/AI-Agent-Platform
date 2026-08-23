@@ -1,6 +1,11 @@
+import os
 import re
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -87,6 +92,243 @@ def _assert_single_snapshot_directory_gate(script: str) -> None:
     positions = [final_select.find(component) for component in components]
     assert all(position >= 0 for position in positions)
     assert positions == sorted(positions), "all six gates must feed the final aggregate"
+
+
+def _write_executable(path: Path, body: str) -> Path:
+    path.write_text(textwrap.dedent(body).lstrip(), encoding="utf-8")
+    path.chmod(0o700)
+    return path
+
+
+def _run_release_harness(
+    tmp_path: Path,
+    script_name: str,
+    *,
+    probe_json: str = '{"ready":true}',
+    probe_status: int = 0,
+    directory_gates: str,
+    owner_bootstrap: bool = False,
+    python_optimize: bool = False,
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir(parents=True)
+    harness_log = tmp_path / "harness.log"
+    platform_root = tmp_path / "opt" / "orbbec-agent-platform"
+    release = platform_root / "releases" / ("a" * 40)
+    previous = platform_root / "releases" / ("b" * 40)
+    private = platform_root / "private"
+    nginx_available = tmp_path / "etc" / "nginx" / "sites-available" / "agent-domain.conf"
+    nginx_enabled = tmp_path / "etc" / "nginx" / "sites-enabled" / "agent-domain.conf"
+    backup_root = tmp_path / "root" / "nginx-backups"
+    for path in (
+        release / "deploy" / "cloud",
+        previous / "deploy" / "cloud",
+        private,
+        nginx_available.parent,
+        nginx_enabled.parent,
+        backup_root,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+    (private / "platform.env").write_text("SAFE_TEST=1\n", encoding="utf-8")
+    for root in (release, previous):
+        (root / "deploy" / "cloud" / "compose.yaml").write_text(
+            "services: {}\n", encoding="utf-8"
+        )
+    (release / "PREVIOUS_RELEASE").write_text(str(previous) + "\n", encoding="utf-8")
+    (release / "PREVIOUS_PLATFORM_ENV").write_text("safe\n", encoding="utf-8")
+    (release / "deploy" / "cloud" / "dingtalk_nginx_transaction.py").write_text(
+        "from pathlib import Path\nimport sys\nPath(sys.argv[2]).write_text(Path(sys.argv[1]).read_text())\n",
+        encoding="utf-8",
+    )
+    nginx_available.write_text(
+        "proxy_read_timeout 360s;\n"
+        "proxy_set_header X-Forwarded-For $remote_addr;\n"
+        "platform-identity-mode\n",
+        encoding="utf-8",
+    )
+    current = platform_root / "current"
+    current.symlink_to(release)
+    (private / "dingtalk-production-cutover").write_text(
+        "\n".join(
+            (
+                f"BACKUP_PATH={backup_root / 'prior'}",
+                f"RELEASE_PATH={release}",
+                f"PREVIOUS_RELEASE={previous}",
+                f"PREVIOUS_ENVIRONMENT={release / 'PREVIOUS_PLATFORM_ENV'}",
+                "FAE_ID=fae-id",
+                "FAE_STARTED_AT=fae-start",
+                f"OWNER_BOOTSTRAP={1 if owner_bootstrap else 0}",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    (private / "dingtalk-production-cutover").chmod(0o600)
+
+    fake_docker = _write_executable(
+        fake_bin / "docker",
+        r"""
+        #!/bin/bash
+        joined=" $* "
+        if [[ "$joined" == *" compose "*" ps -q "* ]]; then
+          echo "${!#}-id"
+        elif [[ "$joined" == *"{{.Id}}"* ]]; then
+          echo "fae-id"
+        elif [[ "$joined" == *"{{.State.StartedAt}}"* ]]; then
+          echo "fae-start"
+        elif [[ "$joined" == *"{{range .Config.Env}}"* ]]; then
+          echo "PLATFORM_IDENTITY_MODE=production"
+        elif [[ "$joined" == *"{{.State.Health.Status}}"* || "$joined" == *"{{if .State.Health}}"* ]]; then
+          echo "healthy"
+        elif [[ "$joined" == *" app.control_plane.gender_probe "* ]]; then
+          printf '%s\n' "$HARNESS_PROBE_JSON"
+          exit "$HARNESS_PROBE_STATUS"
+        elif [[ "$joined" == *" psql "* ]]; then
+          printf '%s\n' "$HARNESS_DIRECTORY_GATES"
+        else
+          exit 97
+        fi
+        """,
+    )
+    fake_id = _write_executable(fake_bin / "id", "#!/bin/bash\necho 0\n")
+    fake_date = _write_executable(
+        fake_bin / "date", "#!/bin/bash\necho 20260823T000000Z\n"
+    )
+    fake_readlink = _write_executable(
+        fake_bin / "readlink", '#!/bin/bash\necho "$HARNESS_RELEASE"\n'
+    )
+    fake_stat = _write_executable(
+        fake_bin / "stat", "#!/bin/bash\necho '600 root'\n"
+    )
+    fake_install = _write_executable(
+        fake_bin / "install",
+        r"""
+        #!/bin/bash
+        if [[ "$1" == "-d" ]]; then
+          /bin/mkdir -p "${!#}"
+          exit 0
+        fi
+        target="${!#}"
+        source="${@: -2:1}"
+        /bin/mkdir -p "$(/usr/bin/dirname "$target")"
+        /bin/cp "$source" "$target"
+        if [[ "$target" == *"sites-available"* ]]; then
+          echo nginx_write >> "$HARNESS_LOG"
+        fi
+        """,
+    )
+    fake_printf = _write_executable(
+        fake_bin / "printf",
+        r"""
+        #!/bin/bash
+        shift
+        printf 'BACKUP_PATH=%s\nRELEASE_PATH=%s\nPREVIOUS_RELEASE=%s\nPREVIOUS_ENVIRONMENT=%s\nFAE_ID=%s\nFAE_STARTED_AT=%s\nOWNER_BOOTSTRAP=%s\n' "$@"
+        """,
+    )
+    fake_noop = _write_executable(fake_bin / "noop", "#!/bin/bash\nexit 0\n")
+    fake_nginx = _write_executable(
+        fake_bin / "nginx", '#!/bin/bash\necho nginx >> "$HARNESS_LOG"\n'
+    )
+    fake_systemctl = _write_executable(
+        fake_bin / "systemctl", '#!/bin/bash\necho systemctl >> "$HARNESS_LOG"\n'
+    )
+    fake_ss = _write_executable(
+        fake_bin / "ss", "#!/bin/bash\necho 'LISTEN 0 128 127.0.0.1:8080'\n"
+    )
+    fake_curl = _write_executable(
+        fake_bin / "curl",
+        r"""
+        #!/bin/bash
+        headers=""
+        output=""
+        write_code=0
+        url=""
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            -D) headers="$2"; shift 2 ;;
+            -o) output="$2"; shift 2 ;;
+            -w) write_code=1; shift 2 ;;
+            http*) url="$1"; shift ;;
+            *) shift ;;
+          esac
+        done
+        code=200
+        body='platform-identity-mode'
+        if [[ "$url" == */api/v1/account ]]; then
+          code=401
+          body=''
+        elif [[ "$url" == */api/health ]]; then
+          body='{"status":"ok"}'
+        elif [[ "$url" == */ ]]; then
+          code=302
+        fi
+        if [[ -n "$headers" ]]; then
+          printf 'HTTP/1.1 %s OK\r\nlocation: /login\r\n\r\n' "$code" > "$headers"
+        fi
+        if [[ -n "$output" && "$output" != /dev/null ]]; then
+          printf '%s' "$body" > "$output"
+        elif [[ -z "$output" ]]; then
+          printf '%s' "$body"
+        fi
+        if [[ "$write_code" == 1 ]]; then
+          printf '%s' "$code"
+        fi
+        """,
+    )
+
+    script = (CLOUD / script_name).read_text(encoding="utf-8")
+    replacements = {
+        "/opt/orbbec-agent-platform": str(platform_root),
+        "/etc/nginx/sites-available/agent-domain.conf": str(nginx_available),
+        "/etc/nginx/sites-enabled/agent-domain.conf": str(nginx_enabled),
+        "/root/nginx-backups": str(backup_root),
+        "/usr/bin/id": str(fake_id),
+        "/usr/bin/docker": str(fake_docker),
+        "/usr/bin/python3": sys.executable,
+        "/usr/bin/date": str(fake_date),
+        "/usr/bin/readlink": str(fake_readlink),
+        "/usr/bin/stat": str(fake_stat),
+        "/usr/bin/install": str(fake_install),
+        "/usr/bin/printf": str(fake_printf),
+        "/usr/bin/curl": str(fake_curl),
+        "/usr/bin/ss": str(fake_ss),
+        "/usr/bin/openssl": str(fake_noop),
+        "/usr/sbin/nginx": str(fake_nginx),
+        "/bin/systemctl": str(fake_systemctl),
+        "/bin/chown": str(fake_noop),
+        "/bin/chmod": str(fake_noop),
+        "/bin/sleep": str(fake_noop),
+    }
+    for source, target in replacements.items():
+        script = script.replace(source, target)
+    harness_script = _write_executable(tmp_path / script_name, script)
+    environment = {
+        **os.environ,
+        "HARNESS_LOG": str(harness_log),
+        "HARNESS_PROBE_JSON": probe_json,
+        "HARNESS_PROBE_STATUS": str(probe_status),
+        "HARNESS_DIRECTORY_GATES": directory_gates,
+        "HARNESS_RELEASE": str(release),
+    }
+    if python_optimize:
+        environment["PYTHONOPTIMIZE"] = "1"
+    arguments = [str(harness_script)]
+    if script_name == "publish-dingtalk-production.sh":
+        arguments.append(str(release))
+        if owner_bootstrap:
+            arguments.append("--allow-unbound-owner")
+        (private / "dingtalk-production-cutover").unlink()
+    result = subprocess.run(
+        arguments,
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    log = harness_log.read_text(encoding="utf-8") if harness_log.exists() else ""
+    return result, log
 
 
 def test_production_compose_runs_identity_and_least_privilege_workers():
@@ -332,7 +574,8 @@ def test_release_owner_count_mapping_preserves_the_explicit_bootstrap_stage():
     )
 
     _assert_owner_count_mapping(publish, "owner_bootstrap")
-    _assert_owner_count_mapping(acceptance, "OWNER_BOOTSTRAP")
+    assert 'expected_owner_count="0"' not in acceptance
+    assert '"$owner_count" == "1"' in acceptance
 
 
 def test_release_directory_gate_is_one_six_component_snapshot():
@@ -355,7 +598,7 @@ def test_publish_gates_cutover_on_the_running_directory_container_before_nginx_c
     assert 'gender_probe_json="$(/usr/bin/docker exec "$directory_id"' in script
     assert "python -m app.control_plane.gender_probe" in script
     assert 'python -m app.control_plane.gender_probe)" || fail' in script
-    assert 'json.loads(sys.stdin.read()).get("ready") is True' in script
+    assert 'sys.exit(0 if json.loads(sys.stdin.read()).get("ready") is True else 1)' in script
     assert '<<<"$gender_probe_json" || fail' in script
     assert script.index("python -m app.control_plane.gender_probe") < script.index(
         '/usr/bin/install -o root -g root -m 644 "$rendered"'
@@ -370,6 +613,56 @@ def test_publish_gates_cutover_on_the_running_directory_container_before_nginx_c
     assert 'echo "$gender_probe_json"' not in script
 
 
+@pytest.mark.parametrize(
+    ("probe_json", "probe_status", "directory_gates", "python_optimize"),
+    [
+        ('{"ready":true}', 1, "0:1:1:3:3:0", False),
+        ('{"ready":false}', 0, "0:1:1:3:3:0", True),
+        ('{"ready":true}', 0, "0:0:1:3:3:0", False),
+    ],
+)
+def test_executable_publish_harness_fails_before_nginx_for_every_gate_failure(
+    tmp_path, probe_json, probe_status, directory_gates, python_optimize
+):
+    result, log = _run_release_harness(
+        tmp_path,
+        "publish-dingtalk-production.sh",
+        probe_json=probe_json,
+        probe_status=probe_status,
+        directory_gates=directory_gates,
+        owner_bootstrap=True,
+        python_optimize=python_optimize,
+    )
+
+    assert result.returncode != 0
+    assert result.stderr == "DINGTALK_PRODUCTION_PUBLISH_FAILED\n"
+    assert "nginx_write" not in log
+    assert "nginx" not in log
+    assert "systemctl" not in log
+
+
+def test_executable_harness_allows_zero_owner_publish_then_requires_one_owner_acceptance(
+    tmp_path,
+):
+    publish_result, _ = _run_release_harness(
+        tmp_path / "publish",
+        "publish-dingtalk-production.sh",
+        directory_gates="0:1:1:3:3:0",
+        owner_bootstrap=True,
+    )
+    acceptance_result, _ = _run_release_harness(
+        tmp_path / "accept",
+        "accept-dingtalk-production.sh",
+        directory_gates="1:1:1:3:3:0",
+        owner_bootstrap=True,
+    )
+
+    assert publish_result.returncode == 0, publish_result.stderr
+    assert publish_result.stdout == "DINGTALK_PRODUCTION_OWNER_LOGIN_REQUIRED\n"
+    assert acceptance_result.returncode == 0, acceptance_result.stderr
+    assert acceptance_result.stdout.startswith("DINGTALK_PRODUCTION_ACCEPTANCE_OK ")
+
+
 def test_publish_and_accept_recheck_one_snapshot_of_all_directory_release_gates():
     publish = (CLOUD / "publish-dingtalk-production.sh").read_text(encoding="utf-8")
     acceptance = (CLOUD / "accept-dingtalk-production.sh").read_text(
@@ -382,6 +675,7 @@ def test_publish_and_accept_recheck_one_snapshot_of_all_directory_release_gates(
         assert 'gender_probe_json="$(/usr/bin/docker exec "$directory_id"' in script
         assert 'python -m app.control_plane.gender_probe)" || fail' in script
         assert '<<<"$gender_probe_json" || fail' in script
+        assert "assert json." not in script
         _assert_no_directory_compose_run(script)
         _assert_single_snapshot_directory_gate(script)
         assert script.count('/usr/bin/docker exec "$postgres_id" psql') == 1
@@ -415,9 +709,8 @@ def test_publish_and_accept_recheck_one_snapshot_of_all_directory_release_gates(
         ):
             assert forbidden not in script
 
-    assert '[[ "$OWNER_BOOTSTRAP" == "0" || "$OWNER_BOOTSTRAP" == "1" ]]' in acceptance
     _assert_owner_count_mapping(publish, "owner_bootstrap")
-    _assert_owner_count_mapping(acceptance, "OWNER_BOOTSTRAP")
+    assert '"$owner_count" == "1"' in acceptance
 
 
 def test_release_runbooks_use_candidate_probe_and_one_snapshot_release_gate():
@@ -441,6 +734,17 @@ def test_release_runbooks_use_candidate_probe_and_one_snapshot_release_gate():
             "run --rm --no-deps platform-directory "
             "python -m app.control_plane.gender_probe"
         ) not in " ".join(text.split())
+    normalized_cloud = " ".join(cloud.split())
+    normalized_acceptance = " ".join(acceptance.split())
+    assert "pre-cutover bootstrap may have zero active owners" in normalized_cloud
+    assert (
+        "formal post-cutover acceptance requires exactly one active owner"
+        in normalized_cloud
+    )
+    assert (
+        "formal post-cutover acceptance requires exactly one active owner"
+        in normalized_acceptance
+    )
 
 
 def test_release_runbooks_require_platform_first_gender_gates_and_reverse_rollback():

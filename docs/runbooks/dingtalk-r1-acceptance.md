@@ -20,7 +20,7 @@ test -n "$directory_id" || exit 1
 test "$(docker inspect --format '{{.State.Health.Status}}' "$directory_id")" = healthy || exit 1
 gender_probe_json="$(docker exec "$directory_id" python -m app.control_plane.gender_probe)" || exit 1
 python3 -c \
-  'import json,sys; assert json.loads(sys.stdin.read()).get("ready") is True' \
+  'import json,sys; sys.exit(0 if json.loads(sys.stdin.read()).get("ready") is True else 1)' \
   <<<"$gender_probe_json" || exit 1
 unset gender_probe_json
 ```
@@ -39,6 +39,11 @@ aggregate `active:valid:null_invalid`, and the null/invalid count is zero. Post-
 through `docker exec`. Evidence contains only fixed aggregate counts/status,
 never employee names, gender values, provider identifiers, mobile numbers,
 ciphertext, raw rows, or provider payloads.
+
+The pre-cutover bootstrap may have zero active owners only during the explicit
+unbound-owner publish stage. After owner binding, formal post-cutover acceptance
+requires exactly one active owner; a recorded bootstrap state never permits
+zero owners during this formal acceptance.
 
 Only after this reconciliation may Platform publish/cutover and the
 authenticated account proof run. Deploy the AI ADMIN strict consumer last.
