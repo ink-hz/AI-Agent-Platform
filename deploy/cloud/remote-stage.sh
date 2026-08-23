@@ -496,6 +496,15 @@ postgres_container="$("${compose[@]}" ps -q platform-postgres)"
 control_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-control-db.sh" \
   "$release_path" "$private_path" "$image_name" "$postgres_container")" || fail
 [[ "$control_bootstrap_result" == "CONTROL_DATABASE_CREDENTIALS_READY version=2" ]] || fail
+conversation_backfill_result="$(/usr/bin/docker run --rm --user 0:0 --read-only \
+  --security-opt no-new-privileges:true \
+  --network orbbec-agent-platform-internal \
+  --tmpfs /tmp:rw,noexec,nosuid,size=8m \
+  -v "$private_path:/run/control-secrets:ro" \
+  -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url \
+  -e PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE=/run/control-secrets/content-encryption-keyring \
+  "$image_name" python -m app.agent_brain.conversation_backfill)" || fail
+[[ "$conversation_backfill_result" =~ ^AGENT_BRAIN_CONVERSATION_BACKFILL_OK\ scanned=[0-9]+\ created=[0-9]+\ quarantined=0$ ]] || fail
 worker_bootstrap_result="$(/usr/bin/docker run --rm --user 0:0 --read-only \
   --security-opt no-new-privileges:true \
   --network orbbec-agent-platform-internal \

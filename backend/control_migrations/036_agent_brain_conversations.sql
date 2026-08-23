@@ -177,17 +177,20 @@ from public;
 do $migration$
 declare
   selected_app text;
+  selected_maintenance text;
   role_name text;
 begin
   case current_user
-    when 'platform_control_owner' then selected_app := 'platform_control_app';
+    when 'platform_control_owner' then
+      selected_app := 'platform_control_app';
+      selected_maintenance := 'platform_control_maintenance';
     when 'platform_control_owner_preview' then
       selected_app := 'platform_control_app_preview';
+      selected_maintenance := 'platform_control_maintenance_preview';
     else
       raise insufficient_privilege using
         message = 'control migration must run as an approved owner role';
   end case;
-
   foreach role_name in array array[
     'platform_control_migrator',
     'platform_control_app',
@@ -233,6 +236,21 @@ begin
     'grant update (assistant_message_id,mission_id,status,updated_at) '
     'on platform_control.conversation_turns to %I',
     selected_app
+  );
+  execute format(
+    'grant select on platform_control.missions, '
+    'platform_control.mission_messages, platform_control.mission_events, '
+    'platform_control.conversations, platform_control.conversation_messages, '
+    'platform_control.conversation_turns to %I', selected_maintenance
+  );
+  execute format(
+    'grant insert on platform_control.conversations, '
+    'platform_control.conversation_messages, '
+    'platform_control.conversation_turns to %I', selected_maintenance
+  );
+  execute format(
+    'grant update (conversation_id,turn_id,triggering_message_id) '
+    'on platform_control.missions to %I', selected_maintenance
   );
 end
 $migration$;

@@ -167,18 +167,37 @@ available until every dependency is ready, and execute the following order
 without skipping or combining a gate:
 
 1. migrations with Brain disabled;
-2. local `agent-brain-bot` on `127.0.0.1:9110`;
-3. Worker allowlist and key registration;
-4. cloud image with Brain disabled;
-5. relay canary;
-6. enable Brain;
-7. switch `/` from the management entry to Agent 大脑.
+2. deterministic legacy Mission-to-Conversation backfill with zero quarantine;
+3. local `agent-brain-bot` on `127.0.0.1:9110`;
+4. Worker allowlist and key registration;
+5. cloud image with Brain disabled;
+6. relay canary;
+7. enable Brain;
+8. switch `/` from the management entry to Agent 大脑.
 
 The cloud environment flag is `PLATFORM_AGENT_BRAIN_ENABLED`. It is absent or
 `0` during migration, image and relay validation. The authenticated root then
 redirects to `/admin`; only an explicit value of `1` enables Mission APIs and
 the use root. The relay remains separately controlled by
 `PLATFORM_EXECUTION_RELAY_ENABLED=1`.
+
+The cloud stage runs `python -m app.agent_brain.conversation_backfill` after
+control migrations and before any control-plane consumer starts. It uses only
+the maintenance DSN and the content-encryption keyring, locks legacy rows in
+bounded `FOR UPDATE SKIP LOCKED` batches, and never rewrites Mission content.
+Each legacy Mission receives deterministic Conversation, Message, and Turn
+identifiers; rerunning after a committed batch creates no duplicate history.
+The release proceeds only when the command prints exactly:
+
+```text
+AGENT_BRAIN_CONVERSATION_BACKFILL_OK scanned=<n> created=<n> quarantined=0
+```
+
+Any non-zero quarantine or non-exact output fails staging while Brain remains
+disabled. Investigate the protected source row and content-key configuration;
+do not delete the Mission, fabricate ownership from a name, or enable Brain to
+work around the gate. Compatibility rollback disables the Conversation entry
+but retains both the original Mission and its additive Conversation links.
 
 Provision the local Worker from Neo's reviewed checkout before creating the
 acceptance inputs:
