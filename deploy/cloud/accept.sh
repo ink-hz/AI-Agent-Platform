@@ -80,7 +80,7 @@ run_agentops() {
   /usr/bin/sudo -n -u agentops /usr/bin/env -i \
     HOME=/Users/agentops USER=agentops LOGNAME=agentops \
     PATH=/Users/agentops/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
-    "$@"
+    /bin/sh -c 'cd /Users/agentops && exec "$@"' sh "$@"
 }
 
 action_lock_token=""

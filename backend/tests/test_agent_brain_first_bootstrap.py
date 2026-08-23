@@ -653,6 +653,7 @@ def test_local_provisioning_wrapper_has_narrow_hba_transaction_and_fixed_sudo() 
     assert " archive --format=tar" in source and "release_sha" in source
     assert '"$metabot_release_sha:scripts/reliability/sanitized-pm2.sh"' in source
     assert "HOME=/Users/agentops" in source
+    assert "/bin/sh -c 'cd /Users/agentops && exec \"$@\"' sh \"$@\"" in source
     assert '-p 5432 -U neo' in source
     assert "current_setting('port')" in source
     assert '"$agentops_helper" finalize' in source
@@ -725,6 +726,7 @@ def test_real_host_agentops_account_socket_home_and_launchd_domain() -> None:
         "/usr/bin/sudo", "-n", "-u", "agentops", "/usr/bin/env", "-i",
         "HOME=/Users/agentops", "USER=agentops", "LOGNAME=agentops",
         "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+        "/bin/sh", "-c", 'cd /Users/agentops && exec "$@"', "sh",
     ]
     account = subprocess.run(
         [*base, "/usr/bin/printenv", "HOME"],
@@ -743,9 +745,23 @@ def test_real_host_agentops_account_socket_home_and_launchd_domain() -> None:
         text=True,
         capture_output=True,
     )
+    working_directory = subprocess.run(
+        [*base, "/bin/pwd", "-P"],
+        text=True,
+        capture_output=True,
+    )
+    argv_probe = "literal; exit 91"
+    argv_safety = subprocess.run(
+        [*base, "/usr/bin/printf", "%s", argv_probe],
+        text=True,
+        capture_output=True,
+    )
     assert account.returncode == 0 and account.stdout.strip() == "/Users/agentops"
     assert identity.returncode == 0 and identity.stdout.strip() == "agentops"
     assert launchd.returncode == 0, launchd.stderr
+    assert working_directory.returncode == 0
+    assert working_directory.stdout.strip() == "/Users/agentops"
+    assert argv_safety.returncode == 0 and argv_safety.stdout == argv_probe
 
 
 def _provision_harness(
@@ -836,6 +852,9 @@ def _provision_harness(
     copied = local / "provision.sh"
     source = PROVISION.read_text(encoding="utf-8")
     source = source.replace('"$(/usr/bin/id -un)" == "neo"', f'"$(/usr/bin/id -un)" == "{current_user}"')
+    source = source.replace(
+        "cd /Users/agentops && exec", f"cd {shlex.quote(str(tmp_path))} && exec"
+    )
     source = source.replace(
         "psql_bin=/opt/homebrew/opt/postgresql@17/bin/psql", f"psql_bin={fake_psql}"
     ).replace(
@@ -1359,6 +1378,7 @@ def test_acceptance_coordinator_keeps_cloud_key_neo_owned_and_commands_fixed() -
     assert "/usr/bin/sudo -n -u agentops" in source
     assert "sudo -n -u agentops /bin/bash -c" not in source
     assert "sudo -n -u agentops /bin/zsh -c" not in source
+    assert "/bin/sh -c 'cd /Users/agentops && exec \"$@\"' sh \"$@\"" in source
     assert "cp " + "/Users/neo/.ssh/orbbec_aliyun_ed25519" not in source
     assert "order by created_at desc" in source
     assert "order by activated_at" not in source

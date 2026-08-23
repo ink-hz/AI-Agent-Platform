@@ -20,7 +20,7 @@ finalize_state="$hba_lock/finalize-state"
 run_agentops() {
   /usr/bin/sudo -n -u agentops /usr/bin/env -i \
     HOME=/Users/agentops USER=agentops LOGNAME=agentops PATH="$agentops_path" \
-    "$@"
+    /bin/sh -c 'cd /Users/agentops && exec "$@"' sh "$@"
 }
 
 install_agentops_tool() {
