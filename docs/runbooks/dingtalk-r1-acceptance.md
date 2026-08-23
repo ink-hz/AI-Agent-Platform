@@ -72,9 +72,9 @@ On the cloud host, after owner binding and publication:
 ```
 
 The automated acceptance requires all five Platform services healthy, the
-required owner state (one active owner, or zero only during the explicit
-owner-bootstrap stage), a completed schema-v2 directory generation newer than eight
-hours, aggregate valid gender coverage for every active member, a recent
+formal post-cutover owner state of exactly one active owner, a completed
+schema-v2 directory generation newer than eight hours, aggregate valid gender
+coverage for every active member, a recent
 healthy directory-event heartbeat, a public login shell without shared Basic Auth,
 unauthenticated account rejection, preserved independent `/admin`
 authentication, private port 8080, no public PostgreSQL, a valid certificate,

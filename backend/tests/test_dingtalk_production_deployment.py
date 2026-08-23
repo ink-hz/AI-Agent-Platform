@@ -106,13 +106,14 @@ def _run_release_harness(
     *,
     probe_json: str = '{"ready":true}',
     probe_status: int = 0,
-    directory_gates: str,
+    directory_gates: str | None,
     owner_bootstrap: bool = False,
     python_optimize: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(parents=True)
     harness_log = tmp_path / "harness.log"
+    owner_count_path = tmp_path / "owner-count"
     platform_root = tmp_path / "opt" / "orbbec-agent-platform"
     release = platform_root / "releases" / ("a" * 40)
     previous = platform_root / "releases" / ("b" * 40)
@@ -130,6 +131,18 @@ def _run_release_harness(
     ):
         path.mkdir(parents=True, exist_ok=True)
     (private / "platform.env").write_text("SAFE_TEST=1\n", encoding="utf-8")
+    owner_count_path.write_text("0\n", encoding="utf-8")
+    for name in (
+        "dingtalk-owner-userid",
+        "dingtalk-corp-id",
+        "control-migrator-database-url",
+        "control-audit-database-url",
+        "identity-encryption-keyring",
+        "identity-hmac-keyring",
+        "owner-receipt-keyring",
+    ):
+        (private / name).write_text("safe-test-value\n", encoding="utf-8")
+        (private / name).chmod(0o600)
     for root in (release, previous):
         (root / "deploy" / "cloud" / "compose.yaml").write_text(
             "services: {}\n", encoding="utf-8"
@@ -178,13 +191,26 @@ def _run_release_harness(
           echo "fae-start"
         elif [[ "$joined" == *"{{range .Config.Env}}"* ]]; then
           echo "PLATFORM_IDENTITY_MODE=production"
+        elif [[ "$joined" == *"{{.Config.Image}}"* ]]; then
+          echo "orbbec-agent-platform:test"
         elif [[ "$joined" == *"{{.State.Health.Status}}"* || "$joined" == *"{{if .State.Health}}"* ]]; then
           echo "healthy"
         elif [[ "$joined" == *" app.control_plane.gender_probe "* ]]; then
           printf '%s\n' "$HARNESS_PROBE_JSON"
           exit "$HARNESS_PROBE_STATUS"
         elif [[ "$joined" == *" psql "* ]]; then
-          printf '%s\n' "$HARNESS_DIRECTORY_GATES"
+          if [[ -n "$HARNESS_DIRECTORY_GATES" ]]; then
+            printf '%s\n' "$HARNESS_DIRECTORY_GATES"
+          else
+            printf '%s:1:1:3:3:0\n' "$(/bin/cat "$HARNESS_OWNER_COUNT")"
+          fi
+        elif [[ "$joined" == *" show-directory-generation "* ]]; then
+          printf '%s\n' '{"status":"ok","generation":{"status":"complete","is_active":true,"generation_id":"00000000-0000-0000-0000-000000000001"}}'
+        elif [[ "$joined" == *" bind-owner "*" --confirm "* ]]; then
+          printf '1\n' > "$HARNESS_OWNER_COUNT"
+          printf '%s\n' '{"status":"ok","operation":"bind"}'
+        elif [[ "$joined" == *" bind-owner "* ]]; then
+          printf '%s\n' '{"status":"dry_run","receipt_created":true}'
         else
           exit 97
         fi
@@ -307,7 +333,8 @@ def _run_release_harness(
         "HARNESS_LOG": str(harness_log),
         "HARNESS_PROBE_JSON": probe_json,
         "HARNESS_PROBE_STATUS": str(probe_status),
-        "HARNESS_DIRECTORY_GATES": directory_gates,
+        "HARNESS_DIRECTORY_GATES": directory_gates or "",
+        "HARNESS_OWNER_COUNT": str(owner_count_path),
         "HARNESS_RELEASE": str(release),
     }
     if python_optimize:
@@ -329,6 +356,89 @@ def _run_release_harness(
     )
     log = harness_log.read_text(encoding="utf-8") if harness_log.exists() else ""
     return result, log
+
+
+class _StatefulReleaseHarness:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def run_publish_bootstrap(self) -> subprocess.CompletedProcess[str]:
+        result, _ = _run_release_harness(
+            self.root,
+            "publish-dingtalk-production.sh",
+            directory_gates=None,
+            owner_bootstrap=True,
+        )
+        return result
+
+    def run_acceptance(self) -> subprocess.CompletedProcess[str]:
+        return self._run_prepared("accept-dingtalk-production.sh")
+
+    def run_owner_bind(self) -> subprocess.CompletedProcess[str]:
+        return self._run_prepared(
+            "bind-production-owner.sh",
+            "operator_a",
+            "operator_b",
+            "BACKUP_REF",
+            "INCIDENT_REF",
+        )
+
+    def _run_prepared(
+        self, script_name: str, *arguments: str
+    ) -> subprocess.CompletedProcess[str]:
+        fake_bin = self.root / "bin"
+        platform_root = self.root / "opt" / "orbbec-agent-platform"
+        release = platform_root / "releases" / ("a" * 40)
+        nginx_available = (
+            self.root / "etc" / "nginx" / "sites-available" / "agent-domain.conf"
+        )
+        nginx_enabled = (
+            self.root / "etc" / "nginx" / "sites-enabled" / "agent-domain.conf"
+        )
+        replacements = {
+            "/opt/orbbec-agent-platform": str(platform_root),
+            "/etc/nginx/sites-available/agent-domain.conf": str(nginx_available),
+            "/etc/nginx/sites-enabled/agent-domain.conf": str(nginx_enabled),
+            "/root/nginx-backups": str(self.root / "root" / "nginx-backups"),
+            "/usr/bin/id": str(fake_bin / "id"),
+            "/usr/bin/docker": str(fake_bin / "docker"),
+            "/usr/bin/python3": sys.executable,
+            "/usr/bin/date": str(fake_bin / "date"),
+            "/usr/bin/readlink": str(fake_bin / "readlink"),
+            "/usr/bin/stat": str(fake_bin / "stat"),
+            "/usr/bin/install": str(fake_bin / "install"),
+            "/usr/bin/printf": str(fake_bin / "printf"),
+            "/usr/bin/curl": str(fake_bin / "curl"),
+            "/usr/bin/ss": str(fake_bin / "ss"),
+            "/usr/bin/openssl": str(fake_bin / "noop"),
+            "/usr/sbin/nginx": str(fake_bin / "nginx"),
+            "/bin/systemctl": str(fake_bin / "systemctl"),
+            "/bin/chown": str(fake_bin / "noop"),
+            "/bin/chmod": str(fake_bin / "noop"),
+            "/bin/sleep": str(fake_bin / "noop"),
+        }
+        script = (CLOUD / script_name).read_text(encoding="utf-8")
+        for source, target in replacements.items():
+            script = script.replace(source, target)
+        executable = _write_executable(self.root / script_name, script)
+        environment = {
+            **os.environ,
+            "HARNESS_LOG": str(self.root / "harness.log"),
+            "HARNESS_PROBE_JSON": '{"ready":true}',
+            "HARNESS_PROBE_STATUS": "0",
+            "HARNESS_DIRECTORY_GATES": "",
+            "HARNESS_OWNER_COUNT": str(self.root / "owner-count"),
+            "HARNESS_RELEASE": str(release),
+        }
+        return subprocess.run(
+            [str(executable), *arguments],
+            cwd=self.root,
+            env=environment,
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
 
 
 def test_production_compose_runs_identity_and_least_privilege_workers():
@@ -644,23 +754,29 @@ def test_executable_publish_harness_fails_before_nginx_for_every_gate_failure(
 def test_executable_harness_allows_zero_owner_publish_then_requires_one_owner_acceptance(
     tmp_path,
 ):
-    publish_result, _ = _run_release_harness(
-        tmp_path / "publish",
-        "publish-dingtalk-production.sh",
-        directory_gates="0:1:1:3:3:0",
-        owner_bootstrap=True,
+    harness = _StatefulReleaseHarness(tmp_path)
+
+    publish_result = harness.run_publish_bootstrap()
+    acceptance_before_bind = harness.run_acceptance()
+    owner_count_before_bind = (tmp_path / "owner-count").read_text(
+        encoding="utf-8"
     )
-    acceptance_result, _ = _run_release_harness(
-        tmp_path / "accept",
-        "accept-dingtalk-production.sh",
-        directory_gates="1:1:1:3:3:0",
-        owner_bootstrap=True,
+    bind_result = harness.run_owner_bind()
+    owner_count_after_bind = (tmp_path / "owner-count").read_text(
+        encoding="utf-8"
     )
+    acceptance_after_bind = harness.run_acceptance()
 
     assert publish_result.returncode == 0, publish_result.stderr
     assert publish_result.stdout == "DINGTALK_PRODUCTION_OWNER_LOGIN_REQUIRED\n"
-    assert acceptance_result.returncode == 0, acceptance_result.stderr
-    assert acceptance_result.stdout.startswith("DINGTALK_PRODUCTION_ACCEPTANCE_OK ")
+    assert acceptance_before_bind.returncode != 0
+    assert acceptance_before_bind.stderr == "DINGTALK_PRODUCTION_ACCEPTANCE_FAILED\n"
+    assert owner_count_before_bind == "0\n"
+    assert bind_result.returncode == 0, bind_result.stderr
+    assert bind_result.stdout == "PRODUCTION_OWNER_BINDING_OK owner_binding=1\n"
+    assert owner_count_after_bind == "1\n"
+    assert acceptance_after_bind.returncode == 0, acceptance_after_bind.stderr
+    assert acceptance_after_bind.stdout.startswith("DINGTALK_PRODUCTION_ACCEPTANCE_OK ")
 
 
 def test_publish_and_accept_recheck_one_snapshot_of_all_directory_release_gates():
@@ -744,6 +860,10 @@ def test_release_runbooks_use_candidate_probe_and_one_snapshot_release_gate():
     assert (
         "formal post-cutover acceptance requires exactly one active owner"
         in normalized_acceptance
+    )
+    assert (
+        "one active owner, or zero only during the explicit owner-bootstrap stage"
+        not in normalized_acceptance
     )
 
 

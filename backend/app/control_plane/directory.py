@@ -20,6 +20,7 @@ from .dingtalk import (
     DingTalkGender,
     DingTalkMember,
     hydrate_authoritative_members,
+    member_identity_snapshot,
 )
 from .directory_limits import (
     DIRECTORY_FETCH_CONCURRENCY,
@@ -372,7 +373,11 @@ class DirectoryReconciler:
                     member.gender_attribute_status,
                 )
                 previous = members.get(member.userid)
-                if previous is not None and previous != normalized:
+                if (
+                    previous is not None
+                    and member_identity_snapshot(previous)
+                    != member_identity_snapshot(normalized)
+                ):
                     raise DirectoryReconciliationError("member_conflict")
                 other_userid = union_owners.get(member.unionid)
                 if other_userid is not None and other_userid != member.userid:

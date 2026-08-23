@@ -189,15 +189,14 @@ async def test_conflicting_duplicate_user_is_rejected_before_database_write() ->
 
 
 @pytest.mark.asyncio
-async def test_conflicting_duplicate_member_gender_is_rejected_before_database_write() -> None:
-    from app.control_plane.directory import DirectoryReconciliationError
-
+async def test_duplicate_list_gender_is_ignored_in_favor_of_one_authoritative_detail() -> None:
+    client = FakeClient(gender_conflict=True)
     repository = FakeRepository()
-    with pytest.raises(DirectoryReconciliationError, match="member_conflict"):
-        await _reconciler(
-            FakeClient(gender_conflict=True), repository
-        ).run_full()
-    assert repository.calls == []
+
+    result = await _reconciler(client, repository).run_full()
+
+    assert repository.staged[result.generation_id]["members"][0].gender == "female"
+    assert client.detail_calls == Counter({"u-1": 1})
 
 
 @pytest.mark.asyncio
