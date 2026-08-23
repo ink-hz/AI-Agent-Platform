@@ -5035,21 +5035,26 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
     state = tmp_path / "state"
     start_phase = tmp_path / "start-phase"
     readiness_counter = tmp_path / "readiness-counter"
+    jlist_delay = tmp_path / "jlist-delay"
     log = tmp_path / "calls"
     config = tmp_path / "execution-worker.ecosystem.config.cjs"
     copied = tmp_path / "worker-pm2.sh"
     state.write_text("absent", encoding="utf-8")
     start_phase.write_text("online", encoding="utf-8")
     readiness_counter.write_text("0", encoding="utf-8")
+    jlist_delay.write_text("", encoding="utf-8")
     config.write_text("module.exports = {};\n", encoding="utf-8")
     config.chmod(0o600)
     fake_pm2.write_text(
         "#!/bin/bash\nset -euo pipefail\n"
         f"state={str(state)!r}\nstart_phase={str(start_phase)!r}\n"
-        f"readiness_counter={str(readiness_counter)!r}\nlog={str(log)!r}\n"
+        f"readiness_counter={str(readiness_counter)!r}\n"
+        f"jlist_delay={str(jlist_delay)!r}\nlog={str(log)!r}\n"
         "echo \"$*\" >> \"$log\"\n"
         "case \"$1\" in\n"
         "  jlist)\n"
+        "    if [[ -s \"$jlist_delay\" ]]; then delay=\"$(<\"$jlist_delay\")\"; "
+        "printf '' > \"$jlist_delay\"; /bin/sleep \"$delay\"; fi\n"
         "    if [[ \"$(<\"$state\")\" == launching ]]; then "
         "count=\"$(<\"$readiness_counter\")\"; count=$((count + 1)); "
         "printf '%s' \"$count\" > \"$readiness_counter\"; "
@@ -5142,6 +5147,9 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
     assert run("restore", "online").returncode == 0
     assert run("state").stdout.strip() == "online"
     start_phase.write_text("waiting restart", encoding="utf-8")
+    assert run("restore", "online").returncode == 1
+    start_phase.write_text("online", encoding="utf-8")
+    jlist_delay.write_text("1.1", encoding="utf-8")
     assert run("restore", "online").returncode == 1
     start_phase.write_text("online", encoding="utf-8")
     assert run("start", "different-config").returncode == 1

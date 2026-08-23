@@ -120,9 +120,9 @@ wait_until_online() {
       else error("invalid worker readiness") end
     ' <<<"$restore_readiness")" || return 1
     [[ "$restore_phase" != failed ]] || return 1
-    [[ "$restore_phase" != online ]] || return 0
     restore_now="$(/bin/date +%s)" || return 1
     [[ "$restore_now" =~ ^[0-9]+$ && "$restore_now" -lt "$restore_deadline" ]] || return 1
+    [[ "$restore_phase" != online ]] || return 0
     /bin/sleep "$restore_interval_seconds"
   done
 }
