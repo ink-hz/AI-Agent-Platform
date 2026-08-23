@@ -1287,6 +1287,41 @@ def test_agentops_stage_retries_after_interrupted_venv_without_mutable_worktree(
     assert private_sentinel.read_text(encoding="utf-8") == "private\n"
     assert not (runtime / ".platform.previous-release").exists()
 
+    cleanup_failure = tmp_path / "provision-agentops-cleanup-failure.sh"
+    cleanup_failure_source = source.replace(
+        '      safe_remove_tree "$previous" || fail',
+        '      /bin/rm -f -- "$previous/committed-release.txt"\n'
+        '      false # injected partial old-tree cleanup failure',
+        1,
+    )
+    cleanup_failure.write_text(cleanup_failure_source, encoding="utf-8")
+    cleanup_failure.chmod(0o700)
+    cleanup_failed = subprocess.run(
+        [
+            "/bin/bash", str(cleanup_failure), "stage", interrupted_sha,
+            interrupted_archive_sha,
+        ],
+        input=interrupted_raw,
+        capture_output=True,
+    )
+    assert cleanup_failed.returncode != 0
+    assert (platform / "committed-release.txt").read_bytes() == b"must-roll-back\n"
+    assert (runtime / ".platform.previous-release").is_dir()
+    assert private_sentinel.read_text(encoding="utf-8") == "private\n"
+
+    cleanup_retry = subprocess.run(
+        [
+            "/bin/bash", str(copied), "stage", interrupted_sha,
+            interrupted_archive_sha,
+        ],
+        input=interrupted_raw,
+        capture_output=True,
+    )
+    assert cleanup_retry.returncode == 0, cleanup_retry.stderr.decode()
+    assert (platform / "committed-release.txt").read_bytes() == b"must-roll-back\n"
+    assert not (runtime / ".platform.previous-release").exists()
+    assert private_sentinel.read_text(encoding="utf-8") == "private\n"
+
 
 def _agentops_install_harness(
     tmp_path: Path, failure: str

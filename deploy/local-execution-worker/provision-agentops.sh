@@ -245,8 +245,12 @@ PY
     fi
     /bin/rm -f -- "$archive"
     if [[ "$old_moved" == 1 ]]; then
-      safe_remove_tree "$previous" || fail
+      # The new tree is fully validated. From this point the old tree may become
+      # partially deleted and must never again be treated as a rollback source.
       old_moved=0
+      new_published=0
+      stage_complete=1
+      safe_remove_tree "$previous" || fail
     fi
     stage_complete=1
     trap - ERR EXIT
