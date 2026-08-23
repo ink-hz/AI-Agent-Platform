@@ -1177,19 +1177,22 @@ def test_agentops_stage_retries_after_interrupted_venv_without_mutable_worktree(
     current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
     runtime = tmp_path / "runtime"
     runtime.mkdir(mode=0o700)
+    def build_release_archive(content: bytes) -> tuple[bytes, str]:
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as archive:
+            for name, raw in (
+                ("backend/requirements.txt", b""),
+                ("committed-release.txt", content),
+            ):
+                info = tarfile.TarInfo(name)
+                info.size = len(raw)
+                info.mode = 0o600
+                archive.addfile(info, io.BytesIO(raw))
+        raw = buffer.getvalue()
+        return raw, hashlib.sha256(raw).hexdigest()
+
     release_sha = "a" * 40
-    archive_buffer = io.BytesIO()
-    with tarfile.open(fileobj=archive_buffer, mode="w") as archive:
-        for name, raw in (
-            ("backend/requirements.txt", b""),
-            ("committed-release.txt", b"reviewed-commit\n"),
-        ):
-            info = tarfile.TarInfo(name)
-            info.size = len(raw)
-            info.mode = 0o600
-            archive.addfile(info, io.BytesIO(raw))
-    archive_raw = archive_buffer.getvalue()
-    archive_sha = hashlib.sha256(archive_raw).hexdigest()
+    archive_raw, archive_sha = build_release_archive(b"reviewed-commit\n")
 
     stale = runtime / f".platform.first-bootstrap.{release_sha}"
     stale.mkdir()
@@ -1226,10 +1229,10 @@ def test_agentops_stage_retries_after_interrupted_venv_without_mutable_worktree(
     first = subprocess.run(command, input=archive_raw, capture_output=True)
 
     platform = runtime / "platform"
-    venv_stage = platform / "backend" / f".venv.first-bootstrap.{release_sha}"
+    venv_stage = stale / "backend/.venv"
     staged_archive = runtime / f".platform-release.{release_sha}.tar"
     assert first.returncode != 0
-    assert (platform / "committed-release.txt").read_bytes() == b"reviewed-commit\n"
+    assert not platform.exists()
     assert not stale.exists() and not venv_stage.exists() and not staged_archive.exists()
 
     second = subprocess.run(command, input=archive_raw, capture_output=True)
@@ -1239,6 +1242,50 @@ def test_agentops_stage_retries_after_interrupted_venv_without_mutable_worktree(
     assert (platform / "committed-release.txt").read_bytes() == b"reviewed-commit\n"
     assert (platform / "backend/.venv/.orbbec-release").read_text().strip() == release_sha
     assert not stale.exists() and not venv_stage.exists() and not staged_archive.exists()
+
+    private_sentinel = runtime / "private/never-switch-this"
+    private_sentinel.write_text("private\n", encoding="utf-8")
+    upgraded_sha = "b" * 40
+    upgraded_raw, upgraded_archive_sha = build_release_archive(b"reviewed-upgrade\n")
+    upgraded_command = [
+        "/bin/bash", str(copied), "stage", upgraded_sha, upgraded_archive_sha,
+    ]
+    upgraded = subprocess.run(upgraded_command, input=upgraded_raw, capture_output=True)
+    assert upgraded.returncode == 0, upgraded.stderr.decode()
+    assert (platform / "committed-release.txt").read_bytes() == b"reviewed-upgrade\n"
+    assert (platform / "backend/.venv/.orbbec-release").read_text().strip() == upgraded_sha
+    assert private_sentinel.read_text(encoding="utf-8") == "private\n"
+    assert not (runtime / ".platform.previous-release").exists()
+
+    replay = subprocess.run(upgraded_command, input=upgraded_raw, capture_output=True)
+    assert replay.returncode == 0, replay.stderr.decode()
+    assert (platform / "committed-release.txt").read_bytes() == b"reviewed-upgrade\n"
+
+    interrupted = tmp_path / "provision-agentops-interrupted.sh"
+    interrupted_source = source.replace(
+        "      new_published=1\n      venv=",
+        "      new_published=1\n      false # injected interruption after publish\n      venv=",
+        1,
+    )
+    interrupted.write_text(interrupted_source, encoding="utf-8")
+    interrupted.chmod(0o700)
+    interrupted_sha = "c" * 40
+    interrupted_raw, interrupted_archive_sha = build_release_archive(
+        b"must-roll-back\n"
+    )
+    interrupted_result = subprocess.run(
+        [
+            "/bin/bash", str(interrupted), "stage", interrupted_sha,
+            interrupted_archive_sha,
+        ],
+        input=interrupted_raw,
+        capture_output=True,
+    )
+    assert interrupted_result.returncode != 0
+    assert (platform / "committed-release.txt").read_bytes() == b"reviewed-upgrade\n"
+    assert (platform / "backend/.venv/.orbbec-release").read_text().strip() == upgraded_sha
+    assert private_sentinel.read_text(encoding="utf-8") == "private\n"
+    assert not (runtime / ".platform.previous-release").exists()
 
 
 def _agentops_install_harness(

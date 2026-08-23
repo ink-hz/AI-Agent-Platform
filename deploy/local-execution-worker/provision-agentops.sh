@@ -139,20 +139,28 @@ case "$action" in
     /bin/chmod 700 "$runtime" "$private" "$log" "$deploy_tools"
     stage="$runtime/.platform.first-bootstrap.$release_sha"
     archive="$runtime/.platform-release.$release_sha.tar"
-    venv_stage="$platform/backend/.venv.first-bootstrap.$release_sha"
+    previous="$runtime/.platform.previous-release"
+    venv_stage="$stage/backend/.venv"
     stage_complete=0
+    old_moved=0
+    new_published=0
     stage_exit() {
       stage_status="$?"; trap - ERR EXIT
       if [[ "$stage_complete" != 1 ]]; then
+        if [[ "$new_published" == 1 && -d "$platform" && ! -L "$platform" ]]; then
+          safe_remove_tree "$platform" >/dev/null 2>&1 || stage_status=1
+        fi
+        if [[ "$old_moved" == 1 && -d "$previous" && ! -L "$previous" \
+          && ! -e "$platform" && ! -L "$platform" ]]; then
+          /bin/mv "$previous" "$platform" >/dev/null 2>&1 || stage_status=1
+        fi
         safe_remove_tree "$stage" >/dev/null 2>&1 || stage_status=1
-        safe_remove_tree "$venv_stage" >/dev/null 2>&1 || stage_status=1
         /bin/rm -f -- "$archive" || stage_status=1
       fi
       exit "$stage_status"
     }
     trap stage_exit ERR EXIT
     safe_remove_tree "$stage" || fail
-    if [[ -d "$venv_stage" && ! -L "$venv_stage" ]]; then safe_remove_tree "$venv_stage" || fail; fi
     /bin/rm -f -- "$archive"
     /usr/bin/python3 -c '
 import hashlib,os,pathlib,stat,sys
@@ -186,40 +194,60 @@ marker=stage/".platform-release.json"
 marker.write_text(json.dumps({"schema_version":1,"release_sha":release,"archive_sha256":archive},sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
 os.chmod(marker,0o600)
 PY
-    if [[ ! -e "$platform" && ! -L "$platform" ]]; then
-      /bin/mv "$stage" "$platform"
-    else
-      [[ -d "$platform" && ! -L "$platform" ]] || fail
-      /usr/bin/cmp -s "$stage/.platform-release.json" "$platform/.platform-release.json" || fail
+    if [[ -d "$previous" && ! -L "$previous" ]]; then
+      if [[ -d "$platform" && ! -L "$platform" ]] && \
+         /usr/bin/cmp -s "$stage/.platform-release.json" "$platform/.platform-release.json"; then
+        old_moved=1
+        new_published=1
+      elif [[ ! -e "$platform" && ! -L "$platform" ]]; then
+        /bin/mv "$previous" "$platform" || fail
+      else
+        [[ -d "$platform" && ! -L "$platform" ]] || fail
+        safe_remove_tree "$platform" || fail
+        /bin/mv "$previous" "$platform" || fail
+      fi
+    elif [[ -e "$previous" || -L "$previous" ]]; then
+      fail
+    fi
+    if [[ -d "$platform" && ! -L "$platform" ]] && \
+       /usr/bin/cmp -s "$stage/.platform-release.json" "$platform/.platform-release.json"; then
       platform_delta="$(/usr/bin/rsync -rlpni --checksum --delete --omit-dir-times \
         --exclude .platform-release.json --exclude .venv --exclude __pycache__ \
         --exclude '*.pyc' --exclude .pytest_cache \
         "$stage/" "$platform/")" || fail
       [[ -z "$platform_delta" ]] || fail
       safe_remove_tree "$stage" || fail
-    fi
-    /bin/rm -f -- "$archive"
-    venv="$platform/backend/.venv"
-    venv_marker="$venv/.orbbec-release"
-    if [[ -d "$venv" && ! -L "$venv" ]]; then
-      if [[ ! -f "$venv_marker" || "$(<"$venv_marker")" != "$release_sha" ]]; then
-        safe_remove_tree "$venv" || fail
-      fi
-    elif [[ -e "$venv" || -L "$venv" ]]; then
-      fail
-    fi
-    if [[ ! -d "$venv" ]]; then
-      safe_remove_tree "$venv_stage" || fail
+      venv="$platform/backend/.venv"
+      venv_marker="$venv/.orbbec-release"
+      [[ -d "$venv" && ! -L "$venv" && -x "$venv/bin/python" \
+        && -f "$venv_marker" && "$(<"$venv_marker")" == "$release_sha" ]] || fail
+      "$venv/bin/python" -m pip check >/dev/null || fail
+    else
+      [[ ! -e "$platform" || ( -d "$platform" && ! -L "$platform" ) ]] || fail
       /opt/homebrew/bin/python3.11 -m venv "$venv_stage" || fail
       "$venv_stage/bin/python" -m pip install --disable-pip-version-check \
-        -r "$platform/backend/requirements.txt" >/dev/null || fail
+        -r "$stage/backend/requirements.txt" >/dev/null || fail
       "$venv_stage/bin/python" -m pip check >/dev/null || fail
       printf '%s\n' "$release_sha" > "$venv_stage/.orbbec-release"
       /bin/chmod 600 "$venv_stage/.orbbec-release"
-      /bin/mv "$venv_stage" "$venv"
+      [[ -x "$venv_stage/bin/python" && "$(<"$venv_stage/.orbbec-release")" == "$release_sha" ]] || fail
+      if [[ -d "$platform" && ! -L "$platform" ]]; then
+        [[ ! -e "$previous" && ! -L "$previous" ]] || fail
+        /bin/mv "$platform" "$previous" || fail
+        old_moved=1
+      fi
+      /bin/mv "$stage" "$platform" || fail
+      new_published=1
+      venv="$platform/backend/.venv"
+      venv_marker="$venv/.orbbec-release"
+      [[ -x "$venv/bin/python" && "$(<"$venv_marker")" == "$release_sha" ]] || fail
+      "$venv/bin/python" -m pip check >/dev/null || fail
     fi
-    [[ -x "$venv/bin/python" && "$(<"$venv_marker")" == "$release_sha" ]] || fail
-    "$venv/bin/python" -m pip check >/dev/null || fail
+    /bin/rm -f -- "$archive"
+    if [[ "$old_moved" == 1 ]]; then
+      safe_remove_tree "$previous" || fail
+      old_moved=0
+    fi
     stage_complete=1
     trap - ERR EXIT
     echo EXECUTION_WORKER_AGENTOPS_STAGED
