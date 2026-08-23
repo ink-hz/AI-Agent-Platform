@@ -343,6 +343,15 @@ else: os.close(fd)
       && "$(<"$receipt/committed")" == v1 ]] || fail
     echo EXECUTION_WORKER_AGENTOPS_COMMITTED
     ;;
+  commit-status)
+    [[ $# -eq 0 && -d "$receipt" && ! -L "$receipt" \
+      && "$(/usr/bin/stat -f '%Lp %Su' "$receipt")" == "700 agentops" \
+      && -f "$receipt/prepared" && ! -L "$receipt/prepared" \
+      && "$(<"$receipt/prepared")" == v1 \
+      && -f "$receipt/committed" && ! -L "$receipt/committed" \
+      && "$(<"$receipt/committed")" == v1 ]] || fail
+    echo EXECUTION_WORKER_AGENTOPS_COMMITTED
+    ;;
   finalize)
     [[ $# -eq 0 ]] || fail
     if [[ ! -e "$receipt" && ! -L "$receipt" ]]; then

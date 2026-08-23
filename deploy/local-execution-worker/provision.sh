@@ -14,10 +14,8 @@ agentops_runtime=/Users/agentops/AgentRuntime
 agentops_helper=/Users/agentops/AgentRuntime/deploy-tools/provision-agentops.sh
 agentops_pm2_tool=/Users/agentops/AgentRuntime/deploy-tools/reliability/sanitized-pm2.sh
 agentops_path=/Users/agentops/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-[[ -x "$git" && -x "$psql_bin" && -S "$psql_socket/.s.PGSQL.5432" ]] || fail
-[[ "$($psql_bin --version)" == psql\ \(PostgreSQL\)\ 17.* ]] || fail
-[[ "$($git -C "$repository" rev-parse --show-toplevel)" == "$repository" ]] || fail
-[[ "$($git -C "$metabot_repository" rev-parse --show-toplevel)" == "$metabot_repository" ]] || fail
+hba_lock=/Users/neo/FlywheelData/.agent-worker-hba.lock
+finalize_state="$hba_lock/finalize-state"
 
 run_agentops() {
   /usr/bin/sudo -n -u agentops /usr/bin/env -i \
@@ -41,8 +39,15 @@ if target.parent!=deploy_tools: directories.append(target.parent)
 for directory in directories:
  try: directory.mkdir(mode=0o700)
  except FileExistsError: pass
- meta=directory.lstat()
- if directory.is_symlink() or not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=os.getuid() or stat.S_IMODE(meta.st_mode)!=0o700: raise SystemExit(1)
+ meta=directory.lstat(); mode=stat.S_IMODE(meta.st_mode)
+ if directory.is_symlink() or not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=os.getuid() or mode&0o022: raise SystemExit(1)
+ if mode!=0o700:
+  directory_fd=os.open(directory,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))
+  try:
+   opened=os.fstat(directory_fd)
+   if not stat.S_ISDIR(opened.st_mode) or opened.st_uid!=os.getuid() or stat.S_IMODE(opened.st_mode)&0o022: raise SystemExit(1)
+   os.fchmod(directory_fd,0o700); os.fsync(directory_fd)
+  finally: os.close(directory_fd)
 if target.exists() or target.is_symlink():
  meta=target.lstat()
  if target.is_symlink() or not stat.S_ISREG(meta.st_mode) or meta.st_uid!=os.getuid(): raise SystemExit(1)
@@ -64,6 +69,62 @@ finally:
 ' "$target" "$expected" "$source" "$agentops_runtime" < "$source"
 }
 
+recover_committed_finalize() {
+  [[ -d "$hba_lock" && ! -L "$hba_lock" \
+    && "$(/usr/bin/stat -f '%Lp %Su' "$hba_lock")" == "700 neo" ]] || return 1
+  for recovery_file in finalize-state pg_hba.backup hba.expected platform-release.tar; do
+    recovery_path="$hba_lock/$recovery_file"
+    [[ -f "$recovery_path" && ! -L "$recovery_path" \
+      && "$(/usr/bin/stat -f '%Lp %Su' "$recovery_path")" == "600 neo" ]] || return 1
+  done
+  recovery_phase="$(<"$finalize_state")" || return 1
+  [[ "$recovery_phase" == prepared-v1 || "$recovery_phase" == committed-v1 ]] || return 1
+  if [[ "$recovery_phase" == prepared-v1 ]]; then
+    run_agentops "$agentops_helper" commit-status >/dev/null 2>&1 || return 1
+    write_finalize_state committed-v1 >/dev/null 2>&1 || return 1
+  fi
+  run_agentops "$agentops_helper" finalize >/dev/null 2>&1 || return 1
+  /bin/rm -f -- "$hba_lock/pg_hba.backup" "$hba_lock/hba.expected" \
+    "$hba_lock/platform-release.tar" "$finalize_state" || return 1
+  /bin/rmdir "$hba_lock" || return 1
+  echo EXECUTION_WORKER_PROVISION_OK
+}
+
+write_finalize_state() {
+  [[ $# -eq 1 && ( "$1" == prepared-v1 || "$1" == committed-v1 ) ]] || return 1
+  /usr/bin/python3 - "$hba_lock" "$finalize_state" "$1" <<'PY'
+import os,pathlib,stat,sys
+lock,target=map(pathlib.Path,sys.argv[1:3]); phase=sys.argv[3]; meta=lock.lstat()
+if lock.is_symlink() or not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=os.getuid() or stat.S_IMODE(meta.st_mode)!=0o700: raise SystemExit(1)
+if phase=="prepared-v1":
+ if target.exists() or target.is_symlink(): raise SystemExit(1)
+elif phase=="committed-v1":
+ if target.is_symlink() or not target.is_file() or target.read_text(encoding="ascii").strip()!="prepared-v1": raise SystemExit(1)
+else: raise SystemExit(1)
+part=lock/".finalize-state.part"
+fd=os.open(part,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),0o600)
+try:
+ view=memoryview((phase+"\n").encode("ascii"))
+ while view: view=view[os.write(fd,view):]
+ os.fsync(fd)
+finally: os.close(fd)
+os.replace(part,target)
+directory=os.open(lock,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))
+try: os.fsync(directory)
+finally: os.close(directory)
+PY
+}
+
+if [[ -e "$hba_lock" || -L "$hba_lock" ]]; then
+  recover_committed_finalize || fail
+  exit 0
+fi
+
+[[ -x "$git" && -x "$psql_bin" && -S "$psql_socket/.s.PGSQL.5432" ]] || fail
+[[ "$($psql_bin --version)" == psql\ \(PostgreSQL\)\ 17.* ]] || fail
+[[ "$($git -C "$repository" rev-parse --show-toplevel)" == "$repository" ]] || fail
+[[ "$($git -C "$metabot_repository" rev-parse --show-toplevel)" == "$metabot_repository" ]] || fail
+
 release_archive=""
 status_file=""
 helper_source=""
@@ -71,7 +132,6 @@ backup=""
 hba=""
 hba_dir=""
 hba_expected=""
-hba_lock=/Users/neo/FlywheelData/.agent-worker-hba.lock
 lock_acquired=0
 agentops_staged=0
 role_created=0
@@ -120,7 +180,8 @@ cleanup() {
   fi
 
   if [[ "$final_ok" == 1 && "$status" == 0 ]]; then
-    if ! run_agentops "$agentops_helper" commit >/dev/null 2>&1; then
+    if ! write_finalize_state prepared-v1 >/dev/null 2>&1 || \
+       ! run_agentops "$agentops_helper" commit >/dev/null 2>&1; then
       status=1
       final_ok=0
       run_agentops "$agentops_helper" rollback >/dev/null 2>&1 || status=1
@@ -130,6 +191,11 @@ cleanup() {
       fi
     else
       worker_committed=1
+      if ! write_finalize_state committed-v1 >/dev/null 2>&1; then
+        temp_password=""
+        echo EXECUTION_WORKER_FINALIZE_RETRY_REQUIRED >&2
+        exit 1
+      fi
     fi
   elif [[ "$agentops_staged" == 1 ]]; then
     run_agentops "$agentops_helper" cleanup >/dev/null 2>&1 || status=1
@@ -158,6 +224,7 @@ cleanup() {
   [[ -z "$status_file" || ! -e "$status_file" ]] || /bin/rm -f -- "$status_file" || status=1
   [[ -z "$helper_source" || ! -e "$helper_source" ]] || /bin/rm -f -- "$helper_source" || status=1
   [[ -z "$release_archive" || ! -e "$release_archive" ]] || /bin/rm -f -- "$release_archive" || status=1
+  [[ ! -e "$finalize_state" ]] || /bin/rm -f -- "$finalize_state" || status=1
   if [[ "$lock_acquired" == 1 ]]; then
     /bin/rmdir "$hba_lock" >/dev/null 2>&1 || status=1
   fi
@@ -212,8 +279,10 @@ install_agentops_tool "$agentops_pm2_tool" "$helper_sha" "$helper_source" || fai
 /bin/rm -f -- "$helper_source"
 helper_source=""
 
-release_archive="$(/usr/bin/mktemp /Users/neo/FlywheelData/.agent-platform-release.XXXXXX)" || fail
+release_archive="$hba_lock/platform-release.tar"
+[[ ! -e "$release_archive" && ! -L "$release_archive" ]] || fail
 $git -C "$repository" archive --format=tar "$release_sha" > "$release_archive" || fail
+/bin/chmod 600 "$release_archive"
 archive_sha="$(/usr/bin/shasum -a 256 "$release_archive" | /usr/bin/awk '{print $1}')"
 [[ "$archive_sha" =~ ^[0-9a-f]{64}$ ]] || fail
 run_agentops "$agentops_helper" stage "$release_sha" "$archive_sha" < "$release_archive" || fail
@@ -230,9 +299,10 @@ hba_dir="$(/usr/bin/dirname "$hba")"
 [[ -d "$hba_dir" && ! -L "$hba_dir" ]] || fail
 [[ "$("${psql_command[@]}" -XAt -v ON_ERROR_STOP=1 -d postgres -c \
   'select count(*) from pg_hba_file_rules where error is not null')" == 0 ]] || fail
-backup="$(/usr/bin/mktemp "$hba_dir/.pg_hba.agent-worker.XXXXXX")" || fail
+backup="$hba_lock/pg_hba.backup"
+[[ ! -e "$backup" && ! -L "$backup" ]] || fail
 /bin/cp -p "$hba" "$backup"; /bin/chmod 600 "$backup"
-hba_expected="$hba_dir/.pg_hba.agent-worker.expected"
+hba_expected="$hba_lock/hba.expected"
 [[ ! -e "$hba_expected" && ! -L "$hba_expected" ]] || fail
 managed_begin="# BEGIN ORBBEC AGENT EXECUTION WORKER"
 managed_end="# END ORBBEC AGENT EXECUTION WORKER"

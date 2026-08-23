@@ -755,6 +755,7 @@ def _provision_harness(
     fail_permanent_validate: bool = False,
     fail_helper_finalize: bool = False,
     unsafe_tool_parent: bool = False,
+    existing_deploy_tools_0755: bool = False,
     fail_stage: str = "",
     original: bytes = b"# user-owned header\nlocal all all trust\n",
 ):
@@ -818,7 +819,7 @@ def _provision_harness(
         " stage) /bin/cat >/dev/null; echo EXECUTION_WORKER_AGENTOPS_STAGED;;\n"
         " prepare) IFS= read -r secret; [[ \"$secret\" == postgresql://* ]]; [[ \"${FAKE_FAIL_STAGE:-}\" != prepare ]];;\n"
         f" install) {install_action};;\n"
-        " commit) :;;\n"
+        " commit) :;; commit-status) :;;\n"
         " finalize) if [[ \"$FAKE_HELPER_FINALIZE_FAIL\" == 1 && ! -e \"$FAKE_FINALIZE_MARKER\" ]]; then : > \"$FAKE_FINALIZE_MARKER\"; exit 75; fi;;\n"
         " rollback) :;; cleanup) :;; *) exit 72;; esac\n",
         encoding="utf-8",
@@ -858,8 +859,8 @@ def _provision_harness(
     ).replace("/usr/bin/sudo", str(fake_sudo))
     if fail_stage == "postrename":
         source = source.replace(
-            "try: os.fsync(directory)",
-            'try: raise OSError("injected post-rename failure")',
+            " os.replace(part,path); path_published=True; os.chmod(path,stat.S_IMODE(meta.st_mode))\n directory=os.open(path.parent,os.O_RDONLY|getattr(os,\"O_DIRECTORY\",0))\n try: os.fsync(directory)",
+            " os.replace(part,path); path_published=True; os.chmod(path,stat.S_IMODE(meta.st_mode))\n directory=os.open(path.parent,os.O_RDONLY|getattr(os,\"O_DIRECTORY\",0))\n try: raise OSError(\"injected post-rename failure\")",
             1,
         )
     if fail_stage == "permanent-prerename":
@@ -889,6 +890,9 @@ def _provision_harness(
         escape = tmp_path / "unsafe-tool-escape"
         escape.mkdir()
         (agentops_runtime / "deploy-tools").symlink_to(escape, target_is_directory=True)
+    elif existing_deploy_tools_0755:
+        agentops_runtime.mkdir(mode=0o700)
+        (agentops_runtime / "deploy-tools").mkdir(mode=0o755)
     result = subprocess.run(
         ["/bin/bash", str(copied)],
         text=True,
@@ -936,6 +940,16 @@ def test_local_provision_rejects_symlinked_agentops_deploy_tools_parent(
     assert hba.read_bytes() == original
     assert not any((tmp_path / "unsafe-tool-escape").iterdir())
     assert "helper:stage" not in log.read_text(encoding="utf-8")
+
+
+def test_local_provision_safely_tightens_owned_deploy_tools_0755(
+    tmp_path: Path,
+) -> None:
+    result, _hba, _original, _log = _provision_harness(
+        tmp_path, fail_install=False, existing_deploy_tools_0755=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "agentops-runtime/deploy-tools").stat().st_mode & 0o777 == 0o700
 
 
 def test_local_provision_preserves_non_managed_bytes_without_trailing_newline(
@@ -990,19 +1004,22 @@ def test_local_provision_helper_finalize_failure_retains_transaction_for_retry(
     calls = log.read_text(encoding="utf-8")
     assert "helper:commit" in calls and "helper:finalize" in calls
     assert "helper:rollback" not in calls and "helper:cleanup" not in calls
-    assert (tmp_path / "runtime-root/.agent-worker-hba.lock").is_dir()
-    assert list(tmp_path.glob(".pg_hba.agent-worker.*"))
-    assert list((tmp_path / "runtime-root").glob(".agent-platform-release.*"))
+    retry_lock = tmp_path / "runtime-root/.agent-worker-hba.lock"
+    assert retry_lock.is_dir()
+    for retained in ("finalize-state", "pg_hba.backup", "hba.expected", "platform-release.tar"):
+        assert (retry_lock / retained).is_file()
     retry = subprocess.run(
         [
             "/bin/bash",
-            str(tmp_path / "agentops-runtime/deploy-tools/provision-agentops.sh"),
-            "finalize",
+            str(tmp_path / "repo/deploy/local-execution-worker/provision.sh"),
         ],
         text=True,
         capture_output=True,
     )
     assert retry.returncode == 0, retry.stderr
+    assert "EXECUTION_WORKER_PROVISION_OK" in retry.stdout
+    assert not (tmp_path / "runtime-root/.agent-worker-hba.lock").exists()
+    assert not retry_lock.exists()
 
 
 @pytest.mark.parametrize(
@@ -1042,7 +1059,7 @@ def test_local_provision_preserves_backup_when_atomic_restore_is_impossible(
     )
     assert result.returncode != 0
     assert hba.is_symlink()
-    assert list(tmp_path.glob(".pg_hba.agent-worker.*"))
+    assert (tmp_path / "runtime-root/.agent-worker-hba.lock/pg_hba.backup").is_file()
     assert "EXECUTION_WORKER_HBA_BACKUP_PRESERVED" in result.stderr
     assert "drop-role" in log.read_text(encoding="utf-8")
 
@@ -1054,7 +1071,7 @@ def test_local_provision_never_overwrites_concurrent_hba_owner_edit(tmp_path: Pa
     assert result.returncode != 0
     assert hba.read_bytes().endswith(b"# concurrent owner edit\n")
     assert hba.read_bytes() != original
-    assert list(tmp_path.glob(".pg_hba.agent-worker.*"))
+    assert (tmp_path / "runtime-root/.agent-worker-hba.lock/pg_hba.backup").is_file()
     assert "EXECUTION_WORKER_HBA_BACKUP_PRESERVED" in result.stderr
     calls = log.read_text(encoding="utf-8")
     assert "helper:rollback" in calls and "drop-role" in calls
@@ -1303,6 +1320,13 @@ def test_agentops_commit_response_loss_can_rollback_then_finalize_is_idempotent(
     assert committed.returncode == 0, committed.stderr
     receipt = tmp_path / "runtime/private/worker-provision-receipt"
     assert (receipt / "committed").read_text(encoding="utf-8") == "v1\n"
+    status = subprocess.run(
+        ["/bin/bash", str(helper), "commit-status"],
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+    assert status.returncode == 0, status.stderr
 
     # A lost coordinator response must leave enough state for the caller to abort.
     rolled_back = subprocess.run(
