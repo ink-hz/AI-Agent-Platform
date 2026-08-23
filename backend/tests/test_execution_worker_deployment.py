@@ -724,6 +724,34 @@ def test_key_generator_writes_requested_worker_v2_identity(tmp_path: Path) -> No
     assert _mode(private) == _mode(public) == 0o600
 
 
+def test_key_generator_without_target_preserves_existing_worker_v2_identity(
+    tmp_path: Path,
+) -> None:
+    private_dir = tmp_path / "private"
+    public_dir = tmp_path / "public"
+    private_dir.mkdir(mode=0o700)
+    public_dir.mkdir(mode=0o700)
+    private = private_dir / "worker.key"
+    public = public_dir / "worker.json"
+    created = subprocess.run(
+        [sys.executable, str(GENERATOR), str(private), str(public), "worker-v2"],
+        text=True,
+        capture_output=True,
+    )
+    assert created.returncode == 0, created.stderr
+    original_private = private.read_bytes()
+
+    reinstalled = subprocess.run(
+        [sys.executable, str(GENERATOR), str(private), str(public)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert reinstalled.returncode == 0, reinstalled.stderr
+    assert private.read_bytes() == original_private
+    assert json.loads(public.read_text(encoding="utf-8"))["key_id"] == "worker-v2"
+
+
 def test_rotator_cleans_fixed_private_part_after_real_generator_sigkill(
     tmp_path: Path,
 ) -> None:
@@ -771,7 +799,9 @@ def test_key_generator_and_rotator_use_only_fixed_reserved_parts() -> None:
     assert 'f".{path.name}.part"' in rotator
 
 
-def _rotation_test_environment(tmp_path: Path, *, loaded: bool = True):
+def _rotation_test_environment(
+    tmp_path: Path, *, loaded: bool = True, worker_state: str | None = None
+):
     current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
     runtime = tmp_path / "AgentRuntime"
     private = runtime / "private"
@@ -802,7 +832,10 @@ def _rotation_test_environment(tmp_path: Path, *, loaded: bool = True):
     canonical_plist.chmod(0o600)
 
     launch_state = tmp_path / "launch-state"
-    launch_state.write_text("loaded" if loaded else "unloaded", encoding="utf-8")
+    launch_state.write_text(
+        worker_state if worker_state is not None else ("online" if loaded else "absent"),
+        encoding="utf-8",
+    )
     launch_fail = tmp_path / "launch-fail"
     launch_error = tmp_path / "launch-error"
     launch_log = tmp_path / "launch-log"
@@ -819,17 +852,17 @@ case "$1" in
         transient) printf 'Input/output error\n' >&2; exit 74 ;;
       esac
     fi
-    if [[ "$(<"$FAKE_LAUNCH_STATE")" == loaded ]]; then printf 'online\n'; else printf 'absent\n'; fi
+    printf '%s\n' "$(<"$FAKE_LAUNCH_STATE")"
     ;;
-  stop) printf unloaded > "$FAKE_LAUNCH_STATE" ;;
   restore)
-    [[ "$2" == online ]]
+    [[ "$2" == online || "$2" == stopped || "$2" == absent ]]
     if [[ -e "$FAKE_LAUNCH_FAIL" ]]; then
       /bin/rm -f -- "$FAKE_LAUNCH_FAIL"
       exit 71
     fi
-    printf loaded > "$FAKE_LAUNCH_STATE"
+    printf '%s' "$2" > "$FAKE_LAUNCH_STATE"
     ;;
+  save) ;;
   *) exit 72 ;;
 esac
 """,
@@ -916,7 +949,8 @@ def test_local_key_rotation_prepare_activate_finalize_is_consistent_and_atomic(
     activated = _run_rotation(paths, "activate")
     assert activated.returncode == 0, activated.stderr
     _assert_rotation_identity(paths, "worker-v2")
-    assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+    assert paths["launch_state"].read_text(encoding="utf-8") == "online"
+    assert "save" in paths["launch_log"].read_text(encoding="utf-8").splitlines()
     assert paths["managed"]["previous_private"].read_bytes() == original[
         "canonical_private"
     ]
@@ -954,7 +988,7 @@ def test_local_key_rotation_activation_failure_restores_exact_previous_state(
         name: paths[name].read_bytes()
         for name in ("canonical_private", "canonical_public", "canonical_plist")
     } == original
-    assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+    assert paths["launch_state"].read_text(encoding="utf-8") == "online"
     assert not any(paths["managed"][name].exists() for name in (
         "previous_private", "previous_public", "previous_plist", "state"
     ))
@@ -963,11 +997,13 @@ def test_local_key_rotation_activation_failure_restores_exact_previous_state(
     ))
 
 
-@pytest.mark.parametrize("loaded", [True, False], ids=["loaded", "unloaded"])
-def test_local_key_rotation_rollback_restores_previous_identity_and_loaded_state(
-    tmp_path: Path, loaded: bool
+@pytest.mark.parametrize(
+    "worker_state", ["online", "stopped", "absent"], ids=["online", "stopped", "absent"]
+)
+def test_local_key_rotation_rollback_restores_exact_previous_worker_state(
+    tmp_path: Path, worker_state: str
 ) -> None:
-    paths = _rotation_test_environment(tmp_path, loaded=loaded)
+    paths = _rotation_test_environment(tmp_path, worker_state=worker_state)
     original = {
         name: paths[name].read_bytes()
         for name in ("canonical_private", "canonical_public", "canonical_plist")
@@ -983,10 +1019,28 @@ def test_local_key_rotation_rollback_restores_previous_identity_and_loaded_state
         for name in ("canonical_private", "canonical_public", "canonical_plist")
     } == original
     _assert_rotation_identity(paths, "worker-v1")
-    assert paths["launch_state"].read_text(encoding="utf-8") == (
-        "loaded" if loaded else "unloaded"
-    )
+    assert paths["launch_state"].read_text(encoding="utf-8") == worker_state
+    assert paths["launch_log"].read_text(encoding="utf-8").splitlines()[-2:] == [
+        "save",
+        "state",
+    ]
     assert not any(path.exists() for path in paths["managed"].values())
+
+
+def test_local_key_rotation_rebuilds_stopped_worker_and_saves_new_definition(
+    tmp_path: Path,
+) -> None:
+    paths = _rotation_test_environment(tmp_path, worker_state="stopped")
+    assert _run_rotation(paths, "prepare").returncode == 0
+
+    activated = _run_rotation(paths, "activate")
+
+    assert activated.returncode == 0, activated.stderr
+    assert paths["launch_state"].read_text(encoding="utf-8") == "stopped"
+    calls = paths["launch_log"].read_text(encoding="utf-8").splitlines()
+    assert calls.count("restore stopped") == 2
+    assert calls[-2:] == ["save", "state"]
+    _assert_rotation_identity(paths, "worker-v2")
 
 
 def test_local_key_rotation_abort_removes_only_prepared_next_assets(
@@ -1111,7 +1165,7 @@ def test_remove_holds_rotation_lock_before_preflight_and_blocks_rotator(
         assert concurrent.stderr == "EXECUTION_WORKER_KEY_ROTATION_FAILED\n"
         assert _rotation_components(paths, "canonical") == original
         assert not any(path.exists() for path in paths["managed"].values())
-        assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+        assert paths["launch_state"].read_text(encoding="utf-8") == "online"
     finally:
         release.touch()
         _stdout, stderr = process.communicate(timeout=5)
@@ -1162,7 +1216,7 @@ def test_rotator_holds_rotation_lock_and_remove_performs_zero_preflight_or_mutat
         assert removed.stderr == "EXECUTION_WORKER_REMOVAL_FAILED\n"
         assert not psql_invoked.exists()
         assert _rotation_components(paths, "canonical") == original
-        assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+        assert paths["launch_state"].read_text(encoding="utf-8") == "online"
     finally:
         generator_release.touch()
         rotation.communicate(timeout=5)
@@ -1179,11 +1233,13 @@ def _rotation_components(paths, prefix: str) -> tuple[bytes, bytes, bytes]:
     return tuple(paths["managed"][name].read_bytes() for name in names)
 
 
-def _write_rotation_phase(paths, phase: str, was_loaded: bool | None) -> None:
+def _write_rotation_phase(
+    paths, phase: str, previous_worker_state: str | None
+) -> None:
     state_path = paths["managed"]["state"]
     state = json.loads(state_path.read_text(encoding="utf-8"))
     state["phase"] = phase
-    state["was_loaded"] = was_loaded
+    state["previous_worker_state"] = previous_worker_state
     state_path.write_text(
         json.dumps(state, sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
@@ -1203,7 +1259,7 @@ def test_local_key_rotation_new_process_rollback_recovers_every_durable_boundary
     original = _rotation_components(paths, "canonical")
     assert _run_rotation(paths, "prepare").returncode == 0
     staged = _rotation_components(paths, "next")
-    _write_rotation_phase(paths, "activating", True)
+    _write_rotation_phase(paths, "activating", "online")
     if replaced_components:
         for name, value in zip(
             ("previous_private", "previous_public", "previous_plist"),
@@ -1212,7 +1268,7 @@ def test_local_key_rotation_new_process_rollback_recovers_every_durable_boundary
         ):
             paths["managed"][name].write_bytes(value)
             paths["managed"][name].chmod(0o600)
-        paths["launch_state"].write_text("unloaded", encoding="utf-8")
+        paths["launch_state"].write_text("stopped", encoding="utf-8")
     for name, value in list(zip(
         ("canonical_private", "canonical_public", "canonical_plist"),
         staged,
@@ -1225,7 +1281,7 @@ def test_local_key_rotation_new_process_rollback_recovers_every_durable_boundary
 
     assert rolled_back.returncode == 0, rolled_back.stderr
     assert _rotation_components(paths, "canonical") == original
-    assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+    assert paths["launch_state"].read_text(encoding="utf-8") == "online"
     assert not any(path.exists() for path in paths["managed"].values())
 
 
@@ -1236,7 +1292,7 @@ def test_local_key_rotation_mixed_recovery_rejects_unjournaled_component(
     assert _run_rotation(paths, "prepare").returncode == 0
     original = _rotation_components(paths, "canonical")
     staged = _rotation_components(paths, "next")
-    _write_rotation_phase(paths, "activating", True)
+    _write_rotation_phase(paths, "activating", "online")
     for name, value in zip(
         ("previous_private", "previous_public", "previous_plist"),
         original,
@@ -1246,7 +1302,7 @@ def test_local_key_rotation_mixed_recovery_rejects_unjournaled_component(
         paths["managed"][name].chmod(0o600)
     paths["canonical_private"].write_bytes(staged[0])
     paths["canonical_public"].write_bytes(b"{}\n")
-    paths["launch_state"].write_text("unloaded", encoding="utf-8")
+    paths["launch_state"].write_text("stopped", encoding="utf-8")
     before = _rotation_components(paths, "canonical")
 
     rolled_back = _run_rotation(paths, "rollback")
@@ -1254,7 +1310,7 @@ def test_local_key_rotation_mixed_recovery_rejects_unjournaled_component(
     assert rolled_back.returncode == 1
     assert rolled_back.stderr == "EXECUTION_WORKER_KEY_ROTATION_FAILED\n"
     assert _rotation_components(paths, "canonical") == before
-    assert paths["launch_state"].read_text(encoding="utf-8") == "unloaded"
+    assert paths["launch_state"].read_text(encoding="utf-8") == "stopped"
 
 
 def test_local_key_rotation_corrupt_boundary_fails_before_creating_previous(
@@ -1262,7 +1318,7 @@ def test_local_key_rotation_corrupt_boundary_fails_before_creating_previous(
 ) -> None:
     paths = _rotation_test_environment(tmp_path, loaded=True)
     assert _run_rotation(paths, "prepare").returncode == 0
-    _write_rotation_phase(paths, "activating", True)
+    _write_rotation_phase(paths, "activating", "online")
     paths["canonical_public"].write_bytes(b"{}\n")
     paths["canonical_public"].chmod(0o600)
     before = {
@@ -1315,7 +1371,7 @@ def test_local_key_rotation_abort_and_finalize_cleanup_are_retryable(
     finalize_paths = _rotation_test_environment(tmp_path / "finalize")
     assert _run_rotation(finalize_paths, "prepare").returncode == 0
     assert _run_rotation(finalize_paths, "activate").returncode == 0
-    _write_rotation_phase(finalize_paths, "finalized", True)
+    _write_rotation_phase(finalize_paths, "finalized", "online")
     finalize_paths["managed"]["previous_private"].unlink()
     finalize_paths["managed"]["next_public"].unlink()
 
@@ -1366,7 +1422,7 @@ def test_local_key_rotation_launchctl_inspection_errors_fail_closed(
     assert activated.returncode == 1
     assert activated.stderr == "EXECUTION_WORKER_KEY_ROTATION_FAILED\n"
     assert _rotation_components(paths, "canonical") == original
-    assert paths["launch_state"].read_text(encoding="utf-8") == "loaded"
+    assert paths["launch_state"].read_text(encoding="utf-8") == "online"
     assert json.loads(paths["managed"]["state"].read_text())["phase"] == "prepared"
 
 
@@ -4806,6 +4862,9 @@ def test_installer_is_noninteractive_agentops_only_and_permission_gated() -> Non
     assert "launchctl" not in lowered
     assert "bootstrap-worker-database.sh" in script
     assert "generate-worker-key.py" in script
+    assert "execution-worker-public.json" in script
+    assert "plistlib" in script
+    assert '/bin/cp "$script_dir/execution-worker-key-binding.plist.template"' not in script
     assert "stat -f '%lp %su'" in lowered
     for forbidden in (
         "/usr/bin/security",

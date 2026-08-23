@@ -223,17 +223,19 @@ def _identity(
     return key_id, values
 
 
-def _loaded() -> bool:
+def _worker_state() -> str:
     result = subprocess.run(
         [str(SUPERVISOR), "state"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
-    if result.returncode == 0 and result.stdout == b"online\n":
-        return True
-    if result.returncode == 0 and result.stdout in {b"absent\n", b"stopped\n"}:
-        return False
+    if result.returncode == 0 and result.stdout in {
+        b"absent\n",
+        b"online\n",
+        b"stopped\n",
+    }:
+        return result.stdout.decode("ascii").strip()
     raise RotationError
 
 
@@ -246,11 +248,18 @@ def _supervise(arguments: list[str]) -> None:
     )
 
 
-def _set_loaded(desired: bool) -> None:
-    if _loaded():
-        _supervise(["stop"])
-    if desired:
-        _supervise(["restore", "online"])
+def _restore_worker_state(desired: str) -> None:
+    if desired not in {"absent", "online", "stopped"}:
+        raise RotationError
+    _supervise(["restore", desired])
+    if _worker_state() != desired:
+        raise RotationError
+
+
+def _save_worker_state(expected: str) -> None:
+    _supervise(["save"])
+    if _worker_state() != expected:
+        raise RotationError
 
 
 def _state() -> dict[str, object]:
@@ -262,13 +271,13 @@ def _state() -> dict[str, object]:
         "to_key_id",
         "previous_sha256",
         "next_sha256",
-        "was_loaded",
+        "previous_worker_state",
     }
     if (
         not isinstance(value, dict)
         or set(value) != expected_keys
         or type(value["schema_version"]) is not int
-        or value["schema_version"] != 2
+        or value["schema_version"] != 3
         or value["phase"] not in {
             "prepared",
             "activating",
@@ -296,9 +305,9 @@ def _state() -> dict[str, object]:
         ):
             raise RotationError
     if value["phase"] == "prepared":
-        if value["was_loaded"] is not None:
+        if value["previous_worker_state"] is not None:
             raise RotationError
-    elif not isinstance(value["was_loaded"], bool):
+    elif value["previous_worker_state"] not in {"absent", "online", "stopped"}:
         raise RotationError
     return value
 
@@ -441,13 +450,13 @@ def _prepare(target_key_id: str) -> None:
         if staged_key_id != target_key_id:
             raise RotationError
         state = {
-            "schema_version": 2,
+            "schema_version": 3,
             "phase": "prepared",
             "from_key_id": current_key_id,
             "to_key_id": target_key_id,
             "previous_sha256": _digests(current),
             "next_sha256": _digests(_staged),
-            "was_loaded": None,
+            "previous_worker_state": None,
         }
         _write_state(state)
     except Exception:
@@ -556,18 +565,20 @@ def _activate(target_key_id: str) -> None:
         NEXT_PATHS, target_key_id, value["next_sha256"]
     )
     _managed_absent(PREVIOUS_PATHS)
-    was_loaded = _loaded()
+    previous_worker_state = _worker_state()
     value["phase"] = "activating"
-    value["was_loaded"] = was_loaded
+    value["previous_worker_state"] = previous_worker_state
     _write_state(value)
     try:
         for path, component in zip(PREVIOUS_PATHS, current, strict=True):
             _atomic_write(path, component)
-        _set_loaded(False)
+        quiescent_state = "absent" if previous_worker_state == "absent" else "stopped"
+        _restore_worker_state(quiescent_state)
         for path, component in zip(CANONICAL_PATHS, staged, strict=True):
             _atomic_write(path, component)
         _validated_identity(CANONICAL_PATHS, target_key_id, value["next_sha256"])
-        _set_loaded(was_loaded)
+        _restore_worker_state(previous_worker_state)
+        _save_worker_state(previous_worker_state)
         value["phase"] = "active"
         _write_state(value)
     except Exception:
@@ -591,7 +602,11 @@ def _rollback(target_key_id: str) -> None:
         )
         _validate_remaining(PREVIOUS_PATHS, value["previous_sha256"])
         _validate_remaining(NEXT_PATHS, value["next_sha256"])
-        _set_loaded(bool(value["was_loaded"]))
+        previous_worker_state = value["previous_worker_state"]
+        if not isinstance(previous_worker_state, str):
+            raise RotationError
+        _restore_worker_state(previous_worker_state)
+        _save_worker_state(previous_worker_state)
         _cleanup_transaction(value)
         return
     staged = _validated_identity(NEXT_PATHS, target_key_id, value["next_sha256"])
@@ -608,13 +623,18 @@ def _rollback(target_key_id: str) -> None:
     for component, old, new in zip(canonical, previous, staged, strict=True):
         if component != old and component != new:
             raise RotationError
-    _set_loaded(False)
+    previous_worker_state = value["previous_worker_state"]
+    if not isinstance(previous_worker_state, str):
+        raise RotationError
+    quiescent_state = "absent" if previous_worker_state == "absent" else "stopped"
+    _restore_worker_state(quiescent_state)
     for path, component in zip(CANONICAL_PATHS, previous, strict=True):
         _atomic_write(path, component)
     _validated_identity(
         CANONICAL_PATHS, value["from_key_id"], value["previous_sha256"]
     )
-    _set_loaded(bool(value["was_loaded"]))
+    _restore_worker_state(previous_worker_state)
+    _save_worker_state(previous_worker_state)
     value["phase"] = "rolled_back"
     _write_state(value)
     _cleanup_transaction(value)

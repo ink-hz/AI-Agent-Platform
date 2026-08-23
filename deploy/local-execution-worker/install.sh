@@ -156,8 +156,58 @@ PY
 "$script_dir/bootstrap-worker-database.sh" "$owner_dsn_file" "$runtime_dsn"
 key_manifest_part="$key_manifest.part.$$"
 [[ ! -e "$key_manifest_part" && ! -L "$key_manifest_part" ]] || fail
-/bin/cp "$script_dir/execution-worker-key-binding.plist.template" "$key_manifest_part"
-/bin/chmod 600 "$key_manifest_part"
+"$platform_root/backend/.venv/bin/python" - \
+  "$public_document" \
+  "$script_dir/execution-worker-key-binding.plist.template" \
+  "$key_manifest_part" \
+  "$private_key" <<'PY' || fail
+import json
+import os
+from pathlib import Path
+import plistlib
+import re
+import sys
+
+public_path, template_path, output_path, private_key_path = map(Path, sys.argv[1:])
+document = json.loads(public_path.read_bytes())
+if (
+    not isinstance(document, dict)
+    or set(document) != {
+        "worker_id", "key_id", "public_key_base64url", "allowed_agent_ids"
+    }
+    or document["worker_id"] != "agentops-mac-primary"
+    or not isinstance(document["key_id"], str)
+    or re.fullmatch(r"worker-v[1-9][0-9]*", document["key_id"]) is None
+):
+    raise SystemExit(1)
+manifest = plistlib.loads(template_path.read_bytes())
+environment = manifest.get("EnvironmentVariables") if isinstance(manifest, dict) else None
+if (
+    manifest.get("Label") != "orbbec-agent-execution-worker"
+    or not isinstance(environment, dict)
+    or environment.get("PLATFORM_WORKER_ID") != "agentops-mac-primary"
+):
+    raise SystemExit(1)
+environment["PLATFORM_WORKER_KEY_ID"] = document["key_id"]
+environment["PLATFORM_WORKER_PRIVATE_KEY_FILE"] = str(private_key_path)
+value = plistlib.dumps(manifest, fmt=plistlib.FMT_XML)
+descriptor = os.open(
+    output_path,
+    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+    0o600,
+)
+try:
+    os.fchmod(descriptor, 0o600)
+    offset = 0
+    while offset < len(value):
+        written = os.write(descriptor, value[offset:])
+        if written <= 0:
+            raise SystemExit(1)
+        offset += written
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+PY
 /usr/bin/plutil -lint "$key_manifest_part" >/dev/null
 /bin/mv -f "$key_manifest_part" "$key_manifest"
 "$worker_supervisor" start || fail

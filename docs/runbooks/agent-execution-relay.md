@@ -265,8 +265,13 @@ inspects the exact database row and fingerprint instead of adding again.
 Back on the `agentops` Mac, atomically activate the prepared identity. The
 wrapper stops only the fixed PM2 Worker before replacing the canonical private
 key, public document and non-loaded key-binding plist; an immediate failure
-restores all three and the exact previous online/non-online state. The plist is
-rotation metadata only and is never used as a service definition:
+restores all three and the exact previous `absent`, `online`, or `stopped`
+state. Both successful activation and rollback rebuild the fixed PM2 definition
+from the canonical document, verify the restored state, and run `pm2 save`; a
+later PM2 resurrect therefore cannot restore the old key ID. The plist is
+rotation metadata only and is never used as a service definition. Rerunning
+the installer also validates and retains the canonical key ID instead of
+resetting a rotated Worker to `worker-v1`:
 
 ```bash
 /Users/agentops/AgentRuntime/platform/backend/.venv/bin/python /Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/rotate-worker-key.py activate worker-v2

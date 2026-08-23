@@ -264,17 +264,79 @@ def _write_public(path: Path, value: bytes) -> None:
         os.close(parent_fd)
 
 
+def _optional_file_bytes(path: Path, *, maximum_size: int) -> bytes | None:
+    parent_fd = _secure_parent(path)
+    try:
+        try:
+            descriptor = os.open(path.name, _FILE_READ_FLAGS, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return None
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+                or metadata.st_uid != os.getuid()
+                or metadata.st_size < 1
+                or metadata.st_size > maximum_size
+            ):
+                raise ValueError
+            value = os.read(descriptor, maximum_size + 1)
+            if len(value) != metadata.st_size or os.read(descriptor, 1):
+                raise ValueError
+            return value
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(parent_fd)
+
+
+def _retained_key_id(private_path: Path, public_path: Path) -> str:
+    private = _optional_file_bytes(private_path, maximum_size=32)
+    public_document = _optional_file_bytes(public_path, maximum_size=65_536)
+    if private is None and public_document is None:
+        return "worker-v1"
+    if private is None or public_document is None or len(private) != 32:
+        raise ValueError
+    document = json.loads(public_document)
+    if (
+        not isinstance(document, dict)
+        or set(document) != {
+            "worker_id",
+            "key_id",
+            "public_key_base64url",
+            "allowed_agent_ids",
+        }
+        or document["worker_id"] != "agentops-mac-primary"
+        or not isinstance(document["key_id"], str)
+        or _KEY_ID.fullmatch(document["key_id"]) is None
+        or document["allowed_agent_ids"] != list(AGENTS)
+    ):
+        raise ValueError
+    derived = Ed25519PrivateKey.from_private_bytes(private).public_key().public_bytes(
+        Encoding.Raw, PublicFormat.Raw
+    )
+    encoded = base64.urlsafe_b64encode(derived).decode("ascii").rstrip("=")
+    if document["public_key_base64url"] != encoded:
+        raise ValueError
+    return document["key_id"]
+
+
 def main(arguments: list[str] | None = None) -> int:
     values = sys.argv[1:] if arguments is None else arguments
     try:
         if len(values) not in {2, 3}:
             raise ValueError
         private_path, public_path = map(Path, values[:2])
-        key_id = values[2] if len(values) == 3 else "worker-v1"
-        if _KEY_ID.fullmatch(key_id) is None:
-            raise ValueError
         lock = _rotation_lock(private_path)
         try:
+            key_id = (
+                values[2]
+                if len(values) == 3
+                else _retained_key_id(private_path, public_path)
+            )
+            if _KEY_ID.fullmatch(key_id) is None:
+                raise ValueError
             private = _private_bytes(private_path)
             public = Ed25519PrivateKey.from_private_bytes(private).public_key().public_bytes(
                 Encoding.Raw, PublicFormat.Raw
