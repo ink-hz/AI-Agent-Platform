@@ -256,6 +256,14 @@ def _restore_worker_state(desired: str) -> None:
         raise RotationError
 
 
+def _quiesce_worker() -> None:
+    current = _worker_state()
+    if current == "online":
+        _supervise(["stop"])
+        if _worker_state() != "stopped":
+            raise RotationError
+
+
 def _save_worker_state(expected: str) -> None:
     _supervise(["save"])
     if _worker_state() != expected:
@@ -572,8 +580,7 @@ def _activate(target_key_id: str) -> None:
     try:
         for path, component in zip(PREVIOUS_PATHS, current, strict=True):
             _atomic_write(path, component)
-        quiescent_state = "absent" if previous_worker_state == "absent" else "stopped"
-        _restore_worker_state(quiescent_state)
+        _quiesce_worker()
         for path, component in zip(CANONICAL_PATHS, staged, strict=True):
             _atomic_write(path, component)
         _validated_identity(CANONICAL_PATHS, target_key_id, value["next_sha256"])
@@ -626,8 +633,7 @@ def _rollback(target_key_id: str) -> None:
     previous_worker_state = value["previous_worker_state"]
     if not isinstance(previous_worker_state, str):
         raise RotationError
-    quiescent_state = "absent" if previous_worker_state == "absent" else "stopped"
-    _restore_worker_state(quiescent_state)
+    _quiesce_worker()
     for path, component in zip(CANONICAL_PATHS, previous, strict=True):
         _atomic_write(path, component)
     _validated_identity(

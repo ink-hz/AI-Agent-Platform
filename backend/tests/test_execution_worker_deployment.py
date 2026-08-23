@@ -854,6 +854,10 @@ case "$1" in
     fi
     printf '%s\n' "$(<"$FAKE_LAUNCH_STATE")"
     ;;
+  stop)
+    [[ "$(<"$FAKE_LAUNCH_STATE")" == online ]]
+    printf stopped > "$FAKE_LAUNCH_STATE"
+    ;;
   restore)
     [[ "$2" == online || "$2" == stopped || "$2" == absent ]]
     if [[ -e "$FAKE_LAUNCH_FAIL" ]]; then
@@ -1038,7 +1042,7 @@ def test_local_key_rotation_rebuilds_stopped_worker_and_saves_new_definition(
     assert activated.returncode == 0, activated.stderr
     assert paths["launch_state"].read_text(encoding="utf-8") == "stopped"
     calls = paths["launch_log"].read_text(encoding="utf-8").splitlines()
-    assert calls.count("restore stopped") == 2
+    assert calls.count("restore stopped") == 1
     assert calls[-2:] == ["save", "state"]
     _assert_rotation_identity(paths, "worker-v2")
 
