@@ -22,6 +22,7 @@ hba_dir="$(/usr/bin/dirname "$hba")"
 backup="$(/usr/bin/mktemp "$hba_dir/.pg_hba.agent-worker.XXXXXX")" || fail
 /bin/chmod 600 "$backup"
 /bin/cp -p "$hba" "$backup"
+/bin/chmod 600 "$backup"
 managed_begin="# BEGIN ORBBEC AGENT EXECUTION WORKER"
 managed_end="# END ORBBEC AGENT EXECUTION WORKER"
 success=0
@@ -41,21 +42,32 @@ if b"\0" in raw: raise SystemExit(1)
 start = raw.find((begin + "\n").encode()); finish = raw.find((end + "\n").encode())
 if (start == -1) != (finish == -1) or (start != -1 and (raw.find((begin+"\n").encode(), start+1) != -1 or raw.find((end+"\n").encode(), finish+1) != -1 or finish < start)): raise SystemExit(1)
 if start != -1: raw = raw[:start] + raw[finish + len(end) + 1:]
-if raw and not raw.endswith(b"\n"): raw += b"\n"
 if mode != "restore":
     lines = [begin]
     if mode == "temporary": lines.append(f"host postgres {role} 127.0.0.1/32 scram-sha-256")
     lines += ["host agent_execution_worker agent_execution_worker_runtime 127.0.0.1/32 scram-sha-256", end]
     raw = ("\n".join(lines) + "\n").encode() + raw
 part = path.with_name("." + path.name + ".agent-worker.part")
-fd = os.open(part, os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0), stat.S_IMODE(meta.st_mode))
-try: os.write(fd, raw); os.fsync(fd)
-finally: os.close(fd)
-current = path.lstat()
-if (current.st_dev,current.st_ino) != (meta.st_dev,meta.st_ino) or path.read_bytes() != original:
-    os.unlink(part)
-    raise SystemExit(1)
-os.replace(part, path); os.chmod(path, stat.S_IMODE(meta.st_mode))
+try:
+    fd = os.open(part, os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0), stat.S_IMODE(meta.st_mode))
+    try:
+        view = memoryview(raw)
+        while view:
+            view = view[os.write(fd, view):]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    current = path.lstat()
+    if (current.st_dev,current.st_ino) != (meta.st_dev,meta.st_ino) or path.read_bytes() != original:
+        raise SystemExit(1)
+    os.replace(part, path); os.chmod(path, stat.S_IMODE(meta.st_mode))
+    directory = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try: os.fsync(directory)
+    finally: os.close(directory)
+except BaseException:
+    try: os.unlink(part)
+    except FileNotFoundError: pass
+    raise
 PY
 }
 
@@ -73,44 +85,98 @@ validate_hba() {
   [[ "$result" == "0:1:$expected_temporary" ]]
 }
 
+restore_hba() {
+  /usr/bin/python3 - "$hba" "$backup" <<'PY'
+import os, pathlib, stat, sys
+path, backup = map(pathlib.Path, sys.argv[1:])
+path_meta = path.lstat(); backup_meta = backup.lstat()
+if (path.is_symlink() or backup.is_symlink()
+    or not stat.S_ISREG(path_meta.st_mode) or not stat.S_ISREG(backup_meta.st_mode)
+    or path_meta.st_uid != os.getuid() or backup_meta.st_uid != os.getuid()):
+    raise SystemExit(1)
+raw = backup.read_bytes()
+part = path.with_name("." + path.name + ".agent-worker.restore.part")
+try:
+    descriptor = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), stat.S_IMODE(path_meta.st_mode))
+    try:
+        view = memoryview(raw)
+        while view:
+            view = view[os.write(descriptor, view):]
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    current = path.lstat()
+    if (current.st_dev, current.st_ino) != (path_meta.st_dev, path_meta.st_ino):
+        raise SystemExit(1)
+    os.replace(part, path)
+    os.chmod(path, stat.S_IMODE(path_meta.st_mode))
+    directory = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try: os.fsync(directory)
+    finally: os.close(directory)
+except BaseException:
+    try: os.unlink(part)
+    except FileNotFoundError: pass
+    raise
+if path.read_bytes() != raw:
+    raise SystemExit(1)
+PY
+}
+
 cleanup() {
   status="$?"
+  backup_removable=1
   trap - ERR EXIT
   /usr/bin/sudo -n -u agentops "$agentops_helper" cleanup >/dev/null 2>&1 || status=1
-  if [[ "$role_created" == 1 ]]; then
-    /usr/bin/printf 'drop role if exists %s;\n' "$temp_role" | \
-      $psql -X -v ON_ERROR_STOP=1 -d postgres >/dev/null 2>&1 || status=1
-  fi
   if [[ "$hba_changed" == 1 ]]; then
     if [[ "$success" == 1 ]]; then
-      write_hba permanent >/dev/null 2>&1 || status=1
-      reload_hba >/dev/null 2>&1 || status=1
-      validate_hba 0 >/dev/null 2>&1 || status=1
+      if ! write_hba permanent >/dev/null 2>&1 ||
+         ! reload_hba >/dev/null 2>&1 ||
+         ! validate_hba 0 >/dev/null 2>&1; then
+        status=1
+        if ! restore_hba >/dev/null 2>&1 ||
+           ! /usr/bin/cmp -s "$backup" "$hba" ||
+           ! reload_hba >/dev/null 2>&1 ||
+           [[ "$($psql -X -A -t -v ON_ERROR_STOP=1 -d postgres -c \
+             'select count(*) from pg_hba_file_rules where error is not null')" != 0 ]]; then
+          status=1
+          backup_removable=0
+        fi
+      fi
     else
-      /bin/cp -p "$backup" "$hba" >/dev/null 2>&1 || status=1
-      /usr/bin/cmp -s "$backup" "$hba" || status=1
-      reload_hba >/dev/null 2>&1 || status=1
-      [[ "$($psql -X -A -t -v ON_ERROR_STOP=1 -d postgres -c \
-        'select count(*) from pg_hba_file_rules where error is not null')" == 0 ]] \
-        >/dev/null 2>&1 || status=1
+      if ! restore_hba >/dev/null 2>&1 ||
+         ! /usr/bin/cmp -s "$backup" "$hba" ||
+         ! reload_hba >/dev/null 2>&1 ||
+         [[ "$($psql -X -A -t -v ON_ERROR_STOP=1 -d postgres -c \
+           'select count(*) from pg_hba_file_rules where error is not null')" != 0 ]]; then
+        status=1
+        backup_removable=0
+      fi
     fi
   fi
-  /bin/rm -f -- "$backup"
+  if [[ "$role_created" == 1 ]]; then
+    printf 'drop role if exists %s;\n' "$temp_role" | \
+      $psql -X -v ON_ERROR_STOP=1 -d postgres >/dev/null 2>&1 || status=1
+  fi
+  if [[ "$backup_removable" == 1 ]]; then
+    /bin/rm -f -- "$backup" || status=1
+  else
+    echo EXECUTION_WORKER_HBA_BACKUP_PRESERVED >&2
+  fi
   temp_password=""
   exit "$status"
 }
 trap cleanup ERR EXIT
 
-/usr/bin/printf "set password_encryption='scram-sha-256'; create role %s login superuser password '%s';\n" \
+role_created=1
+printf "set password_encryption='scram-sha-256'; create role %s login superuser password '%s';\n" \
   "$temp_role" "$temp_password" | \
   $psql -X -v ON_ERROR_STOP=1 -d postgres >/dev/null || fail
-role_created=1
-write_hba temporary || fail
 hba_changed=1
+write_hba temporary || fail
 reload_hba || fail
 validate_hba 1 || fail
 owner_dsn="postgresql://$temp_role:$temp_password@127.0.0.1:$port/postgres"
-/usr/bin/printf '%s\n' "$owner_dsn" | /usr/bin/sudo -n -u agentops "$agentops_helper" prepare || fail
+printf '%s\n' "$owner_dsn" | /usr/bin/sudo -n -u agentops "$agentops_helper" prepare || fail
 owner_dsn=""
 /usr/bin/sudo -n -u agentops "$agentops_helper" install || fail
 success=1

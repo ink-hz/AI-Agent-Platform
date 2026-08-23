@@ -13,7 +13,7 @@ from app.execution_relay.register_worker import _secret_file, _secure_text_file
 REFERENCE = "AGENT_BRAIN_ACCEPTANCE_001"
 
 
-def _identity(value: object, *, role: str) -> UUID:
+def _identity(value: object, *, roles: frozenset[str]) -> UUID:
     if isinstance(value, str):
         return UUID(value)
     account_fields = {
@@ -29,7 +29,7 @@ def _identity(value: object, *, role: str) -> UUID:
     if not isinstance(value, dict) or set(value) not in (
         {"internal_user_id", "role"},
         account_fields,
-    ) or value.get("role") != role or not isinstance(
+    ) or value.get("role") not in roles or not isinstance(
         value.get("internal_user_id"), str
     ):
         raise ValueError
@@ -54,8 +54,12 @@ class AcceptanceGrantInput:
         } or document["schema_version"] != 1:
             raise ValueError
         return cls(
-            actor_internal_user_id=_identity(document["actor"], role="platform_owner"),
-            member_internal_user_id=_identity(document["member"], role="member"),
+            actor_internal_user_id=_identity(
+                document["actor"], roles=frozenset({"platform_owner", "platform_admin"})
+            ),
+            member_internal_user_id=_identity(
+                document["member"], roles=frozenset({"member"})
+            ),
             grant_id=UUID(document["grant_id"]),
             request_id=UUID(document["request_id"]),
         )

@@ -25,7 +25,7 @@ begin
        'marketing-inbound-bot','marketing-voice-bot',
        'marketing-intelligence-bot','marketing-gtm-bot','agent-brain-bot'
      ]::text[]
-     or selected_change_reference <> 'AGENT_BRAIN_BOOTSTRAP_001'
+     or selected_change_reference is distinct from 'AGENT_BRAIN_BOOTSTRAP_001'
      or selected_request_id is null
      or substring(selected_request_id::text from 15 for 1) <> '4'
      or substring(selected_request_id::text from 20 for 1) !~ '^[89ab]$'
@@ -96,25 +96,97 @@ declare
   member_role text;
   member_status text;
   granted_id uuid;
+  grant_row platform_control.agent_use_grants%rowtype;
+  existing_audit platform_control.audit_events%rowtype;
+  expected_details jsonb;
 begin
   select role::text,status into actor_role,actor_status
     from platform_control.internal_users where internal_user_id=selected_actor_id;
   select role::text,status into member_role,member_status
     from platform_control.internal_users where internal_user_id=selected_member_id;
-  if actor_role is distinct from 'platform_owner'
+  if actor_role not in ('platform_owner','platform_admin')
      or actor_status is distinct from 'active'
      or member_role is distinct from 'member'
      or member_status is distinct from 'active'
-     or selected_change_reference <> 'AGENT_BRAIN_ACCEPTANCE_001'
+     or selected_change_reference is distinct from 'AGENT_BRAIN_ACCEPTANCE_001'
+     or selected_grant_id is null
+     or selected_request_id is null
+     or substring(selected_request_id::text from 15 for 1) <> '4'
+     or substring(selected_request_id::text from 20 for 1) !~ '^[89ab]$'
   then
     raise check_violation using message='acceptance grant identity invalid';
   end if;
-  granted_id := platform_control.grant_agent_use_scope_v29(
-    selected_grant_id,'hr-bot','user',selected_member_id,null,false,
-    selected_actor_id,selected_change_reference,selected_request_id
-  );
+  if actor_role = 'platform_owner' then
+    granted_id := platform_control.grant_agent_use_scope_v29(
+      selected_grant_id,'hr-bot','user',selected_member_id,null,false,
+      selected_actor_id,selected_change_reference,selected_request_id
+    );
+  else
+    expected_details := jsonb_build_object(
+      'agent_id','hr-bot','grant_id',selected_grant_id,
+      'include_descendants',false,'reference',selected_change_reference,
+      'target_department_key',null,'target_internal_user_id',selected_member_id,
+      'target_kind','user'
+    );
+    perform pg_advisory_xact_lock(
+      hashtextextended('agent-use-request:' || selected_request_id::text,0)
+    );
+    select * into existing_audit from platform_control.audit_events
+      where audit_event_id=selected_request_id for update;
+    if found then
+      if existing_audit.actor_internal_user_id is distinct from selected_actor_id
+         or existing_audit.event_type <> 'agent_use_scope_granted'
+         or existing_audit.target_type <> 'agent_use_scope'
+         or existing_audit.target_internal_id <> selected_grant_id::text
+         or existing_audit.request_id <> selected_request_id
+         or existing_audit.result <> 'completed'
+         or existing_audit.reason_code <> 'offline_maintenance'
+         or existing_audit.sanitized_before_after is distinct from expected_details
+      then
+        raise check_violation using message='acceptance grant request collision';
+      end if;
+    else
+      perform pg_advisory_xact_lock(
+        hashtextextended('agent-use-grant:' || selected_grant_id::text,0)
+      );
+      insert into platform_control.audit_events (
+        audit_event_id,actor_internal_user_id,event_type,target_type,
+        target_internal_id,request_id,result,reason_code,sanitized_before_after
+      ) values (
+        selected_request_id,selected_actor_id,'agent_use_scope_granted',
+        'agent_use_scope',selected_grant_id::text,selected_request_id,
+        'completed','offline_maintenance',expected_details
+      );
+      insert into platform_control.agent_use_grants (
+        agent_use_grant_id,agent_id,target_kind,target_internal_user_id,
+        target_department_key,include_descendants,created_by,created_audit_event_id
+      ) values (
+        selected_grant_id,'hr-bot','user',selected_member_id,null,false,
+        selected_actor_id,selected_request_id
+      );
+    end if;
+    granted_id := selected_grant_id;
+  end if;
   if granted_id is distinct from selected_grant_id then
     raise check_violation using message='acceptance grant result invalid';
+  end if;
+  select * into grant_row
+    from platform_control.agent_use_grants
+    where agent_use_grant_id=selected_grant_id
+    for update;
+  if grant_row.agent_use_grant_id is null
+     or grant_row.agent_id <> 'hr-bot'
+     or grant_row.target_kind <> 'user'
+     or grant_row.target_internal_user_id is distinct from selected_member_id
+     or grant_row.target_department_key is not null
+     or grant_row.include_descendants
+     or grant_row.created_by is distinct from selected_actor_id
+     or grant_row.created_audit_event_id is distinct from selected_request_id
+     or grant_row.revoked_at is not null
+     or grant_row.revoked_by is not null
+     or grant_row.revoked_audit_event_id is not null
+  then
+    raise check_violation using message='acceptance grant state mismatch';
   end if;
   hr_allowed := platform_control.has_agent_use_scope_v29(
     selected_member_id,'hr-bot'

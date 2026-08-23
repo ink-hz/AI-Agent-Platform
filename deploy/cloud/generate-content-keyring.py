@@ -19,26 +19,32 @@ def _fail() -> int:
 def _safe_directory(path: Path) -> int:
     if not path.is_absolute() or path == Path("/"):
         raise ValueError
-    chain: list[Path] = []
-    current = path
-    while current != current.parent:
-        chain.append(current)
-        current = current.parent
-    for directory in reversed(chain):
-        metadata = directory.lstat()
-        if (
-            stat.S_ISLNK(metadata.st_mode)
-            or not stat.S_ISDIR(metadata.st_mode)
-            or (directory == path and stat.S_IMODE(metadata.st_mode) != 0o700)
-            or (directory == path and metadata.st_uid != os.getuid())
-        ):
-            raise ValueError
-    return os.open(
-        path,
-        os.O_RDONLY
-        | getattr(os, "O_DIRECTORY", 0)
-        | getattr(os, "O_NOFOLLOW", 0),
-    )
+    parts = path.parts[1:]
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise ValueError
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open("/", flags)
+    try:
+        for index, component in enumerate(parts):
+            child = os.open(component, flags, dir_fd=descriptor)
+            metadata = os.fstat(child)
+            final = index == len(parts) - 1
+            mode = stat.S_IMODE(metadata.st_mode)
+            safe_sticky_root = metadata.st_uid == 0 and bool(metadata.st_mode & stat.S_ISVTX)
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or metadata.st_uid not in {0, os.getuid()}
+                or (not final and mode & 0o022 and not safe_sticky_root)
+                or (final and (metadata.st_uid != os.getuid() or mode != 0o700))
+            ):
+                os.close(child)
+                raise ValueError
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
 
 
 def _validate(path: Path) -> tuple[bytes, str]:
@@ -125,7 +131,9 @@ def _create(path: Path) -> str:
             + "\n"
         ).encode("ascii")
         try:
-            os.write(descriptor, raw)
+            view = memoryview(raw)
+            while view:
+                view = view[os.write(descriptor, view):]
             os.fsync(descriptor)
         finally:
             os.close(descriptor)

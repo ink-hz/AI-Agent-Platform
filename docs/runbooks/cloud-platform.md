@@ -158,11 +158,10 @@ Each Cookie file contains exactly the two browser cookies
 `__Host-platform_session` and `__Host-platform_csrf` on one line. The script
 derives mode-`0600` curl/CDP inputs, supplies the required production Origin,
 and never places either value in command-line arguments or evidence. The JSON
-config has schema version `1` and absolute paths for `cloud_admin_key`,
+config uses schema version `2` and has exactly these absolute-path fields:
 `member_cookie_file`, `owner_cookie_file`, `hr_prompt_file`,
 `interruption_prompt_file`, the agentops-owned mode-`0600`
-`relay_acceptance_config`, and the evidence destination. The config uses schema
-version `2`; cloud root access is fixed inside the Neo-owned release coordinator
+`relay_acceptance_config`, and `evidence_file`. Cloud root access is fixed inside the Neo-owned release coordinator
 to `/Users/neo/.ssh/orbbec_aliyun_ed25519`. That key is never copied to or made
 readable by `agentops`.
 
@@ -176,15 +175,33 @@ DingTalk provider identifiers.
 The private document is schema version `1` with exact keys `actor`, `member`,
 `grant_id`, and `request_id`. `actor` and `member` are either stable UUID
 strings or the corresponding `/api/v1/account` results. Run the helper through
-the root-owned maintenance DSN volume:
+a one-use input directory owned by the image runtime UID. Both the mounted
+directory and files must satisfy the helper's `0700`/`0600` ownership checks;
+mounting a root-owned `0600` file directly is not sufficient:
 
 ```bash
-docker run --rm --read-only --network orbbec-agent-platform-internal \
-  -v /opt/orbbec-agent-platform/private:/run/control-secrets:ro \
-  -v /absolute/private/acceptance-grant.json:/run/input/grant.json:ro \
-  -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/control-secrets/control-maintenance-database-url \
+grant_input=/opt/orbbec-agent-platform/private/acceptance-grant-input
+trap 'rm -rf -- "$grant_input"' EXIT
+release="$(readlink -f /opt/orbbec-agent-platform/current)"
+platform_env=/opt/orbbec-agent-platform/private/platform.env
+compose="$release/deploy/cloud/compose.yaml"
+api="$(docker compose --env-file "$platform_env" -f "$compose" ps -q platform-api)"
+PLATFORM_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$api")"
+[[ "$PLATFORM_IMAGE" =~ ^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,255}$ ]]
+install -d -m 0700 -o 10001 -g 10001 "$grant_input"
+install -m 0600 -o 10001 -g 10001 \
+  /absolute/private/acceptance-grant.json "$grant_input/grant.json"
+install -m 0600 -o 10001 -g 10001 \
+  /opt/orbbec-agent-platform/private/control-maintenance-database-url \
+  "$grant_input/maintenance-database-url"
+docker run --rm --read-only --user 10001:10001 \
+  --network orbbec-agent-platform-internal \
+  -v "$grant_input":/run/input:ro \
+  -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/input/maintenance-database-url \
   "$PLATFORM_IMAGE" python -m app.agent_brain.acceptance_grant \
   /run/input/grant.json
+rm -rf -- "$grant_input"
+trap - EXIT
 ```
 
 Run the staged gate from the reviewed release checkout:
@@ -281,6 +298,8 @@ CLOUD_ADMIN_HOST=root@47.106.112.69
 CLOUD_ADMIN_KEY=/Users/neo/.ssh/orbbec_aliyun_ed25519
 CLOUD_SIGNING_PUBLIC_KEY=/absolute/private/path/replica-signing-public.key
 CLOUD_BACKUP_PUBLIC_KEY=/absolute/private/path/backup-recovery-x25519.pub
+CLOUD_CONTENT_ENCRYPTION_KEYRING=/absolute/private/path/content-encryption-keyring
+CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING=/absolute/private/path/execution-worker-public.json
 CLOUD_BASELINE_FILE=/absolute/private/path/cloud-baseline.sha256
 CLOUD_ACCEPTANCE_EVIDENCE_FILE=/absolute/private/path/acceptance-evidence.env
 ```

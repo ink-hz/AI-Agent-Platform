@@ -730,7 +730,7 @@ REMOTE
 set -euo pipefail
 root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"
 api="$(docker compose --env-file "$env" -f "$compose" ps -q platform-api)"; postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
-key="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select key_id from platform_control.execution_worker_keys where worker_id='agentops-mac-primary' and status='active' order by activated_at desc limit 1")"
+key="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select key_id from platform_control.execution_worker_keys where worker_id='agentops-mac-primary' and status='active' order by created_at desc limit 1")"
 [[ "$key" =~ ^worker-v[1-9][0-9]*$ ]] || exit 1
 fae=ai-fae-backend
 printf 'release_sha=%s\napi_container_id=%s\napi_started_at=%s\nworker_key_id=%s\nfae_container_id=%s\nfae_image_id=%s\nfae_started_at=%s\nfae_restart_count=%s\nfae_config_hash=%s\nfae_mounts_hash=%s\nfae_health=%s\nfae_domain_hash=%s\nfae_legacy_ip_hash=%s\nagent_nginx_hash=%s\n' \

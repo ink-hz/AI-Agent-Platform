@@ -88,7 +88,10 @@ def test_content_keyring_generator_is_atomic_idempotent_and_codec_valid(
     assert document["keys"]["1"] not in first.stdout + second.stdout
 
 
-@pytest.mark.parametrize("unsafe", ["parent-symlink", "target-symlink", "world-parent"])
+@pytest.mark.parametrize(
+    "unsafe",
+    ["parent-symlink", "target-symlink", "world-parent", "world-intermediate"],
+)
 def test_content_keyring_generator_rejects_unsafe_paths(
     tmp_path: Path, unsafe: str
 ) -> None:
@@ -102,8 +105,13 @@ def test_content_keyring_generator_rejects_unsafe_paths(
         safe.symlink_to(real, target_is_directory=True)
     elif unsafe == "target-symlink":
         target.symlink_to(tmp_path / "elsewhere")
-    else:
+    elif unsafe == "world-parent":
         safe.chmod(0o755)
+    else:
+        safe.chmod(0o777)
+        private = safe / "private"
+        private.mkdir(mode=0o700)
+        target = private / "keyring"
 
     result = subprocess.run(
         [sys.executable, str(CONTENT), str(target)], text=True, capture_output=True
@@ -339,6 +347,11 @@ def test_acceptance_grant_input_accepts_account_results_but_not_names_or_provide
         "request_id": str(request_id),
     }
     assert AcceptanceGrantInput.from_document(document).member_internal_user_id == member
+    admin_document = {
+        **document,
+        "actor": {**document["actor"], "role": "platform_admin"},
+    }
+    assert AcceptanceGrantInput.from_document(admin_document).actor_internal_user_id == actor
     for forbidden in (
         {**document, "member": {"display_name": "Somebody"}},
         {**document, "member": {"provider_user_id": "secret"}},
@@ -364,6 +377,18 @@ def test_first_worker_registration_real_database_is_idempotent(control_database)
         environment["urls"]["platform_control_maintenance"]
     ) as connection:
         assert ensure_first_worker(connection, document) == "existing"
+        with pytest.raises(psycopg.errors.CheckViolation):
+            connection.execute(
+                "select platform_control.ensure_first_execution_worker_v33("
+                "%s,%s,%s,%s,null,%s)",
+                (
+                    document.worker_id,
+                    document.key_id,
+                    document.public_key,
+                    list(document.allowed_agent_ids),
+                    uuid4(),
+                ),
+            )
 
 
 @pytest.mark.postgres
@@ -440,6 +465,66 @@ def test_acceptance_grant_real_database_replays_same_ids_and_rejects_conflict(
             )
 
 
+@pytest.mark.postgres
+def test_acceptance_grant_replay_rejects_revoked_exact_grant_masked_by_broad_grant(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["preview"]
+    actor, grant_id, request_id = (uuid4() for _ in range(3))
+    with psycopg.connect(environment["admin"]) as connection:
+        member, _root, _child, _generation = _seed_active_directory(connection)
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status,role) values "
+            "(%s,'Bootstrap Owner','active','platform_owner')",
+            (actor,),
+        )
+    value = AcceptanceGrantInput(actor, member, grant_id, request_id)
+    maintenance = environment["urls"]["platform_control_maintenance_preview"]
+    with psycopg.connect(maintenance) as connection:
+        AcceptanceGrantRepository(connection).apply(value)
+        connection.execute(
+            "select platform_control.revoke_agent_use_scope_v29("
+            "%s,%s,'AGENT_BRAIN_ACCEPTANCE_REVOKE_001',%s)",
+            (grant_id, actor, uuid4()),
+        )
+        connection.execute(
+            "select platform_control.grant_agent_use_scope_v29("
+            "%s,'hr-bot','all_members',null,null,false,%s,"
+            "'AGENT_BRAIN_ACCEPTANCE_BROAD_001',%s)",
+            (uuid4(), actor, uuid4()),
+        )
+    with psycopg.connect(maintenance) as connection:
+        with pytest.raises(psycopg.errors.CheckViolation):
+            AcceptanceGrantRepository(connection).apply(value)
+
+
+@pytest.mark.postgres
+def test_acceptance_grant_allows_active_platform_admin_actor(control_database) -> None:
+    environment = control_database["environments"]["preview"]
+    actor, grant_id, request_id = (uuid4() for _ in range(3))
+    with psycopg.connect(environment["admin"]) as connection:
+        member, _root, _child, _generation = _seed_active_directory(connection)
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status,role) values "
+            "(%s,'Bootstrap Admin','active','platform_admin')",
+            (actor,),
+        )
+    with psycopg.connect(
+        environment["urls"]["platform_control_maintenance_preview"]
+    ) as connection:
+        assert AcceptanceGrantRepository(connection).apply(
+            AcceptanceGrantInput(actor, member, grant_id, request_id)
+        ) == {"hr-bot": True, "marketing-gtm-bot": False}
+        with pytest.raises(psycopg.errors.CheckViolation):
+            connection.execute(
+                "select * from platform_control.grant_agent_brain_acceptance_v33("
+                "%s,%s,%s,null,%s)",
+                (uuid4(), member, actor, uuid4()),
+            )
+
+
 def test_local_provisioning_wrapper_has_narrow_hba_transaction_and_fixed_sudo() -> None:
     source = PROVISION.read_text(encoding="utf-8")
     helper = AGENTOPS.read_text(encoding="utf-8")
@@ -461,19 +546,35 @@ def test_local_provisioning_wrapper_has_narrow_hba_transaction_and_fixed_sudo() 
     assert "sudo -S" not in combined
     assert "su -" not in combined
     assert "/Users/agentops/Library/Application Support/MetaBotReliability/api-secret" in helper
-    assert "127.0.0.1:9120" in helper
-    assert "snapshot-except metabot-agent-brain" in helper
+    assert "127\\.0\\.0\\.1:9120" in helper
+    assert "snapshot-except metabot-agent-brain" not in helper
+    assert '"$snapshot" jlist' in helper
+    assert "restart_time" in helper and "pm_exec_path" in helper
+    assert "worker_listener_pid" in helper and "launchd_pid" in helper
+    assert "--checksum" in helper and "--delete" in helper
+    assert "for relative in" not in helper
+    assert "os.O_EXCL" in helper
+    assert 'getattr(os, "O_NOFOLLOW", 0)' in helper
+    assert '/bin/cat > "$owner_dsn"' not in helper
+    assert "/usr/bin/printf '%s\\n' \"$owner_dsn\"" not in source
+    assert '/usr/bin/printf "set password_encryption' not in source
     subprocess.run(["/bin/bash", "-n", str(PROVISION)], check=True)
     subprocess.run(["/bin/bash", "-n", str(AGENTOPS)], check=True)
 
 
-def _provision_harness(tmp_path: Path, *, fail_install: bool):
+def _provision_harness(
+    tmp_path: Path,
+    *,
+    fail_install: bool,
+    fail_finalize: bool = False,
+    fail_stage: str = "",
+    original: bytes = b"# user-owned header\nlocal all all trust\n",
+):
     current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
     root = tmp_path / "repo"
     local = root / "deploy/local-execution-worker"
     local.mkdir(parents=True)
     hba = tmp_path / "pg_hba.conf"
-    original = b"# user-owned header\nlocal all all trust\n"
     hba.write_bytes(original)
     hba.chmod(0o600)
     log = tmp_path / "commands"
@@ -483,25 +584,34 @@ def _provision_harness(tmp_path: Path, *, fail_install: bool):
         "printf '%s\\n' \"$*\" >> \"$HARNESS_LOG\"\n"
         "if [[ \"$1\" == '--version' ]]; then echo 'psql (PostgreSQL) 17.9'; exit 0; fi\n"
         "if [[ ! -t 0 ]]; then IFS= read -r sql || true; "
-        "[[ \"$sql\" == drop\\ role\\ if\\ exists* ]] && echo drop-role >> \"$HARNESS_LOG\"; fi\n"
+        "[[ \"$sql\" == drop\\ role\\ if\\ exists* ]] && echo drop-role >> \"$HARNESS_LOG\"; "
+        "[[ \"$sql\" == set\\ password_encryption* && \"${FAKE_FAIL_STAGE:-}\" == role ]] && exit 73; "
+        "if [[ \"$sql\" == set\\ password_encryption* && \"${FAKE_FAIL_STAGE:-}\" == role-response-loss ]]; then echo role-created-before-loss >> \"$HARNESS_LOG\"; exit 74; fi; fi\n"
         "case \"$*\" in\n"
         "  *'show port'*) echo 5432;;\n"
         f"  *'show hba_file'*) echo {hba};;\n"
-        "  *'select pg_reload_conf()'*) echo t;;\n"
+        "  *'select pg_reload_conf()'*) if [[ \"${FAKE_FAIL_STAGE:-}\" == reload && ! -e \"$FAKE_RELOAD_MARKER\" ]]; then : > \"$FAKE_RELOAD_MARKER\"; echo f; else echo t; fi;;\n"
         "  *'select count(*) from pg_hba_file_rules where error is not null'*) echo 0;;\n"
-        "  *'pg_hba_file_rules'*) if grep -q '^host postgres agent_execution_bootstrap_' \"$FAKE_HBA\"; then echo 0:1:1; else echo 0:1:0; fi;;\n"
+        "  *'pg_hba_file_rules'*) if grep -q '^host postgres agent_execution_bootstrap_' \"$FAKE_HBA\"; then [[ \"${FAKE_FAIL_STAGE:-}\" == validate ]] && echo 0:0:1 || echo 0:1:1; elif [[ \"${FAKE_FINALIZE_FAIL:-0}\" == 1 ]]; then echo 0:0:0; else echo 0:1:0; fi;;\n"
         "  *) :;;\n"
         "esac\n",
         encoding="utf-8",
     )
     fake_psql.chmod(0o700)
     fake_helper = local / "provision-agentops.sh"
+    install_action = (
+        "exit 71"
+        if fail_install
+        else "if [[ \"${FAKE_FAIL_STAGE:-}\" == restore ]]; then "
+        "/bin/rm -f \"$FAKE_HBA\"; /bin/ln -s \"$FAKE_RESTORE_TARGET\" "
+        "\"$FAKE_HBA\"; exit 71; fi; echo EXECUTION_WORKER_AGENTOPS_READY"
+    )
     fake_helper.write_text(
         "#!/bin/bash\nset -euo pipefail\n"
         "printf 'helper:%s\\n' \"$1\" >> \"$HARNESS_LOG\"\n"
         "case \"$1\" in\n"
-        " prepare) IFS= read -r secret; [[ \"$secret\" == postgresql://* ]];;\n"
-        f" install) {'exit 71' if fail_install else 'echo EXECUTION_WORKER_AGENTOPS_READY'};;\n"
+        " prepare) IFS= read -r secret; [[ \"$secret\" == postgresql://* ]]; [[ \"${FAKE_FAIL_STAGE:-}\" != prepare ]];;\n"
+        f" install) {install_action};;\n"
         " cleanup) :;; *) exit 72;; esac\n",
         encoding="utf-8",
     )
@@ -520,13 +630,32 @@ def _provision_harness(tmp_path: Path, *, fail_install: bool):
     source = source.replace(
         "psql=/opt/homebrew/opt/postgresql@17/bin/psql", f"psql={fake_psql}"
     ).replace("/usr/bin/sudo", str(fake_sudo))
+    if fail_stage == "postrename":
+        source = source.replace(
+            "try: os.fsync(directory)",
+            'try: raise OSError("injected post-rename failure")',
+            1,
+        )
     copied.write_text(source, encoding="utf-8")
     copied.chmod(0o700)
+    if fail_stage == "write":
+        (tmp_path / ".pg_hba.conf.agent-worker.part").write_text("occupied")
+    restore_target = tmp_path / "restore-target"
+    restore_target.write_text("do-not-touch", encoding="utf-8")
+    reload_marker = tmp_path / "reload-marker"
     result = subprocess.run(
         ["/bin/bash", str(copied)],
         text=True,
         capture_output=True,
-        env={**os.environ, "HARNESS_LOG": str(log), "FAKE_HBA": str(hba)},
+        env={
+            **os.environ,
+            "HARNESS_LOG": str(log),
+            "FAKE_HBA": str(hba),
+            "FAKE_FINALIZE_FAIL": "1" if fail_finalize else "0",
+            "FAKE_FAIL_STAGE": fail_stage,
+            "FAKE_RELOAD_MARKER": str(reload_marker),
+            "FAKE_RESTORE_TARGET": str(restore_target),
+        },
     )
     return result, hba, original, log
 
@@ -547,6 +676,23 @@ def test_local_provision_success_removes_bootstrap_hba_and_role(tmp_path: Path) 
     assert "postgresql://" not in result.stdout + result.stderr + calls
 
 
+def test_local_provision_preserves_non_managed_bytes_without_trailing_newline(
+    tmp_path: Path,
+) -> None:
+    original = b"# exact-without-newline"
+    result, hba, _ignored, _log = _provision_harness(
+        tmp_path, fail_install=False, original=original
+    )
+    assert result.returncode == 0, result.stderr
+    managed = (
+        b"# BEGIN ORBBEC AGENT EXECUTION WORKER\n"
+        b"host agent_execution_worker agent_execution_worker_runtime "
+        b"127.0.0.1/32 scram-sha-256\n"
+        b"# END ORBBEC AGENT EXECUTION WORKER\n"
+    )
+    assert hba.read_bytes() == managed + original
+
+
 def test_local_provision_failure_restores_hba_and_cleans_bootstrap(tmp_path: Path) -> None:
     result, hba, original, log = _provision_harness(tmp_path, fail_install=True)
     assert result.returncode != 0
@@ -554,6 +700,179 @@ def test_local_provision_failure_restores_hba_and_cleans_bootstrap(tmp_path: Pat
     calls = log.read_text(encoding="utf-8")
     assert "helper:cleanup" in calls and "drop-role" in calls
     assert "postgresql://" not in result.stdout + result.stderr + calls
+
+
+def test_local_provision_finalize_failure_removes_temporary_hba_and_restores(
+    tmp_path: Path,
+) -> None:
+    result, hba, original, log = _provision_harness(
+        tmp_path, fail_install=False, fail_finalize=True
+    )
+    assert result.returncode != 0
+    assert hba.read_bytes() == original
+    calls = log.read_text(encoding="utf-8")
+    assert "helper:cleanup" in calls and "drop-role" in calls
+    assert "postgresql://" not in result.stdout + result.stderr + calls
+
+
+@pytest.mark.parametrize(
+    "stage",
+    [
+        "role",
+        "role-response-loss",
+        "write",
+        "postrename",
+        "reload",
+        "validate",
+        "prepare",
+    ],
+)
+def test_local_provision_failure_injection_restores_every_preinstall_boundary(
+    tmp_path: Path, stage: str
+) -> None:
+    result, hba, original, log = _provision_harness(
+        tmp_path, fail_install=False, fail_stage=stage
+    )
+    assert result.returncode != 0
+    assert hba.read_bytes() == original
+    calls = log.read_text(encoding="utf-8")
+    assert "helper:cleanup" in calls
+    assert "drop-role" in calls
+    if stage == "role-response-loss":
+        assert "role-created-before-loss" in calls
+    assert "postgresql://" not in result.stdout + result.stderr + calls
+
+
+def test_local_provision_preserves_backup_when_atomic_restore_is_impossible(
+    tmp_path: Path,
+) -> None:
+    result, hba, _original, log = _provision_harness(
+        tmp_path, fail_install=False, fail_stage="restore"
+    )
+    assert result.returncode != 0
+    assert hba.is_symlink()
+    assert list(tmp_path.glob(".pg_hba.agent-worker.*"))
+    assert "EXECUTION_WORKER_HBA_BACKUP_PRESERVED" in result.stderr
+    assert "drop-role" in log.read_text(encoding="utf-8")
+
+
+def _agentops_install_harness(tmp_path: Path, failure: str) -> subprocess.CompletedProcess:
+    current_user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
+    runtime = tmp_path / "runtime"
+    private = runtime / "private"
+    platform = runtime / "platform"
+    local = platform / "deploy/local-execution-worker"
+    local.mkdir(parents=True)
+    private.mkdir(parents=True)
+    owner_dsn = private / "postgres-owner-dsn"
+    owner_dsn.write_text("opaque", encoding="utf-8")
+    owner_dsn.chmod(0o600)
+    before = private / "worker-provision-nonbrain-before.json"
+    before.write_text("[]\n", encoding="utf-8")
+    before.chmod(0o600)
+    brain = {
+        "name": "metabot-agent-brain",
+        "pid": 100,
+        "pm_id": 8,
+        "status": "online",
+        "restart_time": 2,
+        "created_at": 1234,
+        "pm_exec_path": "/reviewed/brain.js",
+        "pm_cwd": "/reviewed/brain",
+        "args": [],
+    }
+    brain_before = private / "worker-provision-brain-before.txt"
+    brain_before.write_text(json.dumps(brain, sort_keys=True, separators=(",", ":")) + "\n")
+    brain_before.chmod(0o600)
+    install = local / "install.sh"
+    install.write_text(
+        "#!/bin/bash\n[[ \"${FAKE_FAILURE:-}\" != install ]]\n",
+        encoding="utf-8",
+    )
+    install.chmod(0o700)
+    snapshot = tmp_path / "snapshot"
+    raw_brain = {
+        "name": "metabot-agent-brain",
+        "pid": 101 if failure == "pm2" else 100,
+        "pm_id": 8,
+        "pm2_env": {
+            "status": "online",
+            "restart_time": 3 if failure == "pm2" else 2,
+            "created_at": 1234,
+            "pm_exec_path": "/reviewed/brain.js",
+            "pm_cwd": "/reviewed/brain",
+            "args": [],
+        },
+    }
+    snapshot.write_text(
+        "#!/bin/bash\n"
+        "[[ \"$1\" == snapshot-except ]] && { echo '[]'; exit; }\n"
+        f"[[ \"$1\" == jlist ]] && {{ echo '{json.dumps([raw_brain])}'; exit; }}\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    snapshot.chmod(0o700)
+    fake_lsof = tmp_path / "lsof"
+    fake_lsof.write_text(
+        "#!/bin/bash\n"
+        "case \"$*\" in *9110*) printf 'p%s\\nn127.0.0.1:9110\\n' \"${FAKE_BRAIN_PID:-100}\"; "
+        "[[ \"${FAKE_WILDCARD:-0}\" == 1 ]] && printf 'p300\\nn*:9110\\n' || true;; "
+        "*9120*) printf 'p%s\\nn127.0.0.1:9120\\n' \"${FAKE_WORKER_PID:-200}\";; *) exit 1;; esac\n",
+        encoding="utf-8",
+    )
+    fake_lsof.chmod(0o700)
+    fake_launchctl = tmp_path / "launchctl"
+    fake_launchctl.write_text(
+        "#!/bin/bash\necho '    pid = '${FAKE_LAUNCHD_PID:-200}';'\n",
+        encoding="utf-8",
+    )
+    fake_launchctl.chmod(0o700)
+    copied = tmp_path / "provision-agentops.sh"
+    source = AGENTOPS.read_text(encoding="utf-8")
+    source = source.replace('"$(/usr/bin/id -un)" == "agentops"', f'"$(/usr/bin/id -un)" == "{current_user}"')
+    source = source.replace("runtime=/Users/agentops/AgentRuntime", f"runtime={runtime}")
+    source = source.replace(
+        "snapshot=/Users/agentops/Developer/work/Orbbec-Agent-Team/scripts/reliability/sanitized-pm2.sh",
+        f"snapshot={snapshot}",
+    )
+    source = source.replace("/usr/sbin/lsof", str(fake_lsof))
+    source = source.replace("/bin/launchctl", str(fake_launchctl))
+    copied.write_text(source, encoding="utf-8")
+    copied.chmod(0o700)
+    env = {
+        **os.environ,
+        "FAKE_FAILURE": failure,
+        "FAKE_BRAIN_PID": "999" if failure == "brain-listener" else "100",
+        "FAKE_WORKER_PID": "201" if failure == "worker-listener" else "200",
+        "FAKE_LAUNCHD_PID": "202" if failure == "launchd" else "200",
+        "FAKE_WILDCARD": "1" if failure == "wildcard-listener" else "0",
+    }
+    return subprocess.run(
+        ["/bin/bash", str(copied), "install"],
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "",
+        "install",
+        "pm2",
+        "brain-listener",
+        "worker-listener",
+        "wildcard-listener",
+        "launchd",
+    ],
+)
+def test_agentops_install_executable_process_identity_gates(
+    tmp_path: Path, failure: str
+) -> None:
+    result = _agentops_install_harness(tmp_path, failure)
+    assert (result.returncode == 0) is (failure == "")
+    assert "opaque" not in result.stdout + result.stderr
 
 
 def test_acceptance_coordinator_keeps_cloud_key_neo_owned_and_commands_fixed() -> None:
@@ -566,7 +885,43 @@ def test_acceptance_coordinator_keeps_cloud_key_neo_owned_and_commands_fixed() -
     assert "sudo -n -u agentops /bin/bash -c" not in source
     assert "sudo -n -u agentops /bin/zsh -c" not in source
     assert "cp " + "/Users/neo/.ssh/orbbec_aliyun_ed25519" not in source
+    assert "order by created_at desc" in source
+    assert "order by activated_at" not in source
     subprocess.run(["/bin/bash", "-n", str(ACCEPT)], check=True)
+
+
+def test_acceptance_coordinator_rejects_config_command_injection_before_ssh(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "injected"
+    config = tmp_path / "acceptance.json"
+    inert = str(tmp_path / "not-present")
+    config.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "member_cookie_file": inert,
+                "owner_cookie_file": inert,
+                "hr_prompt_file": inert,
+                "interruption_prompt_file": inert,
+                "relay_acceptance_config": inert,
+                "evidence_file": inert,
+                "cloud_admin_host": f"$(touch {marker})",
+            }
+        ),
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+
+    result = subprocess.run(
+        ["/bin/bash", str(ACCEPT), str(config), "preflight"],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert not marker.exists()
+    assert "root@47.106.112.69" not in result.stdout + result.stderr
 
 
 def test_runbook_documents_bootstrap_files_and_backup_absolute_paths() -> None:
@@ -578,5 +933,9 @@ def test_runbook_documents_bootstrap_files_and_backup_absolute_paths() -> None:
         "offline backup",
         "provision.sh",
         "acceptance-grant",
+        "--user 10001:10001",
+        "CLOUD_CONTENT_ENCRYPTION_KEYRING=/absolute/private/path/",
+        "CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING=/absolute/private/path/",
     ):
         assert required in runbook
+    assert "config has schema version `1`" not in runbook
