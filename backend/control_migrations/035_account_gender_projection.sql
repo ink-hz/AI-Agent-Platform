@@ -1,4 +1,4 @@
-create function platform_control.read_account_gender_v29(
+create function platform_control.read_account_gender_v35(
   selected_internal_user_id uuid
 ) returns text
 language plpgsql
@@ -36,7 +36,7 @@ begin
 end
 $function$;
 
-revoke all on function platform_control.read_account_gender_v29(uuid)
+revoke all on function platform_control.read_account_gender_v35(uuid)
 from public;
 
 do $migration$
@@ -66,7 +66,7 @@ begin
     'platform_audit_append_preview','platform_control_maintenance_preview'
   ] loop
     execute format(
-      'revoke all on function platform_control.read_account_gender_v29(uuid) from %I',
+      'revoke all on function platform_control.read_account_gender_v35(uuid) from %I',
       role_name
     );
   end loop;
@@ -76,7 +76,7 @@ begin
     selected_app
   );
   execute format(
-    'grant execute on function platform_control.read_account_gender_v29(uuid) to %I',
+    'grant execute on function platform_control.read_account_gender_v35(uuid) to %I',
     selected_app
   );
 end

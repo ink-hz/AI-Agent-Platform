@@ -144,6 +144,20 @@ class AuthSecrets:
             "sha256",
         )
 
+    def sign_mission_cursor(self, owner: UUID, payload: bytes) -> bytes:
+        if not isinstance(owner, UUID):
+            raise ValueError("Mission cursor owner invalid")
+        if not isinstance(payload, bytes) or not 1 <= len(payload) <= 512:
+            raise ValueError("Mission cursor payload invalid")
+        return hmac.digest(
+            self._hmac_key,
+            b"orbbec-agent-platform:mission-cursor:v1:"
+            + owner.bytes
+            + b":"
+            + payload,
+            "sha256",
+        )
+
     def issue_browser_challenge(self) -> str:
         payload = int(time.time()).to_bytes(8, "big") + secrets.token_bytes(24)
         signature = hmac.digest(
@@ -698,7 +712,7 @@ class WebSessionRepository:
                     "array[]::text[]) as observation_agent_ids, "
                     "platform_control.read_account_departments_v27("
                     "users.internal_user_id) as departments, "
-                    "platform_control.read_account_gender_v29("
+                    "platform_control.read_account_gender_v35("
                     "users.internal_user_id) as gender from "
                     "platform_control.internal_users users left join lateral "
                     "(select array_agg(grants.agent_id order by grants.agent_id) "

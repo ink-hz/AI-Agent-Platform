@@ -1,12 +1,12 @@
 alter table platform_control.directory_members
   add column gender text,
-  add constraint directory_member_gender_v28
+  add constraint directory_member_gender_v34
     check (gender is null or gender in ('male','female'));
 
 alter table platform_control.directory_generations
   drop constraint directory_generation_v20_bounds;
 alter table platform_control.directory_generations
-  add constraint directory_generation_v28_bounds check (
+  add constraint directory_generation_v34_bounds check (
     source_schema_version between 0 and 2
     and source_department_count <= 20000 and department_count <= 20000
     and source_member_count <= 200000 and member_count <= 200000
@@ -16,7 +16,7 @@ alter table platform_control.directory_generations
          or length(expected_content_sha256) = 64)
   );
 
-create function platform_control.directory_generation_checksum_v28(
+create function platform_control.directory_generation_checksum_v34(
   selected_generation_id uuid
 ) returns text
 language sql security definer
@@ -86,7 +86,7 @@ as $function$
   )),'hex') from records;
 $function$;
 
-create function platform_control.create_directory_staging_generation_v28(
+create function platform_control.create_directory_staging_generation_v34(
   selected_generation_id uuid, selected_sync_run_id uuid,
   selected_run_kind text, selected_member_count integer,
   selected_department_count integer, selected_membership_count integer,
@@ -127,7 +127,7 @@ begin
 end
 $function$;
 
-create function platform_control.stage_directory_member_v28(
+create function platform_control.stage_directory_member_v34(
   selected_generation_id uuid, selected_member_key uuid,
   selected_lookup_hmac bytea, selected_lookup_version integer,
   selected_ciphertext bytea, selected_encryption_version integer,
@@ -176,7 +176,7 @@ begin
 end
 $function$;
 
-create function platform_control.validate_directory_generation_v28(
+create function platform_control.validate_directory_generation_v34(
   selected_generation_id uuid
 ) returns void
 language plpgsql security definer
@@ -260,7 +260,7 @@ begin
          and not exists(select 1 from platform_control.member_departments membership
            where membership.generation_id=member.generation_id
              and membership.member_key=member.member_key))
-  then raise check_violation using message='directory generation v28 invalid'; end if;
+  then raise check_violation using message='directory generation v34 invalid'; end if;
 
   if exists (
     with recursive lineage(descendant,ancestor,depth,path,cycle) as (
@@ -303,7 +303,7 @@ begin
     ) select 1 from differences
   ) then raise check_violation using message='directory closure incomplete'; end if;
 
-  actual_checksum := platform_control.directory_generation_checksum_v28(selected_generation_id);
+  actual_checksum := platform_control.directory_generation_checksum_v34(selected_generation_id);
   if selected.expected_content_sha256 is null
      or selected.expected_content_sha256 <> actual_checksum
   then raise check_violation using message='directory checksum mismatch'; end if;
@@ -324,8 +324,8 @@ begin
     perform platform_control.validate_directory_generation_v20(selected_generation_id);
     selected_checksum := platform_control.directory_generation_checksum_v20(selected_generation_id);
   elsif selected_schema_version=2 then
-    perform platform_control.validate_directory_generation_v28(selected_generation_id);
-    selected_checksum := platform_control.directory_generation_checksum_v28(selected_generation_id);
+    perform platform_control.validate_directory_generation_v34(selected_generation_id);
+    selected_checksum := platform_control.directory_generation_checksum_v34(selected_generation_id);
   else
     raise check_violation using message='directory source schema invalid';
   end if;
@@ -365,8 +365,8 @@ begin
     perform platform_control.validate_directory_generation_v20(selected_generation_id);
     actual_checksum := platform_control.directory_generation_checksum_v20(selected_generation_id);
   elsif selected_schema_version=2 then
-    perform platform_control.validate_directory_generation_v28(selected_generation_id);
-    actual_checksum := platform_control.directory_generation_checksum_v28(selected_generation_id);
+    perform platform_control.validate_directory_generation_v34(selected_generation_id);
+    actual_checksum := platform_control.directory_generation_checksum_v34(selected_generation_id);
   else
     raise check_violation using message='directory source schema invalid';
   end if;
@@ -435,15 +435,15 @@ exception when no_data_found or too_many_rows then
 end
 $function$;
 
-revoke all on function platform_control.directory_generation_checksum_v28(uuid)
+revoke all on function platform_control.directory_generation_checksum_v34(uuid)
   from public;
-revoke all on function platform_control.create_directory_staging_generation_v28(
+revoke all on function platform_control.create_directory_staging_generation_v34(
   uuid,uuid,text,integer,integer,integer,integer,integer,text
 ) from public;
-revoke all on function platform_control.stage_directory_member_v28(
+revoke all on function platform_control.stage_directory_member_v34(
   uuid,uuid,bytea,integer,bytea,integer,bytea,integer,bytea,integer,text,text,text
 ) from public;
-revoke all on function platform_control.validate_directory_generation_v28(uuid)
+revoke all on function platform_control.validate_directory_generation_v34(uuid)
   from public;
 
 do $migration$
@@ -453,7 +453,7 @@ begin
     selected_directory:='platform_directory_worker';
   elsif current_database()='agent_platform_control_preview' and current_user='platform_control_owner_preview' then
     selected_directory:='platform_directory_worker_preview';
-  else raise insufficient_privilege using message='directory v28 owner/environment mismatch';
+  else raise insufficient_privilege using message='directory v34 owner/environment mismatch';
   end if;
   foreach role_name in array array[
     'platform_control_migrator','platform_control_app','platform_directory_worker',
@@ -462,12 +462,12 @@ begin
     'platform_directory_worker_preview','platform_stream_ingest_preview',
     'platform_audit_append_preview','platform_control_maintenance_preview'
   ] loop
-    execute format('revoke all on function platform_control.directory_generation_checksum_v28(uuid) from %I',role_name);
-    execute format('revoke all on function platform_control.create_directory_staging_generation_v28(uuid,uuid,text,integer,integer,integer,integer,integer,text) from %I',role_name);
-    execute format('revoke all on function platform_control.stage_directory_member_v28(uuid,uuid,bytea,integer,bytea,integer,bytea,integer,bytea,integer,text,text,text) from %I',role_name);
-    execute format('revoke all on function platform_control.validate_directory_generation_v28(uuid) from %I',role_name);
+    execute format('revoke all on function platform_control.directory_generation_checksum_v34(uuid) from %I',role_name);
+    execute format('revoke all on function platform_control.create_directory_staging_generation_v34(uuid,uuid,text,integer,integer,integer,integer,integer,text) from %I',role_name);
+    execute format('revoke all on function platform_control.stage_directory_member_v34(uuid,uuid,bytea,integer,bytea,integer,bytea,integer,bytea,integer,text,text,text) from %I',role_name);
+    execute format('revoke all on function platform_control.validate_directory_generation_v34(uuid) from %I',role_name);
   end loop;
-  execute format('grant execute on function platform_control.create_directory_staging_generation_v28(uuid,uuid,text,integer,integer,integer,integer,integer,text) to %I',selected_directory);
-  execute format('grant execute on function platform_control.stage_directory_member_v28(uuid,uuid,bytea,integer,bytea,integer,bytea,integer,bytea,integer,text,text,text) to %I',selected_directory);
+  execute format('grant execute on function platform_control.create_directory_staging_generation_v34(uuid,uuid,text,integer,integer,integer,integer,integer,text) to %I',selected_directory);
+  execute format('grant execute on function platform_control.stage_directory_member_v34(uuid,uuid,bytea,integer,bytea,integer,bytea,integer,bytea,integer,text,text,text) to %I',selected_directory);
 end
 $migration$;

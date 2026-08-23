@@ -57,8 +57,9 @@ describe("Operations Brief presentation helpers", () => {
   });
 
   it("allows only target paths handled by the existing SPA", () => {
-    expect(eventTargetPath(event)).toBe("/agents/ai-fae-agent");
-    expect(eventTargetPath({ ...event, target_path: "/sessions/fae%3Asession-2" })).toBe("/sessions/fae%3Asession-2");
+    expect(eventTargetPath(event)).toBe("/admin/agents/ai-fae-agent");
+    expect(eventTargetPath({ ...event, target_path: "/sessions/fae%3Asession-2" })).toBe("/admin/sessions/fae%3Asession-2");
+    expect(eventTargetPath({ ...event, target_path: "/admin/activity?agent_id=ai-fae-agent" })).toBe("/admin/activity?agent_id=ai-fae-agent");
     expect(eventTargetPath({ ...event, target_path: "https://example.com/admin" })).toBeNull();
     expect(eventTargetPath({ ...event, target_path: "/api/cluster/status" })).toBeNull();
   });

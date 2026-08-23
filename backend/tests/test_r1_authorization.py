@@ -14,7 +14,10 @@ from app.control_plane.authorization import (
     require_exact_viewer_agent,
 )
 from app.control_plane.models import AuthContext, Role
-from app.control_plane.middleware import IdentitySecurityMiddleware
+from app.control_plane.middleware import (
+    IdentitySecurityMiddleware,
+    is_execution_worker_request,
+)
 from test_control_plane_migration import control_database
 
 
@@ -78,6 +81,17 @@ def test_member_and_unknown_route_default_deny_but_owner_reads_known_routes():
     assert service.decide(
         OWNER, "GET", "/api/review/issues/{issue_id}", ()
     ).allowed is True
+
+
+@pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.MANAGEMENT_VIEWER])
+@pytest.mark.parametrize("route", ["/admin", "/admin/{client_path:path}"])
+def test_management_shell_is_not_member_self_service_but_remains_available_to_management_roles(
+    role, route
+):
+    service = AuthorizationService(Grants())
+
+    assert service.decide(AuthContext(uuid4(), role, uuid4(), False), "GET", route, ()).allowed is True
+    assert service.decide(MEMBER, "GET", route, ()).status_code == 403
 
 
 def test_hard_stale_owner_is_read_only_and_cloud_review_mutations_are_disabled():
@@ -237,3 +251,21 @@ def test_database_scope_check_and_viewer_read_audit_are_exact_and_immutable(
         "privileged_read",
     )
     assert row[3] == {"agent_id": "hr-bot", "scope_kind": "exact_agent"}
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "expected"),
+    [
+        ("POST", "/api/v1/execution-worker/lease", True),
+        ("POST", "/api/v1/execution-worker/heartbeat", True),
+        ("POST", f"/api/v1/execution-worker/runs/{uuid4()}/events", True),
+        ("GET", "/api/v1/execution-worker/lease", False),
+        ("POST", "/api/v1/execution-worker/lease/", False),
+        ("POST", "/api/v1/execution-worker/runs/not-a-uuid/events", False),
+        ("POST", f"/prefix/api/v1/execution-worker/runs/{uuid4()}/events", False),
+        ("POST", f"/api/v1/execution-worker/runs/{str(uuid4()).upper()}/events", False),
+        ("POST", f"/api/v1/execution-worker/runs/{uuid4()}/future", False),
+    ],
+)
+def test_execution_worker_public_boundary_is_exact(method, path, expected):
+    assert is_execution_worker_request(method, path) is expected

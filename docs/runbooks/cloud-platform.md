@@ -1,5 +1,9 @@
 # Cloud Platform and DingTalk identity runbook
 
+The local-to-cloud execution prerequisite is operated separately through the
+[Agent execution relay runbook](agent-execution-relay.md). Its release gate must
+pass before any user-facing Chat or Agent Brain route is enabled.
+
 This runbook operates the read-only cloud replica and the production DingTalk
 identity boundary of AI Agent Platform. The public employee entry is
 `https://agent.orbbec.com.cn/`; PostgreSQL and the Platform upstream remain
@@ -43,10 +47,27 @@ dingtalk-owner-userid
 backup-recovery-x25519.pub
 ```
 
-The deployment generates production control DSNs and four independent
-versioned keyrings. It never reads macOS Keychain and never accepts credentials
-through process arguments. Do not print or copy secret contents into a shell
-history.
+The deployment generates production control DSNs and independent versioned
+identity keyrings. Generate the content keyring once, validate it with the
+production codec, and put a second encrypted copy in the approved offline backup:
+
+```bash
+backend/.venv/bin/python deploy/cloud/generate-content-keyring.py \
+  /absolute/private/content-encryption-keyring
+```
+
+The deploy environment references private files by absolute path only:
+
+```text
+CLOUD_CONTENT_ENCRYPTION_KEYRING=/absolute/private/content-encryption-keyring
+CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING=/absolute/private/execution-worker-public.json
+```
+
+The keyring parent is mode `0700` and the file is mode `0600`. Back up the
+content keyring before first deployment; losing it makes encrypted Missions
+unreadable. The generator never prints key material. Deployment never reads
+macOS Keychain and never accepts credentials through process arguments. Do not
+print or copy secret contents into shell history.
 
 Run the reviewed clean release through the normal deploy command. Success is:
 
@@ -139,6 +160,201 @@ authenticated account proof have passed. Rollback AI ADMIN first, then perform
 the Platform compatibility rollback; retain the synchronized nullable column
 and do not delete directory data.
 
+## Agent Brain opt-in release
+
+The use entry is a separate fail-closed release gate. Keep the management root
+available until every dependency is ready, and execute the following order
+without skipping or combining a gate:
+
+1. migrations with Brain disabled;
+2. local `agent-brain-bot` on `127.0.0.1:9110`;
+3. Worker allowlist and key registration;
+4. cloud image with Brain disabled;
+5. relay canary;
+6. enable Brain;
+7. switch `/` from the management entry to Agent 大脑.
+
+The cloud environment flag is `PLATFORM_AGENT_BRAIN_ENABLED`. It is absent or
+`0` during migration, image and relay validation. The authenticated root then
+redirects to `/admin`; only an explicit value of `1` enables Mission APIs and
+the use root. The relay remains separately controlled by
+`PLATFORM_EXECUTION_RELAY_ENABLED=1`.
+
+Provision the local Worker from Neo's reviewed checkout before creating the
+acceptance inputs:
+
+```bash
+deploy/local-execution-worker/provision.sh
+```
+
+This wrapper uses Neo's private PostgreSQL socket only for a temporary
+bootstrap role, leaves only the narrow SCRAM runtime HBA rule, and installs the
+Worker as `agentops` without a password, GUI, Keychain or copied SSH key. The
+Worker is the fixed PM2 process `orbbec-agent-execution-worker`, launched only
+through
+`/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh`
+and the fixed `execution-worker.ecosystem.config.cjs`; the provision path does
+not call `launchctl`. Before mutation it records the exact prior Worker state
+(`absent`, `online`, or `stopped`) and an owner-only copy of the existing PM2
+dump. Failure restores both. Success first proves that the PM2 PID is the sole
+`127.0.0.1:9120` listener, that Agent Brain is byte-for-byte process invariant,
+and that every PM2 process other than Brain and this Worker is invariant; only
+then does it run `pm2 save` and commit the receipt.
+
+The agentops release stage runs with `umask 077`, so the real Git archive
+extracts `worker-pm2.sh` as owner-only mode `0700` and the ecosystem config as
+owner-only mode `0600`. Stage, prepare, and the PM2 wrapper require those exact
+modes; group/other access or a mode mismatch fails before Worker mutation.
+The wrapper does not execute npm's standard `.npm-global/bin/pm2` symlink. It
+uses the fixed regular package executable at
+`.npm-global/lib/node_modules/pm2/bin/pm2` after verifying agentops ownership,
+execute permission, no symlink at the canonical file, and no group/other-write
+permission on its package ancestors.
+After PM2 starts the Worker, provision allows dependency import and socket bind
+up to a fixed 60-second deadline, polling every 5 seconds. Every poll must
+still return the exact PM2 Worker identity. PM2 `launching` is the only startup
+phase that may wait without probing the listener; once online, only an absent
+9120 listener is retryable. `waiting restart`, errored, stopped, absent or
+ambiguous PM2 state, a non-loopback or duplicate listener, or a listener PID
+different from the PM2 PID fails immediately. The deadline begins as soon as
+the installer returns from PM2 start and is checked again before accepting a
+listener; failure restores the prior Worker state and PM2 dump.
+Rollback restoration of a previously online Worker applies the same strict
+identity mapping and a separate fixed 60-second `launching`-to-`online` wait;
+failed PM2 states or expiration fail the rollback instead of claiming that the
+prior state was restored.
+
+Create a private JSON acceptance config and four private browser-input files.
+The config, the member and owner Cookie header files, the HR acceptance prompt,
+the interruption prompt and the evidence destination must be owner-only regular
+files with mode `0600`. The acceptance identities must include a
+real DingTalk test member and a different owner or platform administrator. Before enablement,
+require a pre-created `hr-bot` grant for the member and deliberately do not grant
+`marketing-gtm-bot`.
+
+Each Cookie file contains exactly the two browser cookies
+`__Host-platform_session` and `__Host-platform_csrf` on one line. The script
+derives mode-`0600` curl/CDP inputs, supplies the required production Origin,
+and never places either value in command-line arguments or evidence. The JSON
+config uses schema version `2` and has exactly these absolute-path fields:
+`member_cookie_file`, `owner_cookie_file`, `hr_prompt_file`,
+`interruption_prompt_file`, the agentops-owned mode-`0600`
+`relay_acceptance_config`, and `evidence_file`. Cloud root access is fixed inside the Neo-owned release coordinator
+to `/Users/neo/.ssh/orbbec_aliyun_ed25519`. That key is never copied to or made
+readable by `agentops`.
+
+Before release, persist predeclared `grant_id` and `request_id` UUIDs with the
+authenticated owner/member account results (or their stable
+`internal_user_id` values) in a private JSON file. Apply the audited
+`acceptance-grant` maintenance helper in the deployed container. It grants only
+`hr-bot`, verifies `marketing-gtm-bot` remains denied, and rejects names or
+DingTalk provider identifiers.
+
+The private document is schema version `1` with exact keys `actor`, `member`,
+`grant_id`, and `request_id`. `actor` and `member` are either stable UUID
+strings or the corresponding `/api/v1/account` results. Run the helper through
+a one-use input directory owned by the image runtime UID. Both the mounted
+directory and files must satisfy the helper's `0700`/`0600` ownership checks;
+mounting a root-owned `0600` file directly is not sufficient:
+
+```bash
+grant_input=/opt/orbbec-agent-platform/private/acceptance-grant-input
+trap 'rm -rf -- "$grant_input"' EXIT
+release="$(readlink -f /opt/orbbec-agent-platform/current)"
+platform_env=/opt/orbbec-agent-platform/private/platform.env
+compose="$release/deploy/cloud/compose.yaml"
+api="$(docker compose --env-file "$platform_env" -f "$compose" ps -q platform-api)"
+PLATFORM_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$api")"
+[[ "$PLATFORM_IMAGE" =~ ^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,255}$ ]]
+install -d -m 0700 -o 10001 -g 10001 "$grant_input"
+install -m 0600 -o 10001 -g 10001 \
+  /absolute/private/acceptance-grant.json "$grant_input/grant.json"
+install -m 0600 -o 10001 -g 10001 \
+  /opt/orbbec-agent-platform/private/control-maintenance-database-url \
+  "$grant_input/maintenance-database-url"
+docker run --rm --read-only --user 10001:10001 \
+  --network orbbec-agent-platform-internal \
+  -v "$grant_input":/run/input:ro \
+  -e PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE=/run/input/maintenance-database-url \
+  "$PLATFORM_IMAGE" python -m app.agent_brain.acceptance_grant \
+  /run/input/grant.json
+rm -rf -- "$grant_input"
+trap - EXIT
+```
+
+Run the staged gate from the reviewed release checkout:
+
+```bash
+deploy/cloud/accept.sh /absolute/private/agent-brain-acceptance.json preflight
+deploy/cloud/accept.sh /absolute/private/agent-brain-acceptance.json release
+deploy/cloud/accept.sh /absolute/private/agent-brain-acceptance.json rollback
+deploy/cloud/accept.sh /absolute/private/agent-brain-acceptance.json restore
+```
+
+`release` performs enablement and real acceptance in one fail-closed process;
+there is no standalone enable action. Any enablement or acceptance failure
+restores `PLATFORM_AGENT_BRAIN_ENABLED=0` and therefore the management root.
+The `accept` action is only for an additional rerun of the same gate and also
+disables Brain on failure. `restore` repeats the complete release gate after a
+successful rollback instead of enabling the flag without acceptance.
+Before the flag can become `1`, `release` runs the existing ten-gate execution
+relay acceptance as `agentops` and requires its exact fixed success marker.
+That canary runs while Brain remains `0`; a missing config or any non-exact
+result leaves the management entry active.
+
+All mutating actions hold both a local private-directory lock and the same
+root-owned cloud private-directory lock used by `deploy/cloud/deploy.sh` for
+their full lifecycle. The common remote lock is acquired atomically before
+either workflow acquires or changes deployment input, so a concurrent Brain
+action or cloud deploy fails closed. An unclean shutdown deliberately leaves a
+stale lock for explicit operator audit; never delete it merely to retry.
+
+### Stale lock recovery
+
+Treat the common lock as stale only after confirming that local
+`deploy/cloud/deploy.sh` and `deploy/cloud/accept.sh` processes and their remote
+SSH/stage processes do not hold either lock open. On the cloud host, read and
+record the owner token, lock ownership and timestamps; then compare the current
+and previous deployment pointers and Brain feature state with the most recent
+deployment and acceptance evidence. Also recheck Platform health and the FAE
+invariance snapshot. If a cutover or remote operation remains uncertain, stop
+and investigate instead of clearing the lock.
+
+After the operator records that audit in the deployment incident log, move only
+the exact
+`/opt/orbbec-agent-platform/private/agent-brain-action.lock` directory to a
+token-named tombstone, verify its `owner` file still contains the recorded
+token, and remove that file and the now-empty tombstone. Never use a recursive
+delete or a wildcard. Run `preflight` again before retrying any mutation.
+
+The acceptance checks the member use root, member denial at `/admin`, owner
+access to `/admin`, a real `hr-bot` ChildRun, stored event parity, Markdown
+rendering in a fresh headless browser process, unauthorized Agent denial,
+explicit interruption after a Worker stop, and no duplicate ChildRun after
+Worker restart. Readiness and child-run discovery poll at five-second intervals
+with fixed total time limits; do not replace them with a busy loop.
+
+The evidence file may contain only release SHAs, container IDs and start times,
+worker key ID, Mission IDs, run IDs, event sequences, listener addresses, FAE
+probe results and rollback paths.
+Do not record prompts, answers, cookies, DingTalk IDs, or secrets. Keep the file
+at mode `0600`.
+Every successful gate writes an immutable UUID-suffixed evidence generation and
+atomically updates the configured evidence path to the newest generation. If a
+current evidence file already exists, it is first retained as a separate
+mode-`0600` previous generation. This allows `accept` and `restore` to rerun
+without overwriting the release or rollback evidence used by the preceding
+step.
+
+Rollback sets the feature flag to `0`, recreates only Platform API/loopback,
+and verifies `/admin`, Sessions, Review and Operations before it reports
+success. Do not drop migration 032 or 033. Do not delete Mission data. The rollback
+never restarts or modifies FAE or local MetaBots. The FAE container identity,
+configuration and separate FAE domain/IP Nginx routes remain byte-for-byte
+invariant; only the Agent Platform server block is intentionally replaced.
+After the rollback exercise passes, `restore` returns the
+reviewed release to the enabled state.
+
 ## One-time local preparation
 
 Use an explicit private directory outside the repository:
@@ -160,6 +376,8 @@ CLOUD_ADMIN_HOST=root@47.106.112.69
 CLOUD_ADMIN_KEY=/Users/neo/.ssh/orbbec_aliyun_ed25519
 CLOUD_SIGNING_PUBLIC_KEY=/absolute/private/path/replica-signing-public.key
 CLOUD_BACKUP_PUBLIC_KEY=/absolute/private/path/backup-recovery-x25519.pub
+CLOUD_CONTENT_ENCRYPTION_KEYRING=/absolute/private/path/content-encryption-keyring
+CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING=/absolute/private/path/execution-worker-public.json
 CLOUD_BASELINE_FILE=/absolute/private/path/cloud-baseline.sha256
 CLOUD_ACCEPTANCE_EVIDENCE_FILE=/absolute/private/path/acceptance-evidence.env
 ```

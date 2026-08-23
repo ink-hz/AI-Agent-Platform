@@ -1,0 +1,192 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+fail() { echo EXECUTION_WORKER_PM2_FAILED >&2; exit 1; }
+[[ $# -ge 1 && "$(/usr/bin/id -un)" == agentops && "${HOME:-}" == /Users/agentops ]] || fail
+cd /Users/agentops || fail
+
+name=orbbec-agent-execution-worker
+config=/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/execution-worker.ecosystem.config.cjs
+pm2_home=/Users/agentops
+pm2_root=/Users/agentops/.npm-global
+pm2=/Users/agentops/.npm-global/lib/node_modules/pm2/bin/pm2
+safe_path=/Users/agentops/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+
+secure_pm2() {
+  /usr/bin/python3 - "$pm2_home" "$pm2_root" "$pm2" <<'PY'
+import os
+from pathlib import Path
+import stat
+import sys
+
+home, root, executable = map(Path, sys.argv[1:])
+if root != home / ".npm-global" or executable != root / "lib/node_modules/pm2/bin/pm2":
+    raise SystemExit(1)
+directories = (
+    home,
+    root,
+    root / "bin",
+    root / "lib",
+    root / "lib/node_modules",
+    root / "lib/node_modules/pm2",
+    root / "lib/node_modules/pm2/bin",
+)
+for path in directories:
+    metadata = path.lstat()
+    if (
+        path.is_symlink()
+        or not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or stat.S_IMODE(metadata.st_mode) & 0o022
+    ):
+        raise SystemExit(1)
+metadata = executable.lstat()
+if (
+    executable.is_symlink()
+    or not stat.S_ISREG(metadata.st_mode)
+    or metadata.st_uid != os.getuid()
+    or stat.S_IMODE(metadata.st_mode) & 0o022
+    or not stat.S_IMODE(metadata.st_mode) & 0o100
+    or not 0 < metadata.st_size <= 1_048_576
+):
+    raise SystemExit(1)
+PY
+}
+
+[[ -x /usr/bin/jq ]] && secure_pm2 || fail
+
+fixed_config() {
+  [[ -f "$config" && ! -L "$config" \
+    && "$(/usr/bin/stat -f '%Lp %Su' "$config")" == "600 agentops" ]]
+}
+
+pm2_clean() {
+  /usr/bin/env -i HOME=/Users/agentops USER=agentops LOGNAME=agentops \
+    PATH="$safe_path" PM2_HOME=/Users/agentops/.pm2 \
+    TMPDIR=/Users/agentops/AgentRuntime/tmp \
+    NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost \
+    "$pm2" "$@"
+}
+
+state() {
+  pm2_clean jlist | /usr/bin/jq -er --arg name "$name" '
+    [.[] | select(.name == $name)]
+    | if length == 0 then "absent"
+      elif length == 1 and (.[0].pm2_env.status == "online" or .[0].pm2_env.status == "stopped")
+        then .[0].pm2_env.status
+      else error("worker PM2 state is ambiguous") end'
+}
+
+delete_worker() {
+  pm2_clean delete "$name" >/dev/null 2>&1 || [[ "$(state)" == absent ]]
+}
+
+readiness() {
+  pm2_clean jlist | /usr/bin/jq -ce --arg name "$name" '
+    [.[] | select(.name == $name)]
+    | if length == 0 then {phase:"failed"}
+      elif any(.[];
+        .pm2_env.pm_exec_path != "/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python"
+        or .pm2_env.pm_cwd != "/Users/agentops/AgentRuntime/platform/backend"
+        or .pm2_env.args != ["-m","app.execution_relay.worker"])
+      then error("worker PM2 identity mismatch")
+      elif length != 1 then {phase:"failed"}
+      elif .[0].pm2_env.status == "online"
+        and (.[0].pid | type) == "number" and .[0].pid > 0
+      then {phase:"online",pid:.[0].pid}
+      elif .[0].pm2_env.status == "launching"
+      then {phase:"starting"}
+      else {phase:"failed"}
+      end'
+}
+
+wait_until_online() {
+  restore_interval_seconds=5
+  restore_timeout_seconds=60
+  restore_started="$(/bin/date +%s)" || return 1
+  [[ "$restore_started" =~ ^[0-9]+$ ]] || return 1
+  restore_deadline=$((restore_started + restore_timeout_seconds))
+  while true; do
+    restore_now="$(/bin/date +%s)" || return 1
+    [[ "$restore_now" =~ ^[0-9]+$ && "$restore_now" -lt "$restore_deadline" ]] || return 1
+    restore_readiness="$(readiness)" || return 1
+    restore_phase="$(/usr/bin/jq -er '
+      if keys == ["phase"] and (.phase == "starting" or .phase == "failed")
+        then .phase
+      elif keys == ["phase","pid"] and .phase == "online"
+        and (.pid | type) == "number" and .pid > 0
+        then .phase
+      else error("invalid worker readiness") end
+    ' <<<"$restore_readiness")" || return 1
+    [[ "$restore_phase" != failed ]] || return 1
+    restore_now="$(/bin/date +%s)" || return 1
+    [[ "$restore_now" =~ ^[0-9]+$ && "$restore_now" -lt "$restore_deadline" ]] || return 1
+    [[ "$restore_phase" != online ]] || return 0
+    /bin/sleep "$restore_interval_seconds"
+  done
+}
+
+case "$1" in
+  state)
+    [[ $# -eq 1 ]] || fail
+    state
+    ;;
+  inspect)
+    [[ $# -eq 1 ]] || fail
+    pm2_clean jlist | /usr/bin/jq -ce --arg name "$name" '
+      [.[] | select(.name == $name)]
+      | if length == 1 and .[0].pm2_env.status == "online"
+          and (.[0].pid | type) == "number" and .[0].pid > 0
+          and .[0].pm2_env.pm_exec_path == "/Users/agentops/AgentRuntime/platform/backend/.venv/bin/python"
+          and .[0].pm2_env.pm_cwd == "/Users/agentops/AgentRuntime/platform/backend"
+          and .[0].pm2_env.args == ["-m","app.execution_relay.worker"]
+        then {name:.[0].name,pid:.[0].pid,status:.[0].pm2_env.status,
+              pm_exec_path:.[0].pm2_env.pm_exec_path,pm_cwd:.[0].pm2_env.pm_cwd,
+              args:.[0].pm2_env.args}
+        else error("worker PM2 identity mismatch") end'
+    ;;
+  readiness)
+    [[ $# -eq 1 ]] || fail
+    readiness
+    ;;
+  start)
+    [[ $# -eq 1 ]] && fixed_config || fail
+    delete_worker
+    pm2_clean start "$config" --only "$name" --update-env >/dev/null
+    start_readiness="$(readiness)" || fail
+    /usr/bin/jq -e '
+      (keys == ["phase"] and .phase == "starting")
+      or (keys == ["phase","pid"] and .phase == "online"
+        and (.pid | type) == "number" and .pid > 0)
+    ' <<<"$start_readiness" >/dev/null || fail
+    ;;
+  stop)
+    [[ $# -eq 1 && "$(state)" == online ]] || fail
+    pm2_clean stop "$name" >/dev/null
+    [[ "$(state)" == stopped ]] || fail
+    ;;
+  restore)
+    [[ $# -eq 2 && ( "$2" == absent || "$2" == online || "$2" == stopped ) ]] || fail
+    if [[ "$2" == absent ]]; then
+      delete_worker
+    else
+      fixed_config || fail
+      delete_worker
+      pm2_clean start "$config" --only "$name" --update-env >/dev/null
+      if [[ "$2" == online ]]; then
+        wait_until_online || fail
+      else
+        pm2_clean stop "$name" >/dev/null
+      fi
+    fi
+    [[ "$(state)" == "$2" ]] || fail
+    ;;
+  save)
+    [[ $# -eq 1 ]] || fail
+    current_state="$(state)" || fail
+    [[ "$current_state" == absent || "$current_state" == online || "$current_state" == stopped ]] || fail
+    pm2_clean save >/dev/null
+    ;;
+  *) fail ;;
+esac

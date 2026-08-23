@@ -104,7 +104,7 @@ class DirectoryWorkerRepository:
         timeout_seconds: float = 20.0,
     ) -> None:
         self._call(
-            "select platform_control.create_directory_staging_generation_v28("
+            "select platform_control.create_directory_staging_generation_v34("
             "%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 generation_id,
@@ -147,7 +147,7 @@ class DirectoryWorkerRepository:
         timeout_seconds: float = 20.0,
     ) -> None:
         self._batch(
-            "select platform_control.stage_directory_member_v28("
+            "select platform_control.stage_directory_member_v34("
             "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 (

@@ -209,14 +209,14 @@ describe("AgentDetailPage recent activity", () => {
     expect(activity.querySelector(".section-heading p")).toBeNull();
     expect(activity.querySelector("h2")?.textContent).toBe("最近运行记录");
     expect(activity.querySelector(".operational-event-title")?.textContent).toBe(event.title);
-    expect(activity.querySelector("a[href='/activity?agent_id=test-bot']")?.textContent).toBe("查看全部运行记录 →");
+    expect(activity.querySelector("a[href='/admin/activity?agent_id=test-bot']")?.textContent).toBe("查看全部运行记录 →");
     const runtime = container.querySelector(".agent-runtime-summary")!;
     expect(runtime.textContent).toContain("正常");
     expect(runtime.textContent).toContain("claude-opus-4-8 · PTY");
     expect(runtime.textContent).toContain("Feishu 已连接");
     expect(runtime.textContent).toContain("已运行 8 天");
     expect(runtime.textContent).not.toContain("当前进程");
-    expect(runtime.querySelector("a[href='/agents/test-bot/runtime']")).not.toBeNull();
+    expect(runtime.querySelector("a[href='/admin/agents/test-bot/runtime']")).not.toBeNull();
     expect(runtime.querySelector("a")?.textContent).toBe("查看运行详情 →");
     expect(container.textContent!.indexOf("运行状态")).toBeLessThan(container.textContent!.indexOf("最近运行记录"));
     expect(container.textContent!.indexOf("最近运行记录")).toBeLessThan(container.textContent!.indexOf("最近 Session"));
@@ -323,7 +323,7 @@ describe("AgentDetailPage recent activity", () => {
     await renderAgent(encodedAgent.id);
 
     expect(container.querySelectorAll(".agent-activity-section .operational-event-item")).toHaveLength(8);
-    expect(container.querySelector(".agent-activity-section a[href='/activity?agent_id=system%2Fqa%20agent%3F']"))
+    expect(container.querySelector(".agent-activity-section a[href='/admin/activity?agent_id=system%2Fqa%20agent%3F']"))
       .not.toBeNull();
     const activityCalls = fetchMock.mock.calls.filter(([path]) => String(path).startsWith("/api/operations/events"));
     expect(activityCalls).toHaveLength(1);
@@ -425,7 +425,7 @@ describe("AgentDetailPage recent activity", () => {
     expect(container.textContent).toContain("正在加载 Agent 详情");
     expect(container.textContent).not.toContain(agentFixture.name);
     expect(container.textContent).not.toContain(nextEvent.title);
-    expect(container.querySelector("a[href='/activity?agent_id=test-bot']")).toBeNull();
+    expect(container.querySelector("a[href='/admin/activity?agent_id=test-bot']")).toBeNull();
 
     await act(async () => {
       nextSessions.resolve(response(sessionsPage(nextAgent)));
@@ -434,13 +434,13 @@ describe("AgentDetailPage recent activity", () => {
     });
     expect(container.querySelector(".agent-profile h1")?.textContent).toBe(nextAgent.name);
     expect(container.querySelector(".agent-activity-section")?.textContent).toContain(nextEvent.title);
-    expect(container.querySelector("a[href='/activity?agent_id=next-bot']")).not.toBeNull();
+    expect(container.querySelector("a[href='/admin/activity?agent_id=next-bot']")).not.toBeNull();
   });
 
   it("restores the originating Recent Sessions position after Agent content renders", async () => {
     window.history.replaceState({
-      sessionOrigin: { path: "/agents/test-bot", scrollY: 500 },
-    }, "", "/agents/test-bot");
+      sessionOrigin: { path: "/admin/agents/test-bot", scrollY: 500 },
+    }, "", "/admin/agents/test-bot");
     Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 2200 });
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
     const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);

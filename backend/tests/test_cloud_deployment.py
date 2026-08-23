@@ -284,7 +284,17 @@ def test_remote_stage_calls_control_bootstrap_without_replacing_replica():
     stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
 
     assert '"$release_path/deploy/cloud/bootstrap-control-db.sh"' in stage
-    assert stage.count("bootstrap-control-db.sh") == 1
+    validation = (
+        'for bootstrap_helper in \\\n'
+        '  "$release_path/deploy/cloud/bootstrap-control-db.sh" \\\n'
+    )
+    invocation = (
+        'control_bootstrap_result="$("$release_path/deploy/cloud/'
+        'bootstrap-control-db.sh" \\\n'
+    )
+    assert stage.count(validation) == 1
+    assert stage.count(invocation) == 1
+    assert stage.index(validation) < stage.index(invocation)
     assert "replica-database-url" in stage
     assert "platform_replica_reader" in stage
     assert "platform_replica_importer" in stage

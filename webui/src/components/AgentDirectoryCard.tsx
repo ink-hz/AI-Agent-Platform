@@ -6,7 +6,7 @@ import { PlatformLink } from "./PlatformLink";
 
 export function AgentDirectoryCard({ agent }: { agent: AgentSummary }) {
   return (
-    <PlatformLink className={`directory-agent agent-${agent.accent}`} href={`/agents/${encodeURIComponent(agent.id)}`}>
+    <PlatformLink className={`directory-agent agent-${agent.accent}`} href={`/admin/agents/${encodeURIComponent(agent.id)}`}>
       <span className="directory-accent" />
       <div className="directory-agent-head">
         <span className="fleet-avatar">{agent.glyph}</span>

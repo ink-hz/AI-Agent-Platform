@@ -19,6 +19,7 @@ import {
   PermissionDenied,
   loadAccount,
   logoutAccount,
+  localPathname,
   platformPath,
   identityShellEnabled,
   type Account,
@@ -27,6 +28,11 @@ import { LoginPage } from "./pages/LoginPage";
 import { AccountPage } from "./pages/AccountPage";
 import { IdentityManagementPage } from "./pages/IdentityManagementPage";
 import { GovernancePage } from "./pages/GovernancePage";
+import { BrainPage } from "./pages/BrainPage";
+import { MissionPage } from "./pages/MissionPage";
+import { MissionsPage } from "./pages/MissionsPage";
+import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
+import { AgentUsePage } from "./pages/AgentUsePage";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -40,9 +46,9 @@ function PendingPage({ title, description }: { title: string; description: strin
 }
 
 
-function LegacyFlywheelRedirect() {
-  useEffect(() => navigate("/sessions", { replace: true }), []);
-  return <LoadingState label="正在打开 Session" />;
+function LegacyRedirect({ to }: { to: string }) {
+  useEffect(() => navigate(`${to}${window.location.search}`, { replace: true }), [to]);
+  return <LoadingState label="正在打开新的页面地址" />;
 }
 
 
@@ -60,9 +66,10 @@ function AccessState({
 
 
 function viewerRouteAllowed(account: Account, route: ReturnType<typeof useRoute>): boolean {
-  if (route.name === "account" || route.name === "governance") return true;
-  if (route.name === "agent-runtime") return account.observation_agent_ids.includes(route.agentId);
-  if (route.name === "review" || route.name === "activity") {
+  if (["brain", "missions", "mission", "agents", "agent", "account"].includes(route.name)) return true;
+  if (route.name === "admin-governance") return true;
+  if (route.name === "admin-agent-runtime") return account.observation_agent_ids.includes(route.agentId);
+  if (route.name === "admin-review" || route.name === "admin-activity") {
     const selected = new URLSearchParams(window.location.search).getAll("agent_id");
     return selected.length === 1 && account.observation_agent_ids.includes(selected[0]);
   }
@@ -76,18 +83,24 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
       await logoutAccount(csrf);
       window.location.replace(platformPath("/login"));
     }} /> : <PendingPage title="企业账号" description="身份模式未启用。" />;
-    case "identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
-    case "governance": return <GovernancePage />;
-    case "overview": return <OverviewPage />;
-    case "agents": return <AgentsPage />;
-    case "agent": return <AgentDetailPage agentId={route.agentId} />;
-    case "agent-runtime": return <AgentRuntimePage agentId={route.agentId} />;
-    case "sessions": return <SessionsPage />;
-    case "session": return <SessionDetailPage sessionKey={route.sessionKey} />;
-    case "flywheel": return <LegacyFlywheelRedirect />;
-    case "activity": return <ActivityPage />;
-    case "review": return <ReviewPage />;
-    default: return <PendingPage title="页面不存在" description="请返回 Agent 集群总览。" />;
+    case "brain": return account ? <BrainPage account={account} /> : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
+    case "missions": return <MissionsPage />;
+    case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
+    case "agents": return <AgentUseDirectoryPage />;
+    case "agent": return account ? <AgentUsePage account={account} agentId={route.agentId} key={route.agentId} /> : <PendingPage title="专业 Agent" description="请启用企业身份后使用。" />;
+    case "admin-overview": return <OverviewPage />;
+    case "admin-agents": return <AgentsPage />;
+    case "admin-agent": return <AgentDetailPage agentId={route.agentId} />;
+    case "admin-agent-runtime": return <AgentRuntimePage agentId={route.agentId} />;
+    case "admin-sessions": return <SessionsPage />;
+    case "admin-session": return <SessionDetailPage sessionKey={route.sessionKey} />;
+    case "admin-review": return <ReviewPage />;
+    case "admin-activity": return <ActivityPage />;
+    case "admin-operations": return <PendingPage title="Operations 与数据飞轮" description="运行摘要、证据和改进闭环仍由管理中心统一维护。" />;
+    case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
+    case "admin-governance": return <GovernancePage />;
+    case "legacy-redirect": return <LegacyRedirect to={route.to} />;
+    default: return <PendingPage title="页面不存在" description="请返回 Agent 大脑。" />;
   }
 }
 
@@ -113,7 +126,8 @@ export default function App() {
     }).catch((error: unknown) => {
       if (!current) return;
       if (error instanceof AuthenticationRequired) {
-        navigate("/login", { replace: true });
+        const returnPath = `${localPathname()}${window.location.search}`;
+        navigate(`/login?return_path=${encodeURIComponent(returnPath)}`, { replace: true });
       } else if (error instanceof IdentityDisabled) {
         setLegacyMode(true); setFailure(null); setLoading(false);
       } else {
@@ -130,12 +144,9 @@ export default function App() {
   if (failure === "directory") return <AccessState title="暂时无法确认企业账号" description="企业通讯录同步可能延迟，请稍后重试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
   if (failure) return <AccessState title="暂时无法进入平台" description="连接服务时遇到短暂问题，请重新尝试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
   if (!legacyMode && account) {
-    if (account.role === "member" && route.name === "overview") {
-      navigate("/account", { replace: true });
-      return <AccessState title="正在打开企业账号" description="" />;
-    }
-    const allowed = account.role === "platform_owner" || account.role === "platform_admin"
-      || (account.role === "member" ? route.name === "account" : viewerRouteAllowed(account, route));
+    const usageRoute = ["brain", "missions", "mission", "agents", "agent", "account", "legacy-redirect"].includes(route.name);
+    const allowed = usageRoute || account.role === "platform_owner" || account.role === "platform_admin"
+      || (account.role === "management_viewer" && viewerRouteAllowed(account, route));
     if (!allowed) {
       return <AppShell route={route} account={account}><section className="permission-state" role="alert"><h1>无权访问</h1><p>该页面不在你的后端授权范围内。</p></section></AppShell>;
     }

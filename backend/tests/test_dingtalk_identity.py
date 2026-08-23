@@ -187,7 +187,7 @@ def _stage_and_promote_generation(
     )
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v28("
+            "select platform_control.create_directory_staging_generation_v34("
             "%s,%s,'scheduled',%s,1,%s,1,%s,%s)",
             (generation_id, run_id, len(members), len(members),
              DIRECTORY_SOURCE_SCHEMA_VERSION, digest),
@@ -204,7 +204,7 @@ def _stage_and_promote_generation(
         )
         for staged_member in staged_members:
             connection.execute(
-                "select platform_control.stage_directory_member_v28("
+                "select platform_control.stage_directory_member_v34("
                 "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     generation_id, staged_member.member_key,
@@ -400,7 +400,7 @@ async def test_new_generation_with_transition_candidate_only_pair_is_denied(
     )
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v28("
+            "select platform_control.create_directory_staging_generation_v34("
             "%s,%s,'scheduled',1,1,1,1,%s,%s)",
             (generation_id, uuid4(), DIRECTORY_SOURCE_SCHEMA_VERSION, digest),
         )
@@ -411,7 +411,7 @@ async def test_new_generation_with_transition_candidate_only_pair_is_denied(
              root.ciphertext, root.encryption_key_version),
         )
         connection.execute(
-            "select platform_control.stage_directory_member_v28("
+            "select platform_control.stage_directory_member_v34("
             "%s,%s,%s,1,%s,%s,%s,1,%s,%s,%s,'active',%s)",
             (
                 generation_id, member_key, old_corporate,
@@ -1068,12 +1068,12 @@ def test_directory_worker_can_stage_pair_facts_only_through_narrow_boundary(
     generation_id, member_key = uuid4(), uuid4()
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v28("
+            "select platform_control.create_directory_staging_generation_v34("
             "%s,%s,'scheduled',1,1,1,1,%s,%s)",
             (generation_id, uuid4(), DIRECTORY_SOURCE_SCHEMA_VERSION, "0" * 64),
         )
         result = connection.execute(
-            "select platform_control.stage_directory_member_v28("
+            "select platform_control.stage_directory_member_v34("
             "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 generation_id, member_key,
@@ -1135,7 +1135,7 @@ def test_schema_v2_gender_round_trip_checksum_and_promotion(
             "select member.gender,generation.source_schema_version,"
             "generation.status,generation.expected_content_sha256,"
             "generation.content_sha256,"
-            "platform_control.directory_generation_checksum_v28("
+            "platform_control.directory_generation_checksum_v34("
             "generation.generation_id) as database_checksum,"
             "state.active_generation_id "
             "from platform_control.directory_members member "
@@ -1168,14 +1168,14 @@ def test_schema_v2_member_staging_rejects_invalid_gender_without_partial_row(
     with psycopg.connect(worker_url) as connection:
         with connection.transaction():
             connection.execute(
-                "select platform_control.create_directory_staging_generation_v28("
+                "select platform_control.create_directory_staging_generation_v34("
                 "%s,%s,'scheduled',1,1,1,1,2,%s)",
                 (generation_id, uuid4(), "0" * 64),
             )
         with pytest.raises(psycopg.errors.CheckViolation):
             with connection.transaction():
                 connection.execute(
-                    "select platform_control.stage_directory_member_v28("
+                    "select platform_control.stage_directory_member_v34("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         generation_id,
@@ -1353,13 +1353,13 @@ def test_directory_pair_rejects_mixed_key_versions_without_partial_row(
     ))[1]
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v28("
+            "select platform_control.create_directory_staging_generation_v34("
             "%s,%s,'scheduled',1,1,1,1,%s,%s)",
             (generation_id, uuid4(), DIRECTORY_SOURCE_SCHEMA_VERSION, "0" * 64),
         )
         with pytest.raises(psycopg.errors.CheckViolation):
             connection.execute(
-                "select platform_control.stage_directory_member_v28("
+                "select platform_control.stage_directory_member_v34("
                 "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     generation_id, uuid4(),
@@ -1395,7 +1395,7 @@ def test_directory_promotion_rejects_incomplete_generation_without_state_change(
         ).fetchone()
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v28("
+            "select platform_control.create_directory_staging_generation_v34("
             "%s,%s,'scheduled',%s,1,0,1,%s,%s)",
             (generation_id, uuid4(), declared_members,
              DIRECTORY_SOURCE_SCHEMA_VERSION, "0" * 64),
@@ -2019,7 +2019,7 @@ def test_account_gender_projection_uses_only_one_active_current_member(
             row_factory=dict_row,
         ) as connection:
             return connection.execute(
-                "select platform_control.read_account_gender_v29(%s) as gender",
+                "select platform_control.read_account_gender_v35(%s) as gender",
                 (user_id,),
             ).fetchone()["gender"]
 
@@ -2044,7 +2044,7 @@ def test_account_gender_projection_uses_only_one_active_current_member(
     with psycopg.connect(production_environment["admin"]) as connection:
         connection.execute(
             "alter table platform_control.directory_members "
-            "drop constraint directory_member_gender_v28"
+            "drop constraint directory_member_gender_v34"
         )
         connection.execute(
             "update platform_control.directory_members set gender='invalid-stored-value' "
@@ -2068,7 +2068,7 @@ def test_account_gender_projection_uses_only_one_active_current_member(
             )
             connection.execute(
                 "alter table platform_control.directory_members "
-                "add constraint directory_member_gender_v28 "
+                "add constraint directory_member_gender_v34 "
                 "check (gender is null or gender in ('male','female'))"
             )
 
@@ -2077,7 +2077,7 @@ def test_account_gender_projection_uses_only_one_active_current_member(
 def test_account_gender_projection_has_exact_environment_app_grant(
     control_database,
 ) -> None:
-    signature = "platform_control.read_account_gender_v29(uuid)"
+    signature = "platform_control.read_account_gender_v35(uuid)"
     all_roles = tuple(
         role
         for environment in control_database["environments"].values()

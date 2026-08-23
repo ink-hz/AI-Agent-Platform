@@ -7,7 +7,13 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from app.config import load_config
-from app.main import build_operations, build_review_service, cancel_tasks, create_app
+from app.main import (
+    agent_brain_loop,
+    build_operations,
+    build_review_service,
+    cancel_tasks,
+    create_app,
+)
 from app.operations.repository import OperationsRepository
 
 
@@ -28,6 +34,119 @@ async def test_cancel_tasks_waits_for_task_cleanup():
 
     assert task.cancelled()
     assert cleaned.is_set()
+
+
+@pytest.mark.asyncio
+async def test_agent_brain_loop_starts_as_single_leader_and_cleans_up():
+    entered = asyncio.Event()
+    released = asyncio.Event()
+
+    class LeaderContext:
+        def __enter__(self):
+            entered.set()
+            return True
+
+        def __exit__(self, *_args):
+            released.set()
+
+    class Orchestrator:
+        def leader_session(self):
+            return LeaderContext()
+
+        def advance_pending(self, *, limit):
+            assert limit == 50
+            return 0
+
+    task = asyncio.create_task(agent_brain_loop(Orchestrator(), idle_seconds=0.01))
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+    assert released.is_set()
+
+
+@pytest.mark.asyncio
+async def test_agent_brain_shutdown_holds_leadership_until_inflight_pass_finishes():
+    entered = asyncio.Event()
+    worker_started = asyncio.Event()
+    worker_release = asyncio.Event()
+    leader_released = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    class LeaderContext:
+        def __enter__(self):
+            entered.set()
+            return True
+
+        def __exit__(self, *_args):
+            leader_released.set()
+
+    class Orchestrator:
+        def leader_session(self):
+            return LeaderContext()
+
+        def advance_pending(self, *, limit):
+            assert limit == 50
+            loop.call_soon_threadsafe(worker_started.set)
+            future = asyncio.run_coroutine_threadsafe(worker_release.wait(), loop)
+            future.result(timeout=2)
+            return 0
+
+    task = asyncio.create_task(agent_brain_loop(Orchestrator(), idle_seconds=0.01))
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    await asyncio.wait_for(worker_started.wait(), timeout=1)
+    task.cancel()
+    await asyncio.sleep(0)
+
+    assert leader_released.is_set() is False
+    worker_release.set()
+    await asyncio.gather(task, return_exceptions=True)
+    assert leader_released.is_set() is True
+
+
+@pytest.mark.asyncio
+async def test_agent_brain_shutdown_preserves_cancellation_if_inflight_pass_fails():
+    worker_started = asyncio.Event()
+    worker_release = asyncio.Event()
+    leader_released = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    class LeaderContext:
+        def __enter__(self):
+            return True
+
+        def __exit__(self, *_args):
+            leader_released.set()
+
+    class Orchestrator:
+        def leader_session(self):
+            return LeaderContext()
+
+        def advance_pending(self, *, limit):
+            loop.call_soon_threadsafe(worker_started.set)
+            future = asyncio.run_coroutine_threadsafe(worker_release.wait(), loop)
+            future.result(timeout=2)
+            raise RuntimeError("pass failed during shutdown")
+
+    task = asyncio.create_task(agent_brain_loop(Orchestrator(), idle_seconds=0.01))
+    await asyncio.wait_for(worker_started.wait(), timeout=1)
+    task.cancel()
+    worker_release.set()
+    await asyncio.gather(task, return_exceptions=True)
+
+    assert task.cancelled() is True
+    assert leader_released.is_set() is True
+
+
+def test_agent_brain_feature_defaults_disabled_and_requires_all_three_gates(
+    monkeypatch,
+):
+    monkeypatch.delenv("PLATFORM_AGENT_BRAIN_ENABLED", raising=False)
+    assert load_config().agent_brain_enabled is False
+
+    monkeypatch.setenv("PLATFORM_AGENT_BRAIN_ENABLED", "1")
+    with pytest.raises(ValueError, match="Agent Brain requires production identity and relay"):
+        load_config()
 
 
 def test_operations_migration_failure_leaves_existing_health_route_available(

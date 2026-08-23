@@ -57,10 +57,22 @@ ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION = (
     MIGRATIONS / "027_account_department_projection.sql"
 )
 DIRECTORY_MEMBER_GENDER_MIGRATION = (
-    MIGRATIONS / "028_directory_member_gender.sql"
+    MIGRATIONS / "034_directory_member_gender.sql"
 )
 ACCOUNT_GENDER_PROJECTION_MIGRATION = (
-    MIGRATIONS / "029_account_gender_projection.sql"
+    MIGRATIONS / "035_account_gender_projection.sql"
+)
+EXECUTION_RELAY_MIGRATION = MIGRATIONS / "028_execution_relay.sql"
+AGENT_BRAIN_MIGRATION = MIGRATIONS / "029_agent_brain_mvp.sql"
+AGENT_BRAIN_ORCHESTRATION_MIGRATION = (
+    MIGRATIONS / "030_agent_brain_orchestration.sql"
+)
+EXECUTION_STOP_DELIVERY_MIGRATION = (
+    MIGRATIONS / "031_execution_stop_delivery.sql"
+)
+CONTENT_KEY_CANARIES_MIGRATION = MIGRATIONS / "032_content_key_canaries.sql"
+FIRST_PRODUCTION_BOOTSTRAP_MIGRATION = (
+    MIGRATIONS / "033_first_production_bootstrap.sql"
 )
 RELEASE_1_PLAN = (
     Path(__file__).parents[2]
@@ -117,6 +129,18 @@ TABLES = {
     "management_mutations",
     "worker_heartbeats",
     "directory_event_subject_state",
+    "execution_workers",
+    "execution_worker_keys",
+    "execution_jobs",
+    "execution_events",
+    "execution_worker_nonces",
+    "agent_use_grants",
+    "missions",
+    "mission_messages",
+    "mission_tasks",
+    "mission_runs",
+    "mission_events",
+    "content_key_canaries",
 }
 
 IMMUTABLE_MIGRATION_SHA256 = {
@@ -209,6 +233,23 @@ def test_first_control_migration_exists() -> None:
         "missing account gender projection migration: "
         f"{ACCOUNT_GENDER_PROJECTION_MIGRATION}"
     )
+    assert EXECUTION_RELAY_MIGRATION.is_file(), (
+        f"missing execution relay migration: {EXECUTION_RELAY_MIGRATION}"
+    )
+    assert AGENT_BRAIN_MIGRATION.is_file(), (
+        f"missing Agent Brain migration: {AGENT_BRAIN_MIGRATION}"
+    )
+    assert AGENT_BRAIN_ORCHESTRATION_MIGRATION.is_file(), (
+        "missing Agent Brain orchestration migration: "
+        f"{AGENT_BRAIN_ORCHESTRATION_MIGRATION}"
+    )
+    assert EXECUTION_STOP_DELIVERY_MIGRATION.is_file(), (
+        "missing execution stop-delivery migration: "
+        f"{EXECUTION_STOP_DELIVERY_MIGRATION}"
+    )
+    assert CONTENT_KEY_CANARIES_MIGRATION.is_file(), (
+        f"missing content-key canary migration: {CONTENT_KEY_CANARIES_MIGRATION}"
+    )
 
 
 def test_control_migrations_001_through_019_are_byte_immutable() -> None:
@@ -223,6 +264,15 @@ def test_control_migrations_001_through_019_are_byte_immutable() -> None:
             )
         )
     } == IMMUTABLE_MIGRATION_SHA256
+
+
+def test_origin_account_department_projection_is_byte_immutable() -> None:
+    import hashlib
+
+    assert (
+        hashlib.sha256(ACCOUNT_DEPARTMENT_PROJECTION_MIGRATION.read_bytes()).hexdigest()
+        == "531d5b31b615bec5b17860816ff955a927bdfe4c5010909c9ab9b750a1d11fc3"
+    )
 
 
 def test_task6_and_task8_share_exported_directory_identity_lock_contract() -> None:
@@ -437,7 +487,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 30)
+                    (version, 64) for version in range(1, 36)
                 ]
 
     changed = tmp_path / "migrations"
@@ -482,10 +532,10 @@ def test_directory_gender_functions_have_exact_environment_grants(
     control_database,
 ) -> None:
     protected_functions = {
-        "create_directory_staging_generation_v28": True,
-        "directory_generation_checksum_v28": False,
-        "stage_directory_member_v28": True,
-        "validate_directory_generation_v28": False,
+        "create_directory_staging_generation_v34": True,
+        "directory_generation_checksum_v34": False,
+        "stage_directory_member_v34": True,
+        "validate_directory_generation_v34": False,
     }
     for environment in control_database["environments"].values():
         matched_worker = environment["roles"][2]

@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+import psycopg
+from psycopg.rows import dict_row
 
 from .attachments import routes as attachment_routes
 from .attachments.logging import install_attachment_ticket_redaction
@@ -26,7 +28,10 @@ from .cloud_replica.management_repository import (
 )
 from .control_room import routes as control_room_routes
 from .control_room.service import ControlRoomService
-from .control_plane.middleware import IdentitySecurityMiddleware
+from .control_plane.middleware import (
+    DisabledExecutionWorkerNamespaceMiddleware,
+    IdentitySecurityMiddleware,
+)
 from .control_plane.authorization import (
     AuthorizationReadAuditWriter,
     AuthorizationRepository,
@@ -46,6 +51,7 @@ from .control_plane.auth import (
 )
 from .control_plane.crypto import IdentityKeyring, ProviderIdentityCodec
 from .control_plane.dingtalk import DingTalkClient
+from .control_plane.dsn import validate_control_dsn
 from .control_plane.identity import IdentityResolver
 from .control_plane.rate_limit import ControlRateLimiter
 from .fleet import routes as fleet_routes
@@ -64,6 +70,14 @@ from .health.platform import (
     build_public_platform_health,
 )
 from .health.poller import HealthCache, poll_loop
+from .execution_relay.content_crypto import ContentCodec
+from .execution_relay.repository import ExecutionRelayRepository
+from .execution_relay.routes import build_execution_relay_router
+from .execution_relay.worker_auth import WorkerRequestVerifier
+from .agent_brain.authorization import AgentUseAuthorization
+from .agent_brain.orchestrator import MissionOrchestrator
+from .agent_brain.repository import MissionRepository
+from .agent_brain.routes import MissionCursorCodec, build_agent_brain_router
 from .local_secrets import read_secret_file
 from .observability import routes as observability_routes
 from .observability.repository import (
@@ -96,6 +110,114 @@ async def cancel_tasks(tasks: list[asyncio.Task]) -> None:
         task.cancel()
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def agent_brain_loop(
+    orchestrator: MissionOrchestrator, *, idle_seconds: float = 1.0
+) -> None:
+    """Run only while this process owns the PostgreSQL advisory leadership."""
+
+    if idle_seconds <= 0:
+        raise ValueError("Agent Brain idle interval must be positive")
+    while True:
+        try:
+            with orchestrator.leader_session() as acquired:
+                if not acquired:
+                    await asyncio.sleep(idle_seconds)
+                    continue
+                while True:
+                    advancement = asyncio.create_task(
+                        asyncio.to_thread(orchestrator.advance_pending, limit=50)
+                    )
+                    try:
+                        advanced = await asyncio.shield(advancement)
+                    except asyncio.CancelledError as cancellation:
+                        try:
+                            await advancement
+                        except Exception:
+                            logger.exception(
+                                "Agent Brain pass failed during shutdown"
+                            )
+                        raise cancellation
+                    if advanced == 0:
+                        await asyncio.sleep(idle_seconds)
+                    else:
+                        await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Agent Brain loop unavailable")
+            await asyncio.sleep(idle_seconds)
+
+
+def _check_execution_relay_database(
+    control_database_url: str,
+    *,
+    connect=psycopg.connect,
+) -> None:
+    try:
+        dsn = validate_control_dsn(control_database_url, purpose="app")
+        if dsn.environment != "production":
+            raise ValueError
+        with connect(
+            control_database_url,
+            connect_timeout=3,
+            options="-c statement_timeout=10000 -c timezone=UTC",
+            row_factory=dict_row,
+        ) as connection, connection.cursor() as cursor:
+            objects = cursor.execute(
+                "select "
+                "to_regclass('platform_control.execution_workers') as workers,"
+                "to_regclass('platform_control.execution_worker_keys') "
+                "as worker_keys,"
+                "to_regclass('platform_control.execution_jobs') as jobs,"
+                "to_regclass('platform_control.execution_events') as events,"
+                "to_regclass('platform_control.execution_worker_nonces') "
+                "as nonces,"
+                "to_regprocedure("
+                "'platform_control.touch_execution_worker_v28(text)') "
+                "as touch_worker"
+            ).fetchone()
+            if not objects or any(value is None for value in objects.values()):
+                raise ValueError
+            privileges = cursor.execute(
+                "select "
+                "has_schema_privilege(current_user,"
+                "'platform_control','usage') as schema_usage,("
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_workers','select') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_worker_keys','select') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_jobs','select') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_jobs','insert') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_jobs','update') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_events','select') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_events','insert') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_events','update') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_worker_nonces','select') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_worker_nonces','insert') and "
+                "has_table_privilege(current_user,"
+                "'platform_control.execution_worker_nonces','delete') and "
+                "has_function_privilege(current_user,"
+                "'platform_control.touch_execution_worker_v28(text)',"
+                "'execute')) as ready"
+            ).fetchone()
+            if (
+                not privileges
+                or privileges.get("schema_usage") is not True
+                or privileges.get("ready") is not True
+            ):
+                raise ValueError
+    except Exception:
+        raise RuntimeError("execution relay database unavailable") from None
 
 
 def build_cloud_replica_services(
@@ -362,6 +484,51 @@ def create_app(
         identity_auth is not None
         or config.control_plane.mode is not IdentityMode.DISABLED
     )
+    execution_relay_repository = None
+    execution_relay_router = None
+    agent_brain_orchestrator = None
+    mission_repository = None
+    agent_use_authorization = None
+    control_database_url = None
+    content_codec = None
+    if config.execution_relay_enabled:
+        control_database_url = read_secret_file(
+            config.control_plane.control_database_url_file
+        )
+        _check_execution_relay_database(control_database_url)
+        content_keyring = IdentityKeyring.from_file(
+            config.content_encryption_keyring_file,
+            expected_purpose="platform-content-encryption",
+            expected_key_length=32,
+        )
+        content_codec = ContentCodec(content_keyring)
+        execution_relay_repository = ExecutionRelayRepository(
+            control_database_url,
+            content_codec=content_codec,
+        )
+        execution_relay_router = build_execution_relay_router(
+            execution_relay_repository,
+            WorkerRequestVerifier(control_database_url),
+            lease_seconds=config.execution_relay_lease_seconds,
+            max_body_bytes=config.execution_relay_max_body_bytes,
+        )
+    if config.agent_brain_enabled:
+        if (
+            control_database_url is None
+            or content_codec is None
+            or execution_relay_repository is None
+        ):
+            raise RuntimeError("Agent Brain unavailable")
+        mission_repository = MissionRepository(
+            control_database_url, content_codec=content_codec
+        )
+        agent_use_authorization = AgentUseAuthorization(control_database_url)
+        agent_brain_orchestrator = MissionOrchestrator(
+            mission_repository,
+            execution_relay_repository,
+            capability_provider=agent_use_authorization.permitted_agents_for_user_id,
+        )
+        agent_brain_orchestrator.check_ready()
     if identity_enabled and identity_auth is None:
         identity_auth = build_identity_auth(config)
     cloud_mode = is_cloud_mode(config)
@@ -504,6 +671,8 @@ def create_app(
                         operations_poll_loop(operations_scheduler)
                     )
                 )
+        if agent_brain_orchestrator is not None:
+            tasks.append(asyncio.create_task(agent_brain_loop(agent_brain_orchestrator)))
         try:
             yield
         finally:
@@ -527,6 +696,10 @@ def create_app(
     app.state.attachment_service = attachment_service
     app.state.replica_repository = replica_repository
     app.state.identity_auth = identity_auth
+    app.state.execution_relay_repository = execution_relay_repository
+    app.state.agent_brain_orchestrator = agent_brain_orchestrator
+    app.state.mission_repository = mission_repository
+    app.state.agent_use_authorization = agent_use_authorization
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
         control_database_url = read_secret_file(
@@ -563,6 +736,7 @@ def create_app(
                 config,
                 release_sha=release_sha,
             ),
+            agent_brain_enabled=config.agent_brain_enabled,
         ))
 
     @app.get("/api/deployment")
@@ -577,6 +751,18 @@ def create_app(
     app.include_router(operations_routes.router)
     app.include_router(registry_routes.router)
     app.include_router(review_routes.router)
+    if execution_relay_router is not None:
+        app.include_router(execution_relay_router)
+    if mission_repository is not None and agent_use_authorization is not None:
+        app.include_router(
+            build_agent_brain_router(
+                mission_repository,
+                agent_use_authorization,
+                cursor_codec=MissionCursorCodec(identity_auth.secrets),
+                session_revalidator=identity_auth.authenticate,
+                session_cookie_name=identity_auth.cookie_name,
+            )
+        )
     if identity_enabled:
         app.include_router(routes_manage.router)
         def request_auth_context(request: Request):
@@ -621,6 +807,8 @@ def create_app(
             authorization=authorization_service,
             routes=tuple(app.router.routes),
         )
+    if not config.execution_relay_enabled:
+        app.add_middleware(DisabledExecutionWorkerNamespaceMiddleware)
 
     return app
 

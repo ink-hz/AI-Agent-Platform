@@ -149,7 +149,7 @@ def test_directory_repository_stages_schema_v2_member_gender() -> None:
 
     query, parameters = captured[0]
     assert query == (
-        "select platform_control.stage_directory_member_v28("
+        "select platform_control.stage_directory_member_v34("
         "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
     )
     assert parameters[0][-1] == "female"
@@ -180,6 +180,6 @@ def test_directory_repository_creates_schema_v2_generation() -> None:
 
     query, parameters = captured[0]
     assert query.startswith(
-        "select platform_control.create_directory_staging_generation_v28("
+        "select platform_control.create_directory_staging_generation_v34("
     )
     assert parameters[7] == 2

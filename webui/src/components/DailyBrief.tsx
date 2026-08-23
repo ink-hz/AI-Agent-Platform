@@ -34,7 +34,7 @@ export function DailyBrief({ brief, stale = false }: { brief: OperationsBrief; s
         <article className="brief-panel changes-panel">
           <div className="brief-panel-heading brief-changes-heading">
             <div><span aria-hidden="true">↗</span><h3>近 24 小时</h3></div>
-            <PlatformLink href="/activity">查看全部运行记录 →</PlatformLink>
+            <PlatformLink href="/admin/activity">查看全部运行记录 →</PlatformLink>
           </div>
           <div className="usage-brief">
             <strong>{usageSummary(brief)}</strong>

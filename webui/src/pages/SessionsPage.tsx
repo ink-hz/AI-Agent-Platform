@@ -28,7 +28,7 @@ export function SessionsPage() {
   useEffect(() => { fetchAgents().then(setAgents).catch(() => undefined); }, []);
   useEffect(() => {
     const restore = () => {
-      if (window.location.pathname !== "/sessions") return;
+      if (window.location.pathname !== "/admin/sessions") return;
       const next = sessionFiltersFromSearch(window.location.search);
       const canonical = sessionsPath(next);
       if (currentLocationPath() !== canonical) {

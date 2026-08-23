@@ -358,7 +358,7 @@ def test_worker_has_only_narrow_directory_functions(production_directory) -> Non
             "has_function_privilege(current_user,'platform_control."
             "create_directory_staging_generation_v20(uuid,uuid,text,integer,integer,integer,integer,integer,text)','execute'),"
             "has_function_privilege(current_user,'platform_control."
-            "create_directory_staging_generation_v28(uuid,uuid,text,integer,integer,integer,integer,integer,text)','execute'),"
+            "create_directory_staging_generation_v34(uuid,uuid,text,integer,integer,integer,integer,integer,text)','execute'),"
             "has_function_privilege(current_user,'platform_control."
             "promote_verified_directory_generation(uuid)','execute')"
         )
@@ -375,10 +375,10 @@ def test_worker_has_only_narrow_directory_functions(production_directory) -> Non
             "and proname=any(%s) order by proname",
             ([
                 "create_directory_staging_generation_v20",
-                "create_directory_staging_generation_v28",
+                "create_directory_staging_generation_v34",
                 "stage_directory_department",
                 "stage_directory_member_v19",
-                "stage_directory_member_v28",
+                "stage_directory_member_v34",
                 "stage_directory_membership",
                 "stage_department_closure",
                 "finalize_directory_staging_generation",
@@ -397,7 +397,7 @@ def test_worker_has_only_narrow_directory_functions(production_directory) -> Non
     with psycopg.connect(app_url) as connection, connection.cursor() as cursor:
         cursor.execute(
             "select has_function_privilege(current_user,'platform_control."
-            "create_directory_staging_generation_v28(uuid,uuid,text,integer,integer,integer,integer,integer,text)','execute')"
+            "create_directory_staging_generation_v34(uuid,uuid,text,integer,integer,integer,integer,integer,text)','execute')"
         )
         assert cursor.fetchone()[0] is False
 
@@ -875,7 +875,7 @@ def test_python_and_postgres_canonical_digest_are_identical(
     assert repository.finalize_staging_generation(generation) == expected
     with psycopg.connect(environment["admin"]) as connection:
         assert connection.execute(
-            "select platform_control.directory_generation_checksum_v28(%s)",
+            "select platform_control.directory_generation_checksum_v34(%s)",
             (generation,),
         ).fetchone() == (expected,)
 

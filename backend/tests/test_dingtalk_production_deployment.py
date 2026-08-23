@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import subprocess
@@ -132,6 +133,29 @@ def _run_release_harness(
         path.mkdir(parents=True, exist_ok=True)
     (private / "platform.env").write_text("SAFE_TEST=1\n", encoding="utf-8")
     owner_count_path.write_text("0\n", encoding="utf-8")
+    expected_agents = [
+        "hr-bot",
+        "fae-bot",
+        "marketing-prospecting-bot",
+        "marketing-inbound-bot",
+        "marketing-voice-bot",
+        "marketing-intelligence-bot",
+        "marketing-gtm-bot",
+        "agent-brain-bot",
+    ]
+    (private / "execution-worker-public-keyring.json").write_text(
+        json.dumps(
+            {
+                "worker_id": "agentops-mac-primary",
+                "key_id": "worker-v1",
+                "public_key_base64url": "A" * 43,
+                "allowed_agent_ids": expected_agents,
+            },
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+    (private / "execution-worker-public-keyring.json").chmod(0o600)
     for name in (
         "dingtalk-owner-userid",
         "dingtalk-corp-id",
@@ -198,6 +222,8 @@ def _run_release_harness(
         elif [[ "$joined" == *" app.control_plane.gender_probe "* ]]; then
           printf '%s\n' "$HARNESS_PROBE_JSON"
           exit "$HARNESS_PROBE_STATUS"
+        elif [[ "$joined" == *" psql "* && "$joined" == *".execution_workers "* ]]; then
+          printf '%s\n' 'active:active:t:66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925:["hr-bot","fae-bot","marketing-prospecting-bot","marketing-inbound-bot","marketing-voice-bot","marketing-intelligence-bot","marketing-gtm-bot","agent-brain-bot"]'
         elif [[ "$joined" == *" psql "* ]]; then
           if [[ -n "$HARNESS_DIRECTORY_GATES" ]]; then
             printf '%s\n' "$HARNESS_DIRECTORY_GATES"
@@ -794,7 +820,9 @@ def test_publish_and_accept_recheck_one_snapshot_of_all_directory_release_gates(
         assert "assert json." not in script
         _assert_no_directory_compose_run(script)
         _assert_single_snapshot_directory_gate(script)
-        assert script.count('/usr/bin/docker exec "$postgres_id" psql') == 1
+        assert script.count(
+            'directory_gates="$(/usr/bin/docker exec "$postgres_id" psql'
+        ) == 1
         for required in (
             "status='complete'",
             "source_schema_version=2",
@@ -827,6 +855,10 @@ def test_publish_and_accept_recheck_one_snapshot_of_all_directory_release_gates(
 
     _assert_owner_count_mapping(publish, "owner_bootstrap")
     assert '"$owner_count" == "1"' in acceptance
+    assert publish.count('/usr/bin/docker exec "$postgres_id" psql') == 1
+    assert acceptance.count('/usr/bin/docker exec "$postgres_id" psql') == 2
+    assert 'relay_identity="$(/usr/bin/docker exec "$postgres_id" psql' in acceptance
+    assert "from platform_control.execution_workers worker" in acceptance
 
 
 def test_release_runbooks_use_candidate_probe_and_one_snapshot_release_gate():

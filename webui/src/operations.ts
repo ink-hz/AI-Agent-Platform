@@ -66,8 +66,13 @@ export function eventTimeLabel(event: OperationalEvent): string {
 export function eventTargetPath(event: OperationalEvent): string | null {
   const path = event.target_path;
   if (path === null || !path.startsWith("/") || path.startsWith("//") || path.includes("#")) return null;
-  if (path === "/" || path === "/agents" || path === "/sessions" || path === "/flywheel") return path;
-  if (/^\/(?:agents|sessions)\/[^/?#]+(?:\?[^#]*)?$/.test(path)) return path;
-  if (/^\/sessions(?:\?[^#]*)?$/.test(path)) return path;
+  if (path === "/") return "/admin";
+  if (path === "/agents") return "/admin/agents";
+  if (path === "/sessions") return "/admin/sessions";
+  if (path === "/flywheel") return "/admin/operations";
+  if (/^\/agents\/[^/?#]+(?:\?[^#]*)?$/.test(path)) return `/admin${path}`;
+  if (/^\/sessions(?:\/[^/?#]+)?(?:\?[^#]*)?$/.test(path)) return `/admin${path}`;
+  if (/^\/admin\/(?:agents|sessions)(?:\/[^/?#]+)?(?:\?[^#]*)?$/.test(path)) return path;
+  if (/^\/admin\/(?:activity|operations)(?:\?[^#]*)?$/.test(path)) return path;
   return null;
 }

@@ -1,0 +1,366 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import base64
+import errno
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
+
+
+AGENTS = (
+    "hr-bot",
+    "fae-bot",
+    "marketing-prospecting-bot",
+    "marketing-inbound-bot",
+    "marketing-voice-bot",
+    "marketing-intelligence-bot",
+    "marketing-gtm-bot",
+    "agent-brain-bot",
+)
+
+
+_DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+_FILE_READ_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+_KEY_ID = re.compile(r"worker-v[1-9][0-9]*\Z")
+_LOCK_ENV = "PLATFORM_EXECUTION_WORKER_ROTATION_LOCK_FD"
+
+
+def _secure_parent(path: Path) -> int:
+    if not path.is_absolute() or not path.name or path.name in {".", ".."}:
+        raise ValueError
+    descriptor = os.open(path.parent, _DIRECTORY_FLAGS)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        parent = os.fstat(descriptor)
+    except Exception:
+        os.close(descriptor)
+        raise
+    if (
+        not stat.S_ISDIR(parent.st_mode)
+        or stat.S_IMODE(parent.st_mode) != 0o700
+        or parent.st_uid != os.getuid()
+    ):
+        os.close(descriptor)
+        raise ValueError
+    return descriptor
+
+
+def _rotation_lock(private_path: Path) -> int:
+    path = private_path.parent / "execution-worker-key-rotation.lock"
+    inherited = os.environ.get(_LOCK_ENV)
+    if inherited is None:
+        try:
+            descriptor = os.open(
+                path,
+                os.O_RDWR
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+            os.fchmod(descriptor, 0o600)
+        except FileExistsError:
+            descriptor = os.open(
+                path,
+                os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+            )
+        owned = True
+    elif inherited.isdigit():
+        descriptor = int(inherited)
+        owned = False
+    else:
+        raise ValueError
+    try:
+        metadata = os.fstat(descriptor)
+        named = os.stat(path, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or (metadata.st_dev, metadata.st_ino) != (named.st_dev, named.st_ino)
+        ):
+            raise ValueError
+        fcntl.flock(
+            descriptor,
+            fcntl.LOCK_EX if owned else fcntl.LOCK_EX | fcntl.LOCK_NB,
+        )
+        return descriptor if owned else -1
+    except Exception:
+        if owned:
+            os.close(descriptor)
+        raise
+
+
+def _private_bytes(path: Path) -> bytes:
+    parent_fd = _secure_parent(path)
+    temporary = f".{path.name}.part"
+    created = False
+    try:
+        _cleanup_part(parent_fd, temporary, maximum_size=32)
+        try:
+            descriptor = os.open(path.name, _FILE_READ_FLAGS, dir_fd=parent_fd)
+        except FileNotFoundError:
+            key = Ed25519PrivateKey.generate()
+            value = key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+            descriptor = os.open(
+                temporary,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=parent_fd,
+            )
+            created = True
+            try:
+                os.fchmod(descriptor, 0o600)
+                _write_all(descriptor, value)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            try:
+                os.link(
+                    temporary,
+                    path.name,
+                    src_dir_fd=parent_fd,
+                    dst_dir_fd=parent_fd,
+                    follow_symlinks=False,
+                )
+            except FileExistsError:
+                return _private_bytes_from_parent(parent_fd, path.name)
+            finally:
+                try:
+                    os.unlink(temporary, dir_fd=parent_fd)
+                except FileNotFoundError:
+                    pass
+                created = False
+            os.fsync(parent_fd)
+            return value
+        return _private_bytes_from_descriptor(descriptor)
+    finally:
+        if created:
+            try:
+                os.unlink(temporary, dir_fd=parent_fd)
+            except FileNotFoundError:
+                pass
+        os.close(parent_fd)
+
+
+def _private_bytes_from_parent(parent_fd: int, name: str) -> bytes:
+    descriptor = os.open(name, _FILE_READ_FLAGS, dir_fd=parent_fd)
+    return _private_bytes_from_descriptor(descriptor)
+
+
+def _private_bytes_from_descriptor(descriptor: int) -> bytes:
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or metadata.st_size != 32
+        ):
+            raise ValueError
+        value = os.read(descriptor, 33)
+        if len(value) != 32 or os.read(descriptor, 1):
+            raise ValueError
+        return value
+    finally:
+        os.close(descriptor)
+
+
+def _write_all(descriptor: int, value: bytes) -> None:
+    offset = 0
+    while offset < len(value):
+        written = os.write(descriptor, value[offset:])
+        if written <= 0:
+            raise ValueError
+        offset += written
+
+
+def _validate_optional_target(parent_fd: int, name: str) -> None:
+    try:
+        descriptor = os.open(name, _FILE_READ_FLAGS, dir_fd=parent_fd)
+    except OSError as error:
+        if error.errno == errno.ENOENT:
+            return
+        raise
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or metadata.st_size > 65_536
+        ):
+            raise ValueError
+    finally:
+        os.close(descriptor)
+
+
+def _cleanup_part(parent_fd: int, name: str, *, maximum_size: int) -> None:
+    try:
+        descriptor = os.open(name, _FILE_READ_FLAGS, dir_fd=parent_fd)
+    except FileNotFoundError:
+        return
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or metadata.st_size > maximum_size
+        ):
+            raise ValueError
+    finally:
+        os.close(descriptor)
+    os.unlink(name, dir_fd=parent_fd)
+    os.fsync(parent_fd)
+
+
+def _write_public(path: Path, value: bytes) -> None:
+    parent_fd = _secure_parent(path)
+    temporary = f".{path.name}.part"
+    created = False
+    try:
+        _cleanup_part(parent_fd, temporary, maximum_size=65_536)
+        _validate_optional_target(parent_fd, path.name)
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+            dir_fd=parent_fd,
+        )
+        created = True
+        try:
+            os.fchmod(descriptor, 0o600)
+            _write_all(descriptor, value)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.replace(
+            temporary,
+            path.name,
+            src_dir_fd=parent_fd,
+            dst_dir_fd=parent_fd,
+        )
+        created = False
+        os.fsync(parent_fd)
+    finally:
+        if created:
+            try:
+                os.unlink(temporary, dir_fd=parent_fd)
+            except FileNotFoundError:
+                pass
+        os.close(parent_fd)
+
+
+def _optional_file_bytes(path: Path, *, maximum_size: int) -> bytes | None:
+    parent_fd = _secure_parent(path)
+    try:
+        try:
+            descriptor = os.open(path.name, _FILE_READ_FLAGS, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return None
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+                or metadata.st_uid != os.getuid()
+                or metadata.st_size < 1
+                or metadata.st_size > maximum_size
+            ):
+                raise ValueError
+            value = os.read(descriptor, maximum_size + 1)
+            if len(value) != metadata.st_size or os.read(descriptor, 1):
+                raise ValueError
+            return value
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(parent_fd)
+
+
+def _retained_key_id(private_path: Path, public_path: Path) -> str:
+    private = _optional_file_bytes(private_path, maximum_size=32)
+    public_document = _optional_file_bytes(public_path, maximum_size=65_536)
+    if private is None and public_document is None:
+        return "worker-v1"
+    if private is None or public_document is None or len(private) != 32:
+        raise ValueError
+    document = json.loads(public_document)
+    if (
+        not isinstance(document, dict)
+        or set(document) != {
+            "worker_id",
+            "key_id",
+            "public_key_base64url",
+            "allowed_agent_ids",
+        }
+        or document["worker_id"] != "agentops-mac-primary"
+        or not isinstance(document["key_id"], str)
+        or _KEY_ID.fullmatch(document["key_id"]) is None
+        or document["allowed_agent_ids"] != list(AGENTS)
+    ):
+        raise ValueError
+    derived = Ed25519PrivateKey.from_private_bytes(private).public_key().public_bytes(
+        Encoding.Raw, PublicFormat.Raw
+    )
+    encoded = base64.urlsafe_b64encode(derived).decode("ascii").rstrip("=")
+    if document["public_key_base64url"] != encoded:
+        raise ValueError
+    return document["key_id"]
+
+
+def main(arguments: list[str] | None = None) -> int:
+    values = sys.argv[1:] if arguments is None else arguments
+    try:
+        if len(values) not in {2, 3}:
+            raise ValueError
+        private_path, public_path = map(Path, values[:2])
+        lock = _rotation_lock(private_path)
+        try:
+            key_id = (
+                values[2]
+                if len(values) == 3
+                else _retained_key_id(private_path, public_path)
+            )
+            if _KEY_ID.fullmatch(key_id) is None:
+                raise ValueError
+            private = _private_bytes(private_path)
+            public = Ed25519PrivateKey.from_private_bytes(private).public_key().public_bytes(
+                Encoding.Raw, PublicFormat.Raw
+            )
+            document = {
+                "worker_id": "agentops-mac-primary",
+                "key_id": key_id,
+                "public_key_base64url": base64.urlsafe_b64encode(public).decode().rstrip("="),
+                "allowed_agent_ids": list(AGENTS),
+            }
+            _write_public(
+                public_path,
+                (json.dumps(document, indent=2) + "\n").encode("utf-8"),
+            )
+        finally:
+            if lock >= 0:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                os.close(lock)
+        print(f"WORKER_KEY_FINGERPRINT={hashlib.sha256(public).hexdigest()}")
+        return 0
+    except Exception:
+        print("WORKER_KEY_GENERATION_FAILED", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

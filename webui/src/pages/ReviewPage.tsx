@@ -94,12 +94,12 @@ export function ReviewPage() {
   const chooseIssue = (id: string) => {
     setSelectedId(id);
     setSelectedTurnKey(null);
-    window.history.replaceState({}, "", `/review?agent_id=${encodeURIComponent(agentId)}&issue=${encodeURIComponent(id)}`);
+    window.history.replaceState({}, "", `/admin/review?agent_id=${encodeURIComponent(agentId)}&issue=${encodeURIComponent(id)}`);
   };
   const chooseInbox = (turnKey: string) => {
     setSelectedId(null);
     setSelectedTurnKey(turnKey);
-    window.history.replaceState({}, "", `/review?agent_id=${encodeURIComponent(agentId)}&turn_key=${encodeURIComponent(turnKey)}`);
+    window.history.replaceState({}, "", `/admin/review?agent_id=${encodeURIComponent(agentId)}&turn_key=${encodeURIComponent(turnKey)}`);
   };
   const saveActor = (value: string) => {
     setActor(value);

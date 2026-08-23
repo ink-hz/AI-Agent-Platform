@@ -81,7 +81,7 @@ describe("AgentRuntimePage", () => {
     expect(container.textContent).not.toContain("Model, backend, and channel observation");
     expect(container.textContent).not.toContain("Runtime and primary channel are available");
     expect(container.textContent).toContain("runtime_observation");
-    expect(container.querySelector("a[href='/agents/marketing-inbound-bot']")).not.toBeNull();
+    expect(container.querySelector("a[href='/admin/agents/marketing-inbound-bot']")).not.toBeNull();
     expect(document.title).toBe("运行详情 · Marketing Inbound · Orbbec Agent Platform");
   });
 

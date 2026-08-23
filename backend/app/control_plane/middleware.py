@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import re
 from urllib.parse import urlsplit
 
 from starlette.datastructures import Headers, MutableHeaders, QueryParams
@@ -29,6 +30,71 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
         "/api/v1/manage/system-health",
     }
 )
+_WORKER_RUN_ROUTE = re.compile(
+    r"/api/v1/execution-worker/runs/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/"
+    r"(?:dispatched|events|terminal|stop-ack)\Z"
+)
+_WORKER_NAMESPACE = "/api/v1/execution-worker"
+_DIRECT_AGENT_MISSION_RESPONSE = re.compile(
+    r"/api/v1/agents/[^/]+/missions\Z"
+)
+
+
+def _is_agent_brain_response_path(path: str | None) -> bool:
+    if not isinstance(path, str):
+        return False
+    return (
+        path == "/api/v1/catalog/agents"
+        or path == "/api/v1/brain/missions"
+        or path.startswith("/api/v1/brain/missions/")
+        or _DIRECT_AGENT_MISSION_RESPONSE.fullmatch(path) is not None
+    )
+
+
+def is_execution_worker_request(method: str, path: str) -> bool:
+    return method == "POST" and (
+        path
+        in {
+            "/api/v1/execution-worker/lease",
+            "/api/v1/execution-worker/heartbeat",
+        }
+        or _WORKER_RUN_ROUTE.fullmatch(path) is not None
+    )
+
+
+def _is_execution_worker_namespace(path: str) -> bool:
+    return path == _WORKER_NAMESPACE or path.startswith(
+        _WORKER_NAMESPACE + "/"
+    )
+
+
+def _has_canonical_ascii_raw_path(scope, path: str) -> bool:
+    raw_path = scope.get("raw_path")
+    if not isinstance(raw_path, bytes):
+        return False
+    try:
+        return raw_path.decode("ascii") == path
+    except UnicodeDecodeError:
+        return False
+
+
+class DisabledExecutionWorkerNamespaceMiddleware:
+    """Reserve the worker namespace when the signed relay is not mounted."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and _is_execution_worker_namespace(
+            scope.get("path", "")
+        ):
+            await JSONResponse(
+                {"detail": "not found"},
+                status_code=404,
+                headers=_NO_STORE,
+            )(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
 
 
 def _unprefixed(path: str, prefix: str) -> str | None:
@@ -142,7 +208,10 @@ class IdentitySecurityMiddleware:
         method = scope["method"].upper()
         path = scope.get("path", "")
         local_path = _unprefixed(path, self.auth.route_prefix)
-        identity_response = local_path in _IDENTITY_RESPONSE_PATHS
+        identity_response = (
+            local_path in _IDENTITY_RESPONSE_PATHS
+            or _is_agent_brain_response_path(local_path)
+        )
 
         async def protected_send(message):
             if identity_response and message["type"] == "http.response.start":
@@ -154,6 +223,12 @@ class IdentitySecurityMiddleware:
                 )
                 response_headers["Pragma"] = "no-cache"
             await send(message)
+
+        async def worker_send(message):
+            if message["type"] == "http.response.start":
+                response_headers = MutableHeaders(scope=message)
+                response_headers["Cache-Control"] = "no-store"
+            await protected_send(message)
 
         public = is_public_request(
             method,path,self.auth.route_prefix,self.public_assets
@@ -173,6 +248,19 @@ class IdentitySecurityMiddleware:
                 )(scope, receive, protected_send)
                 return
             scope.setdefault("state", {})["edge_source"] = edge_source
+
+        if self.auth.route_prefix == "/" and _is_execution_worker_namespace(path):
+            if not _has_canonical_ascii_raw_path(
+                scope, path
+            ) or not is_execution_worker_request(method, path):
+                await JSONResponse(
+                    {"detail": "not found"},
+                    status_code=404,
+                    headers=_NO_STORE,
+                )(scope, receive, protected_send)
+                return
+            await self.app(scope, receive, worker_send)
+            return
 
         if public and method not in _SAFE_METHODS and not _origin_matches(
             headers.get("origin"), self.auth.public_base_url,

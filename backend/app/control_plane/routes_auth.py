@@ -145,6 +145,7 @@ def build_auth_router(
     static_dir: str,
     public_assets: frozenset[str],
     detailed_health,
+    agent_brain_enabled: bool,
 ) -> APIRouter:
     router = APIRouter(prefix="" if auth.route_prefix == "/" else auth.route_prefix.rstrip("/"))
 
@@ -159,6 +160,12 @@ def build_auth_router(
     async def root(request: Request):
         token = request.cookies.get(auth.cookie_name)
         if token and auth.authenticate(token) is not None:
+            if not agent_brain_enabled:
+                return RedirectResponse(
+                    _local_path(auth, "/admin"),
+                    status_code=302,
+                    headers=_NO_STORE,
+                )
             return application_shell()
         return RedirectResponse(_local_path(auth, "/login"), status_code=302, headers=_NO_STORE)
 
@@ -185,6 +192,10 @@ def build_auth_router(
     @router.get("/account", include_in_schema=False)
     @router.get("/agents", include_in_schema=False)
     @router.get("/agents/{client_path:path}", include_in_schema=False)
+    @router.get("/missions", include_in_schema=False)
+    @router.get("/missions/{client_path:path}", include_in_schema=False)
+    @router.get("/admin", include_in_schema=False)
+    @router.get("/admin/{client_path:path}", include_in_schema=False)
     @router.get("/sessions", include_in_schema=False)
     @router.get("/sessions/{client_path:path}", include_in_schema=False)
     @router.get("/review", include_in_schema=False)

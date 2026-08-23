@@ -49,7 +49,7 @@ it("negative feedback turn links to review inbox", async () => {
 
   const link = [...container.querySelectorAll("a")].find((item) => item.textContent === "查看修复闭环");
 
-  expect(link?.getAttribute("href")).toBe("/review?agent_id=ai-fae-agent&turn_key=fae%3Aturn-1");
+  expect(link?.getAttribute("href")).toBe("/admin/review?agent_id=ai-fae-agent&turn_key=fae%3Aturn-1");
   expect(container.textContent).toContain("等待复跑");
   expect(container.textContent).toContain("缺少：真实复跑");
 });

@@ -104,12 +104,32 @@ export function localPathname(pathname?: string): string {
 }
 
 
-export function loginReturnPath(search: string): "/admin/" | "/account" {
+export type LoginReturnPath =
+  | "/"
+  | "/account"
+  | "/missions"
+  | `/missions/${string}`
+  | "/agents"
+  | `/agents/${string}`
+  | "/admin"
+  | "/admin/"
+  | `/admin/${string}`;
+
+
+function safeLoginReturnPath(value: string): boolean {
+  if (!value.startsWith("/") || value.startsWith("//") || /[?#\\%\u0000-\u001f\u007f]/.test(value)) return false;
+  if (value === "/" || value === "/account" || value === "/missions" || value === "/agents") return true;
+  if (/^\/missions\/[0-9a-fA-F-]{36}$/.test(value)) return true;
+  if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;
+  return value === "/admin/" || value === "/admin"
+    || /^\/admin\/(?:overview|review|activity|operations|identity|governance|agents(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:\/runtime)?)?|sessions(?:\/[A-Za-z0-9:._-]+)?)$/.test(value);
+}
+
+
+export function loginReturnPath(search: string): LoginReturnPath {
   const params = new URLSearchParams(search);
-  return params.getAll("return_path").length === 1
-    && params.get("return_path") === "/admin/"
-    ? "/admin/"
-    : "/account";
+  const values = params.getAll("return_path");
+  return values.length === 1 && safeLoginReturnPath(values[0]) ? values[0] as LoginReturnPath : "/";
 }
 
 
@@ -252,7 +272,7 @@ export async function loadAccount(prefix = routePrefix()): Promise<Account> {
 }
 
 
-export async function startQrLogin(returnPath: "/admin/" | "/account" = "/account"): Promise<string> {
+export async function startQrLogin(returnPath: LoginReturnPath = "/"): Promise<string> {
   const response = await fetch(platformPath("/api/v1/auth/dingtalk/start"), {
     method: "POST",
     credentials: "include",
