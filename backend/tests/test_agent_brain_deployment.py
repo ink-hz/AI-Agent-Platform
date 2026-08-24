@@ -107,6 +107,8 @@ def test_deploy_preserves_exact_fae_identity_configuration_and_routes() -> None:
         "docker compose down",
     ):
         assert forbidden not in stage
+    assert stage.count("value=sorted(value") == 2
+    assert "{{json .Mounts}}' ai-fae-backend | /usr/bin/sha256sum" not in stage
 
 
 def test_cloud_deploy_and_brain_actions_share_one_atomic_remote_lock() -> None:

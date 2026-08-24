@@ -95,7 +95,8 @@ fae_image_id="$(/usr/bin/docker inspect --format '{{.Image}}' ai-fae-backend 2>/
 fae_started_at="$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend 2>/dev/null || true)"
 fae_restart_count="$(/usr/bin/docker inspect --format '{{.RestartCount}}' ai-fae-backend 2>/dev/null || true)"
 fae_config_digest="$(/usr/bin/docker inspect --format '{{json .Config}}' ai-fae-backend 2>/dev/null | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
-fae_mounts_digest="$(/usr/bin/docker inspect --format '{{json .Mounts}}' ai-fae-backend 2>/dev/null | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
+fae_mounts_digest="$(/usr/bin/docker inspect --format '{{json .Mounts}}' ai-fae-backend 2>/dev/null \
+  | /usr/bin/python3 -c 'import hashlib,json,sys; value=json.load(sys.stdin); value=sorted(value,key=lambda item:(item.get("Destination",""),item.get("Source",""),item.get("Type",""))); raw=json.dumps(value,sort_keys=True,separators=(",",":")).encode(); print(hashlib.sha256(raw).hexdigest())')"
 fae_health_digest="$(/usr/bin/docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ai-fae-backend 2>/dev/null | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
 fae_ip_digest="$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 http://47.106.112.69/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
 fae_domain_digest="$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve fae.orbbec.com.cn:443:127.0.0.1 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')"
@@ -645,7 +646,8 @@ fi
 [[ "$fae_started_at" == "$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)" ]] || fail
 [[ "$fae_restart_count" == "$(/usr/bin/docker inspect --format '{{.RestartCount}}' ai-fae-backend)" ]] || fail
 [[ "$fae_config_digest" == "$(/usr/bin/docker inspect --format '{{json .Config}}' ai-fae-backend | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
-[[ "$fae_mounts_digest" == "$(/usr/bin/docker inspect --format '{{json .Mounts}}' ai-fae-backend | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
+[[ "$fae_mounts_digest" == "$(/usr/bin/docker inspect --format '{{json .Mounts}}' ai-fae-backend \
+  | /usr/bin/python3 -c 'import hashlib,json,sys; value=json.load(sys.stdin); value=sorted(value,key=lambda item:(item.get("Destination",""),item.get("Source",""),item.get("Type",""))); raw=json.dumps(value,sort_keys=True,separators=(",",":")).encode(); print(hashlib.sha256(raw).hexdigest())')" ]] || fail
 [[ "$fae_health_digest" == "$(/usr/bin/docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ai-fae-backend | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 [[ "$fae_ip_digest" == "$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 http://47.106.112.69/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
 [[ "$fae_domain_digest" == "$(/usr/bin/curl --noproxy '*' -fsS --max-time 8 --resolve fae.orbbec.com.cn:443:127.0.0.1 https://fae.orbbec.com.cn/ | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" ]] || fail
