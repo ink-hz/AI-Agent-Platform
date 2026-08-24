@@ -22,7 +22,8 @@ platform_release_sha="__PLATFORM_RELEASE_SHA__"
 private_root=/opt/orbbec-agent-platform/private
 migration_dir="$private_root/office-path-migrations/$change_id"
 action_lock="$private_root/agent-brain-action.lock"
-deploy_input_lock="$private_root/deploy-input.transaction.lock"
+deploy_transaction_lock="$private_root/deploy-input.transaction.lock"
+deploy_input_lock="$private_root/deploy-input.lock"
 report="$migration_dir/rollback-report"
 
 script_dir="$(/usr/bin/dirname "$(/usr/bin/readlink -f "$0")")"
@@ -33,7 +34,9 @@ script_dir="$(/usr/bin/dirname "$(/usr/bin/readlink -f "$0")")"
   && "$backup" == /root/nginx-backups/ai-admin-office-*-$change_id/agent-domain.conf \
   && "$baseline" == /root/nginx-backups/ai-admin-office-*-$change_id/fae-baseline \
   && "$nginx_source" == /etc/nginx/sites-available/agent-domain.conf \
-  && ! -e "$deploy_input_lock" && ! -e "$action_lock" ]] || fail
+  && ! -e "$deploy_input_lock" && ! -e "$action_lock" \
+  && -f "$deploy_transaction_lock" && ! -L "$deploy_transaction_lock" \
+  && "$(/usr/bin/stat -c '%a %U' "$deploy_transaction_lock")" == "600 root" ]] || fail
 
 /usr/bin/python3 - "$backup" "$baseline" "$nginx_source" <<'PY' || fail
 import os
@@ -83,6 +86,10 @@ release_action_lock() {
 }
 trap release_action_lock EXIT
 
+exec 9<>"$deploy_transaction_lock" || fail
+/usr/bin/flock --exclusive --nonblock 9 || fail
+[[ ! -e "$deploy_input_lock" ]] || fail
+
 fingerprint_fae() {
   local fae_id fae_image_id fae_started_at fae_restart_count
   local fae_config_hash fae_mounts_hash fae_domain_http fae_ip_http
@@ -93,7 +100,7 @@ fingerprint_fae() {
   fae_config_hash="$(/usr/bin/docker inspect --format '{{json .Config}}' ai-fae-backend \
     | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" || return 1
   fae_mounts_hash="$(/usr/bin/docker inspect --format '{{json .Mounts}}' ai-fae-backend \
-    | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" || return 1
+    | /usr/bin/python3 -c 'import hashlib,json,sys; value=json.load(sys.stdin); value=sorted(value,key=lambda item:(item.get("Destination",""),item.get("Source",""),item.get("Type",""))); raw=json.dumps(value,sort_keys=True,separators=(",",":")).encode(); print(hashlib.sha256(raw).hexdigest())')" || return 1
   fae_domain_http="$(/usr/bin/curl --noproxy '*' --silent --show-error --fail \
     --max-time 10 https://fae.orbbec.com.cn/ -o /dev/null -w '%{http_code}')" || return 1
   fae_ip_http="$(/usr/bin/curl --noproxy '*' --silent --show-error --fail \
