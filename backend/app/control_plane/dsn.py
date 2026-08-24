@@ -17,6 +17,7 @@ _PURPOSE_ROLES = {
     "maintenance": "platform_control_maintenance",
     "directory": "platform_directory_worker",
     "stream": "platform_stream_ingest",
+    "brain": "platform_brain_worker",
 }
 
 

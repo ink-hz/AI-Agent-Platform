@@ -71,6 +71,9 @@ CONVERSATION_FEEDBACK_MIGRATION = (
 AGENT_BRAIN_SUMMARY_PHASE_MIGRATION = (
     MIGRATIONS / "038_agent_brain_summary_phase.sql"
 )
+AGENT_BRAIN_DURABLE_LOOP_MIGRATION = (
+    MIGRATIONS / "039_agent_brain_durable_loop.sql"
+)
 EXECUTION_RELAY_MIGRATION = MIGRATIONS / "028_execution_relay.sql"
 AGENT_BRAIN_MIGRATION = MIGRATIONS / "029_agent_brain_mvp.sql"
 AGENT_BRAIN_ORCHESTRATION_MIGRATION = (
@@ -94,6 +97,7 @@ PRODUCTION_ROLES = (
     "platform_stream_ingest",
     "platform_audit_append",
     "platform_control_maintenance",
+    "platform_brain_worker",
 )
 PREVIEW_ROLES = tuple(f"{role}_preview" for role in PRODUCTION_ROLES)
 ROLES = PRODUCTION_ROLES + PREVIEW_ROLES
@@ -267,6 +271,10 @@ def test_first_control_migration_exists() -> None:
     )
     assert CONTENT_KEY_CANARIES_MIGRATION.is_file(), (
         f"missing content-key canary migration: {CONTENT_KEY_CANARIES_MIGRATION}"
+    )
+    assert AGENT_BRAIN_DURABLE_LOOP_MIGRATION.is_file(), (
+        "missing durable Agent Brain migration: "
+        f"{AGENT_BRAIN_DURABLE_LOOP_MIGRATION}"
     )
 
 
@@ -505,7 +513,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 39)
+                    (version, 64) for version in range(1, 40)
                 ]
 
     changed = tmp_path / "migrations"

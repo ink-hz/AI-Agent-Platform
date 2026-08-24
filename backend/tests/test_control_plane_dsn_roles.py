@@ -40,6 +40,12 @@ from app.control_plane.routes_manage import ManagementRepository, ManagementServ
             "directory",
             "preview",
         ),
+        (
+            "postgresql://platform_brain_worker@127.0.0.1/"
+            "agent_platform_control",
+            "brain",
+            "production",
+        ),
     ],
 )
 def test_exact_control_dsn_accepts_uri_and_keyword_pairings(
@@ -82,6 +88,14 @@ def test_exact_control_dsn_accepts_uri_and_keyword_pairings(
         (
             "dbname=agent_platform_control user=platform_directory_worker_preview",
             "directory",
+        ),
+        (
+            "dbname=agent_platform_control user=platform_control_app",
+            "brain",
+        ),
+        (
+            "dbname=agent_platform_control user=platform_brain_worker_preview",
+            "brain",
         ),
     ],
 )

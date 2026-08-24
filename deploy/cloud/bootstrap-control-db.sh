@@ -86,6 +86,22 @@ database_names=(
   agent_platform_control_preview
   agent_platform_control_preview
 )
+brain_roles=(
+  platform_brain_worker
+  platform_brain_worker_preview
+)
+brain_password_names=(
+  brain-worker-password
+  preview-brain-worker-password
+)
+brain_dsn_names=(
+  brain-worker-database-url
+  preview-brain-worker-database-url
+)
+brain_database_names=(
+  agent_platform_control
+  agent_platform_control_preview
+)
 
 for credential_name in "${password_names[@]}" "${dsn_names[@]}"; do
   credential_file="$private_path/$credential_name"
@@ -165,6 +181,75 @@ for index in "${!roles[@]}"; do
   fi
   passwords+=("$password_value")
 done
+
+write_root_secret() {
+  local target_path="$1"
+  local secret_value="$2"
+  local temporary_path="${target_path}.tmp.$$"
+  [[ ! -e "$target_path" && ! -e "$temporary_path" ]] || fail
+  /usr/bin/printf '%s\n' "$secret_value" > "$temporary_path"
+  /bin/chown root:root "$temporary_path"
+  /bin/chmod 600 "$temporary_path"
+  /bin/mv "$temporary_path" "$target_path"
+}
+
+declare -a brain_passwords=()
+for index in "${!brain_roles[@]}"; do
+  password_file="$private_path/${brain_password_names[$index]}"
+  dsn_file="$private_path/${brain_dsn_names[$index]}"
+  database_name="${brain_database_names[$index]}"
+
+  if [[ -e "$password_file" ]]; then
+    [[ -f "$password_file" && ! -L "$password_file" ]] || fail
+    [[ "$(/usr/bin/stat -c '%a %U' "$password_file")" == "600 root" ]] \
+      || fail
+    brain_password="$(/usr/bin/tr -d '\n' < "$password_file")"
+    [[ "$brain_password" =~ ^[0-9a-f]{64}$ ]] || fail
+  else
+    brain_password="$(/usr/bin/openssl rand -hex 32)"
+    [[ "$brain_password" =~ ^[0-9a-f]{64}$ ]] || fail
+    write_root_secret "$password_file" "$brain_password"
+  fi
+
+  for existing_password in "${passwords[@]}" "${brain_passwords[@]}"; do
+    [[ "$brain_password" != "$existing_password" ]] || fail
+  done
+  brain_passwords+=("$brain_password")
+
+  brain_dsn="postgresql://${brain_roles[$index]}:${brain_password}@postgres:5432/${database_name}"
+  if [[ -e "$dsn_file" ]]; then
+    [[ -f "$dsn_file" && ! -L "$dsn_file" ]] || fail
+    [[ "$(/usr/bin/stat -c '%a %U' "$dsn_file")" == "600 root" ]] || fail
+    [[ "$(/usr/bin/tr -d '\n' < "$dsn_file")" == "$brain_dsn" ]] || fail
+  else
+    write_root_secret "$dsn_file" "$brain_dsn"
+  fi
+done
+
+/usr/bin/docker exec -i "$postgres_container" \
+  psql -X -v ON_ERROR_STOP=1 -U platform_owner -d postgres >/dev/null <<SQL
+\set production_brain_password '${brain_passwords[0]}'
+\set preview_brain_password '${brain_passwords[1]}'
+
+select format(
+  'create role %I login password %L nosuperuser nocreatedb nocreaterole noreplication nobypassrls inherit',
+  role_name, role_password
+)
+from (values
+  ('platform_brain_worker', :'production_brain_password'),
+  ('platform_brain_worker_preview', :'preview_brain_password')
+) configured(role_name, role_password)
+where not exists (select 1 from pg_roles where rolname = role_name) \gexec
+
+select format(
+  'alter role %1$I login password %2$L nosuperuser nocreatedb nocreaterole noreplication nobypassrls inherit',
+  role_name, role_password
+)
+from (values
+  ('platform_brain_worker', :'production_brain_password'),
+  ('platform_brain_worker_preview', :'preview_brain_password')
+) configured(role_name, role_password) \gexec
+SQL
 
 if [[ "$rotate_credentials" -eq 1 ]]; then
   /usr/bin/docker exec -i "$postgres_container" \
@@ -249,20 +334,22 @@ from (values
   ('platform_stream_ingest', 'inherit'),
   ('platform_audit_append', 'inherit'),
   ('platform_control_maintenance', 'inherit'),
+  ('platform_brain_worker', 'inherit'),
   ('platform_control_migrator_preview', 'noinherit'),
   ('platform_control_app_preview', 'inherit'),
   ('platform_directory_worker_preview', 'inherit'),
   ('platform_stream_ingest_preview', 'inherit'),
   ('platform_audit_append_preview', 'inherit'),
-  ('platform_control_maintenance_preview', 'inherit')
+  ('platform_control_maintenance_preview', 'inherit'),
+  ('platform_brain_worker_preview', 'inherit')
 ) configured(role_name, inheritance)
 where exists (select 1 from pg_roles where rolname = role_name) \gexec
 SQL
 
 control_role_count="$(/usr/bin/docker exec "$postgres_container" \
   psql -X -A -t -U platform_owner -d postgres -c \
-  "select count(*) from pg_roles where rolname = any(array['platform_control_migrator', 'platform_control_app', 'platform_directory_worker', 'platform_stream_ingest', 'platform_audit_append', 'platform_control_maintenance', 'platform_control_migrator_preview', 'platform_control_app_preview', 'platform_directory_worker_preview', 'platform_stream_ingest_preview', 'platform_audit_append_preview', 'platform_control_maintenance_preview'])")"
-[[ "$control_role_count" == "12" ]] || fail
+  "select count(*) from pg_roles where rolname = any(array['platform_control_migrator', 'platform_control_app', 'platform_directory_worker', 'platform_stream_ingest', 'platform_audit_append', 'platform_control_maintenance', 'platform_brain_worker', 'platform_control_migrator_preview', 'platform_control_app_preview', 'platform_directory_worker_preview', 'platform_stream_ingest_preview', 'platform_audit_append_preview', 'platform_control_maintenance_preview', 'platform_brain_worker_preview'])")"
+[[ "$control_role_count" == "14" ]] || fail
 
 production_exists="$(/usr/bin/docker exec "$postgres_container" \
   psql -X -A -t -U platform_owner -d postgres \
@@ -289,24 +376,30 @@ revoke connect on database agent_platform_control from public,
   platform_control_migrator, platform_control_app,
   platform_directory_worker, platform_stream_ingest,
   platform_audit_append, platform_control_maintenance,
+  platform_brain_worker,
   platform_control_migrator_preview, platform_control_app_preview,
   platform_directory_worker_preview, platform_stream_ingest_preview,
-  platform_audit_append_preview, platform_control_maintenance_preview;
+  platform_audit_append_preview, platform_control_maintenance_preview,
+  platform_brain_worker_preview;
 revoke connect on database agent_platform_control_preview from public,
   platform_control_migrator, platform_control_app,
   platform_directory_worker, platform_stream_ingest,
   platform_audit_append, platform_control_maintenance,
+  platform_brain_worker,
   platform_control_migrator_preview, platform_control_app_preview,
   platform_directory_worker_preview, platform_stream_ingest_preview,
-  platform_audit_append_preview, platform_control_maintenance_preview;
+  platform_audit_append_preview, platform_control_maintenance_preview,
+  platform_brain_worker_preview;
 grant connect on database agent_platform_control to
   platform_control_migrator, platform_control_app,
   platform_directory_worker, platform_stream_ingest,
-  platform_audit_append, platform_control_maintenance;
+  platform_audit_append, platform_control_maintenance,
+  platform_brain_worker;
 grant connect on database agent_platform_control_preview to
   platform_control_migrator_preview, platform_control_app_preview,
   platform_directory_worker_preview, platform_stream_ingest_preview,
-  platform_audit_append_preview, platform_control_maintenance_preview;
+  platform_audit_append_preview, platform_control_maintenance_preview,
+  platform_brain_worker_preview;
 SQL
 
 /usr/bin/docker exec -i "$postgres_container" \
@@ -361,9 +454,11 @@ where member.rolname = any(array[
   'platform_control_migrator', 'platform_control_app',
   'platform_directory_worker', 'platform_stream_ingest',
   'platform_audit_append', 'platform_control_maintenance',
+  'platform_brain_worker',
   'platform_control_migrator_preview', 'platform_control_app_preview',
   'platform_directory_worker_preview', 'platform_stream_ingest_preview',
-  'platform_audit_append_preview', 'platform_control_maintenance_preview'
+  'platform_audit_append_preview', 'platform_control_maintenance_preview',
+  'platform_brain_worker_preview'
 ]) \gexec
 grant platform_control_owner to platform_control_migrator;
 grant platform_control_owner_preview to platform_control_migrator_preview;
@@ -419,4 +514,4 @@ fi
 [[ "$("$credential_helper" classify "$private_path")" == "complete" ]] || fail
 /usr/bin/printf '%s\n' 'CONTROL_DATABASE_CREDENTIALS_READY version=2'
 
-unset passwords password_value existing_password
+unset passwords password_value existing_password brain_passwords brain_password brain_dsn

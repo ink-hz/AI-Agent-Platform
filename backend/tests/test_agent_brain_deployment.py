@@ -12,8 +12,22 @@ MISSION_SCHEMA_MIGRATION = (
     ROOT / "backend" / "control_migrations" / "029_agent_brain_mvp.sql"
 )
 LATEST_AGENT_BRAIN_MIGRATION = (
-    ROOT / "backend" / "control_migrations" / "033_first_production_bootstrap.sql"
+    ROOT / "backend" / "control_migrations" / "039_agent_brain_durable_loop.sql"
 )
+
+
+def test_control_bootstrap_provisions_brain_worker_credentials() -> None:
+    script = (CLOUD / "bootstrap-control-db.sh").read_text(encoding="utf-8")
+
+    for required in (
+        "platform_brain_worker",
+        "platform_brain_worker_preview",
+        "brain-worker-password",
+        "preview-brain-worker-password",
+        "brain-worker-database-url",
+        "preview-brain-worker-database-url",
+    ):
+        assert required in script
 
 
 def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:

@@ -131,7 +131,14 @@ def test_conversation_schema_separates_history_from_mission_state(
                 )
             )
             assert "one_active_conversation_turn" in indexes
-            assert "WHERE (status = ANY (ARRAY['accepted'::text, 'running'::text]))" in indexes
+            for active_status in (
+                "accepted",
+                "running",
+                "waiting_agents",
+                "waiting_user",
+                "completing",
+            ):
+                assert f"'{active_status}'::text" in indexes
             assert "owner_internal_user_id, started_by_client_request_id" in indexes
 
 
