@@ -52,7 +52,7 @@ def test_remote_stage_requires_mode_0600_control_content_and_feature_state() -> 
     assert '[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail' in stage
 
 
-def test_formal_nginx_is_dingtalk_only_and_stream_safe() -> None:
+def test_formal_nginx_keeps_platform_root_and_proxies_office_safely() -> None:
     nginx = (CLOUD / "agent-domain.nginx.conf").read_text(encoding="utf-8")
 
     assert 'auth_basic "Orbbec Agent Platform";' not in nginx
@@ -68,6 +68,20 @@ def test_formal_nginx_is_dingtalk_only_and_stream_safe() -> None:
     assert "listen 443 ssl;" in nginx
     assert "listen 8080" not in nginx
     assert "error_log /var/log/nginx/ai-fae-agent.error.log crit;" in nginx
+    assert "location = /office" in nginx
+    assert "location = /office/health" in nginx
+    assert "location ^~ /office/assets/" in nginx
+    assert "location ^~ /office/knowledge-assets/" in nginx
+    assert "location ^~ /office/" in nginx
+    assert "proxy_pass http://127.0.0.1:8011;" in nginx
+    assert "proxy_set_header X-Forwarded-For $remote_addr;" in nginx
+    assert 'proxy_set_header Forwarded "";' in nginx
+    assert 'proxy_set_header Authorization "";' in nginx
+    assert "proxy_set_header Cookie" not in nginx
+    assert "zone=ai_admin_office_chat:10m" in nginx
+    assert "zone=ai_admin_office_conn:10m" in nginx
+    assert "location = /admin" not in nginx
+    assert "location ^~ /admin/" not in nginx
 
 
 def test_deploy_preserves_exact_fae_identity_configuration_and_routes() -> None:
