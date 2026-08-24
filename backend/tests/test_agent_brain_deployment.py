@@ -473,6 +473,18 @@ restore_worker
     assert "nc:-z -w 2 127.0.0.1 9120" in calls
 
 
+def test_brain_disabled_rollback_keeps_root_as_use_entry() -> None:
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    rollback_gate = script.split("rollback_headers=", 1)[1].split(
+        "for owner_path in /admin", 1
+    )[0]
+
+    assert "'%{http_code}'" in rollback_gate
+    assert '== "200"' in rollback_gate
+    assert "x-platform-entry-state: brain-preparing" in rollback_gate.lower()
+    assert "location: /admin" not in rollback_gate.lower()
+
+
 def test_runbook_pins_dependency_order_evidence_and_non_destructive_rollback() -> None:
     runbook = (ROOT / "docs" / "runbooks" / "cloud-platform.md").read_text(
         encoding="utf-8"

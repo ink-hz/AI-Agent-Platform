@@ -417,9 +417,10 @@ def test_authenticated_root_serves_brain_shell_only_after_feature_enablement(
 
     assert response.status_code == 200
     assert "BRAIN SHELL" in response.text
+    assert 'name="platform-agent-brain-mode" content="enabled"' in response.text
 
 
-def test_authenticated_root_preserves_management_entry_while_brain_is_disabled(
+def test_authenticated_root_preserves_use_entry_while_brain_is_disabled(
     tmp_path, monkeypatch
 ) -> None:
     auth = FakeAuth()

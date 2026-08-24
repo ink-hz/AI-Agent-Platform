@@ -77,6 +77,7 @@ export class IdentityDisabled extends PlatformApiError {
 const PREVIEW_PREFIX = "/_preview/dingtalk-r1";
 const ACCOUNT_KEYS = new Set([
   "internal_user_id", "display_name", "role", "departments", "gender", "observation_agent_ids",
+  "real_name", "mobile", "primary_department",
   "directory_freshness", "hard_stale_read_only", "csrf_token",
 ]);
 const MANAGED_USER_KEYS = new Set([
@@ -176,6 +177,9 @@ function parseAccount(value: unknown): Account {
     || !Array.isArray(departments)
     || departments.some((department) => typeof department !== "string" || !department)
     || (gender !== "male" && gender !== "female" && gender !== null)
+    || (value.real_name !== undefined && value.real_name !== null && typeof value.real_name !== "string")
+    || (value.mobile !== undefined && value.mobile !== null && typeof value.mobile !== "string")
+    || (value.primary_department !== undefined && value.primary_department !== null && typeof value.primary_department !== "string")
     || !Array.isArray(scopes) || scopes.some((scope) => typeof scope !== "string" || !scope)
     || !["fresh", "warning", "hard_stale"].includes(String(freshness))
     || typeof value.hard_stale_read_only !== "boolean"
