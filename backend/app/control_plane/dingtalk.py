@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextvars import ContextVar
-from dataclasses import dataclass, field
 import inspect
 import logging
 import re
 import time
+from collections import deque
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar
 from uuid import uuid4
 
@@ -22,7 +22,6 @@ from .directory_limits import (
     MAX_MEMBERS,
 )
 
-
 _LOG = logging.getLogger(__name__)
 _SAFE_ERROR_CODE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _LOGIN_FLOWS = frozenset({"qr", "in_client"})
@@ -32,6 +31,11 @@ _LOG_SECRETS: ContextVar[tuple[str, ...]] = ContextVar(
 )
 _Parsed = TypeVar("_Parsed")
 DINGTALK_GENDER_ATTRIBUTE = "性别"
+DINGTALK_REAL_NAME_ATTRIBUTE = "真名"
+DINGTALK_REAL_NAME_FIELD_TYPE = "TextField"
+_HRM_PROFILE_BATCH_SIZE = 50
+_HRM_MOBILE_FIELD_CODE = "sys00-mobile"
+_HRM_PRIMARY_DEPARTMENT_FIELD_CODE = "sys00-mainDept"
 DingTalkGender = Literal["male", "female"]
 GenderAttributeStatus = Literal["valid", "missing", "invalid"]
 
@@ -94,6 +98,14 @@ class DingTalkMember:
     gender_attribute_status: GenderAttributeStatus = field(
         default="missing", repr=False
     )
+
+
+@dataclass(frozen=True)
+class DingTalkEmployeeProfile:
+    userid: str = field(repr=False)
+    real_name: str | None = field(default=None, repr=False)
+    mobile: str | None = field(default=None, repr=False)
+    primary_department: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -236,6 +248,20 @@ def _optional_integer(value: object) -> int | None:
     return None if value is None else _required_integer(value)
 
 
+def normalize_mainland_mobile(raw: str | None) -> str | None:
+    if raw is None or not isinstance(raw, str):
+        return None
+    normalized = raw.strip()
+    if normalized.startswith("+86"):
+        normalized = normalized[3:]
+    elif normalized.startswith("+"):
+        return None
+    normalized = normalized.replace(" ", "").replace("-", "")
+    if re.fullmatch(r"1[3-9][0-9]{9}", normalized) is None:
+        return None
+    return normalized
+
+
 def _parse_provider_value(
     parser: Callable[[], _Parsed],
 ) -> _Parsed | None:
@@ -255,21 +281,23 @@ class DingTalkClient:
     """
 
     __slots__ = (
+        "_agent_id",
         "_api_base_url",
         "_app_key",
         "_app_secret",
         "_client",
         "_corp_id",
+        "_hrm_real_name_field_code",
+        "_initialized",
         "_login_flow",
         "_now",
         "_oapi_base_url",
         "_owns_client",
         "_sleep",
+        "_timeout",
         "_token",
         "_token_expires_at",
         "_token_lock",
-        "_timeout",
-        "_initialized",
     )
 
     def __init__(
@@ -279,6 +307,8 @@ class DingTalkClient:
         app_secret: str,
         corp_id: str,
         login_flow: str,
+        agent_id: int | None = None,
+        hrm_real_name_field_code: str | None = None,
         api_base_url: str = "https://api.dingtalk.com",
         oapi_base_url: str = "https://oapi.dingtalk.com",
         timeout: httpx.Timeout | None = None,
@@ -288,6 +318,12 @@ class DingTalkClient:
     ) -> None:
         for value in (app_key, app_secret, corp_id):
             _required_string(value)
+        if agent_id is not None and (
+            isinstance(agent_id, bool) or not isinstance(agent_id, int) or agent_id <= 0
+        ):
+            raise ValueError("DingTalk agent ID invalid")
+        if hrm_real_name_field_code is not None:
+            _required_string(hrm_real_name_field_code, maximum=256)
         if login_flow not in _LOGIN_FLOWS:
             raise ValueError("DingTalk login flow invalid")
         for value in (api_base_url, oapi_base_url):
@@ -299,6 +335,10 @@ class DingTalkClient:
         _install_provider_log_filter()
         object.__setattr__(self, "_app_key", app_key)
         object.__setattr__(self, "_app_secret", app_secret)
+        object.__setattr__(self, "_agent_id", agent_id)
+        object.__setattr__(
+            self, "_hrm_real_name_field_code", hrm_real_name_field_code
+        )
         object.__setattr__(self, "_corp_id", corp_id)
         object.__setattr__(self, "_login_flow", login_flow)
         object.__setattr__(self, "_api_base_url", api_base_url.rstrip("/"))
@@ -706,6 +746,154 @@ class DingTalkClient:
     async def get_member(self, userid: str) -> DingTalkMember:
         member, _ = await self._get_member(userid)
         return member
+
+    async def get_employee_profiles(
+        self, userids: tuple[str, ...]
+    ) -> dict[str, DingTalkEmployeeProfile]:
+        if userids == ():
+            return {}
+        if self._agent_id is None or self._hrm_real_name_field_code is None:
+            raise ValueError("DingTalk HRM profile configuration required")
+        if (
+            not isinstance(userids, tuple)
+            or len(userids) > MAX_MEMBERS
+            or len(set(userids)) != len(userids)
+        ):
+            raise ValueError("DingTalk member set invalid")
+        for userid in userids:
+            _required_string(userid)
+            if "," in userid:
+                raise ValueError("DingTalk member set invalid")
+
+        metadata = await self._legacy_read(
+            "/topapi/smartwork/hrm/roster/meta/get",
+            {"agentid": self._agent_id},
+        )
+
+        def validate_real_name_metadata() -> str:
+            groups = metadata.payload.get("result")
+            if not isinstance(groups, list):
+                raise ValueError
+            matches: list[dict[str, Any]] = []
+            for group in groups:
+                fields = _required_object(group).get("field_meta_info_list")
+                if not isinstance(fields, list):
+                    raise ValueError
+                for item in fields:
+                    field_metadata = _required_object(item)
+                    if field_metadata.get("field_code") == self._hrm_real_name_field_code:
+                        matches.append(field_metadata)
+            if len(matches) != 1:
+                raise ValueError
+            match = matches[0]
+            if (
+                match.get("field_name") != DINGTALK_REAL_NAME_ATTRIBUTE
+                or match.get("field_type") != DINGTALK_REAL_NAME_FIELD_TYPE
+            ):
+                raise ValueError
+            return _required_string(match.get("field_code"), maximum=256)
+
+        real_name_field_code = _parse_provider_value(validate_real_name_metadata)
+        if real_name_field_code is None:
+            raise self._error(
+                "DingTalk HR roster metadata invalid",
+                request_id=metadata.request_id,
+                error_code="invalid_hrm_metadata",
+            )
+
+        requested_field_codes = (
+            real_name_field_code,
+            _HRM_MOBILE_FIELD_CODE,
+            _HRM_PRIMARY_DEPARTMENT_FIELD_CODE,
+        )
+        profiles: dict[str, DingTalkEmployeeProfile] = {}
+        for offset in range(0, len(userids), _HRM_PROFILE_BATCH_SIZE):
+            selected = userids[offset : offset + _HRM_PROFILE_BATCH_SIZE]
+            response = await self._legacy_read(
+                "/topapi/smartwork/hrm/employee/v2/list",
+                {
+                    "agentid": self._agent_id,
+                    "userid_list": ",".join(selected),
+                    "field_filter_list": ",".join(requested_field_codes),
+                },
+            )
+
+            def parse_batch(
+                provider_response: _ProviderResponse = response,
+                selected_userids: tuple[str, ...] = selected,
+            ) -> dict[str, DingTalkEmployeeProfile]:
+                rows = provider_response.payload.get("result")
+                if not isinstance(rows, list):
+                    raise ValueError
+                parsed: dict[str, DingTalkEmployeeProfile] = {}
+                for item in rows:
+                    row = _required_object(item)
+                    userid = _required_string(row.get("userid"))
+                    if userid not in selected_userids or userid in parsed:
+                        raise ValueError
+                    raw_fields = row.get("field_data_list")
+                    if not isinstance(raw_fields, list):
+                        raise ValueError
+                    fields: dict[str, dict[str, Any]] = {}
+                    for raw_field in raw_fields:
+                        profile_field = _required_object(raw_field)
+                        field_code = profile_field.get("field_code")
+                        if field_code in requested_field_codes:
+                            if field_code in fields:
+                                raise ValueError
+                            fields[str(field_code)] = profile_field
+
+                    def scalar(
+                        field_code: str,
+                        *,
+                        maximum: int,
+                        profile_fields: dict[str, dict[str, Any]] = fields,
+                    ) -> str | None:
+                        profile_field = profile_fields.get(field_code)
+                        if profile_field is None:
+                            return None
+                        values = profile_field.get("field_value_list")
+                        if not isinstance(values, list) or len(values) != 1:
+                            return None
+                        value = values[0]
+                        if not isinstance(value, dict):
+                            return None
+                        candidate = value.get("label")
+                        if not isinstance(candidate, str) or not candidate.strip():
+                            candidate = value.get("value")
+                        if (
+                            not isinstance(candidate, str)
+                            or not candidate.strip()
+                            or len(candidate.strip()) > maximum
+                            or "\0" in candidate
+                        ):
+                            return None
+                        return candidate.strip()
+
+                    parsed[userid] = DingTalkEmployeeProfile(
+                        userid=userid,
+                        real_name=scalar(real_name_field_code, maximum=256),
+                        mobile=normalize_mainland_mobile(
+                            scalar(_HRM_MOBILE_FIELD_CODE, maximum=64)
+                        ),
+                        primary_department=scalar(
+                            _HRM_PRIMARY_DEPARTMENT_FIELD_CODE,
+                            maximum=MAX_DISPLAY_NAME_LENGTH,
+                        ),
+                    )
+                if set(parsed) != set(selected_userids):
+                    raise ValueError
+                return parsed
+
+            batch = _parse_provider_value(parse_batch)
+            if batch is None:
+                raise self._error(
+                    "DingTalk HR roster response invalid",
+                    request_id=response.request_id,
+                    error_code="invalid_hrm_response",
+                )
+            profiles.update(batch)
+        return profiles
 
     async def _get_member(self, userid: str) -> tuple[DingTalkMember, str]:
         _required_string(userid)
