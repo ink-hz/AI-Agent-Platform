@@ -1,24 +1,22 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from html.parser import HTMLParser
 import json
 import os
-from pathlib import Path
 import subprocess
+from datetime import UTC, datetime, timedelta
+from html.parser import HTMLParser
+from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlsplit
 from uuid import uuid4
 
-from fastapi import APIRouter, FastAPI
-from fastapi.testclient import TestClient
 import pytest
-
-from app.control_plane.models import AuthContext, IdentityMode, IssuedWebSession, Role
-from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.control_plane.authorization import AuthorizationService
+from app.control_plane.middleware import IdentitySecurityMiddleware
+from app.control_plane.models import AuthContext, IdentityMode, IssuedWebSession, Role
 from app.control_plane.routes_auth import build_auth_router
 from app.main import create_app
-
+from fastapi import APIRouter, FastAPI
+from fastapi.testclient import TestClient
 
 AI_ADMIN_ACCOUNT_CONTRACT_FIELDS = {
     "internal_user_id",
@@ -26,6 +24,9 @@ AI_ADMIN_ACCOUNT_CONTRACT_FIELDS = {
     "role",
     "departments",
     "gender",
+    "real_name",
+    "mobile",
+    "primary_department",
     "observation_agent_ids",
     "directory_freshness",
     "hard_stale_read_only",
@@ -121,6 +122,9 @@ class FakeAuth:
         self.return_paths: dict[str, str] = {}
         self.started_count = 0
         self.gender = "female"
+        self.real_name = "Platform Real Name"
+        self.mobile = "13800138000"
+        self.primary_department = "项目管理部"
 
     def start_qr(self, return_path):
         from app.control_plane.auth import StartedLogin
@@ -161,6 +165,9 @@ class FakeAuth:
             "display_name": "Platform user",
             "departments": ["产品中心", "项目管理部"],
             "gender": self.gender,
+            "real_name": self.real_name,
+            "mobile": self.mobile,
+            "primary_department": self.primary_department,
             "observation_agent_ids": [],
             "directory_freshness": "hard_stale"
             if context.hard_stale_read_only else "fresh",
@@ -642,6 +649,9 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
     gender = payload.pop("gender")
     if gender != "female":
         pytest.fail("account gender projection mismatch")
+    assert payload.pop("real_name") == "Platform Real Name"
+    assert payload.pop("mobile") == "13800138000"
+    assert payload.pop("primary_department") == "项目管理部"
     assert payload == {
         "internal_user_id": str(auth.context.internal_user_id),
         "display_name": "Platform user",
@@ -715,6 +725,9 @@ def test_account_returns_null_gender_without_changing_private_cache_contract(
 ) -> None:
     auth = FakeAuth()
     auth.gender = None
+    auth.real_name = None
+    auth.mobile = None
+    auth.primary_department = None
     response = TestClient(_app(tmp_path, monkeypatch, auth)).get(
         "/api/v1/account",
         cookies={auth.cookie_name: "valid-cookie"},
@@ -723,6 +736,9 @@ def test_account_returns_null_gender_without_changing_private_cache_contract(
     assert response.status_code == 200
     assert set(response.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
     assert response.json()["gender"] is None
+    assert response.json()["real_name"] is None
+    assert response.json()["mobile"] is None
+    assert response.json()["primary_department"] is None
     assert response.headers["cache-control"] == "private, no-store"
     assert response.headers["pragma"] == "no-cache"
 

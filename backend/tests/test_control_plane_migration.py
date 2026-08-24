@@ -73,6 +73,9 @@ AGENT_BRAIN_SUMMARY_PHASE_MIGRATION = (
 DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION = (
     MIGRATIONS / "039_directory_member_employee_profile.sql"
 )
+ACCOUNT_EMPLOYEE_PROFILE_PROJECTION_MIGRATION = (
+    MIGRATIONS / "040_account_employee_profile_projection.sql"
+)
 EXECUTION_RELAY_MIGRATION = MIGRATIONS / "028_execution_relay.sql"
 AGENT_BRAIN_MIGRATION = MIGRATIONS / "029_agent_brain_mvp.sql"
 AGENT_BRAIN_ORCHESTRATION_MIGRATION = (
@@ -253,6 +256,10 @@ def test_first_control_migration_exists() -> None:
         "missing directory employee profile migration: "
         f"{DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION}"
     )
+    assert ACCOUNT_EMPLOYEE_PROFILE_PROJECTION_MIGRATION.is_file(), (
+        "missing account employee profile projection migration: "
+        f"{ACCOUNT_EMPLOYEE_PROFILE_PROJECTION_MIGRATION}"
+    )
     assert AGENT_BRAIN_CONVERSATION_MIGRATION.is_file(), (
         "missing Agent Brain Conversation migration: "
         f"{AGENT_BRAIN_CONVERSATION_MIGRATION}"
@@ -314,6 +321,25 @@ def test_employee_profile_migration_uses_nullable_encrypted_columns_only() -> No
         "mobile_plaintext",
     ):
         assert forbidden not in migration
+
+
+def test_account_employee_profile_projection_is_session_scoped_and_least_privilege() -> None:
+    migration = ACCOUNT_EMPLOYEE_PROFILE_PROJECTION_MIGRATION.read_text(
+        encoding="utf-8"
+    ).lower()
+    normalized = " ".join(migration.split())
+
+    assert "read_current_account_employee_profile_v40( selected_session_id uuid )" in normalized
+    assert "selected_internal_user_id" not in migration
+    assert "selected_userid" not in migration
+    assert "selected_staff" not in migration
+    assert "from platform_control.web_sessions session" in migration
+    assert "session.session_id=selected_session_id" in migration
+    assert "security definer" in migration
+    assert "set search_path = pg_catalog, platform_control" in migration
+    assert "grant execute" in migration
+    assert "platform_control_app" in migration
+    assert "platform_directory_worker" in migration
 
 
 def test_origin_account_department_projection_is_byte_immutable() -> None:
@@ -537,7 +563,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 40)
+                    (version, 64) for version in range(1, 41)
                 ]
 
     changed = tmp_path / "migrations"
@@ -611,6 +637,33 @@ def test_directory_gender_functions_have_exact_environment_grants(
             assert can_execute is (
                 protected_functions[name] and role == matched_worker
             )
+            assert public is False
+            assert security_definer is True
+            assert config == ["search_path=pg_catalog, platform_control"]
+
+
+@pytest.mark.postgres
+def test_current_account_employee_profile_projection_has_exact_app_grant(
+    control_database,
+) -> None:
+    function_name = "read_current_account_employee_profile_v40"
+    for environment in control_database["environments"].values():
+        matched_app = environment["roles"][1]
+        with psycopg.connect(environment["admin"]) as connection:
+            rows = connection.execute(
+                "select role_name,"
+                "has_function_privilege(role_name,proc.oid,'execute'),"
+                "has_function_privilege('public',proc.oid,'execute'),"
+                "proc.prosecdef,proc.proconfig "
+                "from pg_proc proc cross join unnest(%s::text[]) role_name "
+                "where proc.pronamespace='platform_control'::regnamespace "
+                "and proc.proname=%s order by role_name",
+                (list(ROLES), function_name),
+            ).fetchall()
+
+        assert len(rows) == len(ROLES)
+        for role, can_execute, public, security_definer, config in rows:
+            assert can_execute is (role == matched_app)
             assert public is False
             assert security_definer is True
             assert config == ["search_path=pg_catalog, platform_control"]
