@@ -383,7 +383,12 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
     )
     codec = ProviderIdentityCodec(encryption, lookup)
     auth_secrets = AuthSecrets(lookup.active_key, key_version=lookup.active_version)
-    repository = WebSessionRepository(database_url, secrets=auth_secrets)
+    repository = WebSessionRepository(
+        database_url,
+        secrets=auth_secrets,
+        identity_codec=codec,
+        directory_id=control.dingtalk_corp_id,
+    )
     rate_limiter = ControlRateLimiter(
         control_database_url=database_url,
         secrets=auth_secrets,

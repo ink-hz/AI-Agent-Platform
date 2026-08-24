@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
 import socket
 import subprocess
 import tempfile
 import uuid
+from pathlib import Path
 
 import psycopg
 import pytest
-
 
 BACKEND = Path(__file__).parents[1]
 MIGRATIONS = BACKEND / "control_migrations"
@@ -72,7 +71,13 @@ AGENT_BRAIN_SUMMARY_PHASE_MIGRATION = (
     MIGRATIONS / "038_agent_brain_summary_phase.sql"
 )
 AGENT_BRAIN_DURABLE_LOOP_MIGRATION = (
-    MIGRATIONS / "039_agent_brain_durable_loop.sql"
+    MIGRATIONS / "041_agent_brain_durable_loop.sql"
+)
+DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION = (
+    MIGRATIONS / "039_directory_member_employee_profile.sql"
+)
+ACCOUNT_EMPLOYEE_PROFILE_PROJECTION_MIGRATION = (
+    MIGRATIONS / "040_account_employee_profile_projection.sql"
 )
 EXECUTION_RELAY_MIGRATION = MIGRATIONS / "028_execution_relay.sql"
 AGENT_BRAIN_MIGRATION = MIGRATIONS / "029_agent_brain_mvp.sql"
@@ -184,6 +189,13 @@ IMMUTABLE_MIGRATION_SHA256 = {
 }
 
 
+def test_control_migration_versions_are_unique_and_contiguous() -> None:
+    versions = [int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")]
+
+    assert len(versions) == len(set(versions))
+    assert sorted(versions) == list(range(1, max(versions) + 1))
+
+
 def test_first_control_migration_exists() -> None:
     assert MIGRATION.is_file(), f"missing migration: {MIGRATION}"
     assert HARDENING_MIGRATION.is_file(), (
@@ -251,6 +263,14 @@ def test_first_control_migration_exists() -> None:
         "missing account gender projection migration: "
         f"{ACCOUNT_GENDER_PROJECTION_MIGRATION}"
     )
+    assert DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION.is_file(), (
+        "missing directory employee profile migration: "
+        f"{DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION}"
+    )
+    assert ACCOUNT_EMPLOYEE_PROFILE_PROJECTION_MIGRATION.is_file(), (
+        "missing account employee profile projection migration: "
+        f"{ACCOUNT_EMPLOYEE_PROFILE_PROJECTION_MIGRATION}"
+    )
     assert AGENT_BRAIN_CONVERSATION_MIGRATION.is_file(), (
         "missing Agent Brain Conversation migration: "
         f"{AGENT_BRAIN_CONVERSATION_MIGRATION}"
@@ -290,6 +310,117 @@ def test_control_migrations_001_through_019_are_byte_immutable() -> None:
             )
         )
     } == IMMUTABLE_MIGRATION_SHA256
+
+
+def test_employee_profile_migration_uses_nullable_encrypted_columns_only() -> None:
+    migration = DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION.read_text(
+        encoding="utf-8"
+    ).lower()
+
+    for purpose in ("real_name", "mobile", "primary_department"):
+        assert f"{purpose}_ciphertext bytea" in migration
+        assert f"{purpose}_nonce bytea" in migration
+        assert f"{purpose}_encryption_key_version integer" in migration
+        assert f"source_{purpose}_present_count integer" in migration
+        assert f"{purpose}_present_count integer" in migration
+    assert "source_schema_version between 0 and 3" in migration
+    assert "create_directory_staging_generation_v39" in migration
+    assert "stage_directory_member_v39" in migration
+    assert "directory_generation_checksum_v39" in migration
+    assert "validate_directory_generation_v39" in migration
+    for purpose in ("real_name", "mobile", "primary_department"):
+        assert (
+            f"num_nonnulls({purpose}_ciphertext, {purpose}_nonce, "
+            f"{purpose}_encryption_key_version) in (0,3)"
+        ) in " ".join(migration.split())
+        assert (
+            f"num_nonnulls(selected_{purpose}_ciphertext, selected_{purpose}_nonce, "
+            f"selected_{purpose}_encryption_version) in (0,3)"
+        ) in " ".join(migration.split())
+    for forbidden in (
+        "real_name text",
+        "mobile text",
+        "primary_department text",
+        "real_name_plaintext",
+        "mobile_plaintext",
+    ):
+        assert forbidden not in migration
+
+
+@pytest.mark.postgres
+def test_employee_profile_staging_rejects_every_partial_encryption_tuple(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    worker_url = environment["urls"]["platform_directory_worker"]
+    partial_shapes = (
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+        (True, True, False),
+        (True, False, True),
+        (False, True, True),
+    )
+    for purpose_index in range(3):
+        for shape in partial_shapes:
+            generation_id = uuid.uuid4()
+            with psycopg.connect(worker_url, autocommit=True) as connection:
+                connection.execute(
+                    "select platform_control.create_directory_staging_generation_v39("
+                    "%s,%s,'scheduled',1,1,0,1,3,%s,0,0,0)",
+                    (generation_id, uuid.uuid4(), "a" * 64),
+                )
+                triples: list[object | None] = [None] * 9
+                offset = purpose_index * 3
+                triples[offset : offset + 3] = (
+                    b"c" * 16 if shape[0] else None,
+                    b"n" * 12 if shape[1] else None,
+                    1 if shape[2] else None,
+                )
+                with pytest.raises(
+                    psycopg.errors.CheckViolation,
+                    match="directory member profile invalid",
+                ):
+                    connection.execute(
+                        "select platform_control.stage_directory_member_v39("
+                        + ",".join(("%s",) * 22)
+                        + ")",
+                        (
+                            generation_id,
+                            uuid.uuid4(),
+                            b"l" * 32,
+                            1,
+                            b"p" * 16,
+                            1,
+                            b"u" * 32,
+                            1,
+                            b"q" * 16,
+                            1,
+                            "Profile Member",
+                            "active",
+                            "female",
+                            *triples,
+                        ),
+                    )
+
+
+def test_account_employee_profile_projection_is_session_scoped_and_least_privilege() -> None:
+    migration = ACCOUNT_EMPLOYEE_PROFILE_PROJECTION_MIGRATION.read_text(
+        encoding="utf-8"
+    ).lower()
+    normalized = " ".join(migration.split())
+
+    assert "read_current_account_employee_profile_v40( selected_session_id uuid )" in normalized
+    assert "selected_internal_user_id" not in migration
+    assert "selected_userid" not in migration
+    assert "selected_staff" not in migration
+    assert "from platform_control.web_sessions session" in migration
+    assert "session.session_id=selected_session_id" in migration
+    assert "security definer" in migration
+    assert "set search_path = pg_catalog, platform_control" in migration
+    assert "grant execute" in migration
+    assert "platform_control_app" in migration
+    assert "platform_directory_worker" in migration
 
 
 def test_origin_account_department_projection_is_byte_immutable() -> None:
@@ -513,7 +644,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                    (version, 64) for version in range(1, 41)
+                    (version, 64) for version in range(1, 43)
                 ]
 
     changed = tmp_path / "migrations"
@@ -559,9 +690,14 @@ def test_directory_gender_functions_have_exact_environment_grants(
 ) -> None:
     protected_functions = {
         "create_directory_staging_generation_v34": True,
+        "create_directory_staging_generation_v39": True,
         "directory_generation_checksum_v34": False,
+        "directory_generation_checksum_v39": False,
+        "read_employee_profile_readiness_v39": True,
         "stage_directory_member_v34": True,
+        "stage_directory_member_v39": True,
         "validate_directory_generation_v34": False,
+        "validate_directory_generation_v39": False,
     }
     for environment in control_database["environments"].values():
         matched_worker = environment["roles"][2]
@@ -582,6 +718,33 @@ def test_directory_gender_functions_have_exact_environment_grants(
             assert can_execute is (
                 protected_functions[name] and role == matched_worker
             )
+            assert public is False
+            assert security_definer is True
+            assert config == ["search_path=pg_catalog, platform_control"]
+
+
+@pytest.mark.postgres
+def test_current_account_employee_profile_projection_has_exact_app_grant(
+    control_database,
+) -> None:
+    function_name = "read_current_account_employee_profile_v40"
+    for environment in control_database["environments"].values():
+        matched_app = environment["roles"][1]
+        with psycopg.connect(environment["admin"]) as connection:
+            rows = connection.execute(
+                "select role_name,"
+                "has_function_privilege(role_name,proc.oid,'execute'),"
+                "has_function_privilege('public',proc.oid,'execute'),"
+                "proc.prosecdef,proc.proconfig "
+                "from pg_proc proc cross join unnest(%s::text[]) role_name "
+                "where proc.pronamespace='platform_control'::regnamespace "
+                "and proc.proname=%s order by role_name",
+                (list(ROLES), function_name),
+            ).fetchall()
+
+        assert len(rows) == len(ROLES)
+        for role, can_execute, public, security_definer, config in rows:
+            assert can_execute is (role == matched_app)
             assert public is False
             assert security_definer is True
             assert config == ["search_path=pg_catalog, platform_control"]
@@ -827,6 +990,44 @@ def test_migration_creates_complete_constrained_control_model(control_database):
                 assert not session_columns & {
                     "token", "csrf_token", "cookie_token"
                 }
+
+                cursor.execute(
+                    "select column_name,is_nullable from information_schema.columns "
+                    "where table_schema='platform_control' "
+                    "and table_name='directory_members'"
+                )
+                member_columns = dict(cursor.fetchall())
+                encrypted_profile_columns = {
+                    f"{purpose}_{suffix}"
+                    for purpose in ("real_name", "mobile", "primary_department")
+                    for suffix in (
+                        "ciphertext",
+                        "nonce",
+                        "encryption_key_version",
+                    )
+                }
+                assert encrypted_profile_columns <= set(member_columns)
+                assert all(
+                    member_columns[column] == "YES"
+                    for column in encrypted_profile_columns
+                )
+                assert not set(member_columns) & {
+                    "real_name",
+                    "mobile",
+                    "primary_department",
+                }
+
+                cursor.execute(
+                    "select column_name from information_schema.columns "
+                    "where table_schema='platform_control' "
+                    "and table_name='directory_generations'"
+                )
+                generation_columns = {row[0] for row in cursor.fetchall()}
+                assert {
+                    f"{prefix}{purpose}_present_count"
+                    for prefix in ("", "source_")
+                    for purpose in ("real_name", "mobile", "primary_department")
+                } <= generation_columns
 
                 cursor.execute(
                     "select indexdef from pg_indexes "

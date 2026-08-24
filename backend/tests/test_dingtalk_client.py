@@ -8,15 +8,15 @@ import traceback
 import httpx
 import pytest
 import respx
-
+from app.control_plane import dingtalk
 from app.control_plane.dingtalk import (
     DingTalkAuthResult,
     DingTalkClient,
     DingTalkDepartment,
+    DingTalkEmployeeProfile,
     DingTalkMember,
     DingTalkProviderError,
 )
-
 
 API = "https://api.test.invalid"
 OAPI = "https://oapi.test.invalid"
@@ -70,6 +70,261 @@ def _client(*, flow: str = "in_client", **overrides) -> DingTalkClient:
 
 def _token() -> httpx.Response:
     return httpx.Response(200, json={"accessToken": "provider-token", "expireIn": 7200})
+
+
+REAL_NAME_CODE = "test-real-name-field"
+
+
+def _profile_metadata(*, name: str = "真名", field_type: str = "TextField"):
+    return httpx.Response(200, json={
+        "errcode": 0,
+        "errmsg": "ok",
+        "result": [{"field_meta_info_list": [{
+            "field_code": REAL_NAME_CODE,
+            "field_name": name,
+            "field_type": field_type,
+        }]}],
+    })
+
+
+def _profile_row(
+    userid: str,
+    *,
+    real_name: object = "Real Name",
+    mobile: object = "+86-138 0013-8000",
+    primary_department: object = "Project Management",
+):
+    def field(code: str, value: object) -> dict[str, object]:
+        values = [] if value is None else [{"label": value, "value": value}]
+        return {"field_code": code, "field_value_list": values}
+
+    return {
+        "userid": userid,
+        "field_data_list": [
+            field(REAL_NAME_CODE, real_name),
+            field("sys00-mobile", mobile),
+            field("sys00-mainDept", primary_department),
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("13800138000", "13800138000"),
+        ("+86-138 0013-8000", "13800138000"),
+        ("+86 138-0013 8000", "13800138000"),
+        (None, None),
+        ("", None),
+        ("+1-13800138000", None),
+        ("8613800138000", None),
+        ("1380013800", None),
+        ("138001380000", None),
+        ("1380013A000", None),
+    ],
+)
+def test_mainland_mobile_normalization_is_unambiguous(raw, expected) -> None:
+    assert dingtalk.normalize_mainland_mobile(raw) == expected
+
+
+def test_employee_profile_repr_does_not_expose_personal_data() -> None:
+    profile = DingTalkEmployeeProfile(
+        userid="private-user",
+        real_name="Private Real Name",
+        mobile="13800138000",
+        primary_department="Private Department",
+    )
+
+    rendered = repr(profile)
+
+    assert "private-user" not in rendered
+    assert "Private Real Name" not in rendered
+    assert "13800138000" not in rendered
+    assert "Private Department" not in rendered
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_employee_profile_reader_validates_metadata_and_batches_fifty() -> None:
+    userids = tuple(f"employee-{index}" for index in range(51))
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/smartwork/hrm/roster/meta/get").mock(
+        return_value=_profile_metadata()
+    )
+    roster = respx.post(f"{OAPI}/topapi/smartwork/hrm/employee/v2/list").mock(
+        side_effect=[
+            httpx.Response(200, json={
+                "errcode": 0,
+                "errmsg": "ok",
+                "result": [_profile_row(userid) for userid in userids[:50]],
+            }),
+            httpx.Response(200, json={
+                "errcode": 0,
+                "errmsg": "ok",
+                "result": [_profile_row(userids[50], real_name=None, mobile=None)],
+            }),
+        ]
+    )
+
+    result = await _client(
+        agent_id=123,
+        hrm_real_name_field_code=REAL_NAME_CODE,
+    ).get_employee_profiles(userids)
+
+    assert len(result) == 51
+    assert result[userids[0]].real_name == "Real Name"
+    assert result[userids[0]].mobile == "13800138000"
+    assert result[userids[0]].primary_department == "Project Management"
+    assert result[userids[50]].real_name is None
+    assert result[userids[50]].mobile is None
+    assert roster.call_count == 2
+    bodies = [json.loads(call.request.content) for call in roster.calls]
+    assert [len(body["userid_list"].split(",")) for body in bodies] == [50, 1]
+    assert all(
+        body["field_filter_list"]
+        == f"{REAL_NAME_CODE},sys00-mobile,sys00-mainDept"
+        for body in bodies
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    ("name", "field_type"),
+    [("姓名", "TextField"), ("真名", "DDSelectField")],
+)
+async def test_employee_profile_reader_rejects_wrong_configured_metadata(
+    name: str,
+    field_type: str,
+) -> None:
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/smartwork/hrm/roster/meta/get").mock(
+        return_value=_profile_metadata(name=name, field_type=field_type)
+    )
+    roster = respx.post(f"{OAPI}/topapi/smartwork/hrm/employee/v2/list").mock(
+        return_value=httpx.Response(500)
+    )
+
+    with pytest.raises(DingTalkProviderError) as caught:
+        await _client(
+            agent_id=123,
+            hrm_real_name_field_code=REAL_NAME_CODE,
+        ).get_employee_profiles(("private-user",))
+
+    assert caught.value.error_code == "invalid_hrm_metadata"
+    assert "private-user" not in str(caught.value)
+    assert roster.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("matching_field_count", [0, 2])
+async def test_employee_profile_reader_requires_one_exact_metadata_match(
+    matching_field_count: int,
+) -> None:
+    fields = [
+        {
+            "field_code": REAL_NAME_CODE,
+            "field_name": "真名",
+            "field_type": "TextField",
+        }
+        for _ in range(matching_field_count)
+    ]
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/smartwork/hrm/roster/meta/get").mock(
+        return_value=httpx.Response(200, json={
+            "errcode": 0,
+            "errmsg": "ok",
+            "result": [{"field_meta_info_list": fields}],
+        })
+    )
+
+    with pytest.raises(DingTalkProviderError) as caught:
+        await _client(
+            agent_id=123,
+            hrm_real_name_field_code=REAL_NAME_CODE,
+        ).get_employee_profiles(("private-user",))
+
+    assert caught.value.error_code == "invalid_hrm_metadata"
+    assert "private-user" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_employee_profile_reader_redacts_failed_provider_response() -> None:
+    secrets = ("private-user", "private-provider-message", "13800138000")
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/smartwork/hrm/roster/meta/get").mock(
+        return_value=_profile_metadata()
+    )
+    respx.post(f"{OAPI}/topapi/smartwork/hrm/employee/v2/list").mock(
+        return_value=httpx.Response(200, json={
+            "errcode": 500,
+            "errmsg": f"{secrets[1]} {secrets[2]}",
+        })
+    )
+
+    with pytest.raises(DingTalkProviderError) as caught:
+        await _client(
+            agent_id=123,
+            hrm_real_name_field_code=REAL_NAME_CODE,
+        ).get_employee_profiles((secrets[0],))
+
+    _assert_no_provider_material_in_exception_tree(caught.value, secrets)
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("rows", [[], [_profile_row("unknown")], [_profile_row("one"), _profile_row("one")]])
+async def test_employee_profile_reader_rejects_incomplete_or_ambiguous_identity_sets(
+    rows,
+) -> None:
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/smartwork/hrm/roster/meta/get").mock(
+        return_value=_profile_metadata()
+    )
+    respx.post(f"{OAPI}/topapi/smartwork/hrm/employee/v2/list").mock(
+        return_value=httpx.Response(200, json={"errcode": 0, "errmsg": "ok", "result": rows})
+    )
+
+    with pytest.raises(DingTalkProviderError) as caught:
+        await _client(
+            agent_id=123,
+            hrm_real_name_field_code=REAL_NAME_CODE,
+        ).get_employee_profiles(("one",))
+
+    assert caught.value.error_code == "invalid_hrm_response"
+    assert "one" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_employee_profile_reader_treats_invalid_individual_values_as_missing() -> None:
+    respx.post(f"{API}/v1.0/oauth2/accessToken").mock(return_value=_token())
+    respx.post(f"{OAPI}/topapi/smartwork/hrm/roster/meta/get").mock(
+        return_value=_profile_metadata()
+    )
+    respx.post(f"{OAPI}/topapi/smartwork/hrm/employee/v2/list").mock(
+        return_value=httpx.Response(200, json={
+            "errcode": 0,
+            "errmsg": "ok",
+            "result": [_profile_row(
+                "one",
+                real_name=["not-scalar"],
+                mobile="not-a-mobile",
+                primary_department={"not": "scalar"},
+            )],
+        })
+    )
+
+    profile = (await _client(
+        agent_id=123,
+        hrm_real_name_field_code=REAL_NAME_CODE,
+    ).get_employee_profiles(("one",)))["one"]
+
+    assert profile.real_name is None
+    assert profile.mobile is None
+    assert profile.primary_department is None
 
 
 @pytest.mark.asyncio

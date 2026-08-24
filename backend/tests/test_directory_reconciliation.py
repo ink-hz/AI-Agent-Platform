@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import logging
-import time
 from uuid import UUID
 
-import pytest
 import psycopg
-
+import pytest
 from app.control_plane.crypto import IdentityKeyring, ProviderIdentityCodec
-from app.control_plane.dingtalk import DingTalkDepartment, DingTalkMember
+from app.control_plane.dingtalk import (
+    DingTalkDepartment,
+    DingTalkEmployeeProfile,
+    DingTalkMember,
+)
 from app.control_plane.identity import IdentityResolver
 from test_control_plane_migration import control_database
 
@@ -46,7 +49,7 @@ class FakeRepository:
         self.calls = []
         self.staged = {}
 
-    def create_staging_generation(self, generation_id, run_id, kind, member_count, department_count, membership_count, closure_count, source_schema_version, expected_digest, **kwargs):
+    def create_staging_generation(self, generation_id, run_id, kind, member_count, department_count, membership_count, closure_count, source_schema_version, expected_digest, real_name_present_count=0, mobile_present_count=0, primary_department_present_count=0, **kwargs):
         self.calls.append((
             "create", generation_id, member_count, department_count,
             membership_count, source_schema_version,
@@ -119,6 +122,17 @@ class FakeClient:
             "u-1", "union-1", "Alice", True, (2, 3), "female", "valid"
         )
 
+    async def get_employee_profiles(self, userids):
+        return {
+            userid: DingTalkEmployeeProfile(
+                userid,
+                "Alice Legal",
+                "13800138000",
+                "Engineering",
+            )
+            for userid in userids
+        }
+
 
 @pytest.mark.asyncio
 async def test_reconciliation_fetches_before_staging_and_promotes_once() -> None:
@@ -127,7 +141,7 @@ async def test_reconciliation_fetches_before_staging_and_promotes_once() -> None
     repository = FakeRepository()
     result = await _reconciler(FakeClient(), repository).run_full("startup")
     assert repository.calls[0][0] == "create"
-    assert repository.calls[0][5] == 2
+    assert repository.calls[0][5] == 3
     assert repository.calls[-1][0] == "promote"
     assert repository.active_generation == result.generation_id
     staged = repository.staged[result.generation_id]
@@ -140,6 +154,30 @@ async def test_reconciliation_fetches_before_staging_and_promotes_once() -> None
     assert member.union.subject_kind == "employee_union"
     assert member.corporate.lookup_key_version == member.union.lookup_key_version == 1
     assert member.gender == "female"
+    assert _codec().open_attribute(
+        member.real_name,
+        "test-corp",
+        result.generation_id,
+        member.member_key,
+        "real_name",
+    ) == "Alice Legal"
+    assert _codec().open_attribute(
+        member.mobile,
+        "test-corp",
+        result.generation_id,
+        member.member_key,
+        "mobile",
+    ) == "13800138000"
+    assert _codec().open_attribute(
+        member.primary_department,
+        "test-corp",
+        result.generation_id,
+        member.member_key,
+        "primary_department",
+    ) == "Engineering"
+    assert "Alice Legal" not in repr(member)
+    assert "13800138000" not in repr(member)
+    assert "Engineering" not in repr(member)
     assert b"u-1" not in member.corporate.ciphertext
     assert b"union-1" not in member.union.ciphertext
     assert _codec().unseal(member.corporate) == IdentityResolver.corporate_provider_id(
@@ -167,7 +205,10 @@ async def test_reconciliation_stages_gender_only_from_one_authoritative_detail()
 
 @pytest.mark.asyncio
 async def test_network_failure_never_creates_staging_or_changes_active() -> None:
-    from app.control_plane.directory import DirectoryReconciler, DirectoryReconciliationError
+    from app.control_plane.directory import (
+        DirectoryReconciler,
+        DirectoryReconciliationError,
+    )
 
     previous = UUID("00000000-0000-0000-0000-000000000001")
     repository = FakeRepository(active_generation=previous)
@@ -179,8 +220,38 @@ async def test_network_failure_never_creates_staging_or_changes_active() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("profile_userids", [(), ("unknown",), ("u-1", "unknown")])
+async def test_profile_identity_mismatch_aborts_before_staging_and_keeps_prior_active(
+    profile_userids: tuple[str, ...],
+) -> None:
+    from app.control_plane.directory import (
+        DirectoryReconciler,
+        DirectoryReconciliationError,
+    )
+
+    class MismatchedProfileClient(FakeClient):
+        async def get_employee_profiles(self, userids):
+            return {
+                userid: DingTalkEmployeeProfile(userid)
+                for userid in profile_userids
+            }
+
+    previous = UUID("00000000-0000-0000-0000-000000000001")
+    repository = FakeRepository(active_generation=previous)
+
+    with pytest.raises(DirectoryReconciliationError, match="member_profile_conflict"):
+        await _reconciler(MismatchedProfileClient(), repository).run_full()
+
+    assert repository.active_generation == previous
+    assert repository.calls == []
+
+
+@pytest.mark.asyncio
 async def test_conflicting_duplicate_user_is_rejected_before_database_write() -> None:
-    from app.control_plane.directory import DirectoryReconciler, DirectoryReconciliationError
+    from app.control_plane.directory import (
+        DirectoryReconciler,
+        DirectoryReconciliationError,
+    )
 
     repository = FakeRepository()
     with pytest.raises(DirectoryReconciliationError, match="member_conflict"):
@@ -202,7 +273,10 @@ async def test_duplicate_list_gender_is_ignored_in_favor_of_one_authoritative_de
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["departments", "members", "memberships", "closure", "finalize"])
 async def test_stage_failure_marks_candidate_failed_and_keeps_prior_active(failure) -> None:
-    from app.control_plane.directory import DirectoryReconciler, DirectoryReconciliationError
+    from app.control_plane.directory import (
+        DirectoryReconciler,
+        DirectoryReconciliationError,
+    )
 
     previous = UUID("00000000-0000-0000-0000-000000000001")
     repository = FakeRepository(active_generation=previous, fail_at=failure)
@@ -215,7 +289,10 @@ async def test_stage_failure_marks_candidate_failed_and_keeps_prior_active(failu
 
 @pytest.mark.asyncio
 async def test_hard_timeout_is_15_minutes_and_cancels_before_any_database_write() -> None:
-    from app.control_plane.directory import DirectoryReconciler, DirectoryReconciliationError
+    from app.control_plane.directory import (
+        DirectoryReconciler,
+        DirectoryReconciliationError,
+    )
 
     class HangingClient(FakeClient):
         async def iter_departments(self):
@@ -274,6 +351,12 @@ async def test_representative_sizing_harness_is_below_ten_minutes() -> None:
             index = userid.removeprefix("u-")
             return DingTalkMember(userid, f"x-{index}", f"M-{index}", True, (1,))
 
+        async def get_employee_profiles(self, userids):
+            return {
+                userid: DingTalkEmployeeProfile(userid)
+                for userid in userids
+            }
+
     started = time.monotonic()
     result = await _reconciler(SizingClient(), FakeRepository()).run_full("scheduled")
     assert result.duration_seconds < 600
@@ -295,6 +378,9 @@ async def test_logs_contain_only_safe_run_metadata(caplog) -> None:
     assert "gender_valid_count=1" in rendered
     assert "gender_missing_count=0" in rendered
     assert "gender_invalid_count=0" in rendered
+    assert "real_name_present_count=1" in rendered
+    assert "mobile_present_count=1" in rendered
+    assert "primary_department_present_count=1" in rendered
 
 
 def test_staged_member_repr_omits_trusted_gender() -> None:
@@ -523,12 +609,33 @@ async def test_real_postgres_atomic_promotion_and_staging_isolation(
             (first.generation_id,),
         )
         assert cursor.fetchone()[0] == 1
+        cursor.execute(
+            "select real_name_ciphertext,real_name_nonce,mobile_ciphertext,"
+            "mobile_nonce,primary_department_ciphertext,"
+            "primary_department_nonce from platform_control.directory_members "
+            "where generation_id=%s",
+            (first.generation_id,),
+        )
+        protected_profile = cursor.fetchone()
+        assert all(value is not None for value in protected_profile)
+        assert len(protected_profile[1]) == 12
+        assert len(protected_profile[3]) == 12
+        assert len(protected_profile[5]) == 12
+        for plaintext in (b"Alice Legal", b"13800138000", b"Engineering"):
+            assert all(plaintext not in value for value in protected_profile)
+
+    readiness = repository.read_employee_profile_readiness()
+    assert readiness.generation_id == first.generation_id
+    assert readiness.active_employee_count == 1
+    assert readiness.real_name_present_count == 1
+    assert readiness.mobile_present_count == 1
+    assert readiness.primary_department_present_count == 1
 
     # A candidate can be staged, but active-generation queries cannot see it.
     generation = UUID("10000000-0000-0000-0000-000000000001")
     repository.create_staging_generation(
         generation, UUID("20000000-0000-0000-0000-000000000001"),
-        "scheduled", 0, 1, 0, 1, 2, "0" * 64,
+        "scheduled", 0, 1, 0, 1, 3, "0" * 64,
     )
     with psycopg.connect(environment["admin"]) as connection, connection.cursor() as cursor:
         cursor.execute(
@@ -548,7 +655,10 @@ async def test_real_postgres_atomic_promotion_and_staging_isolation(
 async def test_real_postgres_stage_failure_preserves_active_generation(
     production_directory,
 ) -> None:
-    from app.control_plane.directory import DirectoryReconciler, DirectoryReconciliationError
+    from app.control_plane.directory import (
+        DirectoryReconciler,
+        DirectoryReconciliationError,
+    )
 
     repository, environment = production_directory
     prior = await _reconciler(FakeClient(), repository).run_full("startup")
@@ -608,7 +718,8 @@ async def test_checksum_mismatch_cannot_replace_active_generation(
     root_key = UUID("50000000-0000-0000-0000-000000000001")
     protected = _codec().seal("department", "root-checksum")
     from app.control_plane.directory import (
-        DIRECTORY_SOURCE_SCHEMA_VERSION, StagedDepartment,
+        DIRECTORY_SOURCE_SCHEMA_VERSION,
+        StagedDepartment,
         canonical_directory_digest,
     )
     department = StagedDepartment(root_key, None, protected, "Root")
@@ -652,7 +763,7 @@ def test_cycle_and_declared_count_mismatch_fail_before_promotion(
     generation = UUID("60000000-0000-0000-0000-000000000003")
     repository.create_staging_generation(
         generation, UUID("60000000-0000-0000-0000-000000000004"),
-        "scheduled", 0, 2, 0, 2, 2, "0" * 64,
+        "scheduled", 0, 2, 0, 2, 3, "0" * 64,
     )
     repository.stage_departments(generation, (
         StagedDepartment(first, second, codec.seal("department", "cycle-1"), "One"),
@@ -665,7 +776,7 @@ def test_cycle_and_declared_count_mismatch_fail_before_promotion(
     mismatch = UUID("70000000-0000-0000-0000-000000000001")
     repository.create_staging_generation(
         mismatch, UUID("70000000-0000-0000-0000-000000000002"),
-        "scheduled", 1, 1, 0, 1, 2, "0" * 64,
+        "scheduled", 1, 1, 0, 1, 3, "0" * 64,
     )
     root = UUID("70000000-0000-0000-0000-000000000003")
     repository.stage_departments(mismatch, (StagedDepartment(root, None, codec.seal("department", "mismatch-root"), "Root"),))
@@ -776,7 +887,7 @@ def test_versioned_canonical_digest_has_golden_vector_and_covers_ciphertext() ->
         ((member_key, dept_key),),
         ((dept_key, dept_key, 0),),
     )
-    assert digest == "1c4829418990392bede2f2f2fb5bd0da8cdae27000fa1e3833a8a18d10a281fc"
+    assert digest == "880d235f7af5c337911ac4b4c9b87518d158be5bd41e132a7a001ed55a8663b1"
     changed = type(corporate)(corporate.subject_kind, corporate.lookup_hmac, 1, b"x" * 29, 1)
     assert canonical_directory_digest(
         DIRECTORY_SOURCE_SCHEMA_VERSION,
@@ -787,7 +898,7 @@ def test_versioned_canonical_digest_has_golden_vector_and_covers_ciphertext() ->
     ) != digest
 
 
-def test_schema_v2_canonical_digest_distinguishes_member_gender() -> None:
+def test_schema_v3_canonical_digest_distinguishes_member_gender() -> None:
     from app.control_plane.directory import (
         StagedDepartment,
         StagedMember,
@@ -817,10 +928,77 @@ def test_schema_v2_canonical_digest_distinguishes_member_gender() -> None:
     )
 
     digests = {
-        canonical_directory_digest(2, (department,), (member,), memberships, closure)
+        canonical_directory_digest(3, (department,), (member,), memberships, closure)
         for member in (male, female, missing)
     }
     assert len(digests) == 3
+
+
+def test_schema_v3_canonical_digest_covers_each_encrypted_profile_attribute() -> None:
+    from app.control_plane.crypto import EncryptedDirectoryAttribute
+    from app.control_plane.directory import (
+        StagedDepartment,
+        StagedMember,
+        canonical_directory_digest,
+    )
+
+    codec = _codec()
+    department = StagedDepartment(
+        UUID("10000000-0000-4000-8000-000000000001"),
+        None,
+        codec.seal("department", "profile-digest"),
+        "Engineering",
+    )
+    member_key = UUID("20000000-0000-4000-8000-000000000001")
+    corporate = codec.seal("employee", "profile-user")
+    union = codec.seal("employee_union", "profile-union")
+    protected = {
+        purpose: EncryptedDirectoryAttribute(purpose, marker * 16, marker * 12, 1)
+        for purpose, marker in (
+            ("real_name", b"r"),
+            ("mobile", b"m"),
+            ("primary_department", b"d"),
+        )
+    }
+    member = StagedMember(
+        member_key,
+        corporate,
+        union,
+        "Alice",
+        "active",
+        "female",
+        protected["real_name"],
+        protected["mobile"],
+        protected["primary_department"],
+    )
+    memberships = ((member_key, department.department_key),)
+    closure = ((department.department_key, department.department_key, 0),)
+    baseline = canonical_directory_digest(
+        3, (department,), (member,), memberships, closure
+    )
+
+    for purpose in protected:
+        changed = dict(protected)
+        changed[purpose] = EncryptedDirectoryAttribute(
+            purpose,
+            b"x" * 16,
+            protected[purpose].nonce,
+            1,
+        )
+        changed_member = StagedMember(
+            member_key,
+            corporate,
+            union,
+            "Alice",
+            "active",
+            "female",
+            changed["real_name"],
+            changed["mobile"],
+            changed["primary_department"],
+        )
+        assert canonical_directory_digest(
+            3, (department,), (changed_member,), memberships, closure
+        ) != baseline
 
 
 @pytest.mark.postgres
@@ -875,7 +1053,7 @@ def test_python_and_postgres_canonical_digest_are_identical(
     assert repository.finalize_staging_generation(generation) == expected
     with psycopg.connect(environment["admin"]) as connection:
         assert connection.execute(
-            "select platform_control.directory_generation_checksum_v34(%s)",
+            "select platform_control.directory_generation_checksum_v39(%s)",
             (generation,),
         ).fetchone() == (expected,)
 

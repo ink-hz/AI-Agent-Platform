@@ -9,6 +9,38 @@ fail() {
 
 [[ "$(${ID_BIN:-/usr/bin/id} -u)" == "0" && $# -eq 0 ]] || fail
 platform_root=/opt/orbbec-agent-platform
+private_root="$platform_root/private"
+action_lock="$private_root/agent-brain-action.lock"
+deploy_input_lock="$private_root/deploy-input.lock"
+cutover_lock_token="${PLATFORM_DINGTALK_CUTOVER_LOCK_TOKEN:-}"
+owns_action_lock=0
+release_action_lock() {
+  status=$?
+  trap - EXIT
+  if [[ "$owns_action_lock" == "1" && -d "$action_lock" && ! -L "$action_lock" \
+    && ( ! -e "$action_lock/owner" \
+      || "$(/bin/cat "$action_lock/owner" 2>/dev/null || true)" == "$cutover_lock_token" ) ]]; then
+    /bin/rm -f -- "$action_lock/owner"
+    /bin/rmdir "$action_lock"
+  fi
+  exit "$status"
+}
+if [[ -n "$cutover_lock_token" ]]; then
+  [[ "$cutover_lock_token" =~ ^[0-9a-f-]{36}$ \
+    && -d "$action_lock" && ! -L "$action_lock" \
+    && "$(/bin/cat "$action_lock/owner")" == "$cutover_lock_token" \
+    && ! -e "$deploy_input_lock" ]] || fail
+else
+  [[ ! -e "$deploy_input_lock" && ! -e "$action_lock" ]] || fail
+  cutover_lock_token="$(/usr/bin/python3 -c 'import uuid; print(uuid.uuid4())')"
+  [[ "$cutover_lock_token" =~ ^[0-9a-f-]{36}$ ]] || fail
+  /bin/mkdir -m 700 "$action_lock" || fail
+  owns_action_lock=1
+  trap release_action_lock EXIT
+  /usr/bin/printf '%s\n' "$cutover_lock_token" > "$action_lock/owner"
+  /bin/chmod 600 "$action_lock/owner"
+fi
+trap release_action_lock EXIT
 state_path="$platform_root/private/dingtalk-production-cutover"
 [[ -f "$state_path" && ! -L "$state_path" ]] || fail
 [[ "$(/usr/bin/stat -c '%a %U' "$state_path")" == "600 root" ]] || fail
@@ -92,4 +124,6 @@ done
 [[ "$FAE_ID" == "$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)" ]] || fail
 [[ "$FAE_STARTED_AT" == "$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)" ]] || fail
 /bin/rm -f -- "$state_path"
+[[ ! -e "$deploy_input_lock" \
+  && "$(/bin/cat "$action_lock/owner")" == "$cutover_lock_token" ]] || fail
 echo "DINGTALK_PRODUCTION_ROLLBACK_OK"

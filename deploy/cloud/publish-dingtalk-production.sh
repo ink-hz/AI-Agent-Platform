@@ -16,10 +16,18 @@ elif [[ $# -ne 1 ]]; then
 fi
 release_path="$1"
 [[ "$release_path" == /opt/orbbec-agent-platform/releases/* ]] || fail
+release_sha="$(/usr/bin/basename "$release_path")"
+[[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail
 transaction="$release_path/deploy/cloud/dingtalk_nginx_transaction.py"
 [[ -f "$transaction" && ! -L "$transaction" ]] || fail
 
 platform_root=/opt/orbbec-agent-platform
+cutover_lock_token="${PLATFORM_DINGTALK_CUTOVER_LOCK_TOKEN:-}"
+[[ "$cutover_lock_token" =~ ^[0-9a-f-]{36}$ \
+  && -d "$platform_root/private/agent-brain-action.lock" \
+  && ! -L "$platform_root/private/agent-brain-action.lock" \
+  && "$(/bin/cat "$platform_root/private/agent-brain-action.lock/owner")" == "$cutover_lock_token" \
+  && ! -e "$platform_root/private/deploy-input.lock" ]] || fail
 environment_path="$platform_root/private/platform.env"
 compose_path="$release_path/deploy/cloud/compose.yaml"
 agent_available=/etc/nginx/sites-available/agent-domain.conf
@@ -42,16 +50,32 @@ for service in platform-api platform-loopback platform-directory platform-dingta
   container_id="$("${compose[@]}" ps -q "$service")"
   [[ -n "$container_id" ]] || fail
   [[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$container_id")" == "healthy" ]] || fail
+  /usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" |
+    /usr/bin/grep -Fxq "PLATFORM_RELEASE_SHA=$release_sha" || fail
 done
+service_ids_before="$("${compose[@]}" ps -q platform-api platform-loopback \
+  platform-directory platform-dingtalk-stream)"
+[[ -n "$service_ids_before" ]] || fail
 directory_id="$("${compose[@]}" ps -q platform-directory)"
 [[ -n "$directory_id" ]] || fail
 [[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$directory_id")" == "healthy" ]] || fail
-gender_probe_json="$(/usr/bin/docker exec "$directory_id" \
-  python -m app.control_plane.gender_probe)" || fail
-/usr/bin/python3 -c \
-  'import json,sys; sys.exit(0 if json.loads(sys.stdin.read()).get("ready") is True else 1)' \
-  <<<"$gender_probe_json" || fail
-unset gender_probe_json
+profile_probe_json="$(/usr/bin/docker exec "$directory_id" \
+  python -m app.control_plane.employee_profile_probe)" || fail
+profile_gates="$(/usr/bin/python3 -c '
+import json,sys,uuid
+p=json.loads(sys.stdin.read())
+keys={"generation_id","active_employee_count","real_name_present_count","mobile_present_count","primary_department_present_count"}
+if set(p)!=keys: raise SystemExit(1)
+generation_id=str(uuid.UUID(p["generation_id"]))
+counts=[p[name] for name in ("active_employee_count","real_name_present_count","mobile_present_count","primary_department_present_count")]
+if any(type(value) is not int for value in counts): raise SystemExit(1)
+active,real_name,mobile,primary_department=counts
+if active<=0 or primary_department!=active or any(value<0 or value>active for value in (real_name,mobile)): raise SystemExit(1)
+print(":".join((generation_id,*map(str,counts))))
+' <<<"$profile_probe_json")" || fail
+unset profile_probe_json
+IFS=: read -r profile_generation_id active_employee_count real_name_present_count mobile_present_count \
+  primary_department_present_count <<<"$profile_gates"
 
 api_id="$("${compose[@]}" ps -q platform-api)"
 /usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_id" |
@@ -65,44 +89,30 @@ WITH active_generation AS (
   LEFT JOIN platform_control.directory_generations AS generation
     ON generation.generation_id=state.active_generation_id
   WHERE state.singleton
-), gender_coverage AS (
-  SELECT
-    count(*) filter (where member.status='active') AS active_gender_count,
-    count(*) filter (where member.status='active' and member.gender in ('male','female')) AS valid_gender_count,
-    count(*) filter (where member.status='active' and (member.gender is null or member.gender not in ('male','female'))) AS null_invalid_gender_count
-  FROM active_generation
-  LEFT JOIN platform_control.directory_members AS member
-    ON member.generation_id=active_generation.active_generation_id
 )
 SELECT concat(
+  active_generation_id::text, ':',
   (select count(*) from platform_control.internal_users where role='platform_owner' and status='active'), ':',
-  (select count(*) from active_generation where active_generation_id is not null and status='complete' and source_schema_version=2 and last_complete_at > clock_timestamp() - interval '8 hours'), ':',
-  (select count(*) from platform_control.worker_heartbeats where worker_name='dingtalk-directory-event' and status='healthy' and last_seen_at > clock_timestamp() - interval '2 minutes'), ':',
-  active_gender_count, ':', valid_gender_count, ':', null_invalid_gender_count
-) FROM gender_coverage
+  (select count(*) from active_generation where active_generation_id is not null and status='complete' and source_schema_version=3 and last_complete_at > clock_timestamp() - interval '8 hours'), ':',
+  (select count(*) from platform_control.worker_heartbeats where worker_name='dingtalk-directory-event' and status='healthy' and last_seen_at > clock_timestamp() - interval '2 minutes')
+) FROM active_generation
 SQL
 )"
 directory_gates="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t \
   -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c \
   "$directory_gate_sql")" || fail
-IFS=: read -r owner_count fresh_generation_count heartbeat_count \
-  active_gender_count valid_gender_count null_invalid_gender_count <<<"$directory_gates"
+IFS=: read -r sql_generation_id owner_count fresh_generation_count heartbeat_count <<<"$directory_gates"
 expected_owner_count="1"
 if [[ "$owner_bootstrap" == "1" ]]; then
   expected_owner_count="0"
 fi
-[[ "$owner_count" =~ ^[0-9]+$ \
+[[ "$sql_generation_id" == "$profile_generation_id" \
+  && "$owner_count" =~ ^[0-9]+$ \
   && "$fresh_generation_count" =~ ^[0-9]+$ \
   && "$heartbeat_count" =~ ^[0-9]+$ \
-  && "$active_gender_count" =~ ^[0-9]+$ \
-  && "$valid_gender_count" =~ ^[0-9]+$ \
-  && "$null_invalid_gender_count" =~ ^[0-9]+$ \
   && "$owner_count" == "$expected_owner_count" \
   && "$fresh_generation_count" == "1" \
-  && "$heartbeat_count" == "1" \
-  && "$active_gender_count" -gt 0 \
-  && "$active_gender_count" -eq "$valid_gender_count" \
-  && "$null_invalid_gender_count" -eq 0 ]] || fail
+  && "$heartbeat_count" == "1" ]] || fail
 
 timestamp="$(/usr/bin/date -u +%Y%m%dT%H%M%SZ)"
 backup_path="/root/nginx-backups/agent-platform-dingtalk-$timestamp"
@@ -154,6 +164,12 @@ done
   /usr/bin/python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)=={"status":"ok"} else 1)' || fail
 [[ "$fae_id" == "$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)" ]] || fail
 [[ "$fae_started_at" == "$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)" ]] || fail
+[[ "$(/usr/bin/readlink -f "$platform_root/current")" == "$release_path" \
+  && ! -e "$platform_root/private/deploy-input.lock" \
+  && "$(/bin/cat "$platform_root/private/agent-brain-action.lock/owner")" == "$cutover_lock_token" ]] || fail
+service_ids_after="$("${compose[@]}" ps -q platform-api platform-loopback \
+  platform-directory platform-dingtalk-stream)"
+[[ "$service_ids_after" == "$service_ids_before" ]] || fail
 /bin/mv -f "$state_path.part" "$state_path"
 rollback_required=0
 trap - EXIT

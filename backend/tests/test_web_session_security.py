@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
-from datetime import UTC, datetime, timedelta
 import re
 import threading
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import psycopg
 import pytest
-
 from app.control_plane.models import AuthContext, IdentityMode, Role
 from test_control_plane_migration import control_database
 
@@ -372,26 +371,64 @@ def production_environment(control_database):
 
 def _db_repository(environment):
     from app.control_plane.auth import AuthSecrets, WebSessionRepository
+    from app.control_plane.crypto import IdentityKeyring, ProviderIdentityCodec
 
     app_role = next(
         role for role in environment["roles"]
         if role in {"platform_control_app", "platform_control_app_preview"}
     )
+    codec = ProviderIdentityCodec(
+        IdentityKeyring(1, "provider-encryption", {1: b"e" * 32}),
+        IdentityKeyring(
+            1,
+            "provider-lookup-hmac",
+            {1: b"h" * 32},
+            transition_versions=(1,),
+        ),
+    )
     return WebSessionRepository(
         environment["urls"][app_role],
         secrets=AuthSecrets(b"w" * 32, key_version=9),
+        identity_codec=codec,
+        directory_id="test-corp",
     )
 
 
-def _seed_current_bound_member(environment, *, gender="female"):
+def _seed_current_bound_member(
+    environment,
+    *,
+    gender="female",
+    profile: tuple[str | None, str | None, str | None] = (None, None, None),
+    source_schema_version: int = 3,
+):
     generation_id = uuid4()
     internal_user_id = uuid4()
+    member_key = uuid4()
+    session_id = uuid4()
+    repository = _db_repository(environment)
+    protected = tuple(
+        repository.identity_codec.seal_attribute(
+            "test-corp",
+            generation_id,
+            member_key,
+            purpose,
+            value,
+        )
+        if value is not None
+        else None
+        for purpose, value in zip(
+            ("real_name", "mobile", "primary_department"),
+            profile,
+            strict=True,
+        )
+    )
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "insert into platform_control.directory_generations "
-            "(generation_id,status,member_count,department_count,content_sha256,completed_at) "
-            "values (%s,'complete',1,0,%s,now())",
-            (generation_id, "d" * 64),
+            "(generation_id,status,member_count,source_member_count,"
+            "department_count,source_schema_version,content_sha256,completed_at) "
+            "values (%s,'complete',1,1,0,%s,%s,now())",
+            (generation_id, source_schema_version, "d" * 64),
         )
         connection.execute(
             "insert into platform_control.internal_users "
@@ -403,18 +440,40 @@ def _seed_current_bound_member(environment, *, gender="female"):
             "insert into platform_control.directory_members "
             "(generation_id,member_key,internal_user_id,subject_kind,lookup_hmac,"
             "lookup_key_version,encrypted_provider_id,encryption_key_version,display_name,status,"
-            "union_lookup_hmac,union_lookup_key_version,gender) "
-            "values (%s,%s,%s,'employee',%s,1,%s,1,'Web Session User','active',%s,1,%s)",
+            "union_lookup_hmac,union_lookup_key_version,gender,"
+            "real_name_ciphertext,real_name_nonce,real_name_encryption_key_version,"
+            "mobile_ciphertext,mobile_nonce,mobile_encryption_key_version,"
+            "primary_department_ciphertext,primary_department_nonce,"
+            "primary_department_encryption_key_version) "
+            "values (%s,%s,%s,'employee',%s,1,%s,1,'Web Session User','active',"
+            "%s,1,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
-                generation_id, uuid4(), internal_user_id, b"c" * 32,
+                generation_id, member_key, internal_user_id, b"c" * 32,
                 b"cipher", b"u" * 32, gender,
+                protected[0].ciphertext if protected[0] else None,
+                protected[0].nonce if protected[0] else None,
+                protected[0].encryption_key_version if protected[0] else None,
+                protected[1].ciphertext if protected[1] else None,
+                protected[1].nonce if protected[1] else None,
+                protected[1].encryption_key_version if protected[1] else None,
+                protected[2].ciphertext if protected[2] else None,
+                protected[2].nonce if protected[2] else None,
+                protected[2].encryption_key_version if protected[2] else None,
             ),
+        )
+        connection.execute(
+            "insert into platform_control.web_sessions "
+            "(session_id,internal_user_id,token_hash,token_hash_key_version,"
+            "csrf_hash,csrf_hash_key_version,idle_expires_at,absolute_expires_at) "
+            "values (%s,%s,%s,1,%s,1,now()+interval '1 hour',"
+            "now()+interval '2 hours')",
+            (session_id, internal_user_id, bytes(session_id.bytes + b"t" * 16), b"s" * 32),
         )
         connection.execute(
             "update platform_control.directory_state set active_generation_id=%s,last_complete_at=now(),updated_at=now() where singleton",
             (generation_id,),
         )
-    return internal_user_id, generation_id
+    return internal_user_id, generation_id, session_id
 
 
 @pytest.mark.postgres
@@ -422,7 +481,9 @@ def test_account_snapshot_returns_departments_and_active_exact_scopes(
     production_environment,
 ) -> None:
     repository = _db_repository(production_environment)
-    internal_user_id, _ = _seed_current_bound_member(production_environment)
+    internal_user_id, _, session_id = _seed_current_bound_member(
+        production_environment
+    )
     with psycopg.connect(production_environment["admin"]) as connection:
         connection.execute(
             "update platform_control.internal_users set role='management_viewer' "
@@ -439,7 +500,9 @@ def test_account_snapshot_returns_departments_and_active_exact_scopes(
             ),
         )
 
-    snapshot = repository.account_snapshot(internal_user_id)
+    snapshot = repository.account_snapshot(
+        AuthContext(internal_user_id, Role.MANAGEMENT_VIEWER, session_id, False)
+    )
     gender = snapshot.pop("gender", object())
     if gender != "female":
         pytest.fail("account gender repository projection mismatch")
@@ -447,20 +510,68 @@ def test_account_snapshot_returns_departments_and_active_exact_scopes(
         "display_name": "Web Session User",
         "departments": [],
         "observation_agent_ids": ["ai-fae-agent", "hr-bot"],
+        "real_name": None,
+        "mobile": None,
+        "primary_department": None,
     }
 
 
 @pytest.mark.postgres
 def test_account_snapshot_preserves_null_gender(production_environment) -> None:
     repository = _db_repository(production_environment)
-    internal_user_id, _ = _seed_current_bound_member(
+    internal_user_id, _, session_id = _seed_current_bound_member(
         production_environment,
         gender=None,
     )
 
-    snapshot = repository.account_snapshot(internal_user_id)
+    snapshot = repository.account_snapshot(
+        AuthContext(internal_user_id, Role.MEMBER, session_id, False)
+    )
 
     assert snapshot["gender"] is None
+
+
+@pytest.mark.postgres
+def test_account_snapshot_keeps_legacy_directory_profile_fields_nullable(
+    production_environment,
+) -> None:
+    repository = _db_repository(production_environment)
+    internal_user_id, _, session_id = _seed_current_bound_member(
+        production_environment,
+        source_schema_version=2,
+    )
+
+    snapshot = repository.account_snapshot(
+        AuthContext(internal_user_id, Role.MEMBER, session_id, False)
+    )
+
+    assert snapshot["real_name"] is None
+    assert snapshot["mobile"] is None
+    assert snapshot["primary_department"] is None
+
+
+@pytest.mark.postgres
+def test_account_snapshot_decrypts_only_the_authenticated_sessions_profile(
+    production_environment,
+) -> None:
+    from app.control_plane.auth import AuthenticationError
+
+    repository = _db_repository(production_environment)
+    internal_user_id, _, session_id = _seed_current_bound_member(
+        production_environment,
+        profile=("Private Real Name", "13800138000", "Project Management"),
+    )
+    context = AuthContext(internal_user_id, Role.MEMBER, session_id, False)
+
+    snapshot = repository.account_snapshot(context)
+
+    assert snapshot["real_name"] == "Private Real Name"
+    assert snapshot["mobile"] == "13800138000"
+    assert snapshot["primary_department"] == "Project Management"
+    with pytest.raises(AuthenticationError, match="account unavailable"):
+        repository.account_snapshot(
+            AuthContext(uuid4(), Role.MEMBER, session_id, False)
+        )
 
 
 @pytest.mark.postgres
@@ -604,7 +715,9 @@ def test_session_issuance_rechecks_current_generation_under_shared_lock(producti
     from app.control_plane.auth import LoginAttempt
 
     repository = _db_repository(production_environment)
-    user_id, old_generation = _seed_current_bound_member(production_environment)
+    user_id, old_generation, _ = _seed_current_bound_member(
+        production_environment
+    )
     state = repository.secrets.random_token()
     attempt = LoginAttempt(
         uuid4(), "qr", repository.secrets.digest("oauth-state", state), 9,
@@ -647,7 +760,9 @@ def test_database_session_uses_db_expiry_rechecks_member_and_revokes_logout(prod
     from app.control_plane.auth import LoginAttempt
 
     repository = _db_repository(production_environment)
-    user_id, generation = _seed_current_bound_member(production_environment)
+    user_id, generation, _ = _seed_current_bound_member(
+        production_environment
+    )
     state = repository.secrets.random_token()
     attempt = LoginAttempt(
         uuid4(), "in_client", repository.secrets.digest("oauth-state", state), 9,
@@ -691,7 +806,7 @@ def test_directory_promotion_serializes_before_waiting_session_issue(
     from app.control_plane.auth import LoginAttempt
 
     repository = _db_repository(production_environment)
-    user_id, _ = _seed_current_bound_member(production_environment)
+    user_id, _, _ = _seed_current_bound_member(production_environment)
     state = repository.secrets.random_token()
     verifier = repository.secrets.random_token()
     attempt = LoginAttempt(

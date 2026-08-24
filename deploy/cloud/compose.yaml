@@ -114,8 +114,10 @@ services:
     environment:
       PLATFORM_CONTROL_DIRECTORY_DATABASE_URL_FILE: /run/secrets/control-directory-worker-database-url
       PLATFORM_DINGTALK_APP_KEY_FILE: /run/secrets/dingtalk-app-key
+      PLATFORM_DINGTALK_AGENT_ID_FILE: /run/secrets/dingtalk-agent-id
       PLATFORM_DINGTALK_CORP_ID_FILE: /run/secrets/dingtalk-corp-id
       PLATFORM_DINGTALK_APP_SECRET_FILE: /run/secrets/dingtalk-app-secret
+      PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE_FILE: /run/secrets/dingtalk-hrm-real-name-field-code
       PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE: /run/secrets/identity-encryption-keyring
       PLATFORM_IDENTITY_HMAC_KEYRING_FILE: /run/secrets/identity-hmac-keyring
     volumes:

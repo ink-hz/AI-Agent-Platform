@@ -77,9 +77,10 @@ CLOUD_PLATFORM_DEPLOY_OK release=<commit> mode=dingtalk
 ```
 
 Deployment starts the formal services while the existing root Basic Auth is
-still present. Platform deploys first; the AI ADMIN strict consumer remains on
-its previous release until every gate below passes. Before Platform
-publish/cutover, run the gender probe inside the directory container so its
+still present. Apply Platform migrations 039/040 first without publishing the
+new account projection, then deploy and verify the AI ADMIN compatibility bridge
+that accepts both legacy and additive account contracts. Before Platform
+publish/cutover, run the employee-profile aggregate probe inside the directory container so its
 file-backed secrets stay inside that service:
 
 ```bash
@@ -89,24 +90,27 @@ compose=(docker compose --env-file "$environment_path" -f "$compose_path")
 directory_id="$("${compose[@]}" ps -q platform-directory)"
 test -n "$directory_id" || exit 1
 test "$(docker inspect --format '{{.State.Health.Status}}' "$directory_id")" = healthy || exit 1
-gender_probe_json="$(docker exec "$directory_id" python -m app.control_plane.gender_probe)" || exit 1
-python3 -c \
-  'import json,sys; sys.exit(0 if json.loads(sys.stdin.read()).get("ready") is True else 1)' \
-  <<<"$gender_probe_json" || exit 1
-unset gender_probe_json
+profile_probe_json="$(docker exec "$directory_id" python -m app.control_plane.employee_profile_probe)" || exit 1
+python3 -c 'import json,sys; p=json.load(sys.stdin); active=p["active_employee_count"]; raise SystemExit(not (active > 0 and p["primary_department_present_count"] == active))' \
+  <<<"$profile_probe_json" || exit 1
+unset profile_probe_json
 ```
 
-Both the container command and the JSON `ready` boolean are fail-closed gates.
+Both the container command and the aggregate completeness checks are fail-closed gates.
 Do not print the captured JSON or load any secret on the controller. Wait for a
-completed active directory generation with source schema version exactly `2`.
+completed active directory generation with source schema version exactly `3`.
 Before Nginx is changed, `publish-dingtalk-production.sh` runs one consistent SQL snapshot through `docker exec` against the candidate PostgreSQL container.
 That single release gate includes the owner-bootstrap-aware owner count, one
-completed active schema-v2 generation fresh within eight hours, a recent
-healthy directory-event heartbeat, and coverage. Its fixed aggregate format is
-`owner:fresh_generation:heartbeat:active:valid:null_invalid`; it requires
-`active > 0`, `active = valid`, `null_invalid = 0`, and every active member to
-satisfy `gender in ('male','female')`. Its coverage segment remains the fixed
-aggregate `active:valid:null_invalid`, and the null/invalid count is zero. The
+completed active schema-v3 generation fresh within eight hours and a recent
+healthy directory-event heartbeat. Its fixed aggregate format is
+`owner:fresh_generation:heartbeat`. The separate employee-profile aggregate requires
+`active_employee_count > 0` and
+`primary_department_present_count = active_employee_count`. Generation validation
+proves authoritative employee-count agreement and required display names, so
+nickname completeness is 100% and primary-department completeness is 100%.
+The real-name and mobile coverage are reported through `real_name_present_count`
+and `mobile_present_count` without a completeness requirement; gender coverage is not a lodging release gate
+because AI ADMIN supports locked local fallback. The
 acceptance script rechecks the same single snapshot after cutover. Acceptance evidence must contain only fixed
 aggregate counts/status. It must not contain employee names, gender values,
 provider identifiers, mobile numbers, ciphertext, raw rows, or provider payloads.
@@ -117,7 +121,7 @@ owner-binding step, formal post-cutover acceptance requires exactly one active
 owner; the bootstrap flag recorded in cutover state does not relax formal
 acceptance.
 
-After the probe and complete schema-v2 reconciliation pass, verify the
+After the probe and complete schema-v3 reconciliation pass, verify the
 directory/event heartbeat. Bind the sole owner with the exact private DingTalk
 userid; never select the owner by display name:
 
@@ -134,9 +138,9 @@ and incident references must be uppercase stable references.
 After owner binding, publish only the root identity boundary:
 
 ```bash
-/opt/orbbec-agent-platform/current/deploy/cloud/publish-dingtalk-production.sh \
-  /opt/orbbec-agent-platform/current
-/opt/orbbec-agent-platform/current/deploy/cloud/accept-dingtalk-production.sh
+/opt/orbbec-agent-platform/current/deploy/cloud/run-dingtalk-production-cutover.sh \
+  /opt/orbbec-agent-platform/releases/<EXPECTED_RELEASE_SHA> \
+  <EXPECTED_RELEASE_SHA> /root/private/platform-controlled-account-cookie
 ```
 
 The Nginx transaction removes the old shared Platform Basic Auth, replaces only
@@ -156,10 +160,19 @@ FAE:
 Do not delete the cutover state or pre-cutover release until the acceptance
 window closes.
 
-Deploy the AI ADMIN strict consumer only after Platform publish and the
-authenticated account proof have passed. Rollback AI ADMIN first, then perform
-the Platform compatibility rollback; retain the synchronized nullable column
-and do not delete directory data.
+The controlled-account cookie file must be a root-owned, mode-`0600`, regular
+file containing only the approved account's session-cookie value. Acceptance
+checks the exact account schema and emits only field-presence booleans. Both
+publish and acceptance run under the same existing deployment/action lock, bind
+evidence to the expected release, verify every application container embeds that
+exact release SHA, and recheck the current release and container IDs. If formal
+acceptance fails after publication, the coordinator invokes the fixed rollback
+under the same lock before releasing it.
+
+Deploy the remaining AI ADMIN migration/backend/UI only after Platform publish
+and the authenticated account proof have passed. Roll back in reverse order:
+AI ADMIN feature release, Platform projection, AI ADMIN compatibility bridge;
+retain synchronized nullable columns and do not delete directory data.
 
 ## Agent Brain opt-in release
 

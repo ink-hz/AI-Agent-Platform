@@ -1,30 +1,35 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 import base64
 import hashlib
 import hmac
 import secrets
 import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from urllib.parse import quote, unquote, urlencode, urlsplit
 from uuid import UUID, uuid4
 
 import psycopg
-from psycopg.rows import dict_row
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from psycopg.rows import dict_row
 
+from .crypto import (
+    EncryptedDirectoryAttribute,
+    IdentityCryptoError,
+    ProviderIdentityCodec,
+)
+from .dsn import validate_control_dsn
 from .models import (
     AuthContext,
     DirectoryFreshness,
     IdentityMode,
     IssuedWebSession,
     ResolvedLoginIdentity,
+    Role,
 )
-from .models import Role
-from .dsn import validate_control_dsn
 
 
 class AuthenticationError(RuntimeError):
@@ -568,7 +573,7 @@ class DingTalkWebAuth:
             raise AuthenticationError("session unavailable")
 
     def account_snapshot(self, context: AuthContext) -> dict[str, object]:
-        snapshot = self.repository.account_snapshot(context.internal_user_id)
+        snapshot = self.repository.account_snapshot(context)
         freshness = self.repository.directory_freshness(
             warning_after_seconds=self.warning_after_seconds,
             hard_stale_after_seconds=self.hard_stale_after_seconds,
@@ -582,12 +587,31 @@ class DingTalkWebAuth:
 class WebSessionRepository:
     """Narrow app-role facade over migration 015 SECURITY DEFINER functions."""
 
-    def __init__(self, control_database_url: str, *, secrets: AuthSecrets, connect=psycopg.connect) -> None:
+    def __init__(
+        self,
+        control_database_url: str,
+        *,
+        secrets: AuthSecrets,
+        identity_codec: ProviderIdentityCodec | None = None,
+        directory_id: str | None = None,
+        connect=psycopg.connect,
+    ) -> None:
         parsed = validate_control_dsn(control_database_url, purpose="app")
+        if (identity_codec is None) != (directory_id is None):
+            raise ValueError("account profile codec configuration invalid")
+        if directory_id is not None and (
+            not isinstance(directory_id, str)
+            or not directory_id.strip()
+            or directory_id != directory_id.strip()
+            or "\0" in directory_id
+        ):
+            raise ValueError("account profile directory invalid")
         self._database_url = control_database_url
         self._connect = connect
         self.environment = parsed.environment
         self.secrets = secrets
+        self.identity_codec = identity_codec
+        self._directory_id = directory_id
 
     def __repr__(self) -> str:
         return f"WebSessionRepository(environment={self.environment!r}, database=<redacted>, secrets=<redacted>)"
@@ -704,35 +728,83 @@ class WebSessionRepository:
         except psycopg.Error:
             raise AuthenticationError("session unavailable") from None
 
-    def account_snapshot(self, internal_user_id: UUID) -> dict[str, object]:
+    def _open_account_attribute(
+        self,
+        row: dict[str, object],
+        purpose: str,
+    ) -> str | None:
+        ciphertext = row[f"{purpose}_ciphertext"]
+        nonce = row[f"{purpose}_nonce"]
+        key_version = row[f"{purpose}_encryption_key_version"]
+        if ciphertext is None and nonce is None and key_version is None:
+            return None
+        if (
+            self.identity_codec is None
+            or self._directory_id is None
+            or row["generation_id"] is None
+            or row["member_key"] is None
+            or not isinstance(ciphertext, bytes)
+            or not isinstance(nonce, bytes)
+            or isinstance(key_version, bool)
+            or not isinstance(key_version, int)
+        ):
+            raise AuthenticationError("account unavailable")
+        try:
+            return self.identity_codec.open_attribute(
+                EncryptedDirectoryAttribute(
+                    purpose=purpose,
+                    ciphertext=ciphertext,
+                    nonce=nonce,
+                    encryption_key_version=key_version,
+                ),
+                self._directory_id,
+                row["generation_id"],
+                row["member_key"],
+                purpose,
+            )
+        except IdentityCryptoError:
+            raise AuthenticationError("account unavailable") from None
+
+    def account_snapshot(self, context: AuthContext) -> dict[str, object]:
+        if not isinstance(context, AuthContext):
+            raise AuthenticationError("account unavailable")
         try:
             with self._connection() as connection:
-                row = connection.execute(
+                rows = connection.execute(
                     "select users.display_name, coalesce(scopes.agent_ids, "
                     "array[]::text[]) as observation_agent_ids, "
                     "platform_control.read_account_departments_v27("
                     "users.internal_user_id) as departments, "
                     "platform_control.read_account_gender_v35("
-                    "users.internal_user_id) as gender from "
+                    "users.internal_user_id) as gender,profile.* from "
                     "platform_control.internal_users users left join lateral "
                     "(select array_agg(grants.agent_id order by grants.agent_id) "
                     "as agent_ids from platform_control.observation_grants grants "
                     "where grants.viewer_internal_user_id=users.internal_user_id "
-                    "and grants.revoked_at is null) scopes on true where "
+                    "and grants.revoked_at is null) scopes on true join lateral "
+                    "platform_control.read_current_account_employee_profile_v40("
+                    "%s) profile on profile.internal_user_id=users.internal_user_id where "
                     "users.internal_user_id=%s and users.status='active'",
-                    (internal_user_id,),
-                ).fetchone()
-            if row is None:
+                    (context.session_id, context.internal_user_id),
+                ).fetchall()
+            if len(rows) != 1:
                 raise AuthenticationError("account unavailable")
+            row = rows[0]
             return {
                 "display_name": row["display_name"],
                 "departments": list(row["departments"]),
                 "gender": row["gender"],
+                "real_name": self._open_account_attribute(row, "real_name"),
+                "mobile": self._open_account_attribute(row, "mobile"),
+                "primary_department": self._open_account_attribute(
+                    row,
+                    "primary_department",
+                ),
                 "observation_agent_ids": list(row["observation_agent_ids"]),
             }
         except AuthenticationError:
             raise
-        except psycopg.Error:
+        except (KeyError, TypeError, ValueError, psycopg.Error):
             raise AuthenticationError("account unavailable") from None
 
     def directory_freshness(

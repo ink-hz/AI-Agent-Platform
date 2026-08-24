@@ -23,9 +23,9 @@ $migration$;
 alter table platform_control.execution_jobs
   alter column job_kind set default 'legacy_brain',
   alter column job_kind set not null,
-  add constraint execution_jobs_job_kind_v40 check (
+  add constraint execution_jobs_job_kind_v42 check (
     job_kind in ('legacy_brain','direct_agent','metabot_local')
   );
 
-create index execution_jobs_kind_status_created_v40
+create index execution_jobs_kind_status_created_v42
   on platform_control.execution_jobs (job_kind,status,created_at,job_id);

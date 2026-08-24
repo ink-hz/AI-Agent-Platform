@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import contextmanager
-from datetime import datetime
-import random
 import logging
 import math
+import random
 import time
+from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, Iterator
 from uuid import UUID
 
@@ -20,12 +20,52 @@ from .directory import (
 )
 from .dsn import validate_control_dsn
 
-
 _LOG = logging.getLogger(__name__)
 
 
 class DirectoryRepositoryError(RuntimeError):
     """Stable worker database failure without provider or connection material."""
+
+
+@dataclass(frozen=True)
+class EmployeeProfileReadiness:
+    generation_id: UUID
+    active_employee_count: int
+    real_name_present_count: int
+    mobile_present_count: int
+    primary_department_present_count: int
+
+    def __post_init__(self) -> None:
+        counts = (
+            self.active_employee_count,
+            self.real_name_present_count,
+            self.mobile_present_count,
+            self.primary_department_present_count,
+        )
+        if (
+            not isinstance(self.generation_id, UUID)
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in counts
+            )
+            or any(value > self.active_employee_count for value in counts[1:])
+        ):
+            raise DirectoryRepositoryError("directory profile readiness invalid")
+
+    @property
+    def ready(self) -> bool:
+        return self.active_employee_count > 0
+
+    def as_public_dict(self) -> dict[str, str | int]:
+        return {
+            "generation_id": str(self.generation_id),
+            "active_employee_count": self.active_employee_count,
+            "real_name_present_count": self.real_name_present_count,
+            "mobile_present_count": self.mobile_present_count,
+            "primary_department_present_count": (
+                self.primary_department_present_count
+            ),
+        }
 
 
 class DirectoryWorkerRepository:
@@ -100,12 +140,15 @@ class DirectoryWorkerRepository:
         closure_count: int,
         source_schema_version: int,
         expected_digest: str,
+        real_name_present_count: int = 0,
+        mobile_present_count: int = 0,
+        primary_department_present_count: int = 0,
         *,
         timeout_seconds: float = 20.0,
     ) -> None:
         self._call(
-            "select platform_control.create_directory_staging_generation_v34("
-            "%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "select platform_control.create_directory_staging_generation_v39("
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 generation_id,
                 run_id,
@@ -116,6 +159,9 @@ class DirectoryWorkerRepository:
                 closure_count,
                 source_schema_version,
                 expected_digest,
+                real_name_present_count,
+                mobile_present_count,
+                primary_department_present_count,
             ),
             timeout_seconds=timeout_seconds,
         )
@@ -147,8 +193,9 @@ class DirectoryWorkerRepository:
         timeout_seconds: float = 20.0,
     ) -> None:
         self._batch(
-            "select platform_control.stage_directory_member_v34("
-            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "select platform_control.stage_directory_member_v39("
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 (
                     generation_id,
@@ -164,6 +211,35 @@ class DirectoryWorkerRepository:
                     row.display_name,
                     row.status,
                     row.gender,
+                    row.real_name.ciphertext if row.real_name else None,
+                    row.real_name.nonce if row.real_name else None,
+                    (
+                        row.real_name.encryption_key_version
+                        if row.real_name
+                        else None
+                    ),
+                    row.mobile.ciphertext if row.mobile else None,
+                    row.mobile.nonce if row.mobile else None,
+                    (
+                        row.mobile.encryption_key_version
+                        if row.mobile
+                        else None
+                    ),
+                    (
+                        row.primary_department.ciphertext
+                        if row.primary_department
+                        else None
+                    ),
+                    (
+                        row.primary_department.nonce
+                        if row.primary_department
+                        else None
+                    ),
+                    (
+                        row.primary_department.encryption_key_version
+                        if row.primary_department
+                        else None
+                    ),
                 )
                 for row in rows
             ), timeout_seconds=timeout_seconds,
@@ -281,6 +357,31 @@ class DirectoryWorkerRepository:
             (internal_user_id, internal_user_id),
         )
         return bool(row["active_member"]), bool(row["locally_invalidated"])
+
+    def read_employee_profile_readiness(self) -> EmployeeProfileReadiness:
+        row = self._call(
+            "select generation_id,active_employee_count,"
+            "real_name_present_count,mobile_present_count,"
+            "primary_department_present_count from "
+            "platform_control.read_employee_profile_readiness_v39()",
+            (),
+        )
+        if row is None:
+            raise DirectoryRepositoryError("directory profile readiness unavailable")
+        try:
+            return EmployeeProfileReadiness(
+                generation_id=row["generation_id"],
+                active_employee_count=int(row["active_employee_count"]),
+                real_name_present_count=int(row["real_name_present_count"]),
+                mobile_present_count=int(row["mobile_present_count"]),
+                primary_department_present_count=int(
+                    row["primary_department_present_count"]
+                ),
+            )
+        except (KeyError, TypeError, ValueError):
+            raise DirectoryRepositoryError(
+                "directory profile readiness invalid"
+            ) from None
 
 
 class DirectoryWorker:

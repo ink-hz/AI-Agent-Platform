@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
 
@@ -25,7 +24,7 @@ def _assert_no_directory_compose_run(script: str) -> None:
         r'(?:"?\$\{compose\[@\]\}"?|(?:/usr/bin/)?docker\s+compose)'
         r"(?:(?!\|\||&&|;).)*?\brun\b"
         r"(?:(?!\|\||&&|;).)*?"
-        r"(?:\bplatform-directory\b|app\.control_plane\.gender_probe)"
+        r"(?:\bplatform-directory\b|app\.control_plane\.employee_profile_probe)"
     )
     match = compose_run.search(normalized)
     assert match is None, f"directory probe must not use Compose run: {match.group(0)!r}"
@@ -72,7 +71,7 @@ def _assert_single_snapshot_directory_gate(script: str) -> None:
 
     final_selects = list(
         re.finditer(
-            r"^SELECT concat\(\n(?P<body>.*?)\n\) FROM gender_coverage$",
+            r"^SELECT concat\(\n(?P<body>.*?)\n\) FROM active_generation$",
             sql,
             re.MULTILINE | re.DOTALL,
         )
@@ -80,19 +79,17 @@ def _assert_single_snapshot_directory_gate(script: str) -> None:
     assert len(final_selects) == 1, "directory gate must have one final aggregate SELECT"
     assert len(re.findall(r"^SELECT\b", sql, re.MULTILINE)) == 1
     final_select = final_selects[0].group(0)
-    assert final_select.count("':'") == 5
+    assert final_select.count("':'") == 3
+    assert "active_generation_id::text" in final_select
 
     components = (
         "from platform_control.internal_users where role='platform_owner' and status='active'",
-        "from active_generation where active_generation_id is not null and status='complete' and source_schema_version=2 and last_complete_at > clock_timestamp() - interval '8 hours'",
+        "from active_generation where active_generation_id is not null and status='complete' and source_schema_version=3 and last_complete_at > clock_timestamp() - interval '8 hours'",
         "from platform_control.worker_heartbeats where worker_name='dingtalk-directory-event' and status='healthy' and last_seen_at > clock_timestamp() - interval '2 minutes'",
-        "active_gender_count",
-        "valid_gender_count",
-        "null_invalid_gender_count",
     )
     positions = [final_select.find(component) for component in components]
     assert all(position >= 0 for position in positions)
-    assert positions == sorted(positions), "all six gates must feed the final aggregate"
+    assert positions == sorted(positions), "all three gates must feed the final aggregate"
 
 
 def _write_executable(path: Path, body: str) -> Path:
@@ -105,11 +102,12 @@ def _run_release_harness(
     tmp_path: Path,
     script_name: str,
     *,
-    probe_json: str = '{"ready":true}',
+    probe_json: str = '{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":10}',
     probe_status: int = 0,
     directory_gates: str | None,
     owner_bootstrap: bool = False,
     python_optimize: bool = False,
+    container_release_sha: str = "a" * 40,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(parents=True)
@@ -215,11 +213,12 @@ def _run_release_harness(
           echo "fae-start"
         elif [[ "$joined" == *"{{range .Config.Env}}"* ]]; then
           echo "PLATFORM_IDENTITY_MODE=production"
+          echo "PLATFORM_RELEASE_SHA=$HARNESS_CONTAINER_RELEASE_SHA"
         elif [[ "$joined" == *"{{.Config.Image}}"* ]]; then
           echo "orbbec-agent-platform:test"
         elif [[ "$joined" == *"{{.State.Health.Status}}"* || "$joined" == *"{{if .State.Health}}"* ]]; then
           echo "healthy"
-        elif [[ "$joined" == *" app.control_plane.gender_probe "* ]]; then
+        elif [[ "$joined" == *" app.control_plane.employee_profile_probe "* ]]; then
           printf '%s\n' "$HARNESS_PROBE_JSON"
           exit "$HARNESS_PROBE_STATUS"
         elif [[ "$joined" == *" psql "* && "$joined" == *".execution_workers "* ]]; then
@@ -228,7 +227,7 @@ def _run_release_harness(
           if [[ -n "$HARNESS_DIRECTORY_GATES" ]]; then
             printf '%s\n' "$HARNESS_DIRECTORY_GATES"
           else
-            printf '%s:1:1:3:3:0\n' "$(/bin/cat "$HARNESS_OWNER_COUNT")"
+            printf '00000000-0000-0000-0000-000000000001:%s:1:1\n' "$(/bin/cat "$HARNESS_OWNER_COUNT")"
           fi
         elif [[ "$joined" == *" show-directory-generation "* ]]; then
           printf '%s\n' '{"status":"ok","generation":{"status":"complete","is_active":true,"generation_id":"00000000-0000-0000-0000-000000000001"}}'
@@ -250,7 +249,8 @@ def _run_release_harness(
         fake_bin / "readlink", '#!/bin/bash\necho "$HARNESS_RELEASE"\n'
     )
     fake_stat = _write_executable(
-        fake_bin / "stat", "#!/bin/bash\necho '600 root'\n"
+        fake_bin / "stat",
+        "#!/bin/bash\nif [[ \" $* \" == *\" %s \"* ]]; then echo 24; else echo '600 root'; fi\n",
     )
     fake_install = _write_executable(
         fake_bin / "install",
@@ -294,12 +294,14 @@ def _run_release_harness(
         headers=""
         output=""
         write_code=0
+        controlled=0
         url=""
         while [[ $# -gt 0 ]]; do
           case "$1" in
             -D) headers="$2"; shift 2 ;;
             -o) output="$2"; shift 2 ;;
             -w) write_code=1; shift 2 ;;
+            --config) controlled=1; shift 2 ;;
             http*) url="$1"; shift ;;
             *) shift ;;
           esac
@@ -307,15 +309,19 @@ def _run_release_harness(
         code=200
         body='platform-identity-mode'
         if [[ "$url" == */api/v1/account ]]; then
-          code=401
-          body=''
+          if [[ "$controlled" == 1 ]]; then
+            body='{"internal_user_id":"11111111-1111-4111-8111-111111111111","display_name":"Controlled User","role":"member","departments":["Department"],"gender":null,"real_name":"Controlled User","mobile":"13800138000","primary_department":"Department","observation_agent_ids":[],"directory_freshness":"fresh","hard_stale_read_only":false,"csrf_token":"csrf"}'
+          else
+            code=401
+            body=''
+          fi
         elif [[ "$url" == */api/health ]]; then
           body='{"status":"ok"}'
         elif [[ "$url" == */ ]]; then
           code=302
         fi
         if [[ -n "$headers" ]]; then
-          printf 'HTTP/1.1 %s OK\r\nlocation: /login\r\n\r\n' "$code" > "$headers"
+          printf 'HTTP/1.1 %s OK\r\nlocation: /login\r\nCache-Control: private, no-store\r\n\r\n' "$code" > "$headers"
         fi
         if [[ -n "$output" && "$output" != /dev/null ]]; then
           printf '%s' "$body" > "$output"
@@ -362,7 +368,16 @@ def _run_release_harness(
         "HARNESS_DIRECTORY_GATES": directory_gates or "",
         "HARNESS_OWNER_COUNT": str(owner_count_path),
         "HARNESS_RELEASE": str(release),
+        "HARNESS_CONTAINER_RELEASE_SHA": container_release_sha,
+        "PLATFORM_DINGTALK_CUTOVER_LOCK_TOKEN": "11111111-1111-4111-8111-111111111111",
     }
+    action_lock = private / "agent-brain-action.lock"
+    action_lock.mkdir(mode=0o700)
+    (action_lock / "owner").write_text(
+        "11111111-1111-4111-8111-111111111111\n",
+        encoding="utf-8",
+    )
+    (action_lock / "owner").chmod(0o600)
     if python_optimize:
         environment["PYTHONOPTIMIZE"] = "1"
     arguments = [str(harness_script)]
@@ -371,6 +386,11 @@ def _run_release_harness(
         if owner_bootstrap:
             arguments.append("--allow-unbound-owner")
         (private / "dingtalk-production-cutover").unlink()
+    else:
+        controlled_cookie = private / "controlled-account-cookie"
+        controlled_cookie.write_text("controlled-session-cookie", encoding="utf-8")
+        controlled_cookie.chmod(0o600)
+        arguments.extend(["a" * 40, str(controlled_cookie)])
     result = subprocess.run(
         arguments,
         cwd=tmp_path,
@@ -398,7 +418,15 @@ class _StatefulReleaseHarness:
         return result
 
     def run_acceptance(self) -> subprocess.CompletedProcess[str]:
-        return self._run_prepared("accept-dingtalk-production.sh")
+        private = self.root / "opt" / "orbbec-agent-platform" / "private"
+        controlled_cookie = private / "controlled-account-cookie"
+        controlled_cookie.write_text("controlled-session-cookie", encoding="utf-8")
+        controlled_cookie.chmod(0o600)
+        return self._run_prepared(
+            "accept-dingtalk-production.sh",
+            "a" * 40,
+            str(controlled_cookie),
+        )
 
     def run_owner_bind(self) -> subprocess.CompletedProcess[str]:
         return self._run_prepared(
@@ -450,11 +478,13 @@ class _StatefulReleaseHarness:
         environment = {
             **os.environ,
             "HARNESS_LOG": str(self.root / "harness.log"),
-            "HARNESS_PROBE_JSON": '{"ready":true}',
+            "HARNESS_PROBE_JSON": '{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":10}',
             "HARNESS_PROBE_STATUS": "0",
             "HARNESS_DIRECTORY_GATES": "",
             "HARNESS_OWNER_COUNT": str(self.root / "owner-count"),
             "HARNESS_RELEASE": str(release),
+            "HARNESS_CONTAINER_RELEASE_SHA": "a" * 40,
+            "PLATFORM_DINGTALK_CUTOVER_LOCK_TOKEN": "11111111-1111-4111-8111-111111111111",
         }
         return subprocess.run(
             [str(executable), *arguments],
@@ -522,6 +552,17 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     assert directory["volumes"] != stream["volumes"]
     assert "PLATFORM_CONTROL_STREAM_DATABASE_URL_FILE" not in directory["environment"]
     assert "PLATFORM_CONTROL_DIRECTORY_DATABASE_URL_FILE" not in stream["environment"]
+    assert directory["environment"]["PLATFORM_DINGTALK_AGENT_ID_FILE"] == (
+        "/run/secrets/dingtalk-agent-id"
+    )
+    assert directory["environment"][
+        "PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE_FILE"
+    ] == "/run/secrets/dingtalk-hrm-real-name-field-code"
+    assert "PLATFORM_DINGTALK_AGENT_ID_FILE" not in stream["environment"]
+    assert (
+        "PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE_FILE"
+        not in stream["environment"]
+    )
 
     serialized = (CLOUD / "compose.yaml").read_text(encoding="utf-8")
     for forbidden in ("clientSecret:", "dingtalk-app-secret:", "corp-id:"):
@@ -565,6 +606,9 @@ def test_formal_nginx_uses_backend_auth_and_preserves_basic_auth_rollback():
 def test_cutover_and_rollback_are_atomic_and_fae_safe():
     publish = (CLOUD / "publish-dingtalk-production.sh").read_text(encoding="utf-8")
     rollback = (CLOUD / "rollback-dingtalk-production.sh").read_text(encoding="utf-8")
+    coordinator = (CLOUD / "run-dingtalk-production-cutover.sh").read_text(
+        encoding="utf-8"
+    )
 
     for script in (publish, rollback):
         assert "set -euo pipefail" in script
@@ -587,6 +631,63 @@ def test_cutover_and_rollback_are_atomic_and_fae_safe():
     assert 'stop "${services_to_stop[@]}"' in rollback
     assert 'up -d --force-recreate "${services_to_start[@]}"' in rollback
     assert '/bin/ln -sfn "$PREVIOUS_RELEASE" "$platform_root/current"' in rollback
+    assert "agent-brain-action.lock" in rollback
+    assert "PLATFORM_DINGTALK_CUTOVER_LOCK_TOKEN" in rollback
+    assert 'published=1' in coordinator
+    assert 'rollback-dingtalk-production.sh" || status=1' in coordinator
+
+
+def test_cutover_coordinator_rolls_back_acceptance_failure_under_the_same_lock(
+    tmp_path: Path,
+) -> None:
+    release_sha = "a" * 40
+    platform_root = tmp_path / "opt" / "orbbec-agent-platform"
+    release = platform_root / "releases" / release_sha
+    cloud = release / "deploy" / "cloud"
+    private = platform_root / "private"
+    cloud.mkdir(parents=True)
+    private.mkdir(parents=True)
+    log = tmp_path / "cutover.log"
+    cookie = private / "controlled-cookie"
+    cookie.write_text("controlled-session-cookie", encoding="utf-8")
+    cookie.chmod(0o600)
+    fake_id = _write_executable(tmp_path / "id", "#!/bin/bash\necho 0\n")
+    lock_check = (
+        f'[[ "$(/bin/cat {private}/agent-brain-action.lock/owner)" '
+        '== "$PLATFORM_DINGTALK_CUTOVER_LOCK_TOKEN" ]] || exit 91\n'
+    )
+    _write_executable(
+        cloud / "publish-dingtalk-production.sh",
+        f"#!/bin/bash\n{lock_check}echo publish >> {log}\n",
+    )
+    _write_executable(
+        cloud / "accept-dingtalk-production.sh",
+        f"#!/bin/bash\n{lock_check}echo accept >> {log}\nexit 17\n",
+    )
+    _write_executable(
+        cloud / "rollback-dingtalk-production.sh",
+        f"#!/bin/bash\n{lock_check}echo rollback >> {log}\n",
+    )
+    script = (CLOUD / "run-dingtalk-production-cutover.sh").read_text(
+        encoding="utf-8"
+    ).replace("/opt/orbbec-agent-platform", str(platform_root))
+    coordinator = _write_executable(tmp_path / "run-cutover.sh", script)
+
+    result = subprocess.run(
+        [str(coordinator), str(release), release_sha, str(cookie)],
+        env={**os.environ, "ID_BIN": str(fake_id)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 17
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        "publish",
+        "accept",
+        "rollback",
+    ]
+    assert not (private / "agent-brain-action.lock").exists()
 
 
 def test_cutover_supports_a_fail_closed_first_owner_login_stage():
@@ -619,6 +720,8 @@ def test_identity_secret_bootstrap_is_noninteractive_and_service_scoped():
         "control-audit-database-url",
         "control-directory-worker-database-url",
         "control-stream-ingest-database-url",
+        "dingtalk-agent-id",
+        "dingtalk-hrm-real-name-field-code",
         "orbbec-agent-platform-api-secrets",
         "orbbec-agent-platform-directory-secrets",
         "orbbec-agent-platform-stream-secrets",
@@ -630,6 +733,13 @@ def test_identity_secret_bootstrap_is_noninteractive_and_service_scoped():
         assert forbidden not in script
     assert script.count("openssl rand 32") >= 3
     assert "cmp -s" not in script
+    directory_copy = script.split(
+        "-v orbbec-agent-platform-directory-secrets:/target", 1
+    )[1].split(
+        "-v orbbec-agent-platform-stream-secrets:/target", 1
+    )[0]
+    assert "dingtalk-agent-id" in directory_copy
+    assert "dingtalk-hrm-real-name-field-code" in directory_copy
 
 
 def test_initial_owner_binding_uses_exact_private_provider_id_and_two_phase_receipt():
@@ -715,7 +825,7 @@ def test_release_owner_count_mapping_preserves_the_explicit_bootstrap_stage():
     assert '"$owner_count" == "1"' in acceptance
 
 
-def test_release_directory_gate_is_one_six_component_snapshot():
+def test_release_directory_gate_is_one_three_component_snapshot():
     for name in (
         "publish-dingtalk-production.sh",
         "accept-dingtalk-production.sh",
@@ -725,37 +835,37 @@ def test_release_directory_gate_is_one_six_component_snapshot():
         )
 
 
-def test_publish_gates_cutover_on_the_running_directory_container_before_nginx_changes():
+def test_publish_gates_cutover_on_the_running_employee_profile_probe_before_nginx_changes():
     script = (CLOUD / "publish-dingtalk-production.sh").read_text(
         encoding="utf-8"
     )
 
     assert 'directory_id="$("${compose[@]}" ps -q platform-directory)"' in script
     assert 'docker inspect --format \'{{.State.Health.Status}}\' "$directory_id"' in script
-    assert 'gender_probe_json="$(/usr/bin/docker exec "$directory_id"' in script
-    assert "python -m app.control_plane.gender_probe" in script
-    assert 'python -m app.control_plane.gender_probe)" || fail' in script
-    assert 'sys.exit(0 if json.loads(sys.stdin.read()).get("ready") is True else 1)' in script
-    assert '<<<"$gender_probe_json" || fail' in script
-    assert script.index("python -m app.control_plane.gender_probe") < script.index(
+    assert 'profile_probe_json="$(/usr/bin/docker exec "$directory_id"' in script
+    assert "python -m app.control_plane.employee_profile_probe" in script
+    assert 'python -m app.control_plane.employee_profile_probe)" || fail' in script
+    assert '<<<"$profile_probe_json")" || fail' in script
+    assert script.index("python -m app.control_plane.employee_profile_probe") < script.index(
         '/usr/bin/install -o root -g root -m 644 "$rendered"'
     )
-    assert script.index("python -m app.control_plane.gender_probe") < script.index(
+    assert script.index("python -m app.control_plane.employee_profile_probe") < script.index(
         "/usr/sbin/nginx -t"
     )
     assert script.index('docker inspect --format \'{{.State.Health.Status}}\' "$directory_id"') < script.index(
-        "python -m app.control_plane.gender_probe"
+        "python -m app.control_plane.employee_profile_probe"
     )
     _assert_no_directory_compose_run(script)
-    assert 'echo "$gender_probe_json"' not in script
+    assert 'echo "$profile_probe_json"' not in script
 
 
 @pytest.mark.parametrize(
     ("probe_json", "probe_status", "directory_gates", "python_optimize"),
     [
-        ('{"ready":true}', 1, "0:1:1:3:3:0", False),
-        ('{"ready":false}', 0, "0:1:1:3:3:0", True),
-        ('{"ready":true}', 0, "0:0:1:3:3:0", False),
+        ('{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":10}', 1, "00000000-0000-0000-0000-000000000001:0:1:1", False),
+        ('{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":9}', 0, "00000000-0000-0000-0000-000000000001:0:1:1", True),
+        ('{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":10}', 0, "00000000-0000-0000-0000-000000000001:0:0:1", False),
+        ('{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":10}', 0, "00000000-0000-0000-0000-000000000002:0:1:1", False),
     ],
 )
 def test_executable_publish_harness_fails_before_nginx_for_every_gate_failure(
@@ -776,6 +886,30 @@ def test_executable_publish_harness_fails_before_nginx_for_every_gate_failure(
     assert "nginx_write" not in log
     assert "nginx" not in log
     assert "systemctl" not in log
+
+
+@pytest.mark.parametrize(
+    ("script_name", "owner_bootstrap"),
+    [
+        ("publish-dingtalk-production.sh", True),
+        ("accept-dingtalk-production.sh", False),
+    ],
+)
+def test_release_harness_rejects_app_containers_from_another_release(
+    tmp_path: Path,
+    script_name: str,
+    owner_bootstrap: bool,
+) -> None:
+    result, log = _run_release_harness(
+        tmp_path,
+        script_name,
+        directory_gates=None,
+        owner_bootstrap=owner_bootstrap,
+        container_release_sha="b" * 40,
+    )
+
+    assert result.returncode != 0
+    assert "nginx_write" not in log
 
 
 def test_executable_harness_allows_zero_owner_publish_then_requires_one_owner_acceptance(
@@ -815,9 +949,9 @@ def test_publish_and_accept_recheck_one_snapshot_of_all_directory_release_gates(
     for script in (publish, acceptance):
         assert 'directory_id="$("${compose[@]}" ps -q platform-directory)"' in script
         assert 'docker inspect --format \'{{.State.Health.Status}}\' "$directory_id"' in script
-        assert 'gender_probe_json="$(/usr/bin/docker exec "$directory_id"' in script
-        assert 'python -m app.control_plane.gender_probe)" || fail' in script
-        assert '<<<"$gender_probe_json" || fail' in script
+        assert 'profile_probe_json="$(/usr/bin/docker exec "$directory_id"' in script
+        assert 'python -m app.control_plane.employee_profile_probe)" || fail' in script
+        assert '<<<"$profile_probe_json")" || fail' in script
         assert "assert json." not in script
         _assert_no_directory_compose_run(script)
         _assert_single_snapshot_directory_gate(script)
@@ -826,31 +960,29 @@ def test_publish_and_accept_recheck_one_snapshot_of_all_directory_release_gates(
         ) == 1
         for required in (
             "status='complete'",
-            "source_schema_version=2",
+            "source_schema_version=3",
             "last_complete_at > clock_timestamp() - interval '8 hours'",
             "worker_name='dingtalk-directory-event'",
-            "member.status='active'",
-            "member.gender in ('male','female')",
-            "member.gender is null or member.gender not in ('male','female')",
             "owner_count",
             "fresh_generation_count",
             "heartbeat_count",
-            "active_gender_count",
-            "valid_gender_count",
-            "null_invalid_gender_count",
+            "active_employee_count",
+            "real_name_present_count",
+            "mobile_present_count",
+            "primary_department_present_count",
         ):
             assert required in script
         assert script.index('docker inspect --format \'{{.State.Health.Status}}\' "$directory_id"') < script.index(
-            "python -m app.control_plane.gender_probe"
+            "python -m app.control_plane.employee_profile_probe"
         )
         for forbidden in (
-            'echo "$gender_probe_json"',
+            'echo "$profile_probe_json"',
             "select member.display_name",
             "select member.gender",
             "encrypted_provider_id",
             "union_encrypted_provider_id",
             "provider_id",
-            "mobile",
+            "select member.mobile",
         ):
             assert forbidden not in script
 
@@ -862,7 +994,7 @@ def test_publish_and_accept_recheck_one_snapshot_of_all_directory_release_gates(
     assert "from platform_control.execution_workers worker" in acceptance
 
 
-def test_release_runbooks_use_candidate_probe_and_one_snapshot_release_gate():
+def test_release_runbooks_use_profile_probe_and_one_snapshot_release_gate():
     cloud = (ROOT / "docs" / "runbooks" / "cloud-platform.md").read_text(
         encoding="utf-8"
     )
@@ -873,15 +1005,16 @@ def test_release_runbooks_use_candidate_probe_and_one_snapshot_release_gate():
     for text in (cloud, acceptance):
         assert 'docker compose --env-file "$environment_path"' in text
         assert 'ps -q platform-directory' in text
-        assert 'docker exec "$directory_id" python -m app.control_plane.gender_probe' in text
+        assert 'docker exec "$directory_id" python -m app.control_plane.employee_profile_probe' in text
         assert "one consistent SQL snapshot" in text
         assert "owner-bootstrap-aware owner count" in text
-        assert "active > 0" in text
-        assert "active = valid" in text
-        assert "null_invalid = 0" in text
+        assert "active_employee_count > 0" in text
+        assert "primary_department_present_count = active_employee_count" in text
+        assert "real_name_present_count" in text
+        assert "mobile_present_count" in text
         assert (
             "run --rm --no-deps platform-directory "
-            "python -m app.control_plane.gender_probe"
+            "python -m app.control_plane.employee_profile_probe"
         ) not in " ".join(text.split())
     normalized_cloud = " ".join(cloud.split())
     normalized_acceptance = " ".join(acceptance.split())
@@ -900,7 +1033,7 @@ def test_release_runbooks_use_candidate_probe_and_one_snapshot_release_gate():
     )
 
 
-def test_release_runbooks_require_platform_first_gender_gates_and_reverse_rollback():
+def test_release_runbooks_require_compatible_staged_profile_gates_and_reverse_rollback():
     cloud = (ROOT / "docs" / "runbooks" / "cloud-platform.md").read_text(
         encoding="utf-8"
     )
@@ -910,12 +1043,12 @@ def test_release_runbooks_require_platform_first_gender_gates_and_reverse_rollba
 
     for text in (cloud, acceptance):
         for required in (
-            "python -m app.control_plane.gender_probe",
-            "`ready`",
-            "source schema version exactly `2`",
-            "`active:valid:null_invalid`",
-            "`gender in ('male','female')`",
-            "null/invalid count is zero",
+            "python -m app.control_plane.employee_profile_probe",
+            "source schema version exactly `3`",
+            "nickname completeness is 100%",
+            "primary-department completeness is 100%",
+            "real-name and mobile coverage are reported",
+            "gender coverage is not a lodging release gate",
         ):
             assert required in text
         for forbidden in (
@@ -929,9 +1062,35 @@ def test_release_runbooks_require_platform_first_gender_gates_and_reverse_rollba
         ):
             assert forbidden in text
 
-    assert cloud.index("python -m app.control_plane.gender_probe") < cloud.index(
+    assert cloud.index("python -m app.control_plane.employee_profile_probe") < cloud.index(
         "publish-dingtalk-production.sh"
     )
-    assert "Platform deploys first" in cloud
-    assert "AI ADMIN strict consumer" in cloud
-    assert "Rollback AI ADMIN first" in cloud
+    assert "AI ADMIN compatibility bridge" in cloud
+    assert "both legacy and additive account contracts" in cloud
+    assert "Roll back in reverse order" in cloud
+
+
+def test_acceptance_binds_controlled_account_evidence_to_release_and_locks() -> None:
+    script = (CLOUD / "accept-dingtalk-production.sh").read_text(encoding="utf-8")
+    publish = (CLOUD / "publish-dingtalk-production.sh").read_text(encoding="utf-8")
+
+    assert 'expected_release_sha="$1"' in script
+    assert 'controlled_cookie_path="$2"' in script
+    assert "600 root" in script
+    assert '--config "$account_cookie_config"' in script
+    assert 'set(payload) != expected' in script
+    assert '{"fresh", "warning", "hard_stale"}' in script
+    assert "soft_stale" not in script
+    assert 'PLATFORM_RELEASE_SHA=$expected_release_sha' in script
+    assert 'PLATFORM_RELEASE_SHA=$release_sha' in publish
+    for marker in (
+        "display_name_present",
+        "real_name_present",
+        "mobile_present",
+        "primary_department_present",
+    ):
+        assert marker in script
+    for value in (script, publish):
+        assert "deploy-input.lock" in value
+        assert "agent-brain-action.lock" in value
+        assert "service_ids_before" in value and "service_ids_after" in value

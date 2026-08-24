@@ -165,7 +165,7 @@ class ExecutionRelayRepository:
             with self._connection() as connection, connection.cursor() as cursor:
                 if self._dsn_purpose == "brain":
                     row = cursor.execute(
-                        "select platform_control.enqueue_brain_relay_job_v39("
+                        "select platform_control.enqueue_brain_relay_job_v41("
                         "%s,%s,%s,%s,%s) as job_id",
                         (
                             job_id,
@@ -511,7 +511,7 @@ class ExecutionRelayRepository:
             with self._connection() as connection, connection.cursor() as cursor:
                 if self._dsn_purpose == "brain":
                     row = cursor.execute(
-                        "select platform_control.request_brain_relay_cancel_v39(%s) "
+                        "select platform_control.request_brain_relay_cancel_v41(%s) "
                         "as accepted",
                         (run_id,),
                     ).fetchone()
@@ -604,7 +604,7 @@ class ExecutionRelayRepository:
             with self._connection() as connection, connection.cursor() as cursor:
                 if self._dsn_purpose == "brain":
                     row = cursor.execute(
-                        "select * from platform_control.brain_relay_job_state_v39(%s)",
+                        "select * from platform_control.brain_relay_job_state_v41(%s)",
                         (run_id,),
                     ).fetchone()
                 else:
@@ -686,7 +686,7 @@ class ExecutionRelayRepository:
             with self._connection() as connection:
                 if self._dsn_purpose == "brain":
                     row = connection.execute(
-                        "select platform_control.brain_relay_worker_available_v39("
+                        "select platform_control.brain_relay_worker_available_v41("
                         "%s,%s) as available",
                         (agent_id, freshness_seconds),
                     ).fetchone()
@@ -710,7 +710,7 @@ class ExecutionRelayRepository:
             with self._connection() as connection, connection.cursor() as cursor:
                 if self._dsn_purpose == "brain":
                     rows = cursor.execute(
-                        "select * from platform_control.brain_relay_events_v39(%s)",
+                        "select * from platform_control.brain_relay_events_v41(%s)",
                         (run_id,),
                     ).fetchall()
                 else:

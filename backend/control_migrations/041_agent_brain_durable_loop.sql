@@ -301,7 +301,7 @@ alter table platform_control.conversation_turns
     references platform_control.conversation_turns(turn_id);
 
 alter table platform_control.conversation_turns
-  add constraint conversation_turn_retry_not_self_v39 check (
+  add constraint conversation_turn_retry_not_self_v41 check (
     retry_of_turn_id is null or retry_of_turn_id <> turn_id
   ),
   drop constraint conversation_turns_status_check,
@@ -341,7 +341,7 @@ alter table platform_control.worker_heartbeats
     'agent-brain-reaper'
   ));
 
-create function platform_control.upsert_brain_worker_heartbeat_v39(
+create function platform_control.upsert_brain_worker_heartbeat_v41(
   selected_worker_name text,
   selected_status text,
   selected_last_error_code text,
@@ -394,7 +394,7 @@ begin
 end
 $function$;
 
-create function platform_control.resolve_agent_use_decision_v39(
+create function platform_control.resolve_agent_use_decision_v41(
   selected_user_id uuid,
   selected_agent_id text
 ) returns table(allowed boolean,directory_generation_id uuid)
@@ -435,7 +435,7 @@ begin
 end
 $function$;
 
-create function platform_brain.append_agent_task_event_v39(
+create function platform_brain.append_agent_task_event_v41(
   selected_task_id uuid,
   selected_seq integer,
   selected_event_type text,
@@ -578,7 +578,7 @@ begin
 end
 $function$;
 
-create function platform_control.enqueue_brain_relay_job_v39(
+create function platform_control.enqueue_brain_relay_job_v41(
   selected_job_id uuid,
   selected_run_id uuid,
   selected_agent_id text,
@@ -623,7 +623,7 @@ begin
 end
 $function$;
 
-create function platform_control.brain_relay_worker_available_v39(
+create function platform_control.brain_relay_worker_available_v41(
   selected_agent_id text,
   selected_freshness_seconds integer
 ) returns boolean
@@ -657,7 +657,7 @@ begin
 end
 $function$;
 
-create function platform_control.brain_relay_job_state_v39(
+create function platform_control.brain_relay_job_state_v41(
   selected_run_id uuid
 ) returns table(
   run_id uuid,status text,cancel_requested boolean,created_at timestamptz,
@@ -690,7 +690,7 @@ begin
 end
 $function$;
 
-create function platform_control.brain_relay_events_v39(
+create function platform_control.brain_relay_events_v41(
   selected_run_id uuid
 ) returns table(
   seq integer,event_type text,payload_ciphertext bytea,
@@ -726,7 +726,7 @@ begin
 end
 $function$;
 
-create function platform_control.request_brain_relay_cancel_v39(
+create function platform_control.request_brain_relay_cancel_v41(
   selected_run_id uuid
 ) returns boolean
 language plpgsql
@@ -773,26 +773,26 @@ end
 $function$;
 
 revoke all on all tables in schema platform_brain from public;
-revoke all on function platform_control.upsert_brain_worker_heartbeat_v39(
+revoke all on function platform_control.upsert_brain_worker_heartbeat_v41(
   text,text,text,timestamptz
 ) from public;
-revoke all on function platform_control.resolve_agent_use_decision_v39(
+revoke all on function platform_control.resolve_agent_use_decision_v41(
   uuid,text
 ) from public;
-revoke all on function platform_brain.append_agent_task_event_v39(
+revoke all on function platform_brain.append_agent_task_event_v41(
   uuid,integer,text,bytea,integer,bytea,timestamptz,text,bytea,integer,bytea
 ) from public;
-revoke all on function platform_control.request_brain_relay_cancel_v39(uuid)
+revoke all on function platform_control.request_brain_relay_cancel_v41(uuid)
 from public;
-revoke all on function platform_control.enqueue_brain_relay_job_v39(
+revoke all on function platform_control.enqueue_brain_relay_job_v41(
   uuid,uuid,text,bytea,integer
 ) from public;
-revoke all on function platform_control.brain_relay_worker_available_v39(
+revoke all on function platform_control.brain_relay_worker_available_v41(
   text,integer
 ) from public;
-revoke all on function platform_control.brain_relay_job_state_v39(uuid)
+revoke all on function platform_control.brain_relay_job_state_v41(uuid)
 from public;
-revoke all on function platform_control.brain_relay_events_v39(uuid)
+revoke all on function platform_control.brain_relay_events_v41(uuid)
 from public;
 
 do $migration$
@@ -831,42 +831,42 @@ begin
     );
     execute format(
       'revoke all on function '
-      'platform_control.upsert_brain_worker_heartbeat_v39('
+      'platform_control.upsert_brain_worker_heartbeat_v41('
       'text,text,text,timestamptz) from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.resolve_agent_use_decision_v39(uuid,text) from %I',
+      'platform_control.resolve_agent_use_decision_v41(uuid,text) from %I',
       role_name
     );
     execute format(
       'revoke all on function '
-      'platform_brain.append_agent_task_event_v39('
+      'platform_brain.append_agent_task_event_v41('
       'uuid,integer,text,bytea,integer,bytea,timestamptz,text,bytea,integer,bytea) '
       'from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.request_brain_relay_cancel_v39(uuid) from %I',
+      'platform_control.request_brain_relay_cancel_v41(uuid) from %I',
       role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.enqueue_brain_relay_job_v39('
+      'platform_control.enqueue_brain_relay_job_v41('
       'uuid,uuid,text,bytea,integer) from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.brain_relay_worker_available_v39(text,integer) '
+      'platform_control.brain_relay_worker_available_v41(text,integer) '
       'from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.brain_relay_job_state_v39(uuid) from %I', role_name
+      'platform_control.brain_relay_job_state_v41(uuid) from %I', role_name
     );
     execute format(
       'revoke all on function '
-      'platform_control.brain_relay_events_v39(uuid) from %I', role_name
+      'platform_control.brain_relay_events_v41(uuid) from %I', role_name
     );
   end loop;
 
@@ -928,45 +928,45 @@ begin
   );
   execute format(
     'grant execute on function '
-    'platform_control.upsert_brain_worker_heartbeat_v39('
+    'platform_control.upsert_brain_worker_heartbeat_v41('
     'text,text,text,timestamptz) to %I', selected_brain
   );
   execute format(
     'grant execute on function '
-    'platform_control.resolve_agent_use_decision_v39(uuid,text) to %I',
+    'platform_control.resolve_agent_use_decision_v41(uuid,text) to %I',
     selected_app
   );
   execute format(
     'grant execute on function '
-    'platform_control.resolve_agent_use_decision_v39(uuid,text) to %I',
+    'platform_control.resolve_agent_use_decision_v41(uuid,text) to %I',
     selected_brain
   );
   execute format(
     'grant execute on function '
-    'platform_control.request_brain_relay_cancel_v39(uuid) to %I',
+    'platform_control.request_brain_relay_cancel_v41(uuid) to %I',
     selected_brain
   );
   execute format(
     'grant execute on function '
-    'platform_control.enqueue_brain_relay_job_v39('
+    'platform_control.enqueue_brain_relay_job_v41('
     'uuid,uuid,text,bytea,integer) to %I', selected_brain
   );
   execute format(
     'grant execute on function '
-    'platform_control.brain_relay_worker_available_v39(text,integer) to %I',
+    'platform_control.brain_relay_worker_available_v41(text,integer) to %I',
     selected_brain
   );
   execute format(
     'grant execute on function '
-    'platform_control.brain_relay_job_state_v39(uuid) to %I', selected_brain
+    'platform_control.brain_relay_job_state_v41(uuid) to %I', selected_brain
   );
   execute format(
     'grant execute on function '
-    'platform_control.brain_relay_events_v39(uuid) to %I', selected_brain
+    'platform_control.brain_relay_events_v41(uuid) to %I', selected_brain
   );
   execute format(
     'grant execute on function '
-    'platform_brain.append_agent_task_event_v39('
+    'platform_brain.append_agent_task_event_v41('
     'uuid,integer,text,bytea,integer,bytea,timestamptz,text,bytea,integer,bytea) '
     'to %I', selected_brain
   );

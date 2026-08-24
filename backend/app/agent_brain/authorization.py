@@ -126,7 +126,7 @@ class AgentUseAuthorization:
             ) as connection:
                 row = connection.execute(
                     "select allowed,directory_generation_id from "
-                    "platform_control.resolve_agent_use_decision_v39(%s,%s)",
+                    "platform_control.resolve_agent_use_decision_v41(%s,%s)",
                     (internal_user_id, agent_id),
                 ).fetchone()
             if row is None or type(row["allowed"]) is not bool:

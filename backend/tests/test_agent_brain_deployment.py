@@ -14,7 +14,7 @@ MISSION_SCHEMA_MIGRATION = (
     ROOT / "backend" / "control_migrations" / "029_agent_brain_mvp.sql"
 )
 LATEST_AGENT_BRAIN_MIGRATION = (
-    ROOT / "backend" / "control_migrations" / "039_agent_brain_durable_loop.sql"
+    ROOT / "backend" / "control_migrations" / "041_agent_brain_durable_loop.sql"
 )
 
 

@@ -7,9 +7,6 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .auth import AuthenticationError, CompletedLogin, cookie_policy
-from .rate_limit import RateLimitExceeded, RateLimitUnavailable
-from .models import AuthContext, IssuedWebSession, Role
 from app.health.platform import build_public_platform_health
 from app.spa import (
     OpenedPublicAsset,
@@ -19,6 +16,9 @@ from app.spa import (
     open_public_static_file,
 )
 
+from .auth import AuthenticationError, CompletedLogin, cookie_policy
+from .models import AuthContext, IssuedWebSession, Role
+from .rate_limit import RateLimitExceeded, RateLimitUnavailable
 
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
@@ -342,6 +342,9 @@ def build_auth_router(
             "role": context.role.value,
             "departments": snapshot["departments"],
             "gender": snapshot["gender"],
+            "real_name": snapshot["real_name"],
+            "mobile": snapshot["mobile"],
+            "primary_department": snapshot["primary_department"],
             "observation_agent_ids": snapshot["observation_agent_ids"],
             "directory_freshness": snapshot["directory_freshness"],
             "hard_stale_read_only": context.hard_stale_read_only,

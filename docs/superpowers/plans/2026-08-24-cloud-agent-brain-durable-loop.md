@@ -83,7 +83,7 @@ Keep `backend/app/agent_brain/orchestrator.py`, `repository.py`, `protocol.py`, 
 ### Task 1: Add the isolated `platform_brain` schema and worker role
 
 **Files:**
-- Create: `backend/control_migrations/039_agent_brain_durable_loop.sql`
+- Create: `backend/control_migrations/041_agent_brain_durable_loop.sql`
 - Create: `backend/tests/test_agent_brain_v2_migration.py`
 - Modify: `backend/tests/test_control_plane_migration.py`
 - Modify: `backend/tests/test_control_plane_dsn_roles.py`
@@ -205,7 +205,7 @@ Expected: shell syntax and whitespace checks PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/control_migrations/039_agent_brain_durable_loop.sql \
+git add backend/control_migrations/041_agent_brain_durable_loop.sql \
   backend/tests/test_agent_brain_v2_migration.py \
   backend/tests/test_control_plane_migration.py \
   backend/tests/test_control_plane_dsn_roles.py \
@@ -1003,7 +1003,7 @@ git commit -m "feat(brain): enforce loop security boundaries"
 ### Task 11: Convert local MetaBot execution into the `metabot_local` Adapter
 
 **Files:**
-- Create: `backend/control_migrations/040_execution_relay_job_kind.sql`
+- Create: `backend/control_migrations/042_execution_relay_job_kind.sql`
 - Create: `backend/app/agent_brain/adapters/metabot_local.py`
 - Create: `backend/tests/test_agent_brain_metabot_adapter.py`
 - Modify: `backend/app/execution_relay/models.py`
@@ -1046,7 +1046,7 @@ Also prove Agent result normalization, progress sequencing, callback replay, com
 
 Run: `cd backend && .venv/bin/python -m pytest tests/test_agent_brain_metabot_adapter.py tests/test_execution_relay_repository.py tests/test_execution_worker_runtime.py -q`
 
-Expected: FAIL because migration 040, relay job kinds, and the V2 Adapter do not exist.
+Expected: FAIL because migration 042, relay job kinds, and the V2 Adapter do not exist.
 
 - [ ] **Step 3: Implement the bridge without a local Brain role**
 
@@ -1094,7 +1094,7 @@ Expected: all PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/control_migrations/040_execution_relay_job_kind.sql \
+git add backend/control_migrations/042_execution_relay_job_kind.sql \
   backend/app/agent_brain/adapters/metabot_local.py \
   backend/tests/test_agent_brain_metabot_adapter.py \
   backend/app/execution_relay/models.py \

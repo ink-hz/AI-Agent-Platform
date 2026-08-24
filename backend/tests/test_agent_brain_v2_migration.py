@@ -11,7 +11,7 @@ from test_control_plane_migration import ROLES, control_database
 MIGRATION = (
     Path(__file__).parents[1]
     / "control_migrations"
-    / "039_agent_brain_durable_loop.sql"
+    / "041_agent_brain_durable_loop.sql"
 )
 BRAIN_TABLES = {
     "authorization_snapshots",
@@ -283,7 +283,7 @@ def test_brain_heartbeat_function_limits_worker_names(control_database) -> None:
             function = connection.execute(
                 "select oid,prosecdef,proconfig from pg_proc "
                 "where pronamespace='platform_control'::regnamespace "
-                "and proname='upsert_brain_worker_heartbeat_v39'"
+                "and proname='upsert_brain_worker_heartbeat_v41'"
             ).fetchone()
             assert function is not None
             oid, security_definer, config = function
@@ -299,7 +299,7 @@ def test_brain_heartbeat_function_limits_worker_names(control_database) -> None:
             task_event_function = connection.execute(
                 "select oid,prosecdef from pg_proc "
                 "where pronamespace='platform_brain'::regnamespace "
-                "and proname='append_agent_task_event_v39'"
+                "and proname='append_agent_task_event_v41'"
             ).fetchone()
             assert task_event_function is not None
             assert task_event_function[1] is True
@@ -318,13 +318,13 @@ def test_brain_heartbeat_function_limits_worker_names(control_database) -> None:
         with psycopg.connect(environment["urls"][brain_role]) as worker:
             for worker_name in BRAIN_WORKER_NAMES:
                 assert worker.execute(
-                    "select platform_control.upsert_brain_worker_heartbeat_v39("
+                    "select platform_control.upsert_brain_worker_heartbeat_v41("
                     "%s,'healthy',null,clock_timestamp())",
                     (worker_name,),
                 ).fetchone() == (True,)
             with pytest.raises(psycopg.errors.CheckViolation):
                 worker.execute(
-                    "select platform_control.upsert_brain_worker_heartbeat_v39("
+                    "select platform_control.upsert_brain_worker_heartbeat_v41("
                     "'dingtalk-directory-event','healthy',null,clock_timestamp())"
                 )
 
@@ -334,11 +334,11 @@ def test_brain_relay_access_is_function_scoped_to_metabot_jobs(
     control_database,
 ) -> None:
     function_names = (
-        "enqueue_brain_relay_job_v39",
-        "brain_relay_worker_available_v39",
-        "brain_relay_job_state_v39",
-        "brain_relay_events_v39",
-        "request_brain_relay_cancel_v39",
+        "enqueue_brain_relay_job_v41",
+        "brain_relay_worker_available_v41",
+        "brain_relay_job_state_v41",
+        "brain_relay_events_v41",
+        "request_brain_relay_cancel_v41",
     )
     for environment in control_database["environments"].values():
         brain_role = next(
