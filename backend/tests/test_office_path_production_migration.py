@@ -34,6 +34,8 @@ def _run_publish_harness(
     failure: str = "",
     preexisting_lock: str = "",
     deferred_identity: bool = False,
+    external_rollback_template: bool = False,
+    external_transaction: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], str, Path, Path]:
     platform_root = tmp_path / "opt" / "orbbec-agent-platform"
     ai_root = tmp_path / "opt" / "ai-admin-agent"
@@ -274,6 +276,9 @@ def _run_publish_harness(
         "/opt/ai-admin-agent": str(ai_root),
         "/etc/nginx/sites-available/agent-domain.conf": str(nginx_source),
         "/root/nginx-backups": str(backups),
+        "/root/office-migration-tools": str(
+            tmp_path / "root" / "office-migration-tools"
+        ),
         "/usr/bin/id": str(fake_id),
         "/usr/bin/readlink": str(fake_readlink),
         "/usr/bin/stat": str(fake_stat),
@@ -299,6 +304,31 @@ def _run_publish_harness(
     (cloud / "rollback-office-path-migration.sh").write_text(
         rollback_for_harness, encoding="utf-8"
     )
+    rollback_template_override = ""
+    transaction_override = ""
+    if external_transaction:
+        tools = tmp_path / "root" / "office-migration-tools" / ("c" * 40)
+        tools.mkdir(parents=True, exist_ok=True, mode=0o700)
+        transaction = tools / "office_path_nginx_transaction.py"
+        transaction.write_text(
+            (CLOUD / "office_path_nginx_transaction.py").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        transaction.chmod(0o600)
+        transaction_override = str(transaction)
+        (cloud / "office_path_nginx_transaction.py").write_text(
+            "raise SystemExit(1)\n", encoding="utf-8"
+        )
+    if external_rollback_template:
+        tools = tmp_path / "root" / "office-migration-tools" / ("c" * 40)
+        tools.mkdir(parents=True, mode=0o700)
+        rollback_override = tools / "rollback-office-path-migration.sh"
+        rollback_override.write_text(rollback_for_harness, encoding="utf-8")
+        rollback_override.chmod(0o600)
+        rollback_template_override = str(rollback_override)
+        (cloud / "rollback-office-path-migration.sh").write_text(
+            "invalid bundled rollback\n", encoding="utf-8"
+        )
     executable = _write_executable(tmp_path / "publish-office.sh", script)
     try:
         result = subprocess.run(
@@ -311,6 +341,8 @@ def _run_publish_harness(
                 "OFFICE_MIGRATION_IDENTITY_SMOKE_MODE": (
                     "deferred_browser" if deferred_identity else "cookie"
                 ),
+                "OFFICE_MIGRATION_ROLLBACK_TEMPLATE": rollback_template_override,
+                "OFFICE_MIGRATION_TRANSACTION": transaction_override,
                 "HARNESS_FAILURE": failure,
                 "HARNESS_LOG": str(log),
                 "HARNESS_NGINX_SOURCE": str(nginx_source),
@@ -413,6 +445,8 @@ def test_publish_has_one_forward_install_and_automatic_backup_restore() -> None:
     assert "rollback_required=1" in value
     assert "rollback_required=0" in value
     assert "trap rollback_on_failure EXIT" in value
+    assert "wait_for_http_code" in value
+    assert "/bin/sleep 0.25" in value
 
 
 def test_evidence_and_installed_rollback_are_owner_only() -> None:
@@ -557,6 +591,32 @@ def test_publish_harness_marks_explicit_browser_identity_as_pending(
         encoding="utf-8"
     )
     assert "authenticated_identity_smoke=deferred_browser" in report
+
+
+def test_publish_harness_accepts_owner_only_external_rollback_template(
+    tmp_path: Path,
+) -> None:
+    result, log, nginx_source, _backups = _run_publish_harness(
+        tmp_path,
+        external_rollback_template=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert log.splitlines() == ["forward_install", "nginx_test", "reload"]
+    assert "location ^~ /office/" in nginx_source.read_text(encoding="utf-8")
+
+
+def test_publish_harness_accepts_owner_only_external_transaction(
+    tmp_path: Path,
+) -> None:
+    result, log, nginx_source, _backups = _run_publish_harness(
+        tmp_path,
+        external_transaction=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert log.splitlines() == ["forward_install", "nginx_test", "reload"]
+    assert "location ^~ /office/" in nginx_source.read_text(encoding="utf-8")
 
 
 def _installed_rollback(tmp_path: Path) -> Path:

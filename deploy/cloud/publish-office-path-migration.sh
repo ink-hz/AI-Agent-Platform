@@ -25,8 +25,24 @@ deploy_transaction_lock="$private_root/deploy-input.transaction.lock"
 deploy_input_lock="$private_root/deploy-input.lock"
 session_cookie_file="$private_root/office-migration-session-cookie"
 platform_release="$platform_root/releases/$platform_release_sha"
+transaction_override="${OFFICE_MIGRATION_TRANSACTION:-}"
 transaction="$platform_release/deploy/cloud/office_path_nginx_transaction.py"
+rollback_template_override="${OFFICE_MIGRATION_ROLLBACK_TEMPLATE:-}"
 rollback_template="$platform_release/deploy/cloud/rollback-office-path-migration.sh"
+if [[ -n "$transaction_override" ]]; then
+  [[ "$transaction_override" == /root/office-migration-tools/*/office_path_nginx_transaction.py \
+    && "$transaction_override" == "$(/usr/bin/readlink -f "$transaction_override")" \
+    && -f "$transaction_override" && ! -L "$transaction_override" \
+    && "$(/usr/bin/stat -c '%a %U' "$transaction_override")" == "600 root" ]] || fail
+  transaction="$transaction_override"
+fi
+if [[ -n "$rollback_template_override" ]]; then
+  [[ "$rollback_template_override" == /root/office-migration-tools/*/rollback-office-path-migration.sh \
+    && "$rollback_template_override" == "$(/usr/bin/readlink -f "$rollback_template_override")" \
+    && -f "$rollback_template_override" && ! -L "$rollback_template_override" \
+    && "$(/usr/bin/stat -c '%a %U' "$rollback_template_override")" == "600 root" ]] || fail
+  rollback_template="$rollback_template_override"
+fi
 
 [[ ! -e "$deploy_input_lock" && ! -e "$action_lock" \
   && -f "$deploy_transaction_lock" && ! -L "$deploy_transaction_lock" \
@@ -121,6 +137,19 @@ fingerprint_fae() {
     "mounts_sha256=$fae_mounts_hash" \
     "fae_domain_http=$fae_domain_http" \
     "fae_ip_http=$fae_ip_http"
+}
+
+wait_for_http_code() {
+  local url="$1" allowed="$2" status attempt
+  for ((attempt = 0; attempt < 20; attempt++)); do
+    status="$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' \
+      --max-time 5 --resolve agent.orbbec.com.cn:443:127.0.0.1 "$url" || true)"
+    if [[ " $allowed " == *" $status "* ]]; then
+      return 0
+    fi
+    /bin/sleep 0.25
+  done
+  return 1
 }
 
 change_id="$(/usr/bin/python3 -c 'import uuid; print(uuid.uuid4().hex)')"
@@ -238,15 +267,10 @@ trap rollback_on_failure EXIT
 /usr/sbin/nginx -t >/dev/null 2>&1 || fail
 /bin/systemctl reload nginx
 
-[[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 5 \
-  --resolve agent.orbbec.com.cn:443:127.0.0.1 https://agent.orbbec.com.cn/)" == "302" ]] || fail
-admin_status="$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 5 \
-  --resolve agent.orbbec.com.cn:443:127.0.0.1 https://agent.orbbec.com.cn/admin/)"
-[[ "$admin_status" == "302" || "$admin_status" == "401" ]] || fail
-[[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 5 \
-  --resolve agent.orbbec.com.cn:443:127.0.0.1 https://agent.orbbec.com.cn/office/health)" == "404" ]] || fail
-[[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 5 \
-  --resolve agent.orbbec.com.cn:443:127.0.0.1 'https://agent.orbbec.com.cn/office/?view=services')" == "200" ]] || fail
+wait_for_http_code https://agent.orbbec.com.cn/ "302" || fail
+wait_for_http_code https://agent.orbbec.com.cn/admin/ "302 401" || fail
+wait_for_http_code https://agent.orbbec.com.cn/office/health "404" || fail
+wait_for_http_code 'https://agent.orbbec.com.cn/office/?view=services' "200" || fail
 if [[ "$identity_smoke_mode" == "cookie" ]]; then
   "$ai_admin_root/.venv/bin/python" "$identity_smoke" \
     --ai-admin-base-url https://agent.orbbec.com.cn/office/ \
