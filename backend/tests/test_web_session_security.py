@@ -68,6 +68,24 @@ def test_safe_return_path_accepts_only_same_environment_relative_paths() -> None
         validate_return_path("/agents/a", route_prefix="/_preview/dingtalk-r1/")
 
 
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "/office",
+        "/office/chat",
+        "/office/?view=services",
+        "/office//",
+    ],
+)
+def test_safe_return_path_allows_only_the_exact_office_entry(candidate: str) -> None:
+    from app.control_plane.auth import validate_return_path
+
+    with pytest.raises(ValueError):
+        validate_return_path(candidate, route_prefix="/")
+
+    assert validate_return_path("/office/", route_prefix="/") == "/office/"
+
+
 def test_qr_attempt_persists_exact_admin_return_path() -> None:
     from app.control_plane.auth import AuthSecrets, DingTalkWebAuth
 
@@ -90,6 +108,30 @@ def test_qr_attempt_persists_exact_admin_return_path() -> None:
 
     assert started.return_path == "/admin/"
     assert stored.return_path == "/admin/"
+
+
+def test_qr_attempt_persists_exact_office_return_path() -> None:
+    from app.control_plane.auth import AuthSecrets, DingTalkWebAuth
+
+    repository = SessionRepository()
+    provider = Provider()
+    auth = DingTalkWebAuth(
+        repository=repository,
+        secrets=AuthSecrets(b"r" * 32, key_version=1),
+        qr_login=provider.complete,
+        in_client_login=provider.complete,
+        environment="production",
+        route_prefix="/",
+        public_base_url="https://agent.example.test",
+        app_key="test-app",
+        state_ttl_seconds=300,
+    )
+
+    started = auth.start_qr("/office/")
+    stored = repository.attempts[auth.secrets.digest("oauth-state", started.state)]["record"]
+
+    assert started.return_path == "/office/"
+    assert stored.return_path == "/office/"
 
 
 def test_qr_authorization_url_has_fixed_scope_callback_and_flow() -> None:

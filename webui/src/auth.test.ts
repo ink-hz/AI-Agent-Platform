@@ -61,6 +61,12 @@ describe("login return path", () => {
   it.each([
     ["?return_path=/admin/", "/admin/"],
     ["?return_path=%2Fadmin%2F", "/admin/"],
+    ["?return_path=%2Foffice%2F", "/office/"],
+    ["?return_path=%2Foffice", "/"],
+    ["?return_path=%2Foffice%2Fchat", "/"],
+    ["?return_path=%2Foffice%2F%3Fview%3Dlodging", "/"],
+    ["?return_path=%252Foffice%252F", "/"],
+    ["?return_path=%2Foffice%5C", "/"],
     ["?return_path=%2F", "/"],
     ["?return_path=%2Fmissions%2F8c13c965-1b60-472e-b275-199987d1d109", "/missions/8c13c965-1b60-472e-b275-199987d1d109"],
     ["?return_path=%2Fconversations", "/conversations"],

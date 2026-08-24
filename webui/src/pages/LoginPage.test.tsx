@@ -57,6 +57,17 @@ describe("LoginPage", () => {
     expect(onStartQr).toHaveBeenCalledWith("/admin/");
   });
 
+  it("uses the exact validated office root for QR login", async () => {
+    window.history.replaceState({}, "", "/login?return_path=%2Foffice%2F");
+    const onStartQr = vi.fn().mockResolvedValue("https://login.dingtalk.com/oauth2/auth");
+    await act(async () => root.render(<LoginPage onStartQr={onStartQr} onNavigate={() => undefined} />));
+
+    const button = [...container.querySelectorAll("button")].find((item) => item.textContent?.includes("扫码登录"));
+    await act(async () => button?.click());
+
+    expect(onStartQr).toHaveBeenCalledWith("/office/");
+  });
+
   it("never forwards an unvalidated query to QR login", async () => {
     window.history.replaceState({}, "", "/login?return_path=https%3A%2F%2Fevil.example%2F");
     const onStartQr = vi.fn().mockResolvedValue("https://login.dingtalk.com/oauth2/auth");
@@ -119,6 +130,16 @@ describe("LoginPage", () => {
 
     expect(onInClient).toHaveBeenCalledTimes(1);
     expect(onNavigate).toHaveBeenCalledWith("/admin/");
+  });
+
+  it("navigates an in-client login to the exact validated office root", async () => {
+    window.history.replaceState({}, "", "/login?return_path=%2Foffice%2F");
+    const onInClient = vi.fn().mockResolvedValue(undefined);
+    const onNavigate = vi.fn();
+    await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={onNavigate} />));
+
+    expect(onInClient).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledWith("/office/");
   });
 
   it("keeps in-client fragment URLs on the default account page", async () => {

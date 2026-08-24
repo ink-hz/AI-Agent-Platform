@@ -203,7 +203,7 @@ def test_catalog_router_is_mounted_outside_the_brain_repository_gate() -> None:
     assert catalog_mount < brain_gate
 
 
-def test_formal_nginx_is_dingtalk_only_and_stream_safe() -> None:
+def test_formal_nginx_keeps_platform_root_and_proxies_office_safely() -> None:
     nginx = (CLOUD / "agent-domain.nginx.conf").read_text(encoding="utf-8")
 
     assert 'auth_basic "Orbbec Agent Platform";' not in nginx
@@ -225,6 +225,20 @@ def test_formal_nginx_is_dingtalk_only_and_stream_safe() -> None:
     )[1].split("}", 1)[0]
     assert "return 404;" in internal_block
     assert "proxy_pass" not in internal_block
+    assert "location = /office" in nginx
+    assert "location = /office/health" in nginx
+    assert "location ^~ /office/assets/" in nginx
+    assert "location ^~ /office/knowledge-assets/" in nginx
+    assert "location ^~ /office/" in nginx
+    assert "proxy_pass http://127.0.0.1:8011;" in nginx
+    assert "proxy_set_header X-Forwarded-For $remote_addr;" in nginx
+    assert 'proxy_set_header Forwarded "";' in nginx
+    assert 'proxy_set_header Authorization "";' in nginx
+    assert "proxy_set_header Cookie" not in nginx
+    assert "zone=ai_admin_office_chat:10m" in nginx
+    assert "zone=ai_admin_office_conn:10m" in nginx
+    assert "location = /admin" not in nginx
+    assert "location ^~ /admin/" not in nginx
 
 
 def test_deploy_preserves_exact_fae_identity_configuration_and_routes() -> None:
