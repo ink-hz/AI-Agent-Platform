@@ -13,10 +13,12 @@ GOOD = textwrap.dedent(
         name: "AI FAE Agent"
         entry_url: "http://fae/app/"
         health: {url: "http://fae/health", type: "fae"}
+        flywheel_agent_id: "ai-fae-agent"
       - id: admin
         name: "AI ADMIN Agent"
         entry_url: "http://admin/app/"
         health: {url: "http://admin/health", type: "admin"}
+        flywheel_agent_id: "ai-admin-agent"
     """
 )
 
@@ -55,6 +57,19 @@ def test_get_agent_by_id(tmp_path):
     repo = YamlRepository(_write(tmp_path, GOOD))
     assert repo.get_agent("admin").name == "AI ADMIN Agent"
     assert repo.get_agent("missing") is None
+
+
+def test_admin_registry_join_is_fixed_to_the_canonical_catalog_id(tmp_path):
+    invalid = GOOD.replace('flywheel_agent_id: "ai-admin-agent"', 'flywheel_agent_id: "admin"')
+
+    with pytest.raises(RegistryError, match="canonical Catalog identity"):
+        YamlRepository(_write(tmp_path, invalid))
+
+
+def test_registry_mapping_does_not_require_a_replay_target(tmp_path):
+    repo = YamlRepository(_write(tmp_path, GOOD))
+
+    assert repo.get_agent_by_flywheel_id("ai-admin-agent").id == "admin"
 
 
 def test_missing_file_fails_fast(tmp_path):
@@ -154,14 +169,6 @@ def test_registry_resolves_unique_flywheel_id_and_dev_target(tmp_path):
                         "credential_ref": "env:FAE_KEY",
                     }
                 ],
-            }
-        ],
-        [
-            {
-                "id": "fae",
-                "flywheel_agent_id": "ai-fae-agent",
-                "api_base": "http://prod.example",
-                "replay_targets": [],
             }
         ],
     ],

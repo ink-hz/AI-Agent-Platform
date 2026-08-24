@@ -5,6 +5,8 @@ from urllib.parse import urlparse
 import yaml
 from pydantic import ValidationError
 
+from app.agent_catalog.models import CANONICAL_AGENT_IDS
+
 from .models import AgentEntry, Registry
 
 
@@ -73,8 +75,20 @@ class YamlRepository:
                 f"{sorted(duplicate_flywheel_ids)}"
             )
 
+        canonical_ids = set(CANONICAL_AGENT_IDS)
+        fixed_joins = {"fae": "ai-fae-agent", "admin": "ai-admin-agent"}
         for agent in registry.agents:
-            if not agent.flywheel_agent_id:
+            if agent.id in fixed_joins and agent.flywheel_agent_id != fixed_joins[agent.id]:
+                raise RegistryError(
+                    f"agent {agent.id!r} must use its canonical Catalog identity"
+                )
+            if agent.flywheel_agent_id and agent.flywheel_agent_id not in canonical_ids:
+                raise RegistryError(
+                    f"agent {agent.id!r} has an unknown canonical Catalog identity"
+                )
+
+        for agent in registry.agents:
+            if not agent.replay_targets:
                 continue
             if len(agent.replay_targets) != 1:
                 raise RegistryError(

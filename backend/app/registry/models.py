@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HealthSpec(BaseModel):
@@ -21,7 +21,9 @@ class ReviewEvidenceConfig(BaseModel):
 
 
 class AgentEntry(BaseModel):
-    id: str
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
     name: str
     domain: str = ""
     description: str = ""
@@ -34,7 +36,9 @@ class AgentEntry(BaseModel):
     api_base: str | None = None
     version: str = ""
     tags: list[str] = Field(default_factory=list)
-    flywheel_agent_id: str | None = None
+    flywheel_agent_id: str | None = Field(
+        default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    )
     replay_targets: list[ReplayTarget] = Field(default_factory=list)
     review_evidence: ReviewEvidenceConfig | None = None
 

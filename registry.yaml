@@ -33,10 +33,11 @@ agents:
     owner: "<负责人>"
     env: "prod"
     status: "active"
-    entry_url: "http://<admin-host>/app/"
+    entry_url: "http://127.0.0.1:8011/office/?view=services"
     health:
-      url: "http://<admin-host>/health"
+      url: "http://127.0.0.1:8011/health"
       type: "admin"
-    api_base: "http://<admin-host>"
+    api_base: "http://127.0.0.1:8011"
+    flywheel_agent_id: "ai-admin-agent"
     version: ""
     tags: ["in-memory-session"]

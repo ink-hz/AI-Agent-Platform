@@ -120,19 +120,29 @@ def test_iris_codex_has_business_visibility_and_release_lifecycle():
     assert profile.last_updated_basis == "release_artifact"
 
 
-def test_catalog_excludes_felix_and_iris_without_excluding_ai_fae():
+def test_catalog_excludes_non_management_profiles_from_fleet_projection():
     catalog = AgentCatalog.default()
 
     assert catalog.is_excluded("fae-bot") is True
     assert catalog.is_excluded("codex-assistant") is True
-    assert catalog.is_excluded("ai-fae-agent") is False
+    assert catalog.is_excluded("ai-fae-agent") is True
+    assert catalog.is_excluded("ai-admin-agent") is True
+    assert catalog.is_excluded("feishu-default") is True
+    assert catalog.is_excluded("test-bot") is True
     assert catalog.canonical_id("fae-bot") is None
     assert catalog.canonical_id("codex-assistant") is None
-    assert catalog.excluded_ids() == ("codex-assistant", "fae-bot")
+    assert catalog.excluded_ids() == (
+        "ai-admin-agent", "ai-fae-agent", "codex-assistant", "fae-bot",
+        "feishu-default", "test-bot",
+    )
+    assert catalog.is_unresolved_alias("pc-bot") is True
+    assert catalog.is_unresolved_alias("quality-bot") is True
+    assert catalog.is_unresolved_alias("new-runtime-bot") is False
     included = {profile.id for profile in catalog.all_profiles()}
     assert "fae-bot" not in included
     assert "codex-assistant" not in included
-    assert "ai-fae-agent" in included
+    assert "ai-fae-agent" not in included
+    assert "ai-admin-agent" not in included
 
 
 def test_catalog_rejects_unknown_exclusion():

@@ -140,5 +140,9 @@ unresolved_aliases:
   - quality-bot
 
 excluded_ids:
+  - feishu-default
   - fae-bot
+  - test-bot
   - codex-assistant
+  - ai-fae-agent
+  - ai-admin-agent

@@ -103,6 +103,11 @@ class AgentCatalog:
     def is_excluded(self, agent_id: str) -> bool:
         return self._aliases.get(agent_id, agent_id) in self._excluded_ids
 
+    def is_unresolved_alias(self, agent_id: str) -> bool:
+        """Projection-only aliases are not canonical product Agent identities."""
+
+        return agent_id in self._unresolved_aliases
+
     def excluded_ids(self) -> tuple[str, ...]:
         return tuple(sorted(self._excluded_ids))
 
