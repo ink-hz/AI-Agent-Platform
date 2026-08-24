@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import fcntl
 import os
 import re
 import shutil
@@ -52,6 +53,9 @@ def _run_publish_harness(
     ):
         directory.mkdir(parents=True, exist_ok=True)
     (platform_root / "current").symlink_to(release)
+    transaction_lock = private / "deploy-input.transaction.lock"
+    transaction_lock.write_text("")
+    transaction_lock.chmod(0o600)
     (ai_root / "RELEASE_COMMIT").write_text(ai_sha + "\n", encoding="utf-8")
     (private / "office-migration-session-cookie").write_text(
         "test-session-cookie\n", encoding="utf-8"
@@ -85,10 +89,12 @@ def _run_publish_harness(
             "raise SystemExit(1)\n", encoding="utf-8"
         )
 
+    active_transaction = None
     if preexisting_lock == "action":
         (private / "agent-brain-action.lock").mkdir()
     elif preexisting_lock == "deploy":
-        (private / "deploy-input.transaction.lock").write_text("busy\n")
+        active_transaction = transaction_lock.open("r+")
+        fcntl.flock(active_transaction, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
     fake_id = _write_executable(fake_bin / "id", "#!/bin/bash\necho 0\n")
     fake_readlink = _write_executable(
@@ -97,6 +103,20 @@ def _run_publish_harness(
     )
     fake_stat = _write_executable(fake_bin / "stat", "#!/bin/bash\necho '600 root'\n")
     fake_date = _write_executable(fake_bin / "date", "#!/bin/bash\necho 20260824T000000Z\n")
+    fake_flock = _write_executable(
+        fake_bin / "flock",
+        f"""
+        #!{sys.executable}
+        import fcntl
+        import sys
+
+        descriptor = int(sys.argv[-1])
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise SystemExit(1)
+        """,
+    )
     fake_identity = _write_executable(
         ai_root / ".venv" / "bin" / "python",
         """
@@ -247,6 +267,7 @@ def _run_publish_harness(
         "/usr/bin/readlink": str(fake_readlink),
         "/usr/bin/stat": str(fake_stat),
         "/usr/bin/date": str(fake_date),
+        "/usr/bin/flock": str(fake_flock),
         "/usr/bin/docker": str(fake_docker),
         "/usr/bin/install": str(fake_install),
         "/usr/bin/python3": sys.executable,
@@ -268,24 +289,28 @@ def _run_publish_harness(
         rollback_for_harness, encoding="utf-8"
     )
     executable = _write_executable(tmp_path / "publish-office.sh", script)
-    result = subprocess.run(
-        [str(executable)],
-        cwd=tmp_path,
-        env={
-            **os.environ,
-            "AI_ADMIN_RELEASE_SHA": ai_sha,
-            "PLATFORM_RELEASE_SHA": release_sha,
-            "HARNESS_FAILURE": failure,
-            "HARNESS_LOG": str(log),
-            "HARNESS_NGINX_SOURCE": str(nginx_source),
-            "HARNESS_NGINX_COUNT": str(tmp_path / "nginx-count"),
-            "HARNESS_AI_SHA": ai_sha,
-        },
-        text=True,
-        capture_output=True,
-        timeout=15,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [str(executable)],
+            cwd=tmp_path,
+            env={
+                **os.environ,
+                "AI_ADMIN_RELEASE_SHA": ai_sha,
+                "PLATFORM_RELEASE_SHA": release_sha,
+                "HARNESS_FAILURE": failure,
+                "HARNESS_LOG": str(log),
+                "HARNESS_NGINX_SOURCE": str(nginx_source),
+                "HARNESS_NGINX_COUNT": str(tmp_path / "nginx-count"),
+                "HARNESS_AI_SHA": ai_sha,
+            },
+            text=True,
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+    finally:
+        if active_transaction is not None:
+            active_transaction.close()
     return result, log.read_text() if log.exists() else "", nginx_source, backups
 
 
@@ -305,6 +330,8 @@ def test_publish_is_a_locked_fail_closed_nginx_transaction() -> None:
         "PLATFORM_RELEASE_SHA",
         "agent-brain-action.lock",
         "deploy-input.transaction.lock",
+        "deploy-input.lock",
+        "/usr/bin/flock",
         "office_path_nginx_transaction.py",
         "nginx -T",
         "nginx -t",

@@ -18,14 +18,17 @@ platform_root=/opt/orbbec-agent-platform
 private_root="$platform_root/private"
 ai_admin_root=/opt/ai-admin-agent
 action_lock="$private_root/agent-brain-action.lock"
-deploy_input_lock="$private_root/deploy-input.transaction.lock"
+deploy_transaction_lock="$private_root/deploy-input.transaction.lock"
+deploy_input_lock="$private_root/deploy-input.lock"
 session_cookie_file="$private_root/office-migration-session-cookie"
 platform_release="$platform_root/releases/$platform_release_sha"
 transaction="$platform_release/deploy/cloud/office_path_nginx_transaction.py"
 rollback_template="$platform_release/deploy/cloud/rollback-office-path-migration.sh"
 expected_nginx_source=/etc/nginx/sites-available/agent-domain.conf
 
-[[ ! -e "$deploy_input_lock" && ! -e "$action_lock" ]] || fail
+[[ ! -e "$deploy_input_lock" && ! -e "$action_lock" \
+  && -f "$deploy_transaction_lock" && ! -L "$deploy_transaction_lock" \
+  && "$(/usr/bin/stat -c '%a %U' "$deploy_transaction_lock")" == "600 root" ]] || fail
 lock_token="$(/usr/bin/python3 -c 'import uuid; print(uuid.uuid4())')"
 [[ "$lock_token" =~ ^[0-9a-f-]{36}$ ]] || fail
 /bin/mkdir -m 700 "$action_lock" || fail
@@ -47,6 +50,10 @@ cleanup_action_lock() {
   fi
 }
 trap release_action_lock EXIT
+
+exec 9<>"$deploy_transaction_lock" || fail
+/usr/bin/flock --exclusive --nonblock 9 || fail
+[[ ! -e "$deploy_input_lock" ]] || fail
 
 [[ "$(/usr/bin/readlink -f "$platform_root/current")" == "$platform_release" \
   && "$(/usr/bin/tr -d '\n' < "$ai_admin_root/RELEASE_COMMIT")" == "$ai_admin_release_sha" \

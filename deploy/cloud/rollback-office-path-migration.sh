@@ -22,7 +22,8 @@ platform_release_sha="__PLATFORM_RELEASE_SHA__"
 private_root=/opt/orbbec-agent-platform/private
 migration_dir="$private_root/office-path-migrations/$change_id"
 action_lock="$private_root/agent-brain-action.lock"
-deploy_input_lock="$private_root/deploy-input.transaction.lock"
+deploy_transaction_lock="$private_root/deploy-input.transaction.lock"
+deploy_input_lock="$private_root/deploy-input.lock"
 report="$migration_dir/rollback-report"
 
 script_dir="$(/usr/bin/dirname "$(/usr/bin/readlink -f "$0")")"
@@ -33,7 +34,9 @@ script_dir="$(/usr/bin/dirname "$(/usr/bin/readlink -f "$0")")"
   && "$backup" == /root/nginx-backups/ai-admin-office-*-$change_id/agent-domain.conf \
   && "$baseline" == /root/nginx-backups/ai-admin-office-*-$change_id/fae-baseline \
   && "$nginx_source" == /etc/nginx/sites-available/agent-domain.conf \
-  && ! -e "$deploy_input_lock" && ! -e "$action_lock" ]] || fail
+  && ! -e "$deploy_input_lock" && ! -e "$action_lock" \
+  && -f "$deploy_transaction_lock" && ! -L "$deploy_transaction_lock" \
+  && "$(/usr/bin/stat -c '%a %U' "$deploy_transaction_lock")" == "600 root" ]] || fail
 
 /usr/bin/python3 - "$backup" "$baseline" "$nginx_source" <<'PY' || fail
 import os
@@ -82,6 +85,10 @@ release_action_lock() {
   exit "$status"
 }
 trap release_action_lock EXIT
+
+exec 9<>"$deploy_transaction_lock" || fail
+/usr/bin/flock --exclusive --nonblock 9 || fail
+[[ ! -e "$deploy_input_lock" ]] || fail
 
 fingerprint_fae() {
   local fae_id fae_image_id fae_started_at fae_restart_count
