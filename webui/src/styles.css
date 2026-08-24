@@ -972,6 +972,7 @@ body {
 .agent-use-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 13px; }
 .agent-use-card { display: block; padding: 23px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: inherit; box-shadow: 0 10px 28px rgba(21, 51, 88, .07); text-decoration: none; }
 .agent-use-card:hover { border-color: #9eb8d4; box-shadow: 0 15px 34px rgba(21, 51, 88, .11); }
+.agent-use-card-disabled { box-shadow: none; opacity: .68; }
 .agent-use-card > span, .agent-use-profile > span { color: var(--brand-bright); font-size: 11.5px; font-weight: 820; letter-spacing: .08em; }
 .agent-use-card h3 { margin: 6px 0 8px; font-size: 21px; }
 .agent-use-card p { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.65; }

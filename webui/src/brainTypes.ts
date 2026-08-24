@@ -58,7 +58,12 @@ export interface AgentCapabilityCard {
   supports_idempotency: boolean;
   max_duration_seconds: number;
   data_classification: "internal";
-  adapter_id: string;
+  interaction_modes: ("direct_chat" | "brain_delegation" | "external_workspace")[];
+  workspace_url: string | null;
+  adapter_id: string | null;
+  adapter_kind: string | null;
+  adapter_config_version: number;
+  output_contract: "normalized_task_result_v1";
   capability_version: number;
 }
 

@@ -73,6 +73,11 @@ function parseMissionEvent(value: unknown): MissionEvent {
 }
 
 function parseCapabilityCard(value: unknown): AgentCapabilityCard {
+  const modes = isObject(value) && Array.isArray(value.interaction_modes)
+    ? value.interaction_modes : [];
+  const validModes = modes.length > 0 && modes.every((mode) =>
+    mode === "direct_chat" || mode === "brain_delegation" || mode === "external_workspace");
+  const externalOnly = modes.length === 1 && modes[0] === "external_workspace";
   if (!isObject(value)
     || typeof value.agent_id !== "string" || !value.agent_id
     || typeof value.display_name !== "string" || !value.display_name
@@ -86,7 +91,15 @@ function parseCapabilityCard(value: unknown): AgentCapabilityCard {
     || typeof value.supports_evidence !== "boolean" || typeof value.supports_streaming !== "boolean"
     || typeof value.supports_cancellation !== "boolean" || typeof value.supports_idempotency !== "boolean"
     || !Number.isSafeInteger(value.max_duration_seconds) || Number(value.max_duration_seconds) <= 0
-    || value.data_classification !== "internal" || typeof value.adapter_id !== "string" || !value.adapter_id
+    || value.data_classification !== "internal" || !validModes
+    || (value.workspace_url !== null && typeof value.workspace_url !== "string")
+    || (value.adapter_id !== null && (typeof value.adapter_id !== "string" || !value.adapter_id))
+    || (value.adapter_kind !== null && (typeof value.adapter_kind !== "string" || !value.adapter_kind))
+    || !Number.isSafeInteger(value.adapter_config_version) || Number(value.adapter_config_version) <= 0
+    || value.output_contract !== "normalized_task_result_v1"
+    || (externalOnly
+      ? (value.adapter_id !== null || value.adapter_kind !== null || typeof value.workspace_url !== "string")
+      : (typeof value.adapter_id !== "string" || typeof value.adapter_kind !== "string" || value.workspace_url !== null))
     || !Number.isSafeInteger(value.capability_version) || Number(value.capability_version) <= 0
   ) throw new Error("Agent catalog response invalid");
   return value as unknown as AgentCapabilityCard;
