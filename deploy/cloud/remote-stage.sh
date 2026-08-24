@@ -595,13 +595,19 @@ done
 if [[ "${#active_loopback_services[@]}" -gt 0 ]]; then
   "${compose[@]}" up -d --force-recreate "${active_loopback_services[@]}" >/dev/null
 fi
+loopback_health_streak=0
 for _attempt in $(/usr/bin/seq 1 40); do
   if /usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null; then
-    break
+    loopback_health_streak=$((loopback_health_streak + 1))
+    if [[ "$loopback_health_streak" -ge 3 ]]; then
+      break
+    fi
+  else
+    loopback_health_streak=0
   fi
   /bin/sleep 1
 done
-/usr/bin/curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8080/api/health >/dev/null || fail
+[[ "$loopback_health_streak" -ge 3 ]] || fail
 api_container="$("${compose[@]}" ps -q platform-api)"
 [[ -n "$api_container" ]] || fail
 api_environment="$(/usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_container")"

@@ -155,6 +155,19 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
     assert '"freshness":"unavailable"' not in script
 
 
+def test_remote_stage_requires_consecutive_loopback_health_checks():
+    script = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+
+    assert "loopback_health_streak=0" in script
+    assert "loopback_health_streak=$((loopback_health_streak + 1))" in script
+    assert "loopback_health_streak=0" in script
+    assert '[[ "$loopback_health_streak" -ge 3 ]] || fail' in script
+    assert (
+        "/usr/bin/curl --silent --show-error --fail --max-time 2 "
+        "http://127.0.0.1:8080/api/health >/dev/null || fail"
+    ) not in script
+
+
 def test_raw_key_files_inside_runtime_volumes_use_reader_contract_mode():
     stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
 
