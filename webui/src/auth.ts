@@ -145,6 +145,12 @@ export function identityShellEnabled(): boolean {
 }
 
 
+export function agentBrainShellEnabled(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.querySelector<HTMLMetaElement>('meta[name="platform-agent-brain-mode"]')?.content === "enabled";
+}
+
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

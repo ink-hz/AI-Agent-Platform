@@ -25,6 +25,7 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
   document.querySelector('meta[name="platform-identity-mode"]')?.remove();
+  document.querySelector('meta[name="platform-agent-brain-mode"]')?.remove();
   window.history.replaceState({}, "", "/");
 });
 
@@ -35,6 +36,10 @@ describe("cloud replica mode", () => {
     meta.name = "platform-identity-mode";
     meta.content = "enabled";
     document.head.append(meta);
+    const brainMeta = document.createElement("meta");
+    brainMeta.name = "platform-agent-brain-mode";
+    brainMeta.content = "enabled";
+    document.head.append(brainMeta);
     window.history.replaceState({}, "", "/");
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
@@ -60,6 +65,31 @@ describe("cloud replica mode", () => {
     expect(container.querySelector<HTMLTextAreaElement>("#brain-request")?.disabled).toBe(false);
     expect(container.textContent).toContain("开始对话");
     expect(container.textContent).not.toContain("Agent 集群总览");
+  });
+
+  it("keeps the root as the use entry while Agent Brain is disabled", async () => {
+    const identityMeta = document.createElement("meta");
+    identityMeta.name = "platform-identity-mode";
+    identityMeta.content = "enabled";
+    document.head.append(identityMeta);
+    const brainMeta = document.createElement("meta");
+    brainMeta.name = "platform-agent-brain-mode";
+    brainMeta.content = "disabled";
+    document.head.append(brainMeta);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      internal_user_id: "owner", display_name: "苍渊", role: "platform_owner",
+      departments: [], gender: null,
+      observation_agent_ids: [], directory_freshness: "fresh",
+      hard_stale_read_only: false, csrf_token: "csrf",
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(container.textContent).toContain("Agent 大脑正在准备");
+    expect(container.querySelector<HTMLAnchorElement>('.brain-preparing a[href="/agents"]')?.textContent)
+      .toBe("打开专业 Agent");
+    expect(container.querySelector("#brain-request")).toBeNull();
   });
 
   it("returns an expired usage route to login with its safe Mission path", async () => {
