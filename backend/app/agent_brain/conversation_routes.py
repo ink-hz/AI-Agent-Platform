@@ -25,11 +25,13 @@ from .conversation_models import (
 )
 from .conversation_service import ConversationCommandService
 from .conversation_repository import (
+    ConversationRepository,
     ConversationRepositoryConflict,
     ConversationRepositoryError,
     ConversationRepositoryNotFound,
     ConversationTurnInProgress,
 )
+from .conversation_projection import ConversationProjection
 from .routes import (
     MissionStreamBusy,
     MissionStreamLimiter,
@@ -270,7 +272,9 @@ def _event_payload(record: ConversationEventRecord) -> dict[str, object]:
         "turn_id": str(record.turn_id) if record.turn_id else None,
         "mission_id": str(record.mission_id) if record.mission_id else None,
         "event_type": record.event_type,
-        "payload": record.payload,
+        "payload": ConversationProjection.public_payload(
+            record.event_type, record.payload
+        ),
         "created_at": record.created_at.isoformat(),
     }
 
@@ -359,6 +363,12 @@ async def conversation_event_stream(
             if await is_disconnected() or not await access_is_live():
                 return
             try:
+                if isinstance(repository, ConversationRepository):
+                    await asyncio.to_thread(
+                        ConversationProjection(repository).project_brain_pending,
+                        conversation_id,
+                        limit=100,
+                    )
                 projected = await asyncio.to_thread(
                     repository.sync_mission_events,
                     owner,

@@ -54,6 +54,7 @@ describe("BrainWorkspacePage", () => {
       fetchMessages: vi.fn().mockResolvedValue([]),
       createMessageSubmission: vi.fn(), streamEvents: vi.fn().mockResolvedValue(undefined),
       cancelCurrentTurn: vi.fn(), submitFeedback: vi.fn(), reconnectDelay: vi.fn().mockResolvedValue(undefined),
+      retryTurn: vi.fn(),
     };
     await act(async () => root.render(<BrainWorkspacePage
       account={account} conversationId="newer" conversationClient={conversationClient}

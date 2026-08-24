@@ -29,7 +29,7 @@ const result: ConversationSubmissionResult = {
   },
   turn: {
     turn_id: "turn", conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", user_message_id: "message",
-    assistant_message_id: null, mission_id: "mission", status: "accepted",
+    assistant_message_id: null, mission_id: "mission", retry_of_turn_id: null, status: "accepted",
     created_at: "2026-08-22T10:00:00Z", updated_at: "2026-08-22T10:00:00Z",
   },
 };

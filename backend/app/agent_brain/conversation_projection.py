@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from uuid import UUID, uuid4
+from dataclasses import dataclass
+from datetime import datetime
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import psycopg
 
@@ -11,7 +13,54 @@ from app.agent_brain.conversation_repository import (
     message_subject,
 )
 from app.agent_brain.repository import MissionRepositoryError
-from app.execution_relay.content_crypto import ContentCryptoError
+from app.execution_relay.content_crypto import (
+    ContentCryptoError,
+    SealedContent,
+)
+
+
+PUBLIC_BRAIN_EVENT_TYPES = frozenset(
+    {
+        "brain.started",
+        "brain.step_started",
+        "agent.task_dispatched",
+        "agent.task_accepted",
+        "agent.task_progress",
+        "agent.task_completed",
+        "agent.task_failed",
+        "agent.task_timed_out",
+        "agent.task_unavailable",
+        "brain.batch_settled",
+        "brain.resumed",
+        "brain.user_input_requested",
+        "brain.answer_submitted",
+        "brain.failed",
+    }
+)
+PUBLIC_BRAIN_PAYLOAD_KEYS = frozenset(
+    {
+        "agent_id",
+        "agent_name",
+        "objective_summary",
+        "public_reason",
+        "status",
+        "duration_ms",
+        "attachment_refs",
+        "reason_code",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class PrivateBrainEvent:
+    event_type: str
+    payload: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class PublicBrainEvent:
+    event_type: str
+    payload: dict[str, object]
 
 
 _TERMINAL_MISSIONS = frozenset(
@@ -31,6 +80,297 @@ class ConversationProjection:
             raise ValueError("Conversation repository required")
         self.repository = repository
         self.missions = repository._missions
+
+    @staticmethod
+    def project(event: PrivateBrainEvent) -> PublicBrainEvent:
+        if event.event_type not in PUBLIC_BRAIN_EVENT_TYPES:
+            raise ValueError("public Brain event type invalid")
+        payload = {
+            key: value
+            for key, value in event.payload.items()
+            if key in PUBLIC_BRAIN_PAYLOAD_KEYS
+        }
+        return PublicBrainEvent(event.event_type, payload)
+
+    @staticmethod
+    def public_payload(
+        event_type: str, payload: dict[str, object]
+    ) -> dict[str, object]:
+        if event_type not in PUBLIC_BRAIN_EVENT_TYPES:
+            return payload
+        return ConversationProjection.project(
+            PrivateBrainEvent(event_type, payload)
+        ).payload
+
+    @staticmethod
+    def _source_event_id(source_key: str) -> UUID:
+        return uuid5(NAMESPACE_URL, f"orbbec-agent-brain-public:{source_key}")
+
+    def _append_public_brain_event_locked(
+        self,
+        cursor,
+        conversation_id: UUID,
+        turn_id: UUID,
+        source_key: str,
+        event_type: str,
+        payload: dict[str, object],
+        created_at: datetime,
+    ) -> bool:
+        projected = self.project(PrivateBrainEvent(event_type, payload))
+        event_id = self._source_event_id(source_key)
+        if cursor.execute(
+            "select 1 from platform_control.conversation_events where event_id=%s",
+            (event_id,),
+        ).fetchone() is not None:
+            return False
+        sealed = self.repository.content_codec.seal_json(
+            event_subject(conversation_id, event_id), projected.payload
+        )
+        sequence = cursor.execute(
+            "select coalesce(max(seq),0)+1 as next_seq from "
+            "platform_control.conversation_events where conversation_id=%s",
+            (conversation_id,),
+        ).fetchone()["next_seq"]
+        cursor.execute(
+            "insert into platform_control.conversation_events "
+            "(event_id,conversation_id,seq,turn_id,mission_id,event_type,"
+            "payload_ciphertext,encryption_key_version,created_at) "
+            "values (%s,%s,%s,%s,null,%s,%s,%s,%s)",
+            (
+                event_id,
+                conversation_id,
+                sequence,
+                turn_id,
+                event_type,
+                sealed.ciphertext,
+                sealed.key_version,
+                created_at,
+            ),
+        )
+        return True
+
+    def project_brain_pending(
+        self, conversation_id: UUID, *, limit: int = 100
+    ) -> int:
+        if not isinstance(conversation_id, UUID) or not 1 <= limit <= 500:
+            raise ValueError("Brain projection input invalid")
+        try:
+            with self.repository._connection() as connection, connection.cursor() as cursor:
+                cursor.execute(
+                    "select conversation_id from platform_control.conversations "
+                    "where conversation_id=%s for update",
+                    (conversation_id,),
+                )
+                loops = cursor.execute(
+                    "select * from platform_brain.brain_loops where conversation_id=%s "
+                    "order by created_at,loop_id",
+                    (conversation_id,),
+                ).fetchall()
+                candidates: list[
+                    tuple[datetime, str, UUID, str, dict[str, object]]
+                ] = []
+                for loop in loops:
+                    loop_id = loop["loop_id"]
+                    turn_id = loop["turn_id"]
+                    candidates.append(
+                        (
+                            loop["created_at"],
+                            f"loop:{loop_id}:started",
+                            turn_id,
+                            "brain.started",
+                            {"status": "running"},
+                        )
+                    )
+                    steps = cursor.execute(
+                        "select * from platform_brain.brain_steps where loop_id=%s "
+                        "order by step_seq",
+                        (loop_id,),
+                    ).fetchall()
+                    for step in steps:
+                        candidates.append(
+                            (
+                                step["created_at"],
+                                f"step:{step['step_id']}:started",
+                                turn_id,
+                                "brain.step_started",
+                                {"status": step["status"]},
+                            )
+                        )
+                        if step["step_seq"] > 1:
+                            candidates.append(
+                                (
+                                    step["created_at"],
+                                    f"step:{step['step_id']}:resumed",
+                                    turn_id,
+                                    "brain.resumed",
+                                    {"status": "running"},
+                                )
+                            )
+                    tasks = cursor.execute(
+                        "select task.*,call.public_reason from "
+                        "platform_brain.agent_tasks task join "
+                        "platform_brain.brain_tool_calls call on "
+                        "call.brain_tool_call_id=task.brain_tool_call_id "
+                        "where task.loop_id=%s order by task.created_at,task.task_id",
+                        (loop_id,),
+                    ).fetchall()
+                    for task in tasks:
+                        context = self.repository.content_codec.unseal_json(
+                            f"brain-task:{task['task_id']}:context",
+                            SealedContent(
+                                bytes(task["task_context_ciphertext"]),
+                                task["task_context_key_version"],
+                            ),
+                        )
+                        objective = context.get("objective")
+                        base_payload = {
+                            "agent_id": task["agent_id"],
+                            "objective_summary": (
+                                objective[:512]
+                                if isinstance(objective, str)
+                                else "已分派专业任务"
+                            ),
+                            "public_reason": task["public_reason"],
+                            "status": task["status"],
+                        }
+                        candidates.append(
+                            (
+                                task["created_at"],
+                                f"task:{task['task_id']}:dispatched",
+                                turn_id,
+                                "agent.task_dispatched",
+                                base_payload,
+                            )
+                        )
+                        if task["status"] != "queued":
+                            candidates.append(
+                                (
+                                    task["started_at"] or task["updated_at"],
+                                    f"task:{task['task_id']}:accepted",
+                                    turn_id,
+                                    "agent.task_accepted",
+                                    base_payload,
+                                )
+                            )
+                    for step in steps:
+                        batch = cursor.execute(
+                            "select count(*) as total,"
+                            "count(*) filter (where task.status in "
+                            "('completed','failed','cancelled','timed_out','unavailable')) "
+                            "as terminal,max(task.terminal_at) as settled_at from "
+                            "platform_brain.agent_tasks task join "
+                            "platform_brain.brain_tool_calls call on "
+                            "call.brain_tool_call_id=task.brain_tool_call_id "
+                            "where call.step_id=%s",
+                            (step["step_id"],),
+                        ).fetchone()
+                        if batch["total"] and batch["total"] == batch["terminal"]:
+                            candidates.append(
+                                (
+                                    batch["settled_at"] or step["updated_at"],
+                                    f"step:{step['step_id']}:batch-settled",
+                                    turn_id,
+                                    "brain.batch_settled",
+                                    {"status": "completed"},
+                                )
+                            )
+                        task_events = cursor.execute(
+                            "select * from platform_brain.agent_task_events "
+                            "where task_id=%s order by seq",
+                            (task["task_id"],),
+                        ).fetchall()
+                        for task_event in task_events:
+                            value = self.repository.content_codec.unseal_json(
+                                f"brain-task:{task['task_id']}:event:"
+                                f"{task_event['seq']}:payload",
+                                SealedContent(
+                                    bytes(task_event["payload_ciphertext"]),
+                                    task_event["payload_key_version"],
+                                ),
+                            )
+                            status = value.get("status")
+                            event_type = {
+                                "completed": "agent.task_completed",
+                                "failed": "agent.task_failed",
+                                "timed_out": "agent.task_timed_out",
+                                "unavailable": "agent.task_unavailable",
+                                "cancelled": "agent.task_failed",
+                            }.get(status, "agent.task_progress")
+                            candidates.append(
+                                (
+                                    task_event["created_at"],
+                                    f"task:{task['task_id']}:event:{task_event['seq']}",
+                                    turn_id,
+                                    event_type,
+                                    {
+                                        **base_payload,
+                                        "status": status or "running",
+                                    },
+                                )
+                            )
+                    request_calls = cursor.execute(
+                        "select call.brain_tool_call_id,call.public_reason,"
+                        "call.created_at from platform_brain.brain_tool_calls call "
+                        "join platform_brain.brain_steps step on "
+                        "step.step_id=call.step_id where step.loop_id=%s "
+                        "and call.tool_name='request_user_input'",
+                        (loop_id,),
+                    ).fetchall()
+                    for call in request_calls:
+                        candidates.append(
+                            (
+                                call["created_at"],
+                                f"call:{call['brain_tool_call_id']}:waiting-user",
+                                turn_id,
+                                "brain.user_input_requested",
+                                {
+                                    "objective_summary": call["public_reason"],
+                                    "public_reason": call["public_reason"],
+                                    "status": "waiting_user",
+                                },
+                            )
+                        )
+                    terminal_type = {
+                        "completed": "brain.answer_submitted",
+                        "failed": "brain.failed",
+                        "interrupted": "brain.failed",
+                        "cancelled": "brain.failed",
+                    }.get(loop["status"])
+                    if terminal_type:
+                        candidates.append(
+                            (
+                                loop["terminal_at"] or loop["updated_at"],
+                                f"loop:{loop_id}:terminal",
+                                turn_id,
+                                terminal_type,
+                                {
+                                    "status": loop["status"],
+                                    "reason_code": loop["reason_code"],
+                                },
+                            )
+                        )
+                inserted = 0
+                for created_at, source, turn_id, event_type, payload in sorted(
+                    candidates, key=lambda item: (item[0], item[1])
+                ):
+                    if inserted >= limit:
+                        break
+                    inserted += int(
+                        self._append_public_brain_event_locked(
+                            cursor,
+                            conversation_id,
+                            turn_id,
+                            source,
+                            event_type,
+                            payload,
+                            created_at,
+                        )
+                    )
+                return inserted
+        except ConversationRepositoryError:
+            raise
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
 
     @staticmethod
     def _append_event(

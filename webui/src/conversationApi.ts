@@ -28,7 +28,7 @@ const MESSAGE_KEYS = new Set([
 ]);
 const TURN_KEYS = new Set([
   "turn_id", "conversation_id", "user_message_id", "assistant_message_id",
-  "mission_id", "status", "created_at", "updated_at",
+  "mission_id", "retry_of_turn_id", "status", "created_at", "updated_at",
 ]);
 const EVENT_KEYS = new Set([
   "event_id", "conversation_id", "seq", "turn_id", "mission_id",
@@ -38,7 +38,9 @@ const SUBMISSION_KEYS = new Set(["conversation", "message", "turn"]);
 const DETAIL_KEYS = new Set(["conversation", "current_turn"]);
 const PAGE_KEYS = new Set(["items", "next_cursor"]);
 const MESSAGE_PAGE_KEYS = new Set(["items"]);
-const CANCEL_KEYS = new Set(["conversation_id", "mission_id", "cancel_requested"]);
+const CANCEL_KEYS = new Set([
+  "conversation_id", "turn_id", "mission_id", "cancel_requested",
+]);
 const FEEDBACK_KEYS = new Set([
   "feedback_id", "conversation_id", "message_id", "turn_id", "mission_id",
   "rating", "created_at",
@@ -51,7 +53,8 @@ const DELIVERY_STATUSES = new Set<ConversationDeliveryStatus>([
   "accepted", "streaming", "completed", "failed",
 ]);
 const TURN_STATUSES = new Set<ConversationTurnStatus>([
-  "accepted", "running", "completed", "failed", "cancelled", "interrupted",
+  "accepted", "running", "waiting_agents", "waiting_user", "completing",
+  "completed", "failed", "cancelled", "interrupted",
 ]);
 
 export const MAX_CONVERSATION_INPUT_BYTES = 32 * 1024;
@@ -150,6 +153,7 @@ function parseTurn(value: unknown): ConversationTurn {
     || !isNonEmptyString(value.user_message_id)
     || !isNullableString(value.assistant_message_id)
     || !isNullableString(value.mission_id)
+    || !isNullableString(value.retry_of_turn_id)
     || !TURN_STATUSES.has(value.status as ConversationTurnStatus)
     || !isNonEmptyString(value.created_at)
     || !isNonEmptyString(value.updated_at)
@@ -231,7 +235,8 @@ function parseMessages(value: unknown): ConversationMessage[] {
 function parseCancelResult(value: unknown): ConversationCancelResult {
   if (!isObject(value) || !hasExactKeys(value, CANCEL_KEYS)
     || !isNonEmptyString(value.conversation_id)
-    || !isNonEmptyString(value.mission_id)
+    || !isNonEmptyString(value.turn_id)
+    || !isNullableString(value.mission_id)
     || value.cancel_requested !== true) {
     throw new Error("Conversation cancel response invalid");
   }
@@ -374,6 +379,33 @@ export async function cancelCurrentTurn(
   const result = parseCancelResult(await response.json());
   if (result.conversation_id !== conversationId) throw new Error("Conversation cancel response invalid");
   return result;
+}
+
+
+export function retryConversationTurn(
+  conversationId: string,
+  turnId: string,
+  csrfToken: string,
+): ConversationSubmission {
+  const idempotencyKey = crypto.randomUUID();
+  return Object.freeze({
+    idempotencyKey,
+    async send(signal?: AbortSignal): Promise<ConversationSubmissionResult> {
+      const response = await checked(await fetch(platformPath(
+        `/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/retry`,
+      ), {
+        method: "POST",
+        credentials: "include",
+        signal,
+        headers: {
+          Accept: "application/json",
+          "X-CSRF-Token": csrfToken,
+          "Idempotency-Key": idempotencyKey,
+        },
+      }));
+      return parseSubmission(await response.json());
+    },
+  });
 }
 
 

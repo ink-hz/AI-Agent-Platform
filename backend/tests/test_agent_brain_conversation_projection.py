@@ -5,13 +5,64 @@ from uuid import uuid4
 import psycopg
 import pytest
 
-from app.agent_brain.conversation_projection import ConversationProjection
+from app.agent_brain.conversation_projection import (
+    ConversationProjection,
+    PrivateBrainEvent,
+)
+from app.agent_brain.conversation_service import ConversationCommandService
+from app.agent_brain.loop_repository import BrainLoopRepository
 from test_agent_brain_conversation_context import _complete_mission
 from test_agent_brain_conversation_repository import (
     conversation_database,
     repository,
 )
 from test_control_plane_migration import control_database
+
+
+def test_public_projection_redacts_private_runtime_fields() -> None:
+    private = PrivateBrainEvent(
+        event_type="agent.task_completed",
+        payload={
+            "agent_id": "hr-bot",
+            "agent_name": "HR Agent",
+            "objective_summary": "评估候选人",
+            "public_reason": "需要招聘专业判断",
+            "status": "completed",
+            "duration_ms": 1200,
+            "attachment_refs": [],
+            "reason_code": "completed",
+            "thinking": "private chain",
+            "provider_request_id": "provider-secret",
+            "prompt": "private prompt",
+            "internal_url": "http://127.0.0.1:9200",
+            "grant_ids": ["private-grant"],
+        },
+    )
+
+    projected = ConversationProjection.project(private)
+
+    assert set(projected.payload) <= {
+        "agent_id",
+        "agent_name",
+        "objective_summary",
+        "public_reason",
+        "status",
+        "duration_ms",
+        "attachment_refs",
+        "reason_code",
+    }
+    serialized = str(projected.payload).lower()
+    assert "thinking" not in serialized
+    assert "provider" not in serialized
+    assert "127.0.0.1" not in serialized
+    assert "grant" not in serialized
+
+
+def test_public_projection_rejects_non_allowlisted_brain_event() -> None:
+    with pytest.raises(ValueError, match="public Brain event"):
+        ConversationProjection.project(
+            PrivateBrainEvent(event_type="provider.raw_response", payload={})
+        )
 
 
 @pytest.mark.postgres
@@ -120,3 +171,43 @@ def test_pending_projection_recovers_terminal_mission_after_crash(
     assert repository.messages_after(
         owner_id, started.conversation.conversation_id
     )[-1].content == "已经完成但尚未投影"
+
+
+@pytest.mark.postgres
+def test_v2_projection_is_idempotent_and_separates_agent_from_brain_resume(
+    conversation_database,
+    repository,
+) -> None:
+    environment, owner, _other = conversation_database
+    started = ConversationCommandService(repository, v2_enabled=True).start(
+        owner, uuid4(), "验证协作时间线"
+    )
+    loops = BrainLoopRepository(
+        environment["urls"]["platform_brain_worker"],
+        content_codec=repository.content_codec,
+    )
+    from test_agent_brain_loop_runtime import _delegate_response, _runtime
+
+    assert _runtime(loops, _delegate_response()).advance_one() is True
+    assert _runtime(loops).dispatch_one() is True
+    projector = ConversationProjection(repository)
+
+    assert projector.project_brain_pending(
+        started.conversation.conversation_id
+    ) > 0
+    assert projector.project_brain_pending(
+        started.conversation.conversation_id
+    ) == 0
+    events = repository.events_after(
+        owner, started.conversation.conversation_id, after=0, limit=100
+    )
+    event_types = [item.event_type for item in events]
+    assert "agent.task_completed" in event_types
+    assert "brain.resumed" in event_types
+    completed = next(
+        item for item in events if item.event_type == "agent.task_completed"
+    )
+    assert set(completed.payload) <= {
+        "agent_id", "agent_name", "objective_summary", "public_reason",
+        "status", "duration_ms", "attachment_refs", "reason_code",
+    }

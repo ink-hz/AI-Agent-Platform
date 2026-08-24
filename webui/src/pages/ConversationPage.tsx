@@ -6,6 +6,7 @@ import {
   createConversationMessageSubmission,
   fetchConversation,
   fetchConversationMessages,
+  retryConversationTurn,
   streamConversationEvents,
   submitConversationFeedback,
   type ConversationStreamOptions,
@@ -35,6 +36,7 @@ export interface ConversationPageClient {
   streamEvents(conversationId: string, options: ConversationStreamOptions): Promise<void>;
   cancelCurrentTurn(conversationId: string, csrfToken: string, signal?: AbortSignal): Promise<ConversationCancelResult>;
   submitFeedback(messageId: string, rating: ConversationFeedbackRating, csrfToken: string, signal?: AbortSignal): Promise<ConversationFeedback>;
+  retryTurn(conversationId: string, turnId: string, csrfToken: string): ConversationSubmission;
   reconnectDelay(signal: AbortSignal): Promise<void>;
 }
 
@@ -45,6 +47,7 @@ const DEFAULT_CLIENT: ConversationPageClient = {
   streamEvents: streamConversationEvents,
   cancelCurrentTurn,
   submitFeedback: submitConversationFeedback,
+  retryTurn: retryConversationTurn,
   reconnectDelay,
 };
 
@@ -154,9 +157,11 @@ export function ConversationPage({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, conversationId, streamEpoch]);
 
-  const send = async () => {
-    const normalized = text.trim();
-    if (!normalized || inFlight.current || account.hard_stale_read_only || turnIsActive(detail)) return;
+  const sendValue = async (value: string) => {
+    const normalized = value.trim();
+    const waitingUser = detail?.current_turn?.status === "waiting_user";
+    if (!normalized || inFlight.current || account.hard_stale_read_only
+      || (turnIsActive(detail) && !waitingUser)) return;
     let selected = retained.current;
     if (!selected || selected.text !== normalized) {
       selected = {
@@ -177,6 +182,33 @@ export function ConversationPage({
       setDetail({ conversation: result.conversation, current_turn: result.turn });
       onConversationUpdated?.(result.conversation);
       setCancelRequested(false);
+      setStreamEpoch((value) => value + 1);
+    } catch {
+      if (!controller.signal.aborted) setSendFailure(true);
+    } finally {
+      if (writeController.current === controller) {
+        inFlight.current = false;
+        if (!controller.signal.aborted) setPending(false);
+      }
+    }
+  };
+
+  const send = async () => sendValue(text);
+
+  const retryTurn = async () => {
+    const turn = detail?.current_turn;
+    if (!turn || !["failed", "interrupted"].includes(turn.status)
+      || inFlight.current || account.hard_stale_read_only) return;
+    const controller = new AbortController();
+    writeController.current?.abort(); writeController.current = controller;
+    inFlight.current = true; setPending(true); setSendFailure(false);
+    try {
+      const result = await client.retryTurn(
+        conversationId, turn.turn_id, account.csrf_token,
+      ).send(controller.signal);
+      if (controller.signal.aborted) return;
+      setMessages((current) => mergeMessages(current, [result.message]));
+      setDetail({ conversation: result.conversation, current_turn: result.turn });
       setStreamEpoch((value) => value + 1);
     } catch {
       if (!controller.signal.aborted) setSendFailure(true);
@@ -217,6 +249,7 @@ export function ConversationPage({
   if (loading) return <section className="conversation-load-state" aria-live="polite"><h1>正在打开对话</h1><p>正在读取已保存的消息与执行记录。</p></section>;
   if (loadFailure || !detail) return <section className="conversation-load-state" role="alert"><h1>暂时无法读取对话</h1><p>对话仍安全保存在平台，请稍后刷新。</p></section>;
   const active = turnIsActive(detail);
+  const waitingUser = detail.current_turn?.status === "waiting_user";
   return <div className="conversation-page">
     <header className="conversation-header">
       <div>
@@ -234,14 +267,23 @@ export function ConversationPage({
       feedback={feedback}
       onFeedback={account.hard_stale_read_only ? undefined : (messageId, rating) => void rate(messageId, rating)}
     />
-    {active && <section className="conversation-running" aria-live="polite">
+    {active && !waitingUser && <section className="conversation-running" aria-live="polite">
       <span>{cancelRequested ? "正在停止本轮执行…" : "Agent 正在处理本轮需求…"}</span>
       <button className="conversation-stop" disabled={cancelRequested || account.hard_stale_read_only} onClick={() => void stop()} type="button">
         {cancelRequested ? "正在停止" : "停止"}
       </button>
     </section>}
     {cancelFailure && <p className="conversation-action-error" role="alert">停止请求暂未送达，请稍后重试。</p>}
-    <ExecutionCard events={events} mode={detail.conversation.mode} directAgentId={detail.conversation.direct_agent_id} />
+    <ExecutionCard
+      directAgentId={detail.conversation.direct_agent_id}
+      disabled={account.hard_stale_read_only}
+      events={events}
+      mode={detail.conversation.mode}
+      onResumeUserInput={waitingUser ? (answer) => void sendValue(answer) : undefined}
+      pending={pending}
+    />
+    {detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
+      && <button className="conversation-turn-retry" disabled={pending || account.hard_stale_read_only} onClick={() => void retryTurn()} type="button">重试本轮</button>}
     <ConversationComposer
       disabled={active || account.hard_stale_read_only}
       onChange={(value) => {

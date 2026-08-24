@@ -52,6 +52,7 @@ const turn = {
   user_message_id: MESSAGE_ID,
   assistant_message_id: null,
   mission_id: MISSION_ID,
+  retry_of_turn_id: null,
   status: "accepted",
   created_at: "2026-08-23T10:00:00Z",
   updated_at: "2026-08-23T10:00:00Z",
@@ -147,7 +148,7 @@ describe("continuous Conversation API", () => {
       .mockResolvedValueOnce(jsonResponse({ conversation, current_turn: turn }))
       .mockResolvedValueOnce(jsonResponse({ items: [conversation], next_cursor: "next" }))
       .mockResolvedValueOnce(jsonResponse({ items: [message] }))
-      .mockResolvedValueOnce(jsonResponse({ conversation_id: CONVERSATION_ID, mission_id: MISSION_ID, cancel_requested: true }))
+      .mockResolvedValueOnce(jsonResponse({ conversation_id: CONVERSATION_ID, turn_id: TURN_ID, mission_id: MISSION_ID, cancel_requested: true }))
       .mockResolvedValueOnce(jsonResponse({ ...conversation, status: "archived", archived_at: "2026-08-23T11:00:00Z" }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -155,7 +156,7 @@ describe("continuous Conversation API", () => {
     await expect(listConversations(undefined, "next/opaque", 10)).resolves.toEqual({ items: [conversation], next_cursor: "next" });
     await expect(fetchConversationMessages(CONVERSATION_ID)).resolves.toEqual([message]);
     await expect(cancelCurrentTurn(CONVERSATION_ID, "csrf")).resolves.toEqual({
-      conversation_id: CONVERSATION_ID, mission_id: MISSION_ID, cancel_requested: true,
+      conversation_id: CONVERSATION_ID, turn_id: TURN_ID, mission_id: MISSION_ID, cancel_requested: true,
     });
     await expect(archiveConversation(CONVERSATION_ID, "csrf")).resolves.toMatchObject({ status: "archived" });
 

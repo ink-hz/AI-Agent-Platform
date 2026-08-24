@@ -30,6 +30,7 @@ const conversation: Conversation = {
 const completedTurn: ConversationTurn = {
   turn_id: "turn-1", conversation_id: conversationId, user_message_id: "message-1",
   assistant_message_id: "message-2", mission_id: "mission-1", status: "completed",
+  retry_of_turn_id: null,
   created_at: "2026-08-23T10:00:00Z", updated_at: "2026-08-23T10:01:00Z",
 };
 const messages: ConversationMessage[] = [
@@ -61,7 +62,7 @@ function submissionResult(text: string): ConversationSubmissionResult {
     },
     turn: {
       turn_id: "turn-2", conversation_id: conversationId, user_message_id: "message-3",
-      assistant_message_id: null, mission_id: "mission-2", status: "accepted",
+      assistant_message_id: null, mission_id: "mission-2", retry_of_turn_id: null, status: "accepted",
       created_at: "2026-08-23T10:02:00Z", updated_at: "2026-08-23T10:02:00Z",
     },
   };
@@ -86,6 +87,10 @@ function client(overrides: Partial<ConversationPageClient> = {}): ConversationPa
     streamEvents: vi.fn().mockImplementation(async (_id, options) => options.onEvent(event)),
     cancelCurrentTurn: vi.fn(),
     submitFeedback: vi.fn(),
+    retryTurn: vi.fn().mockImplementation((_conversationId, _turnId) => ({
+      idempotencyKey: "retry-same",
+      send: vi.fn().mockResolvedValue(submissionResult("重试")),
+    })),
     reconnectDelay: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -214,6 +219,56 @@ describe("ConversationPage", () => {
     await act(async () => root.render(<ConversationPage account={account} client={pageClient} conversationId={conversationId} />));
 
     expect(container.querySelector(".conversation-assistant header strong")?.textContent).toBe("HR Agent");
+  });
+
+  it("shows an Agent result before the Brain observes the settled batch", async () => {
+    const completedEvent: ConversationEvent = {
+      ...event,
+      event_id: "event-completed",
+      event_type: "agent.task_completed",
+      payload: { agent_id: "hr-bot", agent_name: "HR Agent", status: "completed" },
+    };
+    const pageClient = client({
+      streamEvents: vi.fn().mockImplementation(async (_id, options) => {
+        options.onEvent(completedEvent);
+      }),
+    });
+    await act(async () => root.render(
+      <ConversationPage account={account} client={pageClient} conversationId={conversationId} />,
+    ));
+    const details = container.querySelector<HTMLDetailsElement>(".execution-card")!;
+    details.open = true;
+
+    expect(container.textContent).toContain("HR Agent 已完成");
+    expect(container.textContent).toContain("等待 Agent 大脑继续处理");
+    expect(container.textContent).not.toContain("Agent 大脑已读取结果");
+  });
+
+  it("lets the user answer a waiting-user request in the same turn", async () => {
+    const waiting: ConversationTurn = {
+      ...completedTurn,
+      assistant_message_id: null,
+      status: "waiting_user",
+    };
+    const stream = deferred<void>();
+    const pageClient = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation, current_turn: waiting }),
+      streamEvents: vi.fn().mockImplementation((_id, options) => {
+        options.onEvent({
+          ...event,
+          event_type: "brain.user_input_requested",
+          payload: { objective_summary: "请补充岗位级别", status: "waiting_user" },
+        });
+        return stream.promise;
+      }),
+    });
+    await act(async () => root.render(
+      <ConversationPage account={account} client={pageClient} conversationId={conversationId} />,
+    ));
+
+    expect(container.textContent).toContain("请补充岗位级别");
+    const input = container.querySelector<HTMLTextAreaElement>("textarea[aria-label='回答 Agent 大脑']");
+    expect(input).not.toBeNull();
   });
 
   it("submits one rating for the selected assistant answer", async () => {

@@ -5,6 +5,9 @@ export type ConversationDeliveryStatus = "accepted" | "streaming" | "completed" 
 export type ConversationTurnStatus =
   | "accepted"
   | "running"
+  | "waiting_agents"
+  | "waiting_user"
+  | "completing"
   | "completed"
   | "failed"
   | "cancelled"
@@ -41,6 +44,7 @@ export interface ConversationTurn {
   user_message_id: string;
   assistant_message_id: string | null;
   mission_id: string | null;
+  retry_of_turn_id: string | null;
   status: ConversationTurnStatus;
   created_at: string;
   updated_at: string;
@@ -75,7 +79,8 @@ export interface ConversationPage {
 
 export interface ConversationCancelResult {
   conversation_id: string;
-  mission_id: string;
+  turn_id: string;
+  mission_id: string | null;
   cancel_requested: true;
 }
 
