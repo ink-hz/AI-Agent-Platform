@@ -35,7 +35,12 @@ export function ConversationSidebar({
   conversations, selectedConversationId, loading, error, hasMore, loadingMore, mobileOpen,
   onCloseMobile, onLoadMore, onNewConversation, onRetry, onSelect,
 }: ConversationSidebarProps) {
-  return <aside className={`conversation-sidebar${mobileOpen ? " is-open" : ""}`} aria-label="对话列表面板">
+  return <aside
+    aria-label={mobileOpen ? "对话列表" : "对话列表面板"}
+    aria-modal={mobileOpen ? "true" : undefined}
+    className={`conversation-sidebar${mobileOpen ? " is-open" : ""}`}
+    role={mobileOpen ? "dialog" : undefined}
+  >
     <div className="conversation-sidebar-head">
       <strong>Agent 大脑</strong>
       <button aria-label="关闭对话列表" className="conversation-sidebar-close" onClick={onCloseMobile} type="button">×</button>

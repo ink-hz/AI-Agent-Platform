@@ -51,6 +51,15 @@ export function BrainWorkspacePage({
     return () => controller.abort();
   }, [attempt, client]);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [mobileOpen]);
+
   const upsertConversation = useCallback((conversation: Conversation) => {
     setConversations((current) => mergeConversations(current, [conversation]));
   }, []);
@@ -78,6 +87,12 @@ export function BrainWorkspacePage({
       onClick={() => setMobileOpen(true)}
       type="button"
     >☰</button>
+    {mobileOpen && <button
+      aria-label="关闭对话列表"
+      className="conversation-sidebar-backdrop"
+      onClick={() => setMobileOpen(false)}
+      type="button"
+    />}
     <ConversationSidebar
       conversations={conversations}
       selectedConversationId={conversationId}

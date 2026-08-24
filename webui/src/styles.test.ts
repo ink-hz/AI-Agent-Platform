@@ -203,13 +203,20 @@ describe("Executive Operations visual contract", () => {
   });
 
   it("keeps continuous Conversation content and composer usable on mobile", () => {
-    expect(rule(".conversation-page")).toContain("width: min(860px, 100%)");
+    expect(rule(".page.is-brain-workspace")).toContain("width: 100%");
+    expect(rule(".brain-workspace")).toContain("grid-template-columns: 280px minmax(0,1fr)");
+    expect(rule(".brain-workspace")).toContain("overflow: hidden");
+    expect(rule(".conversation-sidebar")).toContain("overflow-y: auto");
+    expect(rule(".brain-workspace-main")).toContain("overflow-y: auto");
     expect(rule(".conversation-composer")).toContain("position: sticky");
     expect(rule(".conversation-message")).toContain("overflow-wrap: anywhere");
     const mobile = lastBlock("@media (max-width: 720px)");
     expect(mobile).toContain(".conversation-header { align-items: stretch; flex-direction: column; }");
     expect(mobile).toContain(".conversation-composer-actions { align-items: stretch; flex-direction: column; }");
     expect(mobile).toContain(".conversation-send { width: 100%; }");
+    expect(mobile).toContain(".conversation-sidebar { position: fixed;");
+    expect(mobile).toContain(".conversation-sidebar.is-open { transform: translateX(0); }");
+    expect(mobile).toContain("env(safe-area-inset-bottom)");
   });
 
   it("keeps attachment names and cards readable on narrow screens", () => {

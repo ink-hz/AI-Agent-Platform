@@ -64,4 +64,19 @@ describe("BrainWorkspacePage", () => {
     expect(container.querySelector(".conversation-page")?.textContent).toContain("最新会话");
     expect(container.textContent).not.toContain("← 历史对话");
   });
+
+  it("opens and closes the mobile Session drawer without changing the conversation", async () => {
+    await act(async () => root.render(<BrainWorkspacePage
+      account={account} client={{ list: vi.fn().mockResolvedValue({ items: [newer], next_cursor: null }) }}
+    />));
+    const opener = container.querySelector<HTMLButtonElement>('button[aria-label="打开对话列表"]')!;
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => opener.click());
+    expect(opener.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector('[role="dialog"][aria-label="对话列表"]')).not.toBeNull();
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector('[role="dialog"][aria-label="对话列表"]')).toBeNull();
+    expect(container.querySelector("textarea[aria-label='你想完成什么？']")).not.toBeNull();
+  });
 });
