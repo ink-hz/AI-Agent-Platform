@@ -112,10 +112,11 @@ def _main() -> int:
     parser.add_argument("--system-prompt", type=Path, required=True)
     parser.add_argument("--evidence-out", type=Path, required=True)
     arguments = parser.parse_args()
-    from app.config import load_config
-
-    config = load_config()
-    if not config.brain_model_enabled:
+    provider_base_url = os.getenv("PLATFORM_BRAIN_PROVIDER_BASE_URL", "").strip()
+    provider_api_key_file = os.getenv(
+        "PLATFORM_BRAIN_PROVIDER_API_KEY_FILE", ""
+    ).strip()
+    if not provider_base_url or not provider_api_key_file:
         raise ProviderCapabilityError("Brain model runtime disabled")
     manifest = BrainModelManifest.load(arguments.manifest)
     try:
@@ -127,8 +128,8 @@ def _main() -> int:
         raise ProviderCapabilityError("system prompt unavailable") from None
     with httpx.Client(timeout=httpx.Timeout(330.0, connect=10.0)) as client:
         provider = AnthropicMessagesAdapter.from_secret_file(
-            base_url=config.brain_provider_base_url,
-            api_key_file=config.brain_provider_api_key_file,
+            base_url=provider_base_url,
+            api_key_file=provider_api_key_file,
             client=client,
         )
         evidence = run_probe(

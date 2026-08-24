@@ -28,8 +28,9 @@ private.
 
 ## Formal DingTalk production release
 
-The formal release runs five Compose services: PostgreSQL, Platform API,
-loopback proxy, directory/event worker, and DingTalk Stream consumer. Only the
+The formal release runs six Compose services: PostgreSQL, Platform API,
+loopback proxy, directory/event worker, DingTalk Stream consumer, and the
+private durable Agent Brain worker. Only the
 loopback proxy binds a host port, exactly `127.0.0.1:8080`. The API and both
 workers have outbound access but no published port. The API uses the
 `platform_control_app` and append-only audit roles; the directory and Stream
@@ -172,14 +173,49 @@ without skipping or combining a gate:
 4. Worker allowlist and key registration;
 5. cloud image with Brain disabled;
 6. relay canary;
-7. enable Brain;
-8. switch `/` from the management entry to Agent 大脑.
+7. start the private durable worker with V2 intake disabled;
+8. run the real Provider probe and reference crash-recovery acceptance;
+9. atomically enable Brain and V2 intake;
+10. switch `/` from the management entry to Agent 大脑.
 
-The cloud environment flag is `PLATFORM_AGENT_BRAIN_ENABLED`. It is absent or
-`0` during migration, image and relay validation. The authenticated root then
+The cloud environment flags are `PLATFORM_AGENT_BRAIN_ENABLED` and
+`PLATFORM_AGENT_BRAIN_V2_ENABLED`. Both are absent or `0` during migration,
+image, Provider, recovery, and relay validation. They move to `1` in the same
+mode-0600 environment-file replacement. The authenticated root then
 redirects to `/admin`; only an explicit value of `1` enables Mission APIs and
 the use root. The relay remains separately controlled by
 `PLATFORM_EXECUTION_RELAY_ENABLED=1`.
+
+Before staging, place the configured Provider key at
+`/opt/orbbec-agent-platform/private/brain-provider-api-key` as a root-owned,
+non-symlink, mode-0600 regular file. It is copied only into the
+`platform-brain-secrets` volume as UID 10001. The Brain service does not receive
+the DingTalk AppSecret, publishes no port, uses a read-only filesystem, drops
+all Linux capabilities, and has `no-new-privileges`. Its database credential is
+the dedicated `platform_brain_worker` DSN.
+
+Stage B is refused unless the evidence resolves to exactly:
+
+```text
+PROVIDER_PROBE=passed
+REFERENCE_RECOVERY=passed
+V1_NONTERMINAL_MISSIONS=0
+V2_MISSION_RUN_WRITES=0
+LOCAL_WORKER_ACCEPTS=metabot_local
+FAE_MANAGED_FILES_UNCHANGED=true
+```
+
+The Provider evidence JSON and `provider-evidence.sha256` live under the
+root-only `/opt/orbbec-agent-platform/private/agent-brain-v2` directory. They
+contain capability booleans, version hashes, request IDs and token counters,
+but no key, Prompt text, user content, raw model response, or Adapter payload.
+The reference-recovery marker is produced only by the acceptance procedure;
+creating it manually bypasses the release contract and is prohibited.
+
+Rollback replaces both Brain flags with `0`, stops the private worker, and
+preserves every `platform_brain` row. It never creates a V1 Mission for an
+active V2 Turn. Existing non-terminal V2 work remains visible as interrupted
+unless the same V2 worker release is restored.
 
 The cloud stage runs `python -m app.agent_brain.conversation_backfill` after
 control migrations and before any control-plane consumer starts. It uses only

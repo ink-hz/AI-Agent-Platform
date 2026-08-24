@@ -35,8 +35,11 @@ class AgentUseAuthorization:
         capability_path: str | Path | None = None,
         fleet_catalog: AgentCatalog | None = None,
         connect: Callable[..., Any] = psycopg.connect,
+        dsn_purpose: str = "app",
     ) -> None:
-        parsed = validate_control_dsn(control_database_url, purpose="app")
+        if dsn_purpose not in {"app", "brain"}:
+            raise ValueError("Agent authorization DSN purpose invalid")
+        parsed = validate_control_dsn(control_database_url, purpose=dsn_purpose)
         self.environment = parsed.environment
         self._control_database_url = control_database_url
         self._connect = connect

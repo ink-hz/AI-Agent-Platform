@@ -406,10 +406,12 @@ as $function$
 begin
   if (
        current_database() = 'agent_platform_control'
-       and session_user <> 'platform_control_app'
+       and session_user not in ('platform_control_app','platform_brain_worker')
      ) or (
        current_database() = 'agent_platform_control_preview'
-       and session_user <> 'platform_control_app_preview'
+       and session_user not in (
+         'platform_control_app_preview','platform_brain_worker_preview'
+       )
      ) or current_database() not in (
        'agent_platform_control','agent_platform_control_preview'
      )
@@ -576,6 +578,200 @@ begin
 end
 $function$;
 
+create function platform_control.enqueue_brain_relay_job_v39(
+  selected_job_id uuid,
+  selected_run_id uuid,
+  selected_agent_id text,
+  selected_payload_ciphertext bytea,
+  selected_key_version integer
+) returns uuid
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_control
+as $function$
+begin
+  if (
+       current_database() = 'agent_platform_control'
+       and session_user <> 'platform_brain_worker'
+     ) or (
+       current_database() = 'agent_platform_control_preview'
+       and session_user <> 'platform_brain_worker_preview'
+     ) or current_database() not in (
+       'agent_platform_control','agent_platform_control_preview'
+     )
+  then raise insufficient_privilege using message='Brain relay caller invalid';
+  end if;
+  if selected_job_id is null or selected_run_id is null
+     or selected_agent_id not in (
+       'hr-bot','fae-bot','marketing-prospecting-bot',
+       'marketing-inbound-bot','marketing-voice-bot',
+       'marketing-intelligence-bot','marketing-gtm-bot'
+     )
+     or octet_length(selected_payload_ciphertext) not between 29 and 1048576
+     or selected_key_version <= 0
+  then raise check_violation using message='Brain relay job invalid';
+  end if;
+  insert into platform_control.execution_jobs (
+    job_id,run_id,agent_id,payload_ciphertext,encryption_key_version,
+    status,cancel_requested,job_kind
+  ) values (
+    selected_job_id,selected_run_id,selected_agent_id,
+    selected_payload_ciphertext,selected_key_version,'queued',false,
+    'metabot_local'
+  );
+  return selected_job_id;
+end
+$function$;
+
+create function platform_control.brain_relay_worker_available_v39(
+  selected_agent_id text,
+  selected_freshness_seconds integer
+) returns boolean
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, platform_control
+as $function$
+begin
+  if (
+       current_database() = 'agent_platform_control'
+       and session_user <> 'platform_brain_worker'
+     ) or (
+       current_database() = 'agent_platform_control_preview'
+       and session_user <> 'platform_brain_worker_preview'
+     ) or current_database() not in (
+       'agent_platform_control','agent_platform_control_preview'
+     )
+  then raise insufficient_privilege using message='Brain relay caller invalid';
+  end if;
+  if selected_agent_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+     or selected_freshness_seconds not between 1 and 3600
+  then raise check_violation using message='Brain relay worker query invalid';
+  end if;
+  return exists(
+    select 1 from platform_control.execution_workers
+    where status='active' and selected_agent_id=any(allowed_agent_ids)
+      and last_seen_at>clock_timestamp()
+        -(selected_freshness_seconds*interval '1 second')
+  );
+end
+$function$;
+
+create function platform_control.brain_relay_job_state_v39(
+  selected_run_id uuid
+) returns table(
+  run_id uuid,status text,cancel_requested boolean,created_at timestamptz,
+  updated_at timestamptz,lease_expires_at timestamptz,terminal_at timestamptz,
+  stop_requested_status text,job_kind text,database_now timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, platform_control
+as $function$
+begin
+  if (
+       current_database() = 'agent_platform_control'
+       and session_user <> 'platform_brain_worker'
+     ) or (
+       current_database() = 'agent_platform_control_preview'
+       and session_user <> 'platform_brain_worker_preview'
+     ) or current_database() not in (
+       'agent_platform_control','agent_platform_control_preview'
+     )
+  then raise insufficient_privilege using message='Brain relay caller invalid';
+  end if;
+  return query select
+    job.run_id,job.status,job.cancel_requested,job.created_at,job.updated_at,
+    job.lease_expires_at,job.terminal_at,job.stop_requested_status,
+    job.job_kind,clock_timestamp()
+  from platform_control.execution_jobs job
+  where job.run_id=selected_run_id and job.job_kind='metabot_local';
+end
+$function$;
+
+create function platform_control.brain_relay_events_v39(
+  selected_run_id uuid
+) returns table(
+  seq integer,event_type text,payload_ciphertext bytea,
+  encryption_key_version integer,created_at timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, platform_control
+as $function$
+begin
+  if (
+       current_database() = 'agent_platform_control'
+       and session_user <> 'platform_brain_worker'
+     ) or (
+       current_database() = 'agent_platform_control_preview'
+       and session_user <> 'platform_brain_worker_preview'
+     ) or current_database() not in (
+       'agent_platform_control','agent_platform_control_preview'
+     )
+  then raise insufficient_privilege using message='Brain relay caller invalid';
+  end if;
+  if not exists(
+    select 1 from platform_control.execution_jobs job
+    where job.run_id=selected_run_id and job.job_kind='metabot_local'
+  ) then raise no_data_found using message='Brain relay job missing';
+  end if;
+  return query select
+    event.seq,event.event_type,event.payload_ciphertext,
+    event.encryption_key_version,event.created_at
+  from platform_control.execution_events event
+  where event.run_id=selected_run_id order by event.seq;
+end
+$function$;
+
+create function platform_control.request_brain_relay_cancel_v39(
+  selected_run_id uuid
+) returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_control
+as $function$
+declare
+  selected_job platform_control.execution_jobs%rowtype;
+begin
+  if (
+       current_database() = 'agent_platform_control'
+       and session_user <> 'platform_brain_worker'
+     ) or (
+       current_database() = 'agent_platform_control_preview'
+       and session_user <> 'platform_brain_worker_preview'
+     ) or current_database() not in (
+       'agent_platform_control','agent_platform_control_preview'
+     )
+  then
+    raise insufficient_privilege using
+      message = 'Brain relay cancellation caller invalid';
+  end if;
+  select * into selected_job from platform_control.execution_jobs
+  where run_id=selected_run_id and job_kind='metabot_local' for update;
+  if not found or selected_job.status in (
+       'completed','failed','cancelled','interrupted'
+     )
+  then
+    return false;
+  end if;
+  if selected_job.status='queued' then
+    update platform_control.execution_jobs set
+      status='cancelled',cancel_requested=true,terminal_at=clock_timestamp(),
+      updated_at=clock_timestamp()
+    where run_id=selected_run_id;
+  else
+    update platform_control.execution_jobs set
+      cancel_requested=true,stop_requested_status='cancelled',
+      stop_acknowledged_at=null,updated_at=clock_timestamp()
+    where run_id=selected_run_id;
+  end if;
+  return true;
+end
+$function$;
+
 revoke all on all tables in schema platform_brain from public;
 revoke all on function platform_control.upsert_brain_worker_heartbeat_v39(
   text,text,text,timestamptz
@@ -586,6 +782,18 @@ revoke all on function platform_control.resolve_agent_use_decision_v39(
 revoke all on function platform_brain.append_agent_task_event_v39(
   uuid,integer,text,bytea,integer,bytea,timestamptz,text,bytea,integer,bytea
 ) from public;
+revoke all on function platform_control.request_brain_relay_cancel_v39(uuid)
+from public;
+revoke all on function platform_control.enqueue_brain_relay_job_v39(
+  uuid,uuid,text,bytea,integer
+) from public;
+revoke all on function platform_control.brain_relay_worker_available_v39(
+  text,integer
+) from public;
+revoke all on function platform_control.brain_relay_job_state_v39(uuid)
+from public;
+revoke all on function platform_control.brain_relay_events_v39(uuid)
+from public;
 
 do $migration$
 declare
@@ -637,6 +845,29 @@ begin
       'uuid,integer,text,bytea,integer,bytea,timestamptz,text,bytea,integer,bytea) '
       'from %I', role_name
     );
+    execute format(
+      'revoke all on function '
+      'platform_control.request_brain_relay_cancel_v39(uuid) from %I',
+      role_name
+    );
+    execute format(
+      'revoke all on function '
+      'platform_control.enqueue_brain_relay_job_v39('
+      'uuid,uuid,text,bytea,integer) from %I', role_name
+    );
+    execute format(
+      'revoke all on function '
+      'platform_control.brain_relay_worker_available_v39(text,integer) '
+      'from %I', role_name
+    );
+    execute format(
+      'revoke all on function '
+      'platform_control.brain_relay_job_state_v39(uuid) from %I', role_name
+    );
+    execute format(
+      'revoke all on function '
+      'platform_control.brain_relay_events_v39(uuid) from %I', role_name
+    );
   end loop;
 
   execute format('grant usage on schema platform_brain to %I', selected_app);
@@ -645,6 +876,9 @@ begin
   execute format(
     'grant select on all tables in schema platform_brain to %I',
     selected_brain
+  );
+  execute format(
+    'grant select on platform_control.worker_heartbeats to %I', selected_brain
   );
   execute format(
     'grant insert on platform_brain.authorization_snapshots, '
@@ -701,6 +935,34 @@ begin
     'grant execute on function '
     'platform_control.resolve_agent_use_decision_v39(uuid,text) to %I',
     selected_app
+  );
+  execute format(
+    'grant execute on function '
+    'platform_control.resolve_agent_use_decision_v39(uuid,text) to %I',
+    selected_brain
+  );
+  execute format(
+    'grant execute on function '
+    'platform_control.request_brain_relay_cancel_v39(uuid) to %I',
+    selected_brain
+  );
+  execute format(
+    'grant execute on function '
+    'platform_control.enqueue_brain_relay_job_v39('
+    'uuid,uuid,text,bytea,integer) to %I', selected_brain
+  );
+  execute format(
+    'grant execute on function '
+    'platform_control.brain_relay_worker_available_v39(text,integer) to %I',
+    selected_brain
+  );
+  execute format(
+    'grant execute on function '
+    'platform_control.brain_relay_job_state_v39(uuid) to %I', selected_brain
+  );
+  execute format(
+    'grant execute on function '
+    'platform_control.brain_relay_events_v39(uuid) to %I', selected_brain
   );
   execute format(
     'grant execute on function '

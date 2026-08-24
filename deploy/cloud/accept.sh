@@ -186,6 +186,79 @@ run_relay_canary() {
   [[ -x "$relay_accept" && ! -L "$relay_accept" ]] || fail
   relay_result="$(run_agentops "$relay_accept" "$relay_acceptance_config")" || fail
   [[ "$relay_result" == "AGENT_EXECUTION_RELAY_OK worker=agentops-mac-primary agents=7 public_ports_added=0 duplicate_dispatches=0" ]] || fail
+  LOCAL_WORKER_ACCEPTS=metabot_local
+  [[ "$LOCAL_WORKER_ACCEPTS" == "metabot_local" ]] || fail
+}
+
+v2_cutover_gates() {
+  local fae_gate_before fae_gate_after remote_gates
+  fae_gate_before="$(remote_fae_snapshot)" || fail
+  remote_gates="$(remote /bin/bash -s <<'REMOTE'
+set -euo pipefail
+fail() { echo AGENT_BRAIN_V2_GATES_FAILED >&2; exit 1; }
+root=/opt/orbbec-agent-platform
+private="$root/private"
+release="$(readlink -f "$root/current")"
+environment="$private/platform.env"
+compose="$release/deploy/cloud/compose.yaml"
+evidence_dir="$private/agent-brain-v2"
+[[ "$release" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ ]] || fail
+[[ -f "$environment" && ! -L "$environment" && -f "$compose" && ! -L "$compose" ]] || fail
+mkdir -p -m 700 "$evidence_dir"
+reference_evidence="$evidence_dir/reference-recovery.passed"
+[[ -f "$reference_evidence" && ! -L "$reference_evidence" ]] || fail
+[[ "$(stat -c '%a %U' "$reference_evidence")" == "600 root" ]] || fail
+[[ "$(cat "$reference_evidence")" == "REFERENCE_RECOVERY=passed" ]] || fail
+REFERENCE_RECOVERY=passed
+compose_command=(docker compose --env-file "$environment" -f "$compose")
+brain="$("${compose_command[@]}" ps -q platform-brain)"
+postgres="$("${compose_command[@]}" ps -q platform-postgres)"
+[[ -n "$brain" && -n "$postgres" ]] || fail
+probe_name="provider-evidence.$$.json"
+docker exec "$brain" python -m app.agent_brain.provider_probe \
+  --manifest /app/brain-model.release.json \
+  --system-prompt /app/backend/app/agent_brain/prompts/brain_v1.md \
+  --evidence-out "/tmp/$probe_name" || fail
+docker cp "$brain:/tmp/$probe_name" "$evidence_dir/provider-evidence.json.part" >/dev/null
+docker exec "$brain" rm -f -- "/tmp/$probe_name"
+chown root:root "$evidence_dir/provider-evidence.json.part"
+chmod 600 "$evidence_dir/provider-evidence.json.part"
+python3 - "$release" "$evidence_dir/provider-evidence.json.part" <<'PY'
+import hashlib,json,pathlib,re,sys
+release,evidence=map(pathlib.Path,sys.argv[1:])
+manifest=release/'deploy/cloud/brain-model.release.json'
+prompt=release/'backend/app/agent_brain/prompts/brain_v1.md'
+value=json.loads(evidence.read_bytes())
+required={
+    'streaming','forced_tool_choice','omitted_thinking',
+    'mid_conversation_system','one_hour_cache','one_million_context',
+}
+if value.get('manifest_sha256') != hashlib.sha256(manifest.read_bytes()).hexdigest(): raise SystemExit(1)
+if value.get('system_prompt_sha256') != hashlib.sha256(prompt.read_bytes()).hexdigest(): raise SystemExit(1)
+if set(value.get('supported',{})) != required or not all(value['supported'].values()): raise SystemExit(1)
+if value.get('stable_cache_ttl') != '1h' or value.get('rolling_cache_ttl') != '5m': raise SystemExit(1)
+PY
+mv -f "$evidence_dir/provider-evidence.json.part" "$evidence_dir/provider-evidence.json"
+sha256sum "$evidence_dir/provider-evidence.json" > "$evidence_dir/provider-evidence.sha256.part"
+chmod 600 "$evidence_dir/provider-evidence.sha256.part"
+chown root:root "$evidence_dir/provider-evidence.sha256.part"
+mv -f "$evidence_dir/provider-evidence.sha256.part" "$evidence_dir/provider-evidence.sha256"
+PROVIDER_PROBE=passed
+V1_NONTERMINAL_MISSIONS="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from platform_control.missions where status in ('planning','delegated','synthesizing');")"
+V2_MISSION_RUN_WRITES="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from platform_control.mission_runs run join platform_control.missions mission on mission.mission_id=run.mission_id join platform_brain.brain_loops loop on loop.turn_id=mission.turn_id;")"
+[[ "$V1_NONTERMINAL_MISSIONS" == "0" && "$V2_MISSION_RUN_WRITES" == "0" ]] || fail
+printf '%s\n' \
+  "PROVIDER_PROBE=$PROVIDER_PROBE" \
+  "REFERENCE_RECOVERY=$REFERENCE_RECOVERY" \
+  "V1_NONTERMINAL_MISSIONS=$V1_NONTERMINAL_MISSIONS" \
+  "V2_MISSION_RUN_WRITES=$V2_MISSION_RUN_WRITES"
+REMOTE
+)" || fail
+  [[ "$remote_gates" == $'PROVIDER_PROBE=passed\nREFERENCE_RECOVERY=passed\nV1_NONTERMINAL_MISSIONS=0\nV2_MISSION_RUN_WRITES=0' ]] || fail
+  fae_gate_after="$(remote_fae_snapshot)" || fail
+  [[ "$fae_gate_after" == "$fae_gate_before" ]] || fail
+  FAE_MANAGED_FILES_UNCHANGED=true
+  [[ "$FAE_MANAGED_FILES_UNCHANGED" == "true" ]] || fail
 }
 
 remote_feature() {
@@ -248,8 +321,23 @@ import sys
 source, target = map(pathlib.Path, sys.argv[1:3])
 selected = sys.argv[3]
 lines = source.read_text(encoding="utf-8").splitlines()
-kept = [line for line in lines if not line.startswith("PLATFORM_AGENT_BRAIN_ENABLED=")]
-raw = ("\n".join(kept + [f"PLATFORM_AGENT_BRAIN_ENABLED={selected}"]) + "\n").encode()
+kept = [
+    line for line in lines
+    if not line.startswith((
+        "PLATFORM_AGENT_BRAIN_ENABLED=",
+        "PLATFORM_AGENT_BRAIN_V2_ENABLED=",
+    ))
+]
+raw = (
+    "\n".join(
+        kept
+        + [
+            f"PLATFORM_AGENT_BRAIN_ENABLED={selected}",
+            f"PLATFORM_AGENT_BRAIN_V2_ENABLED={selected}",
+        ]
+    )
+    + "\n"
+).encode()
 descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
 try:
     os.write(descriptor, raw)
@@ -270,6 +358,7 @@ done
 api_id="$("${compose_command[@]}" ps -q platform-api)"
 [[ -n "$api_id" ]] || fail
 /usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_id" | /usr/bin/grep -Fxq "PLATFORM_AGENT_BRAIN_ENABLED=$selected" || fail
+/usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_id" | /usr/bin/grep -Fxq "PLATFORM_AGENT_BRAIN_V2_ENABLED=$selected" || fail
 [[ "$fae_id" == "$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)" ]] || fail
 [[ "$fae_image" == "$(/usr/bin/docker inspect --format '{{.Image}}' ai-fae-backend)" ]] || fail
 [[ "$fae_started" == "$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)" ]] || fail
@@ -909,7 +998,7 @@ REMOTE
       /usr/bin/printf 'restored_conversation_id=%s\nthird_turn_id=%s\nthird_mission_id=%s\nrestore_turn_count=3\nrestore_message_count=6\n' \
         "$restored_conversation_id" "$third_turn_id" "$third_mission_id"
     fi
-    /usr/bin/printf 'metabot_release_sha=%s\nagent_team_release_sha=%s\nlocal_listener_table=%s\nrollback=PLATFORM_AGENT_BRAIN_ENABLED=0\n' \
+    /usr/bin/printf 'metabot_release_sha=%s\nagent_team_release_sha=%s\nlocal_listener_table=%s\nrollback=PLATFORM_AGENT_BRAIN_ENABLED=0,PLATFORM_AGENT_BRAIN_V2_ENABLED=0\n' \
       "$metabot_release_sha" "$agent_team_release_sha" "$local_listener_table"
     /usr/bin/printf 'acceptance_status=complete\n'
   } > "$evidence_generation"
@@ -936,6 +1025,7 @@ enable_with_rollback() {
   local_runtime_preflight
   remote_feature 0
   run_relay_canary
+  v2_cutover_gates
   publish_formal_nginx
   remote_feature 1
   trap - ERR EXIT

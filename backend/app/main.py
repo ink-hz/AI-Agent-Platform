@@ -696,7 +696,12 @@ def create_app(
                         operations_poll_loop(operations_scheduler)
                     )
                 )
-        if agent_brain_orchestrator is not None:
+        # V2 is executed exclusively by the private durable worker.  Keep the
+        # V1 repository/routes for history, but never run both schedulers.
+        if (
+            agent_brain_orchestrator is not None
+            and not config.agent_brain_v2_enabled
+        ):
             tasks.append(asyncio.create_task(agent_brain_loop(agent_brain_orchestrator)))
         try:
             yield

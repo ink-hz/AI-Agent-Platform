@@ -23,6 +23,8 @@ signing_public="$private_root/replica-signing-public.key"
 ssh_private="$private_root/replica-transport-ed25519"
 backup_private="$private_root/backup-recovery-x25519.key"
 backup_public="$private_root/backup-recovery-x25519.pub"
+brain_manifest="$repository_root/deploy/cloud/brain-model.release.json"
+brain_prompt="$repository_root/backend/app/agent_brain/prompts/brain_v1.md"
 
 if [[ ! -e "$identity_key" ]]; then
   /usr/bin/openssl rand 32 > "$identity_key"
@@ -112,3 +114,9 @@ echo "AUTHORIZED_KEY=restrict,command=\"/opt/orbbec-agent-platform/current/deplo
 echo "SIGNING_PUBLIC_BASE64=$(base64 < "$signing_public" | tr -d '\n')"
 echo "SSH_FINGERPRINT=$(/usr/bin/ssh-keygen -lf "$ssh_private.pub" | /usr/bin/awk '{print $2}')"
 echo "BACKUP_FINGERPRINT=$(/usr/bin/shasum -a 256 "$backup_public" | /usr/bin/awk '{print $1}')"
+[[ -f "$brain_manifest" && ! -L "$brain_manifest" && -f "$brain_prompt" && ! -L "$brain_prompt" ]] || {
+  echo "KEY_BOOTSTRAP_FAILED" >&2
+  exit 1
+}
+echo "BRAIN_MODEL_MANIFEST_SHA256=$(/usr/bin/shasum -a 256 "$brain_manifest" | /usr/bin/awk '{print $1}')"
+echo "BRAIN_SYSTEM_PROMPT_SHA256=$(/usr/bin/shasum -a 256 "$brain_prompt" | /usr/bin/awk '{print $1}')"

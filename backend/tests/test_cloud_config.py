@@ -142,3 +142,17 @@ def test_rejects_unknown_deployment_mode(monkeypatch):
 
     with pytest.raises(RuntimeError, match="deployment mode"):
         load_config()
+
+
+def test_v2_cutover_requires_v1_brain_and_never_enables_implicitly(
+    monkeypatch, tmp_path
+):
+    _configure_cloud(monkeypatch, tmp_path)
+    monkeypatch.setenv("PLATFORM_AGENT_BRAIN_V2_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_AGENT_BRAIN_ENABLED", "0")
+
+    with pytest.raises(ValueError, match="V2 requires Agent Brain"):
+        load_config()
+
+    monkeypatch.setenv("PLATFORM_AGENT_BRAIN_V2_ENABLED", "0")
+    assert load_config().agent_brain_v2_enabled is False

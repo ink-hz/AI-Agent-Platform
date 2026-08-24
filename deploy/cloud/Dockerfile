@@ -22,6 +22,7 @@ COPY --chown=10001:10001 backend/migrations ./migrations
 COPY --chown=10001:10001 backend/control_migrations ./control_migrations
 COPY --chown=10001:10001 deploy/cloud/registry.yaml /app/registry.yaml
 COPY --chown=10001:10001 deploy/cloud/metabot.runtime-contract.json /app/metabot.runtime-contract.json
+COPY --chown=10001:10001 deploy/cloud/brain-model.release.json /app/brain-model.release.json
 COPY --from=web-builder --chown=10001:10001 /src/webui/dist ./app/static
 USER platform:platform
 EXPOSE 8080

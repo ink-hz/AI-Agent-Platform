@@ -88,13 +88,17 @@ class ExecutionRelayRepository:
         *,
         content_codec: ContentCodec,
         connect: Callable[..., Any] = psycopg.connect,
+        dsn_purpose: str = "app",
     ) -> None:
-        validate_control_dsn(control_database_url, purpose="app")
+        if dsn_purpose not in {"app", "brain"}:
+            raise ValueError("execution relay DSN purpose invalid")
+        validate_control_dsn(control_database_url, purpose=dsn_purpose)
         if not isinstance(content_codec, ContentCodec):
             raise ValueError("content codec required")
         self._control_database_url = control_database_url
         self._connect = connect
         self.content_codec = content_codec
+        self._dsn_purpose = dsn_purpose
 
     def __repr__(self) -> str:
         return (
@@ -159,14 +163,31 @@ class ExecutionRelayRepository:
                 payload.model_dump(mode="json"),
             )
             with self._connection() as connection, connection.cursor() as cursor:
-                linked_mission = cursor.execute(
-                    "select mission.cancel_requested "
-                    "from platform_control.mission_runs run_row "
-                    "join platform_control.missions mission "
-                    "on mission.mission_id=run_row.mission_id "
-                    "where run_row.run_id=%s for update of mission",
-                    (payload.run_id,),
-                ).fetchone()
+                if self._dsn_purpose == "brain":
+                    row = cursor.execute(
+                        "select platform_control.enqueue_brain_relay_job_v39("
+                        "%s,%s,%s,%s,%s) as job_id",
+                        (
+                            job_id,
+                            payload.run_id,
+                            payload.agent_id,
+                            sealed.ciphertext,
+                            sealed.key_version,
+                        ),
+                    ).fetchone()
+                    if row is None or row["job_id"] != job_id:
+                        raise ExecutionRelayError("execution relay unavailable")
+                    return job_id
+                linked_mission = None
+                if payload.job_kind != "metabot_local":
+                    linked_mission = cursor.execute(
+                        "select mission.cancel_requested "
+                        "from platform_control.mission_runs run_row "
+                        "join platform_control.missions mission "
+                        "on mission.mission_id=run_row.mission_id "
+                        "where run_row.run_id=%s for update of mission",
+                        (payload.run_id,),
+                    ).fetchone()
                 cancelled = bool(
                     linked_mission
                     and linked_mission["cancel_requested"] is True
@@ -488,6 +509,13 @@ class ExecutionRelayRepository:
     def request_cancel(self, run_id: UUID) -> bool:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
+                if self._dsn_purpose == "brain":
+                    row = cursor.execute(
+                        "select platform_control.request_brain_relay_cancel_v39(%s) "
+                        "as accepted",
+                        (run_id,),
+                    ).fetchone()
+                    return bool(row and row["accepted"])
                 current = cursor.execute(
                     "select status from platform_control.execution_jobs "
                     "where run_id=%s for update",
@@ -574,14 +602,20 @@ class ExecutionRelayRepository:
             raise ExecutionRelayNotFound()
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                row = cursor.execute(
-                    "select run_id,status,cancel_requested,created_at,updated_at,"
-                    "lease_expires_at,terminal_at,stop_requested_status,"
-                    "job_kind,"
-                    "now() as database_now "
-                    "from platform_control.execution_jobs where run_id=%s for update",
-                    (run_id,),
-                ).fetchone()
+                if self._dsn_purpose == "brain":
+                    row = cursor.execute(
+                        "select * from platform_control.brain_relay_job_state_v39(%s)",
+                        (run_id,),
+                    ).fetchone()
+                else:
+                    row = cursor.execute(
+                        "select run_id,status,cancel_requested,created_at,updated_at,"
+                        "lease_expires_at,terminal_at,stop_requested_status,"
+                        "job_kind,"
+                        "now() as database_now "
+                        "from platform_control.execution_jobs where run_id=%s for update",
+                        (run_id,),
+                    ).fetchone()
                 if row is None:
                     raise ExecutionRelayNotFound()
                 queued_expired = (
@@ -602,7 +636,10 @@ class ExecutionRelayRepository:
                         - timedelta(seconds=running_deadline_seconds)
                     )
                 )
-                if queued_expired or running_expired:
+                if (
+                    self._dsn_purpose != "brain"
+                    and (queued_expired or running_expired)
+                ):
                     expired_status = (
                         "cancelled"
                         if row["stop_requested_status"] == "cancelled"
@@ -647,6 +684,13 @@ class ExecutionRelayRepository:
             return False
         try:
             with self._connection() as connection:
+                if self._dsn_purpose == "brain":
+                    row = connection.execute(
+                        "select platform_control.brain_relay_worker_available_v39("
+                        "%s,%s) as available",
+                        (agent_id, freshness_seconds),
+                    ).fetchone()
+                    return bool(row and row["available"])
                 row = connection.execute(
                     "select exists(select 1 from platform_control.execution_workers "
                     "where status='active' and %s=any(allowed_agent_ids) and "
@@ -664,20 +708,26 @@ class ExecutionRelayRepository:
             raise ExecutionRelayNotFound()
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                job = cursor.execute(
-                    "select run_id from platform_control.execution_jobs "
-                    "where run_id=%s",
-                    (run_id,),
-                ).fetchone()
-                if job is None:
-                    raise ExecutionRelayNotFound()
-                rows = cursor.execute(
-                    "select seq,event_type,payload_ciphertext,"
-                    "encryption_key_version,created_at "
-                    "from platform_control.execution_events where run_id=%s "
-                    "order by seq",
-                    (run_id,),
-                ).fetchall()
+                if self._dsn_purpose == "brain":
+                    rows = cursor.execute(
+                        "select * from platform_control.brain_relay_events_v39(%s)",
+                        (run_id,),
+                    ).fetchall()
+                else:
+                    job = cursor.execute(
+                        "select run_id from platform_control.execution_jobs "
+                        "where run_id=%s",
+                        (run_id,),
+                    ).fetchone()
+                    if job is None:
+                        raise ExecutionRelayNotFound()
+                    rows = cursor.execute(
+                        "select seq,event_type,payload_ciphertext,"
+                        "encryption_key_version,created_at "
+                        "from platform_control.execution_events where run_id=%s "
+                        "order by seq",
+                        (run_id,),
+                    ).fetchall()
             events: list[RelayEvent] = []
             expected = 1
             for row in rows:

@@ -36,14 +36,30 @@ environment_path="$platform_root/private/platform.env"
 current_compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$RELEASE_PATH/deploy/cloud/compose.yaml")
 current_services="$("${current_compose[@]}" config --services)"
 services_to_stop=()
-for service in platform-loopback platform-api platform-directory platform-dingtalk-stream; do
+for service in platform-loopback platform-api platform-directory platform-dingtalk-stream platform-brain; do
   if /usr/bin/grep -Fxq "$service" <<<"$current_services"; then
     services_to_stop+=("$service")
   fi
 done
 [[ "${#services_to_stop[@]}" -gt 0 ]] || fail
 "${current_compose[@]}" stop "${services_to_stop[@]}" >/dev/null
-/bin/cp -p "$PREVIOUS_ENVIRONMENT" "$environment_path.part"
+/usr/bin/python3 - "$PREVIOUS_ENVIRONMENT" "$environment_path.part" <<'PY'
+import os,pathlib,sys
+source,target=map(pathlib.Path,sys.argv[1:])
+lines=source.read_text(encoding="utf-8").splitlines()
+kept=[line for line in lines if not line.startswith((
+    "PLATFORM_AGENT_BRAIN_ENABLED=","PLATFORM_AGENT_BRAIN_V2_ENABLED=",
+))]
+raw=("\n".join(kept+[
+    "PLATFORM_AGENT_BRAIN_ENABLED=0",
+    "PLATFORM_AGENT_BRAIN_V2_ENABLED=0",
+])+"\n").encode()
+descriptor=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),0o600)
+try:
+    os.write(descriptor,raw); os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+PY
 /bin/chown root:root "$environment_path.part"
 /bin/chmod 600 "$environment_path.part"
 /bin/mv -f "$environment_path.part" "$environment_path"
@@ -52,7 +68,7 @@ done
 previous_compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$PREVIOUS_RELEASE/deploy/cloud/compose.yaml")
 previous_services="$("${previous_compose[@]}" config --services)"
 services_to_start=()
-for service in platform-api platform-directory platform-dingtalk-stream platform-loopback; do
+for service in platform-api platform-directory platform-dingtalk-stream platform-brain platform-loopback; do
   if /usr/bin/grep -Fxq "$service" <<<"$previous_services"; then
     services_to_start+=("$service")
   fi

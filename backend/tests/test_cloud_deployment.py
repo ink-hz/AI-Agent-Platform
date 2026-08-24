@@ -22,6 +22,7 @@ def test_compose_is_isolated_loopback_only_and_hardened():
         "platform-postgres",
         "platform-directory",
         "platform-dingtalk-stream",
+        "platform-brain",
     }
     assert "ports" not in services["platform-postgres"]
     assert "ports" not in services["platform-api"]
@@ -48,6 +49,15 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert services["platform-api"]["environment"]["PLATFORM_HOST"] == "127.0.0.1"
     assert services["platform-api"]["environment"]["PLATFORM_REVIEW_ENABLED"] == "0"
     assert services["platform-api"]["environment"]["PLATFORM_ATTACHMENT_ENABLED"] == "0"
+    assert services["platform-api"]["environment"]["PLATFORM_AGENT_BRAIN_V2_ENABLED"] == "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
+    assert "ports" not in services["platform-brain"]
+    assert services["platform-brain"]["read_only"] is True
+    assert services["platform-brain"]["user"] == "10001:10001"
+    assert services["platform-brain"]["cap_drop"] == ["ALL"]
+    assert services["platform-brain"]["security_opt"] == ["no-new-privileges:true"]
+    assert set(services["platform-brain"]["networks"]) == {
+        "platform-edge", "platform-internal"
+    }
     assert services["platform-api"]["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.3/32"
     assert services["platform-loopback"]["environment"]["PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS"] == "127.0.0.1/32,172.31.0.1/32"
     assert services["platform-api"]["volumes"] == [
@@ -76,6 +86,7 @@ def test_image_is_multistage_nonroot_and_contains_only_runtime_assets():
     assert "healthcheck" in dockerfile
     assert "uvicorn" in dockerfile
     assert '"--no-proxy-headers"' in dockerfile
+    assert "brain-model.release.json" in dockerfile
     for forbidden in ("copy .git", "copy backend/tests", "sensitive-dictionary", "identity-hmac"):
         assert forbidden not in dockerfile
 

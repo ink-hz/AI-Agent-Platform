@@ -111,6 +111,7 @@ control_secret_consumer_services=(
   platform-directory-preview
   platform-dingtalk-stream
   platform-dingtalk-stream-preview
+  platform-brain
 )
 previous_control_consumers=()
 previous_release=""
@@ -432,7 +433,8 @@ for volume_name in \
   orbbec-agent-platform-postgres-secrets \
   orbbec-agent-platform-api-secrets \
   orbbec-agent-platform-migrate-secrets \
-  orbbec-agent-platform-import-secrets; do
+  orbbec-agent-platform-import-secrets \
+  orbbec-agent-platform-brain-secrets; do
   /usr/bin/docker volume create "$volume_name" >/dev/null
 done
 /usr/bin/docker run --rm --network none \
@@ -467,14 +469,16 @@ if [[ -n "$previous_release" && -f "$environment_path" ]]; then
   fi
 fi
 PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
+PLATFORM_AGENT_BRAIN_V2_ENABLED="${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
 # A first-production deploy only establishes schema, Worker identity and the
 # disabled image. The separately audited acceptance transaction owns enablement.
 [[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail
-/usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\nPLATFORM_AGENT_BRAIN_ENABLED=%s\n' \
-  "$image_name" "$PLATFORM_AGENT_BRAIN_ENABLED" > "$environment_path"
+[[ "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "0" ]] || fail
+/usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\nPLATFORM_AGENT_BRAIN_ENABLED=%s\nPLATFORM_AGENT_BRAIN_V2_ENABLED=%s\n' \
+  "$image_name" "$PLATFORM_AGENT_BRAIN_ENABLED" "$PLATFORM_AGENT_BRAIN_V2_ENABLED" > "$environment_path"
 /bin/chown root:root "$environment_path"
 /bin/chmod 600 "$environment_path"
-export PLATFORM_AGENT_BRAIN_ENABLED
+export PLATFORM_AGENT_BRAIN_ENABLED PLATFORM_AGENT_BRAIN_V2_ENABLED
 unset PLATFORM_CLOUD_AUTH_MODE
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$release_path/deploy/cloud/compose.yaml")
 "${compose[@]}" up -d --force-recreate platform-postgres >/dev/null
@@ -517,6 +521,14 @@ worker_bootstrap_result="$(/usr/bin/docker run --rm --user 0:0 --read-only \
   /run/bootstrap/execution-worker-public-keyring.json)" || fail
 [[ "$worker_bootstrap_result" =~ ^EXECUTION_WORKER_BOOTSTRAP_OK\ status=(registered|existing)\ fingerprint=[0-9a-f]{64}$ ]] || fail
 /usr/bin/test ! -e "$worker_keyring_previous" || fail
+for brain_secret in brain-worker-database-url content-encryption-keyring brain-provider-api-key; do
+  [[ -f "$private_path/$brain_secret" && ! -L "$private_path/$brain_secret" ]] || fail
+  [[ "$(/usr/bin/stat -c '%a %U' "$private_path/$brain_secret")" == "600 root" ]] || fail
+done
+/usr/bin/docker run --rm --network none \
+  -v orbbec-agent-platform-brain-secrets:/target \
+  -v "$private_path:/source:ro" alpine:3.22 \
+  sh -ceu 'cp /source/brain-worker-database-url /source/content-encryption-keyring /source/brain-provider-api-key /target/; chown 10001:10001 /target/*; chmod 600 /target/brain-worker-database-url /target/content-encryption-keyring /target/brain-provider-api-key'
 if [[ -e "$worker_keyring" || -L "$worker_keyring" ]]; then
   /usr/bin/install -o root -g root -m 600 "$worker_keyring" "$worker_keyring_previous"
 else
@@ -619,6 +631,10 @@ for required_runtime_value in \
   "PLATFORM_AGENT_BRAIN_ENABLED=$PLATFORM_AGENT_BRAIN_ENABLED"; do
   /usr/bin/grep -Fxq "$required_runtime_value" <<<"$api_environment" || fail
 done
+/usr/bin/grep -Fxq "PLATFORM_AGENT_BRAIN_V2_ENABLED=$PLATFORM_AGENT_BRAIN_V2_ENABLED" <<<"$api_environment" || fail
+brain_container="$("${compose[@]}" ps -q platform-brain)"
+[[ -n "$brain_container" ]] || fail
+[[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$brain_container")" == "healthy" ]] || fail
 if [[ -n "$previous_release" ]]; then
   /usr/bin/printf '%s\n' "$previous_release" > "$release_path/PREVIOUS_RELEASE"
   /bin/chown root:root "$release_path/PREVIOUS_RELEASE"

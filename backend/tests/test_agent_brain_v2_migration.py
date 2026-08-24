@@ -329,6 +329,41 @@ def test_brain_heartbeat_function_limits_worker_names(control_database) -> None:
                 )
 
 
+@pytest.mark.postgres
+def test_brain_relay_access_is_function_scoped_to_metabot_jobs(
+    control_database,
+) -> None:
+    function_names = (
+        "enqueue_brain_relay_job_v39",
+        "brain_relay_worker_available_v39",
+        "brain_relay_job_state_v39",
+        "brain_relay_events_v39",
+        "request_brain_relay_cancel_v39",
+    )
+    for environment in control_database["environments"].values():
+        brain_role = next(
+            role for role in environment["roles"] if "brain_worker" in role
+        )
+        with psycopg.connect(environment["admin"]) as connection:
+            assert connection.execute(
+                "select has_table_privilege(%s,'platform_control.execution_jobs','select'),"
+                "has_table_privilege(%s,'platform_control.execution_jobs','insert'),"
+                "has_table_privilege(%s,'platform_control.execution_jobs','update'),"
+                "has_table_privilege(%s,'platform_control.execution_events','select')",
+                (brain_role, brain_role, brain_role, brain_role),
+            ).fetchone() == (False, False, False, False)
+            rows = connection.execute(
+                "select proname,prosecdef,has_function_privilege(%s,oid,'execute') "
+                "from pg_proc where pronamespace='platform_control'::regnamespace "
+                "and proname=any(%s) order by proname",
+                (brain_role, list(function_names)),
+            ).fetchall()
+        assert rows == sorted(
+            ((name, True, True) for name in function_names),
+            key=lambda item: item[0],
+        )
+
+
 def test_all_runtime_roles_include_brain_workers() -> None:
     assert "platform_brain_worker" in ROLES
     assert "platform_brain_worker_preview" in ROLES

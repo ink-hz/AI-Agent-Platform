@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,8 @@ CLEARING_PREFIX = "deploy-input.clearing-"
 PREPARING_PREFIX = "deploy-input.preparing-"
 RELEASE = re.compile(r"[0-9a-f]{40}\Z")
 DEPLOYMENT = re.compile(r"[0-9a-f]{32}\Z")
+PROVIDER_EVIDENCE = PRIVATE_ROOT / "agent-brain-v2" / "provider-evidence.json"
+PROVIDER_EVIDENCE_DIGEST = PRIVATE_ROOT / "agent-brain-v2" / "provider-evidence.sha256"
 
 
 class DeployInputError(ValueError):
@@ -77,6 +80,33 @@ def _validate(release_sha: str, deployment_id: str) -> None:
     finally:
         os.close(descriptor)
     if STATE_PART.exists() or STATE_PART.is_symlink():
+        raise DeployInputError
+    _validate_optional_provider_evidence()
+
+
+def _validate_optional_provider_evidence() -> None:
+    if not PROVIDER_EVIDENCE_DIGEST.exists():
+        return
+    for path in (PROVIDER_EVIDENCE, PROVIDER_EVIDENCE_DIGEST):
+        metadata = path.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or path.is_symlink()
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+        ):
+            raise DeployInputError
+    expected = PROVIDER_EVIDENCE_DIGEST.read_text(encoding="ascii").split()
+    if (
+        len(expected) != 2
+        or re.fullmatch(r"[0-9a-f]{64}", expected[0]) is None
+        or expected[1] not in {
+            str(PROVIDER_EVIDENCE),
+            "provider-evidence.json",
+        }
+        or hashlib.sha256(PROVIDER_EVIDENCE.read_bytes()).hexdigest()
+        != expected[0]
+    ):
         raise DeployInputError
 
 

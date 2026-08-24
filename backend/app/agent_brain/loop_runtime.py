@@ -347,6 +347,36 @@ class BrainLoopRuntime:
         for selected in self._repository.adapter_reconciliation_tasks(
             adapter_kind, limit=100
         ):
+            now = datetime.now(timezone.utc)
+            deadline = selected.effective_deadline_at
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=timezone.utc)
+            if deadline <= now:
+                result = NormalizedTaskResult(
+                    status="timed_out",
+                    summary="专业 Agent 未在本轮截止时间内返回结果。",
+                    deliverables=(),
+                    evidence=(),
+                    limitations=("该子任务已超时，Agent 大脑将基于已有结果继续。",),
+                    attachment_refs=(),
+                )
+                changed += int(
+                    self._repository.append_task_event(
+                        AgentTaskEventInput(
+                            task_id=selected.task_id,
+                            seq=selected.next_event_seq,
+                            event_type="agent.timed_out",
+                            created_at=now,
+                            payload={"status": "timed_out"},
+                            terminal_status="timed_out",
+                            result=result,
+                        )
+                    )
+                )
+                self._repository.complete_reconciled_delivery(
+                    selected.task_id, selected.loop_id
+                )
+                continue
             task = AdapterTask(
                 task_id=selected.task_id,
                 loop_id=selected.loop_id,

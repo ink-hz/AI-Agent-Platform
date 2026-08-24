@@ -202,6 +202,37 @@ class BrainLoopRepository:
             row_factory=dict_row,
         )
 
+    def heartbeat(
+        self,
+        worker_name: str,
+        *,
+        status: Literal["healthy", "degraded"],
+        error_code: str | None = None,
+    ) -> None:
+        if (
+            worker_name
+            not in {"agent-brain-step", "agent-brain-adapter", "agent-brain-reaper"}
+            or status not in {"healthy", "degraded"}
+            or (
+                error_code is not None
+                and re.fullmatch(r"[a-z0-9_]{1,64}", error_code) is None
+            )
+        ):
+            raise ValueError("Brain worker heartbeat invalid")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select platform_control.upsert_brain_worker_heartbeat_v39("
+                    "%s,%s,%s,clock_timestamp()) as accepted",
+                    (worker_name, status, error_code),
+                ).fetchone()
+            if row is None or row["accepted"] is not True:
+                raise BrainRepositoryError()
+        except BrainRepositoryError:
+            raise
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
     def create_loop(
         self,
         *,

@@ -5,6 +5,8 @@ import subprocess
 import pytest
 import yaml
 
+from app.agent_brain.worker_runtime import tick, validate_worker_mode
+
 
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
@@ -40,6 +42,31 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
     assert environment["PLATFORM_CONTROL_DATABASE_URL_FILE"] == "/run/secrets/control-database-url"
     assert environment["PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE"] == "/run/secrets/content-encryption-keyring"
     assert api["volumes"] == ["platform-api-secrets:/run/secrets:ro"]
+    assert environment["PLATFORM_AGENT_BRAIN_V2_ENABLED"] == (
+        "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
+    )
+
+    worker = compose["services"]["platform-brain"]
+    assert "ports" not in worker
+    assert set(worker["networks"]) == {"platform-internal", "platform-edge"}
+    assert worker["command"] == [
+        "python", "-m", "app.agent_brain.worker_runtime", "all"
+    ]
+    assert worker["user"] == "10001:10001"
+    assert worker["read_only"] is True
+    assert worker["cap_drop"] == ["ALL"]
+    assert worker["security_opt"] == ["no-new-privileges:true"]
+    assert worker["environment"]["PLATFORM_BRAIN_DATABASE_URL_FILE"] == (
+        "/run/secrets/brain-worker-database-url"
+    )
+    assert worker["environment"]["PLATFORM_BRAIN_MODEL_MANIFEST"] == (
+        "/app/brain-model.release.json"
+    )
+    assert worker["environment"]["PLATFORM_BRAIN_PROVIDER_API_KEY_FILE"] == (
+        "/run/secrets/brain-provider-api-key"
+    )
+    assert "PLATFORM_DINGTALK_APP_SECRET_FILE" not in worker["environment"]
+    assert worker["volumes"] == ["platform-brain-secrets:/run/secrets:ro"]
 
     for name, service in compose["services"].items():
         if name == "platform-loopback":
@@ -56,6 +83,8 @@ def test_remote_stage_requires_mode_0600_control_content_and_feature_state() -> 
         "control-audit-database-url",
         "content-encryption-keyring",
         "execution-worker-public-keyring.json",
+        "brain-worker-database-url",
+        "brain-provider-api-key",
     ):
         assert secret in stage
     assert "stat -c '%a %U'" in stage
@@ -64,6 +93,103 @@ def test_remote_stage_requires_mode_0600_control_content_and_feature_state() -> 
     assert "PLATFORM_EXECUTION_RELAY_ENABLED=1" in stage
     assert 'PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"' in stage
     assert '[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail' in stage
+    assert 'PLATFORM_AGENT_BRAIN_V2_ENABLED="${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"' in stage
+    assert '[[ "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "0" ]] || fail' in stage
+    assert "orbbec-agent-platform-brain-secrets" in stage
+
+
+def test_v2_cutover_has_exact_fail_closed_gates() -> None:
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+
+    for gate in (
+        "PROVIDER_PROBE=passed",
+        "REFERENCE_RECOVERY=passed",
+        "V1_NONTERMINAL_MISSIONS=0",
+        "V2_MISSION_RUN_WRITES=0",
+        "LOCAL_WORKER_ACCEPTS=metabot_local",
+        "FAE_MANAGED_FILES_UNCHANGED=true",
+    ):
+        assert gate in script
+    assert "PLATFORM_AGENT_BRAIN_V2_ENABLED" in script
+    assert "provider-evidence.sha256" in script
+
+
+def test_v2_rollback_stops_intake_without_rewriting_history() -> None:
+    script = (CLOUD / "rollback-dingtalk-production.sh").read_text(
+        encoding="utf-8"
+    ).lower()
+
+    assert "platform_agent_brain_v2_enabled=0" in script
+    assert "platform-brain" in script
+    assert "update platform_brain.brain_loops" not in script
+    assert "delete from platform_brain" not in script
+    assert "insert into platform_control.missions" not in script
+
+
+def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None:
+    calls = []
+
+    class Runtime:
+        def advance_one(self):
+            calls.append("brain")
+            return True
+
+        def scan_settled_batches(self):
+            calls.append("settle")
+            return 1
+
+        def dispatch_one(self):
+            calls.append("adapter")
+            return True
+
+        def reconcile_adapter_tasks(self, kind):
+            calls.append(f"reconcile:{kind}")
+            return 1
+
+        def reconcile_cancellations(self):
+            calls.append("cancel")
+            return 1
+
+    class Repository:
+        def heartbeat(self, name, *, status, error_code=None):
+            calls.append(f"heartbeat:{name}:{status}")
+
+        def expire_leases(self, *, limit):
+            calls.append("expire-steps")
+            return 1
+
+        def expire_delivery_leases(self, *, limit):
+            calls.append("expire-deliveries")
+            return 1
+
+        def expire_waiting_users(self, *, limit):
+            calls.append("expire-users")
+            return 1
+
+        def erase_expired_model_responses(self, *, limit):
+            calls.append("erase-responses")
+            return 1
+
+    changed = tick(validate_worker_mode("all"), Runtime(), Repository())
+
+    assert changed == 9
+    assert calls == [
+        "brain", "settle", "heartbeat:agent-brain-step:healthy",
+        "adapter", "reconcile:metabot_local", "cancel",
+        "heartbeat:agent-brain-adapter:healthy", "expire-steps",
+        "expire-deliveries", "expire-users", "erase-responses",
+        "heartbeat:agent-brain-reaper:healthy",
+    ]
+
+
+def test_api_process_does_not_start_v1_scheduler_when_v2_is_enabled() -> None:
+    source = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
+    guard = "and not config.agent_brain_v2_enabled"
+
+    assert guard in source
+    assert source.index(guard) < source.index(
+        "asyncio.create_task(agent_brain_loop(agent_brain_orchestrator))"
+    )
 
 
 def test_formal_nginx_is_dingtalk_only_and_stream_safe() -> None:
