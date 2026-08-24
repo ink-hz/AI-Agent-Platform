@@ -80,12 +80,16 @@ describe("professional Agent use pages", () => {
     expect(container.textContent).toContain("梳理岗位需求与候选人画像");
     expect(container.textContent).not.toContain("累计 Session");
     expect(container.querySelector("a[href='/agents/hr-bot']")).not.toBeNull();
-    expect([...container.querySelectorAll("h2")].map((node) => node.textContent)).toEqual([
-      "技术支持", "HR", "Marketing", "行政服务",
-    ]);
+    expect(container.querySelectorAll(".agent-use-groups h2")).toHaveLength(0);
     const cards = [...container.querySelectorAll<HTMLElement>(".agent-use-card")];
     expect(cards[0].textContent).toContain("AI FAE Agent");
     expect(cards[cards.length - 1].textContent).toContain("AI 行政 Agent");
+    expect(cards.map((node) => node.getAttribute("href"))).toEqual([
+      "https://fae.orbbec.com.cn/",
+      "/agents/hr-bot",
+      "/agents/marketing-gtm-bot",
+      "/office/?view=services",
+    ]);
     expect(container.querySelector("a[href='/office/?view=services']")?.textContent).toContain("AI 行政 Agent");
     expect(container.querySelector("a[href='https://fae.orbbec.com.cn/']")?.textContent).toContain("AI FAE Agent");
     expect(container.querySelector("a[href='https://fae.orbbec.com.cn/']")?.getAttribute("data-agent-kind")).toBe("fae");

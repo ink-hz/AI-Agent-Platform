@@ -4,7 +4,7 @@
 
 **Goal:** Make every Professional Agent card obviously clickable, fix the product order to FAE → HR → Marketing → Administration, and verify the intended Agent access grants.
 
-**Architecture:** Keep the existing authorized Catalog API and whole-card links. Change only the directory projection and its CSS: derive a stable presentation group and accent from canonical card metadata, render explicit action affordances, and preserve URL allowlisting for external workspaces. Authorization remains server-side and external workspaces remain non-dispatchable.
+**Architecture:** Keep the existing authorized Catalog API and whole-card links. Change only the directory projection and its CSS: render one continuous, canonically ordered two-column grid, derive an accent from card metadata, render explicit action affordances, and preserve URL allowlisting for external workspaces. Authorization remains server-side and external workspaces remain non-dispatchable.
 
 **Tech Stack:** React 19, TypeScript, CSS, Vitest/jsdom, PostgreSQL authorization functions.
 
@@ -30,7 +30,7 @@
 
 - [ ] **Step 1: Write a failing test**
 
-Require the heading order `技术支持`, `HR`, `Marketing`, `行政服务`, assert FAE is the first card and Administration is the final card, and assert enabled cards expose an action element plus `data-agent-kind` styling hook.
+Require a continuous grid without forced group headings, assert FAE is the first card and Administration is the final card, and assert enabled cards expose an action element plus `data-agent-kind` styling hook.
 
 - [ ] **Step 2: Run the focused Vitest test and verify RED**
 
@@ -40,7 +40,7 @@ Expected: FAIL because the current page combines both external cards under `专�
 
 - [ ] **Step 3: Implement the minimal directory projection**
 
-Replace the external-workspace grouping shortcut with canonical group ordering and render a `header`, content body, and action footer inside the existing whole-card link. Keep `safeWorkspaceUrl()` unchanged.
+Replace the grouped projection with canonical card ordering and render a `header`, content body, and action footer inside the existing whole-card link. Keep `safeWorkspaceUrl()` unchanged.
 
 - [ ] **Step 4: Run the focused test and verify GREEN**
 

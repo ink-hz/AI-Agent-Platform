@@ -9,6 +9,16 @@ const WORKSPACE_URLS: Readonly<Record<string, string>> = Object.freeze({
   "ai-admin-agent": "/office/?view=services",
   "ai-fae-agent": "https://fae.orbbec.com.cn/",
 });
+const AGENT_ORDER = Object.freeze([
+  "ai-fae-agent",
+  "hr-bot",
+  "marketing-prospecting-bot",
+  "marketing-inbound-bot",
+  "marketing-voice-bot",
+  "marketing-intelligence-bot",
+  "marketing-gtm-bot",
+  "ai-admin-agent",
+]);
 
 type AgentKind = "fae" | "hr" | "marketing" | "admin";
 
@@ -70,28 +80,20 @@ export function AgentUseDirectoryPage({
     });
     return () => controller.abort();
   }, [attempt, loadCatalog]);
-  const groups = useMemo(() => {
-    const result = new Map<string, AgentCapabilityCard[]>();
-    for (const agent of agents ?? []) {
-      const group = agent.domain_group;
-      result.set(group, [...(result.get(group) ?? []), agent]);
-    }
-    const order = ["技术支持", "HR", "Marketing", "行政服务"];
-    return [...result.entries()].sort(([left], [right]) => {
-      const leftIndex = order.indexOf(left); const rightIndex = order.indexOf(right);
-      return (leftIndex < 0 ? order.length : leftIndex) - (rightIndex < 0 ? order.length : rightIndex)
-        || left.localeCompare(right, "zh-CN");
-    });
-  }, [agents]);
+  const orderedAgents = useMemo(() => [...(agents ?? [])].sort((left, right) => {
+    const leftIndex = AGENT_ORDER.indexOf(left.agent_id);
+    const rightIndex = AGENT_ORDER.indexOf(right.agent_id);
+    return (leftIndex < 0 ? AGENT_ORDER.length : leftIndex) - (rightIndex < 0 ? AGENT_ORDER.length : rightIndex)
+      || left.display_name.localeCompare(right.display_name, "zh-CN");
+  }), [agents]);
 
   return <div className="agent-use-directory">
     <section className="use-page-intro"><p>AUTHORIZED EXPERTS</p><h1>专业 Agent</h1><span>直接进入你已获授权的专业能力。每次任务仍由 Platform 保存、鉴权和回放。</span></section>
     {error ? <ErrorState onRetry={() => setAttempt((value) => value + 1)} />
       : agents === null ? <LoadingState label="正在读取可用 Agent" />
       : agents.length === 0 ? <EmptyState title="暂时没有可用的专业 Agent" description="你仍可从 Agent 大脑完成通用对话和需求澄清。" />
-      : <div className="agent-use-groups">{groups.map(([group, cards]) => <section key={group}>
-        <h2>{group}</h2>
-        <div className="agent-use-grid">{cards.map((card) => <AgentCard card={card} key={card.agent_id} />)}</div>
-      </section>)}</div>}
+      : <div className="agent-use-grid agent-use-directory-grid">
+        {orderedAgents.map((card) => <AgentCard card={card} key={card.agent_id} />)}
+      </div>}
   </div>;
 }
