@@ -90,7 +90,11 @@ class ConversationCursorCodec:
         )
 
     def issue(
-        self, owner: UUID, updated_at: datetime, conversation_id: UUID
+        self,
+        owner: UUID,
+        updated_at: datetime,
+        conversation_id: UUID,
+        direct_agent_id: str | None = None,
     ) -> str:
         if (
             not isinstance(owner, UUID)
@@ -99,20 +103,25 @@ class ConversationCursorCodec:
             or updated_at.tzinfo is None
         ):
             raise ValueError("Conversation cursor input invalid")
-        payload = json.dumps(
-            {
+        document = {
                 "conversation_id": str(conversation_id),
                 "key_version": self._secrets.key_version,
                 "kind": "conversation",
                 "updated_at": updated_at.isoformat(),
-            },
+            }
+        if direct_agent_id is not None:
+            document["direct_agent_id"] = direct_agent_id
+        payload = json.dumps(
+            document,
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
         signature = self._secrets.sign_mission_cursor(owner, payload)
         return self._encode(payload + signature)
 
-    def read(self, owner: UUID, value: str) -> tuple[datetime, UUID]:
+    def read(
+        self, owner: UUID, value: str, direct_agent_id: str | None = None
+    ) -> tuple[datetime, UUID]:
         try:
             raw = self._decode(value)
             if len(raw) <= 32:
@@ -123,16 +132,20 @@ class ConversationCursorCodec:
             ):
                 raise ValueError
             document = json.loads(payload)
-            if set(document) != {
+            expected_keys = {
                 "conversation_id",
                 "key_version",
                 "kind",
                 "updated_at",
-            }:
+            }
+            if direct_agent_id is not None:
+                expected_keys.add("direct_agent_id")
+            if set(document) != expected_keys:
                 raise ValueError
             if (
                 document["kind"] != "conversation"
                 or document["key_version"] != self._secrets.key_version
+                or document.get("direct_agent_id") != direct_agent_id
             ):
                 raise ValueError
             updated_at = datetime.fromisoformat(document["updated_at"])
@@ -554,11 +567,17 @@ def build_conversation_router(
         response: Response,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
         before: Annotated[str | None, Query(min_length=1, max_length=1024)] = None,
+        direct_agent_id: Annotated[
+            str | None,
+            Query(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"),
+        ] = None,
     ):
         context = _auth_context(request)
         try:
             boundary = (
-                cursor_codec.read(context.internal_user_id, before)
+                cursor_codec.read(
+                    context.internal_user_id, before, direct_agent_id
+                )
                 if before is not None
                 else None
             )
@@ -572,6 +591,7 @@ def build_conversation_router(
                 context.internal_user_id,
                 limit=limit + 1,
                 before=boundary,
+                direct_agent_id=direct_agent_id,
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None
@@ -583,6 +603,7 @@ def build_conversation_router(
                 context.internal_user_id,
                 last.updated_at,
                 last.conversation_id,
+                direct_agent_id,
             )
         response.headers.update(_NO_STORE)
         return {

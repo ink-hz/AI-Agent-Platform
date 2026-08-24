@@ -117,6 +117,18 @@ describe("ConversationPage", () => {
     await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks();
   });
 
+  it("rejects a same-owner Session that belongs to a different professional Agent", async () => {
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      client={client()}
+      conversationId={conversationId}
+      expectedAgentId="hr-bot"
+    />));
+
+    expect(container.textContent).toContain("暂时无法读取对话");
+    expect(container.textContent).not.toContain("建议从 GitHub 开始");
+  });
+
   it("renders Markdown, collapsed execution, and keeps the composer after a follow-up", async () => {
     const pageClient = client();
     const onConversationUpdated = vi.fn();

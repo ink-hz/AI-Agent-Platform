@@ -1820,6 +1820,7 @@ class ConversationRepository:
         *,
         limit: int = 50,
         before: tuple[datetime, UUID] | None = None,
+        direct_agent_id: str | None = None,
     ) -> tuple[ConversationRecord, ...]:
         _require_uuid(internal_user_id)
         if (
@@ -1836,18 +1837,28 @@ class ConversationRepository:
             or not isinstance(before[1], UUID)
         ):
             raise ValueError("Conversation list cursor invalid")
+        if direct_agent_id is not None:
+            if (
+                not isinstance(direct_agent_id, str)
+                or _AGENT_ID.fullmatch(direct_agent_id) is None
+            ):
+                raise ValueError("direct Agent invalid")
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 query = (
                     "select * from platform_control.conversations "
                     "where owner_internal_user_id=%s "
                 )
+                base_parameters: tuple[object, ...] = (internal_user_id,)
+                if direct_agent_id is not None:
+                    query += "and mode='direct_agent' and direct_agent_id=%s "
+                    base_parameters += (direct_agent_id,)
                 if before is None:
-                    parameters: tuple[object, ...] = (internal_user_id, limit)
+                    parameters = (*base_parameters, limit)
                 else:
                     query += "and (updated_at,conversation_id)<(%s,%s) "
                     parameters = (
-                        internal_user_id,
+                        *base_parameters,
                         before[0],
                         before[1],
                         limit,

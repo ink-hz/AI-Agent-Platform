@@ -49,7 +49,8 @@ function follow(event: MouseEvent<HTMLAnchorElement>, path: string) {
 
 export function AppShell({ route, children, account }: { route: Route; children: ReactNode; account?: Account | null }) {
   const current = routeSection(route);
-  const brainWorkspace = route.name === "brain" || route.name === "conversation";
+  const brainWorkspace = route.name === "brain" || route.name === "conversation"
+    || route.name === "agent" || route.name === "agent-conversation";
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   useEffect(() => {
     if (current !== "admin") return;

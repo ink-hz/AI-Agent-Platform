@@ -75,11 +75,13 @@ export function ConversationPage({
   account,
   client = DEFAULT_CLIENT,
   onConversationUpdated,
+  expectedAgentId,
 }: {
   conversationId: string;
   account: Account;
   client?: ConversationPageClient;
   onConversationUpdated?: (conversation: Conversation) => void;
+  expectedAgentId?: string;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -110,13 +112,17 @@ export function ConversationPage({
       client.fetchMessages(conversationId, controller.signal),
     ]).then(([snapshot, loadedMessages]) => {
       if (controller.signal.aborted) return;
+      if (expectedAgentId && (
+        snapshot.conversation.mode !== "direct_agent"
+        || snapshot.conversation.direct_agent_id !== expectedAgentId
+      )) throw new Error("Conversation Agent scope mismatch");
       setDetail(snapshot); setMessages(loadedMessages); setLoading(false); setStreamEpoch((value) => value + 1);
       onConversationUpdated?.(snapshot.conversation);
     }).catch(() => {
       if (!controller.signal.aborted) { setLoadFailure(true); setLoading(false); }
     });
     return () => { controller.abort(); writeController.current?.abort(); };
-  }, [client, conversationId, onConversationUpdated]);
+  }, [client, conversationId, expectedAgentId, onConversationUpdated]);
 
   useEffect(() => {
     if (!streamEpoch || !detail) return;

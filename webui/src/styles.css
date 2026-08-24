@@ -973,6 +973,10 @@ body {
 .agent-use-card { display: block; padding: 23px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: inherit; box-shadow: 0 10px 28px rgba(21, 51, 88, .07); text-decoration: none; }
 .agent-use-card:hover { border-color: #9eb8d4; box-shadow: 0 15px 34px rgba(21, 51, 88, .11); }
 .agent-use-card-disabled { box-shadow: none; opacity: .68; }
+.agent-switcher { display: flex; gap: 7px; width: min(980px, 100%); margin: 16px auto 0; overflow-x: auto; }
+.agent-switcher a { flex: 0 0 auto; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-soft); font-size: 11.5px; font-weight: 730; text-decoration: none; }
+.agent-switcher a[aria-current="page"] { border-color: var(--brand); background: var(--brand-wash); color: var(--brand); }
+.workspace-open-button { display: inline-flex; margin-top: 24px; padding: 11px 17px; border-radius: 10px; background: var(--brand); color: #fff; font-size: 13px; font-weight: 780; text-decoration: none; }
 .agent-use-card > span, .agent-use-profile > span { color: var(--brand-bright); font-size: 11.5px; font-weight: 820; letter-spacing: .08em; }
 .agent-use-card h3 { margin: 6px 0 8px; font-size: 21px; }
 .agent-use-card p { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.65; }

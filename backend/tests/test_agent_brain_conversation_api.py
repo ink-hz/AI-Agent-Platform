@@ -286,6 +286,38 @@ def test_history_is_newest_first_paginated_and_cursor_is_owner_bound(
 
 
 @pytest.mark.postgres
+def test_history_can_be_scoped_to_one_direct_agent_without_exposing_other_owners(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner, other = conversation_database
+    repository.start(owner, uuid4(), "HR 一", mode="direct_agent", direct_agent_id="hr-bot")
+    repository.start(owner, uuid4(), "市场", mode="direct_agent", direct_agent_id="marketing-gtm-bot")
+    repository.start(owner, uuid4(), "HR 二", mode="direct_agent", direct_agent_id="hr-bot")
+    repository.start(other, uuid4(), "他人的 HR", mode="direct_agent", direct_agent_id="hr-bot")
+    app, auth, _agent_use = _app(owner, repository)
+    client = TestClient(app)
+
+    first = client.get(
+        "/api/v1/conversations?limit=1&direct_agent_id=hr-bot",
+        **_credentials(auth),
+    )
+    assert first.status_code == 200
+    assert [item["title"] for item in first.json()["items"]] == ["HR 二"]
+    assert all(item["direct_agent_id"] == "hr-bot" for item in first.json()["items"])
+    cursor = first.json()["next_cursor"]
+    second = client.get(
+        f"/api/v1/conversations?limit=10&direct_agent_id=hr-bot&before={cursor}",
+        **_credentials(auth),
+    )
+    assert [item["title"] for item in second.json()["items"]] == ["HR 一"]
+    assert client.get(
+        f"/api/v1/conversations?direct_agent_id=marketing-gtm-bot&before={cursor}",
+        **_credentials(auth),
+    ).status_code == 422
+
+
+@pytest.mark.postgres
 def test_terminal_sse_replays_monotonic_conversation_events_and_closes(
     conversation_database,
     repository,

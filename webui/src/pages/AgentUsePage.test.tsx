@@ -58,12 +58,15 @@ const result: ConversationSubmissionResult = {
     created_at: "2026-08-22T10:00:00Z", updated_at: "2026-08-22T10:00:00Z",
   },
 };
+const historyClient = { list: vi.fn().mockResolvedValue({ items: [], next_cursor: null }) };
 
 
 describe("professional Agent use pages", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
   beforeEach(() => {
+    historyClient.list.mockClear();
+    historyClient.list.mockResolvedValue({ items: [], next_cursor: null });
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   });
@@ -98,7 +101,7 @@ describe("professional Agent use pages", () => {
     const onOpenConversation = vi.fn();
     await act(async () => root.render(<AgentUsePage
       account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([card])}
-      createSubmission={createSubmission} onOpenConversation={onOpenConversation}
+      createSubmission={createSubmission} historyClient={historyClient} onOpenConversation={onOpenConversation}
     />));
     const textarea = container.querySelector("textarea")!;
     await act(async () => {
@@ -109,12 +112,13 @@ describe("professional Agent use pages", () => {
 
     expect(createSubmission).toHaveBeenCalledWith("找视觉人才", "csrf", "hr-bot");
     expect(send).toHaveBeenCalledTimes(1);
-    expect(onOpenConversation).toHaveBeenCalledWith(`/conversations/${result.conversation.conversation_id}`);
+    expect(onOpenConversation).toHaveBeenCalledWith(`/agents/hr-bot/conversations/${result.conversation.conversation_id}`);
+    expect(historyClient.list).toHaveBeenCalledWith(expect.any(AbortSignal), undefined, 20, "hr-bot");
   });
 
   it("recovers when navigation changes from an unavailable Agent to an authorized one", async () => {
     const loadCatalog = vi.fn().mockResolvedValue([card]);
-    const props = { account, loadCatalog, createSubmission: vi.fn(), onOpenConversation: vi.fn() };
+    const props = { account, loadCatalog, historyClient, createSubmission: vi.fn(), onOpenConversation: vi.fn() };
 
     await act(async () => root.render(<AgentUsePage {...props} agentId="missing-bot" />));
     expect(container.textContent).toContain("暂时无法读取");
@@ -128,7 +132,7 @@ describe("professional Agent use pages", () => {
     const createSubmission = vi.fn();
     await act(async () => root.render(<AgentUsePage
       account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([card])}
-      createSubmission={createSubmission} onOpenConversation={vi.fn()}
+      createSubmission={createSubmission} historyClient={historyClient} onOpenConversation={vi.fn()}
     />));
     const textarea = container.querySelector("textarea")!;
     await act(async () => {
@@ -139,5 +143,16 @@ describe("professional Agent use pages", () => {
     expect(container.textContent).toContain("32 KiB");
     expect(container.querySelector<HTMLButtonElement>("button[type=submit]")?.disabled).toBe(true);
     expect(createSubmission).not.toHaveBeenCalled();
+  });
+
+  it("switches among Marketing Agents without rebinding an existing Session", async () => {
+    await act(async () => root.render(<AgentUsePage
+      account={account} agentId="marketing-gtm-bot"
+      loadCatalog={vi.fn().mockResolvedValue([marketingCard, { ...marketingCard, agent_id: "marketing-inbound-bot", display_name: "Marketing Inbound" }])}
+      historyClient={historyClient} onOpenConversation={vi.fn()}
+    />));
+
+    expect(container.querySelector("nav[aria-label='Marketing Agent 切换'] a[aria-current='page']")?.textContent).toBe("GTM");
+    expect(container.querySelector("a[href='/agents/marketing-inbound-bot']")?.textContent).toBe("Inbound");
   });
 });

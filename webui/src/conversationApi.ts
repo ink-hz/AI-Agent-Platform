@@ -341,10 +341,12 @@ export async function listConversations(
   signal?: AbortSignal,
   before?: string,
   limit = 20,
+  directAgentId?: string,
 ): Promise<ConversationPage> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("Conversation list limit invalid");
   const params = new URLSearchParams({ limit: String(limit) });
   if (before) params.set("before", before);
+  if (directAgentId) params.set("direct_agent_id", directAgentId);
   const response = await checked(await fetch(platformPath(`/api/v1/conversations?${params}`), {
     credentials: "include", headers: { Accept: "application/json" }, signal,
   }));

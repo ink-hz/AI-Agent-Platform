@@ -36,6 +36,7 @@ describe("ConversationSidebar", () => {
     />));
 
     expect(container.querySelector('nav[aria-label="对话列表"]')).not.toBeNull();
+    expect(container.querySelector(".conversation-sidebar-head strong")?.textContent).toBe("Agent 大脑");
     expect(container.querySelector('a[aria-current="page"]')?.textContent).toContain("当前会话");
     expect(container.textContent).toContain("HR Agent");
     await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/conversations/direct"]')?.click());

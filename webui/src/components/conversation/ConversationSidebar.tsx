@@ -5,6 +5,7 @@ import type { Conversation } from "../../conversationTypes";
 import { professionalAgentLabel } from "./agentLabels";
 
 export interface ConversationSidebarProps {
+  title?: string;
   conversations: Conversation[];
   selectedConversationId?: string;
   loading: boolean;
@@ -32,6 +33,7 @@ function normalClick(event: MouseEvent<HTMLAnchorElement>): boolean {
 }
 
 export function ConversationSidebar({
+  title = "Agent 大脑",
   conversations, selectedConversationId, loading, error, hasMore, loadingMore, mobileOpen,
   onCloseMobile, onLoadMore, onNewConversation, onRetry, onSelect,
 }: ConversationSidebarProps) {
@@ -46,7 +48,7 @@ export function ConversationSidebar({
     role={mobileOpen ? "dialog" : undefined}
   >
     <div className="conversation-sidebar-head">
-      <strong>Agent 大脑</strong>
+      <strong>{title}</strong>
       <button aria-label="关闭对话列表" className="conversation-sidebar-close" onClick={onCloseMobile} ref={closeButton} type="button">×</button>
     </div>
     <button className="conversation-sidebar-new" onClick={onNewConversation} type="button">＋ 新对话</button>

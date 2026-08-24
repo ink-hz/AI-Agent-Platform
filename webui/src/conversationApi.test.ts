@@ -171,6 +171,18 @@ describe("continuous Conversation API", () => {
     expect(fetchMock.mock.calls[4][1]).toMatchObject({ method: "POST", headers: { "X-CSRF-Token": "csrf" } });
   });
 
+  it("scopes professional history to the selected immutable Agent", async () => {
+    const direct = { ...conversation, mode: "direct_agent", direct_agent_id: "marketing-gtm-bot" };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ items: [direct], next_cursor: null }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listConversations(undefined, undefined, 20, "marketing-gtm-bot"))
+      .resolves.toEqual({ items: [direct], next_cursor: null });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/v1/conversations?limit=20&direct_agent_id=marketing-gtm-bot",
+    );
+  });
+
   it("submits strict per-assistant-message feedback", async () => {
     const feedback = {
       feedback_id: "feedback-1",
