@@ -15,6 +15,7 @@ from app.agent_brain.model_adapter import (
     BrainModelManifest,
     BrainRequestBuilder,
 )
+from app.agent_brain.prompt import BrainPromptIntegrityError, BrainSystemPrompt
 
 
 class ProviderCapabilityError(RuntimeError):
@@ -116,12 +117,13 @@ def _main() -> int:
     config = load_config()
     if not config.brain_model_enabled:
         raise ProviderCapabilityError("Brain model runtime disabled")
+    manifest = BrainModelManifest.load(arguments.manifest)
     try:
-        prompt_bytes = arguments.system_prompt.read_bytes()
-        if prompt_bytes.startswith(b"\xef\xbb\xbf"):
-            raise ValueError
-        system_prompt = prompt_bytes.decode("utf-8")
-    except (OSError, UnicodeError, ValueError):
+        system_prompt = BrainSystemPrompt.load(
+            arguments.system_prompt,
+            expected_sha256=manifest.system_prompt_sha256,
+        ).text
+    except BrainPromptIntegrityError:
         raise ProviderCapabilityError("system prompt unavailable") from None
     with httpx.Client(timeout=httpx.Timeout(330.0, connect=10.0)) as client:
         provider = AnthropicMessagesAdapter.from_secret_file(

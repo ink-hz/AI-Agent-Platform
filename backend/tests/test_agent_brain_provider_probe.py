@@ -15,6 +15,7 @@ from app.agent_brain.provider_probe import (
 
 
 MANIFEST = Path(__file__).parents[2] / "deploy/cloud/brain-model.release.json"
+PROMPT = Path(__file__).parents[1] / "app/agent_brain/prompts/brain_v1.md"
 
 
 class FakeProvider:
@@ -89,3 +90,14 @@ def test_provider_probe_records_required_capabilities_and_effort_profiles() -> N
     assert evidence["stable_cache_ttl"] == "1h"
     assert evidence["rolling_cache_ttl"] == "5m"
     assert all(request.model_id == "claude-opus-5" for request in provider.requests)
+
+
+def test_production_prompt_digest_is_recorded_in_probe_evidence() -> None:
+    evidence = run_probe(
+        MANIFEST,
+        system_prompt=PROMPT.read_text(encoding="utf-8"),
+        provider=FakeProvider(),
+    )
+    assert evidence["system_prompt_sha256"] == (
+        "10b5e0f3d32b419d5e742238f75c94ea7187a62bf1ed22e10b811b5a6b79aba0"
+    )
