@@ -1290,6 +1290,26 @@ def test_advance_limit_is_bounded_to_fifty():
     assert service.advance_pending(limit=51) == 0
 
 
+def test_direct_only_orchestrator_never_claims_brain_missions():
+    class MissionSource:
+        def check_content_keys(self):
+            return None
+
+        def claim_pending(self, limit, *, modes):
+            assert limit == 50
+            assert modes == ("direct_agent",)
+            return ()
+
+    service = MissionOrchestrator(
+        MissionSource(),
+        ScriptedRelay(),
+        capability_provider=lambda _owner: (),
+        mission_modes=("direct_agent",),
+    )
+
+    assert service.advance_pending(limit=51) == 0
+
+
 def test_background_leader_uses_one_session_advisory_lock():
     calls = []
 

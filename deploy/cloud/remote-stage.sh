@@ -470,15 +470,17 @@ if [[ -n "$previous_release" && -f "$environment_path" ]]; then
 fi
 PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
 PLATFORM_AGENT_BRAIN_V2_ENABLED="${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
+PLATFORM_DIRECT_AGENT_ENABLED="${PLATFORM_DIRECT_AGENT_ENABLED:-1}"
 # A first-production deploy only establishes schema, Worker identity and the
 # disabled image. The separately audited acceptance transaction owns enablement.
 [[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail
 [[ "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "0" ]] || fail
-/usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\nPLATFORM_AGENT_BRAIN_ENABLED=%s\nPLATFORM_AGENT_BRAIN_V2_ENABLED=%s\n' \
-  "$image_name" "$PLATFORM_AGENT_BRAIN_ENABLED" "$PLATFORM_AGENT_BRAIN_V2_ENABLED" > "$environment_path"
+[[ "$PLATFORM_DIRECT_AGENT_ENABLED" == "1" ]] || fail
+/usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\nPLATFORM_DIRECT_AGENT_ENABLED=%s\nPLATFORM_AGENT_BRAIN_ENABLED=%s\nPLATFORM_AGENT_BRAIN_V2_ENABLED=%s\n' \
+  "$image_name" "$PLATFORM_DIRECT_AGENT_ENABLED" "$PLATFORM_AGENT_BRAIN_ENABLED" "$PLATFORM_AGENT_BRAIN_V2_ENABLED" > "$environment_path"
 /bin/chown root:root "$environment_path"
 /bin/chmod 600 "$environment_path"
-export PLATFORM_AGENT_BRAIN_ENABLED PLATFORM_AGENT_BRAIN_V2_ENABLED
+export PLATFORM_DIRECT_AGENT_ENABLED PLATFORM_AGENT_BRAIN_ENABLED PLATFORM_AGENT_BRAIN_V2_ENABLED
 unset PLATFORM_CLOUD_AUTH_MODE
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$release_path/deploy/cloud/compose.yaml")
 "${compose[@]}" up -d --force-recreate platform-postgres >/dev/null
@@ -628,6 +630,7 @@ for required_runtime_value in \
   PLATFORM_CLOUD_AUTH_MODE=dingtalk \
   PLATFORM_IDENTITY_MODE=production \
   PLATFORM_EXECUTION_RELAY_ENABLED=1 \
+  "PLATFORM_DIRECT_AGENT_ENABLED=$PLATFORM_DIRECT_AGENT_ENABLED" \
   "PLATFORM_AGENT_BRAIN_ENABLED=$PLATFORM_AGENT_BRAIN_ENABLED"; do
   /usr/bin/grep -Fxq "$required_runtime_value" <<<"$api_environment" || fail
 done

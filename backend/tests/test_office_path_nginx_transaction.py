@@ -88,9 +88,13 @@ server {
 def test_transaction_replaces_admin_locations_and_preserves_platform_tls_acme():
     transformed = _module().transform(CURRENT)
 
-    assert "location = /admin" not in transformed
-    assert "location ^~ /admin/" not in transformed
-    assert "location /admin/" not in transformed
+    assert transformed.count("location = /admin {") == 1
+    assert transformed.count("location ^~ /admin/ {") == 1
+    admin_start = transformed.index("location = /admin {")
+    office_start = transformed.index("location = /office {")
+    admin_boundary = transformed[admin_start:office_start]
+    assert "proxy_pass http://127.0.0.1:8080;" in admin_boundary
+    assert "127.0.0.1:8011" not in admin_boundary
     assert "proxy_pass http://127.0.0.1:8080;" in transformed
     assert "location /api/v1/platform-only" in transformed
     assert "ssl_certificate /example/fullchain.pem;" in transformed

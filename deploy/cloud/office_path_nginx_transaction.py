@@ -24,6 +24,41 @@ _ZONES = (
     "limit_conn_zone $binary_remote_addr zone=ai_admin_office_conn:10m;",
 )
 
+_PLATFORM_ADMIN_LOCATIONS = """\
+    location = /admin {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Forwarded "";
+        proxy_set_header Authorization "";
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 330s;
+        proxy_send_timeout 330s;
+    }
+
+    location ^~ /admin/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Forwarded "";
+        proxy_set_header Authorization "";
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 330s;
+        proxy_send_timeout 330s;
+    }
+
+"""
+
 _OFFICE_LOCATIONS = """\
     location = /office {
         return 308 /office/$is_args$args;
@@ -264,6 +299,7 @@ def _transform_server(block: str) -> str:
                     roots += 1
                     if roots > 1:
                         raise ValueError("root location ambiguous")
+                    output.append(_PLATFORM_ADMIN_LOCATIONS)
                     output.append(_OFFICE_LOCATIONS)
         output.append(line)
         depth += _brace_delta(line)

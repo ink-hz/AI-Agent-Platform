@@ -98,7 +98,36 @@ def test_remote_stage_requires_mode_0600_control_content_and_feature_state() -> 
     assert '[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail' in stage
     assert 'PLATFORM_AGENT_BRAIN_V2_ENABLED="${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"' in stage
     assert '[[ "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "0" ]] || fail' in stage
+    assert 'PLATFORM_DIRECT_AGENT_ENABLED="${PLATFORM_DIRECT_AGENT_ENABLED:-1}"' in stage
+    assert '[[ "$PLATFORM_DIRECT_AGENT_ENABLED" == "1" ]] || fail' in stage
     assert "orbbec-agent-platform-brain-secrets" in stage
+
+
+def test_direct_agent_runtime_is_started_without_enabling_brain_v1() -> None:
+    source = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
+
+    assert 'v1_mission_modes.append("direct_agent")' in source
+    assert 'v1_mission_modes.append("brain")' in source
+    assert "and not config.agent_brain_v2_enabled" in source
+    assert "mission_modes=tuple(v1_mission_modes)" in source
+
+
+def test_control_bootstrap_runs_execution_job_kind_preflight_before_migrations() -> None:
+    bootstrap = (CLOUD / "bootstrap-control-db.sh").read_text(encoding="utf-8")
+    helper = CLOUD / "preflight-execution-job-kind.sh"
+
+    assert helper.is_file()
+    assert helper.stat().st_mode & 0o111
+    source = helper.read_text(encoding="utf-8")
+    assert "default_transaction_read_only=on" in source
+    assert "left join platform_control.mission_runs" in source
+    assert "migration_042_orphan" in source
+    assert "migration_042_unknown_phase" in source
+    assert "EXECUTION_JOB_KIND_PREFLIGHT_OK" in source
+    assert "EXECUTION_JOB_KIND_PREFLIGHT_FAILED" in source
+    assert bootstrap.index("preflight-execution-job-kind.sh") < bootstrap.index(
+        "python -m app.control_plane.migrate"
+    )
 
 
 def test_v2_cutover_has_exact_fail_closed_gates() -> None:
@@ -127,6 +156,12 @@ def test_v2_rollback_stops_intake_without_rewriting_history() -> None:
     assert "update platform_brain.brain_loops" not in script
     assert "delete from platform_brain" not in script
     assert "insert into platform_control.missions" not in script
+    assert "metabot_local" in script
+    assert "queued','leased','dispatched','running" in script
+    assert "rollback_blocked_active_metabot_local" in script
+    assert script.index("rollback_blocked_active_metabot_local") < script.index(
+        'stop "${services_to_stop[@]}"'
+    )
 
 
 def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None:
@@ -237,8 +272,13 @@ def test_formal_nginx_keeps_platform_root_and_proxies_office_safely() -> None:
     assert "proxy_set_header Cookie" not in nginx
     assert "zone=ai_admin_office_chat:10m" in nginx
     assert "zone=ai_admin_office_conn:10m" in nginx
-    assert "location = /admin" not in nginx
-    assert "location ^~ /admin/" not in nginx
+    assert nginx.count("location = /admin {") == 1
+    assert nginx.count("location ^~ /admin/ {") == 1
+    admin_boundary = nginx[
+        nginx.index("location = /admin {"):nginx.index("location = /office {")
+    ]
+    assert "proxy_pass http://127.0.0.1:8080;" in admin_boundary
+    assert "127.0.0.1:8011" not in admin_boundary
 
 
 def test_deploy_preserves_exact_fae_identity_configuration_and_routes() -> None:

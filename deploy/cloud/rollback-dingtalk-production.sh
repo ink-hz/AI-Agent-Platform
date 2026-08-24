@@ -67,6 +67,31 @@ current_fae_started="$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' a
 environment_path="$platform_root/private/platform.env"
 current_compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$RELEASE_PATH/deploy/cloud/compose.yaml")
 current_services="$("${current_compose[@]}" config --services)"
+postgres_container="$("${current_compose[@]}" ps -q platform-postgres)"
+[[ -n "$postgres_container" ]] || fail
+job_kind_column="$(/usr/bin/docker exec \
+  -e PGOPTIONS=-c\ default_transaction_read_only=on \
+  "$postgres_container" psql -X -A -t -v ON_ERROR_STOP=1 \
+  -U platform_owner -d agent_platform_control -c \
+  "select count(*) from information_schema.columns
+   where table_schema='platform_control'
+     and table_name='execution_jobs'
+     and column_name='job_kind'")" || fail
+if [[ "$job_kind_column" == "1" ]]; then
+  active_metabot_local="$(/usr/bin/docker exec \
+    -e PGOPTIONS=-c\ default_transaction_read_only=on \
+    "$postgres_container" psql -X -A -t -v ON_ERROR_STOP=1 \
+    -U platform_owner -d agent_platform_control -c \
+    "select count(*) from platform_control.execution_jobs
+     where job_kind='metabot_local'
+       and status in ('queued','leased','dispatched','running')")" || fail
+  if [[ "$active_metabot_local" != "0" ]]; then
+    echo "ROLLBACK_BLOCKED_ACTIVE_METABOT_LOCAL count=$active_metabot_local" >&2
+    fail
+  fi
+elif [[ "$job_kind_column" != "0" ]]; then
+  fail
+fi
 services_to_stop=()
 for service in platform-loopback platform-api platform-directory platform-dingtalk-stream platform-brain; do
   if /usr/bin/grep -Fxq "$service" <<<"$current_services"; then

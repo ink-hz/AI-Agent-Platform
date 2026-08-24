@@ -247,6 +247,7 @@ class MissionOrchestrator:
         capability_provider: Callable[[UUID], Sequence[AgentCapabilityCard]],
         conversation_context_builder: ConversationContextBuilder | None = None,
         conversation_projection: ConversationProjection | None = None,
+        mission_modes: tuple[str, ...] = ("brain", "direct_agent"),
     ) -> None:
         if not callable(capability_provider):
             raise ValueError("capability provider required")
@@ -262,11 +263,19 @@ class MissionOrchestrator:
             conversation_projection, ConversationProjection
         ):
             raise ValueError("Conversation projection invalid")
+        if (
+            not isinstance(mission_modes, tuple)
+            or not mission_modes
+            or len(set(mission_modes)) != len(mission_modes)
+            or any(mode not in {"brain", "direct_agent"} for mode in mission_modes)
+        ):
+            raise ValueError("Mission modes invalid")
         self.missions = mission_repository
         self.relay = relay_repository
         self._capability_provider = capability_provider
         self._conversation_context_builder = conversation_context_builder
         self._conversation_projection = conversation_projection
+        self._mission_modes = mission_modes
 
     def check_ready(self) -> None:
         """Fail closed unless every Mission table and app privilege exists."""
@@ -445,7 +454,12 @@ class MissionOrchestrator:
                 )
             except Exception:
                 logger.exception("Agent Brain Conversation projection recovery failed")
-        claims = self.missions.claim_pending(bounded)
+        if set(self._mission_modes) == {"brain", "direct_agent"}:
+            claims = self.missions.claim_pending(bounded)
+        else:
+            claims = self.missions.claim_pending(
+                bounded, modes=self._mission_modes
+            )
         for claim in claims:
             try:
                 mission = self.missions.mission_for_orchestration(

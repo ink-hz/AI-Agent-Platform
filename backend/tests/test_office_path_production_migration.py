@@ -461,7 +461,14 @@ def test_publish_harness_success_is_one_install_one_test_one_reload_and_owner_on
     assert result.returncode == 0, result.stderr
     assert log.splitlines() == ["forward_install", "nginx_test", "reload"]
     assert "location ^~ /office/" in nginx_source.read_text(encoding="utf-8")
-    assert "location = /admin" not in nginx_source.read_text(encoding="utf-8")
+    published_nginx = nginx_source.read_text(encoding="utf-8")
+    assert "location = /admin" in published_nginx
+    admin_boundary = published_nginx[
+        published_nginx.index("location = /admin"):
+        published_nginx.index("location = /office")
+    ]
+    assert "proxy_pass http://127.0.0.1:8080;" in admin_boundary
+    assert "127.0.0.1:8011" not in admin_boundary
     evidence_dirs = list(backups.glob("ai-admin-office-*"))
     assert len(evidence_dirs) == 1
     evidence = evidence_dirs[0]

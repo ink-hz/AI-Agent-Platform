@@ -1329,20 +1329,41 @@ class MissionRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise MissionRepositoryError() from None
 
-    def claim_pending(self, limit: int) -> tuple[MissionClaim, ...]:
+    def claim_pending(
+        self,
+        limit: int,
+        *,
+        modes: tuple[Literal["brain", "direct_agent"], ...] | None = None,
+    ) -> tuple[MissionClaim, ...]:
         """Select an internal orchestration batch without blocking peers."""
 
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
             raise ValueError("Mission claim limit invalid")
+        if modes is not None and (
+            not isinstance(modes, tuple)
+            or not modes
+            or len(set(modes)) != len(modes)
+            or any(mode not in {"brain", "direct_agent"} for mode in modes)
+        ):
+            raise ValueError("Mission claim modes invalid")
         try:
             with self._connection() as connection, connection.cursor() as cursor:
+                mode_predicate = ""
+                parameters: tuple[object, ...]
+                if modes is None:
+                    parameters = (limit,)
+                else:
+                    mode_predicate = "and m.mode=any(%s) "
+                    parameters = (list(modes), limit)
                 rows = cursor.execute(
                     "select m.mission_id,m.owner_internal_user_id,m.status,m.row_version "
                     "from platform_control.missions m "
                     "where m.status not in "
                     "('completed','partially_completed','failed','cancelled','interrupted') "
-                    "order by m.updated_at,m.mission_id for update of m skip locked limit %s",
-                    (limit,),
+                    + mode_predicate
+                    + "order by m.updated_at,m.mission_id "
+                    "for update of m skip locked limit %s",
+                    parameters,
                 ).fetchall()
                 return tuple(MissionClaim(**row) for row in rows)
         except MissionRepositoryError:

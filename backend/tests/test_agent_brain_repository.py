@@ -84,6 +84,26 @@ def _relay_for_mission(environment) -> ExecutionRelayRepository:
     )
 
 
+@pytest.mark.postgres
+def test_claim_pending_can_be_restricted_to_direct_agent_mode(
+    mission_database, repository
+) -> None:
+    _environment, owner_id, _other_owner_id = mission_database
+    brain = repository.create_mission(owner_id, uuid4(), "brain")
+    direct = repository.create_mission(
+        owner_id,
+        uuid4(),
+        "direct",
+        mode="direct_agent",
+        direct_agent_id="hr-bot",
+    )
+
+    claims = repository.claim_pending(50, modes=("direct_agent",))
+
+    assert [claim.mission_id for claim in claims] == [direct.mission_id]
+    assert brain.mission_id not in {claim.mission_id for claim in claims}
+
+
 def _mission_payload(mission, run) -> RelayJobPayload:
     return RelayJobPayload(
         run_id=run.run_id,

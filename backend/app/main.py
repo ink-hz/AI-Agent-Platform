@@ -507,6 +507,7 @@ def create_app(
     agent_use_authorization = None
     control_database_url = None
     content_codec = None
+    v1_mission_modes: list[str] = []
     if config.execution_relay_enabled:
         control_database_url = read_secret_file(
             config.control_plane.control_database_url_file
@@ -548,7 +549,11 @@ def create_app(
             v2_enabled=config.agent_brain_v2_enabled,
         )
         agent_use_authorization = AgentUseAuthorization(control_database_url)
-    if config.agent_brain_enabled:
+    if config.direct_agent_enabled:
+        v1_mission_modes.append("direct_agent")
+    if config.agent_brain_enabled and not config.agent_brain_v2_enabled:
+        v1_mission_modes.append("brain")
+    if v1_mission_modes:
         if (
             mission_repository is None
             or conversation_repository is None
@@ -566,6 +571,7 @@ def create_app(
             conversation_projection=ConversationProjection(
                 conversation_repository
             ),
+            mission_modes=tuple(v1_mission_modes),
         )
         agent_brain_orchestrator.check_ready()
     if identity_enabled and identity_auth is None:
@@ -710,12 +716,10 @@ def create_app(
                         operations_poll_loop(operations_scheduler)
                     )
                 )
-        # V2 is executed exclusively by the private durable worker.  Keep the
-        # V1 repository/routes for history, but never run both schedulers.
-        if (
-            agent_brain_orchestrator is not None
-            and not config.agent_brain_v2_enabled
-        ):
+        # Brain V2 is executed by the private durable worker. Direct-Agent
+        # Missions retain the V1 relay state machine and are filtered at claim
+        # time, so they continue while Brain itself is disabled or on V2.
+        if agent_brain_orchestrator is not None:
             tasks.append(asyncio.create_task(agent_brain_loop(agent_brain_orchestrator)))
         try:
             yield

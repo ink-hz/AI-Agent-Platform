@@ -15,6 +15,9 @@ postgres_container="$4"
 [[ "$release_path" == /* && "$private_path" == /* ]] || fail
 [[ -f "$release_path/backend/control_migrations/001_identity_security.sql" ]] || fail
 [[ -f "$release_path/backend/control_migrations/002_isolate_environment_roles.sql" ]] || fail
+job_kind_preflight="$release_path/deploy/cloud/preflight-execution-job-kind.sh"
+[[ -f "$job_kind_preflight" && ! -L "$job_kind_preflight" \
+  && -x "$job_kind_preflight" ]] || fail
 [[ -n "$image_name" && -n "$postgres_container" ]] || fail
 credential_helper="$release_path/deploy/cloud/control-db-credential-state.sh"
 credential_state_file="$private_path/.control-database-credentials-v2.state"
@@ -463,6 +466,13 @@ where member.rolname = any(array[
 grant platform_control_owner to platform_control_migrator;
 grant platform_control_owner_preview to platform_control_migrator_preview;
 SQL
+
+for database_name in agent_platform_control agent_platform_control_preview; do
+  preflight_result="$("$job_kind_preflight" "$postgres_container" "$database_name")" \
+    || fail
+  [[ "$preflight_result" == \
+    "EXECUTION_JOB_KIND_PREFLIGHT_OK database=$database_name state="* ]] || fail
+done
 
 migrator_secrets=(
   "$credential_source_path/control-migrator-database-url"

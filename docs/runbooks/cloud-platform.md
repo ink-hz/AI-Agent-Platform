@@ -174,6 +174,77 @@ and the authenticated account proof have passed. Roll back in reverse order:
 AI ADMIN feature release, Platform projection, AI ADMIN compatibility bridge;
 retain synchronized nullable columns and do not delete directory data.
 
+## Unified employee entry and AI ADMIN `/office` boundary
+
+The Agent domain has one Nginx owner: Agent Platform. Its HTTPS server block
+must retain these explicit path owners:
+
+```text
+/                     Platform employee-use entry
+/agents/*             Platform professional Agent workspaces
+/admin and /admin/*   Platform management center -> 127.0.0.1:8080
+/office and /office/* AI ADMIN -> 127.0.0.1:8011
+```
+
+Do not rely on the fallback `location /` to own `/admin`; both `/admin` and
+`^~ /admin/` are explicit Platform locations so a later application cannot
+silently capture the path. AI ADMIN releases must not install or edit this
+server block. The `/office` cutover is performed only by
+`publish-office-path-migration.sh` under the shared Platform action lock.
+
+The default request-body limit remains 1 MB. Only the exact AI ADMIN feedback
+upload endpoint is 12 MB. Platform currently has no browser upload endpoint,
+so no broad 50 MB exception is installed; add one only together with a real,
+authenticated, exact Platform upload route and its tests. Every `/office`
+location that overrides `add_header` repeats the complete HSTS, nosniff,
+frame, referrer, CSP and permissions header set. `/office/health` is a public
+404 owned by the Admin-path acceptance contract, not a Platform health API.
+
+AI ADMIN authenticates each request through the loopback-only minimal subject
+endpoint and receives only `internal_user_id`, `display_name`, and `active`.
+It must independently enforce strict Host/Origin and CSRF checks for every
+mutation. A same-site request originating at `fae.orbbec.com.cn` must not be
+accepted as an Admin write merely because the browser attached the Platform
+Session Cookie.
+
+Before control migration 042, deployment automatically runs the read-only
+classification preflight against both production and preview control
+databases. To run the same gate manually without exposing rows:
+
+```bash
+release=/opt/orbbec-agent-platform/current
+platform_env=/opt/orbbec-agent-platform/private/platform.env
+compose="$release/deploy/cloud/compose.yaml"
+postgres="$(docker compose --env-file "$platform_env" -f "$compose" ps -q platform-postgres)"
+"$release/deploy/cloud/preflight-execution-job-kind.sh" \
+  "$postgres" agent_platform_control
+"$release/deploy/cloud/preflight-execution-job-kind.sh" \
+  "$postgres" agent_platform_control_preview
+```
+
+The only acceptable outputs begin with
+`EXECUTION_JOB_KIND_PREFLIGHT_OK`. Orphaned `execution_jobs` or an unknown
+Mission phase stops the release and prints only aggregate classification
+evidence. Never coalesce an unknown row to `legacy_brain` merely to pass the
+gate.
+
+The normal staged release enables direct professional-Agent use with
+`PLATFORM_DIRECT_AGENT_ENABLED=1` while keeping both Brain flags at `0`. The
+API process runs a mode-filtered V1 relay scheduler that can claim only
+`direct_agent` Missions in this state. It cannot claim or advance a Brain
+Mission. This is the supported preparation-page state: `/` returns 200 with
+`X-Platform-Entry-State: brain-preparing`, while authorized HR and Marketing
+workspaces remain usable.
+
+Before compatibility rollback, `rollback-dingtalk-production.sh` verifies that
+no `metabot_local` job remains queued, leased, dispatched, or running. A
+non-zero count returns `ROLLBACK_BLOCKED_ACTIVE_METABOT_LOCAL`; wait for the
+tasks to settle or explicitly terminate them through the supported stop path,
+then retry. Never let an older orchestrator reinterpret an in-flight V2 job.
+The Nginx rollback baseline after the office cutover is the post-migration
+configuration containing `/office`; every Platform rollback must recheck
+`/office/?view=services` as well as `/admin`, `/`, and FAE invariance.
+
 ## Agent Brain opt-in release
 
 The use entry is a separate fail-closed release gate. Keep the management root
@@ -189,14 +260,16 @@ without skipping or combining a gate:
 7. start the private durable worker with V2 intake disabled;
 8. run the real Provider probe and reference crash-recovery acceptance;
 9. atomically enable Brain and V2 intake;
-10. switch `/` from the management entry to Agent 大脑.
+10. switch `/` from the preparation state to the active Agent 大脑 workspace.
 
 The cloud environment flags are `PLATFORM_AGENT_BRAIN_ENABLED` and
 `PLATFORM_AGENT_BRAIN_V2_ENABLED`. Both are absent or `0` during migration,
 image, Provider, recovery, and relay validation. They move to `1` in the same
-mode-0600 environment-file replacement. The authenticated root then
-redirects to `/admin`; only an explicit value of `1` enables Mission APIs and
-the use root. The relay remains separately controlled by
+mode-0600 environment-file replacement. The authenticated root never
+redirects to `/admin`. With Brain disabled it serves the preparation shell;
+only an explicit value of `1` enables Brain Mission APIs and the active Brain
+workspace. Direct professional-Agent routes are controlled independently by
+`PLATFORM_DIRECT_AGENT_ENABLED=1`. The relay remains separately controlled by
 `PLATFORM_EXECUTION_RELAY_ENABLED=1`.
 
 Before staging, place the configured Provider key at
