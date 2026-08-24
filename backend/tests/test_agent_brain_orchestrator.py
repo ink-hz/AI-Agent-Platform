@@ -389,6 +389,44 @@ def test_malformed_planner_output_fails_protocol_without_repair(
 
 
 @pytest.mark.postgres
+def test_metabot_nested_terminal_result_advances_planning(
+    brain_database, orchestrator
+):
+    environment, owner_id = brain_database
+    service, missions, relay = orchestrator
+    mission = missions.create_mission(owner_id, uuid4(), "介绍一下你自己")
+    service.advance_pending(limit=50)
+    run_id = next(iter(relay.payloads))
+    relay.states[run_id] = "completed"
+    relay.run_events[run_id] = (
+        RelayEvent(
+            run_id=run_id,
+            seq=1,
+            event_type="agent.complete",
+            created_at=datetime.now(timezone.utc),
+            payload={
+                "result": {
+                    "success": True,
+                    "responseText": json.dumps(
+                        {
+                            "kind": "direct",
+                            "answer": "我是 Agent 大脑。",
+                            "agent_id": None,
+                            "objective": None,
+                            "rationale_summary": "可以直接回答",
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            },
+        ),
+    )
+
+    assert service.advance_pending(limit=50) == 1
+    assert _mission_row(environment, mission.mission_id)[0] == "completed"
+
+
+@pytest.mark.postgres
 def test_oversized_direct_answer_fails_explicitly_instead_of_stalling(
     brain_database, orchestrator
 ):

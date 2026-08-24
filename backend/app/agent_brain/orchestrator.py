@@ -211,7 +211,12 @@ def _terminal_text(events: tuple[RelayEvent, ...], status: str) -> str:
     expected_type = "agent.complete" if status == "completed" else "agent.error"
     if not events or events[-1].event_type != expected_type:
         raise ExecutionRelayError("execution relay unavailable")
-    text = events[-1].payload.get("text", "")
+    payload = events[-1].payload
+    text = payload.get("text", "")
+    if status == "completed" and (type(text) is not str or not text.strip()):
+        result = payload.get("result")
+        if type(result) is dict and result.get("success") is True:
+            text = result.get("responseText", "")
     if type(text) is not str or (status == "completed" and not text.strip()):
         raise ExecutionRelayError("execution relay unavailable")
     try:
