@@ -11,8 +11,11 @@ fail() {
 
 ai_admin_release_sha="${AI_ADMIN_RELEASE_SHA:-}"
 platform_release_sha="${PLATFORM_RELEASE_SHA:-}"
+identity_smoke_mode="${OFFICE_MIGRATION_IDENTITY_SMOKE_MODE:-cookie}"
 [[ "$ai_admin_release_sha" =~ ^[0-9a-f]{40}$ \
-  && "$platform_release_sha" =~ ^[0-9a-f]{40}$ ]] || fail
+  && "$platform_release_sha" =~ ^[0-9a-f]{40}$ \
+  && ( "$identity_smoke_mode" == "cookie" \
+    || "$identity_smoke_mode" == "deferred_browser" ) ]] || fail
 
 platform_root=/opt/orbbec-agent-platform
 private_root="$platform_root/private"
@@ -24,7 +27,6 @@ session_cookie_file="$private_root/office-migration-session-cookie"
 platform_release="$platform_root/releases/$platform_release_sha"
 transaction="$platform_release/deploy/cloud/office_path_nginx_transaction.py"
 rollback_template="$platform_release/deploy/cloud/rollback-office-path-migration.sh"
-expected_nginx_source=/etc/nginx/sites-available/agent-domain.conf
 
 [[ ! -e "$deploy_input_lock" && ! -e "$action_lock" \
   && -f "$deploy_transaction_lock" && ! -L "$deploy_transaction_lock" \
@@ -58,9 +60,11 @@ exec 9<>"$deploy_transaction_lock" || fail
 [[ "$(/usr/bin/readlink -f "$platform_root/current")" == "$platform_release" \
   && "$(/usr/bin/tr -d '\n' < "$ai_admin_root/RELEASE_COMMIT")" == "$ai_admin_release_sha" \
   && -f "$transaction" && ! -L "$transaction" \
-  && -f "$rollback_template" && ! -L "$rollback_template" \
-  && -f "$session_cookie_file" && ! -L "$session_cookie_file" \
-  && "$(/usr/bin/stat -c '%a %U' "$session_cookie_file")" == "600 root" ]] || fail
+  && -f "$rollback_template" && ! -L "$rollback_template" ]] || fail
+if [[ "$identity_smoke_mode" == "cookie" ]]; then
+  [[ -f "$session_cookie_file" && ! -L "$session_cookie_file" \
+    && "$(/usr/bin/stat -c '%a %U' "$session_cookie_file")" == "600 root" ]] || fail
+fi
 /bin/systemctl is-active --quiet nginx || fail
 
 /usr/bin/curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8011/health \
@@ -79,10 +83,12 @@ raise SystemExit(0 if payload.get("status")=="ok" and isinstance(runtime,dict) a
 
 identity_smoke="$ai_admin_root/scripts/smoke_platform_identity.py"
 [[ -f "$identity_smoke" && ! -L "$identity_smoke" ]] || fail
-"$ai_admin_root/.venv/bin/python" "$identity_smoke" \
-  --ai-admin-base-url http://127.0.0.1:8011/office/ \
-  --phase before_revoke --cookie-file "$session_cookie_file" --timeout-seconds 12 \
-  >/dev/null || fail
+if [[ "$identity_smoke_mode" == "cookie" ]]; then
+  "$ai_admin_root/.venv/bin/python" "$identity_smoke" \
+    --ai-admin-base-url http://127.0.0.1:8011/office/ \
+    --phase before_revoke --cookie-file "$session_cookie_file" --timeout-seconds 12 \
+    >/dev/null || fail
+fi
 
 fingerprint_fae() {
   local fae_id fae_image_id fae_started_at fae_restart_count
@@ -165,7 +171,8 @@ finally:
 print(resolved)
 PY
 )" || fail
-[[ "$nginx_source" == "$expected_nginx_source" ]] || fail
+[[ "$nginx_source" == /etc/nginx/sites-available/agent-domain.conf \
+  || "$nginx_source" == /etc/nginx/sites-enabled/agent-domain.conf ]] || fail
 
 /usr/bin/install -o root -g root -m 600 "$nginx_source" "$backup"
 /usr/bin/python3 "$transaction" "$nginx_source" "$candidate" || fail
@@ -233,16 +240,22 @@ trap rollback_on_failure EXIT
 
 [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 5 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 https://agent.orbbec.com.cn/)" == "302" ]] || fail
-[[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 5 \
-  --resolve agent.orbbec.com.cn:443:127.0.0.1 https://agent.orbbec.com.cn/admin/)" == "302" ]] || fail
+admin_status="$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 5 \
+  --resolve agent.orbbec.com.cn:443:127.0.0.1 https://agent.orbbec.com.cn/admin/)"
+[[ "$admin_status" == "302" || "$admin_status" == "401" ]] || fail
 [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 5 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 https://agent.orbbec.com.cn/office/health)" == "404" ]] || fail
 [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 5 \
   --resolve agent.orbbec.com.cn:443:127.0.0.1 'https://agent.orbbec.com.cn/office/?view=services')" == "200" ]] || fail
-"$ai_admin_root/.venv/bin/python" "$identity_smoke" \
-  --ai-admin-base-url https://agent.orbbec.com.cn/office/ \
-  --phase before_revoke --cookie-file "$session_cookie_file" --timeout-seconds 12 \
-  > "$evidence_dir/identity-smoke.json" || fail
+if [[ "$identity_smoke_mode" == "cookie" ]]; then
+  "$ai_admin_root/.venv/bin/python" "$identity_smoke" \
+    --ai-admin-base-url https://agent.orbbec.com.cn/office/ \
+    --phase before_revoke --cookie-file "$session_cookie_file" --timeout-seconds 12 \
+    > "$evidence_dir/identity-smoke.json" || fail
+else
+  /usr/bin/printf '%s\n' '{"phase":"deferred_browser","status":"pending"}' \
+    > "$evidence_dir/identity-smoke.json"
+fi
 
 fingerprint_fae > "$after" || fail
 /bin/chmod 600 "$after" "$evidence_dir/identity-smoke.json"
@@ -257,6 +270,7 @@ fingerprint_fae > "$after" || fail
   "candidate_sha256=$candidate_sha256" \
   "fae_baseline_sha256=$baseline_sha256" \
   "rollback_script=$rollback_installed" \
+  "authenticated_identity_smoke=$identity_smoke_mode" \
   "platform_admin_route_restored=true" \
   "fae_managed_files_unchanged=true" \
   "legacy_admin_route_conflict_restored=false" > "$report"
@@ -264,4 +278,8 @@ fingerprint_fae > "$after" || fail
 
 rollback_required=0
 trap release_action_lock EXIT
-echo "AI_ADMIN_OFFICE_PATH_MIGRATION_OK change_id=$change_id evidence=$evidence_dir rollback=$rollback_installed"
+if [[ "$identity_smoke_mode" == "cookie" ]]; then
+  echo "AI_ADMIN_OFFICE_PATH_MIGRATION_OK change_id=$change_id evidence=$evidence_dir rollback=$rollback_installed"
+else
+  echo "AI_ADMIN_OFFICE_PATH_MIGRATION_PENDING_IDENTITY change_id=$change_id evidence=$evidence_dir rollback=$rollback_installed"
+fi

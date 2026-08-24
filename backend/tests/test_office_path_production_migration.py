@@ -29,7 +29,11 @@ def _write_executable(path: Path, value: str) -> Path:
 
 
 def _run_publish_harness(
-    tmp_path: Path, *, failure: str = "", preexisting_lock: str = ""
+    tmp_path: Path,
+    *,
+    failure: str = "",
+    preexisting_lock: str = "",
+    deferred_identity: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], str, Path, Path]:
     platform_root = tmp_path / "opt" / "orbbec-agent-platform"
     ai_root = tmp_path / "opt" / "ai-admin-agent"
@@ -57,10 +61,11 @@ def _run_publish_harness(
     transaction_lock.write_text("")
     transaction_lock.chmod(0o600)
     (ai_root / "RELEASE_COMMIT").write_text(ai_sha + "\n", encoding="utf-8")
-    (private / "office-migration-session-cookie").write_text(
-        "test-session-cookie\n", encoding="utf-8"
-    )
-    (private / "office-migration-session-cookie").chmod(0o600)
+    if not deferred_identity:
+        (private / "office-migration-session-cookie").write_text(
+            "test-session-cookie\n", encoding="utf-8"
+        )
+        (private / "office-migration-session-cookie").chmod(0o600)
     (ai_root / "scripts" / "smoke_platform_identity.py").write_text(
         "# harness marker\n", encoding="utf-8"
     )
@@ -303,6 +308,9 @@ def _run_publish_harness(
                 **os.environ,
                 "AI_ADMIN_RELEASE_SHA": ai_sha,
                 "PLATFORM_RELEASE_SHA": release_sha,
+                "OFFICE_MIGRATION_IDENTITY_SMOKE_MODE": (
+                    "deferred_browser" if deferred_identity else "cookie"
+                ),
                 "HARNESS_FAILURE": failure,
                 "HARNESS_LOG": str(log),
                 "HARNESS_NGINX_SOURCE": str(nginx_source),
@@ -338,6 +346,7 @@ def test_publish_is_a_locked_fail_closed_nginx_transaction() -> None:
         "deploy-input.transaction.lock",
         "deploy-input.lock",
         "/usr/bin/flock",
+        "/etc/nginx/sites-enabled/agent-domain.conf",
         "office_path_nginx_transaction.py",
         "nginx -T",
         "nginx -t",
@@ -529,6 +538,25 @@ def test_publish_harness_accepts_mounts_with_only_serialization_order_changed(
     assert result.returncode == 0, result.stderr
     assert log.splitlines() == ["forward_install", "nginx_test", "reload"]
     assert "location ^~ /office/" in nginx_source.read_text(encoding="utf-8")
+
+
+def test_publish_harness_marks_explicit_browser_identity_as_pending(
+    tmp_path: Path,
+) -> None:
+    result, log, nginx_source, backups = _run_publish_harness(
+        tmp_path,
+        failure="identity",
+        deferred_identity=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "PENDING_IDENTITY" in result.stdout
+    assert log.splitlines() == ["forward_install", "nginx_test", "reload"]
+    assert "location ^~ /office/" in nginx_source.read_text(encoding="utf-8")
+    report = next(backups.glob("ai-admin-office-*/report")).read_text(
+        encoding="utf-8"
+    )
+    assert "authenticated_identity_smoke=deferred_browser" in report
 
 
 def _installed_rollback(tmp_path: Path) -> Path:
