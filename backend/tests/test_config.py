@@ -44,6 +44,28 @@ def test_identity_defaults_are_disabled_and_need_no_secret_files(monkeypatch) ->
     assert control_plane.trusted_proxy_cidrs == ("127.0.0.1/32", "::1/128")
 
 
+def test_brain_model_defaults_disabled_and_never_accepts_inline_api_key(
+    monkeypatch,
+) -> None:
+    for name in (
+        "PLATFORM_BRAIN_MODEL_ENABLED",
+        "PLATFORM_BRAIN_PROVIDER_BASE_URL",
+        "PLATFORM_BRAIN_PROVIDER_API_KEY_FILE",
+        "PLATFORM_BRAIN_MODEL_MANIFEST_PATH",
+        "PLATFORM_BRAIN_PROVIDER_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    config = load_config()
+    assert config.brain_model_enabled is False
+    assert config.brain_provider_api_key_file == ""
+    assert config.brain_provider_base_url == ""
+
+    monkeypatch.setenv("PLATFORM_BRAIN_PROVIDER_API_KEY", "must-not-be-inline")
+    with pytest.raises(ValueError, match="secret file"):
+        load_config()
+
+
 def test_remote_sync_config_defaults(monkeypatch) -> None:
     for name in (
         "PLATFORM_SYNC_DATABASE_URL_FILE",

@@ -1,0 +1,16 @@
+{
+  "config_version": "brain-opus5-v1",
+  "provider_kind": "anthropic_compatible",
+  "model_id": "claude-opus-5",
+  "context_profile": "opus_1m",
+  "context_window": 1000000,
+  "thinking_type": "adaptive",
+  "thinking_display": "omitted",
+  "thinking_effort": "high",
+  "max_output_tokens": 65536,
+  "max_answer_bytes": 65536,
+  "prompt_cache_enabled": true,
+  "stable_cache_ttl": "1h",
+  "rolling_cache_ttl": "5m",
+  "system_prompt_sha256": "10b5e0f3d32b419d5e742238f75c94ea7187a62bf1ed22e10b811b5a6b79aba0"
+}

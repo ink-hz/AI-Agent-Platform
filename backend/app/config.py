@@ -65,6 +65,10 @@ class Config:
     replica_stale_seconds: int
     execution_relay_enabled: bool
     agent_brain_enabled: bool
+    brain_model_enabled: bool
+    brain_provider_base_url: str
+    brain_provider_api_key_file: str
+    brain_model_manifest_path: str
     content_encryption_keyring_file: str
     execution_relay_lease_seconds: int
     execution_relay_max_body_bytes: int
@@ -524,6 +528,26 @@ def _validate_agent_brain_config(config: Config) -> None:
         )
 
 
+def _validate_brain_model_config(config: Config) -> None:
+    if os.getenv("PLATFORM_BRAIN_PROVIDER_API_KEY"):
+        raise ValueError("Brain Provider credentials must use a secret file")
+    if not config.brain_model_enabled:
+        return
+    if not config.agent_brain_enabled:
+        raise ValueError("Brain model runtime requires Agent Brain")
+    try:
+        _validate_public_base_url(config.brain_provider_base_url)
+    except ValueError:
+        raise ValueError("Brain Provider base URL must be a safe HTTPS origin") from None
+    _validate_private_file(
+        config.brain_provider_api_key_file,
+        "Brain Provider API key",
+    )
+    manifest = Path(config.brain_model_manifest_path)
+    if not manifest.is_absolute() or not manifest.is_file() or manifest.is_symlink():
+        raise RuntimeError("Brain model manifest must be an absolute regular file")
+
+
 def is_cloud_mode(config: Config) -> bool:
     return config.deployment_mode == "cloud-replica"
 
@@ -655,6 +679,16 @@ def load_config() -> Config:
         ),
         execution_relay_enabled=execution_relay_enabled,
         agent_brain_enabled=_enabled("PLATFORM_AGENT_BRAIN_ENABLED"),
+        brain_model_enabled=_enabled("PLATFORM_BRAIN_MODEL_ENABLED"),
+        brain_provider_base_url=os.getenv(
+            "PLATFORM_BRAIN_PROVIDER_BASE_URL", ""
+        ).strip(),
+        brain_provider_api_key_file=os.getenv(
+            "PLATFORM_BRAIN_PROVIDER_API_KEY_FILE", ""
+        ).strip(),
+        brain_model_manifest_path=os.getenv(
+            "PLATFORM_BRAIN_MODEL_MANIFEST_PATH", ""
+        ).strip(),
         content_encryption_keyring_file=content_encryption_keyring_file,
         execution_relay_lease_seconds=execution_relay_lease_seconds,
         execution_relay_max_body_bytes=execution_relay_max_body_bytes,
@@ -664,4 +698,5 @@ def load_config() -> Config:
     _validate_attachment_config(config)
     _validate_execution_relay_config(config)
     _validate_agent_brain_config(config)
+    _validate_brain_model_config(config)
     return config
