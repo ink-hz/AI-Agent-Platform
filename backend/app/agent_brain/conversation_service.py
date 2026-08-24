@@ -84,6 +84,11 @@ class ConversationCommandService:
             return self._repository.append_turn(
                 owner, conversation_id, request_id, text
             )
+        active = self._repository.active_turn_for_owner(owner, conversation_id)
+        if active is not None:
+            return self.resume_waiting_user(
+                owner, conversation_id, request_id, text
+            )
         return self._repository.append_turn_v2(
             owner,
             conversation_id,

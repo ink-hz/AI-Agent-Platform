@@ -661,6 +661,7 @@ begin
   );
   execute format(
     'grant select on platform_brain.brain_loops, '
+    'platform_brain.brain_steps, platform_brain.brain_tool_calls, '
     'platform_brain.agent_tasks, platform_brain.agent_task_events to %I',
     selected_app
   );
@@ -671,6 +672,19 @@ begin
   execute format(
     'grant update (cancel_requested,updated_at,row_version) '
     'on platform_brain.brain_loops to %I', selected_app
+  );
+  execute format(
+    'grant update (status,active_started_at,active_deadline_at,'
+    'waiting_user_expires_at,updated_at,row_version) '
+    'on platform_brain.brain_loops to %I', selected_app
+  );
+  execute format(
+    'grant update (status,terminal_at,updated_at) '
+    'on platform_brain.brain_steps to %I', selected_app
+  );
+  execute format(
+    'grant update (status,result_ciphertext,result_key_version,result_sha256,'
+    'updated_at) on platform_brain.brain_tool_calls to %I', selected_app
   );
   execute format(
     'grant select,insert,update on platform_control.conversations, '

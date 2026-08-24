@@ -25,6 +25,7 @@ from app.agent_brain.tool_protocol import (
     BrainToolBatch,
     DelegateTaskCall,
     ParsedToolCall,
+    RequestUserInputCall,
     SubmitAnswerCall,
     stable_runtime_id,
 )
@@ -401,12 +402,7 @@ class BrainLoopRepository:
                     ).fetchone()
                     if loop is None:
                         raise BrainRepositoryNotFound()
-                    accepted = tuple(
-                        call
-                        for call in commit.batch.calls
-                        if call.accepted and isinstance(call.call, DelegateTaskCall)
-                    )
-                    if loop["task_count"] + len(accepted) > loop["max_tasks"]:
+                    if loop["task_count"] + len(commit.task_specs) > loop["max_tasks"]:
                         raise BrainRepositoryConflict()
                     sealed_response = self.content_codec.seal_json(
                         _step_response_subject(step["step_id"]), response_value
@@ -448,7 +444,7 @@ class BrainLoopRepository:
                     )
                     if isinstance(final_call, SubmitAnswerCall):
                         self._complete_answer_locked(
-                            connection, loop, final_call.answer_markdown
+                            connection, loop, final_call
                         )
                     elif pending == 0:
                         connection.execute(
@@ -462,6 +458,25 @@ class BrainLoopRepository:
                             "updated_at=clock_timestamp(),row_version=row_version+1 "
                             "where loop_id=%s",
                             (len(task_ids), loop_id),
+                        )
+                    elif commit.batch.kind == "request_user_input":
+                        connection.execute(
+                            "update platform_control.conversation_turns set "
+                            "status='waiting_user',updated_at=clock_timestamp() "
+                            "where turn_id=%s",
+                            (loop["turn_id"],),
+                        )
+                        connection.execute(
+                            "update platform_brain.brain_loops set "
+                            "status='waiting_user',step_count=step_count+1,"
+                            "active_elapsed_ms=least(active_budget_ms,active_elapsed_ms+"
+                            "greatest(0,extract(epoch from (clock_timestamp()-"
+                            "active_started_at))*1000)::bigint),active_started_at=null,"
+                            "active_deadline_at=null,waiting_user_expires_at="
+                            "clock_timestamp()+interval '24 hours',"
+                            "updated_at=clock_timestamp(),row_version=row_version+1 "
+                            "where loop_id=%s",
+                            (loop_id,),
                         )
                     else:
                         connection.execute(
@@ -592,7 +607,7 @@ class BrainLoopRepository:
         return tuple(task_ids)
 
     def _complete_answer_locked(
-        self, connection: Any, loop: Mapping[str, Any], answer: str
+        self, connection: Any, loop: Mapping[str, Any], call: SubmitAnswerCall
     ) -> None:
         message_id = uuid4()
         seq = connection.execute(
@@ -601,7 +616,8 @@ class BrainLoopRepository:
             (loop["conversation_id"],),
         ).fetchone()["seq"]
         sealed = self.content_codec.seal_json(
-            message_subject(loop["conversation_id"], message_id), {"text": answer}
+            message_subject(loop["conversation_id"], message_id),
+            {"text": call.answer_markdown},
         )
         connection.execute(
             "insert into platform_control.conversation_messages ("
@@ -618,11 +634,117 @@ class BrainLoopRepository:
         )
         connection.execute(
             "update platform_brain.brain_loops set status='completed',"
-            "step_count=step_count+1,terminal_at=clock_timestamp(),"
+            "outcome=%s,step_count=step_count+1,terminal_at=clock_timestamp(),"
             "active_started_at=null,active_deadline_at=null,updated_at=clock_timestamp(),"
             "row_version=row_version+1 where loop_id=%s",
-            (loop["loop_id"],),
+            (call.outcome, loop["loop_id"]),
         )
+
+    def loop_for_step(self, step: BrainStepRecord) -> BrainLoopRecord:
+        if not isinstance(step, BrainStepRecord):
+            raise ValueError("Brain Step required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select * from platform_brain.brain_loops where loop_id=%s",
+                    (step.loop_id,),
+                ).fetchone()
+            if row is None:
+                raise BrainRepositoryNotFound()
+            return _loop_from_row(row)
+        except BrainRepositoryNotFound:
+            raise
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def record_protocol_retry(self, loop_id: UUID) -> bool:
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "update platform_brain.brain_loops set protocol_retry_count=1,"
+                    "updated_at=clock_timestamp(),row_version=row_version+1 "
+                    "where loop_id=%s and protocol_retry_count=0 and terminal_at is null "
+                    "returning loop_id",
+                    (loop_id,),
+                ).fetchone()
+            return row is not None
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def fail_with_platform_summary(self, loop_id: UUID, reason_code: str) -> None:
+        _require_uuid(loop_id)
+        if not isinstance(reason_code, str) or not reason_code:
+            raise ValueError("Brain failure reason invalid")
+        text = (
+            "【平台生成的部分执行摘要】\n\n"
+            "Agent 大脑本轮未能正常完成。已停止继续执行；"
+            f"原因代码：`{reason_code}`。"
+        )
+        try:
+            with self._connection() as connection, connection.transaction():
+                loop = connection.execute(
+                    "select * from platform_brain.brain_loops where loop_id=%s "
+                    "for update",
+                    (loop_id,),
+                ).fetchone()
+                if loop is None:
+                    raise BrainRepositoryNotFound()
+                if loop["terminal_at"] is not None:
+                    return
+                message_id = uuid4()
+                seq = connection.execute(
+                    "select coalesce(max(seq),0)+1 as seq from "
+                    "platform_control.conversation_messages where conversation_id=%s",
+                    (loop["conversation_id"],),
+                ).fetchone()["seq"]
+                sealed = self.content_codec.seal_json(
+                    message_subject(loop["conversation_id"], message_id),
+                    {"text": text},
+                )
+                connection.execute(
+                    "insert into platform_control.conversation_messages ("
+                    "message_id,conversation_id,seq,role,content_ciphertext,"
+                    "encryption_key_version,turn_id,delivery_status,completed_at) "
+                    "values (%s,%s,%s,'assistant',%s,%s,%s,'failed',clock_timestamp())",
+                    (message_id,loop["conversation_id"],seq,sealed.ciphertext,
+                     sealed.key_version,loop["turn_id"]),
+                )
+                connection.execute(
+                    "update platform_control.conversation_turns set "
+                    "assistant_message_id=%s,status='failed',updated_at=clock_timestamp() "
+                    "where turn_id=%s",
+                    (message_id, loop["turn_id"]),
+                )
+                connection.execute(
+                    "update platform_brain.brain_steps set status='failed',"
+                    "lease_worker_id=null,lease_expires_at=null,"
+                    "terminal_at=clock_timestamp(),updated_at=clock_timestamp() "
+                    "where loop_id=%s and status in "
+                    "('queued','leased','requesting_model','waiting_tool_results')",
+                    (loop_id,),
+                )
+                connection.execute(
+                    "update platform_brain.brain_tool_calls set status='failed',"
+                    "terminal_at=clock_timestamp(),updated_at=clock_timestamp() "
+                    "where step_id in (select step_id from "
+                    "platform_brain.brain_steps where loop_id=%s) "
+                    "and status in ('accepted','waiting_result','result_ready')",
+                    (loop_id,),
+                )
+                connection.execute(
+                    "update platform_brain.brain_loops set status='failed',"
+                    "reason_code=%s,fallback_used=true,"
+                    "fallback_kind='platform_partial_summary',terminal_at=clock_timestamp(),"
+                    "active_started_at=null,active_deadline_at=null,"
+                    "waiting_user_expires_at=null,updated_at=clock_timestamp(),"
+                    "row_version=row_version+1 where loop_id=%s",
+                    (reason_code, loop_id),
+                )
+        except BrainRepositoryNotFound:
+            raise
+        except (ContentCryptoError, psycopg.Error):
+            raise BrainRepositoryError() from None
 
     @staticmethod
     def _step_seq_locked(connection: Any, step_id: UUID) -> int:
@@ -730,6 +852,26 @@ class BrainLoopRepository:
         except psycopg.Error:
             raise BrainRepositoryError() from None
 
+    def settle_ready_batches(self, *, limit: int) -> int:
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("settled batch scan limit invalid")
+        try:
+            with self._connection() as connection:
+                loop_ids = tuple(
+                    row["loop_id"]
+                    for row in connection.execute(
+                        "select loop_id from platform_brain.brain_loops "
+                        "where status='waiting_agents' order by updated_at,loop_id "
+                        "limit %s",
+                        (limit,),
+                    )
+                )
+            return sum(self.settle_batch(loop_id) for loop_id in loop_ids)
+        except BrainRepositoryError:
+            raise
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
     def reconstruct_messages(
         self, loop_id: UUID
     ) -> tuple[dict[str, object], ...]:
@@ -746,7 +888,10 @@ class BrainLoopRepository:
                 messages: list[dict[str, object]] = []
                 for row in connection.execute(
                     "select * from platform_control.conversation_messages "
-                    "where conversation_id=%s order by seq",
+                    "where conversation_id=%s and (role<>'user' or exists ("
+                    "select 1 from platform_control.conversation_turns turn "
+                    "where turn.user_message_id=conversation_messages.message_id)) "
+                    "order by seq",
                     (loop["conversation_id"],),
                 ):
                     value = self.content_codec.unseal_json(
@@ -921,6 +1066,29 @@ class BrainLoopRepository:
                     (limit,),
                 ).fetchall()
             return len(rows)
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def expire_waiting_users(self, *, limit: int) -> int:
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("waiting-user expiry limit invalid")
+        try:
+            with self._connection() as connection:
+                loop_ids = tuple(
+                    row["loop_id"]
+                    for row in connection.execute(
+                        "select loop_id from platform_brain.brain_loops "
+                        "where status='waiting_user' and "
+                        "waiting_user_expires_at<=clock_timestamp() "
+                        "order by waiting_user_expires_at,loop_id limit %s",
+                        (limit,),
+                    )
+                )
+            for loop_id in loop_ids:
+                self.fail_with_platform_summary(loop_id, "user_input_timeout")
+            return len(loop_ids)
+        except BrainRepositoryError:
+            raise
         except psycopg.Error:
             raise BrainRepositoryError() from None
 

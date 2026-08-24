@@ -300,3 +300,42 @@ def test_direct_agent_conversation_still_uses_v1_mission_path(
     turn = response.json()["turn"]
     assert turn["mission_id"] is not None
     assert _loop_and_mission_counts(environment, UUID(turn["turn_id"])) == (0, 0, 1)
+
+
+@pytest.mark.postgres
+def test_waiting_user_reply_resumes_same_turn_through_message_api(
+    conversation_database,
+    repository,
+) -> None:
+    environment, owner, _other = conversation_database
+    client, auth, _agent_use = _v2_client(owner, repository)
+    first = _post(client, auth, "/api/v1/conversations", "先问我岗位级别")
+    conversation_id = UUID(first.json()["conversation"]["conversation_id"])
+    turn_id = UUID(first.json()["turn"]["turn_id"])
+    from app.agent_brain.loop_repository import BrainLoopRepository
+    from test_agent_brain_loop_runtime import _request_user_response, _runtime
+
+    loops = BrainLoopRepository(
+        environment["urls"]["platform_brain_worker"],
+        content_codec=repository.content_codec,
+    )
+    assert _runtime(loops, _request_user_response()).advance_one() is True
+    request_id = uuid4()
+    reply = _post(
+        client,
+        auth,
+        f"/api/v1/conversations/{conversation_id}/messages",
+        "高级工程师",
+        request_id,
+    )
+    replay = _post(
+        client,
+        auth,
+        f"/api/v1/conversations/{conversation_id}/messages",
+        "高级工程师",
+        request_id,
+    )
+    assert reply.status_code == 201
+    assert replay.status_code == 200 and replay.json() == reply.json()
+    assert UUID(reply.json()["turn"]["turn_id"]) == turn_id
+    assert reply.json()["message"]["message_id"] == str(request_id)

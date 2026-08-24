@@ -16,7 +16,9 @@ from app.agent_brain.loop_repository import (
 )
 from app.agent_brain.model_adapter import (
     BrainModelAdapter,
+    BrainModelError,
     BrainRequestBuilder,
+    ProviderRefused,
 )
 from app.agent_brain.prompt import BrainSystemPrompt
 from app.agent_brain.tool_protocol import (
@@ -24,6 +26,7 @@ from app.agent_brain.tool_protocol import (
     ListAgentsCall,
     SubmitAnswerCall,
     ToolLimits,
+    ProtocolViolation,
     parse_tool_batch,
 )
 
@@ -58,15 +61,95 @@ class BrainLoopRuntime:
         )
         if lease is None:
             return False
+        loop = self._repository.loop_for_step(lease)
         owner_id = self._repository.loop_owner(lease.loop_id)
         messages = self._repository.reconstruct_messages(lease.loop_id)
+        forced = (
+            loop.task_count >= loop.max_tasks
+            or lease.step_seq >= loop.max_steps
+            or (
+                loop.active_deadline_at is not None
+                and loop.active_deadline_at <= datetime.now(timezone.utc)
+            )
+        )
         request = self._request_builder.build(
             messages=messages,
             step_seq=lease.step_seq,
             system_prompt=self._system_prompt.text,
+            tool_choice=(
+                {"type": "tool", "name": "submit_answer"} if forced else None
+            ),
+            budget_notice=(
+                "执行预算已到达上限。请立即使用 submit_answer 提交已有结果，"
+                "并明确说明未完成部分。"
+                if forced
+                else None
+            ),
         )
-        response = self._model.complete(request)
-        batch = parse_tool_batch(response.content_blocks, ToolLimits())
+        try:
+            response = self._model.complete(request)
+        except ProviderRefused:
+            self._repository.fail_with_platform_summary(
+                lease.loop_id, "provider_refused"
+            )
+            return True
+        except BrainModelError:
+            self._repository.fail_with_platform_summary(
+                lease.loop_id,
+                "forced_submission_failed" if forced else "provider_failed",
+            )
+            return True
+        try:
+            batch = parse_tool_batch(
+                response.content_blocks,
+                ToolLimits(
+                    max_parallel_tasks=max(
+                        1, min(4, loop.max_tasks - loop.task_count)
+                    )
+                ),
+            )
+            if forced and batch.kind != "submit_answer":
+                raise ProtocolViolation("mixed_tool_batch")
+        except ProtocolViolation:
+            if forced:
+                self._repository.fail_with_platform_summary(
+                    lease.loop_id, "forced_submission_failed"
+                )
+                return True
+            if not self._repository.record_protocol_retry(lease.loop_id):
+                self._repository.fail_with_platform_summary(
+                    lease.loop_id, "protocol_violation_after_retry"
+                )
+                return True
+            correction = self._request_builder.build(
+                messages=messages,
+                step_seq=lease.step_seq,
+                system_prompt=self._system_prompt.text,
+                budget_notice=(
+                    "上一响应违反工具协议。不要输出自由文本；本次必须只调用一个"
+                    "合法工具。"
+                ),
+            )
+            try:
+                response = self._model.complete(correction)
+                batch = parse_tool_batch(
+                    response.content_blocks,
+                    ToolLimits(
+                        max_parallel_tasks=max(
+                            1, min(4, loop.max_tasks - loop.task_count)
+                        )
+                    ),
+                )
+            except ProviderRefused:
+                self._repository.fail_with_platform_summary(
+                    lease.loop_id, "provider_refused"
+                )
+                return True
+            except (BrainModelError, ProtocolViolation):
+                self._repository.fail_with_platform_summary(
+                    lease.loop_id, "protocol_violation_after_retry"
+                )
+                return True
         immediate: list[ImmediateToolResult] = []
         task_specs: list[TaskDispatchSpec] = []
         if batch.kind == "list_agents":
@@ -83,6 +166,21 @@ class BrainLoopRuntime:
         elif batch.kind == "delegate_tasks":
             for parsed in batch.calls:
                 if not parsed.accepted or not isinstance(parsed.call, DelegateTaskCall):
+                    continue
+                now = datetime.now(timezone.utc)
+                if (
+                    loop.active_deadline_at is not None
+                    and loop.active_deadline_at <= now + timedelta(seconds=1)
+                ):
+                    immediate.append(
+                        ImmediateToolResult(
+                            parsed.tool_index,
+                            {
+                                "status": "failed",
+                                "reason": "deadline_insufficient",
+                            },
+                        )
+                    )
                     continue
                 decision = self._runtime_registry.authorize_task(
                     owner_id, parsed.call.agent_id, 1
@@ -110,8 +208,11 @@ class BrainLoopRuntime:
                         adapter_kind=decision.adapter_kind,
                         capability_version=decision.capability_version,
                         authorization_snapshot_id=snapshot_id,
-                        effective_deadline_at=datetime.now(timezone.utc)
-                        + timedelta(seconds=300),
+                        effective_deadline_at=min(
+                            now + timedelta(seconds=300),
+                            loop.active_deadline_at
+                            or now + timedelta(seconds=300),
+                        ),
                     )
                 )
         elif batch.kind == "submit_answer":
@@ -142,6 +243,12 @@ class BrainLoopRuntime:
             ),
         )
         return True
+
+    def scan_settled_batches(self) -> int:
+        settled = self._repository.settle_ready_batches(limit=100)
+        if settled and self._model is not None:
+            self.advance_one()
+        return settled
 
     def dispatch_one(self) -> bool:
         lease = self._repository.lease_task_delivery(

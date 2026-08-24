@@ -17,6 +17,8 @@ from app.agent_brain.model_adapter import (
     BrainUsage,
 )
 from app.agent_brain.prompt import BrainSystemPrompt
+from app.agent_brain.conversation_repository import ConversationRepository
+from app.agent_brain.repository import MissionRepository
 from app.execution_relay.content_crypto import SealedContent
 from test_agent_brain_loop_repository import loop_database, loop_repository, seeded_loop
 from test_control_plane_migration import control_database
@@ -28,13 +30,18 @@ PROMPT_PATH = ROOT / "backend/app/agent_brain/prompts/brain_v1.md"
 
 
 class ScriptedModel:
-    def __init__(self, response: BrainModelResponse) -> None:
-        self.response = response
+    def __init__(self, response) -> None:
+        self.responses = list(response) if isinstance(response, list) else [response]
         self.calls = 0
+        self.requests = []
 
-    def complete(self, _request):
+    def complete(self, request):
         self.calls += 1
-        return self.response
+        self.requests.append(request)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def _response(name: str, arguments: dict[str, object]) -> BrainModelResponse:
@@ -91,6 +98,16 @@ def _submit_response() -> BrainModelResponse:
     )
 
 
+def _request_user_response() -> BrainModelResponse:
+    return _response(
+        "request_user_input",
+        {
+            "question": "需要确认岗位级别",
+            "public_reason": "岗位级别决定候选人范围",
+        },
+    )
+
+
 @dataclass(frozen=True)
 class Decision:
     allowed: bool = True
@@ -138,6 +155,89 @@ def _runtime(repository, response=None):
         worker_id="test-brain-worker",
         lease_seconds=45,
     )
+
+
+@pytest.mark.postgres
+def test_waiting_user_pauses_budget_and_resumes_same_turn_once(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    environment, _codec, owner, conversation_id, turn_id = loop_database
+    loop_id, _snapshot_id = seeded_loop
+    assert _runtime(loop_repository, _request_user_response()).advance_one() is True
+    with psycopg.connect(environment["admin"]) as connection:
+        waiting = connection.execute(
+            "select status,active_elapsed_ms,active_started_at,active_deadline_at,"
+            "waiting_user_expires_at from platform_brain.brain_loops where loop_id=%s",
+            (loop_id,),
+        ).fetchone()
+    assert waiting[0] == "waiting_user"
+    assert waiting[1] < 900_000
+    assert waiting[2] is None and waiting[3] is None
+    assert waiting[4] is not None
+
+    request_id = uuid4()
+    conversations = ConversationRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=loop_repository.content_codec,
+        mission_repository=MissionRepository(
+            environment["urls"]["platform_control_app"],
+            content_codec=loop_repository.content_codec,
+        ),
+    )
+    resumed = conversations.resume_waiting_user_v2(
+        owner, conversation_id, request_id, "高级工程师"
+    )
+    replay = conversations.resume_waiting_user_v2(
+        owner, conversation_id, request_id, "高级工程师"
+    )
+    assert resumed.message.message_id == replay.message.message_id == request_id
+    messages = loop_repository.reconstruct_messages(loop_id)
+    tool_results = [
+        block
+        for message in messages
+        if message["role"] == "user" and isinstance(message["content"], list)
+        for block in message["content"]
+        if block.get("type") == "tool_result"
+    ]
+    assert len(tool_results) == 1
+    assert "高级工程师" in tool_results[0]["content"]
+    with pytest.raises(Exception):
+        conversations.resume_waiting_user_v2(
+            owner, conversation_id, uuid4(), "另一个答案"
+        )
+
+
+@pytest.mark.postgres
+def test_three_task_batch_creates_only_one_resume_step(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    environment, *_unused = loop_database
+    loop_id, _snapshot_id = seeded_loop
+    blocks = tuple(
+        _delegate_response().content_blocks[1] | {
+            "id": f"toolu_batch_{index}",
+            "input": {
+                **_delegate_response().content_blocks[1]["input"],
+                "objective": f"任务 {index}",
+            },
+        }
+        for index in range(3)
+    )
+    response = BrainModelResponse(
+        provider_request_id="msg_batch",
+        content_blocks=blocks,
+        stop_reason="tool_use",
+        usage=BrainUsage(input_tokens=100, output_tokens=40),
+    )
+    assert _runtime(loop_repository, response).advance_one() is True
+    while _runtime(loop_repository).dispatch_one():
+        pass
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_brain.brain_steps where loop_id=%s "
+            "and status='queued'",
+            (loop_id,),
+        ).fetchone() == (1,)
 
 
 @pytest.mark.postgres

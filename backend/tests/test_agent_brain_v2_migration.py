@@ -229,20 +229,23 @@ def test_app_role_can_initialize_but_not_mutate_brain_runtime(control_database) 
         )
         with psycopg.connect(environment["admin"]) as connection:
             for table, expected in {
-                "authorization_snapshots": (True, False, False),
-                "brain_loops": (True, False, False),
-                "brain_steps": (True, False, False),
-                "brain_tool_calls": (False, False, False),
-                "agent_tasks": (False, False, False),
-                "agent_task_events": (False, False, False),
-                "adapter_deliveries": (False, False, False),
-                "brain_checkpoints": (False, False, False),
+                "authorization_snapshots": (False, True, False, False),
+                "brain_loops": (True, True, False, False),
+                "brain_steps": (True, True, False, False),
+                "brain_tool_calls": (True, False, False, False),
+                "agent_tasks": (True, False, False, False),
+                "agent_task_events": (True, False, False, False),
+                "adapter_deliveries": (False, False, False, False),
+                "brain_checkpoints": (False, False, False, False),
             }.items():
                 actual = connection.execute(
-                    "select has_table_privilege(%s,%s,'insert'),"
+                    "select has_table_privilege(%s,%s,'select'),"
+                    "has_table_privilege(%s,%s,'insert'),"
                     "has_table_privilege(%s,%s,'update'),"
                     "has_table_privilege(%s,%s,'delete')",
                     (
+                        app_role,
+                        f"platform_brain.{table}",
                         app_role,
                         f"platform_brain.{table}",
                         app_role,
@@ -259,6 +262,15 @@ def test_app_role_can_initialize_but_not_mutate_brain_runtime(control_database) 
                 "'updated_at','update'),"
                 "has_column_privilege(%s,'platform_brain.brain_loops',"
                 "'row_version','update')",
+                (app_role, app_role, app_role),
+            ).fetchone() == (True, True, True)
+            assert connection.execute(
+                "select has_column_privilege(%s,'platform_brain.brain_loops',"
+                "'status','update'),"
+                "has_column_privilege(%s,'platform_brain.brain_steps',"
+                "'status','update'),"
+                "has_column_privilege(%s,'platform_brain.brain_tool_calls',"
+                "'result_ciphertext','update')",
                 (app_role, app_role, app_role),
             ).fetchone() == (True, True, True)
 
