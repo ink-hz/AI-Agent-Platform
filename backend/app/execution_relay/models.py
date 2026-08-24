@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, Field
+
+
+RelayJobKind = Literal["legacy_brain", "direct_agent", "metabot_local"]
 
 
 class RelayJobPayload(BaseModel):
@@ -13,6 +17,7 @@ class RelayJobPayload(BaseModel):
     agent_id: str
     prompt: str
     max_turns: int = Field(ge=1, le=24)
+    job_kind: RelayJobKind = "legacy_brain"
 
 
 class RelayEvent(BaseModel):

@@ -41,6 +41,9 @@ class _LeaseBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     acceptance_run_id: UUID | None = None
+    accepted_job_kinds: list[
+        Literal["legacy_brain", "direct_agent", "metabot_local"]
+    ] | None = Field(default=None, min_length=1, max_length=3)
 
 
 class _StrictRelayEvent(RelayEvent):
@@ -213,15 +216,28 @@ def build_execution_relay_router(
             r"relay-acceptance-[0-9a-f]{16}",
             authenticated_body.identity.worker_id,
         ) is not None
+        if (
+            parsed.accepted_job_kinds is not None
+            and len(set(parsed.accepted_job_kinds)) != len(parsed.accepted_job_kinds)
+        ):
+            return _error(422, "request validation failed")
         try:
             if parsed.acceptance_run_id is None:
                 if acceptance_worker:
                     return _error(403, "targeted acceptance lease required")
-                result = await run_in_threadpool(
-                    repository.lease,
+                arguments = (
                     authenticated_body.identity.worker_id,
                     authenticated_body.identity.allowed_agent_ids,
                     lease_seconds,
+                )
+                result = await run_in_threadpool(
+                    repository.lease,
+                    *arguments,
+                    *(
+                        (tuple(parsed.accepted_job_kinds),)
+                        if parsed.accepted_job_kinds is not None
+                        else ()
+                    ),
                 )
             else:
                 if not acceptance_worker:

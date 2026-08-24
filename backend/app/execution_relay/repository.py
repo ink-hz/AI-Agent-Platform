@@ -15,7 +15,7 @@ from pydantic import ValidationError
 from app.control_plane.dsn import validate_control_dsn
 
 from .content_crypto import ContentCodec, ContentCryptoError, SealedContent
-from .models import RelayEvent, RelayJobPayload, RelayLease
+from .models import RelayEvent, RelayJobKind, RelayJobPayload, RelayLease
 
 
 TERMINAL_STATUSES = frozenset(
@@ -35,6 +35,7 @@ class RelayJobState:
     lease_expires_at: datetime | None
     terminal_at: datetime | None
     database_now: datetime
+    job_kind: RelayJobKind = "legacy_brain"
 
 
 @dataclass(frozen=True)
@@ -173,9 +174,9 @@ class ExecutionRelayRepository:
                 cursor.execute(
                     "insert into platform_control.execution_jobs "
                     "(job_id,run_id,agent_id,payload_ciphertext,"
-                    "encryption_key_version,status,cancel_requested,terminal_at) "
-                    "values (%s,%s,%s,%s,%s,%s,%s,"
-                    "case when %s then now() else null end)",
+                    "encryption_key_version,status,cancel_requested,terminal_at,"
+                    "job_kind) values (%s,%s,%s,%s,%s,%s,%s,"
+                    "case when %s then now() else null end,%s)",
                     (
                         job_id,
                         payload.run_id,
@@ -185,6 +186,7 @@ class ExecutionRelayRepository:
                         "cancelled" if cancelled else "queued",
                         cancelled,
                         cancelled,
+                        payload.job_kind,
                     ),
                 )
             return job_id
@@ -200,11 +202,22 @@ class ExecutionRelayRepository:
         worker_id: str,
         allowed_agents: tuple[str, ...],
         lease_seconds: int,
+        accepted_job_kinds: tuple[RelayJobKind, ...] = (
+            "legacy_brain",
+            "direct_agent",
+            "metabot_local",
+        ),
     ) -> RelayLease | None:
         if (
             isinstance(lease_seconds, bool)
             or not isinstance(lease_seconds, int)
             or lease_seconds <= 0
+            or not accepted_job_kinds
+            or len(set(accepted_job_kinds)) != len(accepted_job_kinds)
+            or any(
+                kind not in {"legacy_brain", "direct_agent", "metabot_local"}
+                for kind in accepted_job_kinds
+            )
         ):
             raise ValueError("lease seconds invalid")
         try:
@@ -220,8 +233,9 @@ class ExecutionRelayRepository:
                     "encryption_key_version,cancel_requested "
                     "from platform_control.execution_jobs "
                     "where status='queued' and agent_id=any(%s) "
+                    "and job_kind=any(%s) "
                     "order by created_at,job_id for update skip locked limit 1",
-                    (list(permitted),),
+                    (list(permitted), list(accepted_job_kinds)),
                 ).fetchone()
                 if row is None:
                     return None
@@ -563,6 +577,7 @@ class ExecutionRelayRepository:
                 row = cursor.execute(
                     "select run_id,status,cancel_requested,created_at,updated_at,"
                     "lease_expires_at,terminal_at,stop_requested_status,"
+                    "job_kind,"
                     "now() as database_now "
                     "from platform_control.execution_jobs where run_id=%s for update",
                     (run_id,),
@@ -616,6 +631,29 @@ class ExecutionRelayRepository:
             return RelayJobState(**row)
         except ExecutionRelayError:
             raise
+        except psycopg.Error:
+            raise ExecutionRelayError("execution relay unavailable") from None
+
+    def has_active_worker(
+        self, agent_id: str, *, freshness_seconds: int = 60
+    ) -> bool:
+        if (
+            not isinstance(agent_id, str)
+            or not agent_id
+            or isinstance(freshness_seconds, bool)
+            or not isinstance(freshness_seconds, int)
+            or freshness_seconds <= 0
+        ):
+            return False
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select exists(select 1 from platform_control.execution_workers "
+                    "where status='active' and %s=any(allowed_agent_ids) and "
+                    "last_seen_at>clock_timestamp()-(%s*interval '1 second'))",
+                    (agent_id, freshness_seconds),
+                ).fetchone()
+            return bool(row["exists"])
         except psycopg.Error:
             raise ExecutionRelayError("execution relay unavailable") from None
 

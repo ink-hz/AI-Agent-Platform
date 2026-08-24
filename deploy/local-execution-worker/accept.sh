@@ -18,4 +18,4 @@ if ! (cd "$backend" && "$python" -m app.execution_relay.acceptance_orchestrator 
   fail
 fi
 
-echo "AGENT_EXECUTION_RELAY_OK worker=agentops-mac-primary agents=7 public_ports_added=0 duplicate_dispatches=0"
+echo "AGENT_EXECUTION_RELAY_OK worker=agentops-mac-primary agents=7 accepted_job_kinds=direct_agent,metabot_local public_ports_added=0 duplicate_dispatches=0"

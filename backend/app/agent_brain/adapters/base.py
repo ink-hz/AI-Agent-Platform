@@ -31,7 +31,8 @@ class AdapterDelivery:
 @dataclass(frozen=True, slots=True)
 class DispatchReceipt:
     accepted: bool
-    result: NormalizedTaskResult
+    result: NormalizedTaskResult | None
+    external_run_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +41,8 @@ class CancelReceipt:
 
 
 class AgentAdapter(ABC):
+    supports_cancellation: bool = False
+
     @abstractmethod
     def dispatch(
         self, task: AdapterTask, delivery: AdapterDelivery
@@ -70,4 +73,3 @@ class AdapterRegistry:
 
     def is_registered(self, kind: str) -> bool:
         return isinstance(kind, str) and kind in self._adapters
-

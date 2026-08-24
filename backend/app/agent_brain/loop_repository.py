@@ -133,6 +133,17 @@ class CancellationTask:
     next_event_seq: int
 
 
+@dataclass(frozen=True, slots=True)
+class AdapterReconciliationTask:
+    task_id: UUID
+    loop_id: UUID
+    agent_id: str
+    adapter_kind: str
+    context: dict[str, object] = field(repr=False)
+    effective_deadline_at: datetime
+    next_event_seq: int
+
+
 def _model_config_subject(loop_id: UUID) -> str:
     return f"brain-loop:{loop_id}:model-config"
 
@@ -1238,7 +1249,7 @@ class BrainLoopRepository:
     ) -> None:
         inserted = self.append_task_event(
             AgentTaskEventInput(
-                task_id=lease.task_id,seq=1,event_type="agent.completed",
+                task_id=lease.task_id,seq=1,event_type=f"agent.{result.status}",
                 created_at=datetime.now().astimezone(),payload={"status": result.status},
                 terminal_status=result.status,result=result,
             )
@@ -1258,6 +1269,95 @@ class BrainLoopRepository:
         except psycopg.Error:
             raise BrainRepositoryError() from None
         self.settle_batch(lease.loop_id)
+
+    def mark_delivery_dispatched(self, lease: TaskDeliveryLease) -> None:
+        try:
+            with self._connection() as connection:
+                with connection.transaction():
+                    delivery = connection.execute(
+                        "update platform_brain.adapter_deliveries set "
+                        "status='dispatched',lease_worker_id=null,lease_expires_at=null,"
+                        "updated_at=clock_timestamp() where delivery_id=%s and "
+                        "task_id=%s and status='leased' returning delivery_id",
+                        (lease.delivery_id, lease.task_id),
+                    ).fetchone()
+                    if delivery is None:
+                        raise BrainRepositoryConflict()
+                    task = connection.execute(
+                        "update platform_brain.agent_tasks set status='running',"
+                        "started_at=coalesce(started_at,clock_timestamp()),"
+                        "updated_at=clock_timestamp(),row_version=row_version+1 "
+                        "where task_id=%s and status='queued' returning task_id",
+                        (lease.task_id,),
+                    ).fetchone()
+                    if task is None:
+                        raise BrainRepositoryConflict()
+        except BrainRepositoryConflict:
+            raise
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def adapter_reconciliation_tasks(
+        self, adapter_kind: str, *, limit: int = 100
+    ) -> tuple[AdapterReconciliationTask, ...]:
+        if (
+            not isinstance(adapter_kind, str)
+            or _WORKER_ID.fullmatch(adapter_kind) is None
+            or type(limit) is not int
+            or not 1 <= limit <= 1000
+        ):
+            raise ValueError("Adapter reconciliation scan invalid")
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select task.*,(select coalesce(max(event.seq),0)+1 from "
+                    "platform_brain.agent_task_events event where event.task_id="
+                    "task.task_id) as next_event_seq from platform_brain.agent_tasks task "
+                    "join platform_brain.adapter_deliveries delivery on "
+                    "delivery.task_id=task.task_id and delivery.status='dispatched' "
+                    "where task.adapter_kind=%s and task.status='running' "
+                    "order by task.updated_at,task.task_id limit %s",
+                    (adapter_kind, limit),
+                ).fetchall()
+            return tuple(
+                AdapterReconciliationTask(
+                    task_id=row["task_id"],
+                    loop_id=row["loop_id"],
+                    agent_id=row["agent_id"],
+                    adapter_kind=row["adapter_kind"],
+                    context=self.content_codec.unseal_json(
+                        _task_context_subject(row["task_id"]),
+                        SealedContent(
+                            bytes(row["task_context_ciphertext"]),
+                            row["task_context_key_version"],
+                        ),
+                    ),
+                    effective_deadline_at=row["effective_deadline_at"],
+                    next_event_seq=row["next_event_seq"],
+                )
+                for row in rows
+            )
+        except (ContentCryptoError, psycopg.Error):
+            raise BrainRepositoryError() from None
+
+    def complete_reconciled_delivery(self, task_id: UUID, loop_id: UUID) -> None:
+        _require_uuid(task_id)
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                updated = connection.execute(
+                    "update platform_brain.adapter_deliveries set status='completed',"
+                    "terminal_at=clock_timestamp(),updated_at=clock_timestamp() "
+                    "where task_id=%s and status='dispatched'",
+                    (task_id,),
+                ).rowcount
+            if updated != 1:
+                raise BrainRepositoryConflict()
+        except BrainRepositoryConflict:
+            raise
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+        self.settle_batch(loop_id)
 
     def expire_delivery_leases(self, *, limit: int) -> int:
         if type(limit) is not int or not 1 <= limit <= 1000:

@@ -607,6 +607,7 @@ class MissionOrchestrator:
             agent_id=run.agent_id,
             prompt=prompt,
             max_turns=24,
+            job_kind="direct_agent" if run.phase == "direct" else "legacy_brain",
         )
         try:
             existing_state = self.relay.job_state(run.run_id)

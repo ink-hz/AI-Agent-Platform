@@ -186,6 +186,7 @@ def test_planning_direct_decision_completes_with_one_visible_terminal_event(
 
     assert service.advance_pending(limit=50) == 1
     planning_run = next(iter(relay.payloads))
+    assert relay.payloads[planning_run].job_kind == "legacy_brain"
     relay.terminal(
         planning_run,
         "completed",
@@ -229,6 +230,7 @@ def test_direct_agent_completes_without_brain_synthesis(brain_database, orchestr
 
     service.advance_pending(limit=50)
     run_id = next(iter(relay.payloads))
+    assert relay.payloads[run_id].job_kind == "direct_agent"
     relay.terminal(run_id, "completed", "候选人画像结果")
     service.advance_pending(limit=50)
 
@@ -279,6 +281,9 @@ def test_delegate_executes_one_professional_then_synthesizes(
         for run_id, payload in relay.payloads.items()
         if payload.agent_id == "agent-brain-bot" and run_id != planning_id
     )
+    assert relay.payloads[planning_id].job_kind == "legacy_brain"
+    assert relay.payloads[professional_id].job_kind == "legacy_brain"
+    assert relay.payloads[synthesis_id].job_kind == "legacy_brain"
     relay.terminal(synthesis_id, "completed", "综合交付结果")
     service.advance_pending(limit=50)
 

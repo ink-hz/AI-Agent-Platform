@@ -239,6 +239,10 @@ trap cleanup ERR EXIT
 
 release_sha="$($git -C "$repository" rev-parse HEAD)" || fail
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail
+$git -C "$repository" grep -F \
+  "PLATFORM_WORKER_ACCEPTED_JOB_KINDS: 'direct_agent,metabot_local'" \
+  "$release_sha" -- deploy/local-execution-worker/execution-worker.ecosystem.config.cjs \
+  >/dev/null || fail
 status_file="$(/usr/bin/mktemp /Users/neo/FlywheelData/.agent-platform-status.XXXXXX)" || fail
 $git -C "$repository" status --porcelain=v1 -z --untracked-files=all > "$status_file" || fail
 /usr/bin/python3 - "$status_file" <<'PY' || fail

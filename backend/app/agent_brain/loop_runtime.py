@@ -280,15 +280,16 @@ class BrainLoopRuntime:
     def reconcile_cancellations(self) -> int:
         for selected in self._repository.cancellation_tasks(limit=100):
             adapter = self._adapters.require(selected.adapter_kind)
-            adapter.request_cancel(
-                AdapterTask(
-                    task_id=selected.task_id,
-                    loop_id=selected.loop_id,
-                    agent_id=selected.agent_id,
-                    context=selected.context,
-                    effective_deadline_at=selected.effective_deadline_at,
+            if adapter.supports_cancellation:
+                adapter.request_cancel(
+                    AdapterTask(
+                        task_id=selected.task_id,
+                        loop_id=selected.loop_id,
+                        agent_id=selected.agent_id,
+                        context=selected.context,
+                        effective_deadline_at=selected.effective_deadline_at,
+                    )
                 )
-            )
             result = NormalizedTaskResult(
                 status="cancelled",
                 summary="用户已停止本轮任务。",
@@ -331,8 +332,36 @@ class BrainLoopRuntime:
                 idempotency_key=lease.idempotency_key,
             ),
         )
-        self._repository.complete_delivery(lease, receipt.result)
+        if receipt.result is None:
+            self._repository.mark_delivery_dispatched(lease)
+        else:
+            self._repository.complete_delivery(lease, receipt.result)
         return True
+
+    def reconcile_adapter_tasks(self, adapter_kind: str) -> int:
+        adapter = self._adapters.require(adapter_kind)
+        reconcile = getattr(adapter, "reconcile", None)
+        if not callable(reconcile):
+            return 0
+        changed = 0
+        for selected in self._repository.adapter_reconciliation_tasks(
+            adapter_kind, limit=100
+        ):
+            task = AdapterTask(
+                task_id=selected.task_id,
+                loop_id=selected.loop_id,
+                agent_id=selected.agent_id,
+                context=selected.context,
+                effective_deadline_at=selected.effective_deadline_at,
+            )
+            receipt = reconcile(task, next_event_seq=selected.next_event_seq)
+            for event in receipt.events:
+                changed += int(self._repository.append_task_event(event))
+            if receipt.terminal:
+                self._repository.complete_reconciled_delivery(
+                    selected.task_id, selected.loop_id
+                )
+        return changed
 
 
 def _public_value(value: object) -> dict[str, object]:

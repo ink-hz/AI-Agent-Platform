@@ -25,7 +25,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationErro
 
 from .acceptance_hooks import WorkerAcceptanceHooks
 from .metabot_client import MetaBotClient, MetaBotRuntimeMap
-from .models import RelayEvent, RelayJobPayload, RelayLease
+from .models import RelayEvent, RelayJobKind, RelayJobPayload, RelayLease
 from .repository import RelayStopRequest
 from .worker_auth import WorkerRequestSigner
 from .worker_store import WorkerRunRecovery, WorkerStore
@@ -101,6 +101,7 @@ class _StrictLeasePayload(BaseModel):
     agent_id: str
     prompt: str
     max_turns: int = Field(ge=1, le=24)
+    job_kind: Literal["legacy_brain", "direct_agent", "metabot_local"]
 
 
 class _StrictRelayLease(BaseModel):
@@ -140,6 +141,10 @@ class SignedCloudClient:
         signer: WorkerRequestSigner,
         *,
         client: httpx.AsyncClient | None = None,
+        accepted_job_kinds: tuple[RelayJobKind, ...] = (
+            "direct_agent",
+            "metabot_local",
+        ),
     ) -> None:
         try:
             parsed = urlsplit(base_url)
@@ -156,12 +161,19 @@ class SignedCloudClient:
                 or parsed.fragment
                 or parsed.path not in {"", "/"}
                 or not callable(getattr(signer, "sign", None))
+                or not accepted_job_kinds
+                or len(set(accepted_job_kinds)) != len(accepted_job_kinds)
+                or any(
+                    kind not in {"legacy_brain", "direct_agent", "metabot_local"}
+                    for kind in accepted_job_kinds
+                )
             ):
                 raise ValueError
         except (TypeError, ValueError):
             raise WorkerRuntimeError() from None
         self._base_url = base_url.rstrip("/")
         self._signer = signer
+        self._accepted_job_kinds = accepted_job_kinds
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(10.0),
@@ -210,7 +222,7 @@ class SignedCloudClient:
     async def lease(self) -> RelayLease | None:
         response = await self._post(
             f"{_API_PREFIX}/lease",
-            {},
+            {"accepted_job_kinds": list(self._accepted_job_kinds)},
             accepted_statuses=frozenset({200, 204}),
         )
         if response.status_code == 204:
@@ -1215,8 +1227,15 @@ def build_runtime_from_environment() -> WorkerRuntime:
             Path(_required_environment("PLATFORM_METABOT_API_SECRET_FILE")),
         )
         signer = WorkerRequestSigner(worker_id, key_id, private_key)
+        accepted_raw = os.environ.get(
+            "PLATFORM_WORKER_ACCEPTED_JOB_KINDS",
+            "direct_agent,metabot_local",
+        )
+        accepted_job_kinds = tuple(accepted_raw.split(","))
         cloud = SignedCloudClient(
-            _required_environment("PLATFORM_WORKER_CLOUD_URL"), signer
+            _required_environment("PLATFORM_WORKER_CLOUD_URL"),
+            signer,
+            accepted_job_kinds=accepted_job_kinds,  # type: ignore[arg-type]
         )
         return WorkerRuntime(
             worker_id=worker_id,

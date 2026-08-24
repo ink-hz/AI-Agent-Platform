@@ -167,6 +167,26 @@ def test_enqueue_encrypts_payload_with_job_and_run_bound_subject(
 
 
 @pytest.mark.postgres
+def test_lease_filters_job_kinds_without_changing_agent_scope(
+    relay_database, repository
+) -> None:
+    legacy = _payload(run_id=uuid4())
+    metabot = _payload(run_id=uuid4()).model_copy(
+        update={"job_kind": "metabot_local"}
+    )
+    repository.enqueue(legacy)
+    repository.enqueue(metabot)
+
+    lease = repository.lease(
+        "worker-a", ("hr-bot",), 45, ("direct_agent", "metabot_local")
+    )
+
+    assert lease is not None
+    assert lease.payload.run_id == metabot.run_id
+    assert lease.payload.job_kind == "metabot_local"
+
+
+@pytest.mark.postgres
 def test_enqueue_collapses_codec_sealing_failure_to_repository_boundary(
     relay_database, repository, monkeypatch
 ) -> None:

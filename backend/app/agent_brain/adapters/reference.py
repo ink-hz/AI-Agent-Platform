@@ -13,6 +13,8 @@ from app.agent_brain.loop_models import NormalizedTaskResult
 class ReferenceAdapter(AgentAdapter):
     """Deterministic, network-free Adapter used to prove runtime durability."""
 
+    supports_cancellation = True
+
     def dispatch(
         self, task: AdapterTask, delivery: AdapterDelivery
     ) -> DispatchReceipt:

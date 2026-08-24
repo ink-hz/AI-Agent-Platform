@@ -31,6 +31,7 @@ module.exports = {
       PLATFORM_WORKER_DATABASE_URL_FILE: '/Users/agentops/AgentRuntime/private/execution-worker-postgres-dsn',
       PLATFORM_WORKER_CALLBACK_PORT: '9120',
       PLATFORM_WORKER_CLOUD_URL: 'https://agent.orbbec.com.cn',
+      PLATFORM_WORKER_ACCEPTED_JOB_KINDS: 'direct_agent,metabot_local',
       PLATFORM_METABOT_RUNTIME_CONTRACT: '/Users/agentops/AgentRuntime/metabot/runtime-contract.json',
       PLATFORM_METABOT_API_SECRET_FILE: '/Users/agentops/AgentRuntime/private/metabot-api-token',
     },

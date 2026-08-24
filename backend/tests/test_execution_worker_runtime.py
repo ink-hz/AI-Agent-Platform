@@ -111,6 +111,32 @@ def test_relay_event_requires_timezone_aware_created_at() -> None:
         )
 
 
+@pytest.mark.asyncio
+async def test_cutover_worker_leases_only_direct_and_metabot_jobs() -> None:
+    bodies: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(204)
+
+    class Signer:
+        def sign(self, method, path, body):
+            return {}
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = SignedCloudClient(
+            "https://cloud.example",
+            Signer(),
+            client=http,
+            accepted_job_kinds=("direct_agent", "metabot_local"),
+        )
+        assert await client.lease() is None
+
+    assert bodies == [
+        {"accepted_job_kinds": ["direct_agent", "metabot_local"]}
+    ]
+
+
 class FakeStore:
     def __init__(self) -> None:
         self.calls: list[tuple[object, ...]] = []
@@ -1088,7 +1114,11 @@ async def test_signed_cloud_client_signs_exact_raw_body_and_path() -> None:
         f"/api/v1/execution-worker/runs/{RUN_ID}/stop-ack",
         f"/api/v1/execution-worker/runs/{RUN_ID}/terminal",
     ]
-    assert signed[0] == ("POST", "/api/v1/execution-worker/lease", b"{}")
+    assert signed[0] == (
+        "POST",
+        "/api/v1/execution-worker/lease",
+        b'{"accepted_job_kinds":["direct_agent","metabot_local"]}',
+    )
     assert json.loads(signed[3][2]) == {
         "events": [_event(1).model_dump(mode="json")]
     }

@@ -95,6 +95,7 @@ def test_execution_relay_schema_is_versioned_encrypted_and_append_only(
         "integer",
         "NO",
     )
+    assert column_map[("execution_jobs", "job_kind")] == ("text", "NO")
     definitions = "\n".join(definition for _, definition in constraints)
     assert "octet_length(public_key) = 32" in definitions
     assert "UNIQUE (worker_id, key_id)" in definitions or (
@@ -113,6 +114,8 @@ def test_execution_relay_schema_is_versioned_encrypted_and_append_only(
         "interrupted",
     ):
         assert f"'{status}'" in definitions
+    for job_kind in ("legacy_brain", "direct_agent", "metabot_local"):
+        assert f"'{job_kind}'" in definitions
 
 
 @pytest.mark.postgres
