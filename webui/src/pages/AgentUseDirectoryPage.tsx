@@ -10,8 +10,12 @@ const WORKSPACE_URLS: Readonly<Record<string, string>> = Object.freeze({
   "ai-fae-agent": "https://fae.orbbec.com.cn/",
 });
 
-function groupName(card: AgentCapabilityCard): string {
-  return card.interaction_modes.includes("external_workspace") ? "专业工作区" : card.domain_group;
+type AgentKind = "fae" | "hr" | "marketing" | "admin";
+
+function agentKind(card: AgentCapabilityCard): AgentKind {
+  if (card.agent_id === "ai-fae-agent") return "fae";
+  if (card.agent_id === "ai-admin-agent") return "admin";
+  return card.domain_group === "Marketing" ? "marketing" : "hr";
 }
 
 function safeWorkspaceUrl(card: AgentCapabilityCard): string | null {
@@ -20,16 +24,33 @@ function safeWorkspaceUrl(card: AgentCapabilityCard): string | null {
 }
 
 function AgentCard({ card }: { card: AgentCapabilityCard }) {
-  const content = <><span>{card.domain_group}</span><h3>{card.display_name}</h3><p>{card.mission}</p>
-    <ul>{card.capabilities.slice(0, 3).map((capability) => <li key={capability}>{capability}</li>)}</ul></>;
+  const external = card.interaction_modes.includes("external_workspace");
+  const action = external ? "打开工作区" : "进入 Agent";
+  const kind = agentKind(card);
+  const content = <>
+    <header className="agent-use-card-head">
+      <span>{card.domain_group}</span>
+      <span aria-hidden="true" className="agent-use-card-arrow">↗</span>
+    </header>
+    <div className="agent-use-card-body">
+      <h3>{card.display_name}</h3>
+      <p>{card.mission}</p>
+      <ul>{card.capabilities.slice(0, 3).map((capability) => <li key={capability}>{capability}</li>)}</ul>
+    </div>
+  </>;
+  const footer = <span className="agent-use-card-action">{action}<span aria-hidden="true">→</span></span>;
   if (!card.interaction_modes.includes("external_workspace")) {
-    return <PlatformLink className="agent-use-card" href={`/agents/${encodeURIComponent(card.agent_id)}`}>
-      {content}<b>直接使用 →</b>
+    return <PlatformLink aria-label={`进入 ${card.display_name}`} className="agent-use-card"
+      data-agent-kind={kind} href={`/agents/${encodeURIComponent(card.agent_id)}`}>
+      {content}{footer}
     </PlatformLink>;
   }
   const href = safeWorkspaceUrl(card);
-  if (!href) return <article className="agent-use-card agent-use-card-disabled">{content}<b>入口暂不可用</b></article>;
-  return <a className="agent-use-card" href={href}>{content}<b>打开工作区 →</b></a>;
+  if (!href) return <article className="agent-use-card agent-use-card-disabled" data-agent-kind={kind}>
+    {content}<span className="agent-use-card-unavailable">入口暂不可用</span>
+  </article>;
+  return <a aria-label={`打开 ${card.display_name} 工作区`} className="agent-use-card"
+    data-agent-kind={kind} href={href}>{content}{footer}</a>;
 }
 
 
@@ -52,10 +73,10 @@ export function AgentUseDirectoryPage({
   const groups = useMemo(() => {
     const result = new Map<string, AgentCapabilityCard[]>();
     for (const agent of agents ?? []) {
-      const group = groupName(agent);
+      const group = agent.domain_group;
       result.set(group, [...(result.get(group) ?? []), agent]);
     }
-    const order = ["HR", "Marketing", "专业工作区"];
+    const order = ["技术支持", "HR", "Marketing", "行政服务"];
     return [...result.entries()].sort(([left], [right]) => {
       const leftIndex = order.indexOf(left); const rightIndex = order.indexOf(right);
       return (leftIndex < 0 ? order.length : leftIndex) - (rightIndex < 0 ? order.length : rightIndex)

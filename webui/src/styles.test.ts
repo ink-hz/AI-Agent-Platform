@@ -116,6 +116,16 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".fleet-recent p")).toContain("font-size: 13px");
   });
 
+  it("makes Professional Agent cards obvious links without changing the profile label", () => {
+    expect(rule(".agent-use-card")).toContain("grid-template-rows: auto 1fr auto");
+    expect(rule(".agent-use-card:hover")).toContain("transform: translateY(-2px)");
+    expect(rule(".agent-use-card:focus-visible")).toContain("outline: 3px solid");
+    expect(rule(".agent-use-card-action")).toContain("min-height: 42px");
+    expect(rule('.agent-use-card[data-agent-kind="fae"]')).toContain("--agent-accent: #1f66c7");
+    expect(rule('.agent-use-card[data-agent-kind="admin"]')).toContain("--agent-accent: #946300");
+    expect(rule(".agent-use-profile > span")).toContain("color: var(--brand-bright)");
+  });
+
   it("uses one-column summary and Agent layouts on small screens", () => {
     const mobile = block("@media (max-width: 720px)");
     expect(mobile).toContain(".fleet-summary-grid { grid-template-columns: 1fr; }");

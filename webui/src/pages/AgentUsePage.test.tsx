@@ -81,10 +81,21 @@ describe("professional Agent use pages", () => {
     expect(container.textContent).not.toContain("累计 Session");
     expect(container.querySelector("a[href='/agents/hr-bot']")).not.toBeNull();
     expect([...container.querySelectorAll("h2")].map((node) => node.textContent)).toEqual([
-      "HR", "Marketing", "专业工作区",
+      "技术支持", "HR", "Marketing", "行政服务",
     ]);
+    const cards = [...container.querySelectorAll<HTMLElement>(".agent-use-card")];
+    expect(cards[0].textContent).toContain("AI FAE Agent");
+    expect(cards[cards.length - 1].textContent).toContain("AI 行政 Agent");
     expect(container.querySelector("a[href='/office/?view=services']")?.textContent).toContain("AI 行政 Agent");
     expect(container.querySelector("a[href='https://fae.orbbec.com.cn/']")?.textContent).toContain("AI FAE Agent");
+    expect(container.querySelector("a[href='https://fae.orbbec.com.cn/']")?.getAttribute("data-agent-kind")).toBe("fae");
+    expect(container.querySelector("a[href='/agents/hr-bot']")?.getAttribute("data-agent-kind")).toBe("hr");
+    expect(container.querySelector("a[href='/agents/marketing-gtm-bot']")?.getAttribute("data-agent-kind")).toBe("marketing");
+    expect(container.querySelector("a[href='/office/?view=services']")?.getAttribute("data-agent-kind")).toBe("admin");
+    expect(container.querySelectorAll(".agent-use-card-action")).toHaveLength(4);
+    expect(container.querySelectorAll(".agent-use-card-arrow")).toHaveLength(4);
+    expect(container.querySelector("a[href='/agents/hr-bot']")?.getAttribute("aria-label")).toBe("进入 HR Agent");
+    expect(container.querySelector("a[href='https://fae.orbbec.com.cn/']")?.getAttribute("aria-label")).toBe("打开 AI FAE Agent 工作区");
   });
 
   it("never renders an unallowlisted external workspace URL", async () => {
