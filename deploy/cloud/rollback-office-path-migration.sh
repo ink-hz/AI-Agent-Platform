@@ -33,7 +33,8 @@ script_dir="$(/usr/bin/dirname "$(/usr/bin/readlink -f "$0")")"
   && "$migration_dir" == "$script_dir" \
   && "$backup" == /root/nginx-backups/ai-admin-office-*-$change_id/agent-domain.conf \
   && "$baseline" == /root/nginx-backups/ai-admin-office-*-$change_id/fae-baseline \
-  && "$nginx_source" == /etc/nginx/sites-available/agent-domain.conf \
+  && ( "$nginx_source" == /etc/nginx/sites-available/agent-domain.conf \
+    || "$nginx_source" == /etc/nginx/sites-enabled/agent-domain.conf ) \
   && ! -e "$deploy_input_lock" && ! -e "$action_lock" \
   && -f "$deploy_transaction_lock" && ! -L "$deploy_transaction_lock" \
   && "$(/usr/bin/stat -c '%a %U' "$deploy_transaction_lock")" == "600 root" ]] || fail
