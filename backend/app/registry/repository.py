@@ -78,7 +78,11 @@ class YamlRepository:
         canonical_ids = set(CANONICAL_AGENT_IDS)
         fixed_joins = {"fae": "ai-fae-agent", "admin": "ai-admin-agent"}
         for agent in registry.agents:
-            if agent.id in fixed_joins and agent.flywheel_agent_id != fixed_joins[agent.id]:
+            if (
+                agent.id in fixed_joins
+                and agent.flywheel_agent_id is not None
+                and agent.flywheel_agent_id != fixed_joins[agent.id]
+            ):
                 raise RegistryError(
                     f"agent {agent.id!r} must use its canonical Catalog identity"
                 )

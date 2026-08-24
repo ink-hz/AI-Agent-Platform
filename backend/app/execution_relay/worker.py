@@ -25,7 +25,13 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationErro
 
 from .acceptance_hooks import WorkerAcceptanceHooks
 from .metabot_client import MetaBotClient, MetaBotRuntimeMap
-from .models import RelayEvent, RelayJobKind, RelayJobPayload, RelayLease
+from .models import (
+    RelayEvent,
+    RelayJobKind,
+    RelayJobPayload,
+    RelayLease,
+    RequesterSubject,
+)
 from .repository import RelayStopRequest
 from .worker_auth import WorkerRequestSigner
 from .worker_store import WorkerRunRecovery, WorkerStore
@@ -102,6 +108,7 @@ class _StrictLeasePayload(BaseModel):
     prompt: str
     max_turns: int = Field(ge=1, le=24)
     job_kind: Literal["legacy_brain", "direct_agent", "metabot_local"]
+    requester_subject: RequesterSubject | None = None
 
 
 class _StrictRelayLease(BaseModel):

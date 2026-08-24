@@ -173,10 +173,10 @@ async def test_system_agents_remain_diagnostic_but_do_not_enter_business_reporti
         ],
     ).overview(now=NOW)
 
-    assert len(overview.agents) == 8
-    assert get_agent(overview, "test-bot").visibility == "system"
-    assert get_agent(overview, "feishu-default").visibility == "system"
-    assert get_agent(overview, "test-bot").total_conversations == 1
+    assert len(overview.agents) == 6
+    assert {"test-bot", "feishu-default"}.isdisjoint(
+        agent.id for agent in overview.agents
+    )
     assert overview.summary.total_agents == 6
     assert overview.summary.total_conversations == 14
     assert overview.summary.conversations_last_7d == 4
@@ -258,7 +258,7 @@ async def test_healthy_usage_fills_seven_calendar_days_and_ignores_unresolved_bo
 
 
 @pytest.mark.asyncio
-async def test_overview_combines_ten_local_and_two_remote_agents():
+async def test_overview_combines_six_local_and_two_remote_agents():
     service = make_service(
         UsageRecord(
             "ai-fae-agent", 236, 20, 10, NOW, "FAE question",
@@ -287,13 +287,15 @@ async def test_overview_combines_ten_local_and_two_remote_agents():
 
     overview = await service.overview(now=NOW)
 
-    assert len(overview.agents) == 10
+    assert len(overview.agents) == 8
     assert overview.summary.total_agents == 8
     assert overview.summary.running_agents == 8
     assert get_agent(overview, "ai-fae-agent").session_count == 168
     assert get_agent(overview, "ai-admin-agent").session_count == 118
     assert set(overview.expected_agent_ids) == {
-        *(set(CURRENT_BOT_IDS) - {"fae-bot", "codex-assistant"}),
+        *(set(CURRENT_BOT_IDS) - {
+            "feishu-default", "fae-bot", "test-bot", "codex-assistant",
+        }),
         "ai-fae-agent",
         "ai-admin-agent",
     }
@@ -345,7 +347,7 @@ async def test_cloud_roster_completion_keeps_catalog_agents_and_usage():
 
     overview = await service.overview(now=NOW)
 
-    assert len({agent.id for agent in overview.agents}) == len(overview.agents) == 10
+    assert len({agent.id for agent in overview.agents}) == len(overview.agents) == 8
     assert overview.summary.total_agents == 8
     assert {"fae-bot", "codex-assistant"}.isdisjoint(
         agent.id for agent in overview.agents
