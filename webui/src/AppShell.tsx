@@ -53,11 +53,12 @@ export function AppShell({ route, children, account }: { route: Route; children:
   const brainWorkspace = route.name === "brain" || route.name === "conversation";
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   useEffect(() => {
+    if (current !== "admin") return;
     if (account && account.role !== "platform_owner" && account.role !== "platform_admin") return;
     const controller = new AbortController();
     void fetchDeployment(controller.signal).then(setDeployment).catch(() => undefined);
     return () => controller.abort();
-  }, [account]);
+  }, [account, current]);
   const cloudReplica = deployment?.mode === "cloud-replica" && deployment.read_only;
   const roleNavigation = navigationFor(account);
   const navigation = roleNavigation;
@@ -94,7 +95,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
       {account?.hard_stale_read_only && <aside className="hard-stale-banner" role="status">
         <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
       </aside>}
-      {cloudReplica && <aside
+      {current === "admin" && cloudReplica && <aside
         className={`cloud-replica-banner is-${deployment.freshness}`}
         aria-label="云端副本状态"
       >

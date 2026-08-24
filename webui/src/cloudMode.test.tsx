@@ -179,6 +179,24 @@ describe("cloud replica mode", () => {
     expect(container.querySelector(".cloud-replica-banner")?.className).toContain("is-current");
   });
 
+  it("keeps cloud replica status out of the Agent Brain workspace", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      mode: "cloud-replica", read_only: true, auth: "ssh-tunnel",
+      freshness: "current", last_success_at: "2026-08-24T06:43:00Z",
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await act(async () => root.render(
+      <AppShell route={{ name: "brain" }}><p>Agent 大脑内容</p></AppShell>,
+    ));
+    await act(async () => await Promise.resolve());
+
+    expect(container.textContent).toContain("Agent 大脑内容");
+    expect(container.textContent).not.toContain("云端脱敏只读副本");
+    expect(container.textContent).not.toContain("数据已同步");
+    expect(container.textContent).not.toContain("最近同步");
+    expect(container.querySelector(".cloud-replica-banner")).toBeNull();
+  });
+
   it("visibly distinguishes stale replica data", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       mode: "cloud-replica", read_only: true, auth: "ssh-tunnel",
