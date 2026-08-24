@@ -4,11 +4,11 @@ This checklist is the formal acceptance contract for
 `https://agent.orbbec.com.cn/`. It records no AppSecret, OAuth code, token,
 Cookie, raw DingTalk identifier, mobile number, email, or customer content.
 
-## Pre-cutover trusted gender gates
+## Pre-cutover employee-profile gates
 
 Platform deploys first. Keep AI ADMIN on its previous release while the
 existing Platform authentication boundary remains in place. Before Platform
-publish/cutover, run the provider-coverage probe only in the directory
+publish/cutover, run the employee-profile aggregate probe only in the directory
 container, which reads its existing file-backed secrets internally:
 
 ```bash
@@ -18,23 +18,26 @@ compose=(docker compose --env-file "$environment_path" -f "$compose_path")
 directory_id="$("${compose[@]}" ps -q platform-directory)"
 test -n "$directory_id" || exit 1
 test "$(docker inspect --format '{{.State.Health.Status}}' "$directory_id")" = healthy || exit 1
-gender_probe_json="$(docker exec "$directory_id" python -m app.control_plane.gender_probe)" || exit 1
-python3 -c \
-  'import json,sys; sys.exit(0 if json.loads(sys.stdin.read()).get("ready") is True else 1)' \
-  <<<"$gender_probe_json" || exit 1
-unset gender_probe_json
+profile_probe_json="$(docker exec "$directory_id" python -m app.control_plane.employee_profile_probe)" || exit 1
+python3 -c 'import json,sys; p=json.load(sys.stdin); active=p["active_employee_count"]; raise SystemExit(not (active > 0 and p["primary_department_present_count"] == active))' \
+  <<<"$profile_probe_json" || exit 1
+unset profile_probe_json
 ```
 
-A nonzero container exit or JSON `ready` other than literal `true` stops the
-release. Do not print the captured JSON and do not copy secrets to the
-controller. Require a completed active generation with source schema version exactly `2`. Before any Nginx replacement or reload,
+A nonzero container exit, malformed aggregate output, zero employees, or incomplete
+primary-department coverage stops the release. Do not print the captured JSON and
+do not copy secrets to the controller. Require a completed active generation with
+source schema version exactly `3`. Before any Nginx replacement or reload,
 `publish-dingtalk-production.sh` uses `docker exec` to run one consistent SQL snapshot. The single gate covers the owner-bootstrap-aware owner count, the
-fresh complete active schema-v2 generation, directory-event heartbeat, and
-gender coverage. It emits only
-`owner:fresh_generation:heartbeat:active:valid:null_invalid` and requires
-`active > 0`, `active = valid`, `null_invalid = 0`, and every active member to
-satisfy `gender in ('male','female')`. Its coverage segment remains the fixed
-aggregate `active:valid:null_invalid`, and the null/invalid count is zero. Post-cutover
+fresh complete active schema-v3 generation, and the directory-event heartbeat. It
+emits only `owner:fresh_generation:heartbeat`. The employee-profile probe separately
+requires `active_employee_count > 0` and
+`primary_department_present_count = active_employee_count`. Generation validation
+proves authoritative employee-count agreement and required display names, so
+nickname completeness is 100% and primary-department completeness is 100%.
+The real-name and mobile coverage are reported through `real_name_present_count`
+and `mobile_present_count` without a completeness requirement; gender coverage is not a lodging release gate
+because AI ADMIN supports locked local fallback. Post-cutover
 `accept-dingtalk-production.sh` rechecks the same one consistent SQL snapshot
 through `docker exec`. Evidence contains only fixed aggregate counts/status,
 never employee names, gender values, provider identifiers, mobile numbers,
@@ -73,8 +76,8 @@ On the cloud host, after owner binding and publication:
 
 The automated acceptance requires all five Platform services healthy, the
 formal post-cutover owner state of exactly one active owner, a completed
-schema-v2 directory generation newer than eight hours, aggregate valid gender
-coverage for every active member, a recent
+schema-v3 directory generation newer than eight hours, complete nickname and
+primary-department coverage, reported real-name/mobile aggregate coverage, a recent
 healthy directory-event heartbeat, a public login shell without shared Basic Auth,
 unauthenticated account rejection, preserved independent `/admin`
 authentication, private port 8080, no public PostgreSQL, a valid certificate,
