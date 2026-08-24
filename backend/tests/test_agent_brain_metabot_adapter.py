@@ -5,7 +5,7 @@ from uuid import UUID
 
 from app.agent_brain.adapters.base import AdapterDelivery, AdapterTask
 from app.agent_brain.adapters.metabot_local import MetaBotLocalAdapter
-from app.execution_relay.models import RelayEvent
+from app.execution_relay.models import RelayEvent, RequesterSubject
 from app.execution_relay.repository import ExecutionRelayConflict, RelayJobState
 
 
@@ -67,6 +67,10 @@ def _task() -> AdapterTask:
             "expected_output": "结构化人才判断",
         },
         effective_deadline_at=NOW + timedelta(minutes=5),
+        requester_subject=RequesterSubject(
+            internal_user_id=UUID("00000000-0000-4000-8000-000000000705"),
+            display_name="苍渊",
+        ),
     )
 
 
@@ -92,6 +96,11 @@ def test_metabot_adapter_replay_enqueues_one_relay_job() -> None:
     assert len(relay.payloads) == 1
     assert relay.payloads[0].run_id == TASK_ID
     assert relay.payloads[0].job_kind == "metabot_local"
+    assert relay.payloads[0].requester_subject == RequesterSubject(
+        internal_user_id=UUID("00000000-0000-4000-8000-000000000705"),
+        display_name="苍渊",
+    )
+    assert "requester_subject" not in relay.payloads[0].prompt
 
 
 def test_metabot_adapter_returns_fast_unavailable_when_worker_is_offline() -> None:

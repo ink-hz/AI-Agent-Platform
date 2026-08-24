@@ -76,6 +76,8 @@ def test_expired_delivery_reuses_business_idempotency_key(
     _runtime(loop_repository, _delegate_response()).advance_one()
     first = loop_repository.lease_task_delivery("adapter-a", lease_seconds=45)
     assert first is not None
+    assert first.requester_subject.internal_user_id == loop_database[2]
+    assert first.requester_subject.display_name == "Brain Owner"
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "update platform_brain.adapter_deliveries set lease_expires_at="

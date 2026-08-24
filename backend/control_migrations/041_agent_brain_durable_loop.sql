@@ -881,6 +881,10 @@ begin
     'grant select on platform_control.worker_heartbeats to %I', selected_brain
   );
   execute format(
+    'grant select (internal_user_id,display_name,status) '
+    'on platform_control.internal_users to %I', selected_brain
+  );
+  execute format(
     'grant insert on platform_brain.authorization_snapshots, '
     'platform_brain.brain_loops, platform_brain.brain_steps, '
     'platform_brain.brain_tool_calls, platform_brain.agent_tasks, '

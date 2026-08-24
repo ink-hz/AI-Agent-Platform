@@ -14,7 +14,7 @@ from app.execution_relay.metabot_client import (
     MetaBotClientError,
     MetaBotRuntimeMap,
 )
-from app.execution_relay.models import RelayJobPayload
+from app.execution_relay.models import RelayJobPayload, RequesterSubject
 
 
 RUN_ID = UUID("00000000-0000-4000-8000-000000000101")
@@ -230,6 +230,39 @@ def test_start_run_sends_exact_contract_and_callback_bridge_identity(
         "userId": "platform-user",
         "maxTurns": 24,
     }
+
+
+@respx.mock
+def test_start_run_carries_verified_requester_as_metadata_not_prompt(
+    tmp_path: Path,
+) -> None:
+    route = respx.post("http://127.0.0.1:9200/api/core-chat/runs").mock(
+        return_value=httpx.Response(
+            202,
+            json={"status": "accepted", "runId": str(RUN_ID), "targetBot": "hr-bot"},
+        )
+    )
+    client = MetaBotClient(
+        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json")),
+        _secret_file(tmp_path),
+    )
+    payload = _payload().model_copy(
+        update={
+            "requester_subject": RequesterSubject(
+                internal_user_id=UUID("00000000-0000-4000-8000-000000000199"),
+                display_name="苍渊",
+            )
+        }
+    )
+
+    client.start_run(payload, CALLBACK_URL)
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["requesterSubject"] == {
+        "internal_user_id": "00000000-0000-4000-8000-000000000199",
+        "display_name": "苍渊",
+    }
+    assert "苍渊" not in body["prompt"]
 
 
 @respx.mock

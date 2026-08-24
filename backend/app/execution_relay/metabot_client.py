@@ -280,6 +280,10 @@ class MetaBotClient:
                 ),
                 "userId": "platform-user",
             }
+            if payload.requester_subject is not None:
+                request_json["requesterSubject"] = payload.requester_subject.model_dump(
+                    mode="json"
+                )
             if payload.agent_id == "agent-brain-bot":
                 request_json["toolPolicy"] = "none"
             else:

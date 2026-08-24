@@ -22,6 +22,7 @@ from app.agent_brain.loop_models import (
     BrainStepStatus,
     NormalizedTaskResult,
 )
+from app.execution_relay.models import RequesterSubject
 from app.agent_brain.tool_protocol import (
     BrainToolBatch,
     DelegateTaskCall,
@@ -120,6 +121,7 @@ class TaskDeliveryLease:
     delivery_id: UUID
     attempt: int
     idempotency_key: str
+    requester_subject: RequesterSubject = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1219,11 +1221,18 @@ class BrainLoopRepository:
             with self._connection() as connection:
                 with connection.transaction():
                     row = connection.execute(
-                        "select task.*,call.tool_index,step.step_seq from "
+                        "select task.*,call.tool_index,step.step_seq,"
+                        "snapshot.internal_user_id as requester_user_id,"
+                        "requester.display_name as requester_display_name from "
                         "platform_brain.agent_tasks task join "
                         "platform_brain.brain_tool_calls call on "
                         "call.brain_tool_call_id=task.brain_tool_call_id join "
                         "platform_brain.brain_steps step on step.step_id=call.step_id "
+                        "join platform_brain.authorization_snapshots snapshot on "
+                        "snapshot.authorization_snapshot_id=task.authorization_snapshot_id join "
+                        "platform_control.internal_users requester on "
+                        "requester.internal_user_id=snapshot.internal_user_id and "
+                        "requester.status='active' "
                         "where task.status='queued' and not exists (select 1 from "
                         "platform_brain.adapter_deliveries delivery where "
                         "delivery.task_id=task.task_id and delivery.status in "
@@ -1271,6 +1280,10 @@ class BrainLoopRepository:
                         agent_id=row["agent_id"],adapter_kind=row["adapter_kind"],
                         context=value,effective_deadline_at=row["effective_deadline_at"],
                         delivery_id=delivery_id,attempt=attempt,idempotency_key=idempotency_key,
+                        requester_subject=RequesterSubject(
+                            internal_user_id=row["requester_user_id"],
+                            display_name=row["requester_display_name"],
+                        ),
                     )
         except (ContentCryptoError, psycopg.Error):
             raise BrainRepositoryError() from None

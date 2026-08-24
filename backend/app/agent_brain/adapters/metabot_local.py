@@ -95,6 +95,7 @@ class MetaBotLocalAdapter(AgentAdapter):
             ),
             max_turns=24,
             job_kind="metabot_local",
+            requester_subject=task.requester_subject,
         )
         try:
             self._relay.enqueue(payload)

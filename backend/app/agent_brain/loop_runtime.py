@@ -325,6 +325,7 @@ class BrainLoopRuntime:
                 agent_id=lease.agent_id,
                 context=lease.context,
                 effective_deadline_at=lease.effective_deadline_at,
+                requester_subject=lease.requester_subject,
             ),
             AdapterDelivery(
                 delivery_id=lease.delivery_id,

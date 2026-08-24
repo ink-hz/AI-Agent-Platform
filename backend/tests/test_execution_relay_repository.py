@@ -14,7 +14,7 @@ from app.execution_relay.content_crypto import (
     ContentCryptoError,
     SealedContent,
 )
-from app.execution_relay.models import RelayEvent, RelayJobPayload
+from app.execution_relay.models import RelayEvent, RelayJobPayload, RequesterSubject
 from app.execution_relay.repository import (
     ExecutionRelayConflict,
     ExecutionRelayError,
@@ -48,7 +48,27 @@ def _payload(agent_id: str = "hr-bot", *, run_id: UUID | None = None):
         agent_id=agent_id,
         prompt=f"prompt for {agent_id}",
         max_turns=8,
+        requester_subject=RequesterSubject(
+            internal_user_id=UUID("00000000-0000-4000-8000-000000000799"),
+            display_name="苍渊",
+        ),
     )
+
+
+def test_relay_payload_accepts_only_the_explicit_verified_subject_envelope() -> None:
+    payload = RelayJobPayload.model_validate(
+        {
+            **_payload().model_dump(mode="json"),
+            "internal_user_id": "00000000-0000-4000-8000-000000000001",
+            "display_name": "浏览器伪造姓名",
+        }
+    )
+
+    assert payload.requester_subject == RequesterSubject(
+        internal_user_id=UUID("00000000-0000-4000-8000-000000000799"),
+        display_name="苍渊",
+    )
+    assert "00000000-0000-4000-8000-000000000799" not in repr(payload)
 
 
 def _event(

@@ -7,6 +7,7 @@ import re
 from uuid import UUID
 
 from app.agent_brain.loop_models import NormalizedTaskResult
+from app.execution_relay.models import RequesterSubject
 
 
 _KIND = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -19,6 +20,7 @@ class AdapterTask:
     agent_id: str
     context: dict[str, object] = field(repr=False)
     effective_deadline_at: datetime
+    requester_subject: RequesterSubject | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
