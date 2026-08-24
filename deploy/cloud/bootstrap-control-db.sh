@@ -245,7 +245,7 @@ from (values
 where not exists (select 1 from pg_roles where rolname = role_name) \gexec
 
 select format(
-  'alter role %1$I login password %2$L nosuperuser nocreatedb nocreaterole noreplication nobypassrls inherit',
+  'alter role %1\$I login password %2\$L nosuperuser nocreatedb nocreaterole noreplication nobypassrls inherit',
   role_name, role_password
 )
 from (values

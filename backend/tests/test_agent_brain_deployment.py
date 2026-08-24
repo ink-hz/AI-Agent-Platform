@@ -31,6 +31,14 @@ def test_control_bootstrap_provisions_brain_worker_credentials() -> None:
     ):
         assert required in script
 
+    # The SQL is embedded in an expanding shell heredoc. PostgreSQL's
+    # positional format markers must escape their dollar signs or `set -u`
+    # treats `$I` / `$L` as unset shell variables during a production deploy.
+    assert "%1\\$I" in script
+    assert "%2\\$L" in script
+    assert "%1$I" not in script
+    assert "%2$L" not in script
+
 
 def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
     compose = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
