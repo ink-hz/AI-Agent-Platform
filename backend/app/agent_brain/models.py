@@ -42,9 +42,13 @@ class AgentCapabilityCard(BaseModel):
     max_duration_seconds: int = Field(ge=1, le=300)
     data_classification: Literal["internal"] = "internal"
     adapter_id: str = Field(min_length=1, max_length=128)
-    adapter_kind: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
-    adapter_config_version: int = Field(gt=0)
-    output_contract: Literal["normalized_task_result_v1"]
+    adapter_kind: str = Field(
+        default="metabot_local", pattern=r"^[a-z][a-z0-9_]{0,63}$"
+    )
+    adapter_config_version: int = Field(default=1, gt=0)
+    output_contract: Literal["normalized_task_result_v1"] = (
+        "normalized_task_result_v1"
+    )
     capability_version: int = Field(gt=0)
 
 
