@@ -1,6 +1,6 @@
 # 云端 Agent 大脑持久化 Loop 架构设计
 
-**状态：** 待设计评审
+**状态：** 已完成架构评审，待 TDD 实施
 
 **日期：** 2026-08-24
 
@@ -14,7 +14,7 @@ Agent 大脑采用“云端持久化顶层 Agent Loop + 多 Adapter 专业 Agent
 
 Agent 大脑不是固定路由器，也不是本地 MetaBot 的别名。它是在云端直接运行
 Opus 5.0 的模型驱动 Loop：读取持续会话与可用 Agent 能力，决定直接交付、向用户
-追问、调用一个或多个专业 Agent、检查结果、补派或取消任务，并且只能通过
+追问、调用一个或多个专业 Agent、检查结果和补派任务，并且只能通过
 `submit_answer` 完成本轮交付。
 
 Platform 负责身份、授权、会话、持久化、任务投递、事件、附件、审计与恢复；
@@ -218,7 +218,7 @@ Adapter 只负责协议转换与可靠投递，不拥有顶层决策：
 ### 5.1 与 FAE Loop 的同构关系
 
 FAE Loop 的工具是事实检索、文档、SDK 与终稿提交；Agent 大脑 Loop 的工具是
-Agent 发现、任务委派、取消、用户追问与终稿提交。共同控制原则为：
+Agent 发现、任务委派、用户追问与终稿提交。共同控制原则为：
 
 - 模型决定下一步工具；
 - 工具结果回填模型后继续推理；
@@ -227,7 +227,8 @@ Agent 发现、任务委派、取消、用户追问与终稿提交。共同控�
   定义的、明确标注失败来源的平台执行摘要终止本轮；
 - 预算与失败不隐藏；
 - 工具调用、结果、来源、耗时和 outcome 可审计；
-- 不保存或展示原始思维链。
+- 原始 thinking 不进入公开产品面；Provider 协议要求保留的 content block 仅按
+  第 13.1 与第 15 节的加密、短期、审计边界处理。
 
 顶层 Loop 比 FAE Loop 多一个关键要求：专业 Agent 是分钟级异步工具，因此 Loop
 必须可以持久化暂停和恢复，不能依赖一个持续占用的 HTTP 或模型连接。
@@ -238,6 +239,8 @@ Agent 发现、任务委派、取消、用户追问与终稿提交。共同控�
 - 一个正常用户输入创建一个 Turn。
 - 一个 Turn 最多创建一个 Brain Loop。
 - 一个 Brain Loop 可以包含多个 Brain Step 与多个 Agent Task。
+- 失败 Turn 的“重试”创建新的 Turn，并通过 nullable `retry_of_turn_id` 自外键关联
+  原 Turn；不得绕过 `turn_id UNIQUE` 在原 Turn 内创建第二个 Brain Loop。
 - 直接使用专业 Agent 的 Conversation 保留 `direct_agent` 模式，可以绕过 Brain
   Loop；Agent 大脑仍是默认入口。
 
@@ -289,6 +292,24 @@ partial unique index；不能只在 `platform_brain.brain_loops` 中增加状态
   Turn 的补充 User Message，并恢复原 Loop，不新建第二个 Turn。
 - 两个 Brain Worker 不得同时推进同一 Conversation 的非终态 Turn。
 
+### 5.5 waiting_user 的时钟语义
+
+`max_turn_duration` 是活跃执行预算，不是从 Turn 创建开始连续流逝的 wall-clock
+deadline。`running`、`waiting_agents` 与 `completing` 消耗活跃执行预算；
+`waiting_user` 暂停该预算。
+
+进入 `waiting_user` 时：
+
+- 累计本段 `active_elapsed_ms`；
+- 清空当前 `active_started_at` 与 `active_deadline_at`；
+- 保存剩余执行预算；
+- 设置独立的 `waiting_user_expires_at`，首版默认为 24 小时。
+
+用户在 24 小时内回复时，运行时以“当前时间 + 剩余执行预算”重新计算
+`active_deadline_at`。等待人类的时间不计入 900 秒。超过 24 小时未回复时，Loop
+以 `user_input_timeout` 失败并释放 Conversation 的单活跃 Turn 约束；用户随后可
+创建新 Turn。用户也可以主动停止 waiting_user Turn。
+
 ## 6. 模型工具协议
 
 ### 6.1 工具集合
@@ -298,23 +319,47 @@ partial unique index；不能只在 `platform_brain.brain_loops` 中增加状态
 ```text
 list_agents
 delegate_task
-cancel_task
 request_user_input
 submit_answer
 ```
 
+首版不向模型暴露 `cancel_task`。在“同批任务全部 settle 后才恢复模型”的协议下，
+模型没有合法的活任务取消窗口。`agent_tasks.cancel_requested` 与 Adapter 的取消
+能力继续保留，只供用户主动停止和平台安全终止使用。模型主动取消的长期协议见
+第 21.1 节。
+
 并行委派通过同一 Assistant 响应内的多个 `delegate_task` tool-use block 实现，
-每个 tool-use 唯一映射一个 Agent Task。这样满足 Messages API 对 tool-use 与
-tool-result 一一对应的约束，并保证 `brain_tool_call_id -> agent_task` 唯一。
+每个 tool-use 唯一标识一个委派意图。这样满足 Messages API 对 tool-use 与
+tool-result 一一对应的约束。每个被接受的 `delegate_task` tool-use 恰好映射一个
+Agent Task；被运行时限额拒绝的 tool-use 不创建 Task，但仍得到一个配对的终态
+tool-result。
 
 ### 6.2 Tool Call 组合规则
 
 - `list_agents` 必须单独调用。
 - 一个 Step 可以包含一个或多个 `delegate_task`，但不能混入其他工具。
-- 一个 Step 可以包含一个或多个 `cancel_task`，但不能混入其他工具。
 - `request_user_input` 必须单独调用。
 - `submit_answer` 必须单独调用。
-- 未知工具、重复 tool-call ID、混合了禁止组合的调用或参数不合法，均为协议错误。
+- 未知工具、重复 tool-call ID、混合了禁止组合的调用、参数不合法或零 tool-use，
+  均为协议错误。
+
+如果一个 Step 返回超过 `max_parallel_tasks` 个 `delegate_task`，运行时按
+`tool_index` 接受前 N 个并创建 Task；其余 Tool Call 不浪费整个 Step，而是立即
+得到：
+
+```json
+{
+  "status": "rejected_over_parallel_limit",
+  "limit": 4
+}
+```
+
+模型仍在已接受的 Task 全部 settle 后一次性收到该 Step 的全部 tool-result。
+
+模型返回纯自由文本或零 tool-use 时，运行时丢弃该自由文本并进行最多一次协议
+纠正。纠正后仍无合法 tool-use，则 Loop 以 `protocol_violation` 失败，并走第
+12.2 节的平台执行摘要；reason code 使用
+`protocol_violation_after_retry`，不得冒充 `forced_submission_failed`。
 
 ### 6.3 public_reason
 
@@ -498,6 +543,9 @@ Brain 只能从已提供的附件中选择 `attachment_refs` 委派给专业 Age
 
 `brain_steps`、`brain_tool_calls`、`agent_tasks` 与 `agent_task_events` 是 append-only
 或受严格状态机约束的恢复真相。Brain messages 数组必须能由这些记录确定性重建。
+该重建保证覆盖所有非终态 Loop 及终态后 7 天诊断窗口；Thinking 原始 block 到期
+擦除后，仍保留规范化 Tool Call、Tool Result、公开消息、usage 与状态转换用于历史
+审计，但不承诺重放已经终态的 Provider 原始请求。
 
 `brain_checkpoints` 只是加速缓存：
 
@@ -519,13 +567,16 @@ outcome / reason_code
 model_config_snapshot
 max_steps / max_tasks / max_duration_seconds
 step_count / task_count
-deadline_at
+active_budget_ms / active_elapsed_ms / active_started_at / active_deadline_at
+waiting_user_expires_at
 cancel_requested
 row_version
 created_at / updated_at / terminal_at
 ```
 
 状态与 `terminal_at` 必须有 CHECK 约束。`turn_id` 唯一保证一个 Turn 最多一个 Loop。
+`waiting_user` 必须满足 `active_started_at/active_deadline_at` 为空且
+`waiting_user_expires_at` 非空；其他活跃状态必须有可计算的剩余执行预算。
 
 ### 9.3 platform_brain.brain_steps
 
@@ -540,6 +591,7 @@ lease_worker_id / lease_expires_at / attempt
 input_prefix_hash
 model_request_id
 model_response_ciphertext
+response_retention_until
 usage / cache_usage
 created_at / updated_at / terminal_at
 UNIQUE(loop_id, step_seq)
@@ -566,7 +618,8 @@ UNIQUE(step_id, tool_index)
 UNIQUE(step_id, provider_tool_call_id)
 ```
 
-`delegate_task` 类型的 Tool Call 与 `agent_tasks.brain_tool_call_id` 为一对一唯一关系。
+被接受的 `delegate_task` Tool Call 与 `agent_tasks.brain_tool_call_id` 为一对一唯一
+关系；`rejected_over_parallel_limit` Tool Call 不创建 Agent Task。
 
 ### 9.5 platform_brain.agent_tasks
 
@@ -656,7 +709,9 @@ Adapter 在已确认 dispatched 后不得自动重试。
 - 命中的 `agent_use_grants` ID 集合或全员/部门授权依据；
 - 目录 generation；
 - capability version；
-- 计算时间与决策 hash。
+- 计算时间；
+- `effective_decision_hash`，只覆盖规范化的 user、agent、allow/deny 与有效授权
+  scope，不包含目录 generation、capability version 或支持该决定的具体 grant ID。
 
 这里使用的是 Agent 使用授权，不把管理看板的 `observation_grants` 当作调用授权。
 两者可以沿用相同的“显式授权依据 + 版本快照”做法，但语义不能混用。
@@ -666,8 +721,12 @@ Adapter 在已确认 dispatched 后不得自动重试。
 首版采用失败关闭：
 
 - 每次 dispatch、任务结果回填、Loop 恢复和 `submit_answer` 前重新鉴权。
-- 授权或 capability version 变化时，当前 Loop 以
-  `authorization_changed` 显式失败，并向支持取消的 Task 发取消请求。
+- 只有当前 effective authorization decision 从 allow 变为 deny，才将整个 Loop
+  以 `authorization_changed` 显式失败，并向支持取消的 Task 发取消请求。
+- 目录 generation 变化但 effective decision 仍为 allow 时，不影响 Loop。
+- capability version 变化但授权仍为 allow 时，不终止在飞 Loop，也不丢弃已完成
+  结果；后续新建 Task 返回 `capability_changed` tool-result，要求模型重新调用
+  `list_agents` 后决定是否继续。
 - 尚未回填模型的结果不得进入模型上下文。
 - 已在早期 Step 回填的结果无法事后精确摘除，因此不得继续生成正常终稿；加密
   运行记录按既定保留与擦除策略处理。
@@ -683,9 +742,11 @@ max_brain_steps        = 12
 max_agent_tasks        = 8
 max_parallel_tasks     = 4
 max_turn_duration      = 900 seconds
+max_waiting_user       = 86400 seconds
 max_single_task        = 300 seconds
 max_task_result_bytes  = 65536
-max_output_tokens      = 8192
+max_output_tokens      = 32768
+max_answer_markdown    = 65536 bytes
 ```
 
 规则：
@@ -693,6 +754,7 @@ max_output_tokens      = 8192
 - Step 计数只在一次合法、包含 tool-use 的模型决策提交后增加；tool-result 的数据库
   回填与 Loop 唤醒不计 Step。
 - 协议纠正调用单独计 `protocol_retry_count`，最多一次，但仍计 token、耗时和成本。
+- `waiting_user` 暂停 900 秒活跃执行预算，并受独立 24 小时等待上限约束。
 - Task 的有效 deadline 为任务上限、Agent 上限和 Turn 剩余时间三者最小值。
 - 当 Turn deadline 先到时，仍运行的 Task 被标记 `timed_out`，补齐对应 tool-result，
   然后进入强制收束；不能等待“300 秒 × 多轮”自然完成。
@@ -732,6 +794,9 @@ fallback_kind=platform_execution_summary
 reason_code=forced_submission_failed
 ```
 
+普通协议纠正后仍为零 tool-use 时使用相同的显式平台摘要结构，但 reason code 为
+`protocol_violation_after_retry`。两者都不能交付被丢弃的模型自由文本。
+
 这是显式、可审计的失败交付，不得标记为正常模型答案。
 
 ## 13. BrainModelAdapter
@@ -746,12 +811,32 @@ provider_kind:        anthropic_messages 或 anthropic_compatible
 model_id:             claude-opus-5
 context_profile:      opus_1m
 context_window:       1000000
-max_output_tokens:    8192
+thinking_type:        adaptive
+thinking_display:     omitted
+thinking_effort:      high
+max_output_tokens:    32768
+max_answer_bytes:     65536
 prompt_cache_enabled: true
+prompt_cache_ttl:     1h（真实 Provider 探测通过后）
 ```
 
-具体 model ID 与 context profile 必须在 Dev 对真实 Provider 做能力探测后冻结到
-release manifest；不能只凭环境变量名称声称已经启用。
+具体 model ID、context profile、adaptive thinking、强制 tool choice、输出上限与
+1 小时 cache TTL 必须在 Dev 对真实 Provider 做能力探测后冻结到 release manifest；
+不能只凭环境变量名称声称已经启用。任一关键能力不支持都阻塞发布，不得在运行时
+悄悄关闭 thinking 或切换 Provider。
+
+Opus 5.0 首版明确启用 adaptive thinking，并使用 `display=omitted`。Anthropic
+Messages 工具循环要求与 tool-use 同属一个 Assistant Turn 的 thinking content
+block 在返回 tool-result 时完整、不修改地回传；因此 `brain_steps` 必须保存恢复
+所需的原始 content block。`max_tokens` 同时覆盖 thinking、tool call 与终稿，故从
+8192 提升至 32768，并将 `submit_answer.answer_markdown` 的服务端上限固定为
+65536 bytes。真实网关验收必须覆盖高 effort 下的工具调用、强制
+`submit_answer`、截断与答案长度。
+
+协议依据：
+
+- [Anthropic Thinking 文档](https://platform.claude.com/docs/en/about-claude/models/extended-thinking-models)
+- [Anthropic Prompt Caching 文档](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
 
 两个 backend 不是运行时 failover。切换必须：
 
@@ -781,6 +866,11 @@ release manifest；不能只凭环境变量名称声称已经启用。
 - prefix hash；
 - Provider request ID；
 - duration 与 stop reason。
+
+默认 5 分钟 cache TTL 与最长 300 秒的 `waiting_agents` 正好处于失效边界。首版
+优先使用 Provider 的 1 小时 TTL；Step 2 能力探测必须验证真实 Gateway 是否透传
+该档位，并把 `cache_ttl`、价格档位与探测证据冻结到 release manifest。若 Gateway
+不支持 1 小时 TTL，必须在发布评审中显式接受成本，而不是假设仍会命中。
 
 成本评测必须按完整多 Step Turn 统计，不能用一次调用成本外推。
 
@@ -824,7 +914,13 @@ Registry 的页面展示 URL 与调用端点必须分离；`entry_url` 不能自
 - 附件句柄绑定 internal user、Agent、Task、操作与过期时间。
 - Agent API 必须二次鉴权，不能相信浏览器传入的 user ID 或 agent ID。
 - 会话、Tool 参数、结果与公开事件分别加密或白名单投影。
-- 不保存、展示或传输原始思维链。
+- Provider 协议要求回传的 thinking content block 只以 envelope encryption 保存于
+  `brain_steps.model_response_ciphertext`，不投影到 SSE、前端、数据飞轮、日志或
+  专业 Agent。
+- Thinking block 在 Loop 终态后保留 7 天用于协议恢复审计，随后擦除原始 block；
+  规范化 Tool Call、公开事件、usage 和稳定错误码按普通运行记录保留。
+- Thinking block 的内部读取只允许 break-glass 诊断，必须填写事由并写审计；普通
+  platform owner、reviewer 和业务用户均不可读取。
 - Provider/Adapter/模型配置切换、跨用户查看、授权变更和敏感擦除均写审计。
 
 ## 16. 公开事件与用户体验
@@ -865,12 +961,12 @@ Prompt、授权依据与密钥不得进入 SSE。
 | Mac/MetaBot 离线 | `metabot_local` Task 快速返回 unavailable；其他 Adapter 与 Brain 正常 |
 | 专业 Agent 超时 | 生成 timed_out tool-result；批次 settle 后由 Brain 决定 |
 | 一个批次部分成功 | UI 实时展示；模型等全批 settle 后统一观察 |
-| Opus 5.0 不可用 | 当前 Brain Turn 显式失败/可重试；登录、历史、管理和 Direct Agent 不受影响 |
+| Opus 5.0 不可用 | 当前 Brain Turn 显式失败；“重试”创建关联到原 Turn 的新 Turn，不在原 Turn 重建 Loop；登录、历史、管理和 Direct Agent 不受影响 |
 | Brain Worker 重启 | 租约过期后从 append-only 记录重建并恢复 |
 | Adapter Worker 重启 | Delivery 租约与 Adapter 幂等声明决定是否重投 |
 | 重复 Agent 事件 | `(task_id, seq)` 幂等接受或冲突拒绝 |
 | 用户停止 | 标记 Loop cancel_requested，取消可取消任务，完成为 cancelled |
-| 授权中途变化 | 整个 Loop 以 authorization_changed 失败，不继续正常终稿 |
+| 有效授权从 allow 变为 deny | 整个 Loop 以 authorization_changed 失败，不继续正常终稿；单纯 generation 变化不触发 |
 | 预算耗尽 | 强制 submit_answer；再次失败则显式平台执行摘要 |
 | Registry/health 暂不可用 | 不使用过期信息静默派发；list_agents 标记 unknown/stale 或返回明确失败 |
 
@@ -885,6 +981,8 @@ Prompt、授权依据与密钥不得进入 SSE。
 - Step、Task、并行批次数；
 - 每次 Agent 选择与公开理由；
 - Provider token/cache/耗时；
+- 连续 Step cache 命中率；
+- `waiting_agents` 恢复后 cache 命中率；
 - Task queue/run/settle 耗时；
 - outcome、fallback 与 reason code；
 - 上下文截断、附件 omission；
@@ -903,8 +1001,13 @@ Prompt、授权依据与密钥不得进入 SSE。
 - Tool Call 重放不重复创建 Task；
 - 同 Conversation 并发请求；
 - waiting_user 恢复；
-- 授权中途撤销；
+- waiting_user 静置超过 900 秒后仍能正常恢复；
+- 真实授权撤销导致失败；
+- 目录 generation 变化但有效授权不变时 Loop 不失败；
+- capability version 变化只拒绝新 Task，不终止在飞 Loop；
 - 强制 submit_answer 与二级失败摘要；
+- 零 tool-use 的一次纠正与 `protocol_violation_after_retry`；
+- 超过并行上限时前 N 个执行、其余返回 `rejected_over_parallel_limit`；
 - 长会话显式截断；
 - 附件最小化委派；
 - 模型不输出原始思维链。
@@ -931,7 +1034,8 @@ Prompt、授权依据与密钥不得进入 SSE。
 ### Step 2：BrainModelAdapter
 
 - 固定 Opus 5.0、context profile、max tokens 和唯一 Provider。
-- 验证 tool-use、强制 tool-choice、Prompt caching、usage 与错误语义。
+- 验证 adaptive thinking、tool-use、强制 tool-choice、1 小时 Prompt caching、usage
+  与错误语义，并将能力与 TTL 探测冻结进 release manifest。
 - 配置切换进入审计。
 
 ### Step 3：最小端到端纵向切片
@@ -957,7 +1061,7 @@ Prompt、授权依据与密钥不得进入 SSE。
 - 多 Step；
 - 同批多 Agent；
 - settle 后恢复；
-- 补派、取消、waiting_user；
+- 补派、用户主动停止、waiting_user；
 - 预算、deadline 与强制收束。
 
 ### Step 5：完整协议与过程视图
@@ -977,7 +1081,7 @@ Prompt、授权依据与密钥不得进入 SSE。
 ### Step 7：接通 HR / Marketing
 
 - 逐个固定 capability 与输出契约；
-- 验证附件、取消、超时与幂等声明；
+- 验证附件、用户停止、超时与幂等声明；
 - 不增加代码级兜底路由。
 
 ### Step 8：独立 FAE HTTP Adapter
@@ -996,6 +1100,8 @@ Prompt、授权依据与密钥不得进入 SSE。
 ### Step 10：旧主链路只读
 
 - 删除 `agent-brain-bot` 作为 planning/summary/synthesis 主链路的运行依赖。
+- V2 Brain Loop、Step 与 Task 永远不写入 `missions/mission_runs/mission_tasks`；旧
+  CHECK 约束原样保留，只服务 V1 历史回放。
 - V1 Mission 与 Run 表、诊断路由按保留期只读。
 - MetaBot Agent 与本地历史不删除，只改变其架构地位。
 
@@ -1010,11 +1116,15 @@ Prompt、授权依据与密钥不得进入 SSE。
 5. 同一 Conversation 两次并发提交只有一个非终态 Turn。
 6. 同 `(task_id, seq)` 重放幂等，不同内容冲突失败。
 7. 达到预算后强制 submit_answer；强制失败时生成带 fallback 标签的平台摘要。
-8. 授权中途变化导致整个 Loop 显式失败。
-9. 长会话和附件 omission 对模型与用户都显式可见。
-10. UI 能区分“Agent 已完成但 Brain 尚未恢复”和“Brain 已观察结果”。
-11. 生产只配置一个 Opus 5.0 Provider，不存在运行时模型/Provider failover。
-12. FAE 容器、域名、配置、启动时间和重启次数在非 FAE 接入批次保持不变。
+8. waiting_user 静置超过 900 秒后，24 小时窗口内仍可正常回答并完成原 Turn。
+9. 真实授权撤销导致 Loop 失败；例行目录同步不误杀，capability 更新只拒绝新 Task。
+10. 长会话和附件 omission 对模型与用户都显式可见。
+11. UI 能区分“Agent 已完成但 Brain 尚未恢复”和“Brain 已观察结果”。
+12. 生产只配置一个 Opus 5.0 Provider，不存在运行时模型/Provider failover。
+13. 连续 Step 与 waiting_agents 恢复路径分别报告 cache 命中率和成本。
+14. 零 tool-use 重试一次后显式失败，不向用户交付模型自由文本。
+15. V2 运行时对旧 `mission_runs` 的写入次数为零。
+16. FAE 容器、域名、配置、启动时间和重启次数在非 FAE 接入批次保持不变。
 
 ## 21. 明确非目标
 
@@ -1026,6 +1136,21 @@ Prompt、授权依据与密钥不得进入 SSE。
 - 不做运行时 Provider/模型/Agent 静默兜底。
 - 不把 Agent 大脑原始思维链展示给用户或写入数据飞轮。
 - 不在首版迁移 MetaBot SQLite 历史。
+
+### 21.1 已知演进：模型主动取消
+
+首版不向模型暴露 `cancel_task`。完成 durable Loop 纵向切片并验证稳定后，可以在
+不修改 `agent_tasks` 主 schema 的前提下演进为：
+
+```text
+delegate_task -> 立即返回 {status: dispatched, task_id}
+await_tasks    -> 对指定 Task 执行阻塞收集
+cancel_task    -> 对尚未 settle 的 Task 请求取消
+```
+
+该协议允许模型看到部分结果后纠偏和取消无价值任务，但会引入跨 Step 未完成 Task、
+显式 await 集合与更复杂的 Messages API 配对关系，必须单独设计、评测和发布，不能
+在首版实现中半开放。
 
 ## 22. 最终原则
 
