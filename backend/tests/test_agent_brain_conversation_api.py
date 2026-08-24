@@ -42,6 +42,7 @@ def _app(
     role: Role = Role.MEMBER,
     agent_use: FakeAgentUse | None = None,
     command_service=None,
+    brain_enabled: bool = True,
 ):
     context = AuthContext(owner, role, uuid4(), False)
     auth = FakeAuth(context)
@@ -58,6 +59,7 @@ def _app(
             ),
             session_revalidator=auth.authenticate,
             session_cookie_name=auth.cookie_name,
+            brain_enabled=brain_enabled,
             heartbeat_seconds=0.001,
             poll_seconds=0,
         )
@@ -230,6 +232,26 @@ def test_direct_agent_authorization_is_rechecked_for_every_turn(
         "继续评估",
     )
     assert denied.status_code == 403
+
+
+@pytest.mark.postgres
+def test_direct_conversation_remains_available_while_brain_intake_is_disabled(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner, _ = conversation_database
+    app, auth, _agent_use = _app(owner, repository, brain_enabled=False)
+    client = TestClient(app)
+
+    direct = _post(
+        client, auth, "/api/v1/agents/hr-bot/conversations", "评估简历"
+    )
+    brain = _post(client, auth, "/api/v1/conversations", "请统一调度")
+
+    assert direct.status_code == 201
+    assert direct.json()["conversation"]["mode"] == "direct_agent"
+    assert brain.status_code == 503
+    assert brain.json()["detail"] == "Agent Brain unavailable"
 
 
 @pytest.mark.postgres

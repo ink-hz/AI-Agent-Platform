@@ -528,13 +528,13 @@ def create_app(
             lease_seconds=config.execution_relay_lease_seconds,
             max_body_bytes=config.execution_relay_max_body_bytes,
         )
-    if config.agent_brain_enabled:
+    if config.direct_agent_enabled or config.agent_brain_enabled:
         if (
             control_database_url is None
             or content_codec is None
             or execution_relay_repository is None
         ):
-            raise RuntimeError("Agent Brain unavailable")
+            raise RuntimeError("Agent conversation execution unavailable")
         mission_repository = MissionRepository(
             control_database_url, content_codec=content_codec
         )
@@ -548,6 +548,14 @@ def create_app(
             v2_enabled=config.agent_brain_v2_enabled,
         )
         agent_use_authorization = AgentUseAuthorization(control_database_url)
+    if config.agent_brain_enabled:
+        if (
+            mission_repository is None
+            or conversation_repository is None
+            or execution_relay_repository is None
+            or agent_use_authorization is None
+        ):
+            raise RuntimeError("Agent Brain unavailable")
         agent_brain_orchestrator = MissionOrchestrator(
             mission_repository,
             execution_relay_repository,
@@ -798,20 +806,26 @@ def create_app(
         app.include_router(build_agent_catalog_router(agent_use_authorization))
     if mission_repository is not None and agent_use_authorization is not None:
         app.include_router(
-            build_agent_brain_router(
-                mission_repository,
-                agent_use_authorization,
-                cursor_codec=MissionCursorCodec(identity_auth.secrets),
-                session_revalidator=identity_auth.authenticate,
-                session_cookie_name=identity_auth.cookie_name,
-            )
-        )
-        app.include_router(
             build_conversation_router(
                 conversation_repository,
                 agent_use_authorization,
                 command_service=conversation_command_service,
                 cursor_codec=ConversationCursorCodec(identity_auth.secrets),
+                session_revalidator=identity_auth.authenticate,
+                session_cookie_name=identity_auth.cookie_name,
+                brain_enabled=config.agent_brain_enabled,
+            )
+        )
+    if (
+        config.agent_brain_enabled
+        and mission_repository is not None
+        and agent_use_authorization is not None
+    ):
+        app.include_router(
+            build_agent_brain_router(
+                mission_repository,
+                agent_use_authorization,
+                cursor_codec=MissionCursorCodec(identity_auth.secrets),
                 session_revalidator=identity_auth.authenticate,
                 session_cookie_name=identity_auth.cookie_name,
             )

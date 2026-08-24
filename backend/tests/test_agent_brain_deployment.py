@@ -38,6 +38,9 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
     environment = api["environment"]
 
     assert environment["PLATFORM_EXECUTION_RELAY_ENABLED"] == "1"
+    assert environment["PLATFORM_DIRECT_AGENT_ENABLED"] == (
+        "${PLATFORM_DIRECT_AGENT_ENABLED:-0}"
+    )
     assert environment["PLATFORM_AGENT_BRAIN_ENABLED"] == "${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
     assert environment["PLATFORM_CONTROL_DATABASE_URL_FILE"] == "/run/secrets/control-database-url"
     assert environment["PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE"] == "/run/secrets/content-encryption-keyring"

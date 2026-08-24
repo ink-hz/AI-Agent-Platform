@@ -64,6 +64,7 @@ class Config:
     replica_signing_public_key_file: str
     replica_stale_seconds: int
     execution_relay_enabled: bool
+    direct_agent_enabled: bool
     agent_brain_enabled: bool
     agent_brain_v2_enabled: bool
     brain_model_enabled: bool
@@ -518,6 +519,11 @@ def _validate_execution_relay_config(config: Config) -> None:
 
 
 def _validate_agent_brain_config(config: Config) -> None:
+    if config.direct_agent_enabled and (
+        config.control_plane.mode is not IdentityMode.PRODUCTION
+        or not config.execution_relay_enabled
+    ):
+        raise ValueError("Direct Agent requires production identity and relay")
     if config.agent_brain_v2_enabled and not config.agent_brain_enabled:
         raise ValueError("Agent Brain V2 requires Agent Brain")
     if not config.agent_brain_enabled:
@@ -681,6 +687,7 @@ def load_config() -> Config:
             os.getenv("PLATFORM_REPLICA_STALE_SECONDS", "900")
         ),
         execution_relay_enabled=execution_relay_enabled,
+        direct_agent_enabled=_enabled("PLATFORM_DIRECT_AGENT_ENABLED"),
         agent_brain_enabled=_enabled("PLATFORM_AGENT_BRAIN_ENABLED"),
         agent_brain_v2_enabled=_enabled("PLATFORM_AGENT_BRAIN_V2_ENABLED"),
         brain_model_enabled=_enabled("PLATFORM_BRAIN_MODEL_ENABLED"),

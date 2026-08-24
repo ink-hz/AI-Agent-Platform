@@ -358,6 +358,30 @@ def test_execution_relay_enabled_accepts_only_production_root_and_valid_keyring(
     assert config.execution_relay_max_body_bytes == 524_288
 
 
+def test_direct_agent_execution_is_independent_from_brain_but_requires_relay(
+    monkeypatch, tmp_path
+) -> None:
+    _enable_production_identity(monkeypatch, tmp_path)
+    keyring = _content_keyring(tmp_path / "content-keyring.json")
+    monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE", keyring)
+    monkeypatch.setenv("PLATFORM_DIRECT_AGENT_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_AGENT_BRAIN_ENABLED", "0")
+
+    config = load_config()
+
+    assert config.direct_agent_enabled is True
+    assert config.agent_brain_enabled is False
+
+
+def test_direct_agent_execution_fails_closed_without_relay(monkeypatch) -> None:
+    monkeypatch.setenv("PLATFORM_DIRECT_AGENT_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_ENABLED", "0")
+
+    with pytest.raises(ValueError, match="Direct Agent requires production identity and relay"):
+        load_config()
+
+
 def test_execution_relay_enabled_requires_production_identity(monkeypatch, tmp_path):
     monkeypatch.setenv("PLATFORM_EXECUTION_RELAY_ENABLED", "1")
     monkeypatch.setenv(

@@ -437,6 +437,7 @@ def build_conversation_router(
     cursor_codec: ConversationCursorCodec,
     session_revalidator: Callable[[str], object],
     session_cookie_name: str,
+    brain_enabled: bool = True,
     heartbeat_seconds: float = 15,
     revalidate_seconds: float = 15,
     poll_seconds: float = 1,
@@ -444,6 +445,8 @@ def build_conversation_router(
     max_streams_per_conversation: int = 2,
     max_streams_global: int = 200,
 ) -> APIRouter:
+    if type(brain_enabled) is not bool:
+        raise ValueError("Conversation Brain flag invalid")
     if not callable(session_revalidator):
         raise ValueError("Conversation session revalidator required")
     if not isinstance(session_cookie_name, str) or not session_cookie_name:
@@ -511,6 +514,10 @@ def build_conversation_router(
             str | None, Header(alias="Idempotency-Key")
         ] = None,
     ):
+        if not brain_enabled:
+            raise HTTPException(
+                503, "Agent Brain unavailable", headers=_NO_STORE
+            )
         return await create(
             _auth_context(request),
             response,
@@ -651,6 +658,10 @@ def build_conversation_router(
                 context.internal_user_id,
                 conversation_id,
             )
+            if conversation.mode == "brain" and not brain_enabled:
+                raise HTTPException(
+                    503, "Agent Brain unavailable", headers=_NO_STORE
+                )
             if conversation.mode == "direct_agent":
                 await require_direct_agent(
                     context.internal_user_id, conversation.direct_agent_id
@@ -681,6 +692,10 @@ def build_conversation_router(
             str | None, Header(alias="Idempotency-Key")
         ] = None,
     ):
+        if not brain_enabled:
+            raise HTTPException(
+                503, "Agent Brain unavailable", headers=_NO_STORE
+            )
         context = _auth_context(request)
         _ensure_writable(context)
         request_id = _parse_idempotency_key(idempotency_key)
