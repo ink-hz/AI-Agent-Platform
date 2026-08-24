@@ -118,6 +118,36 @@ def test_postgres_authorization_passes_all_callable_ids_as_text_array(
     ) == CALLABLE_AGENT_IDS
 
 
+@pytest.mark.postgres
+def test_fresh_single_agent_decision_includes_directory_generation(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as connection:
+        user_id, _root, _child, generation_id = _seed_active_directory(connection)
+        actor_id = uuid4()
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values "
+            "(%s,'Decision Actor','active')",
+            (actor_id,),
+        )
+        _insert_grant(
+            connection,
+            agent_id="hr-bot",
+            target_kind="user",
+            actor_id=actor_id,
+            user_id=user_id,
+        )
+
+    decision = AgentUseAuthorization(
+        environment["urls"]["platform_control_app"]
+    ).decide_for_user_id(user_id, "hr-bot")
+
+    assert decision.allowed is True
+    assert decision.directory_generation_id == generation_id
+
+
 def test_management_role_does_not_bypass_agent_use_decision() -> None:
     decisions = _Decisions(set())
     authorization = AgentUseAuthorization(APP_DSN, connect=decisions.connect)

@@ -394,6 +394,45 @@ begin
 end
 $function$;
 
+create function platform_control.resolve_agent_use_decision_v39(
+  selected_user_id uuid,
+  selected_agent_id text
+) returns table(allowed boolean,directory_generation_id uuid)
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, platform_control
+as $function$
+begin
+  if (
+       current_database() = 'agent_platform_control'
+       and session_user <> 'platform_control_app'
+     ) or (
+       current_database() = 'agent_platform_control_preview'
+       and session_user <> 'platform_control_app_preview'
+     ) or current_database() not in (
+       'agent_platform_control','agent_platform_control_preview'
+     )
+  then
+    raise insufficient_privilege using
+      message = 'Agent use decision caller invalid';
+  end if;
+  if selected_user_id is null
+     or selected_agent_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+  then
+    raise check_violation using message = 'Agent use decision input invalid';
+  end if;
+  return query
+  select
+    platform_control.has_agent_use_scope_v29(
+      selected_user_id,selected_agent_id
+    ),
+    state.active_generation_id
+  from platform_control.directory_state state
+  where state.singleton=true;
+end
+$function$;
+
 create function platform_brain.append_agent_task_event_v39(
   selected_task_id uuid,
   selected_seq integer,
@@ -541,6 +580,9 @@ revoke all on all tables in schema platform_brain from public;
 revoke all on function platform_control.upsert_brain_worker_heartbeat_v39(
   text,text,text,timestamptz
 ) from public;
+revoke all on function platform_control.resolve_agent_use_decision_v39(
+  uuid,text
+) from public;
 revoke all on function platform_brain.append_agent_task_event_v39(
   uuid,integer,text,bytea,integer,bytea,timestamptz,text,bytea,integer,bytea
 ) from public;
@@ -583,6 +625,11 @@ begin
       'revoke all on function '
       'platform_control.upsert_brain_worker_heartbeat_v39('
       'text,text,text,timestamptz) from %I', role_name
+    );
+    execute format(
+      'revoke all on function '
+      'platform_control.resolve_agent_use_decision_v39(uuid,text) from %I',
+      role_name
     );
     execute format(
       'revoke all on function '
@@ -635,6 +682,11 @@ begin
     'grant execute on function '
     'platform_control.upsert_brain_worker_heartbeat_v39('
     'text,text,text,timestamptz) to %I', selected_brain
+  );
+  execute format(
+    'grant execute on function '
+    'platform_control.resolve_agent_use_decision_v39(uuid,text) to %I',
+    selected_app
   );
   execute format(
     'grant execute on function '

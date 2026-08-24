@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import psycopg
 from psycopg.rows import dict_row
@@ -16,6 +18,13 @@ from .models import AgentCapabilityCard, load_capability_cards
 
 class AgentUseAuthorizationUnavailable(RuntimeError):
     """Stable orchestration-only signal that authorization could not be decided."""
+
+
+@dataclass(frozen=True, slots=True)
+class AgentUseDecision:
+    allowed: bool
+    grant_ids: tuple[UUID, ...]
+    directory_generation_id: UUID | None
 
 
 class AgentUseAuthorization:
@@ -34,6 +43,10 @@ class AgentUseAuthorization:
         self._cards = load_capability_cards(
             capability_path, fleet_catalog=fleet_catalog
         )
+
+    @property
+    def capability_cards(self) -> tuple[AgentCapabilityCard, ...]:
+        return self._cards
 
     def __repr__(self) -> str:
         return (
@@ -89,5 +102,37 @@ class AgentUseAuthorization:
                 for card, row in zip(self._cards, rows, strict=True)
                 if row["allowed"]
             )
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise AgentUseAuthorizationUnavailable() from None
+
+    def decide_for_user_id(
+        self, internal_user_id: UUID, agent_id: str
+    ) -> AgentUseDecision:
+        if (
+            not isinstance(internal_user_id, UUID)
+            or not isinstance(agent_id, str)
+            or agent_id not in {card.agent_id for card in self._cards}
+        ):
+            return AgentUseDecision(False, (), None)
+        try:
+            with self._connect(
+                self._control_database_url,
+                connect_timeout=3,
+                options="-c statement_timeout=10000",
+                row_factory=dict_row,
+            ) as connection:
+                row = connection.execute(
+                    "select allowed,directory_generation_id from "
+                    "platform_control.resolve_agent_use_decision_v39(%s,%s)",
+                    (internal_user_id, agent_id),
+                ).fetchone()
+            if row is None or type(row["allowed"]) is not bool:
+                raise AgentUseAuthorizationUnavailable()
+            generation = row["directory_generation_id"]
+            if generation is not None and not isinstance(generation, UUID):
+                raise AgentUseAuthorizationUnavailable()
+            return AgentUseDecision(row["allowed"], (), generation)
+        except AgentUseAuthorizationUnavailable:
+            raise
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise AgentUseAuthorizationUnavailable() from None
