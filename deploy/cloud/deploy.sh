@@ -42,6 +42,12 @@ fi
 
 repository_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repository_root"
+backend_python="$repository_root/backend/.venv/bin/python"
+if [[ ! -x "$backend_python" ]]; then
+  common_git="$(git rev-parse --path-format=absolute --git-common-dir)" || fail
+  backend_python="$(/usr/bin/dirname "$common_git")/backend/.venv/bin/python"
+fi
+[[ -x "$backend_python" ]] || fail
 [[ -z "$(git status --porcelain)" ]] || fail
 release_sha="$(git rev-parse HEAD)"
 remote_master_sha="$(git rev-parse refs/remotes/origin/master 2>/dev/null || true)"
@@ -105,7 +111,7 @@ trap cleanup EXIT
 source_root="$artifact_root/source"
 /bin/mkdir -p "$source_root"
 git archive "$release_sha" | /usr/bin/tar -x -C "$source_root"
-"$repository_root/backend/.venv/bin/python" - "$source_root" <<'PY'
+"$backend_python" - "$source_root" <<'PY'
 import hashlib
 import pathlib
 import sys
@@ -130,9 +136,9 @@ ssh_options=(
   -o ConnectTimeout=8
   -o StrictHostKeyChecking=yes
 )
-deployment_id="$("$repository_root/backend/.venv/bin/python" -c 'import secrets; print(secrets.token_hex(16))')"
+deployment_id="$("$backend_python" -c 'import secrets; print(secrets.token_hex(16))')"
 [[ "$deployment_id" =~ ^[0-9a-f]{32}$ ]] || fail
-agent_brain_action_lock_token="$("$repository_root/backend/.venv/bin/python" -c 'import uuid; print(uuid.uuid4())')"
+agent_brain_action_lock_token="$("$backend_python" -c 'import uuid; print(uuid.uuid4())')"
 [[ "$agent_brain_action_lock_token" =~ ^[0-9a-f-]{36}$ ]] || fail
 acquire_agent_brain_action_lock() {
   /usr/bin/ssh "${ssh_options[@]}" "$CLOUD_ADMIN_HOST" /bin/bash -s -- \

@@ -93,6 +93,10 @@ def test_cloud_registry_and_contract_have_no_source_coordinates():
 def test_local_deploy_preflight_is_clean_noninteractive_and_manifest_bound():
     script = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
 
+    assert 'backend_python="$repository_root/backend/.venv/bin/python"' in script
+    assert "git rev-parse --path-format=absolute --git-common-dir" in script
+    assert '$(/usr/bin/dirname "$common_git")/backend/.venv/bin/python' in script
+    assert script.count('"$backend_python"') >= 3
     assert "git status --porcelain" in script
     assert "git rev-parse HEAD" in script
     assert "refs/remotes/origin/master" in script
