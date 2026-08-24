@@ -76,8 +76,9 @@ CLOUD_PLATFORM_DEPLOY_OK release=<commit> mode=dingtalk
 ```
 
 Deployment starts the formal services while the existing root Basic Auth is
-still present. Platform deploys first; the AI ADMIN strict consumer remains on
-its previous release until every gate below passes. Before Platform
+still present. Apply Platform migrations 039/040 first without publishing the
+new account projection, then deploy and verify the AI ADMIN compatibility bridge
+that accepts both legacy and additive account contracts. Before Platform
 publish/cutover, run the employee-profile aggregate probe inside the directory container so its
 file-backed secrets stay inside that service:
 
@@ -136,9 +137,9 @@ and incident references must be uppercase stable references.
 After owner binding, publish only the root identity boundary:
 
 ```bash
-/opt/orbbec-agent-platform/current/deploy/cloud/publish-dingtalk-production.sh \
-  /opt/orbbec-agent-platform/current
-/opt/orbbec-agent-platform/current/deploy/cloud/accept-dingtalk-production.sh
+/opt/orbbec-agent-platform/current/deploy/cloud/run-dingtalk-production-cutover.sh \
+  /opt/orbbec-agent-platform/releases/<EXPECTED_RELEASE_SHA> \
+  <EXPECTED_RELEASE_SHA> /root/private/platform-controlled-account-cookie
 ```
 
 The Nginx transaction removes the old shared Platform Basic Auth, replaces only
@@ -158,10 +159,19 @@ FAE:
 Do not delete the cutover state or pre-cutover release until the acceptance
 window closes.
 
-Deploy the AI ADMIN strict consumer only after Platform publish and the
-authenticated account proof have passed. Rollback AI ADMIN first, then perform
-the Platform compatibility rollback; retain the synchronized nullable column
-and do not delete directory data.
+The controlled-account cookie file must be a root-owned, mode-`0600`, regular
+file containing only the approved account's session-cookie value. Acceptance
+checks the exact account schema and emits only field-presence booleans. Both
+publish and acceptance run under the same existing deployment/action lock, bind
+evidence to the expected release, verify every application container embeds that
+exact release SHA, and recheck the current release and container IDs. If formal
+acceptance fails after publication, the coordinator invokes the fixed rollback
+under the same lock before releasing it.
+
+Deploy the remaining AI ADMIN migration/backend/UI only after Platform publish
+and the authenticated account proof have passed. Roll back in reverse order:
+AI ADMIN feature release, Platform projection, AI ADMIN compatibility bridge;
+retain synchronized nullable columns and do not delete directory data.
 
 ## Agent Brain opt-in release
 

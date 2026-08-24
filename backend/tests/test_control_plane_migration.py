@@ -313,6 +313,15 @@ def test_employee_profile_migration_uses_nullable_encrypted_columns_only() -> No
     assert "stage_directory_member_v39" in migration
     assert "directory_generation_checksum_v39" in migration
     assert "validate_directory_generation_v39" in migration
+    for purpose in ("real_name", "mobile", "primary_department"):
+        assert (
+            f"num_nonnulls({purpose}_ciphertext, {purpose}_nonce, "
+            f"{purpose}_encryption_key_version) in (0,3)"
+        ) in " ".join(migration.split())
+        assert (
+            f"num_nonnulls(selected_{purpose}_ciphertext, selected_{purpose}_nonce, "
+            f"selected_{purpose}_encryption_version) in (0,3)"
+        ) in " ".join(migration.split())
     for forbidden in (
         "real_name text",
         "mobile text",
@@ -321,6 +330,63 @@ def test_employee_profile_migration_uses_nullable_encrypted_columns_only() -> No
         "mobile_plaintext",
     ):
         assert forbidden not in migration
+
+
+@pytest.mark.postgres
+def test_employee_profile_staging_rejects_every_partial_encryption_tuple(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    worker_url = environment["urls"]["platform_directory_worker"]
+    partial_shapes = (
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+        (True, True, False),
+        (True, False, True),
+        (False, True, True),
+    )
+    for purpose_index in range(3):
+        for shape in partial_shapes:
+            generation_id = uuid.uuid4()
+            with psycopg.connect(worker_url, autocommit=True) as connection:
+                connection.execute(
+                    "select platform_control.create_directory_staging_generation_v39("
+                    "%s,%s,'scheduled',1,1,0,1,3,%s,0,0,0)",
+                    (generation_id, uuid.uuid4(), "a" * 64),
+                )
+                triples: list[object | None] = [None] * 9
+                offset = purpose_index * 3
+                triples[offset : offset + 3] = (
+                    b"c" * 16 if shape[0] else None,
+                    b"n" * 12 if shape[1] else None,
+                    1 if shape[2] else None,
+                )
+                with pytest.raises(
+                    psycopg.errors.CheckViolation,
+                    match="directory member profile invalid",
+                ):
+                    connection.execute(
+                        "select platform_control.stage_directory_member_v39("
+                        + ",".join(("%s",) * 22)
+                        + ")",
+                        (
+                            generation_id,
+                            uuid.uuid4(),
+                            b"l" * 32,
+                            1,
+                            b"p" * 16,
+                            1,
+                            b"u" * 32,
+                            1,
+                            b"q" * 16,
+                            1,
+                            "Profile Member",
+                            "active",
+                            "female",
+                            *triples,
+                        ),
+                    )
 
 
 def test_account_employee_profile_projection_is_session_scoped_and_least_privilege() -> None:

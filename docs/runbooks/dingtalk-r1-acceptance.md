@@ -6,8 +6,9 @@ Cookie, raw DingTalk identifier, mobile number, email, or customer content.
 
 ## Pre-cutover employee-profile gates
 
-Platform deploys first. Keep AI ADMIN on its previous release while the
-existing Platform authentication boundary remains in place. Before Platform
+Apply Platform migrations 039/040 first while the old account projection remains
+active. Deploy and verify the AI ADMIN compatibility bridge next; it must accept
+both legacy and additive account contracts. Before Platform
 publish/cutover, run the employee-profile aggregate probe only in the directory
 container, which reads its existing file-backed secrets internally:
 
@@ -49,9 +50,9 @@ requires exactly one active owner; a recorded bootstrap state never permits
 zero owners during this formal acceptance.
 
 Only after this reconciliation may Platform publish/cutover and the
-authenticated account proof run. Deploy the AI ADMIN strict consumer last.
-Rollback AI ADMIN first, then use the Platform compatibility rollback without
-deleting synchronized directory data.
+authenticated account proof run. Deploy the remaining AI ADMIN lodging feature
+last. Rollback follows the exact reverse order and never deletes synchronized
+directory data.
 
 ## Automated gates
 
@@ -71,17 +72,26 @@ git diff --check
 On the cloud host, after owner binding and publication:
 
 ```bash
-/opt/orbbec-agent-platform/current/deploy/cloud/accept-dingtalk-production.sh
+/opt/orbbec-agent-platform/current/deploy/cloud/run-dingtalk-production-cutover.sh \
+  /opt/orbbec-agent-platform/releases/<EXPECTED_RELEASE_SHA> \
+  <EXPECTED_RELEASE_SHA> /root/private/platform-controlled-account-cookie
 ```
 
-The automated acceptance requires all five Platform services healthy, the
+The automated acceptance requires all five Platform services healthy, the four
+application containers carrying the exact expected release SHA, the
 formal post-cutover owner state of exactly one active owner, a completed
 schema-v3 directory generation newer than eight hours, complete nickname and
 primary-department coverage, reported real-name/mobile aggregate coverage, a recent
 healthy directory-event heartbeat, a public login shell without shared Basic Auth,
-unauthenticated account rejection, preserved independent `/admin`
+unauthenticated account rejection, a root-owned mode-`0600` controlled-account
+cookie proof of the exact additive account schema and present display name,
+real name, normalized mobile and primary department (only booleans are emitted),
+preserved independent `/admin`
 authentication, private port 8080, no public PostgreSQL, a valid certificate,
-and unchanged FAE container identity/start time.
+and unchanged FAE container identity/start time. An acceptance failure after
+publication automatically runs the fixed rollback inside the same
+deployment/action lock; a failed rollback is itself a failed cutover and requires
+operator escalation before any retry.
 
 ## Real DingTalk checks
 

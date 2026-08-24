@@ -9,25 +9,28 @@ alter table platform_control.directory_members
   add column primary_department_nonce bytea,
   add column primary_department_encryption_key_version integer,
   add constraint directory_member_real_name_v39 check (
-    (real_name_ciphertext is null and real_name_nonce is null
-      and real_name_encryption_key_version is null)
-    or (octet_length(real_name_ciphertext) between 16 and 4096
+    num_nonnulls(real_name_ciphertext, real_name_nonce,
+      real_name_encryption_key_version) in (0,3)
+    and (real_name_ciphertext is null
+      or (octet_length(real_name_ciphertext) between 16 and 4096
       and octet_length(real_name_nonce)=12
-      and real_name_encryption_key_version > 0)
+      and real_name_encryption_key_version > 0))
   ),
   add constraint directory_member_mobile_v39 check (
-    (mobile_ciphertext is null and mobile_nonce is null
-      and mobile_encryption_key_version is null)
-    or (octet_length(mobile_ciphertext) between 16 and 4096
+    num_nonnulls(mobile_ciphertext, mobile_nonce,
+      mobile_encryption_key_version) in (0,3)
+    and (mobile_ciphertext is null
+      or (octet_length(mobile_ciphertext) between 16 and 4096
       and octet_length(mobile_nonce)=12
-      and mobile_encryption_key_version > 0)
+      and mobile_encryption_key_version > 0))
   ),
   add constraint directory_member_primary_department_v39 check (
-    (primary_department_ciphertext is null and primary_department_nonce is null
-      and primary_department_encryption_key_version is null)
-    or (octet_length(primary_department_ciphertext) between 16 and 4096
+    num_nonnulls(primary_department_ciphertext, primary_department_nonce,
+      primary_department_encryption_key_version) in (0,3)
+    and (primary_department_ciphertext is null
+      or (octet_length(primary_department_ciphertext) between 16 and 4096
       and octet_length(primary_department_nonce)=12
-      and primary_department_encryption_key_version > 0)
+      and primary_department_encryption_key_version > 0))
   );
 
 alter table platform_control.directory_generations
@@ -191,24 +194,27 @@ set search_path = pg_catalog, platform_control
 as $function$
 begin
   if not (
-       (selected_real_name_ciphertext is null and selected_real_name_nonce is null
-         and selected_real_name_encryption_version is null)
-       or (octet_length(selected_real_name_ciphertext) between 16 and 4096
+       num_nonnulls(selected_real_name_ciphertext, selected_real_name_nonce,
+         selected_real_name_encryption_version) in (0,3)
+       and (selected_real_name_ciphertext is null
+         or (octet_length(selected_real_name_ciphertext) between 16 and 4096
          and octet_length(selected_real_name_nonce)=12
-         and selected_real_name_encryption_version=selected_encryption_version)
+         and selected_real_name_encryption_version=selected_encryption_version))
      ) or not (
-       (selected_mobile_ciphertext is null and selected_mobile_nonce is null
-         and selected_mobile_encryption_version is null)
-       or (octet_length(selected_mobile_ciphertext) between 16 and 4096
+       num_nonnulls(selected_mobile_ciphertext, selected_mobile_nonce,
+         selected_mobile_encryption_version) in (0,3)
+       and (selected_mobile_ciphertext is null
+         or (octet_length(selected_mobile_ciphertext) between 16 and 4096
          and octet_length(selected_mobile_nonce)=12
-         and selected_mobile_encryption_version=selected_encryption_version)
+         and selected_mobile_encryption_version=selected_encryption_version))
      ) or not (
-       (selected_primary_department_ciphertext is null
-         and selected_primary_department_nonce is null
-         and selected_primary_department_encryption_version is null)
-       or (octet_length(selected_primary_department_ciphertext) between 16 and 4096
+       num_nonnulls(selected_primary_department_ciphertext,
+         selected_primary_department_nonce,
+         selected_primary_department_encryption_version) in (0,3)
+       and (selected_primary_department_ciphertext is null
+         or (octet_length(selected_primary_department_ciphertext) between 16 and 4096
          and octet_length(selected_primary_department_nonce)=12
-         and selected_primary_department_encryption_version=selected_encryption_version)
+         and selected_primary_department_encryption_version=selected_encryption_version))
      )
   then raise check_violation using message='directory member profile invalid'; end if;
 
@@ -272,7 +278,14 @@ begin
   if exists (
     select 1 from platform_control.directory_members member
     where member.generation_id=selected_generation_id and (
-      (member.real_name_ciphertext is not null and
+      num_nonnulls(member.real_name_ciphertext, member.real_name_nonce,
+        member.real_name_encryption_key_version) not in (0,3)
+      or num_nonnulls(member.mobile_ciphertext, member.mobile_nonce,
+        member.mobile_encryption_key_version) not in (0,3)
+      or num_nonnulls(member.primary_department_ciphertext,
+        member.primary_department_nonce,
+        member.primary_department_encryption_key_version) not in (0,3)
+      or (member.real_name_ciphertext is not null and
         member.real_name_encryption_key_version<>member.encryption_key_version)
       or (member.mobile_ciphertext is not null and
         member.mobile_encryption_key_version<>member.encryption_key_version)

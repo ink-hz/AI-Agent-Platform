@@ -315,7 +315,7 @@ def test_hard_stale_access_audit_allows_exact_privileged_roles(
     )
 
     environment = control_database["environments"]["production"]
-    user_id, _ = _seed_current_bound_member(environment)
+    user_id, _, _ = _seed_current_bound_member(environment)
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "update platform_control.internal_users set role='member' "
@@ -374,7 +374,7 @@ def test_hard_stale_management_read_adds_required_access_audit(
     from app.control_plane.routes_manage import ManagementRepository, ManagementService
 
     environment = control_database["environments"]["production"]
-    user_id, _ = _seed_current_bound_member(environment)
+    user_id, _, _ = _seed_current_bound_member(environment)
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "update platform_control.internal_users set role='member' "
@@ -431,7 +431,7 @@ def test_existing_session_is_rechecked_when_directory_crosses_hard_stale(
 
     environment = control_database["environments"]["production"]
     repository = _db_repository(environment)
-    user_id, _ = _seed_current_bound_member(environment)
+    user_id, _, _ = _seed_current_bound_member(environment)
     state = repository.secrets.random_token()
     verifier = repository.secrets.random_token()
     attempt = LoginAttempt(
@@ -511,7 +511,7 @@ def test_hard_stale_session_issue_allows_exact_privileged_roles(
 
     environment = control_database["environments"]["production"]
     repository = _db_repository(environment)
-    user_id, _ = _seed_current_bound_member(environment)
+    user_id, _, _ = _seed_current_bound_member(environment)
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "update platform_control.internal_users set role='member' "
@@ -581,7 +581,7 @@ def test_privileged_session_returns_to_normal_only_after_fresh_reconciliation(
 
     environment = control_database["environments"]["production"]
     repository = _db_repository(environment)
-    user_id, _ = _seed_current_bound_member(environment)
+    user_id, _, _ = _seed_current_bound_member(environment)
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "update platform_control.internal_users set role='member' "

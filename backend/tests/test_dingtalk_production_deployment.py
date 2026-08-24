@@ -79,7 +79,8 @@ def _assert_single_snapshot_directory_gate(script: str) -> None:
     assert len(final_selects) == 1, "directory gate must have one final aggregate SELECT"
     assert len(re.findall(r"^SELECT\b", sql, re.MULTILINE)) == 1
     final_select = final_selects[0].group(0)
-    assert final_select.count("':'") == 2
+    assert final_select.count("':'") == 3
+    assert "active_generation_id::text" in final_select
 
     components = (
         "from platform_control.internal_users where role='platform_owner' and status='active'",
@@ -106,6 +107,7 @@ def _run_release_harness(
     directory_gates: str | None,
     owner_bootstrap: bool = False,
     python_optimize: bool = False,
+    container_release_sha: str = "a" * 40,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(parents=True)
@@ -211,6 +213,7 @@ def _run_release_harness(
           echo "fae-start"
         elif [[ "$joined" == *"{{range .Config.Env}}"* ]]; then
           echo "PLATFORM_IDENTITY_MODE=production"
+          echo "PLATFORM_RELEASE_SHA=$HARNESS_CONTAINER_RELEASE_SHA"
         elif [[ "$joined" == *"{{.Config.Image}}"* ]]; then
           echo "orbbec-agent-platform:test"
         elif [[ "$joined" == *"{{.State.Health.Status}}"* || "$joined" == *"{{if .State.Health}}"* ]]; then
@@ -224,7 +227,7 @@ def _run_release_harness(
           if [[ -n "$HARNESS_DIRECTORY_GATES" ]]; then
             printf '%s\n' "$HARNESS_DIRECTORY_GATES"
           else
-            printf '%s:1:1\n' "$(/bin/cat "$HARNESS_OWNER_COUNT")"
+            printf '00000000-0000-0000-0000-000000000001:%s:1:1\n' "$(/bin/cat "$HARNESS_OWNER_COUNT")"
           fi
         elif [[ "$joined" == *" show-directory-generation "* ]]; then
           printf '%s\n' '{"status":"ok","generation":{"status":"complete","is_active":true,"generation_id":"00000000-0000-0000-0000-000000000001"}}'
@@ -246,7 +249,8 @@ def _run_release_harness(
         fake_bin / "readlink", '#!/bin/bash\necho "$HARNESS_RELEASE"\n'
     )
     fake_stat = _write_executable(
-        fake_bin / "stat", "#!/bin/bash\necho '600 root'\n"
+        fake_bin / "stat",
+        "#!/bin/bash\nif [[ \" $* \" == *\" %s \"* ]]; then echo 24; else echo '600 root'; fi\n",
     )
     fake_install = _write_executable(
         fake_bin / "install",
@@ -290,12 +294,14 @@ def _run_release_harness(
         headers=""
         output=""
         write_code=0
+        controlled=0
         url=""
         while [[ $# -gt 0 ]]; do
           case "$1" in
             -D) headers="$2"; shift 2 ;;
             -o) output="$2"; shift 2 ;;
             -w) write_code=1; shift 2 ;;
+            --config) controlled=1; shift 2 ;;
             http*) url="$1"; shift ;;
             *) shift ;;
           esac
@@ -303,15 +309,19 @@ def _run_release_harness(
         code=200
         body='platform-identity-mode'
         if [[ "$url" == */api/v1/account ]]; then
-          code=401
-          body=''
+          if [[ "$controlled" == 1 ]]; then
+            body='{"internal_user_id":"11111111-1111-4111-8111-111111111111","display_name":"Controlled User","role":"member","departments":["Department"],"gender":null,"real_name":"Controlled User","mobile":"13800138000","primary_department":"Department","observation_agent_ids":[],"directory_freshness":"fresh","hard_stale_read_only":false,"csrf_token":"csrf"}'
+          else
+            code=401
+            body=''
+          fi
         elif [[ "$url" == */api/health ]]; then
           body='{"status":"ok"}'
         elif [[ "$url" == */ ]]; then
           code=302
         fi
         if [[ -n "$headers" ]]; then
-          printf 'HTTP/1.1 %s OK\r\nlocation: /login\r\n\r\n' "$code" > "$headers"
+          printf 'HTTP/1.1 %s OK\r\nlocation: /login\r\nCache-Control: private, no-store\r\n\r\n' "$code" > "$headers"
         fi
         if [[ -n "$output" && "$output" != /dev/null ]]; then
           printf '%s' "$body" > "$output"
@@ -358,7 +368,16 @@ def _run_release_harness(
         "HARNESS_DIRECTORY_GATES": directory_gates or "",
         "HARNESS_OWNER_COUNT": str(owner_count_path),
         "HARNESS_RELEASE": str(release),
+        "HARNESS_CONTAINER_RELEASE_SHA": container_release_sha,
+        "PLATFORM_DINGTALK_CUTOVER_LOCK_TOKEN": "11111111-1111-4111-8111-111111111111",
     }
+    action_lock = private / "agent-brain-action.lock"
+    action_lock.mkdir(mode=0o700)
+    (action_lock / "owner").write_text(
+        "11111111-1111-4111-8111-111111111111\n",
+        encoding="utf-8",
+    )
+    (action_lock / "owner").chmod(0o600)
     if python_optimize:
         environment["PYTHONOPTIMIZE"] = "1"
     arguments = [str(harness_script)]
@@ -367,6 +386,11 @@ def _run_release_harness(
         if owner_bootstrap:
             arguments.append("--allow-unbound-owner")
         (private / "dingtalk-production-cutover").unlink()
+    else:
+        controlled_cookie = private / "controlled-account-cookie"
+        controlled_cookie.write_text("controlled-session-cookie", encoding="utf-8")
+        controlled_cookie.chmod(0o600)
+        arguments.extend(["a" * 40, str(controlled_cookie)])
     result = subprocess.run(
         arguments,
         cwd=tmp_path,
@@ -394,7 +418,15 @@ class _StatefulReleaseHarness:
         return result
 
     def run_acceptance(self) -> subprocess.CompletedProcess[str]:
-        return self._run_prepared("accept-dingtalk-production.sh")
+        private = self.root / "opt" / "orbbec-agent-platform" / "private"
+        controlled_cookie = private / "controlled-account-cookie"
+        controlled_cookie.write_text("controlled-session-cookie", encoding="utf-8")
+        controlled_cookie.chmod(0o600)
+        return self._run_prepared(
+            "accept-dingtalk-production.sh",
+            "a" * 40,
+            str(controlled_cookie),
+        )
 
     def run_owner_bind(self) -> subprocess.CompletedProcess[str]:
         return self._run_prepared(
@@ -451,6 +483,8 @@ class _StatefulReleaseHarness:
             "HARNESS_DIRECTORY_GATES": "",
             "HARNESS_OWNER_COUNT": str(self.root / "owner-count"),
             "HARNESS_RELEASE": str(release),
+            "HARNESS_CONTAINER_RELEASE_SHA": "a" * 40,
+            "PLATFORM_DINGTALK_CUTOVER_LOCK_TOKEN": "11111111-1111-4111-8111-111111111111",
         }
         return subprocess.run(
             [str(executable), *arguments],
@@ -571,6 +605,9 @@ def test_formal_nginx_uses_backend_auth_and_preserves_basic_auth_rollback():
 def test_cutover_and_rollback_are_atomic_and_fae_safe():
     publish = (CLOUD / "publish-dingtalk-production.sh").read_text(encoding="utf-8")
     rollback = (CLOUD / "rollback-dingtalk-production.sh").read_text(encoding="utf-8")
+    coordinator = (CLOUD / "run-dingtalk-production-cutover.sh").read_text(
+        encoding="utf-8"
+    )
 
     for script in (publish, rollback):
         assert "set -euo pipefail" in script
@@ -593,6 +630,63 @@ def test_cutover_and_rollback_are_atomic_and_fae_safe():
     assert 'stop "${services_to_stop[@]}"' in rollback
     assert 'up -d --force-recreate "${services_to_start[@]}"' in rollback
     assert '/bin/ln -sfn "$PREVIOUS_RELEASE" "$platform_root/current"' in rollback
+    assert "agent-brain-action.lock" in rollback
+    assert "PLATFORM_DINGTALK_CUTOVER_LOCK_TOKEN" in rollback
+    assert 'published=1' in coordinator
+    assert 'rollback-dingtalk-production.sh" || status=1' in coordinator
+
+
+def test_cutover_coordinator_rolls_back_acceptance_failure_under_the_same_lock(
+    tmp_path: Path,
+) -> None:
+    release_sha = "a" * 40
+    platform_root = tmp_path / "opt" / "orbbec-agent-platform"
+    release = platform_root / "releases" / release_sha
+    cloud = release / "deploy" / "cloud"
+    private = platform_root / "private"
+    cloud.mkdir(parents=True)
+    private.mkdir(parents=True)
+    log = tmp_path / "cutover.log"
+    cookie = private / "controlled-cookie"
+    cookie.write_text("controlled-session-cookie", encoding="utf-8")
+    cookie.chmod(0o600)
+    fake_id = _write_executable(tmp_path / "id", "#!/bin/bash\necho 0\n")
+    lock_check = (
+        f'[[ "$(/bin/cat {private}/agent-brain-action.lock/owner)" '
+        '== "$PLATFORM_DINGTALK_CUTOVER_LOCK_TOKEN" ]] || exit 91\n'
+    )
+    _write_executable(
+        cloud / "publish-dingtalk-production.sh",
+        f"#!/bin/bash\n{lock_check}echo publish >> {log}\n",
+    )
+    _write_executable(
+        cloud / "accept-dingtalk-production.sh",
+        f"#!/bin/bash\n{lock_check}echo accept >> {log}\nexit 17\n",
+    )
+    _write_executable(
+        cloud / "rollback-dingtalk-production.sh",
+        f"#!/bin/bash\n{lock_check}echo rollback >> {log}\n",
+    )
+    script = (CLOUD / "run-dingtalk-production-cutover.sh").read_text(
+        encoding="utf-8"
+    ).replace("/opt/orbbec-agent-platform", str(platform_root))
+    coordinator = _write_executable(tmp_path / "run-cutover.sh", script)
+
+    result = subprocess.run(
+        [str(coordinator), str(release), release_sha, str(cookie)],
+        env={**os.environ, "ID_BIN": str(fake_id)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 17
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        "publish",
+        "accept",
+        "rollback",
+    ]
+    assert not (private / "agent-brain-action.lock").exists()
 
 
 def test_cutover_supports_a_fail_closed_first_owner_login_stage():
@@ -767,9 +861,10 @@ def test_publish_gates_cutover_on_the_running_employee_profile_probe_before_ngin
 @pytest.mark.parametrize(
     ("probe_json", "probe_status", "directory_gates", "python_optimize"),
     [
-        ('{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":10}', 1, "0:1:1", False),
-        ('{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":9}', 0, "0:1:1", True),
-        ('{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":10}', 0, "0:0:1", False),
+        ('{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":10}', 1, "00000000-0000-0000-0000-000000000001:0:1:1", False),
+        ('{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":9}', 0, "00000000-0000-0000-0000-000000000001:0:1:1", True),
+        ('{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":10}', 0, "00000000-0000-0000-0000-000000000001:0:0:1", False),
+        ('{"generation_id":"00000000-0000-0000-0000-000000000001","active_employee_count":10,"real_name_present_count":8,"mobile_present_count":7,"primary_department_present_count":10}', 0, "00000000-0000-0000-0000-000000000002:0:1:1", False),
     ],
 )
 def test_executable_publish_harness_fails_before_nginx_for_every_gate_failure(
@@ -790,6 +885,30 @@ def test_executable_publish_harness_fails_before_nginx_for_every_gate_failure(
     assert "nginx_write" not in log
     assert "nginx" not in log
     assert "systemctl" not in log
+
+
+@pytest.mark.parametrize(
+    ("script_name", "owner_bootstrap"),
+    [
+        ("publish-dingtalk-production.sh", True),
+        ("accept-dingtalk-production.sh", False),
+    ],
+)
+def test_release_harness_rejects_app_containers_from_another_release(
+    tmp_path: Path,
+    script_name: str,
+    owner_bootstrap: bool,
+) -> None:
+    result, log = _run_release_harness(
+        tmp_path,
+        script_name,
+        directory_gates=None,
+        owner_bootstrap=owner_bootstrap,
+        container_release_sha="b" * 40,
+    )
+
+    assert result.returncode != 0
+    assert "nginx_write" not in log
 
 
 def test_executable_harness_allows_zero_owner_publish_then_requires_one_owner_acceptance(
@@ -913,7 +1032,7 @@ def test_release_runbooks_use_profile_probe_and_one_snapshot_release_gate():
     )
 
 
-def test_release_runbooks_require_platform_first_profile_gates_and_reverse_rollback():
+def test_release_runbooks_require_compatible_staged_profile_gates_and_reverse_rollback():
     cloud = (ROOT / "docs" / "runbooks" / "cloud-platform.md").read_text(
         encoding="utf-8"
     )
@@ -945,6 +1064,32 @@ def test_release_runbooks_require_platform_first_profile_gates_and_reverse_rollb
     assert cloud.index("python -m app.control_plane.employee_profile_probe") < cloud.index(
         "publish-dingtalk-production.sh"
     )
-    assert "Platform deploys first" in cloud
-    assert "AI ADMIN strict consumer" in cloud
-    assert "Rollback AI ADMIN first" in cloud
+    assert "AI ADMIN compatibility bridge" in cloud
+    assert "both legacy and additive account contracts" in cloud
+    assert "Roll back in reverse order" in cloud
+
+
+def test_acceptance_binds_controlled_account_evidence_to_release_and_locks() -> None:
+    script = (CLOUD / "accept-dingtalk-production.sh").read_text(encoding="utf-8")
+    publish = (CLOUD / "publish-dingtalk-production.sh").read_text(encoding="utf-8")
+
+    assert 'expected_release_sha="$1"' in script
+    assert 'controlled_cookie_path="$2"' in script
+    assert "600 root" in script
+    assert '--config "$account_cookie_config"' in script
+    assert 'set(payload) != expected' in script
+    assert '{"fresh", "warning", "hard_stale"}' in script
+    assert "soft_stale" not in script
+    assert 'PLATFORM_RELEASE_SHA=$expected_release_sha' in script
+    assert 'PLATFORM_RELEASE_SHA=$release_sha' in publish
+    for marker in (
+        "display_name_present",
+        "real_name_present",
+        "mobile_present",
+        "primary_department_present",
+    ):
+        assert marker in script
+    for value in (script, publish):
+        assert "deploy-input.lock" in value
+        assert "agent-brain-action.lock" in value
+        assert "service_ids_before" in value and "service_ids_after" in value
