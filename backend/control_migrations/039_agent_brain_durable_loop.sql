@@ -181,12 +181,18 @@ create table platform_brain.brain_tool_calls (
   result_key_version integer check (
     result_key_version is null or result_key_version > 0
   ),
+  result_sha256 bytea check (
+    result_sha256 is null or octet_length(result_sha256) = 32
+  ),
   created_at timestamptz not null default clock_timestamp(),
   updated_at timestamptz not null default clock_timestamp(),
   terminal_at timestamptz,
   unique (step_id, tool_index),
   unique (step_id, provider_tool_call_id),
-  check ((result_ciphertext is null) = (result_key_version is null)),
+  check (
+    (result_ciphertext is null)
+      = (result_key_version is null and result_sha256 is null)
+  ),
   check ((status in ('consumed','failed')) = (terminal_at is not null))
 );
 
@@ -388,9 +394,155 @@ begin
 end
 $function$;
 
+create function platform_brain.append_agent_task_event_v39(
+  selected_task_id uuid,
+  selected_seq integer,
+  selected_event_type text,
+  selected_payload_ciphertext bytea,
+  selected_payload_key_version integer,
+  selected_payload_sha256 bytea,
+  selected_created_at timestamptz,
+  selected_terminal_status text,
+  selected_result_ciphertext bytea,
+  selected_result_key_version integer,
+  selected_result_sha256 bytea
+) returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_brain
+as $function$
+declare
+  current_task_status text;
+  current_tool_call_id uuid;
+  existing_event platform_brain.agent_task_events%rowtype;
+  existing_result_sha256 bytea;
+  previous_seq integer;
+begin
+  if (
+       current_database() = 'agent_platform_control'
+       and session_user <> 'platform_brain_worker'
+     ) or (
+       current_database() = 'agent_platform_control_preview'
+       and session_user <> 'platform_brain_worker_preview'
+     ) or current_database() not in (
+       'agent_platform_control','agent_platform_control_preview'
+     )
+  then
+    raise insufficient_privilege using
+      message = 'Brain task event caller invalid';
+  end if;
+  if selected_seq <= 0
+     or selected_event_type !~ '^[a-z][a-z0-9_.-]{0,63}$'
+     or octet_length(selected_payload_ciphertext) < 29
+     or selected_payload_key_version <= 0
+     or octet_length(selected_payload_sha256) <> 32
+     or selected_created_at is null
+     or (
+       selected_terminal_status is not null
+       and selected_terminal_status not in (
+         'completed','failed','cancelled','timed_out','unavailable'
+       )
+     )
+     or (
+       (selected_terminal_status is null)
+         <> (
+           selected_result_ciphertext is null
+           and selected_result_key_version is null
+           and selected_result_sha256 is null
+         )
+     )
+     or (
+       selected_terminal_status is not null
+       and (
+         octet_length(selected_result_ciphertext) < 29
+         or selected_result_key_version <= 0
+         or octet_length(selected_result_sha256) <> 32
+       )
+     )
+  then
+    raise check_violation using message = 'Brain task event invalid';
+  end if;
+
+  select status,brain_tool_call_id into current_task_status,current_tool_call_id
+  from platform_brain.agent_tasks
+  where task_id=selected_task_id
+  for update;
+  if not found then
+    raise no_data_found using message = 'Brain task missing';
+  end if;
+
+  select * into existing_event
+  from platform_brain.agent_task_events
+  where task_id=selected_task_id and seq=selected_seq;
+  if found then
+    select result_sha256 into existing_result_sha256
+    from platform_brain.brain_tool_calls
+    where brain_tool_call_id=current_tool_call_id;
+    if existing_event.event_type=selected_event_type
+       and existing_event.payload_sha256=selected_payload_sha256
+       and existing_event.created_at=selected_created_at
+       and (
+         selected_terminal_status is null
+         or (
+           current_task_status=selected_terminal_status
+           and existing_result_sha256=selected_result_sha256
+         )
+       )
+    then
+      return false;
+    end if;
+    raise check_violation using message = 'Brain task event conflict';
+  end if;
+
+  if current_task_status in (
+       'completed','failed','cancelled','timed_out','unavailable'
+     )
+  then
+    raise check_violation using message = 'Brain task already terminal';
+  end if;
+  select coalesce(max(seq),0) into previous_seq
+  from platform_brain.agent_task_events where task_id=selected_task_id;
+  if selected_seq <> previous_seq + 1 then
+    raise check_violation using message = 'Brain task event sequence invalid';
+  end if;
+
+  insert into platform_brain.agent_task_events (
+    task_id,seq,event_type,payload_ciphertext,payload_key_version,
+    payload_sha256,created_at
+  ) values (
+    selected_task_id,selected_seq,selected_event_type,
+    selected_payload_ciphertext,selected_payload_key_version,
+    selected_payload_sha256,selected_created_at
+  );
+
+  if selected_terminal_status is null then
+    update platform_brain.agent_tasks set
+      status='running',started_at=coalesce(started_at,clock_timestamp()),
+      updated_at=clock_timestamp(),row_version=row_version+1
+    where task_id=selected_task_id and status='queued';
+  else
+    update platform_brain.agent_tasks set
+      status=selected_terminal_status,
+      started_at=coalesce(started_at,clock_timestamp()),
+      terminal_at=clock_timestamp(),updated_at=clock_timestamp(),
+      row_version=row_version+1
+    where task_id=selected_task_id;
+    update platform_brain.brain_tool_calls set
+      status='result_ready',result_ciphertext=selected_result_ciphertext,
+      result_key_version=selected_result_key_version,
+      result_sha256=selected_result_sha256,updated_at=clock_timestamp()
+    where brain_tool_call_id=current_tool_call_id;
+  end if;
+  return true;
+end
+$function$;
+
 revoke all on all tables in schema platform_brain from public;
 revoke all on function platform_control.upsert_brain_worker_heartbeat_v39(
   text,text,text,timestamptz
+) from public;
+revoke all on function platform_brain.append_agent_task_event_v39(
+  uuid,integer,text,bytea,integer,bytea,timestamptz,text,bytea,integer,bytea
 ) from public;
 
 do $migration$
@@ -432,13 +584,32 @@ begin
       'platform_control.upsert_brain_worker_heartbeat_v39('
       'text,text,text,timestamptz) from %I', role_name
     );
+    execute format(
+      'revoke all on function '
+      'platform_brain.append_agent_task_event_v39('
+      'uuid,integer,text,bytea,integer,bytea,timestamptz,text,bytea,integer,bytea) '
+      'from %I', role_name
+    );
   end loop;
 
   execute format('grant usage on schema platform_brain to %I', selected_app);
   execute format('grant usage on schema platform_brain to %I', selected_brain);
   execute format('grant usage on schema platform_control to %I', selected_brain);
   execute format(
-    'grant select,insert,update on all tables in schema platform_brain to %I',
+    'grant select on all tables in schema platform_brain to %I',
+    selected_brain
+  );
+  execute format(
+    'grant insert on platform_brain.authorization_snapshots, '
+    'platform_brain.brain_loops, platform_brain.brain_steps, '
+    'platform_brain.brain_tool_calls, platform_brain.agent_tasks, '
+    'platform_brain.adapter_deliveries, platform_brain.brain_checkpoints to %I',
+    selected_brain
+  );
+  execute format(
+    'grant update on platform_brain.brain_loops, '
+    'platform_brain.brain_steps, platform_brain.brain_tool_calls, '
+    'platform_brain.adapter_deliveries, platform_brain.brain_checkpoints to %I',
     selected_brain
   );
   execute format(
@@ -464,6 +635,12 @@ begin
     'grant execute on function '
     'platform_control.upsert_brain_worker_heartbeat_v39('
     'text,text,text,timestamptz) to %I', selected_brain
+  );
+  execute format(
+    'grant execute on function '
+    'platform_brain.append_agent_task_event_v39('
+    'uuid,integer,text,bytea,integer,bytea,timestamptz,text,bytea,integer,bytea) '
+    'to %I', selected_brain
   );
 end
 $migration$;

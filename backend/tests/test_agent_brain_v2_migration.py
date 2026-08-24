@@ -171,8 +171,18 @@ def test_brain_role_is_environment_scoped_and_least_privileged(
             else "platform_brain_worker"
         )
         with psycopg.connect(environment["admin"]) as connection:
+            writable = {
+                "authorization_snapshots": (True, False),
+                "brain_loops": (True, True),
+                "brain_steps": (True, True),
+                "brain_tool_calls": (True, True),
+                "agent_tasks": (True, False),
+                "agent_task_events": (False, False),
+                "adapter_deliveries": (True, True),
+                "brain_checkpoints": (True, True),
+            }
             for table in BRAIN_TABLES:
-                assert connection.execute(
+                privileges = connection.execute(
                     "select has_table_privilege(%s,%s,'select'),"
                     "has_table_privilege(%s,%s,'insert'),"
                     "has_table_privilege(%s,%s,'update'),"
@@ -190,7 +200,14 @@ def test_brain_role_is_environment_scoped_and_least_privileged(
                         opposite_role,
                         f"platform_brain.{table}",
                     ),
-                ).fetchone() == (True, True, True, False, False)
+                ).fetchone()
+                assert privileges == (
+                    True,
+                    writable[table][0],
+                    writable[table][1],
+                    False,
+                    False,
+                )
 
             for protected in (
                 "provider_identities",
@@ -223,6 +240,25 @@ def test_brain_heartbeat_function_limits_worker_names(control_database) -> None:
                 "has_table_privilege(%s,'platform_control.worker_heartbeats','insert'),"
                 "has_table_privilege(%s,'platform_control.worker_heartbeats','update')",
                 (brain_role, oid, brain_role, brain_role),
+            ).fetchone() == (True, False, False)
+
+            task_event_function = connection.execute(
+                "select oid,prosecdef from pg_proc "
+                "where pronamespace='platform_brain'::regnamespace "
+                "and proname='append_agent_task_event_v39'"
+            ).fetchone()
+            assert task_event_function is not None
+            assert task_event_function[1] is True
+            assert connection.execute(
+                "select has_function_privilege(%s,%s,'execute'),"
+                "has_table_privilege(%s,'platform_brain.agent_task_events','insert'),"
+                "has_table_privilege(%s,'platform_brain.agent_tasks','update')",
+                (
+                    brain_role,
+                    task_event_function[0],
+                    brain_role,
+                    brain_role,
+                ),
             ).fetchone() == (True, False, False)
 
         with psycopg.connect(environment["urls"][brain_role]) as worker:

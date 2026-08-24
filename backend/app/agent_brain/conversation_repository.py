@@ -247,6 +247,7 @@ class ConversationRepository:
             status=row["status"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            retry_of_turn_id=row.get("retry_of_turn_id"),
         )
 
     def _replay_locked(

@@ -13,7 +13,15 @@ ConversationStatus = Literal["active", "archived"]
 MessageRole = Literal["user", "assistant", "system"]
 MessageDeliveryStatus = Literal["accepted", "streaming", "completed", "failed"]
 TurnStatus = Literal[
-    "accepted", "running", "completed", "failed", "cancelled", "interrupted"
+    "accepted",
+    "running",
+    "waiting_agents",
+    "waiting_user",
+    "completing",
+    "completed",
+    "failed",
+    "cancelled",
+    "interrupted",
 ]
 FeedbackRating = Literal["helpful", "unhelpful"]
 
@@ -60,6 +68,7 @@ class ConversationTurnRecord:
     status: TurnStatus
     created_at: datetime
     updated_at: datetime
+    retry_of_turn_id: UUID | None = None
 
 
 @dataclass(frozen=True)
