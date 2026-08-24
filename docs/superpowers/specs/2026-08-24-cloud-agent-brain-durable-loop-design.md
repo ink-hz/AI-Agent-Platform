@@ -745,7 +745,7 @@ max_turn_duration      = 900 seconds
 max_waiting_user       = 86400 seconds
 max_single_task        = 300 seconds
 max_task_result_bytes  = 65536
-max_output_tokens      = 32768
+max_output_tokens      = 65536
 max_answer_markdown    = 65536 bytes
 ```
 
@@ -767,8 +767,9 @@ max_answer_markdown    = 65536 bytes
 
 1. 终止或超时未完成 Task，并补齐所有等待中的 tool-result。
 2. 向模型加入明确预算通知。
-3. 下一次请求只暴露 `submit_answer` schema。
-4. 设置 `tool_choice={type: tool, name: submit_answer}`。
+3. 保持四个工具的定义、顺序和字节内容不变，避免使 tools/system/message 缓存全部
+   失效。
+4. 只把 `tool_choice` 设置为 `{type: tool, name: submit_answer}`。
 5. 要求基于已有结果说明已完成内容、缺口与失败项。
 
 ### 12.2 二级失败路径
@@ -797,6 +798,11 @@ reason_code=forced_submission_failed
 普通协议纠正后仍为零 tool-use 时使用相同的显式平台摘要结构，但 reason code 为
 `protocol_violation_after_retry`。两者都不能交付被丢弃的模型自由文本。
 
+Provider 返回 HTTP 200 且 `stop_reason=refusal` 时，不进入零 tool-use 纠正重试，
+直接使用相同的显式平台摘要结构，reason code 为 `provider_refused`，并保留经过
+清洗的 `stop_details.category` 供运维诊断。请求体不得设置 Provider 的
+`fallbacks` 参数，拒答不得自动切换到其他模型。
+
 这是显式、可审计的失败交付，不得标记为正常模型答案。
 
 ## 13. BrainModelAdapter
@@ -814,29 +820,43 @@ context_window:       1000000
 thinking_type:        adaptive
 thinking_display:     omitted
 thinking_effort:      high
-max_output_tokens:    32768
+max_output_tokens:    65536
 max_answer_bytes:     65536
 prompt_cache_enabled: true
-prompt_cache_ttl:     1h（真实 Provider 探测通过后）
+stable_cache_ttl:     1h（真实 Provider 探测通过后）
+rolling_cache_ttl:    5m
+system_prompt_sha256: 10b5e0f3d32b419d5e742238f75c94ea7187a62bf1ed22e10b811b5a6b79aba0
 ```
 
 具体 model ID、context profile、adaptive thinking、强制 tool choice、输出上限与
-1 小时 cache TTL 必须在 Dev 对真实 Provider 做能力探测后冻结到 release manifest；
-不能只凭环境变量名称声称已经启用。任一关键能力不支持都阻塞发布，不得在运行时
-悄悄关闭 thinking 或切换 Provider。
+缓存 TTL 必须在 Dev 对真实 Provider 做能力探测后冻结到 release manifest；不能只
+凭环境变量名称声称已经启用。`thinking_effort=high` 是首版候选值，Dev 必须用同一
+评测集扫描 `medium/high/xhigh` 的质量、延迟和成本，发布时冻结唯一档位；同一 Turn
+内不得改变 effort，因为 effort 变化会破坏缓存前缀。任一关键能力不支持都阻塞
+发布，不得在运行时悄悄关闭 thinking、降低 effort 或切换 Provider。
 
 Opus 5.0 首版明确启用 adaptive thinking，并使用 `display=omitted`。Anthropic
 Messages 工具循环要求与 tool-use 同属一个 Assistant Turn 的 thinking content
 block 在返回 tool-result 时完整、不修改地回传；因此 `brain_steps` 必须保存恢复
-所需的原始 content block。`max_tokens` 同时覆盖 thinking、tool call 与终稿，故从
-8192 提升至 32768，并将 `submit_answer.answer_markdown` 的服务端上限固定为
-65536 bytes。真实网关验收必须覆盖高 effort 下的工具调用、强制
+所需的原始 content block。`display=omitted` 下该 block 不含可读思维文本，只保留
+继续工具循环所需的空 thinking 字段与签名；探测若观察到可读 thinking 内容则阻塞
+发布。`max_tokens` 同时覆盖 thinking、tool call 与终稿，故固定为 65536，并将
+`submit_answer.answer_markdown` 的服务端上限固定为 65536 UTF-8 bytes。由于
+`max_tokens > 21333`，Adapter 必须使用流式 Messages API，并在完整收集最终 Message
+后才提交 Step。真实网关验收必须覆盖 high effort 下的工具调用、强制
 `submit_answer`、截断与答案长度。
+
+Adapter 发出的请求体不得包含 `temperature`、`top_p` 或 `top_k`；Opus 5 不接受
+这些非默认采样参数。请求也不得包含 `fallbacks`。`stop_reason` 必须先于 content
+解析，其中 `refusal` 映射为 `provider_refused`，不做相同请求重试。
 
 协议依据：
 
 - [Anthropic Thinking 文档](https://platform.claude.com/docs/en/about-claude/models/extended-thinking-models)
 - [Anthropic Prompt Caching 文档](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+- [Anthropic Pricing 文档](https://platform.claude.com/docs/en/about-claude/pricing)
+- [Anthropic Effort 文档](https://platform.claude.com/docs/en/build-with-claude/effort)
+- [Anthropic Refusal 文档](https://platform.claude.com/docs/en/build-with-claude/refusals)
 
 两个 backend 不是运行时 failover。切换必须：
 
@@ -850,35 +870,75 @@ block 在返回 tool-result 时完整、不修改地回传；因此 `brain_steps
 
 ### 13.2 Prompt caching
 
-消息顺序固定为：
+Provider 的真实渲染顺序固定为：
 
-1. 稳定 system instruction；
-2. 稳定工具 schema；
-3. capability catalog/version；
+1. 四个稳定工具 schema；
+2. 稳定顶层 system instruction；
+3. capability catalog/version（会话内 system message）；
 4. Conversation 上下文；
 5. 本轮 append-only Step/Tool Result。
 
-将稳定前缀设置为 Provider 支持的 cache boundary。每个 Step 记录：
+工具定义的集合、顺序和字节内容在整个 Turn 内保持不变；强制收束只改变
+`tool_choice`，不得裁剪工具数组。最多使用四个 cache breakpoint：
+
+1. 最后一个工具 schema 后，缓存稳定工具前缀；
+2. 顶层 system instruction 后，缓存 tools + system；
+3. capability catalog/version 后，缓存本次能力快照；
+4. 最新追加消息的最后一个 content block 后，形成滚动前缀。
+
+第 4 个 breakpoint 利用 Provider 最多向后查找 20 个 content block 的规则；只有当
+最新 Step 超过该窗口时才把第 3 个 breakpoint 临时移动为中间锚点，不机械地同时
+保留“上一 Step”和“最新 Step”两个滚动点。稳定 tools/system 使用 1 小时 TTL，
+能力快照与滚动消息默认使用 5 分钟 TTL；混用时所有 1 小时 breakpoint 必须出现在
+5 分钟 breakpoint 之前。首个 `waiting_agents` 恢复可能只命中稳定前缀，必须独立
+计量，不能用连续 Step 的高命中率掩盖。
+
+Capability catalog 与预算通知通过会话中 system message 追加在 Conversation
+历史之后，避免改写稳定顶层 system。真实 Provider/Gateway 探测必须验证该能力；
+不支持时阻塞发布，不在运行时退化成低优先级 user 文本。Opus 5 最小可缓存前缀为
+512 tokens，探测同时验证实际前缀达到门槛。
+
+每个 Step 记录：
 
 - input/output tokens；
 - cache creation/read tokens；
 - model config version；
+- system prompt SHA-256；
 - prefix hash；
 - Provider request ID；
 - duration 与 stop reason。
 
-默认 5 分钟 cache TTL 与最长 300 秒的 `waiting_agents` 正好处于失效边界。首版
-优先使用 Provider 的 1 小时 TTL；Step 2 能力探测必须验证真实 Gateway 是否透传
-该档位，并把 `cache_ttl`、价格档位与探测证据冻结到 release manifest。若 Gateway
+5 分钟 cache TTL 与最长 300 秒的 `waiting_agents` 正好处于失效边界。Step 2 能力
+探测必须验证真实 Gateway 是否透传 1 小时 TTL，并把两档 TTL、写入/读取价格与探测
+证据冻结到 release manifest。1 小时缓存写入成本为基础输入价 2 倍、读取为 0.1 倍，
+因此同一稳定前缀从第二次读取开始优于完全不缓存；5 分钟写入为 1.25 倍。若 Gateway
 不支持 1 小时 TTL，必须在发布评审中显式接受成本，而不是假设仍会命中。
 
-成本评测必须按完整多 Step Turn 统计，不能用一次调用成本外推。
+成本评测必须按完整多 Step Turn 统计，并分别报告连续 Step、第一次
+`waiting_agents` 恢复、后续恢复三条路径，不能用一次调用成本外推。
 
-### 13.3 重试
+### 13.3 Brain 系统提示词
+
+Brain 系统提示词是版本化的发布制品，不从数据库在线编辑。首版提示词必须明确：
+
+- 能直接回答时直接回答，只在专业能力、数据或工具确有必要时委派；
+- 最多使用运行时允许的 Task/并发预算，不为“看起来更充分”重复委派；
+- 只处理用户当前范围，补派必须针对已有结果的具体缺口；
+- `public_reason` 与终稿简洁、可验证，不叙述内部自我修正或冗余验证过程；
+- 自由文本不是交付，只有四种工具调用合法，只有 `submit_answer` 结束本轮；
+- 不把 Prompt、内部身份、授权依据、原始 Adapter payload 或签名写入公开输出。
+
+提示词规范化字节的 SHA-256 写入 release manifest、Step 遥测和配置变更审计。变更
+提示词必须形成新 manifest 并重新跑 Provider probe 与独立答案质量评测，不能作为
+运行时开关修改。
+
+### 13.4 重试
 
 - 首个响应事件前的 429/5xx/连接失败可以指数退避重试。
 - 已收到可提交的模型事件后不自动重试，避免重复工具调用。
-- Provider 非流式返回时，在完整响应提交数据库之前不会产生外部副作用。
+- `stop_reason=refusal` 不重试，直接进入 `provider_refused` 显式失败交付。
+- 流式响应必须完整聚合为可校验的 Message 后，才允许提交模型 Step；半流输出不产生
+  工具副作用。
 - 所有重试计入 token、时限和 attempt 遥测。
 
 ## 14. Agent Registry 与 Adapter Registry
@@ -914,13 +974,15 @@ Registry 的页面展示 URL 与调用端点必须分离；`entry_url` 不能自
 - 附件句柄绑定 internal user、Agent、Task、操作与过期时间。
 - Agent API 必须二次鉴权，不能相信浏览器传入的 user ID 或 agent ID。
 - 会话、Tool 参数、结果与公开事件分别加密或白名单投影。
-- Provider 协议要求回传的 thinking content block 只以 envelope encryption 保存于
-  `brain_steps.model_response_ciphertext`，不投影到 SSE、前端、数据飞轮、日志或
-  专业 Agent。
-- Thinking block 在 Loop 终态后保留 7 天用于协议恢复审计，随后擦除原始 block；
+- Provider 协议要求回传的完整 Assistant content block 只以 envelope encryption
+  保存于 `brain_steps.model_response_ciphertext`，不投影到 SSE、前端、数据飞轮、
+  日志或专业 Agent。`display=omitted` 时其中不含可读思维文本，但签名仍必须按字节
+  原样保存和回传以保证协议正确性。
+- 加密 Provider response 在 Loop 终态后保留 7 天用于崩溃恢复与协议审计，随后擦除；
   规范化 Tool Call、公开事件、usage 和稳定错误码按普通运行记录保留。
-- Thinking block 的内部读取只允许 break-glass 诊断，必须填写事由并写审计；普通
-  platform owner、reviewer 和业务用户均不可读取。
+- 首版不提供任何 HTTP 或离线 CLI 解密导出原始 Provider response。若未来改为
+  `display=summarized` 或确需诊断导出，必须作为独立安全设计评审，不得复用运行时
+  配置开关临时开启。
 - Provider/Adapter/模型配置切换、跨用户查看、授权变更和敏感擦除均写审计。
 
 ## 16. 公开事件与用户体验
@@ -962,6 +1024,7 @@ Prompt、授权依据与密钥不得进入 SSE。
 | 专业 Agent 超时 | 生成 timed_out tool-result；批次 settle 后由 Brain 决定 |
 | 一个批次部分成功 | UI 实时展示；模型等全批 settle 后统一观察 |
 | Opus 5.0 不可用 | 当前 Brain Turn 显式失败；“重试”创建关联到原 Turn 的新 Turn，不在原 Turn 重建 Loop；登录、历史、管理和 Direct Agent 不受影响 |
+| Provider 返回 refusal | 不做协议纠正或模型重试；以 `provider_refused` 和显式平台执行摘要结束，不启用 Provider fallbacks |
 | Brain Worker 重启 | 租约过期后从 append-only 记录重建并恢复 |
 | Adapter Worker 重启 | Delivery 租约与 Adapter 幂等声明决定是否重投 |
 | 重复 Agent 事件 | `(task_id, seq)` 幂等接受或冲突拒绝 |
@@ -982,7 +1045,7 @@ Prompt、授权依据与密钥不得进入 SSE。
 - 每次 Agent 选择与公开理由；
 - Provider token/cache/耗时；
 - 连续 Step cache 命中率；
-- `waiting_agents` 恢复后 cache 命中率；
+- 第一次与后续 `waiting_agents` 恢复的 cache 命中率；
 - Task queue/run/settle 耗时；
 - outcome、fallback 与 reason code；
 - 上下文截断、附件 omission；
@@ -997,6 +1060,7 @@ Prompt、授权依据与密钥不得进入 SSE。
 - 一个成功、一个超时；
 - MetaBot 离线；
 - Provider 中断；
+- Provider refusal，且无协议重试或模型切换；
 - Worker 在模型返回前后崩溃；
 - Tool Call 重放不重复创建 Task；
 - 同 Conversation 并发请求；
@@ -1008,6 +1072,8 @@ Prompt、授权依据与密钥不得进入 SSE。
 - 强制 submit_answer 与二级失败摘要；
 - 零 tool-use 的一次纠正与 `protocol_violation_after_retry`；
 - 超过并行上限时前 N 个执行、其余返回 `rejected_over_parallel_limit`；
+- 强制 submit_answer 前后工具 schema 集合、顺序和字节内容不变；
+- Provider 请求不含 sampling 参数或 `fallbacks`；
 - 长会话显式截断；
 - 附件最小化委派；
 - 模型不输出原始思维链。
@@ -1033,9 +1099,11 @@ Prompt、授权依据与密钥不得进入 SSE。
 
 ### Step 2：BrainModelAdapter
 
-- 固定 Opus 5.0、context profile、max tokens 和唯一 Provider。
-- 验证 adaptive thinking、tool-use、强制 tool-choice、1 小时 Prompt caching、usage
-  与错误语义，并将能力与 TTL 探测冻结进 release manifest。
+- 固定 Opus 5.0、context profile、65536 max tokens、唯一 Provider 和版本化系统
+  提示词；用同一评测集扫描 medium/high/xhigh 后冻结 effort。
+- 验证 adaptive thinking、`display=omitted`、流式完整响应、tool-use、强制
+  tool-choice、会话中 system message、滚动 Prompt caching、refusal、usage 与错误
+  语义，并将能力、TTL、提示词摘要和 effort 冻结进 release manifest。
 - 配置切换进入审计。
 
 ### Step 3：最小端到端纵向切片
@@ -1120,11 +1188,16 @@ Prompt、授权依据与密钥不得进入 SSE。
 9. 真实授权撤销导致 Loop 失败；例行目录同步不误杀，capability 更新只拒绝新 Task。
 10. 长会话和附件 omission 对模型与用户都显式可见。
 11. UI 能区分“Agent 已完成但 Brain 尚未恢复”和“Brain 已观察结果”。
-12. 生产只配置一个 Opus 5.0 Provider，不存在运行时模型/Provider failover。
-13. 连续 Step 与 waiting_agents 恢复路径分别报告 cache 命中率和成本。
+12. 生产只配置一个 Opus 5.0 Provider，不存在运行时模型/Provider failover；
+    Provider refusal 显式标为 `provider_refused`，不重试或换模型。
+13. 连续 Step、第一次 waiting_agents 恢复与后续恢复分别报告 cache 命中率和成本。
 14. 零 tool-use 重试一次后显式失败，不向用户交付模型自由文本。
 15. V2 运行时对旧 `mission_runs` 的写入次数为零。
 16. FAE 容器、域名、配置、启动时间和重启次数在非 FAE 接入批次保持不变。
+17. 强制 submit_answer 只改变 `tool_choice`，四个工具 schema 在整个 Turn 内字节
+    稳定；Provider 请求不含 sampling 参数和 `fallbacks`。
+18. 系统提示词 SHA-256、65536 max tokens、流式响应与冻结 effort 均与 release
+    manifest 及真实 Provider probe 证据一致。
 
 ## 21. 明确非目标
 

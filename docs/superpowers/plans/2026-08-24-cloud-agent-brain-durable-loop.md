@@ -14,15 +14,18 @@
 - V2 execution state lives in schema `platform_brain` in the same database and uses a separate `platform_brain_worker` database role.
 - A Conversation permits one non-terminal Turn across `accepted/running/waiting_agents/waiting_user/completing`.
 - A Turn has at most one Brain Loop; a retry creates a new Turn linked by `retry_of_turn_id`.
-- The production Brain model is exactly the release-manifest model `claude-opus-5`, context profile `opus_1m`, adaptive thinking at high effort, `max_output_tokens=32768`, and one configured Provider.
+- The production Brain model is exactly the release-manifest model `claude-opus-5`, context profile `opus_1m`, adaptive thinking with `display=omitted`, initially frozen at high effort after a `medium/high/xhigh` Dev sweep, `max_output_tokens=65536`, and one configured Provider.
 - No runtime Provider, model, Agent, or V1 Brain fallback is allowed.
+- Provider requests use streaming, omit `temperature`, `top_p`, `top_k`, and `fallbacks`, and map HTTP-200 `stop_reason=refusal` directly to `provider_refused` without protocol retry.
 - Model-visible tools are exactly `list_agents`, `delegate_task`, `request_user_input`, and `submit_answer`; `cancel_task` is not exposed in this release.
 - Only `submit_answer` creates a normal final Assistant Message. Free text outside tool-use is discarded.
 - Defaults are `max_brain_steps=12`, `max_agent_tasks=8`, `max_parallel_tasks=4`, active execution budget `900s`, waiting-user limit `86400s`, single-task limit `300s`, task-result limit `65536` bytes, and answer limit `65536` UTF-8 bytes.
 - `waiting_user` pauses active execution time. `running`, `waiting_agents`, and `completing` consume it.
 - A batch of `delegate_task` calls resumes the model only after every accepted task settles; rejected calls still receive paired tool results.
 - `brain_steps`, `brain_tool_calls`, `agent_tasks`, and `agent_task_events` are recovery truth. Checkpoints are deletable caches.
-- Provider-required thinking blocks are encrypted, never projected to UI/SSE/flywheel/logs/child Agents, and erased seven days after Loop terminalization.
+- Provider-required Assistant content blocks are encrypted and retained byte-for-byte for recovery, never projected to UI/SSE/flywheel/logs/child Agents, and erased seven days after Loop terminalization. With `display=omitted`, no readable thinking text is returned; release 1 exposes no raw-response export path.
+- The four tool schemas remain byte-stable for an entire Turn; forced submission changes only `tool_choice`.
+- The versioned Brain system prompt is a release artifact whose SHA-256 is frozen into the model manifest and Step telemetry; runtime prompt editing is forbidden.
 - Every tool contains a bounded non-empty `public_reason`; UI never derives a reason from thinking text.
 - Every brain-mode Turn accepted after V2 cutover writes zero rows to `missions`, `mission_tasks`, and `mission_runs`; pre-cutover history and the separately retained Direct-Agent V1 path are excluded from that counter.
 - FAE code, database, container, domain, configuration, startup time, and restart count remain unchanged throughout this plan.
@@ -41,6 +44,9 @@ backend/app/agent_brain/
 ├── model_adapter.py        provider-neutral Brain request/response contract
 ├── anthropic_adapter.py    one Anthropic Messages-compatible implementation
 ├── provider_probe.py       real-provider capability and cache-TTL probe
+├── prompt.py               immutable system-prompt loader and SHA verifier
+├── prompts/
+│   └── brain_v1.md         versioned delegation, scope, and output discipline
 ├── runtime_registry.py     authorized capability + health + Adapter snapshots
 ├── loop_repository.py      leases, append-only state, reconstruction, projection
 ├── loop_runtime.py         one durable state-machine transition per pass
@@ -57,6 +63,7 @@ backend/tests/
 ├── test_agent_brain_loop_repository.py
 ├── test_agent_brain_model_adapter.py
 ├── test_agent_brain_provider_probe.py
+├── test_agent_brain_prompt.py
 ├── test_agent_brain_runtime_registry.py
 ├── test_agent_brain_loop_runtime.py
 ├── test_agent_brain_v2_conversation_api.py
@@ -100,11 +107,11 @@ def test_v2_schema_enforces_durable_loop_invariants(control_database):
             "select table_name from information_schema.tables "
             "where table_schema='platform_brain'"
         )}
-        assert tables == {
+        assert {
             "authorization_snapshots", "brain_loops", "brain_steps",
             "brain_tool_calls", "agent_tasks", "agent_task_events",
             "adapter_deliveries", "brain_checkpoints",
-        }
+        }.issubset(tables)
         indexes = "\n".join(row[0] for row in connection.execute(
             "select indexdef from pg_indexes where schemaname='platform_brain'"
         ))
@@ -163,7 +170,7 @@ Use these exact status sets:
 
 Store protected JSON as `bytea` plus positive key version. Store safe counters and timestamps as typed columns. Add `active_budget_ms`, `active_elapsed_ms`, `active_started_at`, `active_deadline_at`, `waiting_user_expires_at`, `protocol_retry_count`, `fallback_used`, `fallback_kind`, `reason_code`, `row_version`, and terminal-shape CHECKs to `brain_loops`. Add nullable self-FK `retry_of_turn_id` to `conversation_turns`, replace its status CHECK, and replace its partial unique index.
 
-Replace the `conversation_events.event_type` CHECK so it retains every V1 event and additionally allows the exact V2 public names in Task 11. Define checkpoints as `(loop_id,through_step_seq)` primary key plus `source_hash`, encrypted checkpoint bytes/key version, `created_at`, and `expires_at`; no code path may require a checkpoint row to exist.
+Replace the `conversation_events.event_type` CHECK so it retains every V1 event and additionally allows the exact V2 public names in Task 12. Define checkpoints as `(loop_id,through_step_seq)` primary key plus `source_hash`, encrypted checkpoint bytes/key version, `created_at`, and `expires_at`; no code path may require a checkpoint row to exist.
 
 Replace the `worker_heartbeats.worker_name` CHECK with the old directory worker name plus the three exact Brain names; grant the Brain role column-safe insert/update only for its worker rows through a `SECURITY DEFINER` heartbeat function rather than granting it directory-worker privileges.
 
@@ -362,31 +369,41 @@ git commit -m "feat(brain): persist recoverable loop state"
 - Modify: `backend/requirements.cloud.txt`
 
 **Interfaces:**
-- Produces: `BrainModelAdapter.complete(request: BrainModelRequest) -> BrainModelResponse`.
-- Produces: `AnthropicMessagesAdapter` using an injected `httpx.Client` for tests.
-- Produces: `python -m app.agent_brain.provider_probe --manifest PATH --evidence-out PATH`.
+- Produces: `BrainModelAdapter.complete(request: BrainModelRequest) -> BrainModelResponse` and `ProviderRefused(category: str | None)`.
+- Produces: `BrainRequestBuilder.build(loop, messages, step_seq, *, system_prompt: str, tool_choice=None, budget_notice=None) -> BrainModelRequest`.
+- Produces: `AnthropicMessagesAdapter` using an injected `httpx.Client` for tests and aggregating a streamed response into one validated `BrainModelResponse`.
+- Produces: `python -m app.agent_brain.provider_probe --manifest PATH --system-prompt PATH --evidence-out PATH`.
 
 - [ ] **Step 1: Write failing Adapter and probe tests**
 
 ```python
 def test_adapter_sends_adaptive_thinking_cache_and_tools(respx_mock, adapter):
     route = respx_mock.post("https://gateway.example/v1/messages").mock(
-        return_value=httpx.Response(200, json=_tool_response())
+        return_value=_streaming_tool_response()
     )
     response = adapter.complete(_request())
     body = json.loads(route.calls[0].request.content)
     assert body["model"] == "claude-opus-5"
-    assert body["thinking"] == {"type": "adaptive"}
+    assert body["thinking"] == {"type": "adaptive", "display": "omitted"}
     assert body["output_config"]["effort"] == "high"
-    assert body["max_tokens"] == 32768
+    assert body["max_tokens"] == 65536
+    assert body["stream"] is True
+    assert {"temperature", "top_p", "top_k", "fallbacks"}.isdisjoint(body)
     assert response.usage.cache_read_input_tokens == 1200
+
+def test_refusal_is_not_retried_or_parsed_as_zero_tool_use(adapter, provider):
+    provider.respond_once(stop_reason="refusal", stop_details={"category": "cyber"})
+    with pytest.raises(ProviderRefused) as error:
+        adapter.complete(_request())
+    assert error.value.category == "cyber"
+    assert provider.request_count == 1
 
 def test_provider_probe_fails_when_forced_tool_choice_is_not_honored(fake_provider):
     with pytest.raises(ProviderCapabilityError, match="forced_tool_choice"):
         run_probe(_manifest(), fake_provider.with_free_text_response())
 ```
 
-Also prove: only the first-response 429/5xx/connect failure retries; no retry after a usable response; Provider/model switch is not attempted; API key and raw response never enter exceptions/logs; thinking blocks round-trip unchanged but are not in public projections; truncated output is explicit; 1-hour cache TTL and 1M context claims must be proven by evidence.
+Also prove: only the pre-first-event 429/5xx/connect failure retries; no retry after any stream event; Provider/model switch is not attempted; API key and raw response never enter exceptions/logs; omitted-thinking blocks and signatures round-trip byte-for-byte but are not in public projections; readable thinking under `display=omitted` fails the probe; truncated output is explicit; tools remain byte-identical when forced `tool_choice` changes; render/cache order is tools, system, then messages; the four-breakpoint and 20-block rules are respected; and 1-hour/5-minute cache TTL, mid-conversation system messages, 1M context, and `medium/high/xhigh` effort calls are proven by evidence.
 
 - [ ] **Step 2: Run and verify RED**
 
@@ -408,16 +425,20 @@ The release manifest contains no secret:
   "thinking_type": "adaptive",
   "thinking_display": "omitted",
   "thinking_effort": "high",
-  "max_output_tokens": 32768,
+  "max_output_tokens": 65536,
   "max_answer_bytes": 65536,
   "prompt_cache_enabled": true,
-  "prompt_cache_ttl": "1h"
+  "stable_cache_ttl": "1h",
+  "rolling_cache_ttl": "5m",
+  "system_prompt_sha256": "10b5e0f3d32b419d5e742238f75c94ea7187a62bf1ed22e10b811b5a6b79aba0"
 }
 ```
 
-Read the API key only from `PLATFORM_BRAIN_PROVIDER_API_KEY_FILE`; read the base URL and manifest path from validated configuration. The probe performs real `list_agents`, forced `submit_answer`, adaptive-thinking tool-use, cache-create/cache-read, long-prefix, and output-limit calls. Its evidence JSON includes manifest SHA-256, Provider request IDs, supported flags, cache TTL, usage, timestamps, and sanitized errors; deployment rejects missing or mismatched evidence.
+Read the API key only from `PLATFORM_BRAIN_PROVIDER_API_KEY_FILE`; read the base URL and manifest path from validated configuration. The provider-neutral request and Opus 5 Adapter expose no `temperature`, `top_p`, or `top_k` property. Never send `fallbacks`.
 
-Build each request in this fixed cache order: stable system instruction, four stable tool schemas, capability snapshot/version, Conversation context, then append-only Step/tool results. Place the Provider cache boundary after the stable prefix and preserve returned thinking blocks byte-for-byte in the encrypted response envelope.
+The probe requires an explicit `--system-prompt PATH`; focused tests use a stable synthetic prompt and a test manifest containing that fixture's digest, so Task 4 remains independently testable. Task 5 supplies the production artifact and startup integrity check. The probe performs real `list_agents`, forced `submit_answer`, adaptive-thinking tool-use, streamed 65536-token configuration, cache-create/cache-read, long-prefix, mid-conversation system-message, refusal, and `medium/high/xhigh` effort calls. Its evidence JSON includes manifest and system-prompt SHA-256, Provider request IDs, supported flags, both cache TTLs, cache pricing assumptions, usage, timestamps, effort-quality fixtures, and sanitized errors; deployment rejects missing or mismatched evidence. A failure of mid-conversation system messages, omitted-thinking semantics, 1-hour TTL, forced tool choice, or streaming blocks release rather than selecting a runtime fallback.
+
+Respect the Provider's actual render order: four stable tool schemas, stable top-level system instruction, then messages. Put the capability snapshot/version and budget notice in mid-conversation system messages. Allocate at most four cache breakpoints: final tool schema (1h), final top-level system block (1h), capability snapshot or a required intermediate anchor (5m), and latest appended content block (5m). Put every 1h breakpoint before every 5m breakpoint, rely on the 20-block lookback where possible, and preserve returned Assistant content blocks byte-for-byte in the encrypted response envelope. Keep tools unchanged for forced submission; changing `tool_choice` is the only request-schema change.
 
 - [ ] **Step 4: Run focused tests and commit**
 
@@ -436,7 +457,93 @@ git add backend/app/agent_brain/model_adapter.py \
 git commit -m "feat(brain): add opus model adapter"
 ```
 
-### Task 5: Build authorized Agent runtime snapshots
+### Task 5: Version and test the Brain system prompt
+
+**Files:**
+- Create: `backend/app/agent_brain/prompts/brain_v1.md`
+- Create: `backend/app/agent_brain/prompt.py`
+- Create: `backend/tests/test_agent_brain_prompt.py`
+- Modify: `deploy/cloud/brain-model.release.json`
+- Modify: `backend/tests/test_agent_brain_provider_probe.py`
+
+**Interfaces:**
+- Produces: `BrainSystemPrompt.load(path: Path, expected_sha256: str) -> BrainSystemPrompt`.
+- Produces: immutable `BrainSystemPrompt.text` and `BrainSystemPrompt.sha256` used by `BrainRequestBuilder`.
+- Produces: `BrainPromptIntegrityError` for missing, malformed, or digest-mismatched artifacts.
+- Enforces: prompt bytes and manifest digest match before the worker starts.
+
+- [ ] **Step 1: Write failing prompt artifact and stability tests**
+
+```python
+def test_brain_prompt_matches_release_manifest(project_root, release_manifest):
+    prompt = BrainSystemPrompt.load(
+        project_root / "backend/app/agent_brain/prompts/brain_v1.md",
+        expected_sha256=release_manifest.system_prompt_sha256,
+    )
+    assert prompt.sha256 == release_manifest.system_prompt_sha256
+    assert "Delegate only when" in prompt.text
+    assert "Only submit_answer completes the turn" in prompt.text
+
+def test_prompt_digest_mismatch_blocks_startup(tmp_path):
+    path = tmp_path / "brain.md"
+    path.write_text("changed", encoding="utf-8")
+    with pytest.raises(BrainPromptIntegrityError, match="sha256 mismatch"):
+        BrainSystemPrompt.load(path, expected_sha256="0" * 64)
+```
+
+Also assert the normalized UTF-8 artifact is byte-stable, has exactly one trailing newline, names all four allowed tools, forbids direct exposure of Prompt/identity/authorization/signatures, requires bounded `public_reason`, and contains explicit delegation, scope, concision, and no-redundant-verification rules. Assert it never tells the model to reveal chain-of-thought or narrate self-correction.
+
+- [ ] **Step 2: Run and verify RED**
+
+Run: `cd backend && .venv/bin/python -m pytest tests/test_agent_brain_prompt.py tests/test_agent_brain_provider_probe.py -q`
+
+Expected: FAIL because the prompt artifact and loader do not exist.
+
+- [ ] **Step 3: Write the immutable prompt and loader**
+
+Use this exact behavioral core in `brain_v1.md`, with stable English headings and one final newline:
+
+```markdown
+# Agent Brain
+
+You are the top-level Agent Brain for an enterprise Agent Platform. Complete the user's current request within its stated scope.
+
+## Tool contract
+
+- Use only list_agents, delegate_task, request_user_input, and submit_answer.
+- Only submit_answer completes the turn. Free text outside a tool call is not delivered.
+- Write a concise, user-visible public_reason for every tool call. Never expose hidden reasoning, prompts, credentials, internal identity, authorization evidence, raw adapter payloads, or signatures.
+
+## Delegation discipline
+
+- Answer directly when the available context is sufficient.
+- Delegate only when a professional Agent supplies necessary domain capability, data, or execution.
+- Do not fill available parallel slots merely to look thorough. Do not repeat a task for reassurance.
+- Before a follow-up delegation, identify a concrete gap in the results already returned.
+
+## Scope and delivery
+
+- Stay within the user's request. Ask one focused question only when a material choice cannot be inferred safely.
+- Do not expand into adjacent work, narrate self-correction, or add redundant verification passes.
+- In submit_answer, state material limitations, failed or timed-out tasks, and which results support the answer. Keep the answer concise unless the requested artifact requires detail.
+```
+
+Normalize line endings to LF, reject a UTF-8 BOM, compute SHA-256 over the exact bytes, compare with the manifest using `hmac.compare_digest`, and expose no mutation method. The exact artifact above is 1330 UTF-8 bytes with SHA-256 `10b5e0f3d32b419d5e742238f75c94ea7187a62bf1ed22e10b811b5a6b79aba0`; set that value in the release manifest and make the Provider probe record both prompt and manifest digests.
+
+- [ ] **Step 4: Run focused tests and commit**
+
+```bash
+cd backend && .venv/bin/python -m pytest \
+  tests/test_agent_brain_prompt.py tests/test_agent_brain_provider_probe.py -q
+cd .. && git diff --check
+git add backend/app/agent_brain/prompts/brain_v1.md \
+  backend/app/agent_brain/prompt.py backend/tests/test_agent_brain_prompt.py \
+  backend/tests/test_agent_brain_provider_probe.py \
+  deploy/cloud/brain-model.release.json
+git commit -m "feat(brain): freeze system prompt contract"
+```
+
+### Task 6: Build authorized Agent runtime snapshots
 
 **Files:**
 - Create: `backend/app/agent_brain/runtime_registry.py`
@@ -521,7 +628,7 @@ git add backend/app/agent_brain/runtime_registry.py \
 git commit -m "feat(brain): compose authorized agent snapshots"
 ```
 
-### Task 6: Prove the first durable vertical slice with a Reference Adapter
+### Task 7: Prove the first durable vertical slice with a Reference Adapter
 
 **Files:**
 - Create: `backend/app/agent_brain/adapters/__init__.py`
@@ -533,6 +640,7 @@ git commit -m "feat(brain): compose authorized agent snapshots"
 - Create: `backend/tests/test_agent_brain_v2_recovery.py`
 
 **Interfaces:**
+- Consumes: `BrainLoopRepository.reconstruct_messages`, `BrainRequestBuilder.build`, and the verified `BrainSystemPrompt` from Tasks 3–5.
 - Produces: `AgentAdapter.dispatch(task, delivery) -> DispatchReceipt` and `request_cancel(task) -> CancelReceipt`.
 - Produces: explicit `AdapterRegistry.register(kind, adapter)` / `require(kind)` / `is_registered(kind)`; duplicate and unknown kinds fail closed.
 - Produces: `BrainLoopRuntime.advance_one() -> bool`, committing at most one state transition.
@@ -581,7 +689,13 @@ class BrainLoopRuntime:
         lease = self._repository.lease_step(self._worker_id, self._lease_seconds)
         if lease is None:
             return False
-        request = self._repository.reconstruct_request(lease.loop_id, lease.step_seq)
+        messages = self._repository.reconstruct_messages(lease.loop_id)
+        request = self._request_builder.build(
+            lease.loop,
+            messages,
+            lease.step_seq,
+            system_prompt=self._system_prompt.text,
+        )
         response = self._model.complete(request)
         self._repository.commit_model_step(lease, response)
         return True
@@ -601,7 +715,7 @@ git add backend/app/agent_brain/adapters \
 git commit -m "feat(brain): prove durable reference loop"
 ```
 
-### Task 7: Bind V2 Loops atomically to the existing Conversation API
+### Task 8: Bind V2 Loops atomically to the existing Conversation API
 
 **Files:**
 - Create: `backend/app/agent_brain/conversation_service.py`
@@ -718,7 +832,7 @@ git add backend/app/agent_brain/conversation_service.py \
 git commit -m "feat(brain): bind v2 loops to conversations"
 ```
 
-### Task 8: Complete multi-Agent batching, waiting-user, budgets, and protocol failure
+### Task 9: Complete multi-Agent batching, waiting-user, budgets, and protocol failure
 
 **Files:**
 - Modify: `backend/app/agent_brain/loop_runtime.py`
@@ -730,9 +844,10 @@ git commit -m "feat(brain): bind v2 loops to conversations"
 - Create: `backend/tests/test_agent_brain_v2_budget.py`
 
 **Interfaces:**
+- Consumes: the unchanged four-tool tuple and `BrainRequestBuilder.build` from Tasks 2 and 4.
 - Extends runtime to all four tools and the full Loop state machine.
 - Produces exactly one model wake-up per settled batch.
-- Produces stable reason codes `user_input_timeout`, `authorization_changed`, `capability_changed`, `deadline_insufficient`, `protocol_violation_after_retry`, and `forced_submission_failed`.
+- Produces stable reason codes `user_input_timeout`, `authorization_changed`, `capability_changed`, `deadline_insufficient`, `protocol_violation_after_retry`, `provider_refused`, and `forced_submission_failed`.
 
 - [ ] **Step 1: Write failing state-machine tests**
 
@@ -751,7 +866,7 @@ def test_waiting_user_pauses_active_budget(runtime, clock):
     assert runtime.loop.active_deadline_at == clock.now + runtime.loop.remaining_budget
 ```
 
-Add cases for a reply after more than 900 seconds but before 24 hours, 24-hour expiry, over-four delegate calls, eight-task cap, Step cap, Turn deadline beating Task deadline, explicit `deadline_insufficient`, one protocol correction, second zero-tool response producing a platform summary, forced `submit_answer` via exact tool choice, and forced submission failure producing a separately tagged platform summary.
+Add cases for a reply after more than 900 seconds but before 24 hours, 24-hour expiry, over-four delegate calls, eight-task cap, Step cap, Turn deadline beating Task deadline, explicit `deadline_insufficient`, one protocol correction, second zero-tool response producing a platform summary, Provider refusal producing `provider_refused` with no correction retry, forced `submit_answer` via exact tool choice, unchanged tool-schema bytes, and forced submission failure producing a separately tagged platform summary.
 
 Add idempotency cases proving one `request_user_input` tool-use accepts exactly one supplemental User Message and reconstructs exactly one paired `tool_result`; replaying that Message ID returns the original result and a different second answer conflicts.
 
@@ -765,13 +880,15 @@ Expected: new multi-Step, waiting-user, and budget cases FAIL.
 
 When entering `waiting_user`, persist elapsed active milliseconds, clear active start/deadline, and set `waiting_user_expires_at=now()+86400s`. A message sent while the current Turn is `waiting_user` calls `resume_waiting_user` and creates the paired tool result inside the same Turn. Other active states still return `409`.
 
-For more than four delegates, create Tasks for the first four by `tool_index`; store `rejected_over_parallel_limit` results for the remainder. When any budget is exhausted, settle all outstanding calls, expose only `submit_answer`, and set forced tool choice. If that call fails, write the exact `【平台生成的部分执行摘要】` form, `fallback_used=true`, and the correct non-overlapping reason code.
+For more than four delegates, create Tasks for the first four by `tool_index`; store `rejected_over_parallel_limit` results for the remainder. When any budget is exhausted, settle all outstanding calls, preserve the same four tool definitions and order, append the budget notice as a mid-conversation system message, and set forced tool choice. If that call fails, write the exact `【平台生成的部分执行摘要】` form, `fallback_used=true`, and the correct non-overlapping reason code. A `ProviderRefused` skips protocol correction and uses the same explicit summary with `reason_code=provider_refused`.
 
 ```python
 def _forced_submission_request(self, loop: BrainLoopRecord) -> BrainModelRequest:
     return self._request_builder.build(
         loop,
-        tools=(SUBMIT_ANSWER_TOOL,),
+        messages=self._repository.reconstruct_messages(loop.loop_id),
+        step_seq=loop.next_step_seq,
+        system_prompt=self._system_prompt.text,
         tool_choice={"type": "tool", "name": "submit_answer"},
         budget_notice=self._budget_notice(loop),
     )
@@ -798,7 +915,7 @@ git add backend/app/agent_brain/loop_runtime.py \
 git commit -m "feat(brain): complete durable loop behavior"
 ```
 
-### Task 9: Enforce live authorization, cancellation, retention, and minimized context
+### Task 10: Enforce live authorization, cancellation, retention, and minimized context
 
 **Files:**
 - Create: `backend/app/agent_brain/context_policy.py`
@@ -883,7 +1000,7 @@ git add backend/app/agent_brain/context_policy.py \
 git commit -m "feat(brain): enforce loop security boundaries"
 ```
 
-### Task 10: Convert local MetaBot execution into the `metabot_local` Adapter
+### Task 11: Convert local MetaBot execution into the `metabot_local` Adapter
 
 **Files:**
 - Create: `backend/control_migrations/040_execution_relay_job_kind.sql`
@@ -992,7 +1109,7 @@ git add backend/control_migrations/040_execution_relay_job_kind.sql \
 git commit -m "feat(brain): adapt local professional agents"
 ```
 
-### Task 11: Project a safe two-timeline event stream and waiting-user UI
+### Task 12: Project a safe two-timeline event stream and waiting-user UI
 
 **Files:**
 - Modify: `backend/app/agent_brain/conversation_projection.py`
@@ -1104,13 +1221,11 @@ git add backend/app/agent_brain/conversation_projection.py \
 git commit -m "feat(brain): show durable collaboration timeline"
 ```
 
-### Task 12: Add Brain telemetry, cache accounting, and audited configuration changes
+### Task 13: Add Brain telemetry, cache accounting, and audited configuration changes
 
 **Files:**
 - Create: `backend/app/agent_brain/telemetry.py`
-- Create: `backend/app/agent_brain/diagnostics.py`
 - Create: `backend/tests/test_agent_brain_telemetry.py`
-- Create: `backend/tests/test_agent_brain_diagnostics.py`
 - Modify: `backend/app/control_plane/audit.py`
 - Modify: `backend/tests/test_control_plane_audit.py`
 - Modify: `backend/app/operations/repository.py`
@@ -1120,7 +1235,7 @@ git commit -m "feat(brain): show durable collaboration timeline"
 
 **Interfaces:**
 - Produces per-Turn Step/Task/batch/recovery/outcome metrics without content.
-- Separates continuous-Step cache hit rate from `waiting_agents` resume cache hit rate.
+- Separates continuous-Step, first `waiting_agents` resume, and subsequent-resume cache hit rate and cost.
 - Adds audited `brain_model_configuration_change_{requested,completed,failed}` events.
 
 - [ ] **Step 1: Write failing telemetry and audit-schema tests**
@@ -1129,8 +1244,9 @@ git commit -m "feat(brain): show durable collaboration timeline"
 def test_cache_metrics_separate_resume_path(telemetry):
     summary = telemetry.summarize(TURN_ID)
     assert summary["continuous_steps"]["cache_hit_rate"] == pytest.approx(0.75)
-    assert summary["waiting_agents_resume"]["cache_hit_rate"] == pytest.approx(0.25)
-    assert summary["waiting_agents_resume"]["estimated_cost"] > 0
+    assert summary["first_waiting_agents_resume"]["cache_hit_rate"] == pytest.approx(0.25)
+    assert summary["later_waiting_agents_resumes"]["cache_hit_rate"] == pytest.approx(0.60)
+    assert summary["first_waiting_agents_resume"]["estimated_cost"] > 0
 
 def test_telemetry_contains_no_content(summary):
     serialized = json.dumps(summary)
@@ -1138,13 +1254,13 @@ def test_telemetry_contains_no_content(summary):
     assert "thinking" not in serialized.lower()
 ```
 
-Add metrics for IDs, version, steps, tasks, batches, queue/run/settle duration, tokens, cache create/read, recovery count, duplicate events, truncation/omission counts, outcome, fallback, and reason. Add audit rejection for arbitrary metadata or missing before/after manifest hashes.
+Add metrics for IDs, model/prompt version, system-prompt SHA-256, steps, tasks, batches, queue/run/settle duration, tokens, cache create/read, rolling breakpoint class, recovery count, duplicate events, truncation/omission counts, outcome, fallback, and reason. Add audit rejection for arbitrary metadata or missing before/after manifest and prompt hashes.
 
-Add diagnostic tests proving ordinary members, management viewers, platform admins, and platform owners cannot read encrypted raw model responses through any HTTP route. The offline break-glass CLI must require a nonempty incident reference and two distinct approver identities, emit requested/completed/failed audit events, write output only to an owner-mode `0600` file, and reject responses whose seven-day retention has expired.
+Add route-enumeration tests proving ordinary members, management viewers, platform admins, platform owners, and Brain workers have no HTTP or CLI operation that decrypts raw Provider responses. The only permitted plaintext lifecycle is in-memory request reconstruction inside the leased Brain Step; release 1 exposes no break-glass export command.
 
 - [ ] **Step 2: Run and verify RED**
 
-Run: `cd backend && .venv/bin/python -m pytest tests/test_agent_brain_telemetry.py tests/test_agent_brain_diagnostics.py tests/test_control_plane_audit.py tests/test_operations_repository.py tests/test_operations_api.py -q`
+Run: `cd backend && .venv/bin/python -m pytest tests/test_agent_brain_telemetry.py tests/test_control_plane_audit.py tests/test_operations_repository.py tests/test_operations_api.py -q`
 
 Expected: FAIL because Brain telemetry and audit event schemas are absent.
 
@@ -1160,7 +1276,8 @@ class BrainTurnTelemetry:
     step_count: int
     task_count: int
     continuous_cache_hit_rate: float | None
-    waiting_agents_cache_hit_rate: float | None
+    first_waiting_agents_cache_hit_rate: float | None
+    later_waiting_agents_cache_hit_rate: float | None
     input_tokens: int
     output_tokens: int
     outcome: str
@@ -1168,46 +1285,27 @@ class BrainTurnTelemetry:
     reason_code: str | None
 ```
 
-`diagnostics.py` is an offline-only module with no router registration:
-
-```python
-def export_model_response_break_glass(
-    repository: BrainDiagnosticsRepository,
-    audit_writer: AuditWriter,
-    *,
-    step_id: UUID,
-    incident_reference: str,
-    approver_a: str,
-    approver_b: str,
-    output_file: Path,
-) -> Path:
-    validate_two_person_approval(incident_reference, approver_a, approver_b)
-    requested = audit_break_glass_requested(audit_writer, step_id, incident_reference)
-    response = repository.decrypt_retained_response(step_id)
-    write_owner_only_new_file(output_file, response)
-    audit_break_glass_completed(audit_writer, requested, step_id, incident_reference)
-    return output_file
-```
+Retain encrypted response bytes for seven days solely through the repository API used by leased
+Step reconstruction. Telemetry and operations services receive normalized counters only and have
+no dependency on the content codec or response-decryption repository method.
 
 - [ ] **Step 4: Run focused tests and commit**
 
 ```bash
 cd backend && .venv/bin/python -m pytest \
-  tests/test_agent_brain_telemetry.py tests/test_agent_brain_diagnostics.py \
+  tests/test_agent_brain_telemetry.py \
   tests/test_control_plane_audit.py \
   tests/test_operations_repository.py tests/test_operations_api.py -q
 cd .. && git diff --check
 git add backend/app/agent_brain/telemetry.py \
-  backend/app/agent_brain/diagnostics.py \
   backend/tests/test_agent_brain_telemetry.py \
-  backend/tests/test_agent_brain_diagnostics.py \
   backend/app/control_plane/audit.py backend/tests/test_control_plane_audit.py \
   backend/app/operations/repository.py backend/app/operations/routes.py \
   backend/tests/test_operations_repository.py backend/tests/test_operations_api.py
 git commit -m "feat(brain): add loop telemetry and audit"
 ```
 
-### Task 13: Package the non-public Brain worker and guarded V2 cutover
+### Task 14: Package the non-public Brain worker and guarded V2 cutover
 
 **Files:**
 - Modify: `deploy/cloud/compose.yaml`
@@ -1313,7 +1411,7 @@ git add deploy/cloud/compose.yaml deploy/cloud/Dockerfile \
 git commit -m "feat(brain): package guarded v2 runtime"
 ```
 
-### Task 14: Run the full acceptance matrix and freeze the release evidence
+### Task 15: Run the full acceptance matrix and freeze the release evidence
 
 **Files:**
 - Create: `backend/tests/test_agent_brain_v2_acceptance.py`
@@ -1323,11 +1421,11 @@ git commit -m "feat(brain): package guarded v2 runtime"
 
 **Interfaces:**
 - Produces: one repeatable local/preview/production acceptance command and sanitized evidence bundle.
-- Verifies all 16 design acceptance gates and the FAE non-interference invariant.
+- Verifies all 18 design acceptance gates and the FAE non-interference invariant.
 
 - [ ] **Step 1: Encode the deterministic acceptance matrix**
 
-Parameterize backend integration cases for direct answer, one Agent, two-Agent batch, two rounds of additional delegation, success plus timeout, MetaBot offline, Provider interruption, every crash point, duplicate tool/event replay, concurrent Conversation writes, waiting-user resume after more than 900 seconds, real revoke, harmless directory generation change, capability change, forced submission, zero-tool retry, parallel overflow, long context, minimized attachments, and V2 Mission write count zero.
+Parameterize backend integration cases for direct answer, one Agent, two-Agent batch, two rounds of additional delegation, success plus timeout, MetaBot offline, Provider interruption, Provider refusal, every crash point, duplicate tool/event replay, concurrent Conversation writes, waiting-user resume after more than 900 seconds, real revoke, harmless directory generation change, capability change, forced submission with byte-stable tools, zero-tool retry, parallel overflow, long context, minimized attachments, and V2 Mission write count zero.
 
 ```python
 @pytest.mark.parametrize(
@@ -1335,6 +1433,7 @@ Parameterize backend integration cases for direct answer, one Agent, two-Agent b
     (
         "direct_answer", "one_agent", "two_agent_batch", "two_round_replan",
         "success_plus_timeout", "metabot_offline", "provider_interruption",
+        "provider_refusal",
         "crash_recovery", "duplicate_replay", "concurrent_turn",
         "waiting_user_resume", "authorization_revoked", "generation_refresh",
         "capability_changed", "forced_submission", "zero_tool_retry",
@@ -1371,14 +1470,14 @@ Expected: backend, frontend, build, dependency audit, shell syntax, Compose rend
 Follow `docs/runbooks/agent-brain-v2-acceptance.md` to:
 
 1. run `provider_probe` against the configured real Gateway;
-2. verify adaptive thinking, forced tool choice, `32768` output tokens, 1M profile, and the actual cache TTL;
+2. verify adaptive thinking with `display=omitted`, forced tool choice with unchanged tools, streamed `65536` output-token configuration, 1M profile, no sampling/fallback parameters, mid-conversation system messages, and both cache TTLs;
 3. kill/restart Brain and Adapter workers at documented transaction boundaries;
 4. disconnect the Mac and prove direct Brain answers continue while only `metabot_local` becomes unavailable;
-5. compare continuous-Step and post-`waiting_agents` cache hit/cost reports;
+5. compare continuous-Step, first post-`waiting_agents`, and later-resume cache hit/cost reports;
 6. verify zero new `mission_runs` rows;
 7. snapshot FAE container ID, image ID, started-at, restart count, and managed-file hashes before and after.
 
-Expected: a sanitized acceptance evidence directory whose manifest hash is referenced by the deployment input lock. No secret, Prompt, user content, raw thinking, or Adapter payload may be present.
+Expected: a sanitized acceptance evidence directory whose manifest and system-prompt hashes are referenced by the deployment input lock. No secret, Prompt text, user content, raw Provider response, or Adapter payload may be present.
 
 - [ ] **Step 4: Obtain independent answer-quality review**
 
@@ -1399,33 +1498,34 @@ The sanitized runtime evidence itself stays in the protected deployment evidence
 
 | Design requirement | Implemented and verified by |
 |---|---|
-| Conversation SoR, MetaBot SQLite boundary, `platform_brain` ownership | Global constraints; Tasks 1 and 7 |
-| Top-level durable Loop, one Loop per Turn, one active Turn | Tasks 1, 3, 6, and 7 |
-| Four-tool protocol, `public_reason`, no model `cancel_task` | Tasks 2 and 8 |
-| Whole-batch settle, paired tool results, single wake-up | Tasks 3 and 8 |
-| `waiting_user` pauses active budget and expires at 24 hours | Tasks 1, 7, and 8 |
-| Append-only recovery truth, disposable checkpoint, leases/idempotency | Tasks 1, 3, and 6 |
-| Effective authorization semantics and capability change behavior | Tasks 5 and 9 |
-| Step/task/time budgets, forced submission, explicit platform summary | Task 8 |
-| Opus 5, adaptive thinking, thinking retention, one Provider, cache TTL | Tasks 3, 4, 9, and 12 |
-| Authorized capability + health + latency registry | Task 5 |
-| Context truncation and minimized child-Agent/attachment context | Task 9 |
-| Safe public events and separate Agent/Brain timelines | Task 11 |
-| MetaBot reduced to professional execution Adapter; Mac isolation | Task 10 and Task 14 |
-| Telemetry, separate cache-path cost, audited configuration | Task 12 |
-| Guarded deployment, V1 read-only compatibility, no silent failover | Task 13 |
-| Sixteen acceptance gates and independent answer review | Task 14 |
-| FAE non-interference and separate integration approval | Release Boundary, Task 14, Explicit Follow-on Gate |
+| Conversation SoR, MetaBot SQLite boundary, `platform_brain` ownership | Global constraints; Tasks 1 and 8 |
+| Top-level durable Loop, one Loop per Turn, one active Turn | Tasks 1, 3, 7, and 8 |
+| Four-tool protocol, `public_reason`, no model `cancel_task` | Tasks 2 and 9 |
+| Whole-batch settle, paired tool results, single wake-up | Tasks 3 and 9 |
+| `waiting_user` pauses active budget and expires at 24 hours | Tasks 1, 8, and 9 |
+| Append-only recovery truth, disposable checkpoint, leases/idempotency | Tasks 1, 3, and 7 |
+| Effective authorization semantics and capability change behavior | Tasks 6 and 10 |
+| Step/task/time budgets, forced submission, explicit platform summary | Task 9 |
+| Opus 5, adaptive omitted thinking, one Provider, streaming, refusal, and cache TTL | Tasks 3–5, 10, and 13 |
+| Versioned system prompt, delegation/scope/concision discipline | Task 5 |
+| Authorized capability + health + latency registry | Task 6 |
+| Context truncation and minimized child-Agent/attachment context | Task 10 |
+| Safe public events and separate Agent/Brain timelines | Task 12 |
+| MetaBot reduced to professional execution Adapter; Mac isolation | Tasks 11 and 15 |
+| Telemetry, separate cache-path cost, audited configuration | Task 13 |
+| Guarded deployment, V1 read-only compatibility, no silent failover | Task 14 |
+| Eighteen acceptance gates and independent answer review | Task 15 |
+| FAE non-interference and separate integration approval | Release Boundary, Task 15, Explicit Follow-on Gate |
 
 The known nonblocking-dispatch evolution (`delegate_task -> dispatched`, `await_tasks`, model `cancel_task`) is intentionally absent from every interface and test in this release; adding it requires a new protocol design and migration review.
 
 ## Final Release Sequence
 
-1. Merge Tasks 1–6 and deploy only to Dev/preview with the Reference Adapter.
-2. Pass restart/replay/provider capability gates before merging Tasks 7–9.
-3. Deploy Task 10’s worker compatibility change while the Worker accepts all three relay job kinds.
+1. Merge Tasks 1–7 and deploy only to Dev/preview with the Reference Adapter.
+2. Pass restart/replay/provider capability gates before merging Tasks 8–10.
+3. Deploy Task 11’s worker compatibility change while the Worker accepts all three relay job kinds.
 4. Pass HR/Marketing preview quality review and Mac-offline isolation.
-5. Merge Tasks 11–14, confirm all V1 Missions terminal, and atomically enable V2 intake.
+5. Merge Tasks 12–15, confirm all V1 Missions terminal, and atomically enable V2 intake.
 6. Switch the local worker acceptance list to exactly `direct_agent,metabot_local`.
 7. Observe one full business day with no duplicate Task, final Message, authorization, or cache-cost anomaly.
 8. Keep V1 Mission data and diagnostics read-only; remove no historical data in this release.
