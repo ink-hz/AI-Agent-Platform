@@ -194,7 +194,8 @@ services:
       PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE: /run/secrets/content-encryption-keyring
       PLATFORM_BRAIN_MODEL_MANIFEST: /app/brain-model.release.json
       PLATFORM_BRAIN_SYSTEM_PROMPT: /app/backend/app/agent_brain/prompts/brain_v1.md
-      PLATFORM_BRAIN_PROVIDER_BASE_URL: "${PLATFORM_BRAIN_PROVIDER_BASE_URL:-https://api.anthropic.com}"
+      PLATFORM_BRAIN_PROVIDER_BASE_URL: "${PLATFORM_BRAIN_PROVIDER_BASE_URL:-https://cc.nexcor.ai}"
+      PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME: "${PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME:-bearer}"
       PLATFORM_BRAIN_PROVIDER_API_KEY_FILE: /run/secrets/brain-provider-api-key
     volumes:
       - platform-brain-secrets:/run/secrets:ro

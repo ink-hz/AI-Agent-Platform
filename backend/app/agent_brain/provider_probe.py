@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from typing import Literal, cast
 
 import httpx
 
@@ -116,8 +117,16 @@ def _main() -> int:
     provider_api_key_file = os.getenv(
         "PLATFORM_BRAIN_PROVIDER_API_KEY_FILE", ""
     ).strip()
-    if not provider_base_url or not provider_api_key_file:
+    auth_scheme_value = os.getenv(
+        "PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME", "x-api-key"
+    ).strip()
+    if (
+        not provider_base_url
+        or not provider_api_key_file
+        or auth_scheme_value not in {"x-api-key", "bearer"}
+    ):
         raise ProviderCapabilityError("Brain model runtime disabled")
+    auth_scheme = cast(Literal["x-api-key", "bearer"], auth_scheme_value)
     manifest = BrainModelManifest.load(arguments.manifest)
     try:
         system_prompt = BrainSystemPrompt.load(
@@ -130,6 +139,7 @@ def _main() -> int:
         provider = AnthropicMessagesAdapter.from_secret_file(
             base_url=provider_base_url,
             api_key_file=provider_api_key_file,
+            auth_scheme=auth_scheme,
             client=client,
         )
         evidence = run_probe(

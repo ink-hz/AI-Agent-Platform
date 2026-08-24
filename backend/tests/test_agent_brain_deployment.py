@@ -76,6 +76,12 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
     assert worker["environment"]["PLATFORM_BRAIN_PROVIDER_API_KEY_FILE"] == (
         "/run/secrets/brain-provider-api-key"
     )
+    assert worker["environment"]["PLATFORM_BRAIN_PROVIDER_BASE_URL"] == (
+        "${PLATFORM_BRAIN_PROVIDER_BASE_URL:-https://cc.nexcor.ai}"
+    )
+    assert worker["environment"]["PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME"] == (
+        "${PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME:-bearer}"
+    )
     assert "PLATFORM_DINGTALK_APP_SECRET_FILE" not in worker["environment"]
     assert worker["volumes"] == ["platform-brain-secrets:/run/secrets:ro"]
 

@@ -134,6 +134,35 @@ def test_adapter_sends_adaptive_thinking_cache_and_tools() -> None:
     assert "provider-secret" not in repr(response)
 
 
+def test_adapter_uses_explicit_bearer_auth_for_fae_gateway() -> None:
+    captured: list[httpx.Headers] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.headers)
+        return httpx.Response(200, content=_tool_stream())
+
+    adapter = AnthropicMessagesAdapter(
+        base_url="https://cc.nexcor.ai",
+        api_key="fae-provider-token",
+        auth_scheme="bearer",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert adapter.complete(_request()).stop_reason == "tool_use"
+    assert captured[0]["authorization"] == "Bearer fae-provider-token"
+    assert "x-api-key" not in captured[0]
+
+
+def test_adapter_rejects_unknown_auth_scheme() -> None:
+    with pytest.raises(ValueError, match="configuration invalid"):
+        AnthropicMessagesAdapter(
+            base_url="https://gateway.example",
+            api_key="secret",
+            auth_scheme="automatic",
+            client=httpx.Client(transport=httpx.MockTransport(lambda _: None)),
+        )
+
+
 def test_forced_submission_changes_only_tool_choice_not_tool_bytes() -> None:
     normal = _request()
     forced = _request(forced=True)
@@ -251,4 +280,3 @@ def test_stream_failure_after_first_event_is_not_retried() -> None:
         adapter.complete(_request())
     assert calls == 1
     assert "raw-private" not in repr(error.value)
-

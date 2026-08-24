@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import signal
 import time
-from typing import Literal
+from typing import Literal, cast
 
 import httpx
 import psycopg
@@ -56,6 +56,12 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
     prompt_path = _required_path("PLATFORM_BRAIN_SYSTEM_PROMPT")
     api_key_path = _required_path("PLATFORM_BRAIN_PROVIDER_API_KEY_FILE")
     base_url = os.getenv("PLATFORM_BRAIN_PROVIDER_BASE_URL", "").strip()
+    auth_scheme_value = os.getenv(
+        "PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME", "x-api-key"
+    ).strip()
+    if auth_scheme_value not in {"x-api-key", "bearer"}:
+        raise RuntimeError("Brain worker configuration unavailable")
+    auth_scheme = cast(Literal["x-api-key", "bearer"], auth_scheme_value)
     database_url = read_secret_file(str(database_path))
     validate_control_dsn(database_url, purpose="brain")
     keyring = IdentityKeyring.from_file(
@@ -75,6 +81,7 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
     model = AnthropicMessagesAdapter.from_secret_file(
         base_url=base_url,
         api_key_file=str(api_key_path),
+        auth_scheme=auth_scheme,
         client=client,
     )
     repository = BrainLoopRepository(database_url, content_codec=codec)

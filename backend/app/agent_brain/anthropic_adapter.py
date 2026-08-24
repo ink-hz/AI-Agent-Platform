@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import stat
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -26,6 +26,7 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
         *,
         base_url: str,
         api_key: str,
+        auth_scheme: Literal["x-api-key", "bearer"] = "x-api-key",
         client: httpx.Client,
     ) -> None:
         if (
@@ -33,11 +34,13 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
             or not base_url.startswith("https://")
             or not isinstance(api_key, str)
             or not api_key
+            or auth_scheme not in {"x-api-key", "bearer"}
             or not isinstance(client, httpx.Client)
         ):
             raise ValueError("Anthropic Adapter configuration invalid")
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
+        self._auth_scheme = auth_scheme
         self._client = client
 
     @classmethod
@@ -46,6 +49,7 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
         *,
         base_url: str,
         api_key_file: str,
+        auth_scheme: Literal["x-api-key", "bearer"] = "x-api-key",
         client: httpx.Client,
     ) -> AnthropicMessagesAdapter:
         try:
@@ -64,10 +68,20 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
                 raise ValueError
         except (OSError, UnicodeError, ValueError):
             raise ValueError("Anthropic API key file invalid") from None
-        return cls(base_url=base_url, api_key=api_key, client=client)
+        return cls(
+            base_url=base_url,
+            api_key=api_key,
+            auth_scheme=auth_scheme,
+            client=client,
+        )
 
     def __repr__(self) -> str:
         return "AnthropicMessagesAdapter(base_url=<redacted>, api_key=<redacted>)"
+
+    def _auth_headers(self) -> dict[str, str]:
+        if self._auth_scheme == "bearer":
+            return {"authorization": f"Bearer {self._api_key}"}
+        return {"x-api-key": self._api_key}
 
     def complete(self, request: BrainModelRequest) -> BrainModelResponse:
         if not isinstance(request, BrainModelRequest):
@@ -80,7 +94,7 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
                     f"{self._base_url}/v1/messages",
                     json=request.provider_body(),
                     headers={
-                        "x-api-key": self._api_key,
+                        **self._auth_headers(),
                         "anthropic-version": "2023-06-01",
                         "accept": "text/event-stream",
                     },
