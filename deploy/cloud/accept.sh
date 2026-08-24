@@ -285,7 +285,7 @@ docker exec "$brain" python -m app.agent_brain.provider_probe \
   --manifest /app/brain-model.release.json \
   --system-prompt /app/backend/app/agent_brain/prompts/brain_v1.md \
   --evidence-out "/tmp/$probe_name" || fail
-docker cp "$brain:/tmp/$probe_name" "$evidence_dir/provider-evidence.json.part" >/dev/null
+docker exec "$brain" cat -- "/tmp/$probe_name" > "$evidence_dir/provider-evidence.json.part"
 docker exec "$brain" rm -f -- "/tmp/$probe_name"
 chown root:root "$evidence_dir/provider-evidence.json.part"
 chmod 600 "$evidence_dir/provider-evidence.json.part"

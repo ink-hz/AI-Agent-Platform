@@ -168,6 +168,8 @@ def test_v2_cutover_has_exact_fail_closed_gates() -> None:
         assert gate in script
     assert "PLATFORM_AGENT_BRAIN_V2_ENABLED" in script
     assert "provider-evidence.sha256" in script
+    assert 'docker exec "$brain" cat -- "/tmp/$probe_name"' in script
+    assert 'docker cp "$brain:/tmp/$probe_name"' not in script
 
 
 def test_v2_rollback_stops_intake_without_rewriting_history() -> None:
