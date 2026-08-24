@@ -147,7 +147,7 @@ export function routePath(route: Route): string {
 
 export function routeSection(route: Route): RouteSection | null {
   if (route.name === "brain") return "brain";
-  if (route.name === "conversations" || route.name === "conversation") return "conversations";
+  if (route.name === "conversations" || route.name === "conversation") return "brain";
   if (route.name === "agents" || route.name === "agent") return "agents";
   if (route.name === "missions" || route.name === "mission") return "missions";
   if (route.name === "account") return "account";

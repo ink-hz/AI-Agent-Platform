@@ -26,9 +26,11 @@ describe("usage navigation", () => {
 
   it("gives members a use-first navigation and always sends the brand home", async () => {
     await act(async () => root.render(<AppShell route={{ name: "brain" }} account={member}><p>内容</p></AppShell>));
-    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent历史对话企业账号");
+    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent企业账号");
     expect(container.querySelector<HTMLAnchorElement>(".brand")?.getAttribute("href")).toBe("/");
     expect(container.textContent).not.toContain("管理中心");
+    expect(container.querySelector("main.page.is-brain-workspace")).not.toBeNull();
+    expect(container.querySelector("footer.site-foot")).toBeNull();
   });
 
   it("adds one quiet management entry for owners without replacing use navigation", async () => {
@@ -39,9 +41,18 @@ describe("usage navigation", () => {
     const navigation = container.querySelector(".product-nav")?.textContent || "";
     expect(navigation).toContain("Agent 大脑");
     expect(navigation).toContain("专业 Agent");
-    expect(navigation).toContain("历史对话");
+    expect(navigation).not.toContain("历史对话");
     expect(navigation).toContain("企业账号");
     expect(navigation).toContain("管理中心");
     expect(container.querySelector<HTMLAnchorElement>('a[href="/admin"]')).not.toBeNull();
+  });
+
+  it("uses the same workspace shell for a selected conversation", async () => {
+    await act(async () => root.render(<AppShell
+      route={{ name: "conversation", conversationId: "conversation-1" }} account={member}
+    ><p>持续对话</p></AppShell>));
+    expect(container.querySelector("main.page.is-brain-workspace")).not.toBeNull();
+    expect(container.querySelector('a[aria-current="page"]')?.textContent).toBe("Agent 大脑");
+    expect(container.querySelector("footer.site-foot")).toBeNull();
   });
 });

@@ -10,7 +10,6 @@ import { platformPath, type Account } from "./auth";
 const USE_NAVIGATION = [
   { label: "Agent 大脑", path: "/", section: "brain" },
   { label: "专业 Agent", path: "/agents", section: "agents" },
-  { label: "历史对话", path: "/conversations", section: "conversations" },
   { label: "企业账号", path: "/account", section: "account" },
 ] as const;
 
@@ -51,6 +50,7 @@ function follow(event: MouseEvent<HTMLAnchorElement>, path: string) {
 
 export function AppShell({ route, children, account }: { route: Route; children: ReactNode; account?: Account | null }) {
   const current = routeSection(route);
+  const brainWorkspace = route.name === "brain" || route.name === "conversation";
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   useEffect(() => {
     if (account && account.role !== "platform_owner" && account.role !== "platform_admin") return;
@@ -112,8 +112,8 @@ export function AppShell({ route, children, account }: { route: Route; children:
           href={platformPath(item.path)} key={item.path} onClick={(event) => follow(event, item.path)}
         >{item.label}</a>)}</div>
       </nav>}
-      <main className="page">{children}</main>
-      <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>
+      <main className={`page${brainWorkspace ? " is-brain-workspace" : ""}`}>{children}</main>
+      {!brainWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
     </div>
   );
 }

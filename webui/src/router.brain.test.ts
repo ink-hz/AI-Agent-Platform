@@ -21,7 +21,8 @@ describe("Agent Brain route boundary", () => {
     expect(parseRoute("/agents")).toEqual({ name: "agents" });
     expect(parseRoute("/agents/hr-bot")).toEqual({ name: "agent", agentId: "hr-bot" });
     expect(routeSection({ name: "mission", missionId: "one" })).toBe("missions");
-    expect(routeSection({ name: "conversation", conversationId: "one" })).toBe("conversations");
+    expect(routeSection({ name: "conversation", conversationId: "one" })).toBe("brain");
+    expect(routeSection({ name: "conversations" })).toBe("brain");
   });
 
   it("places every management page beneath the admin namespace", () => {

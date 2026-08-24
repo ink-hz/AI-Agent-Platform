@@ -9,8 +9,8 @@ export const PLATFORM_TITLE = "Orbbec Agent Platform";
 export function routeDocumentTitle(route: Route): string {
   switch (route.name) {
     case "brain": return `Agent 大脑 · ${PLATFORM_TITLE}`;
-    case "conversations": return `历史对话 · ${PLATFORM_TITLE}`;
-    case "conversation": return `对话 · ${PLATFORM_TITLE}`;
+    case "conversations": return `Agent 大脑 · ${PLATFORM_TITLE}`;
+    case "conversation": return `Agent 大脑 · ${PLATFORM_TITLE}`;
     case "missions": return `历史任务 · ${PLATFORM_TITLE}`;
     case "mission": return `任务 · ${PLATFORM_TITLE}`;
     case "agents": return `专业 Agent · ${PLATFORM_TITLE}`;
