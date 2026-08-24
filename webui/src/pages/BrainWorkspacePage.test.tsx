@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Account } from "../auth";
-import type { Conversation } from "../conversationTypes";
+import type { Conversation, ConversationDetail } from "../conversationTypes";
 import { BrainWorkspacePage } from "./BrainWorkspacePage";
 
 const account: Account = {
@@ -46,5 +46,22 @@ describe("BrainWorkspacePage", () => {
     await act(async () => root.render(<BrainWorkspacePage account={account} client={{ list }} />));
     expect(container.textContent).toContain("对话列表暂时无法读取");
     expect(container.querySelector("textarea[aria-label='你想完成什么？']")).not.toBeNull();
+  });
+
+  it("renders a selected Session inside the same workspace", async () => {
+    const conversationClient = {
+      fetchConversation: vi.fn().mockResolvedValue({ conversation: newer, current_turn: null } satisfies ConversationDetail),
+      fetchMessages: vi.fn().mockResolvedValue([]),
+      createMessageSubmission: vi.fn(), streamEvents: vi.fn().mockResolvedValue(undefined),
+      cancelCurrentTurn: vi.fn(), submitFeedback: vi.fn(), reconnectDelay: vi.fn().mockResolvedValue(undefined),
+    };
+    await act(async () => root.render(<BrainWorkspacePage
+      account={account} conversationId="newer" conversationClient={conversationClient}
+      client={{ list: vi.fn().mockResolvedValue({ items: [newer], next_cursor: null }) }}
+    />));
+
+    expect(container.querySelector('a[aria-current="page"]')?.textContent).toContain("最新会话");
+    expect(container.querySelector(".conversation-page")?.textContent).toContain("最新会话");
+    expect(container.textContent).not.toContain("← 历史对话");
   });
 });

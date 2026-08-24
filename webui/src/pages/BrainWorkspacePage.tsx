@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { Account } from "../auth";
 import { listConversations } from "../conversationApi";
@@ -51,9 +51,9 @@ export function BrainWorkspacePage({
     return () => controller.abort();
   }, [attempt, client]);
 
-  const upsertConversation = (conversation: Conversation) => {
+  const upsertConversation = useCallback((conversation: Conversation) => {
     setConversations((current) => mergeConversations(current, [conversation]));
-  };
+  }, []);
 
   const loadMore = async () => {
     if (!cursor || loadingMore) return;
@@ -96,6 +96,7 @@ export function BrainWorkspacePage({
       {conversationId
         ? <ConversationThread
           account={account} client={conversationClient} conversationId={conversationId}
+          onConversationUpdated={upsertConversation}
         />
         : <BrainPage
           account={account} client={brainClient} onConversationCreated={upsertConversation}

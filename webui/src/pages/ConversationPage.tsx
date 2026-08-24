@@ -12,6 +12,7 @@ import {
   type ConversationSubmission,
 } from "../conversationApi";
 import type {
+  Conversation,
   ConversationCancelResult,
   ConversationDetail,
   ConversationEvent,
@@ -25,7 +26,6 @@ import { ConversationComposer } from "../components/conversation/ConversationCom
 import { ConversationMessages } from "../components/conversation/ConversationMessages";
 import { ExecutionCard } from "../components/conversation/ExecutionCard";
 import { professionalAgentLabel } from "../components/conversation/agentLabels";
-import { PlatformLink } from "../components/PlatformLink";
 
 
 export interface ConversationPageClient {
@@ -71,10 +71,12 @@ export function ConversationPage({
   conversationId,
   account,
   client = DEFAULT_CLIENT,
+  onConversationUpdated,
 }: {
   conversationId: string;
   account: Account;
   client?: ConversationPageClient;
+  onConversationUpdated?: (conversation: Conversation) => void;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -106,11 +108,12 @@ export function ConversationPage({
     ]).then(([snapshot, loadedMessages]) => {
       if (controller.signal.aborted) return;
       setDetail(snapshot); setMessages(loadedMessages); setLoading(false); setStreamEpoch((value) => value + 1);
+      onConversationUpdated?.(snapshot.conversation);
     }).catch(() => {
       if (!controller.signal.aborted) { setLoadFailure(true); setLoading(false); }
     });
     return () => { controller.abort(); writeController.current?.abort(); };
-  }, [client, conversationId]);
+  }, [client, conversationId, onConversationUpdated]);
 
   useEffect(() => {
     if (!streamEpoch || !detail) return;
@@ -172,6 +175,7 @@ export function ConversationPage({
       setText("");
       setMessages((current) => mergeMessages(current, [result.message]));
       setDetail({ conversation: result.conversation, current_turn: result.turn });
+      onConversationUpdated?.(result.conversation);
       setCancelRequested(false);
       setStreamEpoch((value) => value + 1);
     } catch {
@@ -216,11 +220,9 @@ export function ConversationPage({
   return <div className="conversation-page">
     <header className="conversation-header">
       <div>
-        <PlatformLink href="/conversations">← 历史对话</PlatformLink>
         <p>{detail.conversation.mode === "direct_agent" ? detail.conversation.direct_agent_id : "Agent 大脑"}</p>
         <h1>{detail.conversation.title}</h1>
       </div>
-      <PlatformLink className="conversation-new" href="/">新建对话</PlatformLink>
     </header>
     {connection === "offline" && <aside className="conversation-connection is-offline" role="status"><strong>连接暂时中断</strong><span>正在从最后一条执行记录继续连接，不会重复创建任务。</span></aside>}
     {connection === "connecting" && <aside className="conversation-connection" role="status">正在连接执行进度…</aside>}

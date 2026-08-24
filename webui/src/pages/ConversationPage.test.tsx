@@ -114,9 +114,15 @@ describe("ConversationPage", () => {
 
   it("renders Markdown, collapsed execution, and keeps the composer after a follow-up", async () => {
     const pageClient = client();
-    await act(async () => root.render(<ConversationPage account={account} client={pageClient} conversationId={conversationId} />));
+    const onConversationUpdated = vi.fn();
+    await act(async () => root.render(<ConversationPage
+      account={account} client={pageClient} conversationId={conversationId}
+      onConversationUpdated={onConversationUpdated}
+    />));
 
     expect(container.querySelector(".conversation-assistant h2")?.textContent).toBe("第一轮结果");
+    expect(container.textContent).not.toContain("历史对话");
+    expect(onConversationUpdated).toHaveBeenCalledWith(conversation);
     expect(container.querySelector<HTMLDetailsElement>(".execution-card")?.open).toBe(false);
     expect(container.textContent).toContain("HR Agent");
     expect(container.querySelector("textarea[aria-label='继续对话']")).not.toBeNull();
@@ -125,6 +131,9 @@ describe("ConversationPage", () => {
     await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")?.click());
 
     expect(pageClient.createMessageSubmission).toHaveBeenCalledWith(conversationId, "继续给出搜索式", account.csrf_token);
+    expect(onConversationUpdated).toHaveBeenLastCalledWith(expect.objectContaining({
+      conversation_id: conversationId, updated_at: "2026-08-23T10:02:00Z",
+    }));
     expect(container.textContent).toContain("继续给出搜索式");
     expect(container.querySelector("textarea[aria-label='继续对话']")).not.toBeNull();
   });

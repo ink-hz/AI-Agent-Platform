@@ -28,13 +28,11 @@ import { LoginPage } from "./pages/LoginPage";
 import { AccountPage } from "./pages/AccountPage";
 import { IdentityManagementPage } from "./pages/IdentityManagementPage";
 import { GovernancePage } from "./pages/GovernancePage";
-import { BrainPage } from "./pages/BrainPage";
+import { BrainWorkspacePage } from "./pages/BrainWorkspacePage";
 import { MissionPage } from "./pages/MissionPage";
 import { MissionsPage } from "./pages/MissionsPage";
 import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
 import { AgentUsePage } from "./pages/AgentUsePage";
-import { ConversationPage } from "./pages/ConversationPage";
-import { ConversationsPage } from "./pages/ConversationsPage";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -85,9 +83,9 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
       await logoutAccount(csrf);
       window.location.replace(platformPath("/login"));
     }} /> : <PendingPage title="企业账号" description="身份模式未启用。" />;
-    case "brain": return account ? <BrainPage account={account} /> : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
-    case "conversations": return <ConversationsPage />;
-    case "conversation": return account ? <ConversationPage account={account} conversationId={route.conversationId} key={route.conversationId} /> : <PendingPage title="历史对话" description="请启用企业身份后查看。" />;
+    case "brain": return account ? <BrainWorkspacePage account={account} /> : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
+    case "conversations": return <LegacyRedirect to="/" />;
+    case "conversation": return account ? <BrainWorkspacePage account={account} conversationId={route.conversationId} /> : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
     case "missions": return <MissionsPage />;
     case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
     case "agents": return <AgentUseDirectoryPage />;

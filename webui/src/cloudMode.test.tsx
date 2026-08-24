@@ -204,7 +204,7 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(
       <AppShell route={{ name: "account" }} account={member}><p>内容</p></AppShell>,
     ));
-    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent历史对话企业账号");
+    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent企业账号");
 
     const viewer: Account = {
       ...member, display_name: "观察者", role: "management_viewer",
@@ -214,7 +214,7 @@ describe("cloud replica mode", () => {
       <AppShell route={{ name: "admin-governance" }} account={viewer}><p>内容</p></AppShell>,
     ));
     const navigation = container.querySelector(".product-nav")?.textContent || "";
-    expect(navigation).toBe("Agent 大脑专业 Agent历史对话企业账号");
+    expect(navigation).toBe("Agent 大脑专业 Agent企业账号");
     expect(navigation).not.toContain("管理中心");
   });
 
