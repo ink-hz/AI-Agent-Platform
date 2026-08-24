@@ -100,7 +100,7 @@ fingerprint_fae() {
   fae_config_hash="$(/usr/bin/docker inspect --format '{{json .Config}}' ai-fae-backend \
     | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" || return 1
   fae_mounts_hash="$(/usr/bin/docker inspect --format '{{json .Mounts}}' ai-fae-backend \
-    | /usr/bin/sha256sum | /usr/bin/awk '{print $1}')" || return 1
+    | /usr/bin/python3 -c 'import hashlib,json,sys; value=json.load(sys.stdin); value=sorted(value,key=lambda item:(item.get("Destination",""),item.get("Source",""),item.get("Type",""))); raw=json.dumps(value,sort_keys=True,separators=(",",":")).encode(); print(hashlib.sha256(raw).hexdigest())')" || return 1
   fae_domain_http="$(/usr/bin/curl --noproxy '*' --silent --show-error --fail \
     --max-time 10 https://fae.orbbec.com.cn/ -o /dev/null -w '%{http_code}')" || return 1
   fae_ip_http="$(/usr/bin/curl --noproxy '*' --silent --show-error --fail \

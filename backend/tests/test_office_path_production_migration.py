@@ -142,7 +142,13 @@ def _run_publish_harness(
               echo 0
             fi ;;
           *"{{json .Config}}"*) printf '%s' '{"safe":"config"}' ;;
-          *"{{json .Mounts}}"*) printf '%s' '[{"safe":"mount"}]' ;;
+          *"{{json .Mounts}}"*)
+            if [[ "$HARNESS_FAILURE" == "fae_mount_order" && -f "$HARNESS_LOG" ]] \
+              && /usr/bin/grep -Fq forward_install "$HARNESS_LOG"; then
+              printf '%s' '[{"Destination":"/b","Source":"b","Type":"bind"},{"Destination":"/a","Source":"a","Type":"bind"}]'
+            else
+              printf '%s' '[{"Destination":"/a","Source":"a","Type":"bind"},{"Destination":"/b","Source":"b","Type":"bind"}]'
+            fi ;;
           *) exit 91 ;;
         esac
         """,
@@ -381,10 +387,9 @@ def test_publish_collects_only_hashed_fae_config_and_mounts() -> None:
         "docker inspect --format '{{json .Config}}' ai-fae-backend | "
         "/usr/bin/sha256sum"
     ) in normalized
-    assert (
-        "docker inspect --format '{{json .Mounts}}' ai-fae-backend | "
-        "/usr/bin/sha256sum"
-    ) in normalized
+    assert "docker inspect --format '{{json .Mounts}}' ai-fae-backend" in normalized
+    assert "sorted(value" in value
+    assert "sort_keys=True" in value
     assert "FAE_CONFIG_RAW" not in value
     assert "FAE_MOUNTS_RAW" not in value
 
@@ -505,6 +510,18 @@ def test_publish_harness_success_is_one_install_one_test_one_reload_and_owner_on
         / "private"
         / "agent-brain-action.lock"
     ).exists()
+
+
+def test_publish_harness_accepts_mounts_with_only_serialization_order_changed(
+    tmp_path: Path,
+) -> None:
+    result, log, nginx_source, _backups = _run_publish_harness(
+        tmp_path, failure="fae_mount_order"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert log.splitlines() == ["forward_install", "nginx_test", "reload"]
+    assert "location ^~ /office/" in nginx_source.read_text(encoding="utf-8")
 
 
 def _installed_rollback(tmp_path: Path) -> Path:
