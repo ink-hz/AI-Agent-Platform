@@ -345,7 +345,7 @@ rollback() {
       candidate_services="$(/usr/bin/docker compose --env-file "$environment_path" \
         -f "$release_path/deploy/cloud/compose.yaml" config --services 2>/dev/null || true)"
       candidate_to_stop=()
-      for service_name in platform-loopback platform-api platform-directory platform-dingtalk-stream; do
+      for service_name in platform-brain platform-loopback platform-api platform-directory platform-dingtalk-stream; do
         if /usr/bin/grep -Fxq "$service_name" <<<"$candidate_services"; then
           candidate_to_stop+=("$service_name")
         fi

@@ -219,11 +219,22 @@ for index in "${!brain_roles[@]}"; do
   done
   brain_passwords+=("$brain_password")
 
-  brain_dsn="postgresql://${brain_roles[$index]}:${brain_password}@postgres:5432/${database_name}"
+  brain_dsn="postgresql://${brain_roles[$index]}:${brain_password}@platform-postgres:5432/${database_name}"
   if [[ -e "$dsn_file" ]]; then
     [[ -f "$dsn_file" && ! -L "$dsn_file" ]] || fail
     [[ "$(/usr/bin/stat -c '%a %U' "$dsn_file")" == "600 root" ]] || fail
-    [[ "$(/usr/bin/tr -d '\n' < "$dsn_file")" == "$brain_dsn" ]] || fail
+    existing_brain_dsn="$(/usr/bin/tr -d '\n' < "$dsn_file")"
+    legacy_brain_dsn="postgresql://${brain_roles[$index]}:${brain_password}@postgres:5432/${database_name}"
+    if [[ "$existing_brain_dsn" == "$legacy_brain_dsn" ]]; then
+      repair_path="$dsn_file.brain-dsn-repair.part"
+      [[ ! -e "$repair_path" && ! -L "$repair_path" ]] || fail
+      /usr/bin/printf '%s\n' "$brain_dsn" > "$repair_path"
+      /bin/chown root:root "$repair_path"
+      /bin/chmod 600 "$repair_path"
+      /bin/mv -f "$repair_path" "$dsn_file"
+    else
+      [[ "$existing_brain_dsn" == "$brain_dsn" ]] || fail
+    fi
   else
     write_root_secret "$dsn_file" "$brain_dsn"
   fi
@@ -525,3 +536,4 @@ fi
 /usr/bin/printf '%s\n' 'CONTROL_DATABASE_CREDENTIALS_READY version=2'
 
 unset passwords password_value existing_password brain_passwords brain_password brain_dsn
+unset existing_brain_dsn legacy_brain_dsn repair_path

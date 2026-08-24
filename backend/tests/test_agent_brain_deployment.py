@@ -38,6 +38,12 @@ def test_control_bootstrap_provisions_brain_worker_credentials() -> None:
     assert "%2\\$L" in script
     assert "%1$I" not in script
     assert "%2$L" not in script
+    assert (
+        'brain_dsn="postgresql://${brain_roles[$index]}:${brain_password}'
+        '@platform-postgres:5432/${database_name}"'
+    ) in script
+    assert "legacy_brain_dsn" in script
+    assert "brain-dsn-repair.part" in script
 
 
 def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
@@ -115,6 +121,10 @@ def test_remote_stage_requires_mode_0600_control_content_and_feature_state() -> 
     assert 'PLATFORM_DIRECT_AGENT_ENABLED="${PLATFORM_DIRECT_AGENT_ENABLED:-1}"' in stage
     assert '[[ "$PLATFORM_DIRECT_AGENT_ENABLED" == "1" ]] || fail' in stage
     assert "orbbec-agent-platform-brain-secrets" in stage
+    assert (
+        "for service_name in platform-brain platform-loopback platform-api "
+        "platform-directory platform-dingtalk-stream;"
+    ) in stage
 
 
 def test_direct_agent_runtime_is_started_without_enabling_brain_v1() -> None:
