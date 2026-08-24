@@ -120,6 +120,10 @@ class Decision:
 
 
 class FakeRegistry:
+    def __init__(self, *, allowed: bool = True, reason_code: str = "allowed"):
+        self.allowed = allowed
+        self.reason_code = reason_code
+
     def list_for_user(self, _user_id):
         return (
             {
@@ -134,10 +138,10 @@ class FakeRegistry:
     def authorize_task(self, _user_id, agent_id, expected_capability_version):
         assert agent_id == "reference-agent"
         assert expected_capability_version == 1
-        return Decision()
+        return Decision(allowed=self.allowed, reason_code=self.reason_code)
 
 
-def _runtime(repository, response=None):
+def _runtime(repository, response=None, *, registry=None):
     manifest = BrainModelManifest.load(MANIFEST_PATH)
     prompt = BrainSystemPrompt.load(
         PROMPT_PATH,
@@ -150,7 +154,7 @@ def _runtime(repository, response=None):
         model=ScriptedModel(response) if response is not None else None,
         request_builder=BrainRequestBuilder(manifest),
         system_prompt=prompt,
-        runtime_registry=FakeRegistry(),
+        runtime_registry=registry or FakeRegistry(),
         adapters=adapters,
         worker_id="test-brain-worker",
         lease_seconds=45,
@@ -291,3 +295,26 @@ def test_adapter_registry_fails_closed_for_duplicate_and_unknown_kinds() -> None
         registry.register("reference", ReferenceAdapter())
     with pytest.raises(LookupError, match="not registered"):
         registry.require("missing")
+
+
+@pytest.mark.postgres
+def test_live_revocation_fails_loop_before_model(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    environment, *_unused = loop_database
+    loop_id, _snapshot = seeded_loop
+    _runtime(loop_repository, _delegate_response()).advance_one()
+    _runtime(loop_repository).dispatch_one()
+    denied_model = ScriptedModel(_submit_response())
+    denied = _runtime(
+        loop_repository,
+        registry=FakeRegistry(allowed=False, reason_code="authorization_changed"),
+    )
+    denied._model = denied_model
+    assert denied.advance_one() is True
+    assert denied_model.calls == 0
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select status,reason_code from platform_brain.brain_loops where loop_id=%s",
+            (loop_id,),
+        ).fetchone() == ("failed", "authorization_changed")

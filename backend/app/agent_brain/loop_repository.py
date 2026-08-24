@@ -15,6 +15,7 @@ from psycopg.types.json import Jsonb
 
 from app.agent_brain.conversation_repository import message_subject
 from app.agent_brain.loop_models import (
+    AuthorizationSnapshot,
     BrainLoopRecord,
     BrainLoopStatus,
     BrainStepRecord,
@@ -67,6 +68,7 @@ class TaskDispatchSpec:
     capability_version: int
     authorization_snapshot_id: UUID
     effective_deadline_at: datetime
+    task_context: dict[str, object] | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +120,17 @@ class TaskDeliveryLease:
     delivery_id: UUID
     attempt: int
     idempotency_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class CancellationTask:
+    task_id: UUID
+    loop_id: UUID
+    agent_id: str
+    adapter_kind: str
+    context: dict[str, object] = field(repr=False)
+    effective_deadline_at: datetime
+    next_event_seq: int
 
 
 def _model_config_subject(loop_id: UUID) -> str:
@@ -568,7 +581,7 @@ class BrainLoopRepository:
                     parsed.tool_index,
                     "task",
                 )
-                context_value = {
+                context_value = spec.task_context or {
                     "agent_id": parsed.call.agent_id,
                     "arguments": arguments,
                 }
@@ -1124,6 +1137,36 @@ class BrainLoopRepository:
         except psycopg.Error:
             raise BrainRepositoryError() from None
 
+    def authorization_snapshots_for_loop(
+        self, loop_id: UUID
+    ) -> tuple[AuthorizationSnapshot, ...]:
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select distinct on (snapshot.agent_id) snapshot.* from "
+                    "platform_brain.authorization_snapshots snapshot join "
+                    "platform_brain.agent_tasks task on "
+                    "task.authorization_snapshot_id=snapshot.authorization_snapshot_id "
+                    "where task.loop_id=%s order by snapshot.agent_id,"
+                    "snapshot.computed_at desc",
+                    (loop_id,),
+                ).fetchall()
+            return tuple(
+                AuthorizationSnapshot(
+                    authorization_snapshot_id=row["authorization_snapshot_id"],
+                    internal_user_id=row["internal_user_id"],
+                    agent_id=row["agent_id"],
+                    allowed=row["allowed"],
+                    capability_version=row["capability_version"],
+                    effective_decision_hash=bytes(row["effective_decision_hash"]),
+                    computed_at=row["computed_at"],
+                )
+                for row in rows
+            )
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
     def lease_task_delivery(
         self, worker_id: str, *, lease_seconds: int
     ) -> TaskDeliveryLease | None:
@@ -1151,14 +1194,31 @@ class BrainLoopRepository:
                         row["loop_id"], row["step_seq"], row["tool_index"], "delivery"
                     )
                     idempotency_key = f"brain:{row['task_id']}:delivery:1"
-                    connection.execute(
-                        "insert into platform_brain.adapter_deliveries ("
-                        "delivery_id,task_id,adapter_kind,attempt,status,"
-                        "lease_worker_id,lease_expires_at,idempotency_key) values "
-                        "(%s,%s,%s,1,'leased',%s,clock_timestamp()+(%s*interval '1 second'),%s)",
-                        (delivery_id,row["task_id"],row["adapter_kind"],worker_id,
-                         lease_seconds,idempotency_key),
-                    )
+                    prior = connection.execute(
+                        "select * from platform_brain.adapter_deliveries "
+                        "where task_id=%s order by attempt desc limit 1 for update",
+                        (row["task_id"],),
+                    ).fetchone()
+                    attempt = 1 if prior is None else prior["attempt"] + 1
+                    if prior is None:
+                        connection.execute(
+                            "insert into platform_brain.adapter_deliveries ("
+                            "delivery_id,task_id,adapter_kind,attempt,status,"
+                            "lease_worker_id,lease_expires_at,idempotency_key) values "
+                            "(%s,%s,%s,1,'leased',%s,clock_timestamp()+"
+                            "(%s*interval '1 second'),%s)",
+                            (delivery_id,row["task_id"],row["adapter_kind"],worker_id,
+                             lease_seconds,idempotency_key),
+                        )
+                    else:
+                        connection.execute(
+                            "update platform_brain.adapter_deliveries set attempt=%s,"
+                            "status='leased',lease_worker_id=%s,lease_expires_at="
+                            "clock_timestamp()+(%s*interval '1 second'),"
+                            "terminal_at=null,updated_at=clock_timestamp() "
+                            "where delivery_id=%s and status='expired'",
+                            (attempt,worker_id,lease_seconds,delivery_id),
+                        )
                     value = self.content_codec.unseal_json(
                         _task_context_subject(row["task_id"]),
                         SealedContent(bytes(row["task_context_ciphertext"]),
@@ -1168,7 +1228,7 @@ class BrainLoopRepository:
                         task_id=row["task_id"],loop_id=row["loop_id"],
                         agent_id=row["agent_id"],adapter_kind=row["adapter_kind"],
                         context=value,effective_deadline_at=row["effective_deadline_at"],
-                        delivery_id=delivery_id,attempt=1,idempotency_key=idempotency_key,
+                        delivery_id=delivery_id,attempt=attempt,idempotency_key=idempotency_key,
                     )
         except (ContentCryptoError, psycopg.Error):
             raise BrainRepositoryError() from None
@@ -1198,6 +1258,97 @@ class BrainLoopRepository:
         except psycopg.Error:
             raise BrainRepositoryError() from None
         self.settle_batch(lease.loop_id)
+
+    def expire_delivery_leases(self, *, limit: int) -> int:
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("Adapter delivery expiry limit invalid")
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "with selected as (select delivery.delivery_id,task.status as "
+                    "task_status from platform_brain.adapter_deliveries delivery "
+                    "join platform_brain.agent_tasks task on task.task_id=delivery.task_id "
+                    "where delivery.status='leased' and delivery.lease_expires_at<"
+                    "clock_timestamp() order by delivery.lease_expires_at,delivery.delivery_id "
+                    "for update of delivery skip locked limit %s) update "
+                    "platform_brain.adapter_deliveries delivery set status=case when "
+                    "selected.task_status in ('completed','failed','cancelled','timed_out',"
+                    "'unavailable') then 'completed' else 'expired' end,"
+                    "lease_worker_id=null,lease_expires_at=null,terminal_at=clock_timestamp(),"
+                    "updated_at=clock_timestamp() from selected where "
+                    "delivery.delivery_id=selected.delivery_id returning delivery.delivery_id",
+                    (limit,),
+                ).fetchall()
+            return len(rows)
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def cancellation_tasks(self, *, limit: int) -> tuple[CancellationTask, ...]:
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("cancellation scan limit invalid")
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select task.*,(select coalesce(max(event.seq),0)+1 from "
+                    "platform_brain.agent_task_events event where event.task_id="
+                    "task.task_id) as next_event_seq from platform_brain.agent_tasks task join "
+                    "platform_brain.brain_loops loop on loop.loop_id=task.loop_id "
+                    "where loop.cancel_requested and loop.terminal_at is null and "
+                    "task.status in ('queued','running') order by task.created_at limit %s",
+                    (limit,),
+                ).fetchall()
+            return tuple(
+                CancellationTask(
+                    task_id=row["task_id"],loop_id=row["loop_id"],
+                    agent_id=row["agent_id"],adapter_kind=row["adapter_kind"],
+                    context=self.content_codec.unseal_json(
+                        _task_context_subject(row["task_id"]),
+                        SealedContent(bytes(row["task_context_ciphertext"]),
+                                      row["task_context_key_version"]),
+                    ),
+                    effective_deadline_at=row["effective_deadline_at"],
+                    next_event_seq=row["next_event_seq"],
+                )
+                for row in rows
+            )
+        except (ContentCryptoError, psycopg.Error):
+            raise BrainRepositoryError() from None
+
+    def terminalize_requested_cancellations(self, *, limit: int) -> int:
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("cancellation terminal limit invalid")
+        try:
+            with self._connection() as connection, connection.transaction():
+                loops = connection.execute(
+                    "select * from platform_brain.brain_loops where "
+                    "cancel_requested and terminal_at is null order by updated_at,loop_id "
+                    "for update skip locked limit %s",
+                    (limit,),
+                ).fetchall()
+                for loop in loops:
+                    connection.execute(
+                        "update platform_brain.brain_steps set status='failed',"
+                        "lease_worker_id=null,lease_expires_at=null,"
+                        "terminal_at=clock_timestamp(),updated_at=clock_timestamp() "
+                        "where loop_id=%s and status not in ('completed','failed')",
+                        (loop["loop_id"],),
+                    )
+                    connection.execute(
+                        "update platform_control.conversation_turns set "
+                        "status='cancelled',updated_at=clock_timestamp() where turn_id=%s",
+                        (loop["turn_id"],),
+                    )
+                    connection.execute(
+                        "update platform_brain.brain_loops set status='cancelled',"
+                        "reason_code='cancelled_by_user',terminal_at=clock_timestamp(),"
+                        "active_started_at=null,active_deadline_at=null,"
+                        "waiting_user_expires_at=null,updated_at=clock_timestamp(),"
+                        "row_version=row_version+1 where loop_id=%s",
+                        (loop["loop_id"],),
+                    )
+            return len(loops)
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
 
 
 def _loop_from_row(row: Mapping[str, Any]) -> BrainLoopRecord:
@@ -1270,6 +1421,7 @@ def _validate_commit(step_seq: int, commit: ModelStepCommit) -> None:
             or spec.capability_version <= 0
             or not isinstance(spec.authorization_snapshot_id, UUID)
             or not isinstance(spec.effective_deadline_at, datetime)
+            or (spec.task_context is not None and type(spec.task_context) is not dict)
         ):
             raise ValueError("task dispatch spec invalid")
 

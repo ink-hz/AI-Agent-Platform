@@ -2,18 +2,22 @@ from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
+import json
 
 from app.agent_brain.adapters.base import (
     AdapterDelivery,
     AdapterRegistry,
     AdapterTask,
 )
+from app.agent_brain.context_policy import BrainContextPolicy
 from app.agent_brain.loop_repository import (
+    AgentTaskEventInput,
     BrainLoopRepository,
     ImmediateToolResult,
     ModelStepCommit,
     TaskDispatchSpec,
 )
+from app.agent_brain.loop_models import NormalizedTaskResult
 from app.agent_brain.model_adapter import (
     BrainModelAdapter,
     BrainModelError,
@@ -43,6 +47,7 @@ class BrainLoopRuntime:
         adapters: AdapterRegistry,
         worker_id: str,
         lease_seconds: int,
+        context_policy: BrainContextPolicy | None = None,
     ) -> None:
         self._repository = repository
         self._model = model
@@ -52,6 +57,7 @@ class BrainLoopRuntime:
         self._adapters = adapters
         self._worker_id = worker_id
         self._lease_seconds = lease_seconds
+        self._context_policy = context_policy or BrainContextPolicy()
 
     def advance_one(self) -> bool:
         if self._model is None or not hasattr(self._model, "complete"):
@@ -63,7 +69,20 @@ class BrainLoopRuntime:
             return False
         loop = self._repository.loop_for_step(lease)
         owner_id = self._repository.loop_owner(lease.loop_id)
-        messages = self._repository.reconstruct_messages(lease.loop_id)
+        for snapshot in self._repository.authorization_snapshots_for_loop(
+            lease.loop_id
+        ):
+            decision = self._runtime_registry.authorize_task(
+                owner_id, snapshot.agent_id, snapshot.capability_version
+            )
+            if snapshot.allowed and decision.reason_code == "authorization_changed":
+                self._repository.fail_with_platform_summary(
+                    lease.loop_id, "authorization_changed"
+                )
+                return True
+        messages = self._context_policy.build_brain_context(
+            self._repository.reconstruct_messages(lease.loop_id)
+        ).messages
         forced = (
             loop.task_count >= loop.max_tasks
             or lease.step_seq >= loop.max_steps
@@ -213,6 +232,14 @@ class BrainLoopRuntime:
                             loop.active_deadline_at
                             or now + timedelta(seconds=300),
                         ),
+                        task_context={
+                            "objective": parsed.call.objective,
+                            **json.loads(
+                                self._context_policy.build_task_context(
+                                    parsed.call
+                                ).serialized
+                            ),
+                        },
                     )
                 )
         elif batch.kind == "submit_answer":
@@ -249,6 +276,39 @@ class BrainLoopRuntime:
         if settled and self._model is not None:
             self.advance_one()
         return settled
+
+    def reconcile_cancellations(self) -> int:
+        for selected in self._repository.cancellation_tasks(limit=100):
+            adapter = self._adapters.require(selected.adapter_kind)
+            adapter.request_cancel(
+                AdapterTask(
+                    task_id=selected.task_id,
+                    loop_id=selected.loop_id,
+                    agent_id=selected.agent_id,
+                    context=selected.context,
+                    effective_deadline_at=selected.effective_deadline_at,
+                )
+            )
+            result = NormalizedTaskResult(
+                status="cancelled",
+                summary="用户已停止本轮任务。",
+                deliverables=(),
+                evidence=(),
+                limitations=("任务结果未继续交付。",),
+                attachment_refs=(),
+            )
+            self._repository.append_task_event(
+                AgentTaskEventInput(
+                    task_id=selected.task_id,
+                    seq=selected.next_event_seq,
+                    event_type="agent.cancelled",
+                    created_at=datetime.now(timezone.utc),
+                    payload={"status": "cancelled"},
+                    terminal_status="cancelled",
+                    result=result,
+                )
+            )
+        return self._repository.terminalize_requested_cancellations(limit=100)
 
     def dispatch_one(self) -> bool:
         lease = self._repository.lease_task_delivery(

@@ -3,6 +3,8 @@ from __future__ import annotations
 import psycopg
 import pytest
 
+from app.agent_brain.conversation_repository import ConversationRepository
+from app.agent_brain.repository import MissionRepository
 from test_agent_brain_loop_repository import loop_database, loop_repository, seeded_loop
 from test_agent_brain_loop_runtime import (
     _delegate_response,
@@ -64,3 +66,54 @@ def test_recreated_runtime_after_every_commit_keeps_one_task_and_answer(
             (loop_id, loop_id, loop_id),
         ).fetchone()
     assert counts == (1, 1, 0)
+
+
+@pytest.mark.postgres
+def test_expired_delivery_reuses_business_idempotency_key(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    environment, *_unused = loop_database
+    _runtime(loop_repository, _delegate_response()).advance_one()
+    first = loop_repository.lease_task_delivery("adapter-a", lease_seconds=45)
+    assert first is not None
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_brain.adapter_deliveries set lease_expires_at="
+            "clock_timestamp()-interval '1 second' where delivery_id=%s",
+            (first.delivery_id,),
+        )
+    assert loop_repository.expire_delivery_leases(limit=10) == 1
+    second = loop_repository.lease_task_delivery("adapter-b", lease_seconds=45)
+    assert second is not None
+    assert second.delivery_id == first.delivery_id
+    assert second.idempotency_key == first.idempotency_key
+    assert second.attempt == 2
+
+
+@pytest.mark.postgres
+def test_user_stop_terminalizes_waiting_user_without_normal_answer(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    environment, codec, owner, conversation_id, _turn_id = loop_database
+    loop_id, _snapshot = seeded_loop
+    from test_agent_brain_loop_runtime import _request_user_response
+
+    _runtime(loop_repository, _request_user_response()).advance_one()
+    conversations = ConversationRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=codec,
+        mission_repository=MissionRepository(
+            environment["urls"]["platform_control_app"], content_codec=codec
+        ),
+    )
+    conversations.request_cancel_v2(owner, conversation_id)
+    assert _runtime(loop_repository).reconcile_cancellations() == 1
+    with psycopg.connect(environment["admin"]) as connection:
+        state = connection.execute(
+            "select loop.status,loop.reason_code,turn.status,turn.assistant_message_id "
+            "from platform_brain.brain_loops loop join "
+            "platform_control.conversation_turns turn on turn.turn_id=loop.turn_id "
+            "where loop.loop_id=%s",
+            (loop_id,),
+        ).fetchone()
+    assert state == ("cancelled", "cancelled_by_user", "cancelled", None)
