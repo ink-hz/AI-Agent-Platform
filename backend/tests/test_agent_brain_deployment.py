@@ -258,6 +258,7 @@ def test_acceptance_is_private_real_idempotent_and_rollback_safe() -> None:
         "AGENT_BRAIN_ROLLBACK_OK",
         "remote_feature 1",
         "remote_feature 0",
+        "x-platform-entry-state: brain-preparing",
         "/api/v1/brain/missions",
         "/api/v1/brain/missions/",
         "/api/v1/agents/marketing-gtm-bot/conversations",
@@ -303,6 +304,7 @@ def test_acceptance_is_private_real_idempotent_and_rollback_safe() -> None:
         "acceptance_status=complete",
     ):
         assert required in script
+    assert "location: /admin" not in script.lower()
     for forbidden in (
         "set -x",
         "security ",

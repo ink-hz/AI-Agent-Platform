@@ -26,7 +26,11 @@ describe("usage navigation", () => {
 
   it("gives members a use-first navigation and always sends the brand home", async () => {
     await act(async () => root.render(<AppShell route={{ name: "brain" }} account={member}><p>内容</p></AppShell>));
-    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent企业账号");
+    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent");
+    expect(container.querySelector(".product-nav")?.textContent).not.toContain("企业账号");
+    const accountEntry = container.querySelector<HTMLAnchorElement>("a.account-chip");
+    expect(accountEntry?.textContent).toBe("成员");
+    expect(accountEntry?.getAttribute("href")).toBe("/account");
     expect(container.querySelector<HTMLAnchorElement>(".brand")?.getAttribute("href")).toBe("/");
     expect(container.textContent).not.toContain("管理中心");
     expect(container.querySelector("main.page.is-brain-workspace")).not.toBeNull();
@@ -43,9 +47,16 @@ describe("usage navigation", () => {
     expect(navigation).toContain("Agent 大脑");
     expect(navigation).toContain("专业 Agent");
     expect(navigation).not.toContain("历史对话");
-    expect(navigation).toContain("企业账号");
+    expect(navigation).not.toContain("企业账号");
     expect(navigation).toContain("管理中心");
     expect(container.querySelector<HTMLAnchorElement>('a[href="/admin"]')).not.toBeNull();
+  });
+
+  it("marks the employee name as the current account entry on the account page", async () => {
+    await act(async () => root.render(<AppShell route={{ name: "account" }} account={member}><p>账号信息</p></AppShell>));
+    const accountEntry = container.querySelector<HTMLAnchorElement>("a.account-chip");
+    expect(accountEntry?.getAttribute("href")).toBe("/account");
+    expect(accountEntry?.getAttribute("aria-current")).toBe("page");
   });
 
   it("uses the same workspace shell for a selected conversation", async () => {

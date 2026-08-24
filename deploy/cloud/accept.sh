@@ -1285,8 +1285,8 @@ PY
     trap cleanup_rollback EXIT
     cookie_config "$owner_cookie_file" "$temporary/owner.curl" "$temporary/owner.browser.json"
     rollback_headers="$temporary/root.headers"
-    [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" -D "$rollback_headers" -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/)" == "302" ]] || fail
-    /usr/bin/tr -d '\r' < "$rollback_headers" | /usr/bin/grep -Fxiq 'location: /admin' || fail
+    [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" -D "$rollback_headers" -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/)" == "200" ]] || fail
+    /usr/bin/tr -d '\r' < "$rollback_headers" | /usr/bin/grep -Fxiq 'x-platform-entry-state: brain-preparing' || fail
     for owner_path in /admin /admin/sessions /admin/review /admin/activity; do
       [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" -o /dev/null -w '%{http_code}' --max-time 15 "https://agent.orbbec.com.cn$owner_path")" == "200" ]] || fail
     done

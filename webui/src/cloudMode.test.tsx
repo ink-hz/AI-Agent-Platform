@@ -25,16 +25,44 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
   document.querySelector('meta[name="platform-identity-mode"]')?.remove();
+  document.querySelector('meta[name="platform-agent-brain-mode"]')?.remove();
   window.history.replaceState({}, "", "/");
 });
 
 
 describe("cloud replica mode", () => {
+  it("shows a useful preparation page instead of a broken Brain composer while Brain is disabled", async () => {
+    const identityMeta = document.createElement("meta");
+    identityMeta.name = "platform-identity-mode";
+    identityMeta.content = "enabled";
+    document.head.append(identityMeta);
+    const brainMeta = document.createElement("meta");
+    brainMeta.name = "platform-agent-brain-mode";
+    brainMeta.content = "disabled";
+    document.head.append(brainMeta);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      internal_user_id: "member", display_name: "成员", role: "member",
+      departments: [], gender: null, observation_agent_ids: [],
+      directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf",
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(container.querySelector("#brain-preparing-heading")?.textContent).toBe("Agent 大脑正在准备");
+    expect(container.textContent).toContain("专业 Agent");
+    expect(container.querySelector("#brain-request")).toBeNull();
+  });
+
   it("opens the authenticated cloud root as the continuous Agent Brain composer", async () => {
     const meta = document.createElement("meta");
     meta.name = "platform-identity-mode";
     meta.content = "enabled";
     document.head.append(meta);
+    const brainMeta = document.createElement("meta");
+    brainMeta.name = "platform-agent-brain-mode";
+    brainMeta.content = "enabled";
+    document.head.append(brainMeta);
     window.history.replaceState({}, "", "/");
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
@@ -222,7 +250,8 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(
       <AppShell route={{ name: "account" }} account={member}><p>内容</p></AppShell>,
     ));
-    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent企业账号");
+    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent");
+    expect(container.querySelector<HTMLAnchorElement>("a.account-chip")?.getAttribute("href")).toBe("/account");
 
     const viewer: Account = {
       ...member, display_name: "观察者", role: "management_viewer",
@@ -232,7 +261,7 @@ describe("cloud replica mode", () => {
       <AppShell route={{ name: "admin-governance" }} account={viewer}><p>内容</p></AppShell>,
     ));
     const navigation = container.querySelector(".product-nav")?.textContent || "";
-    expect(navigation).toBe("Agent 大脑专业 Agent企业账号");
+    expect(navigation).toBe("Agent 大脑专业 Agent");
     expect(navigation).not.toContain("管理中心");
   });
 

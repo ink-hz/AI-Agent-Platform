@@ -22,6 +22,7 @@ import {
   localPathname,
   platformPath,
   identityShellEnabled,
+  agentBrainShellEnabled,
   type Account,
 } from "./auth";
 import { LoginPage } from "./pages/LoginPage";
@@ -33,6 +34,7 @@ import { MissionPage } from "./pages/MissionPage";
 import { MissionsPage } from "./pages/MissionsPage";
 import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
 import { AgentUsePage } from "./pages/AgentUsePage";
+import { BrainPreparingPage } from "./pages/BrainPreparingPage";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -83,7 +85,9 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
       await logoutAccount(csrf);
       window.location.replace(platformPath("/login"));
     }} /> : <PendingPage title="企业账号" description="身份模式未启用。" />;
-    case "brain": return account ? <BrainWorkspacePage account={account} /> : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
+    case "brain": return account
+      ? (agentBrainShellEnabled() ? <BrainWorkspacePage account={account} /> : <BrainPreparingPage />)
+      : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
     case "conversations": return <LegacyRedirect to="/" />;
     case "conversation": return account ? <BrainWorkspacePage account={account} conversationId={route.conversationId} /> : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
     case "missions": return <MissionsPage />;

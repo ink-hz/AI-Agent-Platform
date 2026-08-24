@@ -374,8 +374,10 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
     cookies = {auth.cookie_name: "valid-cookie"}
 
     root = client.get("/", cookies=cookies, follow_redirects=False)
-    assert root.status_code == 302
-    assert root.headers["location"] == "/admin"
+    assert root.status_code == 200
+    assert root.headers["x-platform-entry-state"] == "brain-preparing"
+    assert "LOGIN SHELL" in root.text
+    assert 'name="platform-agent-brain-mode" content="disabled"' in root.text
     for path in (
         "/account", "/agents", "/agents/hr-bot", "/missions", "/conversations",
         "/missions/00000000-0000-0000-0000-000000000001", "/admin",
@@ -427,8 +429,9 @@ def test_authenticated_root_preserves_management_entry_while_brain_is_disabled(
         "/", cookies={auth.cookie_name: "valid-cookie"}, follow_redirects=False
     )
 
-    assert response.status_code == 302
-    assert response.headers["location"] == "/admin"
+    assert response.status_code == 200
+    assert response.headers["x-platform-entry-state"] == "brain-preparing"
+    assert 'name="platform-agent-brain-mode" content="disabled"' in response.text
     assert response.headers["cache-control"] == "no-store"
 
 

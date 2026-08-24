@@ -10,7 +10,6 @@ import { platformPath, type Account } from "./auth";
 const USE_NAVIGATION = [
   { label: "Agent 大脑", path: "/", section: "brain" },
   { label: "专业 Agent", path: "/agents", section: "agents" },
-  { label: "企业账号", path: "/account", section: "account" },
 ] as const;
 
 const ADMIN_NAVIGATION = [
@@ -89,7 +88,13 @@ export function AppShell({ route, children, account }: { route: Route; children:
               >{item.label}</a>
             ))}
           </nav>
-          {account && <span className="account-chip">{account.display_name}</span>}
+          {account && <a
+            aria-current={current === "account" ? "page" : undefined}
+            aria-label={`查看 ${account.display_name} 的企业账号`}
+            className={`account-chip${current === "account" ? " is-current" : ""}`}
+            href={platformPath("/account")}
+            onClick={(event) => follow(event, "/account")}
+          >{account.display_name}</a>}
         </div>
       </header>
       {account?.hard_stale_read_only && <aside className="hard-stale-banner" role="status">

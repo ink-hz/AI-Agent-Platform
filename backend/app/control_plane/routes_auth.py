@@ -58,7 +58,9 @@ def _opened_response(
     )
 
 
-def _shell_response(opened: OpenedPublicAsset, *, csp: str) -> Response:
+def _shell_response(
+    opened: OpenedPublicAsset, *, csp: str, agent_brain_enabled: bool
+) -> Response:
     try:
         if opened.size > 2_097_152:
             raise PublicAssetUnavailable("application shell unavailable")
@@ -75,6 +77,15 @@ def _shell_response(opened: OpenedPublicAsset, *, csp: str) -> Response:
         content = content.replace(b"<head>", b"<head>" + enabled, 1)
     else:
         content = enabled + content
+    brain_mode = (
+        b'<meta name="platform-agent-brain-mode" content="enabled" />'
+        if agent_brain_enabled
+        else b'<meta name="platform-agent-brain-mode" content="disabled" />'
+    )
+    if b"<head>" in content:
+        content = content.replace(b"<head>", b"<head>" + brain_mode, 1)
+    else:
+        content = brain_mode + content
     return Response(
         content=content,
         media_type="text/html",
@@ -152,7 +163,11 @@ def build_auth_router(
     def application_shell() -> Response:
         try:
             opened = open_public_static_file(static_dir, "index.html")
-            return _shell_response(opened, csp=_login_csp(auth))
+            return _shell_response(
+                opened,
+                csp=_login_csp(auth),
+                agent_brain_enabled=agent_brain_enabled,
+            )
         except PublicAssetUnavailable:
             raise HTTPException(503, "application shell unavailable") from None
 
@@ -161,11 +176,9 @@ def build_auth_router(
         token = request.cookies.get(auth.cookie_name)
         if token and auth.authenticate(token) is not None:
             if not agent_brain_enabled:
-                return RedirectResponse(
-                    _local_path(auth, "/admin"),
-                    status_code=302,
-                    headers=_NO_STORE,
-                )
+                response = application_shell()
+                response.headers["X-Platform-Entry-State"] = "brain-preparing"
+                return response
             return application_shell()
         return RedirectResponse(_local_path(auth, "/login"), status_code=302, headers=_NO_STORE)
 
@@ -177,7 +190,9 @@ def build_auth_router(
         except PublicAssetUnavailable:
             response = HTMLResponse("<!doctype html><title>Agent Platform</title>", headers={**_NO_STORE, "Content-Security-Policy": csp})
         else:
-            response = _shell_response(opened, csp=csp)
+            response = _shell_response(
+                opened, csp=csp, agent_brain_enabled=agent_brain_enabled
+            )
         issuer = getattr(auth, "issue_browser_challenge", None)
         if issuer is not None:
             challenge = issuer(request.cookies.get(auth.challenge_cookie_name))
