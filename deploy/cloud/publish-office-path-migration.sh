@@ -172,17 +172,19 @@ baseline_sha256="$(/usr/bin/sha256sum "$baseline" | /usr/bin/awk '{print $1}')"
   && "$backup_sha256" != "$candidate_sha256" ]] || fail
 
 /usr/bin/python3 - "$rollback_template" "$rollback_rendered" \
-  "$change_id" "$backup" "$backup_sha256" "$nginx_source" "$baseline" "$baseline_sha256" \
+  "$change_id" "$backup" "$backup_sha256" "$candidate_sha256" "$nginx_source" \
+  "$baseline" "$baseline_sha256" \
   "$ai_admin_release_sha" "$platform_release_sha" <<'PY' || fail
 from pathlib import Path
 import sys
 
-source, target, change_id, backup, backup_hash, nginx_source, baseline, baseline_hash, ai_sha, platform_sha = sys.argv[1:]
+source, target, change_id, backup, backup_hash, candidate_hash, nginx_source, baseline, baseline_hash, ai_sha, platform_sha = sys.argv[1:]
 value = Path(source).read_text(encoding="utf-8")
 replacements = {
     "__CHANGE_ID__": change_id,
     "__BACKUP_PATH__": backup,
     "__BACKUP_SHA256__": backup_hash,
+    "__CANDIDATE_SHA256__": candidate_hash,
     "__NGINX_SOURCE__": nginx_source,
     "__BASELINE_PATH__": baseline,
     "__BASELINE_SHA256__": baseline_hash,

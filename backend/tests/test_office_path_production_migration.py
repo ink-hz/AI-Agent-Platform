@@ -394,6 +394,7 @@ def test_rollback_is_argument_free_hash_bound_and_does_not_touch_services() -> N
         "umask 077",
         "office-path-migrations",
         "BACKUP_SHA256",
+        "CANDIDATE_SHA256",
         "sha256sum",
         "O_NOFOLLOW",
         "nginx -t",
@@ -526,7 +527,9 @@ def test_installed_rollback_harness_restores_legacy_config_from_any_working_dire
     )
 
 
-@pytest.mark.parametrize("mutation", ["symlink", "tamper", "argument"])
+@pytest.mark.parametrize(
+    "mutation", ["symlink", "tamper", "argument", "current_drift"]
+)
 def test_installed_rollback_harness_rejects_untrusted_backup_or_arguments(
     tmp_path: Path, mutation: str
 ) -> None:
@@ -535,15 +538,18 @@ def test_installed_rollback_harness_rejects_untrusted_backup_or_arguments(
     rollback = _installed_rollback(tmp_path)
     backup = next(backups.glob("ai-admin-office-*/agent-domain.conf"))
     arguments: list[str] = []
+    office_value = nginx_source.read_text(encoding="utf-8")
     if mutation == "symlink":
         original = backup.with_name("original.conf")
         backup.rename(original)
         backup.symlink_to(original)
     elif mutation == "tamper":
         backup.write_text("tampered\n", encoding="utf-8")
+    elif mutation == "current_drift":
+        nginx_source.write_text(office_value + "# later change\n", encoding="utf-8")
     else:
         arguments.append(str(backup))
-    office_value = nginx_source.read_text(encoding="utf-8")
+    expected_value = nginx_source.read_text(encoding="utf-8")
 
     result = subprocess.run(
         [str(rollback), *arguments],
@@ -563,4 +569,4 @@ def test_installed_rollback_harness_rejects_untrusted_backup_or_arguments(
     )
 
     assert result.returncode != 0
-    assert nginx_source.read_text(encoding="utf-8") == office_value
+    assert nginx_source.read_text(encoding="utf-8") == expected_value

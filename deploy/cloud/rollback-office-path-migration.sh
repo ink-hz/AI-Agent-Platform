@@ -13,6 +13,7 @@ fail() {
 change_id="__CHANGE_ID__"
 backup="__BACKUP_PATH__"
 backup_sha256="__BACKUP_SHA256__"
+candidate_sha256="__CANDIDATE_SHA256__"
 nginx_source="__NGINX_SOURCE__"
 baseline="__BASELINE_PATH__"
 baseline_sha256="__BASELINE_SHA256__"
@@ -55,7 +56,8 @@ for index, raw in enumerate(sys.argv[1:]):
 PY
 
 [[ "$(/usr/bin/sha256sum "$backup" | /usr/bin/awk '{print $1}')" == "$backup_sha256" \
-  && "$(/usr/bin/sha256sum "$baseline" | /usr/bin/awk '{print $1}')" == "$baseline_sha256" ]] || fail
+  && "$(/usr/bin/sha256sum "$baseline" | /usr/bin/awk '{print $1}')" == "$baseline_sha256" \
+  && "$(/usr/bin/sha256sum "$nginx_source" | /usr/bin/awk '{print $1}')" == "$candidate_sha256" ]] || fail
 
 lock_token="$(/usr/bin/python3 -c 'import uuid; print(uuid.uuid4())')"
 [[ "$lock_token" =~ ^[0-9a-f-]{36}$ ]] || fail
@@ -139,6 +141,7 @@ fingerprint_fae > "$fae_after" || fail
   "platform_release_sha=$platform_release_sha" \
   "nginx_source=$nginx_source" \
   "backup_sha256=$backup_sha256" \
+  "candidate_sha256=$candidate_sha256" \
   "legacy_admin_route_conflict_restored=true" > "$report.part"
 /bin/chmod 600 "$report.part"
 /bin/mv -f "$report.part" "$report"
