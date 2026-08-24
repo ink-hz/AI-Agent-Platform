@@ -1,10 +1,17 @@
 # Agent 大脑统一对话工作区设计
 
+> 执行架构说明：本文继续作为 Web 持续对话工作区的 UI 设计。本文中“沿用现有
+> Agent 执行协议”的假设，已由
+> `2026-08-24-cloud-agent-brain-durable-loop-design.md` 取代；实现不得因此继续
+> 依赖 V1 `planning -> professional -> synthesis` 或本地 `agent-brain-bot` 主链路。
+
 ## 目标
 
 Agent 大脑是产品默认使用入口，不是任务创建页，也不是管理看板。用户进入平台后应停留在一个持续工作的对话界面中：左侧选择 Session，右侧继续当前 Session。历史记录是工作区导航的一部分，不再是独立页面。
 
-本次只重构 Web 使用体验，沿用已经上线的 Conversation、Message、Turn、Mission、SSE、权限和加密数据模型，不修改 FAE，不改变 Agent 执行协议。
+本文只定义 Web 使用体验，沿用 Conversation、Message、Turn、SSE、权限和加密
+边界，不修改 FAE。Agent 执行协议及 Mission 的后续演进由云端持久化 Loop 设计
+定义，不再由本文冻结。
 
 ## 已选方案
 
