@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
 
 import psycopg
 from psycopg import sql
@@ -125,6 +126,44 @@ PRESERVE_ON_NULL_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
     ("admin", "admin_chat_turns"): ("question_at", "answer_at"),
 }
 
+_SUBJECT_EVIDENCE_COLUMNS = {
+    "internal_user_id", "verification_method", "verified_at"
+}
+
+
+def normalize_session_subject_link(
+    row: dict[str, Any], synced_at: datetime
+) -> NormalizedRow | None:
+    """Accept only an explicit subject minted from a verified Platform Session."""
+
+    try:
+        native_session_id = str(row.get("id") or "").strip()
+        internal_user_id = UUID(str(row.get("internal_user_id") or ""))
+        verification_method = row.get("verification_method")
+        verified_at = row.get("verified_at")
+        if (
+            not native_session_id
+            or verification_method != "platform_session"
+            or not isinstance(verified_at, (str, datetime))
+            or not str(verified_at).strip()
+        ):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return NormalizedRow(
+        "platform_identity",
+        "session_subject_links",
+        {
+            "source_kind": "admin",
+            "native_session_id": native_session_id,
+            "internal_user_id": str(internal_user_id),
+            "verification_method": verification_method,
+            "verified_at": verified_at,
+            "source_synced_at": synced_at,
+        },
+        ("source_kind", "native_session_id"),
+    )
+
 
 def _target_table(source_kind: str, source_table: str) -> tuple[str, str]:
     if source_kind == "fae":
@@ -180,6 +219,8 @@ def normalize_row(
     metadata = row.get("metadata")
     details = dict(metadata) if isinstance(metadata, dict) else {}
     known = set(columns) | {"metadata"}
+    if source_kind == "admin" and source_table == "admin_chat_sessions":
+        known |= _SUBJECT_EVIDENCE_COLUMNS
     details.update({key: value for key, value in row.items() if key not in known})
     values["details"] = details
     values["source_synced_at"] = synced_at
@@ -319,13 +360,32 @@ def import_bundle(
             validation = validate_bundle(bundle)
             with connection.transaction():
                 with connection.cursor() as cursor:
+                    linked_subjects = 0
+                    unresolved_subjects = 0
+                    if bundle.source_kind == "admin":
+                        cursor.execute(
+                            "delete from platform_identity.session_subject_links "
+                            "where source_kind='admin'"
+                        )
                     for table, rows in bundle.tables.items():
                         for source_row in rows:
                             _upsert(
                                 cursor,
                                 normalize_row(bundle.source_kind, table, source_row, synced_at),
                             )
+                            if bundle.source_kind == "admin" and table == "admin_chat_sessions":
+                                subject_link = normalize_session_subject_link(
+                                    source_row, synced_at
+                                )
+                                if subject_link is None:
+                                    unresolved_subjects += 1
+                                else:
+                                    _upsert(cursor, subject_link)
+                                    linked_subjects += 1
                         applied[table] = len(rows)
+                    if bundle.source_kind == "admin":
+                        validation["admin_sessions_subject_linked"] = linked_subjects
+                        validation["admin_sessions_subject_unresolved"] = unresolved_subjects
                     if bundle.source_kind == "admin" and "admin_directory_members" in bundle.tables:
                         cursor.execute("select platform_identity.refresh_dingtalk_matches()")
                     if bundle.source_kind == "fae":

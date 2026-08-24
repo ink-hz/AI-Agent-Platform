@@ -4,6 +4,9 @@ from pathlib import Path
 MIGRATION = (
     Path(__file__).parents[1] / "migrations/001_observability_sources.sql"
 )
+SUBJECT_LINK_MIGRATION = (
+    Path(__file__).parents[1] / "migrations/011_admin_session_subject_links.sql"
+)
 
 
 def migration_sql() -> str:
@@ -60,3 +63,14 @@ def test_conversation_counts_require_a_non_empty_answer() -> None:
     sql = migration_sql()
     assert "m.role = 'assistant' and nullif(btrim(m.content), '') is not null" in sql
     assert "where t.session_id = s.id and nullif(btrim(t.answer), '') is not null" in sql
+
+
+def test_admin_session_subject_links_have_a_verified_unique_identity_boundary() -> None:
+    sql = SUBJECT_LINK_MIGRATION.read_text(encoding="utf-8").lower()
+
+    assert "create table if not exists platform_identity.session_subject_links" in sql
+    assert "primary key (source_kind, native_session_id)" in sql
+    assert "internal_user_id uuid not null" in sql
+    assert "verification_method text not null" in sql
+    assert "verified_at timestamptz not null" in sql
+    assert "grant select, insert, update, delete" in sql

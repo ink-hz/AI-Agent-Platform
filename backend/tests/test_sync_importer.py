@@ -7,6 +7,7 @@ from app.sync_remote.importer import (
     ImportValidationError,
     _upsert,
     normalize_row,
+    normalize_session_subject_link,
     normalize_trace_span,
     validate_bundle,
 )
@@ -24,6 +25,49 @@ class RecordingCursor:
     def execute(self, statement, params) -> None:
         self.statement = statement.as_string()
         self.params = tuple(params)
+
+
+def test_admin_session_uses_only_explicit_platform_verified_subject() -> None:
+    row = {
+        "id": "admin-session-1",
+        "internal_user_id": "00000000-0000-4000-8000-000000000123",
+        "verification_method": "platform_session",
+        "verified_at": "2026-08-24T09:00:00+00:00",
+        "display_name": "钉钉临时名称",
+        "sender_user_id": "browser-controlled",
+    }
+
+    link = normalize_session_subject_link(row, SYNCED_AT)
+
+    assert link is not None
+    assert link.target_schema == "platform_identity"
+    assert link.target_table == "session_subject_links"
+    assert link.values == {
+        "source_kind": "admin",
+        "native_session_id": "admin-session-1",
+        "internal_user_id": "00000000-0000-4000-8000-000000000123",
+        "verification_method": "platform_session",
+        "verified_at": "2026-08-24T09:00:00+00:00",
+        "source_synced_at": SYNCED_AT,
+    }
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"id": "legacy", "display_name": "苍渊"},
+        {"id": "legacy", "sender_user_id": "on_forged"},
+        {"id": "legacy", "internal_user_id": "00000000-0000-4000-8000-000000000123"},
+        {
+            "id": "legacy",
+            "internal_user_id": "00000000-0000-4000-8000-000000000123",
+            "verification_method": "name_guess",
+            "verified_at": "2026-08-24T09:00:00+00:00",
+        },
+    ],
+)
+def test_admin_session_without_complete_platform_evidence_stays_unresolved(row) -> None:
+    assert normalize_session_subject_link(row, SYNCED_AT) is None
 
 
 def test_fae_review_preserves_corrected_answer() -> None:
