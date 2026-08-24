@@ -219,6 +219,12 @@ def test_formal_nginx_is_dingtalk_only_and_stream_safe() -> None:
     assert "listen 443 ssl;" in nginx
     assert "listen 8080" not in nginx
     assert "error_log /var/log/nginx/ai-fae-agent.error.log crit;" in nginx
+    assert "location = /api/v1/internal/session/subject" in nginx
+    internal_block = nginx.split(
+        "location = /api/v1/internal/session/subject", 1
+    )[1].split("}", 1)[0]
+    assert "return 404;" in internal_block
+    assert "proxy_pass" not in internal_block
 
 
 def test_deploy_preserves_exact_fae_identity_configuration_and_routes() -> None:

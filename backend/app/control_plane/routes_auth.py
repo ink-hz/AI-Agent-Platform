@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from ipaddress import ip_address
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -148,6 +149,18 @@ def _raise_rate_failure(error: Exception) -> None:
     if isinstance(error, RateLimitUnavailable):
         raise HTTPException(503, "login unavailable", headers=_NO_STORE) from None
     raise error
+
+
+def _is_loopback_request(request: Request) -> bool:
+    edge_source = getattr(request.state, "edge_source", None)
+    if edge_source is not None:
+        return bool(edge_source.ip.is_loopback)
+    if request.client is None:
+        return False
+    try:
+        return ip_address(request.client.host).is_loopback
+    except ValueError:
+        return False
 
 
 def build_auth_router(
@@ -364,6 +377,23 @@ def build_auth_router(
             "directory_freshness": snapshot["directory_freshness"],
             "hard_stale_read_only": context.hard_stale_read_only,
             "csrf_token": request.state.csrf_token,
+        }
+
+    @router.get("/api/v1/internal/session/subject")
+    async def internal_session_subject(request: Request):
+        if not _is_loopback_request(request):
+            raise HTTPException(404, "not found")
+        context: AuthContext = request.state.auth_context
+        try:
+            display_name = auth.account_snapshot(context)["display_name"]
+        except Exception:
+            raise HTTPException(503, "session subject unavailable") from None
+        if not isinstance(display_name, str) or not display_name:
+            raise HTTPException(503, "session subject unavailable")
+        return {
+            "internal_user_id": str(context.internal_user_id),
+            "display_name": display_name,
+            "active": True,
         }
 
     @router.post("/api/v1/auth/logout", status_code=204)

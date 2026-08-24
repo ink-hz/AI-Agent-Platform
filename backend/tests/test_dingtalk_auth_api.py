@@ -5,6 +5,7 @@ import os
 import subprocess
 from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
+from ipaddress import ip_network
 from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlsplit
 from uuid import uuid4
@@ -771,6 +772,80 @@ def test_account_failure_is_privacy_safe(tmp_path, monkeypatch, caplog) -> None:
     for forbidden in ("employee record", "provider", "gender details"):
         if forbidden in log_text:
             pytest.fail("account failure log exposed identity detail")
+
+
+def test_loopback_session_subject_returns_only_minimal_verified_identity(
+    tmp_path, monkeypatch
+) -> None:
+    auth = FakeAuth()
+    auth.trusted_proxy_networks = (ip_network("127.0.0.1/32"),)
+    client = TestClient(
+        _app(tmp_path, monkeypatch, auth), client=("127.0.0.1", 51000)
+    )
+    response = client.get(
+        "/api/v1/internal/session/subject",
+        cookies={auth.cookie_name: "valid-cookie", auth.csrf_cookie_name: auth.csrf},
+        headers={
+            "X-Real-IP": "127.0.0.1",
+            "X-Forwarded-Proto": "http",
+            "X-Ignored-User-ID": "forged-user",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "internal_user_id": str(auth.context.internal_user_id),
+        "display_name": "Platform user",
+        "active": True,
+    }
+    assert "set-cookie" not in response.headers
+    serialized = response.text.lower()
+    for forbidden in (
+        "mobile", "real_name", "department", "role", "csrf", "token",
+        "13800138000", "platform real name", "forged-user",
+    ):
+        assert forbidden not in serialized
+
+
+def test_session_subject_is_hidden_from_public_edges_and_fails_closed(
+    tmp_path, monkeypatch
+) -> None:
+    from app.control_plane.auth import AuthenticationError
+
+    auth = FakeAuth()
+    auth.trusted_proxy_networks = (ip_network("127.0.0.1/32"),)
+    client = TestClient(
+        _app(tmp_path, monkeypatch, auth), client=("127.0.0.1", 51000)
+    )
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    public_response = client.get(
+        "/api/v1/internal/session/subject",
+        cookies=cookies,
+        headers={"X-Real-IP": "203.0.113.8", "X-Forwarded-Proto": "https"},
+    )
+    assert public_response.status_code == 404
+
+    auth.revoked = True
+    inactive = client.get(
+        "/api/v1/internal/session/subject",
+        cookies=cookies,
+        headers={"X-Real-IP": "127.0.0.1", "X-Forwarded-Proto": "http"},
+    )
+    assert inactive.status_code == 401
+    auth.revoked = False
+
+    def fail_account_snapshot(_context):
+        raise AuthenticationError("provider detail must remain private")
+
+    auth.account_snapshot = fail_account_snapshot
+    unavailable = client.get(
+        "/api/v1/internal/session/subject",
+        cookies=cookies,
+        headers={"X-Real-IP": "127.0.0.1", "X-Forwarded-Proto": "http"},
+    )
+    assert unavailable.status_code == 503
+    assert unavailable.json() == {"detail": "session subject unavailable"}
 
 
 def test_unknown_stored_role_fails_closed() -> None:
