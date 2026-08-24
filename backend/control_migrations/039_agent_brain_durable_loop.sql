@@ -666,7 +666,7 @@ begin
   );
   execute format(
     'grant insert on platform_brain.authorization_snapshots, '
-    'platform_brain.brain_loops to %I', selected_app
+    'platform_brain.brain_loops, platform_brain.brain_steps to %I', selected_app
   );
   execute format(
     'grant update (cancel_requested,updated_at,row_version) '

@@ -41,6 +41,7 @@ def _app(
     *,
     role: Role = Role.MEMBER,
     agent_use: FakeAgentUse | None = None,
+    command_service=None,
 ):
     context = AuthContext(owner, role, uuid4(), False)
     auth = FakeAuth(context)
@@ -51,6 +52,7 @@ def _app(
         build_conversation_router(
             conversations,
             agent_use,
+            command_service=command_service,
             cursor_codec=ConversationCursorCodec(
                 AuthSecrets(b"x" * 32, key_version=1)
             ),

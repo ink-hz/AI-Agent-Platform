@@ -148,6 +148,11 @@ def test_agent_brain_feature_defaults_disabled_and_requires_all_three_gates(
     with pytest.raises(ValueError, match="Agent Brain requires production identity and relay"):
         load_config()
 
+    monkeypatch.setenv("PLATFORM_AGENT_BRAIN_ENABLED", "0")
+    monkeypatch.setenv("PLATFORM_AGENT_BRAIN_V2_ENABLED", "1")
+    with pytest.raises(ValueError, match="V2 requires Agent Brain"):
+        load_config()
+
 
 def test_operations_migration_failure_leaves_existing_health_route_available(
     tmp_path, monkeypatch

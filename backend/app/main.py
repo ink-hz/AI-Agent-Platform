@@ -78,6 +78,7 @@ from .agent_brain.authorization import AgentUseAuthorization
 from .agent_brain.conversation_context import ConversationContextBuilder
 from .agent_brain.conversation_projection import ConversationProjection
 from .agent_brain.conversation_repository import ConversationRepository
+from .agent_brain.conversation_service import ConversationCommandService
 from .agent_brain.conversation_routes import (
     ConversationCursorCodec,
     build_conversation_router,
@@ -496,6 +497,7 @@ def create_app(
     agent_brain_orchestrator = None
     mission_repository = None
     conversation_repository = None
+    conversation_command_service = None
     agent_use_authorization = None
     control_database_url = None
     content_codec = None
@@ -534,6 +536,10 @@ def create_app(
             control_database_url,
             content_codec=content_codec,
             mission_repository=mission_repository,
+        )
+        conversation_command_service = ConversationCommandService(
+            conversation_repository,
+            v2_enabled=config.agent_brain_v2_enabled,
         )
         agent_use_authorization = AgentUseAuthorization(control_database_url)
         agent_brain_orchestrator = MissionOrchestrator(
@@ -719,6 +725,7 @@ def create_app(
     app.state.agent_brain_orchestrator = agent_brain_orchestrator
     app.state.mission_repository = mission_repository
     app.state.conversation_repository = conversation_repository
+    app.state.conversation_command_service = conversation_command_service
     app.state.agent_use_authorization = agent_use_authorization
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
@@ -787,6 +794,7 @@ def create_app(
             build_conversation_router(
                 conversation_repository,
                 agent_use_authorization,
+                command_service=conversation_command_service,
                 cursor_codec=ConversationCursorCodec(identity_auth.secrets),
                 session_revalidator=identity_auth.authenticate,
                 session_cookie_name=identity_auth.cookie_name,

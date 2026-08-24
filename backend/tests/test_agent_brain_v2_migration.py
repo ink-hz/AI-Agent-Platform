@@ -222,6 +222,48 @@ def test_brain_role_is_environment_scoped_and_least_privileged(
 
 
 @pytest.mark.postgres
+def test_app_role_can_initialize_but_not_mutate_brain_runtime(control_database) -> None:
+    for environment in control_database["environments"].values():
+        app_role = next(
+            role for role in environment["roles"] if "control_app" in role
+        )
+        with psycopg.connect(environment["admin"]) as connection:
+            for table, expected in {
+                "authorization_snapshots": (True, False, False),
+                "brain_loops": (True, False, False),
+                "brain_steps": (True, False, False),
+                "brain_tool_calls": (False, False, False),
+                "agent_tasks": (False, False, False),
+                "agent_task_events": (False, False, False),
+                "adapter_deliveries": (False, False, False),
+                "brain_checkpoints": (False, False, False),
+            }.items():
+                actual = connection.execute(
+                    "select has_table_privilege(%s,%s,'insert'),"
+                    "has_table_privilege(%s,%s,'update'),"
+                    "has_table_privilege(%s,%s,'delete')",
+                    (
+                        app_role,
+                        f"platform_brain.{table}",
+                        app_role,
+                        f"platform_brain.{table}",
+                        app_role,
+                        f"platform_brain.{table}",
+                    ),
+                ).fetchone()
+                assert actual == expected
+            assert connection.execute(
+                "select has_column_privilege(%s,'platform_brain.brain_loops',"
+                "'cancel_requested','update'),"
+                "has_column_privilege(%s,'platform_brain.brain_loops',"
+                "'updated_at','update'),"
+                "has_column_privilege(%s,'platform_brain.brain_loops',"
+                "'row_version','update')",
+                (app_role, app_role, app_role),
+            ).fetchone() == (True, True, True)
+
+
+@pytest.mark.postgres
 def test_brain_heartbeat_function_limits_worker_names(control_database) -> None:
     for environment in control_database["environments"].values():
         brain_role = next(role for role in environment["roles"] if "brain_worker" in role)

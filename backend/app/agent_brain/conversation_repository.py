@@ -53,8 +53,13 @@ class ConversationRepositoryError(RuntimeError):
 
 
 class ConversationRepositoryConflict(ConversationRepositoryError):
+    def __init__(self, message: str = "conversation repository conflict") -> None:
+        super().__init__(message)
+
+
+class ConversationTurnInProgress(ConversationRepositoryConflict):
     def __init__(self) -> None:
-        super().__init__("conversation repository conflict")
+        super().__init__("conversation turn in progress")
 
 
 class ConversationRepositoryNotFound(ConversationRepositoryError):
@@ -275,7 +280,7 @@ class ConversationRepository:
             "where conversation_id=%s and client_request_id=%s for update",
             (conversation_row["conversation_id"], client_request_id),
         ).fetchone()
-        if turn is None or turn["mission_id"] is None:
+        if turn is None:
             raise ConversationRepositoryError()
         message = cursor.execute(
             "select * from platform_control.conversation_messages "
@@ -292,6 +297,170 @@ class ConversationRepository:
             message_record,
             self._turn_from_row(turn),
             turn["mission_id"],
+        )
+
+    def _replay_v2_locked(
+        self,
+        cursor: Any,
+        conversation_row: dict[str, Any],
+        client_request_id: UUID,
+        text: str,
+        *,
+        retry_of_turn_id: UUID | None = None,
+    ) -> ConversationCreateResult:
+        conversation, message, turn, mission_id = self._replay_locked(
+            cursor, conversation_row, client_request_id, text
+        )
+        if (
+            mission_id is not None
+            or turn.retry_of_turn_id != retry_of_turn_id
+            or cursor.execute(
+                "select 1 from platform_brain.brain_loops where turn_id=%s",
+                (turn.turn_id,),
+            ).fetchone()
+            is None
+        ):
+            raise ConversationRepositoryConflict()
+        return ConversationCreateResult(
+            conversation=conversation,
+            message=message,
+            turn=turn,
+            mission=None,
+            created=False,
+        )
+
+    def _insert_v2_loop_locked(
+        self,
+        cursor: Any,
+        conversation_id: UUID,
+        turn_id: UUID,
+        *,
+        model_config: dict[str, object],
+        max_steps: int,
+        max_tasks: int,
+        max_duration_seconds: int,
+    ) -> UUID:
+        loop_id = uuid4()
+        step_id = uuid4()
+        sealed = self.content_codec.seal_json(
+            f"brain-loop:{loop_id}:model-config", model_config
+        )
+        cursor.execute(
+            "insert into platform_brain.brain_loops ("
+            "loop_id,conversation_id,turn_id,status,model_config_ciphertext,"
+            "model_config_key_version,max_steps,max_tasks,max_duration_seconds,"
+            "active_budget_ms) values (%s,%s,%s,'queued',%s,%s,%s,%s,%s,%s)",
+            (
+                loop_id,
+                conversation_id,
+                turn_id,
+                sealed.ciphertext,
+                sealed.key_version,
+                max_steps,
+                max_tasks,
+                max_duration_seconds,
+                max_duration_seconds * 1000,
+            ),
+        )
+        cursor.execute(
+            "insert into platform_brain.brain_steps "
+            "(step_id,loop_id,step_seq,status) values (%s,%s,1,'queued')",
+            (step_id, loop_id),
+        )
+        return loop_id
+
+    def _new_v2_turn_locked(
+        self,
+        cursor: Any,
+        conversation_row: dict[str, Any],
+        client_request_id: UUID,
+        text: str,
+        *,
+        message_seq: int,
+        retry_of_turn_id: UUID | None,
+        model_config: dict[str, object],
+        max_steps: int,
+        max_tasks: int,
+        max_duration_seconds: int,
+    ) -> ConversationCreateResult:
+        conversation_id = conversation_row["conversation_id"]
+        message_id = uuid4()
+        turn_id = uuid4()
+        sealed = self.content_codec.seal_json(
+            message_subject(conversation_id, message_id), {"text": text}
+        )
+        message_row = cursor.execute(
+            "insert into platform_control.conversation_messages "
+            "(message_id,conversation_id,seq,role,content_ciphertext,"
+            "encryption_key_version,turn_id,mission_id,delivery_status) "
+            "values (%s,%s,%s,'user',%s,%s,%s,null,'accepted') returning *",
+            (
+                message_id,
+                conversation_id,
+                message_seq,
+                sealed.ciphertext,
+                sealed.key_version,
+                turn_id,
+            ),
+        ).fetchone()
+        turn_row = cursor.execute(
+            "insert into platform_control.conversation_turns "
+            "(turn_id,conversation_id,user_message_id,client_request_id,"
+            "mission_id,status,retry_of_turn_id) "
+            "values (%s,%s,%s,%s,null,'accepted',%s) returning *",
+            (
+                turn_id,
+                conversation_id,
+                message_id,
+                client_request_id,
+                retry_of_turn_id,
+            ),
+        ).fetchone()
+        loop_id = self._insert_v2_loop_locked(
+            cursor,
+            conversation_id,
+            turn_id,
+            model_config=model_config,
+            max_steps=max_steps,
+            max_tasks=max_tasks,
+            max_duration_seconds=max_duration_seconds,
+        )
+        common_payload = {
+            "turn_id": str(turn_id),
+            "mission_id": None,
+            "message_id": str(message_id),
+            "loop_id": str(loop_id),
+            "status": "accepted",
+        }
+        if message_seq == 1:
+            self._append_event_locked(
+                cursor,
+                conversation_id,
+                turn_id,
+                None,
+                "conversation.started",
+                common_payload,
+            )
+        for event_type in ("message.accepted", "turn.accepted", "brain.started"):
+            self._append_event_locked(
+                cursor,
+                conversation_id,
+                turn_id,
+                None,
+                event_type,
+                common_payload,
+            )
+        conversation_row = cursor.execute(
+            "update platform_control.conversations set updated_at=now() "
+            "where conversation_id=%s returning *",
+            (conversation_id,),
+        ).fetchone()
+        return ConversationCreateResult(
+            conversation=self._conversation_from_row(conversation_row),
+            message=self._message_from_row(message_row),
+            turn=self._turn_from_row(turn_row),
+            mission=None,
+            created=True,
         )
 
     def _new_turn_locked(
@@ -624,7 +793,8 @@ class ConversationRepository:
                         raise ConversationRepositoryConflict()
                     active = cursor.execute(
                         "select 1 from platform_control.conversation_turns "
-                        "where conversation_id=%s and status in ('accepted','running') "
+                        "where conversation_id=%s and status in "
+                        "('accepted','running','waiting_agents','waiting_user','completing') "
                         "limit 1",
                         (conversation_id,),
                     ).fetchone()
@@ -669,6 +839,368 @@ class ConversationRepository:
             ValueError,
             psycopg.Error,
         ):
+            raise ConversationRepositoryError() from None
+
+    @staticmethod
+    def _require_v2_limits(
+        model_config: object,
+        max_steps: object,
+        max_tasks: object,
+        max_duration_seconds: object,
+    ) -> dict[str, object]:
+        if (
+            type(model_config) is not dict
+            or type(max_steps) is not int
+            or not 1 <= max_steps <= 128
+            or type(max_tasks) is not int
+            or not 0 <= max_tasks <= 128
+            or type(max_duration_seconds) is not int
+            or not 1 <= max_duration_seconds <= 86400
+        ):
+            raise ValueError("V2 Conversation configuration invalid")
+        return dict(model_config)
+
+    def start_v2(
+        self,
+        internal_user_id: UUID,
+        client_request_id: UUID,
+        text: str,
+        *,
+        model_config: dict[str, object],
+        max_steps: int,
+        max_tasks: int,
+        max_duration_seconds: int,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(client_request_id)
+        text = _require_text(text)
+        config = self._require_v2_limits(
+            model_config, max_steps, max_tasks, max_duration_seconds
+        )
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                existing = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where owner_internal_user_id=%s "
+                    "and started_by_client_request_id=%s for update",
+                    (internal_user_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    if existing["mode"] != "brain":
+                        raise ConversationRepositoryConflict()
+                    return self._replay_v2_locked(
+                        cursor, existing, client_request_id, text
+                    )
+                conversation_id = uuid4()
+                conversation_row = cursor.execute(
+                    "insert into platform_control.conversations "
+                    "(conversation_id,owner_internal_user_id,"
+                    "started_by_client_request_id,mode,direct_agent_id,title,status) "
+                    "values (%s,%s,%s,'brain',null,%s,'active') returning *",
+                    (
+                        conversation_id,
+                        internal_user_id,
+                        client_request_id,
+                        _title_for(text),
+                    ),
+                ).fetchone()
+                return self._new_v2_turn_locked(
+                    cursor,
+                    conversation_row,
+                    client_request_id,
+                    text,
+                    message_seq=1,
+                    retry_of_turn_id=None,
+                    model_config=config,
+                    max_steps=max_steps,
+                    max_tasks=max_tasks,
+                    max_duration_seconds=max_duration_seconds,
+                )
+        except psycopg.errors.UniqueViolation:
+            return self._replay_v2_start_after_race(
+                internal_user_id, client_request_id, text
+            )
+        except ConversationRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise ConversationRepositoryError() from None
+
+    def _replay_v2_start_after_race(
+        self,
+        internal_user_id: UUID,
+        client_request_id: UUID,
+        text: str,
+    ) -> ConversationCreateResult:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where owner_internal_user_id=%s "
+                    "and started_by_client_request_id=%s for update",
+                    (internal_user_id, client_request_id),
+                ).fetchone()
+                if row is None or row["mode"] != "brain":
+                    raise ConversationRepositoryConflict()
+                return self._replay_v2_locked(
+                    cursor, row, client_request_id, text
+                )
+        except ConversationRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            TypeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise ConversationRepositoryError() from None
+
+    def append_turn_v2(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        text: str,
+        *,
+        model_config: dict[str, object],
+        max_steps: int,
+        max_tasks: int,
+        max_duration_seconds: int,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        text = _require_text(text)
+        config = self._require_v2_limits(
+            model_config, max_steps, max_tasks, max_duration_seconds
+        )
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                if conversation_row["mode"] != "brain":
+                    raise ConversationRepositoryConflict()
+                existing = cursor.execute(
+                    "select 1 from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    return self._replay_v2_locked(
+                        cursor, conversation_row, client_request_id, text
+                    )
+                if conversation_row["status"] != "active":
+                    raise ConversationRepositoryConflict()
+                if self._active_turn_locked(cursor, conversation_id) is not None:
+                    raise ConversationTurnInProgress()
+                next_seq = cursor.execute(
+                    "select coalesce(max(seq),0)+1 as next_seq from "
+                    "platform_control.conversation_messages "
+                    "where conversation_id=%s",
+                    (conversation_id,),
+                ).fetchone()["next_seq"]
+                return self._new_v2_turn_locked(
+                    cursor,
+                    conversation_row,
+                    client_request_id,
+                    text,
+                    message_seq=next_seq,
+                    retry_of_turn_id=None,
+                    model_config=config,
+                    max_steps=max_steps,
+                    max_tasks=max_tasks,
+                    max_duration_seconds=max_duration_seconds,
+                )
+        except ConversationRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise ConversationRepositoryError() from None
+
+    @staticmethod
+    def _active_turn_locked(cursor: Any, conversation_id: UUID):
+        return cursor.execute(
+            "select * from platform_control.conversation_turns "
+            "where conversation_id=%s and status in "
+            "('accepted','running','waiting_agents','waiting_user','completing') "
+            "limit 1",
+            (conversation_id,),
+        ).fetchone()
+
+    def retry_turn_v2(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        failed_turn_id: UUID,
+        client_request_id: UUID,
+        *,
+        model_config: dict[str, object],
+        max_steps: int,
+        max_tasks: int,
+        max_duration_seconds: int,
+    ) -> ConversationCreateResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(failed_turn_id)
+        _require_uuid(client_request_id)
+        config = self._require_v2_limits(
+            model_config, max_steps, max_tasks, max_duration_seconds
+        )
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                cursor.execute("set constraints all deferred")
+                conversation_row = cursor.execute(
+                    "select * from platform_control.conversations "
+                    "where conversation_id=%s and owner_internal_user_id=%s "
+                    "for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation_row is None:
+                    raise ConversationRepositoryNotFound()
+                if (
+                    conversation_row["mode"] != "brain"
+                    or conversation_row["status"] != "active"
+                ):
+                    raise ConversationRepositoryConflict()
+                original = cursor.execute(
+                    "select * from platform_control.conversation_turns "
+                    "where conversation_id=%s and turn_id=%s for update",
+                    (conversation_id, failed_turn_id),
+                ).fetchone()
+                if original is None:
+                    raise ConversationRepositoryNotFound()
+                existing = cursor.execute(
+                    "select 1 from platform_control.conversation_turns "
+                    "where conversation_id=%s and client_request_id=%s",
+                    (conversation_id, client_request_id),
+                ).fetchone()
+                source_message = cursor.execute(
+                    "select * from platform_control.conversation_messages "
+                    "where conversation_id=%s and message_id=%s",
+                    (conversation_id, original["user_message_id"]),
+                ).fetchone()
+                if source_message is None:
+                    raise ConversationRepositoryError()
+                text = self._message_from_row(source_message).content
+                if existing is not None:
+                    return self._replay_v2_locked(
+                        cursor,
+                        conversation_row,
+                        client_request_id,
+                        text,
+                        retry_of_turn_id=failed_turn_id,
+                    )
+                if original["status"] not in (
+                    "failed",
+                    "cancelled",
+                    "interrupted",
+                ):
+                    raise ConversationRepositoryConflict()
+                if self._active_turn_locked(cursor, conversation_id) is not None:
+                    raise ConversationTurnInProgress()
+                next_seq = cursor.execute(
+                    "select coalesce(max(seq),0)+1 as next_seq from "
+                    "platform_control.conversation_messages "
+                    "where conversation_id=%s",
+                    (conversation_id,),
+                ).fetchone()["next_seq"]
+                return self._new_v2_turn_locked(
+                    cursor,
+                    conversation_row,
+                    client_request_id,
+                    text,
+                    message_seq=next_seq,
+                    retry_of_turn_id=failed_turn_id,
+                    model_config=config,
+                    max_steps=max_steps,
+                    max_tasks=max_tasks,
+                    max_duration_seconds=max_duration_seconds,
+                )
+        except ConversationRepositoryError:
+            raise
+        except (
+            ContentCryptoError,
+            KeyError,
+            RecursionError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            psycopg.Error,
+        ):
+            raise ConversationRepositoryError() from None
+
+    def resume_waiting_user_v2(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        text: str,
+    ) -> ConversationCreateResult:
+        del internal_user_id, conversation_id, client_request_id, text
+        raise ConversationRepositoryConflict()
+
+    def request_cancel_v2(
+        self, internal_user_id: UUID, conversation_id: UUID
+    ) -> ConversationTurnRecord:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    "select turn.* from platform_control.conversation_turns turn "
+                    "join platform_control.conversations conversation "
+                    "on conversation.conversation_id=turn.conversation_id "
+                    "where turn.conversation_id=%s "
+                    "and conversation.owner_internal_user_id=%s "
+                    "and turn.status in "
+                    "('accepted','running','waiting_agents','waiting_user','completing') "
+                    "order by turn.created_at desc limit 1 for update of turn",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if row is None:
+                    owned = cursor.execute(
+                        "select 1 from platform_control.conversations "
+                        "where conversation_id=%s and owner_internal_user_id=%s",
+                        (conversation_id, internal_user_id),
+                    ).fetchone()
+                    if owned is None:
+                        raise ConversationRepositoryNotFound()
+                    raise ConversationRepositoryConflict()
+                updated = cursor.execute(
+                    "update platform_brain.brain_loops set cancel_requested=true,"
+                    "updated_at=clock_timestamp(),row_version=row_version+1 "
+                    "where turn_id=%s returning loop_id",
+                    (row["turn_id"],),
+                ).fetchone()
+                if updated is None:
+                    raise ConversationRepositoryConflict()
+            return self._turn_from_row(row)
+        except ConversationRepositoryError:
+            raise
+        except (KeyError, TypeError, ValueError, psycopg.Error):
             raise ConversationRepositoryError() from None
 
     def conversation_for_owner(
@@ -1126,7 +1658,8 @@ class ConversationRepository:
                     raise ConversationRepositoryNotFound()
                 row = cursor.execute(
                     "select * from platform_control.conversation_turns "
-                    "where conversation_id=%s and status in ('accepted','running') "
+                    "where conversation_id=%s and status in "
+                    "('accepted','running','waiting_agents','waiting_user','completing') "
                     "limit 1",
                     (conversation_id,),
                 ).fetchone()
@@ -1203,7 +1736,8 @@ class ConversationRepository:
                     return self._conversation_from_row(row)
                 active = cursor.execute(
                     "select 1 from platform_control.conversation_turns "
-                    "where conversation_id=%s and status in ('accepted','running') "
+                    "where conversation_id=%s and status in "
+                    "('accepted','running','waiting_agents','waiting_user','completing') "
                     "limit 1",
                     (conversation_id,),
                 ).fetchone()
@@ -1234,7 +1768,8 @@ class ConversationRepository:
                     "on conversation.conversation_id=turn.conversation_id "
                     "where turn.conversation_id=%s "
                     "and conversation.owner_internal_user_id=%s "
-                    "and turn.status in ('accepted','running') "
+                    "and turn.status in "
+                    "('accepted','running','waiting_agents','waiting_user','completing') "
                     "order by turn.created_at desc limit 1",
                     (conversation_id, internal_user_id),
                 ).fetchone()

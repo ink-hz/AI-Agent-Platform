@@ -23,10 +23,12 @@ from .conversation_models import (
     ConversationRecord,
     ConversationTurnRecord,
 )
+from .conversation_service import ConversationCommandService
 from .conversation_repository import (
     ConversationRepositoryConflict,
     ConversationRepositoryError,
     ConversationRepositoryNotFound,
+    ConversationTurnInProgress,
 )
 from .routes import (
     MissionStreamBusy,
@@ -188,6 +190,15 @@ def _repository_http_error(error: ConversationRepositoryError) -> HTTPException:
     if isinstance(error, ConversationRepositoryNotFound):
         return HTTPException(404, "Conversation not found", headers=_NO_STORE)
     if isinstance(error, ConversationRepositoryConflict):
+        if isinstance(error, ConversationTurnInProgress):
+            return HTTPException(
+                409,
+                {
+                    "code": "turn_in_progress",
+                    "message": "当前对话已有一轮正在执行",
+                },
+                headers=_NO_STORE,
+            )
         return HTTPException(409, "conversation conflict", headers=_NO_STORE)
     return HTTPException(
         503, "Conversation service unavailable", headers=_NO_STORE
@@ -234,6 +245,9 @@ def _turn_payload(record: ConversationTurnRecord | None) -> dict[str, object] | 
             str(record.assistant_message_id) if record.assistant_message_id else None
         ),
         "mission_id": str(record.mission_id) if record.mission_id else None,
+        "retry_of_turn_id": (
+            str(record.retry_of_turn_id) if record.retry_of_turn_id else None
+        ),
         "status": record.status,
         "created_at": record.created_at.isoformat(),
         "updated_at": record.updated_at.isoformat(),
@@ -409,6 +423,7 @@ def build_conversation_router(
     repository,
     agent_use_authorization,
     *,
+    command_service: ConversationCommandService | None = None,
     cursor_codec: ConversationCursorCodec,
     session_revalidator: Callable[[str], object],
     session_cookie_name: str,
@@ -424,6 +439,9 @@ def build_conversation_router(
     if not isinstance(session_cookie_name, str) or not session_cookie_name:
         raise ValueError("Conversation session cookie name required")
     router = APIRouter(tags=["agent-brain-conversations"])
+    commands = command_service or ConversationCommandService(
+        repository, v2_enabled=False
+    )
     limiter = MissionStreamLimiter(
         max_per_owner=max_streams_per_owner,
         max_per_mission=max_streams_per_conversation,
@@ -461,7 +479,7 @@ def build_conversation_router(
             await require_direct_agent(context.internal_user_id, direct_agent_id)
         try:
             result = await asyncio.to_thread(
-                repository.start,
+                commands.start,
                 context.internal_user_id,
                 request_id,
                 body.text,
@@ -628,12 +646,44 @@ def build_conversation_router(
                     context.internal_user_id, conversation.direct_agent_id
                 )
             result = await asyncio.to_thread(
-                repository.append_turn,
+                commands.append_turn,
                 context.internal_user_id,
                 conversation_id,
                 request_id,
                 body.text,
             )
+        except ConversationRepositoryError as error:
+            raise _repository_http_error(error) from None
+        response.status_code = 201 if result.created else 200
+        response.headers.update(_NO_STORE)
+        return _create_payload(result)
+
+    @router.post(
+        "/api/v1/conversations/{conversation_id}/turns/{turn_id}/retry",
+        status_code=201,
+    )
+    async def retry_turn(
+        conversation_id: UUID,
+        turn_id: UUID,
+        request: Request,
+        response: Response,
+        idempotency_key: Annotated[
+            str | None, Header(alias="Idempotency-Key")
+        ] = None,
+    ):
+        context = _auth_context(request)
+        _ensure_writable(context)
+        request_id = _parse_idempotency_key(idempotency_key)
+        try:
+            result = await asyncio.to_thread(
+                commands.retry_turn,
+                context.internal_user_id,
+                conversation_id,
+                turn_id,
+                request_id,
+            )
+        except ValueError:
+            raise HTTPException(404, "Conversation not found", headers=_NO_STORE)
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None
         response.status_code = 201 if result.created else 200
@@ -669,8 +719,8 @@ def build_conversation_router(
         context = _auth_context(request)
         _ensure_writable(context)
         try:
-            mission = await asyncio.to_thread(
-                repository.request_cancel,
+            cancellation = await asyncio.to_thread(
+                commands.request_cancel,
                 context.internal_user_id,
                 conversation_id,
             )
@@ -679,8 +729,11 @@ def build_conversation_router(
         response.headers.update(_NO_STORE)
         return {
             "conversation_id": str(conversation_id),
-            "mission_id": str(mission.mission_id),
-            "cancel_requested": mission.cancel_requested,
+            "turn_id": str(cancellation.turn_id),
+            "mission_id": (
+                str(cancellation.mission_id) if cancellation.mission_id else None
+            ),
+            "cancel_requested": cancellation.cancel_requested,
         }
 
     @router.post("/api/v1/conversations/{conversation_id}/archive")

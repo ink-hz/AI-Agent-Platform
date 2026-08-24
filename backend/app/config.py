@@ -65,6 +65,7 @@ class Config:
     replica_stale_seconds: int
     execution_relay_enabled: bool
     agent_brain_enabled: bool
+    agent_brain_v2_enabled: bool
     brain_model_enabled: bool
     brain_provider_base_url: str
     brain_provider_api_key_file: str
@@ -517,6 +518,8 @@ def _validate_execution_relay_config(config: Config) -> None:
 
 
 def _validate_agent_brain_config(config: Config) -> None:
+    if config.agent_brain_v2_enabled and not config.agent_brain_enabled:
+        raise ValueError("Agent Brain V2 requires Agent Brain")
     if not config.agent_brain_enabled:
         return
     if (
@@ -679,6 +682,7 @@ def load_config() -> Config:
         ),
         execution_relay_enabled=execution_relay_enabled,
         agent_brain_enabled=_enabled("PLATFORM_AGENT_BRAIN_ENABLED"),
+        agent_brain_v2_enabled=_enabled("PLATFORM_AGENT_BRAIN_V2_ENABLED"),
         brain_model_enabled=_enabled("PLATFORM_BRAIN_MODEL_ENABLED"),
         brain_provider_base_url=os.getenv(
             "PLATFORM_BRAIN_PROVIDER_BASE_URL", ""

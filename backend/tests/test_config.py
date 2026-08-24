@@ -48,6 +48,7 @@ def test_brain_model_defaults_disabled_and_never_accepts_inline_api_key(
     monkeypatch,
 ) -> None:
     for name in (
+        "PLATFORM_AGENT_BRAIN_V2_ENABLED",
         "PLATFORM_BRAIN_MODEL_ENABLED",
         "PLATFORM_BRAIN_PROVIDER_BASE_URL",
         "PLATFORM_BRAIN_PROVIDER_API_KEY_FILE",
@@ -57,6 +58,7 @@ def test_brain_model_defaults_disabled_and_never_accepts_inline_api_key(
         monkeypatch.delenv(name, raising=False)
 
     config = load_config()
+    assert config.agent_brain_v2_enabled is False
     assert config.brain_model_enabled is False
     assert config.brain_provider_api_key_file == ""
     assert config.brain_provider_base_url == ""

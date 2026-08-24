@@ -88,7 +88,7 @@ class ConversationCreateResult:
     conversation: ConversationRecord
     message: ConversationMessageRecord
     turn: ConversationTurnRecord
-    mission: MissionRecord
+    mission: MissionRecord | None
     created: bool
 
 

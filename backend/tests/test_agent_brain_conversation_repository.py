@@ -32,6 +32,17 @@ def _codec() -> ContentCodec:
 
 def _clear_conversations(connection) -> None:
     connection.execute("set constraints all deferred")
+    for table in (
+        "brain_checkpoints",
+        "adapter_deliveries",
+        "agent_task_events",
+        "agent_tasks",
+        "brain_tool_calls",
+        "brain_steps",
+        "brain_loops",
+        "authorization_snapshots",
+    ):
+        connection.execute(f"delete from platform_brain.{table}")
     connection.execute("delete from platform_control.conversation_feedback")
     connection.execute("delete from platform_control.conversation_events")
     connection.execute("delete from platform_control.mission_events")
