@@ -53,9 +53,9 @@ body {
 .permission-state h1 { margin: 0; font-size: 28px; }
 .permission-state p { margin: 11px 0 0; color: var(--ink-soft); line-height: 1.65; }
 .brain-preparing { width: min(720px, 100%); margin: 72px auto; padding: clamp(34px, 7vw, 72px); border: 1px solid var(--line); border-radius: 24px; background: linear-gradient(145deg, #fff, #f3f7fc); box-shadow: 0 24px 70px rgba(21, 61, 105, .10); }
-.brain-preparing .eyebrow { margin: 0 0 14px; color: var(--brand-bright); font-size: 12px; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
+.brain-preparing-kicker { margin: 0 0 14px; color: var(--brand-bright); font-size: 12px; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
 .brain-preparing h1 { margin: 0; color: var(--ink); font-size: clamp(34px, 6vw, 54px); letter-spacing: -.045em; }
-.brain-preparing > p:not(.eyebrow) { max-width: 570px; margin: 18px 0 0; color: var(--ink-soft); font-size: 16px; line-height: 1.75; }
+.brain-preparing > p:not(.brain-preparing-kicker) { max-width: 570px; margin: 18px 0 0; color: var(--ink-soft); font-size: 16px; line-height: 1.75; }
 .brain-preparing .primary-action { display: inline-flex; margin-top: 28px; padding: 12px 18px; border-radius: 11px; background: var(--brand); color: #fff; font-size: 14px; font-weight: 780; text-decoration: none; }
 .access-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 24px; }
 .access-actions button, .access-actions a { min-width: 112px; padding: 10px 16px; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 760; cursor: pointer; text-decoration: none; }

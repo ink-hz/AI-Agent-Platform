@@ -268,7 +268,7 @@ def test_usage_leaders_counts_business_sessions_and_skips_system_agents():
         ("marketing-gtm-bot", 7),
         ("hr-bot", 3),
     ]
-    assert [item.agent_name for item in leaders] == ["Marketing GTM", "HR"]
+    assert [item.agent_name for item in leaders] == ["Marketing GTM", "HR Agent"]
     # The window is pushed into SQL rather than filtered in Python.
     assert connection.session_windows == [
         (datetime(2026, 8, 13, 8, 0, tzinfo=UTC), NOW)

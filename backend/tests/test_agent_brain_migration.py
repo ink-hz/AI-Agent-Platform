@@ -695,10 +695,10 @@ def test_agent_use_scope_tracks_active_generation_and_defaults_to_deny(
             ),
         ).fetchall()
         assert dict(decisions) == {
-            "ai-admin-agent": False,
-            "ai-fae-agent": False,
+            "ai-admin-agent": True,
+            "ai-fae-agent": True,
             "codex-assistant": False,
-            "fae-bot": True,
+            "fae-bot": False,
             "feishu-default": False,
             "hr-bot": True,
             "marketing-gtm-bot": False,
