@@ -13,6 +13,7 @@ CLOUD_RUNBOOK = ROOT / "docs/runbooks/cloud-platform.md"
 README = ROOT / "README.md"
 SUCCESS = (
     "AGENT_EXECUTION_RELAY_OK worker=agentops-mac-primary agents=7 "
+    "accepted_job_kinds=direct_agent,metabot_local "
     "public_ports_added=0 duplicate_dispatches=0"
 )
 

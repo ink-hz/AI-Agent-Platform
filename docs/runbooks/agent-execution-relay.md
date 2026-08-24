@@ -21,7 +21,7 @@ path. Both the directory and file must remain mode 0700/0600. Run:
 Success is exactly:
 
 ```text
-AGENT_EXECUTION_RELAY_OK worker=agentops-mac-primary agents=7 public_ports_added=0 duplicate_dispatches=0
+AGENT_EXECUTION_RELAY_OK worker=agentops-mac-primary agents=7 accepted_job_kinds=direct_agent,metabot_local public_ports_added=0 duplicate_dispatches=0
 ```
 
 Any other output or exit status is a failed release gate. `accept.sh` performs

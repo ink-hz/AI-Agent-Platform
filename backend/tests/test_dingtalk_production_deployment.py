@@ -477,6 +477,7 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
         "platform-loopback",
         "platform-directory",
         "platform-dingtalk-stream",
+        "platform-brain",
     }
     api = services["platform-api"]
     startup = api["command"][2]

@@ -11,7 +11,7 @@ fail() {
 [[ "$(/usr/bin/id -un)" == "neo" ]] || fail
 config_path="$1"
 action="$2"
-[[ "$action" == "preflight" || "$action" == "release" || "$action" == "accept" || "$action" == "rollback" || "$action" == "restore" ]] || fail
+[[ "$action" == "preflight" || "$action" == "reference" || "$action" == "release" || "$action" == "accept" || "$action" == "rollback" || "$action" == "restore" ]] || fail
 [[ -f "$config_path" && ! -L "$config_path" ]] || fail
 [[ "$(/usr/bin/stat -f '%Lp %u' "$config_path")" == "600 $(/usr/bin/id -u)" ]] || fail
 
@@ -185,9 +185,61 @@ run_relay_canary() {
   relay_accept=/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/accept.sh
   [[ -x "$relay_accept" && ! -L "$relay_accept" ]] || fail
   relay_result="$(run_agentops "$relay_accept" "$relay_acceptance_config")" || fail
-  [[ "$relay_result" == "AGENT_EXECUTION_RELAY_OK worker=agentops-mac-primary agents=7 public_ports_added=0 duplicate_dispatches=0" ]] || fail
+  [[ "$relay_result" == "AGENT_EXECUTION_RELAY_OK worker=agentops-mac-primary agents=7 accepted_job_kinds=direct_agent,metabot_local public_ports_added=0 duplicate_dispatches=0" ]] || fail
   LOCAL_WORKER_ACCEPTS=metabot_local
   [[ "$LOCAL_WORKER_ACCEPTS" == "metabot_local" ]] || fail
+}
+
+prepare_v2_reference_evidence() {
+  local local_release remote_release contract_sha reference_payload
+  local_release="$(/usr/bin/git -C "$repository_root" rev-parse HEAD)" || fail
+  [[ "$local_release" =~ ^[0-9a-f]{40}$ ]] || fail
+  remote_release="$(remote '/usr/bin/basename "$(/usr/bin/readlink -f /opt/orbbec-agent-platform/current)"')" || fail
+  [[ "$remote_release" == "$local_release" ]] || fail
+
+  acceptance_tests=("tests/test_agent_brain_v2_acceptance.py")
+  while IFS= read -r test_ref; do
+    [[ "$test_ref" == tests/test_agent_brain_*::* ]] || fail
+    acceptance_tests+=("$test_ref")
+  done < <(
+    cd "$repository_root/backend" &&
+      "$python" -m app.agent_brain.acceptance_contract pytest-args
+  )
+  [[ "${#acceptance_tests[@]}" == "21" ]] || fail
+  (
+    cd "$repository_root/backend"
+    PYTHONDONTWRITEBYTECODE=1 "$python" -m pytest -q "${acceptance_tests[@]}"
+  ) || fail
+
+  contract_sha="$(/usr/bin/shasum -a 256 "$repository_root/backend/app/agent_brain/acceptance_contract.py" | /usr/bin/awk '{print $1}')" || fail
+  [[ "$contract_sha" =~ ^[0-9a-f]{64}$ ]] || fail
+  reference_payload="$(
+    "$python" - "$local_release" "$contract_sha" <<'PY'
+import json,re,sys
+release_sha,contract_sha=sys.argv[1:]
+if not re.fullmatch(r'[0-9a-f]{40}',release_sha): raise SystemExit(1)
+if not re.fullmatch(r'[0-9a-f]{64}',contract_sha): raise SystemExit(1)
+print(json.dumps({
+    'schema_version':1,
+    'status':'passed',
+    'release_sha':release_sha,
+    'scenario_count':20,
+    'contract_sha256':contract_sha,
+},separators=(',',':'),sort_keys=True))
+PY
+  )" || fail
+  remote '/bin/bash -s' <<REMOTE || fail
+set -euo pipefail
+umask 077
+target=/opt/orbbec-agent-platform/private/agent-brain-v2/reference-recovery.passed
+mkdir -p -m 700 "\$(dirname "\$target")"
+[[ ! -L "\$target" ]] || exit 1
+printf '%s\n' '$reference_payload' > "\$target.part"
+chown root:root "\$target.part"
+chmod 600 "\$target.part"
+mv -f "\$target.part" "\$target"
+REMOTE
+  echo "AGENT_BRAIN_V2_REFERENCE_OK"
 }
 
 v2_cutover_gates() {
@@ -208,7 +260,21 @@ mkdir -p -m 700 "$evidence_dir"
 reference_evidence="$evidence_dir/reference-recovery.passed"
 [[ -f "$reference_evidence" && ! -L "$reference_evidence" ]] || fail
 [[ "$(stat -c '%a %U' "$reference_evidence")" == "600 root" ]] || fail
-[[ "$(cat "$reference_evidence")" == "REFERENCE_RECOVERY=passed" ]] || fail
+python3 - "$reference_evidence" "$release" <<'PY'
+import hashlib,json,pathlib,re,sys
+evidence=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2])
+value=json.loads(evidence.read_bytes())
+contract=release/'backend/app/agent_brain/acceptance_contract.py'
+expected={
+    'schema_version':1,
+    'status':'passed',
+    'release_sha':release.name,
+    'scenario_count':20,
+    'contract_sha256':hashlib.sha256(contract.read_bytes()).hexdigest(),
+}
+if value != expected or not re.fullmatch(r'[0-9a-f]{40}',value['release_sha']):
+    raise SystemExit(1)
+PY
 REFERENCE_RECOVERY=passed
 compose_command=(docker compose --env-file "$environment" -f "$compose")
 brain="$("${compose_command[@]}" ps -q platform-brain)"
@@ -1013,6 +1079,135 @@ REMOTE
   echo "AGENT_BRAIN_ACCEPTANCE_OK"
 }
 
+validate_v2_quality_review() {
+  quality_review_file="$(/usr/bin/dirname "$config_path")/quality-review.json"
+  require_private_file "$quality_review_file" 16384
+  local release_sha
+  release_sha="$(/usr/bin/git -C "$repository_root" rev-parse HEAD)" || fail
+  "$python" - "$quality_review_file" "$release_sha" <<'PY'
+import json,pathlib,re,sys
+path=pathlib.Path(sys.argv[1]); release_sha=sys.argv[2]
+value=json.loads(path.read_bytes())
+if set(value) != {'schema_version','release_sha','reviewer_id','decision','scenarios'}: raise SystemExit(1)
+if value['schema_version'] != 1 or value['release_sha'] != release_sha: raise SystemExit(1)
+if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{2,127}',value['reviewer_id']): raise SystemExit(1)
+if value['decision'] != 'approved': raise SystemExit(1)
+rows=value['scenarios']
+if not isinstance(rows,list) or [row.get('scenario_id') for row in rows] != ['hr_quality','marketing_quality']: raise SystemExit(1)
+for row in rows:
+    if set(row) != {'scenario_id','outcome','material_defects'}: raise SystemExit(1)
+    if row['outcome'] != 'approved' or row['material_defects'] != []: raise SystemExit(1)
+print(value['reviewer_id'])
+PY
+}
+
+accept_v2_real() {
+  require_private_file "$member_cookie_file" 8192
+  require_private_file "$hr_prompt_file" 32768
+  evidence_parent="$(/usr/bin/dirname "$evidence_file")"
+  [[ -d "$evidence_parent" && ! -L "$evidence_parent" ]] || fail
+  [[ "$(/usr/bin/stat -f '%Lp %u' "$evidence_parent")" == "700 $(/usr/bin/id -u)" ]] || fail
+  [[ ! -L "$evidence_file" ]] || fail
+  reviewer_id="$(validate_v2_quality_review)" || fail
+  temporary="$(/usr/bin/mktemp -d)"
+  cleanup_v2_accept() { /bin/rm -rf -- "$temporary"; }
+  v2_accept_failure() {
+    status="$?"
+    trap - ERR EXIT
+    cleanup_v2_accept
+    remote_feature 0 || status=1
+    release_action_lock || status=1
+    exit "$status"
+  }
+  trap v2_accept_failure ERR EXIT
+  cookie_config "$member_cookie_file" "$temporary/member.curl" "$temporary/member.browser.json"
+  base=https://agent.orbbec.com.cn
+  curl_member=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/member.curl" --max-time 15)
+  fae_before="$(remote_fae_snapshot)" || fail
+  make_body "$hr_prompt_file" "$temporary/v2-request.json"
+  request_key="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+  status_code="$("${curl_member[@]}" -o "$temporary/v2-create.json" -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/json' -H "Idempotency-Key: $request_key" \
+    --data-binary "@$temporary/v2-request.json" "$base/api/v1/conversations")" || fail
+  [[ "$status_code" == "201" ]] || fail
+  IFS=, read -r conversation_id turn_id < <("$python" - "$temporary/v2-create.json" <<'PY'
+import json,sys,uuid
+value=json.load(open(sys.argv[1],encoding='utf-8'))
+conversation=uuid.UUID(value['conversation']['conversation_id'])
+turn=value['turn']
+if turn.get('mission_id') is not None: raise SystemExit(1)
+print(f"{conversation},{uuid.UUID(turn['turn_id'])}")
+PY
+  ) || fail
+  "${curl_member[@]}" --max-time 900 -H 'Accept: text/event-stream' \
+    "$base/api/v1/conversations/$conversation_id/events?after=0" > "$temporary/v2-events.sse" || fail
+  event_summary="$("$python" - "$temporary/v2-events.sse" "$conversation_id" "$turn_id" <<'PY'
+import json,sys
+path,conversation_id,turn_id=sys.argv[1:]
+events=[]
+for frame in open(path,encoding='utf-8').read().replace('\r\n','\n').split('\n\n'):
+    if not frame or frame.startswith(':'): continue
+    lines=frame.splitlines(); ids=[x[4:] for x in lines if x.startswith('id: ')]; data=[x[6:] for x in lines if x.startswith('data: ')]
+    if len(ids)!=1 or len(data)!=1: raise SystemExit(1)
+    value=json.loads(data[0])
+    rendered=json.dumps(value,ensure_ascii=False,separators=(',',':')).lower()
+    if any(term in rendered for term in ('thinking','provider_request_id','ciphertext','tool_use_id')): raise SystemExit(1)
+    if value.get('seq') != int(ids[0]) or value.get('conversation_id') != conversation_id: raise SystemExit(1)
+    if value.get('turn_id') not in (None,turn_id): raise SystemExit(1)
+    events.append((value['seq'],value['event_type']))
+if not events or [x[0] for x in events] != list(range(events[0][0],events[-1][0]+1)): raise SystemExit(1)
+types=[kind for _,kind in events]
+if 'turn.completed' not in types or 'brain.answer_submitted' not in types: raise SystemExit(1)
+print(','.join(f'{seq}:{kind}' for seq,kind in events))
+PY
+  )" || fail
+  [[ "$("${curl_member[@]}" -o "$temporary/v2-messages.json" -w '%{http_code}' "$base/api/v1/conversations/$conversation_id/messages")" == "200" ]] || fail
+  "$python" - "$temporary/v2-messages.json" "$conversation_id" "$turn_id" <<'PY' || fail
+import json,sys
+items=json.load(open(sys.argv[1],encoding='utf-8')).get('items')
+if not isinstance(items,list) or len(items)!=2: raise SystemExit(1)
+if [item.get('role') for item in items] != ['user','assistant']: raise SystemExit(1)
+if any(item.get('conversation_id') != sys.argv[2] or item.get('turn_id') != sys.argv[3] for item in items): raise SystemExit(1)
+answer=items[1].get('content')
+if not isinstance(answer,str) or not answer.strip(): raise SystemExit(1)
+PY
+  db_summary="$(remote /bin/bash -s -- "$conversation_id" "$turn_id" <<'REMOTE'
+set -euo pipefail
+conversation="$1"; turn="$2"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"
+postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
+docker exec "$postgres" psql -X -A -t -F ',' -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v conversation="$conversation" -v turn="$turn" -c "select concat('loop_status=',loop.status,',task_count=',(select count(*) from platform_brain.agent_tasks where loop_id=loop.loop_id),',mission_count=',(select count(*) from platform_control.missions where turn_id=:'turn'::uuid),',mission_run_count=',(select count(*) from platform_control.mission_runs run join platform_control.missions mission on mission.mission_id=run.mission_id where mission.turn_id=:'turn'::uuid)) from platform_brain.brain_loops loop where loop.conversation_id=:'conversation'::uuid and loop.turn_id=:'turn'::uuid;"
+REMOTE
+  )" || fail
+  [[ "$db_summary" =~ ^loop_status=completed,task_count=[0-8],mission_count=0,mission_run_count=0$ ]] || fail
+  [[ "$(remote_fae_snapshot)" == "$fae_before" ]] || fail
+  remote_evidence="$(remote /bin/bash -s <<'REMOTE'
+set -euo pipefail
+root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; evidence="$root/private/agent-brain-v2/provider-evidence.json"
+fae=ai-fae-backend
+printf 'release_sha=%s\nmanifest_sha256=%s\nsystem_prompt_sha256=%s\nprovider_evidence_sha256=%s\nfae_container_id=%s\nfae_image_id=%s\nfae_started_at=%s\nfae_restart_count=%s\n' \
+  "$(basename "$release")" \
+  "$(sha256sum "$release/deploy/cloud/brain-model.release.json" | awk '{print $1}')" \
+  "$(sha256sum "$release/backend/app/agent_brain/prompts/brain_v1.md" | awk '{print $1}')" \
+  "$(sha256sum "$evidence" | awk '{print $1}')" \
+  "$(docker inspect --format '{{.Id}}' "$fae")" "$(docker inspect --format '{{.Image}}' "$fae")" \
+  "$(docker inspect --format '{{.State.StartedAt}}' "$fae")" "$(docker inspect --format '{{.RestartCount}}' "$fae")"
+REMOTE
+  )" || fail
+  evidence_generation="$evidence_file.generation.$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+  {
+    /usr/bin/printf '%s\n' "$remote_evidence"
+    /usr/bin/printf 'brain_v2=true\nscenario_count=20\nconversation_id=%s\nturn_id=%s\nevents=%s\n%s\nreviewer_id=%s\nquality_review=approved\nV2_MISSION_RUN_WRITES=0\nFAE_MANAGED_FILES_UNCHANGED=true\nacceptance_status=complete\n' \
+      "$conversation_id" "$turn_id" "$event_summary" "$db_summary" "$reviewer_id"
+  } > "$evidence_generation"
+  /bin/chmod 600 "$evidence_generation"
+  /usr/bin/install -m 600 "$evidence_generation" "$evidence_file.part.$$"
+  /bin/mv -f "$evidence_file.part.$$" "$evidence_file"
+  cleanup_v2_accept
+  trap - ERR EXIT
+  trap action_lock_exit EXIT
+  echo "AGENT_BRAIN_V2_ACCEPTANCE_OK"
+}
+
 enable_with_rollback() {
   enable_failure_rollback() {
     status="$?"
@@ -1025,6 +1220,7 @@ enable_with_rollback() {
   local_runtime_preflight
   remote_feature 0
   run_relay_canary
+  prepare_v2_reference_evidence
   v2_cutover_gates
   publish_formal_nginx
   remote_feature 1
@@ -1038,21 +1234,43 @@ case "$action" in
     remote '/usr/bin/test "$(/usr/bin/stat -c "%a %U" /opt/orbbec-agent-platform/private/platform.env)" = "600 root"; ! /usr/bin/ss -H -lnt | /usr/bin/awk '\''$4 !~ /^(127\.0\.0\.1|\[::1\]|127\.0\.0\.53%lo|127\.0\.0\.54):/ {print $4}'\'' | /usr/bin/grep -Eq '\''^(0\.0\.0\.0|\[::\]):(5432|8080|910[1-8]|9110|9120)$'\''' || fail
     echo "AGENT_BRAIN_PREFLIGHT_OK"
     ;;
+  reference)
+    acquire_action_lock
+    prepare_v2_reference_evidence
+    release_action_lock || fail
+    trap - EXIT
+    ;;
   release)
     acquire_action_lock
     enable_with_rollback
-    accept_real
+    accept_v2_real
     release_action_lock || fail
     trap - EXIT
     ;;
   accept)
     acquire_action_lock
-    accept_real
+    v2_cutover_gates
+    accept_v2_real
     release_action_lock || fail
     trap - EXIT
     ;;
   rollback)
     acquire_action_lock
+    require_private_file "$owner_cookie_file" 8192
+    require_private_file "$evidence_file" 65536
+    read -r preserved_conversation preserved_turn < <("$python" - "$evidence_file" <<'PY'
+import pathlib,re,sys
+values={}
+for line in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+    if '=' in line:
+        key,value=line.split('=',1); values[key]=value
+if values.get('brain_v2') != 'true' or values.get('acceptance_status') != 'complete': raise SystemExit(1)
+for key in ('conversation_id','turn_id'):
+    if not re.fullmatch(r'[0-9a-f-]{36}',values.get(key,'')): raise SystemExit(1)
+if values.get('V2_MISSION_RUN_WRITES') != '0': raise SystemExit(1)
+print(values['conversation_id'],values['turn_id'])
+PY
+    ) || fail
     fae_before="$(remote_fae_snapshot)" || fail
     remote_feature 0
     [[ "$(remote_fae_snapshot)" == "$fae_before" ]] || fail
@@ -1078,37 +1296,25 @@ case "$action" in
     done
     [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 15 https://fae.orbbec.com.cn/)" == "200" ]] || fail
     [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 15 http://47.106.112.69/)" == "200" ]] || fail
-    for port in 9101 9102 9103 9104 9105 9107 9108 9110; do
-      /usr/bin/nc -z -w 2 127.0.0.1 "$port" || fail
-    done
-    require_private_file "$evidence_file" 65536
-    read -r preserved_conversation preserved_first preserved_second preserved_interrupted < <("$python" - "$evidence_file" <<'PY'
-import pathlib,re,sys
-values={}
-for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
-    if "=" in line:
-        key,value=line.split("=",1); values[key]=value
-for key in ("conversation_id","first_mission_id","second_mission_id","interrupted_mission_id"):
-    if not re.fullmatch(r"[0-9a-f-]{36}", values.get(key,"")): raise SystemExit(1)
-print(values["conversation_id"], values["first_mission_id"], values["second_mission_id"], values["interrupted_mission_id"])
-PY
-    ) || fail
-    preserved_shape="$(remote /bin/bash -s -- "$preserved_conversation" "$preserved_first" "$preserved_second" "$preserved_interrupted" <<'REMOTE'
+    preserved_shape="$(remote /bin/bash -s -- "$preserved_conversation" "$preserved_turn" <<'REMOTE'
 set -euo pipefail
-conversation="$1"; first="$2"; second="$3"; interrupted="$4"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"; postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
-docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v conversation="$conversation" -v first="$first" -v second="$second" -v interrupted="$interrupted" -c "select concat('turn_count=',(select count(*) from platform_control.conversation_turns where conversation_id=:'conversation'::uuid),',message_count=',(select count(*) from platform_control.conversation_messages where conversation_id=:'conversation'::uuid),',mission_count=',(select count(*) from platform_control.missions where mission_id in (:'first'::uuid,:'second'::uuid,:'interrupted'::uuid)));"
+conversation="$1"; turn="$2"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"; postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
+docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v conversation="$conversation" -v turn="$turn" -c "select concat('conversation_count=',(select count(*) from platform_control.conversations where conversation_id=:'conversation'::uuid),',turn_count=',(select count(*) from platform_control.conversation_turns where turn_id=:'turn'::uuid and conversation_id=:'conversation'::uuid),',loop_count=',(select count(*) from platform_brain.brain_loops where turn_id=:'turn'::uuid and conversation_id=:'conversation'::uuid),',mission_count=',(select count(*) from platform_control.missions where turn_id=:'turn'::uuid));"
 REMOTE
     )" || fail
-    [[ "$preserved_shape" == "turn_count=2,message_count=4,mission_count=3" ]] || fail
+    [[ "$preserved_shape" == "conversation_count=1,turn_count=1,loop_count=1,mission_count=0" ]] || fail
+    V2_ROLLBACK_HISTORY_PRESERVED=true
+    [[ "$V2_ROLLBACK_HISTORY_PRESERVED" == "true" ]] || fail
     trap - EXIT
     /bin/rm -rf -- "$temporary"
     release_action_lock || fail
     echo "AGENT_BRAIN_ROLLBACK_OK"
+    echo "AGENT_BRAIN_V2_ROLLBACK_OK"
     ;;
   restore)
     acquire_action_lock
     enable_with_rollback
-    accept_real
+    accept_v2_real
     release_action_lock || fail
     trap - EXIT
     ;;

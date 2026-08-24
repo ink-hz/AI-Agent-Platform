@@ -874,6 +874,13 @@ def _provision_harness(
     pm2_source.parent.mkdir(parents=True)
     pm2_source.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
     pm2_source.chmod(0o700)
+    ecosystem = local / "execution-worker.ecosystem.config.cjs"
+    ecosystem.write_text(
+        "module.exports = { apps: [{ env: { "
+        "PLATFORM_WORKER_ACCEPTED_JOB_KINDS: "
+        "'direct_agent,metabot_local' } }] };\n",
+        encoding="utf-8",
+    )
     runtime_root = tmp_path / "runtime-root"
     runtime_root.mkdir()
     agentops_runtime = tmp_path / "agentops-runtime"

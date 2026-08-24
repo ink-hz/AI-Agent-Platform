@@ -5120,7 +5120,7 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
         f"config={config}",
     ).replace(
         'restore_timeout_seconds=60',
-        'restore_timeout_seconds=1',
+        'restore_timeout_seconds=2',
     ).replace(
         '/bin/sleep "$restore_interval_seconds"',
         '/bin/sleep 0.01',
@@ -5175,7 +5175,7 @@ def test_worker_pm2_wrapper_uses_fixed_identity_and_exact_state_machine(
     start_phase.write_text("waiting restart", encoding="utf-8")
     assert run("restore", "online").returncode == 1
     start_phase.write_text("online", encoding="utf-8")
-    jlist_delay.write_text("1.1", encoding="utf-8")
+    jlist_delay.write_text("2.1", encoding="utf-8")
     assert run("restore", "online").returncode == 1
     start_phase.write_text("online", encoding="utf-8")
     assert run("start", "different-config").returncode == 1

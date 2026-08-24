@@ -1,12 +1,18 @@
 # Orbbec Agent Platform
 
-面向 11 个 Agent 的只读观测平台：默认 Fleet 和 Operations 视图聚焦 9 个 Business Agents；Feishu Default 与 Test 两个 System Agents 仍可从 Agents 目录和显式筛选入口访问。Platform 展示运行状态、真实使用量、Sessions、逐轮问答、Evidence、Feedback、Review、Trace、Flywheel 改进项和基于证据的 Operations 事件，不提供 Agent 入口，也不执行重启、Review 或发布操作。
+Orbbec 企业 Agent 的统一身份、使用与管理平台。默认首页提供持续对话的 Agent
+大脑；它在云端运行持久化 Loop，按授权发现、分派和整合 HR、Marketing 等专业
+Agent。Fleet、Sessions、Evidence、Feedback、Review、Trace、Flywheel 与
+Operations 继续作为管理与数据飞轮能力。FAE 保持独立对外入口，本次不接入 Brain
+调用链。
 
 云端采用不可逆脱敏、签名批次和字段级加密的只读副本，首期只监听
 `127.0.0.1:8080` 并通过 SSH tunnel 访问，不修改既有 FAE/Nginx。部署、同步、
 备份、恢复和 18 项验收见 [Cloud Platform sanitized replica runbook](docs/runbooks/cloud-platform.md)。
 本地 MetaBot 执行中继的验收、故障恢复、密钥轮换与安全卸载见
 [Agent execution relay runbook](docs/runbooks/agent-execution-relay.md)。
+Agent Brain V2 的 20 场景矩阵、真实 Provider 探测、恢复演练、质量评审与发布门禁见
+[Agent Brain V2 acceptance runbook](docs/runbooks/agent-brain-v2-acceptance.md)。
 
 ## 当前能力
 
