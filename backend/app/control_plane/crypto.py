@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import base64
 import binascii
-from dataclasses import dataclass, field
 import hashlib
 import hmac
 import json
 import os
-from pathlib import Path
 import secrets
 import stat
+from dataclasses import dataclass, field
+from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping
+from uuid import UUID
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -189,6 +190,26 @@ class ProtectedProviderId:
         )
 
 
+@dataclass(frozen=True)
+class EncryptedDirectoryAttribute:
+    purpose: str
+    ciphertext: bytes = field(repr=False)
+    nonce: bytes = field(repr=False)
+    encryption_key_version: int
+
+    def __repr__(self) -> str:
+        return (
+            f"EncryptedDirectoryAttribute(purpose={self.purpose!r}, "
+            "ciphertext=<redacted>, nonce=<redacted>, "
+            f"encryption_key_version={self.encryption_key_version!r})"
+        )
+
+
+_DIRECTORY_ATTRIBUTE_PURPOSES = frozenset(
+    {"real_name", "mobile", "primary_department"}
+)
+
+
 def normalize_provider_id(provider_id: str) -> str:
     try:
         if not isinstance(provider_id, str):
@@ -357,6 +378,137 @@ class ProviderIdentityCodec:
             UnicodeError,
         ):
             raise IdentityCryptoError("identity decrypt failed") from None
+
+    @staticmethod
+    def _attribute_aad(
+        directory_id: str,
+        generation_id: UUID,
+        member_id: UUID,
+        purpose: str,
+        encryption_key_version: int,
+    ) -> bytes:
+        try:
+            directory = _normalize_subject_kind(directory_id)
+            if not isinstance(generation_id, UUID) or not isinstance(member_id, UUID):
+                raise ValueError
+            if purpose not in _DIRECTORY_ATTRIBUTE_PURPOSES:
+                raise ValueError
+            if (
+                isinstance(encryption_key_version, bool)
+                or not isinstance(encryption_key_version, int)
+                or encryption_key_version <= 0
+            ):
+                raise ValueError
+            return json.dumps(
+                [
+                    "dingtalk-directory-attribute",
+                    1,
+                    directory,
+                    str(generation_id),
+                    str(member_id),
+                    purpose,
+                    encryption_key_version,
+                ],
+                ensure_ascii=True,
+                separators=(",", ":"),
+            ).encode("ascii")
+        except (IdentityCryptoError, TypeError, ValueError, UnicodeError):
+            raise IdentityCryptoError("attribute context invalid") from None
+
+    def seal_attribute(
+        self,
+        directory_id: str,
+        generation_id: UUID,
+        member_id: UUID,
+        purpose: str,
+        value: str,
+    ) -> EncryptedDirectoryAttribute:
+        try:
+            if (
+                not isinstance(value, str)
+                or not value
+                or value != value.strip()
+                or len(value) > 1024
+                or "\0" in value
+            ):
+                raise ValueError
+            value.encode("utf-8")
+            version = self.encryption.active_version
+            aad = self._attribute_aad(
+                directory_id,
+                generation_id,
+                member_id,
+                purpose,
+                version,
+            )
+            nonce = secrets.token_bytes(12)
+            ciphertext = AESGCM(self.encryption.active_key).encrypt(
+                nonce,
+                value.encode("utf-8"),
+                aad,
+            )
+            return EncryptedDirectoryAttribute(
+                purpose=purpose,
+                ciphertext=ciphertext,
+                nonce=nonce,
+                encryption_key_version=version,
+            )
+        except IdentityCryptoError:
+            raise
+        except (TypeError, ValueError, UnicodeError):
+            raise IdentityCryptoError("attribute encrypt failed") from None
+
+    def open_attribute(
+        self,
+        protected: EncryptedDirectoryAttribute,
+        directory_id: str,
+        generation_id: UUID,
+        member_id: UUID,
+        purpose: str,
+    ) -> str:
+        try:
+            if (
+                not isinstance(protected, EncryptedDirectoryAttribute)
+                or protected.purpose != purpose
+                or not isinstance(protected.nonce, bytes)
+                or len(protected.nonce) != 12
+                or not isinstance(protected.ciphertext, bytes)
+                or len(protected.ciphertext) < 16
+            ):
+                raise ValueError
+            key = self.encryption.key_for_version(
+                protected.encryption_key_version
+            )
+            aad = self._attribute_aad(
+                directory_id,
+                generation_id,
+                member_id,
+                purpose,
+                protected.encryption_key_version,
+            )
+            plaintext = AESGCM(key).decrypt(
+                protected.nonce,
+                protected.ciphertext,
+                aad,
+            )
+            value = plaintext.decode("utf-8")
+            if (
+                not value
+                or value != value.strip()
+                or len(value) > 1024
+                or "\0" in value
+            ):
+                raise ValueError
+            return value
+        except (
+            AttributeError,
+            IdentityCryptoError,
+            InvalidTag,
+            TypeError,
+            ValueError,
+            UnicodeError,
+        ):
+            raise IdentityCryptoError("attribute decrypt failed") from None
 
     def lookup_candidates(
         self, subject_kind: str, provider_id: str

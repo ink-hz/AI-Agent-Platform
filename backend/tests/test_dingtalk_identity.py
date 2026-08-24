@@ -4,14 +4,11 @@ import asyncio
 from pathlib import Path
 from uuid import uuid4
 
-import psycopg
-from psycopg.rows import dict_row
-import pytest
-
 import app.control_plane.identity as identity_module
-
-from app.control_plane.dingtalk import DingTalkAuthResult, DingTalkMember
+import psycopg
+import pytest
 from app.control_plane.crypto import ProtectedProviderId
+from app.control_plane.dingtalk import DingTalkAuthResult, DingTalkMember
 from app.control_plane.directory import (
     DIRECTORY_SOURCE_SCHEMA_VERSION,
     StagedDepartment,
@@ -23,6 +20,7 @@ from app.control_plane.identity import (
     IdentityResolver,
 )
 from app.control_plane.models import DirectoryFreshness
+from psycopg.rows import dict_row
 from test_control_plane_migration import control_database
 from test_identity_crypto import _codec
 
@@ -187,8 +185,8 @@ def _stage_and_promote_generation(
     )
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v34("
-            "%s,%s,'scheduled',%s,1,%s,1,%s,%s)",
+            "select platform_control.create_directory_staging_generation_v39("
+            "%s,%s,'scheduled',%s,1,%s,1,%s,%s,0,0,0)",
             (generation_id, run_id, len(members), len(members),
              DIRECTORY_SOURCE_SCHEMA_VERSION, digest),
         )
@@ -204,8 +202,9 @@ def _stage_and_promote_generation(
         )
         for staged_member in staged_members:
             connection.execute(
-                "select platform_control.stage_directory_member_v34("
-                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "select platform_control.stage_directory_member_v39("
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                "null,null,null,null,null,null,null,null,null)",
                 (
                     generation_id, staged_member.member_key,
                     staged_member.corporate.lookup_hmac,
@@ -400,8 +399,8 @@ async def test_new_generation_with_transition_candidate_only_pair_is_denied(
     )
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v34("
-            "%s,%s,'scheduled',1,1,1,1,%s,%s)",
+            "select platform_control.create_directory_staging_generation_v39("
+            "%s,%s,'scheduled',1,1,1,1,%s,%s,0,0,0)",
             (generation_id, uuid4(), DIRECTORY_SOURCE_SCHEMA_VERSION, digest),
         )
         connection.execute(
@@ -411,8 +410,9 @@ async def test_new_generation_with_transition_candidate_only_pair_is_denied(
              root.ciphertext, root.encryption_key_version),
         )
         connection.execute(
-            "select platform_control.stage_directory_member_v34("
-            "%s,%s,%s,1,%s,%s,%s,1,%s,%s,%s,'active',%s)",
+            "select platform_control.stage_directory_member_v39("
+            "%s,%s,%s,1,%s,%s,%s,1,%s,%s,%s,'active',%s,"
+            "null,null,null,null,null,null,null,null,null)",
             (
                 generation_id, member_key, old_corporate,
                 corporate.ciphertext, corporate.encryption_key_version,
@@ -1068,13 +1068,14 @@ def test_directory_worker_can_stage_pair_facts_only_through_narrow_boundary(
     generation_id, member_key = uuid4(), uuid4()
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v34("
-            "%s,%s,'scheduled',1,1,1,1,%s,%s)",
+            "select platform_control.create_directory_staging_generation_v39("
+            "%s,%s,'scheduled',1,1,1,1,%s,%s,0,0,0)",
             (generation_id, uuid4(), DIRECTORY_SOURCE_SCHEMA_VERSION, "0" * 64),
         )
         result = connection.execute(
-            "select platform_control.stage_directory_member_v34("
-            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "select platform_control.stage_directory_member_v39("
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+            "null,null,null,null,null,null,null,null,null)",
             (
                 generation_id, member_key,
                 corporate.lookup_hmac, corporate.lookup_key_version,
@@ -1109,7 +1110,7 @@ def test_directory_worker_can_stage_pair_facts_only_through_narrow_boundary(
     (("male", "valid"), ("female", "valid"), (None, "missing")),
     ids=("male", "female", "missing"),
 )
-def test_schema_v2_gender_round_trip_checksum_and_promotion(
+def test_schema_v3_gender_round_trip_checksum_and_promotion(
     production_environment,
     tmp_path: Path,
     gender: str | None,
@@ -1135,7 +1136,7 @@ def test_schema_v2_gender_round_trip_checksum_and_promotion(
             "select member.gender,generation.source_schema_version,"
             "generation.status,generation.expected_content_sha256,"
             "generation.content_sha256,"
-            "platform_control.directory_generation_checksum_v34("
+            "platform_control.directory_generation_checksum_v39("
             "generation.generation_id) as database_checksum,"
             "state.active_generation_id "
             "from platform_control.directory_members member "
@@ -1145,7 +1146,7 @@ def test_schema_v2_gender_round_trip_checksum_and_promotion(
             (generation_id,),
         ).fetchone()
     assert row["gender"] == gender
-    assert row["source_schema_version"] == 2
+    assert row["source_schema_version"] == 3
     assert row["status"] == "complete"
     assert row["expected_content_sha256"] == row["database_checksum"]
     assert row["content_sha256"] == row["database_checksum"]
@@ -1154,7 +1155,7 @@ def test_schema_v2_gender_round_trip_checksum_and_promotion(
 
 @pytest.mark.postgres
 @pytest.mark.parametrize("gender", ("", "unknown"), ids=("blank", "unknown"))
-def test_schema_v2_member_staging_rejects_invalid_gender_without_partial_row(
+def test_schema_v3_member_staging_rejects_invalid_gender_without_partial_row(
     production_environment,
     tmp_path: Path,
     gender: str,
@@ -1168,15 +1169,16 @@ def test_schema_v2_member_staging_rejects_invalid_gender_without_partial_row(
     with psycopg.connect(worker_url) as connection:
         with connection.transaction():
             connection.execute(
-                "select platform_control.create_directory_staging_generation_v34("
-                "%s,%s,'scheduled',1,1,1,1,2,%s)",
+                "select platform_control.create_directory_staging_generation_v39("
+                "%s,%s,'scheduled',1,1,1,1,3,%s,0,0,0)",
                 (generation_id, uuid4(), "0" * 64),
             )
         with pytest.raises(psycopg.errors.CheckViolation):
             with connection.transaction():
                 connection.execute(
-                    "select platform_control.stage_directory_member_v34("
-                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "select platform_control.stage_directory_member_v39("
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                    "null,null,null,null,null,null,null,null,null)",
                     (
                         generation_id,
                         uuid4(),
@@ -1353,14 +1355,15 @@ def test_directory_pair_rejects_mixed_key_versions_without_partial_row(
     ))[1]
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v34("
-            "%s,%s,'scheduled',1,1,1,1,%s,%s)",
+            "select platform_control.create_directory_staging_generation_v39("
+            "%s,%s,'scheduled',1,1,1,1,%s,%s,0,0,0)",
             (generation_id, uuid4(), DIRECTORY_SOURCE_SCHEMA_VERSION, "0" * 64),
         )
         with pytest.raises(psycopg.errors.CheckViolation):
             connection.execute(
-                "select platform_control.stage_directory_member_v34("
-                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "select platform_control.stage_directory_member_v39("
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                "null,null,null,null,null,null,null,null,null)",
                 (
                     generation_id, uuid4(),
                     corporate.lookup_hmac, corporate.lookup_key_version,
@@ -1395,8 +1398,8 @@ def test_directory_promotion_rejects_incomplete_generation_without_state_change(
         ).fetchone()
     with psycopg.connect(worker_url) as connection:
         connection.execute(
-            "select platform_control.create_directory_staging_generation_v34("
-            "%s,%s,'scheduled',%s,1,0,1,%s,%s)",
+            "select platform_control.create_directory_staging_generation_v39("
+            "%s,%s,'scheduled',%s,1,0,1,%s,%s,0,0,0)",
             (generation_id, uuid4(), declared_members,
              DIRECTORY_SOURCE_SCHEMA_VERSION, "0" * 64),
         )

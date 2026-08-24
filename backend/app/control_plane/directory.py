@@ -1,22 +1,27 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from enum import StrEnum
 import hashlib
 import logging
 import struct
 import time
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from .crypto import ProtectedProviderId, ProviderIdentityCodec
+from .crypto import (
+    EncryptedDirectoryAttribute,
+    ProtectedProviderId,
+    ProviderIdentityCodec,
+)
 from .dingtalk import (
     DingTalkClient,
     DingTalkDepartment,
     DingTalkDirectorySnapshotError,
+    DingTalkEmployeeProfile,
     DingTalkGender,
     DingTalkMember,
     hydrate_authoritative_members,
@@ -36,9 +41,8 @@ from .directory_limits import (
     MAX_PROVIDER_CIPHERTEXT_BYTES,
     MIN_PROVIDER_CIPHERTEXT_BYTES,
 )
-from .models import DirectoryFreshness
 from .identity import IdentityResolver
-
+from .models import DirectoryFreshness
 
 _LOG = logging.getLogger(__name__)
 
@@ -91,6 +95,12 @@ class StagedMember:
     display_name: str
     status: str
     gender: DingTalkGender | None = field(repr=False)
+    real_name: EncryptedDirectoryAttribute | None = field(default=None, repr=False)
+    mobile: EncryptedDirectoryAttribute | None = field(default=None, repr=False)
+    primary_department: EncryptedDirectoryAttribute | None = field(
+        default=None,
+        repr=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -242,10 +252,17 @@ def canonical_directory_digest(
 ) -> str:
     if source_schema_version != DIRECTORY_SOURCE_SCHEMA_VERSION:
         raise ValueError("directory source schema invalid")
+    profile_counts = tuple(
+        sum(
+            row.status == "active" and getattr(row, field_name) is not None
+            for row in members
+        )
+        for field_name in ("real_name", "mobile", "primary_department")
+    )
     records = [
         _canonical_record(
             b"H", source_schema_version, len(members), len(departments),
-            len(memberships), len(closure)
+            len(memberships), len(closure), *profile_counts
         )
     ]
     for row in sorted(departments, key=lambda item: item.department_key.bytes):
@@ -262,6 +279,23 @@ def canonical_directory_digest(
             row.corporate.encryption_key_version, row.corporate.ciphertext,
             row.union.lookup_key_version, row.union.lookup_hmac,
             row.union.encryption_key_version, row.union.ciphertext,
+            row.real_name.encryption_key_version if row.real_name else None,
+            row.real_name.nonce if row.real_name else None,
+            row.real_name.ciphertext if row.real_name else None,
+            row.mobile.encryption_key_version if row.mobile else None,
+            row.mobile.nonce if row.mobile else None,
+            row.mobile.ciphertext if row.mobile else None,
+            (
+                row.primary_department.encryption_key_version
+                if row.primary_department
+                else None
+            ),
+            row.primary_department.nonce if row.primary_department else None,
+            (
+                row.primary_department.ciphertext
+                if row.primary_department
+                else None
+            ),
         ))
     for member_key, department_key in sorted(
         memberships, key=lambda item: (item[0].bytes, item[1].bytes)
@@ -392,6 +426,20 @@ class DirectoryReconciler:
         except DingTalkDirectorySnapshotError:
             raise DirectoryReconciliationError("member_conflict") from None
 
+        profiles = await self._client.get_employee_profiles(tuple(sorted(members)))
+        if (
+            not isinstance(profiles, dict)
+            or set(profiles) != set(members)
+            or any(
+                not isinstance(profile, DingTalkEmployeeProfile)
+                or profile.userid != userid
+                for userid, profile in profiles.items()
+            )
+        ):
+            raise DirectoryReconciliationError("member_profile_conflict")
+
+        generation_id = uuid4()
+
         protected_departments: dict[int, StagedDepartment] = {}
         for department_id in sorted(by_id):
             item = by_id[department_id]
@@ -421,6 +469,7 @@ class DirectoryReconciler:
         member_keys: dict[str, UUID] = {}
         for userid in sorted(members):
             member = members[userid]
+            profile = profiles[userid]
             corporate = self._codec.seal(
                 "employee",
                 IdentityResolver.corporate_provider_id(self._corp_id, userid),
@@ -439,6 +488,24 @@ class DirectoryReconciler:
                     member.display_name,
                     "active" if member.active else "inactive",
                     member.gender,
+                    self._seal_optional_attribute(
+                        generation_id,
+                        key,
+                        "real_name",
+                        profile.real_name,
+                    ),
+                    self._seal_optional_attribute(
+                        generation_id,
+                        key,
+                        "mobile",
+                        profile.mobile,
+                    ),
+                    self._seal_optional_attribute(
+                        generation_id,
+                        key,
+                        "primary_department",
+                        profile.primary_department,
+                    ),
                 )
             )
         memberships = tuple(
@@ -466,7 +533,13 @@ class DirectoryReconciler:
             tuple(protected_departments[key] for key in sorted(protected_departments)),
             tuple(staged_members), memberships, closure,
         )
-        generation_id = uuid4()
+        profile_present_counts = tuple(
+            sum(
+                row.status == "active" and getattr(row, field_name) is not None
+                for row in staged_members
+            )
+            for field_name in ("real_name", "mobile", "primary_department")
+        )
         run_id = uuid4()
         try:
             self._check_deadline(deadline)
@@ -480,6 +553,7 @@ class DirectoryReconciler:
                 len(closure),
                 DIRECTORY_SOURCE_SCHEMA_VERSION,
                 expected_digest,
+                *profile_present_counts,
                 timeout_seconds=self._remaining(deadline),
             )
             self._check_deadline(deadline)
@@ -529,7 +603,9 @@ class DirectoryReconciler:
         _LOG.info(
             "directory reconciliation completed generation_id=%s run_id=%s "
             "duration_ms=%d member_count=%d department_count=%d membership_count=%d "
-            "gender_valid_count=%d gender_missing_count=%d gender_invalid_count=%d",
+            "gender_valid_count=%d gender_missing_count=%d gender_invalid_count=%d "
+            "real_name_present_count=%d mobile_present_count=%d "
+            "primary_department_present_count=%d",
             generation_id,
             run_id,
             int(duration * 1000),
@@ -539,6 +615,7 @@ class DirectoryReconciler:
             gender_status_counts["valid"],
             gender_status_counts["missing"],
             gender_status_counts["invalid"],
+            *profile_present_counts,
         )
         return DirectoryReconciliationResult(
             generation_id,
@@ -548,6 +625,29 @@ class DirectoryReconciler:
             len(memberships),
             duration,
         )
+
+    def _seal_optional_attribute(
+        self,
+        generation_id: UUID,
+        member_id: UUID,
+        purpose: str,
+        value: str | None,
+    ) -> EncryptedDirectoryAttribute | None:
+        if value is None:
+            return None
+        protected = self._codec.seal_attribute(
+            self._corp_id,
+            generation_id,
+            member_id,
+            purpose,
+            value,
+        )
+        if (
+            len(protected.nonce) != 12
+            or not 16 <= len(protected.ciphertext) <= MAX_PROVIDER_CIPHERTEXT_BYTES
+        ):
+            raise DirectoryReconciliationError("profile_ciphertext_bound")
+        return protected
 
     def _stage_batches(
         self,

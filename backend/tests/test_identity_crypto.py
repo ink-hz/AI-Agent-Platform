@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import base64
 import json
-from pathlib import Path
 import stat
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
-
 from app.control_plane.crypto import (
+    EncryptedDirectoryAttribute,
     IdentityCryptoError,
     IdentityKeyring,
     ProtectedProviderId,
@@ -97,6 +97,126 @@ def test_seal_has_deterministic_lookup_and_randomized_ciphertext(tmp_path: Path)
     assert first.ciphertext != second.ciphertext
     assert len(first.ciphertext) >= 12 + 16
     assert codec.unseal(first) == "synthetic-provider-id"
+
+
+def test_directory_attribute_round_trip_is_randomized_and_redacted(
+    tmp_path: Path,
+) -> None:
+    codec = _codec(tmp_path)
+    generation_id = uuid4()
+    member_id = uuid4()
+
+    first = codec.seal_attribute(
+        "test-corp",
+        generation_id,
+        member_id,
+        "real_name",
+        "Private Real Name",
+    )
+    second = codec.seal_attribute(
+        "test-corp",
+        generation_id,
+        member_id,
+        "real_name",
+        "Private Real Name",
+    )
+
+    assert first.nonce != second.nonce
+    assert first.ciphertext != second.ciphertext
+    assert first.encryption_key_version == second.encryption_key_version == 2
+    assert first.nonce not in first.ciphertext
+    assert codec.open_attribute(
+        first,
+        "test-corp",
+        generation_id,
+        member_id,
+        "real_name",
+    ) == "Private Real Name"
+    assert "Private Real Name" not in repr(first)
+    assert first.ciphertext.hex() not in repr(first)
+    assert first.nonce.hex() not in repr(first)
+
+
+@pytest.mark.parametrize("wrong_binding", ["directory", "generation", "member", "purpose"])
+def test_directory_attribute_aad_binds_every_context_value(
+    tmp_path: Path,
+    wrong_binding: str,
+) -> None:
+    codec = _codec(tmp_path)
+    generation_id = uuid4()
+    member_id = uuid4()
+    protected = codec.seal_attribute(
+        "test-corp",
+        generation_id,
+        member_id,
+        "mobile",
+        "13800138000",
+    )
+    context = {
+        "directory_id": "other-corp" if wrong_binding == "directory" else "test-corp",
+        "generation_id": uuid4() if wrong_binding == "generation" else generation_id,
+        "member_id": uuid4() if wrong_binding == "member" else member_id,
+        "purpose": "real_name" if wrong_binding == "purpose" else "mobile",
+    }
+
+    with pytest.raises(IdentityCryptoError, match="attribute decrypt failed") as caught:
+        codec.open_attribute(protected, **context)
+
+    assert "13800138000" not in str(caught.value)
+
+
+def test_directory_attribute_rejects_tampering_and_supports_key_rotation(
+    tmp_path: Path,
+) -> None:
+    old_codec = ProviderIdentityCodec(
+        _keyring(
+            tmp_path,
+            "attribute-old-encryption.json",
+            "provider-encryption",
+            1,
+            {1: b"e" * 32},
+        ),
+        _keyring(
+            tmp_path,
+            "attribute-old-hmac.json",
+            "provider-lookup-hmac",
+            1,
+            {1: b"h" * 32},
+            transition_versions=(1,),
+        ),
+    )
+    generation_id = uuid4()
+    member_id = uuid4()
+    protected = old_codec.seal_attribute(
+        "test-corp",
+        generation_id,
+        member_id,
+        "primary_department",
+        "Project Management",
+    )
+    rotated_codec = _codec(tmp_path)
+    tampered = EncryptedDirectoryAttribute(
+        purpose=protected.purpose,
+        ciphertext=protected.ciphertext[:-1] + bytes([protected.ciphertext[-1] ^ 1]),
+        nonce=protected.nonce,
+        encryption_key_version=protected.encryption_key_version,
+    )
+
+    assert rotated_codec.open_attribute(
+        protected,
+        "test-corp",
+        generation_id,
+        member_id,
+        "primary_department",
+    ) == "Project Management"
+    with pytest.raises(IdentityCryptoError, match="attribute decrypt failed"):
+        rotated_codec.open_attribute(
+            tampered,
+            "test-corp",
+            generation_id,
+            member_id,
+            "primary_department",
+        )
 
 
 def test_subject_kind_and_version_are_authenticated_aad(tmp_path: Path) -> None:

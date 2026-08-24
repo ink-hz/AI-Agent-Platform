@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from uuid import UUID
 
@@ -243,7 +244,7 @@ def test_directory_service_cancels_peer_and_closes_provider(monkeypatch: pytest.
     assert events[-1] == "closed"
 
 
-def test_directory_repository_stages_schema_v2_member_gender() -> None:
+def test_directory_repository_stages_schema_v3_member_profile() -> None:
     from app.control_plane.crypto import ProtectedProviderId
     from app.control_plane.directory import StagedMember
     from app.control_plane.directory_worker import DirectoryWorkerRepository
@@ -271,14 +272,13 @@ def test_directory_repository_stages_schema_v2_member_gender() -> None:
     )
 
     query, parameters = captured[0]
-    assert query == (
-        "select platform_control.stage_directory_member_v34("
-        "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
-    )
-    assert parameters[0][-1] == "female"
+    assert query.startswith("select platform_control.stage_directory_member_v39(")
+    assert len(parameters[0]) == 22
+    assert parameters[0][12] == "female"
+    assert parameters[0][13:] == (None,) * 9
 
 
-def test_directory_repository_creates_schema_v2_generation() -> None:
+def test_directory_repository_creates_schema_v3_generation() -> None:
     from app.control_plane.directory_worker import DirectoryWorkerRepository
 
     repository = DirectoryWorkerRepository(
@@ -297,12 +297,98 @@ def test_directory_repository_creates_schema_v2_generation() -> None:
         1,
         1,
         1,
-        2,
+        3,
         "a" * 64,
+        1,
+        1,
+        1,
     )
 
     query, parameters = captured[0]
     assert query.startswith(
-        "select platform_control.create_directory_staging_generation_v34("
+        "select platform_control.create_directory_staging_generation_v39("
     )
-    assert parameters[7] == 2
+    assert parameters[7] == 3
+    assert parameters[9:] == (1, 1, 1)
+
+
+def test_directory_repository_reads_only_aggregate_employee_profile_readiness() -> None:
+    from app.control_plane.directory_worker import DirectoryWorkerRepository
+
+    repository = DirectoryWorkerRepository(
+        "postgresql://platform_directory_worker@127.0.0.1/agent_platform_control"
+    )
+    captured = []
+    repository._call = lambda query, parameters, **kwargs: (
+        captured.append((query, parameters))
+        or {
+            "generation_id": UUID("50000000-0000-4000-8000-000000000001"),
+            "active_employee_count": 10,
+            "real_name_present_count": 8,
+            "mobile_present_count": 7,
+            "primary_department_present_count": 9,
+        }
+    )
+
+    readiness = repository.read_employee_profile_readiness()
+
+    assert readiness.ready is True
+    assert readiness.as_public_dict() == {
+        "generation_id": "50000000-0000-4000-8000-000000000001",
+        "active_employee_count": 10,
+        "real_name_present_count": 8,
+        "mobile_present_count": 7,
+        "primary_department_present_count": 9,
+    }
+    query, parameters = captured[0]
+    assert "read_employee_profile_readiness_v39" in query
+    assert parameters == ()
+    for forbidden in ("display_name", "ciphertext", "nonce", "lookup_hmac"):
+        assert forbidden not in query
+
+
+def test_employee_profile_probe_outputs_only_privacy_safe_aggregates(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from app.control_plane import employee_profile_probe
+    from app.control_plane.directory_worker import EmployeeProfileReadiness
+
+    class Settings:
+        directory_database_url = "postgresql://private-database-url"
+
+    class Repository:
+        def __init__(self, database_url):
+            assert database_url == Settings.directory_database_url
+
+        def read_employee_profile_readiness(self):
+            return EmployeeProfileReadiness(
+                UUID("50000000-0000-4000-8000-000000000001"),
+                10,
+                8,
+                7,
+                9,
+            )
+
+    monkeypatch.setattr(
+        employee_profile_probe,
+        "load_worker_settings",
+        lambda service: Settings(),
+    )
+    monkeypatch.setattr(
+        employee_profile_probe,
+        "DirectoryWorkerRepository",
+        Repository,
+    )
+
+    assert employee_profile_probe.main() == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "private-database-url" not in captured.out
+    assert set(json.loads(captured.out)) == {
+        "generation_id",
+        "active_employee_count",
+        "real_name_present_count",
+        "mobile_present_count",
+        "primary_department_present_count",
+    }
