@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
 
@@ -521,6 +520,17 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     assert directory["volumes"] != stream["volumes"]
     assert "PLATFORM_CONTROL_STREAM_DATABASE_URL_FILE" not in directory["environment"]
     assert "PLATFORM_CONTROL_DIRECTORY_DATABASE_URL_FILE" not in stream["environment"]
+    assert directory["environment"]["PLATFORM_DINGTALK_AGENT_ID_FILE"] == (
+        "/run/secrets/dingtalk-agent-id"
+    )
+    assert directory["environment"][
+        "PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE_FILE"
+    ] == "/run/secrets/dingtalk-hrm-real-name-field-code"
+    assert "PLATFORM_DINGTALK_AGENT_ID_FILE" not in stream["environment"]
+    assert (
+        "PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE_FILE"
+        not in stream["environment"]
+    )
 
     serialized = (CLOUD / "compose.yaml").read_text(encoding="utf-8")
     for forbidden in ("clientSecret:", "dingtalk-app-secret:", "corp-id:"):
@@ -618,6 +628,8 @@ def test_identity_secret_bootstrap_is_noninteractive_and_service_scoped():
         "control-audit-database-url",
         "control-directory-worker-database-url",
         "control-stream-ingest-database-url",
+        "dingtalk-agent-id",
+        "dingtalk-hrm-real-name-field-code",
         "orbbec-agent-platform-api-secrets",
         "orbbec-agent-platform-directory-secrets",
         "orbbec-agent-platform-stream-secrets",
@@ -629,6 +641,13 @@ def test_identity_secret_bootstrap_is_noninteractive_and_service_scoped():
         assert forbidden not in script
     assert script.count("openssl rand 32") >= 3
     assert "cmp -s" not in script
+    directory_copy = script.split(
+        "-v orbbec-agent-platform-directory-secrets:/target", 1
+    )[1].split(
+        "-v orbbec-agent-platform-stream-secrets:/target", 1
+    )[0]
+    assert "dingtalk-agent-id" in directory_copy
+    assert "dingtalk-hrm-real-name-field-code" in directory_copy
 
 
 def test_initial_owner_binding_uses_exact_private_provider_id_and_two_phase_receipt():

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from dataclasses import dataclass, field
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable
 
@@ -25,11 +25,12 @@ from .stream_consumer import (
     StreamPayloadCipher,
 )
 
-
 _INLINE_SECRETS = (
     "PLATFORM_CONTROL_DIRECTORY_DATABASE_URL",
     "PLATFORM_CONTROL_STREAM_DATABASE_URL",
+    "PLATFORM_DINGTALK_AGENT_ID",
     "PLATFORM_DINGTALK_APP_SECRET",
+    "PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE",
     "PLATFORM_IDENTITY_ENCRYPTION_KEYRING",
     "PLATFORM_IDENTITY_HMAC_KEYRING",
 )
@@ -42,6 +43,8 @@ class WorkerSettings:
     app_secret: str = field(repr=False)
     encryption_keyring_file: Path
     hmac_keyring_file: Path | None
+    agent_id: int | None = None
+    hrm_real_name_field_code: str | None = field(default=None, repr=False)
     directory_database_url: str | None = field(default=None, repr=False)
     stream_database_url: str | None = field(default=None, repr=False)
 
@@ -54,6 +57,23 @@ def _required_file_environment(name: str) -> Path:
     if not path.is_absolute():
         raise ValueError(f"{name} must be absolute")
     return path
+
+
+def _positive_integer_secret(name: str) -> int:
+    raw = read_secret_file(str(_required_file_environment(name)), max_bytes=32)
+    if not raw.isascii() or not raw.isdigit():
+        raise ValueError(f"{name} invalid")
+    value = int(raw)
+    if value <= 0:
+        raise ValueError(f"{name} invalid")
+    return value
+
+
+def _hrm_field_code_secret(name: str) -> str:
+    value = read_secret_file(str(_required_file_environment(name)), max_bytes=256)
+    if len(value) > 256 or "," in value or any(ord(character) < 33 for character in value):
+        raise ValueError(f"{name} invalid")
+    return value
 
 
 def load_worker_settings(service: str | None = None) -> WorkerSettings:
@@ -70,6 +90,19 @@ def load_worker_settings(service: str | None = None) -> WorkerSettings:
     )
     app_secret = read_secret_file(
         str(_required_file_environment("PLATFORM_DINGTALK_APP_SECRET_FILE"))
+    )
+    directory_enabled = service in {None, "directory"}
+    agent_id = (
+        _positive_integer_secret("PLATFORM_DINGTALK_AGENT_ID_FILE")
+        if directory_enabled
+        else None
+    )
+    hrm_real_name_field_code = (
+        _hrm_field_code_secret(
+            "PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE_FILE"
+        )
+        if directory_enabled
+        else None
     )
     encryption_file = _required_file_environment(
         "PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE"
@@ -107,6 +140,8 @@ def load_worker_settings(service: str | None = None) -> WorkerSettings:
         app_secret=app_secret,
         encryption_keyring_file=encryption_file,
         hmac_keyring_file=hmac_file,
+        agent_id=agent_id,
+        hrm_real_name_field_code=hrm_real_name_field_code,
         directory_database_url=directory_url,
         stream_database_url=stream_url,
     )
@@ -124,6 +159,8 @@ def build_directory_services():
     settings = load_worker_settings("directory")
     if settings.directory_database_url is None or settings.hmac_keyring_file is None:
         raise RuntimeError("directory worker configuration unavailable")
+    if settings.agent_id is None or settings.hrm_real_name_field_code is None:
+        raise RuntimeError("directory worker HRM configuration unavailable")
     encryption = _encryption_keyring(settings)
     lookup = IdentityKeyring.from_file(
         settings.hmac_keyring_file,
@@ -136,6 +173,8 @@ def build_directory_services():
         app_secret=settings.app_secret,
         corp_id=settings.corp_id,
         login_flow="in_client",
+        agent_id=settings.agent_id,
+        hrm_real_name_field_code=settings.hrm_real_name_field_code,
     )
     repository = DirectoryWorkerRepository(settings.directory_database_url)
     reconciler = DirectoryReconciler(

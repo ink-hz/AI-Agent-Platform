@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 from uuid import UUID
 
@@ -14,11 +13,10 @@ def _private_file(path: Path, value: str) -> Path:
     return path
 
 
-def test_worker_runtime_reads_credentials_only_from_private_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    from app.control_plane.worker_runtime import load_worker_settings
-
+def _install_worker_secret_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, str]:
     values = {
         "PLATFORM_CONTROL_DIRECTORY_DATABASE_URL_FILE": (
             "postgresql://platform_directory_worker:secret@db/agent_platform_control"
@@ -27,8 +25,10 @@ def test_worker_runtime_reads_credentials_only_from_private_files(
             "postgresql://platform_stream_ingest:secret@db/agent_platform_control"
         ),
         "PLATFORM_DINGTALK_APP_KEY_FILE": "app-key",
+        "PLATFORM_DINGTALK_AGENT_ID_FILE": "12345",
         "PLATFORM_DINGTALK_CORP_ID_FILE": "corp-id",
         "PLATFORM_DINGTALK_APP_SECRET_FILE": "app-secret",
+        "PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE_FILE": "private-real-name-code",
     }
     for name, value in values.items():
         file_path = _private_file(tmp_path / name.lower(), value)
@@ -41,25 +41,148 @@ def test_worker_runtime_reads_credentials_only_from_private_files(
         "PLATFORM_IDENTITY_HMAC_KEYRING_FILE",
         str(_private_file(tmp_path / "lookup.json", "{}")),
     )
+    return values
+
+
+def test_worker_runtime_reads_credentials_only_from_private_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from app.control_plane.worker_runtime import load_worker_settings
+
+    _install_worker_secret_files(tmp_path, monkeypatch)
 
     settings = load_worker_settings()
 
     assert settings.app_key == "app-key"
     assert settings.corp_id == "corp-id"
     assert settings.app_secret == "app-secret"
+    assert settings.agent_id == 12345
+    assert settings.hrm_real_name_field_code == "private-real-name-code"
     assert settings.directory_database_url.endswith("/agent_platform_control")
     assert settings.stream_database_url.endswith("/agent_platform_control")
     rendered = repr(settings)
-    for secret in ("app-secret", "platform_directory_worker", "platform_stream_ingest"):
+    for secret in (
+        "app-secret",
+        "platform_directory_worker",
+        "platform_stream_ingest",
+        "private-real-name-code",
+    ):
         assert secret not in rendered
 
 
+@pytest.mark.parametrize("failure", ["missing", "empty", "unavailable"])
+def test_directory_worker_fails_closed_without_valid_hrm_field_code_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    from app.control_plane.worker_runtime import load_worker_settings
+    from app.local_secrets import SecretFileUnavailable
+
+    _install_worker_secret_files(tmp_path, monkeypatch)
+    environment_name = "PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE_FILE"
+    sensitive_value = "private-real-name-code"
+    if failure == "missing":
+        monkeypatch.delenv(environment_name)
+        expected_error = ValueError
+    elif failure == "empty":
+        monkeypatch.setenv(
+            environment_name,
+            str(_private_file(tmp_path / "empty-hrm-code", " \n")),
+        )
+        expected_error = SecretFileUnavailable
+    else:
+        monkeypatch.setenv(environment_name, str(tmp_path / sensitive_value))
+        expected_error = SecretFileUnavailable
+
+    with pytest.raises(expected_error) as caught:
+        load_worker_settings("directory")
+
+    assert sensitive_value not in str(caught.value)
+
+
+def test_stream_worker_does_not_receive_hrm_profile_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.control_plane.worker_runtime import load_worker_settings
+
+    _install_worker_secret_files(tmp_path, monkeypatch)
+    monkeypatch.delenv("PLATFORM_DINGTALK_AGENT_ID_FILE")
+    monkeypatch.delenv("PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE_FILE")
+
+    settings = load_worker_settings("stream")
+
+    assert settings.agent_id is None
+    assert settings.hrm_real_name_field_code is None
+
+
+def test_directory_worker_injects_hrm_configuration_only_into_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.control_plane import worker_runtime
+
+    settings = worker_runtime.WorkerSettings(
+        app_key="app-key",
+        corp_id="corp-id",
+        app_secret="app-secret",
+        encryption_keyring_file=tmp_path / "encryption.json",
+        hmac_keyring_file=tmp_path / "lookup.json",
+        agent_id=12345,
+        hrm_real_name_field_code="private-real-name-code",
+        directory_database_url="postgresql://directory",
+    )
+    captured: dict[str, object] = {}
+    provider = object()
+
+    class FakeKeyring:
+        @staticmethod
+        def from_file(*args, **kwargs):
+            return object()
+
+    def fake_provider(**kwargs):
+        captured.update(kwargs)
+        return provider
+
+    monkeypatch.setattr(worker_runtime, "load_worker_settings", lambda service: settings)
+    monkeypatch.setattr(worker_runtime, "_encryption_keyring", lambda value: object())
+    monkeypatch.setattr(worker_runtime, "IdentityKeyring", FakeKeyring)
+    monkeypatch.setattr(worker_runtime, "DingTalkClient", fake_provider)
+    for name in (
+        "ProviderIdentityCodec",
+        "DirectoryWorkerRepository",
+        "DirectoryReconciler",
+        "DirectoryWorker",
+        "DirectoryEventRepository",
+        "StreamPayloadCipher",
+        "TargetedMemberRefresher",
+        "DirectoryEventWorker",
+    ):
+        monkeypatch.setattr(worker_runtime, name, lambda *args, **kwargs: object())
+
+    built_provider, _, _ = worker_runtime.build_directory_services()
+
+    assert built_provider is provider
+    assert captured["agent_id"] == 12345
+    assert captured["hrm_real_name_field_code"] == "private-real-name-code"
+
+
+@pytest.mark.parametrize(
+    "environment_name",
+    [
+        "PLATFORM_DINGTALK_APP_SECRET",
+        "PLATFORM_DINGTALK_AGENT_ID",
+        "PLATFORM_DINGTALK_HRM_REAL_NAME_FIELD_CODE",
+    ],
+)
 def test_worker_runtime_rejects_inline_secret_environment(
     monkeypatch: pytest.MonkeyPatch,
+    environment_name: str,
 ):
     from app.control_plane.worker_runtime import load_worker_settings
 
-    monkeypatch.setenv("PLATFORM_DINGTALK_APP_SECRET", "inline-secret")
+    monkeypatch.setenv(environment_name, "inline-secret")
     with pytest.raises(ValueError, match="secret files"):
         load_worker_settings()
 
