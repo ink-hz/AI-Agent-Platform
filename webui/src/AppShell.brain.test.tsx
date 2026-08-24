@@ -30,6 +30,7 @@ describe("usage navigation", () => {
     expect(container.querySelector<HTMLAnchorElement>(".brand")?.getAttribute("href")).toBe("/");
     expect(container.textContent).not.toContain("管理中心");
     expect(container.querySelector("main.page.is-brain-workspace")).not.toBeNull();
+    expect(container.querySelector(".app.is-brain-workspace-shell")).not.toBeNull();
     expect(container.querySelector("footer.site-foot")).toBeNull();
   });
 

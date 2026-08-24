@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { Account } from "../auth";
 import { conversationInputTooLarge, startConversation, type ConversationSubmission } from "../conversationApi";
@@ -36,6 +36,8 @@ export function BrainPage({
   const submitController = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
   const inputTooLarge = conversationInputTooLarge(text.trim());
+
+  useEffect(() => () => submitController.current?.abort(), []);
 
   const send = async () => {
     const normalized = text.trim();

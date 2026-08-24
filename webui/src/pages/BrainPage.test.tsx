@@ -133,4 +133,25 @@ describe("BrainPage", () => {
     expect(container.querySelector<HTMLButtonElement>(".brain-submit")?.disabled).toBe(true);
     expect(createSubmission).not.toHaveBeenCalled();
   });
+
+  it("aborts an in-flight first message when the composer unmounts", async () => {
+    const pending = deferred<ConversationSubmissionResult>();
+    let signal: AbortSignal | undefined;
+    const client: BrainPageClient = {
+      createSubmission: vi.fn().mockReturnValue({
+        idempotencyKey: "request",
+        send: vi.fn((selected?: AbortSignal) => { signal = selected; return pending.promise; }),
+      }),
+    };
+    await act(async () => root.render(<BrainPage account={account} client={client} />));
+    const textarea = container.querySelector("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "新任务");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>(".brain-submit")?.click());
+    expect(signal?.aborted).toBe(false);
+    await act(async () => root.render(<div>已离开</div>));
+    expect(signal?.aborted).toBe(true);
+  });
 });

@@ -903,8 +903,9 @@ body {
 .admin-nav a { flex: 0 0 auto; padding: 7px 10px; border-radius: 8px; color: var(--ink-soft); font-size: 12px; font-weight: 700; text-decoration: none; }
 .admin-nav a:hover, .admin-nav a.is-current { background: var(--surface); color: var(--brand); box-shadow: 0 1px 5px rgba(19, 53, 91, .08); }
 
-.page.is-brain-workspace { width: 100%; padding: 0; }
-.brain-workspace { display: grid; grid-template-columns: 280px minmax(0,1fr); height: calc(100dvh - 73px); overflow: hidden; }
+.app.is-brain-workspace-shell { height: 100dvh; overflow: hidden; }
+.page.is-brain-workspace { width: 100%; min-height: 0; padding: 0; }
+.brain-workspace { position: relative; display: grid; grid-template-columns: 280px minmax(0,1fr); height: 100%; overflow: hidden; }
 .brain-workspace-main { min-width: 0; overflow-y: auto; padding: 0 clamp(24px, 4vw, 56px); }
 .brain-workspace-menu, .conversation-sidebar-close, .conversation-sidebar-backdrop { display: none; }
 .conversation-sidebar { overflow-y: auto; padding: 18px 14px; border-right: 1px solid var(--line); background: rgba(247,249,252,.94); }
@@ -1101,9 +1102,9 @@ body {
 
 @media (max-width: 720px) {
   .page.is-brain-workspace { width: 100%; }
-  .brain-workspace { display: block; height: calc(100dvh - 105px); }
+  .brain-workspace { display: block; height: 100%; }
   .brain-workspace-main { height: 100%; padding: 0 14px; }
-  .brain-workspace-menu { position: fixed; z-index: 35; top: 116px; left: 12px; display: grid; width: 40px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.96); color: var(--brand); font-size: 18px; place-items: center; }
+  .brain-workspace-menu { position: absolute; z-index: 35; top: 12px; left: 12px; display: grid; width: 40px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.96); color: var(--brand); font-size: 18px; place-items: center; }
   .conversation-sidebar { position: fixed; z-index: 42; top: 0; bottom: 0; left: 0; width: min(86vw, 320px); padding: 18px 14px; border-right: 1px solid var(--line); box-shadow: 16px 0 42px rgba(15,27,45,.2); transform: translateX(-105%); transition: transform .18s ease; }
   .conversation-sidebar.is-open { transform: translateX(0); }
   .conversation-sidebar-close { display: grid; width: 34px; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink-soft); font: inherit; font-size: 20px; place-items: center; }

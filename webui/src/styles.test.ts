@@ -204,7 +204,9 @@ describe("Executive Operations visual contract", () => {
 
   it("keeps continuous Conversation content and composer usable on mobile", () => {
     expect(rule(".page.is-brain-workspace")).toContain("width: 100%");
+    expect(rule(".app.is-brain-workspace-shell")).toContain("height: 100dvh");
     expect(rule(".brain-workspace")).toContain("grid-template-columns: 280px minmax(0,1fr)");
+    expect(rule(".brain-workspace")).toContain("height: 100%");
     expect(rule(".brain-workspace")).toContain("overflow: hidden");
     expect(rule(".conversation-sidebar")).toContain("overflow-y: auto");
     expect(rule(".brain-workspace-main")).toContain("overflow-y: auto");

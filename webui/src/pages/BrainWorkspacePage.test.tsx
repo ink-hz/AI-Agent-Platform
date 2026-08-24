@@ -74,6 +74,7 @@ describe("BrainWorkspacePage", () => {
     await act(async () => opener.click());
     expect(opener.getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelector('[role="dialog"][aria-label="对话列表"]')).not.toBeNull();
+    expect(document.activeElement).toBe(container.querySelector(".conversation-sidebar-close"));
     await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
     expect(opener.getAttribute("aria-expanded")).toBe("false");
     expect(container.querySelector('[role="dialog"][aria-label="对话列表"]')).toBeNull();

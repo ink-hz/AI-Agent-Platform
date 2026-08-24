@@ -70,7 +70,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
       ? "数据已过期"
       : "等待首次同步";
   return (
-    <div className="app">
+    <div className={`app${brainWorkspace ? " is-brain-workspace-shell" : ""}`}>
       <header className="topbar">
         <div className="topbar-inner">
           <a className="brand" href={platformPath("/")} onClick={(event) => follow(event, "/")}>
