@@ -88,17 +88,18 @@ def test_genuine_allow_to_deny_changes_effective_hash() -> None:
     assert allowed.effective_decision_hash != denied.effective_decision_hash
 
 
-def test_list_filters_unregistered_adapters_and_defaults_to_deny() -> None:
+def test_list_keeps_authorized_agent_with_missing_adapter_as_unavailable() -> None:
     authorization = FakeAuthorization()
-    authorization.allowed = {"hr-bot", "fae-bot"}
+    authorization.allowed = {"hr-bot"}
     registry = _registry(
         authorization=authorization,
-        registered={"metabot_local"},
+        registered={"reference"},
     )
 
-    assert tuple(item.agent_id for item in registry.list_for_user(USER_ID)) == (
-        "hr-bot",
-    )
+    listed = registry.list_for_user(USER_ID)
+    assert tuple(item.agent_id for item in listed) == ("hr-bot",)
+    assert listed[0].availability == "unavailable"
+    assert listed[0].health_fresh is False
     unknown = registry.authorize_task(USER_ID, "missing-bot", 1)
     assert unknown.allowed is False
     assert unknown.reason_code == "agent_unavailable"

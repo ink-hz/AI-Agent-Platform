@@ -1,5 +1,6 @@
 import pytest
 
+from app.agent_catalog import load_agent_catalog
 from app.fleet.catalog import AgentCatalog
 
 
@@ -24,24 +25,24 @@ EXPECTED_IDENTITIES = {
         "FS",
         "承接飞书默认会话与日常协作任务。",
     ),
-    "hr-bot": ("HR", "HR", "HR", "处理招聘、人事与员工服务相关工作。"),
+    "hr-bot": ("HR Agent", "HR", "HR", "帮助员工和管理者完成招聘、人事与员工服务任务。"),
     "marketing-prospecting-bot": (
         "Marketing Prospecting",
         "Marketing",
         "PRO",
-        "发现、筛选并跟进潜在客户线索。",
+        "发现、筛选并规划潜在客户线索的跟进方向。",
     ),
     "marketing-inbound-bot": (
         "Marketing Inbound",
         "Marketing",
         "IN",
-        "处理入站线索、内容触达与客户咨询。",
+        "处理入站线索、内容触达与客户咨询准备工作。",
     ),
     "marketing-voice-bot": (
         "Marketing Voice",
         "Marketing",
         "VO",
-        "处理语音触达、通话沟通与结果整理。",
+        "为语音触达、通话沟通与结果整理提供支持。",
     ),
     "fae-bot": ("FAE", "FAE", "FAE", "处理产品咨询、问题诊断与现场应用。"),
     "test-bot": (
@@ -54,13 +55,13 @@ EXPECTED_IDENTITIES = {
         "Marketing GTM",
         "Marketing",
         "GTM",
-        "负责市场进入策略、节奏规划与执行协同。",
+        "制定市场进入策略、节奏规划与执行协同方案。",
     ),
     "marketing-intelligence-bot": (
         "Marketing Intelligence",
         "Marketing",
         "INT",
-        "收集并整理市场动态与竞争信息。",
+        "收集、比较并整理市场动态与竞争信息。",
     ),
     "codex-assistant": (
         "Iris Codex",
@@ -137,3 +138,13 @@ def test_catalog_excludes_felix_and_iris_without_excluding_ai_fae():
 def test_catalog_rejects_unknown_exclusion():
     with pytest.raises(ValueError, match="excluded agent profile"):
         AgentCatalog({}, {}, set(), {"missing-agent"})
+
+
+def test_fleet_business_profiles_project_canonical_product_identity():
+    fleet = AgentCatalog.default()
+
+    for card in load_agent_catalog():
+        profile = fleet.profile(card.agent_id, card.agent_id)
+        assert (profile.name, profile.domain, profile.description) == (
+            card.display_name, card.domain_group, card.mission,
+        )

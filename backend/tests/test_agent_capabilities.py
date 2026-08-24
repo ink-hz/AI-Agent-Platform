@@ -10,7 +10,6 @@ from app.agent_brain.models import (
     AgentCapabilityCard,
     load_capability_cards,
 )
-from app.fleet.catalog import AgentCatalog
 
 
 APP_DSN = (
@@ -20,7 +19,7 @@ APP_DSN = (
 
 
 def _default_payload() -> dict[str, object]:
-    path = Path(__file__).parents[1] / "app" / "agent_brain" / "capabilities.yaml"
+    path = Path(__file__).parents[1] / "app" / "agent_catalog" / "catalog.yaml"
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
@@ -30,13 +29,12 @@ def _write_payload(tmp_path: Path, payload: dict[str, object]) -> Path:
     return path
 
 
-def test_default_catalog_contains_exactly_the_seven_callable_agents() -> None:
+def test_brain_projection_contains_exactly_the_six_delegated_agents() -> None:
     cards = load_capability_cards()
 
     assert tuple(card.agent_id for card in cards) == CALLABLE_AGENT_IDS
     assert set(CALLABLE_AGENT_IDS) == {
         "hr-bot",
-        "fae-bot",
         "marketing-prospecting-bot",
         "marketing-inbound-bot",
         "marketing-voice-bot",
@@ -49,6 +47,7 @@ def test_default_catalog_contains_exactly_the_seven_callable_agents() -> None:
         "codex-assistant",
         "ai-fae-agent",
         "ai-admin-agent",
+        "fae-bot",
     } & {card.agent_id for card in cards}
 
 
@@ -121,13 +120,6 @@ def test_invalid_capability_configuration_fails_during_startup(
 
     with pytest.raises(ValueError):
         AgentUseAuthorization(APP_DSN, capability_path=path)
-
-
-def test_inconsistent_injected_fleet_catalog_fails_during_startup() -> None:
-    inconsistent_catalog = AgentCatalog({}, {}, set())
-
-    with pytest.raises(ValueError, match="business catalog"):
-        AgentUseAuthorization(APP_DSN, fleet_catalog=inconsistent_catalog)
 
 
 def test_capability_model_rejects_undeclared_internal_fields() -> None:

@@ -11,8 +11,6 @@ from psycopg.rows import dict_row
 
 from app.control_plane.dsn import validate_control_dsn
 from app.control_plane.models import AuthContext
-from app.fleet.catalog import AgentCatalog
-
 from .models import AgentCapabilityCard, load_capability_cards
 
 
@@ -33,7 +31,6 @@ class AgentUseAuthorization:
         control_database_url: str,
         *,
         capability_path: str | Path | None = None,
-        fleet_catalog: AgentCatalog | None = None,
         connect: Callable[..., Any] = psycopg.connect,
         dsn_purpose: str = "app",
     ) -> None:
@@ -43,9 +40,7 @@ class AgentUseAuthorization:
         self.environment = parsed.environment
         self._control_database_url = control_database_url
         self._connect = connect
-        self._cards = load_capability_cards(
-            capability_path, fleet_catalog=fleet_catalog
-        )
+        self._cards = load_capability_cards(capability_path)
 
     @property
     def capability_cards(self) -> tuple[AgentCapabilityCard, ...]:

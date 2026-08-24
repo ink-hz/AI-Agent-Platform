@@ -156,7 +156,7 @@ def test_management_role_does_not_bypass_agent_use_decision() -> None:
 
 
 def test_final_user_decisions_are_not_cached() -> None:
-    decisions = _Decisions({"hr-bot"}, {"fae-bot"})
+    decisions = _Decisions({"hr-bot"}, {"marketing-gtm-bot"})
     auth = _auth()
     authorization = AgentUseAuthorization(APP_DSN, connect=decisions.connect)
 
@@ -164,7 +164,7 @@ def test_final_user_decisions_are_not_cached() -> None:
     second = authorization.permitted_agents(auth)
 
     assert tuple(card.agent_id for card in first) == ("hr-bot",)
-    assert tuple(card.agent_id for card in second) == ("fae-bot",)
+    assert tuple(card.agent_id for card in second) == ("marketing-gtm-bot",)
     assert decisions.calls == 2
 
 

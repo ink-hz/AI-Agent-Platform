@@ -550,7 +550,7 @@ git commit -m "feat(brain): freeze system prompt contract"
 - Create: `backend/tests/test_agent_brain_runtime_registry.py`
 - Modify: `backend/app/agent_brain/models.py`
 - Modify: `backend/app/agent_brain/authorization.py`
-- Modify: `backend/app/agent_brain/capabilities.yaml`
+- Modify: `backend/app/agent_catalog/catalog.yaml`
 - Modify: `backend/tests/test_agent_capabilities.py`
 - Modify: `backend/tests/test_agent_use_authorization.py`
 
@@ -621,7 +621,7 @@ cd backend && .venv/bin/python -m pytest \
 cd .. && git diff --check
 git add backend/app/agent_brain/runtime_registry.py \
   backend/app/agent_brain/models.py backend/app/agent_brain/authorization.py \
-  backend/app/agent_brain/capabilities.yaml \
+  backend/app/agent_catalog/catalog.yaml \
   backend/tests/test_agent_brain_runtime_registry.py \
   backend/tests/test_agent_capabilities.py \
   backend/tests/test_agent_use_authorization.py

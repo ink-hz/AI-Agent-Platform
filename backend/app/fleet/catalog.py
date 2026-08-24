@@ -1,8 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
 import yaml
+
+from app.agent_catalog import load_agent_catalog
 
 
 AgentVisibility = Literal["business", "system"]
@@ -49,6 +51,25 @@ class AgentCatalog:
             bot_id: AgentProfile(id=bot_id, **fields)
             for bot_id, fields in (payload.get("profiles") or {}).items()
         }
+        for card in load_agent_catalog():
+            existing = profiles.get(card.agent_id)
+            if existing is None:
+                existing = AgentProfile(
+                    id=card.agent_id,
+                    name=card.display_name,
+                    domain=card.domain_group,
+                    description=card.mission,
+                    glyph="AI",
+                    accent="default",
+                    visibility="business",
+                )
+            profiles[card.agent_id] = replace(
+                existing,
+                name=card.display_name,
+                domain=card.domain_group,
+                description=card.mission,
+                visibility="business",
+            )
         return cls(
             profiles,
             dict(payload.get("aliases") or {}),

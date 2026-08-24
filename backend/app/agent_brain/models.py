@@ -3,15 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.fleet.catalog import AgentCatalog
+from app.agent_catalog import load_agent_catalog
 
 
 CALLABLE_AGENT_IDS = (
     "hr-bot",
-    "fae-bot",
     "marketing-prospecting-bot",
     "marketing-inbound-bot",
     "marketing-voice-bot",
@@ -52,89 +50,44 @@ class AgentCapabilityCard(BaseModel):
     capability_version: int = Field(gt=0)
 
 
-class _CapabilitySpec(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    agent_id: str = Field(min_length=1, max_length=128)
-    mission: str = Field(min_length=1, max_length=1_024)
-    capabilities: tuple[str, ...] = Field(min_length=1, max_length=16)
-    exclusions: tuple[str, ...] = Field(min_length=1, max_length=16)
-    example_tasks: tuple[str, ...] = Field(min_length=1, max_length=8)
-    required_inputs: tuple[str, ...] = Field(min_length=1, max_length=16)
-    accepted_input_types: tuple[Literal["text"], ...] = ("text",)
-    output_types: tuple[Literal["text"], ...] = ("text",)
-    supports_attachments_in: bool = False
-    supports_attachments_out: bool = False
-    supports_evidence: bool
-    supports_streaming: bool
-    supports_cancellation: bool
-    supports_idempotency: bool
-    max_duration_seconds: int = Field(ge=1, le=300)
-    data_classification: Literal["internal"] = "internal"
-    adapter_id: str = Field(min_length=1, max_length=128)
-    adapter_kind: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
-    adapter_config_version: int = Field(gt=0)
-    output_contract: Literal["normalized_task_result_v1"]
-    capability_version: int = Field(gt=0)
-
-    @field_validator(
-        "capabilities", "exclusions", "example_tasks", "required_inputs"
-    )
-    @classmethod
-    def _non_empty_unique_text(cls, values: tuple[str, ...]) -> tuple[str, ...]:
-        if any(not isinstance(value, str) or not value.strip() for value in values):
-            raise ValueError("capability entries must be non-empty text")
-        normalized = tuple(value.strip() for value in values)
-        if len(normalized) != len(set(normalized)):
-            raise ValueError("capability entries must be unique")
-        return normalized
-
-
-class _CapabilityDocument(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    agents: tuple[_CapabilitySpec, ...] = Field(min_length=1)
-
-
-def _read_document(path: Path) -> _CapabilityDocument:
-    try:
-        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return _CapabilityDocument.model_validate(payload)
-    except (OSError, UnicodeError, yaml.YAMLError, ValidationError, TypeError):
-        raise ValueError("capability catalog invalid") from None
-
-
 def load_capability_cards(
     path: str | Path | None = None,
-    *,
-    fleet_catalog: AgentCatalog | None = None,
 ) -> tuple[AgentCapabilityCard, ...]:
-    """Load and fully validate the immutable public capability catalog."""
+    """Project the canonical product Catalog into Brain-delegatable cards."""
 
-    selected_path = (
-        Path(path) if path is not None else Path(__file__).with_name("capabilities.yaml")
-    )
-    document = _read_document(selected_path)
-    ids = tuple(spec.agent_id for spec in document.agents)
-    if len(ids) != len(set(ids)):
-        raise ValueError("duplicate capability Agent ID")
-    if set(ids) != set(CALLABLE_AGENT_IDS):
+    catalog = load_agent_catalog(path)
+    delegated = tuple(card for card in catalog if card.dispatchable)
+    if tuple(card.agent_id for card in delegated) != CALLABLE_AGENT_IDS:
         raise ValueError("capability Agent IDs must match callable allowlist")
-
-    specs = {spec.agent_id: spec for spec in document.agents}
-    catalog = fleet_catalog or AgentCatalog.default()
-    cards: list[AgentCapabilityCard] = []
-    for agent_id in CALLABLE_AGENT_IDS:
-        profile = catalog.profile(agent_id, agent_id)
-        if profile.id != agent_id or profile.visibility != "business":
-            raise ValueError("callable Agent missing from business catalog")
-        spec = specs[agent_id]
-        values = spec.model_dump()
-        cards.append(
+    projected: list[AgentCapabilityCard] = []
+    for card in delegated:
+        if card.adapter_id is None or card.adapter_kind is None:
+            raise ValueError("delegated Agent requires an Adapter")
+        projected.append(
             AgentCapabilityCard(
-                display_name=profile.name,
-                domain_group=profile.domain,
-                **values,
+                agent_id=card.agent_id,
+                display_name=card.display_name,
+                domain_group=card.domain_group,
+                mission=card.mission,
+                capabilities=card.capabilities,
+                exclusions=card.exclusions,
+                example_tasks=card.example_tasks,
+                required_inputs=card.required_inputs,
+                accepted_input_types=card.accepted_input_types,
+                output_types=card.output_types,
+                supports_attachments_in=card.supports_attachments_in,
+                supports_attachments_out=card.supports_attachments_out,
+                supports_evidence=card.supports_evidence,
+                supports_streaming=card.supports_streaming,
+                supports_cancellation=card.supports_cancellation,
+                supports_idempotency=card.supports_idempotency,
+                max_duration_seconds=card.max_duration_seconds,
+                data_classification=card.data_classification,
+                adapter_id=card.adapter_id,
+                adapter_kind=card.adapter_kind,
+                adapter_config_version=card.adapter_config_version,
+                output_contract=card.output_contract,
+                capability_version=card.capability_version,
             )
         )
-    return tuple(cards)
+    return tuple(projected)

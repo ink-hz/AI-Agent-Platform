@@ -42,10 +42,11 @@
 ## Task 3：建立唯一规范的 8-Agent Catalog
 
 **文件：**
-- 修改：`backend/app/agent_brain/capabilities.yaml`
-- 新增：`backend/app/catalog/models.py`
-- 新增：`backend/app/catalog/repository.py`
-- 新增：`backend/app/catalog/__init__.py`
+- 删除：`backend/app/agent_brain/capabilities.yaml`（内容迁入规范 Catalog）
+- 新增：`backend/app/agent_catalog/models.py`
+- 新增：`backend/app/agent_catalog/repository.py`
+- 新增：`backend/app/agent_catalog/catalog.yaml`
+- 新增：`backend/app/agent_catalog/__init__.py`
 - 修改：`backend/app/fleet/catalog.py`
 - 测试：`backend/tests/test_fleet_catalog.py`
 - 新增：`backend/tests/test_agent_catalog.py`
@@ -59,7 +60,7 @@
 ## Task 4：Catalog 与授权 API 脱离 Brain 开关
 
 **文件：**
-- 新增：`backend/app/catalog/routes.py`
+- 新增：`backend/app/agent_catalog/routes.py`
 - 修改：`backend/app/main.py`
 - 修改：`backend/app/agent_brain/routes.py`
 - 修改：`backend/app/agent_brain/authorization.py`

@@ -12,7 +12,7 @@ from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.agent_brain.models import AgentCapabilityCard, load_capability_cards
 
 
-Availability = Literal["healthy", "degraded", "offline", "unknown"]
+Availability = Literal["healthy", "degraded", "offline", "unknown", "unavailable"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,8 +117,6 @@ class RuntimeAgentRegistry:
             )
             snapshots = []
             for card in permitted:
-                if card.adapter_kind not in self._registered_adapter_kinds:
-                    continue
                 decision = self._decision_value(
                     self._authorization.decide_for_user_id(
                         internal_user_id, card.agent_id
@@ -205,11 +203,12 @@ class RuntimeAgentRegistry:
     ) -> RuntimeAgentSnapshot:
         observation = self._health.for_agent(card.agent_id)
         fresh = False
-        availability: Availability = "unknown"
+        adapter_registered = card.adapter_kind in self._registered_adapter_kinds
+        availability: Availability = "unknown" if adapter_registered else "unavailable"
         p50 = None
         p95 = None
         sampled_at = None
-        if isinstance(observation, AgentHealthObservation):
+        if adapter_registered and isinstance(observation, AgentHealthObservation):
             sampled_at = observation.sampled_at
             if sampled_at is not None:
                 if sampled_at.tzinfo is None:
