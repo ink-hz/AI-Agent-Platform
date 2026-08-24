@@ -24,7 +24,14 @@ _OS_IDENTITY = re.compile(
 )
 _REFERENCE = re.compile(r"^[A-Z][A-Z0-9_-]{2,63}$")
 _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
-_ERROR_CODES = frozenset({"business_rejected", "control_unavailable"})
+_ERROR_CODES = frozenset(
+    {
+        "business_rejected",
+        "control_unavailable",
+        "provider_probe_failed",
+        "activation_failed",
+    }
+)
 _ROLES = frozenset(
     {"member", "management_viewer", "platform_admin", "platform_owner"}
 )
@@ -79,6 +86,11 @@ _KNOWN_METADATA_KEYS = frozenset(
         "error_code",
         "previous_scope_sha256",
         "new_scope_sha256",
+        "previous_manifest_sha256",
+        "new_manifest_sha256",
+        "previous_prompt_sha256",
+        "new_prompt_sha256",
+        "sanitized_result",
     }
 )
 
@@ -190,6 +202,27 @@ _READ_COMPLETED = frozenset(
 _FAILED = frozenset(
     {"operation_id", "linked_audit_event_id", "error_code", "result"}
 )
+_BRAIN_CONFIG_HASHES = frozenset(
+    {
+        "previous_manifest_sha256",
+        "new_manifest_sha256",
+        "previous_prompt_sha256",
+        "new_prompt_sha256",
+    }
+)
+_BRAIN_CONFIG_REQUEST = frozenset({"operation_id", "result"}) | _BRAIN_CONFIG_HASHES
+_BRAIN_CONFIG_COMPLETED = frozenset(
+    {"operation_id", "linked_audit_event_id", "sanitized_result", "result"}
+) | _BRAIN_CONFIG_HASHES
+_BRAIN_CONFIG_FAILED = frozenset(
+    {
+        "operation_id",
+        "linked_audit_event_id",
+        "error_code",
+        "sanitized_result",
+        "result",
+    }
+) | _BRAIN_CONFIG_HASHES
 
 _EVENT_SCHEMAS: dict[str, tuple[frozenset[str], ...]] = {}
 _EVENT_REASON: dict[str, str] = {}
@@ -204,12 +237,13 @@ def _register_events(
     target: str,
     requested: frozenset[str],
     completed: frozenset[str],
+    failed: frozenset[str] = _FAILED,
 ) -> None:
     for stem in stems:
         for result, schema in (
             ("requested", requested),
             ("completed", completed),
-            ("failed", _FAILED),
+            ("failed", failed),
         ):
             event_type = f"{stem}_{result}"
             _EVENT_SCHEMAS[event_type] = (schema,)
@@ -289,6 +323,14 @@ _register_events(
     target="management_user_directory",
     requested=_READ_REQUEST,
     completed=_READ_COMPLETED,
+)
+_register_events(
+    ("brain_model_configuration_change",),
+    reason="model_configuration_change",
+    target="brain_model_configuration",
+    requested=_BRAIN_CONFIG_REQUEST,
+    completed=_BRAIN_CONFIG_COMPLETED,
+    failed=_BRAIN_CONFIG_FAILED,
 )
 _register_events(
     ("governance_audit_read",),
@@ -372,8 +414,19 @@ def _safe_metadata_value(key: str, value: Any) -> bool:
         "protected_target_lookup_hash",
         "previous_scope_sha256",
         "new_scope_sha256",
+        "previous_manifest_sha256",
+        "new_manifest_sha256",
+        "previous_prompt_sha256",
+        "new_prompt_sha256",
     }:
         return isinstance(value, str) and _HEX_64.fullmatch(value) is not None
+    if key == "sanitized_result":
+        return isinstance(value, str) and value in {
+            "activated",
+            "unchanged",
+            "probe_rejected",
+            "activation_rejected",
+        }
     if key == "error_code":
         return isinstance(value, str) and value in _ERROR_CODES
     if key in _SCOPE_KEYS:
@@ -570,6 +623,8 @@ def _validate_target(command: AuditCommand) -> bool:
         return command.target_id == "all"
     if command.target_type == "governance_audit":
         return command.target_id == "sanitized"
+    if command.target_type == "brain_model_configuration":
+        return command.target_id == "active"
     return False
 
 
@@ -778,12 +833,24 @@ def _outcome_command(
             }
         )
     else:
-        metadata = {
+        metadata: dict[str, AuditValue] = {
             "operation_id": str(requested.request_id),
             "linked_audit_event_id": str(requested_audit_event_id),
             "error_code": error_code or "control_unavailable",
             "result": "failed",
         }
+        if requested.event_type == "brain_model_configuration_change_requested":
+            metadata.update(
+                {
+                    key: requested.metadata[key]
+                    for key in _BRAIN_CONFIG_HASHES
+                }
+            )
+            metadata["sanitized_result"] = (
+                "probe_rejected"
+                if error_code == "provider_probe_failed"
+                else "activation_rejected"
+            )
     return AuditCommand(
         event_type=f"{base}_{result}",
         actor_internal_user_id=requested.actor_internal_user_id,

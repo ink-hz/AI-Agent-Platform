@@ -99,6 +99,44 @@ class ConversationMetrics(BaseModel):
     mission_quality_rate: float | None = Field(default=None, ge=0, le=1)
 
 
+class BrainTurnOperationsRecord(BaseModel):
+    turn_id: str = Field(pattern=r"^[0-9a-f-]{36}$")
+    model_config_version: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+    step_count: int = Field(ge=0)
+    task_count: int = Field(ge=0)
+    batch_count: int = Field(ge=0)
+    continuous_cache_hit_rate: float | None = Field(default=None, ge=0, le=1)
+    first_waiting_agents_cache_hit_rate: float | None = Field(default=None, ge=0, le=1)
+    later_waiting_agents_cache_hit_rate: float | None = Field(default=None, ge=0, le=1)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    estimated_cost: float = Field(ge=0)
+    outcome: Literal[
+        "resolved", "partially_completed", "safe_abstained", "failed", "cancelled", "interrupted"
+    ]
+    fallback_used: bool
+    reason_code: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    observed_at: datetime
+
+
+class BrainOperationsMetrics(BaseModel):
+    period_start: datetime
+    period_end: datetime
+    turns: int = Field(ge=0)
+    completed_turns: int = Field(ge=0)
+    failed_turns: int = Field(ge=0)
+    fallback_turns: int = Field(ge=0)
+    steps: int = Field(ge=0)
+    tasks: int = Field(ge=0)
+    batches: int = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    estimated_cost: float = Field(ge=0)
+    continuous_cache_hit_rate: float | None = Field(default=None, ge=0, le=1)
+    first_waiting_agents_cache_hit_rate: float | None = Field(default=None, ge=0, le=1)
+    later_waiting_agents_cache_hit_rate: float | None = Field(default=None, ge=0, le=1)
+
+
 class UsageOccurrence(BaseModel):
     turn_key: str
     agent_id: str

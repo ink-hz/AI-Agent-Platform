@@ -225,6 +225,100 @@ def test_audit_event_id_is_idempotent_for_request_phase_and_correlated() -> None
     assert {call[1] for call in calls} == {command.request_id}
 
 
+def _brain_model_configuration_command(**metadata_overrides) -> AuditCommand:
+    request_id = uuid4()
+    metadata = {
+        "operation_id": str(request_id),
+        "previous_manifest_sha256": "a" * 64,
+        "new_manifest_sha256": "b" * 64,
+        "previous_prompt_sha256": "c" * 64,
+        "new_prompt_sha256": "d" * 64,
+        "result": "requested",
+    }
+    metadata.update(metadata_overrides)
+    return AuditCommand(
+        event_type="brain_model_configuration_change_requested",
+        actor_internal_user_id=uuid4(),
+        target_type="brain_model_configuration",
+        target_id="active",
+        request_id=request_id,
+        reason="model_configuration_change",
+        metadata=metadata,
+    )
+
+
+def test_brain_model_configuration_audit_requires_exact_hashes() -> None:
+    appended = []
+
+    class Repository:
+        def append(self, event_id, command, sanitized):
+            appended.append((command.event_type, sanitized))
+            return event_id
+
+    writer = AuditWriter(Repository())
+    command = _brain_model_configuration_command()
+    requested_id = writer.append(command)
+    writer.append_outcome(
+        command,
+        requested_id,
+        actual={
+            "operation_id": str(command.request_id),
+            "previous_manifest_sha256": "a" * 64,
+            "new_manifest_sha256": "b" * 64,
+            "previous_prompt_sha256": "c" * 64,
+            "new_prompt_sha256": "d" * 64,
+            "sanitized_result": "activated",
+        },
+    )
+
+    assert [event for event, _ in appended] == [
+        "brain_model_configuration_change_requested",
+        "brain_model_configuration_change_completed",
+    ]
+    assert appended[-1][1]["linked_audit_event_id"] == str(requested_id)
+
+    for invalid in (
+        _brain_model_configuration_command(previous_manifest_sha256=""),
+        _brain_model_configuration_command(secret="must-not-enter-audit"),
+    ):
+        with pytest.raises(ValueError, match="audit metadata invalid"):
+            writer.append(invalid)
+
+
+def test_brain_model_configuration_failed_audit_keeps_hashes_not_secrets() -> None:
+    appended = []
+
+    class Repository:
+        def append(self, event_id, command, sanitized):
+            appended.append(sanitized)
+            return event_id
+
+    writer = AuditWriter(Repository())
+    command = _brain_model_configuration_command()
+    requested_id = writer.append(command)
+    writer.append_outcome(
+        command,
+        requested_id,
+        error_code="provider_probe_failed",
+    )
+
+    failed = appended[-1]
+    assert failed["sanitized_result"] == "probe_rejected"
+    assert failed["previous_manifest_sha256"] == "a" * 64
+    assert failed["new_prompt_sha256"] == "d" * 64
+    assert set(failed) == {
+        "operation_id",
+        "linked_audit_event_id",
+        "previous_manifest_sha256",
+        "new_manifest_sha256",
+        "previous_prompt_sha256",
+        "new_prompt_sha256",
+        "error_code",
+        "sanitized_result",
+        "result",
+    }
+
+
 def test_sensitive_mutation_fails_closed_before_control_change() -> None:
     mutations = []
 

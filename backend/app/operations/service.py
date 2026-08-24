@@ -10,6 +10,7 @@ from .models import (
     EventFilters,
     OperationsBrief,
     OperationalEvent,
+    BrainOperationsMetrics,
     UsageBrief,
 )
 from .repository import OperationsRepository
@@ -98,6 +99,11 @@ class OperationsService:
             limit=limit,
             offset=offset,
         )
+
+    def brain_metrics(
+        self, period_start: datetime, period_end: datetime
+    ) -> BrainOperationsMetrics:
+        return self._repository.brain_metrics(period_start, period_end)
 
     def _freshness(self, now: datetime) -> BriefFreshness:
         runs = {

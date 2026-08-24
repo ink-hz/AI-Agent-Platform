@@ -1,0 +1,227 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+import re
+from typing import Any
+from uuid import UUID
+
+
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_OUTCOMES = frozenset(
+    {"resolved", "partially_completed", "safe_abstained", "failed", "cancelled", "interrupted"}
+)
+
+# Release-manifest accounting rates. They are deliberately data-only estimates;
+# billing reconciliation remains outside the runtime and may use different rates.
+_INPUT_COST_PER_TOKEN = 5.0 / 1_000_000
+_OUTPUT_COST_PER_TOKEN = 25.0 / 1_000_000
+_CACHE_CREATE_COST_PER_TOKEN = 10.0 / 1_000_000
+_CACHE_READ_COST_PER_TOKEN = 0.5 / 1_000_000
+
+
+def _counter(value: Any) -> bool:
+    return type(value) is int and 0 <= value <= 10**15
+
+
+@dataclass(frozen=True)
+class BrainStepCounters:
+    step_seq: int
+    resume_ordinal: int
+    duration_ms: int
+    input_tokens: int
+    output_tokens: int
+    cache_creation_input_tokens: int
+    cache_read_input_tokens: int
+    recovery_count: int = 0
+    duplicate_event_count: int = 0
+    truncation_count: int = 0
+    omission_count: int = 0
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.step_seq) is not int
+            or self.step_seq < 1
+            or type(self.resume_ordinal) is not int
+            or self.resume_ordinal < 0
+            or not all(
+                _counter(value)
+                for value in (
+                    self.duration_ms,
+                    self.input_tokens,
+                    self.output_tokens,
+                    self.cache_creation_input_tokens,
+                    self.cache_read_input_tokens,
+                    self.recovery_count,
+                    self.duplicate_event_count,
+                    self.truncation_count,
+                    self.omission_count,
+                )
+            )
+        ):
+            raise ValueError("Brain telemetry step invalid")
+
+
+@dataclass(frozen=True)
+class BrainTurnSnapshot:
+    turn_id: UUID
+    model_config_version: str
+    model_id: str
+    prompt_version: str
+    system_prompt_sha256: str
+    task_count: int
+    batch_count: int
+    queue_duration_ms: int
+    run_duration_ms: int
+    settle_duration_ms: int
+    steps: tuple[BrainStepCounters, ...]
+    outcome: str
+    fallback_used: bool
+    reason_code: str | None
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.turn_id, UUID)
+            or not all(
+                isinstance(value, str) and _SAFE_ID.fullmatch(value)
+                for value in (
+                    self.model_config_version,
+                    self.model_id,
+                    self.prompt_version,
+                )
+            )
+            or _SHA256.fullmatch(self.system_prompt_sha256) is None
+            or not all(
+                _counter(value)
+                for value in (
+                    self.task_count,
+                    self.batch_count,
+                    self.queue_duration_ms,
+                    self.run_duration_ms,
+                    self.settle_duration_ms,
+                )
+            )
+            or type(self.steps) is not tuple
+            or any(not isinstance(step, BrainStepCounters) for step in self.steps)
+            or tuple(step.step_seq for step in self.steps)
+            != tuple(range(1, len(self.steps) + 1))
+            or self.outcome not in _OUTCOMES
+            or type(self.fallback_used) is not bool
+            or (
+                self.reason_code is not None
+                and (
+                    type(self.reason_code) is not str
+                    or re.fullmatch(r"[a-z][a-z0-9_]{0,63}", self.reason_code)
+                    is None
+                )
+            )
+        ):
+            raise ValueError("Brain telemetry snapshot invalid")
+
+
+@dataclass(frozen=True)
+class CachePathTelemetry:
+    step_count: int
+    input_tokens: int
+    output_tokens: int
+    cache_creation_input_tokens: int
+    cache_read_input_tokens: int
+    cache_hit_rate: float | None
+    estimated_cost: float
+
+
+@dataclass(frozen=True)
+class BrainTurnTelemetry:
+    turn_id: UUID
+    model_config_version: str
+    model_id: str
+    prompt_version: str
+    system_prompt_sha256: str
+    step_count: int
+    task_count: int
+    batch_count: int
+    queue_duration_ms: int
+    run_duration_ms: int
+    settle_duration_ms: int
+    continuous_steps: CachePathTelemetry
+    first_waiting_agents_resume: CachePathTelemetry
+    later_waiting_agents_resumes: CachePathTelemetry
+    input_tokens: int
+    output_tokens: int
+    cache_creation_input_tokens: int
+    cache_read_input_tokens: int
+    recovery_count: int
+    duplicate_event_count: int
+    truncation_count: int
+    omission_count: int
+    outcome: str
+    fallback_used: bool
+    reason_code: str | None
+
+    def as_public_dict(self) -> dict[str, object]:
+        value = asdict(self)
+        value["turn_id"] = str(self.turn_id)
+        return value
+
+
+def _cache_path(steps: tuple[BrainStepCounters, ...]) -> CachePathTelemetry:
+    input_tokens = sum(step.input_tokens for step in steps)
+    output_tokens = sum(step.output_tokens for step in steps)
+    cache_create = sum(step.cache_creation_input_tokens for step in steps)
+    cache_read = sum(step.cache_read_input_tokens for step in steps)
+    denominator = input_tokens + cache_read
+    return CachePathTelemetry(
+        step_count=len(steps),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_creation_input_tokens=cache_create,
+        cache_read_input_tokens=cache_read,
+        cache_hit_rate=(cache_read / denominator if denominator else None),
+        estimated_cost=(
+            input_tokens * _INPUT_COST_PER_TOKEN
+            + output_tokens * _OUTPUT_COST_PER_TOKEN
+            + cache_create * _CACHE_CREATE_COST_PER_TOKEN
+            + cache_read * _CACHE_READ_COST_PER_TOKEN
+        ),
+    )
+
+
+class BrainTelemetry:
+    """Build content-free metrics from already normalized runtime counters."""
+
+    def summarize(self, snapshot: BrainTurnSnapshot) -> BrainTurnTelemetry:
+        if not isinstance(snapshot, BrainTurnSnapshot):
+            raise ValueError("Brain telemetry snapshot required")
+        continuous = tuple(step for step in snapshot.steps if step.resume_ordinal == 0)
+        first_resume = tuple(step for step in snapshot.steps if step.resume_ordinal == 1)
+        later_resumes = tuple(step for step in snapshot.steps if step.resume_ordinal > 1)
+        all_path = _cache_path(snapshot.steps)
+        return BrainTurnTelemetry(
+            turn_id=snapshot.turn_id,
+            model_config_version=snapshot.model_config_version,
+            model_id=snapshot.model_id,
+            prompt_version=snapshot.prompt_version,
+            system_prompt_sha256=snapshot.system_prompt_sha256,
+            step_count=len(snapshot.steps),
+            task_count=snapshot.task_count,
+            batch_count=snapshot.batch_count,
+            queue_duration_ms=snapshot.queue_duration_ms,
+            run_duration_ms=snapshot.run_duration_ms,
+            settle_duration_ms=snapshot.settle_duration_ms,
+            continuous_steps=_cache_path(continuous),
+            first_waiting_agents_resume=_cache_path(first_resume),
+            later_waiting_agents_resumes=_cache_path(later_resumes),
+            input_tokens=all_path.input_tokens,
+            output_tokens=all_path.output_tokens,
+            cache_creation_input_tokens=all_path.cache_creation_input_tokens,
+            cache_read_input_tokens=all_path.cache_read_input_tokens,
+            recovery_count=sum(step.recovery_count for step in snapshot.steps),
+            duplicate_event_count=sum(
+                step.duplicate_event_count for step in snapshot.steps
+            ),
+            truncation_count=sum(step.truncation_count for step in snapshot.steps),
+            omission_count=sum(step.omission_count for step in snapshot.steps),
+            outcome=snapshot.outcome,
+            fallback_used=snapshot.fallback_used,
+            reason_code=snapshot.reason_code,
+        )

@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.operations.models import BrainTurnOperationsRecord
 from app.operations.models import EventFilters, RunHealth
 from app.operations.repository import OperationsRepository
 from app.operations.routes import brief, events
@@ -214,3 +215,49 @@ def test_conversation_metrics_keep_conversations_turns_and_quality_distinct(
         "helpful_missions": 1,
         "mission_quality_rate": 1.0,
     }
+
+
+def test_brain_metrics_route_returns_aggregates_without_diagnostic_content(tmp_path):
+    client = make_client(tmp_path)
+    client.app.state.operations_service._repository.record_brain_turn(
+        BrainTurnOperationsRecord(
+            turn_id="017ddf96-0bf5-7e0d-a385-9c31ab5e639e",
+            model_config_version="brain-opus5-v1",
+            step_count=2,
+            task_count=1,
+            batch_count=1,
+            continuous_cache_hit_rate=0.8,
+            first_waiting_agents_cache_hit_rate=0.5,
+            later_waiting_agents_cache_hit_rate=None,
+            input_tokens=100,
+            output_tokens=20,
+            estimated_cost=0.004,
+            outcome="resolved",
+            fallback_used=False,
+            reason_code=None,
+            observed_at=datetime.now(timezone.utc),
+        )
+    )
+
+    response = client.get("/api/operations/brain-metrics?hours=24")
+
+    assert response.status_code == 200
+    assert response.json()["turns"] == 1
+    serialized = json.dumps(response.json()).lower()
+    assert "turn_id" not in serialized
+    assert "content" not in serialized
+    assert "thinking" not in serialized
+
+
+def test_no_http_route_exports_raw_brain_provider_responses(tmp_path):
+    client = make_client(tmp_path)
+    paths = {
+        route.path.lower()
+        for route in client.app.routes
+        if hasattr(route, "path")
+    }
+
+    assert not any(
+        any(term in path for term in ("provider-response", "decrypt", "thinking"))
+        for path in paths
+    )

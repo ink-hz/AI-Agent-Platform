@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -8,6 +8,7 @@ from app.agent_brain.conversation_repository import ConversationRepositoryError
 
 from .models import (
     ConversationMetrics,
+    BrainOperationsMetrics,
     EventFilters,
     EventSeverity,
     OperationsBrief,
@@ -77,3 +78,15 @@ async def conversation_metrics(request: Request):
         raise HTTPException(
             status_code=503, detail="conversation metrics unavailable"
         ) from None
+
+
+@router.get("/brain-metrics", response_model=BrainOperationsMetrics)
+async def brain_metrics(
+    request: Request,
+    hours: int = Query(24, ge=1, le=24 * 90),
+):
+    period_end = datetime.now(timezone.utc)
+    period_start = period_end - timedelta(hours=hours)
+    return await asyncio.to_thread(
+        _service(request).brain_metrics, period_start, period_end
+    )

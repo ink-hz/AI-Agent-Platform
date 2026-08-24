@@ -2,8 +2,15 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from uuid import uuid4
 
-from app.operations.models import EventFilters, NewOperationalEvent, RuleState, RunHealth
+from app.operations.models import (
+    BrainTurnOperationsRecord,
+    EventFilters,
+    NewOperationalEvent,
+    RuleState,
+    RunHealth,
+)
 from app.operations.repository import MIGRATION_VERSION_1, OperationsRepository
 
 
@@ -41,7 +48,7 @@ def test_migrate_creates_versioned_operations_schema(tmp_path):
     repo = OperationsRepository(str(tmp_path / "operations.db"))
     repo.migrate()
 
-    assert repo.schema_version() == 2
+    assert repo.schema_version() == 3
     with sqlite3.connect(tmp_path / "operations.db") as connection:
         columns = {
             row[1]
@@ -83,11 +90,51 @@ def test_migrate_upgrades_v1_without_losing_existing_state(tmp_path):
 
     repo.migrate()
 
-    assert repo.schema_version() == 2
+    assert repo.schema_version() == 3
     assert repo.list_events(EventFilters(), 20, 0).items[0].event_id == event.event_id
     assert repo.get_rule_state(state.rule_key) == state
     assert repo.latest_run(run.run_name) == run
     assert repo.usage_occurrence_count() == 0
+
+
+def test_brain_telemetry_is_content_free_and_aggregates_by_cache_path(tmp_path):
+    repo = migrated_repository(tmp_path)
+    turn_id = str(uuid4())
+    repo.record_brain_turn(
+        BrainTurnOperationsRecord(
+            turn_id=turn_id,
+            model_config_version="brain-opus5-v1",
+            step_count=4,
+            task_count=3,
+            batch_count=2,
+            continuous_cache_hit_rate=0.75,
+            first_waiting_agents_cache_hit_rate=0.25,
+            later_waiting_agents_cache_hit_rate=0.60,
+            input_tokens=100,
+            output_tokens=40,
+            estimated_cost=0.005,
+            outcome="resolved",
+            fallback_used=False,
+            reason_code=None,
+            observed_at=NOW,
+        )
+    )
+
+    summary = repo.brain_metrics(NOW - timedelta(hours=1), NOW + timedelta(hours=1))
+
+    assert summary.turns == 1
+    assert summary.completed_turns == 1
+    assert summary.continuous_cache_hit_rate == pytest.approx(0.75)
+    assert summary.first_waiting_agents_cache_hit_rate == pytest.approx(0.25)
+    assert summary.later_waiting_agents_cache_hit_rate == pytest.approx(0.60)
+    with sqlite3.connect(tmp_path / "operations.db") as connection:
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "pragma table_info(operational_brain_turns)"
+            ).fetchall()
+        }
+    assert not {"content", "prompt", "response", "thinking"} & columns
 
 
 def test_schema_version_propagates_non_missing_table_operational_error(tmp_path):

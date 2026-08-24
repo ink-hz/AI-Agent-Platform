@@ -11,6 +11,8 @@ from uuid import uuid4
 from app.observability.models import Page
 
 from .models import (
+    BrainOperationsMetrics,
+    BrainTurnOperationsRecord,
     EventFilters,
     NewOperationalEvent,
     OperationalEvent,
@@ -93,6 +95,29 @@ create table if not exists operational_usage_occurrences (
 );
 create index if not exists ix_operational_usage_agent_bucket
   on operational_usage_occurrences(agent_id, bucket_start);
+"""
+
+
+MIGRATION_VERSION_3 = """
+create table if not exists operational_brain_turns (
+  turn_id text primary key,
+  model_config_version text not null,
+  step_count integer not null check (step_count >= 0),
+  task_count integer not null check (task_count >= 0),
+  batch_count integer not null check (batch_count >= 0),
+  continuous_cache_hit_rate real,
+  first_waiting_agents_cache_hit_rate real,
+  later_waiting_agents_cache_hit_rate real,
+  input_tokens integer not null check (input_tokens >= 0),
+  output_tokens integer not null check (output_tokens >= 0),
+  estimated_cost real not null check (estimated_cost >= 0),
+  outcome text not null,
+  fallback_used integer not null check (fallback_used in (0,1)),
+  reason_code text,
+  observed_at text not null
+);
+create index if not exists ix_operational_brain_turns_time
+  on operational_brain_turns(observed_at desc, turn_id);
 """
 
 
@@ -301,6 +326,11 @@ class OperationsRepository:
             connection.execute(
                 "insert or ignore into operations_schema_version(version, applied_at) values (?, ?)",
                 (2, _timestamp(datetime.now(timezone.utc))),
+            )
+            connection.executescript(MIGRATION_VERSION_3)
+            connection.execute(
+                "insert or ignore into operations_schema_version(version, applied_at) values (?, ?)",
+                (3, _timestamp(datetime.now(timezone.utc))),
             )
 
     def schema_version(self) -> int:
@@ -591,6 +621,90 @@ class OperationsRepository:
                 "select count(*) as count from operational_usage_occurrences"
             ).fetchone()
         return int(row["count"])
+
+    def record_brain_turn(
+        self, record: BrainTurnOperationsRecord
+    ) -> BrainTurnOperationsRecord:
+        if not isinstance(record, BrainTurnOperationsRecord):
+            raise ValueError("Brain operations record required")
+        with self._connection() as connection:
+            connection.execute(
+                """
+                insert into operational_brain_turns(
+                  turn_id,model_config_version,step_count,task_count,batch_count,
+                  continuous_cache_hit_rate,first_waiting_agents_cache_hit_rate,
+                  later_waiting_agents_cache_hit_rate,input_tokens,output_tokens,
+                  estimated_cost,outcome,fallback_used,reason_code,observed_at
+                ) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                on conflict(turn_id) do update set
+                  model_config_version=excluded.model_config_version,
+                  step_count=excluded.step_count,task_count=excluded.task_count,
+                  batch_count=excluded.batch_count,
+                  continuous_cache_hit_rate=excluded.continuous_cache_hit_rate,
+                  first_waiting_agents_cache_hit_rate=excluded.first_waiting_agents_cache_hit_rate,
+                  later_waiting_agents_cache_hit_rate=excluded.later_waiting_agents_cache_hit_rate,
+                  input_tokens=excluded.input_tokens,output_tokens=excluded.output_tokens,
+                  estimated_cost=excluded.estimated_cost,outcome=excluded.outcome,
+                  fallback_used=excluded.fallback_used,reason_code=excluded.reason_code,
+                  observed_at=excluded.observed_at
+                """,
+                (
+                    record.turn_id,
+                    record.model_config_version,
+                    record.step_count,
+                    record.task_count,
+                    record.batch_count,
+                    record.continuous_cache_hit_rate,
+                    record.first_waiting_agents_cache_hit_rate,
+                    record.later_waiting_agents_cache_hit_rate,
+                    record.input_tokens,
+                    record.output_tokens,
+                    record.estimated_cost,
+                    record.outcome,
+                    int(record.fallback_used),
+                    record.reason_code,
+                    _timestamp(record.observed_at),
+                ),
+            )
+        return record
+
+    def brain_metrics(
+        self, period_start: datetime, period_end: datetime
+    ) -> BrainOperationsMetrics:
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                select count(*) as turns,
+                  sum(case when outcome in ('resolved','partially_completed','safe_abstained') then 1 else 0 end) as completed_turns,
+                  sum(case when outcome in ('failed','cancelled','interrupted') then 1 else 0 end) as failed_turns,
+                  sum(fallback_used) as fallback_turns,
+                  sum(step_count) as steps,sum(task_count) as tasks,sum(batch_count) as batches,
+                  sum(input_tokens) as input_tokens,sum(output_tokens) as output_tokens,
+                  sum(estimated_cost) as estimated_cost,
+                  avg(continuous_cache_hit_rate) as continuous_cache_hit_rate,
+                  avg(first_waiting_agents_cache_hit_rate) as first_waiting_agents_cache_hit_rate,
+                  avg(later_waiting_agents_cache_hit_rate) as later_waiting_agents_cache_hit_rate
+                from operational_brain_turns where observed_at>=? and observed_at<=?
+                """,
+                (_timestamp(period_start), _timestamp(period_end)),
+            ).fetchone()
+        return BrainOperationsMetrics(
+            period_start=period_start,
+            period_end=period_end,
+            turns=int(row["turns"] or 0),
+            completed_turns=int(row["completed_turns"] or 0),
+            failed_turns=int(row["failed_turns"] or 0),
+            fallback_turns=int(row["fallback_turns"] or 0),
+            steps=int(row["steps"] or 0),
+            tasks=int(row["tasks"] or 0),
+            batches=int(row["batches"] or 0),
+            input_tokens=int(row["input_tokens"] or 0),
+            output_tokens=int(row["output_tokens"] or 0),
+            estimated_cost=float(row["estimated_cost"] or 0),
+            continuous_cache_hit_rate=row["continuous_cache_hit_rate"],
+            first_waiting_agents_cache_hit_rate=row["first_waiting_agents_cache_hit_rate"],
+            later_waiting_agents_cache_hit_rate=row["later_waiting_agents_cache_hit_rate"],
+        )
 
     def usage_leaders(
         self,
