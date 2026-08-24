@@ -254,6 +254,10 @@ def validate_return_path(value: str | None, *, route_prefix: str) -> str:
     ):
         raise ValueError("return path invalid")
     normalized_prefix = route_prefix if route_prefix.endswith("/") else route_prefix + "/"
+    if (
+        selected == "/office" or selected.startswith("/office/")
+    ) and selected != "/office/":
+        raise ValueError("return path invalid")
     if normalized_prefix != "/" and not (
         selected == normalized_prefix[:-1] or selected.startswith(normalized_prefix)
     ):

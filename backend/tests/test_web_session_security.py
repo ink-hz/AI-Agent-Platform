@@ -68,6 +68,24 @@ def test_safe_return_path_accepts_only_same_environment_relative_paths() -> None
         validate_return_path("/agents/a", route_prefix="/_preview/dingtalk-r1/")
 
 
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "/office",
+        "/office/chat",
+        "/office/?view=services",
+        "/office//",
+    ],
+)
+def test_safe_return_path_allows_only_the_exact_office_entry(candidate: str) -> None:
+    from app.control_plane.auth import validate_return_path
+
+    with pytest.raises(ValueError):
+        validate_return_path(candidate, route_prefix="/")
+
+    assert validate_return_path("/office/", route_prefix="/") == "/office/"
+
+
 def test_qr_attempt_persists_exact_admin_return_path() -> None:
     from app.control_plane.auth import AuthSecrets, DingTalkWebAuth
 
