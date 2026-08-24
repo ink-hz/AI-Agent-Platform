@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
 import type { Account } from "../auth";
-import { conversationInputTooLarge, listConversations, startConversation, type ConversationSubmission } from "../conversationApi";
-import type { ConversationPage } from "../conversationTypes";
-import { PlatformLink } from "../components/PlatformLink";
+import { conversationInputTooLarge, startConversation, type ConversationSubmission } from "../conversationApi";
+import type { Conversation } from "../conversationTypes";
 import { navigate } from "../router";
 
 
@@ -14,41 +13,29 @@ const EXAMPLES = [
 ] as const;
 
 export interface BrainPageClient {
-  listConversations(signal?: AbortSignal): Promise<ConversationPage>;
   createSubmission(text: string, csrfToken: string): ConversationSubmission;
 }
 
-const DEFAULT_CLIENT: BrainPageClient = { listConversations, createSubmission: startConversation };
+const DEFAULT_CLIENT: BrainPageClient = { createSubmission: startConversation };
 
 export function BrainPage({
   account,
   client = DEFAULT_CLIENT,
+  onConversationCreated,
   onOpenConversation = (path) => navigate(path),
 }: {
   account: Account;
   client?: BrainPageClient;
+  onConversationCreated?: (conversation: Conversation) => void;
   onOpenConversation?: (path: string) => void;
 }) {
   const [text, setText] = useState("");
-  const [recent, setRecent] = useState<ConversationPage | null>(null);
-  const [recentUnavailable, setRecentUnavailable] = useState(false);
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState(false);
   const retained = useRef<{ text: string; submission: ConversationSubmission } | null>(null);
   const submitController = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
   const inputTooLarge = conversationInputTooLarge(text.trim());
-
-  useEffect(() => {
-    const controller = new AbortController();
-    client.listConversations(controller.signal).then(setRecent).catch(() => {
-      if (!controller.signal.aborted) setRecentUnavailable(true);
-    });
-    return () => {
-      controller.abort();
-      submitController.current?.abort();
-    };
-  }, [client]);
 
   const send = async () => {
     const normalized = text.trim();
@@ -67,6 +54,7 @@ export function BrainPage({
     try {
       const result = await selected.submission.send(controller.signal);
       retained.current = null;
+      onConversationCreated?.(result.conversation);
       onOpenConversation(`/conversations/${encodeURIComponent(result.conversation.conversation_id)}`);
     } catch {
       if (!controller.signal.aborted) setFailure(true);
@@ -94,6 +82,7 @@ export function BrainPage({
           autoFocus
           disabled={account.hard_stale_read_only}
           id="brain-request"
+          aria-label="你想完成什么？"
           maxLength={32 * 1024}
           onChange={(event) => {
             const next = event.target.value;
@@ -120,16 +109,6 @@ export function BrainPage({
       <div className="brain-examples" aria-label="任务示例">
         {EXAMPLES.map((example) => <button className="brain-example" key={example} onClick={() => setText(example)} type="button">{example}</button>)}
       </div>
-    </section>
-    <section className="brain-recent" aria-labelledby="recent-conversations-heading">
-      <header><div><p>YOUR WORK</p><h2 id="recent-conversations-heading">最近对话</h2></div><PlatformLink href="/conversations">查看全部</PlatformLink></header>
-      {recentUnavailable ? <p className="brain-recent-state" role="status">最近对话暂时无法读取，不影响创建新对话。</p>
-        : recent === null ? <p className="brain-recent-state" role="status">正在读取最近对话…</p>
-        : recent.items.length === 0 ? <p className="brain-recent-state">还没有对话，从上面的输入框开始。</p>
-        : <div className="brain-recent-list">{recent.items.slice(0, 5).map((conversation) => <PlatformLink href={`/conversations/${encodeURIComponent(conversation.conversation_id)}`} key={conversation.conversation_id}>
-          <span>{conversation.title}</span><b>{conversation.status === "archived" ? "已归档" : "可继续"}</b>
-        </PlatformLink>)}</div>}
-      <PlatformLink className="brain-agent-link" href="/agents">也可以直接使用专业 Agent →</PlatformLink>
     </section>
   </div>;
 }

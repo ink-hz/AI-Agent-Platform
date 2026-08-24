@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Account } from "../auth";
-import type { ConversationPage, ConversationSubmissionResult } from "../conversationTypes";
+import type { ConversationSubmissionResult } from "../conversationTypes";
 import { BrainPage, type BrainPageClient } from "./BrainPage";
 
 
@@ -59,7 +59,6 @@ describe("BrainPage", () => {
 
   it("is immediately usable after account load and shows only the focused first viewport", async () => {
     const client: BrainPageClient = {
-      listConversations: vi.fn().mockResolvedValue({ items: [], next_cursor: null } satisfies ConversationPage),
       createSubmission: vi.fn(),
     };
     await act(async () => root.render(<BrainPage account={account} client={client} onOpenConversation={vi.fn()} />));
@@ -67,8 +66,7 @@ describe("BrainPage", () => {
     expect(container.querySelector("h1")?.textContent).toBe("Agent 大脑");
     expect(container.querySelector("textarea")?.disabled).toBe(false);
     expect(container.querySelectorAll(".brain-example")).toHaveLength(3);
-    expect(container.textContent).toContain("最近对话");
-    expect(container.textContent).toContain("专业 Agent");
+    expect(container.textContent).not.toContain("最近对话");
     expect(container.textContent).not.toContain("累计对话");
     expect(container.textContent).not.toContain("运行摘要");
   });
@@ -77,11 +75,11 @@ describe("BrainPage", () => {
     const pending = deferred<ConversationSubmissionResult>();
     const send = vi.fn(() => pending.promise);
     const onOpenConversation = vi.fn();
+    const onConversationCreated = vi.fn();
     const client: BrainPageClient = {
-      listConversations: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
       createSubmission: vi.fn().mockReturnValue({ idempotencyKey: "request", send }),
     };
-    await act(async () => root.render(<BrainPage account={account} client={client} onOpenConversation={onOpenConversation} />));
+    await act(async () => root.render(<BrainPage account={account} client={client} onConversationCreated={onConversationCreated} onOpenConversation={onOpenConversation} />));
     const textarea = container.querySelector("textarea")!;
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
@@ -93,6 +91,7 @@ describe("BrainPage", () => {
     expect(send).toHaveBeenCalledTimes(1);
 
     await act(async () => { pending.resolve(result); await pending.promise; });
+    expect(onConversationCreated).toHaveBeenCalledWith(result.conversation);
     expect(onOpenConversation).toHaveBeenCalledWith("/conversations/8c13c965-1b60-472e-b275-199987d1d109");
   });
 
@@ -102,7 +101,7 @@ describe("BrainPage", () => {
       .mockResolvedValueOnce(result);
     const createSubmission = vi.fn().mockReturnValue({ idempotencyKey: "same", send });
     const client: BrainPageClient = {
-      listConversations: vi.fn().mockResolvedValue({ items: [], next_cursor: null }), createSubmission,
+      createSubmission,
     };
     await act(async () => root.render(<BrainPage account={account} client={client} onOpenConversation={vi.fn()} />));
     const textarea = container.querySelector("textarea")!;
@@ -121,7 +120,7 @@ describe("BrainPage", () => {
   it("blocks text that exceeds 32 KiB after UTF-8 encoding", async () => {
     const createSubmission = vi.fn();
     const client: BrainPageClient = {
-      listConversations: vi.fn().mockResolvedValue({ items: [], next_cursor: null }), createSubmission,
+      createSubmission,
     };
     await act(async () => root.render(<BrainPage account={account} client={client} onOpenConversation={vi.fn()} />));
     const textarea = container.querySelector("textarea")!;
