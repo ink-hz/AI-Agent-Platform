@@ -22,6 +22,8 @@ from app.agent_brain.repository import (
     TERMINAL_MISSION_STATUSES,
 )
 from app.agent_brain.routes import MissionCursorCodec, build_agent_brain_router
+from app.agent_catalog import load_agent_catalog
+from app.agent_catalog.routes import build_agent_catalog_router
 from app.control_plane.authorization import AuthorizationService
 from app.control_plane.auth import AuthSecrets
 from app.control_plane.middleware import IdentitySecurityMiddleware
@@ -64,6 +66,14 @@ class FakeAgentUse:
         if self.unavailable:
             raise AgentUseAuthorizationUnavailable()
         return self.cards
+
+    def permitted_catalog_for_user_id(self, owner: UUID):
+        from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
+
+        self.calls.append(owner)
+        if self.unavailable:
+            raise AgentUseAuthorizationUnavailable()
+        return tuple(card for card in load_agent_catalog() if card.agent_id == "hr-bot")
 
 
 class FakeMissionRepository:
@@ -218,6 +228,7 @@ def _app(
     context = AuthContext(owner, role, uuid4(), False)
     auth = FakeAuth(context)
     app = FastAPI()
+    app.include_router(build_agent_catalog_router(agent_use))
     app.include_router(
         build_agent_brain_router(
             missions,
@@ -273,6 +284,9 @@ def test_catalog_is_authenticated_no_store_and_contains_only_current_grants() ->
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     assert [item["agent_id"] for item in response.json()["agents"]] == ["hr-bot"]
+    assert response.json()["agents"][0]["interaction_modes"] == [
+        "direct_chat", "brain_delegation",
+    ]
     assert agent_use.calls == [owner]
 
 

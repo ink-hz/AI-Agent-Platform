@@ -192,6 +192,14 @@ def test_api_process_does_not_start_v1_scheduler_when_v2_is_enabled() -> None:
     )
 
 
+def test_catalog_router_is_mounted_outside_the_brain_repository_gate() -> None:
+    source = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
+
+    catalog_mount = source.index("build_agent_catalog_router(agent_use_authorization)")
+    brain_gate = source.index("if mission_repository is not None")
+    assert catalog_mount < brain_gate
+
+
 def test_formal_nginx_is_dingtalk_only_and_stream_safe() -> None:
     nginx = (CLOUD / "agent-domain.nginx.conf").read_text(encoding="utf-8")
 

@@ -168,6 +168,19 @@ def test_final_user_decisions_are_not_cached() -> None:
     assert decisions.calls == 2
 
 
+def test_catalog_authorization_includes_external_workspaces_without_making_them_callable() -> None:
+    decisions = _Decisions({"ai-admin-agent", "ai-fae-agent"}, set())
+    authorization = AgentUseAuthorization(APP_DSN, connect=decisions.connect)
+
+    catalog = authorization.permitted_catalog_for_user_id(_auth().internal_user_id)
+
+    assert tuple(card.agent_id for card in catalog) == (
+        "ai-admin-agent", "ai-fae-agent",
+    )
+    assert all(card.dispatchable is False for card in catalog)
+    assert authorization.permitted_agents(_auth()) == ()
+
+
 def test_database_failure_fails_closed() -> None:
     def unavailable(*_args, **_kwargs):
         raise psycopg.OperationalError("database unavailable")

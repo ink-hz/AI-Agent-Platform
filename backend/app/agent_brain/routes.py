@@ -455,19 +455,6 @@ def build_agent_brain_router(
                 503, "Agent catalog unavailable", headers=_NO_STORE
             ) from None
 
-    @router.get("/api/v1/catalog/agents")
-    async def catalog(request: Request, response: Response):
-        context = _auth_context(request)
-        response.headers.update(_NO_STORE)
-        return {
-            "agents": [
-                card.model_dump(mode="json")
-                for card in await asyncio.to_thread(
-                    permitted, context.internal_user_id
-                )
-            ]
-        }
-
     @router.get("/api/v1/brain/missions")
     async def list_missions(
         request: Request,

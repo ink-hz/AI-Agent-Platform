@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 
 from app.control_plane.dsn import validate_control_dsn
 from app.control_plane.models import AuthContext
+from app.agent_catalog import AgentCatalogCard, load_agent_catalog
 from .models import AgentCapabilityCard, load_capability_cards
 
 
@@ -40,6 +41,7 @@ class AgentUseAuthorization:
         self.environment = parsed.environment
         self._control_database_url = control_database_url
         self._connect = connect
+        self._catalog_cards = load_agent_catalog(capability_path)
         self._cards = load_capability_cards(capability_path)
 
     @property
@@ -73,7 +75,15 @@ class AgentUseAuthorization:
 
         if not isinstance(internal_user_id, UUID):
             raise AgentUseAuthorizationUnavailable() from None
-        agent_ids = tuple(card.agent_id for card in self._cards)
+        return self._permitted_cards(internal_user_id, self._cards)
+
+    def permitted_catalog_for_user_id(
+        self, internal_user_id
+    ) -> tuple[AgentCatalogCard, ...]:
+        return self._permitted_cards(internal_user_id, self._catalog_cards)
+
+    def _permitted_cards(self, internal_user_id, cards):
+        agent_ids = tuple(card.agent_id for card in cards)
         agent_id_array = list(agent_ids)
         try:
             with self._connect(
@@ -89,7 +99,7 @@ class AgentUseAuthorization:
                     "requested(agent_id,ordinal) order by requested.ordinal",
                     (internal_user_id, agent_id_array),
                 ).fetchall()
-            if len(rows) != len(self._cards):
+            if len(rows) != len(cards):
                 raise AgentUseAuthorizationUnavailable()
             if tuple(row["agent_id"] for row in rows) != agent_ids:
                 raise AgentUseAuthorizationUnavailable()
@@ -97,7 +107,7 @@ class AgentUseAuthorization:
                 raise AgentUseAuthorizationUnavailable()
             return tuple(
                 card
-                for card, row in zip(self._cards, rows, strict=True)
+                for card, row in zip(cards, rows, strict=True)
                 if row["allowed"]
             )
         except (KeyError, TypeError, ValueError, psycopg.Error):
@@ -109,7 +119,7 @@ class AgentUseAuthorization:
         if (
             not isinstance(internal_user_id, UUID)
             or not isinstance(agent_id, str)
-            or agent_id not in {card.agent_id for card in self._cards}
+            or agent_id not in {card.agent_id for card in self._catalog_cards}
         ):
             return AgentUseDecision(False, (), None)
         try:
