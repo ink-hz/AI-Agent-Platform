@@ -117,6 +117,7 @@ export type LoginReturnPath =
   | `/conversations/${string}`
   | "/agents"
   | `/agents/${string}`
+  | "/office/"
   | "/admin"
   | "/admin/"
   | `/admin/${string}`;
@@ -128,7 +129,7 @@ function safeLoginReturnPath(value: string): boolean {
   if (/^\/missions\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/conversations\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;
-  return value === "/admin/" || value === "/admin"
+  return value === "/office/" || value === "/admin/" || value === "/admin"
     || /^\/admin\/(?:overview|review|activity|operations|identity|governance|agents(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:\/runtime)?)?|sessions(?:\/[A-Za-z0-9:._-]+)?)$/.test(value);
 }
 
