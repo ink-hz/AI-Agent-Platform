@@ -86,6 +86,29 @@ describe("login return path", () => {
 
 
 describe("authenticated account bootstrap", () => {
+  it("accepts the current employee profile fields returned by the account API", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      internal_user_id: "owner",
+      display_name: "苍渊",
+      role: "platform_owner",
+      departments: ["总经办"],
+      gender: "male",
+      real_name: "员工姓名",
+      mobile: "13800138000",
+      primary_department: "总经办",
+      observation_agent_ids: [],
+      directory_freshness: "fresh",
+      hard_stale_read_only: false,
+      csrf_token: "csrf",
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(loadAccount("")).resolves.toMatchObject({
+      internal_user_id: "owner",
+      display_name: "苍渊",
+      departments: ["总经办"],
+    });
+  });
+
   it("accepts and projects trusted DingTalk departments and gender", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(accountResponse()));
 
