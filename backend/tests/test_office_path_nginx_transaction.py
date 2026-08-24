@@ -115,6 +115,33 @@ def test_transaction_replaces_admin_locations_and_preserves_platform_tls_acme():
     assert "$http_cookie" not in redacted_log
 
 
+def test_every_office_location_with_cache_headers_repeats_security_headers():
+    transformed = _module().transform(CURRENT)
+    required = (
+        'add_header Strict-Transport-Security "max-age=31536000" always;',
+        'add_header X-Content-Type-Options "nosniff" always;',
+        'add_header X-Frame-Options "DENY" always;',
+        'add_header Referrer-Policy "no-referrer" always;',
+        "add_header Content-Security-Policy",
+        'add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;',
+    )
+    selectors = (
+        "location = /office/chat {",
+        "location = /office/service-feedback {",
+        "location ^~ /office/assets/ {",
+        "location ^~ /office/knowledge-assets/ {",
+        "location ^~ /office/ {",
+    )
+
+    for selector in selectors:
+        start = transformed.index(selector)
+        end = transformed.index("\n    }", start)
+        block = transformed[start:end]
+        assert "add_header Cache-Control" in block
+        for header in required:
+            assert header in block, (selector, header)
+
+
 @pytest.mark.parametrize(
     "unsafe_variable",
     ["$request", "$request_uri", "$args", "$http_cookie", "$http_authorization"],
