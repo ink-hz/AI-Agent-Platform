@@ -241,6 +241,139 @@ class Provider:
         return self.user_id
 
 
+@pytest.mark.asyncio
+async def test_in_client_profile_selects_office_without_changing_identity_session() -> None:
+    from app.control_plane.auth import (
+        AuthSecrets,
+        DingTalkWebAuth,
+        InClientAuthProfile,
+    )
+
+    repository = SessionRepository()
+    platform = Provider()
+    office = Provider(user_id=platform.user_id)
+    auth = DingTalkWebAuth(
+        repository=repository,
+        secrets=AuthSecrets(b"r" * 32, key_version=1),
+        qr_login=platform.complete,
+        in_client_login=platform.complete,
+        in_client_profiles=(
+            InClientAuthProfile(
+                "office", "office-public-key", ("/office/",), office.complete
+            ),
+        ),
+        environment="production",
+        route_prefix="/",
+        public_base_url="https://agent.example.test",
+        app_key="platform-public-key",
+        state_ttl_seconds=300,
+    )
+
+    assert auth.in_client_configuration("/office/") == (
+        "office",
+        "office-public-key",
+    )
+    assert auth.in_client_configuration("/account") == (
+        "platform",
+        "platform-public-key",
+    )
+
+    completed = await auth.complete_in_client("office-code", app_id="office")
+
+    assert office.calls == 1
+    assert platform.calls == 0
+    assert auth.authenticate(completed.session.cookie_token)[0].internal_user_id == platform.user_id
+
+
+@pytest.mark.asyncio
+async def test_in_client_profile_rejects_unknown_application_before_attempt() -> None:
+    from app.control_plane.auth import (
+        AuthenticationError,
+        AuthSecrets,
+        DingTalkWebAuth,
+    )
+
+    repository = SessionRepository()
+    provider = Provider()
+    auth = DingTalkWebAuth(
+        repository=repository,
+        secrets=AuthSecrets(b"r" * 32, key_version=1),
+        qr_login=provider.complete,
+        in_client_login=provider.complete,
+        environment="production",
+        route_prefix="/",
+        public_base_url="https://agent.example.test",
+        app_key="platform-public-key",
+        state_ttl_seconds=300,
+    )
+
+    with pytest.raises(AuthenticationError, match="login application invalid"):
+        await auth.complete_in_client("provider-code-secret", app_id="unknown")
+
+    assert repository.attempts == {}
+    assert provider.calls == 0
+
+
+@pytest.mark.parametrize(
+    "profiles",
+    [
+        (
+            ("office", "office-key", ("/office/",)),
+            ("office", "other-key", ("/account",)),
+        ),
+        (
+            ("office", "office-key", ("/office/",)),
+            ("people", "office-key", ("/account",)),
+        ),
+        (
+            ("office", "office-key", ("/office/",)),
+            ("people", "people-key", ("/office/",)),
+        ),
+        (("platform", "office-key", ("/office/",)),),
+    ],
+)
+def test_in_client_profiles_reject_reserved_and_duplicate_configuration(
+    profiles,
+) -> None:
+    from app.control_plane.auth import (
+        AuthSecrets,
+        DingTalkWebAuth,
+        InClientAuthProfile,
+    )
+
+    provider = Provider()
+    configured = tuple(
+        InClientAuthProfile(app_id, app_key, return_paths, provider.complete)
+        for app_id, app_key, return_paths in profiles
+    )
+
+    with pytest.raises(ValueError, match="in-client application configuration invalid"):
+        DingTalkWebAuth(
+            repository=SessionRepository(),
+            secrets=AuthSecrets(b"r" * 32, key_version=1),
+            qr_login=provider.complete,
+            in_client_login=provider.complete,
+            in_client_profiles=configured,
+            environment="production",
+            route_prefix="/",
+            public_base_url="https://agent.example.test",
+            app_key="platform-public-key",
+            state_ttl_seconds=300,
+        )
+
+
+def test_in_client_profile_repr_redacts_public_key_and_callable() -> None:
+    from app.control_plane.auth import InClientAuthProfile
+
+    provider = Provider()
+    profile = InClientAuthProfile(
+        "office", "office-public-key", ("/office/",), provider.complete
+    )
+
+    assert "office-public-key" not in repr(profile)
+    assert "complete" not in repr(profile)
+
+
 def test_database_session_unknown_stored_role_fails_closed() -> None:
     from app.control_plane.auth import AuthSecrets, WebSessionRepository
 

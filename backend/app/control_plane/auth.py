@@ -3,10 +3,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import re
 import secrets
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from urllib.parse import quote, unquote, urlencode, urlsplit
@@ -34,6 +35,9 @@ from .models import (
 
 class AuthenticationError(RuntimeError):
     """Stable authentication failure that carries no provider or token data."""
+
+
+_IN_CLIENT_APP_ID = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 
 
 @dataclass(frozen=True)
@@ -80,6 +84,20 @@ class CompletedLogin:
     @property
     def absolute_expires_at(self) -> datetime:
         return self.session.absolute_expires_at
+
+
+@dataclass(frozen=True, repr=False)
+class InClientAuthProfile:
+    app_id: str
+    app_key: str = field(repr=False)
+    return_paths: tuple[str, ...]
+    login: Callable[[str, str], Awaitable[UUID]] = field(repr=False)
+
+    def __repr__(self) -> str:
+        return (
+            f"InClientAuthProfile(app_id={self.app_id!r}, app_key=<redacted>, "
+            f"return_paths={self.return_paths!r}, login=<redacted>)"
+        )
 
 
 class AuthRepository(Protocol):
@@ -311,6 +329,7 @@ class DingTalkWebAuth:
         route_prefix: str,
         public_base_url: str,
         app_key: str,
+        in_client_profiles: tuple[InClientAuthProfile, ...] = (),
         corp_id: str = "",
         state_ttl_seconds: int = 300,
         mode: IdentityMode | None = None,
@@ -335,6 +354,54 @@ class DingTalkWebAuth:
         self.public_base_url = public_base_url.rstrip("/")
         self.app_key = app_key
         self.corp_id = corp_id
+        platform_profile = InClientAuthProfile(
+            "platform", app_key, (), in_client_login
+        )
+        profile_by_id = {platform_profile.app_id: platform_profile}
+        profile_by_return_path: dict[str, InClientAuthProfile] = {}
+        application_keys = {app_key}
+        for profile in in_client_profiles:
+            if (
+                not isinstance(profile, InClientAuthProfile)
+                or profile.app_id == "platform"
+                or _IN_CLIENT_APP_ID.fullmatch(profile.app_id) is None
+                or not profile.app_key
+                or profile.app_key != profile.app_key.strip()
+                or profile.app_key in application_keys
+                or profile.app_id in profile_by_id
+                or not profile.return_paths
+                or not callable(profile.login)
+            ):
+                raise ValueError("in-client application configuration invalid")
+            validated_paths: list[str] = []
+            try:
+                for return_path in profile.return_paths:
+                    selected = validate_return_path(
+                        return_path, route_prefix=route_prefix
+                    )
+                    if (
+                        selected in validated_paths
+                        or selected in profile_by_return_path
+                    ):
+                        raise ValueError
+                    validated_paths.append(selected)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "in-client application configuration invalid"
+                ) from None
+            normalized = InClientAuthProfile(
+                profile.app_id,
+                profile.app_key,
+                tuple(validated_paths),
+                profile.login,
+            )
+            profile_by_id[normalized.app_id] = normalized
+            application_keys.add(normalized.app_key)
+            for return_path in normalized.return_paths:
+                profile_by_return_path[return_path] = normalized
+        self._platform_in_client = platform_profile
+        self._in_client_profiles = profile_by_id
+        self._in_client_by_return_path = profile_by_return_path
         self.state_ttl_seconds = state_ttl_seconds
         self.mode = mode or (IdentityMode.PREVIEW if environment == "preview" else IdentityMode.PRODUCTION)
         self.cookie_name = cookie_name or (
@@ -363,6 +430,15 @@ class DingTalkWebAuth:
 
     def _path(self, path: str) -> str:
         return path if self.route_prefix == "/" else self.route_prefix.rstrip("/") + path
+
+    def in_client_configuration(self, return_path: str | None) -> tuple[str, str]:
+        selected = validate_return_path(
+            return_path, route_prefix=self.route_prefix
+        )
+        profile = self._in_client_by_return_path.get(
+            selected, self._platform_in_client
+        )
+        return profile.app_id, profile.app_key
 
     def issue_browser_challenge(self, current: str | None = None) -> str:
         if current:
@@ -523,8 +599,16 @@ class DingTalkWebAuth:
         )
 
     async def complete_in_client(
-        self, code: str, browser_challenge: str | None = None, edge_ip=None
+        self,
+        code: str,
+        browser_challenge: str | None = None,
+        edge_ip=None,
+        *,
+        app_id: str = "platform",
     ) -> CompletedLogin:
+        profile = self._in_client_profiles.get(app_id)
+        if profile is None:
+            raise AuthenticationError("login application invalid")
         if self.rate_limiter is not None:
             self.rate_limiter.check_callback(edge_ip)
         # In-client auth codes are also serialized through a backend-only random
@@ -553,7 +637,7 @@ class DingTalkWebAuth:
             self.rate_limiter.create_login_attempt(attempt, edge_ip=edge_ip)
         claimed = self._claim(state, "in_client")
         return await self._complete(
-            claimed, code, self.in_client_login, edge_ip=edge_ip
+            claimed, code, profile.login, edge_ip=edge_ip
         )
 
     def authenticate(self, cookie_token: str):
