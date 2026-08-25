@@ -5,7 +5,7 @@ import { inClientLogin, inClientLoginAvailable, loginReturnPath, platformPath, r
 
 export interface LoginPageProps {
   onStartQr?: (returnPath: LoginReturnPath) => Promise<string>;
-  onInClient?: () => Promise<void>;
+  onInClient?: (returnPath: LoginReturnPath) => Promise<void>;
   onNavigate?: (target: string) => void;
 }
 
@@ -53,7 +53,7 @@ export function LoginPage({
     setBusy(true);
     setError(false);
     try {
-      await inClientAction();
+      await inClientAction(returnPath);
       if (!active.current) return;
       onNavigate(successTarget);
     } catch {

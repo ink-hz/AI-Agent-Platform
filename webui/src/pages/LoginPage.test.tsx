@@ -119,6 +119,7 @@ describe("LoginPage", () => {
     await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={onNavigate} />));
 
     expect(onInClient).toHaveBeenCalledTimes(1);
+    expect(onInClient).toHaveBeenCalledWith("/");
     expect(onNavigate).toHaveBeenCalledWith("/");
   });
 
@@ -129,6 +130,7 @@ describe("LoginPage", () => {
     await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={onNavigate} />));
 
     expect(onInClient).toHaveBeenCalledTimes(1);
+    expect(onInClient).toHaveBeenCalledWith("/admin/");
     expect(onNavigate).toHaveBeenCalledWith("/admin/");
   });
 
@@ -139,6 +141,7 @@ describe("LoginPage", () => {
     await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={onNavigate} />));
 
     expect(onInClient).toHaveBeenCalledTimes(1);
+    expect(onInClient).toHaveBeenCalledWith("/office/");
     expect(onNavigate).toHaveBeenCalledWith("/office/");
   });
 

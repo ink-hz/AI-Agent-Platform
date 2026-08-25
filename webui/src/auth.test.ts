@@ -298,18 +298,30 @@ describe("authenticated account bootstrap", () => {
   it("uses the bundled DingTalk JSAPI code without storing it", async () => {
     const storage = vi.spyOn(Storage.prototype, "setItem");
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ client_id: "client", corp_id: "corp" }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ client_id: "office-client", corp_id: "corp", app_id: "office" }), { status: 200, headers: { "Content-Type": "application/json" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrf_token: "not-persisted" }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 DingTalk/7.6.50 Android");
     requestAuthCode.mockResolvedValueOnce({ code: "one-time-code" });
 
-    await inClientLogin();
+    await inClientLogin("/office/");
 
-    expect(requestAuthCode).toHaveBeenCalledWith({ clientId: "client", corpId: "corp" });
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/auth/dingtalk/config?return_path=%2Foffice%2F");
+    expect(requestAuthCode).toHaveBeenCalledWith({ clientId: "office-client", corpId: "corp" });
     expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/auth/dingtalk/in-client/exchange");
-    expect(fetchMock.mock.calls[1][1]?.body).toBe(JSON.stringify({ code: "one-time-code" }));
+    expect(fetchMock.mock.calls[1][1]?.body).toBe(JSON.stringify({ code: "one-time-code", app_id: "office" }));
     expect(storage).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed in-client application response before requesting a code", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      client_id: "office-client", corp_id: "corp", app_id: "Office!",
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 DingTalk/7.6.50 Android");
+
+    await expect(inClientLogin("/office/")).rejects.toThrow("DingTalk configuration invalid");
+
+    expect(requestAuthCode).not.toHaveBeenCalled();
   });
 });
 

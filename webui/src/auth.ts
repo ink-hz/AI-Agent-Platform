@@ -315,12 +315,12 @@ export async function startQrLogin(returnPath: LoginReturnPath = "/"): Promise<s
 }
 
 
-export async function exchangeInClientCode(code: string): Promise<void> {
+export async function exchangeInClientCode(code: string, appId = "platform"): Promise<void> {
   const response = await fetch(platformPath("/api/v1/auth/dingtalk/in-client/exchange"), {
     method: "POST",
     credentials: "include",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, app_id: appId }),
   });
   await checked(response);
 }
@@ -332,31 +332,36 @@ export function inClientLoginAvailable(): boolean {
 }
 
 
-async function loadPublicDingTalkConfig(): Promise<{ client_id: string; corp_id: string }> {
-  const configResponse = await fetch(platformPath("/api/v1/auth/dingtalk/config"), {
+async function loadPublicDingTalkConfig(returnPath: LoginReturnPath): Promise<{
+  client_id: string; corp_id: string; app_id: string;
+}> {
+  const query = new URLSearchParams({ return_path: returnPath });
+  const configResponse = await fetch(platformPath(`/api/v1/auth/dingtalk/config?${query.toString()}`), {
     credentials: "include", headers: { Accept: "application/json" },
   });
   await checked(configResponse);
   const config: unknown = await configResponse.json();
-  if (!isObject(config) || Object.keys(config).some((key) => !["client_id", "corp_id"].includes(key))
+  if (!isObject(config) || Object.keys(config).some((key) => !["client_id", "corp_id", "app_id"].includes(key))
+    || Object.keys(config).length !== 3
     || typeof config.client_id !== "string" || !config.client_id
-    || typeof config.corp_id !== "string" || !config.corp_id) {
+    || typeof config.corp_id !== "string" || !config.corp_id
+    || typeof config.app_id !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/.test(config.app_id)) {
     throw new Error("DingTalk configuration invalid");
   }
-  return { client_id: config.client_id, corp_id: config.corp_id };
+  return { client_id: config.client_id, corp_id: config.corp_id, app_id: config.app_id };
 }
 
 
-export async function inClientLogin(): Promise<void> {
+export async function inClientLogin(returnPath: LoginReturnPath = "/"): Promise<void> {
   if (!inClientLoginAvailable()) throw new Error("DingTalk JSAPI unavailable");
   const { default: dd } = await import("dingtalk-jsapi");
-  const config = await loadPublicDingTalkConfig();
+  const config = await loadPublicDingTalkConfig(returnPath);
   const result = await dd.requestAuthCode({
     clientId: config.client_id,
     corpId: config.corp_id,
   });
   if (!result || typeof result.code !== "string" || !result.code) throw new Error("DingTalk authorization failed");
-  await exchangeInClientCode(result.code);
+  await exchangeInClientCode(result.code, config.app_id);
 }
 
 
