@@ -46,6 +46,7 @@ from .control_plane.auth import (
     AuthSecrets,
     DingTalkWebAuth,
     HardStaleAccessAuditWriter,
+    InClientAuthProfile,
     SystemHealthAuditWriter,
     WebSessionRepository,
 )
@@ -53,6 +54,7 @@ from .control_plane.crypto import IdentityKeyring, ProviderIdentityCodec
 from .control_plane.dingtalk import DingTalkClient
 from .control_plane.dsn import validate_control_dsn
 from .control_plane.identity import IdentityResolver
+from .control_plane.in_client_apps import load_trusted_in_client_apps
 from .control_plane.rate_limit import ControlRateLimiter
 from .fleet import routes as fleet_routes
 from .fleet.cache import UsageCache
@@ -446,6 +448,46 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
     async def in_client_login(code: str, verifier: str):
         return await resolve(in_client, in_client_resolver, code, verifier)
 
+    registered_applications = (
+        load_trusted_in_client_apps(
+            control.dingtalk_in_client_apps_file,
+            route_prefix=control.route_prefix,
+        )
+        if control.dingtalk_in_client_apps_file
+        else ()
+    )
+    registered_clients: list[DingTalkClient] = []
+    in_client_profiles: list[InClientAuthProfile] = []
+
+    def registered_login(client, resolver):
+        async def login(code: str, verifier: str):
+            return await resolve(client, resolver, code, verifier)
+
+        return login
+
+    for application in registered_applications:
+        client = DingTalkClient(
+            app_key=application.app_key,
+            app_secret=application.app_secret,
+            corp_id=control.dingtalk_corp_id,
+            login_flow="in_client",
+        )
+        resolver = IdentityResolver(
+            database_url,
+            corp_id=control.dingtalk_corp_id,
+            client=client,
+            identity_codec=codec,
+        )
+        registered_clients.append(client)
+        in_client_profiles.append(
+            InClientAuthProfile(
+                application.app_id,
+                application.app_key,
+                application.return_paths,
+                registered_login(client, resolver),
+            )
+        )
+
     return DingTalkWebAuth(
         repository=repository,
         secrets=auth_secrets,
@@ -455,6 +497,7 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
         route_prefix=control.route_prefix,
         public_base_url=control.public_base_url,
         app_key=control.dingtalk_app_key,
+        in_client_profiles=tuple(in_client_profiles),
         corp_id=control.dingtalk_corp_id,
         state_ttl_seconds=control.oauth_state_ttl_seconds,
         mode=control.mode,
@@ -464,7 +507,11 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
             ipaddress.ip_network(value, strict=True)
             for value in control.trusted_proxy_cidrs
         ),
-        close_callbacks=(qr_client.aclose, in_client.aclose),
+        close_callbacks=(
+            qr_client.aclose,
+            in_client.aclose,
+            *(client.aclose for client in registered_clients),
+        ),
         hard_stale_audit=(
             HardStaleAccessAuditWriter(
                 read_secret_file(control.audit_database_url_file)

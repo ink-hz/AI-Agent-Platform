@@ -1,5 +1,7 @@
 import asyncio
 from dataclasses import replace
+import json
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -14,7 +16,132 @@ from app.main import (
     cancel_tasks,
     create_app,
 )
+from app.control_plane.models import ControlPlaneConfig, IdentityMode
 from app.operations.repository import OperationsRepository
+
+
+def test_build_identity_auth_builds_registered_in_client_profile(
+    tmp_path, monkeypatch
+) -> None:
+    from app import main as app_main
+
+    registry = tmp_path / "dingtalk-in-client-apps.json"
+    registry.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "apps": [
+                    {
+                        "id": "office",
+                        "app_key": "office-key",
+                        "app_secret": "office-secret",
+                        "return_paths": ["/office/"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry.chmod(0o600)
+    control = ControlPlaneConfig(
+        mode=IdentityMode.PRODUCTION,
+        control_database_url_file="/private/control-database-url",
+        audit_database_url_file="",
+        public_base_url="https://agent.example.test",
+        route_prefix="/",
+        cookie_name="__Host-platform_session",
+        dingtalk_app_key="platform-key",
+        dingtalk_agent_id="platform-agent",
+        dingtalk_corp_id="corp-id",
+        dingtalk_app_secret_file="/private/platform-secret",
+        encryption_keyring_file="/private/encryption",
+        hmac_keyring_file="/private/lookup",
+        rate_limit_hmac_keyring_file="/private/rate",
+        dingtalk_in_client_apps_file=str(registry),
+    )
+
+    class Keyring:
+        active_key = b"k" * 32
+        active_version = 1
+
+        @classmethod
+        def from_file(cls, *_args, **_kwargs):
+            return cls()
+
+    class Repository:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def directory_freshness(self, **_kwargs):
+            return "fresh"
+
+    clients = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            clients.append(self)
+
+        async def exchange_login_code(self, code, verifier):
+            return SimpleNamespace(code=code, verifier=verifier)
+
+        async def aclose(self):
+            return None
+
+    resolvers = []
+
+    class Resolver:
+        def __init__(self, database_url, **kwargs):
+            self.database_url = database_url
+            self.kwargs = kwargs
+            resolvers.append(self)
+
+        async def resolve_login_identity(self, _result, _freshness):
+            return "same-internal-user-id"
+
+    captured = {}
+
+    def auth_factory(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(**kwargs)
+
+    monkeypatch.setattr(
+        app_main,
+        "read_secret_file",
+        lambda path: "postgresql://platform" if "database" in path else "platform-secret",
+    )
+    monkeypatch.setattr(app_main, "IdentityKeyring", Keyring)
+    monkeypatch.setattr(app_main, "ProviderIdentityCodec", lambda *_args: object())
+    monkeypatch.setattr(app_main, "WebSessionRepository", Repository)
+    monkeypatch.setattr(app_main, "ControlRateLimiter", lambda **_kwargs: object())
+    monkeypatch.setattr(app_main, "DingTalkClient", Client)
+    monkeypatch.setattr(app_main, "IdentityResolver", Resolver)
+    monkeypatch.setattr(app_main, "DingTalkWebAuth", auth_factory)
+
+    built = app_main.build_identity_auth(SimpleNamespace(control_plane=control))
+
+    assert built.app_key == "platform-key"
+    assert [client.kwargs["app_key"] for client in clients] == [
+        "platform-key",
+        "platform-key",
+        "office-key",
+    ]
+    assert [client.kwargs["login_flow"] for client in clients] == [
+        "qr",
+        "in_client",
+        "in_client",
+    ]
+    assert all(client.kwargs["corp_id"] == "corp-id" for client in clients)
+    assert len(resolvers) == 3
+    assert all(resolver.database_url == "postgresql://platform" for resolver in resolvers)
+    assert len(captured["in_client_profiles"]) == 1
+    office = captured["in_client_profiles"][0]
+    assert (office.app_id, office.app_key, office.return_paths) == (
+        "office",
+        "office-key",
+        ("/office/",),
+    )
+    assert len(captured["close_callbacks"]) == 3
 
 
 @pytest.mark.asyncio
