@@ -40,7 +40,6 @@ const message = {
   role: "user",
   content: "定义候选人画像",
   turn_id: TURN_ID,
-  mission_id: MISSION_ID,
   delivery_status: "accepted",
   created_at: "2026-08-23T10:00:00Z",
   completed_at: null,
@@ -51,7 +50,6 @@ const turn = {
   conversation_id: CONVERSATION_ID,
   user_message_id: MESSAGE_ID,
   assistant_message_id: null,
-  mission_id: MISSION_ID,
   retry_of_turn_id: null,
   status: "accepted",
   created_at: "2026-08-23T10:00:00Z",
@@ -133,6 +131,17 @@ describe("continuous Conversation API", () => {
     );
   });
 
+  it("accepts only the member-safe message shape without mission identifiers", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ items: [message] })));
+
+    await expect(fetchConversationMessages(CONVERSATION_ID)).resolves.toEqual([message]);
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      items: [{ ...message, mission_id: MISSION_ID }],
+    })));
+    await expect(fetchConversationMessages(CONVERSATION_ID)).rejects.toThrow("Message response invalid");
+  });
+
   it("rejects empty or over-32-KiB input before writing", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -148,7 +157,7 @@ describe("continuous Conversation API", () => {
       .mockResolvedValueOnce(jsonResponse({ conversation, current_turn: turn }))
       .mockResolvedValueOnce(jsonResponse({ items: [conversation], next_cursor: "next" }))
       .mockResolvedValueOnce(jsonResponse({ items: [message] }))
-      .mockResolvedValueOnce(jsonResponse({ conversation_id: CONVERSATION_ID, turn_id: TURN_ID, mission_id: MISSION_ID, cancel_requested: true }))
+      .mockResolvedValueOnce(jsonResponse({ conversation_id: CONVERSATION_ID, turn_id: TURN_ID, cancel_requested: true }))
       .mockResolvedValueOnce(jsonResponse({ ...conversation, status: "archived", archived_at: "2026-08-23T11:00:00Z" }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -156,7 +165,7 @@ describe("continuous Conversation API", () => {
     await expect(listConversations(undefined, "next/opaque", 10)).resolves.toEqual({ items: [conversation], next_cursor: "next" });
     await expect(fetchConversationMessages(CONVERSATION_ID)).resolves.toEqual([message]);
     await expect(cancelCurrentTurn(CONVERSATION_ID, "csrf")).resolves.toEqual({
-      conversation_id: CONVERSATION_ID, turn_id: TURN_ID, mission_id: MISSION_ID, cancel_requested: true,
+      conversation_id: CONVERSATION_ID, turn_id: TURN_ID, cancel_requested: true,
     });
     await expect(archiveConversation(CONVERSATION_ID, "csrf")).resolves.toMatchObject({ status: "archived" });
 
@@ -189,7 +198,6 @@ describe("continuous Conversation API", () => {
       conversation_id: CONVERSATION_ID,
       message_id: MESSAGE_ID,
       turn_id: TURN_ID,
-      mission_id: MISSION_ID,
       rating: "helpful",
       created_at: "2026-08-23T10:03:00Z",
     };
@@ -235,12 +243,12 @@ describe("continuous Conversation API", () => {
   it("accepts monotonic same-conversation SSE events split across chunks", async () => {
     const first = JSON.stringify({
       event_id: "event-1", conversation_id: CONVERSATION_ID, seq: 2,
-      turn_id: TURN_ID, mission_id: MISSION_ID, event_type: "turn.running",
+      turn_id: TURN_ID, event_type: "turn.running",
       payload: { status: "running" }, created_at: "2026-08-23T10:00:01Z",
     });
     const second = JSON.stringify({
       event_id: "event-2", conversation_id: CONVERSATION_ID, seq: 3,
-      turn_id: TURN_ID, mission_id: MISSION_ID, event_type: "message.completed",
+      turn_id: TURN_ID, event_type: "message.completed",
       payload: { message_id: MESSAGE_ID }, created_at: "2026-08-23T10:00:02Z",
     });
     const encoded = new TextEncoder().encode(
@@ -271,8 +279,8 @@ describe("continuous Conversation API", () => {
   });
 
   it.each([
-    `id: 2\nevent: conversation\ndata: ${JSON.stringify({ event_id: "e", conversation_id: CONVERSATION_ID, seq: 1, turn_id: null, mission_id: null, event_type: "x", payload: {}, created_at: "now" })}\n\n`,
-    `id: 2\nevent: conversation\ndata: ${JSON.stringify({ event_id: "e", conversation_id: "another", seq: 2, turn_id: null, mission_id: null, event_type: "x", payload: {}, created_at: "now" })}\n\n`,
+    `id: 2\nevent: conversation\ndata: ${JSON.stringify({ event_id: "e", conversation_id: CONVERSATION_ID, seq: 1, turn_id: null, event_type: "x", payload: {}, created_at: "now" })}\n\n`,
+    `id: 2\nevent: conversation\ndata: ${JSON.stringify({ event_id: "e", conversation_id: "another", seq: 2, turn_id: null, event_type: "x", payload: {}, created_at: "now" })}\n\n`,
     `id: 2\nevent: conversation\ndata: {"event_id":`,
   ])("rejects non-monotonic, cross-conversation, or truncated SSE frames", async (body) => {
     const stream = new ReadableStream<Uint8Array>({

@@ -13,6 +13,7 @@ from app.agent_brain.conversation_projection import ConversationProjection
 from app.agent_brain.conversation_models import ConversationEventRecord
 from app.agent_brain.conversation_routes import (
     ConversationCursorCodec,
+    _event_payload,
     build_conversation_router,
     conversation_event_stream,
 )
@@ -97,6 +98,59 @@ def _fail_and_project(conversations, owner: UUID, mission_id: UUID) -> None:
     assert ConversationProjection(conversations).project_terminal(mission_id)
 
 
+def _latest_mission_id(conversations, owner: UUID, conversation_id: UUID) -> UUID:
+    turn = conversations.latest_turn_for_owner(owner, conversation_id)
+    assert turn is not None and turn.mission_id is not None
+    return turn.mission_id
+
+
+@pytest.mark.postgres
+def test_member_conversation_payloads_omit_internal_mission_ids(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner, _ = conversation_database
+    app, auth, _agent_use = _app(owner, repository)
+    client = TestClient(app)
+
+    started = _post(
+        client,
+        auth,
+        "/api/v1/agents/hr-bot/conversations",
+        "定义候选人画像",
+    )
+
+    assert started.status_code == 201
+    assert "mission_id" not in started.json()["message"]
+    assert "mission_id" not in started.json()["turn"]
+
+
+def test_member_event_replaces_internal_agent_id_with_catalog_name() -> None:
+    record = ConversationEventRecord(
+        event_id=uuid4(),
+        conversation_id=uuid4(),
+        seq=1,
+        turn_id=uuid4(),
+        mission_id=uuid4(),
+        event_type="agent.task_completed",
+        payload={"agent_id": "hr-bot", "status": "completed"},
+        created_at=datetime.now(timezone.utc),
+    )
+
+    payload = _event_payload(
+        record,
+        display_name_for_agent=lambda agent_id: (
+            "HR Agent" if agent_id == "hr-bot" else None
+        ),
+    )
+
+    assert "mission_id" not in payload
+    assert payload["payload"] == {
+        "agent_name": "HR Agent",
+        "status": "completed",
+    }
+
+
 @pytest.mark.postgres
 def test_follow_up_reuses_one_conversation_and_one_history_item(
     conversation_database,
@@ -109,7 +163,7 @@ def test_follow_up_reuses_one_conversation_and_one_history_item(
 
     assert first.status_code == 201
     conversation_id = UUID(first.json()["conversation"]["conversation_id"])
-    mission_id = UUID(first.json()["turn"]["mission_id"])
+    mission_id = _latest_mission_id(repository, owner, conversation_id)
     _fail_and_project(repository, owner, mission_id)
     second = _post(
         client,
@@ -219,8 +273,9 @@ def test_direct_agent_authorization_is_rechecked_for_every_turn(
         "评估简历",
     )
     assert first.status_code == 201
+    conversation_id = UUID(first.json()["conversation"]["conversation_id"])
     _fail_and_project(
-        repository, owner, UUID(first.json()["turn"]["mission_id"])
+        repository, owner, _latest_mission_id(repository, owner, conversation_id)
     )
 
     grants.cards = ()
@@ -327,7 +382,7 @@ def test_terminal_sse_replays_monotonic_conversation_events_and_closes(
     client = TestClient(app)
     started = _post(client, auth, "/api/v1/conversations", "事件流")
     conversation_id = started.json()["conversation"]["conversation_id"]
-    mission_id = UUID(started.json()["turn"]["mission_id"])
+    mission_id = _latest_mission_id(repository, owner, UUID(conversation_id))
     planning = repository._missions.create_run(
         owner,
         mission_id,
@@ -497,7 +552,6 @@ def test_feedback_api_binds_only_the_owned_assistant_message(
         "conversation_id": str(started.conversation.conversation_id),
         "message_id": str(assistant.message_id),
         "turn_id": str(started.turn.turn_id),
-        "mission_id": str(started.mission.mission_id),
         "rating": "helpful",
         "created_at": response.json()["created_at"],
     }

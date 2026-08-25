@@ -29,25 +29,25 @@ const conversation: Conversation = {
 };
 const completedTurn: ConversationTurn = {
   turn_id: "turn-1", conversation_id: conversationId, user_message_id: "message-1",
-  assistant_message_id: "message-2", mission_id: "mission-1", status: "completed",
+  assistant_message_id: "message-2", status: "completed",
   retry_of_turn_id: null,
   created_at: "2026-08-23T10:00:00Z", updated_at: "2026-08-23T10:01:00Z",
 };
 const messages: ConversationMessage[] = [
   {
     message_id: "message-1", conversation_id: conversationId, seq: 1, role: "user",
-    content: "帮我找候选人", turn_id: "turn-1", mission_id: "mission-1", delivery_status: "completed",
+    content: "帮我找候选人", turn_id: "turn-1", delivery_status: "completed",
     created_at: "2026-08-23T10:00:00Z", completed_at: "2026-08-23T10:00:00Z",
   },
   {
     message_id: "message-2", conversation_id: conversationId, seq: 2, role: "assistant",
-    content: "## 第一轮结果\n\n- 建议从 GitHub 开始", turn_id: "turn-1", mission_id: "mission-1", delivery_status: "completed",
+    content: "## 第一轮结果\n\n- 建议从 GitHub 开始", turn_id: "turn-1", delivery_status: "completed",
     created_at: "2026-08-23T10:01:00Z", completed_at: "2026-08-23T10:01:00Z",
   },
 ];
 const event: ConversationEvent = {
   event_id: "event-1", conversation_id: conversationId, seq: 1, turn_id: "turn-1",
-  mission_id: "mission-1", event_type: "task.dispatched",
+  event_type: "task.dispatched",
   payload: { selected_agent_id: "hr-bot", status: "running" }, created_at: "2026-08-23T10:00:10Z",
 };
 
@@ -57,12 +57,12 @@ function submissionResult(text: string): ConversationSubmissionResult {
     conversation: { ...conversation, title: text, updated_at: "2026-08-23T10:02:00Z" },
     message: {
       message_id: "message-3", conversation_id: conversationId, seq: 3, role: "user", content: text,
-      turn_id: "turn-2", mission_id: "mission-2", delivery_status: "accepted",
+      turn_id: "turn-2", delivery_status: "accepted",
       created_at: "2026-08-23T10:02:00Z", completed_at: null,
     },
     turn: {
       turn_id: "turn-2", conversation_id: conversationId, user_message_id: "message-3",
-      assistant_message_id: null, mission_id: "mission-2", retry_of_turn_id: null, status: "accepted",
+      assistant_message_id: null, retry_of_turn_id: null, status: "accepted",
       created_at: "2026-08-23T10:02:00Z", updated_at: "2026-08-23T10:02:00Z",
     },
   };
@@ -174,7 +174,7 @@ describe("ConversationPage", () => {
     const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
     const stream = deferred<void>();
     const cancelCurrentTurn = vi.fn().mockResolvedValue({
-      conversation_id: conversationId, mission_id: "mission-1", cancel_requested: true,
+      conversation_id: conversationId, turn_id: "turn-1", cancel_requested: true,
     });
     const pageClient = client({
       fetchConversation: vi.fn().mockResolvedValue({ conversation, current_turn: active }),
@@ -286,7 +286,7 @@ describe("ConversationPage", () => {
   it("submits one rating for the selected assistant answer", async () => {
     const submitFeedback = vi.fn().mockResolvedValue({
       feedback_id: "feedback-1", conversation_id: conversationId,
-      message_id: "message-2", turn_id: "turn-1", mission_id: "mission-1",
+      message_id: "message-2", turn_id: "turn-1",
       rating: "helpful", created_at: "2026-08-23T10:03:00Z",
     });
     const pageClient = client({ submitFeedback } as unknown as Partial<ConversationPageClient>);

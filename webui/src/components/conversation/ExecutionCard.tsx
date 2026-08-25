@@ -1,5 +1,4 @@
 import type { ConversationEvent, ConversationMode } from "../../conversationTypes";
-import { PlatformLink } from "../PlatformLink";
 import { professionalAgentLabel } from "./agentLabels";
 import { UserInputRequest } from "./UserInputRequest";
 
@@ -93,7 +92,6 @@ export function ExecutionCard({
           const completed = event.event_type === "agent.task_completed";
           return <li key={event.event_id}>
           <div><strong>{completed && label ? `${label} 已完成` : EVENT_LABELS[event.event_type] ?? "执行更新"}</strong><span>{eventSummary(event)}</span></div>
-          {event.mission_id && <PlatformLink href={`/missions/${encodeURIComponent(event.mission_id)}`}>诊断详情</PlatformLink>}
         </li>;})}
       {waitingForBrain && <li className="execution-waiting-brain">等待 Agent 大脑继续处理</li>}
     </ol>

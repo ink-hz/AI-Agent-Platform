@@ -32,7 +32,6 @@ export interface ConversationMessage {
   role: ConversationMessageRole;
   content: string;
   turn_id: string | null;
-  mission_id: string | null;
   delivery_status: ConversationDeliveryStatus;
   created_at: string;
   completed_at: string | null;
@@ -43,7 +42,6 @@ export interface ConversationTurn {
   conversation_id: string;
   user_message_id: string;
   assistant_message_id: string | null;
-  mission_id: string | null;
   retry_of_turn_id: string | null;
   status: ConversationTurnStatus;
   created_at: string;
@@ -55,7 +53,6 @@ export interface ConversationEvent {
   conversation_id: string;
   seq: number;
   turn_id: string | null;
-  mission_id: string | null;
   event_type: string;
   payload: Record<string, unknown>;
   created_at: string;
@@ -80,7 +77,6 @@ export interface ConversationPage {
 export interface ConversationCancelResult {
   conversation_id: string;
   turn_id: string;
-  mission_id: string | null;
   cancel_requested: true;
 }
 
@@ -91,7 +87,6 @@ export interface ConversationFeedback {
   conversation_id: string;
   message_id: string;
   turn_id: string;
-  mission_id: string | null;
   rating: ConversationFeedbackRating;
   created_at: string;
 }

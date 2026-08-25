@@ -24,14 +24,14 @@ const CONVERSATION_KEYS = new Set([
 ]);
 const MESSAGE_KEYS = new Set([
   "message_id", "conversation_id", "seq", "role", "content", "turn_id",
-  "mission_id", "delivery_status", "created_at", "completed_at",
+  "delivery_status", "created_at", "completed_at",
 ]);
 const TURN_KEYS = new Set([
   "turn_id", "conversation_id", "user_message_id", "assistant_message_id",
-  "mission_id", "retry_of_turn_id", "status", "created_at", "updated_at",
+  "retry_of_turn_id", "status", "created_at", "updated_at",
 ]);
 const EVENT_KEYS = new Set([
-  "event_id", "conversation_id", "seq", "turn_id", "mission_id",
+  "event_id", "conversation_id", "seq", "turn_id",
   "event_type", "payload", "created_at",
 ]);
 const SUBMISSION_KEYS = new Set(["conversation", "message", "turn"]);
@@ -39,10 +39,10 @@ const DETAIL_KEYS = new Set(["conversation", "current_turn"]);
 const PAGE_KEYS = new Set(["items", "next_cursor"]);
 const MESSAGE_PAGE_KEYS = new Set(["items"]);
 const CANCEL_KEYS = new Set([
-  "conversation_id", "turn_id", "mission_id", "cancel_requested",
+  "conversation_id", "turn_id", "cancel_requested",
 ]);
 const FEEDBACK_KEYS = new Set([
-  "feedback_id", "conversation_id", "message_id", "turn_id", "mission_id",
+  "feedback_id", "conversation_id", "message_id", "turn_id",
   "rating", "created_at",
 ]);
 
@@ -137,7 +137,6 @@ function parseMessage(value: unknown): ConversationMessage {
     || !MESSAGE_ROLES.has(value.role as ConversationMessageRole)
     || typeof value.content !== "string"
     || !isNullableString(value.turn_id)
-    || !isNullableString(value.mission_id)
     || !DELIVERY_STATUSES.has(value.delivery_status as ConversationDeliveryStatus)
     || !isNonEmptyString(value.created_at)
     || !isNullableString(value.completed_at)
@@ -152,7 +151,6 @@ function parseTurn(value: unknown): ConversationTurn {
     || !isNonEmptyString(value.conversation_id)
     || !isNonEmptyString(value.user_message_id)
     || !isNullableString(value.assistant_message_id)
-    || !isNullableString(value.mission_id)
     || !isNullableString(value.retry_of_turn_id)
     || !TURN_STATUSES.has(value.status as ConversationTurnStatus)
     || !isNonEmptyString(value.created_at)
@@ -168,7 +166,6 @@ function parseEvent(value: unknown): ConversationEvent {
     || !isNonEmptyString(value.conversation_id)
     || !isPositiveInteger(value.seq)
     || !isNullableString(value.turn_id)
-    || !isNullableString(value.mission_id)
     || !isNonEmptyString(value.event_type)
     || !isObject(value.payload)
     || !isNonEmptyString(value.created_at)
@@ -190,7 +187,6 @@ function parseSubmission(value: unknown): ConversationSubmissionResult {
     || result.turn.conversation_id !== result.conversation.conversation_id
     || result.turn.user_message_id !== result.message.message_id
     || result.message.turn_id !== result.turn.turn_id
-    || result.message.mission_id !== result.turn.mission_id
   ) throw new Error("Conversation submission response invalid");
   return result;
 }
@@ -236,7 +232,6 @@ function parseCancelResult(value: unknown): ConversationCancelResult {
   if (!isObject(value) || !hasExactKeys(value, CANCEL_KEYS)
     || !isNonEmptyString(value.conversation_id)
     || !isNonEmptyString(value.turn_id)
-    || !isNullableString(value.mission_id)
     || value.cancel_requested !== true) {
     throw new Error("Conversation cancel response invalid");
   }
@@ -250,7 +245,6 @@ function parseFeedback(value: unknown): ConversationFeedback {
     || !isNonEmptyString(value.conversation_id)
     || !isNonEmptyString(value.message_id)
     || !isNonEmptyString(value.turn_id)
-    || !isNullableString(value.mission_id)
     || (value.rating !== "helpful" && value.rating !== "unhelpful")
     || !isNonEmptyString(value.created_at)) {
     throw new Error("Conversation feedback response invalid");

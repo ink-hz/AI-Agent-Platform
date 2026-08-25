@@ -24,12 +24,12 @@ const result: ConversationSubmissionResult = {
   },
   message: {
     message_id: "message", conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", seq: 1,
-    role: "user", content: "找视觉人才", turn_id: "turn", mission_id: "mission",
+    role: "user", content: "找视觉人才", turn_id: "turn",
     delivery_status: "accepted", created_at: "2026-08-22T10:00:00Z", completed_at: null,
   },
   turn: {
     turn_id: "turn", conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", user_message_id: "message",
-    assistant_message_id: null, mission_id: "mission", retry_of_turn_id: null, status: "accepted",
+    assistant_message_id: null, retry_of_turn_id: null, status: "accepted",
     created_at: "2026-08-22T10:00:00Z", updated_at: "2026-08-22T10:00:00Z",
   },
 };

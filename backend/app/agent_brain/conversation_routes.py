@@ -242,7 +242,6 @@ def _message_payload(record: ConversationMessageRecord) -> dict[str, object]:
         "role": record.role,
         "content": record.content,
         "turn_id": str(record.turn_id) if record.turn_id else None,
-        "mission_id": str(record.mission_id) if record.mission_id else None,
         "delivery_status": record.delivery_status,
         "created_at": record.created_at.isoformat(),
         "completed_at": record.completed_at.isoformat() if record.completed_at else None,
@@ -259,7 +258,6 @@ def _turn_payload(record: ConversationTurnRecord | None) -> dict[str, object] | 
         "assistant_message_id": (
             str(record.assistant_message_id) if record.assistant_message_id else None
         ),
-        "mission_id": str(record.mission_id) if record.mission_id else None,
         "retry_of_turn_id": (
             str(record.retry_of_turn_id) if record.retry_of_turn_id else None
         ),
@@ -277,17 +275,31 @@ def _create_payload(result: ConversationCreateResult) -> dict[str, object]:
     }
 
 
-def _event_payload(record: ConversationEventRecord) -> dict[str, object]:
+def _event_payload(
+    record: ConversationEventRecord,
+    *,
+    display_name_for_agent: Callable[[str], str | None] | None = None,
+) -> dict[str, object]:
+    public_payload = dict(
+        ConversationProjection.public_payload(record.event_type, record.payload)
+    )
+    agent_id = public_payload.pop("agent_id", None)
+    if agent_id is None:
+        agent_id = public_payload.pop("selected_agent_id", None)
+    if isinstance(agent_id, str):
+        resolved = (
+            display_name_for_agent(agent_id)
+            if display_name_for_agent is not None
+            else None
+        )
+        public_payload["agent_name"] = resolved or "专业 Agent"
     return {
         "event_id": str(record.event_id),
         "conversation_id": str(record.conversation_id),
         "seq": record.seq,
         "turn_id": str(record.turn_id) if record.turn_id else None,
-        "mission_id": str(record.mission_id) if record.mission_id else None,
         "event_type": record.event_type,
-        "payload": ConversationProjection.public_payload(
-            record.event_type, record.payload
-        ),
+        "payload": public_payload,
         "created_at": record.created_at.isoformat(),
     }
 
@@ -298,15 +310,18 @@ def _feedback_payload(record) -> dict[str, object]:
         "conversation_id": str(record.conversation_id),
         "message_id": str(record.message_id),
         "turn_id": str(record.turn_id),
-        "mission_id": str(record.mission_id) if record.mission_id else None,
         "rating": record.rating,
         "created_at": record.created_at.isoformat(),
     }
 
 
-def _sse_event(record: ConversationEventRecord) -> str:
+def _sse_event(
+    record: ConversationEventRecord,
+    *,
+    display_name_for_agent: Callable[[str], str | None] | None = None,
+) -> str:
     data = json.dumps(
-        _event_payload(record),
+        _event_payload(record, display_name_for_agent=display_name_for_agent),
         ensure_ascii=False,
         separators=(",", ":"),
         allow_nan=False,
@@ -329,6 +344,7 @@ async def conversation_event_stream(
     revalidate_seconds: float = 15,
     poll_seconds: float = 1,
     slot_reserved: bool = False,
+    display_name_for_agent: Callable[[str], str | None] | None = None,
 ) -> AsyncIterator[str]:
     if (
         heartbeat_seconds <= 0
@@ -406,7 +422,9 @@ async def conversation_event_stream(
                 if not await access_is_live():
                     return
                 cursor = event.seq
-                yield _sse_event(event)
+                yield _sse_event(
+                    event, display_name_for_agent=display_name_for_agent
+                )
             if active_turn is None:
                 # A terminal Turn can have more Mission events than one projection
                 # batch. Drain every full batch before deciding the stream is done.
@@ -426,7 +444,9 @@ async def conversation_event_stream(
                     return
                 for event in tail:
                     cursor = event.seq
-                    yield _sse_event(event)
+                    yield _sse_event(
+                        event, display_name_for_agent=display_name_for_agent
+                    )
                 if len(tail) < 100:
                     return
                 continue
@@ -483,6 +503,15 @@ def build_conversation_router(
             raise HTTPException(
                 503, "Agent catalog unavailable", headers=_NO_STORE
             ) from None
+
+    def catalog_names(owner: UUID) -> dict[str, str]:
+        try:
+            cards = agent_use_authorization.permitted_catalog_for_user_id(owner)
+        except AgentUseAuthorizationUnavailable:
+            raise HTTPException(
+                503, "Agent catalog unavailable", headers=_NO_STORE
+            ) from None
+        return {card.agent_id: card.display_name for card in cards}
 
     async def require_direct_agent(owner: UUID, agent_id: str) -> None:
         cards = await asyncio.to_thread(permitted, owner)
@@ -776,9 +805,6 @@ def build_conversation_router(
         return {
             "conversation_id": str(conversation_id),
             "turn_id": str(cancellation.turn_id),
-            "mission_id": (
-                str(cancellation.mission_id) if cancellation.mission_id else None
-            ),
             "cancel_requested": cancellation.cancel_requested,
         }
 
@@ -819,6 +845,9 @@ def build_conversation_router(
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None
+        display_names = await asyncio.to_thread(
+            catalog_names, context.internal_user_id
+        )
         if not limiter.acquire(context.internal_user_id, conversation_id):
             raise HTTPException(
                 503, "Conversation stream limit reached", headers=_NO_STORE
@@ -838,6 +867,7 @@ def build_conversation_router(
                 revalidate_seconds=revalidate_seconds,
                 poll_seconds=poll_seconds,
                 slot_reserved=True,
+                display_name_for_agent=display_names.get,
             ),
             media_type="text/event-stream",
             headers=_SSE_HEADERS,
