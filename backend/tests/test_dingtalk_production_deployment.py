@@ -13,6 +13,42 @@ ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
 
 
+def test_compose_mounts_multi_app_registry_only_in_platform_api() -> None:
+    compose = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
+    services = compose["services"]
+
+    assert services["platform-api"]["environment"][
+        "PLATFORM_DINGTALK_IN_CLIENT_APPS_FILE"
+    ] == "/run/secrets/dingtalk-in-client-apps.json"
+    assert "PLATFORM_DINGTALK_IN_CLIENT_APPS_FILE" not in services[
+        "platform-directory"
+    ]["environment"]
+    assert "PLATFORM_DINGTALK_IN_CLIENT_APPS_FILE" not in services[
+        "platform-dingtalk-stream"
+    ]["environment"]
+
+
+def test_secret_bootstrap_requires_and_copies_multi_app_registry_only_to_api() -> None:
+    script = (CLOUD / "bootstrap-dingtalk-production-secrets.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert re.search(
+        r"required_private=\(.*?^  dingtalk-in-client-apps\.json$.*?^\)",
+        script,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert script.count("/source/dingtalk-in-client-apps.json") == 1
+    api_start = script.index("-v orbbec-agent-platform-api-secrets:/target")
+    worker_start = script.index(
+        "-v orbbec-agent-platform-directory-secrets:/target", api_start
+    )
+    api_block = script[api_start:worker_start]
+    worker_blocks = script[worker_start:]
+    assert "cp /source/dingtalk-in-client-apps.json" in api_block
+    assert "dingtalk-in-client-apps.json" not in worker_blocks
+
+
 def _normalized_shell(script: str) -> str:
     without_line_continuations = re.sub(r"\\\s*\n", " ", script)
     return " ".join(without_line_continuations.split())

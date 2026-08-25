@@ -65,6 +65,7 @@ services:
       PLATFORM_CONTROL_DATABASE_URL_FILE: /run/secrets/control-database-url
       PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE: /run/secrets/control-audit-database-url
       PLATFORM_DINGTALK_APP_SECRET_FILE: /run/secrets/dingtalk-app-secret
+      PLATFORM_DINGTALK_IN_CLIENT_APPS_FILE: /run/secrets/dingtalk-in-client-apps.json
       PLATFORM_IDENTITY_ENCRYPTION_KEYRING_FILE: /run/secrets/identity-encryption-keyring
       PLATFORM_IDENTITY_HMAC_KEYRING_FILE: /run/secrets/identity-hmac-keyring
       PLATFORM_RATE_LIMIT_HMAC_KEYRING_FILE: /run/secrets/rate-limit-hmac-keyring

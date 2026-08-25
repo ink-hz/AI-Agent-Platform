@@ -17,6 +17,7 @@ required_private=(
   dingtalk-agent-id
   dingtalk-corp-id
   dingtalk-app-secret
+  dingtalk-in-client-apps.json
   dingtalk-hrm-real-name-field-code
   control-database-url
   control-audit-database-url
@@ -96,6 +97,7 @@ done
     cp /source/replica-database-url /source/replica-encryption-key /source/replica-signing-public-key /target/
     cp /source/control-database-url /source/control-audit-database-url /target/
     cp /source/dingtalk-app-key /source/dingtalk-agent-id /source/dingtalk-corp-id /source/dingtalk-app-secret /target/
+    cp /source/dingtalk-in-client-apps.json /target/
     cp /source/identity-encryption-keyring /source/identity-hmac-keyring /source/rate-limit-hmac-keyring /target/
     cp /source/content-encryption-keyring /source/execution-worker-public-keyring.json /target/
     chown 10001:10001 /target/*
