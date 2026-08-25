@@ -3,8 +3,11 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import type { Account } from "../auth";
 import { fetchAgentCatalog } from "../brainApi";
 import {
+  archiveConversation,
   conversationInputTooLarge,
   listConversations,
+  renameConversation,
+  restoreConversation,
   startConversation,
   type ConversationSubmission,
 } from "../conversationApi";
@@ -23,7 +26,7 @@ const WORKSPACE_URLS: Readonly<Record<string, string>> = Object.freeze({
 });
 
 export interface AgentHistoryClient {
-  list(signal?: AbortSignal, before?: string, limit?: number, directAgentId?: string): Promise<ConversationPage>;
+  list(signal?: AbortSignal, before?: string, limit?: number, directAgentId?: string, status?: "active" | "archived"): Promise<ConversationPage>;
 }
 
 const DEFAULT_HISTORY_CLIENT: AgentHistoryClient = { list: listConversations };
@@ -59,6 +62,7 @@ export function AgentUsePage({
   const [catalog, setCatalog] = useState<AgentCapabilityCard[] | null>(null);
   const [loadFailure, setLoadFailure] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyFailure, setHistoryFailure] = useState(false);
@@ -121,6 +125,33 @@ export function AgentUsePage({
     }
   };
 
+  const loadArchived = async () => {
+    try {
+      const page = await historyClient.list(undefined, undefined, 100, agentId, "archived");
+      setArchivedConversations(page.items);
+    } catch {
+      setHistoryFailure(true);
+    }
+  };
+
+  const renameHistory = async (selectedId: string, title: string) => {
+    const updated = await renameConversation(selectedId, title, account.csrf_token);
+    setConversations((current) => current.map((item) => item.conversation_id === selectedId ? updated : item));
+  };
+
+  const archiveHistory = async (selectedId: string) => {
+    const archived = await archiveConversation(selectedId, account.csrf_token);
+    setConversations((current) => current.filter((item) => item.conversation_id !== selectedId));
+    setArchivedConversations((current) => mergeConversations(current, [archived]));
+    if (selectedId === conversationId) onOpenConversation(`/agents/${encodeURIComponent(agentId)}`);
+  };
+
+  const restoreHistory = async (selectedId: string) => {
+    const restored = await restoreConversation(selectedId, account.csrf_token);
+    setArchivedConversations((current) => current.filter((item) => item.conversation_id !== selectedId));
+    setConversations((current) => mergeConversations(current, [restored]));
+  };
+
   const send = async () => {
     const normalized = text.trim();
     if (!card || !normalized || inputTooLarge || inFlight.current || account.hard_stale_read_only) return;
@@ -165,6 +196,7 @@ export function AgentUsePage({
     <button aria-expanded={mobileOpen} aria-label="打开对话列表" className="brain-workspace-menu" onClick={() => setMobileOpen(true)} type="button">☰</button>
     {mobileOpen && <button aria-label="关闭对话列表" className="conversation-sidebar-backdrop" onClick={() => setMobileOpen(false)} type="button" />}
     <ConversationSidebar
+      archivedConversations={archivedConversations}
       title={card.display_name}
       conversations={conversations}
       selectedConversationId={conversationId}
@@ -174,8 +206,12 @@ export function AgentUsePage({
       loadingMore={loadingMore}
       mobileOpen={mobileOpen}
       onCloseMobile={() => setMobileOpen(false)}
+      onArchive={account.hard_stale_read_only ? undefined : archiveHistory}
+      onLoadArchived={() => void loadArchived()}
       onLoadMore={() => void loadMore()}
       onNewConversation={() => { setMobileOpen(false); onOpenConversation(`/agents/${encodeURIComponent(agentId)}`); }}
+      onRename={account.hard_stale_read_only ? undefined : renameHistory}
+      onRestore={account.hard_stale_read_only ? undefined : restoreHistory}
       onRetry={() => setHistoryAttempt((value) => value + 1)}
       onSelect={(selected) => onOpenConversation(scopedConversationPath(agentId, selected))}
     />

@@ -373,6 +373,49 @@ def test_history_can_be_scoped_to_one_direct_agent_without_exposing_other_owners
 
 
 @pytest.mark.postgres
+def test_owner_renames_archives_and_restores_history_through_member_api(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner, _ = conversation_database
+    app, auth, _agent_use = _app(owner, repository)
+    client = TestClient(app)
+    started = _post(client, auth, "/api/v1/conversations", "原始标题")
+    conversation_id = started.json()["conversation"]["conversation_id"]
+
+    renamed = client.patch(
+        f"/api/v1/conversations/{conversation_id}",
+        **_write_credentials(auth),
+        json={"title": "  新标题  "},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["title"] == "新标题"
+
+    mission_id = _latest_mission_id(repository, owner, UUID(conversation_id))
+    _fail_and_project(repository, owner, mission_id)
+    archived = client.post(
+        f"/api/v1/conversations/{conversation_id}/archive",
+        **_write_credentials(auth),
+    )
+    assert archived.status_code == 200
+    assert archived.json()["status"] == "archived"
+    assert client.get(
+        "/api/v1/conversations", **_credentials(auth)
+    ).json()["items"] == []
+    archived_page = client.get(
+        "/api/v1/conversations?status=archived&limit=1", **_credentials(auth)
+    )
+    assert [item["title"] for item in archived_page.json()["items"]] == ["新标题"]
+
+    restored = client.post(
+        f"/api/v1/conversations/{conversation_id}/restore",
+        **_write_credentials(auth),
+    )
+    assert restored.status_code == 200
+    assert restored.json()["status"] == "active"
+
+
+@pytest.mark.postgres
 def test_terminal_sse_replays_monotonic_conversation_events_and_closes(
     conversation_database,
     repository,

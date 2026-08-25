@@ -10,7 +10,7 @@ from typing import Annotated, AsyncIterator, Callable, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, Response
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.control_plane.auth import AuthSecrets
 from app.control_plane.models import AuthContext
@@ -67,6 +67,20 @@ class ConversationFeedbackBody(BaseModel):
     rating: Literal["helpful", "unhelpful"]
 
 
+class ConversationRenameBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    title: str = Field(min_length=1, max_length=160)
+
+    @field_validator("title")
+    @classmethod
+    def _normalized_title(cls, value: str) -> str:
+        selected = value.strip()
+        if not selected:
+            raise ValueError("Conversation title required")
+        return selected
+
+
 class ConversationCursorCodec:
     """Authenticated, owner-bound keyset cursor with a distinct payload kind."""
 
@@ -95,6 +109,7 @@ class ConversationCursorCodec:
         updated_at: datetime,
         conversation_id: UUID,
         direct_agent_id: str | None = None,
+        status: Literal["active", "archived"] = "active",
     ) -> str:
         if (
             not isinstance(owner, UUID)
@@ -107,6 +122,7 @@ class ConversationCursorCodec:
                 "conversation_id": str(conversation_id),
                 "key_version": self._secrets.key_version,
                 "kind": "conversation",
+                "status": status,
                 "updated_at": updated_at.isoformat(),
             }
         if direct_agent_id is not None:
@@ -120,7 +136,11 @@ class ConversationCursorCodec:
         return self._encode(payload + signature)
 
     def read(
-        self, owner: UUID, value: str, direct_agent_id: str | None = None
+        self,
+        owner: UUID,
+        value: str,
+        direct_agent_id: str | None = None,
+        status: Literal["active", "archived"] = "active",
     ) -> tuple[datetime, UUID]:
         try:
             raw = self._decode(value)
@@ -136,6 +156,7 @@ class ConversationCursorCodec:
                 "conversation_id",
                 "key_version",
                 "kind",
+                "status",
                 "updated_at",
             }
             if direct_agent_id is not None:
@@ -146,6 +167,7 @@ class ConversationCursorCodec:
                 document["kind"] != "conversation"
                 or document["key_version"] != self._secrets.key_version
                 or document.get("direct_agent_id") != direct_agent_id
+                or document["status"] != status
             ):
                 raise ValueError
             updated_at = datetime.fromisoformat(document["updated_at"])
@@ -600,12 +622,13 @@ def build_conversation_router(
             str | None,
             Query(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"),
         ] = None,
+        status: Annotated[Literal["active", "archived"], Query()] = "active",
     ):
         context = _auth_context(request)
         try:
             boundary = (
                 cursor_codec.read(
-                    context.internal_user_id, before, direct_agent_id
+                    context.internal_user_id, before, direct_agent_id, status
                 )
                 if before is not None
                 else None
@@ -621,6 +644,7 @@ def build_conversation_router(
                 limit=limit + 1,
                 before=boundary,
                 direct_agent_id=direct_agent_id,
+                status=status,
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None
@@ -633,6 +657,7 @@ def build_conversation_router(
                 last.updated_at,
                 last.conversation_id,
                 direct_agent_id,
+                status,
             )
         response.headers.update(_NO_STORE)
         return {
@@ -808,6 +833,27 @@ def build_conversation_router(
             "cancel_requested": cancellation.cancel_requested,
         }
 
+    @router.patch("/api/v1/conversations/{conversation_id}")
+    async def rename_conversation(
+        conversation_id: UUID,
+        body: ConversationRenameBody,
+        request: Request,
+        response: Response,
+    ):
+        context = _auth_context(request)
+        _ensure_writable(context)
+        try:
+            conversation = await asyncio.to_thread(
+                repository.rename,
+                context.internal_user_id,
+                conversation_id,
+                body.title,
+            )
+        except ConversationRepositoryError as error:
+            raise _repository_http_error(error) from None
+        response.headers.update(_NO_STORE)
+        return _conversation_payload(conversation)
+
     @router.post("/api/v1/conversations/{conversation_id}/archive")
     async def archive_conversation(
         conversation_id: UUID, request: Request, response: Response
@@ -817,6 +863,23 @@ def build_conversation_router(
         try:
             conversation = await asyncio.to_thread(
                 repository.archive,
+                context.internal_user_id,
+                conversation_id,
+            )
+        except ConversationRepositoryError as error:
+            raise _repository_http_error(error) from None
+        response.headers.update(_NO_STORE)
+        return _conversation_payload(conversation)
+
+    @router.post("/api/v1/conversations/{conversation_id}/restore")
+    async def restore_conversation(
+        conversation_id: UUID, request: Request, response: Response
+    ):
+        context = _auth_context(request)
+        _ensure_writable(context)
+        try:
+            conversation = await asyncio.to_thread(
+                repository.restore,
                 context.internal_user_id,
                 conversation_id,
             )

@@ -38,12 +38,50 @@ describe("ConversationSidebar", () => {
     expect(container.querySelector('nav[aria-label="对话列表"]')).not.toBeNull();
     expect(container.querySelector(".conversation-sidebar-head strong")?.textContent).toBe("Agent 大脑");
     expect(container.querySelector('a[aria-current="page"]')?.textContent).toContain("当前会话");
-    expect(container.textContent).toContain("HR Agent");
+    expect(container.textContent).not.toContain("HR Agent");
     await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/conversations/direct"]')?.click());
     expect(onSelect).toHaveBeenCalledWith("direct");
     await act(async () => container.querySelector<HTMLButtonElement>(".conversation-sidebar-new")?.click());
     expect(onNewConversation).toHaveBeenCalledTimes(1);
     await act(async () => container.querySelector<HTMLButtonElement>(".conversation-sidebar-more")?.click());
     expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers accessible rename, archive, archived history, and restore actions", async () => {
+    const onRename = vi.fn();
+    const onArchive = vi.fn();
+    const onLoadArchived = vi.fn();
+    const onRestore = vi.fn();
+    const archived = { ...selected, conversation_id: "archived", title: "已归档", status: "archived" as const, archived_at: "2026-08-25T10:00:00Z" };
+    await act(async () => root.render(<ConversationSidebar
+      archivedConversations={[archived]}
+      conversations={[selected]}
+      selectedConversationId="selected"
+      loading={false} error={false} hasMore={false} loadingMore={false} mobileOpen={false}
+      onArchive={onArchive} onCloseMobile={vi.fn()} onLoadArchived={onLoadArchived}
+      onLoadMore={vi.fn()} onNewConversation={vi.fn()} onRename={onRename}
+      onRestore={onRestore} onRetry={vi.fn()} onSelect={vi.fn()}
+    />));
+
+    const actions = container.querySelector<HTMLButtonElement>("button[aria-label='打开对话操作']");
+    expect(actions).not.toBeNull();
+    await act(async () => actions?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>("button[data-action='rename']")?.click());
+    const input = container.querySelector<HTMLInputElement>("input[aria-label='对话标题']")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "新的标题");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => container.querySelector<HTMLFormElement>("form.conversation-rename")?.requestSubmit());
+    expect(onRename).toHaveBeenCalledWith("selected", "新的标题");
+
+    await act(async () => actions?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>("button[data-action='archive']")?.click());
+    expect(onArchive).toHaveBeenCalledWith("selected");
+    await act(async () => container.querySelector<HTMLButtonElement>("button[aria-label='查看已归档对话']")?.click());
+    expect(onLoadArchived).toHaveBeenCalledTimes(1);
+    await act(async () => container.querySelector<HTMLButtonElement>("button[aria-label='恢复已归档']")?.click());
+    expect(onRestore).toHaveBeenCalledWith("archived");
+    expect(container.textContent).not.toContain("删除");
   });
 });

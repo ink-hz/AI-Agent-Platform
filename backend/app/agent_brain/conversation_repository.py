@@ -108,6 +108,15 @@ def _title_for(text: str) -> str:
     return title[:160]
 
 
+def _require_title(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Conversation title invalid")
+    selected = value.strip()
+    if not selected or len(selected) > 160:
+        raise ValueError("Conversation title invalid")
+    return selected
+
+
 def _require_mode(
     mode: object, direct_agent_id: object
 ) -> tuple[Literal["brain", "direct_agent"], str | None]:
@@ -1821,6 +1830,7 @@ class ConversationRepository:
         limit: int = 50,
         before: tuple[datetime, UUID] | None = None,
         direct_agent_id: str | None = None,
+        status: Literal["active", "archived"] = "active",
     ) -> tuple[ConversationRecord, ...]:
         _require_uuid(internal_user_id)
         if (
@@ -1843,13 +1853,15 @@ class ConversationRepository:
                 or _AGENT_ID.fullmatch(direct_agent_id) is None
             ):
                 raise ValueError("direct Agent invalid")
+        if status not in {"active", "archived"}:
+            raise ValueError("Conversation status invalid")
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 query = (
                     "select * from platform_control.conversations "
-                    "where owner_internal_user_id=%s "
+                    "where owner_internal_user_id=%s and status=%s "
                 )
-                base_parameters: tuple[object, ...] = (internal_user_id,)
+                base_parameters: tuple[object, ...] = (internal_user_id, status)
                 if direct_agent_id is not None:
                     query += "and mode='direct_agent' and direct_agent_id=%s "
                     base_parameters += (direct_agent_id,)
@@ -1868,6 +1880,28 @@ class ConversationRepository:
                     parameters,
                 ).fetchall()
             return tuple(self._conversation_from_row(row) for row in rows)
+        except ConversationRepositoryError:
+            raise
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def rename(
+        self, internal_user_id: UUID, conversation_id: UUID, title: str
+    ) -> ConversationRecord:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        selected_title = _require_title(title)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    "update platform_control.conversations set title=%s,"
+                    "updated_at=now() where conversation_id=%s "
+                    "and owner_internal_user_id=%s returning *",
+                    (selected_title, conversation_id, internal_user_id),
+                ).fetchone()
+            if row is None:
+                raise ConversationRepositoryNotFound()
+            return self._conversation_from_row(row)
         except ConversationRepositoryError:
             raise
         except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
@@ -1902,9 +1936,31 @@ class ConversationRepository:
                 row = cursor.execute(
                     "update platform_control.conversations set status='archived',"
                     "archived_at=now(),updated_at=now() where conversation_id=%s "
+                    "and owner_internal_user_id=%s "
                     "returning *",
-                    (conversation_id,),
+                    (conversation_id, internal_user_id),
                 ).fetchone()
+            return self._conversation_from_row(row)
+        except ConversationRepositoryError:
+            raise
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def restore(
+        self, internal_user_id: UUID, conversation_id: UUID
+    ) -> ConversationRecord:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    "update platform_control.conversations set status='active',"
+                    "archived_at=null,updated_at=now() where conversation_id=%s "
+                    "and owner_internal_user_id=%s returning *",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+            if row is None:
+                raise ConversationRepositoryNotFound()
             return self._conversation_from_row(row)
         except ConversationRepositoryError:
             raise

@@ -529,3 +529,32 @@ def test_record_contracts_are_immutable_and_typed() -> None:
     assert get_type_hints(ConversationMessageRecord)["created_at"] is datetime
     assert get_type_hints(ConversationTurnRecord)["updated_at"] is datetime
     assert datetime.now(timezone.utc).tzinfo is not None
+
+
+@pytest.mark.postgres
+def test_owner_can_rename_archive_restore_and_filter_history(
+    conversation_database,
+    repository,
+) -> None:
+    environment, owner, other = conversation_database
+    from app.agent_brain.conversation_projection import ConversationProjection
+    from test_agent_brain_conversation_context import _complete_mission
+
+    started = repository.start(owner, uuid4(), "原始标题")
+    conversation_id = started.conversation.conversation_id
+
+    renamed = repository.rename(owner, conversation_id, "  新标题  ")
+    assert renamed.title == "新标题"
+    with pytest.raises(ConversationRepositoryNotFound):
+        repository.rename(other, conversation_id, "越权")
+
+    _complete_mission(environment, repository, started.mission.mission_id, "完成")
+    assert ConversationProjection(repository).project_terminal(
+        started.mission.mission_id
+    )
+    assert repository.archive(owner, conversation_id).status == "archived"
+    assert repository.list_for_owner(owner, status="active") == ()
+    assert [item.conversation_id for item in repository.list_for_owner(
+        owner, status="archived"
+    )] == [conversation_id]
+    assert repository.restore(owner, conversation_id).status == "active"

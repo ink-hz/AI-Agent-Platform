@@ -10,6 +10,8 @@ import {
   fetchConversation,
   fetchConversationMessages,
   listConversations,
+  renameConversation,
+  restoreConversation,
   startConversation,
   streamConversationEvents,
   submitConversationFeedback,
@@ -190,6 +192,28 @@ describe("continuous Conversation API", () => {
     expect(fetchMock.mock.calls[0][0]).toBe(
       "/api/v1/conversations?limit=20&direct_agent_id=marketing-gtm-bot",
     );
+  });
+
+  it("renames, lists archived history, and restores with exact member endpoints", async () => {
+    const archived = { ...conversation, status: "archived", archived_at: "2026-08-25T10:00:00Z" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ ...conversation, title: "新标题" }))
+      .mockResolvedValueOnce(jsonResponse({ items: [archived], next_cursor: null }))
+      .mockResolvedValueOnce(jsonResponse(conversation));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renameConversation(CONVERSATION_ID, "新标题", "csrf");
+    await listConversations(undefined, undefined, 20, undefined, "archived");
+    await restoreConversation(CONVERSATION_ID, "csrf");
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `/api/v1/conversations/${CONVERSATION_ID}`,
+      "/api/v1/conversations?limit=20&status=archived",
+      `/api/v1/conversations/${CONVERSATION_ID}/restore`,
+    ]);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: "PATCH", body: JSON.stringify({ title: "新标题" }),
+    });
   });
 
   it("submits strict per-assistant-message feedback", async () => {

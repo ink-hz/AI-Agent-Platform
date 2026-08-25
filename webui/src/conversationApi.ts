@@ -336,15 +336,38 @@ export async function listConversations(
   before?: string,
   limit = 20,
   directAgentId?: string,
+  status: ConversationStatus = "active",
 ): Promise<ConversationPage> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("Conversation list limit invalid");
   const params = new URLSearchParams({ limit: String(limit) });
   if (before) params.set("before", before);
   if (directAgentId) params.set("direct_agent_id", directAgentId);
+  if (status !== "active") params.set("status", status);
   const response = await checked(await fetch(platformPath(`/api/v1/conversations?${params}`), {
     credentials: "include", headers: { Accept: "application/json" }, signal,
   }));
   return parsePage(await response.json());
+}
+
+
+export async function renameConversation(
+  conversationId: string,
+  title: string,
+  csrfToken: string,
+  signal?: AbortSignal,
+): Promise<Conversation> {
+  const selected = title.trim();
+  if (!selected || selected.length > 160) throw new Error("Conversation title invalid");
+  const response = await checked(await fetch(platformPath(`/api/v1/conversations/${encodeURIComponent(conversationId)}`), {
+    method: "PATCH", credentials: "include", signal,
+    headers: {
+      Accept: "application/json", "Content-Type": "application/json", "X-CSRF-Token": csrfToken,
+    },
+    body: JSON.stringify({ title: selected }),
+  }));
+  const result = parseConversation(await response.json());
+  if (result.conversation_id !== conversationId) throw new Error("Conversation rename response invalid");
+  return result;
 }
 
 
@@ -417,6 +440,23 @@ export async function archiveConversation(
   const result = parseConversation(await response.json());
   if (result.conversation_id !== conversationId || result.status !== "archived") {
     throw new Error("Conversation archive response invalid");
+  }
+  return result;
+}
+
+
+export async function restoreConversation(
+  conversationId: string,
+  csrfToken: string,
+  signal?: AbortSignal,
+): Promise<Conversation> {
+  const response = await checked(await fetch(platformPath(`/api/v1/conversations/${encodeURIComponent(conversationId)}/restore`), {
+    method: "POST", credentials: "include", signal,
+    headers: { Accept: "application/json", "X-CSRF-Token": csrfToken },
+  }));
+  const result = parseConversation(await response.json());
+  if (result.conversation_id !== conversationId || result.status !== "active") {
+    throw new Error("Conversation restore response invalid");
   }
   return result;
 }
