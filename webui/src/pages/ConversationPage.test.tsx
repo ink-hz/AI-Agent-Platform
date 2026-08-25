@@ -129,7 +129,7 @@ describe("ConversationPage", () => {
     expect(container.textContent).not.toContain("建议从 GitHub 开始");
   });
 
-  it("renders Markdown, collapsed execution, and keeps the composer after a follow-up", async () => {
+  it("renders Markdown without member diagnostics and keeps the composer after a follow-up", async () => {
     const pageClient = client();
     const onConversationUpdated = vi.fn();
     await act(async () => root.render(<ConversationPage
@@ -140,8 +140,9 @@ describe("ConversationPage", () => {
     expect(container.querySelector(".conversation-assistant h2")?.textContent).toBe("第一轮结果");
     expect(container.textContent).not.toContain("历史对话");
     expect(onConversationUpdated).toHaveBeenCalledWith(conversation);
-    expect(container.querySelector<HTMLDetailsElement>(".execution-card")?.open).toBe(false);
-    expect(container.textContent).toContain("HR Agent");
+    expect(container.querySelector(".execution-card")).toBeNull();
+    expect(container.textContent).not.toContain("执行过程");
+    expect(container.textContent).not.toContain("诊断详情");
     expect(container.querySelector("textarea[aria-label='继续对话']")).not.toBeNull();
 
     await setTextarea(container, "继续给出搜索式");
@@ -228,9 +229,17 @@ describe("ConversationPage", () => {
     const pageClient = client({
       fetchConversation: vi.fn().mockResolvedValue({ conversation: directConversation, current_turn: completedTurn }),
     });
-    await act(async () => root.render(<ConversationPage account={account} client={pageClient} conversationId={conversationId} />));
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      assistantLabel="HR Agent"
+      client={pageClient}
+      conversationId={conversationId}
+      personaSubtitle="Hannah · 技术人才搜寻与招聘协作"
+    />));
 
     expect(container.querySelector(".conversation-assistant header strong")?.textContent).toBe("HR Agent");
+    expect(container.querySelector(".conversation-header h1")?.textContent).toBe("HR Agent");
+    expect(container.textContent).toContain("Hannah · 技术人才搜寻与招聘协作");
   });
 
   it("shows an Agent result before the Brain observes the settled batch", async () => {
@@ -248,12 +257,13 @@ describe("ConversationPage", () => {
     await act(async () => root.render(
       <ConversationPage account={account} client={pageClient} conversationId={conversationId} />,
     ));
-    const details = container.querySelector<HTMLDetailsElement>(".execution-card")!;
+    const details = container.querySelector<HTMLDetailsElement>(".public-collaboration")!;
     details.open = true;
 
     expect(container.textContent).toContain("HR Agent 已完成");
-    expect(container.textContent).toContain("等待 Agent 大脑继续处理");
+    expect(container.textContent).toContain("查看协作过程");
     expect(container.textContent).not.toContain("Agent 大脑已读取结果");
+    expect(container.textContent).not.toContain("completed");
   });
 
   it("lets the user answer a waiting-user request in the same turn", async () => {

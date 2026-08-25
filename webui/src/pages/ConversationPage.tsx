@@ -25,8 +25,8 @@ import { TERMINAL_CONVERSATION_TURN_STATUSES } from "../conversationTypes";
 import { reconnectDelay } from "../brainApi";
 import { ConversationComposer } from "../components/conversation/ConversationComposer";
 import { ConversationMessages } from "../components/conversation/ConversationMessages";
-import { ExecutionCard } from "../components/conversation/ExecutionCard";
-import { professionalAgentLabel } from "../components/conversation/agentLabels";
+import { PublicProgress } from "../components/conversation/PublicProgress";
+import { UserInputRequest } from "../components/conversation/UserInputRequest";
 
 
 export interface ConversationPageClient {
@@ -76,12 +76,16 @@ export function ConversationPage({
   client = DEFAULT_CLIENT,
   onConversationUpdated,
   expectedAgentId,
+  assistantLabel = "Agent 大脑",
+  personaSubtitle,
 }: {
   conversationId: string;
   account: Account;
   client?: ConversationPageClient;
   onConversationUpdated?: (conversation: Conversation) => void;
   expectedAgentId?: string;
+  assistantLabel?: string;
+  personaSubtitle?: string | null;
 }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -256,38 +260,45 @@ export function ConversationPage({
   if (loadFailure || !detail) return <section className="conversation-load-state" role="alert"><h1>暂时无法读取对话</h1><p>对话仍安全保存在平台，请稍后刷新。</p></section>;
   const active = turnIsActive(detail);
   const waitingUser = detail.current_turn?.status === "waiting_user";
+  const waitingUserEvent = [...events].reverse().find(
+    (event) => event.event_type === "brain.user_input_requested",
+  );
+  const waitingQuestion = waitingUserEvent?.payload.objective_summary;
+  const stopButton = <button
+    className="conversation-stop"
+    disabled={cancelRequested || account.hard_stale_read_only}
+    onClick={() => void stop()}
+    type="button"
+  >{cancelRequested ? "正在停止" : "停止"}</button>;
   return <div className="conversation-page">
     <header className="conversation-header">
       <div>
-        <p>{detail.conversation.mode === "direct_agent" ? detail.conversation.direct_agent_id : "Agent 大脑"}</p>
-        <h1>{detail.conversation.title}</h1>
+        <h1>{assistantLabel}</h1>
+        {personaSubtitle && <p>{personaSubtitle}</p>}
       </div>
     </header>
-    {connection === "offline" && <aside className="conversation-connection is-offline" role="status"><strong>连接暂时中断</strong><span>正在从最后一条执行记录继续连接，不会重复创建任务。</span></aside>}
-    {connection === "connecting" && <aside className="conversation-connection" role="status">正在连接执行进度…</aside>}
+    {connection === "offline" && <aside className="conversation-connection is-offline" role="status"><strong>连接暂时中断</strong><span>正在从上次进度继续连接，不会重复提交请求。</span></aside>}
+    {connection === "connecting" && <aside className="conversation-connection" role="status">正在连接对话…</aside>}
     <ConversationMessages
-      assistantLabel={detail.conversation.mode === "direct_agent"
-        ? professionalAgentLabel(detail.conversation.direct_agent_id) ?? "专业 Agent"
-        : "Agent 大脑"}
+      assistantLabel={assistantLabel}
       messages={messages}
       feedback={feedback}
       onFeedback={account.hard_stale_read_only ? undefined : (messageId, rating) => void rate(messageId, rating)}
     />
-    {active && !waitingUser && <section className="conversation-running" aria-live="polite">
-      <span>{cancelRequested ? "正在停止本轮执行…" : "Agent 正在处理本轮需求…"}</span>
-      <button className="conversation-stop" disabled={cancelRequested || account.hard_stale_read_only} onClick={() => void stop()} type="button">
-        {cancelRequested ? "正在停止" : "停止"}
-      </button>
-    </section>}
-    {cancelFailure && <p className="conversation-action-error" role="alert">停止请求暂未送达，请稍后重试。</p>}
-    <ExecutionCard
-      directAgentId={detail.conversation.direct_agent_id}
-      disabled={account.hard_stale_read_only}
+    <PublicProgress
+      active={active && !waitingUser}
+      assistantLabel={assistantLabel}
       events={events}
       mode={detail.conversation.mode}
-      onResumeUserInput={waitingUser ? (answer) => void sendValue(answer) : undefined}
-      pending={pending}
+      stopButton={stopButton}
     />
+    {cancelFailure && <p className="conversation-action-error" role="alert">停止请求暂未送达，请稍后重试。</p>}
+    {waitingUser && typeof waitingQuestion === "string" && <UserInputRequest
+      disabled={account.hard_stale_read_only}
+      onSubmit={(answer) => void sendValue(answer)}
+      pending={pending}
+      question={waitingQuestion}
+    />}
     {detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
       && <button className="conversation-turn-retry" disabled={pending || account.hard_stale_read_only} onClick={() => void retryTurn()} type="button">重试本轮</button>}
     <ConversationComposer

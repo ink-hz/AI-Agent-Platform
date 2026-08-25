@@ -62,7 +62,8 @@ describe("BrainWorkspacePage", () => {
     />));
 
     expect(container.querySelector('a[aria-current="page"]')?.textContent).toContain("最新会话");
-    expect(container.querySelector(".conversation-page")?.textContent).toContain("最新会话");
+    expect(container.querySelector(".conversation-header h1")?.textContent).toBe("Agent 大脑");
+    expect(container.querySelector(".conversation-page")?.textContent).not.toContain("最新会话");
     expect(container.textContent).not.toContain("← 历史对话");
   });
 

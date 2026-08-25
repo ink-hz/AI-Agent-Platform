@@ -184,7 +184,15 @@ export function AgentUsePage({
         {marketing.map((item) => <PlatformLink aria-current={item.agent_id === agentId ? "page" : undefined} href={`/agents/${encodeURIComponent(item.agent_id)}`} key={item.agent_id}>{item.display_name.replace("Marketing ", "")}</PlatformLink>)}
       </nav>}
       {conversationId
-        ? <ConversationThread account={account} client={conversationClient} conversationId={conversationId} expectedAgentId={agentId} onConversationUpdated={upsertConversation} />
+        ? <ConversationThread
+          account={account}
+          assistantLabel={card.display_name}
+          client={conversationClient}
+          conversationId={conversationId}
+          expectedAgentId={agentId}
+          onConversationUpdated={upsertConversation}
+          personaSubtitle={card.persona_subtitle}
+        />
         : <div className="agent-use-page"><PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>
           <section className="agent-use-profile"><span>{card.domain_group}</span><h1>{card.display_name}</h1>
             {card.persona_subtitle && <p className="agent-persona-subtitle">{card.persona_subtitle}</p>}

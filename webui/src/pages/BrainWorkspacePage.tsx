@@ -110,7 +110,7 @@ export function BrainWorkspacePage({
     <section className="brain-workspace-main">
       {conversationId
         ? <ConversationThread
-          account={account} client={conversationClient} conversationId={conversationId}
+          account={account} assistantLabel="Agent 大脑" client={conversationClient} conversationId={conversationId}
           onConversationUpdated={upsertConversation}
         />
         : <BrainPage
