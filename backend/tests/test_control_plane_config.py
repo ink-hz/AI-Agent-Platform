@@ -189,6 +189,31 @@ def test_production_configuration_uses_root_host_cookie(tmp_path, monkeypatch) -
     assert control_plane.cookie_name == "__Host-platform_session"
 
 
+def test_trusted_in_client_registry_is_optional(tmp_path, monkeypatch) -> None:
+    install_required_identity_environment(tmp_path, monkeypatch, mode="production")
+    monkeypatch.delenv("PLATFORM_DINGTALK_IN_CLIENT_APPS_FILE", raising=False)
+
+    assert load_config().control_plane.dingtalk_in_client_apps_file == ""
+
+
+def test_trusted_in_client_registry_uses_a_private_service_owned_file(
+    tmp_path, monkeypatch
+) -> None:
+    install_required_identity_environment(tmp_path, monkeypatch, mode="production")
+    registry = tmp_path / "dingtalk-in-client-apps.json"
+    registry.write_text('{"schema_version":1,"apps":[]}', encoding="utf-8")
+    registry.chmod(0o600)
+    monkeypatch.setenv("PLATFORM_DINGTALK_IN_CLIENT_APPS_FILE", str(registry))
+
+    assert load_config().control_plane.dingtalk_in_client_apps_file == str(registry)
+
+    registry.chmod(0o644)
+    with pytest.raises(
+        RuntimeError, match="trusted DingTalk application registry.*0600"
+    ):
+        load_config()
+
+
 def test_preview_and_production_cookie_names_are_fixed(tmp_path, monkeypatch) -> None:
     install_required_identity_environment(tmp_path, monkeypatch, mode="preview")
     monkeypatch.setenv("PLATFORM_COOKIE_NAME", "shared_platform_session")

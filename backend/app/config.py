@@ -365,6 +365,14 @@ def _load_control_plane_config() -> ControlPlaneConfig:
     )
     for path, label in private_files:
         _validate_private_file(path, label)
+    dingtalk_in_client_apps_file = os.getenv(
+        "PLATFORM_DINGTALK_IN_CLIENT_APPS_FILE", ""
+    ).strip()
+    if dingtalk_in_client_apps_file:
+        _validate_private_file(
+            dingtalk_in_client_apps_file,
+            "trusted DingTalk application registry",
+        )
     if Path(rate_limit_hmac_keyring_file).samefile(hmac_keyring_file):
         raise ValueError(
             "rate limit HMAC keyring must be distinct from identity HMAC keyring"
@@ -440,6 +448,7 @@ def _load_control_plane_config() -> ControlPlaneConfig:
         authenticated_mutations_per_minute=_positive_environment_int(
             "PLATFORM_AUTHENTICATED_MUTATIONS_PER_MINUTE", 60
         ),
+        dingtalk_in_client_apps_file=dingtalk_in_client_apps_file,
     )
 
 

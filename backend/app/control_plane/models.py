@@ -108,3 +108,4 @@ class ControlPlaneConfig:
     oauth_exchanges_per_minute: int = 3_000
     authenticated_reads_per_minute: int = 300
     authenticated_mutations_per_minute: int = 60
+    dingtalk_in_client_apps_file: str = ""
