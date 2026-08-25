@@ -12,15 +12,69 @@ from app.agent_brain.loop_models import (
     NormalizedTaskResult,
 )
 from app.agent_brain.tool_protocol import (
+    AwaitAgentEventsCall,
     BRAIN_TOOL_SCHEMAS,
     BrainToolBatch,
     DelegateTaskCall,
     ProtocolViolation,
+    SendAgentMessageCall,
+    StopAgentTaskCall,
     SubmitAnswerCall,
     ToolLimits,
     parse_tool_batch,
     stable_runtime_id,
 )
+
+
+TASK_ID = UUID("00000000-0000-4000-8000-000000000101")
+
+
+def _await_block(
+    task_ids: list[str] | None = None,
+    *,
+    wake_on: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "type": "tool_use",
+        "id": "toolu_await",
+        "name": "await_agent_events",
+        "input": {
+            "task_ids": task_ids or [str(TASK_ID)],
+            "wake_on": wake_on or ["question", "finding", "result"],
+            "public_reason": "等待专业 Agent 返回真实进展",
+        },
+    }
+
+
+def _send_block(
+    task_id: UUID = TASK_ID,
+    *,
+    index: int = 1,
+    message: str = "请补充证据",
+) -> dict[str, object]:
+    return {
+        "type": "tool_use",
+        "id": f"toolu_send_{index}",
+        "name": "send_agent_message",
+        "input": {
+            "task_id": str(task_id),
+            "message": message,
+            "public_reason": "根据已返回的发现补充追问",
+        },
+    }
+
+
+def _stop_block(task_id: UUID = TASK_ID) -> dict[str, object]:
+    return {
+        "type": "tool_use",
+        "id": "toolu_stop",
+        "name": "stop_agent_task",
+        "input": {
+            "task_id": str(task_id),
+            "reason": "当前结果已足够",
+            "public_reason": "停止不再需要的专业任务",
+        },
+    }
 
 
 def _delegate_block(
@@ -211,16 +265,107 @@ def test_stable_runtime_ids_are_deterministic_distinct_and_validate_shape() -> N
             stable_runtime_id(loop_id, *values)
 
 
-def test_public_tool_schema_contains_exactly_four_tools_and_no_cancel() -> None:
+def test_public_tool_schema_contains_exactly_seven_collaboration_tools() -> None:
     assert [schema["name"] for schema in BRAIN_TOOL_SCHEMAS] == [
         "list_agents",
         "delegate_task",
+        "await_agent_events",
+        "send_agent_message",
+        "stop_agent_task",
         "request_user_input",
         "submit_answer",
     ]
     rendered = repr(BRAIN_TOOL_SCHEMAS)
     assert "cancel_task" not in rendered
     assert "public_reason" in rendered
+
+
+def test_collaboration_tools_enforce_step_homogeneity() -> None:
+    second_task = UUID("00000000-0000-4000-8000-000000000102")
+    limits = ToolLimits(
+        allowed_task_ids=frozenset({TASK_ID, second_task}),
+        active_task_ids=frozenset({TASK_ID, second_task}),
+    )
+    sends = parse_tool_batch(
+        [_send_block(TASK_ID, index=1), _send_block(second_task, index=2)],
+        limits,
+    )
+    assert sends.kind == "agent_messages"
+    assert all(isinstance(item.call, SendAgentMessageCall) for item in sends.calls)
+
+    waited = parse_tool_batch([_await_block()], limits)
+    assert waited.kind == "await_agent_events"
+    assert isinstance(waited.calls[0].call, AwaitAgentEventsCall)
+    stopped = parse_tool_batch([_stop_block()], limits)
+    assert stopped.kind == "stop_agent_task"
+    assert isinstance(stopped.calls[0].call, StopAgentTaskCall)
+
+    with pytest.raises(ProtocolViolation) as error:
+        parse_tool_batch([_delegate_block(1), _await_block()], limits)
+    assert error.value.code == "mixed_tool_batch"
+    with pytest.raises(ProtocolViolation) as multiple_waits:
+        parse_tool_batch(
+            [_await_block(), {**_await_block(), "id": "toolu_await_2"}],
+            limits,
+        )
+    assert multiple_waits.value.code == "mixed_tool_batch"
+
+
+def test_collaboration_tools_require_owned_active_tasks() -> None:
+    foreign = uuid4()
+    terminal = uuid4()
+    limits = ToolLimits(
+        allowed_task_ids=frozenset({TASK_ID, terminal}),
+        active_task_ids=frozenset({TASK_ID}),
+    )
+    for block in (
+        _await_block([str(foreign)]),
+        _send_block(foreign),
+        _stop_block(foreign),
+    ):
+        with pytest.raises(ProtocolViolation) as error:
+            parse_tool_batch([block], limits)
+        assert error.value.code == "reference_not_owned"
+
+    with pytest.raises(ProtocolViolation) as terminal_error:
+        parse_tool_batch([_stop_block(terminal)], limits)
+    assert terminal_error.value.code == "target_not_active"
+
+
+def test_followup_message_is_limited_to_16_kibibytes() -> None:
+    limits = ToolLimits(
+        allowed_task_ids=frozenset({TASK_ID}),
+        active_task_ids=frozenset({TASK_ID}),
+        max_tool_argument_bytes=128 * 1024,
+    )
+    accepted = parse_tool_batch(
+        [_send_block(message="中" * 5461)],
+        limits,
+    )
+    assert isinstance(accepted.calls[0].call, SendAgentMessageCall)
+    with pytest.raises(ProtocolViolation) as error:
+        parse_tool_batch([_send_block(message="中" * 5462)], limits)
+    assert error.value.code == "invalid_tool_input"
+
+
+@pytest.mark.parametrize(
+    "wake_on",
+    [
+        [],
+        ["message"],
+        ["question", "question"],
+        ["question", "finding", "result", "failed", "timeout", "cancelled"],
+    ],
+)
+def test_await_accepts_only_exact_unique_wake_kinds(wake_on: list[str]) -> None:
+    limits = ToolLimits(allowed_task_ids=frozenset({TASK_ID}))
+    block = _await_block(wake_on=wake_on)
+    # The helper defaults an empty list, so preserve the explicit empty case.
+    if not wake_on:
+        block["input"]["wake_on"] = []  # type: ignore[index]
+    with pytest.raises(ProtocolViolation) as error:
+        parse_tool_batch([block], limits)
+    assert error.value.code == "invalid_tool_input"
 
 
 def test_runtime_models_are_frozen_and_use_exact_status_values() -> None:

@@ -41,6 +41,9 @@ def test_prompt_names_exact_tools_and_enforces_behavioral_boundaries() -> None:
     for name in (
         "list_agents",
         "delegate_task",
+        "await_agent_events",
+        "send_agent_message",
+        "stop_agent_task",
         "request_user_input",
         "submit_answer",
     ):
@@ -52,6 +55,10 @@ def test_prompt_names_exact_tools_and_enforces_behavioral_boundaries() -> None:
         "Keep the answer concise",
         "Do not repeat a task for reassurance",
         "Never expose hidden reasoning",
+        "Never manufacture progress",
+        "concrete Agent event",
+        "material specialist value",
+        "irreversible authorization",
     ):
         assert required in prompt
     assert "cancel_task" not in prompt
