@@ -96,6 +96,7 @@ def test_metabot_adapter_replay_enqueues_one_relay_job() -> None:
     assert len(relay.payloads) == 1
     assert relay.payloads[0].run_id == TASK_ID
     assert relay.payloads[0].job_kind == "metabot_local"
+    assert relay.payloads[0].result_mode == "internal"
     assert relay.payloads[0].requester_subject == RequesterSubject(
         internal_user_id=UUID("00000000-0000-4000-8000-000000000705"),
         display_name="苍渊",
@@ -162,3 +163,28 @@ def test_metabot_adapter_normalizes_progress_and_completed_result() -> None:
     assert receipt.events[1].result is not None
     assert receipt.events[1].result.deliverables == ("人才判断",)
     assert receipt.terminal is True
+
+
+def test_metabot_adapter_reads_v2_internal_output_as_task_summary() -> None:
+    relay = FakeRelay(status="completed")
+    relay.payloads.append(object())
+    relay.relay_events = (
+        RelayEvent(
+            run_id=TASK_ID,
+            seq=1,
+            event_type="agent.complete",
+            created_at=NOW,
+            payload={
+                "result": {
+                    "contractVersion": "core_chat_result_v2",
+                    "success": True,
+                    "outputText": "候选人的视觉项目证据充分。",
+                }
+            },
+        ),
+    )
+
+    receipt = MetaBotLocalAdapter(relay).reconcile(_task(), next_event_seq=1)
+
+    assert receipt.events[0].result is not None
+    assert receipt.events[0].result.summary == "候选人的视觉项目证据充分。"

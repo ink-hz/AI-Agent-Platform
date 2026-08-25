@@ -8,6 +8,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 
 
 RelayJobKind = Literal["legacy_brain", "direct_agent", "metabot_local"]
+RelayResultMode = Literal["internal", "public_markdown"]
 
 
 class RequesterSubject(BaseModel):
@@ -34,6 +35,7 @@ class RelayJobPayload(BaseModel):
     prompt: str
     max_turns: int = Field(ge=1, le=24)
     job_kind: RelayJobKind = "legacy_brain"
+    result_mode: RelayResultMode = "internal"
     requester_subject: RequesterSubject | None = Field(default=None, repr=False)
 
 

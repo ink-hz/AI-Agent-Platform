@@ -99,6 +99,18 @@ def _payload(agent_id: str = "hr-bot") -> RelayJobPayload:
     )
 
 
+def _public_payload(agent_id: str = "hr-bot") -> RelayJobPayload:
+    return RelayJobPayload(
+        run_id=RUN_ID,
+        conversation_id=CONVERSATION_ID,
+        trigger_message_id=TRIGGER_MESSAGE_ID,
+        agent_id=agent_id,
+        prompt="请根据岗位要求形成候选人画像。",
+        max_turns=24,
+        result_mode="public_markdown",
+    )
+
+
 def test_runtime_map_requires_schema_v2_all_approved_bots_and_unique_ports(
     tmp_path: Path,
 ) -> None:
@@ -229,7 +241,24 @@ def test_start_run_sends_exact_contract_and_callback_bridge_identity(
         "executionChatId": EXECUTION_CHAT_ID,
         "userId": "platform-user",
         "maxTurns": 24,
+        "resultMode": "internal",
     }
+
+
+@respx.mock
+def test_start_run_forwards_public_result_mode(tmp_path: Path) -> None:
+    runtime_map = MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json"))
+    route = respx.post("http://127.0.0.1:9200/api/core-chat/runs").mock(
+        return_value=httpx.Response(
+            202,
+            json={"status": "accepted", "runId": str(RUN_ID), "targetBot": "hr-bot"},
+        )
+    )
+    client = MetaBotClient(runtime_map, _secret_file(tmp_path))
+
+    client.start_run(_public_payload(), CALLBACK_URL)
+
+    assert json.loads(route.calls.last.request.content)["resultMode"] == "public_markdown"
 
 
 @respx.mock

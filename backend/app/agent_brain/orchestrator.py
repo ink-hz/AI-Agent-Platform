@@ -207,24 +207,57 @@ def build_synthesis_prompt(
     )
 
 
-def _terminal_text(events: tuple[RelayEvent, ...], status: str) -> str:
+class PublicAnswerContractError(ExecutionRelayError):
+    """A successful public-delivery run did not provide a safe v2 answer."""
+
+
+_PUBLIC_PROTOCOL_PREFIXES = (
+    "Using jd-registry?",
+    "Tool selection:",
+    "Internal plan:",
+)
+
+
+def _validated_terminal_text(text: object, *, public: bool) -> str:
+    if type(text) is not str or not text.strip():
+        if public:
+            raise PublicAnswerContractError("public answer contract invalid")
+        raise ExecutionRelayError("execution relay unavailable")
+    selected = text.strip()
+    try:
+        if len(selected.encode("utf-8")) > MAX_RELAY_RESULT_BYTES:
+            if public:
+                raise PublicAnswerContractError("public answer contract invalid")
+            raise ExecutionRelayError("execution relay unavailable")
+    except UnicodeError:
+        if public:
+            raise PublicAnswerContractError("public answer contract invalid") from None
+        raise ExecutionRelayError("execution relay unavailable") from None
+    if public and selected.startswith(_PUBLIC_PROTOCOL_PREFIXES):
+        raise PublicAnswerContractError("public answer contract invalid")
+    return selected
+
+
+def _terminal_text(
+    events: tuple[RelayEvent, ...], status: str, *, require_public: bool = False
+) -> str:
     expected_type = "agent.complete" if status == "completed" else "agent.error"
     if not events or events[-1].event_type != expected_type:
         raise ExecutionRelayError("execution relay unavailable")
     payload = events[-1].payload
-    text = payload.get("text", "")
-    if status == "completed" and (type(text) is not str or not text.strip()):
-        result = payload.get("result")
-        if type(result) is dict and result.get("success") is True:
-            text = result.get("responseText", "")
-    if type(text) is not str or (status == "completed" and not text.strip()):
+    if status != "completed":
+        return _validated_terminal_text(payload.get("text", ""), public=False)
+    result = payload.get("result")
+    if type(result) is not dict or result.get("success") is not True:
+        if require_public:
+            raise PublicAnswerContractError("public answer contract invalid")
         raise ExecutionRelayError("execution relay unavailable")
-    try:
-        if len(text.encode("utf-8")) > MAX_RELAY_RESULT_BYTES:
-            raise ExecutionRelayError("execution relay unavailable")
-    except UnicodeError:
-        raise ExecutionRelayError("execution relay unavailable") from None
-    return text
+    if result.get("contractVersion") != "core_chat_result_v2":
+        if require_public:
+            raise PublicAnswerContractError("public answer contract invalid")
+        raise ExecutionRelayError("execution relay unavailable")
+    key = "publicAnswerMarkdown" if require_public else "outputText"
+    return _validated_terminal_text(result.get(key), public=require_public)
 
 
 def _is_visible_text(value: str | None) -> bool:
@@ -622,6 +655,11 @@ class MissionOrchestrator:
             prompt=prompt,
             max_turns=24,
             job_kind="direct_agent" if run.phase == "direct" else "legacy_brain",
+            result_mode=(
+                "public_markdown"
+                if run.phase in {"direct", "synthesis"}
+                else "internal"
+            ),
         )
         try:
             existing_state = self.relay.job_state(run.run_id)
@@ -1131,7 +1169,10 @@ class MissionOrchestrator:
         if state in _ACTIVE_RELAY_STATES:
             return False
         if state == "completed":
-            result = _terminal_text(events, state)
+            try:
+                result = _terminal_text(events, state, require_public=True)
+            except PublicAnswerContractError:
+                return self._complete_public_answer_invalid(mission, run)
             if not _is_visible_text(result):
                 return self._complete_output_too_large(
                     mission, run, partial=False
@@ -1192,12 +1233,35 @@ class MissionOrchestrator:
             return True
         return self._complete_terminal(mission, run, state, events)
 
+    def _complete_public_answer_invalid(
+        self, mission: MissionRecord, run: MissionRun
+    ) -> bool:
+        self.missions.complete_run(
+            mission.owner_internal_user_id,
+            mission.mission_id,
+            run.run_id,
+            status="failed",
+            output_payload={"reason_code": "public_answer_contract_invalid"},
+            event_type="mission.failed",
+            event_payload={
+                "text": "专业 Agent 暂未生成可交付的回答，请重试本轮。",
+                "reason_code": "public_answer_contract_invalid",
+            },
+            mission_status="failed",
+            expected_mission_status=mission.status,
+            expected_row_version=mission.row_version,
+        )
+        return True
+
     def _advance_synthesis(self, mission: MissionRecord, run: MissionRun) -> bool:
         state, events = self._run_state(mission, run)
         if state in _ACTIVE_RELAY_STATES:
             return False
         if state == "completed":
-            result = _terminal_text(events, state)
+            try:
+                result = _terminal_text(events, state, require_public=True)
+            except PublicAnswerContractError:
+                return self._complete_public_answer_invalid(mission, run)
             if not _is_visible_text(result):
                 return self._complete_output_too_large(
                     mission, run, partial=True

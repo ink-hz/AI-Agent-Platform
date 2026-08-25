@@ -108,6 +108,7 @@ class _StrictLeasePayload(BaseModel):
     prompt: str
     max_turns: int = Field(ge=1, le=24)
     job_kind: Literal["legacy_brain", "direct_agent", "metabot_local"]
+    result_mode: Literal["internal", "public_markdown"]
     requester_subject: RequesterSubject | None = None
 
 

@@ -82,6 +82,16 @@ class ScriptedRelay:
 
     def terminal(self, run_id: UUID, status: str, text: str = "") -> None:
         event_type = "agent.complete" if status == "completed" else "agent.error"
+        payload = {"text": text} if text else {}
+        if status == "completed":
+            result = {
+                "contractVersion": "core_chat_result_v2",
+                "success": True,
+                "outputText": text,
+            }
+            if self.payloads[run_id].result_mode == "public_markdown":
+                result["publicAnswerMarkdown"] = text
+            payload = {"result": result}
         self.states[run_id] = status
         self.run_events[run_id] = (
             RelayEvent(
@@ -89,7 +99,19 @@ class ScriptedRelay:
                 seq=1,
                 event_type=event_type,
                 created_at=datetime.now(timezone.utc),
-                payload={"text": text} if text else {},
+                payload=payload,
+            ),
+        )
+
+    def terminal_result(self, run_id: UUID, result: dict[str, object]) -> None:
+        self.states[run_id] = "completed"
+        self.run_events[run_id] = (
+            RelayEvent(
+                run_id=run_id,
+                seq=1,
+                event_type="agent.complete",
+                created_at=datetime.now(timezone.utc),
+                payload={"result": result},
             ),
         )
 
@@ -231,6 +253,7 @@ def test_direct_agent_completes_without_brain_synthesis(brain_database, orchestr
     service.advance_pending(limit=50)
     run_id = next(iter(relay.payloads))
     assert relay.payloads[run_id].job_kind == "direct_agent"
+    assert relay.payloads[run_id].result_mode == "public_markdown"
     relay.terminal(run_id, "completed", "候选人画像结果")
     service.advance_pending(limit=50)
 
@@ -242,6 +265,40 @@ def test_direct_agent_completes_without_brain_synthesis(brain_database, orchestr
         "task.dispatched",
         "mission.completed",
     ]
+
+
+@pytest.mark.postgres
+def test_direct_agent_rejects_completion_without_typed_public_answer(
+    brain_database, orchestrator
+):
+    environment, owner_id = brain_database
+    service, missions, relay = orchestrator
+    mission = missions.create_mission(
+        owner_id,
+        uuid4(),
+        "介绍一下你自己",
+        mode="direct_agent",
+        direct_agent_id="hr-bot",
+    )
+
+    service.advance_pending(limit=50)
+    run_id = next(iter(relay.payloads))
+    relay.terminal_result(
+        run_id,
+        {
+            "success": True,
+            "responseText": "Using jd-registry? No — internal narration",
+        },
+    )
+    service.advance_pending(limit=50)
+
+    assert _mission_row(environment, mission.mission_id)[0] == "failed"
+    terminal = missions.events_after(owner_id, mission.mission_id)[-1]
+    assert terminal.event_type == "mission.failed"
+    assert terminal.payload == {
+        "text": "专业 Agent 暂未生成可交付的回答，请重试本轮。",
+        "reason_code": "public_answer_contract_invalid",
+    }
 
 
 @pytest.mark.postgres
@@ -284,6 +341,9 @@ def test_delegate_executes_one_professional_then_synthesizes(
     assert relay.payloads[planning_id].job_kind == "legacy_brain"
     assert relay.payloads[professional_id].job_kind == "legacy_brain"
     assert relay.payloads[synthesis_id].job_kind == "legacy_brain"
+    assert relay.payloads[planning_id].result_mode == "internal"
+    assert relay.payloads[professional_id].result_mode == "internal"
+    assert relay.payloads[synthesis_id].result_mode == "public_markdown"
     relay.terminal(synthesis_id, "completed", "综合交付结果")
     service.advance_pending(limit=50)
 
@@ -409,10 +469,11 @@ def test_metabot_nested_terminal_result_advances_planning(
             seq=1,
             event_type="agent.complete",
             created_at=datetime.now(timezone.utc),
-            payload={
-                "result": {
-                    "success": True,
-                    "responseText": json.dumps(
+                payload={
+                    "result": {
+                        "contractVersion": "core_chat_result_v2",
+                        "success": True,
+                        "outputText": json.dumps(
                         {
                             "kind": "direct",
                             "answer": "我是 Agent 大脑。",
@@ -1030,10 +1091,14 @@ def test_real_relay_events_drive_run_lifecycle_and_review_before_synthesis(
                 seq=1,
                 event_type="agent.complete",
                 created_at=datetime.now(timezone.utc),
-                payload={
-                    "text": '{"kind":"delegate","answer":null,'
-                    '"agent_id":"hr-bot","objective":"定位视觉算法候选人",'
-                    '"rationale_summary":"招聘任务"}'
+                    payload={
+                        "result": {
+                            "contractVersion": "core_chat_result_v2",
+                            "success": True,
+                            "outputText": '{"kind":"delegate","answer":null,'
+                            '"agent_id":"hr-bot","objective":"定位视觉算法候选人",'
+                            '"rationale_summary":"招聘任务"}',
+                        }
                 },
             ),
         ),
@@ -1079,7 +1144,13 @@ def test_real_relay_events_drive_run_lifecycle_and_review_before_synthesis(
                 seq=3,
                 event_type="agent.complete",
                 created_at=datetime.now(timezone.utc),
-                payload={"text": "候选人结果"},
+                payload={
+                    "result": {
+                        "contractVersion": "core_chat_result_v2",
+                        "success": True,
+                        "outputText": "候选人结果",
+                    }
+                },
             ),
         ),
     )
@@ -1133,7 +1204,14 @@ def test_terminal_race_archives_real_relay_result_instead_of_forcing_interrupt(
                     seq=1,
                     event_type="agent.complete",
                     created_at=datetime.now(timezone.utc),
-                    payload={"text": "竞争中已完成"},
+                    payload={
+                        "result": {
+                            "contractVersion": "core_chat_result_v2",
+                            "success": True,
+                            "outputText": "竞争中已完成",
+                            "publicAnswerMarkdown": "竞争中已完成",
+                        }
+                    },
                 ),
             ),
         )

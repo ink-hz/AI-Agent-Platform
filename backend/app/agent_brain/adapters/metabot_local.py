@@ -176,6 +176,15 @@ class MetaBotLocalAdapter(AgentAdapter):
 
 
 def _event_summary(payload: dict[str, object], status: str | None) -> str:
+    result = payload.get("result")
+    if (
+        isinstance(result, dict)
+        and result.get("contractVersion") == "core_chat_result_v2"
+        and result.get("success") is True
+    ):
+        output_text = result.get("outputText")
+        if isinstance(output_text, str) and output_text.strip():
+            return output_text[:32768]
     for key in ("summary", "text", "result", "message"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():

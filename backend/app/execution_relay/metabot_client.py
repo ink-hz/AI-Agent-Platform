@@ -279,6 +279,7 @@ class MetaBotClient:
                     f"platform-{payload.conversation_id}-{payload.agent_id}"
                 ),
                 "userId": "platform-user",
+                "resultMode": payload.result_mode,
             }
             if payload.requester_subject is not None:
                 request_json["requesterSubject"] = payload.requester_subject.model_dump(
