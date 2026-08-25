@@ -180,15 +180,25 @@ export function AgentUsePage({
       onSelect={(selected) => onOpenConversation(scopedConversationPath(agentId, selected))}
     />
     <section className="brain-workspace-main">
-      {marketing.length > 1 && <nav aria-label="Marketing Agent 切换" className="agent-switcher">
+      {card.domain_group === "Marketing" && marketing.length === 5 && <nav aria-label="Marketing Agent 切换" className="agent-switcher">
         {marketing.map((item) => <PlatformLink aria-current={item.agent_id === agentId ? "page" : undefined} href={`/agents/${encodeURIComponent(item.agent_id)}`} key={item.agent_id}>{item.display_name.replace("Marketing ", "")}</PlatformLink>)}
       </nav>}
       {conversationId
         ? <ConversationThread account={account} client={conversationClient} conversationId={conversationId} expectedAgentId={agentId} onConversationUpdated={upsertConversation} />
         : <div className="agent-use-page"><PlatformLink className="back-link" href="/agents">← 返回专业 Agent</PlatformLink>
-          <section className="agent-use-profile"><span>{card.domain_group}</span><h1>{card.display_name}</h1><p>{card.mission}</p>
+          <section className="agent-use-profile"><span>{card.domain_group}</span><h1>{card.display_name}</h1>
+            {card.persona_subtitle && <p className="agent-persona-subtitle">{card.persona_subtitle}</p>}
+            <p>{card.mission}</p>
             <div><section><h2>可以完成</h2><ul>{card.capabilities.map((item) => <li key={item}>{item}</li>)}</ul></section>
               <section><h2>能力边界</h2><ul>{card.exclusions.map((item) => <li key={item}>{item}</li>)}</ul></section></div>
+          </section>
+          <section aria-label="常用任务" className="agent-task-starters">
+            {card.example_tasks.slice(0, 4).map((example) => <button
+              className="agent-task-starter"
+              key={example}
+              onClick={() => { setText(example); retained.current = null; setFailure(false); }}
+              type="button"
+            >{example}</button>)}
           </section>
           <form className="agent-direct-composer" onSubmit={submit}>
             <label htmlFor="direct-agent-request">直接交给 {card.display_name}</label>

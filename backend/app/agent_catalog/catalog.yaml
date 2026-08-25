@@ -1,6 +1,7 @@
 agents:
   - agent_id: hr-bot
     display_name: HR Agent
+    persona_subtitle: Hannah · 技术人才搜寻与招聘协作
     domain_group: HR
     mission: 帮助员工和管理者完成招聘、人事与员工服务任务。
     capabilities: [梳理岗位需求与候选人画像, 起草招聘沟通与面试材料, 解答人事流程与员工服务问题]
@@ -10,10 +11,11 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
-    capability_version: 1
+    capability_version: 2
 
   - agent_id: marketing-prospecting-bot
     display_name: Marketing Prospecting
+    persona_subtitle: 目标客户发现与线索优先级判断
     domain_group: Marketing
     mission: 发现、筛选并规划潜在客户线索的跟进方向。
     capabilities: [定义目标客户画像, 设计线索筛选条件, 起草个性化初次触达内容]
@@ -23,10 +25,11 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
-    capability_version: 1
+    capability_version: 2
 
   - agent_id: marketing-inbound-bot
     display_name: Marketing Inbound
+    persona_subtitle: 入站线索研判与承接设计
     domain_group: Marketing
     mission: 处理入站线索、内容触达与客户咨询准备工作。
     capabilities: [分类入站需求与购买阶段, 起草咨询回复与后续问题, 规划内容承接路径]
@@ -36,10 +39,11 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
-    capability_version: 1
+    capability_version: 2
 
   - agent_id: marketing-voice-bot
     display_name: Marketing Voice
+    persona_subtitle: 客户沟通话术与通话复盘
     domain_group: Marketing
     mission: 为语音触达、通话沟通与结果整理提供支持。
     capabilities: [设计通话目标与沟通提纲, 起草合规的电话沟通话术, 将通话信息整理为后续行动]
@@ -50,10 +54,11 @@ agents:
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
     supports_evidence: false
-    capability_version: 1
+    capability_version: 2
 
   - agent_id: marketing-intelligence-bot
     display_name: Marketing Intelligence
+    persona_subtitle: 市场与竞争情报分析
     domain_group: Marketing
     mission: 收集、比较并整理市场动态与竞争信息。
     capabilities: [构建市场与竞争信息框架, 比较已提供来源中的事实与差异, 提炼趋势、风险与信息缺口]
@@ -63,10 +68,11 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
-    capability_version: 1
+    capability_version: 2
 
   - agent_id: marketing-gtm-bot
     display_name: Marketing GTM
+    persona_subtitle: 市场进入策略与量产获客协同
     domain_group: Marketing
     mission: 制定市场进入策略、节奏规划与执行协同方案。
     capabilities: [明确细分市场与进入假设, 设计阶段目标、里程碑与责任边界, 组织跨团队执行清单]
@@ -76,7 +82,7 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
-    capability_version: 1
+    capability_version: 2
 
   - agent_id: ai-admin-agent
     display_name: AI 行政 Agent

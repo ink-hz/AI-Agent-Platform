@@ -54,6 +54,19 @@ def test_catalog_expresses_direct_delegated_and_external_modes_explicitly() -> N
     assert fae.dispatchable is False
 
 
+def test_catalog_exposes_public_persona_subtitles() -> None:
+    repository = AgentCatalogRepository()
+
+    assert repository.require("hr-bot").persona_subtitle == (
+        "Hannah · 技术人才搜寻与招聘协作"
+    )
+    assert all(
+        repository.require(agent_id).persona_subtitle
+        for agent_id in EXPECTED_IDS
+        if agent_id.startswith("marketing-")
+    )
+
+
 @pytest.mark.parametrize(
     "mutate",
     [

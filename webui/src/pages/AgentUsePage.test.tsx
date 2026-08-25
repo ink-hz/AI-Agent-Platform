@@ -18,6 +18,7 @@ const account: Account = {
 };
 const card: AgentCapabilityCard = {
   agent_id: "hr-bot", display_name: "HR Agent", domain_group: "HR",
+  persona_subtitle: "Hannah · 技术人才搜寻与招聘协作",
   mission: "帮助员工和管理者完成招聘、人事与员工服务任务。",
   capabilities: ["梳理岗位需求与候选人画像"], exclusions: ["不代替管理者作出录用决定"],
   example_tasks: ["根据岗位说明梳理候选人能力组合"], required_inputs: ["任务目标"],
@@ -161,13 +162,44 @@ describe("professional Agent use pages", () => {
   });
 
   it("switches among Marketing Agents without rebinding an existing Session", async () => {
+    const marketingCards = [
+      ["marketing-prospecting-bot", "Marketing Prospecting"],
+      ["marketing-inbound-bot", "Marketing Inbound"],
+      ["marketing-voice-bot", "Marketing Voice"],
+      ["marketing-intelligence-bot", "Marketing Intelligence"],
+      ["marketing-gtm-bot", "Marketing GTM"],
+    ].map(([agent_id, display_name]) => ({
+      ...marketingCard,
+      agent_id,
+      display_name,
+      persona_subtitle: `${display_name} · 营销协作`,
+    }));
     await act(async () => root.render(<AgentUsePage
       account={account} agentId="marketing-gtm-bot"
-      loadCatalog={vi.fn().mockResolvedValue([marketingCard, { ...marketingCard, agent_id: "marketing-inbound-bot", display_name: "Marketing Inbound" }])}
+      loadCatalog={vi.fn().mockResolvedValue(marketingCards)}
       historyClient={historyClient} onOpenConversation={vi.fn()}
     />));
 
     expect(container.querySelector("nav[aria-label='Marketing Agent 切换'] a[aria-current='page']")?.textContent).toBe("GTM");
     expect(container.querySelector("a[href='/agents/marketing-inbound-bot']")?.textContent).toBe("Inbound");
+    expect(container.querySelectorAll("nav[aria-label='Marketing Agent 切换'] a")).toHaveLength(5);
+  });
+
+  it("keeps HR free of Marketing controls and offers non-submitting task starters", async () => {
+    const createSubmission = vi.fn();
+    await act(async () => root.render(<AgentUsePage
+      account={account} agentId="hr-bot"
+      loadCatalog={vi.fn().mockResolvedValue([card, marketingCard])}
+      createSubmission={createSubmission} historyClient={historyClient} onOpenConversation={vi.fn()}
+    />));
+
+    expect(container.querySelector("nav[aria-label='Marketing Agent 切换']")).toBeNull();
+    expect(container.textContent).toContain("Hannah · 技术人才搜寻与招聘协作");
+    const starter = container.querySelector<HTMLButtonElement>(".agent-task-starter");
+    expect(starter?.textContent).toContain("候选人能力组合");
+    await act(async () => starter?.click());
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value)
+      .toBe(card.example_tasks[0]);
+    expect(createSubmission).not.toHaveBeenCalled();
   });
 });

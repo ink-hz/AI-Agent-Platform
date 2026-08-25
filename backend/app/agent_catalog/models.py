@@ -31,6 +31,7 @@ class AgentCatalogCard(BaseModel):
 
     agent_id: str = Field(min_length=1, max_length=128)
     display_name: str = Field(min_length=1, max_length=128)
+    persona_subtitle: str | None = Field(default=None, min_length=1, max_length=160)
     domain_group: str = Field(min_length=1, max_length=128)
     mission: str = Field(min_length=1, max_length=1_024)
     capabilities: tuple[str, ...] = Field(min_length=1, max_length=16)

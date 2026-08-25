@@ -81,6 +81,8 @@ function parseCapabilityCard(value: unknown): AgentCapabilityCard {
   if (!isObject(value)
     || typeof value.agent_id !== "string" || !value.agent_id
     || typeof value.display_name !== "string" || !value.display_name
+    || (value.persona_subtitle !== null
+      && (typeof value.persona_subtitle !== "string" || !value.persona_subtitle))
     || typeof value.domain_group !== "string" || !value.domain_group
     || typeof value.mission !== "string" || !value.mission
     || !isStringArray(value.capabilities) || !isStringArray(value.exclusions)

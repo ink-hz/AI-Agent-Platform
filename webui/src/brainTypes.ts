@@ -42,6 +42,7 @@ export interface MissionEvent {
 export interface AgentCapabilityCard {
   agent_id: string;
   display_name: string;
+  persona_subtitle: string | null;
   domain_group: string;
   mission: string;
   capabilities: string[];
