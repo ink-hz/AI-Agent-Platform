@@ -106,6 +106,9 @@ class StartBody(BaseModel):
 class CodeBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     code: str = Field(min_length=1, max_length=2048)
+    app_id: str = Field(
+        default="platform", pattern=r"^[a-z][a-z0-9_-]{0,31}$"
+    )
 
 
 def _local_path(auth, path: str) -> str:
@@ -277,9 +280,19 @@ def build_auth_router(
         return build_public_platform_health()
 
     @router.get("/api/v1/auth/dingtalk/config")
-    async def public_dingtalk_config():
+    async def public_dingtalk_config(return_path: str | None = None):
+        try:
+            app_id, app_key = auth.in_client_configuration(return_path)
+        except (AuthenticationError, ValueError):
+            raise HTTPException(400, "login request invalid") from None
         return Response(
-            content=json.dumps({"client_id": auth.app_key, "corp_id": auth.corp_id}),
+            content=json.dumps(
+                {
+                    "client_id": app_key,
+                    "corp_id": auth.corp_id,
+                    "app_id": app_id,
+                }
+            ),
             media_type="application/json",
             headers=_NO_STORE,
         )
@@ -338,12 +351,15 @@ def build_auth_router(
     async def in_client(payload: CodeBody, request: Request):
         try:
             if getattr(auth, "rate_limiter", None) is None:
-                completed = await auth.complete_in_client(payload.code)
+                completed = await auth.complete_in_client(
+                    payload.code, app_id=payload.app_id
+                )
             else:
                 completed = await auth.complete_in_client(
                     payload.code,
                     request.cookies.get(auth.challenge_cookie_name),
                     request.state.edge_source.ip,
+                    app_id=payload.app_id,
                 )
             issued, _ = _session_value(completed)
         except (RateLimitExceeded, RateLimitUnavailable) as error:

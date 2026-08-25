@@ -123,6 +123,7 @@ class FakeAuth:
         self.csrf = "csrf-value"
         self.revoked = False
         self.provider_calls = 0
+        self.completed_app_id = None
         self.return_paths: dict[str, str] = {}
         self.started_count = 0
         self.gender = "female"
@@ -148,8 +149,14 @@ class FakeAuth:
         self.provider_calls += 1
         return CompletedLogin(self._issued(), return_path)
 
-    async def complete_in_client(self, code):
+    def in_client_configuration(self, return_path):
+        if return_path == "/office/":
+            return "office", "office-public-client-id"
+        return "platform", self.app_key
+
+    async def complete_in_client(self, code, *, app_id="platform"):
         self.provider_calls += 1
+        self.completed_app_id = app_id
         return self._issued()
 
     def _issued(self):
@@ -354,7 +361,18 @@ def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
     assert client.get("/api/v1/auth/dingtalk/config").json() == {
         "client_id": "public-client-id",
         "corp_id": "public-corp-id",
+        "app_id": "platform",
     }
+
+    office_config = client.get(
+        "/api/v1/auth/dingtalk/config?return_path=%2Foffice%2F"
+    )
+    assert office_config.json() == {
+        "client_id": "office-public-client-id",
+        "corp_id": "public-corp-id",
+        "app_id": "office",
+    }
+    assert office_config.headers["cache-control"] == "no-store"
 
     for path in (
         "/api/deployment",
@@ -634,12 +652,57 @@ def test_qr_and_in_client_login_set_rotated_cookie_and_return_csrf(tmp_path, mon
 
     in_client = client.post(
         "/api/v1/auth/dingtalk/in-client/exchange",
-        json={"code": "code"},
+        json={"code": "code", "app_id": "office"},
         headers={"Origin": "https://agent.example.test"},
     )
     assert in_client.status_code == 200
     assert in_client.json() == {"csrf_token": "csrf-value"}
     assert auth.provider_calls == 2
+    assert auth.completed_app_id == "office"
+
+
+def test_in_client_exchange_defaults_to_platform_and_rejects_invalid_app_id(
+    tmp_path, monkeypatch
+) -> None:
+    auth = FakeAuth()
+    client = TestClient(_app(tmp_path, monkeypatch, auth))
+    headers = {"Origin": "https://agent.example.test"}
+
+    defaulted = client.post(
+        "/api/v1/auth/dingtalk/in-client/exchange",
+        json={"code": "code"},
+        headers=headers,
+    )
+    invalid = client.post(
+        "/api/v1/auth/dingtalk/in-client/exchange",
+        json={"code": "provider-code-secret", "app_id": "Office!"},
+        headers=headers,
+    )
+
+    assert defaulted.status_code == 200
+    assert auth.completed_app_id == "platform"
+    assert invalid.status_code == 422
+    assert "provider-code-secret" not in invalid.text
+
+
+def test_public_dingtalk_config_rejects_unsafe_return_path_without_echo(
+    tmp_path, monkeypatch
+) -> None:
+    auth = FakeAuth()
+
+    def reject_unsafe(return_path):
+        if return_path and "secret" in return_path:
+            raise ValueError("provider-secret-must-not-escape")
+        return "platform", auth.app_key
+
+    auth.in_client_configuration = reject_unsafe
+    response = TestClient(_app(tmp_path, monkeypatch, auth)).get(
+        "/api/v1/auth/dingtalk/config?return_path=%2Fprovider-secret"
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "login request invalid"}
+    assert "provider-secret" not in response.text
 
 
 def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch) -> None:
