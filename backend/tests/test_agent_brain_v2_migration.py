@@ -63,7 +63,7 @@ def test_v2_schema_enforces_durable_loop_invariants(control_database) -> None:
             )
             for required in (
                 "one_active_brain_step",
-                "one_active_adapter_delivery",
+                "adapter_delivery_identity_v45",
                 "brain_tool_call_id",
                 "(task_id, seq)",
                 "(step_id, tool_index)",
