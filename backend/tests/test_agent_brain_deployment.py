@@ -476,6 +476,16 @@ def test_acceptance_proves_continuous_conversation_release_and_restore() -> None
     assert "delete from platform_control.conversations" not in script.lower()
 
 
+def test_acceptance_keeps_member_diagnostics_hidden_and_office_available() -> None:
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+
+    for forbidden_member_text in ("诊断详情", "hr-bot", "accepted", "/missions/"):
+        assert forbidden_member_text in script
+    assert "document.body.innerText" in script
+    assert "https://agent.orbbec.com.cn/office/?view=services" in script
+    assert "OFFICE_ROUTE_UNCHANGED" in script
+
+
 def test_rollback_pins_every_deployed_agent_brain_migration() -> None:
     runbook = (ROOT / "docs" / "runbooks" / "cloud-platform.md").read_text(
         encoding="utf-8"

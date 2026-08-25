@@ -57,7 +57,7 @@ def test_v2_start_creates_turn_loop_and_first_step_without_mission(
 
     assert response.status_code == 201
     turn = response.json()["turn"]
-    assert turn["mission_id"] is None
+    assert "mission_id" not in turn
     assert turn["retry_of_turn_id"] is None
     assert _loop_and_mission_counts(environment, UUID(turn["turn_id"])) == (1, 1, 0)
 
@@ -216,7 +216,7 @@ def test_v2_retry_creates_linked_turn_and_preserves_failed_turn(
     new_turn = retry.json()["turn"]
     assert new_turn["retry_of_turn_id"] == str(failed_turn_id)
     assert new_turn["turn_id"] != str(failed_turn_id)
-    assert new_turn["mission_id"] is None
+    assert "mission_id" not in new_turn
     assert _loop_and_mission_counts(environment, UUID(new_turn["turn_id"])) == (1, 1, 0)
     with psycopg.connect(environment["admin"]) as connection:
         statuses = dict(connection.execute(
@@ -298,7 +298,7 @@ def test_direct_agent_conversation_still_uses_v1_mission_path(
 
     assert response.status_code == 201
     turn = response.json()["turn"]
-    assert turn["mission_id"] is not None
+    assert "mission_id" not in turn
     assert _loop_and_mission_counts(environment, UUID(turn["turn_id"])) == (0, 0, 1)
 
 

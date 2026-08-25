@@ -307,6 +307,28 @@ class MetaBotClient:
         except Exception:
             raise MetaBotClientError(_REQUEST_FAILED) from None
 
+    def assert_result_contract_v2(self, agent_id: str) -> None:
+        try:
+            if not isinstance(agent_id, str):
+                raise ValueError
+            port = self._runtime_map.port_for(agent_id)
+            with self._client() as client:
+                response = client.get(
+                    f"http://127.0.0.1:{port}/api/core-chat/capabilities"
+                )
+            if response.status_code != 200:
+                raise ValueError
+            result = response.json()
+            if (
+                not isinstance(result, dict)
+                or not isinstance(result.get("contracts"), dict)
+                or result["contracts"].get("coreChatResult")
+                != "core_chat_result_v2"
+            ):
+                raise ValueError
+        except Exception:
+            raise MetaBotClientError(_REQUEST_FAILED) from None
+
     def cancel_run(self, run_id: UUID, agent_id: str) -> None:
         try:
             if not isinstance(run_id, UUID) or not isinstance(agent_id, str):

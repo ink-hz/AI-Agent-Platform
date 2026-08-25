@@ -671,8 +671,14 @@ const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, mil
     const evaluation = await command("Runtime.evaluate", {
       expression: `(() => {
         const blocks = Array.from(document.querySelectorAll('.message-markdown'));
-        return blocks.some((block) => block.textContent.trim().length > 0 &&
-          block.querySelector('p,h1,h2,h3,h4,h5,h6,ul,ol,pre,blockquote,table'));
+        const visibleText = document.body.innerText;
+        const forbiddenText = ['诊断详情', 'hr-bot', 'accepted'];
+        const hasForbiddenMissionLink = Array.from(document.querySelectorAll('a'))
+          .some((link) => link.getAttribute('href')?.includes('/missions/'));
+        return !forbiddenText.some((value) => visibleText.includes(value)) &&
+          !hasForbiddenMissionLink &&
+          blocks.some((block) => block.textContent.trim().length > 0 &&
+            block.querySelector('p,h1,h2,h3,h4,h5,h6,ul,ol,pre,blockquote,table'));
       })()`,
       returnByValue: true,
     });
@@ -739,6 +745,9 @@ accept_real() {
   base=https://agent.orbbec.com.cn
   curl_member=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/member.curl" --max-time 15)
   curl_owner=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" --max-time 15)
+  office_url="https://agent.orbbec.com.cn/office/?view=services"
+  [[ "$("${curl_member[@]}" -o "$temporary/office-services.html" -w '%{http_code}' "$office_url")" == "200" ]] || fail
+  /usr/bin/grep -Fq '<html' "$temporary/office-services.html" || fail
 
   restored_conversation_id=""
   third_turn_id=""
@@ -765,13 +774,21 @@ PY
     [[ "$("${curl_member[@]}" -o "$temporary/restore-response.json" -w '%{http_code}' -X POST \
       -H 'Content-Type: application/json' -H "Idempotency-Key: $third_key" \
       --data-binary "@$temporary/restore-follow-up.json" "$base/api/v1/conversations/$restored_conversation_id/messages")" == "201" ]] || fail
-    IFS=, read -r third_turn_id third_mission_id < <("$python" - "$temporary/restore-response.json" "$restored_conversation_id" <<'PY'
+    third_turn_id="$("$python" - "$temporary/restore-response.json" "$restored_conversation_id" <<'PY'
 import json,sys,uuid
 value=json.load(open(sys.argv[1],encoding="utf-8"))
 if value["conversation"].get("conversation_id") != sys.argv[2]: raise SystemExit(1)
-print(f'{uuid.UUID(value["turn"]["turn_id"])},{uuid.UUID(value["turn"]["mission_id"])}')
+if "mission_id" in value["turn"] or "mission_id" in value["message"]: raise SystemExit(1)
+print(uuid.UUID(value["turn"]["turn_id"]))
 PY
-    ) || fail
+    )" || fail
+    third_mission_id="$(remote /bin/bash -s -- "$third_turn_id" <<'REMOTE'
+set -euo pipefail
+turn="$1"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"; postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
+docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v turn="$turn" -c "select mission_id from platform_control.missions where turn_id=:'turn'::uuid;"
+REMOTE
+    )" || fail
+    [[ "$third_mission_id" =~ ^[0-9a-f-]{36}$ ]] || fail
     [[ "$("${curl_member[@]}" -o "$temporary/restore-replay.json" -w '%{http_code}' -X POST \
       -H 'Content-Type: application/json' -H "Idempotency-Key: $third_key" \
       --data-binary "@$temporary/restore-follow-up.json" "$base/api/v1/conversations/$restored_conversation_id/messages")" == "200" ]] || fail
@@ -793,13 +810,14 @@ if not events or [x[0] for x in events] != list(range(start,events[-1][0]+1)): r
 if "turn.completed" not in [kind for _,kind in events]: raise SystemExit(1)
 PY
     [[ "$("${curl_member[@]}" -o "$temporary/restore-messages.json" -w '%{http_code}' "$base/api/v1/conversations/$restored_conversation_id/messages")" == "200" ]] || fail
-    "$python" - "$temporary/restore-messages.json" "$restored_conversation_id" "$third_turn_id" "$third_mission_id" <<'PY' || fail
+    "$python" - "$temporary/restore-messages.json" "$restored_conversation_id" "$third_turn_id" <<'PY' || fail
 import json,sys
 items=json.load(open(sys.argv[1],encoding="utf-8")).get("items")
 if not isinstance(items,list) or len(items)!=6: raise SystemExit(1)
 if [item.get("role") for item in items] != ["user","assistant"]*3: raise SystemExit(1)
 if any(item.get("conversation_id") != sys.argv[2] for item in items): raise SystemExit(1)
-if items[-2].get("turn_id") != sys.argv[3] or items[-2].get("mission_id") != sys.argv[4]: raise SystemExit(1)
+if items[-2].get("turn_id") != sys.argv[3]: raise SystemExit(1)
+if any("mission_id" in item for item in items): raise SystemExit(1)
 PY
     restore_shape="$(remote /bin/bash -s -- "$restored_conversation_id" <<'REMOTE'
 set -euo pipefail
@@ -861,16 +879,22 @@ PY
   [[ "$("${curl_member[@]}" -o "$temporary/conversation.json" -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' -H "Idempotency-Key: $first_key" \
     --data-binary "@$temporary/hr.json" "$base/api/v1/conversations")" == "201" ]] || fail
-  IFS=, read -r conversation_id first_turn_id first_mission_id < <("$python" - "$temporary/conversation.json" <<'PY'
+  IFS=, read -r conversation_id first_turn_id < <("$python" - "$temporary/conversation.json" <<'PY'
 import json,sys,uuid
 value=json.load(open(sys.argv[1],encoding="utf-8"))
 conversation=uuid.UUID(value["conversation"]["conversation_id"])
 turn=uuid.UUID(value["turn"]["turn_id"])
-mission=uuid.UUID(value["turn"]["mission_id"])
-if value["message"].get("mission_id") != str(mission): raise SystemExit(1)
-print(f"{conversation},{turn},{mission}")
+if "mission_id" in value["turn"] or "mission_id" in value["message"]: raise SystemExit(1)
+print(f"{conversation},{turn}")
 PY
   ) || fail
+  first_mission_id="$(remote /bin/bash -s -- "$first_turn_id" <<'REMOTE'
+set -euo pipefail
+turn="$1"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"; postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
+docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v turn="$turn" -c "select mission_id from platform_control.missions where turn_id=:'turn'::uuid;"
+REMOTE
+  )" || fail
+  [[ "$first_mission_id" =~ ^[0-9a-f-]{36}$ ]] || fail
   [[ "$("${curl_member[@]}" -o "$temporary/conversation-replay.json" -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' -H "Idempotency-Key: $first_key" \
     --data-binary "@$temporary/hr.json" "$base/api/v1/conversations")" == "200" ]] || fail
@@ -907,14 +931,21 @@ PY
   [[ "$("${curl_member[@]}" -o "$temporary/follow-up-response.json" -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' -H "Idempotency-Key: $second_key" \
     --data-binary "@$temporary/follow-up.json" "$base/api/v1/conversations/$conversation_id/messages")" == "201" ]] || fail
-  IFS=, read -r second_turn_id second_mission_id < <("$python" - "$temporary/follow-up-response.json" "$conversation_id" <<'PY'
+  second_turn_id="$("$python" - "$temporary/follow-up-response.json" "$conversation_id" <<'PY'
 import json,sys,uuid
 value=json.load(open(sys.argv[1],encoding="utf-8"))
 if value["conversation"].get("conversation_id") != sys.argv[2]: raise SystemExit(1)
-turn=uuid.UUID(value["turn"]["turn_id"]); mission=uuid.UUID(value["turn"]["mission_id"])
-print(f"{turn},{mission}")
+if "mission_id" in value["turn"] or "mission_id" in value["message"]: raise SystemExit(1)
+print(uuid.UUID(value["turn"]["turn_id"]))
 PY
-  ) || fail
+  )" || fail
+  second_mission_id="$(remote /bin/bash -s -- "$second_turn_id" <<'REMOTE'
+set -euo pipefail
+turn="$1"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"; postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
+docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v turn="$turn" -c "select mission_id from platform_control.missions where turn_id=:'turn'::uuid;"
+REMOTE
+  )" || fail
+  [[ "$second_mission_id" =~ ^[0-9a-f-]{36}$ ]] || fail
   [[ "$second_turn_id" != "$first_turn_id" && "$second_mission_id" != "$first_mission_id" ]] || fail
   [[ "$("${curl_member[@]}" -o "$temporary/follow-up-replay.json" -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' -H "Idempotency-Key: $second_key" \
@@ -944,14 +975,14 @@ PY
     "$base/api/v1/conversations/$conversation_id/events?after=$second_last_seq")" == "200" ]] || fail
   [[ ! -s "$temporary/resume.sse" ]] || fail
   [[ "$("${curl_member[@]}" -o "$temporary/messages.json" -w '%{http_code}' "$base/api/v1/conversations/$conversation_id/messages")" == "200" ]] || fail
-  "$python" - "$temporary/messages.json" "$conversation_id" "$first_turn_id" "$second_turn_id" "$first_mission_id" "$second_mission_id" <<'PY' || fail
+  "$python" - "$temporary/messages.json" "$conversation_id" "$first_turn_id" "$second_turn_id" <<'PY' || fail
 import json,sys
 items=json.load(open(sys.argv[1],encoding="utf-8")).get("items")
 if not isinstance(items,list) or len(items)!=4: raise SystemExit(1)
 if [item.get("role") for item in items] != ["user","assistant","user","assistant"]: raise SystemExit(1)
 if any(item.get("conversation_id") != sys.argv[2] for item in items): raise SystemExit(1)
 if [items[0].get("turn_id"),items[2].get("turn_id")] != [sys.argv[3],sys.argv[4]]: raise SystemExit(1)
-if [items[0].get("mission_id"),items[2].get("mission_id")] != [sys.argv[5],sys.argv[6]]: raise SystemExit(1)
+if any("mission_id" in item for item in items): raise SystemExit(1)
 PY
   [[ "$("${curl_member[@]}" -o "$temporary/history.json" -w '%{http_code}' "$base/api/v1/conversations?limit=100")" == "200" ]] || fail
   "$python" - "$temporary/history.json" "$conversation_id" <<'PY' || fail
@@ -1066,6 +1097,7 @@ REMOTE
     fi
     /usr/bin/printf 'metabot_release_sha=%s\nagent_team_release_sha=%s\nlocal_listener_table=%s\nrollback=PLATFORM_AGENT_BRAIN_ENABLED=0,PLATFORM_AGENT_BRAIN_V2_ENABLED=0\n' \
       "$metabot_release_sha" "$agent_team_release_sha" "$local_listener_table"
+    /usr/bin/printf 'OFFICE_ROUTE_UNCHANGED=true\n'
     /usr/bin/printf 'acceptance_status=complete\n'
   } > "$evidence_generation"
   /bin/chmod 600 "$evidence_generation"

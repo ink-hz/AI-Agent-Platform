@@ -262,6 +262,51 @@ def test_start_run_forwards_public_result_mode(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_result_contract_probe_requires_v2_capability(tmp_path: Path) -> None:
+    runtime_map = MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json"))
+    route = respx.get("http://127.0.0.1:9200/api/core-chat/capabilities").mock(
+        return_value=httpx.Response(
+            200,
+            json={"contracts": {"coreChatResult": "core_chat_result_v2"}},
+        )
+    )
+    client = MetaBotClient(runtime_map, _secret_file(tmp_path))
+
+    client.assert_result_contract_v2("hr-bot")
+
+    assert route.called
+    assert route.calls.last.request.headers["Authorization"] == (
+        "Bearer local-bearer-secret"
+    )
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, json={"contracts": {}}),
+        httpx.Response(200, json={"contracts": {"coreChatResult": "legacy"}}),
+        httpx.Response(503, json={"error": "offline"}),
+        httpx.Response(200, content=b"not-json"),
+        httpx.Response(302, headers={"Location": "http://127.0.0.1:9400/stolen"}),
+    ],
+)
+@respx.mock
+def test_result_contract_probe_fails_closed(
+    tmp_path: Path, response: httpx.Response
+) -> None:
+    respx.get("http://127.0.0.1:9200/api/core-chat/capabilities").mock(
+        return_value=response
+    )
+    client = MetaBotClient(
+        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json")),
+        _secret_file(tmp_path),
+    )
+
+    with pytest.raises(MetaBotClientError, match="metabot request failed"):
+        client.assert_result_contract_v2("hr-bot")
+
+
+@respx.mock
 def test_start_run_carries_verified_requester_as_metadata_not_prompt(
     tmp_path: Path,
 ) -> None:

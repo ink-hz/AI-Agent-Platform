@@ -78,9 +78,9 @@ def test_capability_change_rejects_new_task_without_revoking_loop() -> None:
 def test_genuine_allow_to_deny_changes_effective_hash() -> None:
     authorization = FakeAuthorization()
     registry = _registry(authorization=authorization)
-    allowed = registry.authorize_task(USER_ID, "hr-bot", 1)
+    allowed = registry.authorize_task(USER_ID, "hr-bot", 2)
     authorization.allowed.clear()
-    denied = registry.authorize_task(USER_ID, "hr-bot", 1)
+    denied = registry.authorize_task(USER_ID, "hr-bot", 2)
 
     assert allowed.allowed is True
     assert denied.allowed is False

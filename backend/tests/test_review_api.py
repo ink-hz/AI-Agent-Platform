@@ -241,6 +241,8 @@ def test_conversation_feedback_projection_exposes_links_without_message_content(
                     turn_id=UUID("00000000-0000-0000-0000-000000000013"),
                     mission_id=UUID("00000000-0000-0000-0000-000000000014"),
                     rating="unhelpful",
+                    reason="incomplete",
+                    comment="请补充证据来源。",
                     created_at=datetime.fromisoformat(
                         "2026-08-23T10:00:00+00:00"
                     ),
@@ -255,4 +257,6 @@ def test_conversation_feedback_projection_exposes_links_without_message_content(
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["rating"] == "unhelpful"
+    assert response.json()["items"][0]["reason"] == "incomplete"
+    assert response.json()["items"][0]["comment"] == "请补充证据来源。"
     assert "content" not in response.json()["items"][0]

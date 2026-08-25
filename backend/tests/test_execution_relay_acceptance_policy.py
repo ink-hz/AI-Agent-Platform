@@ -45,6 +45,15 @@ def test_acceptance_wrapper_is_executable_noninteractive_and_stable() -> None:
     assert script.rstrip().endswith(f'echo "{SUCCESS}"')
 
 
+def test_acceptance_wrapper_blocks_without_core_chat_result_v2() -> None:
+    script = _acceptance()
+
+    assert "MetaBotRuntimeMap.from_contract" in script
+    assert "assert_result_contract_v2(\"hr-bot\")" in script
+    assert "/Users/agentops/AgentRuntime/metabot/runtime-contract.json" in script
+    assert "/Users/agentops/AgentRuntime/private/metabot-api-token" in script
+
+
 def test_orchestrator_executes_all_ten_gates_without_boolean_evidence() -> None:
     source = _orchestrator().lower()
     for number in range(1, 11):
