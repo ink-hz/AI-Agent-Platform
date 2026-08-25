@@ -10,7 +10,7 @@ from typing import Annotated, AsyncIterator, Callable, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.control_plane.auth import AuthSecrets
 from app.control_plane.models import AuthContext
@@ -65,6 +65,28 @@ class ConversationFeedbackBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     rating: Literal["helpful", "unhelpful"]
+    reason: Literal["inaccurate", "incomplete", "unclear", "unresolved", "other"] | None = None
+    comment: str | None = None
+
+    @field_validator("comment")
+    @classmethod
+    def _valid_comment(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        selected = value.strip()
+        if not selected:
+            return None
+        if len(selected.encode("utf-8")) > 1000:
+            raise ValueError("Feedback comment too long")
+        return selected
+
+    @model_validator(mode="after")
+    def _valid_detail(self) -> "ConversationFeedbackBody":
+        if self.rating == "helpful" and (self.reason is not None or self.comment is not None):
+            raise ValueError("Helpful feedback cannot include detail")
+        if self.rating == "unhelpful" and self.reason is None:
+            raise ValueError("Improvement reason required")
+        return self
 
 
 class ConversationRenameBody(BaseModel):
@@ -333,6 +355,7 @@ def _feedback_payload(record) -> dict[str, object]:
         "message_id": str(record.message_id),
         "turn_id": str(record.turn_id),
         "rating": record.rating,
+        "reason": record.reason,
         "created_at": record.created_at.isoformat(),
     }
 
@@ -805,6 +828,8 @@ def build_conversation_router(
                 context.internal_user_id,
                 message_id,
                 body.rating,
+                body.reason,
+                body.comment,
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None

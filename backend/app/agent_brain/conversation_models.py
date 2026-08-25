@@ -24,6 +24,7 @@ TurnStatus = Literal[
     "interrupted",
 ]
 FeedbackRating = Literal["helpful", "unhelpful"]
+FeedbackReason = Literal["inaccurate", "incomplete", "unclear", "unresolved", "other"]
 
 
 @dataclass(frozen=True)
@@ -101,7 +102,9 @@ class ConversationFeedbackRecord:
     turn_id: UUID
     mission_id: UUID | None
     rating: FeedbackRating
+    reason: FeedbackReason | None
     created_at: datetime
+    comment: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)

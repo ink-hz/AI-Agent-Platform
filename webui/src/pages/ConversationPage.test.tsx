@@ -297,7 +297,7 @@ describe("ConversationPage", () => {
     const submitFeedback = vi.fn().mockResolvedValue({
       feedback_id: "feedback-1", conversation_id: conversationId,
       message_id: "message-2", turn_id: "turn-1",
-      rating: "helpful", created_at: "2026-08-23T10:03:00Z",
+      rating: "helpful", reason: null, created_at: "2026-08-23T10:03:00Z",
     });
     const pageClient = client({ submitFeedback } as unknown as Partial<ConversationPageClient>);
     await act(async () => root.render(
@@ -311,11 +311,38 @@ describe("ConversationPage", () => {
     await act(async () => helpful?.click());
 
     expect(submitFeedback).toHaveBeenCalledWith(
-      "message-2", "helpful", account.csrf_token, expect.any(AbortSignal),
+      "message-2", "helpful", null, null, account.csrf_token, expect.any(AbortSignal),
     );
     expect(container.textContent).toContain("已记录你的反馈");
     expect(container.querySelector<HTMLButtonElement>(
-      "button[aria-label='这个回答没有帮助']",
+      "button[aria-label='这个回答需改进']",
     )?.disabled).toBe(true);
+  });
+
+  it("collects an improvement reason and optional comment before submitting", async () => {
+    const submitFeedback = vi.fn().mockResolvedValue({
+      feedback_id: "feedback-2", conversation_id: conversationId,
+      message_id: "message-2", turn_id: "turn-1", rating: "unhelpful",
+      reason: "incomplete", created_at: "2026-08-23T10:03:00Z",
+    });
+    await act(async () => root.render(<ConversationPage
+      account={account} client={client({ submitFeedback })} conversationId={conversationId}
+    />));
+
+    await act(async () => container.querySelector<HTMLButtonElement>("button[aria-label='这个回答需改进']")?.click());
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>(".conversation-feedback-detail button")]
+      .find((button) => button.textContent === "信息不完整")?.click());
+    const comment = container.querySelector<HTMLTextAreaElement>("textarea[aria-label='补充改进建议']")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(comment, "缺少目标公司");
+      comment.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>(".conversation-feedback-detail button")]
+      .find((button) => button.textContent === "提交反馈")?.click());
+
+    expect(submitFeedback).toHaveBeenCalledWith(
+      "message-2", "unhelpful", "incomplete", "缺少目标公司", account.csrf_token,
+      expect.any(AbortSignal),
+    );
   });
 });

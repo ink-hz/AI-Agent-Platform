@@ -223,12 +223,13 @@ describe("continuous Conversation API", () => {
       message_id: MESSAGE_ID,
       turn_id: TURN_ID,
       rating: "helpful",
+      reason: null,
       created_at: "2026-08-23T10:03:00Z",
     };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(feedback, 201));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(submitConversationFeedback(MESSAGE_ID, "helpful", "csrf"))
+    await expect(submitConversationFeedback(MESSAGE_ID, "helpful", null, null, "csrf"))
       .resolves.toEqual(feedback);
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/v1/messages/${MESSAGE_ID}/feedback`,
@@ -236,12 +237,12 @@ describe("continuous Conversation API", () => {
         method: "POST",
         credentials: "include",
         headers: expect.objectContaining({ "X-CSRF-Token": "csrf" }),
-        body: JSON.stringify({ rating: "helpful" }),
+        body: JSON.stringify({ rating: "helpful", reason: null, comment: null }),
       }),
     );
 
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ ...feedback, content: "must reject" })));
-    await expect(submitConversationFeedback(MESSAGE_ID, "helpful", "csrf"))
+    await expect(submitConversationFeedback(MESSAGE_ID, "helpful", null, null, "csrf"))
       .rejects.toThrow("feedback response invalid");
   });
 

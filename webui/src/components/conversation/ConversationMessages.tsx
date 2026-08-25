@@ -1,4 +1,7 @@
+import { useState } from "react";
+
 import type {
+  ConversationFeedbackReason,
   ConversationFeedbackRating,
   ConversationMessage,
 } from "../../conversationTypes";
@@ -23,8 +26,16 @@ export function ConversationMessages({
   messages: ConversationMessage[];
   assistantLabel?: string;
   feedback?: Record<string, ConversationFeedbackRating | "pending" | "error">;
-  onFeedback?: (messageId: string, rating: ConversationFeedbackRating) => void;
+  onFeedback?: (
+    messageId: string,
+    rating: ConversationFeedbackRating,
+    reason: ConversationFeedbackReason | null,
+    comment: string | null,
+  ) => void;
 }) {
+  const [improving, setImproving] = useState<string | null>(null);
+  const [reasons, setReasons] = useState<Record<string, ConversationFeedbackReason | null>>({});
+  const [comments, setComments] = useState<Record<string, string>>({});
   const ordered = [...new Map(messages.map((message) => [message.message_id, message])).values()]
     .sort((left, right) => left.seq - right.seq);
   return <section className="conversation-messages" aria-label="对话内容" aria-live="polite">
@@ -46,16 +57,25 @@ export function ConversationMessages({
           aria-label="这个回答有帮助"
           className={feedback[message.message_id] === "helpful" ? "is-selected" : ""}
           disabled={Boolean(feedback[message.message_id] && feedback[message.message_id] !== "error")}
-          onClick={() => onFeedback(message.message_id, "helpful")}
+          onClick={() => onFeedback(message.message_id, "helpful", null, null)}
           type="button"
         >有帮助</button>
         <button
-          aria-label="这个回答没有帮助"
+          aria-label="这个回答需改进"
           className={feedback[message.message_id] === "unhelpful" ? "is-selected" : ""}
           disabled={Boolean(feedback[message.message_id] && feedback[message.message_id] !== "error")}
-          onClick={() => onFeedback(message.message_id, "unhelpful")}
+          onClick={() => setImproving(message.message_id)}
           type="button"
-        >没帮助</button>
+        >需改进</button>
+        {improving === message.message_id && !feedback[message.message_id] && <div className="conversation-feedback-detail">
+          <div>{([
+            ["inaccurate", "信息不准确"], ["incomplete", "信息不完整"], ["unclear", "表达不清楚"],
+            ["unresolved", "没有解决问题"], ["other", "其他"],
+          ] as const).map(([value, label]) => <button className={reasons[message.message_id] === value ? "is-selected" : ""} key={value} onClick={() => setReasons((current) => ({ ...current, [message.message_id]: value }))} type="button">{label}</button>)}</div>
+          <textarea aria-label="补充改进建议" maxLength={1000} onChange={(event) => setComments((current) => ({ ...current, [message.message_id]: event.target.value }))} placeholder="可选：补充哪里需要改进" value={comments[message.message_id] ?? ""} />
+          <button disabled={!reasons[message.message_id]} onClick={() => onFeedback(message.message_id, "unhelpful", reasons[message.message_id] ?? null, comments[message.message_id]?.trim() || null)} type="button">提交反馈</button>
+          <button onClick={() => setImproving(null)} type="button">取消</button>
+        </div>}
         {feedback[message.message_id] === "error" && <small role="alert">反馈暂未保存，请重试。</small>}
       </footer>}
     </article>)}

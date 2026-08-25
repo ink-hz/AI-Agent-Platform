@@ -6,6 +6,7 @@ import type {
   ConversationDetail,
   ConversationEvent,
   ConversationFeedback,
+  ConversationFeedbackReason,
   ConversationFeedbackRating,
   ConversationMessage,
   ConversationMessageRole,
@@ -43,7 +44,7 @@ const CANCEL_KEYS = new Set([
 ]);
 const FEEDBACK_KEYS = new Set([
   "feedback_id", "conversation_id", "message_id", "turn_id",
-  "rating", "created_at",
+  "rating", "reason", "created_at",
 ]);
 
 const CONVERSATION_MODES = new Set<ConversationMode>(["brain", "direct_agent"]);
@@ -246,6 +247,9 @@ function parseFeedback(value: unknown): ConversationFeedback {
     || !isNonEmptyString(value.message_id)
     || !isNonEmptyString(value.turn_id)
     || (value.rating !== "helpful" && value.rating !== "unhelpful")
+    || (value.reason !== null && !["inaccurate", "incomplete", "unclear", "unresolved", "other"].includes(String(value.reason)))
+    || (value.rating === "helpful" && value.reason !== null)
+    || (value.rating === "unhelpful" && value.reason === null)
     || !isNonEmptyString(value.created_at)) {
     throw new Error("Conversation feedback response invalid");
   }
@@ -465,6 +469,8 @@ export async function restoreConversation(
 export async function submitConversationFeedback(
   messageId: string,
   rating: ConversationFeedbackRating,
+  reason: ConversationFeedbackReason | null,
+  comment: string | null,
   csrfToken: string,
   signal?: AbortSignal,
 ): Promise<ConversationFeedback> {
@@ -479,10 +485,10 @@ export async function submitConversationFeedback(
       "Content-Type": "application/json",
       "X-CSRF-Token": csrfToken,
     },
-    body: JSON.stringify({ rating }),
+    body: JSON.stringify({ rating, reason, comment }),
   }));
   const result = parseFeedback(await response.json());
-  if (result.message_id !== messageId || result.rating !== rating) {
+  if (result.message_id !== messageId || result.rating !== rating || result.reason !== reason) {
     throw new Error("Conversation feedback response invalid");
   }
   return result;

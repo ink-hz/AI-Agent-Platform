@@ -257,6 +257,8 @@ async def conversation_feedback(
                 "turn_id": str(item.turn_id),
                 "mission_id": str(item.mission_id) if item.mission_id else None,
                 "rating": item.rating,
+                "reason": item.reason,
+                "comment": item.comment,
                 "created_at": item.created_at.isoformat(),
             }
             for item in items

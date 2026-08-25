@@ -19,6 +19,7 @@ import type {
   ConversationEvent,
   ConversationFeedback,
   ConversationFeedbackRating,
+  ConversationFeedbackReason,
   ConversationMessage,
 } from "../conversationTypes";
 import { TERMINAL_CONVERSATION_TURN_STATUSES } from "../conversationTypes";
@@ -35,7 +36,7 @@ export interface ConversationPageClient {
   createMessageSubmission(conversationId: string, text: string, csrfToken: string): ConversationSubmission;
   streamEvents(conversationId: string, options: ConversationStreamOptions): Promise<void>;
   cancelCurrentTurn(conversationId: string, csrfToken: string, signal?: AbortSignal): Promise<ConversationCancelResult>;
-  submitFeedback(messageId: string, rating: ConversationFeedbackRating, csrfToken: string, signal?: AbortSignal): Promise<ConversationFeedback>;
+  submitFeedback(messageId: string, rating: ConversationFeedbackRating, reason: ConversationFeedbackReason | null, comment: string | null, csrfToken: string, signal?: AbortSignal): Promise<ConversationFeedback>;
   retryTurn(conversationId: string, turnId: string, csrfToken: string): ConversationSubmission;
   reconnectDelay(signal: AbortSignal): Promise<void>;
 }
@@ -242,13 +243,13 @@ export function ConversationPage({
     }
   };
 
-  const rate = async (messageId: string, rating: ConversationFeedbackRating) => {
+  const rate = async (messageId: string, rating: ConversationFeedbackRating, reason: ConversationFeedbackReason | null, comment: string | null) => {
     if (account.hard_stale_read_only || feedback[messageId] === "pending") return;
     const controller = new AbortController();
     setFeedback((current) => ({ ...current, [messageId]: "pending" }));
     try {
       const result = await client.submitFeedback(
-        messageId, rating, account.csrf_token, controller.signal,
+        messageId, rating, reason, comment, account.csrf_token, controller.signal,
       );
       setFeedback((current) => ({ ...current, [messageId]: result.rating }));
     } catch {
@@ -283,7 +284,7 @@ export function ConversationPage({
       assistantLabel={assistantLabel}
       messages={messages}
       feedback={feedback}
-      onFeedback={account.hard_stale_read_only ? undefined : (messageId, rating) => void rate(messageId, rating)}
+      onFeedback={account.hard_stale_read_only ? undefined : (messageId, rating, reason, comment) => void rate(messageId, rating, reason, comment)}
     />
     <PublicProgress
       active={active && !waitingUser}

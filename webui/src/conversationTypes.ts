@@ -81,6 +81,7 @@ export interface ConversationCancelResult {
 }
 
 export type ConversationFeedbackRating = "helpful" | "unhelpful";
+export type ConversationFeedbackReason = "inaccurate" | "incomplete" | "unclear" | "unresolved" | "other";
 
 export interface ConversationFeedback {
   feedback_id: string;
@@ -88,6 +89,7 @@ export interface ConversationFeedback {
   message_id: string;
   turn_id: string;
   rating: ConversationFeedbackRating;
+  reason: ConversationFeedbackReason | null;
   created_at: string;
 }
 

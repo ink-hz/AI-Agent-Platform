@@ -596,6 +596,7 @@ def test_feedback_api_binds_only_the_owned_assistant_message(
         "message_id": str(assistant.message_id),
         "turn_id": str(started.turn.turn_id),
         "rating": "helpful",
+        "reason": None,
         "created_at": response.json()["created_at"],
     }
     assert "最终候选人搜索方案" not in response.text

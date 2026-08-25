@@ -370,10 +370,10 @@ def test_feedback_resolves_owned_assistant_message_without_copying_content(
     assistant = next(message for message in messages if message.role == "assistant")
 
     result = repository.create_feedback(
-        owner_id, assistant.message_id, "unhelpful"
+        owner_id, assistant.message_id, "unhelpful", "incomplete", "缺少目标公司"
     )
     replay = repository.create_feedback(
-        owner_id, assistant.message_id, "unhelpful"
+        owner_id, assistant.message_id, "unhelpful", "incomplete", "缺少目标公司"
     )
 
     assert result.created is True
@@ -382,9 +382,11 @@ def test_feedback_resolves_owned_assistant_message_without_copying_content(
     assert result.feedback.conversation_id == started.conversation.conversation_id
     assert result.feedback.turn_id == started.turn.turn_id
     assert result.feedback.mission_id == started.mission.mission_id
+    assert result.feedback.reason == "incomplete"
+    assert result.feedback.comment == "缺少目标公司"
     with pytest.raises(ConversationRepositoryNotFound):
         repository.create_feedback(
-            other_owner_id, assistant.message_id, "unhelpful"
+            other_owner_id, assistant.message_id, "unhelpful", "incomplete", None
         )
     with pytest.raises(ConversationRepositoryConflict):
         repository.create_feedback(owner_id, assistant.message_id, "helpful")
@@ -393,12 +395,13 @@ def test_feedback_resolves_owned_assistant_message_without_copying_content(
 
     with psycopg.connect(environment["admin"]) as connection:
         row = connection.execute(
-            "select * from platform_control.conversation_feedback "
+            "select comment_ciphertext from platform_control.conversation_feedback "
             "where feedback_id=%s",
             (result.feedback.feedback_id,),
         ).fetchone()
     assert row is not None
     assert "候选人搜索方案" not in repr(row)
+    assert "目标公司".encode() not in bytes(row[0])
     listed, total = repository.list_feedback(limit=20, offset=0)
     assert total == 1
     assert listed == (result.feedback,)

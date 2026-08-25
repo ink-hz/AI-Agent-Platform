@@ -77,6 +77,10 @@ def event_subject(conversation_id: UUID, event_id: UUID) -> str:
     return f"conversation:{conversation_id}:event:{event_id}:payload"
 
 
+def feedback_subject(feedback_id: UUID) -> str:
+    return f"conversation-feedback:{feedback_id}:comment"
+
+
 def _mission_event_subject(mission_id: UUID, event_id: UUID) -> str:
     return f"mission:{mission_id}:event:{event_id}:payload"
 
@@ -1424,11 +1428,23 @@ class ConversationRepository:
         internal_user_id: UUID,
         message_id: UUID,
         rating: Literal["helpful", "unhelpful"],
+        reason: Literal["inaccurate", "incomplete", "unclear", "unresolved", "other"] | None = None,
+        comment: str | None = None,
     ) -> ConversationFeedbackResult:
         _require_uuid(internal_user_id)
         _require_uuid(message_id)
         if rating not in {"helpful", "unhelpful"}:
             raise ValueError("Conversation feedback rating invalid")
+        if rating == "helpful" and (reason is not None or comment is not None):
+            raise ValueError("Helpful feedback cannot include detail")
+        if rating == "unhelpful" and reason not in {
+            "inaccurate", "incomplete", "unclear", "unresolved", "other",
+        }:
+            raise ValueError("Improvement feedback reason invalid")
+        if comment is not None:
+            comment = comment.strip() or None
+            if comment is not None and len(comment.encode("utf-8")) > 1000:
+                raise ValueError("Feedback comment invalid")
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 target = cursor.execute(
@@ -1453,35 +1469,78 @@ class ConversationRepository:
                     (internal_user_id, message_id),
                 ).fetchone()
                 if existing is not None:
-                    if existing["rating"] != rating:
+                    existing_record = self._feedback_from_row(existing)
+                    if (
+                        existing_record.rating != rating
+                        or existing_record.reason != reason
+                        or existing_record.comment != comment
+                    ):
                         raise ConversationRepositoryConflict()
                     row = existing
                     created = False
                 else:
+                    feedback_id = uuid4()
+                    sealed_comment = (
+                        self.content_codec.seal_json(
+                            feedback_subject(feedback_id), {"text": comment}
+                        )
+                        if comment is not None
+                        else None
+                    )
                     row = cursor.execute(
                         "insert into platform_control.conversation_feedback "
                         "(feedback_id,owner_internal_user_id,conversation_id,"
-                        "message_id,turn_id,mission_id,rating) "
-                        "values (%s,%s,%s,%s,%s,%s,%s) returning *",
+                        "message_id,turn_id,mission_id,rating,reason,"
+                        "comment_ciphertext,comment_key_version) "
+                        "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) returning *",
                         (
-                            uuid4(),
+                            feedback_id,
                             internal_user_id,
                             target["conversation_id"],
                             message_id,
                             target["turn_id"],
                             target["mission_id"],
                             rating,
+                            reason,
+                            sealed_comment.ciphertext if sealed_comment else None,
+                            sealed_comment.key_version if sealed_comment else None,
                         ),
                     ).fetchone()
                     created = True
             return ConversationFeedbackResult(
-                feedback=ConversationFeedbackRecord(**row),
+                feedback=self._feedback_from_row(row),
                 created=created,
             )
         except ConversationRepositoryError:
             raise
-        except (KeyError, TypeError, ValueError, psycopg.Error):
+        except (ContentCryptoError, KeyError, TypeError, UnicodeError, ValueError, psycopg.Error):
             raise ConversationRepositoryError() from None
+
+    def _feedback_from_row(self, row: dict[str, Any]) -> ConversationFeedbackRecord:
+        comment = None
+        if row.get("comment_ciphertext") is not None:
+            document = self.content_codec.unseal_json(
+                feedback_subject(row["feedback_id"]),
+                SealedContent(
+                    bytes(row["comment_ciphertext"]), row["comment_key_version"]
+                ),
+            )
+            selected = document.get("text")
+            if not isinstance(selected, str):
+                raise ConversationRepositoryError()
+            comment = selected
+        return ConversationFeedbackRecord(
+            feedback_id=row["feedback_id"],
+            owner_internal_user_id=row["owner_internal_user_id"],
+            conversation_id=row["conversation_id"],
+            message_id=row["message_id"],
+            turn_id=row["turn_id"],
+            mission_id=row["mission_id"],
+            rating=row["rating"],
+            reason=row.get("reason"),
+            created_at=row["created_at"],
+            comment=comment,
+        )
 
     def conversation_metrics(self) -> ConversationMetrics:
         try:
@@ -1643,10 +1702,10 @@ class ConversationRepository:
                     "platform_control.conversation_feedback"
                 ).fetchone()["total"]
             return (
-                tuple(ConversationFeedbackRecord(**row) for row in rows),
+                tuple(self._feedback_from_row(row) for row in rows),
                 int(total),
             )
-        except (KeyError, TypeError, ValueError, psycopg.Error):
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
             raise ConversationRepositoryError() from None
 
     def events_after(

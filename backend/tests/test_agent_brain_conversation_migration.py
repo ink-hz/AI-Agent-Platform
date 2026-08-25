@@ -71,6 +71,9 @@ def test_conversation_schema_separates_history_from_mission_state(
                 "turn_id",
                 "mission_id",
                 "rating",
+                "reason",
+                "comment_ciphertext",
+                "comment_key_version",
                 "created_at",
             }
             assert not columns["conversation_feedback"] & {
