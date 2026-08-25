@@ -73,6 +73,13 @@ CLOUD_PLATFORM_DEPLOY_OK release=e7dc86b97e62962ee9ff27fef7134cad70daa27e mode=d
 - Public health endpoint returns `status=ok`.
 - Unauthenticated `/` redirects to `/login`, never `/admin`.
 
+After this release completed, the independent DingTalk multi-application login
+work advanced production to `2f6147151fc51189673ddcdabc26e26edc7d0fde`.
+That commit is a descendant of `e7dc86b` and therefore contains this entire
+Professional Agent UX release. Platform health, the local Worker v2 gate, FAE
+invariance, and the canonical Office route were rechecked against the later
+production release.
+
 ### Frozen-route and FAE invariance
 
 The canonical administrative portal remains:
