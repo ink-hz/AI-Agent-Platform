@@ -33,6 +33,11 @@ def _codec() -> ContentCodec:
 def _clear_conversations(connection) -> None:
     connection.execute("set constraints all deferred")
     for table in (
+        "brain_user_interventions",
+        "brain_wait_subscriptions",
+        "brain_thinking_summaries",
+        "agent_task_messages",
+        "agent_task_sessions",
         "brain_checkpoints",
         "adapter_deliveries",
         "agent_task_events",

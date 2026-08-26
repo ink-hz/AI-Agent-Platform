@@ -35,6 +35,18 @@ PUBLIC_BRAIN_EVENT_TYPES = frozenset(
         "brain.user_input_requested",
         "brain.answer_submitted",
         "brain.failed",
+        "brain.thinking_summary",
+        "brain.waiting_agents",
+        "brain.user_intervention",
+        "brain.agent_message_sent",
+        "brain.agent_stop_requested",
+        "agent.thinking_summary",
+        "agent.message",
+        "agent.work_update",
+        "agent.artifact",
+        "agent.question",
+        "agent.cancelled",
+        "agent.task_recovered",
     }
 )
 PUBLIC_BRAIN_PAYLOAD_KEYS = frozenset(
@@ -47,6 +59,15 @@ PUBLIC_BRAIN_PAYLOAD_KEYS = frozenset(
         "duration_ms",
         "attachment_refs",
         "reason_code",
+        "task_id",
+        "child_session_id",
+        "source",
+        "source_ref",
+        "kind",
+        "summary",
+        "evidence_refs",
+        "artifact_refs",
+        "created_at",
     }
 )
 
@@ -90,6 +111,13 @@ class ConversationProjection:
             for key, value in event.payload.items()
             if key in PUBLIC_BRAIN_PAYLOAD_KEYS
         }
+        if event.event_type in {"brain.thinking_summary", "agent.thinking_summary"}:
+            if (
+                payload.get("source") != "provider"
+                or type(payload.get("source_ref")) is not str
+                or type(payload.get("summary")) is not str
+            ):
+                raise ValueError("public Brain event payload invalid")
         return PublicBrainEvent(event.event_type, payload)
 
     @staticmethod
@@ -98,9 +126,12 @@ class ConversationProjection:
     ) -> dict[str, object]:
         if event_type not in PUBLIC_BRAIN_EVENT_TYPES:
             return payload
-        return ConversationProjection.project(
-            PrivateBrainEvent(event_type, payload)
-        ).payload
+        try:
+            return ConversationProjection.project(
+                PrivateBrainEvent(event_type, payload)
+            ).payload
+        except ValueError:
+            return {"status": "public_event_unavailable"}
 
     @staticmethod
     def _source_event_id(source_key: str) -> UUID:
@@ -206,11 +237,47 @@ class ConversationProjection:
                                     {"status": "running"},
                                 )
                             )
+                        summaries = cursor.execute(
+                            "select * from platform_brain.brain_thinking_summaries "
+                            "where step_id=%s and status in ('completed','interrupted') "
+                            "order by block_index",
+                            (step["step_id"],),
+                        ).fetchall()
+                        for summary in summaries:
+                            value = self.repository.content_codec.unseal_json(
+                                f"brain-step:{step['step_id']}:thinking:"
+                                f"{summary['block_index']}",
+                                SealedContent(
+                                    bytes(summary["summary_ciphertext"]),
+                                    summary["summary_key_version"],
+                                ),
+                            )
+                            text = value.get("text")
+                            if not isinstance(text, str) or not text:
+                                continue
+                            candidates.append(
+                                (
+                                    summary["updated_at"],
+                                    f"step:{step['step_id']}:thinking:"
+                                    f"{summary['block_index']}",
+                                    turn_id,
+                                    "brain.thinking_summary",
+                                    {
+                                        "source": "provider",
+                                        "source_ref": summary["provider_run_ref"],
+                                        "summary": text[:4096],
+                                        "status": summary["status"],
+                                        "created_at": summary["updated_at"].isoformat(),
+                                    },
+                                )
+                            )
                     tasks = cursor.execute(
-                        "select task.*,call.public_reason from "
+                        "select task.*,call.public_reason,session.child_session_id from "
                         "platform_brain.agent_tasks task join "
                         "platform_brain.brain_tool_calls call on "
-                        "call.brain_tool_call_id=task.brain_tool_call_id "
+                        "call.brain_tool_call_id=task.brain_tool_call_id left join "
+                        "platform_brain.agent_task_sessions session on "
+                        "session.task_id=task.task_id "
                         "where task.loop_id=%s order by task.created_at,task.task_id",
                         (loop_id,),
                     ).fetchall()
@@ -224,6 +291,8 @@ class ConversationProjection:
                         )
                         objective = context.get("objective")
                         base_payload = {
+                            "task_id": str(task["task_id"]),
+                            "child_session_id": task["child_session_id"],
                             "agent_id": task["agent_id"],
                             "objective_summary": (
                                 objective[:512]
@@ -252,6 +321,62 @@ class ConversationProjection:
                                     base_payload,
                                 )
                             )
+                        task_events = cursor.execute(
+                            "select * from platform_brain.agent_task_events "
+                            "where task_id=%s order by seq",
+                            (task["task_id"],),
+                        ).fetchall()
+                        for task_event in task_events:
+                            value = self.repository.content_codec.unseal_json(
+                                f"brain-task:{task['task_id']}:event:"
+                                f"{task_event['seq']}:payload",
+                                SealedContent(
+                                    bytes(task_event["payload_ciphertext"]),
+                                    task_event["payload_key_version"],
+                                ),
+                            )
+                            stored_type = task_event["event_type"]
+                            event_type = {
+                                "thinking_summary": "agent.thinking_summary",
+                                "message": "agent.message",
+                                "work_update": "agent.work_update",
+                                "finding": "agent.work_update",
+                                "artifact": "agent.artifact",
+                                "question": "agent.question",
+                                "result": "agent.task_completed",
+                                "failed": "agent.task_failed",
+                                "timeout": "agent.task_timed_out",
+                                "cancelled": "agent.cancelled",
+                            }.get(stored_type, "agent.task_progress")
+                            summary = value.get("summary") or value.get("text")
+                            event_payload = {
+                                **base_payload,
+                                "source": value.get("source", "adapter"),
+                                "source_ref": value.get(
+                                    "source_ref", f"event:{task_event['seq']}"
+                                ),
+                                "kind": (
+                                    "finding" if stored_type == "finding" else stored_type
+                                ),
+                                "summary": (
+                                    summary[:2048]
+                                    if isinstance(summary, str)
+                                    else "专业 Agent 已更新任务状态"
+                                ),
+                                "status": value.get("status", task["status"]),
+                                "evidence_refs": value.get("evidence_refs", []),
+                                "artifact_refs": value.get("artifact_refs", []),
+                                "created_at": task_event["created_at"].isoformat(),
+                            }
+                            candidates.append(
+                                (
+                                    task_event["created_at"],
+                                    f"task:{task['task_id']}:event:{task_event['seq']}",
+                                    turn_id,
+                                    event_type,
+                                    event_payload,
+                                )
+                            )
                     for step in steps:
                         batch = cursor.execute(
                             "select count(*) as total,"
@@ -272,40 +397,6 @@ class ConversationProjection:
                                     turn_id,
                                     "brain.batch_settled",
                                     {"status": "completed"},
-                                )
-                            )
-                        task_events = cursor.execute(
-                            "select * from platform_brain.agent_task_events "
-                            "where task_id=%s order by seq",
-                            (task["task_id"],),
-                        ).fetchall()
-                        for task_event in task_events:
-                            value = self.repository.content_codec.unseal_json(
-                                f"brain-task:{task['task_id']}:event:"
-                                f"{task_event['seq']}:payload",
-                                SealedContent(
-                                    bytes(task_event["payload_ciphertext"]),
-                                    task_event["payload_key_version"],
-                                ),
-                            )
-                            status = value.get("status")
-                            event_type = {
-                                "completed": "agent.task_completed",
-                                "failed": "agent.task_failed",
-                                "timed_out": "agent.task_timed_out",
-                                "unavailable": "agent.task_unavailable",
-                                "cancelled": "agent.task_failed",
-                            }.get(status, "agent.task_progress")
-                            candidates.append(
-                                (
-                                    task_event["created_at"],
-                                    f"task:{task['task_id']}:event:{task_event['seq']}",
-                                    turn_id,
-                                    event_type,
-                                    {
-                                        **base_payload,
-                                        "status": status or "running",
-                                    },
                                 )
                             )
                     request_calls = cursor.execute(

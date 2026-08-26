@@ -50,6 +50,13 @@ def _card(agent_id: str = "hr-bot") -> AgentCapabilityCard:
         max_duration_seconds=300,
         adapter_id="metabot-core-chat",
         capability_version=1,
+        supports_persistent_session=True,
+        supports_followup_message=True,
+        supports_progress_events=True,
+        supports_thinking_summary=True,
+        supports_cancel=True,
+        supports_attachments=False,
+        typical_latency_seconds=90,
     )
 
 

@@ -94,6 +94,14 @@ class ConversationCreateResult:
 
 
 @dataclass(frozen=True)
+class ConversationInterventionResult:
+    message: ConversationMessageRecord
+    turn: ConversationTurnRecord
+    status: Literal["pending", "consumed"]
+    created: bool
+
+
+@dataclass(frozen=True)
 class ConversationFeedbackRecord:
     feedback_id: UUID
     owner_internal_user_id: UUID

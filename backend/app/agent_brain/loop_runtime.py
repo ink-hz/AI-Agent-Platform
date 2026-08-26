@@ -73,6 +73,7 @@ class BrainLoopRuntime:
         if lease is None:
             return False
         loop = self._repository.loop_for_step(lease)
+        self._collaboration.claim_intervention(lease.loop_id, lease.step_id)
         owner_id = self._repository.loop_owner(lease.loop_id)
         for snapshot in self._repository.authorization_snapshots_for_loop(
             lease.loop_id
@@ -462,7 +463,11 @@ class BrainLoopRuntime:
                     task_id=selected.task_id,
                     seq=event.seq,
                     event_type=event_type,
-                    payload=dict(event.payload),
+                    payload={
+                        **dict(event.payload),
+                        "source": event.source,
+                        "source_ref": event.source_ref,
+                    },
                     created_at=event.created_at,
                 )
             )

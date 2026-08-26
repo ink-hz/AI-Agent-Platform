@@ -138,13 +138,8 @@ def test_v2_append_reports_stable_turn_in_progress_and_rejects_archive(
         f"/api/v1/conversations/{conversation_id}/messages",
         "并发追问",
     )
-    assert overlap.status_code == 409
-    assert overlap.json() == {
-        "detail": {
-            "code": "turn_in_progress",
-            "message": "当前对话已有一轮正在执行",
-        }
-    }
+    assert overlap.status_code == 202
+    assert overlap.json()["intervention"]["status"] == "pending"
 
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(

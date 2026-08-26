@@ -764,6 +764,41 @@ def build_conversation_router(
                 await require_direct_agent(
                     context.internal_user_id, conversation.direct_agent_id
                 )
+            if conversation.mode == "brain":
+                replay = await asyncio.to_thread(
+                    repository.replay_message_for_owner,
+                    context.internal_user_id,
+                    conversation_id,
+                    request_id,
+                    body.text,
+                )
+                if replay is not None:
+                    response.status_code = 200
+                    response.headers.update(_NO_STORE)
+                    return _create_payload(replay)
+                active_turn = await asyncio.to_thread(
+                    repository.active_turn_for_owner,
+                    context.internal_user_id,
+                    conversation_id,
+                )
+                if active_turn is not None and active_turn.status != "waiting_user":
+                    intervention = await asyncio.to_thread(
+                        repository.append_brain_intervention,
+                        context.internal_user_id,
+                        conversation_id,
+                        request_id,
+                        body.text,
+                    )
+                    response.status_code = 202 if intervention.created else 200
+                    response.headers.update(_NO_STORE)
+                    return {
+                        "intervention": {
+                            "status": intervention.status,
+                            "message_id": str(intervention.message.message_id),
+                        },
+                        "message": _message_payload(intervention.message),
+                        "turn": _turn_payload(intervention.turn),
+                    }
             result = await asyncio.to_thread(
                 commands.append_turn,
                 context.internal_user_id,
@@ -776,6 +811,30 @@ def build_conversation_router(
         response.status_code = 201 if result.created else 200
         response.headers.update(_NO_STORE)
         return _create_payload(result)
+
+    @router.get(
+        "/api/v1/conversations/{conversation_id}/turns/{turn_id}/tasks/{task_id}"
+    )
+    async def task_detail(
+        conversation_id: UUID,
+        turn_id: UUID,
+        task_id: UUID,
+        request: Request,
+        response: Response,
+    ):
+        context = _auth_context(request)
+        try:
+            detail = await asyncio.to_thread(
+                repository.task_detail_for_owner,
+                context.internal_user_id,
+                conversation_id,
+                turn_id,
+                task_id,
+            )
+        except ConversationRepositoryError as error:
+            raise _repository_http_error(error) from None
+        response.headers.update(_NO_STORE)
+        return detail
 
     @router.post(
         "/api/v1/conversations/{conversation_id}/turns/{turn_id}/retry",
