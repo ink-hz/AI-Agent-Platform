@@ -27,6 +27,7 @@ VIEWER = AuthContext(uuid4(), Role.MANAGEMENT_VIEWER, uuid4(), False)
 MEMBER = AuthContext(uuid4(), Role.MEMBER, uuid4(), False)
 STALE_OWNER = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), True)
 STALE_ADMIN = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), True)
+STALE_MEMBER = AuthContext(uuid4(), Role.MEMBER, uuid4(), True)
 
 
 class Grants:
@@ -106,6 +107,39 @@ def test_hard_stale_owner_is_read_only_and_cloud_review_mutations_are_disabled()
     assert service.decide(
         OWNER, "POST", "/api/review/issues", ()
     ).status_code == 403
+
+
+@pytest.mark.parametrize(
+    ("method", "route"),
+    [
+        ("POST", "/api/v1/extensions/voc/drafts"),
+        ("PATCH", "/api/v1/extensions/voc/drafts/{draft_id}"),
+        ("POST", "/api/v1/extensions/voc/drafts/{draft_id}/cancel"),
+        ("POST", "/api/v1/extensions/voc/drafts/{draft_id}/submit"),
+        ("POST", "/api/v1/extensions/voc/vocs/{voc_no}/supplements"),
+    ],
+)
+def test_voc_mutations_are_self_service_but_hard_stale_is_read_only(method, route):
+    service = AuthorizationService(Grants())
+
+    assert service.decide(MEMBER, method, route, ()).allowed is True
+    assert service.decide(STALE_MEMBER, method, route, ()).status_code == 503
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        "/api/v1/extensions/voc/drafts/active",
+        "/api/v1/extensions/voc/vocs",
+        "/api/v1/extensions/voc/vocs/{voc_no}",
+    ],
+)
+def test_voc_self_reads_remain_available_when_directory_is_hard_stale(route):
+    decision = AuthorizationService(Grants()).decide(
+        STALE_MEMBER, "GET", route, ()
+    )
+
+    assert decision.allowed is True
 
 
 def test_platform_admin_uses_owner_routes_after_fail_closed_gates():

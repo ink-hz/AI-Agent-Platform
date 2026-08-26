@@ -456,6 +456,34 @@ def test_injected_review_service_lifecycle_remains_owned_by_caller(tmp_path):
     assert review_service.closed is False
 
 
+def test_injected_voc_extension_client_is_registered_and_caller_owned(tmp_path):
+    registry = tmp_path / "registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "contract.json"
+    contract.write_text('{"bots": []}', encoding="utf-8")
+
+    class InjectedVocClient:
+        def __init__(self):
+            self.closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    voc_client = InjectedVocClient()
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        voc_extension_client=voc_client,
+    )
+
+    with TestClient(app) as client:
+        assert client.get("/api/v1/extensions/voc/vocs").status_code == 401
+        assert app.state.voc_extension_client is voc_client
+
+    assert voc_client.closed is False
+
+
 @pytest.mark.asyncio
 async def test_platform_lifespan_and_health_start_while_operations_baseline_blocks(
     tmp_path, monkeypatch

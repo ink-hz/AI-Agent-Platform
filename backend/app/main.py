@@ -111,6 +111,9 @@ from .review.repository import PsycopgReviewRepository
 from .review.replay import ReplayRunner
 from .review.service import ReviewService, UnavailableReviewService
 from .spa import SpaStaticFiles, load_public_asset_manifest
+from .voc_extension.client import VocExtensionClient
+from .voc_extension.identity import PlatformVocTokenSigner
+from .voc_extension.routes import build_voc_extension_router
 
 
 logger = logging.getLogger(__name__)
@@ -537,10 +540,22 @@ def create_app(
     review_service=None,
     attachment_service=None,
     identity_auth=None,
+    voc_extension_client=None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
     config = load_config()
+    owns_voc_extension_client = (
+        voc_extension_client is None and config.voc_extension_enabled
+    )
+    if owns_voc_extension_client:
+        voc_extension_client = VocExtensionClient(
+            config.voc_extension_base_url,
+            PlatformVocTokenSigner.from_file(
+                config.voc_extension_signing_key_file
+            ),
+            timeout_seconds=config.voc_extension_timeout_seconds,
+        )
     brain_use_enabled = config.agent_brain_enabled and (
         not config.agent_brain_v2_enabled
         or config.agent_brain_collaboration_enabled
@@ -780,6 +795,8 @@ def create_app(
                 await review_service.close()
             if owns_identity_auth and identity_auth is not None:
                 await identity_auth.aclose()
+            if owns_voc_extension_client and voc_extension_client is not None:
+                await voc_extension_client.aclose()
 
     app = FastAPI(title="Orbbec AI Agent Platform", version="0.1.0", lifespan=lifespan)
     app.state.repo = repo
@@ -801,6 +818,7 @@ def create_app(
     app.state.conversation_repository = conversation_repository
     app.state.conversation_command_service = conversation_command_service
     app.state.agent_use_authorization = agent_use_authorization
+    app.state.voc_extension_client = voc_extension_client
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
         control_database_url = read_secret_file(
@@ -855,6 +873,7 @@ def create_app(
     app.include_router(operations_routes.router)
     app.include_router(registry_routes.router)
     app.include_router(review_routes.router)
+    app.include_router(build_voc_extension_router())
     if execution_relay_router is not None:
         app.include_router(execution_relay_router)
     if agent_use_authorization is not None:

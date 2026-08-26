@@ -52,6 +52,14 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("POST", "/api/v1/conversations/{conversation_id}/restore"),
     ("POST", "/api/v1/agents/{agent_id}/conversations"),
     ("POST", "/api/v1/messages/{message_id}/feedback"),
+    ("POST", "/api/v1/extensions/voc/drafts"),
+    ("GET", "/api/v1/extensions/voc/drafts/active"),
+    ("PATCH", "/api/v1/extensions/voc/drafts/{draft_id}"),
+    ("POST", "/api/v1/extensions/voc/drafts/{draft_id}/cancel"),
+    ("POST", "/api/v1/extensions/voc/drafts/{draft_id}/submit"),
+    ("GET", "/api/v1/extensions/voc/vocs"),
+    ("GET", "/api/v1/extensions/voc/vocs/{voc_no}"),
+    ("POST", "/api/v1/extensions/voc/vocs/{voc_no}/supplements"),
     ("GET", "/account"),
     ("GET", "/agents"),
     ("GET", "/agents/{client_path:path}"),
@@ -66,6 +74,14 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/identity"),
     ("GET", "/governance"),
     ("GET", "/flywheel"),
+})
+
+_VOC_MUTATION_ROUTES = frozenset({
+    ("POST", "/api/v1/extensions/voc/drafts"),
+    ("PATCH", "/api/v1/extensions/voc/drafts/{draft_id}"),
+    ("POST", "/api/v1/extensions/voc/drafts/{draft_id}/cancel"),
+    ("POST", "/api/v1/extensions/voc/drafts/{draft_id}/submit"),
+    ("POST", "/api/v1/extensions/voc/vocs/{voc_no}/supplements"),
 })
 
 _OWNER_ROUTES = frozenset({
@@ -152,6 +168,8 @@ class AuthorizationService:
         if auth is None:
             return self._deny(401, "authentication_required")
         if key in _AUTHENTICATED_SELF_ROUTES:
+            if auth.hard_stale_read_only and key in _VOC_MUTATION_ROUTES:
+                return self._deny(503, "hard_stale_read_only")
             return AuthorizationDecision(True, 200, "self_service", None)
         if key not in _OWNER_ROUTES:
             return self._deny(403, "route_not_authorized")
