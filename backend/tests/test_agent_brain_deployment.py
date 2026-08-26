@@ -238,14 +238,19 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
             calls.append("erase-responses")
             return 1
 
+        def erase_expired_conversations(self, *, limit):
+            calls.append("erase-conversations")
+            return 1
+
     changed = tick(validate_worker_mode("all"), Runtime(), Repository())
 
-    assert changed == 10
+    assert changed == 11
     assert calls == [
         "brain", "settle", "heartbeat:agent-brain-step:healthy",
         "adapter", "reconcile:persistent", "reconcile:metabot_local", "cancel",
         "heartbeat:agent-brain-adapter:healthy", "expire-steps",
         "expire-deliveries", "expire-users", "erase-responses",
+        "erase-conversations",
         "heartbeat:agent-brain-reaper:healthy",
     ]
 

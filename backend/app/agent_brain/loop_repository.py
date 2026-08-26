@@ -1363,6 +1363,21 @@ class BrainLoopRepository:
         except psycopg.Error:
             raise BrainRepositoryError() from None
 
+    def erase_expired_conversations(self, *, limit: int) -> int:
+        from app.agent_brain.retention import (
+            ConversationRetention,
+            ConversationRetentionError,
+        )
+
+        try:
+            return ConversationRetention(
+                self._control_database_url,
+                content_codec=self.content_codec,
+                connect=self._connect,
+            ).erase_expired(limit=limit)
+        except ConversationRetentionError:
+            raise BrainRepositoryError() from None
+
     def expire_waiting_users(self, *, limit: int) -> int:
         if type(limit) is not int or not 1 <= limit <= 1000:
             raise ValueError("waiting-user expiry limit invalid")

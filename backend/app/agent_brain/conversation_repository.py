@@ -2313,7 +2313,8 @@ class ConversationRepository:
                 row = cursor.execute(
                     "update platform_control.conversations set status='active',"
                     "archived_at=null,updated_at=now() where conversation_id=%s "
-                    "and owner_internal_user_id=%s returning *",
+                    "and owner_internal_user_id=%s "
+                    "and title<>'[内容已按保留策略清除]' returning *",
                     (conversation_id, internal_user_id),
                 ).fetchone()
             if row is None:

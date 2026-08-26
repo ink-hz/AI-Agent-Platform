@@ -203,7 +203,6 @@ class MetaBotLocalAdapter(AgentAdapter):
             ),
             max_turns=24,
             job_kind="metabot_local",
-            requester_subject=task.requester_subject,
             collaboration_contract="core_chat_collaboration_v3",
             task_session_id=self._session_id(task),
             message_kind="initial",

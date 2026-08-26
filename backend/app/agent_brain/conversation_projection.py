@@ -70,6 +70,9 @@ PUBLIC_BRAIN_PAYLOAD_KEYS = frozenset(
         "created_at",
     }
 )
+NON_DATA_PRODUCT_EVENT_TYPES = frozenset(
+    {"brain.thinking_summary", "agent.thinking_summary"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +135,29 @@ class ConversationProjection:
             ).payload
         except ValueError:
             return {"status": "public_event_unavailable"}
+
+    @staticmethod
+    def data_product_payload(
+        event_type: str, payload: dict[str, object]
+    ) -> dict[str, object]:
+        if event_type in NON_DATA_PRODUCT_EVENT_TYPES:
+            raise ValueError("Brain thinking event is not exportable")
+        return ConversationProjection.project(
+            PrivateBrainEvent(event_type, payload)
+        ).payload
+
+    @staticmethod
+    def searchable_text(event_type: str, payload: dict[str, object]) -> str:
+        if event_type in NON_DATA_PRODUCT_EVENT_TYPES:
+            raise ValueError("Brain thinking event is not searchable")
+        projected = ConversationProjection.project(
+            PrivateBrainEvent(event_type, payload)
+        ).payload
+        return "\n".join(
+            value
+            for key in ("objective_summary", "public_reason", "summary")
+            if isinstance((value := projected.get(key)), str) and value.strip()
+        )
 
     @staticmethod
     def _source_event_id(source_key: str) -> UUID:
