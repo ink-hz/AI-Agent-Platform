@@ -541,6 +541,10 @@ def create_app(
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
     config = load_config()
+    brain_use_enabled = config.agent_brain_enabled and (
+        not config.agent_brain_v2_enabled
+        or config.agent_brain_collaboration_enabled
+    )
     identity_enabled = (
         identity_auth is not None
         or config.control_plane.mode is not IdentityMode.DISABLED
@@ -836,7 +840,7 @@ def create_app(
                 config,
                 release_sha=release_sha,
             ),
-            agent_brain_enabled=config.agent_brain_enabled,
+            agent_brain_enabled=brain_use_enabled,
         ))
 
     @app.get("/api/deployment")
@@ -864,7 +868,7 @@ def create_app(
                 cursor_codec=ConversationCursorCodec(identity_auth.secrets),
                 session_revalidator=identity_auth.authenticate,
                 session_cookie_name=identity_auth.cookie_name,
-                brain_enabled=config.agent_brain_enabled,
+                brain_enabled=brain_use_enabled,
             )
         )
     if (

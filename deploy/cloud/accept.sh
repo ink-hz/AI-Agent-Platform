@@ -392,6 +392,7 @@ kept = [
     if not line.startswith((
         "PLATFORM_AGENT_BRAIN_ENABLED=",
         "PLATFORM_AGENT_BRAIN_V2_ENABLED=",
+        "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED=",
     ))
 ]
 raw = (
@@ -400,6 +401,7 @@ raw = (
         + [
             f"PLATFORM_AGENT_BRAIN_ENABLED={selected}",
             f"PLATFORM_AGENT_BRAIN_V2_ENABLED={selected}",
+            f"PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED={selected}",
         ]
     )
     + "\n"
@@ -425,6 +427,7 @@ api_id="$("${compose_command[@]}" ps -q platform-api)"
 [[ -n "$api_id" ]] || fail
 /usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_id" | /usr/bin/grep -Fxq "PLATFORM_AGENT_BRAIN_ENABLED=$selected" || fail
 /usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_id" | /usr/bin/grep -Fxq "PLATFORM_AGENT_BRAIN_V2_ENABLED=$selected" || fail
+/usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_id" | /usr/bin/grep -Fxq "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED=$selected" || fail
 [[ "$fae_id" == "$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)" ]] || fail
 [[ "$fae_image" == "$(/usr/bin/docker inspect --format '{{.Image}}' ai-fae-backend)" ]] || fail
 [[ "$fae_started" == "$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)" ]] || fail

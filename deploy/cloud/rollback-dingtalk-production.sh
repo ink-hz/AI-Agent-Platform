@@ -106,10 +106,12 @@ source,target=map(pathlib.Path,sys.argv[1:])
 lines=source.read_text(encoding="utf-8").splitlines()
 kept=[line for line in lines if not line.startswith((
     "PLATFORM_AGENT_BRAIN_ENABLED=","PLATFORM_AGENT_BRAIN_V2_ENABLED=",
+    "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED=",
 ))]
 raw=("\n".join(kept+[
     "PLATFORM_AGENT_BRAIN_ENABLED=0",
     "PLATFORM_AGENT_BRAIN_V2_ENABLED=0",
+    "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED=0",
 ])+"\n").encode()
 descriptor=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),0o600)
 try:
