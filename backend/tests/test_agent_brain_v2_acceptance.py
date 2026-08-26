@@ -183,7 +183,9 @@ def test_acceptance_success_plus_timeout_settles_one_batch(
                 ),
             )
         )
-    assert loop_repository.settle_batch(loop_id) is True
+    # Live collaboration delegates non-blockingly. The old blocking batch
+    # settler must not create a second resume step after task terminals land.
+    assert loop_repository.settle_batch(loop_id) is False
     assert _runtime(loop_repository, _submit_response()).advance_one()
     with psycopg.connect(environment["admin"]) as connection:
         statuses = connection.execute(
