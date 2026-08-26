@@ -7,11 +7,17 @@ from typing import Protocol
 from uuid import UUID
 
 from app.agent_brain.adapters.base import (
+    AdapterCapabilities,
     AdapterDelivery,
+    AdapterEvent,
+    AdapterMessage,
     AdapterTask,
     AgentAdapter,
     CancelReceipt,
+    ChildSessionReceipt,
     DispatchReceipt,
+    MessageDeliveryReceipt,
+    StopDeliveryReceipt,
 )
 from app.agent_brain.loop_models import NormalizedTaskResult
 from app.agent_brain.loop_repository import AgentTaskEventInput
@@ -51,6 +57,15 @@ class MetaBotLocalAdapter(AgentAdapter):
     """
 
     supports_cancellation = True
+    capabilities = AdapterCapabilities(
+        supports_persistent_session=False,
+        supports_followup_message=False,
+        supports_progress_events=True,
+        supports_thinking_summary=False,
+        supports_cancel=True,
+        supports_attachments=False,
+        typical_latency_seconds=90,
+    )
 
     def __init__(self, relay: _Relay, *, worker_freshness_seconds: int = 60) -> None:
         if (
@@ -64,6 +79,63 @@ class MetaBotLocalAdapter(AgentAdapter):
             raise ValueError("MetaBot local Adapter configuration invalid")
         self._relay = relay
         self._worker_freshness_seconds = worker_freshness_seconds
+        self._tasks_by_session: dict[str, AdapterTask] = {}
+
+    def start_session(
+        self, task: AdapterTask, delivery: AdapterDelivery
+    ) -> ChildSessionReceipt:
+        receipt = self.dispatch(task, delivery)
+        child_session_id = str(task.task_id)
+        if receipt.accepted:
+            self._tasks_by_session[child_session_id] = task
+        return ChildSessionReceipt(
+            accepted=receipt.accepted,
+            child_session_id=child_session_id,
+            external_run_id=receipt.external_run_id,
+        )
+
+    def send_message(
+        self,
+        child_session_id: str,
+        message: AdapterMessage,
+        delivery: AdapterDelivery,
+    ) -> MessageDeliveryReceipt:
+        del child_session_id, message, delivery
+        return MessageDeliveryReceipt(accepted=False, external_run_id=None)
+
+    def read_events(
+        self, child_session_id: str, *, after: int
+    ) -> tuple[AdapterEvent, ...]:
+        task = self._tasks_by_session.get(child_session_id)
+        if task is None:
+            raise LookupError("Adapter child session not found")
+        receipt = self.reconcile(task, next_event_seq=after + 1)
+        return tuple(
+            AdapterEvent(
+                seq=event.seq,
+                kind=("result" if event.terminal_status is not None else "work_update"),
+                source="adapter",
+                source_ref=str(task.task_id),
+                created_at=event.created_at,
+                payload=event.payload,
+            )
+            for event in receipt.events
+        )
+
+    def request_stop(
+        self,
+        child_session_id: str,
+        reason: str,
+        delivery: AdapterDelivery,
+    ) -> StopDeliveryReceipt:
+        del reason, delivery
+        task = self._tasks_by_session.get(child_session_id)
+        if task is None:
+            return StopDeliveryReceipt(accepted=False, supported=True)
+        return StopDeliveryReceipt(
+            accepted=self.request_cancel(task).accepted,
+            supported=True,
+        )
 
     def dispatch(
         self, task: AdapterTask, delivery: AdapterDelivery

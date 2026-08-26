@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 import re
+from typing import Literal
 from uuid import UUID
 
 from app.agent_brain.loop_models import NormalizedTaskResult
@@ -28,6 +29,63 @@ class AdapterDelivery:
     delivery_id: UUID
     attempt: int
     idempotency_key: str
+    delivery_kind: Literal["initial", "followup", "stop"] = "initial"
+    source_message_seq: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AdapterMessage:
+    seq: int
+    text: str = field(repr=False)
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class AdapterCapabilities:
+    supports_persistent_session: bool
+    supports_followup_message: bool
+    supports_progress_events: bool
+    supports_thinking_summary: bool
+    supports_cancel: bool
+    supports_attachments: bool
+    typical_latency_seconds: int
+
+
+@dataclass(frozen=True, slots=True)
+class ChildSessionReceipt:
+    accepted: bool
+    child_session_id: str
+    external_run_id: UUID | None
+
+
+@dataclass(frozen=True, slots=True)
+class MessageDeliveryReceipt:
+    accepted: bool
+    external_run_id: UUID | None
+
+
+@dataclass(frozen=True, slots=True)
+class StopDeliveryReceipt:
+    accepted: bool
+    supported: bool
+
+
+@dataclass(frozen=True, slots=True)
+class AdapterEvent:
+    seq: int
+    kind: Literal[
+        "thinking_summary",
+        "work_update",
+        "message",
+        "artifact",
+        "question",
+        "result",
+        "error",
+    ]
+    source: Literal["provider", "agent", "adapter"]
+    source_ref: str
+    created_at: datetime
+    payload: dict[str, object] = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +102,33 @@ class CancelReceipt:
 
 class AgentAdapter(ABC):
     supports_cancellation: bool = False
+    capabilities: AdapterCapabilities
+
+    @abstractmethod
+    def start_session(
+        self, task: AdapterTask, delivery: AdapterDelivery
+    ) -> ChildSessionReceipt: ...
+
+    @abstractmethod
+    def send_message(
+        self,
+        child_session_id: str,
+        message: AdapterMessage,
+        delivery: AdapterDelivery,
+    ) -> MessageDeliveryReceipt: ...
+
+    @abstractmethod
+    def read_events(
+        self, child_session_id: str, *, after: int
+    ) -> tuple[AdapterEvent, ...]: ...
+
+    @abstractmethod
+    def request_stop(
+        self,
+        child_session_id: str,
+        reason: str,
+        delivery: AdapterDelivery,
+    ) -> StopDeliveryReceipt: ...
 
     @abstractmethod
     def dispatch(

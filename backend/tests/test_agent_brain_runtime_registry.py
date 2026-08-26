@@ -144,3 +144,10 @@ def test_snapshot_exposes_adapter_and_public_capability_contract() -> None:
     assert item.output_contract == "normalized_task_result_v1"
     assert item.supports_idempotency is True
     assert item.max_duration_seconds == 300
+    assert item.supports_persistent_session is True
+    assert item.supports_followup_message is True
+    assert item.supports_progress_events is True
+    assert item.supports_thinking_summary is True
+    assert item.supports_cancel is True
+    assert item.supports_attachments is False
+    assert item.typical_latency_seconds == 90

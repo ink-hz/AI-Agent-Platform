@@ -37,6 +37,13 @@ class AgentCapabilityCard(BaseModel):
     supports_streaming: bool
     supports_cancellation: bool
     supports_idempotency: bool
+    supports_persistent_session: bool
+    supports_followup_message: bool
+    supports_progress_events: bool
+    supports_thinking_summary: bool
+    supports_cancel: bool
+    supports_attachments: bool
+    typical_latency_seconds: int = Field(ge=1, le=600)
     max_duration_seconds: int = Field(ge=1, le=300)
     data_classification: Literal["internal"] = "internal"
     adapter_id: str = Field(min_length=1, max_length=128)
@@ -81,6 +88,13 @@ def load_capability_cards(
                 supports_streaming=card.supports_streaming,
                 supports_cancellation=card.supports_cancellation,
                 supports_idempotency=card.supports_idempotency,
+                supports_persistent_session=card.supports_persistent_session,
+                supports_followup_message=card.supports_followup_message,
+                supports_progress_events=card.supports_progress_events,
+                supports_thinking_summary=card.supports_thinking_summary,
+                supports_cancel=card.supports_cancel,
+                supports_attachments=card.supports_attachments,
+                typical_latency_seconds=card.typical_latency_seconds,
                 max_duration_seconds=card.max_duration_seconds,
                 data_classification=card.data_classification,
                 adapter_id=card.adapter_id,
