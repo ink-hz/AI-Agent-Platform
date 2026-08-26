@@ -58,6 +58,8 @@ export interface ConversationEvent {
   created_at: string;
 }
 
+export type { WorkroomTurn } from "./workroomTypes";
+
 export interface ConversationSubmissionResult {
   conversation: Conversation;
   message: ConversationMessage;
