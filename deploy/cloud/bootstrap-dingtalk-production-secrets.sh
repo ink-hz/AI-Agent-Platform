@@ -28,6 +28,7 @@ required_private=(
   replica-signing-public-key
   content-encryption-keyring
   execution-worker-public-keyring.json
+  voc-extension-signing-key
 )
 for name in "${required_private[@]}"; do
   path="$private_path/$name"
@@ -100,6 +101,7 @@ done
     cp /source/dingtalk-in-client-apps.json /target/
     cp /source/identity-encryption-keyring /source/identity-hmac-keyring /source/rate-limit-hmac-keyring /target/
     cp /source/content-encryption-keyring /source/execution-worker-public-keyring.json /target/
+    cp /source/voc-extension-signing-key /target/
     chown 10001:10001 /target/*
     chmod 600 /target/*
   '

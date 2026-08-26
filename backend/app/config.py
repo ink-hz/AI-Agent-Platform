@@ -591,7 +591,7 @@ def _validate_voc_extension_config(config: Config) -> None:
     if (
         parsed.scheme != "http"
         or host is None
-        or not _loopback(host)
+        or not (_loopback(host) or host == "172.30.0.8")
         or port is None
         or parsed.username is not None
         or parsed.password is not None
@@ -600,7 +600,9 @@ def _validate_voc_extension_config(config: Config) -> None:
         or parsed.query
         or parsed.fragment
     ):
-        raise ValueError("VOC extension base URL must be a loopback HTTP origin")
+        raise ValueError(
+            "VOC extension base URL must be the fixed private HTTP origin"
+        )
     if not 1 <= config.voc_extension_timeout_seconds <= 60:
         raise ValueError("VOC extension timeout must be between 1 and 60 seconds")
     _validate_private_file(

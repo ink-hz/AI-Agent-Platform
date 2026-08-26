@@ -35,13 +35,15 @@ def _validated_base_url(value: str) -> str:
         parsed = urlparse(value)
         host = parsed.hostname
         port = parsed.port
-        loopback = host is not None and ip_address(host).is_loopback
+        private_service = host is not None and (
+            ip_address(host).is_loopback or host == "172.30.0.8"
+        )
     except ValueError:
-        loopback = False
+        private_service = False
         port = None
     if (
         parsed.scheme != "http"
-        or not loopback
+        or not private_service
         or port is None
         or parsed.username is not None
         or parsed.password is not None
@@ -50,7 +52,7 @@ def _validated_base_url(value: str) -> str:
         or parsed.query
         or parsed.fragment
     ):
-        raise ValueError("VOC base URL must be an absolute loopback HTTP origin")
+        raise ValueError("VOC base URL must be the absolute fixed private HTTP origin")
     return value.rstrip("/")
 
 
@@ -111,6 +113,22 @@ class VocExtensionClient:
                 json=json,
                 params=query,
             ) as response:
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > _MAX_RESPONSE_BYTES:
+                        raise VocProtocolError("voc_response_too_large")
+                return VocUpstreamResponse(response.status_code, bytes(body))
+        except VocProtocolError:
+            raise
+        except (httpx.TimeoutException, httpx.TransportError):
+            raise VocUpstreamUnavailable("voc_unavailable") from None
+
+    async def health(self) -> VocUpstreamResponse:
+        """Call only the downstream safe health endpoint without employee identity."""
+
+        try:
+            async with self._client.stream("GET", "/health") as response:
                 body = bytearray()
                 async for chunk in response.aiter_bytes():
                     body.extend(chunk)

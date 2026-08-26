@@ -34,6 +34,7 @@ function editable(draft: VocDraft, changes: Partial<VocDraftContent>): VocDraft 
 export function VocWorkspacePage({ csrfToken, api = vocApi }: { csrfToken: string; api?: VocApi }) {
   const [source, setSource] = useState("");
   const [draft, setDraft] = useState<VocDraft | null>(null);
+  const [draftDirty, setDraftDirty] = useState(false);
   const [items, setItems] = useState<VocSummary[]>([]);
   const [detail, setDetail] = useState<VocDetail | null>(null);
   const [supplement, setSupplement] = useState("");
@@ -47,13 +48,22 @@ export function VocWorkspacePage({ csrfToken, api = vocApi }: { csrfToken: strin
   const supplementRequest = useRef<string | null>(null);
 
   const reloadList = async () => setItems(await api.listVocs());
-  const reloadDraft = async () => setDraft(await api.activeDraft());
+  const reloadDraft = async () => {
+    setDraft(await api.activeDraft());
+    setDraftDirty(false);
+  };
+  const changeDraft = (changes: Partial<VocDraftContent>) => {
+    editRequest.current = null;
+    submitRequest.current = null;
+    setDraftDirty(true);
+    setDraft((current) => current ? editable(current, changes) : current);
+  };
 
   useEffect(() => {
     let current = true;
     void Promise.all([api.activeDraft(), api.listVocs()]).then(([active, vocs]) => {
       if (!current) return;
-      setDraft(active); setItems(vocs);
+      setDraft(active); setDraftDirty(false); setItems(vocs);
       if (active) setSource(active.source_text);
     }).catch((failure) => { if (current) setError(message(failure)); });
     return () => { current = false; };
@@ -65,8 +75,11 @@ export function VocWorkspacePage({ csrfToken, api = vocApi }: { csrfToken: strin
     createRequest.current ??= crypto.randomUUID();
     try {
       const value = await api.createDraft(createRequest.current, source.trim(), csrfToken);
-      createRequest.current = null; editRequest.current = null; cancelRequest.current = null; submitRequest.current = null; setDraft(value);
-    } catch (failure) { setError(message(failure)); }
+      createRequest.current = null; editRequest.current = null; cancelRequest.current = null; submitRequest.current = null; setDraft(value); setDraftDirty(false);
+    } catch (failure) {
+      setError(message(failure));
+      if (failure instanceof VocApiError && failure.status === 409) void reloadDraft();
+    }
     finally { setBusy(null); }
   };
 
@@ -75,7 +88,7 @@ export function VocWorkspacePage({ csrfToken, api = vocApi }: { csrfToken: strin
     setBusy("save"); setError(null); editRequest.current ??= crypto.randomUUID();
     try {
       const value = await api.updateDraft(draft.draft_id, editRequest.current, draft.version, draft.content, csrfToken);
-      editRequest.current = null; setDraft(value);
+      editRequest.current = null; setDraft(value); setDraftDirty(false);
     } catch (failure) {
       setError(message(failure));
       if (failure instanceof VocApiError && failure.status === 409) void reloadDraft();
@@ -87,19 +100,34 @@ export function VocWorkspacePage({ csrfToken, api = vocApi }: { csrfToken: strin
     setBusy("cancel"); setError(null); cancelRequest.current ??= crypto.randomUUID();
     try {
       await api.cancelDraft(draft.draft_id, cancelRequest.current, draft.version, csrfToken);
-      cancelRequest.current = null; editRequest.current = null; submitRequest.current = null; setDraft(null); setSource("");
-    } catch (failure) { setError(message(failure)); }
+      cancelRequest.current = null; editRequest.current = null; submitRequest.current = null; setDraft(null); setDraftDirty(false); setSource("");
+    } catch (failure) {
+      setError(message(failure));
+      if (failure instanceof VocApiError && failure.status === 409) void reloadDraft();
+    }
     finally { setBusy(null); }
   };
 
   const submit = async () => {
     if (!draft || busy) return;
-    setBusy("submit"); setError(null); submitRequest.current ??= crypto.randomUUID();
+    setBusy("submit"); setError(null);
     try {
-      const value = await api.submitDraft(draft.draft_id, submitRequest.current, draft.version, csrfToken);
-      submitRequest.current = null; editRequest.current = null; cancelRequest.current = null; setCreatedVocNo(value.voc_no); setDraft(null); setSource("");
+      let persisted = draft;
+      if (draftDirty) {
+        editRequest.current ??= crypto.randomUUID();
+        persisted = await api.updateDraft(draft.draft_id, editRequest.current, draft.version, draft.content, csrfToken);
+        editRequest.current = null;
+        setDraft(persisted);
+        setDraftDirty(false);
+      }
+      submitRequest.current ??= crypto.randomUUID();
+      const value = await api.submitDraft(persisted.draft_id, submitRequest.current, persisted.version, csrfToken);
+      submitRequest.current = null; editRequest.current = null; cancelRequest.current = null; setCreatedVocNo(value.voc_no); setDraft(null); setDraftDirty(false); setSource("");
       await reloadList();
-    } catch (failure) { setError(message(failure)); }
+    } catch (failure) {
+      setError(message(failure));
+      if (failure instanceof VocApiError && failure.status === 409) void reloadDraft();
+    }
     finally { setBusy(null); }
   };
 
@@ -130,7 +158,7 @@ export function VocWorkspacePage({ csrfToken, api = vocApi }: { csrfToken: strin
     <div className="voc-layout">
       <section className="voc-compose-panel">
         <label htmlFor="voc-source">客户反馈</label>
-        <textarea id="voc-source" aria-label="客户反馈" maxLength={4000} value={source} onChange={(event) => setSource(event.target.value)} placeholder="例如：客户反馈设备连续运行两小时后发热，并出现自动关机…" />
+        <textarea id="voc-source" aria-label="客户反馈" maxLength={4000} value={source} onChange={(event) => { createRequest.current = null; setSource(event.target.value); }} placeholder="例如：客户反馈设备连续运行两小时后发热，并出现自动关机…" />
         <div className="voc-compose-actions"><span>{source.length}/4000</span><button type="button" disabled={!source.trim() || Boolean(busy)} onClick={() => void organize()}>{error && createRequest.current ? "重新整理" : busy === "organize" ? "正在整理…" : "整理成草稿"}</button></div>
       </section>
 
@@ -140,12 +168,12 @@ export function VocWorkspacePage({ csrfToken, api = vocApi }: { csrfToken: strin
       {draft && <section className="voc-draft-panel" aria-label="VOC 草稿">
         <header><div><p>待确认草稿</p><h2>请检查整理结果</h2></div><span>版本 {draft.version}</span></header>
         <div className="voc-form-grid">
-          <label>客户<input aria-label="客户" value={draft.content.customer ?? ""} onChange={(event) => setDraft(editable(draft, { customer: event.target.value || null }))} /></label>
-          <label>产品或场景<input aria-label="产品或场景" value={draft.content.product_or_scenario ?? ""} onChange={(event) => setDraft(editable(draft, { product_or_scenario: event.target.value || null }))} /></label>
-          <label className="is-wide">反馈内容<input aria-label="反馈内容" required value={draft.content.feedback} onChange={(event) => setDraft(editable(draft, { feedback: event.target.value }))} /></label>
-          <label className="is-wide">影响<input aria-label="影响" value={draft.content.impact ?? ""} onChange={(event) => setDraft(editable(draft, { impact: event.target.value || null }))} /></label>
-          <label>信息来源<select aria-label="信息来源" value={draft.content.evidence_basis} onChange={(event) => setDraft(editable(draft, { evidence_basis: event.target.value as EvidenceBasis }))}>{Object.entries(BASIS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-          <label className="is-wide">待补信息<textarea aria-label="待补信息" value={draft.content.gaps.join("\n")} onChange={(event) => setDraft(editable(draft, { gaps: event.target.value.split("\n").map((value) => value.trim()).filter(Boolean).slice(0, 8) }))} /></label>
+          <label>客户<input aria-label="客户" value={draft.content.customer ?? ""} onChange={(event) => changeDraft({ customer: event.target.value || null })} /></label>
+          <label>产品或场景<input aria-label="产品或场景" value={draft.content.product_or_scenario ?? ""} onChange={(event) => changeDraft({ product_or_scenario: event.target.value || null })} /></label>
+          <label className="is-wide">反馈内容<input aria-label="反馈内容" required value={draft.content.feedback} onChange={(event) => changeDraft({ feedback: event.target.value })} /></label>
+          <label className="is-wide">影响<input aria-label="影响" value={draft.content.impact ?? ""} onChange={(event) => changeDraft({ impact: event.target.value || null })} /></label>
+          <label>信息来源<select aria-label="信息来源" value={draft.content.evidence_basis} onChange={(event) => changeDraft({ evidence_basis: event.target.value as EvidenceBasis })}>{Object.entries(BASIS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+          <label className="is-wide">待补信息<textarea aria-label="待补信息" value={draft.content.gaps.join("\n")} onChange={(event) => changeDraft({ gaps: event.target.value.split("\n").map((value) => value.trim()).filter(Boolean).slice(0, 8) })} /></label>
         </div>
         <div className="voc-draft-actions"><button type="button" disabled={Boolean(busy)} onClick={() => void cancel()}>取消草稿</button><button type="button" disabled={Boolean(busy) || !draft.content.feedback.trim()} onClick={() => void save()}>保存修改</button><button className="is-submit" type="button" disabled={Boolean(busy) || !draft.content.feedback.trim()} onClick={() => void submit()}>确认提交 VOC</button></div>
       </section>}
@@ -156,6 +184,6 @@ export function VocWorkspacePage({ csrfToken, api = vocApi }: { csrfToken: strin
       </section>
     </div>
 
-    {detail && <aside className="voc-detail" aria-label="VOC 详情"><header><div><p>VOC 详情</p><h2>{detail.voc_no}</h2></div><button type="button" aria-label="关闭 VOC 详情" onClick={() => setDetail(null)}>×</button></header><ol>{detail.entries.map((entry) => <li key={entry.revision}><span>版本 {entry.revision}</span><p>{entry.content}</p></li>)}</ol><label>补充信息<textarea aria-label="补充信息" maxLength={4000} value={supplement} onChange={(event) => setSupplement(event.target.value)} /></label><button className="voc-supplement-submit" type="button" disabled={!supplement.trim() || Boolean(busy)} onClick={() => void addSupplement()}>提交补充</button></aside>}
+    {detail && <aside className="voc-detail" aria-label="VOC 详情"><header><div><p>VOC 详情</p><h2>{detail.voc_no}</h2></div><button type="button" aria-label="关闭 VOC 详情" onClick={() => setDetail(null)}>×</button></header><ol>{detail.entries.map((entry) => <li key={entry.revision}><span>版本 {entry.revision}</span><p>{entry.content}</p></li>)}</ol><label>补充信息<textarea aria-label="补充信息" maxLength={4000} value={supplement} onChange={(event) => { supplementRequest.current = null; setSupplement(event.target.value); }} /></label><button className="voc-supplement-submit" type="button" disabled={!supplement.trim() || Boolean(busy)} onClick={() => void addSupplement()}>提交补充</button></aside>}
   </section>;
 }

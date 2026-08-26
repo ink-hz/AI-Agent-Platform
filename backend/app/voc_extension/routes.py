@@ -19,6 +19,14 @@ _ALLOWED_STATUSES = frozenset({200, 201, 401, 403, 404, 409, 422, 503})
 _VOC_NO_PATTERN = r"^VOC-[0-9]{8}-[0-9]{3,}$"
 
 
+def _reject_nonstandard_json(_value: str):
+    raise ValueError("nonstandard JSON constant")
+
+
+def _decode_json(value: bytes):
+    return json.loads(value, parse_constant=_reject_nonstandard_json)
+
+
 class _StrictRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -103,8 +111,8 @@ async def _forward(
     if upstream.status_code not in _ALLOWED_STATUSES:
         raise HTTPException(502, "voc_protocol_error", headers=_NO_STORE)
     try:
-        body = json.loads(upstream.body)
-    except (UnicodeDecodeError, json.JSONDecodeError):
+        body = _decode_json(upstream.body)
+    except (UnicodeDecodeError, ValueError):
         raise HTTPException(502, "voc_protocol_error", headers=_NO_STORE) from None
     if body is not None and not isinstance(body, dict):
         raise HTTPException(502, "voc_protocol_error", headers=_NO_STORE)
@@ -113,6 +121,23 @@ async def _forward(
 
 def build_voc_extension_router() -> APIRouter:
     router = APIRouter(prefix="/api/v1/extensions/voc", tags=["voc-extension"])
+
+    @router.get("/health")
+    async def health(request: Request):
+        client = getattr(request.app.state, "voc_extension_client", None)
+        if client is None:
+            raise HTTPException(503, "voc_unavailable", headers=_NO_STORE)
+        try:
+            upstream = await client.health()
+            body = _decode_json(upstream.body)
+        except (VocProtocolError, VocUpstreamUnavailable, UnicodeDecodeError, ValueError):
+            raise HTTPException(503, "voc_unavailable", headers=_NO_STORE) from None
+        if upstream.status_code != 200 or body != {
+            "status": "ok",
+            "service": "voc-workspace",
+        }:
+            raise HTTPException(503, "voc_unavailable", headers=_NO_STORE)
+        return JSONResponse(body, headers=_NO_STORE)
 
     @router.post("/drafts")
     async def create_draft(request: Request, payload: CreateDraftBody):

@@ -41,3 +41,18 @@ agents:
     flywheel_agent_id: "ai-admin-agent"
     version: ""
     tags: ["in-memory-session"]
+
+  - id: voc
+    name: "VOC 洞察助手"
+    domain: "客户洞察"
+    description: "将员工自然语言整理成可编辑 VOC 草稿，确认后入库，并查看和补充本人记录"
+    icon: "💬"
+    owner: "<负责人>"
+    env: "prod"
+    status: "active"
+    entry_url: "/agents/voc/workspace"
+    health:
+      url: "http://127.0.0.1:8080/api/v1/extensions/voc/health"
+      type: "generic"
+    version: ""
+    tags: ["platform-extension", "employee-self-service"]

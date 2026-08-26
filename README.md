@@ -14,6 +14,8 @@ Operations 继续作为管理与数据飞轮能力。FAE 保持独立对外入�
 Agent Brain V2 的 20 场景矩阵、真实 Provider 探测、恢复演练、质量评审与发布门禁见
 [Agent Brain V2 acceptance runbook](docs/runbooks/agent-brain-v2-acceptance.md)。
 
+VOC Platform extension 已提供原生员工工作台 `/agents/voc/workspace`。Platform 复用现有企业登录、CSRF 和账号权限，只把短期、员工绑定的请求转发给 Docker 内部私网上的 VOC 业务服务；自然语言先形成可编辑草稿，点击确认后才正式入库。部署、密钥轮换、验收与回滚见 [VOC extension runbook](docs/voc-extension-runbook.md)。
+
 ## 当前能力
 
 - 自动读取 `deploy/metabot.runtime-contract.json` 中的业务 Bot 和 test-bot。
@@ -28,6 +30,7 @@ Agent Brain V2 的 20 场景矩阵、真实 Provider 探测、恢复演练、质
 - FAE 提供脱敏后的 Stage/Span Trace；ADMIN 未采集的工程 Trace 明确标记为 unavailable。
 - 契约读取失败时保留最后一次有效实例列表。
 - Platform API 暂时失败时，页面保留最后一次成功快照并提示数据可能过期。
+- VOC 洞察助手支持员工整理、修改、提交、查看和补充本人 VOC，不依赖钉钉机器人入口，也不提供全员查看或管理入口。
 
 健康状态与业务数据的新鲜度相互独立：健康异常不影响上一份业务快照，远端同步失败也不会清空上一份成功数据。
 

@@ -83,6 +83,10 @@ services:
       PLATFORM_REPLICA_ENCRYPTION_KEY_FILE: /run/secrets/replica-encryption-key
       PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE: /run/secrets/replica-signing-public-key
       PLATFORM_REPLICA_STALE_SECONDS: "900"
+      PLATFORM_VOC_EXTENSION_ENABLED: "1"
+      PLATFORM_VOC_EXTENSION_BASE_URL: http://172.30.0.8:18130
+      PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE: /run/secrets/voc-extension-signing-key
+      PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS: "10"
     volumes:
       - platform-api-secrets:/run/secrets:ro
     networks:

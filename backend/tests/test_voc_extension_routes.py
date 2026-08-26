@@ -131,6 +131,14 @@ async def test_disabled_unavailable_and_invalid_upstream_fail_safely() -> None:
     assert invalid.json() == {"detail": "voc_protocol_error"}
     assert "private detail" not in json.dumps(invalid.json())
 
+    upstream.response = VocUpstreamResponse(200, b'{"value":NaN}')
+    async with AsyncClient(
+        transport=ASGITransport(app=workspace_app(upstream)), base_url="http://test"
+    ) as client:
+        nonstandard = await client.get("/api/v1/extensions/voc/vocs")
+    assert nonstandard.status_code == 502
+    assert nonstandard.json() == {"detail": "voc_protocol_error"}
+
     upstream.error = VocProtocolError("private protocol detail")
     async with AsyncClient(
         transport=ASGITransport(app=workspace_app(upstream)), base_url="http://test"

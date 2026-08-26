@@ -548,14 +548,6 @@ def create_app(
     owns_voc_extension_client = (
         voc_extension_client is None and config.voc_extension_enabled
     )
-    if owns_voc_extension_client:
-        voc_extension_client = VocExtensionClient(
-            config.voc_extension_base_url,
-            PlatformVocTokenSigner.from_file(
-                config.voc_extension_signing_key_file
-            ),
-            timeout_seconds=config.voc_extension_timeout_seconds,
-        )
     brain_use_enabled = config.agent_brain_enabled and (
         not config.agent_brain_v2_enabled
         or config.agent_brain_collaboration_enabled
@@ -749,6 +741,14 @@ def create_app(
         attachment_service = build_attachment_service(config)
     if attachment_service is not None:
         install_attachment_ticket_redaction()
+    if owns_voc_extension_client:
+        voc_extension_client = VocExtensionClient(
+            config.voc_extension_base_url,
+            PlatformVocTokenSigner.from_file(
+                config.voc_extension_signing_key_file
+            ),
+            timeout_seconds=config.voc_extension_timeout_seconds,
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

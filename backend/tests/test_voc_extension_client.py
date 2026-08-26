@@ -78,17 +78,27 @@ async def test_client_uses_fixed_loopback_origin_and_actor_bearer() -> None:
     assert requests[0].headers["Authorization"].startswith("Bearer ")
 
 
+@pytest.mark.asyncio
+async def test_client_accepts_only_the_fixed_platform_private_service_address() -> None:
+    client = VocExtensionClient(
+        "http://172.30.0.8:18130", PlatformVocTokenSigner(SECRET)
+    )
+
+    await client.aclose()
+
+
 @pytest.mark.parametrize(
     "base_url",
     [
         "https://127.0.0.1:18130",
         "http://example.test:18130",
+        "http://172.30.0.9:18130",
         "http://127.0.0.1:18130/prefix",
         "http://user@127.0.0.1:18130",
     ],
 )
-def test_client_rejects_any_non_fixed_loopback_origin(base_url: str) -> None:
-    with pytest.raises(ValueError, match="loopback"):
+def test_client_rejects_any_non_fixed_private_origin(base_url: str) -> None:
+    with pytest.raises(ValueError, match="private"):
         VocExtensionClient(base_url, PlatformVocTokenSigner(SECRET))
 
 

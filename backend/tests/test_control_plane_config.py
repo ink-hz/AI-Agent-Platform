@@ -157,12 +157,28 @@ def test_enabled_voc_extension_requires_private_key_and_loopback(
         load_config()
 
 
+def test_enabled_voc_extension_accepts_fixed_platform_private_service(
+    tmp_path: Path, monkeypatch
+) -> None:
+    key = tmp_path / "voc-extension-signing-key"
+    key.write_bytes(b"k" * 32)
+    key.chmod(0o600)
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_ENABLED", "1")
+    monkeypatch.setenv(
+        "PLATFORM_VOC_EXTENSION_BASE_URL", "http://172.30.0.8:18130"
+    )
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE", str(key))
+
+    assert load_config().voc_extension_base_url == "http://172.30.0.8:18130"
+
+
 @pytest.mark.parametrize(
     ("name", "value", "message"),
     [
-        ("PLATFORM_VOC_EXTENSION_BASE_URL", "http://example.test:18130", "loopback"),
-        ("PLATFORM_VOC_EXTENSION_BASE_URL", "https://127.0.0.1:18130", "loopback"),
-        ("PLATFORM_VOC_EXTENSION_BASE_URL", "http://127.0.0.1:18130/path", "loopback"),
+        ("PLATFORM_VOC_EXTENSION_BASE_URL", "http://example.test:18130", "private"),
+        ("PLATFORM_VOC_EXTENSION_BASE_URL", "http://172.30.0.9:18130", "private"),
+        ("PLATFORM_VOC_EXTENSION_BASE_URL", "https://127.0.0.1:18130", "private"),
+        ("PLATFORM_VOC_EXTENSION_BASE_URL", "http://127.0.0.1:18130/path", "private"),
         ("PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS", "0", "between 1 and 60"),
         ("PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS", "61", "between 1 and 60"),
     ],
