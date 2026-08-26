@@ -330,6 +330,7 @@ def test_collaboration_tools_require_owned_active_tasks() -> None:
     with pytest.raises(ProtocolViolation) as terminal_error:
         parse_tool_batch([_stop_block(terminal)], limits)
     assert terminal_error.value.code == "target_not_active"
+    assert parse_tool_batch([_send_block(terminal)], limits).kind == "agent_messages"
 
 
 def test_followup_message_is_limited_to_16_kibibytes() -> None:

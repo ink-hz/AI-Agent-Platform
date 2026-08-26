@@ -92,6 +92,11 @@ def _commit(
 def _clear_v2(connection) -> None:
     connection.execute("set constraints all deferred")
     for table in (
+        "brain_user_interventions",
+        "brain_wait_subscriptions",
+        "brain_thinking_summaries",
+        "agent_task_messages",
+        "agent_task_sessions",
         "brain_checkpoints",
         "adapter_deliveries",
         "agent_task_events",
@@ -363,7 +368,7 @@ def test_checkpoint_deletion_does_not_change_message_reconstruction(
             result=result,
         )
     )
-    assert loop_repository.settle_batch(loop_id) is True
+    assert loop_repository.queued_step_count(loop_id) == 1
     before = loop_repository.reconstruct_messages(loop_id)
     loop_repository.put_checkpoint(
         loop_id,

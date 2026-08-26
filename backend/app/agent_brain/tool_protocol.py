@@ -473,7 +473,9 @@ def _validate_runtime_limits(arguments: ToolCall, limits: ToolLimits) -> None:
         )
     elif isinstance(arguments, AwaitAgentEventsCall):
         _require_owned(arguments.task_ids, limits.allowed_task_ids)
-    elif isinstance(arguments, (SendAgentMessageCall, StopAgentTaskCall)):
+    elif isinstance(arguments, SendAgentMessageCall):
+        _require_owned((arguments.task_id,), limits.allowed_task_ids)
+    elif isinstance(arguments, StopAgentTaskCall):
         _require_owned((arguments.task_id,), limits.allowed_task_ids)
         if (
             limits.active_task_ids is not None

@@ -185,12 +185,8 @@ def seeded_live_task(live_database):
             ),
         ),
     ).task_ids[0]
-    repository.create_task_session(
-        task_id=task_id,
-        child_session_id=f"child-{task_id}",
-        adapter_kind="reference",
-        adapter_session_ref={"remote_session_id": "remote-hr-1"},
-        capability_snapshot={"supports_followup_message": True},
+    loop_repository.bind_adapter_session_ref(
+        task_id, {"remote_session_id": "remote-hr-1"}
     )
     yield repository, loop_repository, loop_id, task_id, conversation_id
 
@@ -199,7 +195,6 @@ def _seed_wait_step(
     live_database, loop_id: UUID, *, task_id: UUID
 ) -> UUID:
     environment, codec, *_unused = live_database
-    wait_step_id = uuid4()
     wait_tool_call_id = uuid4()
     arguments = codec.seal_json(
         f"brain-tool-call:{wait_tool_call_id}:arguments",
@@ -209,30 +204,21 @@ def _seed_wait_step(
             "public_reason": "等待专业 Agent 的发现",
         },
     )
-    immediate = codec.seal_json(
-        "brain-tool-call:placeholder:result", {"status": "dispatched"}
-    )
     with psycopg.connect(environment["admin"]) as connection:
-        first = connection.execute(
+        wait_step_id = connection.execute(
             "select step_id from platform_brain.brain_steps "
-            "where loop_id=%s and step_seq=1",
+            "where loop_id=%s and step_seq=2",
             (loop_id,),
         ).fetchone()[0]
         connection.execute(
-            "update platform_brain.brain_tool_calls set status='result_ready',"
-            "result_ciphertext=%s,result_key_version=%s,result_sha256=%s "
-            "where step_id=%s",
-            (immediate.ciphertext, immediate.key_version, b"r" * 32, first),
+            "update platform_brain.brain_steps set status='waiting_tool_results' "
+            "where step_id=%s and status='queued'",
+            (wait_step_id,),
         )
         connection.execute(
-            "update platform_brain.brain_steps set status='completed',"
-            "terminal_at=clock_timestamp() where step_id=%s",
-            (first,),
-        )
-        connection.execute(
-            "insert into platform_brain.brain_steps "
-            "(step_id,loop_id,step_seq,status) values (%s,%s,2,'waiting_tool_results')",
-            (wait_step_id, loop_id),
+            "update platform_brain.brain_loops set status='waiting_agents' "
+            "where loop_id=%s",
+            (loop_id,),
         )
         connection.execute(
             "insert into platform_brain.brain_tool_calls "
@@ -261,18 +247,6 @@ def test_task_session_and_messages_are_encrypted_and_round_trip(
     session = repository.task_session(task_id)
     assert session.adapter_session_ref == {"remote_session_id": "remote-hr-1"}
 
-    first = repository.append_task_message(
-        AgentTaskMessageInput(
-            task_id=task_id,
-            seq=1,
-            sender="brain",
-            message_kind="initial",
-            text="分析候选人的复合能力",
-            created_at=NOW,
-        )
-    )
-    replay = repository.append_task_message(first.input)
-    assert replay.replayed is True
     assert repository.task_messages(task_id)[0].text == "分析候选人的复合能力"
     with psycopg.connect(environment["admin"]) as connection:
         raw = bytes(
@@ -296,21 +270,20 @@ def test_messages_are_monotonic_conflict_safe_and_followups_are_capped(
         repository.append_task_message(
             AgentTaskMessageInput(
                 task_id=task_id,
-                seq=2,
+                seq=3,
                 sender="brain",
                 message_kind="followup",
                 text="跳过第一条",
                 created_at=NOW,
             )
         )
-    for seq in range(1, 6):
-        kind = "initial" if seq == 1 else "followup"
+    for seq in range(2, 6):
         repository.append_task_message(
             AgentTaskMessageInput(
                 task_id=task_id,
                 seq=seq,
                 sender="brain",
-                message_kind=kind,
+                message_kind="followup",
                 text=f"message-{seq}",
                 created_at=NOW + timedelta(seconds=seq),
             )

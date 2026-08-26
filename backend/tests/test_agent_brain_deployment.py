@@ -206,6 +206,10 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
             calls.append("adapter")
             return True
 
+        def reconcile_one(self):
+            calls.append("reconcile:persistent")
+            return True
+
         def reconcile_adapter_tasks(self, kind):
             calls.append(f"reconcile:{kind}")
             return 1
@@ -236,10 +240,10 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
 
     changed = tick(validate_worker_mode("all"), Runtime(), Repository())
 
-    assert changed == 9
+    assert changed == 10
     assert calls == [
         "brain", "settle", "heartbeat:agent-brain-step:healthy",
-        "adapter", "reconcile:metabot_local", "cancel",
+        "adapter", "reconcile:persistent", "reconcile:metabot_local", "cancel",
         "heartbeat:agent-brain-adapter:healthy", "expire-steps",
         "expire-deliveries", "expire-users", "erase-responses",
         "heartbeat:agent-brain-reaper:healthy",

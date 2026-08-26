@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import re
 from typing import Any, Literal
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import psycopg
 from psycopg.rows import dict_row
@@ -24,10 +24,13 @@ from app.agent_brain.loop_models import (
 )
 from app.execution_relay.models import RequesterSubject
 from app.agent_brain.tool_protocol import (
+    AwaitAgentEventsCall,
     BrainToolBatch,
     DelegateTaskCall,
     ParsedToolCall,
     RequestUserInputCall,
+    SendAgentMessageCall,
+    StopAgentTaskCall,
     SubmitAnswerCall,
     stable_runtime_id,
 )
@@ -121,7 +124,12 @@ class TaskDeliveryLease:
     delivery_id: UUID
     attempt: int
     idempotency_key: str
+    delivery_kind: Literal["initial", "followup", "stop"]
+    source_message_seq: int | None
+    child_session_id: str
     requester_subject: RequesterSubject = field(repr=False)
+    adapter_session_ref: dict[str, object] | None = field(default=None, repr=False)
+    message_text: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +154,17 @@ class AdapterReconciliationTask:
     next_event_seq: int
 
 
+@dataclass(frozen=True, slots=True)
+class AdapterSessionPoll:
+    task_id: UUID
+    loop_id: UUID
+    agent_id: str
+    adapter_kind: str
+    child_session_id: str
+    adapter_session_ref: dict[str, object] | None = field(default=None, repr=False)
+    after_event_seq: int = 0
+
+
 def _model_config_subject(loop_id: UUID) -> str:
     return f"brain-loop:{loop_id}:model-config"
 
@@ -164,6 +183,14 @@ def _tool_result_subject(tool_call_id: UUID) -> str:
 
 def _task_context_subject(task_id: UUID) -> str:
     return f"brain-task:{task_id}:context"
+
+
+def _task_session_ref_subject(task_id: UUID) -> str:
+    return f"brain-task:{task_id}:session-ref"
+
+
+def _task_message_subject(task_id: UUID, seq: int) -> str:
+    return f"brain-task:{task_id}:message:{seq}"
 
 
 def _task_event_subject(task_id: UUID, seq: int) -> str:
@@ -202,6 +229,17 @@ class BrainLoopRepository:
             connect_timeout=3,
             options="-c statement_timeout=10000 -c timezone=UTC",
             row_factory=dict_row,
+        )
+
+    def collaboration_repository(self):
+        # Local import keeps the shared repository errors in this module without
+        # introducing a module-import cycle.
+        from app.agent_brain.collaboration_repository import CollaborationRepository
+
+        return CollaborationRepository(
+            self._control_database_url,
+            content_codec=self.content_codec,
+            connect=self._connect,
         )
 
     def heartbeat(
@@ -563,9 +601,10 @@ class BrainLoopRepository:
         specs = {spec.tool_index: spec for spec in commit.task_specs}
         immediate = {result.tool_index: result.value for result in commit.immediate_results}
         task_ids: list[UUID] = []
+        step_seq = self._step_seq_locked(connection, step_id)
         for parsed in commit.batch.calls:
             tool_call_id = stable_runtime_id(
-                loop_id, self._step_seq_locked(connection, step_id), parsed.tool_index, "tool_call"
+                loop_id, step_seq, parsed.tool_index, "tool_call"
             )
             arguments = parsed.call.model_dump(mode="json")
             sealed_arguments = self.content_codec.seal_json(
@@ -590,6 +629,7 @@ class BrainLoopRepository:
                     _tool_result_subject(tool_call_id), rejected
                 )
                 result_sha256 = _json_hash(rejected)
+                status = "result_ready"
             connection.execute(
                 "insert into platform_brain.brain_tool_calls ("
                 "brain_tool_call_id,step_id,tool_index,provider_tool_call_id,"
@@ -621,7 +661,7 @@ class BrainLoopRepository:
                     raise BrainRepositoryConflict()
                 task_id = stable_runtime_id(
                     loop_id,
-                    self._step_seq_locked(connection, step_id),
+                    step_seq,
                     parsed.tool_index,
                     "task",
                 )
@@ -652,7 +692,188 @@ class BrainLoopRepository:
                         spec.effective_deadline_at,
                     ),
                 )
+                child_session_id = str(uuid5(task_id, "platform-child-session"))
+                connection.execute(
+                    "insert into platform_brain.agent_task_sessions ("
+                    "task_id,child_session_id,adapter_kind,status,capability_snapshot) "
+                    "values (%s,%s,%s,'active',%s)",
+                    (
+                        task_id,
+                        child_session_id,
+                        spec.adapter_kind,
+                        Jsonb(
+                            {
+                                "adapter_kind": spec.adapter_kind,
+                                "capability_version": spec.capability_version,
+                            }
+                        ),
+                    ),
+                )
+                created_at = datetime.now(timezone.utc)
+                initial_text = parsed.call.objective
+                sealed_message = self.content_codec.seal_json(
+                    _task_message_subject(task_id, 1), {"text": initial_text}
+                )
+                connection.execute(
+                    "insert into platform_brain.agent_task_messages ("
+                    "task_id,seq,sender,message_kind,content_ciphertext,"
+                    "content_key_version,content_sha256,created_at) "
+                    "values (%s,1,'brain','initial',%s,%s,%s,%s)",
+                    (
+                        task_id,
+                        sealed_message.ciphertext,
+                        sealed_message.key_version,
+                        hashlib.sha256(initial_text.encode("utf-8")).digest(),
+                        created_at,
+                    ),
+                )
+                delivery_id = uuid5(task_id, "delivery:initial")
+                connection.execute(
+                    "insert into platform_brain.adapter_deliveries ("
+                    "delivery_id,task_id,adapter_kind,attempt,status,idempotency_key,"
+                    "delivery_kind,source_message_seq) "
+                    "values (%s,%s,%s,1,'queued',%s,'initial',null)",
+                    (
+                        delivery_id,
+                        task_id,
+                        spec.adapter_kind,
+                        f"brain:{task_id}:initial:1",
+                    ),
+                )
+                dispatched = {
+                    "status": "dispatched",
+                    "task_id": str(task_id),
+                    "child_session_id": child_session_id,
+                }
+                self._set_tool_result_locked(
+                    connection, tool_call_id, dispatched
+                )
                 task_ids.append(task_id)
+            elif (
+                parsed.accepted
+                and parsed.tool_index not in immediate
+                and isinstance(parsed.call, AwaitAgentEventsCall)
+            ):
+                cursors: dict[str, int] = {}
+                for task_id in parsed.call.task_ids:
+                    owned = connection.execute(
+                        "select loop_id from platform_brain.agent_tasks "
+                        "where task_id=%s",
+                        (task_id,),
+                    ).fetchone()
+                    if owned is None or owned["loop_id"] != loop_id:
+                        raise BrainRepositoryConflict()
+                    cursors[str(task_id)] = connection.execute(
+                        "select coalesce(max(seq),0) as seq from "
+                        "platform_brain.agent_task_events where task_id=%s",
+                        (task_id,),
+                    ).fetchone()["seq"]
+                connection.execute(
+                    "insert into platform_brain.brain_wait_subscriptions ("
+                    "wait_id,brain_tool_call_id,loop_id,task_ids,wake_on,cursors,status) "
+                    "values (%s,%s,%s,%s,%s,%s,'active')",
+                    (
+                        uuid4(),
+                        tool_call_id,
+                        loop_id,
+                        list(parsed.call.task_ids),
+                        list(parsed.call.wake_on),
+                        Jsonb(cursors),
+                    ),
+                )
+            elif (
+                parsed.accepted
+                and parsed.tool_index not in immediate
+                and isinstance(parsed.call, SendAgentMessageCall)
+            ):
+                task_id = parsed.call.task_id
+                session = connection.execute(
+                    "select session.status,task.loop_id,task.adapter_kind from "
+                    "platform_brain.agent_task_sessions session join "
+                    "platform_brain.agent_tasks task on task.task_id=session.task_id "
+                    "where session.task_id=%s for update of session",
+                    (task_id,),
+                ).fetchone()
+                if session is None or session["loop_id"] != loop_id or session["status"] != "active":
+                    raise BrainRepositoryConflict()
+                message_state = connection.execute(
+                    "select coalesce(max(seq),0) as seq,count(*) filter "
+                    "(where sender='brain' and message_kind='followup') as followups "
+                    "from platform_brain.agent_task_messages where task_id=%s",
+                    (task_id,),
+                ).fetchone()
+                if message_state["followups"] >= 4:
+                    raise BrainRepositoryConflict()
+                message_seq = message_state["seq"] + 1
+                created_at = datetime.now(timezone.utc)
+                sealed_message = self.content_codec.seal_json(
+                    _task_message_subject(task_id, message_seq),
+                    {"text": parsed.call.message},
+                )
+                connection.execute(
+                    "insert into platform_brain.agent_task_messages ("
+                    "task_id,seq,sender,message_kind,content_ciphertext,"
+                    "content_key_version,content_sha256,created_at) "
+                    "values (%s,%s,'brain','followup',%s,%s,%s,%s)",
+                    (
+                        task_id,
+                        message_seq,
+                        sealed_message.ciphertext,
+                        sealed_message.key_version,
+                        hashlib.sha256(parsed.call.message.encode("utf-8")).digest(),
+                        created_at,
+                    ),
+                )
+                connection.execute(
+                    "insert into platform_brain.adapter_deliveries ("
+                    "delivery_id,task_id,adapter_kind,attempt,status,idempotency_key,"
+                    "delivery_kind,source_message_seq) "
+                    "values (%s,%s,%s,1,'queued',%s,'followup',%s)",
+                    (
+                        uuid5(task_id, f"delivery:followup:{message_seq}"),
+                        task_id,
+                        session["adapter_kind"],
+                        f"brain:{task_id}:followup:{message_seq}",
+                        message_seq,
+                    ),
+                )
+                self._set_tool_result_locked(
+                    connection,
+                    tool_call_id,
+                    {"status": "message_queued", "task_id": str(task_id)},
+                )
+            elif (
+                parsed.accepted
+                and parsed.tool_index not in immediate
+                and isinstance(parsed.call, StopAgentTaskCall)
+            ):
+                task_id = parsed.call.task_id
+                session = connection.execute(
+                    "select session.status,task.loop_id,task.adapter_kind from "
+                    "platform_brain.agent_task_sessions session join "
+                    "platform_brain.agent_tasks task on task.task_id=session.task_id "
+                    "where session.task_id=%s for update of session",
+                    (task_id,),
+                ).fetchone()
+                if session is None or session["loop_id"] != loop_id or session["status"] != "active":
+                    raise BrainRepositoryConflict()
+                connection.execute(
+                    "insert into platform_brain.adapter_deliveries ("
+                    "delivery_id,task_id,adapter_kind,attempt,status,idempotency_key,"
+                    "delivery_kind,source_message_seq) "
+                    "values (%s,%s,%s,1,'queued',%s,'stop',null)",
+                    (
+                        uuid5(task_id, "delivery:stop"),
+                        task_id,
+                        session["adapter_kind"],
+                        f"brain:{task_id}:stop:1",
+                    ),
+                )
+                self._set_tool_result_locked(
+                    connection,
+                    tool_call_id,
+                    {"status": "stop_requested", "task_id": str(task_id)},
+                )
         if set(specs) != {
             call.tool_index
             for call in commit.batch.calls
@@ -662,6 +883,22 @@ class BrainLoopRepository:
         }:
             raise BrainRepositoryConflict()
         return tuple(task_ids)
+
+    def _set_tool_result_locked(
+        self, connection: Any, tool_call_id: UUID, value: dict[str, object]
+    ) -> None:
+        sealed = self.content_codec.seal_json(
+            _tool_result_subject(tool_call_id), value
+        )
+        updated = connection.execute(
+            "update platform_brain.brain_tool_calls set status='result_ready',"
+            "result_ciphertext=%s,result_key_version=%s,result_sha256=%s,"
+            "updated_at=clock_timestamp() where brain_tool_call_id=%s "
+            "and status='waiting_result'",
+            (sealed.ciphertext, sealed.key_version, _json_hash(value), tool_call_id),
+        ).rowcount
+        if updated != 1:
+            raise BrainRepositoryConflict()
 
     def _complete_answer_locked(
         self, connection: Any, loop: Mapping[str, Any], call: SubmitAnswerCall
@@ -1211,6 +1448,65 @@ class BrainLoopRepository:
         except psycopg.Error:
             raise BrainRepositoryError() from None
 
+    def queued_step_count(self, loop_id: UUID) -> int:
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                return connection.execute(
+                    "select count(*) as count from platform_brain.brain_steps "
+                    "where loop_id=%s and status='queued'",
+                    (loop_id,),
+                ).fetchone()["count"]
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def loop_status(self, loop_id: UUID) -> str:
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select status from platform_brain.brain_loops where loop_id=%s",
+                    (loop_id,),
+                ).fetchone()
+            if row is None:
+                raise BrainRepositoryNotFound()
+            return row["status"]
+        except BrainRepositoryNotFound:
+            raise
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def task_ids_for_loop(self, loop_id: UUID) -> frozenset[UUID]:
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                return frozenset(
+                    row["task_id"]
+                    for row in connection.execute(
+                        "select task_id from platform_brain.agent_tasks where loop_id=%s",
+                        (loop_id,),
+                    )
+                )
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def active_session_task_ids(self, loop_id: UUID) -> frozenset[UUID]:
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                return frozenset(
+                    row["task_id"]
+                    for row in connection.execute(
+                        "select session.task_id from platform_brain.agent_task_sessions "
+                        "session join platform_brain.agent_tasks task on "
+                        "task.task_id=session.task_id where task.loop_id=%s "
+                        "and session.status='active'",
+                        (loop_id,),
+                    )
+                )
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
     def lease_task_delivery(
         self, worker_id: str, *, lease_seconds: int
     ) -> TaskDeliveryLease | None:
@@ -1221,70 +1517,89 @@ class BrainLoopRepository:
             with self._connection() as connection:
                 with connection.transaction():
                     row = connection.execute(
-                        "select task.*,call.tool_index,step.step_seq,"
+                        "select delivery.*,task.loop_id,task.agent_id,task.adapter_kind,"
+                        "task.task_context_ciphertext,task.task_context_key_version,"
+                        "task.effective_deadline_at,session.child_session_id,"
+                        "session.adapter_session_ref_ciphertext,"
+                        "session.adapter_session_ref_key_version,"
                         "snapshot.internal_user_id as requester_user_id,"
                         "requester.display_name as requester_display_name from "
-                        "platform_brain.agent_tasks task join "
-                        "platform_brain.brain_tool_calls call on "
-                        "call.brain_tool_call_id=task.brain_tool_call_id join "
-                        "platform_brain.brain_steps step on step.step_id=call.step_id "
+                        "platform_brain.adapter_deliveries delivery join "
+                        "platform_brain.agent_tasks task on task.task_id=delivery.task_id "
+                        "join platform_brain.agent_task_sessions session on "
+                        "session.task_id=task.task_id "
                         "join platform_brain.authorization_snapshots snapshot on "
                         "snapshot.authorization_snapshot_id=task.authorization_snapshot_id join "
                         "platform_control.internal_users requester on "
                         "requester.internal_user_id=snapshot.internal_user_id and "
                         "requester.status='active' "
-                        "where task.status='queued' and not exists (select 1 from "
-                        "platform_brain.adapter_deliveries delivery where "
-                        "delivery.task_id=task.task_id and delivery.status in "
-                        "('queued','leased','dispatched')) order by task.created_at,task.task_id "
-                        "limit 1"
+                        "where session.status='active' and (delivery.status in ('queued','expired') "
+                        "or (delivery.status='leased' and "
+                        "delivery.lease_expires_at<clock_timestamp())) "
+                        "order by delivery.created_at,delivery.delivery_id "
+                        "for update of delivery skip locked limit 1"
                     ).fetchone()
                     if row is None:
                         return None
-                    delivery_id = stable_runtime_id(
-                        row["loop_id"], row["step_seq"], row["tool_index"], "delivery"
+                    attempt = row["attempt"] + (1 if row["status"] != "queued" else 0)
+                    connection.execute(
+                        "update platform_brain.adapter_deliveries set attempt=%s,"
+                        "status='leased',lease_worker_id=%s,lease_expires_at="
+                        "clock_timestamp()+(%s*interval '1 second'),terminal_at=null,"
+                        "updated_at=clock_timestamp() where delivery_id=%s",
+                        (attempt, worker_id, lease_seconds, row["delivery_id"]),
                     )
-                    idempotency_key = f"brain:{row['task_id']}:delivery:1"
-                    prior = connection.execute(
-                        "select * from platform_brain.adapter_deliveries "
-                        "where task_id=%s order by attempt desc limit 1 for update",
-                        (row["task_id"],),
-                    ).fetchone()
-                    attempt = 1 if prior is None else prior["attempt"] + 1
-                    if prior is None:
-                        connection.execute(
-                            "insert into platform_brain.adapter_deliveries ("
-                            "delivery_id,task_id,adapter_kind,attempt,status,"
-                            "lease_worker_id,lease_expires_at,idempotency_key) values "
-                            "(%s,%s,%s,1,'leased',%s,clock_timestamp()+"
-                            "(%s*interval '1 second'),%s)",
-                            (delivery_id,row["task_id"],row["adapter_kind"],worker_id,
-                             lease_seconds,idempotency_key),
-                        )
-                    else:
-                        connection.execute(
-                            "update platform_brain.adapter_deliveries set attempt=%s,"
-                            "status='leased',lease_worker_id=%s,lease_expires_at="
-                            "clock_timestamp()+(%s*interval '1 second'),"
-                            "terminal_at=null,updated_at=clock_timestamp() "
-                            "where delivery_id=%s and status='expired'",
-                            (attempt,worker_id,lease_seconds,delivery_id),
-                        )
                     value = self.content_codec.unseal_json(
                         _task_context_subject(row["task_id"]),
                         SealedContent(bytes(row["task_context_ciphertext"]),
                                       row["task_context_key_version"]),
                     )
+                    session_ref = None
+                    if row["adapter_session_ref_ciphertext"] is not None:
+                        session_ref = self.content_codec.unseal_json(
+                            _task_session_ref_subject(row["task_id"]),
+                            SealedContent(
+                                bytes(row["adapter_session_ref_ciphertext"]),
+                                row["adapter_session_ref_key_version"],
+                            ),
+                        )
+                    message_text = None
+                    if row["source_message_seq"] is not None:
+                        message_row = connection.execute(
+                            "select content_ciphertext,content_key_version from "
+                            "platform_brain.agent_task_messages where task_id=%s and seq=%s",
+                            (row["task_id"], row["source_message_seq"]),
+                        ).fetchone()
+                        if message_row is None:
+                            raise BrainRepositoryConflict()
+                        message_value = self.content_codec.unseal_json(
+                            _task_message_subject(row["task_id"], row["source_message_seq"]),
+                            SealedContent(
+                                bytes(message_row["content_ciphertext"]),
+                                message_row["content_key_version"],
+                            ),
+                        )
+                        message_text = message_value.get("text")
+                        if type(message_text) is not str:
+                            raise ContentCryptoError("content decrypt failed")
                     return TaskDeliveryLease(
                         task_id=row["task_id"],loop_id=row["loop_id"],
                         agent_id=row["agent_id"],adapter_kind=row["adapter_kind"],
                         context=value,effective_deadline_at=row["effective_deadline_at"],
-                        delivery_id=delivery_id,attempt=attempt,idempotency_key=idempotency_key,
+                        delivery_id=row["delivery_id"],attempt=attempt,
+                        idempotency_key=row["idempotency_key"],
+                        delivery_kind=row["delivery_kind"],
+                        source_message_seq=row["source_message_seq"],
+                        child_session_id=row["child_session_id"],
+                        adapter_session_ref=session_ref,
+                        message_text=message_text,
                         requester_subject=RequesterSubject(
                             internal_user_id=row["requester_user_id"],
                             display_name=row["requester_display_name"],
                         ),
                     )
+        except BrainRepositoryConflict:
+            raise
         except (ContentCryptoError, psycopg.Error):
             raise BrainRepositoryError() from None
 
@@ -1317,25 +1632,122 @@ class BrainLoopRepository:
     def mark_delivery_dispatched(self, lease: TaskDeliveryLease) -> None:
         try:
             with self._connection() as connection:
-                with connection.transaction():
-                    delivery = connection.execute(
-                        "update platform_brain.adapter_deliveries set "
-                        "status='dispatched',lease_worker_id=null,lease_expires_at=null,"
-                        "updated_at=clock_timestamp() where delivery_id=%s and "
-                        "task_id=%s and status='leased' returning delivery_id",
-                        (lease.delivery_id, lease.task_id),
-                    ).fetchone()
-                    if delivery is None:
-                        raise BrainRepositoryConflict()
-                    task = connection.execute(
-                        "update platform_brain.agent_tasks set status='running',"
-                        "started_at=coalesce(started_at,clock_timestamp()),"
-                        "updated_at=clock_timestamp(),row_version=row_version+1 "
-                        "where task_id=%s and status='queued' returning task_id",
-                        (lease.task_id,),
-                    ).fetchone()
-                    if task is None:
-                        raise BrainRepositoryConflict()
+                row = connection.execute(
+                    "select platform_brain.mark_adapter_delivery_dispatched_v45("
+                    "%s,%s) as updated",
+                    (lease.delivery_id, lease.task_id),
+                ).fetchone()
+            if row is None or row["updated"] is not True:
+                raise BrainRepositoryConflict()
+        except BrainRepositoryConflict:
+            raise
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def complete_leased_delivery(self, lease: TaskDeliveryLease) -> None:
+        try:
+            with self._connection() as connection:
+                updated = connection.execute(
+                    "update platform_brain.adapter_deliveries set status='completed',"
+                    "lease_worker_id=null,lease_expires_at=null,"
+                    "terminal_at=clock_timestamp(),updated_at=clock_timestamp() "
+                    "where delivery_id=%s and task_id=%s and status='leased'",
+                    (lease.delivery_id, lease.task_id),
+                ).rowcount
+            if updated != 1:
+                raise BrainRepositoryConflict()
+        except BrainRepositoryConflict:
+            raise
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def bind_adapter_session_ref(
+        self, task_id: UUID, reference: dict[str, object]
+    ) -> None:
+        _require_uuid(task_id)
+        if type(reference) is not dict:
+            raise ValueError("Adapter session reference invalid")
+        try:
+            sealed = self.content_codec.seal_json(
+                _task_session_ref_subject(task_id), reference
+            )
+            with self._connection() as connection:
+                updated = connection.execute(
+                    "update platform_brain.agent_task_sessions set "
+                    "adapter_session_ref_ciphertext=%s,adapter_session_ref_key_version=%s,"
+                    "updated_at=clock_timestamp() where task_id=%s and status='active'",
+                    (sealed.ciphertext, sealed.key_version, task_id),
+                ).rowcount
+            if updated != 1:
+                raise BrainRepositoryConflict()
+        except BrainRepositoryConflict:
+            raise
+        except (ContentCryptoError, psycopg.Error):
+            raise BrainRepositoryError() from None
+
+    def next_adapter_session_poll(self) -> AdapterSessionPoll | None:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select session.*,task.loop_id,task.agent_id,"
+                    "coalesce((select max(event.seq) from "
+                    "platform_brain.agent_task_events event where "
+                    "event.task_id=task.task_id),0) as after_event_seq from "
+                    "platform_brain.agent_task_sessions session join "
+                    "platform_brain.agent_tasks task on task.task_id=session.task_id "
+                    "where session.status='active' and "
+                    "session.adapter_session_ref_ciphertext is not null and exists ("
+                    "select 1 from platform_brain.adapter_deliveries delivery where "
+                    "delivery.task_id=task.task_id and delivery.delivery_kind='initial' "
+                    "and delivery.status in ('dispatched','completed')) "
+                    "order by session.updated_at,session.task_id limit 1"
+                ).fetchone()
+            if row is None:
+                return None
+            reference = self.content_codec.unseal_json(
+                _task_session_ref_subject(row["task_id"]),
+                SealedContent(
+                    bytes(row["adapter_session_ref_ciphertext"]),
+                    row["adapter_session_ref_key_version"],
+                ),
+            )
+            return AdapterSessionPoll(
+                task_id=row["task_id"],
+                loop_id=row["loop_id"],
+                agent_id=row["agent_id"],
+                adapter_kind=row["adapter_kind"],
+                child_session_id=row["child_session_id"],
+                adapter_session_ref=reference,
+                after_event_seq=row["after_event_seq"],
+            )
+        except (ContentCryptoError, psycopg.Error):
+            raise BrainRepositoryError() from None
+
+    def complete_initial_delivery_after_events(self, task_id: UUID) -> None:
+        _require_uuid(task_id)
+        try:
+            with self._connection() as connection:
+                connection.execute(
+                    "update platform_brain.adapter_deliveries set status='completed',"
+                    "terminal_at=clock_timestamp(),updated_at=clock_timestamp() "
+                    "where task_id=%s and delivery_kind='initial' "
+                    "and status='dispatched'",
+                    (task_id,),
+                )
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def touch_adapter_session(self, task_id: UUID) -> None:
+        _require_uuid(task_id)
+        try:
+            with self._connection() as connection:
+                updated = connection.execute(
+                    "update platform_brain.agent_task_sessions set "
+                    "updated_at=clock_timestamp() where task_id=%s",
+                    (task_id,),
+                ).rowcount
+            if updated != 1:
+                raise BrainRepositoryConflict()
         except BrainRepositoryConflict:
             raise
         except psycopg.Error:

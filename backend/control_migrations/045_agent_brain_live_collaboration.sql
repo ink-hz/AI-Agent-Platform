@@ -190,6 +190,173 @@ alter table platform_control.conversation_events
     'agent.task_recovered'
   ));
 
+create function platform_brain.append_agent_task_event_v45(
+  selected_task_id uuid,
+  selected_seq integer,
+  selected_event_type text,
+  selected_payload_ciphertext bytea,
+  selected_payload_key_version integer,
+  selected_payload_sha256 bytea,
+  selected_created_at timestamptz
+) returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_brain
+as $function$
+declare
+  existing_event platform_brain.agent_task_events%rowtype;
+  previous_seq integer;
+  current_status text;
+begin
+  if (
+       current_database() = 'agent_platform_control'
+       and session_user <> 'platform_brain_worker'
+     ) or (
+       current_database() = 'agent_platform_control_preview'
+       and session_user <> 'platform_brain_worker_preview'
+     ) or current_database() not in (
+       'agent_platform_control','agent_platform_control_preview'
+     )
+  then
+    raise insufficient_privilege using
+      message = 'Brain collaboration event caller invalid';
+  end if;
+  if selected_seq <= 0
+     or selected_event_type not in (
+       'thinking_summary','message','work_update','artifact','question',
+       'finding','result','failed','timeout','cancelled'
+     )
+     or octet_length(selected_payload_ciphertext) < 29
+     or selected_payload_key_version <= 0
+     or octet_length(selected_payload_sha256) <> 32
+     or selected_created_at is null
+  then
+    raise check_violation using message = 'Brain collaboration event invalid';
+  end if;
+
+  select status into current_status
+  from platform_brain.agent_tasks
+  where task_id=selected_task_id
+  for update;
+  if not found then
+    raise no_data_found using message = 'Brain task missing';
+  end if;
+
+  select * into existing_event
+  from platform_brain.agent_task_events
+  where task_id=selected_task_id and seq=selected_seq;
+  if found then
+    if existing_event.event_type=selected_event_type
+       and existing_event.payload_sha256=selected_payload_sha256
+       and existing_event.created_at=selected_created_at
+    then
+      return false;
+    end if;
+    raise check_violation using message = 'Brain collaboration event conflict';
+  end if;
+
+  select coalesce(max(seq),0) into previous_seq
+  from platform_brain.agent_task_events where task_id=selected_task_id;
+  if selected_seq <> previous_seq + 1 then
+    raise check_violation using
+      message = 'Brain collaboration event sequence invalid';
+  end if;
+
+  insert into platform_brain.agent_task_events (
+    task_id,seq,event_type,payload_ciphertext,payload_key_version,
+    payload_sha256,created_at
+  ) values (
+    selected_task_id,selected_seq,selected_event_type,
+    selected_payload_ciphertext,selected_payload_key_version,
+    selected_payload_sha256,selected_created_at
+  );
+
+  if selected_event_type in ('result','failed','timeout','cancelled') then
+    update platform_brain.agent_tasks set
+      status=case selected_event_type
+        when 'result' then 'completed'
+        when 'failed' then 'failed'
+        when 'timeout' then 'timed_out'
+        else 'cancelled'
+      end,
+      started_at=coalesce(started_at,clock_timestamp()),
+      terminal_at=coalesce(terminal_at,clock_timestamp()),
+      updated_at=clock_timestamp(),row_version=row_version+1
+    where task_id=selected_task_id;
+    if selected_event_type in ('failed','timeout','cancelled') then
+      update platform_brain.agent_task_sessions set
+        status=case selected_event_type
+          when 'cancelled' then 'cancelled'
+          else 'failed'
+        end,
+        terminal_at=coalesce(terminal_at,clock_timestamp()),
+        updated_at=clock_timestamp()
+      where task_id=selected_task_id and status='active';
+    end if;
+  elsif current_status='queued' then
+    update platform_brain.agent_tasks set
+      status='running',started_at=coalesce(started_at,clock_timestamp()),
+      updated_at=clock_timestamp(),row_version=row_version+1
+    where task_id=selected_task_id;
+  end if;
+  return true;
+end
+$function$;
+
+create function platform_brain.mark_adapter_delivery_dispatched_v45(
+  selected_delivery_id uuid,
+  selected_task_id uuid
+) returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_brain
+as $function$
+declare
+  selected_kind text;
+begin
+  if (
+       current_database() = 'agent_platform_control'
+       and session_user <> 'platform_brain_worker'
+     ) or (
+       current_database() = 'agent_platform_control_preview'
+       and session_user <> 'platform_brain_worker_preview'
+     ) or current_database() not in (
+       'agent_platform_control','agent_platform_control_preview'
+     )
+  then
+    raise insufficient_privilege using
+      message = 'Brain collaboration delivery caller invalid';
+  end if;
+
+  update platform_brain.adapter_deliveries set
+    status='dispatched',lease_worker_id=null,lease_expires_at=null,
+    updated_at=clock_timestamp()
+  where delivery_id=selected_delivery_id and task_id=selected_task_id
+    and delivery_kind='initial' and status='leased'
+  returning delivery_kind into selected_kind;
+  if selected_kind is null then
+    return false;
+  end if;
+
+  update platform_brain.agent_tasks set
+    status='running',started_at=coalesce(started_at,clock_timestamp()),
+    updated_at=clock_timestamp(),row_version=row_version+1
+  where task_id=selected_task_id and status='queued';
+  if not found then
+    raise check_violation using
+      message = 'Brain collaboration task dispatch invalid';
+  end if;
+  return true;
+end
+$function$;
+
+revoke all on function platform_brain.append_agent_task_event_v45(
+  uuid,integer,text,bytea,integer,bytea,timestamptz
+) from public;
+revoke all on function platform_brain.mark_adapter_delivery_dispatched_v45(
+  uuid,uuid
+) from public;
+
 revoke all on table
   platform_brain.agent_task_sessions,
   platform_brain.agent_task_messages,
@@ -239,6 +406,17 @@ begin
   execute format(
     'grant select,insert on platform_brain.brain_user_interventions to %I',
     selected_app
+  );
+  execute format(
+    'grant execute on function '
+    'platform_brain.append_agent_task_event_v45('
+    'uuid,integer,text,bytea,integer,bytea,timestamptz) to %I',
+    selected_brain
+  );
+  execute format(
+    'grant execute on function '
+    'platform_brain.mark_adapter_delivery_dispatched_v45(uuid,uuid) to %I',
+    selected_brain
   );
 end
 $migration$;

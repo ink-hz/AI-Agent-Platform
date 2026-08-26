@@ -121,6 +121,7 @@ def tick(mode: WorkerMode, runtime: BrainLoopRuntime, repository) -> int:
         repository.heartbeat("agent-brain-step", status="healthy")
     if mode in {"adapter", "all"}:
         changed += int(runtime.dispatch_one())
+        changed += int(runtime.reconcile_one())
         changed += runtime.reconcile_adapter_tasks("metabot_local")
         changed += runtime.reconcile_cancellations()
         repository.heartbeat("agent-brain-adapter", status="healthy")

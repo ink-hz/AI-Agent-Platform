@@ -92,7 +92,7 @@ class ReferenceAdapter(AgentAdapter):
                         "agent",
                         str(run_id),
                         now,
-                        {"kind": "progress", "summary": "正在验证持久协作链路。"},
+                        {"kind": "finding", "summary": "正在验证持久协作链路。"},
                     ),
                     AdapterEvent(
                         3,
