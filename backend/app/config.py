@@ -72,6 +72,10 @@ class Config:
     brain_provider_base_url: str
     brain_provider_api_key_file: str
     brain_model_manifest_path: str
+    voc_extension_enabled: bool
+    voc_extension_base_url: str
+    voc_extension_signing_key_file: str
+    voc_extension_timeout_seconds: float
     content_encryption_keyring_file: str
     execution_relay_lease_seconds: int
     execution_relay_max_body_bytes: int
@@ -571,6 +575,47 @@ def _validate_brain_model_config(config: Config) -> None:
         raise RuntimeError("Brain model manifest must be an absolute regular file")
 
 
+def _validate_voc_extension_config(config: Config) -> None:
+    if os.getenv("PLATFORM_VOC_EXTENSION_SIGNING_KEY"):
+        raise ValueError("VOC extension signing key must use a secret file")
+    if not config.voc_extension_enabled:
+        return
+    try:
+        parsed = urlparse(config.voc_extension_base_url)
+        host = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        host = None
+        port = None
+        parsed = urlparse("")
+    if (
+        parsed.scheme != "http"
+        or host is None
+        or not _loopback(host)
+        or port is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("VOC extension base URL must be a loopback HTTP origin")
+    if not 1 <= config.voc_extension_timeout_seconds <= 60:
+        raise ValueError("VOC extension timeout must be between 1 and 60 seconds")
+    _validate_private_file(
+        config.voc_extension_signing_key_file,
+        "VOC extension signing key",
+    )
+    try:
+        if len(Path(config.voc_extension_signing_key_file).read_bytes()) < 32:
+            raise RuntimeError(
+                "VOC extension signing key must contain at least 32 bytes"
+            )
+    except OSError as error:
+        raise RuntimeError("VOC extension signing key is unavailable") from error
+
+
 def is_cloud_mode(config: Config) -> bool:
     return config.deployment_mode == "cloud-replica"
 
@@ -717,6 +762,17 @@ def load_config() -> Config:
         brain_model_manifest_path=os.getenv(
             "PLATFORM_BRAIN_MODEL_MANIFEST_PATH", ""
         ).strip(),
+        voc_extension_enabled=_enabled("PLATFORM_VOC_EXTENSION_ENABLED"),
+        voc_extension_base_url=os.getenv(
+            "PLATFORM_VOC_EXTENSION_BASE_URL", "http://127.0.0.1:18130"
+        ).strip(),
+        voc_extension_signing_key_file=os.getenv(
+            "PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE",
+            str(DEFAULT_SECRETS_DIR / "voc-extension-signing-key"),
+        ).strip(),
+        voc_extension_timeout_seconds=float(
+            os.getenv("PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS", "10")
+        ),
         content_encryption_keyring_file=content_encryption_keyring_file,
         execution_relay_lease_seconds=execution_relay_lease_seconds,
         execution_relay_max_body_bytes=execution_relay_max_body_bytes,
@@ -727,4 +783,5 @@ def load_config() -> Config:
     _validate_execution_relay_config(config)
     _validate_agent_brain_config(config)
     _validate_brain_model_config(config)
+    _validate_voc_extension_config(config)
     return config

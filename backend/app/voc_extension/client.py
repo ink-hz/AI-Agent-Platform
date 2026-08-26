@@ -1,0 +1,126 @@
+"""Bounded HTTP client for the loopback-only VOC workspace service."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from ipaddress import ip_address
+from typing import Mapping
+from urllib.parse import urlparse
+from uuid import UUID
+
+import httpx
+
+from .identity import PlatformVocTokenSigner
+
+_MAX_RESPONSE_BYTES = 1_048_576
+_CAPABILITIES = frozenset({"voc.submit", "voc.read_self"})
+
+
+class VocUpstreamUnavailable(RuntimeError):
+    """The private VOC service could not be reached in time."""
+
+
+class VocProtocolError(RuntimeError):
+    """The private VOC service violated the bounded BFF contract."""
+
+
+@dataclass(frozen=True, slots=True)
+class VocUpstreamResponse:
+    status_code: int
+    body: bytes
+
+
+def _validated_base_url(value: str) -> str:
+    try:
+        parsed = urlparse(value)
+        host = parsed.hostname
+        port = parsed.port
+        loopback = host is not None and ip_address(host).is_loopback
+    except ValueError:
+        loopback = False
+        port = None
+    if (
+        parsed.scheme != "http"
+        or not loopback
+        or port is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("VOC base URL must be an absolute loopback HTTP origin")
+    return value.rstrip("/")
+
+
+def _validated_path(path: str) -> str:
+    parsed = urlparse(path)
+    if (
+        not path.startswith("/api/platform/v1/")
+        or parsed.path != path
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or "//" in path
+        or any(part in {".", ".."} for part in path.split("/"))
+    ):
+        raise ValueError("VOC request path is outside the workspace contract")
+    return path
+
+
+class VocExtensionClient:
+    """Call one fixed loopback origin with a freshly signed actor identity."""
+
+    def __init__(
+        self,
+        base_url: str,
+        signer: PlatformVocTokenSigner,
+        *,
+        timeout_seconds: float = 10.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        if not 1 <= timeout_seconds <= 60:
+            raise ValueError("VOC timeout must be between 1 and 60 seconds")
+        self._signer = signer
+        self._client = httpx.AsyncClient(
+            base_url=_validated_base_url(base_url),
+            timeout=timeout_seconds,
+            transport=transport,
+            trust_env=False,
+        )
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        actor_id: UUID,
+        json: Mapping[str, object] | None = None,
+        query: Mapping[str, object] | None = None,
+    ) -> VocUpstreamResponse:
+        normalized_method = method.upper()
+        if normalized_method not in {"GET", "POST", "PATCH"}:
+            raise ValueError("VOC request method is not allowed")
+        token = self._signer.issue(actor_id, _CAPABILITIES)
+        try:
+            async with self._client.stream(
+                normalized_method,
+                _validated_path(path),
+                headers={"Authorization": f"Bearer {token}"},
+                json=json,
+                params=query,
+            ) as response:
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > _MAX_RESPONSE_BYTES:
+                        raise VocProtocolError("voc_response_too_large")
+                return VocUpstreamResponse(response.status_code, bytes(body))
+        except VocProtocolError:
+            raise
+        except (httpx.TimeoutException, httpx.TransportError):
+            raise VocUpstreamUnavailable("voc_unavailable") from None
+
+    async def aclose(self) -> None:
+        await self._client.aclose()

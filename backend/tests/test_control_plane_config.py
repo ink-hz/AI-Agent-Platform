@@ -118,6 +118,69 @@ def test_control_plane_models_are_explicit_and_immutable() -> None:
         auth.hard_stale_read_only = False
 
 
+def test_voc_extension_defaults_disabled(monkeypatch) -> None:
+    for name in (
+        "PLATFORM_VOC_EXTENSION_ENABLED",
+        "PLATFORM_VOC_EXTENSION_BASE_URL",
+        "PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE",
+        "PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    config = load_config()
+
+    assert config.voc_extension_enabled is False
+    assert config.voc_extension_base_url == "http://127.0.0.1:18130"
+    assert config.voc_extension_timeout_seconds == 10.0
+
+
+def test_enabled_voc_extension_requires_private_key_and_loopback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    key = tmp_path / "voc-extension-signing-key"
+    key.write_bytes(b"k" * 32)
+    key.chmod(0o600)
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_BASE_URL", "http://[::1]:18130")
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE", str(key))
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS", "12.5")
+
+    config = load_config()
+
+    assert config.voc_extension_enabled is True
+    assert config.voc_extension_base_url == "http://[::1]:18130"
+    assert config.voc_extension_signing_key_file == str(key)
+    assert config.voc_extension_timeout_seconds == 12.5
+
+    key.chmod(0o644)
+    with pytest.raises(RuntimeError, match="VOC extension signing key.*0600"):
+        load_config()
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "message"),
+    [
+        ("PLATFORM_VOC_EXTENSION_BASE_URL", "http://example.test:18130", "loopback"),
+        ("PLATFORM_VOC_EXTENSION_BASE_URL", "https://127.0.0.1:18130", "loopback"),
+        ("PLATFORM_VOC_EXTENSION_BASE_URL", "http://127.0.0.1:18130/path", "loopback"),
+        ("PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS", "0", "between 1 and 60"),
+        ("PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS", "61", "between 1 and 60"),
+    ],
+)
+def test_enabled_voc_extension_rejects_unsafe_configuration(
+    tmp_path: Path, monkeypatch, name: str, value: str, message: str
+) -> None:
+    key = tmp_path / "voc-extension-signing-key"
+    key.write_bytes(b"k" * 32)
+    key.chmod(0o600)
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE", str(key))
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises((ValueError, RuntimeError), match=message):
+        load_config()
+
+
 @pytest.mark.parametrize("mode", ["preview", "production"])
 def test_enabled_identity_requires_every_explicit_field(tmp_path, monkeypatch, mode) -> None:
     install_required_identity_environment(tmp_path, monkeypatch, mode=mode)
