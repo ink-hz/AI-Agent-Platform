@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import timezone
+from datetime import datetime, timezone
 from enum import Enum
 import json
 import logging
@@ -21,7 +21,14 @@ from uuid import UUID
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import httpx
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    model_validator,
+)
 
 from .acceptance_hooks import WorkerAcceptanceHooks
 from .metabot_client import MetaBotClient, MetaBotRuntimeMap
@@ -82,17 +89,104 @@ class _StrictCallbackEvent(BaseModel):
 
     runId: UUID
     seq: int = Field(gt=0)
-    type: Literal["state", "question", "file", "log", "complete", "error"]
+    type: Literal[
+        "state",
+        "question",
+        "file",
+        "log",
+        "complete",
+        "error",
+        "thinking_summary",
+        "work_update",
+        "agent_message",
+        "artifact",
+        "result",
+    ]
     createdAt: AwareDatetime
     bridge: _CoreChatBridge
     payload: dict[str, object]
 
+    @model_validator(mode="after")
+    def _valid_public_event(self) -> "_StrictCallbackEvent":
+        value = self.payload
+        if self.type == "thinking_summary":
+            if not (
+                value.get("source") == "provider"
+                and isinstance(value.get("providerRunRef"), str)
+                and type(value.get("blockIndex")) is int
+                and value["blockIndex"] >= 0
+                and type(value.get("deltaSeq")) is int
+                and value["deltaSeq"] > 0
+                and isinstance(value.get("text"), str)
+                and bool(value["text"])
+                and value.get("status") in {"streaming", "completed", "interrupted"}
+            ):
+                raise ValueError("thinking summary provenance invalid")
+        elif self.type == "work_update":
+            if not (
+                value.get("source") == "agent_sdk"
+                and isinstance(value.get("sourceRef"), str)
+                and type(value.get("eventSeq")) is int
+                and value["eventSeq"] > 0
+                and value.get("kind")
+                in {
+                    "plan",
+                    "progress",
+                    "finding",
+                    "question",
+                    "blocker",
+                    "decision",
+                    "artifact",
+                    "result",
+                }
+                and isinstance(value.get("text"), str)
+                and bool(value["text"])
+                and isinstance(value.get("status"), str)
+            ):
+                raise ValueError("work update provenance invalid")
+        elif self.type == "agent_message":
+            if not (
+                value.get("source") == "provider"
+                and isinstance(value.get("providerRunRef"), str)
+                and type(value.get("blockIndex")) is int
+                and value["blockIndex"] >= 0
+                and type(value.get("deltaSeq")) is int
+                and value["deltaSeq"] > 0
+                and isinstance(value.get("text"), str)
+                and bool(value["text"])
+            ):
+                raise ValueError("agent message provenance invalid")
+        elif self.type == "artifact":
+            if not (
+                value.get("source") == "agent_output"
+                and isinstance(value.get("sourceRef"), str)
+            ):
+                raise ValueError("artifact provenance invalid")
+        elif self.type == "question":
+            if not (
+                value.get("source") == "agent_sdk"
+                and isinstance(value.get("sourceRef"), str)
+            ):
+                raise ValueError("question provenance invalid")
+        elif self.type == "result":
+            result = value.get("result")
+            if not (
+                value.get("source") == "agent_runtime"
+                and isinstance(value.get("sourceRef"), str)
+                and isinstance(result, dict)
+                and result.get("contractVersion") == "core_chat_result_v2"
+                and result.get("success") is True
+            ):
+                raise ValueError("result provenance invalid")
+        return self
+
 
 def _relay_event(value: _StrictCallbackEvent) -> RelayEvent:
+    event_type = "message" if value.type == "agent_message" else value.type
     return RelayEvent(
         run_id=value.runId,
         seq=value.seq,
-        event_type=f"agent.{value.type}",
+        event_type=f"agent.{event_type}",
         created_at=value.createdAt,
         payload=value.payload,
     )
@@ -110,6 +204,11 @@ class _StrictLeasePayload(BaseModel):
     job_kind: Literal["legacy_brain", "direct_agent", "metabot_local"]
     result_mode: Literal["internal", "public_markdown"]
     requester_subject: RequesterSubject | None = None
+    collaboration_contract: Literal["core_chat_collaboration_v3"] | None = None
+    task_session_id: str | None = Field(default=None, min_length=16, max_length=256)
+    message_kind: Literal["initial", "followup", "stop"] = "initial"
+    message_seq: int = Field(default=1, ge=1)
+    parent_run_id: UUID | None = None
 
 
 class _StrictRelayLease(BaseModel):
@@ -605,11 +704,32 @@ class WorkerRuntime:
         try:
             if self.acceptance_hooks is not None:
                 self.acceptance_hooks.before_metabot_post(run_id)
-            await asyncio.to_thread(self.metabot.start_run, payload, callback_url)
+            if payload.message_kind == "stop":
+                if payload.parent_run_id is None:
+                    raise WorkerRuntimeError()
+                await asyncio.to_thread(
+                    self.metabot.cancel_run, payload.parent_run_id, payload.agent_id
+                )
+            else:
+                await asyncio.to_thread(self.metabot.start_run, payload, callback_url)
             if self.acceptance_hooks is not None:
                 await self.acceptance_hooks.after_metabot_post(run_id)
             context.metabot_accepted = True
             await self._store_call("mark_dispatched", run_id)
+            if payload.message_kind == "stop":
+                event = RelayEvent(
+                    run_id=run_id,
+                    seq=1,
+                    event_type="agent.result",
+                    created_at=datetime.now(timezone.utc),
+                    payload={
+                        "source": "adapter",
+                        "sourceRef": f"stop:{payload.parent_run_id}",
+                        "status": "stopped",
+                    },
+                )
+                await self._store_call("append_terminal_event", event, "completed")
+                context.terminal_status = "completed"
         except Exception as error:
             self._safe_log(
                 "dispatch_interrupted",
@@ -803,6 +923,14 @@ class WorkerRuntime:
             )
             if strict_event.runId != run_id:
                 return CallbackResult.INVALID
+            async with self._state_lock:
+                known_context = self._runs.get(run_id)
+            if (
+                known_context is not None
+                and known_context.agent_id
+                and strict_event.bridge.botName != known_context.agent_id
+            ):
+                return CallbackResult.INVALID
             event = _relay_event(strict_event)
             terminal = self._terminal_status(event)
             async with self._state_lock:
@@ -853,6 +981,7 @@ class WorkerRuntime:
     def _terminal_status(event: RelayEvent) -> str | None:
         return {
             "agent.complete": "completed",
+            "agent.result": "completed",
             "agent.error": "failed",
         }.get(event.event_type)
 

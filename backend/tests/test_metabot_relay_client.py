@@ -111,6 +111,28 @@ def _public_payload(agent_id: str = "hr-bot") -> RelayJobPayload:
     )
 
 
+def _collaboration_payload(
+    *,
+    message_kind: str = "initial",
+    message_seq: int = 1,
+    parent_run_id: UUID | None = None,
+) -> RelayJobPayload:
+    return RelayJobPayload(
+        run_id=RUN_ID,
+        conversation_id=CONVERSATION_ID,
+        trigger_message_id=TRIGGER_MESSAGE_ID,
+        agent_id="hr-bot",
+        prompt="请继续核对候选人的视觉项目证据。",
+        max_turns=24,
+        job_kind="metabot_local",
+        collaboration_contract="core_chat_collaboration_v3",
+        task_session_id="task-session-000000000101",
+        message_kind=message_kind,
+        message_seq=message_seq,
+        parent_run_id=parent_run_id,
+    )
+
+
 def test_runtime_map_requires_schema_v2_all_approved_bots_and_unique_ports(
     tmp_path: Path,
 ) -> None:
@@ -278,6 +300,94 @@ def test_result_contract_probe_requires_v2_capability(tmp_path: Path) -> None:
     assert route.calls.last.request.headers["Authorization"] == (
         "Bearer local-bearer-secret"
     )
+
+
+@respx.mock
+def test_collaboration_followup_requires_v3_and_reuses_child_session(
+    tmp_path: Path,
+) -> None:
+    capabilities = respx.get(
+        "http://127.0.0.1:9200/api/core-chat/capabilities"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "contracts": {"collaboration": "core_chat_collaboration_v3"},
+                "agents": [
+                    {
+                        "name": "hr-bot",
+                        "capabilities": {
+                            "collaboration": "core_chat_collaboration_v3",
+                            "thinkingSummary": "provider",
+                        },
+                    }
+                ],
+            },
+        )
+    )
+    route = respx.post("http://127.0.0.1:9200/api/core-chat/runs").mock(
+        return_value=httpx.Response(
+            202,
+            json={
+                "contractVersion": "core_chat_collaboration_v3",
+                "status": "accepted",
+                "runId": str(RUN_ID),
+                "taskSessionId": "task-session-000000000101",
+                "messageSeq": 2,
+                "targetBot": "hr-bot",
+            },
+        )
+    )
+    client = MetaBotClient(
+        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json")),
+        _secret_file(tmp_path),
+    )
+
+    client.start_run(
+        _collaboration_payload(
+            message_kind="followup", message_seq=2, parent_run_id=TRIGGER_MESSAGE_ID
+        ),
+        CALLBACK_URL,
+    )
+
+    assert capabilities.call_count == 1
+    assert json.loads(route.calls.last.request.content) == {
+        "contractVersion": "core_chat_collaboration_v3",
+        "runId": str(RUN_ID),
+        "conversationId": str(CONVERSATION_ID),
+        "triggerMessageId": str(TRIGGER_MESSAGE_ID),
+        "targetBot": "hr-bot",
+        "prompt": "请继续核对候选人的视觉项目证据。",
+        "eventCallbackUrl": CALLBACK_URL,
+        "taskSessionId": "task-session-000000000101",
+        "messageKind": "followup",
+        "messageSeq": 2,
+        "parentRunId": str(TRIGGER_MESSAGE_ID),
+        "resultMode": "internal",
+    }
+
+
+@respx.mock
+def test_collaboration_send_fails_closed_when_v3_capability_is_missing(
+    tmp_path: Path,
+) -> None:
+    respx.get("http://127.0.0.1:9200/api/core-chat/capabilities").mock(
+        return_value=httpx.Response(
+            200, json={"contracts": {"coreChatResult": "core_chat_result_v2"}}
+        )
+    )
+    route = respx.post("http://127.0.0.1:9200/api/core-chat/runs").mock(
+        return_value=httpx.Response(202)
+    )
+    client = MetaBotClient(
+        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json")),
+        _secret_file(tmp_path),
+    )
+
+    with pytest.raises(MetaBotClientError, match="metabot request failed"):
+        client.start_run(_collaboration_payload(), CALLBACK_URL)
+
+    assert route.call_count == 0
 
 
 @pytest.mark.parametrize(

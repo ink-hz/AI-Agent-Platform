@@ -100,6 +100,22 @@ def _callback_body(
     ).encode()
 
 
+def _v3_callback_body(event_type: str, payload: dict[str, object]) -> bytes:
+    return json.dumps(
+        {
+            "runId": str(RUN_ID),
+            "seq": 1,
+            "type": event_type,
+            "createdAt": NOW.isoformat(),
+            "bridge": {
+                "botName": "hr-bot",
+                "executionChatId": "core-task-task-session-000000000101-hr-bot",
+            },
+            "payload": payload,
+        }
+    ).encode()
+
+
 def test_relay_event_requires_timezone_aware_created_at() -> None:
     with pytest.raises(ValueError):
         RelayEvent(
@@ -526,6 +542,105 @@ async def test_duplicate_token_mismatch_gap_and_body_schema_are_rejected() -> No
     assert [call for call in store.calls if call[0] == "event"] == [
         ("event", RUN_ID, 1)
     ]
+
+
+@pytest.mark.asyncio
+async def test_v3_callback_preserves_provider_thinking_provenance() -> None:
+    store = FakeStore()
+    runtime = _runtime(cloud=FakeCloud([_lease()]), store=store)
+    await runtime.lease_once()
+
+    result = await runtime.accept_callback(
+        RUN_ID,
+        store.tokens[RUN_ID],
+        _v3_callback_body(
+            "thinking_summary",
+            {
+                "source": "provider",
+                "providerRunRef": "provider-run-1",
+                "blockIndex": 0,
+                "deltaSeq": 1,
+                "text": "正在核对候选人证据",
+                "status": "streaming",
+            },
+        ),
+    )
+
+    assert result is CallbackResult.ACCEPTED
+    assert store.events[RUN_ID][0].event_type == "agent.thinking_summary"
+    assert store.events[RUN_ID][0].payload["source"] == "provider"
+
+
+@pytest.mark.asyncio
+async def test_v3_callback_rejects_fake_thinking_and_unknown_work_kind() -> None:
+    store = FakeStore()
+    runtime = _runtime(cloud=FakeCloud([_lease()]), store=store)
+    await runtime.lease_once()
+    token = store.tokens[RUN_ID]
+
+    fake_thinking = _v3_callback_body(
+        "thinking_summary",
+        {
+            "source": "agent_sdk",
+            "providerRunRef": "provider-run-1",
+            "blockIndex": 0,
+            "deltaSeq": 1,
+            "text": "伪造摘要",
+            "status": "streaming",
+        },
+    )
+    bad_work = _v3_callback_body(
+        "work_update",
+        {
+            "source": "agent_sdk",
+            "sourceRef": "task:1",
+            "eventSeq": 1,
+            "kind": "pretending",
+            "text": "伪造进展",
+            "status": "running",
+        },
+    )
+
+    assert await runtime.accept_callback(RUN_ID, token, fake_thinking) is CallbackResult.INVALID
+    assert await runtime.accept_callback(RUN_ID, token, bad_work) is CallbackResult.INVALID
+
+
+@pytest.mark.asyncio
+async def test_stop_command_cancels_parent_run_and_completes_relay_job() -> None:
+    stop_run_id = UUID("00000000-0000-4000-8000-000000000191")
+    parent_run_id = UUID("00000000-0000-4000-8000-000000000192")
+    stop_payload = RelayJobPayload(
+        run_id=stop_run_id,
+        conversation_id=UUID("00000000-0000-4000-8000-000000000102"),
+        trigger_message_id=stop_run_id,
+        agent_id="hr-bot",
+        prompt="目标已经变化",
+        max_turns=24,
+        job_kind="metabot_local",
+        collaboration_contract="core_chat_collaboration_v3",
+        task_session_id="task-session-000000000101",
+        message_kind="stop",
+        parent_run_id=parent_run_id,
+    )
+    cloud = FakeCloud(
+        [
+            RelayLease(
+                job_id=JOB_ID,
+                payload=stop_payload,
+                lease_expires_at=NOW + timedelta(seconds=45),
+                cancel_requested=False,
+            )
+        ]
+    )
+    store = FakeStore()
+    metabot = FakeMetaBot()
+    runtime = _runtime(cloud=cloud, store=store, metabot=metabot)
+
+    assert await runtime.lease_once() is True
+
+    assert metabot.calls == [("cancel", parent_run_id, "hr-bot")]
+    assert store.terminals[stop_run_id] == "completed"
+    assert store.events[stop_run_id][0].event_type == "agent.result"
 
 
 @pytest.mark.asyncio

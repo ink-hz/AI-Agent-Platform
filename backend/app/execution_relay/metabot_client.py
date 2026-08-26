@@ -281,11 +281,36 @@ class MetaBotClient:
                 "userId": "platform-user",
                 "resultMode": payload.result_mode,
             }
-            if payload.requester_subject is not None:
+            if payload.collaboration_contract is not None:
+                if payload.message_kind == "stop":
+                    raise ValueError
+                with self._client() as client:
+                    self._assert_collaboration_v3(client, port, payload.agent_id)
+                request_json = {
+                    "contractVersion": payload.collaboration_contract,
+                    "runId": str(payload.run_id),
+                    "conversationId": str(payload.conversation_id),
+                    "triggerMessageId": str(payload.trigger_message_id),
+                    "targetBot": payload.agent_id,
+                    "prompt": payload.prompt,
+                    "eventCallbackUrl": event_callback_url,
+                    "taskSessionId": payload.task_session_id,
+                    "messageKind": payload.message_kind,
+                    "messageSeq": payload.message_seq,
+                    **(
+                        {"parentRunId": str(payload.parent_run_id)}
+                        if payload.parent_run_id is not None
+                        else {}
+                    ),
+                    "resultMode": payload.result_mode,
+                }
+            elif payload.requester_subject is not None:
                 request_json["requesterSubject"] = payload.requester_subject.model_dump(
                     mode="json"
                 )
-            if payload.agent_id == "agent-brain-bot":
+            if payload.collaboration_contract is not None:
+                pass
+            elif payload.agent_id == "agent-brain-bot":
                 request_json["toolPolicy"] = "none"
             else:
                 request_json["maxTurns"] = payload.max_turns
@@ -294,18 +319,61 @@ class MetaBotClient:
                     f"http://127.0.0.1:{port}/api/core-chat/runs",
                     json=request_json,
                 )
-            if response.status_code != 202:
+            allowed_statuses = (
+                {200, 202}
+                if payload.collaboration_contract is not None
+                else {202}
+            )
+            if response.status_code not in allowed_statuses:
                 raise ValueError
             result = response.json()
             if (
                 not isinstance(result, dict)
-                or result.get("status") != "accepted"
+                or result.get("status") not in {"accepted", "replayed"}
                 or result.get("runId") != str(payload.run_id)
                 or result.get("targetBot") != payload.agent_id
             ):
                 raise ValueError
+            if payload.collaboration_contract is not None and (
+                result.get("contractVersion") != payload.collaboration_contract
+                or result.get("taskSessionId") != payload.task_session_id
+                or result.get("messageSeq") != payload.message_seq
+            ):
+                raise ValueError
         except Exception:
             raise MetaBotClientError(_REQUEST_FAILED) from None
+
+    @staticmethod
+    def _assert_collaboration_v3(
+        client: httpx.Client, port: int, agent_id: str
+    ) -> None:
+        response = client.get(f"http://127.0.0.1:{port}/api/core-chat/capabilities")
+        if response.status_code != 200:
+            raise ValueError
+        result = response.json()
+        if (
+            not isinstance(result, dict)
+            or not isinstance(result.get("contracts"), dict)
+            or result["contracts"].get("collaboration")
+            != "core_chat_collaboration_v3"
+            or not isinstance(result.get("agents"), list)
+        ):
+            raise ValueError
+        selected = next(
+            (
+                item
+                for item in result["agents"]
+                if isinstance(item, dict) and item.get("name") == agent_id
+            ),
+            None,
+        )
+        capabilities = selected.get("capabilities") if isinstance(selected, dict) else None
+        if (
+            not isinstance(capabilities, dict)
+            or capabilities.get("collaboration") != "core_chat_collaboration_v3"
+            or capabilities.get("thinkingSummary") != "provider"
+        ):
+            raise ValueError
 
     def assert_result_contract_v2(self, agent_id: str) -> None:
         try:

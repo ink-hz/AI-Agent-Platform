@@ -191,8 +191,13 @@ def test_lease_filters_job_kinds_without_changing_agent_scope(
     relay_database, repository
 ) -> None:
     legacy = _payload(run_id=uuid4())
-    metabot = _payload(run_id=uuid4()).model_copy(
-        update={"job_kind": "metabot_local"}
+    metabot = RelayJobPayload(
+        **{
+            **_payload(run_id=uuid4()).model_dump(),
+            "job_kind": "metabot_local",
+            "collaboration_contract": "core_chat_collaboration_v3",
+            "task_session_id": "task-session-000000000101",
+        }
     )
     repository.enqueue(legacy)
     repository.enqueue(metabot)

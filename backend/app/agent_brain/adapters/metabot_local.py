@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from app.agent_brain.adapters.base import (
     AdapterCapabilities,
@@ -50,7 +50,7 @@ class ReconciliationReceipt:
 
 
 class MetaBotLocalAdapter(AgentAdapter):
-    """Reliable V2 bridge to local MetaBot professional Agents.
+    """Reliable Core Chat v3 bridge to local MetaBot professional Agents.
 
     Enqueue is idempotent on the Brain task id.  A successful dispatch is not
     a completed task; the cloud reconciler consumes relay events separately.
@@ -58,10 +58,10 @@ class MetaBotLocalAdapter(AgentAdapter):
 
     supports_cancellation = True
     capabilities = AdapterCapabilities(
-        supports_persistent_session=False,
-        supports_followup_message=False,
+        supports_persistent_session=True,
+        supports_followup_message=True,
         supports_progress_events=True,
-        supports_thinking_summary=False,
+        supports_thinking_summary=True,
         supports_cancel=True,
         supports_attachments=False,
         typical_latency_seconds=90,
@@ -84,8 +84,10 @@ class MetaBotLocalAdapter(AgentAdapter):
     def start_session(
         self, task: AdapterTask, delivery: AdapterDelivery
     ) -> ChildSessionReceipt:
+        if task.agent_id == "agent-brain-bot":
+            return ChildSessionReceipt(False, self._session_id(task), None)
         receipt = self.dispatch(task, delivery)
-        child_session_id = str(task.task_id)
+        child_session_id = self._session_id(task)
         if receipt.accepted:
             self._tasks_by_session[child_session_id] = task
         return ChildSessionReceipt(
@@ -100,26 +102,49 @@ class MetaBotLocalAdapter(AgentAdapter):
         message: AdapterMessage,
         delivery: AdapterDelivery,
     ) -> MessageDeliveryReceipt:
-        del child_session_id, message, delivery
-        return MessageDeliveryReceipt(accepted=False, external_run_id=None)
+        try:
+            task_id, loop_id, agent_id = self._session_parts(child_session_id)
+        except (TypeError, ValueError):
+            return MessageDeliveryReceipt(False, None)
+        if not self._worker_available(agent_id) or message.seq <= 1:
+            return MessageDeliveryReceipt(False, None)
+        parent_run_id = (
+            task_id
+            if message.seq == 2
+            else uuid5(task_id, f"delivery:followup:{message.seq - 1}")
+        )
+        payload = RelayJobPayload(
+            run_id=delivery.delivery_id,
+            conversation_id=loop_id,
+            trigger_message_id=delivery.delivery_id,
+            agent_id=agent_id,
+            prompt=message.text,
+            max_turns=24,
+            job_kind="metabot_local",
+            collaboration_contract="core_chat_collaboration_v3",
+            task_session_id=child_session_id,
+            message_kind="followup",
+            message_seq=message.seq,
+            parent_run_id=parent_run_id,
+        )
+        return MessageDeliveryReceipt(
+            accepted=self._enqueue(payload), external_run_id=payload.run_id
+        )
 
     def read_events(
         self, child_session_id: str, *, after: int
     ) -> tuple[AdapterEvent, ...]:
-        task = self._tasks_by_session.get(child_session_id)
-        if task is None:
+        try:
+            task_id, _loop_id, _agent_id = self._session_parts(child_session_id)
+        except (TypeError, ValueError):
             raise LookupError("Adapter child session not found")
-        receipt = self.reconcile(task, next_event_seq=after + 1)
+        if type(after) is not int or after < 0:
+            raise ValueError("Adapter event cursor invalid")
+        source_events = self._collaboration_events(task_id)
         return tuple(
-            AdapterEvent(
-                seq=event.seq,
-                kind=("result" if event.terminal_status is not None else "work_update"),
-                source="adapter",
-                source_ref=str(task.task_id),
-                created_at=event.created_at,
-                payload=event.payload,
-            )
-            for event in receipt.events
+            self._adapter_event(source, seq=index)
+            for index, source in enumerate(source_events, start=1)
+            if index > after
         )
 
     def request_stop(
@@ -128,21 +153,32 @@ class MetaBotLocalAdapter(AgentAdapter):
         reason: str,
         delivery: AdapterDelivery,
     ) -> StopDeliveryReceipt:
-        del reason, delivery
-        task = self._tasks_by_session.get(child_session_id)
-        if task is None:
-            return StopDeliveryReceipt(accepted=False, supported=True)
-        return StopDeliveryReceipt(
-            accepted=self.request_cancel(task).accepted,
-            supported=True,
+        try:
+            task_id, loop_id, agent_id = self._session_parts(child_session_id)
+        except (TypeError, ValueError):
+            return StopDeliveryReceipt(False, True)
+        if not self._worker_available(agent_id):
+            return StopDeliveryReceipt(False, True)
+        payload = RelayJobPayload(
+            run_id=delivery.delivery_id,
+            conversation_id=loop_id,
+            trigger_message_id=delivery.delivery_id,
+            agent_id=agent_id,
+            prompt=reason,
+            max_turns=24,
+            job_kind="metabot_local",
+            collaboration_contract="core_chat_collaboration_v3",
+            task_session_id=child_session_id,
+            message_kind="stop",
+            message_seq=1,
+            parent_run_id=task_id,
         )
+        return StopDeliveryReceipt(self._enqueue(payload), True)
 
     def dispatch(
         self, task: AdapterTask, delivery: AdapterDelivery
     ) -> DispatchReceipt:
-        if not self._relay.has_active_worker(
-            task.agent_id, freshness_seconds=self._worker_freshness_seconds
-        ):
+        if task.agent_id == "agent-brain-bot" or not self._worker_available(task.agent_id):
             return DispatchReceipt(
                 accepted=False,
                 result=NormalizedTaskResult(
@@ -168,17 +204,101 @@ class MetaBotLocalAdapter(AgentAdapter):
             max_turns=24,
             job_kind="metabot_local",
             requester_subject=task.requester_subject,
+            collaboration_contract="core_chat_collaboration_v3",
+            task_session_id=self._session_id(task),
+            message_kind="initial",
+            message_seq=1,
         )
-        try:
-            self._relay.enqueue(payload)
-        except ExecutionRelayConflict:
-            state = self._relay.job_state(task.task_id)
-            if state.job_kind != "metabot_local":
-                raise
+        self._enqueue(payload)
         return DispatchReceipt(
             accepted=True,
             result=None,
             external_run_id=task.task_id,
+        )
+
+    def _worker_available(self, agent_id: str) -> bool:
+        return agent_id != "agent-brain-bot" and self._relay.has_active_worker(
+            agent_id, freshness_seconds=self._worker_freshness_seconds
+        )
+
+    def _enqueue(self, payload: RelayJobPayload) -> bool:
+        try:
+            self._relay.enqueue(payload)
+        except ExecutionRelayConflict:
+            state = self._relay.job_state(payload.run_id)
+            if state.job_kind != "metabot_local":
+                raise
+        return True
+
+    @staticmethod
+    def _session_id(task: AdapterTask) -> str:
+        return f"metabot:{task.task_id}:{task.loop_id}:{task.agent_id}"
+
+    @staticmethod
+    def _session_parts(child_session_id: str) -> tuple[UUID, UUID, str]:
+        if type(child_session_id) is not str:
+            raise ValueError
+        prefix, task_id, loop_id, agent_id = child_session_id.split(":", 3)
+        if prefix != "metabot" or not agent_id or agent_id == "agent-brain-bot":
+            raise ValueError
+        return UUID(task_id), UUID(loop_id), agent_id
+
+    def _collaboration_events(self, task_id: UUID) -> tuple[object, ...]:
+        run_ids = [task_id]
+        for message_seq in range(2, 6):
+            candidate = uuid5(task_id, f"delivery:followup:{message_seq}")
+            try:
+                self._relay.job_state(candidate)
+            except ExecutionRelayNotFound:
+                break
+            run_ids.append(candidate)
+        events = [
+            event
+            for run_id in run_ids
+            for event in self._relay.events(run_id)
+        ]
+        return tuple(
+            sorted(events, key=lambda event: (event.created_at, str(event.run_id), event.seq))
+        )
+
+    @staticmethod
+    def _adapter_event(source: object, *, seq: int) -> AdapterEvent:
+        event_type = source.event_type
+        payload = dict(source.payload)
+        payload["relay_run_id"] = str(source.run_id)
+        payload["relay_seq"] = source.seq
+        kind = {
+            "agent.thinking_summary": "thinking_summary",
+            "agent.work_update": "work_update",
+            "agent.message": "message",
+            "agent.artifact": "artifact",
+            "agent.question": "question",
+            "agent.result": "result",
+            "agent.complete": "result",
+            "agent.error": "error",
+        }.get(event_type, "work_update")
+        raw_source = payload.get("source")
+        normalized_source = (
+            "provider"
+            if raw_source == "provider"
+            else "adapter"
+            if raw_source == "adapter"
+            else "agent"
+        )
+        source_ref = payload.get("providerRunRef") or payload.get("sourceRef")
+        if not isinstance(source_ref, str) or not source_ref:
+            source_ref = str(source.run_id)
+        if kind == "result":
+            payload.setdefault("summary", _event_summary(payload, "completed"))
+        elif kind == "error":
+            payload.setdefault("summary", _event_summary(payload, "failed"))
+        return AdapterEvent(
+            seq=seq,
+            kind=kind,  # type: ignore[arg-type]
+            source=normalized_source,  # type: ignore[arg-type]
+            source_ref=source_ref,
+            created_at=source.created_at,
+            payload=payload,
         )
 
     def request_cancel(self, task: AdapterTask) -> CancelReceipt:
