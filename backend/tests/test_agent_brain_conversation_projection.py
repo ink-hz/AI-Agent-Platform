@@ -189,7 +189,9 @@ def test_v2_projection_is_idempotent_and_separates_agent_from_brain_resume(
     from test_agent_brain_loop_runtime import _delegate_response, _runtime
 
     assert _runtime(loops, _delegate_response()).advance_one() is True
-    assert _runtime(loops).dispatch_one() is True
+    runtime = _runtime(loops)
+    assert runtime.dispatch_one() is True
+    assert runtime.reconcile_one() is True
     projector = ConversationProjection(repository)
 
     assert projector.project_brain_pending(
@@ -210,4 +212,6 @@ def test_v2_projection_is_idempotent_and_separates_agent_from_brain_resume(
     assert set(completed.payload) <= {
         "agent_id", "agent_name", "objective_summary", "public_reason",
         "status", "duration_ms", "attachment_refs", "reason_code",
+        "task_id", "child_session_id", "source", "source_ref", "kind",
+        "summary", "evidence_refs", "artifact_refs", "created_at",
     }

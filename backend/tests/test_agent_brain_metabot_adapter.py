@@ -97,10 +97,7 @@ def test_metabot_adapter_replay_enqueues_one_relay_job() -> None:
     assert relay.payloads[0].run_id == TASK_ID
     assert relay.payloads[0].job_kind == "metabot_local"
     assert relay.payloads[0].result_mode == "internal"
-    assert relay.payloads[0].requester_subject == RequesterSubject(
-        internal_user_id=UUID("00000000-0000-4000-8000-000000000705"),
-        display_name="苍渊",
-    )
+    assert relay.payloads[0].requester_subject is None
     assert "requester_subject" not in relay.payloads[0].prompt
 
 

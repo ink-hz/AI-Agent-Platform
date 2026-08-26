@@ -14,7 +14,7 @@ MISSION_SCHEMA_MIGRATION = (
     ROOT / "backend" / "control_migrations" / "029_agent_brain_mvp.sql"
 )
 LATEST_AGENT_BRAIN_MIGRATION = (
-    ROOT / "backend" / "control_migrations" / "041_agent_brain_durable_loop.sql"
+    ROOT / "backend" / "control_migrations" / "047_agent_brain_collaboration_retention.sql"
 )
 
 
@@ -62,6 +62,9 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
     assert environment["PLATFORM_AGENT_BRAIN_V2_ENABLED"] == (
         "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
     )
+    assert environment["PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED"] == (
+        "${PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED:-0}"
+    )
 
     worker = compose["services"]["platform-brain"]
     assert "ports" not in worker
@@ -98,7 +101,7 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
             assert "ports" not in service
 
 
-def test_remote_stage_requires_mode_0600_control_content_and_feature_state() -> None:
+def test_remote_stage_requires_mode_0600_and_preserves_feature_state() -> None:
     stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
 
     for secret in (
@@ -115,9 +118,11 @@ def test_remote_stage_requires_mode_0600_control_content_and_feature_state() -> 
     assert '"600 10001"' in stage
     assert "PLATFORM_EXECUTION_RELAY_ENABLED=1" in stage
     assert 'PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"' in stage
-    assert '[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail' in stage
     assert 'PLATFORM_AGENT_BRAIN_V2_ENABLED="${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"' in stage
-    assert '[[ "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "0" ]] || fail' in stage
+    assert 'PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED="${PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED:-0}"' in stage
+    assert '[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail' not in stage
+    assert '[[ "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "0" ]] || fail' not in stage
+    assert "read_previous_feature" in stage
     assert 'PLATFORM_DIRECT_AGENT_ENABLED="${PLATFORM_DIRECT_AGENT_ENABLED:-1}"' in stage
     assert '[[ "$PLATFORM_DIRECT_AGENT_ENABLED" == "1" ]] || fail' in stage
     assert "orbbec-agent-platform-brain-secrets" in stage
@@ -134,6 +139,7 @@ def test_direct_agent_runtime_is_started_without_enabling_brain_v1() -> None:
     assert 'v1_mission_modes.append("brain")' in source
     assert "and not config.agent_brain_v2_enabled" in source
     assert "mission_modes=tuple(v1_mission_modes)" in source
+    assert "or config.agent_brain_collaboration_enabled" in source
 
 
 def test_control_bootstrap_runs_execution_job_kind_preflight_before_migrations() -> None:
@@ -178,6 +184,7 @@ def test_v2_rollback_stops_intake_without_rewriting_history() -> None:
     ).lower()
 
     assert "platform_agent_brain_v2_enabled=0" in script
+    assert "platform_agent_brain_collaboration_enabled=0" in script
     assert "platform-brain" in script
     assert "update platform_brain.brain_loops" not in script
     assert "delete from platform_brain" not in script
@@ -204,6 +211,10 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
 
         def dispatch_one(self):
             calls.append("adapter")
+            return True
+
+        def reconcile_one(self):
+            calls.append("reconcile:persistent")
             return True
 
         def reconcile_adapter_tasks(self, kind):
@@ -234,14 +245,19 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
             calls.append("erase-responses")
             return 1
 
+        def erase_expired_conversations(self, *, limit):
+            calls.append("erase-conversations")
+            return 1
+
     changed = tick(validate_worker_mode("all"), Runtime(), Repository())
 
-    assert changed == 9
+    assert changed == 11
     assert calls == [
         "brain", "settle", "heartbeat:agent-brain-step:healthy",
-        "adapter", "reconcile:metabot_local", "cancel",
+        "adapter", "reconcile:persistent", "reconcile:metabot_local", "cancel",
         "heartbeat:agent-brain-adapter:healthy", "expire-steps",
         "expire-deliveries", "expire-users", "erase-responses",
+        "erase-conversations",
         "heartbeat:agent-brain-reaper:healthy",
     ]
 

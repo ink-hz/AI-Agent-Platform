@@ -121,6 +121,7 @@ def tick(mode: WorkerMode, runtime: BrainLoopRuntime, repository) -> int:
         repository.heartbeat("agent-brain-step", status="healthy")
     if mode in {"adapter", "all"}:
         changed += int(runtime.dispatch_one())
+        changed += int(runtime.reconcile_one())
         changed += runtime.reconcile_adapter_tasks("metabot_local")
         changed += runtime.reconcile_cancellations()
         repository.heartbeat("agent-brain-adapter", status="healthy")
@@ -129,6 +130,7 @@ def tick(mode: WorkerMode, runtime: BrainLoopRuntime, repository) -> int:
         changed += repository.expire_delivery_leases(limit=100)
         changed += repository.expire_waiting_users(limit=100)
         changed += repository.erase_expired_model_responses(limit=100)
+        changed += repository.erase_expired_conversations(limit=100)
         repository.heartbeat("agent-brain-reaper", status="healthy")
     return changed
 

@@ -52,6 +52,7 @@ describe("BrainWorkspacePage", () => {
     const conversationClient = {
       fetchConversation: vi.fn().mockResolvedValue({ conversation: newer, current_turn: null } satisfies ConversationDetail),
       fetchMessages: vi.fn().mockResolvedValue([]),
+      fetchTaskDetail: vi.fn(),
       createMessageSubmission: vi.fn(), streamEvents: vi.fn().mockResolvedValue(undefined),
       cancelCurrentTurn: vi.fn(), submitFeedback: vi.fn(), reconnectDelay: vi.fn().mockResolvedValue(undefined),
       retryTurn: vi.fn(),

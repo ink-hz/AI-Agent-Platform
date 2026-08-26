@@ -101,15 +101,17 @@ def test_cloud_worker_key_mutation_helpers_are_executable_python() -> None:
         compile(path.read_text(encoding="utf-8"), str(path), "exec")
 
 
-def test_cloud_stage_backfills_conversations_only_while_brain_is_disabled() -> None:
+def test_cloud_stage_backfills_conversations_only_while_consumers_are_stopped() -> None:
     script = CLOUD_REMOTE_STAGE.read_text(encoding="utf-8")
-    disabled = script.index('[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail')
+    stopped = script.index(
+        '"${previous_compose[@]}" stop "${previous_control_consumers[@]}"'
+    )
     bootstrap = script.index("CONTROL_DATABASE_CREDENTIALS_READY version=2")
     backfill = script.index("app.agent_brain.conversation_backfill")
     exact_gate = script.index("AGENT_BRAIN_CONVERSATION_BACKFILL_OK\\ scanned=")
     service_start = script.index('"${compose[@]}" up -d --force-recreate "${active_control_secret_consumers[@]}"')
 
-    assert disabled < bootstrap < backfill < exact_gate < service_start
+    assert stopped < bootstrap < backfill < exact_gate < service_start
     assert "quarantined=0" in script[backfill:service_start]
     assert "PLATFORM_CONTROL_MAINTENANCE_DATABASE_URL_FILE" in script[bootstrap:service_start]
     assert "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE" in script[bootstrap:service_start]

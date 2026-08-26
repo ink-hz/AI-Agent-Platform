@@ -72,12 +72,12 @@ def run_probe(
                 )
             )
         )
-    if any(
+    if not any(
         block.get("type") == "thinking" and block.get("thinking")
         for response in responses
         for block in response.content_blocks
     ):
-        raise ProviderCapabilityError("omitted_thinking unsupported")
+        raise ProviderCapabilityError("summarized_thinking unsupported")
     if not all(response.stop_reason == "tool_use" for response in responses):
         raise ProviderCapabilityError("streaming tool use unsupported")
     manifest_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
@@ -89,7 +89,7 @@ def run_probe(
         "supported": {
             "streaming": True,
             "forced_tool_choice": True,
-            "omitted_thinking": True,
+            "summarized_thinking": True,
             "mid_conversation_system": True,
             "one_hour_cache": True,
             "one_million_context": manifest.context_window == 1_000_000,

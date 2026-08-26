@@ -6,9 +6,12 @@ import json
 
 from app.agent_brain.adapters.base import (
     AdapterDelivery,
+    AdapterMessage,
     AdapterRegistry,
     AdapterTask,
 )
+from app.agent_brain.collaboration_models import AgentTaskPublicEventInput
+from app.agent_brain.collaboration_models import BrainThinkingDelta as StoredThinkingDelta
 from app.agent_brain.context_policy import BrainContextPolicy
 from app.agent_brain.loop_repository import (
     AgentTaskEventInput,
@@ -23,6 +26,7 @@ from app.agent_brain.model_adapter import (
     BrainModelError,
     BrainRequestBuilder,
     ProviderRefused,
+    ThinkingDelta,
 )
 from app.agent_brain.prompt import BrainSystemPrompt
 from app.agent_brain.tool_protocol import (
@@ -58,6 +62,7 @@ class BrainLoopRuntime:
         self._worker_id = worker_id
         self._lease_seconds = lease_seconds
         self._context_policy = context_policy or BrainContextPolicy()
+        self._collaboration = repository.collaboration_repository()
 
     def advance_one(self) -> bool:
         if self._model is None or not hasattr(self._model, "complete"):
@@ -68,6 +73,7 @@ class BrainLoopRuntime:
         if lease is None:
             return False
         loop = self._repository.loop_for_step(lease)
+        self._collaboration.claim_intervention(lease.loop_id, lease.step_id)
         owner_id = self._repository.loop_owner(lease.loop_id)
         for snapshot in self._repository.authorization_snapshots_for_loop(
             lease.loop_id
@@ -83,6 +89,8 @@ class BrainLoopRuntime:
         messages = self._context_policy.build_brain_context(
             self._repository.reconstruct_messages(lease.loop_id)
         ).messages
+        owned_task_ids = self._repository.task_ids_for_loop(lease.loop_id)
+        active_task_ids = self._repository.active_session_task_ids(lease.loop_id)
         forced = (
             loop.task_count >= loop.max_tasks
             or lease.step_seq >= loop.max_steps
@@ -105,14 +113,32 @@ class BrainLoopRuntime:
                 else None
             ),
         )
+        thinking_blocks: set[int] = set()
+
+        def persist_thinking(delta: ThinkingDelta) -> None:
+            thinking_blocks.add(delta.block_index)
+            self._collaboration.append_thinking_delta(
+                StoredThinkingDelta(
+                    step_id=lease.step_id,
+                    block_index=delta.block_index,
+                    delta_seq=delta.delta_seq,
+                    text=delta.text,
+                    provider_run_ref=delta.provider_run_ref,
+                )
+            )
+
         try:
-            response = self._model.complete(request)
+            response = self._model.complete(
+                request, on_thinking_delta=persist_thinking
+            )
         except ProviderRefused:
+            self._finalize_thinking(lease.step_id, thinking_blocks, interrupted=True)
             self._repository.fail_with_platform_summary(
                 lease.loop_id, "provider_refused"
             )
             return True
         except BrainModelError:
+            self._finalize_thinking(lease.step_id, thinking_blocks, interrupted=True)
             self._repository.fail_with_platform_summary(
                 lease.loop_id,
                 "forced_submission_failed" if forced else "provider_failed",
@@ -124,22 +150,34 @@ class BrainLoopRuntime:
                 ToolLimits(
                     max_parallel_tasks=max(
                         1, min(4, loop.max_tasks - loop.task_count)
-                    )
+                    ),
+                    allowed_task_ids=owned_task_ids,
+                    active_task_ids=active_task_ids,
                 ),
             )
             if forced and batch.kind != "submit_answer":
                 raise ProtocolViolation("mixed_tool_batch")
         except ProtocolViolation:
             if forced:
+                self._finalize_thinking(
+                    lease.step_id, thinking_blocks, interrupted=True
+                )
                 self._repository.fail_with_platform_summary(
                     lease.loop_id, "forced_submission_failed"
                 )
                 return True
             if not self._repository.record_protocol_retry(lease.loop_id):
+                self._finalize_thinking(
+                    lease.step_id, thinking_blocks, interrupted=True
+                )
                 self._repository.fail_with_platform_summary(
                     lease.loop_id, "protocol_violation_after_retry"
                 )
                 return True
+            self._finalize_thinking(
+                lease.step_id, thinking_blocks, interrupted=True
+            )
+            thinking_blocks.clear()
             correction = self._request_builder.build(
                 messages=messages,
                 step_seq=lease.step_seq,
@@ -156,7 +194,9 @@ class BrainLoopRuntime:
                     ToolLimits(
                         max_parallel_tasks=max(
                             1, min(4, loop.max_tasks - loop.task_count)
-                        )
+                        ),
+                        allowed_task_ids=owned_task_ids,
+                        active_task_ids=active_task_ids,
                     ),
                 )
             except ProviderRefused:
@@ -169,6 +209,7 @@ class BrainLoopRuntime:
                     lease.loop_id, "protocol_violation_after_retry"
                 )
                 return True
+        self._finalize_thinking(lease.step_id, thinking_blocks, interrupted=False)
         immediate: list[ImmediateToolResult] = []
         task_specs: list[TaskDispatchSpec] = []
         if batch.kind == "list_agents":
@@ -271,6 +312,14 @@ class BrainLoopRuntime:
         )
         return True
 
+    def _finalize_thinking(
+        self, step_id, block_indexes: set[int], *, interrupted: bool
+    ) -> None:
+        for block_index in sorted(block_indexes):
+            self._collaboration.finalize_thinking_summary(
+                step_id, block_index, interrupted=interrupted
+            )
+
     def scan_settled_batches(self) -> int:
         settled = self._repository.settle_ready_batches(limit=100)
         if settled and self._model is not None:
@@ -318,26 +367,123 @@ class BrainLoopRuntime:
         if lease is None:
             return False
         adapter = self._adapters.require(lease.adapter_kind)
-        receipt = adapter.dispatch(
-            AdapterTask(
-                task_id=lease.task_id,
-                loop_id=lease.loop_id,
-                agent_id=lease.agent_id,
-                context=lease.context,
-                effective_deadline_at=lease.effective_deadline_at,
-                requester_subject=lease.requester_subject,
-            ),
-            AdapterDelivery(
-                delivery_id=lease.delivery_id,
-                attempt=lease.attempt,
-                idempotency_key=lease.idempotency_key,
-            ),
+        task = AdapterTask(
+            task_id=lease.task_id,
+            loop_id=lease.loop_id,
+            agent_id=lease.agent_id,
+            context=lease.context,
+            effective_deadline_at=lease.effective_deadline_at,
+            requester_subject=lease.requester_subject,
         )
-        if receipt.result is None:
+        delivery = AdapterDelivery(
+            delivery_id=lease.delivery_id,
+            attempt=lease.attempt,
+            idempotency_key=lease.idempotency_key,
+            delivery_kind=lease.delivery_kind,
+            source_message_seq=lease.source_message_seq,
+        )
+        remote_child_id = (
+            str(lease.adapter_session_ref.get("child_session_id"))
+            if lease.adapter_session_ref
+            and lease.adapter_session_ref.get("child_session_id")
+            else lease.child_session_id
+        )
+        if lease.delivery_kind == "initial":
+            receipt = adapter.start_session(task, delivery)
+            if not receipt.accepted:
+                self._repository.complete_leased_delivery(lease)
+                self._collaboration.append_task_event_and_wake(
+                    AgentTaskPublicEventInput(
+                        task_id=lease.task_id,
+                        seq=1,
+                        event_type="failed",
+                        payload={"status": "unavailable"},
+                        created_at=datetime.now(timezone.utc),
+                    )
+                )
+                return True
+            self._repository.bind_adapter_session_ref(
+                lease.task_id,
+                {
+                    "child_session_id": receipt.child_session_id,
+                    "external_run_id": (
+                        str(receipt.external_run_id)
+                        if receipt.external_run_id is not None
+                        else None
+                    ),
+                },
+            )
             self._repository.mark_delivery_dispatched(lease)
+        elif lease.delivery_kind == "followup":
+            if lease.source_message_seq is None or lease.message_text is None:
+                raise RuntimeError("Follow-up delivery is incomplete")
+            adapter.send_message(
+                remote_child_id,
+                AdapterMessage(
+                    seq=lease.source_message_seq,
+                    text=lease.message_text,
+                    created_at=datetime.now(timezone.utc),
+                ),
+                delivery,
+            )
+            self._repository.complete_leased_delivery(lease)
         else:
-            self._repository.complete_delivery(lease, receipt.result)
+            adapter.request_stop(
+                remote_child_id,
+                "Agent 大脑已请求停止当前专业任务。",
+                delivery,
+            )
+            self._repository.complete_leased_delivery(lease)
         return True
+
+    def reconcile_one(self) -> bool:
+        selected = self._repository.next_adapter_session_poll()
+        if selected is None:
+            return False
+        adapter = self._adapters.require(selected.adapter_kind)
+        remote_child_id = (
+            str(selected.adapter_session_ref.get("child_session_id"))
+            if selected.adapter_session_ref
+            and selected.adapter_session_ref.get("child_session_id")
+            else selected.child_session_id
+        )
+        events = adapter.read_events(
+            remote_child_id, after=selected.after_event_seq
+        )
+        changed = False
+        saw_result = False
+        for event in events:
+            event_type = event.kind
+            if event.kind == "work_update" and event.payload.get("kind") == "finding":
+                event_type = "finding"
+            elif event.kind == "error":
+                event_type = "failed"
+            outcome = self._collaboration.append_task_event_and_wake(
+                AgentTaskPublicEventInput(
+                    task_id=selected.task_id,
+                    seq=event.seq,
+                    event_type=event_type,
+                    payload={
+                        **dict(event.payload),
+                        "source": event.source,
+                        "source_ref": event.source_ref,
+                    },
+                    created_at=event.created_at,
+                )
+            )
+            changed = changed or not outcome.replayed
+            saw_result = saw_result or event_type in {
+                "result",
+                "failed",
+                "timeout",
+                "cancelled",
+            }
+        if saw_result:
+            self._repository.complete_initial_delivery_after_events(
+                selected.task_id
+            )
+        self._repository.touch_adapter_session(selected.task_id)
+        return changed
 
     def reconcile_adapter_tasks(self, adapter_kind: str) -> int:
         adapter = self._adapters.require(adapter_kind)

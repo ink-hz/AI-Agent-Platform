@@ -16,6 +16,7 @@ from app.agent_brain.conversation_models import (
     ConversationEventRecord,
     ConversationFeedbackRecord,
     ConversationFeedbackResult,
+    ConversationInterventionResult,
     ConversationMetrics,
     ConversationMessageRecord,
     ConversationRecord,
@@ -1882,6 +1883,303 @@ class ConversationRepository:
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise ConversationRepositoryError() from None
 
+    def replay_message_for_owner(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        text: str,
+    ) -> ConversationCreateResult | None:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        text = _require_text(text)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select message.* from platform_control.conversation_messages "
+                    "message join platform_control.conversations conversation on "
+                    "conversation.conversation_id=message.conversation_id where "
+                    "message.message_id=%s and message.conversation_id=%s and "
+                    "conversation.owner_internal_user_id=%s",
+                    (client_request_id, conversation_id, internal_user_id),
+                ).fetchone()
+                if row is None:
+                    return None
+                message = self._message_from_row(row)
+                if message.content != text or message.turn_id is None:
+                    raise ConversationRepositoryConflict()
+                turn = connection.execute(
+                    "select * from platform_control.conversation_turns where turn_id=%s",
+                    (message.turn_id,),
+                ).fetchone()
+                conversation = connection.execute(
+                    "select * from platform_control.conversations where conversation_id=%s",
+                    (conversation_id,),
+                ).fetchone()
+            if turn is None or conversation is None:
+                raise ConversationRepositoryError()
+            return ConversationCreateResult(
+                self._conversation_from_row(conversation),
+                message,
+                self._turn_from_row(turn),
+                None,
+                False,
+            )
+        except ConversationRepositoryError:
+            raise
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def append_brain_intervention(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+        text: str,
+    ) -> ConversationInterventionResult:
+        _require_uuid(internal_user_id)
+        _require_uuid(conversation_id)
+        _require_uuid(client_request_id)
+        text = _require_text(text)
+        try:
+            with self._connection() as connection, connection.transaction():
+                cursor = connection.cursor()
+                cursor.execute("set constraints all deferred")
+                conversation = cursor.execute(
+                    "select * from platform_control.conversations where "
+                    "conversation_id=%s and owner_internal_user_id=%s and mode='brain' "
+                    "and status='active' for update",
+                    (conversation_id, internal_user_id),
+                ).fetchone()
+                if conversation is None:
+                    raise ConversationRepositoryNotFound()
+                existing = cursor.execute(
+                    "select message.*,intervention.status as intervention_status "
+                    "from platform_control.conversation_messages message left join "
+                    "platform_brain.brain_user_interventions intervention on "
+                    "intervention.message_id=message.message_id where "
+                    "message.message_id=%s and message.conversation_id=%s",
+                    (client_request_id, conversation_id),
+                ).fetchone()
+                if existing is not None:
+                    message = self._message_from_row(existing)
+                    if message.content != text or existing["intervention_status"] is None:
+                        raise ConversationRepositoryConflict()
+                    turn = cursor.execute(
+                        "select * from platform_control.conversation_turns "
+                        "where turn_id=%s",
+                        (message.turn_id,),
+                    ).fetchone()
+                    return ConversationInterventionResult(
+                        message,
+                        self._turn_from_row(turn),
+                        existing["intervention_status"],
+                        False,
+                    )
+                active = cursor.execute(
+                    "select loop.*,turn.status as turn_status from "
+                    "platform_brain.brain_loops loop join "
+                    "platform_control.conversation_turns turn on "
+                    "turn.turn_id=loop.turn_id where loop.conversation_id=%s and "
+                    "loop.status in ('queued','running','waiting_agents') and "
+                    "turn.status in ('accepted','running','waiting_agents') "
+                    "order by loop.created_at desc limit 1",
+                    (conversation_id,),
+                ).fetchone()
+                if active is None:
+                    raise ConversationTurnInProgress()
+                seq = cursor.execute(
+                    "select coalesce(max(seq),0)+1 as seq from "
+                    "platform_control.conversation_messages where conversation_id=%s",
+                    (conversation_id,),
+                ).fetchone()["seq"]
+                sealed_message = self.content_codec.seal_json(
+                    message_subject(conversation_id, client_request_id), {"text": text}
+                )
+                message_row = cursor.execute(
+                    "insert into platform_control.conversation_messages ("
+                    "message_id,conversation_id,seq,role,content_ciphertext,"
+                    "encryption_key_version,turn_id,delivery_status) values "
+                    "(%s,%s,%s,'user',%s,%s,%s,'accepted') returning *",
+                    (
+                        client_request_id,
+                        conversation_id,
+                        seq,
+                        sealed_message.ciphertext,
+                        sealed_message.key_version,
+                        active["turn_id"],
+                    ),
+                ).fetchone()
+                intervention_id = uuid4()
+                sealed_intervention = self.content_codec.seal_json(
+                    f"brain-intervention:{intervention_id}", {"text": text}
+                )
+                cursor.execute(
+                    "insert into platform_brain.brain_user_interventions ("
+                    "intervention_id,loop_id,message_id,content_ciphertext,"
+                    "content_key_version,content_sha256,status) values "
+                    "(%s,%s,%s,%s,%s,%s,'pending')",
+                    (
+                        intervention_id,
+                        active["loop_id"],
+                        client_request_id,
+                        sealed_intervention.ciphertext,
+                        sealed_intervention.key_version,
+                        hashlib.sha256(text.encode("utf-8")).digest(),
+                    ),
+                )
+                self._append_event_locked(
+                    cursor,
+                    conversation_id,
+                    active["turn_id"],
+                    None,
+                    "brain.user_intervention",
+                    {"status": "pending", "summary": text[:512]},
+                )
+                if active["status"] == "waiting_agents":
+                    wait = cursor.execute(
+                        "select brain_tool_call_id from "
+                        "platform_brain.brain_wait_subscriptions where loop_id=%s "
+                        "and status='active'",
+                        (active["loop_id"],),
+                    ).fetchone()
+                    if wait is None:
+                        raise ConversationRepositoryConflict()
+                    result_value = {
+                        "status": "user_intervention",
+                        "user_message_id": str(client_request_id),
+                        "message": text,
+                    }
+                    result_bytes = json.dumps(
+                        result_value,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                    sealed_result = self.content_codec.seal_json(
+                        f"brain-tool-call:{wait['brain_tool_call_id']}:result",
+                        result_value,
+                    )
+                    cursor.execute(
+                        "select platform_brain.wake_loop_for_user_intervention_v46("
+                        "%s,%s,%s,%s,%s,%s)",
+                        (
+                            active["loop_id"],
+                            wait["brain_tool_call_id"],
+                            sealed_result.ciphertext,
+                            sealed_result.key_version,
+                            hashlib.sha256(result_bytes).digest(),
+                            uuid4(),
+                        ),
+                    )
+                cursor.execute(
+                    "update platform_control.conversations set "
+                    "updated_at=clock_timestamp() where conversation_id=%s",
+                    (conversation_id,),
+                )
+                turn_row = cursor.execute(
+                    "select * from platform_control.conversation_turns where turn_id=%s",
+                    (active["turn_id"],),
+                ).fetchone()
+                return ConversationInterventionResult(
+                    self._message_from_row(message_row),
+                    self._turn_from_row(turn_row),
+                    "pending",
+                    True,
+                )
+        except ConversationRepositoryError:
+            raise
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def task_detail_for_owner(
+        self,
+        internal_user_id: UUID,
+        conversation_id: UUID,
+        turn_id: UUID,
+        task_id: UUID,
+    ) -> dict[str, object]:
+        for value in (internal_user_id, conversation_id, turn_id, task_id):
+            _require_uuid(value)
+        try:
+            with self._connection() as connection:
+                task = connection.execute(
+                    "select task.*,session.child_session_id,session.status as "
+                    "session_status from platform_brain.agent_tasks task join "
+                    "platform_brain.brain_loops loop on loop.loop_id=task.loop_id join "
+                    "platform_control.conversations conversation on "
+                    "conversation.conversation_id=loop.conversation_id left join "
+                    "platform_brain.agent_task_sessions session on "
+                    "session.task_id=task.task_id where task.task_id=%s and "
+                    "loop.conversation_id=%s and loop.turn_id=%s and "
+                    "conversation.owner_internal_user_id=%s",
+                    (task_id, conversation_id, turn_id, internal_user_id),
+                ).fetchone()
+                if task is None:
+                    raise ConversationRepositoryNotFound()
+                messages = []
+                for row in connection.execute(
+                    "select * from platform_brain.agent_task_messages "
+                    "where task_id=%s order by seq",
+                    (task_id,),
+                ):
+                    value = self.content_codec.unseal_json(
+                        f"brain-task:{task_id}:message:{row['seq']}",
+                        SealedContent(
+                            bytes(row["content_ciphertext"]),
+                            row["content_key_version"],
+                        ),
+                    )
+                    messages.append(
+                        {
+                            "seq": row["seq"],
+                            "sender": row["sender"],
+                            "kind": row["message_kind"],
+                            "text": value.get("text", ""),
+                            "created_at": row["created_at"].isoformat(),
+                        }
+                    )
+                events = []
+                for row in connection.execute(
+                    "select * from platform_brain.agent_task_events "
+                    "where task_id=%s order by seq",
+                    (task_id,),
+                ):
+                    value = self.content_codec.unseal_json(
+                        f"brain-task:{task_id}:event:{row['seq']}:payload",
+                        SealedContent(
+                            bytes(row["payload_ciphertext"]),
+                            row["payload_key_version"],
+                        ),
+                    )
+                    events.append(
+                        {
+                            "seq": row["seq"],
+                            "kind": row["event_type"],
+                            "source": value.get("source", "adapter"),
+                            "source_ref": value.get("source_ref", f"event:{row['seq']}"),
+                            "summary": value.get("summary") or value.get("text") or "",
+                            "status": value.get("status"),
+                            "evidence_refs": value.get("evidence_refs", []),
+                            "artifact_refs": value.get("artifact_refs", []),
+                            "created_at": row["created_at"].isoformat(),
+                        }
+                    )
+            return {
+                "task_id": str(task_id),
+                "child_session_id": task["child_session_id"],
+                "agent_id": task["agent_id"],
+                "status": task["status"],
+                "session_status": task["session_status"],
+                "messages": messages,
+                "events": events,
+            }
+        except ConversationRepositoryError:
+            raise
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
     def list_for_owner(
         self,
         internal_user_id: UUID,
@@ -2015,7 +2313,8 @@ class ConversationRepository:
                 row = cursor.execute(
                     "update platform_control.conversations set status='active',"
                     "archived_at=null,updated_at=now() where conversation_id=%s "
-                    "and owner_internal_user_id=%s returning *",
+                    "and owner_internal_user_id=%s "
+                    "and title<>'[内容已按保留策略清除]' returning *",
                     (conversation_id, internal_user_id),
                 ).fetchone()
             if row is None:

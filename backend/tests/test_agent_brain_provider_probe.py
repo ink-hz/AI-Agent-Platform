@@ -19,12 +19,12 @@ PROMPT = Path(__file__).parents[1] / "app/agent_brain/prompts/brain_v1.md"
 
 
 class FakeProvider:
-    def __init__(self, *, honor_forced: bool = True, readable_thinking: bool = False):
+    def __init__(self, *, honor_forced: bool = True, readable_thinking: bool = True):
         self.honor_forced = honor_forced
         self.readable_thinking = readable_thinking
         self.requests = []
 
-    def complete(self, request):
+    def complete(self, request, *, on_thinking_delta=None):
         self.requests.append(request)
         if request.tool_choice and not self.honor_forced:
             blocks = ({"type": "text", "text": "free text"},)
@@ -61,12 +61,12 @@ def test_provider_probe_fails_when_forced_tool_choice_is_not_honored() -> None:
         )
 
 
-def test_provider_probe_rejects_readable_thinking_in_omitted_mode() -> None:
-    with pytest.raises(ProviderCapabilityError, match="omitted_thinking"):
+def test_provider_probe_rejects_missing_summarized_thinking() -> None:
+    with pytest.raises(ProviderCapabilityError, match="summarized_thinking"):
         run_probe(
             MANIFEST,
             system_prompt="synthetic stable prompt",
-            provider=FakeProvider(readable_thinking=True),
+            provider=FakeProvider(readable_thinking=False),
         )
 
 
@@ -81,7 +81,7 @@ def test_provider_probe_records_required_capabilities_and_effort_profiles() -> N
     assert evidence["supported"] == {
         "streaming": True,
         "forced_tool_choice": True,
-        "omitted_thinking": True,
+        "summarized_thinking": True,
         "mid_conversation_system": True,
         "one_hour_cache": True,
         "one_million_context": True,
@@ -99,5 +99,5 @@ def test_production_prompt_digest_is_recorded_in_probe_evidence() -> None:
         provider=FakeProvider(),
     )
     assert evidence["system_prompt_sha256"] == (
-        "10b5e0f3d32b419d5e742238f75c94ea7187a62bf1ed22e10b811b5a6b79aba0"
+        "39a66996ebc5f74b80ec1c5090eec73391ade791b257df432b8fa995121995c1"
     )

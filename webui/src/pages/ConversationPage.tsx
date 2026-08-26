@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Account } from "../auth";
 import {
@@ -6,6 +6,7 @@ import {
   createConversationMessageSubmission,
   fetchConversation,
   fetchConversationMessages,
+  fetchConversationTaskDetail,
   retryConversationTurn,
   streamConversationEvents,
   submitConversationFeedback,
@@ -20,20 +21,26 @@ import type {
   ConversationFeedback,
   ConversationFeedbackRating,
   ConversationFeedbackReason,
+  ConversationInterventionResult,
   ConversationMessage,
+  ConversationSubmissionResult,
+  ConversationTaskDetail,
 } from "../conversationTypes";
 import { TERMINAL_CONVERSATION_TURN_STATUSES } from "../conversationTypes";
 import { reconnectDelay } from "../brainApi";
 import { ConversationComposer } from "../components/conversation/ConversationComposer";
 import { ConversationMessages } from "../components/conversation/ConversationMessages";
+import { MultiAgentWorkroom } from "../components/conversation/MultiAgentWorkroom";
 import { PublicProgress } from "../components/conversation/PublicProgress";
 import { UserInputRequest } from "../components/conversation/UserInputRequest";
+import { projectWorkroom } from "../workroomProjection";
 
 
 export interface ConversationPageClient {
   fetchConversation(conversationId: string, signal?: AbortSignal): Promise<ConversationDetail>;
   fetchMessages(conversationId: string, signal?: AbortSignal): Promise<ConversationMessage[]>;
-  createMessageSubmission(conversationId: string, text: string, csrfToken: string): ConversationSubmission;
+  createMessageSubmission(conversationId: string, text: string, csrfToken: string): ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
+  fetchTaskDetail(conversationId: string, turnId: string, taskId: string, signal?: AbortSignal): Promise<ConversationTaskDetail>;
   streamEvents(conversationId: string, options: ConversationStreamOptions): Promise<void>;
   cancelCurrentTurn(conversationId: string, csrfToken: string, signal?: AbortSignal): Promise<ConversationCancelResult>;
   submitFeedback(messageId: string, rating: ConversationFeedbackRating, reason: ConversationFeedbackReason | null, comment: string | null, csrfToken: string, signal?: AbortSignal): Promise<ConversationFeedback>;
@@ -45,6 +52,7 @@ const DEFAULT_CLIENT: ConversationPageClient = {
   fetchConversation,
   fetchMessages: fetchConversationMessages,
   createMessageSubmission: createConversationMessageSubmission,
+  fetchTaskDetail: fetchConversationTaskDetail,
   streamEvents: streamConversationEvents,
   cancelCurrentTurn,
   submitFeedback: submitConversationFeedback,
@@ -101,10 +109,19 @@ export function ConversationPage({
   const [cancelRequested, setCancelRequested] = useState(false);
   const [feedback, setFeedback] = useState<Record<string, ConversationFeedbackRating | "pending" | "error">>({});
   const [streamEpoch, setStreamEpoch] = useState(0);
-  const retained = useRef<{ text: string; submission: ConversationSubmission } | null>(null);
+  const retained = useRef<{
+    text: string;
+    submission: ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult>;
+  } | null>(null);
   const writeController = useRef<AbortController | null>(null);
   const eventCursor = useRef(0);
   const inFlight = useRef(false);
+  const loadTaskDetail = useCallback(
+    (turnId: string, taskId: string, signal: AbortSignal) => client.fetchTaskDetail(
+      conversationId, turnId, taskId, signal,
+    ),
+    [client, conversationId],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -172,7 +189,7 @@ export function ConversationPage({
     const normalized = value.trim();
     const waitingUser = detail?.current_turn?.status === "waiting_user";
     if (!normalized || inFlight.current || account.hard_stale_read_only
-      || (turnIsActive(detail) && !waitingUser)) return;
+      || (turnIsActive(detail) && detail?.conversation.mode === "direct_agent" && !waitingUser)) return;
     let selected = retained.current;
     if (!selected || selected.text !== normalized) {
       selected = {
@@ -190,10 +207,14 @@ export function ConversationPage({
       retained.current = null;
       setText("");
       setMessages((current) => mergeMessages(current, [result.message]));
-      setDetail({ conversation: result.conversation, current_turn: result.turn });
-      onConversationUpdated?.(result.conversation);
+      if ("conversation" in result) {
+        setDetail({ conversation: result.conversation, current_turn: result.turn });
+        onConversationUpdated?.(result.conversation);
+        setStreamEpoch((value) => value + 1);
+      } else {
+        setDetail((current) => current ? { ...current, current_turn: result.turn } : current);
+      }
       setCancelRequested(false);
-      setStreamEpoch((value) => value + 1);
     } catch {
       if (!controller.signal.aborted) setSendFailure(true);
     } finally {
@@ -271,6 +292,18 @@ export function ConversationPage({
     onClick={() => void stop()}
     type="button"
   >{cancelRequested ? "正在停止" : "停止"}</button>;
+  const workrooms = (() => {
+    const grouped = new Map<string, ConversationEvent[]>();
+    for (const item of events) {
+      if (!item.turn_id) continue;
+      const selected = grouped.get(item.turn_id) ?? [];
+      selected.push(item); grouped.set(item.turn_id, selected);
+    }
+    return new Map([...grouped].flatMap(([turnId, selected]) => {
+      const workroom = projectWorkroom(selected);
+      return workroom ? [[turnId, workroom] as const] : [];
+    }));
+  })();
   return <div className="conversation-page">
     <header className="conversation-header">
       <div>
@@ -285,6 +318,13 @@ export function ConversationPage({
       messages={messages}
       feedback={feedback}
       onFeedback={account.hard_stale_read_only ? undefined : (messageId, rating, reason, comment) => void rate(messageId, rating, reason, comment)}
+      renderAfterUserTurn={(turnId) => {
+        const workroom = workrooms.get(turnId);
+        return workroom ? <MultiAgentWorkroom
+          loadTaskDetail={loadTaskDetail}
+          workroom={workroom}
+        /> : null;
+      }}
     />
     <PublicProgress
       active={active && !waitingUser}
@@ -303,13 +343,17 @@ export function ConversationPage({
     {detail.current_turn && ["failed", "interrupted"].includes(detail.current_turn.status)
       && <button className="conversation-turn-retry" disabled={pending || account.hard_stale_read_only} onClick={() => void retryTurn()} type="button">重试本轮</button>}
     <ConversationComposer
-      disabled={active || account.hard_stale_read_only}
+      disabled={(active && (detail.conversation.mode === "direct_agent" || waitingUser)) || account.hard_stale_read_only}
+      label={active && detail.conversation.mode === "brain" ? "补充当前任务" : "继续对话"}
       onChange={(value) => {
         setText(value); setSendFailure(false);
         if (retained.current?.text !== value.trim()) retained.current = null;
       }}
       onSubmit={() => void send()}
       pending={pending}
+      placeholder={active && detail.conversation.mode === "brain"
+        ? "补充范围、修改优先级，或给正在协作的 Agent 新指令…"
+        : undefined}
       value={text}
     />
     {account.hard_stale_read_only && <p className="conversation-read-only" role="status">当前为只读状态，已有对话仍可查看。</p>}

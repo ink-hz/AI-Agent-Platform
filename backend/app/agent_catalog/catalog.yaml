@@ -11,6 +11,13 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
+    supports_persistent_session: true
+    supports_followup_message: true
+    supports_progress_events: true
+    supports_thinking_summary: true
+    supports_cancel: true
+    supports_attachments: false
+    typical_latency_seconds: 90
     capability_version: 2
 
   - agent_id: marketing-prospecting-bot
@@ -25,6 +32,13 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
+    supports_persistent_session: true
+    supports_followup_message: true
+    supports_progress_events: true
+    supports_thinking_summary: true
+    supports_cancel: true
+    supports_attachments: false
+    typical_latency_seconds: 90
     capability_version: 2
 
   - agent_id: marketing-inbound-bot
@@ -39,6 +53,13 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
+    supports_persistent_session: true
+    supports_followup_message: true
+    supports_progress_events: true
+    supports_thinking_summary: true
+    supports_cancel: true
+    supports_attachments: false
+    typical_latency_seconds: 90
     capability_version: 2
 
   - agent_id: marketing-voice-bot
@@ -54,6 +75,13 @@ agents:
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
     supports_evidence: false
+    supports_persistent_session: true
+    supports_followup_message: true
+    supports_progress_events: true
+    supports_thinking_summary: true
+    supports_cancel: true
+    supports_attachments: false
+    typical_latency_seconds: 90
     capability_version: 2
 
   - agent_id: marketing-intelligence-bot
@@ -68,6 +96,13 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
+    supports_persistent_session: true
+    supports_followup_message: true
+    supports_progress_events: true
+    supports_thinking_summary: true
+    supports_cancel: true
+    supports_attachments: false
+    typical_latency_seconds: 90
     capability_version: 2
 
   - agent_id: marketing-gtm-bot
@@ -82,6 +117,13 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
+    supports_persistent_session: true
+    supports_followup_message: true
+    supports_progress_events: true
+    supports_thinking_summary: true
+    supports_cancel: true
+    supports_attachments: false
+    typical_latency_seconds: 90
     capability_version: 2
 
   - agent_id: ai-admin-agent
@@ -94,6 +136,13 @@ agents:
     example_tasks: [查看行政服务目录, 查询班车或住宿办理入口]
     interaction_modes: [external_workspace]
     workspace_url: /office/?view=services
+    supports_persistent_session: false
+    supports_followup_message: false
+    supports_progress_events: false
+    supports_thinking_summary: false
+    supports_cancel: false
+    supports_attachments: false
+    typical_latency_seconds: 30
     capability_version: 1
 
   - agent_id: ai-fae-agent
@@ -106,4 +155,11 @@ agents:
     example_tasks: [为深度相机异常整理分步排查方案, 比较两个产品在给定场景下的适用性]
     interaction_modes: [external_workspace]
     workspace_url: https://fae.orbbec.com.cn/
+    supports_persistent_session: false
+    supports_followup_message: false
+    supports_progress_events: false
+    supports_thinking_summary: false
+    supports_cancel: false
+    supports_attachments: false
+    typical_latency_seconds: 30
     capability_version: 1

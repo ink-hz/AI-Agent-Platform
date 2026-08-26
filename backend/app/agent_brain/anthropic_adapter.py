@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import stat
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import httpx
 
@@ -17,6 +17,7 @@ from app.agent_brain.model_adapter import (
     ProviderRefused,
     ProviderTruncated,
     ProviderUnavailable,
+    ThinkingDelta,
 )
 
 
@@ -83,7 +84,12 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
             return {"authorization": f"Bearer {self._api_key}"}
         return {"x-api-key": self._api_key}
 
-    def complete(self, request: BrainModelRequest) -> BrainModelResponse:
+    def complete(
+        self,
+        request: BrainModelRequest,
+        *,
+        on_thinking_delta: Callable[[ThinkingDelta], None] | None = None,
+    ) -> BrainModelResponse:
         if not isinstance(request, BrainModelRequest):
             raise ValueError("Brain model request required")
         for attempt in range(2):
@@ -106,6 +112,8 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
                     if response.status_code < 200 or response.status_code >= 300:
                         raise ProviderUnavailable()
                     events: list[dict[str, object]] = []
+                    provider_id: str | None = None
+                    thinking_sequences: dict[int, int] = {}
                     for line in response.iter_lines():
                         if not line.startswith("data: "):
                             continue
@@ -117,6 +125,33 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
                             raise ProviderInterrupted()
                         saw_event = True
                         events.append(event)
+                        event_type = event.get("type")
+                        if event_type == "message_start":
+                            message = event.get("message")
+                            if not isinstance(message, dict) or not isinstance(
+                                message.get("id"), str
+                            ):
+                                raise ProviderInterrupted()
+                            provider_id = message["id"]
+                        elif event_type == "content_block_delta":
+                            index = event.get("index")
+                            delta = event.get("delta")
+                            if (
+                                type(index) is int
+                                and isinstance(delta, dict)
+                                and delta.get("type") == "thinking_delta"
+                            ):
+                                text = delta.get("thinking")
+                                if provider_id is None or type(text) is not str:
+                                    raise ProviderInterrupted()
+                                if not text:
+                                    continue
+                                sequence = thinking_sequences.get(index, 0) + 1
+                                thinking_sequences[index] = sequence
+                                if on_thinking_delta is not None:
+                                    on_thinking_delta(
+                                        ThinkingDelta(index, sequence, text, provider_id)
+                                    )
                     return _aggregate_events(events)
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
                 if saw_event or attempt == 1:
@@ -179,7 +214,8 @@ def _aggregate_events(events: list[dict[str, object]]) -> BrainModelResponse:
             elif event_type == "content_block_stop":
                 index = event["index"]
                 if index in partial_json:
-                    blocks[index]["input"] = json.loads(partial_json[index])
+                    if partial_json[index]:
+                        blocks[index]["input"] = json.loads(partial_json[index])
             elif event_type == "message_delta":
                 delta = event.get("delta")
                 if not isinstance(delta, dict):

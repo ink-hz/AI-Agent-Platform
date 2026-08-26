@@ -67,6 +67,7 @@ class Config:
     direct_agent_enabled: bool
     agent_brain_enabled: bool
     agent_brain_v2_enabled: bool
+    agent_brain_collaboration_enabled: bool
     brain_model_enabled: bool
     brain_provider_base_url: str
     brain_provider_api_key_file: str
@@ -528,6 +529,10 @@ def _validate_execution_relay_config(config: Config) -> None:
 
 
 def _validate_agent_brain_config(config: Config) -> None:
+    if config.agent_brain_collaboration_enabled and not (
+        config.agent_brain_enabled and config.agent_brain_v2_enabled
+    ):
+        raise ValueError("Agent Brain collaboration requires Agent Brain V2")
     if config.direct_agent_enabled and (
         config.control_plane.mode is not IdentityMode.PRODUCTION
         or not config.execution_relay_enabled
@@ -699,6 +704,9 @@ def load_config() -> Config:
         direct_agent_enabled=_enabled("PLATFORM_DIRECT_AGENT_ENABLED"),
         agent_brain_enabled=_enabled("PLATFORM_AGENT_BRAIN_ENABLED"),
         agent_brain_v2_enabled=_enabled("PLATFORM_AGENT_BRAIN_V2_ENABLED"),
+        agent_brain_collaboration_enabled=_enabled(
+            "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED"
+        ),
         brain_model_enabled=_enabled("PLATFORM_BRAIN_MODEL_ENABLED"),
         brain_provider_base_url=os.getenv(
             "PLATFORM_BRAIN_PROVIDER_BASE_URL", ""

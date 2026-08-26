@@ -50,6 +50,13 @@ class RuntimeAgentSnapshot:
     supports_streaming: bool
     supports_cancellation: bool
     supports_idempotency: bool
+    supports_persistent_session: bool
+    supports_followup_message: bool
+    supports_progress_events: bool
+    supports_thinking_summary: bool
+    supports_cancel: bool
+    supports_attachments: bool
+    typical_latency_seconds: int
     grant_ids: tuple[UUID, ...]
     directory_generation_id: UUID | None
     effective_decision_hash: bytes
@@ -245,6 +252,13 @@ class RuntimeAgentRegistry:
             supports_streaming=card.supports_streaming,
             supports_cancellation=card.supports_cancellation,
             supports_idempotency=card.supports_idempotency,
+            supports_persistent_session=card.supports_persistent_session,
+            supports_followup_message=card.supports_followup_message,
+            supports_progress_events=card.supports_progress_events,
+            supports_thinking_summary=card.supports_thinking_summary,
+            supports_cancel=card.supports_cancel,
+            supports_attachments=card.supports_attachments,
+            typical_latency_seconds=card.typical_latency_seconds,
             grant_ids=decision["grant_ids"],
             directory_generation_id=decision["directory_generation_id"],
             effective_decision_hash=_decision_hash(

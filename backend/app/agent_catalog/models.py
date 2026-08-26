@@ -51,6 +51,13 @@ class AgentCatalogCard(BaseModel):
     supports_streaming: bool = True
     supports_cancellation: bool = True
     supports_idempotency: bool = True
+    supports_persistent_session: bool
+    supports_followup_message: bool
+    supports_progress_events: bool
+    supports_thinking_summary: bool
+    supports_cancel: bool
+    supports_attachments: bool
+    typical_latency_seconds: int = Field(ge=1, le=600)
     max_duration_seconds: int = Field(default=300, ge=1, le=300)
     data_classification: Literal["internal"] = "internal"
     output_contract: Literal["normalized_task_result_v1"] = "normalized_task_result_v1"
@@ -76,6 +83,17 @@ class AgentCatalogCard(BaseModel):
                 raise ValueError("external workspace Agent cannot declare an Adapter")
             if self.workspace_url != _WORKSPACE_URLS.get(self.agent_id):
                 raise ValueError("external workspace URL is not allowlisted")
+            if any(
+                (
+                    self.supports_persistent_session,
+                    self.supports_followup_message,
+                    self.supports_progress_events,
+                    self.supports_thinking_summary,
+                    self.supports_cancel,
+                    self.supports_attachments,
+                )
+            ):
+                raise ValueError("external workspace cannot declare Adapter capabilities")
         else:
             if "external_workspace" in modes or not modes <= {"direct_chat", "brain_delegation"}:
                 raise ValueError("interaction mode combination invalid")

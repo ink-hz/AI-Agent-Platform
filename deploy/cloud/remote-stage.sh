@@ -469,19 +469,41 @@ if [[ -n "$previous_release" && -f "$environment_path" ]]; then
     api_stopped=1
   fi
 fi
+read_previous_feature() {
+  local name="$1"
+  local fallback="$2"
+  local value=""
+  if [[ -f "$environment_path" ]]; then
+    value="$(/usr/bin/grep -m1 -E "^${name}=(0|1)$" "$environment_path" | /usr/bin/cut -d= -f2- || true)"
+  fi
+  [[ "$value" == "0" || "$value" == "1" ]] || value="$fallback"
+  /usr/bin/printf '%s' "$value"
+}
+if [[ -z "${PLATFORM_AGENT_BRAIN_ENABLED+x}" ]]; then
+  PLATFORM_AGENT_BRAIN_ENABLED="$(read_previous_feature PLATFORM_AGENT_BRAIN_ENABLED 0)"
+fi
+if [[ -z "${PLATFORM_AGENT_BRAIN_V2_ENABLED+x}" ]]; then
+  PLATFORM_AGENT_BRAIN_V2_ENABLED="$(read_previous_feature PLATFORM_AGENT_BRAIN_V2_ENABLED 0)"
+fi
+if [[ -z "${PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED+x}" ]]; then
+  PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED="$(read_previous_feature PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED 0)"
+fi
 PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
 PLATFORM_AGENT_BRAIN_V2_ENABLED="${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
+PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED="${PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED:-0}"
 PLATFORM_DIRECT_AGENT_ENABLED="${PLATFORM_DIRECT_AGENT_ENABLED:-1}"
-# A first-production deploy only establishes schema, Worker identity and the
-# disabled image. The separately audited acceptance transaction owns enablement.
-[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail
-[[ "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "0" ]] || fail
+[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" || "$PLATFORM_AGENT_BRAIN_ENABLED" == "1" ]] || fail
+[[ "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "0" || "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "1" ]] || fail
+[[ "$PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED" == "0" || "$PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED" == "1" ]] || fail
+if [[ "$PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED" == "1" ]]; then
+  [[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "1" && "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "1" ]] || fail
+fi
 [[ "$PLATFORM_DIRECT_AGENT_ENABLED" == "1" ]] || fail
-/usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\nPLATFORM_DIRECT_AGENT_ENABLED=%s\nPLATFORM_AGENT_BRAIN_ENABLED=%s\nPLATFORM_AGENT_BRAIN_V2_ENABLED=%s\n' \
-  "$image_name" "$PLATFORM_DIRECT_AGENT_ENABLED" "$PLATFORM_AGENT_BRAIN_ENABLED" "$PLATFORM_AGENT_BRAIN_V2_ENABLED" > "$environment_path"
+/usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\nPLATFORM_DIRECT_AGENT_ENABLED=%s\nPLATFORM_AGENT_BRAIN_ENABLED=%s\nPLATFORM_AGENT_BRAIN_V2_ENABLED=%s\nPLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED=%s\n' \
+  "$image_name" "$PLATFORM_DIRECT_AGENT_ENABLED" "$PLATFORM_AGENT_BRAIN_ENABLED" "$PLATFORM_AGENT_BRAIN_V2_ENABLED" "$PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED" > "$environment_path"
 /bin/chown root:root "$environment_path"
 /bin/chmod 600 "$environment_path"
-export PLATFORM_DIRECT_AGENT_ENABLED PLATFORM_AGENT_BRAIN_ENABLED PLATFORM_AGENT_BRAIN_V2_ENABLED
+export PLATFORM_DIRECT_AGENT_ENABLED PLATFORM_AGENT_BRAIN_ENABLED PLATFORM_AGENT_BRAIN_V2_ENABLED PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED
 unset PLATFORM_CLOUD_AUTH_MODE
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$release_path/deploy/cloud/compose.yaml")
 "${compose[@]}" up -d --force-recreate platform-postgres >/dev/null

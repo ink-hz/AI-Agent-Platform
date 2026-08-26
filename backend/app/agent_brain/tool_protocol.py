@@ -31,6 +31,7 @@ class ProtocolViolation(RuntimeError):
             "tool_arguments_too_large",
             "reference_not_owned",
             "target_not_allowed",
+            "target_not_active",
         }
     )
 
@@ -48,6 +49,7 @@ class ToolLimits:
     max_answer_bytes: int = 64 * 1024
     allowed_agent_ids: frozenset[str] | None = None
     allowed_task_ids: frozenset[UUID] | None = None
+    active_task_ids: frozenset[UUID] | None = None
     allowed_attachment_refs: frozenset[UUID] | None = None
 
     def __post_init__(self) -> None:
@@ -61,6 +63,21 @@ class ToolLimits:
             not _valid_agent_id(agent_id) for agent_id in self.allowed_agent_ids
         ):
             raise ValueError("allowed Agent IDs invalid")
+        for references in (
+            self.allowed_task_ids,
+            self.active_task_ids,
+            self.allowed_attachment_refs,
+        ):
+            if references is not None and any(
+                not isinstance(reference, UUID) for reference in references
+            ):
+                raise ValueError("allowed references invalid")
+        if (
+            self.active_task_ids is not None
+            and self.allowed_task_ids is not None
+            and not self.active_task_ids.issubset(self.allowed_task_ids)
+        ):
+            raise ValueError("active Task IDs invalid")
 
 
 class _StrictToolCall(BaseModel):
@@ -136,6 +153,56 @@ class RequestUserInputCall(_StrictToolCall):
         return value
 
 
+class AwaitAgentEventsCall(_StrictToolCall):
+    task_ids: tuple[UUID, ...]
+    wake_on: tuple[
+        Literal["question", "finding", "result", "failed", "timeout"], ...
+    ]
+
+    @field_validator("task_ids")
+    @classmethod
+    def _tasks_are_bounded(cls, value: tuple[UUID, ...]) -> tuple[UUID, ...]:
+        if not value:
+            raise ValueError("at least one Task is required")
+        return _bounded_uuid_tuple(value, maximum_items=8)
+
+    @field_validator("wake_on")
+    @classmethod
+    def _wake_kinds_are_exact(
+        cls,
+        value: tuple[
+            Literal["question", "finding", "result", "failed", "timeout"], ...
+        ],
+    ) -> tuple[
+        Literal["question", "finding", "result", "failed", "timeout"], ...
+    ]:
+        if not value or len(set(value)) != len(value):
+            raise ValueError("wake kinds invalid")
+        return value
+
+
+class SendAgentMessageCall(_StrictToolCall):
+    task_id: UUID
+    message: str
+
+    @field_validator("message")
+    @classmethod
+    def _message_is_bounded(cls, value: str) -> str:
+        _require_utf8_text(value, minimum=1, maximum=16 * 1024)
+        return value
+
+
+class StopAgentTaskCall(_StrictToolCall):
+    task_id: UUID
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_is_bounded(cls, value: str) -> str:
+        _require_utf8_text(value, minimum=1, maximum=4096)
+        return value
+
+
 class SubmitAnswerCall(_StrictToolCall):
     answer_markdown: str
     outcome: Literal["resolved", "partially_completed", "safe_abstained"]
@@ -162,7 +229,13 @@ class SubmitAnswerCall(_StrictToolCall):
 
 
 ToolCall: TypeAlias = (
-    ListAgentsCall | DelegateTaskCall | RequestUserInputCall | SubmitAnswerCall
+    ListAgentsCall
+    | DelegateTaskCall
+    | AwaitAgentEventsCall
+    | SendAgentMessageCall
+    | StopAgentTaskCall
+    | RequestUserInputCall
+    | SubmitAnswerCall
 )
 
 
@@ -171,7 +244,13 @@ class ParsedToolCall:
     provider_tool_call_id: str
     tool_index: int
     name: Literal[
-        "list_agents", "delegate_task", "request_user_input", "submit_answer"
+        "list_agents",
+        "delegate_task",
+        "await_agent_events",
+        "send_agent_message",
+        "stop_agent_task",
+        "request_user_input",
+        "submit_answer",
     ]
     call: ToolCall
     accepted: bool = True
@@ -181,7 +260,13 @@ class ParsedToolCall:
 @dataclass(frozen=True, slots=True)
 class BrainToolBatch:
     kind: Literal[
-        "list_agents", "delegate_tasks", "request_user_input", "submit_answer"
+        "list_agents",
+        "delegate_tasks",
+        "await_agent_events",
+        "agent_messages",
+        "stop_agent_task",
+        "request_user_input",
+        "submit_answer",
     ]
     calls: tuple[ParsedToolCall, ...]
 
@@ -189,6 +274,9 @@ class BrainToolBatch:
 _TOOL_MODELS: dict[str, type[_StrictToolCall]] = {
     "list_agents": ListAgentsCall,
     "delegate_task": DelegateTaskCall,
+    "await_agent_events": AwaitAgentEventsCall,
+    "send_agent_message": SendAgentMessageCall,
+    "stop_agent_task": StopAgentTaskCall,
     "request_user_input": RequestUserInputCall,
     "submit_answer": SubmitAnswerCall,
 }
@@ -210,6 +298,21 @@ BRAIN_TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
         "delegate_task",
         DelegateTaskCall,
         "Delegate one bounded task to one authorized professional Agent.",
+    ),
+    _tool_schema(
+        "await_agent_events",
+        AwaitAgentEventsCall,
+        "Wait for real events from owned professional-Agent tasks.",
+    ),
+    _tool_schema(
+        "send_agent_message",
+        SendAgentMessageCall,
+        "Send a bounded follow-up message to one active professional-Agent task.",
+    ),
+    _tool_schema(
+        "stop_agent_task",
+        StopAgentTaskCall,
+        "Request cancellation of one owned active professional-Agent task.",
     ),
     _tool_schema(
         "request_user_input",
@@ -274,7 +377,10 @@ def parse_tool_batch(
     if not parsed:
         raise ProtocolViolation("zero_tool_use")
     names = {call.name for call in parsed}
-    if len(names) != 1 or (next(iter(names)) != "delegate_task" and len(parsed) != 1):
+    if len(names) != 1 or (
+        next(iter(names)) not in {"delegate_task", "send_agent_message"}
+        and len(parsed) != 1
+    ):
         raise ProtocolViolation("mixed_tool_batch")
 
     tool_name = parsed[0].name
@@ -293,6 +399,8 @@ def parse_tool_batch(
             for index, call in enumerate(parsed)
         ]
         kind = "delegate_tasks"
+    elif tool_name == "send_agent_message":
+        kind = "agent_messages"
     else:
         kind = tool_name
     return BrainToolBatch(kind=kind, calls=tuple(parsed))  # type: ignore[arg-type]
@@ -320,6 +428,11 @@ def _normalize_arguments(name: str, raw: dict[object, object]) -> dict[object, o
     if name == "delegate_task":
         tuple_fields = ("context_excerpt", "constraints", "attachment_refs")
         uuid_fields = ("attachment_refs",)
+    elif name == "await_agent_events":
+        tuple_fields = ("task_ids", "wake_on")
+        uuid_fields = ("task_ids",)
+    elif name in {"send_agent_message", "stop_agent_task"}:
+        normalized["task_id"] = _strict_uuid(normalized.get("task_id"))
     elif name == "submit_answer":
         tuple_fields = ("used_task_ids", "attachment_refs")
         uuid_fields = tuple_fields
@@ -358,6 +471,17 @@ def _validate_runtime_limits(arguments: ToolCall, limits: ToolLimits) -> None:
             arguments.attachment_refs,
             limits.allowed_attachment_refs,
         )
+    elif isinstance(arguments, AwaitAgentEventsCall):
+        _require_owned(arguments.task_ids, limits.allowed_task_ids)
+    elif isinstance(arguments, SendAgentMessageCall):
+        _require_owned((arguments.task_id,), limits.allowed_task_ids)
+    elif isinstance(arguments, StopAgentTaskCall):
+        _require_owned((arguments.task_id,), limits.allowed_task_ids)
+        if (
+            limits.active_task_ids is not None
+            and arguments.task_id not in limits.active_task_ids
+        ):
+            raise ProtocolViolation("target_not_active")
 
 
 def _require_owned(
@@ -414,6 +538,9 @@ def _valid_agent_id(value: object) -> bool:
 assert set(_TOOL_MODELS) == {
     "list_agents",
     "delegate_task",
+    "await_agent_events",
+    "send_agent_message",
+    "stop_agent_task",
     "request_user_input",
     "submit_answer",
 }

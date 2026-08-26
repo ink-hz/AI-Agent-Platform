@@ -15,6 +15,7 @@ from app.agent_brain.model_adapter import (
     BrainModelResponse,
     BrainRequestBuilder,
     BrainUsage,
+    ThinkingDelta,
 )
 from app.agent_brain.prompt import BrainSystemPrompt
 from app.agent_brain.conversation_repository import ConversationRepository
@@ -35,22 +36,35 @@ class ScriptedModel:
         self.calls = 0
         self.requests = []
 
-    def complete(self, request):
+    def complete(self, request, *, on_thinking_delta=None):
         self.calls += 1
         self.requests.append(request)
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
+        if on_thinking_delta is not None:
+            for index, block in enumerate(response.content_blocks):
+                if block.get("type") == "thinking" and block.get("thinking"):
+                    on_thinking_delta(
+                        ThinkingDelta(
+                            index,
+                            1,
+                            block["thinking"],
+                            response.provider_request_id,
+                        )
+                    )
         return response
 
 
-def _response(name: str, arguments: dict[str, object]) -> BrainModelResponse:
+def _response(
+    name: str, arguments: dict[str, object], *, thinking: str = ""
+) -> BrainModelResponse:
     return BrainModelResponse(
         provider_request_id=f"msg_{name}_{uuid4()}",
         content_blocks=(
             {
                 "type": "thinking",
-                "thinking": "",
+                "thinking": thinking,
                 "signature": "signed",
             },
             {
@@ -141,7 +155,7 @@ class FakeRegistry:
         return Decision(allowed=self.allowed, reason_code=self.reason_code)
 
 
-def _runtime(repository, response=None, *, registry=None):
+def _runtime(repository, response=None, *, registry=None, model=None):
     manifest = BrainModelManifest.load(MANIFEST_PATH)
     prompt = BrainSystemPrompt.load(
         PROMPT_PATH,
@@ -151,7 +165,7 @@ def _runtime(repository, response=None, *, registry=None):
     adapters.register("reference", ReferenceAdapter())
     return BrainLoopRuntime(
         repository=repository,
-        model=ScriptedModel(response) if response is not None else None,
+        model=model or (ScriptedModel(response) if response is not None else None),
         request_builder=BrainRequestBuilder(manifest),
         system_prompt=prompt,
         runtime_registry=registry or FakeRegistry(),

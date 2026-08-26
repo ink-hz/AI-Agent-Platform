@@ -56,7 +56,7 @@ describe("PublicProgress", () => {
     expect(container.textContent).not.toContain("执行过程");
   });
 
-  it("renders only business-level Brain collaboration labels", async () => {
+  it("shows only a factual live status while the workroom owns collaboration detail", async () => {
     await act(async () => root.render(<PublicProgress
       active
       assistantLabel="Agent 大脑"
@@ -70,10 +70,10 @@ describe("PublicProgress", () => {
       stopButton={<button type="button">停止</button>}
     />));
 
-    expect(container.textContent).toContain("查看协作过程");
-    expect(container.textContent).toContain("HR Agent 已完成");
-    expect(container.textContent).toContain("Agent 大脑正在整合结果");
+    expect(container.textContent).toContain("本轮仍在执行，你可以继续补充要求");
+    expect(container.textContent).not.toContain("查看协作过程");
+    expect(container.textContent).not.toContain("正在整合结果");
+    expect(container.textContent).not.toContain("正在分析需求");
     expect(container.textContent).not.toContain("completed");
-    expect(container.querySelector("a[href*='/missions/']")).toBeNull();
   });
 });
