@@ -2,7 +2,7 @@
 
 ## 服务边界
 
-员工只访问 Agent Platform 的 `/agents/voc/workspace`。浏览器沿用 Platform Cookie 和 CSRF；Platform 后端从已验证会话取得内部用户 UUID，签发最长 60 秒的 `voc.submit`、`voc.read_self` 身份令牌，再通过 `orbbec-agent-platform-internal` 内部 Docker 网络调用 `172.30.0.8:18130` 上的 VOC workspace。该地址没有宿主机端口映射。浏览器不能指定用户、下游 URL 或能力，也看不到签名密钥。
+员工只访问 Agent Platform 的 `/agents/voc/workspace`。浏览器沿用 Platform Cookie 和 CSRF；Platform 后端从已验证会话取得内部用户 UUID，签发最长 60 秒的 `voc.submit`、`voc.read_self` 身份令牌，再通过专用内部 Docker 网络 `orbbec-agent-voc-extension` 调用 `172.29.0.3:18130` 上的 VOC workspace。该网络只连接 Platform API 与 VOC workspace，且没有宿主机端口映射。浏览器不能指定用户、下游 URL 或能力，也看不到签名密钥。
 
 不要把身份令牌、签名密钥、数据库 DSN 或模型令牌发给员工做测试。VOC 服务没有独立账号和浏览器入口，也不读取 Platform 角色名。
 
@@ -23,17 +23,17 @@ chmod 600 '/absolute/private/platform-voc-signing-key' '/absolute/private/orbbec
 
 ## 启动顺序
 
-1. 使用迁移专用凭据在 VOC 数据库应用 migration 013–015。
-2. 以仅属于 `voc_platform` 的低权限登录运行 VOC readiness。
-3. 启动 VOC workspace，并确认只监听内部网络地址 `172.30.0.8:18130`，且没有 `ports` 映射。
-4. 配置并启动 Platform BFF。
+1. 先部署 Platform，创建专用网络并把 Platform API 固定到 `172.29.0.2`。
+2. 使用迁移专用凭据在 VOC 数据库应用 migration 013–015。
+3. 以仅属于 `voc_platform` 的低权限登录运行 VOC readiness。
+4. 启动 VOC workspace，并确认只监听内部网络地址 `172.29.0.3:18130`，且没有 `ports` 映射。
 5. 通过 Platform 同源健康接口和受控员工账号完成浏览器验收。
 
 Platform 配置：
 
 ```text
 PLATFORM_VOC_EXTENSION_ENABLED=1
-PLATFORM_VOC_EXTENSION_BASE_URL=http://172.30.0.8:18130
+PLATFORM_VOC_EXTENSION_BASE_URL=http://172.29.0.3:18130
 PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE=/run/secrets/voc-extension-signing-key
 PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS=10
 ```
@@ -71,6 +71,8 @@ curl --fail --silent http://127.0.0.1:8080/api/v1/extensions/voc/health
 模型不可用时页面保留员工原文，不能降级成自动入库。VOC 不可用时 Platform 固定返回安全的 503，不回显内部异常或响应体。
 
 回滚顺序必须先断开入口，再停止业务服务：
+
+专用网络首次切换后，不允许自动回滚到仍使用 `172.30.0.8` 共享网络的旧 Platform release；回滚脚本会在停止当前服务前失败关闭。只有同样声明 `orbbec-agent-voc-extension` 和 `172.29.0.3:18130` 的兼容 release 可以作为自动回滚目标。
 
 1. 设置 `PLATFORM_VOC_EXTENSION_ENABLED=0` 并重启 Platform。
 2. 确认同源健康接口返回 503、其他 Agent 仍正常。

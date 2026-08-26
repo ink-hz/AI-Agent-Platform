@@ -165,11 +165,11 @@ def test_enabled_voc_extension_accepts_fixed_platform_private_service(
     key.chmod(0o600)
     monkeypatch.setenv("PLATFORM_VOC_EXTENSION_ENABLED", "1")
     monkeypatch.setenv(
-        "PLATFORM_VOC_EXTENSION_BASE_URL", "http://172.30.0.8:18130"
+        "PLATFORM_VOC_EXTENSION_BASE_URL", "http://172.29.0.3:18130"
     )
     monkeypatch.setenv("PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE", str(key))
 
-    assert load_config().voc_extension_base_url == "http://172.30.0.8:18130"
+    assert load_config().voc_extension_base_url == "http://172.29.0.3:18130"
 
 
 @pytest.mark.parametrize(

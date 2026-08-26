@@ -92,6 +92,36 @@ describe("VocWorkspacePage", () => {
     expect(api.updateDraft.mock.invocationCallOrder[0]).toBeLessThan(api.submitDraft.mock.invocationCallOrder[0]);
   });
 
+  it("locks every draft field while save-before-submit is in flight", async () => {
+    let resolveUpdate!: (value: typeof draft) => void;
+    const pendingUpdate = new Promise<typeof draft>((resolve) => { resolveUpdate = resolve; });
+    const api = {
+      activeDraft: vi.fn().mockResolvedValue(draft), listVocs: vi.fn().mockResolvedValue([{
+        voc_no: "VOC-20260826-001", latest_content: "历史反馈", revision: 1,
+        created_at: "2026-08-26T09:00:00Z", updated_at: "2026-08-26T09:00:00Z",
+      }]),
+      createDraft: vi.fn(), updateDraft: vi.fn().mockReturnValue(pendingUpdate), cancelDraft: vi.fn(),
+      submitDraft: vi.fn().mockResolvedValue({ voc_no: "VOC-20260826-003", revision: 1, already_submitted: false }),
+      getVoc: vi.fn(), supplementVoc: vi.fn(),
+    };
+    await act(async () => root.render(<VocWorkspacePage csrfToken="csrf" api={api} />));
+    const feedback = container.querySelector<HTMLInputElement>("input[aria-label='反馈内容']")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(feedback, "设备发热并自动关机");
+      feedback.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    act(() => button(container, "确认提交 VOC").click());
+
+    expect(container.querySelector<HTMLFieldSetElement>("fieldset[aria-label='VOC 草稿编辑']")?.disabled).toBe(true);
+    const record = container.querySelector<HTMLButtonElement>(".voc-records ol button")!;
+    expect(record.disabled).toBe(true);
+    record.click();
+    expect(api.getVoc).not.toHaveBeenCalled();
+    expect(container.querySelector<HTMLFieldSetElement>("fieldset[aria-label='VOC 草稿编辑']")?.disabled).toBe(true);
+    await act(async () => resolveUpdate({ ...draft, version: 2, content: { ...draft.content, feedback: "设备发热并自动关机" } }));
+  });
+
   it("keeps employee text and request ID when the organizer is temporarily unavailable", async () => {
     const api = {
       activeDraft: vi.fn().mockResolvedValue(null), listVocs: vi.fn().mockResolvedValue([]),

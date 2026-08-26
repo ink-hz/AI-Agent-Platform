@@ -591,7 +591,7 @@ def _validate_voc_extension_config(config: Config) -> None:
     if (
         parsed.scheme != "http"
         or host is None
-        or not (_loopback(host) or host == "172.30.0.8")
+        or not (_loopback(host) or host == "172.29.0.3")
         or port is None
         or parsed.username is not None
         or parsed.password is not None

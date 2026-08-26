@@ -36,7 +36,7 @@ def _validated_base_url(value: str) -> str:
         host = parsed.hostname
         port = parsed.port
         private_service = host is not None and (
-            ip_address(host).is_loopback or host == "172.30.0.8"
+            ip_address(host).is_loopback or host == "172.29.0.3"
         )
     except ValueError:
         private_service = False

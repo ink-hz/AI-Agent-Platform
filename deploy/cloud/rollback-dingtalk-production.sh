@@ -93,6 +93,29 @@ elif [[ "$job_kind_column" != "0" ]]; then
   fail
 fi
 services_to_stop=()
+# voc-extension rollback compatibility: never report a successful rollback that
+# silently disconnects an enabled production VOC workspace.
+if /usr/bin/grep -Fq 'name: orbbec-agent-voc-extension' "$RELEASE_PATH/deploy/cloud/compose.yaml"; then
+  previous_voc_compatible="$(/usr/bin/docker compose \
+    --env-file "$PREVIOUS_ENVIRONMENT" \
+    -f "$PREVIOUS_RELEASE/deploy/cloud/compose.yaml" \
+    config --format json | /usr/bin/python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+api = data.get("services", {}).get("platform-api", {})
+environment = api.get("environment", {})
+networks = api.get("networks", {})
+network = data.get("networks", {}).get("voc-extension", {})
+compatible = (
+    str(environment.get("PLATFORM_VOC_EXTENSION_ENABLED", "")) == "1"
+    and environment.get("PLATFORM_VOC_EXTENSION_BASE_URL") == "http://172.29.0.3:18130"
+    and "voc-extension" in networks
+    and network.get("name") == "orbbec-agent-voc-extension"
+)
+print("yes" if compatible else "no")
+')" || fail
+  [[ "$previous_voc_compatible" == "yes" ]] || fail
+fi
 for service in platform-loopback platform-api platform-directory platform-dingtalk-stream platform-brain; do
   if /usr/bin/grep -Fxq "$service" <<<"$current_services"; then
     services_to_stop+=("$service")

@@ -132,6 +132,7 @@ export function VocWorkspacePage({ csrfToken, api = vocApi }: { csrfToken: strin
   };
 
   const openDetail = async (vocNo: string) => {
+    if (busy) return;
     setBusy("detail"); setError(null);
     try { setDetail(await api.getVoc(vocNo)); }
     catch (failure) { setError(message(failure)); }
@@ -167,6 +168,7 @@ export function VocWorkspacePage({ csrfToken, api = vocApi }: { csrfToken: strin
 
       {draft && <section className="voc-draft-panel" aria-label="VOC 草稿">
         <header><div><p>待确认草稿</p><h2>请检查整理结果</h2></div><span>版本 {draft.version}</span></header>
+        <fieldset className="voc-draft-editor" aria-label="VOC 草稿编辑" disabled={Boolean(busy)}>
         <div className="voc-form-grid">
           <label>客户<input aria-label="客户" value={draft.content.customer ?? ""} onChange={(event) => changeDraft({ customer: event.target.value || null })} /></label>
           <label>产品或场景<input aria-label="产品或场景" value={draft.content.product_or_scenario ?? ""} onChange={(event) => changeDraft({ product_or_scenario: event.target.value || null })} /></label>
@@ -176,11 +178,12 @@ export function VocWorkspacePage({ csrfToken, api = vocApi }: { csrfToken: strin
           <label className="is-wide">待补信息<textarea aria-label="待补信息" value={draft.content.gaps.join("\n")} onChange={(event) => changeDraft({ gaps: event.target.value.split("\n").map((value) => value.trim()).filter(Boolean).slice(0, 8) })} /></label>
         </div>
         <div className="voc-draft-actions"><button type="button" disabled={Boolean(busy)} onClick={() => void cancel()}>取消草稿</button><button type="button" disabled={Boolean(busy) || !draft.content.feedback.trim()} onClick={() => void save()}>保存修改</button><button className="is-submit" type="button" disabled={Boolean(busy) || !draft.content.feedback.trim()} onClick={() => void submit()}>确认提交 VOC</button></div>
+        </fieldset>
       </section>}
 
       <section className="voc-records">
         <header><div><p>我的 VOC</p><h2>已提交的客户声音</h2></div><button type="button" disabled={Boolean(busy)} onClick={() => void reloadList()}>刷新</button></header>
-        {items.length === 0 ? <p className="voc-empty">还没有正式 VOC。先在上方描述一条客户反馈吧。</p> : <ol>{items.map((item) => <li key={item.voc_no}><button type="button" onClick={() => void openDetail(item.voc_no)}><strong>{item.voc_no}</strong><span>{item.latest_content}</span><small>版本 {item.revision}</small></button></li>)}</ol>}
+        {items.length === 0 ? <p className="voc-empty">还没有正式 VOC。先在上方描述一条客户反馈吧。</p> : <ol>{items.map((item) => <li key={item.voc_no}><button type="button" disabled={Boolean(busy)} onClick={() => void openDetail(item.voc_no)}><strong>{item.voc_no}</strong><span>{item.latest_content}</span><small>版本 {item.revision}</small></button></li>)}</ol>}
       </section>
     </div>
 

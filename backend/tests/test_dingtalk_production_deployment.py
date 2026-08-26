@@ -561,7 +561,11 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     assert api["environment"]["PLATFORM_ROUTE_PREFIX"] == "/"
     assert api["environment"]["PLATFORM_COOKIE_NAME"] == "__Host-platform_session"
     assert api["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.3/32"
-    assert set(api["networks"]) == {"platform-internal", "platform-edge"}
+    assert set(api["networks"]) == {
+        "platform-internal",
+        "platform-edge",
+        "voc-extension",
+    }
     assert api["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.4"
     assert services["platform-postgres"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.2"
 
@@ -642,6 +646,8 @@ def test_formal_nginx_uses_backend_auth_and_preserves_basic_auth_rollback():
 def test_cutover_and_rollback_are_atomic_and_fae_safe():
     publish = (CLOUD / "publish-dingtalk-production.sh").read_text(encoding="utf-8")
     rollback = (CLOUD / "rollback-dingtalk-production.sh").read_text(encoding="utf-8")
+    assert "voc-extension rollback compatibility" in rollback
+    assert "PLATFORM_VOC_EXTENSION_BASE_URL" in rollback
     coordinator = (CLOUD / "run-dingtalk-production-cutover.sh").read_text(
         encoding="utf-8"
     )

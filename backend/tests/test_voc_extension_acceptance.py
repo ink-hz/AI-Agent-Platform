@@ -156,6 +156,7 @@ def test_voc_extension_runbook_preserves_the_private_service_boundary() -> None:
     assert "VOC Platform extension" in readme
     assert "PLATFORM_VOC_EXTENSION_ENABLED=0" in runbook
     assert runbook.index("PLATFORM_VOC_EXTENSION_ENABLED=0") < runbook.index("停止 VOC workspace")
-    assert "172.30.0.8:18130" in runbook
+    assert "172.29.0.3:18130" in runbook
+    assert "orbbec-agent-voc-extension" in runbook
     assert "没有宿主机端口映射" in runbook
     assert "不要把身份令牌" in runbook

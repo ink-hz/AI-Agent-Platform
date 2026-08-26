@@ -50,7 +50,7 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert services["platform-api"]["environment"]["PLATFORM_REVIEW_ENABLED"] == "0"
     assert services["platform-api"]["environment"]["PLATFORM_ATTACHMENT_ENABLED"] == "0"
     assert services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_ENABLED"] == "1"
-    assert services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_BASE_URL"] == "http://172.30.0.8:18130"
+    assert services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_BASE_URL"] == "http://172.29.0.3:18130"
     assert services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE"] == "/run/secrets/voc-extension-signing-key"
     assert services["platform-api"]["environment"]["PLATFORM_AGENT_BRAIN_V2_ENABLED"] == "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
     assert "ports" not in services["platform-brain"]
@@ -74,6 +74,12 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     for forbidden in ("langfuse", "nginx", "ai-fae", "fae-backend"):
         assert forbidden not in serialized
     assert value["networks"]["platform-internal"]["internal"] is True
+    assert value["networks"]["voc-extension"] == {
+        "name": "orbbec-agent-voc-extension",
+        "internal": True,
+        "ipam": {"config": [{"subnet": "172.29.0.0/29", "gateway": "172.29.0.1"}]},
+    }
+    assert services["platform-api"]["networks"]["voc-extension"]["ipv4_address"] == "172.29.0.2"
     assert value["networks"]["platform-edge"]["internal"] is False
 
 

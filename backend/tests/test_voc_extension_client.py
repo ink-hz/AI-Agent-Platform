@@ -81,7 +81,7 @@ async def test_client_uses_fixed_loopback_origin_and_actor_bearer() -> None:
 @pytest.mark.asyncio
 async def test_client_accepts_only_the_fixed_platform_private_service_address() -> None:
     client = VocExtensionClient(
-        "http://172.30.0.8:18130", PlatformVocTokenSigner(SECRET)
+        "http://172.29.0.3:18130", PlatformVocTokenSigner(SECRET)
     )
 
     await client.aclose()

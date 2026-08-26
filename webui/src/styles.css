@@ -1238,6 +1238,7 @@ body {
 .voc-draft-panel > header, .voc-records > header, .voc-detail > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .voc-draft-panel h2, .voc-records h2, .voc-detail h2 { margin: 0; font-size: 20px; }
 .voc-draft-panel > header > span { padding: 6px 9px; border-radius: 999px; background: var(--brand-wash); color: var(--brand); font-size: 11.5px; font-weight: 760; }
+.voc-draft-editor { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
 .voc-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 20px; }
 .voc-form-grid label, .voc-detail > label { display: grid; gap: 7px; color: var(--ink-soft); font-size: 11.5px; font-weight: 760; }
 .voc-form-grid .is-wide { grid-column: 1 / -1; }
