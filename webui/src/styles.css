@@ -1104,12 +1104,64 @@ body {
 .conversation-feedback-detail { display: grid; flex: 1 0 100%; grid-template-columns: 1fr auto auto; gap: 9px; margin-top: 6px; padding: 12px; border-radius: 11px; background: var(--surface-soft); }
 .conversation-feedback-detail > div { display: flex; grid-column: 1 / -1; flex-wrap: wrap; gap: 7px; }
 .conversation-feedback-detail textarea { grid-column: 1 / -1; min-height: 76px; resize: vertical; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); font: inherit; }
-.public-collaboration { margin-top: 13px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.72); }
-.public-collaboration summary { padding: 13px 15px; color: var(--brand); font-size: 12.5px; font-weight: 760; cursor: pointer; }
-.public-collaboration ol { display: grid; gap: 8px; margin: 0; padding: 0 18px 15px 36px; color: var(--ink-soft); font-size: 12.5px; line-height: 1.55; }
 .conversation-running { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; padding: 12px 15px; border: 1px solid #b9cee5; border-radius: 11px; background: #edf5ff; color: var(--brand); font-size: 12px; }
 .conversation-stop { min-height: 36px; padding: 7px 13px; border: 1px solid #e1aaa4; border-radius: 9px; background: #fff; color: var(--down); font: inherit; font-size: 12px; font-weight: 760; cursor: pointer; }
 .conversation-stop:disabled { cursor: not-allowed; opacity: .55; }
+.multi-agent-workroom { width: min(820px, 100%); margin: 0; border: 1px solid #b8cce2; border-radius: 17px; background: linear-gradient(145deg, #f7fbff 0%, #fff 62%); box-shadow: 0 10px 30px rgba(19, 63, 111, .08); }
+.multi-agent-workroom > details > summary { display: flex; align-items: center; gap: 18px; min-height: 68px; padding: 14px 17px; cursor: pointer; list-style: none; }
+.multi-agent-workroom > details > summary::-webkit-details-marker { display: none; }
+.multi-agent-workroom > details > summary > span { display: grid; min-width: 0; gap: 3px; }
+.multi-agent-workroom > details > summary strong { color: var(--brand); font-size: 14px; }
+.multi-agent-workroom > details > summary small { color: var(--ink-soft); font-size: 11.5px; }
+.multi-agent-workroom > details > summary b { margin-left: auto; color: var(--ink-faint); font-size: 11.5px; white-space: nowrap; }
+.multi-agent-workroom > details > summary::after { content: "展开"; color: var(--brand-bright); font-size: 11.5px; font-weight: 750; }
+.multi-agent-workroom > details[open] > summary::after { content: "收起"; }
+.multi-agent-workroom.is-running { border-color: #8eb8e1; box-shadow: 0 12px 34px rgba(20, 85, 151, .12); }
+.multi-agent-workroom.is-failed, .multi-agent-workroom.is-partially_completed { border-color: #dfc28a; }
+.workroom-body { border-top: 1px solid var(--line-soft); padding: 15px 17px 18px; }
+.workroom-tabs { display: flex; gap: 4px; width: fit-content; max-width: 100%; padding: 4px; border-radius: 11px; background: #edf3f9; }
+.workroom-tabs button { display: flex; align-items: center; gap: 6px; padding: 7px 11px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-soft); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.workroom-tabs button[aria-selected="true"] { background: #fff; color: var(--brand); box-shadow: 0 2px 8px rgba(23, 56, 92, .1); }
+.workroom-tabs button span { display: inline-grid; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--brand-wash); font-size: 11.5px; place-items: center; }
+.workroom-panel { margin-top: 14px; }
+.workroom-team { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.workroom-agent-card { display: grid; grid-template-columns: 38px minmax(0, 1fr) 14px; align-items: center; gap: 11px; min-height: 112px; padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: #fff; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.workroom-agent-card:hover, .workroom-agent-card:focus-visible { border-color: #7ba7d4; outline: 0; box-shadow: 0 8px 20px rgba(21, 75, 130, .1); transform: translateY(-1px); }
+.workroom-agent-card.is-running { border-color: #9cbfe2; }
+.workroom-agent-card.is-failed, .workroom-agent-card.is-timed_out, .workroom-agent-card.is-unavailable { border-color: #e1c99c; }
+.workroom-agent-mark { display: grid; width: 38px; height: 38px; border-radius: 11px; background: linear-gradient(145deg, #2268c5, #4a8ddd); color: #fff; font-size: 15px; font-weight: 820; place-items: center; }
+.workroom-agent-copy { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; }
+.workroom-agent-copy strong { overflow: hidden; color: var(--brand); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.workroom-agent-copy small { color: var(--brand-bright); font-size: 11.5px; font-weight: 750; }
+.workroom-agent-copy b, .workroom-agent-copy > span { grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workroom-agent-copy b { margin-top: 4px; color: var(--ink); font-size: 12px; }
+.workroom-agent-copy > span { color: var(--ink-soft); font-size: 11.5px; }
+.workroom-agent-arrow { color: var(--brand-bright); font-size: 22px; }
+.workroom-timeline, .workroom-session-messages, .workroom-session-events { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.workroom-session-events { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.workroom-timeline li, .workroom-session-messages li, .workroom-session-events li { position: relative; padding: 11px 8px 11px 25px; border-left: 1px solid #c6d5e5; }
+.workroom-timeline li::before, .workroom-session-messages li::before, .workroom-session-events li::before { position: absolute; top: 17px; left: -5px; width: 9px; height: 9px; border: 2px solid #f8fbff; border-radius: 50%; background: #6d91b8; content: ""; }
+.workroom-timeline li.is-brain_thinking::before, .workroom-timeline li.is-brain_message::before { background: #7857bb; }
+.workroom-timeline li.is-agent_thinking::before { background: #318cc1; }
+.workroom-timeline li.is-agent_work::before, .workroom-session-messages li.is-agent::before { background: #2b9a69; }
+.workroom-timeline li:last-child, .workroom-session-messages li:last-child, .workroom-session-events li:last-child { border-color: transparent; }
+.workroom-timeline li > div, .workroom-session-messages li > div, .workroom-session-events li > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.workroom-timeline strong, .workroom-session-messages strong, .workroom-session-events strong { color: var(--ink); font-size: 11.5px; }
+.workroom-timeline time, .workroom-session-messages time, .workroom-session-events time { color: var(--ink-faint); font-size: 11.5px; }
+.workroom-timeline p, .workroom-session-messages p, .workroom-session-events p { margin: 5px 0 0; color: var(--ink-soft); font-size: 12.5px; line-height: 1.65; white-space: pre-wrap; }
+.workroom-timeline small { display: block; margin-top: 5px; color: var(--warn); font-size: 11.5px; }
+.workroom-deliverables { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.workroom-deliverables a { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--brand); font-size: 12px; font-weight: 720; text-decoration: none; }
+.workroom-session { margin-top: 15px; padding: 15px; border: 1px solid #a9c3df; border-radius: 13px; background: #fff; box-shadow: 0 12px 30px rgba(20, 58, 99, .1); }
+.workroom-session > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
+.workroom-session > header > div { display: grid; gap: 2px; }
+.workroom-session > header strong { color: var(--brand); font-size: 13px; }
+.workroom-session > header span { color: var(--ink-faint); font-size: 11.5px; }
+.workroom-session > header button { width: 30px; height: 30px; border: 0; border-radius: 8px; background: var(--surface-soft); color: var(--ink-soft); font-size: 20px; cursor: pointer; }
+.workroom-session h4 { margin: 14px 0 0; font-size: 13px; }
+.workroom-session > p { margin: 5px 0 12px; color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
+.workroom-session-state { padding: 12px; border-radius: 9px; background: var(--surface-soft); }
+.workroom-session-state.is-error { background: var(--warn-wash); color: var(--warn); }
 .execution-card { margin-top: 14px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.7); }
 .execution-card > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; cursor: pointer; list-style: none; }
 .execution-card > summary::-webkit-details-marker { display: none; }
@@ -1193,6 +1245,15 @@ body {
   .conversation-new { align-self: flex-start; }
   .conversation-user { width: 92%; }
   .conversation-message { padding: 17px; }
+  .multi-agent-workroom { border-radius: 14px; }
+  .multi-agent-workroom > details > summary { align-items: flex-start; flex-wrap: wrap; gap: 7px 12px; }
+  .multi-agent-workroom > details > summary b { margin-left: 0; }
+  .multi-agent-workroom > details > summary::after { margin-left: auto; }
+  .workroom-body { padding: 12px; }
+  .workroom-tabs { display: grid; width: 100%; grid-template-columns: repeat(3, 1fr); }
+  .workroom-tabs button { justify-content: center; padding: 8px 5px; }
+  .workroom-team { grid-template-columns: 1fr; }
+  .workroom-agent-card { min-height: 102px; }
   .conversation-running, .conversation-action-error, .conversation-history-header, .conversation-history-list > a { align-items: stretch; flex-direction: column; }
   .conversation-composer { bottom: 6px; padding: 11px; padding-bottom: calc(11px + env(safe-area-inset-bottom)); border-radius: 14px; }
   .conversation-composer textarea { min-height: 112px; }

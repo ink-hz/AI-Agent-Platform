@@ -8,12 +8,14 @@ import type {
   ConversationFeedback,
   ConversationFeedbackReason,
   ConversationFeedbackRating,
+  ConversationInterventionResult,
   ConversationMessage,
   ConversationMessageRole,
   ConversationMode,
   ConversationPage,
   ConversationStatus,
   ConversationSubmissionResult,
+  ConversationTaskDetail,
   ConversationTurn,
   ConversationTurnStatus,
 } from "./conversationTypes";
@@ -36,6 +38,8 @@ const EVENT_KEYS = new Set([
   "event_type", "payload", "created_at",
 ]);
 const SUBMISSION_KEYS = new Set(["conversation", "message", "turn"]);
+const INTERVENTION_KEYS = new Set(["intervention", "message", "turn"]);
+const INTERVENTION_VALUE_KEYS = new Set(["status", "message_id"]);
 const DETAIL_KEYS = new Set(["conversation", "current_turn"]);
 const PAGE_KEYS = new Set(["items", "next_cursor"]);
 const MESSAGE_PAGE_KEYS = new Set(["items"]);
@@ -45,6 +49,14 @@ const CANCEL_KEYS = new Set([
 const FEEDBACK_KEYS = new Set([
   "feedback_id", "conversation_id", "message_id", "turn_id",
   "rating", "reason", "created_at",
+]);
+const TASK_DETAIL_KEYS = new Set([
+  "task_id", "child_session_id", "agent_id", "status", "session_status", "messages", "events",
+]);
+const TASK_MESSAGE_KEYS = new Set(["seq", "sender", "kind", "text", "created_at"]);
+const TASK_EVENT_KEYS = new Set([
+  "seq", "kind", "source", "source_ref", "summary", "status",
+  "evidence_refs", "artifact_refs", "created_at",
 ]);
 
 const CONVERSATION_MODES = new Set<ConversationMode>(["brain", "direct_agent"]);
@@ -193,6 +205,75 @@ function parseSubmission(value: unknown): ConversationSubmissionResult {
 }
 
 
+function parseIntervention(value: unknown): ConversationInterventionResult {
+  if (!isObject(value) || !hasExactKeys(value, INTERVENTION_KEYS)
+    || !isObject(value.intervention)
+    || !hasExactKeys(value.intervention, INTERVENTION_VALUE_KEYS)
+    || !["pending", "delivered"].includes(String(value.intervention.status))
+    || !isNonEmptyString(value.intervention.message_id)) {
+    throw new Error("Conversation intervention response invalid");
+  }
+  const message = parseMessage(value.message);
+  const turn = parseTurn(value.turn);
+  if (message.message_id !== value.intervention.message_id
+    || message.conversation_id !== turn.conversation_id
+    || message.turn_id !== turn.turn_id) {
+    throw new Error("Conversation intervention response invalid");
+  }
+  return {
+    intervention: value.intervention as ConversationInterventionResult["intervention"],
+    message,
+    turn,
+  };
+}
+
+
+function parseMessageWrite(value: unknown): ConversationSubmissionResult | ConversationInterventionResult {
+  if (isObject(value) && hasExactKeys(value, INTERVENTION_KEYS)) return parseIntervention(value);
+  return parseSubmission(value);
+}
+
+
+function stringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+
+function parseTaskDetail(value: unknown): ConversationTaskDetail {
+  if (!isObject(value) || !hasExactKeys(value, TASK_DETAIL_KEYS)
+    || !isNonEmptyString(value.task_id)
+    || !isNonEmptyString(value.child_session_id)
+    || !isNonEmptyString(value.agent_id)
+    || !isNonEmptyString(value.status)
+    || !isNonEmptyString(value.session_status)
+    || !Array.isArray(value.messages)
+    || !Array.isArray(value.events)) throw new Error("Conversation task detail invalid");
+  const messages = value.messages.map((item) => {
+    if (!isObject(item) || !hasExactKeys(item, TASK_MESSAGE_KEYS)
+      || !isPositiveInteger(item.seq)
+      || !["brain", "agent", "user", "platform"].includes(String(item.sender))
+      || !isNonEmptyString(item.kind)
+      || typeof item.text !== "string"
+      || !isNonEmptyString(item.created_at)) throw new Error("Conversation task detail invalid");
+    return item as unknown as ConversationTaskDetail["messages"][number];
+  });
+  const events = value.events.map((item) => {
+    if (!isObject(item) || !hasExactKeys(item, TASK_EVENT_KEYS)
+      || !isPositiveInteger(item.seq)
+      || !isNonEmptyString(item.kind)
+      || !isNonEmptyString(item.source)
+      || !isNonEmptyString(item.source_ref)
+      || typeof item.summary !== "string"
+      || !isNullableString(item.status)
+      || !stringArray(item.evidence_refs)
+      || !stringArray(item.artifact_refs)
+      || !isNonEmptyString(item.created_at)) throw new Error("Conversation task detail invalid");
+    return item as unknown as ConversationTaskDetail["events"][number];
+  });
+  return { ...value, messages, events } as ConversationTaskDetail;
+}
+
+
 function parseDetail(value: unknown): ConversationDetail {
   if (!isObject(value) || !hasExactKeys(value, DETAIL_KEYS)) {
     throw new Error("Conversation detail response invalid");
@@ -270,9 +351,9 @@ function normalizedInput(text: string): string {
 }
 
 
-export interface ConversationSubmission {
+export interface ConversationSubmission<TResult = ConversationSubmissionResult> {
   readonly idempotencyKey: string;
-  send(signal?: AbortSignal): Promise<ConversationSubmissionResult>;
+  send(signal?: AbortSignal): Promise<TResult>;
 }
 
 
@@ -312,8 +393,25 @@ export function createConversationMessageSubmission(
   conversationId: string,
   text: string,
   csrfToken: string,
-): ConversationSubmission {
-  return submission(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, text, csrfToken);
+): ConversationSubmission<ConversationSubmissionResult | ConversationInterventionResult> {
+  const selectedText = normalizedInput(text);
+  const idempotencyKey = crypto.randomUUID();
+  return Object.freeze({
+    idempotencyKey,
+    async send(signal?: AbortSignal) {
+      const response = await checked(await fetch(platformPath(
+        `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`,
+      ), {
+        method: "POST", credentials: "include", signal,
+        headers: {
+          Accept: "application/json", "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken, "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({ text: selectedText }),
+      }));
+      return parseMessageWrite(await response.json());
+    },
+  });
 }
 
 
@@ -322,8 +420,23 @@ export function appendConversationMessage(
   text: string,
   csrfToken: string,
   signal?: AbortSignal,
-): Promise<ConversationSubmissionResult> {
+): Promise<ConversationSubmissionResult | ConversationInterventionResult> {
   return createConversationMessageSubmission(conversationId, text, csrfToken).send(signal);
+}
+
+
+export async function fetchConversationTaskDetail(
+  conversationId: string,
+  turnId: string,
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<ConversationTaskDetail> {
+  const response = await checked(await fetch(platformPath(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/tasks/${encodeURIComponent(taskId)}`,
+  ), { credentials: "include", headers: { Accept: "application/json" }, signal }));
+  const detail = parseTaskDetail(await response.json());
+  if (detail.task_id !== taskId) throw new Error("Conversation task detail invalid");
+  return detail;
 }
 
 

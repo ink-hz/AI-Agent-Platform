@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 
 import type {
   ConversationFeedbackReason,
@@ -22,6 +22,7 @@ export function ConversationMessages({
   assistantLabel = "Agent 大脑",
   feedback = {},
   onFeedback,
+  renderAfterUserTurn,
 }: {
   messages: ConversationMessage[];
   assistantLabel?: string;
@@ -32,6 +33,7 @@ export function ConversationMessages({
     reason: ConversationFeedbackReason | null,
     comment: string | null,
   ) => void;
+  renderAfterUserTurn?: (turnId: string) => ReactNode;
 }) {
   const [improving, setImproving] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Record<string, ConversationFeedbackReason | null>>({});
@@ -39,10 +41,9 @@ export function ConversationMessages({
   const ordered = [...new Map(messages.map((message) => [message.message_id, message])).values()]
     .sort((left, right) => left.seq - right.seq);
   return <section className="conversation-messages" aria-label="对话内容" aria-live="polite">
-    {ordered.map((message) => <article
+    {ordered.map((message) => <Fragment key={message.message_id}><article
       className={`conversation-message conversation-${message.role}`}
       data-message-id={message.message_id}
-      key={message.message_id}
     >
       <header>
         <strong>{message.role === "user" ? "你" : message.role === "assistant" ? assistantLabel : "系统"}</strong>
@@ -78,6 +79,8 @@ export function ConversationMessages({
         </div>}
         {feedback[message.message_id] === "error" && <small role="alert">反馈暂未保存，请重试。</small>}
       </footer>}
-    </article>)}
+    </article>
+    {message.role === "user" && message.turn_id && renderAfterUserTurn?.(message.turn_id)}
+    </Fragment>)}
   </section>;
 }

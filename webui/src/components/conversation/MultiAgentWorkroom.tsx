@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { WorkroomTurn } from "../../workroomTypes";
+import type { ConversationTaskDetail } from "../../conversationTypes";
 import { WorkroomAgentSession } from "./WorkroomAgentSession";
 import { WorkroomDeliverables } from "./WorkroomDeliverables";
 import { WorkroomTeamView } from "./WorkroomTeamView";
@@ -19,7 +20,13 @@ const STATUS_LABELS: Record<WorkroomTurn["status"], string> = {
 };
 
 
-export function MultiAgentWorkroom({ workroom }: { workroom: WorkroomTurn }) {
+export function MultiAgentWorkroom({
+  workroom,
+  loadTaskDetail,
+}: {
+  workroom: WorkroomTurn;
+  loadTaskDetail?: (turnId: string, taskId: string, signal: AbortSignal) => Promise<ConversationTaskDetail>;
+}) {
   const [expanded, setExpanded] = useState(workroom.defaultExpanded);
   const [tab, setTab] = useState<WorkroomTab>("team");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -33,6 +40,7 @@ export function MultiAgentWorkroom({ workroom }: { workroom: WorkroomTurn }) {
     }
   }, [workroom.defaultExpanded, workroom.turnId]);
   const selectedTask = workroom.tasks.find((task) => task.taskId === selectedTaskId) ?? null;
+  const idPrefix = `workroom-${workroom.turnId}`;
   const tabs: Array<{ id: WorkroomTab; label: string; count?: number }> = [
     { id: "team", label: "团队", count: workroom.tasks.length },
     { id: "timeline", label: "协作记录" },
@@ -48,9 +56,9 @@ export function MultiAgentWorkroom({ workroom }: { workroom: WorkroomTurn }) {
         <div className="workroom-tabs" role="tablist" aria-label="协作室视图">
           {tabs.map((item) => <button
             aria-label={item.label}
-            aria-controls={`workroom-panel-${item.id}`}
+            aria-controls={`${idPrefix}-panel-${item.id}`}
             aria-selected={tab === item.id}
-            id={`workroom-tab-${item.id}`}
+            id={`${idPrefix}-tab-${item.id}`}
             key={item.id}
             onClick={() => setTab(item.id)}
             role="tab"
@@ -58,9 +66,9 @@ export function MultiAgentWorkroom({ workroom }: { workroom: WorkroomTurn }) {
           >{item.label}{item.count !== undefined && <span>{item.count}</span>}</button>)}
         </div>
         <div
-          aria-labelledby={`workroom-tab-${tab}`}
+          aria-labelledby={`${idPrefix}-tab-${tab}`}
           className="workroom-panel"
-          id={`workroom-panel-${tab}`}
+          id={`${idPrefix}-panel-${tab}`}
           role="tabpanel"
         >
           {tab === "team" && <WorkroomTeamView tasks={workroom.tasks} onSelectTask={setSelectedTaskId} />}
@@ -68,9 +76,11 @@ export function MultiAgentWorkroom({ workroom }: { workroom: WorkroomTurn }) {
           {tab === "deliverables" && <WorkroomDeliverables deliverables={workroom.deliverables} />}
         </div>
         {selectedTask && <WorkroomAgentSession
+          loadTaskDetail={loadTaskDetail}
           onClose={() => setSelectedTaskId(null)}
           task={selectedTask}
           timeline={workroom.timeline}
+          turnId={workroom.turnId}
         />}
       </div>
     </details>

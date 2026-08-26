@@ -2,8 +2,9 @@
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ConversationTaskDetail } from "../../conversationTypes";
 import type { WorkroomTurn } from "../../workroomTypes";
 import { MultiAgentWorkroom } from "./MultiAgentWorkroom";
 
@@ -89,5 +90,31 @@ describe("MultiAgentWorkroom", () => {
 
     expect(container.querySelector<HTMLAnchorElement>("a")?.getAttribute("href"))
       .toBe("/api/v1/attachments/attachment-1");
+  });
+
+  it("loads a real child task transcript only when its Agent card is opened", async () => {
+    const detail: ConversationTaskDetail = {
+      task_id: "task-1", child_session_id: "child-1", agent_id: "hr-bot",
+      status: "running", session_status: "active",
+      messages: [
+        { seq: 1, sender: "brain", kind: "followup", text: "请聚焦深圳", created_at: "2026-08-26T02:01:00Z" },
+        { seq: 2, sender: "agent", kind: "message", text: "已调整搜索范围", created_at: "2026-08-26T02:01:05Z" },
+      ],
+      events: [],
+    };
+    const loadTaskDetail = vi.fn().mockResolvedValue(detail);
+    await act(async () => root.render(<MultiAgentWorkroom
+      loadTaskDetail={loadTaskDetail}
+      workroom={fixture()}
+    />));
+
+    expect(loadTaskDetail).not.toHaveBeenCalled();
+    await act(async () => container.querySelector<HTMLButtonElement>(
+      'button[aria-label="查看 HR Agent 子会话"]',
+    )?.click());
+
+    expect(loadTaskDetail).toHaveBeenCalledWith("turn-1", "task-1", expect.any(AbortSignal));
+    expect(container.textContent).toContain("请聚焦深圳");
+    expect(container.textContent).toContain("已调整搜索范围");
   });
 });

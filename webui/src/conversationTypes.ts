@@ -66,6 +66,41 @@ export interface ConversationSubmissionResult {
   turn: ConversationTurn;
 }
 
+export interface ConversationInterventionResult {
+  intervention: {
+    status: "pending" | "delivered";
+    message_id: string;
+  };
+  message: ConversationMessage;
+  turn: ConversationTurn;
+}
+
+export interface ConversationTaskDetail {
+  task_id: string;
+  child_session_id: string;
+  agent_id: string;
+  status: string;
+  session_status: string;
+  messages: Array<{
+    seq: number;
+    sender: "brain" | "agent" | "user" | "platform";
+    kind: string;
+    text: string;
+    created_at: string;
+  }>;
+  events: Array<{
+    seq: number;
+    kind: string;
+    source: string;
+    source_ref: string;
+    summary: string;
+    status: string | null;
+    evidence_refs: string[];
+    artifact_refs: string[];
+    created_at: string;
+  }>;
+}
+
 export interface ConversationDetail {
   conversation: Conversation;
   current_turn: ConversationTurn | null;

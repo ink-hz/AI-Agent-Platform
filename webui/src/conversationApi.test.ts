@@ -9,6 +9,7 @@ import {
   createConversationMessageSubmission,
   fetchConversation,
   fetchConversationMessages,
+  fetchConversationTaskDetail,
   listConversations,
   renameConversation,
   restoreConversation,
@@ -130,6 +131,48 @@ describe("continuous Conversation API", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/v1/conversations/${CONVERSATION_ID}/messages`,
       expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("accepts a 202 intervention response without inventing a second Turn", async () => {
+    const interventionMessage = {
+      ...message, message_id: "message-intervention", seq: 2,
+      content: "把范围改成深圳", turn_id: TURN_ID,
+    };
+    const intervention = {
+      intervention: { status: "pending", message_id: "message-intervention" },
+      message: interventionMessage,
+      turn: { ...turn, status: "waiting_agents" },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(intervention, 202)));
+
+    await expect(createConversationMessageSubmission(
+      CONVERSATION_ID, "把范围改成深圳", "csrf",
+    ).send()).resolves.toEqual(intervention);
+  });
+
+  it("loads a strict owner-scoped child task transcript", async () => {
+    const task = {
+      task_id: "task-1", child_session_id: "child-1", agent_id: "hr-bot",
+      status: "running", session_status: "active",
+      messages: [{
+        seq: 1, sender: "agent", kind: "message", text: "已定位候选人",
+        created_at: "2026-08-26T02:00:00Z",
+      }],
+      events: [{
+        seq: 1, kind: "work", source: "agent_sdk", source_ref: "run:1",
+        summary: "检索 GitHub", status: "running", evidence_refs: [], artifact_refs: [],
+        created_at: "2026-08-26T02:00:00Z",
+      }],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(task));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchConversationTaskDetail(CONVERSATION_ID, TURN_ID, "task-1"))
+      .resolves.toEqual(task);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/conversations/${CONVERSATION_ID}/turns/${TURN_ID}/tasks/task-1`,
+      expect.objectContaining({ credentials: "include" }),
     );
   });
 

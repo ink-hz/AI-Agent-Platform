@@ -10,7 +10,9 @@ import type {
   ConversationDetail,
   ConversationEvent,
   ConversationMessage,
+  ConversationInterventionResult,
   ConversationSubmissionResult,
+  ConversationTaskDetail,
   ConversationTurn,
 } from "../conversationTypes";
 import { ConversationPage, type ConversationPageClient } from "./ConversationPage";
@@ -81,6 +83,10 @@ function client(overrides: Partial<ConversationPageClient> = {}): ConversationPa
   return {
     fetchConversation: vi.fn().mockResolvedValue({ conversation, current_turn: completedTurn } satisfies ConversationDetail),
     fetchMessages: vi.fn().mockResolvedValue(messages),
+    fetchTaskDetail: vi.fn().mockResolvedValue({
+      task_id: "task-1", child_session_id: "child-1", agent_id: "hr-bot",
+      status: "running", session_status: "active", messages: [], events: [],
+    } satisfies ConversationTaskDetail),
     createMessageSubmission: vi.fn().mockImplementation((_id, text) => ({
       idempotencyKey: "same", send: vi.fn().mockResolvedValue(submissionResult(text)),
     })),
@@ -187,7 +193,7 @@ describe("ConversationPage", () => {
 
     expect(cancelCurrentTurn).toHaveBeenCalledWith(conversationId, account.csrf_token, expect.any(AbortSignal));
     expect(container.textContent).toContain("正在停止");
-    expect(container.querySelector("textarea[aria-label='继续对话']")).not.toBeNull();
+    expect(container.querySelector("textarea[aria-label='补充当前任务']")).not.toBeNull();
   });
 
   it("resumes SSE from the last accepted sequence after reconnect", async () => {
@@ -240,30 +246,83 @@ describe("ConversationPage", () => {
     expect(container.querySelector(".conversation-assistant header strong")?.textContent).toBe("HR Agent");
     expect(container.querySelector(".conversation-header h1")?.textContent).toBe("HR Agent");
     expect(container.textContent).toContain("Hannah · 技术人才搜寻与招聘协作");
+    expect(container.querySelector(".multi-agent-workroom")).toBeNull();
   });
 
-  it("shows an Agent result before the Brain observes the settled batch", async () => {
-    const completedEvent: ConversationEvent = {
-      ...event,
-      event_id: "event-completed",
-      event_type: "agent.task_completed",
-      payload: { agent_id: "hr-bot", agent_name: "HR Agent", status: "completed" },
+  it("keeps a direct Agent composer locked while its current Turn is active", async () => {
+    const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const stream = deferred<void>();
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      assistantLabel="HR Agent"
+      client={client({
+        fetchConversation: vi.fn().mockResolvedValue({ conversation: directConversation, current_turn: active }),
+        streamEvents: vi.fn().mockReturnValue(stream.promise),
+      })}
+      conversationId={conversationId}
+    />));
+
+    expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='继续对话']")?.disabled).toBe(true);
+  });
+
+  it("embeds a real Agent workroom in its Turn before the final answer", async () => {
+    const dispatchedEvent: ConversationEvent = {
+      ...event, event_id: "event-dispatched", event_type: "agent.task_dispatched",
+      payload: {
+        task_id: "task-1", child_session_id: "child-1", agent_id: "hr-bot",
+        objective_summary: "定位人才", public_reason: "需要人才判断", status: "running",
+      },
     };
     const pageClient = client({
       streamEvents: vi.fn().mockImplementation(async (_id, options) => {
-        options.onEvent(completedEvent);
+        options.onEvent(dispatchedEvent);
       }),
     });
     await act(async () => root.render(
       <ConversationPage account={account} client={pageClient} conversationId={conversationId} />,
     ));
-    const details = container.querySelector<HTMLDetailsElement>(".public-collaboration")!;
-    details.open = true;
+    const userMessage = container.querySelector(".conversation-user");
+    const workroom = container.querySelector(".multi-agent-workroom");
+    const answer = container.querySelector(".conversation-assistant");
+    expect(workroom?.textContent).toContain("HR Agent");
+    expect(userMessage!.compareDocumentPosition(workroom!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(workroom!.compareDocumentPosition(answer!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.textContent).not.toContain("查看协作过程");
+  });
 
-    expect(container.textContent).toContain("HR Agent 已完成");
-    expect(container.textContent).toContain("查看协作过程");
-    expect(container.textContent).not.toContain("Agent 大脑已读取结果");
-    expect(container.textContent).not.toContain("completed");
+  it("keeps the Brain composer enabled and sends an intervention into the active Turn", async () => {
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "waiting_agents" };
+    const intervention: ConversationInterventionResult = {
+      intervention: { status: "pending", message_id: "message-3" },
+      message: {
+        message_id: "message-3", conversation_id: conversationId, seq: 3, role: "user",
+        content: "把范围改成深圳", turn_id: "turn-1", delivery_status: "accepted",
+        created_at: "2026-08-25T10:02:00Z", completed_at: null,
+      },
+      turn: active,
+    };
+    const createMessageSubmission = vi.fn().mockReturnValue({
+      idempotencyKey: "intervention", send: vi.fn().mockResolvedValue(intervention),
+    });
+    const stream = deferred<void>();
+    const pageClient = client({
+      fetchConversation: vi.fn().mockResolvedValue({ conversation, current_turn: active }),
+      createMessageSubmission,
+      streamEvents: vi.fn().mockReturnValue(stream.promise),
+    });
+    await act(async () => root.render(
+      <ConversationPage account={account} client={pageClient} conversationId={conversationId} />,
+    ));
+
+    const composer = container.querySelector<HTMLTextAreaElement>("textarea[aria-label='补充当前任务']");
+    expect(composer?.disabled).toBe(false);
+    await setTextarea(container, "把范围改成深圳");
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-send")?.click());
+
+    expect(createMessageSubmission).toHaveBeenCalledWith(conversationId, "把范围改成深圳", "csrf");
+    expect(container.textContent).toContain("把范围改成深圳");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='补充当前任务']")?.disabled).toBe(false);
   });
 
   it("lets the user answer a waiting-user request in the same turn", async () => {
