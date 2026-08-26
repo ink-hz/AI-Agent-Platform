@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { Account } from "../auth";
+import { platformPath } from "../auth";
 
 
 const ROLE_LABEL = {
@@ -41,6 +42,9 @@ export function AccountPage({
         {failed && <p role="alert" className="auth-message is-error">退出失败，请重试。</p>}
         <button type="button" disabled={busy} onClick={() => void logout()}>{busy ? "正在退出…" : "退出登录"}</button>
       </div>
+      <a className="voc-account-entry" href={platformPath("/agents/voc/workspace")}>
+        <span>员工自助</span><strong>打开 VOC 洞察助手</strong><small>整理、提交并查看自己的客户声音</small>
+      </a>
     </section>
   );
 }

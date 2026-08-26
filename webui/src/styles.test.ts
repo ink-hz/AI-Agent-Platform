@@ -39,6 +39,12 @@ function lastBlock(header: string): string {
 
 
 describe("Executive Operations visual contract", () => {
+  it("gives the VOC workspace a clear draft boundary and responsive layout", () => {
+    expect(rule(".voc-layout")).toContain("grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr)");
+    expect(rule(".voc-draft-panel")).toContain("border: 1px solid #9fb9d5");
+    expect(rule(".voc-draft-actions .is-submit")).toContain("background: var(--brand)");
+    expect(block("@media (max-width: 820px)")).toContain(".voc-layout { grid-template-columns: 1fr; }");
+  });
   it("uses a Chinese-first product typeface and removes template-era chrome", () => {
     expect(rule(":root")).toContain('font-family: "PingFang SC", "Microsoft YaHei", Inter, "Segoe UI", system-ui, sans-serif');
     expect(styles).not.toContain(".readonly-tag");

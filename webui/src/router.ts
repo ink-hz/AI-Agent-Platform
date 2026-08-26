@@ -14,6 +14,7 @@ export type Route =
   | { name: "agents" }
   | { name: "agent"; agentId: string }
   | { name: "agent-conversation"; agentId: string; conversationId: string }
+  | { name: "voc-workspace" }
   | { name: "admin-overview" }
   | { name: "admin-agents" }
   | { name: "admin-agent"; agentId: string }
@@ -61,6 +62,7 @@ export function parseRoute(pathname: string): Route {
   if (clean === "/conversations") return { name: "conversations" };
   if (clean === "/missions") return { name: "missions" };
   if (clean === "/agents") return { name: "agents" };
+  if (clean === "/agents/voc/workspace") return { name: "voc-workspace" };
 
   if (clean === "/admin" || clean === "/admin/overview") return { name: "admin-overview" };
   if (clean === "/admin/agents") return { name: "admin-agents" };
@@ -138,6 +140,7 @@ export function routePath(route: Route): string {
     case "agents": return "/agents";
     case "agent": return `/agents/${encodeURIComponent(route.agentId)}`;
     case "agent-conversation": return `/agents/${encodeURIComponent(route.agentId)}/conversations/${encodeURIComponent(route.conversationId)}`;
+    case "voc-workspace": return "/agents/voc/workspace";
     case "admin-overview": return "/admin";
     case "admin-agents": return "/admin/agents";
     case "admin-agent": return `/admin/agents/${encodeURIComponent(route.agentId)}`;
@@ -158,7 +161,7 @@ export function routePath(route: Route): string {
 export function routeSection(route: Route): RouteSection | null {
   if (route.name === "brain") return "brain";
   if (route.name === "conversations" || route.name === "conversation") return "brain";
-  if (route.name === "agents" || route.name === "agent" || route.name === "agent-conversation") return "agents";
+  if (route.name === "agents" || route.name === "agent" || route.name === "agent-conversation" || route.name === "voc-workspace") return "agents";
   if (route.name === "missions" || route.name === "mission") return "missions";
   if (route.name === "account") return "account";
   if (route.name.startsWith("admin-")) return "admin";

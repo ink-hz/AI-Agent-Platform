@@ -16,6 +16,7 @@ describe("Platform router", () => {
     expect(parseRoute("/")).toEqual({ name: "brain" });
     expect(parseRoute("/agents")).toEqual({ name: "agents" });
     expect(parseRoute("/agents/ai-fae-agent")).toEqual({ name: "agent", agentId: "ai-fae-agent" });
+    expect(parseRoute("/agents/voc/workspace")).toEqual({ name: "voc-workspace" });
     expect(parseRoute("/missions/one")).toEqual({ name: "mission", missionId: "one" });
     expect(parseRoute("/unknown")).toEqual({ name: "not-found" });
     expect(parseRoute("/login")).toEqual({ name: "login" });
@@ -38,11 +39,13 @@ describe("Platform router", () => {
     expect(routePath({ name: "admin-agent-runtime", agentId: "fae/a" })).toBe("/admin/agents/fae%2Fa/runtime");
     expect(routePath({ name: "admin-review" })).toBe("/admin/review");
     expect(routePath({ name: "account" })).toBe("/account");
+    expect(routePath({ name: "voc-workspace" })).toBe("/agents/voc/workspace");
   });
 
   it("keeps detail pages in their parent navigation section", () => {
     expect(routeSection({ name: "agent", agentId: "ai-fae-agent" })).toBe("agents");
     expect(routeSection({ name: "mission", missionId: "one" })).toBe("missions");
+    expect(routeSection({ name: "voc-workspace" })).toBe("agents");
     expect(routeSection({ name: "admin-session", sessionKey: "fae:abc" })).toBe("admin");
   });
 

@@ -41,6 +41,7 @@ describe("AccountPage", () => {
     expect(container.textContent).toContain("苍渊");
     expect(container.textContent).toContain("平台所有者");
     expect(container.textContent).not.toContain(account.csrf_token);
+    expect(container.querySelector("a[href='/agents/voc/workspace']")?.textContent).toContain("VOC 洞察助手");
     await act(async () => container.querySelector("button")?.click());
     expect(onLogout).toHaveBeenCalledWith(account.csrf_token);
   });
