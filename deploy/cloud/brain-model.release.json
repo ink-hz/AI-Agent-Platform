@@ -5,7 +5,7 @@
   "context_profile": "opus_1m",
   "context_window": 1000000,
   "thinking_type": "adaptive",
-  "thinking_display": "omitted",
+  "thinking_display": "summarized",
   "thinking_effort": "high",
   "max_output_tokens": 65536,
   "max_answer_bytes": 65536,

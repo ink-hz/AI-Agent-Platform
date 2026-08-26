@@ -104,7 +104,7 @@ def test_adapter_sends_adaptive_thinking_cache_and_tools() -> None:
         return httpx.Response(
             200,
             headers={"content-type": "text/event-stream"},
-            content=_tool_stream(),
+            content=_tool_stream(thinking="需要先判断是否委派。"),
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -118,7 +118,7 @@ def test_adapter_sends_adaptive_thinking_cache_and_tools() -> None:
 
     body = bodies[0]
     assert body["model"] == "claude-opus-5"
-    assert body["thinking"] == {"type": "adaptive", "display": "omitted"}
+    assert body["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert body["output_config"] == {"effort": "high"}
     assert body["max_tokens"] == 65536
     assert body["stream"] is True
@@ -126,7 +126,7 @@ def test_adapter_sends_adaptive_thinking_cache_and_tools() -> None:
     assert response.usage.cache_read_input_tokens == 1200
     assert response.content_blocks[0] == {
         "type": "thinking",
-        "thinking": "",
+        "thinking": "需要先判断是否委派。",
         "signature": "sig_abc",
     }
     assert all(block.get("type") != "thinking" for block in response.public_blocks)

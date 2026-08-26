@@ -11,6 +11,7 @@ from app.agent_brain.adapters.base import (
     AdapterTask,
 )
 from app.agent_brain.collaboration_models import AgentTaskPublicEventInput
+from app.agent_brain.collaboration_models import BrainThinkingDelta as StoredThinkingDelta
 from app.agent_brain.context_policy import BrainContextPolicy
 from app.agent_brain.loop_repository import (
     AgentTaskEventInput,
@@ -25,6 +26,7 @@ from app.agent_brain.model_adapter import (
     BrainModelError,
     BrainRequestBuilder,
     ProviderRefused,
+    ThinkingDelta,
 )
 from app.agent_brain.prompt import BrainSystemPrompt
 from app.agent_brain.tool_protocol import (
@@ -110,14 +112,32 @@ class BrainLoopRuntime:
                 else None
             ),
         )
+        thinking_blocks: set[int] = set()
+
+        def persist_thinking(delta: ThinkingDelta) -> None:
+            thinking_blocks.add(delta.block_index)
+            self._collaboration.append_thinking_delta(
+                StoredThinkingDelta(
+                    step_id=lease.step_id,
+                    block_index=delta.block_index,
+                    delta_seq=delta.delta_seq,
+                    text=delta.text,
+                    provider_run_ref=delta.provider_run_ref,
+                )
+            )
+
         try:
-            response = self._model.complete(request)
+            response = self._model.complete(
+                request, on_thinking_delta=persist_thinking
+            )
         except ProviderRefused:
+            self._finalize_thinking(lease.step_id, thinking_blocks, interrupted=True)
             self._repository.fail_with_platform_summary(
                 lease.loop_id, "provider_refused"
             )
             return True
         except BrainModelError:
+            self._finalize_thinking(lease.step_id, thinking_blocks, interrupted=True)
             self._repository.fail_with_platform_summary(
                 lease.loop_id,
                 "forced_submission_failed" if forced else "provider_failed",
@@ -138,15 +158,25 @@ class BrainLoopRuntime:
                 raise ProtocolViolation("mixed_tool_batch")
         except ProtocolViolation:
             if forced:
+                self._finalize_thinking(
+                    lease.step_id, thinking_blocks, interrupted=True
+                )
                 self._repository.fail_with_platform_summary(
                     lease.loop_id, "forced_submission_failed"
                 )
                 return True
             if not self._repository.record_protocol_retry(lease.loop_id):
+                self._finalize_thinking(
+                    lease.step_id, thinking_blocks, interrupted=True
+                )
                 self._repository.fail_with_platform_summary(
                     lease.loop_id, "protocol_violation_after_retry"
                 )
                 return True
+            self._finalize_thinking(
+                lease.step_id, thinking_blocks, interrupted=True
+            )
+            thinking_blocks.clear()
             correction = self._request_builder.build(
                 messages=messages,
                 step_seq=lease.step_seq,
@@ -178,6 +208,7 @@ class BrainLoopRuntime:
                     lease.loop_id, "protocol_violation_after_retry"
                 )
                 return True
+        self._finalize_thinking(lease.step_id, thinking_blocks, interrupted=False)
         immediate: list[ImmediateToolResult] = []
         task_specs: list[TaskDispatchSpec] = []
         if batch.kind == "list_agents":
@@ -279,6 +310,14 @@ class BrainLoopRuntime:
             ),
         )
         return True
+
+    def _finalize_thinking(
+        self, step_id, block_indexes: set[int], *, interrupted: bool
+    ) -> None:
+        for block_index in sorted(block_indexes):
+            self._collaboration.finalize_thinking_summary(
+                step_id, block_index, interrupted=interrupted
+            )
 
     def scan_settled_batches(self) -> int:
         settled = self._repository.settle_ready_batches(limit=100)

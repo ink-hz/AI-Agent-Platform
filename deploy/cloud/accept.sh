@@ -296,7 +296,7 @@ manifest=release/'deploy/cloud/brain-model.release.json'
 prompt=release/'backend/app/agent_brain/prompts/brain_v1.md'
 value=json.loads(evidence.read_bytes())
 required={
-    'streaming','forced_tool_choice','omitted_thinking',
+    'streaming','forced_tool_choice','summarized_thinking',
     'mid_conversation_system','one_hour_cache','one_million_context',
 }
 if value.get('manifest_sha256') != hashlib.sha256(manifest.read_bytes()).hexdigest(): raise SystemExit(1)

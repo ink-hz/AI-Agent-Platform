@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 from app.agent_brain.tool_protocol import BRAIN_TOOL_SCHEMAS
 
@@ -60,7 +60,7 @@ class BrainModelManifest:
     context_profile: Literal["opus_1m"]
     context_window: int
     thinking_type: Literal["adaptive"]
-    thinking_display: Literal["omitted"]
+    thinking_display: Literal["summarized"]
     thinking_effort: Literal["medium", "high", "xhigh"]
     max_output_tokens: int
     max_answer_bytes: int
@@ -98,6 +98,14 @@ class BrainUsage:
     output_tokens: int = 0
     cache_creation_input_tokens: int = 0
     cache_read_input_tokens: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class ThinkingDelta:
+    block_index: int
+    delta_seq: int
+    text: str = field(repr=False)
+    provider_run_ref: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,7 +248,12 @@ class BrainRequestBuilder:
 
 class BrainModelAdapter(ABC):
     @abstractmethod
-    def complete(self, request: BrainModelRequest) -> BrainModelResponse:
+    def complete(
+        self,
+        request: BrainModelRequest,
+        *,
+        on_thinking_delta: Callable[[ThinkingDelta], None] | None = None,
+    ) -> BrainModelResponse:
         raise NotImplementedError
 
 
@@ -270,4 +283,3 @@ def _canonical_json(value: object) -> str:
         )
     except (TypeError, UnicodeError, ValueError):
         raise ValueError("Brain model JSON invalid") from None
-

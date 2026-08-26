@@ -132,7 +132,7 @@ AGENT_BRAIN_V2_REFERENCE_OK
 `release` 会在私有 `platform-brain` 容器内调用 `provider_probe`，核对：
 
 - `claude-opus-5` 与 1M 上下文档位；
-- adaptive thinking，`display=omitted`；
+- adaptive thinking，`display=summarized`，且摘要不会包含在探测证据中；
 - 流式请求和 `max_output_tokens=65536`；
 - 强制 `submit_answer` 时 tools 字节不变；
 - 不发送 `temperature`、`top_p`、`top_k` 或 `fallbacks`；
