@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+from datetime import date
+from pathlib import Path
+import re
+
+from markdown_it import MarkdownIt
+import yaml
+
+from app.ai_notes.repository import AiNoteArticle, AiNotesRepository
+from app.ai_notes.validation import validate_publication
+
+
+MODULE_ROOT = Path(__file__).resolve().parents[1] / "app" / "ai_notes"
+CONTENT_ROOT = MODULE_ROOT / "content"
+MARKER_FILE = MODULE_ROOT / "legacy_markers.yaml"
+TODAY = date(2026, 8, 27)
+
+
+def published_article(category_slug: str, article_slug: str) -> AiNoteArticle:
+    repository = AiNotesRepository.load(CONTENT_ROOT, today=TODAY)
+    article = repository.article(category_slug, article_slug)
+    assert article is not None
+    return article
+
+
+def assert_clean_body(markdown: str) -> None:
+    assert re.search(r"(?m)^#\s+", markdown) is None
+    tokens = MarkdownIt("commonmark", {"html": True}).parse(markdown)
+    assert not {token.type for token in tokens} & {"html_block", "html_inline"}
+
+
+def test_legacy_marker_file_covers_identified_source_branding() -> None:
+    selected = yaml.safe_load(MARKER_FILE.read_text(encoding="utf-8"))
+    assert selected == {
+        "markers": ["inkbot.cn", "Ink Blog", "STARSHIP", "星舰"]
+    }
+
+
+def test_current_production_content_passes_publication_validation() -> None:
+    index = validate_publication(CONTENT_ROOT, MARKER_FILE, today=TODAY)
+    assert len(index.categories) == 5
