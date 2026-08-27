@@ -60,7 +60,11 @@ def _opened_response(
 
 
 def _shell_response(
-    opened: OpenedPublicAsset, *, csp: str, agent_brain_enabled: bool
+    opened: OpenedPublicAsset,
+    *,
+    csp: str,
+    agent_brain_enabled: bool,
+    asset_base: str,
 ) -> Response:
     try:
         if opened.size > 2_097_152:
@@ -70,6 +74,9 @@ def _shell_response(
         opened.file.close()
     if len(content) != opened.size:
         raise PublicAssetUnavailable("application shell unavailable")
+    base = asset_base.encode("ascii")
+    content = content.replace(b'"./assets/', b'"' + base + b"assets/")
+    content = content.replace(b'"./favicon.ico"', b'"' + base + b'favicon.ico"')
     disabled = b'<meta name="platform-identity-mode" content="disabled" />'
     enabled = b'<meta name="platform-identity-mode" content="enabled" />'
     if disabled in content:
@@ -183,6 +190,7 @@ def build_auth_router(
                 opened,
                 csp=_login_csp(auth),
                 agent_brain_enabled=agent_brain_enabled,
+                asset_base=auth.route_prefix,
             )
         except PublicAssetUnavailable:
             raise HTTPException(503, "application shell unavailable") from None
@@ -207,7 +215,10 @@ def build_auth_router(
             response = HTMLResponse("<!doctype html><title>Agent Platform</title>", headers={**_NO_STORE, "Content-Security-Policy": csp})
         else:
             response = _shell_response(
-                opened, csp=csp, agent_brain_enabled=agent_brain_enabled
+                opened,
+                csp=csp,
+                agent_brain_enabled=agent_brain_enabled,
+                asset_base=auth.route_prefix,
             )
         issuer = getattr(auth, "issue_browser_challenge", None)
         if issuer is not None:

@@ -314,7 +314,7 @@ def test_one_real_vite_build_serves_assets_at_root_and_preview(
     )
 
     scenarios = (
-        (FakeAuth(), "/", "/login"),
+        (FakeAuth(), "/", "/login", "/agents/voc/workspace"),
         (
             FakeAuth(
                 mode=IdentityMode.PREVIEW,
@@ -322,26 +322,35 @@ def test_one_real_vite_build_serves_assets_at_root_and_preview(
             ),
             "/_preview/dingtalk-r1/",
             "/_preview/dingtalk-r1/login",
+            "/_preview/dingtalk-r1/agents/voc/workspace",
         ),
     )
-    for auth, root, login_path in scenarios:
+    for auth, root, login_path, workspace_path in scenarios:
         client = TestClient(_app_with_static(tmp_path, monkeypatch, auth, static))
         root_response = client.get(root, follow_redirects=False)
         assert root_response.status_code == 302
         assert root_response.headers["location"] == login_path
-        login = client.get(login_path)
-        assert login.status_code == 200
-        parser = _AssetReferences()
-        parser.feed(login.text)
-        assert parser.values
-        for reference in parser.values:
-            resolved = urlsplit(
-                urljoin(f"https://agent.example.test{login_path}", reference)
-            ).path
-            assert resolved == root + "favicon.ico" or resolved.startswith(
-                root + "assets/"
-            )
-            assert client.get(resolved).status_code == 200
+        pages = (
+            client.get(login_path),
+            client.get(
+                workspace_path,
+                cookies={auth.cookie_name: "valid-cookie"},
+            ),
+        )
+        for path, page in zip((login_path, workspace_path), pages, strict=True):
+            assert page.status_code == 200
+            parser = _AssetReferences()
+            parser.feed(page.text)
+            assert parser.values
+            for reference in parser.values:
+                resolved = urlsplit(
+                    urljoin(f"https://agent.example.test{path}", reference)
+                ).path
+                assert resolved == root + "favicon.ico" or resolved.startswith(
+                    root + "assets/"
+                )
+                assert client.get(resolved).status_code == 200
+        login = pages[0]
         csp = login.headers["content-security-policy"]
         assert f"https://agent.example.test{root}assets/" in csp or (
             root == "/" and "script-src 'self'" in csp
