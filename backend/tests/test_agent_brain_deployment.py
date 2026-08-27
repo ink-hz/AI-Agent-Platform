@@ -62,9 +62,7 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
     assert environment["PLATFORM_AGENT_BRAIN_V2_ENABLED"] == (
         "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
     )
-    assert environment["PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED"] == (
-        "${PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED:-0}"
-    )
+    assert "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED" not in environment
 
     worker = compose["services"]["platform-brain"]
     assert "ports" not in worker
@@ -119,7 +117,7 @@ def test_remote_stage_requires_mode_0600_and_preserves_feature_state() -> None:
     assert "PLATFORM_EXECUTION_RELAY_ENABLED=1" in stage
     assert 'PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"' in stage
     assert 'PLATFORM_AGENT_BRAIN_V2_ENABLED="${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"' in stage
-    assert 'PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED="${PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED:-0}"' in stage
+    assert "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED" not in stage
     assert '[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail' not in stage
     assert '[[ "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "0" ]] || fail' not in stage
     assert "read_previous_feature" in stage
@@ -185,7 +183,7 @@ def test_v2_rollback_stops_intake_without_rewriting_history() -> None:
     ).lower()
 
     assert "platform_agent_brain_v2_enabled=0" in script
-    assert "platform_agent_brain_collaboration_enabled=0" in script
+    assert "platform_agent_brain_collaboration_enabled" not in script
     assert "platform-brain" in script
     assert "update platform_brain.brain_loops" not in script
     assert "delete from platform_brain" not in script
@@ -391,7 +389,6 @@ def test_acceptance_is_private_real_idempotent_and_rollback_safe() -> None:
         "AGENT_BRAIN_ROLLBACK_OK",
         "remote_feature 1",
         "remote_feature 0",
-        "x-platform-entry-state: brain-preparing",
         "/api/v1/brain/missions",
         "/api/v1/brain/missions/",
         "/api/v1/agents/marketing-gtm-bot/conversations",
@@ -613,8 +610,23 @@ def test_brain_disabled_rollback_keeps_root_as_use_entry() -> None:
 
     assert "'%{http_code}'" in rollback_gate
     assert '== "200"' in rollback_gate
-    assert "x-platform-entry-state: brain-preparing" in rollback_gate.lower()
+    assert "x-platform-entry-state" not in rollback_gate.lower()
     assert "location: /admin" not in rollback_gate.lower()
+
+
+def test_live_deploy_contract_has_no_collaboration_gate_or_preparing_state() -> None:
+    live_files = (
+        CLOUD / "compose.yaml",
+        CLOUD / "remote-stage.sh",
+        CLOUD / "accept.sh",
+        CLOUD / "rollback-dingtalk-production.sh",
+        ROOT / "docs" / "runbooks" / "agent-brain-live-collaboration-release.md",
+        ROOT / "docs" / "runbooks" / "cloud-platform.md",
+    )
+    contents = "\n".join(path.read_text(encoding="utf-8") for path in live_files)
+
+    assert "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED" not in contents
+    assert "brain-preparing" not in contents
 
 
 def test_runbook_pins_dependency_order_evidence_and_non_destructive_rollback() -> None:
@@ -629,7 +641,7 @@ def test_runbook_pins_dependency_order_evidence_and_non_destructive_rollback() -
         "cloud image with Brain disabled",
         "relay canary",
         "enable Brain",
-        "switch `/`",
+        "verify `/` remains",
     )
     positions = [runbook.index(item) for item in ordered]
     assert positions == sorted(positions)

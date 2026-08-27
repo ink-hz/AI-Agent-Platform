@@ -389,11 +389,7 @@ selected = sys.argv[3]
 lines = source.read_text(encoding="utf-8").splitlines()
 kept = [
     line for line in lines
-    if not line.startswith((
-        "PLATFORM_AGENT_BRAIN_ENABLED=",
-        "PLATFORM_AGENT_BRAIN_V2_ENABLED=",
-        "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED=",
-    ))
+    if not line.startswith("PLATFORM_AGENT_BRAIN_")
 ]
 raw = (
     "\n".join(
@@ -401,7 +397,6 @@ raw = (
         + [
             f"PLATFORM_AGENT_BRAIN_ENABLED={selected}",
             f"PLATFORM_AGENT_BRAIN_V2_ENABLED={selected}",
-            f"PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED={selected}",
         ]
     )
     + "\n"
@@ -427,7 +422,6 @@ api_id="$("${compose_command[@]}" ps -q platform-api)"
 [[ -n "$api_id" ]] || fail
 /usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_id" | /usr/bin/grep -Fxq "PLATFORM_AGENT_BRAIN_ENABLED=$selected" || fail
 /usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_id" | /usr/bin/grep -Fxq "PLATFORM_AGENT_BRAIN_V2_ENABLED=$selected" || fail
-/usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$api_id" | /usr/bin/grep -Fxq "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED=$selected" || fail
 [[ "$fae_id" == "$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend)" ]] || fail
 [[ "$fae_image" == "$(/usr/bin/docker inspect --format '{{.Image}}' ai-fae-backend)" ]] || fail
 [[ "$fae_started" == "$(/usr/bin/docker inspect --format '{{.State.StartedAt}}' ai-fae-backend)" ]] || fail
@@ -1321,7 +1315,6 @@ PY
     cookie_config "$owner_cookie_file" "$temporary/owner.curl" "$temporary/owner.browser.json"
     rollback_headers="$temporary/root.headers"
     [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" -D "$rollback_headers" -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/)" == "200" ]] || fail
-    /usr/bin/tr -d '\r' < "$rollback_headers" | /usr/bin/grep -Fxiq 'x-platform-entry-state: brain-preparing' || fail
     for owner_path in /admin /admin/sessions /admin/review /admin/activity; do
       [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" -o /dev/null -w '%{http_code}' --max-time 15 "https://agent.orbbec.com.cn$owner_path")" == "200" ]] || fail
     done

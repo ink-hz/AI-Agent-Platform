@@ -16,13 +16,13 @@
 2. 发布 Core Chat v3，同时保留 v2 解析能力。
 3. 发布本地 Worker，使其同时接受 v2 和 v3；此时旧 Platform 仍可运行。
 4. 对 HR 和 5 个 Marketing Agent 逐个运行真实 Thinking 探针；任何一个不支持即停止。
-5. 应用 migration 045 and later migrations，发布 Platform，但保持 `PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED=0`。
+5. 应用 migration 045 and later migrations，发布 Platform，但保持 Brain 与 Brain V2 intake 关闭。
 6. 跑 Reference 全场景，再各跑一个真实 HR 与 Marketing 会话。
-7. 仅对 owner 开启协作，验证追问、停止、用户中途补充和 Worker 崩溃恢复。
+7. 原子开启 Brain 与 Brain V2，只授权 owner 验证追问、停止、用户中途补充和 Worker 崩溃恢复。
 8. 对 owner 开启工作间 UI，分别在桌面和手机复放同一会话。
 9. 独立复审通过后才扩大人员授权。
 
-普通发布必须继承已有的三个 Brain 开关，不得把已启用环境强制写回 0。协作开关只能在 Brain 与 Brain V2 均为 1 时设为 1。
+普通发布必须继承已有的 Brain 与 Brain V2 开关，不得把已启用环境强制写回 0。不存在独立的“协作可用性”开关；人员范围只由后端 Agent 授权控制。
 
 ## 自动化门禁
 
@@ -58,7 +58,7 @@
 
 ## 回滚
 
-1. 先将 `PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED=0`，拒绝新协作 Turn。
+1. 原子关闭 Brain 与 Brain V2 intake，拒绝新协作 Turn；根页面仍是 Agent 大脑，运行请求明确返回不可用，不切换到伪准备页。
 2. 排空可完成的 follow-up；其余任务写入明确终态，不删除历史。
 3. 隐藏工作间 UI，再回滚 Platform 代码。migration 045 and later migrations remain，不回滚结构、不删除数据。
 4. 重新核对 Nginx SHA、`/office/?view=services`、FAE 容器身份、FAE 域名和原 IP。

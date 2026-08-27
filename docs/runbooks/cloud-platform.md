@@ -232,9 +232,10 @@ The normal staged release enables direct professional-Agent use with
 `PLATFORM_DIRECT_AGENT_ENABLED=1` while keeping both Brain flags at `0`. The
 API process runs a mode-filtered V1 relay scheduler that can claim only
 `direct_agent` Missions in this state. It cannot claim or advance a Brain
-Mission. This is the supported preparation-page state: `/` returns 200 with
-`X-Platform-Entry-State: brain-preparing`, while authorized HR and Marketing
-workspaces remain usable.
+Mission. The authenticated `/` route still renders the real Agent 大脑
+workspace; a Brain submission fails explicitly with HTTP 503 while intake is
+disabled. It never switches to a release-state preparation page. Authorized HR
+and Marketing workspaces remain usable.
 
 Before compatibility rollback, `rollback-dingtalk-production.sh` verifies that
 no `metabot_local` job remains queued, leased, dispatched, or running. A
@@ -260,15 +261,15 @@ without skipping or combining a gate:
 7. start the private durable worker with V2 intake disabled;
 8. run the real Provider probe and reference crash-recovery acceptance;
 9. atomically enable Brain and V2 intake;
-10. switch `/` from the preparation state to the active Agent 大脑 workspace.
+10. verify `/` remains the Agent 大脑 workspace and a real Turn completes.
 
 The cloud environment flags are `PLATFORM_AGENT_BRAIN_ENABLED` and
 `PLATFORM_AGENT_BRAIN_V2_ENABLED`. Both are absent or `0` during migration,
 image, Provider, recovery, and relay validation. They move to `1` in the same
 mode-0600 environment-file replacement. The authenticated root never
-redirects to `/admin`. With Brain disabled it serves the preparation shell;
-only an explicit value of `1` enables Brain Mission APIs and the active Brain
-workspace. Direct professional-Agent routes are controlled independently by
+redirects to `/admin` or a preparation shell. Only an explicit value of `1`
+enables Brain Mission APIs. The workspace itself remains visible and reports
+runtime unavailability explicitly. Direct professional-Agent routes are controlled independently by
 `PLATFORM_DIRECT_AGENT_ENABLED=1`. The relay remains separately controlled by
 `PLATFORM_EXECUTION_RELAY_ENABLED=1`.
 
