@@ -136,8 +136,16 @@ def test_exporter_signs_management_projection_manifest_counts(tmp_path):
             return (
                 ReviewInboxProjection("hr-bot", "raw-turn", 2, now),
                 OperationEventProjection(
-                    "raw-event", "hr-bot", "execution_failure", "critical",
-                    "联系 alice@example.com", now,
+                    event_id="raw-event",
+                    agent_id="hr-bot",
+                    event_type="execution_failure",
+                    event_family="execution",
+                    severity="critical",
+                    status="historical",
+                    title="HR Agent execution failed",
+                    summary="联系 alice@example.com",
+                    source_kind="metabot",
+                    occurred_at=now,
                 ),
             )
 
