@@ -647,7 +647,7 @@ describe("ActivityPage", () => {
 
     expect(container.querySelector(".topbar")).not.toBeNull();
     expect(container.querySelector(".readonly-tag")).toBeNull();
-    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent管理中心");
+    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 AgentAI 工程笔记管理中心");
     expect(container.querySelector("[role=alert]")?.textContent).toContain("运行记录暂不可用");
     expect(container.querySelector(".product-nav [aria-current=page]")?.textContent).toBe("管理中心");
     expect(container.querySelector(".admin-nav")?.textContent).toContain("运行记录");

@@ -271,7 +271,12 @@ def _app(
 
 
 def _app_with_static(
-    tmp_path: Path, monkeypatch, auth: FakeAuth, static: Path
+    tmp_path: Path,
+    monkeypatch,
+    auth: FakeAuth,
+    static: Path,
+    *,
+    ai_notes_reader=None,
 ):
     registry = tmp_path / f"registry-{auth.mode.value}.yaml"
     registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
@@ -283,6 +288,7 @@ def _app_with_static(
         cluster_contract_path=str(contract),
         start_poller=False,
         identity_auth=auth,
+        ai_notes_reader=ai_notes_reader,
     )
 
 
@@ -361,6 +367,58 @@ def test_one_real_vite_build_serves_assets_at_root_and_preview(
         assert f"https://agent.example.test{root}assets/" in csp or (
             root == "/" and "script-src 'self'" in csp
         )
+
+
+def test_article_body_requires_auth_and_is_absent_from_public_assets(
+    tmp_path, monkeypatch
+) -> None:
+    sentinel = "INTERNAL_AI_NOTE_SENTINEL_8F2C"
+
+    class SentinelReader(_AiNotesReader):
+        def article(self, category_slug: str, article_slug: str):
+            selected = super().article(category_slug, article_slug)
+            return None if selected is None else {**selected, "markdown": sentinel}
+
+    webui = Path(__file__).parents[2] / "webui"
+    static = tmp_path / "vite-ai-notes-dist"
+    subprocess.run(
+        [
+            "npm", "exec", "vite", "--", "build", "--outDir", str(static),
+            "--emptyOutDir",
+        ],
+        cwd=webui,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    auth = FakeAuth()
+    client = TestClient(
+        _app_with_static(
+            tmp_path,
+            monkeypatch,
+            auth,
+            static,
+            ai_notes_reader=SentinelReader(),
+        )
+    )
+
+    assert client.get("/api/v1/ai-notes/foundations/handbook").status_code == 401
+    assert client.get("/ai-notes").status_code == 401
+    public_bytes = b"".join(
+        path.read_bytes() for path in static.rglob("*") if path.is_file()
+    )
+    assert sentinel.encode() not in public_bytes
+
+    cookies = {auth.cookie_name: "valid-cookie"}
+    article = client.get(
+        "/api/v1/ai-notes/foundations/handbook",
+        cookies=cookies,
+    )
+    shell = client.get("/ai-notes/foundations/handbook", cookies=cookies)
+    assert article.status_code == 200
+    assert article.json()["markdown"] == sentinel
+    assert shell.status_code == 200
+    assert sentinel not in shell.text
 
 
 def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
