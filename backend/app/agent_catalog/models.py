@@ -11,6 +11,7 @@ InteractionMode = Literal["direct_chat", "brain_delegation", "external_workspace
 
 CANONICAL_AGENT_IDS = (
     "hr-bot",
+    "voc",
     "marketing-prospecting-bot",
     "marketing-inbound-bot",
     "marketing-voice-bot",
@@ -23,6 +24,7 @@ CANONICAL_AGENT_IDS = (
 _WORKSPACE_URLS = {
     "ai-admin-agent": "/office/?view=services",
     "ai-fae-agent": "https://fae.orbbec.com.cn/",
+    "voc": "/agents/voc/workspace",
 }
 
 

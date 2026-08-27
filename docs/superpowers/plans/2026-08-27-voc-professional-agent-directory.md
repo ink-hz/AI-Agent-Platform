@@ -23,6 +23,7 @@
 
 **Files:**
 - Modify: `backend/tests/test_agent_catalog.py`
+- Modify: `backend/tests/test_control_plane_migration.py`
 - Create: `backend/tests/test_voc_agent_catalog_migration.py`
 - Modify: `backend/app/agent_catalog/models.py`
 - Modify: `backend/app/agent_catalog/catalog.yaml`
