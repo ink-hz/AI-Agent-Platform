@@ -73,6 +73,28 @@ describe("AiNotesPage", () => {
     expect(container.textContent).toContain("Agent 系统手册");
   });
 
+  it("opens the first article when navigation returns from a deep link to the index", async () => {
+    const client = clientWith(index);
+    const onNavigate = vi.fn();
+    await act(async () => root.render(
+      <AiNotesPage
+        categorySlug="tools"
+        articleSlug="frameworks"
+        client={client}
+        onNavigate={onNavigate}
+      />,
+    ));
+
+    await act(async () => root.render(<AiNotesPage client={client} onNavigate={onNavigate} />));
+
+    expect(onNavigate).toHaveBeenCalledWith("/ai-notes/foundations/handbook", { replace: true });
+    expect(client.fetchArticle).toHaveBeenLastCalledWith(
+      "foundations",
+      "handbook",
+      expect.any(AbortSignal),
+    );
+  });
+
   it("treats five empty categories as a valid empty state", async () => {
     await act(async () => root.render(<AiNotesPage client={clientWith(emptyIndex)} />));
 

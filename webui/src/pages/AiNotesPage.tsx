@@ -59,22 +59,25 @@ export function AiNotesPage({
   useEffect(() => {
     const controller = new AbortController();
     setIndexState("loading");
+    setAutomaticSelection(null);
     void client.fetchIndex(controller.signal).then((loaded) => {
       setIndex(loaded);
       setIndexState("ready");
-      if (!categorySlug && !articleSlug) {
-        const selected = firstArticle(loaded);
-        setAutomaticSelection(selected);
-        if (selected) {
-          onNavigate(`/ai-notes/${selected.categorySlug}/${selected.articleSlug}`, { replace: true });
-        }
-      }
     }).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setIndexState("error");
     });
     return () => controller.abort();
   }, [client, onNavigate]);
+
+  useEffect(() => {
+    if (!index || categorySlug || articleSlug) return;
+    const selected = firstArticle(index);
+    setAutomaticSelection(selected);
+    if (selected) {
+      onNavigate(`/ai-notes/${selected.categorySlug}/${selected.articleSlug}`, { replace: true });
+    }
+  }, [articleSlug, categorySlug, index, onNavigate]);
 
   const selectedPath = useMemo<AiNotesSelection | null>(() => {
     if (categorySlug && articleSlug) return { categorySlug, articleSlug };
