@@ -50,3 +50,13 @@ def test_publishes_clean_claude_code_architecture_note() -> None:
     assert article.updated_at == TODAY
     assert article.tags == ("Claude Code", "Agent", "AI 开发工具")
     assert_clean_body(article.markdown)
+
+
+def test_publishes_clean_ai_native_architecture_design_note() -> None:
+    article = published_article("thinking-and-methods", "ai-native-architecture-design")
+    assert article.title == "AI Native 辅助架构设计：协作方法与质量控制"
+    assert article.filename == "ai-native-architecture-design.md"
+    assert article.published_at == TODAY
+    assert article.updated_at == TODAY
+    assert article.tags == ("AI Native", "架构设计", "工程方法")
+    assert_clean_body(article.markdown)
