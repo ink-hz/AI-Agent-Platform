@@ -307,6 +307,24 @@ def test_formal_nginx_keeps_platform_root_and_proxies_office_safely() -> None:
     assert "location ^~ /office/assets/" in nginx
     assert "location ^~ /office/knowledge-assets/" in nginx
     assert "location ^~ /office/" in nginx
+    assert "location ^~ /assets/" in nginx
+    asset_start = nginx.index("location ^~ /assets/")
+    root_start = nginx.index("location / {", asset_start)
+    asset_boundary = nginx[asset_start:root_start]
+    for directive in (
+        "proxy_pass http://127.0.0.1:8080;",
+        "proxy_hide_header Cache-Control;",
+        "proxy_hide_header Set-Cookie;",
+        "gzip on;",
+        "gzip_vary on;",
+        "gzip_min_length 1024;",
+        "gzip_types text/css application/javascript application/json "
+        "image/svg+xml font/woff font/woff2;",
+        'add_header Cache-Control "public, max-age=31536000, immutable";',
+    ):
+        assert directive in asset_boundary
+    assert "proxy_buffering off;" not in asset_boundary
+    assert 'add_header Cache-Control "no-store"' not in asset_boundary
     assert "proxy_pass http://127.0.0.1:8011;" in nginx
     assert "proxy_set_header X-Forwarded-For $remote_addr;" in nginx
     assert 'proxy_set_header Forwarded "";' in nginx

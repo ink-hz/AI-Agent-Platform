@@ -16,6 +16,32 @@ _SHARED_AUTH = {
     "auth_delay": re.compile(r"^auth_delay\s+1s;$"),
 }
 
+_FORMAL_ASSETS = """\
+    location ^~ /assets/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Forwarded "";
+        proxy_set_header Authorization "";
+        proxy_hide_header Cache-Control;
+        proxy_hide_header Set-Cookie;
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_types text/css application/javascript application/json image/svg+xml font/woff font/woff2;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    }
+
+"""
+
 _FORMAL_ROOT = """\
     location / {
         proxy_pass http://127.0.0.1:8080;
@@ -162,7 +188,7 @@ def _transform_server(block: str) -> str:
                     index += 1
                 if depth != location_depth:
                     raise ValueError("root location invalid")
-                output.append(_FORMAL_ROOT)
+                output.append(_FORMAL_ASSETS + _FORMAL_ROOT)
                 continue
         output.append(line)
         depth += _brace_delta(line)
