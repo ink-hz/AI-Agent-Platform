@@ -1375,7 +1375,8 @@ body {
   .brain-home-toolbar { min-height: 42px; }
   .brain-home-focus { margin-top: clamp(20px, 7vh, 52px); }
   .brain-home-focus > h1 { font-size: 34px; }
-  .brain-composer { margin-top: 23px; padding: 11px; border-radius: 15px; }
+  .brain-home-focus .brain-composer { margin-top: 23px; }
+  .brain-composer { padding: 11px; border-radius: 15px; }
   .brain-composer textarea, .agent-direct-composer textarea { min-height: 150px; padding: 13px; font-size: 15px; }
   .brain-composer-actions, .agent-direct-composer > div { align-items: stretch; flex-direction: column; }
   .brain-submit, .agent-direct-composer button { width: 100%; }

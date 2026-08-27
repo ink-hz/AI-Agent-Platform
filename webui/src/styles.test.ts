@@ -278,5 +278,6 @@ describe("Executive Operations visual contract", () => {
     const mobile = lastBlock("@media (max-width: 720px)");
     expect(mobile).toContain(".brain-home-toolbar");
     expect(mobile).toContain(".brain-home-focus");
+    expect(mobile).toContain(".brain-home-focus .brain-composer { margin-top: 23px; }");
   });
 });
