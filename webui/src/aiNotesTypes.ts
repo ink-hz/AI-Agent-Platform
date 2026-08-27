@@ -3,6 +3,8 @@ export interface AiNoteSummary {
   title: string;
   filename: string;
   description: string;
+  author: string;
+  motto: string | null;
   published_at: string;
   updated_at: string | null;
   tags: string[];
@@ -40,8 +42,8 @@ export class AiNotesApiError extends Error {
 }
 
 const SUMMARY_KEYS = [
-  "slug", "title", "filename", "description", "published_at", "updated_at",
-  "tags", "reading_minutes",
+  "slug", "title", "filename", "description", "author", "motto",
+  "published_at", "updated_at", "tags", "reading_minutes",
 ] as const;
 const ARTICLE_KEYS = [
   ...SUMMARY_KEYS, "category_slug", "category_title", "markdown",
@@ -66,6 +68,10 @@ function exactKeys(value: Record<string, unknown>, expected: readonly string[]):
 function nonEmptyString(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) throw new AiNotesContractError();
   return value;
+}
+
+function optionalNonEmptyString(value: unknown): string | null {
+  return value === null ? null : nonEmptyString(value);
 }
 
 function slug(value: unknown, pattern: RegExp): string {
@@ -98,6 +104,8 @@ function summaryFields(value: Record<string, unknown>): AiNoteSummary {
     title: nonEmptyString(value.title),
     filename: nonEmptyString(value.filename),
     description: nonEmptyString(value.description),
+    author: nonEmptyString(value.author),
+    motto: optionalNonEmptyString(value.motto),
     published_at: dateValue(value.published_at) as string,
     updated_at: dateValue(value.updated_at, true),
     tags: [...value.tags] as string[],

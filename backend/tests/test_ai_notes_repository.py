@@ -31,6 +31,8 @@ def write_article(
         f"title: {title}\n"
         f"slug: {slug}\n"
         "description: 从原理到实践。\n"
+        "author: 苍渊\n"
+        "motto: 博观而约取，厚积而薄发。\n"
         "publishedAt: 2026-08-27\n"
         "updatedAt: 2026-08-27\n"
         "tags: [Agent, 架构]\n"
@@ -62,6 +64,8 @@ def test_builds_ordered_published_index_and_whitelist(tmp_path: Path) -> None:
     assert repository.article("tools", "draft") is None
     article = repository.article("foundations", "first")
     assert article is not None
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
     assert article.markdown.startswith("# 正文")
     assert article.reading_minutes == 1
 

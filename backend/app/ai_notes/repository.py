@@ -136,6 +136,8 @@ def _load_repository(root: Path, *, today: date) -> AiNotesRepository:
                 title=frontmatter.title,
                 filename=matched.group("display"),
                 description=frontmatter.description,
+                author=frontmatter.author,
+                motto=frontmatter.motto,
                 published_at=frontmatter.published_at,
                 updated_at=frontmatter.updated_at,
                 tags=frontmatter.tags,

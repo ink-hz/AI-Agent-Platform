@@ -929,7 +929,10 @@ body {
 .ai-note-header { padding-bottom: 28px; border-bottom: 1px solid var(--line-soft); }
 .ai-note-path { margin: 0 0 13px; color: var(--ink-faint); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 .ai-note-header > h1 { margin: 0; color: var(--ink); font-size: clamp(28px, 3vw, 38px); line-height: 1.22; letter-spacing: -.035em; }
-.ai-note-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 17px; color: var(--ink-faint); font-size: 12px; }
+.ai-note-signature { margin-top: 17px; color: var(--ink-faint); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.ai-note-byline { margin: 0; font-size: 12px; }
+.ai-note-author { color: var(--ink); font-size: 15px; font-weight: 800; letter-spacing: .01em; }
+.ai-note-motto { margin: 7px 0 0; color: var(--ink-faint); font-size: 12px; }
 .ai-note-tags { display: flex; flex-wrap: wrap; gap: 7px; margin: 15px 0 0; padding: 0; list-style: none; }
 .ai-note-tags li { padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-soft); font-size: 11.5px; }
 .article-markdown { min-width: 0; padding-top: 30px; color: var(--ink); font-size: 15px; line-height: 1.82; overflow-wrap: anywhere; }

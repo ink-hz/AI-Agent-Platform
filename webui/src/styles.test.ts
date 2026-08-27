@@ -253,6 +253,10 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".ai-notes-sidebar")).toContain("overflow-y: auto");
     expect(rule(".ai-notes-reader")).toContain("overflow-y: auto");
     expect(rule(".ai-note-article")).toContain("max-width: 820px");
+    expect(rule(".ai-note-signature")).toContain("font-family: ui-monospace");
+    expect(rule(".ai-note-author")).toContain("font-weight: 800");
+    expect(rule(".ai-note-author")).toContain("color: var(--ink)");
+    expect(rule(".ai-note-motto")).toContain("color: var(--ink-faint)");
     expect(rule(".article-table-scroll")).toContain("overflow-x: auto");
     expect(rule(`.ai-notes-category-toggle:focus-visible,
 .ai-notes-files button:focus-visible,

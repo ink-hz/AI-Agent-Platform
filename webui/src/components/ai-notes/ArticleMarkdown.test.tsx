@@ -37,7 +37,8 @@ describe("ArticleMarkdown", () => {
   it("renders restrained article metadata and the Markdown body", () => {
     const article: AiNoteArticleData = {
       slug: "handbook", title: "Agent 系统手册", filename: "handbook.md",
-      description: "不作为顶部营销文案展示", published_at: "2026-08-27",
+      description: "不作为顶部营销文案展示", author: "苍渊",
+      motto: "博观而约取，厚积而薄发。", published_at: "2026-08-27",
       updated_at: "2026-08-28", tags: ["Agent", "架构"], reading_minutes: 8,
       category_slug: "foundations", category_title: "基础与原理", markdown: "# 正文",
     };
@@ -46,8 +47,12 @@ describe("ArticleMarkdown", () => {
 
     expect(html).toContain("基础与原理 / handbook.md");
     expect(html).toContain("Agent 系统手册");
+    expect(html).toContain("by");
+    expect(html).toContain('<strong class="ai-note-author">苍渊</strong>');
+    expect(html).toContain("// 博观而约取，厚积而薄发。");
     expect(html).toContain('dateTime="2026-08-27"');
-    expect(html).toContain("约 8 分钟");
+    expect(html).toContain("updated");
+    expect(html).not.toContain("约 8 分钟");
     expect(html).toContain("Agent");
     expect(html).not.toContain("不作为顶部营销文案展示");
     expect(html).toContain('<h1 id="正文">正文</h1>');

@@ -9,6 +9,8 @@ const summary = {
   title: "Agent 系统手册",
   filename: "handbook.md",
   description: "从原理到实践。",
+  author: "苍渊",
+  motto: "博观而约取，厚积而薄发。",
   published_at: "2026-08-27",
   updated_at: null,
   tags: ["Agent"],
@@ -69,6 +71,21 @@ describe("AI notes API", () => {
     }));
 
     await expect(aiNotesClient.fetchIndex()).rejects.toBeInstanceOf(AiNotesContractError);
+  });
+
+  it("rejects a missing author and a blank motto", () => {
+    const { author: _author, ...withoutAuthor } = summary;
+    void _author;
+
+    expect(() => parseAiNotesIndex({
+      categories: [{ slug: "foundations", title: "基础与原理", articles: [withoutAuthor] }],
+    })).toThrow(AiNotesContractError);
+    expect(() => parseAiNotesIndex({
+      categories: [{
+        slug: "foundations", title: "基础与原理",
+        articles: [{ ...summary, motto: "   " }],
+      }],
+    })).toThrow(AiNotesContractError);
   });
 
   it.each(["2026-99-99", "2026-02-29", "2026-04-31", "0000-01-01"])(

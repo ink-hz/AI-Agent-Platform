@@ -16,7 +16,8 @@ const index: AiNotesIndex = {
       articles: [
         {
           slug: "handbook", title: "Agent 系统手册", filename: "handbook.md",
-          description: "说明", published_at: "2026-08-27", updated_at: null,
+          description: "说明", author: "苍渊", motto: "博观而约取，厚积而薄发。",
+          published_at: "2026-08-27", updated_at: null,
           tags: ["Agent"], reading_minutes: 8,
         },
       ],
@@ -27,7 +28,8 @@ const index: AiNotesIndex = {
       articles: [
         {
           slug: "frameworks", title: "框架选型", filename: "framework-guide.md",
-          description: "说明", published_at: "2026-08-27", updated_at: null,
+          description: "说明", author: "苍渊", motto: null,
+          published_at: "2026-08-27", updated_at: null,
           tags: [], reading_minutes: 3,
         },
       ],

@@ -2,6 +2,8 @@
 title: Claude Code 架构分析：公开能力与工程启发
 slug: claude-code-architecture
 description: 基于官方公开能力，分析 Claude Code 的权限、工具、Hooks、上下文、MCP 与可观测性设计。
+author: 苍渊
+motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
 updatedAt: 2026-08-27
 tags:

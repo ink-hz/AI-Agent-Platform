@@ -2,6 +2,8 @@
 title: AI Native 辅助架构设计：协作方法与质量控制
 slug: ai-native-architecture-design
 description: 总结 AI 参与架构设计时的材料治理、结构搭建、方案推演、决策记录与质量收敛方法。
+author: 苍渊
+motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
 updatedAt: 2026-08-27
 tags:

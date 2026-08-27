@@ -27,12 +27,21 @@ class ArticleFrontmatter(BaseModel):
     title: str = Field(min_length=1)
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,127}$")
     description: str = Field(min_length=1)
+    author: str = Field(min_length=1)
+    motto: str | None = None
     published_at: date = Field(alias="publishedAt")
     updated_at: date | None = Field(default=None, alias="updatedAt")
     tags: tuple[str, ...] = ()
     draft: StrictBool
 
-    _text_not_blank = field_validator("title", "description")(_non_blank)
+    _required_text_not_blank = field_validator(
+        "title", "description", "author"
+    )(_non_blank)
+
+    @field_validator("motto")
+    @classmethod
+    def motto_not_blank(cls, value: str | None) -> str | None:
+        return None if value is None else _non_blank(value)
 
     @field_validator("tags")
     @classmethod
@@ -50,6 +59,8 @@ class AiNoteSummary(BaseModel):
     title: str
     filename: str
     description: str
+    author: str
+    motto: str | None
     published_at: date
     updated_at: date | None
     tags: tuple[str, ...]

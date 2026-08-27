@@ -61,6 +61,26 @@ def test_rejects_invalid_publication_dates(
         AiNotesRepository.load(tmp_path, today=date(2026, 8, 27))
 
 
+def test_rejects_missing_author_and_blank_motto(tmp_path: Path) -> None:
+    category = write_category(
+        tmp_path, "01-foundations", "基础与原理", "foundations"
+    )
+    write_article(category, "01-first.md", slug="first")
+    path = category / "01-first.md"
+    source = path.read_text(encoding="utf-8")
+
+    path.write_text(source.replace("author: 苍渊\n", ""), encoding="utf-8")
+    with pytest.raises(AiNotesContentError):
+        AiNotesRepository.load(tmp_path, today=date(2026, 8, 27))
+
+    path.write_text(
+        source.replace("motto: 博观而约取，厚积而薄发。", "motto: '   '"),
+        encoding="utf-8",
+    )
+    with pytest.raises(AiNotesContentError):
+        AiNotesRepository.load(tmp_path, today=date(2026, 8, 27))
+
+
 @pytest.mark.parametrize(
     "link",
     [

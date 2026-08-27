@@ -35,6 +35,8 @@ slug: foundations
 title: Agent 系统手册：从概念到工程实践
 slug: agent-system-handbook
 description: 系统梳理 Agent 的核心闭环、运行时、工具、安全和评估。
+author: 苍渊
+motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
 updatedAt: 2026-08-27
 tags:
@@ -46,7 +48,8 @@ draft: true
 
 约束：
 
-- `title`、`slug`、`description`、`publishedAt`、`draft` 必填；`updatedAt`、`tags` 可选。
+- `title`、`slug`、`description`、`author`、`publishedAt`、`draft` 必填；`motto`、`updatedAt`、`tags` 可选。
+- `author` 不得为空白；`motto` 存在时不得为空白。作者和座右铭由阅读页作为结构化署名展示，不写进正文。
 - 文章 slug 必须匹配 `[a-z0-9][a-z0-9-]{0,127}`，并在所属分类中唯一。
 - `publishedAt` 不得早于 `2026-05-25`，不得晚于校验当天。
 - `updatedAt` 不得早于 `publishedAt`。

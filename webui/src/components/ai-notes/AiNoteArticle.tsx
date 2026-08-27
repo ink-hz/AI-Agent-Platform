@@ -7,11 +7,19 @@ export function AiNoteArticle({ article }: { article: AiNoteArticleData }) {
     <header className="ai-note-header">
       <p className="ai-note-path">{article.category_title} / {article.filename}</p>
       <h1>{article.title}</h1>
-      <div className="ai-note-meta">
-        <time dateTime={article.published_at}>发布于 {article.published_at}</time>
-        {article.updated_at && article.updated_at !== article.published_at
-          && <time dateTime={article.updated_at}>更新于 {article.updated_at}</time>}
-        <span>约 {article.reading_minutes} 分钟</span>
+      <div className="ai-note-signature">
+        <p className="ai-note-byline">
+          <span>by</span>{" "}
+          <strong className="ai-note-author">{article.author}</strong>
+          <span aria-hidden="true"> · </span>
+          <time dateTime={article.published_at}>{article.published_at}</time>
+          {article.updated_at && article.updated_at !== article.published_at && <>
+            <span aria-hidden="true"> · </span>
+            <span>updated </span>
+            <time dateTime={article.updated_at}>{article.updated_at}</time>
+          </>}
+        </p>
+        {article.motto && <p className="ai-note-motto">// {article.motto}</p>}
       </div>
       {article.tags.length > 0 && <ul className="ai-note-tags" aria-label="文章标签">
         {article.tags.map((tag) => <li key={tag}>{tag}</li>)}

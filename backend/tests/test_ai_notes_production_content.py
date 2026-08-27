@@ -48,6 +48,8 @@ def test_publishes_clean_claude_code_architecture_note() -> None:
     assert article.filename == "claude-code-architecture.md"
     assert article.published_at == TODAY
     assert article.updated_at == TODAY
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("Claude Code", "Agent", "AI 开发工具")
     assert_clean_body(article.markdown)
 
@@ -58,5 +60,7 @@ def test_publishes_clean_ai_native_architecture_design_note() -> None:
     assert article.filename == "ai-native-architecture-design.md"
     assert article.published_at == TODAY
     assert article.updated_at == TODAY
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("AI Native", "架构设计", "工程方法")
     assert_clean_body(article.markdown)
