@@ -40,3 +40,13 @@ def test_legacy_marker_file_covers_identified_source_branding() -> None:
 def test_current_production_content_passes_publication_validation() -> None:
     index = validate_publication(CONTENT_ROOT, MARKER_FILE, today=TODAY)
     assert len(index.categories) == 5
+
+
+def test_publishes_clean_claude_code_architecture_note() -> None:
+    article = published_article("tools-and-frameworks", "claude-code-architecture")
+    assert article.title == "Claude Code 架构分析：公开能力与工程启发"
+    assert article.filename == "claude-code-architecture.md"
+    assert article.published_at == TODAY
+    assert article.updated_at == TODAY
+    assert article.tags == ("Claude Code", "Agent", "AI 开发工具")
+    assert_clean_body(article.markdown)
