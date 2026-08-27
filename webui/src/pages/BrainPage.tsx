@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import type { Account } from "../auth";
+import { platformPath, type Account } from "../auth";
 import { ConversationApiError, conversationInputTooLarge, startConversation, type ConversationSubmission } from "../conversationApi";
 import type { Conversation } from "../conversationTypes";
 import { navigate } from "../router";
@@ -29,11 +29,13 @@ export function BrainPage({
   account,
   client = DEFAULT_CLIENT,
   onConversationCreated,
+  onOpenAiNotes = (path) => navigate(path),
   onOpenConversation = (path) => navigate(path),
 }: {
   account: Account;
   client?: BrainPageClient;
   onConversationCreated?: (conversation: Conversation) => void;
+  onOpenAiNotes?: (path: string) => void;
   onOpenConversation?: (path: string) => void;
 }) {
   const [text, setText] = useState("");
@@ -87,6 +89,15 @@ export function BrainPage({
       <p>把原始需求直接交给它</p>
       <h1 id="brain-heading">Agent 大脑</h1>
       <span>它会判断是否需要专业 Agent，并把真实的分工、执行和结果交付给你。</span>
+      <a
+        className="brain-ai-notes-entry"
+        href={platformPath("/ai-notes")}
+        onClick={(event) => {
+          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          onOpenAiNotes("/ai-notes");
+        }}
+      >AI 工程笔记 <span aria-hidden="true">→</span></a>
       <form className="brain-composer" onSubmit={submit}>
         <label htmlFor="brain-request">你想完成什么？</label>
         <textarea

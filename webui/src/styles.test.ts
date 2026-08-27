@@ -263,4 +263,10 @@ describe("Executive Operations visual contract", () => {
     expect(mobile).toContain(".ai-notes-sidebar { display: none; }");
     expect(mobile).toContain(".ai-notes-mobile-menu { display: inline-flex; }");
   });
+
+  it("keeps the AI notes home entry quiet and keyboard visible", () => {
+    expect(rule(".brain-ai-notes-entry")).toContain("display: inline-flex");
+    expect(rule(".brain-ai-notes-entry")).toContain("min-height: 36px");
+    expect(rule(".brain-ai-notes-entry:focus-visible")).toContain("outline: 3px solid");
+  });
 });

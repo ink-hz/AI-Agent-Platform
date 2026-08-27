@@ -37,6 +37,7 @@ describe("BrainWorkspacePage", () => {
     const rows = [...container.querySelectorAll(".conversation-session-link")];
     expect(rows.map((row) => row.textContent)).toEqual([expect.stringContaining("最新会话"), expect.stringContaining("较早会话")]);
     expect(container.querySelector("textarea[aria-label='你想完成什么？']")).not.toBeNull();
+    expect(container.querySelector('.brain-ai-notes-entry[href="/ai-notes"]')).not.toBeNull();
     await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/conversations/newer"]')?.click());
     expect(onNavigate).toHaveBeenCalledWith("/conversations/newer");
   });
@@ -66,6 +67,7 @@ describe("BrainWorkspacePage", () => {
     expect(container.querySelector(".conversation-header h1")?.textContent).toBe("Agent 大脑");
     expect(container.querySelector(".conversation-page")?.textContent).not.toContain("最新会话");
     expect(container.textContent).not.toContain("← 历史对话");
+    expect(container.querySelector(".brain-ai-notes-entry")).toBeNull();
   });
 
   it("opens and closes the mobile Session drawer without changing the conversation", async () => {

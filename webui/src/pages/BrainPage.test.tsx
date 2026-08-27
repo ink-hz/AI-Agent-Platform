@@ -72,6 +72,26 @@ describe("BrainPage", () => {
     expect(container.textContent).not.toContain("运行摘要");
   });
 
+  it("opens AI engineering notes from one quiet home entry", async () => {
+    const onOpenAiNotes = vi.fn();
+    await act(async () => root.render(
+      <BrainPage
+        account={account}
+        client={{ createSubmission: vi.fn() }}
+        onOpenAiNotes={onOpenAiNotes}
+      />,
+    ));
+
+    const entry = container.querySelector<HTMLAnchorElement>(".brain-ai-notes-entry");
+    expect(entry?.textContent).toBe("AI 工程笔记 →");
+    expect(entry?.getAttribute("href")).toBe("/ai-notes");
+    expect(container.querySelector(".brain-hero > span + .brain-ai-notes-entry")).toBe(entry);
+    expect(entry?.nextElementSibling?.classList.contains("brain-composer")).toBe(true);
+
+    await act(async () => entry?.click());
+    expect(onOpenAiNotes).toHaveBeenCalledWith("/ai-notes");
+  });
+
   it("submits once while pending and opens the persisted Conversation URL", async () => {
     const pending = deferred<ConversationSubmissionResult>();
     const send = vi.fn(() => pending.promise);
