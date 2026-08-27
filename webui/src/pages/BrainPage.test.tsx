@@ -47,6 +47,7 @@ describe("BrainPage", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
   beforeEach(() => {
+    window.history.replaceState({}, "", "/");
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -90,6 +91,32 @@ describe("BrainPage", () => {
 
     await act(async () => entry?.click());
     expect(onOpenAiNotes).toHaveBeenCalledWith("/ai-notes");
+  });
+
+  it("preserves the deployment prefix and native modified-link behavior", async () => {
+    window.history.replaceState({}, "", "/_preview/dingtalk-r1/");
+    const onOpenAiNotes = vi.fn();
+    await act(async () => root.render(
+      <BrainPage
+        account={account}
+        client={{ createSubmission: vi.fn() }}
+        onOpenAiNotes={onOpenAiNotes}
+      />,
+    ));
+    const entry = container.querySelector<HTMLAnchorElement>(".brain-ai-notes-entry")!;
+    expect(entry.getAttribute("href")).toBe("/_preview/dingtalk-r1/ai-notes");
+
+    for (const init of [
+      { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 },
+    ]) {
+      entry.addEventListener("click", (event) => event.preventDefault(), { once: true });
+      await act(async () => entry.dispatchEvent(new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      })));
+    }
+    expect(onOpenAiNotes).not.toHaveBeenCalled();
   });
 
   it("submits once while pending and opens the persisted Conversation URL", async () => {
