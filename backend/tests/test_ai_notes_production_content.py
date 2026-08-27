@@ -100,3 +100,18 @@ def test_publishes_clean_agent_engineering_learning_map() -> None:
     assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("Agent", "学习地图", "AI 工程")
     assert_clean_body(article.markdown)
+
+
+def test_first_batch_is_exactly_the_approved_five_articles() -> None:
+    index = validate_publication(CONTENT_ROOT, MARKER_FILE, today=TODAY)
+    actual = {
+        category.slug: tuple(article.slug for article in category.articles)
+        for category in index.categories
+    }
+    assert actual == {
+        "foundations": ("agent-engineering-learning-map",),
+        "agent-architecture": ("enterprise-agent-system-architecture",),
+        "tools-and-frameworks": ("claude-code-architecture",),
+        "ai-engineering": ("rag-retrieval-engineering",),
+        "thinking-and-methods": ("ai-native-architecture-design",),
+    }
