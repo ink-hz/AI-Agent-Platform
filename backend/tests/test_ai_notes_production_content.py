@@ -88,3 +88,15 @@ def test_publishes_clean_rag_retrieval_engineering_note() -> None:
     assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("RAG", "向量检索", "AI 工程")
     assert_clean_body(article.markdown)
+
+
+def test_publishes_clean_agent_engineering_learning_map() -> None:
+    article = published_article("foundations", "agent-engineering-learning-map")
+    assert article.title == "Agent 工程学习地图：从模型循环到生产系统"
+    assert article.filename == "agent-engineering-learning-map.md"
+    assert article.published_at == TODAY
+    assert article.updated_at == TODAY
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
+    assert article.tags == ("Agent", "学习地图", "AI 工程")
+    assert_clean_body(article.markdown)
