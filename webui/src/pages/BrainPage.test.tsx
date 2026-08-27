@@ -67,7 +67,10 @@ describe("BrainPage", () => {
 
     expect(container.querySelector("h1")?.textContent).toBe("Agent 大脑");
     expect(container.querySelector("textarea")?.disabled).toBe(false);
-    expect(container.querySelectorAll(".brain-example")).toHaveLength(3);
+    expect(container.querySelectorAll(".brain-example")).toHaveLength(0);
+    expect(container.textContent).not.toContain("把原始需求直接交给它");
+    expect(container.textContent).not.toContain("它会判断是否需要专业 Agent");
+    expect(container.textContent).not.toContain("首版支持纯文本任务");
     expect(container.textContent).not.toContain("最近对话");
     expect(container.textContent).not.toContain("累计对话");
     expect(container.textContent).not.toContain("运行摘要");
@@ -86,8 +89,9 @@ describe("BrainPage", () => {
     const entry = container.querySelector<HTMLAnchorElement>(".brain-ai-notes-entry");
     expect(entry?.textContent).toBe("AI 工程笔记 →");
     expect(entry?.getAttribute("href")).toBe("/ai-notes");
-    expect(container.querySelector(".brain-hero > span + .brain-ai-notes-entry")).toBe(entry);
-    expect(entry?.nextElementSibling?.classList.contains("brain-composer")).toBe(true);
+    expect(entry?.parentElement?.classList.contains("brain-home-toolbar")).toBe(true);
+    expect(container.querySelector(".brain-home-focus h1")?.textContent).toBe("Agent 大脑");
+    expect(container.querySelector(".brain-home-focus .brain-composer")).not.toBeNull();
 
     await act(async () => entry?.click());
     expect(onOpenAiNotes).toHaveBeenCalledWith("/ai-notes");

@@ -5,13 +5,6 @@ import { ConversationApiError, conversationInputTooLarge, startConversation, typ
 import type { Conversation } from "../conversationTypes";
 import { navigate } from "../router";
 
-
-const EXAMPLES = [
-  "帮我细化一个视觉算法岗位的能力组合，并给出候选人搜寻与面试方案",
-  "为深度相机异常整理一套分步排查方案，标出还需要补充的信息",
-  "为灵巧手 OEM、代采与 DFM 服务制定目标客户与首轮触达方案",
-] as const;
-
 export interface BrainPageClient {
   createSubmission(text: string, csrfToken: string): ConversationSubmission;
 }
@@ -86,52 +79,50 @@ export function BrainPage({
 
   return <div className="brain-page">
     <section className="brain-hero" aria-labelledby="brain-heading">
-      <p>把原始需求直接交给它</p>
-      <h1 id="brain-heading">Agent 大脑</h1>
-      <span>它会判断是否需要专业 Agent，并把真实的分工、执行和结果交付给你。</span>
-      <a
-        className="brain-ai-notes-entry"
-        href={platformPath("/ai-notes")}
-        onClick={(event) => {
-          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-          event.preventDefault();
-          onOpenAiNotes("/ai-notes");
-        }}
-      >AI 工程笔记 <span aria-hidden="true">→</span></a>
-      <form className="brain-composer" onSubmit={submit}>
-        <label htmlFor="brain-request">你想完成什么？</label>
-        <textarea
-          autoFocus
-          disabled={account.hard_stale_read_only}
-          id="brain-request"
-          aria-label="你想完成什么？"
-          maxLength={32 * 1024}
-          onChange={(event) => {
-            const next = event.target.value;
-            setText(next);
-            if (retained.current?.text !== next.trim()) retained.current = null;
-            setFailure(null);
+      <div className="brain-home-toolbar">
+        <a
+          className="brain-ai-notes-entry"
+          href={platformPath("/ai-notes")}
+          onClick={(event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            onOpenAiNotes("/ai-notes");
           }}
-          placeholder="描述目标、背景和希望得到的结果…"
-          rows={5}
-          value={text}
-        />
-        <div className="brain-composer-actions">
-          <span>首版支持纯文本任务；需要专业能力时最多调用一个已授权 Agent。</span>
-          <button className="brain-submit" disabled={!text.trim() || inputTooLarge || pending || account.hard_stale_read_only} type="submit">
-            {pending ? "正在创建…" : "开始对话"}
-          </button>
-        </div>
-      </form>
-      {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
-      {failure && <div className="brain-submit-error" role="alert">
-        <span>{failure === "unavailable"
-          ? "Agent 大脑暂不可用。请稍后使用同一次请求重试。"
-          : "对话暂未创建成功。网络恢复后可使用同一次请求安全重试。"}</span>
-        <button className="brain-retry" disabled={pending} onClick={() => void send()} type="button">重新提交</button>
-      </div>}
-      <div className="brain-examples" aria-label="任务示例">
-        {EXAMPLES.map((example) => <button className="brain-example" key={example} onClick={() => setText(example)} type="button">{example}</button>)}
+        >AI 工程笔记 <span aria-hidden="true">→</span></a>
+      </div>
+      <div className="brain-home-focus">
+        <h1 id="brain-heading">Agent 大脑</h1>
+        <form className="brain-composer" onSubmit={submit}>
+          <label htmlFor="brain-request">你想完成什么？</label>
+          <textarea
+            autoFocus
+            disabled={account.hard_stale_read_only}
+            id="brain-request"
+            aria-label="你想完成什么？"
+            maxLength={32 * 1024}
+            onChange={(event) => {
+              const next = event.target.value;
+              setText(next);
+              if (retained.current?.text !== next.trim()) retained.current = null;
+              setFailure(null);
+            }}
+            placeholder="描述目标、背景和希望得到的结果…"
+            rows={5}
+            value={text}
+          />
+          <div className="brain-composer-actions">
+            <button className="brain-submit" disabled={!text.trim() || inputTooLarge || pending || account.hard_stale_read_only} type="submit">
+              {pending ? "正在创建…" : "开始对话"}
+            </button>
+          </div>
+        </form>
+        {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
+        {failure && <div className="brain-submit-error" role="alert">
+          <span>{failure === "unavailable"
+            ? "Agent 大脑暂不可用。请稍后使用同一次请求重试。"
+            : "对话暂未创建成功。网络恢复后可使用同一次请求安全重试。"}</span>
+          <button className="brain-retry" disabled={pending} onClick={() => void send()} type="button">重新提交</button>
+        </div>}
       </div>
     </section>
   </div>;
