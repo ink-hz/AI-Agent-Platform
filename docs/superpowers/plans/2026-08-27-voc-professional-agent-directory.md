@@ -311,6 +311,7 @@ git commit -m "feat(web): list VOC after HR"
 
 **Files:**
 - Create: `backend/tests/test_voc_agent_directory_deployment.py`
+- Modify: `backend/tests/test_fleet_service.py`
 - Modify: `deploy/cloud/accept.sh`
 
 **Interfaces:**
@@ -369,7 +370,7 @@ Expected: shell syntax and selected tests pass.
 Run:
 
 ```bash
-PYTHONPATH=backend .venv/bin/pytest -q backend/tests
+cd backend && PYTHONPATH=. ../.venv/bin/pytest -q tests
 cd webui && npm test && npm run build
 ```
 
