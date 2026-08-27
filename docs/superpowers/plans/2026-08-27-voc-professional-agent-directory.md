@@ -384,17 +384,13 @@ git commit -m "test(deploy): require VOC in member catalog"
 git push -u origin feat/voc-agent-directory
 ```
 
-- [ ] **Step 6: Merge to master and deploy with the existing cloud release script**
+- [ ] **Step 6: Merge to master and publish the exact release commit**
 
-Merge the reviewed branch without rewriting unrelated local master work, push that exact commit to `origin/master`, then run:
+Merge the reviewed branch without rewriting unrelated local master work and push that exact commit to `origin/master`. Do not deploy yet: the authenticated release gate requires the VOC grant to exist before it runs.
 
-```bash
-deploy/cloud/deploy.sh "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/cloud-replica/deploy.env"
-```
+- [ ] **Step 7: Create the audited production all-member grant before deployment**
 
-Record the resulting release commit, image, container start time, migration 048 success, and health state. Do not restart FAE or AI ADMIN.
-
-- [ ] **Step 7: Create the audited production all-member grant**
+The old release neither contains the VOC Catalog card nor accepts `voc` in its canonical authorization allowlist, so pre-creating the grant does not expose a new entry before the new image is active. It does ensure the new release's authenticated acceptance gate can pass immediately after migration 048 is applied.
 
 Resolve the current active `platform_owner` internal UUID from the control database. Generate separate UUIDv4 values for the grant and audit request, then call:
 
@@ -412,9 +408,19 @@ select platform_control.grant_agent_use_scope_v29(
 );
 ```
 
-Use the production control database secret file without printing its contents. Verify one active `all_members` grant for `voc` and one matching `agent_use_scope_granted` audit event.
+Use the production control database secret file without printing its contents. Verify one active `all_members` grant for `voc` and one matching `agent_use_scope_granted` audit event. Record the grant ID so a failed deployment can immediately invoke the audited revoke function.
 
-- [ ] **Step 8: Verify production behavior**
+- [ ] **Step 8: Deploy with the existing cloud release script**
+
+From a clean checkout whose HEAD equals `origin/master`, run:
+
+```bash
+deploy/cloud/deploy.sh "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/cloud-replica/deploy.env"
+```
+
+Record the resulting release commit, image, container start time, migration 048 success, and health state. Do not restart FAE or AI ADMIN.
+
+- [ ] **Step 9: Verify production behavior**
 
 Run the authenticated production acceptance suite, then verify:
 
@@ -425,6 +431,6 @@ Run the authenticated production acceptance suite, then verify:
 - `/office/?view=services` and `https://fae.orbbec.com.cn/` remain unchanged;
 - `voc` is absent from Brain-dispatchable Agent results.
 
-- [ ] **Step 9: Record rollback evidence**
+- [ ] **Step 10: Record rollback evidence**
 
 Record the previous Platform image and release. Rollback means restoring that image and invoking the audited revoke function for the `voc` grant; it must not delete VOC records or stop the VOC service.
