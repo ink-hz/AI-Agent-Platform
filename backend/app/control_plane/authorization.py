@@ -88,6 +88,12 @@ _VOC_MUTATION_ROUTES = frozenset({
     ("POST", "/api/v1/extensions/voc/vocs/{voc_no}/supplements"),
 })
 
+_VOC_MANAGEMENT_ROUTES = frozenset({
+    ("GET", "/api/v1/extensions/voc/admin/vocs"),
+    ("GET", "/api/v1/extensions/voc/admin/vocs/{voc_no}"),
+    ("GET", "/api/v1/extensions/voc/admin/submitters"),
+})
+
 _OWNER_ROUTES = frozenset({
     *(route for route in VIEWER_R1_ROUTES),
     ("GET", "/api/deployment"),
@@ -132,7 +138,7 @@ _OWNER_ROUTES = frozenset({
     ("DELETE", "/api/v1/manage/admins/{internal_user_id}"),
     ("PUT", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
     ("DELETE", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
-}) | _MANAGEMENT_SHELL_ROUTES | _AUTHENTICATED_SELF_ROUTES
+}) | _MANAGEMENT_SHELL_ROUTES | _AUTHENTICATED_SELF_ROUTES | _VOC_MANAGEMENT_ROUTES
 
 
 @dataclass(frozen=True)
@@ -193,6 +199,8 @@ class AuthorizationService:
             return AuthorizationDecision(True, 200, auth.role.value, None)
         if key in _MANAGEMENT_SHELL_ROUTES:
             return AuthorizationDecision(True, 200, "viewer_shell", None)
+        if key in _VOC_MANAGEMENT_ROUTES:
+            return AuthorizationDecision(True, 200, "viewer_voc_management", None)
         if key not in VIEWER_R1_ROUTES:
             return self._deny(403, "viewer_route_denied")
         if route_template == "/api/v1/manage/audit/governance":

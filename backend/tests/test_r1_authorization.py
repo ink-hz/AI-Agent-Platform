@@ -164,6 +164,24 @@ def test_voc_self_reads_remain_available_when_directory_is_hard_stale(route):
     assert decision.allowed is True
 
 
+@pytest.mark.parametrize(
+    "route",
+    [
+        "/api/v1/extensions/voc/admin/vocs",
+        "/api/v1/extensions/voc/admin/vocs/{voc_no}",
+        "/api/v1/extensions/voc/admin/submitters",
+    ],
+)
+def test_voc_management_reads_allow_exact_management_roles_only(route):
+    service = AuthorizationService(Grants())
+
+    assert service.decide(None, "GET", route, ()).status_code == 401
+    assert service.decide(MEMBER, "GET", route, ()).status_code == 403
+    for context in (VIEWER, ADMIN, OWNER):
+        decision = service.decide(context, "GET", route, ())
+        assert decision.allowed is True
+
+
 def test_platform_admin_uses_owner_routes_after_fail_closed_gates():
     service = AuthorizationService(Grants(), cloud_mode=True)
 

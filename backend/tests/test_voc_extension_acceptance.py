@@ -19,6 +19,7 @@ from app.voc_extension.identity import PlatformVocTokenSigner
 from app.voc_extension.routes import build_voc_extension_router
 
 MEMBER_ID = UUID("11111111-1111-4111-8111-111111111111")
+MANAGER_ID = UUID("22222222-2222-4222-8222-222222222222")
 
 
 class Grants:
@@ -36,8 +37,18 @@ class Auth:
     hard_stale_audit = staticmethod(lambda *_args: None)
 
     def authenticate(self, token):
-        if token not in {"member", "stale"}:
+        if token not in {"member", "stale", "manager"}:
             return None
+        if token == "manager":
+            return (
+                AuthContext(
+                    MANAGER_ID,
+                    Role.MANAGEMENT_VIEWER,
+                    uuid4(),
+                    False,
+                ),
+                "csrf",
+            )
         return (
             AuthContext(MEMBER_ID, Role.MEMBER, uuid4(), token == "stale"),
             "csrf",
@@ -50,6 +61,14 @@ class Auth:
 def _payload(token: str) -> dict[str, object]:
     segment = token.split(".")[1]
     return json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
+
+
+class Directory:
+    def names_for(self, ids):
+        return {MEMBER_ID: "苍渊"} if MEMBER_ID in ids else {}
+
+    def list_submitters(self):
+        return ()
 
 
 @pytest.mark.asyncio
@@ -133,6 +152,79 @@ async def test_platform_voc_extension_end_to_end_actor_and_mutation_boundary() -
             )
             assert stale.status_code == 503
             assert len(downstream) == count
+    finally:
+        await voc_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_management_read_is_middleware_protected_and_uses_minimal_token() -> None:
+    downstream: list[httpx.Request] = []
+
+    def voc_service(request: httpx.Request) -> httpx.Response:
+        downstream.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "voc_no": "VOC-20260826-001",
+                        "submitter_internal_user_id": str(MEMBER_ID),
+                        "legacy_submitter_name": None,
+                        "source": "platform",
+                        "latest_content": "设备连续运行三小时后明显发热",
+                        "revision": 1,
+                        "analysis_status": "pending",
+                        "created_at": "2026-08-26T09:30:00Z",
+                        "updated_at": "2026-08-26T09:30:00Z",
+                    }
+                ],
+                "next_cursor": None,
+            },
+        )
+
+    voc_client = VocExtensionClient(
+        "http://127.0.0.1:18130",
+        PlatformVocTokenSigner(b"v" * 32),
+        transport=httpx.MockTransport(voc_service),
+    )
+    app = FastAPI()
+    app.state.voc_extension_client = voc_client
+    app.state.voc_submitter_directory = Directory()
+    app.include_router(build_voc_extension_router())
+    app.add_middleware(
+        IdentitySecurityMiddleware,
+        auth=Auth(),
+        public_assets=frozenset(),
+        authorization=AuthorizationService(Grants()),
+        routes=tuple(app.router.routes),
+    )
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="https://agent.example.test",
+        ) as browser:
+            unauthenticated = await browser.get(
+                "/api/v1/extensions/voc/admin/vocs"
+            )
+            member = await browser.get(
+                "/api/v1/extensions/voc/admin/vocs",
+                headers={"Cookie": "session=member; csrf=csrf"},
+            )
+            manager = await browser.get(
+                "/api/v1/extensions/voc/admin/vocs",
+                headers={"Cookie": "session=manager; csrf=csrf"},
+            )
+
+        assert unauthenticated.status_code == 401
+        assert member.status_code == 403
+        assert manager.status_code == 200
+        assert manager.json()["items"][0]["submitter_name"] == "苍渊"
+        assert len(downstream) == 1
+        claims = _payload(
+            downstream[0].headers["Authorization"].removeprefix("Bearer ")
+        )
+        assert claims["sub"] == str(MANAGER_ID)
+        assert claims["capabilities"] == ["voc.read_all"]
     finally:
         await voc_client.aclose()
 
