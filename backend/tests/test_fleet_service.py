@@ -298,6 +298,7 @@ async def test_overview_combines_six_local_and_two_remote_agents():
         }),
         "ai-fae-agent",
         "ai-admin-agent",
+        "voc",
     }
 
 
@@ -308,6 +309,7 @@ async def test_overview_expected_roster_retains_missing_catalog_agents():
     assert [agent.id for agent in overview.agents] == ["hr-bot"]
     assert "ai-fae-agent" in overview.expected_agent_ids
     assert "ai-admin-agent" in overview.expected_agent_ids
+    assert "voc" in overview.expected_agent_ids
     assert "marketing-intelligence-bot" in overview.expected_agent_ids
 
 
@@ -347,8 +349,8 @@ async def test_cloud_roster_completion_keeps_catalog_agents_and_usage():
 
     overview = await service.overview(now=NOW)
 
-    assert len({agent.id for agent in overview.agents}) == len(overview.agents) == 8
-    assert overview.summary.total_agents == 8
+    assert len({agent.id for agent in overview.agents}) == len(overview.agents) == 9
+    assert overview.summary.total_agents == 9
     assert {"fae-bot", "codex-assistant"}.isdisjoint(
         agent.id for agent in overview.agents
     )

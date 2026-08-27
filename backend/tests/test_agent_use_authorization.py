@@ -68,7 +68,7 @@ def _auth(role: Role = Role.MEMBER) -> AuthContext:
     return AuthContext(uuid4(), role, uuid4(), False)
 
 
-def test_permitted_agents_evaluates_every_callable_card_through_v29_scope() -> None:
+def test_permitted_agents_evaluates_every_callable_card_through_v41_decision() -> None:
     decisions = _Decisions({"hr-bot", "marketing-gtm-bot"})
     auth = _auth()
     authorization = AgentUseAuthorization(APP_DSN, connect=decisions.connect)
@@ -81,7 +81,7 @@ def test_permitted_agents_evaluates_every_callable_card_through_v29_scope() -> N
     )
     assert decisions.calls == 1
     sql, params = decisions.queries[0]
-    assert "platform_control.has_agent_use_scope_v29" in sql
+    assert "platform_control.resolve_agent_use_decision_v41" in sql
     assert params == (auth.internal_user_id, list(CALLABLE_AGENT_IDS))
 
 
@@ -115,6 +115,38 @@ def test_postgres_authorization_passes_all_callable_ids_as_text_array(
 
     assert tuple(
         card.agent_id for card in authorization.permitted_agents(auth)
+    ) == CALLABLE_AGENT_IDS
+
+
+@pytest.mark.postgres
+def test_postgres_brain_worker_can_list_authorized_agents(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as connection:
+        user_id, _root, _child, _generation = _seed_active_directory(connection)
+        actor_id = uuid4()
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) "
+            "values (%s,'Brain Grant Actor','active')",
+            (actor_id,),
+        )
+        for agent_id in CALLABLE_AGENT_IDS:
+            _insert_grant(
+                connection,
+                agent_id=agent_id,
+                target_kind="user",
+                actor_id=actor_id,
+                user_id=user_id,
+            )
+
+    authorization = AgentUseAuthorization(
+        environment["urls"]["platform_brain_worker"],
+        dsn_purpose="brain",
+    )
+
+    assert tuple(
+        card.agent_id
+        for card in authorization.permitted_agents_for_user_id(user_id)
     ) == CALLABLE_AGENT_IDS
 
 

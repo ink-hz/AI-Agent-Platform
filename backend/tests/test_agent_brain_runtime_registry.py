@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.agent_brain.models import load_capability_cards
+from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.agent_brain.runtime_registry import (
     AgentHealthObservation,
     RuntimeAgentRegistry,
@@ -103,6 +104,21 @@ def test_list_keeps_authorized_agent_with_missing_adapter_as_unavailable() -> No
     unknown = registry.authorize_task(USER_ID, "missing-bot", 1)
     assert unknown.allowed is False
     assert unknown.reason_code == "agent_unavailable"
+
+
+def test_list_does_not_turn_authorization_failure_into_empty_agent_list() -> None:
+    class UnavailableAuthorization(FakeAuthorization):
+        def permitted_agents_for_user_id(self, _user_id):
+            raise AgentUseAuthorizationUnavailable()
+
+    registry = _registry(authorization=UnavailableAuthorization())
+
+    try:
+        registry.list_for_user(USER_ID)
+    except AgentUseAuthorizationUnavailable:
+        pass
+    else:
+        raise AssertionError("authorization failure must remain explicit")
 
 
 def test_health_states_staleness_and_unknown_latency_are_explicit() -> None:

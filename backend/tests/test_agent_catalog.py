@@ -8,6 +8,7 @@ from app.agent_catalog import CANONICAL_AGENT_IDS, AgentCatalogRepository, load_
 
 EXPECTED_IDS = {
     "hr-bot",
+    "voc",
     "marketing-prospecting-bot",
     "marketing-inbound-bot",
     "marketing-voice-bot",
@@ -23,7 +24,7 @@ def _payload() -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_catalog_contains_exactly_the_eight_product_agents() -> None:
+def test_catalog_contains_exactly_the_nine_product_agents() -> None:
     cards = load_agent_catalog()
 
     assert set(CANONICAL_AGENT_IDS) == EXPECTED_IDS
@@ -36,7 +37,7 @@ def test_catalog_contains_exactly_the_eight_product_agents() -> None:
 def test_catalog_expresses_direct_delegated_and_external_modes_explicitly() -> None:
     repository = AgentCatalogRepository()
 
-    for agent_id in EXPECTED_IDS - {"ai-admin-agent", "ai-fae-agent"}:
+    for agent_id in EXPECTED_IDS - {"ai-admin-agent", "ai-fae-agent", "voc"}:
         card = repository.require(agent_id)
         assert card.interaction_modes == ("direct_chat", "brain_delegation")
         assert card.adapter_kind == "metabot_local"
@@ -45,6 +46,7 @@ def test_catalog_expresses_direct_delegated_and_external_modes_explicitly() -> N
 
     admin = repository.require("ai-admin-agent")
     fae = repository.require("ai-fae-agent")
+    voc = repository.require("voc")
     assert admin.interaction_modes == ("external_workspace",)
     assert admin.workspace_url == "/office/?view=services"
     assert admin.adapter_kind is None
@@ -52,6 +54,10 @@ def test_catalog_expresses_direct_delegated_and_external_modes_explicitly() -> N
     assert fae.workspace_url == "https://fae.orbbec.com.cn/"
     assert fae.adapter_kind is None
     assert fae.dispatchable is False
+    assert voc.interaction_modes == ("external_workspace",)
+    assert voc.workspace_url == "/agents/voc/workspace"
+    assert voc.adapter_kind is None
+    assert voc.dispatchable is False
 
 
 def test_catalog_exposes_public_persona_subtitles() -> None:

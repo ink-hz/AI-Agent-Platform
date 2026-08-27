@@ -20,6 +20,25 @@ agents:
     typical_latency_seconds: 90
     capability_version: 2
 
+  - agent_id: voc
+    display_name: VOC 洞察助手
+    domain_group: 客户洞察
+    mission: 将客户反馈整理为可编辑 VOC 草稿，确认后入库，并查看和补充本人记录。
+    capabilities: [整理客户反馈为结构化草稿, 提交本人 VOC, 查看和补充本人记录]
+    exclusions: [不代替用户确认并提交草稿, 不读取无权访问的他人 VOC]
+    required_inputs: [客户反馈原文, 企业登录身份]
+    example_tasks: [把客户反馈整理成 VOC 草稿, 查看并补充我提交的 VOC]
+    interaction_modes: [external_workspace]
+    workspace_url: /agents/voc/workspace
+    supports_persistent_session: false
+    supports_followup_message: false
+    supports_progress_events: false
+    supports_thinking_summary: false
+    supports_cancel: false
+    supports_attachments: false
+    typical_latency_seconds: 30
+    capability_version: 1
+
   - agent_id: marketing-prospecting-bot
     display_name: Marketing Prospecting
     persona_subtitle: 目标客户发现与线索优先级判断

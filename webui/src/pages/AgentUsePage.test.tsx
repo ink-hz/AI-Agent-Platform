@@ -42,6 +42,10 @@ const faeCard: AgentCapabilityCard = {
   ...adminCard, agent_id: "ai-fae-agent", display_name: "AI FAE Agent", domain_group: "技术支持",
   workspace_url: "https://fae.orbbec.com.cn/",
 };
+const vocCard: AgentCapabilityCard = {
+  ...adminCard, agent_id: "voc", display_name: "VOC 洞察助手", domain_group: "客户洞察",
+  workspace_url: "/agents/voc/workspace",
+};
 const result: ConversationSubmissionResult = {
   conversation: {
     conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", mode: "direct_agent", direct_agent_id: "hr-bot",
@@ -74,7 +78,7 @@ describe("professional Agent use pages", () => {
   afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks(); });
 
   it("lists only the authorized capability catalog without management metrics", async () => {
-    const loadCatalog = vi.fn().mockResolvedValue([card, marketingCard, adminCard, faeCard]);
+    const loadCatalog = vi.fn().mockResolvedValue([card, marketingCard, adminCard, faeCard, vocCard]);
     await act(async () => root.render(<AgentUseDirectoryPage loadCatalog={loadCatalog} />));
     expect(container.textContent).toContain("HR Agent");
     expect(container.textContent).toContain(card.mission);
@@ -88,6 +92,7 @@ describe("professional Agent use pages", () => {
     expect(cards.map((node) => node.getAttribute("href"))).toEqual([
       "https://fae.orbbec.com.cn/",
       "/agents/hr-bot",
+      "/agents/voc/workspace",
       "/agents/marketing-gtm-bot",
       "/office/?view=services",
     ]);
@@ -95,16 +100,17 @@ describe("professional Agent use pages", () => {
     expect(container.querySelector("a[href='https://fae.orbbec.com.cn/']")?.textContent).toContain("AI FAE Agent");
     expect(container.querySelector("a[href='https://fae.orbbec.com.cn/']")?.getAttribute("data-agent-kind")).toBe("fae");
     expect(container.querySelector("a[href='/agents/hr-bot']")?.getAttribute("data-agent-kind")).toBe("hr");
+    expect(container.querySelector("a[href='/agents/voc/workspace']")?.getAttribute("data-agent-kind")).toBe("voc");
     expect(container.querySelector("a[href='/agents/marketing-gtm-bot']")?.getAttribute("data-agent-kind")).toBe("marketing");
     expect(container.querySelector("a[href='/office/?view=services']")?.getAttribute("data-agent-kind")).toBe("admin");
-    expect(container.querySelectorAll(".agent-use-card-action")).toHaveLength(4);
-    expect(container.querySelectorAll(".agent-use-card-arrow")).toHaveLength(4);
+    expect(container.querySelectorAll(".agent-use-card-action")).toHaveLength(5);
+    expect(container.querySelectorAll(".agent-use-card-arrow")).toHaveLength(5);
     expect(container.querySelector("a[href='/agents/hr-bot']")?.getAttribute("aria-label")).toBe("进入 HR Agent");
     expect(container.querySelector("a[href='https://fae.orbbec.com.cn/']")?.getAttribute("aria-label")).toBe("打开 AI FAE Agent 工作区");
   });
 
   it("never renders an unallowlisted external workspace URL", async () => {
-    const poisoned = { ...faeCard, workspace_url: "https://evil.example/" };
+    const poisoned = { ...vocCard, workspace_url: "https://evil.example/" };
     await act(async () => root.render(<AgentUseDirectoryPage loadCatalog={vi.fn().mockResolvedValue([poisoned])} />));
 
     expect(container.querySelector("a[href='https://evil.example/']")).toBeNull();

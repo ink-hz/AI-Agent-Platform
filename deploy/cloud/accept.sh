@@ -859,7 +859,7 @@ PY
   "$python" - "$temporary/catalog.json" <<'PY' || fail
 import json,sys
 agents={item.get("agent_id") for item in json.load(open(sys.argv[1],encoding="utf-8")).get("agents",[])}
-if "hr-bot" not in agents or "marketing-gtm-bot" in agents: raise SystemExit(1)
+if "hr-bot" not in agents or "voc" not in agents or "marketing-gtm-bot" in agents: raise SystemExit(1)
 PY
 
   make_body() {

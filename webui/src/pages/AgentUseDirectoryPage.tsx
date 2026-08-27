@@ -8,10 +8,12 @@ import { PlatformLink } from "../components/PlatformLink";
 const WORKSPACE_URLS: Readonly<Record<string, string>> = Object.freeze({
   "ai-admin-agent": "/office/?view=services",
   "ai-fae-agent": "https://fae.orbbec.com.cn/",
+  "voc": "/agents/voc/workspace",
 });
 const AGENT_ORDER = Object.freeze([
   "ai-fae-agent",
   "hr-bot",
+  "voc",
   "marketing-prospecting-bot",
   "marketing-inbound-bot",
   "marketing-voice-bot",
@@ -20,11 +22,12 @@ const AGENT_ORDER = Object.freeze([
   "ai-admin-agent",
 ]);
 
-type AgentKind = "fae" | "hr" | "marketing" | "admin";
+type AgentKind = "fae" | "hr" | "voc" | "marketing" | "admin";
 
 function agentKind(card: AgentCapabilityCard): AgentKind {
   if (card.agent_id === "ai-fae-agent") return "fae";
   if (card.agent_id === "ai-admin-agent") return "admin";
+  if (card.agent_id === "voc") return "voc";
   return card.domain_group === "Marketing" ? "marketing" : "hr";
 }
 

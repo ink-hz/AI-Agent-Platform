@@ -93,10 +93,13 @@ class AgentUseAuthorization:
                 row_factory=dict_row,
             ) as connection:
                 rows = connection.execute(
-                    "select requested.agent_id,"
-                    "platform_control.has_agent_use_scope_v29(%s,requested.agent_id) "
-                    "as allowed from unnest(%s::text[]) with ordinality "
-                    "requested(agent_id,ordinal) order by requested.ordinal",
+                    "select requested.agent_id,decision.allowed "
+                    "from (select %s::uuid as internal_user_id) actor "
+                    "cross join unnest(%s::text[]) with ordinality "
+                    "requested(agent_id,ordinal) cross join lateral "
+                    "platform_control.resolve_agent_use_decision_v41("
+                    "actor.internal_user_id,requested.agent_id) decision "
+                    "order by requested.ordinal",
                     (internal_user_id, agent_id_array),
                 ).fetchall()
             if len(rows) != len(cards):
