@@ -93,7 +93,7 @@ detected_mime_type text
 original_name_ciphertext bytea
 original_name_key_version integer
 object_ref_ciphertext bytea
-object_key_version integer
+object_ref_key_version integer
 retention_until timestamptz
 created_at / ready_at / deleted_at
 ```
@@ -134,6 +134,27 @@ revoked_at
 唯一有效范围是 `(task_id, attachment_id, agent_id)`。任务终止、授权撤销、用户停用、
 附件删除或 Grant 过期时立即拒绝。
 
+### 4.4 erasure jobs
+
+`attachment_erasure_jobs` 至少包含：
+
+```text
+erasure_job_id uuid primary key
+attachment_id uuid not null
+requested_by_internal_user_id uuid not null
+reason_ciphertext / reason_key_version / reason_sha256
+status queued | running | completed | partial | failed
+attempt_count integer
+original_deleted_at / derivatives_deleted_at / exports_deleted_at
+downstream_cleanup_status jsonb
+last_error_code text
+created_at / started_at / completed_at / updated_at
+unique (attachment_id) where status in (queued, running)
+```
+
+`partial` 是正式终态：表示 Platform 原件与可控副本已删除，但至少一个下游临时副本无法
+确认清理。重试可以创建新 Attempt，但不能把历史 partial 审计改写成 completed。
+
 ## 5. 上传与验证状态机
 
 ```text
@@ -160,6 +181,12 @@ uploading
 
 派生物必须在原件扫描为 clean 后生成。解析 Worker 使用无网络、只读输入、临时目录、
 CPU/内存/时长限制；禁止宏执行、脚本执行、外链加载和压缩包递归解包。
+
+`ready` 是唯一允许字节离开隔离区的状态。`uploading`、`validating`、`scanning`、
+`quarantined`、`rejected`、`deleted` 的对象一律不能经 Media Gateway、浏览器 Preview、
+Derivative API 或 Agent Output 下载；内部接口返回稳定 `attachment_not_ready`/`gone`，
+不得为了“先预览”绕过状态。该检查在元数据授权服务和实际流式打开对象前各执行一次，
+不能只靠前端隐藏。
 
 ## 6. 文件限制
 
@@ -312,10 +339,12 @@ A6  一年保留、紧急擦除与恢复演练
 - 同一 PDF/文档可委派给两个 Agent，无重复对象；
 - 未授权 Task、错误 Agent、过期 Grant、擦除后读取全部拒绝；
 - MIME 伪装、Hash 不一致、ClamAV 命中和扫描不可用都不能进入 ready；
+- 任一非 `ready` 状态经 Media Gateway、Preview、Derivative 或 Output 下载均被后端拒绝；
 - FAE 图片问答与文档证据链真实使用 Platform Attachment；
 - Agent 输出文件回到 Conversation，可预览/下载；
 - MetaBot 本地临时文件在完成、取消、崩溃恢复后清理；
 - 一年保留和紧急擦除覆盖所有原件、派生物、分片和导出；
+- 下游清理无法确认时 Erasure Job 终态为 `partial`，不得误报 completed；
 - FAE 外部客户上传无回归；
 - 日志与响应不暴露 Object Key、MinIO 凭据、文件路径或钉钉标识。
 

@@ -122,6 +122,7 @@ GET  /internal/platform/v1/health
   "constraints": ["..."],
   "attachment_refs": ["uuid"],
   "expected_output": "...",
+  "capability_version": 2,
   "idempotency_key": "...",
   "deadline_at": "...",
   "authorized_scopes": ["service_catalog.read"]
@@ -130,6 +131,11 @@ GET  /internal/platform/v1/health
 
 内部入口把该请求规范化为现有 Admin Job，持久化映射后快速返回 `202`。不得在 Platform
 45 秒投递租约内等待行政模型完成。
+
+创建前必须把 `capability_version` 与当前行政 Capability 比较；不一致返回
+`409 capability_changed + current_capability_version + must_refresh_capabilities=true`，
+不创建 Job。`deadline_at` 是硬截止：过期请求拒绝入队，到点后停止新的模型/工具/领域
+调用并恰好一次写入 `timeout`。即使 Platform 已超时，行政侧也不得继续任何业务写操作。
 
 ## 6. 持续消息与取消
 
@@ -170,7 +176,10 @@ audience = ai-admin-agent
 agent_id = ai-admin-agent
 agent_task_id
 internal_user_id
+capability_version
 authorized_scopes
+task_deadline_at
+action_execution_deadline_at (仅第二批 Action Execute Token)
 issued_at / expires_at / request_id / kid
 ```
 
@@ -239,6 +248,11 @@ Contract v1 映射，Platform Adapter 不做猜测式翻译。阻塞输入只能
 发出 HTTP Task Contract v1 的 `action_required` 事件。Proposal Payload 全部按公共合同
 实现；不能让模型 Markdown 或前端文本产生 Action。
 
+Digest 原文只包含
+`platform_task_id + action_seq + action_kind + parameters`，线上为 lowercase hex；
+Summary/Impact 不参与。行政必须使用公共 Contract Fixture 验证与 Platform 得到完全相同的
+Hash。
+
 第二批才增加：
 
 ```text
@@ -259,6 +273,10 @@ POST /internal/platform/v1/tasks/{task_id}/actions/{action_id}/execute
 Action 执行必须复用班车、住宿、反馈 Store 已有的业务 idempotency_key，而不是只在 HTTP
 入口去重。
 
+确认后的独立执行截止由签名 Task Token 的 `action_execution_deadline_at` 给出。行政必须
+在执行前和提交领域写入前检查；领域写入与幂等结果必须在同一事务内再次校验并原子提交。
+截止后恰好一次返回 `timeout`，不能让已超时的预订、申请或提交继续成为孤儿写操作。
+
 ## 11. 生产不变项
 
 - `/office/` 行政问答保持可用；
@@ -271,9 +289,15 @@ Action 执行必须复用班车、住宿、反馈 Store 已有的业务 idempote
 
 ## 12. 测试
 
+行政仓库不复制合同断言。CI 通过 `CONTRACT_TEST_COMMIT` 检出 AI-Agent-Platform 的
+`contracts/http_task_v1/`，校验目录 SHA-256 后对本地 Admin 服务运行同一 HTTP 黑盒
+Driver；Commit 与 Hash 写入 Release Manifest。
+
 第一批：
 
 - 复用现有 Job 的创建、重复创建、事件游标和恢复；
+- capability_version 当前值成功、旧值明确拒绝且不创建 Job；
+- deadline_at 过期拒绝、运行中到点写 timeout，迟到结果不允许调用领域写方法；
 - Platform 内部事件端点 `wait_seconds=0` 立即返回，旧事件正确规范化，`timed_out` 被拒绝；
 - 后续消息序号与幂等冲突；
 - queued/running/terminal 取消；

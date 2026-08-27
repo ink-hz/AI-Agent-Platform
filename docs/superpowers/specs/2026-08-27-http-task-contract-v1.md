@@ -67,6 +67,7 @@ POST /internal/platform/v1/tasks/{task_id}/actions/{action_id}/execute
   "constraints": ["..."],
   "attachment_refs": ["uuid"],
   "expected_output": "...",
+  "capability_version": 2,
   "idempotency_key": "...",
   "deadline_at": "...",
   "authorized_scopes": ["..."]
@@ -87,6 +88,22 @@ POST /internal/platform/v1/tasks/{task_id}/actions/{action_id}/execute
 
 HTTP 状态为 `202`。相同幂等键与相同 Payload 返回相同任务；相同幂等键与不同 Payload
 返回 `409 idempotency_conflict`。
+
+`capability_version` 必须等于上游 `GET /internal/platform/v1/capabilities` 当前公开的
+版本。Platform 在发请求前先做本地授权与版本校验，上游在持久化任务前再次校验；版本
+不一致返回 `409 capability_changed`，并携带 `current_capability_version` 和
+`must_refresh_capabilities=true`，不得创建任务。这是同一份能力快照的对称校验，不是
+把 Platform 的授权判断转移给上游。
+
+`deadline_at` 是上游必须执行的 UTC 硬截止时间，不是提示字段：
+
+- 已经过期的创建请求返回 `deadline_expired`，不得排队；
+- 到点后不得开始新的模型调用、工具调用或业务写操作；
+- 正在运行的可取消工作应请求取消，并恰好一次地产生规范终态事件 `timeout`；
+- Task 已超时后到达的结果只能记入隔离诊断，不能反向改变终态或触发业务写入；
+- Action 确认后的独立执行窗口由签名 Task Token 中的
+  `action_execution_deadline_at` 约束，不改变本节 Task Deadline，也不把业务参数放回
+  Execute 请求。
 
 后续消息按 `(task_id, message_seq, idempotency_key)` 幂等。取消先持久化
 `cancel_requested`，重复取消返回相同结果；终态不可反向改变。
@@ -117,6 +134,12 @@ wait_seconds = 0
 Reconcile Worker，必须另写设计和独立心跳，不能悄悄改变 v1 语义。
 
 事件序号从 1 开始严格连续。相同 `(task_id, seq)` 只允许幂等重放完全相同的事件。
+Platform 在写库前验证整页事件从 `after + 1` 开始且页内连续。发现缺口、乱序或同序不同
+内容时，不把异常抛出到整个 Worker Tick：只把该 Task 终结为
+`status=failed, reason_code=protocol_violation`、把对应 Agent 健康投影标为异常，并继续
+处理其他 Agent。
+原始缺口游标不得前移；Platform 生成的任务终结事实使用独立的控制面记录，不伪造一个
+来自上游的缺失序号事件。
 
 ## 6. 规范事件词表
 
@@ -184,7 +207,25 @@ Parameters，再发出 `action_required`：
 
 - `action_id = uuid5(platform_task_id, "action:" + action_seq)`；
 - 上游持久化的 Canonical JSON 是最终执行参数唯一事实源；
-- Canonical JSON 使用 UTF-8、键排序、固定分隔符，禁止 NaN/Infinity；
+- Digest 原文固定且只包含以下四个字段：
+
+  ```text
+  action_digest = sha256(canonical_json({
+    "platform_task_id": <UUID lowercase string>,
+    "action_seq": <positive integer>,
+    "action_kind": <string>,
+    "parameters": <JSON object>
+  }))
+  ```
+
+- Canonical JSON 固定采用 RFC 8785 JSON Canonicalization Scheme (JCS) 的 UTF-8 字节；
+  等价实现必须按 Unicode 码点排序对象键、无多余空白、保留数组顺序、不 ASCII-escape
+  普通 Unicode，并拒绝 NaN、Infinity 和非法 Unicode surrogate；UUID 使用带连字符的
+  小写字符串；
+- 线上 `action_digest` 是 64 个字符的 lowercase hex；Platform 入库前解码为
+  `bytea(32)`；
+- `summary` 和 `impact` 是加密保存的展示投影，明确不进入 Digest；修改展示文案不能改变
+  已冻结的业务操作；
 - 上游计算 Digest 后持久化参数与 Digest，再发事件；
 - Platform 重新计算并校验 Digest，随后加密保存参数、摘要和影响；
 - Platform 的公开确认卡只由持久 Action 投影生成；
@@ -212,17 +253,29 @@ Parameters，再发出 `action_required`：
 
 ## 9. Action 等待与唤醒
 
-进入 `waiting_confirmation` 前必须存在一个覆盖相关 Task 的 active wait subscription。
-确认、拒绝、过期或明确修改 Action 时，Platform 采用迁移 046 的用户介入模式：
+`action_required` 到达时，Platform 必须无条件、原子地持久化 Action 和 Task 状态；active
+wait subscription 只是唤醒通道，永远不是 Proposal 落库或状态转换的前置条件。
 
-1. 原子终结当前 wait subscription；
-2. 把 Action 事实写入等待 Tool Result；
-3. 完成当前 Step 并创建下一 Step；
-4. 恢复 Loop 活动时钟；
-5. 确认路径同时创建 Action Execution Delivery；
-6. 下一 Brain Step 可以等待真实执行结果，不能把“已确认”展示为“已执行”。
+为消除“事件先到、Wait 后建”的游标竞态，Platform 为每个 `(loop_id, task_id)` 保存
+`delivered_seq`，它只在事件已经进入持久 Tool Result 后前移。创建 Wait 时必须在同一事务
+内锁定这些游标并检查 `seq > delivered_seq` 的事件：
 
-不复用旧 active wait，也不允许确认后依靠定时扫描碰运气唤醒。
+- 已存在符合 `wake_on` 的事件时，不创建 active Wait；立即把自上次 `delivered_seq` 后的
+  全部事件写入同一个 Tool Result、推进游标并创建下一 Step；
+- 不存在时才创建 active Wait，订阅保存的是 `delivered_seq`，不能取当前事件最大序号；
+- Event Append 与 Wait Create 使用相同的锁顺序和结算函数，重复事件或并发创建不能产生
+  两次唤醒。
+
+确认、拒绝、过期或明确修改 Action 时：
+
+1. 有 active Wait 时，原子终结它，把 Action 事实写入 Tool Result，推进 delivered cursor；
+2. 没有 active Wait 时，仍持久化 Action 决议和执行投递；后续 Wait 由上述“创建即检查”
+   路径立即取得该事实，不允许丢弃或造孤儿 Proposal；
+3. Loop 已处于 `waiting_confirmation` 且没有活跃 Step 时，数据库函数原子创建恢复 Step；
+4. 确认路径同时创建 Action Execution Delivery；
+5. 下一 Brain Step 可以等待真实执行结果，不能把“已确认”展示为“已执行”。
+
+已终结的 Wait 不复用，也不允许确认后依靠定时扫描碰运气唤醒。
 
 ## 10. 普通消息与 Pending Action
 
@@ -234,6 +287,11 @@ Parameters，再发出 `action_required`：
 - 与 Action 无关的普通消息可以在同一 Turn 继续处理，原确认卡保持 pending；
 - 前端在任何 supersede 操作前明确显示“原确认将失效”；
 - 大脑文字不能自行把 Action 标记 superseded。
+
+只要当前 Turn 仍有归属于 Conversation Owner 的 `pending` Action，`submit_answer` 就是
+协议违规：Runtime 返回 `pending_action_requires_resolution`，不得终结 Loop，也不得把
+Action 转为 expired。大脑必须等待确认、拒绝、过期或明确修改后的权威事件；Action
+解决后才允许提交最终答案。显式停止/取消整个 Turn 仍可终止并过期 Action。
 
 ## 11. 错误码
 
@@ -252,6 +310,7 @@ action_conflict
 action_digest_mismatch
 action_expired
 capability_changed
+deadline_expired
 attachment_unsupported
 upstream_unavailable
 ```
@@ -260,9 +319,17 @@ upstream_unavailable
 
 ## 12. 合同测试
 
-Platform 提供同一份黑盒 Contract Test Suite，FAE 和行政都必须运行。至少覆盖：
+唯一测试源位于 AI-Agent-Platform 仓库 `contracts/http_task_v1/`，包含 JSON Schema、
+固定请求/响应样例和只依赖 HTTP 的 pytest 黑盒驱动器。FAE 与行政 CI 不复制测试：它们按
+`CONTRACT_TEST_COMMIT` 检出 Platform 仓库的固定 Commit，启动本仓服务后运行同一入口；
+Release Manifest 同时记录 Commit 和测试目录 SHA-256。Commit 不存在、Hash 不匹配或测试
+未运行均视为合同未通过。
+
+同一套测试至少覆盖：
 
 - 创建快速返回和幂等冲突；
+- Capability Version 双向校验与过期版本拒绝；
+- `deadline_at` 到期后停止执行、产生 `timeout`，且不发生迟到业务写入；
 - `wait_seconds=0` 立即返回，无事件时不阻塞；
 - 规范事件词表和所有旧事件映射；
 - `timeout` 终态，`timed_out` 被拒绝；
@@ -271,6 +338,9 @@ Platform 提供同一份黑盒 Contract Test Suite，FAE 和行政都必须运�
 - 重复 execute 不重复业务写入；
 - 错误 Scope、Audience、Task 绑定和 Token 轮换；
 - 断线后从 `after` 精确重放，无重复、无缺口；
+- 事件序号缺口只隔离单 Task/Agent，其他 Agent 的派发、取消和心跳继续；
+- 事件先于首次 Wait 到达时，Wait 创建立即结算而不是把事件当成已读；
+- Pending Action 存在时 `submit_answer` 被拒绝且确认卡仍有效；
 - 终态不可逆。
 
 只有合同测试通过并记录具体 Commit 后，Platform 才能为该 Agent 打开

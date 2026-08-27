@@ -68,12 +68,22 @@ Platform、FAE、行政、VOC 和 MetaBot 代码及部署都由 Orbbec 掌控。
 ### 4.1 迁移 049：状态、事件与唤醒
 
 - 扩展 `agent_tasks.status`；
+- 增加 `dispatched_at`，并以 `mark_adapter_delivery_dispatched_v49` 替换会把 Task 直接
+  写成 running 的 v45 函数；
 - 为 Task 增加暂停/恢复所需已消耗执行时间；
+- 为 Task 增加受约束 `terminal_reason_code`，协议错误落为
+  `failed/protocol_violation`，不扩张 Status 枚举；
 - 为 Loop 增加 `waiting_confirmation` 和 `intervention_expires_at`；
 - 扩展 Conversation Turn 的状态 Check 和单活跃索引；
 - 扩展 Event/Wake 白名单；
+- 新增 `(loop_id, task_id)` durable delivered cursor；删除 Wait 创建时以
+  `max(agent_task_events.seq)` 初始化游标的逻辑；
+- Wait 创建与事件 Append 复用同一个 Serializable 结算函数：已有未交付合格事件时立即
+  生成 Tool Result，不留下 active Wait；
 - 按 HTTP Task Contract v1 统一 `timeout`、`input_required`、`action_required`；
 - 替换 `append_agent_task_event_v45` 为 v49，包含新状态映射；
+- 增加单 Task 协议隔离函数，序号缺口/乱序/未知事件不得让 CheckViolation 逃逸并拖垮
+  整个 Worker；
 - 重新审计 Worker/App 的列级 Grant。
 
 ### 4.2 迁移 050：Action 与执行
@@ -96,6 +106,13 @@ Platform、FAE、行政、VOC 和 MetaBot 代码及部署都由 Orbbec 掌控。
 - `expire_agent_task_actions_v50`：Worker/Reaper 身份，批量过期并唤醒；
 - `supersede_agent_task_action_v50`：只取代被明确修改的 Action；
 - `append_agent_task_event_v49`：包含新增事件和任务状态映射。
+- `mark_adapter_delivery_dispatched_v49`：Delivery dispatched 时只把 queued Task 转为
+  dispatched；首条真实进度/终态才写 running/started_at；
+- `create_or_settle_wait_subscription_v49`：锁 durable cursor，若事件已先到达则立即结算，
+  否则创建 active Wait；
+- `fail_agent_task_protocol_v49`：仅隔离一个 Task/Session/Delivery 并写 Agent 健康事实，
+  不伪造上游缺失序号；有 Wait 时直接写 Platform-origin Tool Result，无 Wait 时由下一次
+  Wait 创建读取 Task 控制面终态并立即结算。
 
 函数必须 `SECURITY DEFINER`、固定 `search_path`、撤销 public 权限，并精确验证生产与
 Preview caller role。
@@ -109,6 +126,8 @@ Preview caller role。
 - Action 超时唤醒大脑部分交付，不走整轮 `user_input_timeout`；
 - 无关普通消息不改变 pending Action；只有确认卡“修改”、绑定 action_id 的介入或上游
   新参数 Proposal 才 supersede 对应 Action，并先向用户提示；
+- 存在 Owner Pending Action 时，`submit_answer` 返回
+  `pending_action_requires_resolution`，Loop 保持非终态，Action 不失效；
 - 终止 Loop 时清理 pending Action 并请求停止对应 Task。
 
 ## 6. Action 服务
@@ -126,12 +145,15 @@ ActionExecutionDispatcher
 Platform Session + CSRF，拒绝非 Owner、错误 Digest、过期和终态请求。
 
 `action_required` Proposal 的字段、Canonical JSON、Digest 和过期语义严格使用 HTTP
-Task Contract v1。Execute 只发送 `action_id + action_digest + idempotency_key`，不得把
-Platform 保存的 Parameters 回传覆盖上游持久副本。
+Task Contract v1。Digest 只覆盖
+`platform_task_id + action_seq + action_kind + parameters`；Summary/Impact 不参与。
+Execute 只发送 `action_id + action_digest + idempotency_key`，不得把 Platform 保存的
+Parameters 回传覆盖上游持久副本。
 
-确认、拒绝、过期和明确修改时，按迁移 046 模式原子终结 active wait、填入 Action Tool
-Result、完成 Step、创建下一 Step 并恢复活动时钟；确认路径同时创建执行投递。禁止复用旧
-Wait 或等轮询碰运气唤醒。
+Proposal 与 Task 状态无条件落库，active Wait 不是前置条件。确认、拒绝、过期和明确修改
+时，有 active Wait 才按迁移 046 模式终结并填 Tool Result；无 active Wait 仍持久化决议
+和执行投递，后续 Wait 通过“创建即检查未交付事件”立即取得事实。禁止复用旧 Wait 或等
+轮询碰运气唤醒。
 
 ## 7. 通用 HTTP Adapter
 
@@ -148,8 +170,16 @@ TaskCapabilityProbe
 协议错误和明确 unavailable。FAE 与行政的内部 Task Facade 直接输出 HTTP Task Contract
 v1 规范事件；Platform Adapter 不猜测 `accepted/progress/timed_out` 等旧事件。
 
+创建请求携带经 Catalog 校验的 `capability_version` 和硬 `deadline_at`。上游再次校验
+版本；Task Token 同时绑定能力版本、Task Deadline，以及确认后的独立
+`action_execution_deadline_at`。过期请求不得创建，截止后不得继续业务写操作。
+
 事件读取固定传 `wait_seconds=0` 并消费有限 JSON 页面。一次 Tick 不得进入 SSE/长轮询；
 无事件时立即返回，不能阻塞其他 Agent 的派发、取消或 60 秒健康心跳。
+
+事件页先在内存中验证从 `after + 1` 连续，再逐条落库。协议错误只终结当前 Task、标记
+当前 Agent 健康异常并继续 Tick。Brain Step、Adapter、Reaper 三个阶段分别 catch、分别
+写 Heartbeat；单 Agent 错误不得把三类 Heartbeat 一起标为 degraded。
 
 Action 能力使用可选接口 `ActionCapableAdapter`。行政只读阶段和 FAE Adapter 不实现。
 
@@ -243,6 +273,12 @@ Action 能力使用可选接口 `ActionCapableAdapter`。行政只读阶段和 F
 - capability_changed 返回当前版本并阻止无界重试；
 - Reference Adapter 全状态机；
 - HTTP Task Contract v1 规范事件、Action Proposal/Execute 和 `wait_seconds=0`；
+- Action Digest 四字段 Fixture 在 Platform、FAE、行政得到相同 lowercase hex；
+- 事件先于首次 Wait 到达时立即结算，finding/action_required 不丢失；
+- queued -> dispatched -> running 三态都有真实持久迁移；
+- pending Action 存在时 submit_answer 被拒绝，普通消息不使确认卡失效；
+- 单上游事件序号缺口只隔离对应 Task/Agent，其他 Agent 和三个 Worker 阶段继续；
+- Task Deadline 到点产生 timeout，迟到执行不能发生业务写入；
 - VOC 六条确认路径；
 - FAE 600 秒任务、断线游标恢复、追问、取消；
 - 行政只读 Scope 越权拒绝；
@@ -258,6 +294,7 @@ Action 能力使用可选接口 `ActionCapableAdapter`。行政只读阶段和 F
 
 - P0 Commit/Release/验收证据；
 - 049/050 Migration、权限矩阵和独立回滚说明；
+- `contracts/http_task_v1/` 唯一黑盒套件、固定 Commit/SHA-256 和三个仓库的 CI 证据；
 - HTTP Task Contract v1 Schema；
 - Workspace SSO/Task Identity 合同、威胁模型和身份贯通证据；
 - 独立附件项目的接口占位和依赖说明；附件项目自己的交付物由其设计维护；

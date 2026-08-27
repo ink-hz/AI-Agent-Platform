@@ -186,6 +186,16 @@ queued
 任务进入 `waiting_input` 或 `waiting_confirmation` 时暂停自己的有效执行时钟；恢复时按
 已消耗时间重算 `effective_deadline_at`。
 
+迁移 `049` 同时增加受约束的 `terminal_reason_code`。事件缺口等上游协议错误把 Task
+终结为 `status=failed, terminal_reason_code=protocol_violation`；不能把
+`protocol_violation` 混进 Status 枚举。
+
+`dispatched` 是真实持久状态，不是 UI 标签。迁移 `049` 必须用
+`mark_adapter_delivery_dispatched_v49` 替换 v45：初始 Delivery 从 `leased` 转
+`dispatched` 时，Task 只从 `queued` 转 `dispatched` 并写 `dispatched_at`；只有收到首条
+真实 `work_update` 或终态事件时才写 `running/started_at`。Repository 不得继续调用会把
+Task 直接写成 `running` 的 v45 函数。
+
 ### 5.2 不新增 Task Group
 
 一次并行派发批次由同一个 `step_id` 唯一标识。同一 Step 内 Tool Call 已有
@@ -226,6 +236,11 @@ index (task_id, action_digest)
 重放不得生成第二条 Action。Summary、Impact 和 Parameters 与既有 Brain 内容纪律一致，
 只允许加密正文 + Key Version + SHA-256，不保留明文二选一。
 
+Digest 原文严格采用 HTTP Task Contract v1 的四字段对象：
+`platform_task_id + action_seq + action_kind + parameters`。Summary/Impact 不参与 Digest；
+线上为 64 字符 lowercase hex，入库解码为 `bytea(32)`。Platform 与上游共用合同测试里的
+Canonical JSON Fixture，禁止各仓库自行解释“对整个 Payload 做 Hash”。
+
 Action 不冗余保存 `agent_id`、`conversation_id` 或 `turn_id`。权威绑定路径固定为：
 
 ```text
@@ -245,6 +260,9 @@ agent_task_actions.task_id
 - `confirmed`、`rejected`、`expired`、`superseded` 均不可反向变回 pending；
 - 同一任务的新参数 proposal 必须把旧 pending Action 转为 `superseded`；
 - Loop 在 Action 尚 pending 时终止，所有 pending Action 转 `expired` 并请求停止任务；
+- 正常 `submit_answer` 在存在 pending Action 时不得终止 Loop；Runtime 返回
+  `pending_action_requires_resolution` 并要求先等待 Action 决议。只有显式停止、取消、
+  不可恢复失败等非正常终止路径才执行上一条清理；
 - 重复确认返回同一执行记录，不产生第二次上游写操作；
 - Action 参数和确认身份全部绑定 Conversation Owner，不允许首版代确认。
 
@@ -325,11 +343,18 @@ Step、Tool Result、Task、Event 和 Action。
 
 ### 6.6 确认后的 Wait 处理
 
-进入 `waiting_confirmation` 前必须存在覆盖相关 Task 的 active wait subscription。
-确认、拒绝、过期或明确修改 Action 时不复用旧 Wait；数据库函数采用迁移 `046` 的用户
-介入模式，原子终结 Wait、写入 Action Tool Result、完成当前 Step、创建下一 Step 并恢复
-活动时钟。确认路径同时创建执行投递；下一 Step 再等待真实 `result/failed/timeout`，不能
-把“已确认”展示为“已执行”。
+Action Proposal 和任务状态转换无条件落库，active Wait 只负责唤醒，绝不是前置条件。
+迁移 `049` 新增 `(loop_id, task_id)` 的 durable delivered cursor；游标只在事件已经写入
+持久 Tool Result 后前移，不能在创建 Wait 时取事件表 `max(seq)`。
+
+创建 Wait 时必须在同一 Serializable 事务内锁游标并检查已存在的合格事件。若事件已先
+到达，立即结算 Tool Result、推进游标、完成 Step 并创建下一 Step，不留下 active Wait；
+没有合格事件才创建订阅。Event Append 与 Wait Create 复用同一个结算函数和锁顺序。
+
+确认、拒绝、过期或明确修改时：有 active Wait 就原子终结并唤醒；没有 active Wait 也
+必须持久化决议和执行投递，后续 Wait 通过“创建即检查”取得事实。Loop 已暂停且无 active
+Step 时，控制函数原子创建恢复 Step。已终结的旧 Wait 不复用；下一 Step 等待真实
+`result/failed/timeout`，不能把“已确认”展示为“已执行”。
 
 ## 7. 事件与唤醒协议
 
@@ -351,6 +376,11 @@ action_required
 唤醒继续满足：真实事件驱动、每个 Loop 最多一个 active wait、游标单调、重复事件幂等、
 终态事件不再唤醒。
 
+迁移 `049` 新增 `platform_brain.brain_task_event_cursors`（或等价命名），唯一键为
+`(loop_id, task_id)`，保存 `delivered_seq`。它是“已交给模型”的权威水位，不是“已经
+写库”的水位。现有 `loop_repository.py` 以 `max(seq)` 初始化 Wait Cursor 的逻辑必须
+删除，并增加“事件先于首次 await 到达”的数据库与 Repository 集成测试。
+
 所有 HTTP Agent 的在线词表、旧事件映射和 Payload 以
 `2026-08-27-http-task-contract-v1.md` 为唯一权威：
 
@@ -360,6 +390,20 @@ action_required
 - `sources` 规范化为 `artifact`；
 - 阻塞型旧 `question` 规范化为 `input_required`，非阻塞问题为 `message`；
 - Platform Adapter 不猜测未知事件，遇到未知 Kind 明确报 `protocol_violation`。
+
+事件页在入库前必须验证从请求 `after + 1` 开始连续。未知 Kind、缺口、乱序或同序冲突
+都是 Task/Agent 局部协议错误：调用 `fail_agent_task_protocol_v49`（名称可保持版本后缀但
+语义必须一致）原子写入 Task 的 `failed/protocol_violation` 控制面终态、终结其
+Session/Delivery，并更新该 Agent 的持久健康投影；
+不能让 PostgreSQL `check_violation` 逃逸到整个 Worker Tick。
+
+协议缺口不能伪造成一个“来自上游的连续 failed 事件”。有 active Wait 时，控制函数直接
+用 Platform-origin Tool Result 唤醒；没有 active Wait 时，后续 Wait 创建同时检查 Task
+控制面终态并立即返回该失败事实。
+
+Worker Tick 的 Brain Step、Adapter、Reaper 三个阶段分别捕获异常并分别写心跳。一个
+Adapter/Task 的协议错误不能跳过其他 Adapter、取消处理或 Reaper，也不能把三个心跳
+一起标记 degraded；只有数据库整体不可用等共享基础设施故障才允许升级为全局故障。
 
 ## 8. HTTP Adapter 标准合同
 
@@ -425,13 +469,23 @@ Platform Adapter 读取事件必须传 `wait_seconds=0`，并消费有限 JSON �
 
 ### 8.3 幂等和事件
 
-- 创建任务按 Platform `agent_task_id + idempotency_key` 幂等；
+- 创建任务按 Platform `agent_task_id + idempotency_key` 幂等，并携带当前
+  `capability_version`；上游 Capability Facade 必须对称校验，版本不一致时返回当前版本
+  且不创建任务；
 - 后续消息按 `task_id + message_seq + idempotency_key` 幂等；
 - 取消重复调用返回相同结果；
 - 事件 `seq` 从 1 开始、严格单调、支持 `after` 重放；
 - 终态不可逆；
 - 相同幂等键配不同 payload 返回 `idempotency_conflict`；
 - 上游任务 ID 只作为加密映射，不能反向决定 Platform Task 状态。
+
+`deadline_at` 是上游硬截止，不是提示。上游到点后必须停止新模型/工具/业务写操作并
+恰好一次发出 `timeout`；Platform 已终结后的迟到结果不得复活 Task。Action 确认后的
+独立执行截止通过签名 Task Token 约束，上游同样必须在截止后禁止业务写入。
+
+唯一黑盒合同套件位于 Platform `contracts/http_task_v1/`。FAE/行政 CI 按固定
+`CONTRACT_TEST_COMMIT` 检出并运行 HTTP Driver，不 vendor 或复制断言；Release Manifest
+记录该 Commit 与目录 SHA-256。
 
 ## 9. 统一身份、Scope 与参数一致性
 
@@ -480,7 +534,10 @@ audience
 internal_user_id
 agent_id
 agent_task_id
+capability_version
 authorized_scopes
+task_deadline_at
+action_execution_deadline_at (仅 Action Execute Token)
 issued_at
 expires_at
 request_id
@@ -506,9 +563,11 @@ feedback.own.read
 
 ### 9.5 Action Digest
 
-双方使用同一 Canonical JSON：UTF-8、键排序、固定分隔符、禁止 NaN/Infinity、禁止
-隐式浮点格式变化，再计算 SHA-256。专业 Agent 在 propose 前持久化的 Canonical
-Parameters 是唯一执行事实源；Platform 保存其加密副本用于确认卡与审计，但 execute
+双方使用 HTTP Task Contract v1 冻结的 RFC 8785 JCS UTF-8 Canonical JSON 和固定跨仓
+Fixture。Digest 原文只包含
+`platform_task_id + action_seq + action_kind + parameters`，Summary/Impact 明确排除；
+线上使用 lowercase hex，Platform 入库使用 `bytea(32)`。专业 Agent 在 propose 前持久化
+的 Canonical Parameters 是唯一执行事实源；Platform 保存其加密副本用于确认卡与审计，但 execute
 请求不回传 Parameters，只传 Action ID、Digest 和幂等键。上游执行前从自己的持久副本
 复算 Digest。世界状态变化导致参数失效时返回业务冲突并重新 propose，不得自动换班次、
 房间、客户或其他参数。
@@ -643,7 +702,11 @@ Workspace SSO 底座随阶段 3 建立；VOC/行政复用现有同源身份，FA
 - Adapter 事件读取固定 `wait_seconds=0`，无事件时立即返回且不阻塞其他 Agent 心跳；
 - 重试不产生第二个上游任务或业务写操作；
 - 事件游标断线续传无重复、无缺口；
+- 事件先于首次 Wait 到达时立即结算，不把已落库 finding/action_required 当成已读；
+- 上游序号缺口只隔离单 Task/Agent，其他 Adapter 和三类 Worker 心跳继续；
 - 后续消息与取消可幂等重放；
+- Capability Version 由 Platform 与上游双重校验；Deadline 到点后上游发 `timeout` 且
+  不执行迟到业务写；
 - Scope 缺失由上游明确拒绝；
 - Agent 离线以 `unavailable` 出现，不从列表消失。
 

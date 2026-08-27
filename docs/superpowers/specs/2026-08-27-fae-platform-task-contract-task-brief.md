@@ -92,6 +92,7 @@ GET  /internal/platform/v1/health
   "constraints": ["..."],
   "attachment_refs": ["uuid"],
   "expected_output": "...",
+  "capability_version": 2,
   "idempotency_key": "...",
   "deadline_at": "...",
   "authorized_scopes": ["fae.answer"]
@@ -111,6 +112,11 @@ GET  /internal/platform/v1/health
 
 禁止让请求线程运行 FAE Loop。Platform 投递租约只有 45 秒，长驻 HTTP 会导致租约过期
 和重复创建。
+
+持久化前必须把 `capability_version` 与本服务当前 Capability 比较；不一致返回
+`409 capability_changed + current_capability_version + must_refresh_capabilities=true`，
+不创建任务。`deadline_at` 是硬截止：过期请求不得入队，到点后停止新的模型/工具调用并
+恰好一次写入 `timeout`；截止后到达的结果不得复活任务。
 
 ## 6. 持久化模型
 
@@ -133,6 +139,9 @@ platform_task_idempotency
 - 终态不可逆；
 - 相同幂等键不同 payload 返回 `idempotency_conflict`；
 - 下游任务 ID 不能决定 Platform 状态。
+
+若 FAE 自身无法产生连续事件，必须在 FAE Facade 内把该任务终结为明确协议失败并标记
+本服务任务健康异常，不能继续返回带缺口的页面让 Platform 猜测或补号。
 
 内存 Session 可以作为执行缓存，但进程重启后必须从持久消息重建完成任务所需上下文。
 
@@ -190,7 +199,8 @@ context/planner/synthesis，不新建无关联 Session。若当前执行不可�
 ## 10. 身份与安全
 
 只接受 Platform 签发的 audience-bound 短时凭证，至少校验：issuer、audience、kid、
-expiry、agent_id=`ai-fae-agent`、task_id 和 `fae.answer` Scope。
+expiry、agent_id=`ai-fae-agent`、task_id、`capability_version`、`task_deadline_at` 和
+`fae.answer` Scope。
 
 - 不信任请求体中的 user_id、角色或部门；
 - 不记录 Token、内部用户 ID、完整 Prompt 或附件名；
@@ -274,9 +284,16 @@ duration_ms
 
 ## 13. 测试
 
+不得在 FAE 仓库复制一套“相似测试”。CI 通过 `CONTRACT_TEST_COMMIT` 检出
+AI-Agent-Platform 的 `contracts/http_task_v1/`，验证目录 SHA-256 后对本地 FAE 服务
+运行同一 HTTP 黑盒 Driver；Commit 与 Hash 写入 Release Manifest。
+
 - 创建和幂等冲突；
+- capability_version 当前值成功、旧值明确拒绝且不创建任务；
+- deadline_at 已过期拒绝、执行中到期产生 timeout、迟到结果不复活；
 - Worker 在持久化前后崩溃；
 - 事件游标断线、重连、重复请求和序号缺口；
+- 序号缺口由 FAE Task Facade 局部终结，不影响其他 FAE Task；
 - `wait_seconds=0` 无事件时立即返回，`timed_out` 事件被合同测试拒绝；
 - 多轮 context 真正进入 planner/retrieval/synthesis；
 - 后续消息在执行边界前后到达；
