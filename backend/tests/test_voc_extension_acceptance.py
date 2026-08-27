@@ -20,6 +20,7 @@ from app.voc_extension.routes import build_voc_extension_router
 
 MEMBER_ID = UUID("11111111-1111-4111-8111-111111111111")
 MANAGER_ID = UUID("22222222-2222-4222-8222-222222222222")
+OTHER_ID = UUID("33333333-3333-4333-8333-333333333333")
 
 
 class Grants:
@@ -65,7 +66,8 @@ def _payload(token: str) -> dict[str, object]:
 
 class Directory:
     def names_for(self, ids):
-        return {MEMBER_ID: "苍渊"} if MEMBER_ID in ids else {}
+        names = {MEMBER_ID: "苍渊", OTHER_ID: "林川"}
+        return {item: names[item] for item in ids if item in names}
 
     def list_submitters(self):
         return ()
@@ -162,25 +164,44 @@ async def test_management_read_is_middleware_protected_and_uses_minimal_token() 
 
     def voc_service(request: httpx.Request) -> httpx.Response:
         downstream.append(request)
-        return httpx.Response(
-            200,
-            json={
-                "items": [
-                    {
-                        "voc_no": "VOC-20260826-001",
-                        "submitter_internal_user_id": str(MEMBER_ID),
-                        "legacy_submitter_name": None,
-                        "source": "platform",
-                        "latest_content": "设备连续运行三小时后明显发热",
-                        "revision": 1,
-                        "analysis_status": "pending",
-                        "created_at": "2026-08-26T09:30:00Z",
-                        "updated_at": "2026-08-26T09:30:00Z",
-                    }
-                ],
-                "next_cursor": None,
-            },
-        )
+        first = {
+            "voc_no": "VOC-20260826-001",
+            "submitter_internal_user_id": str(MEMBER_ID),
+            "legacy_submitter_name": None,
+            "source": "platform",
+            "latest_content": "设备连续运行三小时后明显发热",
+            "revision": 1,
+            "analysis_status": "pending",
+            "created_at": "2026-08-26T09:30:00Z",
+            "updated_at": "2026-08-26T09:30:00Z",
+        }
+        if request.url.path.endswith("/VOC-20260826-001"):
+            return httpx.Response(
+                200,
+                json={
+                    **first,
+                    "entries": [
+                        {
+                            "revision": 1,
+                            "entry_type": "original",
+                            "content": "设备连续运行三小时后明显发热",
+                            "created_at": "2026-08-26T09:30:00Z",
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(200, json={
+            "items": [
+                first,
+                {
+                    **first,
+                    "voc_no": "VOC-20260826-002",
+                    "submitter_internal_user_id": str(OTHER_ID),
+                    "latest_content": "客户现场自动关机",
+                },
+            ],
+            "next_cursor": None,
+        })
 
     voc_client = VocExtensionClient(
         "http://127.0.0.1:18130",
@@ -214,17 +235,30 @@ async def test_management_read_is_middleware_protected_and_uses_minimal_token() 
                 "/api/v1/extensions/voc/admin/vocs",
                 headers={"Cookie": "session=manager; csrf=csrf"},
             )
+            detail = await browser.get(
+                "/api/v1/extensions/voc/admin/vocs/VOC-20260826-001",
+                headers={"Cookie": "session=manager; csrf=csrf"},
+            )
 
         assert unauthenticated.status_code == 401
         assert member.status_code == 403
         assert manager.status_code == 200
-        assert manager.json()["items"][0]["submitter_name"] == "苍渊"
-        assert len(downstream) == 1
-        claims = _payload(
-            downstream[0].headers["Authorization"].removeprefix("Bearer ")
-        )
-        assert claims["sub"] == str(MANAGER_ID)
-        assert claims["capabilities"] == ["voc.read_all"]
+        assert [item["submitter_name"] for item in manager.json()["items"]] == [
+            "苍渊",
+            "林川",
+        ]
+        assert detail.status_code == 200
+        assert detail.json()["submitter_name"] == "苍渊"
+        assert detail.json()["entries"][0]["entry_type"] == "original"
+        assert len(downstream) == 2
+        for request in downstream:
+            claims = _payload(
+                request.headers["Authorization"].removeprefix("Bearer ")
+            )
+            assert claims["sub"] == str(MANAGER_ID)
+            assert claims["capabilities"] == ["voc.read_all"]
+        for response in (unauthenticated, member, manager, detail):
+            assert response.headers["Cache-Control"] == "no-store"
     finally:
         await voc_client.aclose()
 
