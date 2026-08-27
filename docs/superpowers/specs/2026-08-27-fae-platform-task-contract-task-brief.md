@@ -8,7 +8,9 @@
 
 **核对基线：** `origin/master@7302821`
 
-**上游设计：** AI-Agent-Platform `2026-08-27-agent-brain-actions-and-external-adapters-design.md`
+**上游设计：** AI-Agent-Platform `2026-08-27-agent-brain-actions-and-external-adapters-design.md`、
+`2026-08-27-http-task-contract-v1.md`、
+`2026-08-27-platform-agent-attachment-substrate-design.md`
 
 ## 1. 背景
 
@@ -21,6 +23,9 @@ FAE 任务、读取真实进展、追加消息和取消。不能用 Platform 长
 
 同时增加企业员工从 Agent Platform 直接进入 FAE 的钉钉单点身份，并让企业任务直接
 复用 Platform 统一附件底座。上述增量不改变 FAE 面向外部客户的公开身份和上传模式。
+
+FAE 与 Platform 的代码、部署和协议都由 Orbbec 团队掌控。本任务不是对不可修改的外部
+服务做包装；应直接在 FAE 仓库实现规范 Task Facade 和持久任务能力。
 
 ## 2. 必须遵守的 FAE 架构原则
 
@@ -65,7 +70,7 @@ FAE 任务、读取真实进展、追加消息和取消。不能用 Platform 长
 POST /internal/platform/v1/tasks
 POST /internal/platform/v1/tasks/{task_id}/messages
 GET  /internal/platform/v1/tasks/{task_id}
-GET  /internal/platform/v1/tasks/{task_id}/events?after={seq}&limit={n}
+GET  /internal/platform/v1/tasks/{task_id}/events?after={seq}&limit={n}&wait_seconds=0
 POST /internal/platform/v1/tasks/{task_id}/cancel
 GET  /internal/platform/v1/capabilities
 GET  /internal/platform/v1/health
@@ -143,21 +148,25 @@ queued -> running -> waiting_input -> running
 事件至少包括：
 
 ```text
-accepted
-started
-progress
-finding
-input_required
+thinking_summary
 message
-sources
+work_update
+artifact
+input_required
+finding
 result
 failed
 cancelled
-timed_out
+timeout
 ```
 
 所有公开事件必须是 FAE 运行时真实产生的事实。不得把历史答案倒推成进度，不得用定时器
 生成“正在分析”等模拟消息。
+
+线上事件严格遵循 HTTP Task Contract v1。FAE 内部的 `started/progress/sources/timed_out`
+必须在内部 Task Facade 分别规范化为 `work_update/work_update/artifact/timeout`；创建
+`accepted` 只由 `202` 回执表达。阻塞型问题使用 `input_required`，普通非阻塞提问使用
+`message`。Platform Adapter 不负责猜测或翻译 FAE 私有事件。
 
 ## 8. 后续消息
 
@@ -213,6 +222,10 @@ Platform internal_user_id。
 
 ### 10.2 Platform 附件与图片
 
+附件服务本身由独立的
+`2026-08-27-platform-agent-attachment-substrate-design.md` 实施，不塞进 FAE 持久任务
+迁移。FAE 负责消费统一合同，不再创建第二套企业附件事实源。
+
 企业 Task 中的 `attachment_refs` 指向 Platform 附件，不是 FAE 本地附件 ID。FAE 使用
 任务 Token 访问 Platform 内部 Media Gateway：
 
@@ -253,7 +266,8 @@ duration_ms
 
 - FAE 最大活动时长 600 秒；
 - 创建任务端点应在持久化后快速返回，不等待模型；
-- Event GET 支持 `after`，单次 long-poll/SSE 最长不超过 30 秒后返回 keepalive；
+- Platform 内部 Event GET 支持 `after + limit + wait_seconds=0`，立即返回有限 JSON 页面；
+- FAE 可以为其他消费者保留 SSE/长轮询，但 Platform Adapter 不得使用；
 - Worker 使用自己的执行租约并续租，不能借用 Platform 45 秒投递租约；
 - Worker 崩溃后任务可重新领取；
 - 幂等和事件序列保证恢复不重复结果。
@@ -263,6 +277,7 @@ duration_ms
 - 创建和幂等冲突；
 - Worker 在持久化前后崩溃；
 - 事件游标断线、重连、重复请求和序号缺口；
+- `wait_seconds=0` 无事件时立即返回，`timed_out` 事件被合同测试拒绝；
 - 多轮 context 真正进入 planner/retrieval/synthesis；
 - 后续消息在执行边界前后到达；
 - 取消在 queued、running、terminal 三种状态；
@@ -279,6 +294,7 @@ duration_ms
 
 - 实际迁移、代码和 Commit；
 - 内部 API Schema；
+- HTTP Task Contract v1 黑盒测试报告；
 - 企业工作区 SSO、Binding 和统一 internal_user_id 证据；
 - Platform 图片/文档读取与输出附件回传证据；
 - 事件和状态表；

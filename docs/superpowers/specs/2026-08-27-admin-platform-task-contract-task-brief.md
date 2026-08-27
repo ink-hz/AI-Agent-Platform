@@ -8,7 +8,9 @@
 
 **核对基线：** `origin/master@e95e274`
 
-**上游设计：** AI-Agent-Platform `2026-08-27-agent-brain-actions-and-external-adapters-design.md`
+**上游设计：** AI-Agent-Platform `2026-08-27-agent-brain-actions-and-external-adapters-design.md`、
+`2026-08-27-http-task-contract-v1.md`、
+`2026-08-27-platform-agent-attachment-substrate-design.md`
 
 ## 1. 事实基线
 
@@ -30,6 +32,9 @@ Job Delivery lease
 行政浏览器身份和 Brain 服务端任务身份必须都由 Platform 底座提供，并关联同一个
 `internal_user_id`；两条链路不能混用 Cookie 或 Token。Agent Conversation 附件统一
 使用 Platform Attachment，不再为行政 Agent 另造一套附件存储。
+
+行政与 Platform 的代码、部署和协议都由 Orbbec 团队掌控。本任务直接修改行政仓库的
+Jobs、内部 Facade 和领域 Gateway，不把行政当作不可修改的第三方服务。
 
 ## 2. 分两批交付
 
@@ -66,7 +71,7 @@ feedback.own.read
 POST /internal/platform/v1/tasks
 POST /internal/platform/v1/tasks/{task_id}/messages
 GET  /internal/platform/v1/tasks/{task_id}
-GET  /internal/platform/v1/tasks/{task_id}/events?after={seq}&limit={n}
+GET  /internal/platform/v1/tasks/{task_id}/events?after={seq}&limit={n}&wait_seconds=0
 POST /internal/platform/v1/tasks/{task_id}/cancel
 GET  /internal/platform/v1/capabilities
 GET  /internal/platform/v1/health
@@ -98,6 +103,10 @@ GET  /internal/platform/v1/health
 - Platform Token 的 issuer/audience/kid 校验；
 - 规范化能力、健康和错误码；
 - read-only Tool/Service Gateway。
+
+内部 Task Facade 必须把既有 Job Event 规范化为 HTTP Task Contract v1，并用立即返回的
+有限 JSON 页面暴露。现有 `/jobs/{id}/events` 可以继续为其他消费者提供 SSE/长轮询，
+但 Platform 内部端点的 `wait_seconds` 必须为 0，不能阻塞 Brain Worker Tick。
 
 ## 5. 创建任务
 
@@ -186,6 +195,9 @@ Brain Adapter 不使用浏览器 Cookie，而使用短时 Task Token。无论用
 
 ### 8.3 Platform 附件
 
+附件服务由独立的 `2026-08-27-platform-agent-attachment-substrate-design.md` 实施。行政
+第一批只读任务不依赖附件上线；声明附件能力后，行政只消费统一 Grant/Output 合同。
+
 行政 Agent 的 Conversation 输入和输出使用 Platform Task-scoped Attachment Grant：
 
 - 行政服务不取得 MinIO 凭据或 Object Key；
@@ -201,24 +213,31 @@ Brain Adapter 不使用浏览器 Cookie，而使用短时 Task Token。无论用
 事件至少规范化为：
 
 ```text
-accepted
-started
-progress
-finding
-input_required
+thinking_summary
 message
+work_update
+artifact
+input_required
+finding
 result
 failed
 cancelled
-timed_out
+timeout
 ```
 
 现有 Job Event Sequence 继续作为上游事实序列。结果至少包含 outcome、answer_markdown、
 evidence_refs、limitations、fallback state、trace_ref 和 duration。
 
 不得通过定时器或耗时推断伪造工作进度。没有阶段事件时只报告“运行中，尚无更新”。
+现有 Job 的 `accepted/started/progress/done/timed_out` 在行政内部 Facade 按 HTTP Task
+Contract v1 映射，Platform Adapter 不做猜测式翻译。阻塞输入只能使用
+`input_required`；普通消息不改变任务状态。
 
 ## 10. 第二批 Action 契约
+
+行政必须先在自己的 PostgreSQL 中持久化 Canonical Parameters、Action ID 和 Digest，再
+发出 HTTP Task Contract v1 的 `action_required` 事件。Proposal Payload 全部按公共合同
+实现；不能让模型 Markdown 或前端文本产生 Action。
 
 第二批才增加：
 
@@ -226,12 +245,13 @@ evidence_refs、limitations、fallback state、trace_ref 和 duration。
 POST /internal/platform/v1/tasks/{task_id}/actions/{action_id}/execute
 ```
 
-执行请求必须包含 Platform 确认的 Action ID、Digest、规范化参数和幂等键。行政服务：
+执行请求只包含 Platform 确认的 Action ID、Digest 和幂等键，不携带 Parameters。行政
+服务从 propose 阶段自己的持久化副本读取唯一执行参数：
 
 1. 校验写 Scope；
 2. 复算 Canonical JSON SHA-256；
 3. Digest 不一致返回 `action_digest_mismatch`；
-4. 原样执行用户确认的参数；
+4. 原样执行上游 propose 时持久化、且用户已确认的参数；
 5. 外部状态变化时失败并要求重新 propose；
 6. 不自动换班次、住宿、时间、人员或其他业务参数；
 7. 重复确认/投递返回同一业务结果，不重复写入。
@@ -254,6 +274,7 @@ Action 执行必须复用班车、住宿、反馈 Store 已有的业务 idempote
 第一批：
 
 - 复用现有 Job 的创建、重复创建、事件游标和恢复；
+- Platform 内部事件端点 `wait_seconds=0` 立即返回，旧事件正确规范化，`timed_out` 被拒绝；
 - 后续消息序号与幂等冲突；
 - queued/running/terminal 取消；
 - Token 过期、错误 audience、错误 Task、错误 Scope；
@@ -269,6 +290,7 @@ Action 执行必须复用班车、住宿、反馈 Store 已有的业务 idempote
 
 - 不确认、拒绝、过期时无业务写入；
 - Digest 变化和参数变化拒绝；
+- Action Proposal 先持久化参数，Execute 请求不含参数；
 - 重复 execute 不重复预订/申请/提交；
 - 提交后 Worker 崩溃仍能恢复同一结果；
 - 外部状态变化返回业务冲突，不自适应参数；
@@ -280,6 +302,7 @@ Action 执行必须复用班车、住宿、反馈 Store 已有的业务 idempote
 
 - 实际复用和新增的 Jobs 结构；
 - 内部 API 与 Token Schema；
+- HTTP Task Contract v1 黑盒测试报告；
 - `/office` Subject 身份和 Brain Task 身份的统一 internal_user_id 证据；
 - Platform 附件复用和领域业务附件边界证据；
 - Scope 到具体业务方法的矩阵；

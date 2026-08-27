@@ -1,4 +1,4 @@
-# Agent 大脑业务确认与外部专业 Agent 接入设计
+# Agent 大脑业务确认与独立专业 Agent 接入设计
 
 **日期：** 2026-08-27
 
@@ -6,7 +6,7 @@
 
 **基线：** AI-Agent-Platform `origin/master@40d2c9d`；AI-ADMIN-Agent `e95e274`；AI-FAE-Agent `origin/master@7302821`
 
-**范围：** Agent Brain V2 的能力版本修复、任务状态扩展、用户业务确认、VOC/FAE/行政接入、统一身份、统一附件和协作室增量
+**范围：** Agent Brain V2 的能力版本修复、任务状态扩展、用户业务确认、VOC/FAE/行政接入、统一身份和协作室增量；统一附件为并行项目
 
 ## 1. 文档定位
 
@@ -41,6 +41,17 @@
 
 ## 2. 核心架构边界
 
+### 2.1 代码与系统所有权
+
+Platform、FAE、行政、VOC、MetaBot 及其部署代码全部由 Orbbec 团队掌控，团队有权修改、
+测试、发布和回滚任一组成部分。本设计中的“上游”“下游”“独立 Agent”只表示运行时
+职责、数据方向和故障域，不表示第三方黑盒、代码不可修改或控制权不足。
+
+因此跨服务协议优先在所有相关仓库共同落地，而不是让 Platform 为历史差异长期维护猜测式
+兼容层。服务边界仍然保留，是为了独立部署、最小权限、故障隔离和可恢复性。
+
+### 2.2 职责边界
+
 ```text
 大脑拥有任务和调度权
 用户拥有不可逆业务操作的授权权
@@ -56,7 +67,7 @@ Platform 拥有身份、授权记录、状态和审计事实
 - 专业 Agent 不能信任 Prompt、浏览器字段或模型文字中的“用户已同意”；
 - 专业 Agent 只执行短时凭证中明确授权的能力 Scope；
 - 写操作的最终参数必须与用户确认时看到的参数完全一致；
-- 无任何静默换 Agent、换模型、降级到一次性聊天或模拟进度的路径。
+- 无任何静默换 Agent、换模型、降级到一次性聊天或模拟进度的路径；
 - 钉钉只作为企业身份源；下游不复制钉钉登录逻辑，也不保存钉钉原始身份标识。
 
 ## 3. 已核实的现状
@@ -134,8 +145,11 @@ HR 和五个 Marketing Agent 的 Catalog `capability_version` 均为 `2`。因�
 ### 4.2 语义
 
 - 版本一致：固化授权快照并创建任务；
-- 版本不一致：不创建任务，返回 `capability_changed`；
+- 版本不一致：不创建任务，返回 `capability_changed`，Tool Result 同时携带当前版本和
+  `must_call_list_agents=true`；
 - 大脑必须重新 `list_agents` 后再派发；
+- 同一 Loop 对同一 Agent 连续两次版本不一致后，Runtime 返回
+  `capability_version_unstable` 并停止该派发意图，不再让模型无界重试消耗 Step；
 - 已创建任务不因后续 Catalog 升级被杀掉；
 - 真实授权变为 deny 时，仍以 `authorization_changed` 终止相关 Loop。
 
@@ -145,9 +159,13 @@ HR 和五个 Marketing Agent 的 Catalog `capability_version` 均为 `2`。因�
 失效。它必须独立提交、独立发布，并用真实 Catalog + Runtime Registry 证明版本 `2`
 能够创建 HR 任务；不得只用 Reference Adapter 验证。
 
-## 5. 数据模型：迁移 049
+## 5. 数据模型：迁移 049 与 050
 
-迁移编号 `049` 已核对未被本地或远端引用占用。实施前仍需再次确认主线。
+迁移编号 `049`、`050` 已核对未被本地或远端引用占用。实施前仍需再次确认主线。为降低
+回滚和权限审计风险，拆分为：
+
+- `049`：Task/Loop/Turn 状态、任务有效时钟、事件词表、等待订阅和唤醒约束；
+- `050`：Action 表、Action Execution Delivery、确认/拒绝/过期/取代函数和列级 Grant。
 
 ### 5.1 Agent Task 状态
 
@@ -176,21 +194,24 @@ queued
 
 ### 5.3 Action 表
 
-新增 `platform_brain.agent_task_actions`，至少包含：
+迁移 `050` 新增 `platform_brain.agent_task_actions`，至少包含：
 
 ```text
 action_id uuid primary key
 task_id uuid not null
 action_seq integer not null
 action_kind text not null
-summary text or encrypted projection
-impact text or encrypted projection
+summary_ciphertext bytea not null
+summary_key_version integer not null
+summary_sha256 bytea not null check octet_length = 32
+impact_ciphertext bytea not null
+impact_key_version integer not null
+impact_sha256 bytea not null check octet_length = 32
 parameters_ciphertext bytea not null
 parameters_key_version integer not null
 action_digest bytea not null check octet_length = 32
 status pending | confirmed | rejected | expired | superseded
 expires_at timestamptz not null
-owner_internal_user_id uuid not null
 confirmed_by_internal_user_id uuid
 confirmed_at timestamptz
 execution_timeout_seconds integer not null
@@ -198,10 +219,25 @@ execution_status not_started | queued | running | completed | failed
 execution_deadline_at timestamptz
 created_at / updated_at / terminal_at
 unique (task_id, action_seq)
+index (task_id, action_digest)
 ```
 
 `action_id` 使用稳定派生：`uuid5(task_id, "action:" + action_seq)`。同一 propose
-重放不得生成第二条 Action。
+重放不得生成第二条 Action。Summary、Impact 和 Parameters 与既有 Brain 内容纪律一致，
+只允许加密正文 + Key Version + SHA-256，不保留明文二选一。
+
+Action 不冗余保存 `agent_id`、`conversation_id` 或 `turn_id`。权威绑定路径固定为：
+
+```text
+agent_task_actions.task_id
+  -> agent_tasks.agent_id / brain_tool_call_id
+  -> brain_tool_calls.step_id
+  -> brain_steps.loop_id
+  -> brain_loops.turn_id
+  -> conversation_turns.conversation_id / owner
+```
+
+确认、读取和审计都沿该路径校验；不得按 Action 表中的缓存身份绕开权威 Join。
 
 ### 5.4 Action 状态不变量
 
@@ -253,7 +289,10 @@ Web/API 角色不得获得 Action 表级 Update。确认和拒绝只能调用 `S
 
 - 用户点击确认或拒绝：恢复原 Turn；
 - 用户发送普通文本：作为原 Turn 的用户介入；
-- 普通文本会把该 Turn 内所有 pending Action 转为 `superseded`，再由大脑处理新要求；
+- 与 Action 无关的普通文本不会自动废弃 pending Action；
+- 只有用户从确认卡明确选择“修改”、消息携带 Platform 绑定的 `action_id` 介入上下文，
+  或上游对同一 Action 提出新参数时，才 supersede 对应 Action；
+- 前端执行 supersede 前必须明确提示“原确认将失效”；
 - 用户需要完全独立的工作时，新建 Conversation，或先停止当前 Turn。
 
 因此不允许同一 Conversation 出现两个非终态 Turn，也不会让确认卡期间的主输入框失效。
@@ -284,6 +323,14 @@ Step、Tool Result、Task、Event 和 Action。
 - `execution_timeout_seconds` 来自固定 Action Capability，不由模型自由填写，且不超过
   对应 Agent 的 `max_duration_seconds`。
 
+### 6.6 确认后的 Wait 处理
+
+进入 `waiting_confirmation` 前必须存在覆盖相关 Task 的 active wait subscription。
+确认、拒绝、过期或明确修改 Action 时不复用旧 Wait；数据库函数采用迁移 `046` 的用户
+介入模式，原子终结 Wait、写入 Action Tool Result、完成当前 Step、创建下一 Step 并恢复
+活动时钟。确认路径同时创建执行投递；下一 Step 再等待真实 `result/failed/timeout`，不能
+把“已确认”展示为“已执行”。
+
 ## 7. 事件与唤醒协议
 
 `PUBLIC_EVENT_KINDS` 和 `await_agent_events.wake_on` 增加：
@@ -304,10 +351,22 @@ action_required
 唤醒继续满足：真实事件驱动、每个 Loop 最多一个 active wait、游标单调、重复事件幂等、
 终态事件不再唤醒。
 
+所有 HTTP Agent 的在线词表、旧事件映射和 Payload 以
+`2026-08-27-http-task-contract-v1.md` 为唯一权威：
+
+- 终态事件统一为 `timeout`，禁止 HTTP Agent 发送 `timed_out`；
+- `accepted` 由创建回执表达，不写 Task Event；
+- `started/progress` 在各 Agent 的内部 Facade 规范化为 `work_update`；
+- `sources` 规范化为 `artifact`；
+- 阻塞型旧 `question` 规范化为 `input_required`，非阻塞问题为 `message`；
+- Platform Adapter 不猜测未知事件，遇到未知 Kind 明确报 `protocol_violation`。
+
 ## 8. HTTP Adapter 标准合同
 
-FAE 和行政的内部任务面采用同一语义合同，但不要求共享代码仓库。VOC 可在 Platform
-进程内实现同一 Adapter 接口。
+FAE 和行政的内部任务面实现同一
+`2026-08-27-http-task-contract-v1.md`。所有代码都由 Orbbec 控制，因此规范化在各仓库
+的内部 Task Facade 完成；Platform Adapter 只处理同一协议，不维护长期猜测式映射。
+VOC 可在 Platform 进程内实现同一 Adapter 接口。
 
 ### 8.1 必需能力
 
@@ -315,7 +374,7 @@ FAE 和行政的内部任务面采用同一语义合同，但不要求共享代�
 POST   /internal/platform/v1/tasks
 POST   /internal/platform/v1/tasks/{task_id}/messages
 GET    /internal/platform/v1/tasks/{task_id}
-GET    /internal/platform/v1/tasks/{task_id}/events?after={seq}&limit={n}
+GET    /internal/platform/v1/tasks/{task_id}/events?after={seq}&limit={n}&wait_seconds=0
 POST   /internal/platform/v1/tasks/{task_id}/cancel
 GET    /internal/platform/v1/capabilities
 GET    /internal/platform/v1/health
@@ -329,6 +388,20 @@ POST /internal/platform/v1/tasks/{task_id}/actions/{action_id}/execute
 
 首批 FAE 和行政只读 Adapter 不实现 Action 接口。VOC 是第一条 Action 验证链路；行政
 写操作在其后独立升级能力版本。
+
+Action Proposal 通过规范 `action_required` 事件进入 Platform，Payload 包含稳定
+`action_id/action_seq`、Action Kind、加密前 Summary/Impact、Canonical Parameters、
+Digest、Expiry 和固定执行窗口。上游必须先持久化参数和 Digest，再发事件。
+
+Action Execute 请求只包含：
+
+```text
+action_id
+action_digest
+idempotency_key
+```
+
+禁止 Platform 回传 Parameters；上游执行时只读取 propose 阶段持久化的唯一参数副本。
 
 ### 8.2 快速创建与租约
 
@@ -345,6 +418,10 @@ POST /internal/platform/v1/tasks/{task_id}/actions/{action_id}/execute
 
 禁止用 300/600 秒长驻 HTTP 请求承载任务。Platform 的 Adapter Delivery 租约默认只有
 45 秒，只覆盖“创建上游任务并保存映射”。任务结果由事件游标同步，不能占用派发租约。
+
+Platform Adapter 读取事件必须传 `wait_seconds=0`，并消费有限 JSON 页面。FAE/行政可以
+为其他消费者保留 SSE 或长轮询，但 Brain Worker Tick 禁止进入 30/60 秒阻塞等待，否则
+会同时卡住全体 Agent 的派发、取消和心跳。
 
 ### 8.3 幂等和事件
 
@@ -430,120 +507,24 @@ feedback.own.read
 ### 9.5 Action Digest
 
 双方使用同一 Canonical JSON：UTF-8、键排序、固定分隔符、禁止 NaN/Infinity、禁止
-隐式浮点格式变化，再计算 SHA-256。Platform 保存的 Digest 是确认卡权威；上游执行前
-独立复算。世界状态变化导致参数失效时返回业务冲突并重新 propose，不得自动换班次、
+隐式浮点格式变化，再计算 SHA-256。专业 Agent 在 propose 前持久化的 Canonical
+Parameters 是唯一执行事实源；Platform 保存其加密副本用于确认卡与审计，但 execute
+请求不回传 Parameters，只传 Action ID、Digest 和幂等键。上游执行前从自己的持久副本
+复算 Digest。世界状态变化导致参数失效时返回业务冲突并重新 propose，不得自动换班次、
 房间、客户或其他参数。
 
 ## 10. 统一 Agent 附件底座
 
-### 10.1 Platform 是企业 Agent 附件事实源
+附件是独立并行项目，完整设计见
+`2026-08-27-platform-agent-attachment-substrate-design.md`。本设计只冻结与 Brain 的接口：
 
-所有企业内部 Agent Conversation 的输入图片、文档和输出附件统一由 Platform 管理：
-
-```text
-Browser / Agent output
-  -> Platform Attachment API
-  -> ownership + metadata + sha256 + classification
-  -> Platform-managed MinIO
-  -> task-scoped access grant
-  -> FAE / HR / Marketing / VOC / 行政
-```
-
-现有 Platform Attachment 模块主要是 Flywheel 附件的只读 Ticket/Streaming Proxy，不能
-直接作为 Conversation 上传事实源。本次在保留既有预览兼容的同时增加 Platform-owned
-Attachment Metadata、上传、Task Binding、内部读取和 Agent Output 能力。
-
-### 10.2 统一能力范围
-
-- 浏览器上传、分片/流式写入、大小和 SHA-256 校验；
-- MIME 与 magic-byte 双重校验，拒绝可执行内容和类型伪装；
-- 图片尺寸/格式元数据、文档文本提取、PDF 预览和可选 OCR 派生物；
-- 原件、派生物、访问审计和一年保留；
-- Conversation/Message/Turn 所有权；
-- Task 范围内最小授权；
-- Agent 生成附件回传；
-- Owner 紧急擦除覆盖原件、缩略图、OCR/文本、导出副本和未过期 Task Grant。
-
-Platform 硬上限首版固定为单文件50 MB、单消息最多10个、单消息合计最多100 MB；Catalog
-可以为每个 Agent 设置更低上限，不能提高 Platform 硬上限。上传状态为
-`pending -> scanning -> ready`，检测失败进入 `quarantined`，擦除或保留到期进入
-`deleted`。只有 `ready` 附件可以绑定消息或任务。
-
-控制库新增独立 `platform_attachments` schema：
-
-```text
-attachments
-attachment_uploads
-attachment_bindings
-attachment_derivatives
-attachment_access_grants
-attachment_access_events
-```
-
-这组表使用独立于 049 Action 状态机的后续迁移。迁移编号在阶段 0 合并后按主线下一个
-可用编号确定，不能把附件数据面塞进 049，也不能放进只读的 `platform_replica`。
-
-Blob Object Key 使用随机不可猜值，不包含用户名、花名、原始文件名、Conversation ID 或
-钉钉身份。文件名仅作为加密元数据保存，日志不记录查询参数、文件名和 Object Key。
-
-### 10.3 统一接口边界
-
-附件服务至少提供以下语义，不要求把对象存储协议暴露给浏览器或 Agent：
-
-```text
-create_upload -> upload bytes -> complete_upload
-bind_to_message / bind_to_turn
-issue_task_grant -> stream_media_with_grant
-register_agent_output
-preview / download
-emergency_erase
-```
-
-浏览器写接口使用 Platform Session + CSRF；内部 Agent 读取和输出接口使用
-audience/task/scope-bound Token。完成上传必须由服务端重新计算字节数、SHA-256、MIME 和
-magic-byte，不能相信浏览器声明。任何接口都不得接受调用方指定的 Object Key、MinIO
-Endpoint 或任意远程 URL。
-
-### 10.4 Task 访问
-
-Brain 只把用户明确选择、属于该 Conversation 且通过授权检查的 `attachment_refs` 放入
-`delegate_task`。Platform 为每个 `(task_id, attachment_id, agent_id)` 签发短时读取
-Grant。专业 Agent 通过 Platform 内部 Media Gateway 流式读取，不能获得 MinIO Access
-Key、Object Key 或长期预签名 URL。
-
-Grant 必须绑定 Task、Agent、Audience、用途、最大读取次数/字节数和到期时间。每次打开、
-完成、范围读取、失败和过期都写审计。任务终止、授权撤销或附件擦除时 Grant 立即失效。
-
-### 10.5 Catalog 附件能力
-
-附件不再用一个模糊的 `supports_attachments` 表达，Catalog 至少声明：
-
-```text
-accepted_attachment_mime_types
-max_attachment_count
-max_attachment_bytes_each
-max_attachment_bytes_total
-supports_image_vision
-supports_document_text
-supports_attachment_output
-```
-
-所有 Agent 复用同一存储、权限、生命周期和传输底座，但可以声明不同的处理能力。能力不
-匹配返回 `attachment_unsupported`；不得静默丢弃文件或只把文件名传给模型。
-
-### 10.6 FAE 与其他 Agent
-
-FAE 企业任务直接消费 Platform Attachment Grant，并把图片送入现有视觉路径、文档送入
-现有附件解析路径。FAE 面向外部客户的上传仍由 FAE 自己管理，不强制外部客户使用企业
-Platform。
-
-HR、Marketing、VOC 和行政逐个接入相同 Grant/Result Contract。行政门户中的住宿证明、
-反馈凭证等领域业务附件仍属于对应业务记录；当它们进入 Agent Conversation 时必须通过
-显式授权引用或复制到 Platform Attachment，不允许直接暴露业务存储路径。
-
-MetaBot 本地 Worker 使用同一 HTTPS Media Gateway 和 Task Token 下载附件到权限 `0600`
-的任务临时目录，任务结束立即删除。它不得把附件长期写入 MetaBot SQLite 或共享目录。
-VOC 在 Platform 进程内也必须经过同一 Task 授权检查，不能因为同进程而绕过所有权。
+- Brain 只派发用户明确选择且通过所有权检查的 `attachment_refs`；
+- 每个 Agent 在 Catalog 声明 MIME、大小、图片视觉、文档文本和输出附件能力；
+- Platform 为 `(task_id, attachment_id, agent_id)` 签发短时 Grant；
+- Agent 不获得 MinIO 凭据、Object Key 或长期 URL；
+- 能力不匹配返回 `attachment_unsupported`，不得静默忽略；
+- FAE 图片/文档能力开放前，附件独立轨必须完成 Task Grant、Media Gateway 和 FAE 验收；
+- VOC Action 确认不依赖附件，附件项目不得阻塞 VOC 阶段。
 
 ## 11. Catalog 和九 Agent 投影
 
@@ -597,8 +578,10 @@ remaining_step_slots
 委派回执增加 `assigned_timeout_seconds`、`remaining_active_seconds_after_dispatch` 和
 `deadline_at`。剩余预算不足时派发前返回 `deadline_insufficient`。
 
-生产 `max_steps` 暂时保持 12。先监控并在 Dev 测量 12/16/24 Step 的最坏 Token、上下文
-增长、连续 Step 缓存命中和等待恢复缓存命中，再决定发布值；24 只是候选上限。
+用户已确认 `max_steps=24` 是本版架构硬上限。该决策不等于未经评测立即把生产默认值改为
+24：首个 Release Manifest 仍为 12；Dev 必须测量 12/16/24 Step 的最坏 Token、上下文
+增长、连续 Step 缓存命中和等待恢复缓存命中。达到成本、延迟和质量门槛后以受审计配置
+发布到 24，不再修改 Schema 或协议；任何环境都不得超过 24。
 
 ## 13. 前端增量
 
@@ -617,19 +600,21 @@ remaining_step_slots
 
 ```text
 阶段 0  capability_version P0：独立修复、提交、发布、真实 HR 委派
-阶段 1  迁移 049：状态机、Action、确认、唤醒、权限、恢复
-阶段 2  Platform 统一身份与附件底座；Reference Adapter 验证全状态机和附件授权
-阶段 3  VOC：propose / confirm / reject / expire / submit
-阶段 4  FAE：企业 SSO、持久任务、附件/图片、事件重放、追问、取消、600 秒预算
+阶段 1  HTTP Task Contract v1 冻结；迁移 049 状态、事件、等待与唤醒
+阶段 2  迁移 050 Action、执行投递、权限与恢复；Reference Adapter 全状态机
+阶段 3  Platform 统一身份；VOC propose / confirm / reject / expire / submit
+阶段 4  FAE：企业 SSO、持久任务、事件重放、追问、取消、600 秒预算
 阶段 5  行政只读：复用 Jobs、短时身份、Scope、追问、取消
 阶段 6  行政写操作：在 VOC 确认机制验收后开放
-阶段 7  九 Agent 并发和 12/16/24 Step 成本评测
+阶段 7  九 Agent 并发和 12/16/24 Step 成本评测；按门槛发布 24
+
+附件轨 A0-A6 与阶段 0-3 并行，不阻塞 VOC；A2/A3 完成后才给 FAE 打开图片/文档能力
 ```
 
 FAE 和行政由各自仓库的专属会话并行实施，但必须先冻结本设计的内部协议版本。Platform
 Adapter 不得在上游尚未通过合同测试时声称 Agent 可用。
 
-Workspace SSO 底座随阶段 2 建立；VOC/行政复用现有同源身份，FAE 的跨域一次性授权码
+Workspace SSO 底座随阶段 3 建立；VOC/行政复用现有同源身份，FAE 的跨域一次性授权码
 交换随阶段 4 验收。
 
 ## 15. 验收门槛
@@ -638,6 +623,7 @@ Workspace SSO 底座随阶段 2 建立；VOC/行政复用现有同源身份，FA
 
 - 真实 Catalog 版本 `2` 的 HR Agent 能创建 Task；
 - 旧版本派发返回 `capability_changed` 且不创建 Task；
+- `capability_changed` 回带当前版本与重新 `list_agents` 指令，连续两次后停止该派发意图；
 - Catalog 升级不杀掉既有 Task；
 - 授权撤销仍明确终止 Loop。
 
@@ -646,13 +632,15 @@ Workspace SSO 底座随阶段 2 建立；VOC/行政复用现有同源身份，FA
 - 不确认、确认、拒绝、超时、Digest 变化、重复确认六条路径；
 - propose 后、confirm 前、confirm 后三个崩溃点；
 - 确认后即使 Brain 预算不足，操作仍进入独立执行窗口；
-- 新普通消息使 pending Action 变 `superseded` 并恢复原 Turn；
+- 无关普通消息不误伤 pending Action；只有明确修改对应 Action 时才 supersede，且用户先
+  看到失效提示；
 - 非 Owner、过期、错误 Digest、终态 Loop 全部拒绝；
 - 上游参数复算失败绝不执行。
 
 ### 15.3 Adapter
 
 - 创建请求快速返回，45 秒租约内保存映射；
+- Adapter 事件读取固定 `wait_seconds=0`，无事件时立即返回且不阻塞其他 Agent 心跳；
 - 重试不产生第二个上游任务或业务写操作；
 - 事件游标断线续传无重复、无缺口；
 - 后续消息与取消可幂等重放；
@@ -674,19 +662,16 @@ Workspace SSO 底座随阶段 2 建立；VOC/行政复用现有同源身份，FA
 - 下游日志、响应和公开事件不出现钉钉原始 ID；
 - FAE 外部客户入口不被企业钉钉身份强制覆盖。
 
-### 15.6 统一附件
+### 15.6 统一附件并行轨
 
-- 同一 Platform 图片附件能被 FAE 和至少一个其他 Agent 通过各自 Task Grant 读取；
-- 同一文档附件无需重复上传即可委派给两个获授权 Agent；
-- 未授权 Task、错误 Agent、过期 Grant、附件擦除和 MIME 不兼容全部明确拒绝；
-- Agent 输出附件归档回 Platform，并能在 Conversation 中预览/下载；
-- 上游日志、事件和结果不暴露 Object Key、本地路径或 MinIO 凭据；
-- 一年保留和紧急擦除覆盖所有原件与派生物。
+附件验收不再作为 VOC Action 的发布门槛。完整门槛由
+`2026-08-27-platform-agent-attachment-substrate-design.md` 维护；本项目只验证 Brain 在
+附件能力尚未开放时明确返回 `attachment_unsupported`，而不是静默丢弃。
 
 ## 16. 发布和回滚
 
 - 阶段 0 独立发布，失败只回滚 Tool Schema/Prompt/Runtime 修复；
-- 049 先在 Preview 数据库做全量迁移和 Grant 审计；
+- 049、050 分别在 Preview 数据库做全量迁移、回滚和 Grant 审计；
 - Catalog 双模式只在对应 Adapter 合同通过后逐个开启；
 - FAE 公网 `/chat`、`fae.orbbec.com.cn`、原 IP 保持不变；
 - 行政 `/office/*`、服务门户和既有 Jobs 保持兼容；
@@ -695,6 +680,8 @@ Workspace SSO 底座随阶段 2 建立；VOC/行政复用现有同源身份，FA
 
 ## 17. 配套任务书
 
+- `2026-08-27-http-task-contract-v1.md`
+- `2026-08-27-platform-agent-attachment-substrate-design.md`
 - `2026-08-27-agent-brain-platform-task-brief.md`
 - `2026-08-27-fae-platform-task-contract-task-brief.md`
 - `2026-08-27-admin-platform-task-contract-task-brief.md`

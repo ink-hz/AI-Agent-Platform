@@ -6,20 +6,24 @@
 
 **仓库：** `/Users/neo/Developer/work/AI-Agent-Platform`
 
-**设计依据：** `2026-08-27-agent-brain-actions-and-external-adapters-design.md`
+**设计依据：** `2026-08-27-agent-brain-actions-and-external-adapters-design.md`、
+`2026-08-27-http-task-contract-v1.md`
 
 ## 1. 目标
 
 在不重建现有 041/045/046 Durable Loop 的前提下：
 
 1. 先修复 capability version 硬编码导致真实 Agent 无法委派的 P0；
-2. 用迁移 049 增加任务等待状态和用户 Action 确认；
+2. 用迁移 049 增加状态、事件和唤醒，用迁移 050 增加用户 Action 确认；
 3. 允许 FAE、VOC、行政同时具有专业工作区和 Brain 调度能力；
 4. 提供 FAE、行政共用的 HTTP Adapter 基座；
 5. 先跑通 VOC 确认，再接 FAE、行政只读，最后开放行政写操作；
 6. 只对现有协作室增加确认卡和新状态，不另造任务管理页面。
-7. 由 Platform 统一提供钉钉身份、专业工作区 SSO、服务端任务身份和 Agent 附件底座，
-   所有内部使用都归属于同一个 `internal_user_id`。
+7. 由 Platform 统一提供钉钉身份、专业工作区 SSO 和服务端任务身份，所有内部使用都
+   归属于同一个 `internal_user_id`；附件底座按独立并行设计交付。
+
+Platform、FAE、行政、VOC 和 MetaBot 代码及部署都由 Orbbec 掌控。跨仓协议是独立部署
+边界，不是第三方黑盒兼容层；需要一致行为时应同步修改相关仓库。
 
 ## 2. 不得改动
 
@@ -31,7 +35,7 @@
 - 不重写已有七个 Brain 工具；
 - 不用现有 `/chat` 长请求包装成伪任务；
 - 不给大脑确认业务操作的工具；
-- 不把 `max_steps` 未经实测直接从 12 提到 24。
+- `max_steps` 硬上限固定为 24，但首个生产 Manifest 未经实测不从 12 提升。
 
 ## 3. 阶段 0：P0 独立修复
 
@@ -41,7 +45,9 @@
 - Tool Schema 和 Brain Prompt 要求从 `list_agents` 结果回传版本；
 - `loop_runtime.py` 不再传常量 `1`；
 - Runtime Registry 继续执行 optimistic capability check；
-- 版本不一致返回 `capability_changed`，不创建 Task；
+- 版本不一致返回 `capability_changed`、当前版本和 `must_call_list_agents=true`，不创建
+  Task；同一 Loop/Agent 连续两次不一致后返回 `capability_version_unstable` 并停止该
+  派发意图；
 - 更新 Prompt SHA 和 Release Manifest。
 
 ### 3.2 测试
@@ -54,32 +60,41 @@
 
 ### 3.3 提交和发布
 
-该阶段必须形成独立 Commit、Release 和验收记录。不能和迁移 049 混合，便于快速回滚和
+该阶段必须形成独立 Commit、Release 和验收记录。不能和迁移 049/050 混合，便于快速回滚和
 定位 Prompt Cache 首次失效成本。
 
-## 4. 迁移 049
+## 4. 迁移 049 与 050
 
-### 4.1 Schema
+### 4.1 迁移 049：状态、事件与唤醒
 
 - 扩展 `agent_tasks.status`；
 - 为 Task 增加暂停/恢复所需已消耗执行时间；
 - 为 Loop 增加 `waiting_confirmation` 和 `intervention_expires_at`；
 - 扩展 Conversation Turn 的状态 Check 和单活跃索引；
-- 新增 `agent_task_actions`；
-- 增加 Action Execution Delivery 的稳定身份和幂等约束；
 - 扩展 Event/Wake 白名单；
-- 增加确认、拒绝、过期、取代和 Action 执行的公开事件类型；
+- 按 HTTP Task Contract v1 统一 `timeout`、`input_required`、`action_required`；
+- 替换 `append_agent_task_event_v45` 为 v49，包含新状态映射；
 - 重新审计 Worker/App 的列级 Grant。
 
-### 4.2 数据库函数
+### 4.2 迁移 050：Action 与执行
+
+- 新增 `agent_task_actions`，Summary/Impact/Parameters 全部按 Ciphertext + Key Version +
+  SHA-256 保存；
+- 不冗余 agent/conversation/turn，权威归属沿 task -> tool call -> step -> loop -> turn；
+- 增加 `(task_id, action_digest)` 索引；
+- 增加 Action Execution Delivery 的稳定身份和幂等约束；
+- 增加确认、拒绝、过期、取代和 Action 执行公开投影；
+- 重新审计 Worker/App 的列级 Grant。
+
+### 4.3 数据库函数
 
 至少提供：
 
-- `propose_agent_task_action_v49`：Worker 身份，幂等创建或取代 Action；
-- `confirm_agent_task_action_v49`：App 身份，校验 Owner/Digest/Expiry 并创建执行投递；
-- `reject_agent_task_action_v49`：App 身份，原子拒绝并唤醒；
-- `expire_agent_task_actions_v49`：Worker/Reaper 身份，批量过期并唤醒；
-- `supersede_pending_actions_for_intervention_v49`：普通用户消息恢复原 Turn；
+- `propose_agent_task_action_v50`：Worker 身份，幂等创建或取代 Action；
+- `confirm_agent_task_action_v50`：App 身份，校验 Owner/Digest/Expiry 并创建执行投递；
+- `reject_agent_task_action_v50`：App 身份，原子拒绝并唤醒；
+- `expire_agent_task_actions_v50`：Worker/Reaper 身份，批量过期并唤醒；
+- `supersede_agent_task_action_v50`：只取代被明确修改的 Action；
 - `append_agent_task_event_v49`：包含新增事件和任务状态映射。
 
 函数必须 `SECURITY DEFINER`、固定 `search_path`、撤销 public 权限，并精确验证生产与
@@ -92,7 +107,8 @@ Preview caller role。
 - 有其他可运行 Task 时保持活动计时；
 - Task 自己的等待时间不计入 Task 有效执行时长；
 - Action 超时唤醒大脑部分交付，不走整轮 `user_input_timeout`；
-- 普通用户消息使 pending Action `superseded` 并恢复同一个 Turn；
+- 无关普通消息不改变 pending Action；只有确认卡“修改”、绑定 action_id 的介入或上游
+  新参数 Proposal 才 supersede 对应 Action，并先向用户提示；
 - 终止 Loop 时清理 pending Action 并请求停止对应 Task。
 
 ## 6. Action 服务
@@ -109,6 +125,14 @@ ActionExecutionDispatcher
 确认卡投影只读持久化 Action；模型 Markdown 不进入参数或授权路径。确认 API 使用
 Platform Session + CSRF，拒绝非 Owner、错误 Digest、过期和终态请求。
 
+`action_required` Proposal 的字段、Canonical JSON、Digest 和过期语义严格使用 HTTP
+Task Contract v1。Execute 只发送 `action_id + action_digest + idempotency_key`，不得把
+Platform 保存的 Parameters 回传覆盖上游持久副本。
+
+确认、拒绝、过期和明确修改时，按迁移 046 模式原子终结 active wait、填入 Action Tool
+Result、完成 Step、创建下一 Step 并恢复活动时钟；确认路径同时创建执行投递。禁止复用旧
+Wait 或等轮询碰运气唤醒。
+
 ## 7. 通用 HTTP Adapter
 
 实现共用基座：
@@ -121,7 +145,11 @@ TaskCapabilityProbe
 ```
 
 基座负责：短时签名凭证、快速创建、幂等键、上游任务映射、游标同步、重试退避、健康、
-协议错误和明确 unavailable。FAE 与行政只提供配置和事件映射，不复制可靠性代码。
+协议错误和明确 unavailable。FAE 与行政的内部 Task Facade 直接输出 HTTP Task Contract
+v1 规范事件；Platform Adapter 不猜测 `accepted/progress/timed_out` 等旧事件。
+
+事件读取固定传 `wait_seconds=0` 并消费有限 JSON 页面。一次 Tick 不得进入 SSE/长轮询；
+无事件时立即返回，不能阻塞其他 Agent 的派发、取消或 60 秒健康心跳。
 
 Action 能力使用可选接口 `ActionCapableAdapter`。行政只读阶段和 FAE Adapter 不实现。
 
@@ -150,39 +178,15 @@ Action 能力使用可选接口 `ActionCapableAdapter`。行政只读阶段和 F
 身份底座必须有后端测试覆盖：错误企业、停用用户、无 Agent 授权、码重放、错误 state、
 错误 audience、Binding 失效和 Token 轮换。
 
-## 9. 统一 Agent 附件底座
+## 9. 附件并行项目边界
 
-现有 Attachment 模块只有基于 Flywheel 元数据的预览/下载 Ticket，不是 Agent Conversation
-的统一上传事实源。本阶段扩展为 Platform-owned Attachment Service：
+统一附件底座不属于迁移 049/050，也不阻塞 VOC Action。完整实现按
+`2026-08-27-platform-agent-attachment-substrate-design.md` 建立独立分支、迁移、计划和
+验收。
 
-- Metadata/ownership 位于 Platform 控制库；
-- 原始 Blob 和派生物位于 Platform 管理的 MinIO；
-- 浏览器上传、Agent 读取、Agent 输出、预览、下载、保留和审计统一；
-- 原始文件默认保留一年，紧急擦除覆盖原件、预览、OCR/文本派生物和导出副本；
-- 所有 Agent Conversation 上传组件复用同一 API；
-- 上游 Agent 不取得 MinIO 凭据或长期预签名 URL，只使用绑定 Task 的短时读取 Grant；
-- Agent 输出附件先上传 Platform，再通过 `attachment_ref` 进入结果。
-
-任务上下文只包含用户明确选择且通过所有权检查的附件引用。Catalog 声明 MIME、数量、
-单文件/总大小、图片视觉、文档文本和输出附件能力；能力不匹配显式返回
-`attachment_unsupported`，不得静默丢弃。
-
-新增 `platform_attachments` schema：attachments、uploads、bindings、derivatives、
-access_grants、access_events。首版硬上限单文件50 MB、单消息10个、总计100 MB；只有通过
-类型、大小、SHA-256、magic-byte 和安全扫描并进入 `ready` 的对象可以绑定。
-
-统一接口至少覆盖：创建上传、完成上传、将附件绑定到 Message/Turn、签发 Task Grant、
-按 Grant 流式读取、Agent 输出登记、用户预览/下载和紧急擦除。浏览器写接口使用 Platform
-Session + CSRF；内部读写接口使用 audience/task/scope-bound Token。接口不得接收任意
-Object Key，也不得允许调用方以 URL 指定上游文件。
-
-适配路径必须覆盖全部内部 Agent：
-
-- FAE/行政 HTTP Adapter 使用短时 Media Gateway；
-- VOC 同进程仍执行相同 Task 授权；
-- MetaBot Local Worker 通过 HTTPS + Task Token 下载到 `0600` 临时目录，任务结束删除；
-- Agent 输出使用统一 Output Attachment API 回写 Platform；
-- 任何 Adapter 不得获得 MinIO 凭据或长期 URL。
+本任务只负责 Brain 接口边界：保留 `attachment_refs`、Catalog 能力声明、派发前所有权
+检查、能力不匹配的 `attachment_unsupported` 和 Task Grant 调用点。在独立附件轨未通过
+验收前，不得声称任何新增 Agent 已支持 Platform 图片/文档；也不得静默丢弃引用。
 
 ## 10. VOC 第一条确认链路
 
@@ -190,7 +194,8 @@ Object Key，也不得允许调用方以 URL 指定上游文件。
 
 1. Brain 派发“整理 VOC”；
 2. VOC Adapter 返回结构化 Draft；
-3. 正式提交生成 `action_required` 和持久 Action；
+3. VOC 先持久化 Canonical Draft 参数与 Digest，再按 HTTP Task Contract v1 生成
+   `action_required`，Platform 校验并持久化 Action；
 4. 卡片展示待提交参数；
 5. Owner 确认后执行 Submit；
 6. 结果事件唤醒 Brain；
@@ -215,7 +220,8 @@ Object Key，也不得允许调用方以 URL 指定上游文件。
 - 普通 Task 截止时间不超过创建时剩余 Turn 活动预算；
 - Action 确认后获得固定独立执行窗口；
 - list/receipt 投影剩余预算和时长；
-- 生产 Step 仍为 12，先增加 12/16/24 评测工具和指标。
+- 架构硬上限为 24；首个生产 Manifest 保持 12，增加 12/16/24 评测工具和指标，达到门槛
+  后以受审计配置发布 24。
 
 ## 13. 前端
 
@@ -226,6 +232,7 @@ Object Key，也不得允许调用方以 URL 指定上游文件。
 - Confirm/Reject 按钮及 CSRF；
 - Expired/Superseded/Executing/Completed/Failed 展示；
 - 真实确认身份、时间和 Digest 摘要；
+- 修改 Action 前的明确失效警示，无关普通消息保留 Pending 卡片；
 - 预算不足、Agent unavailable、Scope denied 的明确提示。
 
 禁止通过前端计时器伪造处理阶段，禁止从回答 Markdown 解析 Action。
@@ -233,26 +240,27 @@ Object Key，也不得允许调用方以 URL 指定上游文件。
 ## 14. 验收
 
 - P0 真实 HR 委派；
+- capability_changed 返回当前版本并阻止无界重试；
 - Reference Adapter 全状态机；
+- HTTP Task Contract v1 规范事件、Action Proposal/Execute 和 `wait_seconds=0`；
 - VOC 六条确认路径；
 - FAE 600 秒任务、断线游标恢复、追问、取消；
 - 行政只读 Scope 越权拒绝；
 - 行政写操作只在后续 capability version 启用；
 - Worker 在 propose 后、confirm 前、confirm 后被杀时都不重复执行；
 - 九 Agent 不静默消失，Mac 离线明确 unavailable；
-- `/office/*` 和 FAE 公网入口不变。
+- `/office/*` 和 FAE 公网入口不变；
 - 钉钉登录一次后，VOC、行政和企业 FAE 入口均解析为同一个 internal_user_id；注销或
   停用后跨域 FAE Binding 不再有效；
-- 图片、PDF和普通文档经同一 Platform 附件 ID 被 FAE 与至少另一个 Agent 成功读取，
-  未授权 Task、错误 Agent、过期 Grant 和 MIME 不兼容均被拒绝。
+- 附件底座不阻塞 VOC；附件能力未开放时明确返回 `attachment_unsupported`。
 
 ## 15. 交付物
 
 - P0 Commit/Release/验收证据；
-- 049 Migration、权限矩阵和回滚说明；
+- 049/050 Migration、权限矩阵和独立回滚说明；
 - HTTP Task Contract v1 Schema；
 - Workspace SSO/Task Identity 合同、威胁模型和身份贯通证据；
-- Platform Attachment Contract、MinIO/Metadata 迁移、访问审计和一年保留策略；
+- 独立附件项目的接口占位和依赖说明；附件项目自己的交付物由其设计维护；
 - VOC/FAE/行政 Adapter；
 - Action 前端与审计证据；
 - 九 Agent 并发报告；
