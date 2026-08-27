@@ -35,6 +35,7 @@ import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
 import { AgentUsePage } from "./pages/AgentUsePage";
 import { VocWorkspacePage } from "./pages/VocWorkspacePage";
 import { AiNotesPage } from "./pages/AiNotesPage";
+import { VocManagementPage } from "./pages/VocManagementPage";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -112,7 +113,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-operations": return <PendingPage title="Operations 与数据飞轮" description="运行摘要、证据和改进闭环仍由管理中心统一维护。" />;
     case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
     case "admin-governance": return <GovernancePage />;
-    case "admin-voc": return <PendingPage title="VOC 管理" description="集中查看所有员工提交的客户反馈。" />;
+    case "admin-voc": return <VocManagementPage />;
     case "legacy-redirect": return <LegacyRedirect to={route.to} />;
     default: return <PendingPage title="页面不存在" description="请返回 Agent 大脑。" />;
   }
