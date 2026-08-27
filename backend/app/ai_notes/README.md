@@ -32,9 +32,9 @@ slug: foundations
 
 ```yaml
 ---
-title: Agent 系统手册：从概念到工程实践
-slug: agent-system-handbook
-description: 系统梳理 Agent 的核心闭环、运行时、工具、安全和评估。
+title: Agent 工程学习地图：从模型循环到生产系统
+slug: agent-engineering-learning-map
+description: 用可运行实验和验收标准，串起 Agent 工程从最小闭环到生产系统的学习路径。
 author: 苍渊
 motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
