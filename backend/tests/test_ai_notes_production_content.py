@@ -64,3 +64,15 @@ def test_publishes_clean_ai_native_architecture_design_note() -> None:
     assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("AI Native", "架构设计", "工程方法")
     assert_clean_body(article.markdown)
+
+
+def test_publishes_clean_enterprise_agent_architecture_note() -> None:
+    article = published_article("agent-architecture", "enterprise-agent-system-architecture")
+    assert article.title == "企业级 Agent 系统架构：从循环引擎到信任层级"
+    assert article.filename == "enterprise-agent-system-architecture.md"
+    assert article.published_at == TODAY
+    assert article.updated_at == TODAY
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
+    assert article.tags == ("Agent", "系统架构", "AI 工程")
+    assert_clean_body(article.markdown)
