@@ -26,7 +26,7 @@ describe("usage navigation", () => {
 
   it("gives members a use-first navigation and always sends the brand home", async () => {
     await act(async () => root.render(<AppShell route={{ name: "brain" }} account={member}><p>内容</p></AppShell>));
-    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 AgentAI 工程笔记");
+    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent");
     expect(container.querySelector(".product-nav")?.textContent).not.toContain("企业账号");
     const accountEntry = container.querySelector<HTMLAnchorElement>("a.account-chip");
     expect(accountEntry?.textContent).toBe("成员");
@@ -46,7 +46,7 @@ describe("usage navigation", () => {
     const navigation = container.querySelector(".product-nav")?.textContent || "";
     expect(navigation).toContain("Agent 大脑");
     expect(navigation).toContain("专业 Agent");
-    expect(navigation).toContain("AI 工程笔记");
+    expect(navigation).not.toContain("AI 工程笔记");
     expect(navigation).not.toContain("历史对话");
     expect(navigation).not.toContain("企业账号");
     expect(navigation).toContain("管理中心");
@@ -66,13 +66,11 @@ describe("usage navigation", () => {
     expect(container.querySelector<HTMLAnchorElement>('.admin-nav a[href="/admin/voc"]')?.getAttribute("aria-current")).toBeNull();
   });
 
-  it("marks AI notes as the current top-level entry", async () => {
+  it("keeps the AI notes workspace without a global navigation entry", async () => {
     await act(async () => root.render(
       <AppShell route={{ name: "ai-notes" }} account={member}><p>文章</p></AppShell>,
     ));
-    const current = container.querySelector<HTMLAnchorElement>('a[href="/ai-notes"]');
-    expect(current?.getAttribute("aria-current")).toBe("page");
-    expect(current?.textContent).toBe("AI 工程笔记");
+    expect(container.querySelector('.product-nav a[href="/ai-notes"]')).toBeNull();
     expect(container.querySelector("main.page.is-ai-notes-workspace")).not.toBeNull();
     expect(container.querySelector(".app.is-ai-notes-workspace-shell")).not.toBeNull();
     expect(container.querySelector("footer.site-foot")).toBeNull();
