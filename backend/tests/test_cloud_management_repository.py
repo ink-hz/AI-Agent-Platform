@@ -151,6 +151,56 @@ def test_operation_projection_filters_before_pagination():
     assert page.items[0].summary == "脱敏故障"
 
 
+def test_operation_projection_restores_safe_event_semantics():
+    cipher = FieldCipher(b"m" * 32)
+    record = {
+        "kind": "operation_event_projection", "key": "e" * 52,
+        "agent_id": "ai-admin-agent",
+        "event_type": "remote_sync_unavailable",
+        "event_family": "data",
+        "severity": "attention",
+        "status": "active",
+        "title": {"text": "ai-admin-agent synchronization is unavailable"},
+        "summary": {"text": "The latest synchronization failed."},
+        "source_kind": "admin",
+        "occurred_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v2",
+    }
+    repository = ReplicaOperationsRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record)]), now=lambda: NOW,
+    )
+
+    event = repository.list_events(EventFilters(), 50, 0).items[0]
+
+    assert event.event_family == "data"
+    assert event.status == "active"
+    assert event.title == "ai-admin-agent synchronization is unavailable"
+    assert event.source_kind == "admin"
+
+
+def test_old_operation_projection_uses_explicit_compatibility_defaults():
+    cipher = FieldCipher(b"m" * 32)
+    record = {
+        "kind": "operation_event_projection", "key": "f" * 52,
+        "agent_id": "hr-bot", "event_type": "unknown_old_event",
+        "severity": "info", "summary": {"text": "Legacy"},
+        "occurred_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v2",
+    }
+    repository = ReplicaOperationsRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record)]), now=lambda: NOW,
+    )
+
+    event = repository.list_events(EventFilters(), 50, 0).items[0]
+
+    assert event.event_family == "execution"
+    assert event.status == "historical"
+    assert event.title == "unknown_old_event"
+    assert event.source_kind == "cloud-replica"
+
+
 def test_excluded_agents_are_absent_from_review_projections():
     cipher = FieldCipher(b"m" * 32)
     visible_issue_id = uuid4()

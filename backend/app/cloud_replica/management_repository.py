@@ -212,6 +212,24 @@ class ReplicaReviewRepository(_ProjectionReader):
 
 
 class ReplicaOperationsRepository(_ProjectionReader):
+    _LEGACY_EVENT_FAMILIES = {
+        "new_conversations": "usage",
+        "conversation_milestone": "usage",
+        "agent_launched": "lifecycle",
+        "deployment_updated": "lifecycle",
+        "sync_recovered": "recovery",
+        "data_access_recovered": "recovery",
+        "runtime_recovered": "recovery",
+        "remote_sync_unavailable": "data",
+        "business_data_unavailable": "data",
+        "runtime_degraded": "runtime",
+        "runtime_offline": "runtime",
+    }
+
+    @classmethod
+    def _legacy_event_family(cls, event_type: str) -> str:
+        return cls._LEGACY_EVENT_FAMILIES.get(event_type, "execution")
+
     def list_events(
         self, filters: EventFilters, limit: int, offset: int
     ) -> Page[OperationalEvent]:
@@ -232,10 +250,14 @@ class ReplicaOperationsRepository(_ProjectionReader):
             items.append(OperationalEvent(
                 event_id=value["key"], agent_id=value["agent_id"],
                 agent_visibility="business", event_type=value["event_type"],
-                event_family="execution", severity=value["severity"],
-                status="historical", title=value["event_type"],
+                event_family=(value.get("event_family") or
+                              self._legacy_event_family(value["event_type"])),
+                severity=value["severity"],
+                status=value.get("status") or "historical",
+                title=(value.get("title") or {}).get("text") or value["event_type"],
                 summary=(value.get("summary") or {}).get("text", ""),
-                source_kind="cloud-replica", occurred_at=occurred_at,
+                source_kind=value.get("source_kind") or "cloud-replica",
+                occurred_at=occurred_at,
                 first_observed_at=occurred_at, last_observed_at=occurred_at,
                 facts={}, fingerprint=value["key"],
             ))

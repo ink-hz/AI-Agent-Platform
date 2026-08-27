@@ -47,6 +47,9 @@ class PreparedManagement:
     payload_sha256: str
 
 
+_PLATFORM_EVENT_AGENT_ID = "platform"
+
+
 @dataclass(frozen=True, slots=True)
 class ReplicaImportResult:
     status: str
@@ -96,13 +99,18 @@ _MANAGEMENT_KEYS = {
     },
     "operation_event_projection": {
         "kind", "key", "agent_id", "occurred_at", "event_type", "severity",
-        "summary", "sanitizer_policy_version",
+        "event_family", "status", "title", "summary", "source_kind",
+        "sanitizer_policy_version",
     },
     "review_feedback_totals_projection": {
         "kind", "key", "agent_id", "observed_at", "feedback_rows",
         "negative_rows", "negative_turns", "positive_rows",
         "sanitizer_policy_version",
     },
+}
+_LEGACY_OPERATION_EVENT_KEYS = {
+    "kind", "key", "agent_id", "occurred_at", "event_type", "severity",
+    "summary", "sanitizer_policy_version",
 }
 
 
@@ -210,10 +218,22 @@ class ReplicaStore:
     def prepare_management(self, record: dict[str, Any]) -> PreparedManagement:
         kind = record.get("kind")
         expected = _MANAGEMENT_KEYS.get(kind)
-        if expected is None or set(record) != expected:
+        actual_keys = set(record)
+        if expected is None or (
+            actual_keys != expected
+            and not (
+                kind == "operation_event_projection"
+                and actual_keys == _LEGACY_OPERATION_EVENT_KEYS
+            )
+        ):
             raise ReplicaStoreError("record_invalid")
         record_key = record.get("key")
         agent_id = record.get("agent_id")
+        indexed_agent_id = (
+            _PLATFORM_EVENT_AGENT_ID
+            if kind == "operation_event_projection" and agent_id is None
+            else agent_id
+        )
         time_field = {
             "review_issue_projection": "updated_at",
             "review_inbox_projection": "first_feedback_at",
@@ -223,8 +243,8 @@ class ReplicaStore:
         if (
             not isinstance(record_key, str)
             or not _SAFE_RECORD_KEY.fullmatch(record_key)
-            or not isinstance(agent_id, str)
-            or not _SAFE_AGENT.fullmatch(agent_id)
+            or not isinstance(indexed_agent_id, str)
+            or not _SAFE_AGENT.fullmatch(indexed_agent_id)
             or not isinstance(record.get("sanitizer_policy_version"), str)
             or not record["sanitizer_policy_version"]
         ):
@@ -237,7 +257,7 @@ class ReplicaStore:
         return PreparedManagement(
             projection_kind=kind,
             record_key=record_key,
-            agent_id=agent_id,
+            agent_id=indexed_agent_id,
             occurred_at=occurred_at,
             encrypted=encrypted,
             payload_sha256=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),

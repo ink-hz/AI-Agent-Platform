@@ -207,14 +207,19 @@ def sanitize_management_projection(
             "sanitizer_policy_version": policy.version,
         }
     if isinstance(raw, OperationEventProjection):
+        title = sanitize_text(raw.title, policy, "operation-title")
         summary = sanitize_text(raw.summary, policy, "operation-summary")
         return {
             "kind": "operation_event_projection",
             "key": stable_id("operation-event", raw.event_id, identity_key),
             "agent_id": raw.agent_id,
             "event_type": _safe_identifier(raw.event_type) or "unknown",
+            "event_family": _safe_identifier(raw.event_family) or "execution",
             "severity": _safe_identifier(raw.severity) or "unknown",
+            "status": _safe_identifier(raw.status) or "historical",
+            "title": {"text": title.text},
             "summary": {"text": summary.text},
+            "source_kind": _safe_identifier(raw.source_kind) or "unknown",
             "occurred_at": raw.occurred_at,
             "sanitizer_policy_version": policy.version,
         }

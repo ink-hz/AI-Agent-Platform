@@ -181,8 +181,12 @@ class ReviewFeedbackTotalsProjection:
 @dataclass(frozen=True, slots=True)
 class OperationEventProjection:
     event_id: str
-    agent_id: str
+    agent_id: str | None
     event_type: str
+    event_family: str
     severity: str
+    status: str
+    title: str
     summary: str
+    source_kind: str
     occurred_at: datetime

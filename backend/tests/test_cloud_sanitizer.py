@@ -296,10 +296,14 @@ def test_management_projection_keeps_text_and_hashes_identifiers(policy):
     operation = sanitize_management_projection(
         OperationEventProjection(
             event_id="raw-event-provider-on_27882925f0e4f159846581dd8144ad63",
-            agent_id="hr-bot",
-            event_type="execution_failure",
-            severity="critical",
+            agent_id=None,
+            event_type="data_access_recovered",
+            event_family="recovery",
+            severity="info",
+            status="historical",
+            title="flywheel data access recovered",
             summary="客户甲集团 https://example.com/private",
+            source_kind="flywheel",
             occurred_at=now,
         ),
         policy,
@@ -309,6 +313,16 @@ def test_management_projection_keeps_text_and_hashes_identifiers(policy):
     assert issue["title"]["text"] == "联系 alice@example.com 处理项目鹰 /Users/neo/a.md"
     assert issue["owner_display"] == "张候选人"
     assert operation["summary"]["text"] == "客户甲集团 https://example.com/private"
+    assert operation["title"]["text"] == "flywheel data access recovered"
+    assert operation["agent_id"] is None
+    assert operation["event_family"] == "recovery"
+    assert operation["status"] == "historical"
+    assert operation["source_kind"] == "flywheel"
+    assert set(operation) == {
+        "kind", "key", "agent_id", "occurred_at", "event_type",
+        "event_family", "severity", "status", "title", "summary",
+        "source_kind", "sanitizer_policy_version",
+    }
     # The raw event id is still replaced by a derived stable identifier.
     assert "on_27882925f0e4f159846581dd8144ad63" not in json.dumps(
         operation, ensure_ascii=False, default=str

@@ -116,6 +116,30 @@ def test_prepared_management_projection_encrypts_display_fields(
     assert "已脱敏标题" not in json.dumps(prepared.encrypted, ensure_ascii=False)
 
 
+def test_platform_operation_projection_uses_safe_non_null_index_agent():
+    store = ReplicaStore("postgresql://replica", cipher=FieldCipher(b"e" * 32))
+    record = {
+        "kind": "operation_event_projection",
+        "key": "d" * 52,
+        "agent_id": None,
+        "occurred_at": "2026-08-11T08:01:00.000000Z",
+        "event_type": "data_access_recovered",
+        "event_family": "recovery",
+        "severity": "info",
+        "status": "historical",
+        "title": {"text": "flywheel data access recovered"},
+        "summary": {"text": "The source is readable again."},
+        "source_kind": "flywheel",
+        "sanitizer_policy_version": "test-v1",
+    }
+
+    prepared = store.prepare_management(record)
+
+    assert prepared.agent_id == "platform"
+    assert prepared.projection_kind == "operation_event_projection"
+    assert prepared.record_key == "d" * 52
+
+
 def test_unknown_or_sensitive_management_projection_is_rejected():
     store = ReplicaStore("postgresql://replica", cipher=FieldCipher(b"e" * 32))
     with pytest.raises(ReplicaStoreError, match="record_invalid"):

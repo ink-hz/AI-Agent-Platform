@@ -192,12 +192,15 @@ class ReplicaSource:
                     event_id=event.event_id,
                     agent_id=event.agent_id,
                     event_type=event.event_type,
+                    event_family=event.event_family,
                     severity=event.severity,
+                    status=event.status,
+                    title=event.title,
                     summary=event.summary,
+                    source_kind=event.source_kind,
                     occurred_at=event.occurred_at,
                 )
                 for event in page.items
-                if event.agent_id is not None
             )
         return tuple(values)
 

@@ -8,6 +8,8 @@ from app.cloud_replica.source import (
     TURN_SQL,
     ReplicaSource,
 )
+from app.observability.models import Page
+from app.operations.models import EventFilters, OperationalEvent
 
 
 def test_source_queries_are_explicit_bounded_and_never_touch_restricted_fields():
@@ -171,3 +173,52 @@ def test_source_rejects_invalid_window_before_connecting():
     else:
         raise AssertionError("invalid window was accepted")
     assert called is False
+
+
+def test_management_source_includes_platform_level_operation_events():
+    now = datetime(2026, 8, 11, tzinfo=UTC)
+    calls = []
+
+    class Operations:
+        def list_events(self, filters: EventFilters, limit: int, offset: int):
+            assert filters.date_to == now
+            assert (limit, offset) == (10_000, 0)
+            return Page(
+                items=[OperationalEvent(
+                    event_id="event-1",
+                    agent_id=None,
+                    agent_visibility="business",
+                    event_type="data_access_recovered",
+                    event_family="recovery",
+                    severity="info",
+                    status="historical",
+                    title="flywheel data access recovered",
+                    summary="The required business-data source is readable again.",
+                    source_kind="flywheel",
+                    occurred_at=now,
+                    first_observed_at=now,
+                    last_observed_at=now,
+                    facts={"available": True},
+                    fingerprint="data:flywheel:unavailable:recovered",
+                )],
+                total=1,
+                limit=10_000,
+                offset=0,
+            )
+
+    source = ReplicaSource(
+        "postgresql://safe",
+        connection_factory=lambda *_args, **_kwargs: _Connection({}, calls),
+        operations_repository=Operations(),
+    )
+
+    projections = source.fetch_management_projections(through=now)
+
+    operation = next(
+        item for item in projections if item.__class__.__name__ == "OperationEventProjection"
+    )
+    assert operation.agent_id is None
+    assert operation.event_family == "recovery"
+    assert operation.status == "historical"
+    assert operation.title == "flywheel data access recovered"
+    assert operation.source_kind == "flywheel"
