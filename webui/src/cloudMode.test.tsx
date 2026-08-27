@@ -284,8 +284,9 @@ describe("cloud replica mode", () => {
       <AppShell route={{ name: "admin-governance" }} account={viewer}><p>内容</p></AppShell>,
     ));
     const navigation = container.querySelector(".product-nav")?.textContent || "";
-    expect(navigation).toBe("Agent 大脑专业 AgentAI 工程笔记");
-    expect(navigation).not.toContain("管理中心");
+    expect(navigation).toBe("Agent 大脑专业 AgentAI 工程笔记管理中心");
+    expect(container.querySelector<HTMLAnchorElement>('.product-nav a[href="/admin/voc"]')).not.toBeNull();
+    expect(container.querySelector(".admin-nav")?.textContent).toBe("VOC 管理");
   });
 
   it("shows the server-enforced hard-stale read-only state", async () => {

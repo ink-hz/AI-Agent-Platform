@@ -22,6 +22,7 @@ const ADMIN_NAVIGATION = [
   { label: "数据飞轮", path: "/admin/operations", section: "admin" },
   { label: "身份管理", path: "/admin/identity", section: "admin" },
   { label: "治理审计", path: "/admin/governance", section: "admin" },
+  { label: "VOC 管理", path: "/admin/voc", section: "admin" },
 ] as const;
 
 
@@ -36,6 +37,8 @@ function navigationFor(account?: Account | null): NavigationItem[] {
   const base: NavigationItem[] = [...USE_NAVIGATION];
   if (!account || account.role === "platform_owner" || account.role === "platform_admin") {
     base.push({ label: "管理中心", path: "/admin", section: "admin" });
+  } else if (account.role === "management_viewer") {
+    base.push({ label: "管理中心", path: "/admin/voc", section: "admin" });
   }
   return base;
 }
@@ -66,7 +69,9 @@ export function AppShell({ route, children, account }: { route: Route; children:
   const navigation = roleNavigation;
   const managementNavigation = (!account || account.role === "platform_owner" || account.role === "platform_admin")
     ? (cloudReplica ? ADMIN_NAVIGATION.filter((item) => item.path !== "/admin/review") : ADMIN_NAVIGATION)
-    : [];
+    : account?.role === "management_viewer"
+      ? ADMIN_NAVIGATION.filter((item) => item.path === "/admin/voc")
+      : [];
   const freshnessLabel = deployment?.freshness === "current"
     ? "数据已同步"
     : deployment?.freshness === "stale"

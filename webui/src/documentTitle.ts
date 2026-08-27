@@ -31,6 +31,7 @@ export function routeDocumentTitle(route: Route): string {
     case "account": return `企业账号 · ${PLATFORM_TITLE}`;
     case "admin-identity": return `身份管理 · ${PLATFORM_TITLE}`;
     case "admin-governance": return `治理审计 · ${PLATFORM_TITLE}`;
+    case "admin-voc": return `VOC 管理 · ${PLATFORM_TITLE}`;
     default: return PLATFORM_TITLE;
   }
 }

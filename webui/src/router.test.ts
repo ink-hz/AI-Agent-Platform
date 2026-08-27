@@ -56,6 +56,7 @@ describe("Platform router", () => {
     expect(routePath({ name: "agent", agentId: "ai-fae-agent" })).toBe("/agents/ai-fae-agent");
     expect(routePath({ name: "admin-agent-runtime", agentId: "fae/a" })).toBe("/admin/agents/fae%2Fa/runtime");
     expect(routePath({ name: "admin-review" })).toBe("/admin/review");
+    expect(routePath({ name: "admin-voc" })).toBe("/admin/voc");
     expect(routePath({ name: "account" })).toBe("/account");
     expect(routePath({ name: "voc-workspace" })).toBe("/agents/voc/workspace");
   });
@@ -65,6 +66,7 @@ describe("Platform router", () => {
     expect(routeSection({ name: "mission", missionId: "one" })).toBe("missions");
     expect(routeSection({ name: "voc-workspace" })).toBe("agents");
     expect(routeSection({ name: "admin-session", sessionKey: "fae:abc" })).toBe("admin");
+    expect(routeSection({ name: "admin-voc" })).toBe("admin");
   });
 
   it("treats search changes as navigation", () => {

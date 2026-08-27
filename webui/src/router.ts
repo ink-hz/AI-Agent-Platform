@@ -28,6 +28,7 @@ export type Route =
   | { name: "admin-operations" }
   | { name: "admin-identity" }
   | { name: "admin-governance" }
+  | { name: "admin-voc" }
   | { name: "legacy-redirect"; to: string }
   | { name: "not-found" };
 
@@ -78,6 +79,7 @@ export function parseRoute(pathname: string): Route {
   if (clean === "/admin/operations") return { name: "admin-operations" };
   if (clean === "/admin/identity") return { name: "admin-identity" };
   if (clean === "/admin/governance") return { name: "admin-governance" };
+  if (clean === "/admin/voc") return { name: "admin-voc" };
 
   const adminAgentRuntime = /^\/admin\/agents\/([^/]+)\/runtime$/.exec(clean);
   if (adminAgentRuntime) {
@@ -160,6 +162,7 @@ export function routePath(route: Route): string {
     case "admin-operations": return "/admin/operations";
     case "admin-identity": return "/admin/identity";
     case "admin-governance": return "/admin/governance";
+    case "admin-voc": return "/admin/voc";
     case "legacy-redirect": return route.to;
     default: return "/404";
   }

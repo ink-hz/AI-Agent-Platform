@@ -51,6 +51,19 @@ describe("usage navigation", () => {
     expect(navigation).not.toContain("企业账号");
     expect(navigation).toContain("管理中心");
     expect(container.querySelector<HTMLAnchorElement>('a[href="/admin"]')).not.toBeNull();
+    expect(container.querySelector<HTMLAnchorElement>('a[href="/admin/voc"]')?.textContent).toBe("VOC 管理");
+  });
+
+  it("gives management viewers a direct VOC management entry only", async () => {
+    await act(async () => root.render(<AppShell
+      route={{ name: "admin-voc" }} account={{ ...member, role: "management_viewer" }}
+    ><p>VOC 内容</p></AppShell>));
+
+    const product = container.querySelector(".product-nav")?.textContent || "";
+    expect(product).toContain("管理中心");
+    expect(container.querySelector<HTMLAnchorElement>('.product-nav a[href="/admin/voc"]')).not.toBeNull();
+    expect(container.querySelector(".admin-nav")?.textContent).toBe("VOC 管理");
+    expect(container.querySelector<HTMLAnchorElement>('.admin-nav a[href="/admin/voc"]')?.getAttribute("aria-current")).toBeNull();
   });
 
   it("marks AI notes as the current top-level entry", async () => {

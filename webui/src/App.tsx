@@ -70,6 +70,7 @@ function AccessState({
 function viewerRouteAllowed(account: Account, route: ReturnType<typeof useRoute>): boolean {
   if (["brain", "conversations", "conversation", "missions", "mission", "agents", "agent", "agent-conversation", "voc-workspace", "ai-notes", "ai-note", "account"].includes(route.name)) return true;
   if (route.name === "admin-governance") return true;
+  if (route.name === "admin-voc") return true;
   if (route.name === "admin-agent-runtime") return account.observation_agent_ids.includes(route.agentId);
   if (route.name === "admin-review" || route.name === "admin-activity") {
     const selected = new URLSearchParams(window.location.search).getAll("agent_id");
@@ -111,6 +112,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-operations": return <PendingPage title="Operations 与数据飞轮" description="运行摘要、证据和改进闭环仍由管理中心统一维护。" />;
     case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
     case "admin-governance": return <GovernancePage />;
+    case "admin-voc": return <PendingPage title="VOC 管理" description="集中查看所有员工提交的客户反馈。" />;
     case "legacy-redirect": return <LegacyRedirect to={route.to} />;
     default: return <PendingPage title="页面不存在" description="请返回 Agent 大脑。" />;
   }

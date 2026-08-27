@@ -75,6 +75,7 @@ describe("login return path", () => {
     ["?return_path=%2Faccount", "/account"],
     ["?return_path=%2Fai-notes", "/ai-notes"],
     ["?return_path=%2Fai-notes%2Fagent-architecture%2Fsystem-handbook", "/ai-notes/agent-architecture/system-handbook"],
+    ["?return_path=%2Fadmin%2Fvoc", "/admin/voc"],
     ["?return_path=%2Fai-notes%2Fa%2F..%2Fadmin", "/"],
     ["?return_path=%2Fai-notes%2FUPPER%2Fhandbook", "/"],
     ["", "/"],

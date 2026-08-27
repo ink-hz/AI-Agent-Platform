@@ -135,7 +135,7 @@ function safeLoginReturnPath(value: string): boolean {
   if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;
   if (/^\/ai-notes\/[a-z0-9][a-z0-9-]{0,63}\/[a-z0-9][a-z0-9-]{0,127}$/.test(value)) return true;
   return value === "/office/" || value === "/admin/" || value === "/admin"
-    || /^\/admin\/(?:overview|review|activity|operations|identity|governance|agents(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:\/runtime)?)?|sessions(?:\/[A-Za-z0-9:._-]+)?)$/.test(value);
+    || /^\/admin\/(?:overview|review|activity|operations|identity|governance|voc|agents(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:\/runtime)?)?|sessions(?:\/[A-Za-z0-9:._-]+)?)$/.test(value);
 }
 
 

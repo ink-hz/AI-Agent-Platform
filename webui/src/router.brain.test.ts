@@ -41,6 +41,7 @@ describe("Agent Brain route boundary", () => {
     expect(parseRoute("/admin/operations")).toEqual({ name: "admin-operations" });
     expect(parseRoute("/admin/identity")).toEqual({ name: "admin-identity" });
     expect(parseRoute("/admin/governance")).toEqual({ name: "admin-governance" });
+    expect(parseRoute("/admin/voc")).toEqual({ name: "admin-voc" });
   });
 
   it.each([
@@ -65,6 +66,7 @@ describe("Agent Brain route boundary", () => {
     expect(routePath({ name: "agent-conversation", agentId: "hr/bot", conversationId: "a/b" }))
       .toBe("/agents/hr%2Fbot/conversations/a%2Fb");
     expect(routePath({ name: "admin-review" })).toBe("/admin/review");
+    expect(routePath({ name: "admin-voc" })).toBe("/admin/voc");
     expect(routePath({ name: "admin-agent-runtime", agentId: "fae/a" })).toBe("/admin/agents/fae%2Fa/runtime");
   });
 });
