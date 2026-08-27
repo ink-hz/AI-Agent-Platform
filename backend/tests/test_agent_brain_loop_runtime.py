@@ -9,6 +9,7 @@ import pytest
 
 from app.agent_brain.adapters.base import AdapterRegistry
 from app.agent_brain.adapters.reference import ReferenceAdapter
+from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.agent_brain.loop_runtime import BrainLoopRuntime
 from app.agent_brain.model_adapter import (
     BrainModelManifest,
@@ -155,6 +156,11 @@ class FakeRegistry:
         return Decision(allowed=self.allowed, reason_code=self.reason_code)
 
 
+class UnavailableListRegistry(FakeRegistry):
+    def list_for_user(self, _user_id):
+        raise AgentUseAuthorizationUnavailable()
+
+
 def _runtime(repository, response=None, *, registry=None, model=None):
     manifest = BrainModelManifest.load(MANIFEST_PATH)
     prompt = BrainSystemPrompt.load(
@@ -297,6 +303,30 @@ def test_reference_adapter_slice_survives_worker_recreation(
     )
     assert content == {"text": "完成"}
     assert state == ("completed", "completed", 1)
+
+
+@pytest.mark.postgres
+def test_list_agents_reports_authorization_failure_instead_of_zero_agents(
+    loop_repository, seeded_loop
+) -> None:
+    loop_id, _snapshot_id = seeded_loop
+
+    assert _runtime(
+        loop_repository,
+        _list_agents_response(),
+        registry=UnavailableListRegistry(),
+    ).advance_one() is True
+
+    tool_results = [
+        block
+        for message in loop_repository.reconstruct_messages(loop_id)
+        if message["role"] == "user" and isinstance(message["content"], list)
+        for block in message["content"]
+        if block.get("type") == "tool_result"
+    ]
+    assert len(tool_results) == 1
+    assert '"status":"failed"' in tool_results[0]["content"]
+    assert '"reason":"authorization_unavailable"' in tool_results[0]["content"]
 
 
 def test_adapter_registry_fails_closed_for_duplicate_and_unknown_kinds() -> None:

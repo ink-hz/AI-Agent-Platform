@@ -10,6 +10,7 @@ from app.agent_brain.adapters.base import (
     AdapterRegistry,
     AdapterTask,
 )
+from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.agent_brain.collaboration_models import AgentTaskPublicEventInput
 from app.agent_brain.collaboration_models import BrainThinkingDelta as StoredThinkingDelta
 from app.agent_brain.context_policy import BrainContextPolicy
@@ -213,11 +214,19 @@ class BrainLoopRuntime:
         immediate: list[ImmediateToolResult] = []
         task_specs: list[TaskDispatchSpec] = []
         if batch.kind == "list_agents":
-            snapshots = self._runtime_registry.list_for_user(owner_id)
+            try:
+                snapshots = self._runtime_registry.list_for_user(owner_id)
+            except AgentUseAuthorizationUnavailable:
+                snapshots = None
             immediate.append(
                 ImmediateToolResult(
                     0,
                     {
+                        "status": "failed",
+                        "reason": "authorization_unavailable",
+                    }
+                    if snapshots is None
+                    else {
                         "status": "completed",
                         "agents": [_public_value(item) for item in snapshots],
                     },

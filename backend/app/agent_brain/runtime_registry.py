@@ -139,8 +139,10 @@ class RuntimeAgentRegistry:
                     )
                 )
             return tuple(snapshots)
-        except (AgentUseAuthorizationUnavailable, KeyError, TypeError, ValueError):
-            return ()
+        except AgentUseAuthorizationUnavailable:
+            raise
+        except (KeyError, TypeError, ValueError) as exc:
+            raise AgentUseAuthorizationUnavailable() from exc
 
     def authorize_task(
         self,
