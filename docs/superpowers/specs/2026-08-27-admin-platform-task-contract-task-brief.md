@@ -291,7 +291,8 @@ Action 执行必须复用班车、住宿、反馈 Store 已有的业务 idempote
 
 行政仓库不复制合同断言。CI 通过 `CONTRACT_TEST_COMMIT` 检出 AI-Agent-Platform 的
 `contracts/http_task_v1/`，校验目录 SHA-256 后对本地 Admin 服务运行同一 HTTP 黑盒
-Driver；Commit 与 Hash 写入 Release Manifest。
+Driver；Commit 与 Hash 写入 Release Manifest。CI 必须显式使用 Python `>=3.11`，不得
+调用操作系统默认 Python。
 
 第一批：
 

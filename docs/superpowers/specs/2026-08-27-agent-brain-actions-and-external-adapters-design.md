@@ -260,9 +260,10 @@ agent_task_actions.task_id
 - `confirmed`、`rejected`、`expired`、`superseded` 均不可反向变回 pending；
 - 同一任务的新参数 proposal 必须把旧 pending Action 转为 `superseded`；
 - Loop 在 Action 尚 pending 时终止，所有 pending Action 转 `expired` 并请求停止任务；
-- 正常 `submit_answer` 在存在 pending Action 时不得终止 Loop；Runtime 返回
-  `pending_action_requires_resolution` 并要求先等待 Action 决议。只有显式停止、取消、
-  不可恢复失败等非正常终止路径才执行上一条清理；
+- 正常 `submit_answer` 在存在 pending Action 时不得终止 Loop；Runtime 返回普通 Tool
+  Result `status=rejected, reason=pending_action_requires_resolution`，不增加
+  `protocol_retry_count`，并要求先等待 Action 决议。只有显式停止、取消、不可恢复失败等
+  非正常终止路径才执行上一条清理；
 - 重复确认返回同一执行记录，不产生第二次上游写操作；
 - Action 参数和确认身份全部绑定 Conversation Owner，不允许首版代确认。
 
@@ -294,6 +295,12 @@ Web/API 角色不得获得 Action 表级 Update。确认和拒绝只能调用 `S
 
 如果还有任何可运行任务或可执行 Step，Loop 保持 `running`/`waiting_agents`，活动预算
 继续计时。禁止冻结活动预算后继续调用模型。
+
+唯一特例是“强制收束条件已经成立且仍有 pending Action”：Runtime 此时不得调用模型或
+强制 `submit_answer`，而是转 `waiting_confirmation` 并暂停 Brain 活动时钟；Task 自己的
+有效时钟继续运行，事件继续落库。Action 决议后恢复，强制收束仍成立且 Pending 已解除，
+下一步才以 `tool_choice=submit_answer` 完成 Turn。该特例同时覆盖 task_count、step_seq 和
+active_deadline 三种 forced 条件，不走 `forced_submission_failed`。
 
 ### 6.2 介入到期字段
 
@@ -344,12 +351,18 @@ Step、Tool Result、Task、Event 和 Action。
 ### 6.6 确认后的 Wait 处理
 
 Action Proposal 和任务状态转换无条件落库，active Wait 只负责唤醒，绝不是前置条件。
-迁移 `049` 新增 `(loop_id, task_id)` 的 durable delivered cursor；游标只在事件已经写入
-持久 Tool Result 后前移，不能在创建 Wait 时取事件表 `max(seq)`。
+迁移 `049` 新增每 Task 一行的 durable delivered cursor；游标只在事件已经写入持久 Tool
+Result 后前移，不能在创建 Wait 时取事件表 `max(seq)`。
 
-创建 Wait 时必须在同一 Serializable 事务内锁游标并检查已存在的合格事件。若事件已先
-到达，立即结算 Tool Result、推进游标、完成 Step 并创建下一 Step，不留下 active Wait；
-没有合格事件才创建订阅。Event Append 与 Wait Create 复用同一个结算函数和锁顺序。
+模型 `commit_model_step` 事务只创建 active Wait，不锁 Cursor、不读取 Event，也不结算
+Wait。提交成功后立即调用独立短事务 `settle_if_undelivered(loop_id)`；Event Append 后调用
+同一函数，Reaper 每轮也扫描 active Wait 兜底。结算函数在 Serializable 事务内锁 Cursor，
+有合格事件就原子写 Tool Result、推进游标、终结 Wait、完成 Step 并创建下一 Step；没有就
+保持 Wait active。
+
+短结算事务遇到 `40001` 最多重试三次，退避上限为 10/25/50ms 并使用 full jitter；耗尽后
+保留 active Wait，由 Reaper 下轮重试，绝不重新调用模型。结算函数以 Wait 状态、Tool Call
+状态和 `delivered_seq` 保证幂等。
 
 确认、拒绝、过期或明确修改时：有 active Wait 就原子终结并唤醒；没有 active Wait 也
 必须持久化决议和执行投递，后续 Wait 通过“创建即检查”取得事实。Loop 已暂停且无 active
@@ -376,10 +389,15 @@ action_required
 唤醒继续满足：真实事件驱动、每个 Loop 最多一个 active wait、游标单调、重复事件幂等、
 终态事件不再唤醒。
 
-迁移 `049` 新增 `platform_brain.brain_task_event_cursors`（或等价命名），唯一键为
-`(loop_id, task_id)`，保存 `delivered_seq`。它是“已交给模型”的权威水位，不是“已经
-写库”的水位。现有 `loop_repository.py` 以 `max(seq)` 初始化 Wait Cursor 的逻辑必须
-删除，并增加“事件先于首次 await 到达”的数据库与 Repository 集成测试。
+迁移 `049` 新增 `platform_brain.brain_task_event_cursors`：`task_id` 为主键，`loop_id`
+是由 Task 权威关系写入的不可变查询列并建立索引，另有 `delivered_seq`。独立表的理由是
+避免每次 Event/Wait 结算都碰 `agent_tasks.row_version` 热行；`loop_id` 用于按 Loop 排序锁定
+和 Reaper 扫描，不用于重新定义 Task 归属。
+
+`brain_wait_subscriptions.cursors` 在迁移 049 中删除，不能保留第二份可写水位。唤醒查询、
+Tool Result 排空和重放一律读 `brain_task_event_cursors.delivered_seq`。现有
+`loop_repository.py` 以 `max(seq)` 初始化 Wait Cursor 的逻辑必须删除，并增加“事件先于
+首次 await 到达”的数据库与 Repository 集成测试。
 
 所有 HTTP Agent 的在线词表、旧事件映射和 Payload 以
 `2026-08-27-http-task-contract-v1.md` 为唯一权威：
@@ -639,8 +657,10 @@ remaining_step_slots
 
 用户已确认 `max_steps=24` 是本版架构硬上限。该决策不等于未经评测立即把生产默认值改为
 24：首个 Release Manifest 仍为 12；Dev 必须测量 12/16/24 Step 的最坏 Token、上下文
-增长、连续 Step 缓存命中和等待恢复缓存命中。达到成本、延迟和质量门槛后以受审计配置
-发布到 24，不再修改 Schema 或协议；任何环境都不得超过 24。
+增长、连续 Step 缓存命中、等待恢复缓存命中，以及 Wait 立即结算率和因此消耗的 Step 数。
+Telemetry 按 `post_commit/event_append/reaper` 区分结算来源，并记录
+`immediate/pending/serialization_retry_exhausted` 结果。达到成本、延迟和质量门槛后以
+受审计配置发布到 24，不再修改 Schema 或协议；任何环境都不得超过 24。
 
 ## 13. 前端增量
 
@@ -693,6 +713,8 @@ Workspace SSO 底座随阶段 3 建立；VOC/行政复用现有同源身份，FA
 - 确认后即使 Brain 预算不足，操作仍进入独立执行窗口；
 - 无关普通消息不误伤 pending Action；只有明确修改对应 Action 时才 supersede，且用户先
   看到失效提示；
+- Pending Action 下重复 submit 不增加 `protocol_retry_count`；forced + pending 转
+  waiting_confirmation，Action 决议后再强制收束并成功交付；
 - 非 Owner、过期、错误 Digest、终态 Loop 全部拒绝；
 - 上游参数复算失败绝不执行。
 
@@ -703,6 +725,8 @@ Workspace SSO 底座随阶段 3 建立；VOC/行政复用现有同源身份，FA
 - 重试不产生第二个上游任务或业务写操作；
 - 事件游标断线续传无重复、无缺口；
 - 事件先于首次 Wait 到达时立即结算，不把已落库 finding/action_required 当成已读；
+- Wait 结算 40001 重试耗尽后不重复调用模型，Reaper 能在下一 Tick 完成同一结算；
+- `brain_wait_subscriptions.cursors` 已删除，`delivered_seq` 是唯一水位；
 - 上游序号缺口只隔离单 Task/Agent，其他 Adapter 和三类 Worker 心跳继续；
 - 后续消息与取消可幂等重放；
 - Capability Version 由 Platform 与上游双重校验；Deadline 到点后上游发 `timeout` 且

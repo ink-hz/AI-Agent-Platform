@@ -286,7 +286,8 @@ duration_ms
 
 不得在 FAE 仓库复制一套“相似测试”。CI 通过 `CONTRACT_TEST_COMMIT` 检出
 AI-Agent-Platform 的 `contracts/http_task_v1/`，验证目录 SHA-256 后对本地 FAE 服务
-运行同一 HTTP 黑盒 Driver；Commit 与 Hash 写入 Release Manifest。
+运行同一 HTTP 黑盒 Driver；Commit 与 Hash 写入 Release Manifest。CI 必须显式使用
+Python `>=3.11`，不得调用操作系统默认 Python。
 
 - 创建和幂等冲突；
 - capability_version 当前值成功、旧值明确拒绝且不创建任务；

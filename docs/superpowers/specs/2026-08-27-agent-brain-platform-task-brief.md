@@ -76,10 +76,13 @@ Platform、FAE、行政、VOC 和 MetaBot 代码及部署都由 Orbbec 掌控。
 - 为 Loop 增加 `waiting_confirmation` 和 `intervention_expires_at`；
 - 扩展 Conversation Turn 的状态 Check 和单活跃索引；
 - 扩展 Event/Wake 白名单；
-- 新增 `(loop_id, task_id)` durable delivered cursor；删除 Wait 创建时以
-  `max(agent_task_events.seq)` 初始化游标的逻辑；
-- Wait 创建与事件 Append 复用同一个 Serializable 结算函数：已有未交付合格事件时立即
-  生成 Tool Result，不留下 active Wait；
+- 新增每 Task 一行的 durable delivered cursor；`task_id` 为主键，`loop_id` 是不可变查询
+  列并建索引，避免碰 `agent_tasks.row_version` 热行；
+- 删除 `brain_wait_subscriptions.cursors`，所有判定只读唯一权威 `delivered_seq`；
+- `commit_model_step` 只持久化 active Wait；提交后、Event Append 后及 Reaper 均调用独立
+  `settle_if_undelivered` 短事务；
+- 短结算事务遇到 `40001` 最多重试三次，使用 10/25/50ms full-jitter 上限；耗尽后保留
+  active Wait 给 Reaper 重试，不重新调用模型；
 - 按 HTTP Task Contract v1 统一 `timeout`、`input_required`、`action_required`；
 - 替换 `append_agent_task_event_v45` 为 v49，包含新状态映射；
 - 增加单 Task 协议隔离函数，序号缺口/乱序/未知事件不得让 CheckViolation 逃逸并拖垮
@@ -108,8 +111,8 @@ Platform、FAE、行政、VOC 和 MetaBot 代码及部署都由 Orbbec 掌控。
 - `append_agent_task_event_v49`：包含新增事件和任务状态映射。
 - `mark_adapter_delivery_dispatched_v49`：Delivery dispatched 时只把 queued Task 转为
   dispatched；首条真实进度/终态才写 running/started_at；
-- `create_or_settle_wait_subscription_v49`：锁 durable cursor，若事件已先到达则立即结算，
-  否则创建 active Wait；
+- `create_wait_subscription_v49`：只创建 active Wait，不锁 Cursor、不结算事件；
+- `settle_if_undelivered_v49`：独立短事务锁唯一 delivered cursor，幂等结算已有事件；
 - `fail_agent_task_protocol_v49`：仅隔离一个 Task/Session/Delivery 并写 Agent 健康事实，
   不伪造上游缺失序号；有 Wait 时直接写 Platform-origin Tool Result，无 Wait 时由下一次
   Wait 创建读取 Task 控制面终态并立即结算。
@@ -121,13 +124,15 @@ Preview caller role。
 
 - 状态推导集中在一个领域函数，不在 Route、Worker、Repository 多处复制；
 - 只有无可执行 Step 且全部非终态 Task 等用户时，Loop 才暂停；
-- 有其他可运行 Task 时保持活动计时；
+- 有其他可运行 Task 时通常保持活动计时；forced + pending Action 是唯一例外；
 - Task 自己的等待时间不计入 Task 有效执行时长；
 - Action 超时唤醒大脑部分交付，不走整轮 `user_input_timeout`；
 - 无关普通消息不改变 pending Action；只有确认卡“修改”、绑定 action_id 的介入或上游
   新参数 Proposal 才 supersede 对应 Action，并先向用户提示；
-- 存在 Owner Pending Action 时，`submit_answer` 返回
-  `pending_action_requires_resolution`，Loop 保持非终态，Action 不失效；
+- 存在 Owner Pending Action 时，`submit_answer` 返回普通 rejected Tool Result，
+  `reason=pending_action_requires_resolution`；不增加 protocol retry，Loop 保持非终态；
+- forced + pending Action 不调用模型，转 `waiting_confirmation` 并暂停 Brain 时钟；Task
+  时钟和事件继续，Action 决议后再执行强制 `submit_answer`；
 - 终止 Loop 时清理 pending Action 并请求停止对应 Task。
 
 ## 6. Action 服务
@@ -152,8 +157,8 @@ Parameters 回传覆盖上游持久副本。
 
 Proposal 与 Task 状态无条件落库，active Wait 不是前置条件。确认、拒绝、过期和明确修改
 时，有 active Wait 才按迁移 046 模式终结并填 Tool Result；无 active Wait 仍持久化决议
-和执行投递，后续 Wait 通过“创建即检查未交付事件”立即取得事实。禁止复用旧 Wait 或等
-轮询碰运气唤醒。
+和执行投递。Wait 创建事务本身不结算；提交成功后的短事务、Event Append 和 Reaper 使用
+同一 delivered cursor 立即取得事实。禁止复用旧 Wait 或依赖无上限轮询碰运气唤醒。
 
 ## 7. 通用 HTTP Adapter
 
@@ -180,6 +185,12 @@ v1 规范事件；Platform Adapter 不猜测 `accepted/progress/timed_out` 等�
 事件页先在内存中验证从 `after + 1` 连续，再逐条落库。协议错误只终结当前 Task、标记
 当前 Agent 健康异常并继续 Tick。Brain Step、Adapter、Reaper 三个阶段分别 catch、分别
 写 Heartbeat；单 Agent 错误不得把三类 Heartbeat 一起标为 degraded。
+
+Telemetry 增加 Wait 结算来源与成本：
+`brain_wait_settlement_total{source=post_commit|event_append|reaper}`、
+`brain_wait_settlement_total{result=immediate|pending|serialization_retry_exhausted}` 和
+`brain_wait_immediate_settlement_rate`。12/16/24 Step 评测必须分别报告立即结算率及其消耗
+的 Step 数。
 
 Action 能力使用可选接口 `ActionCapableAdapter`。行政只读阶段和 FAE Adapter 不实现。
 
@@ -277,6 +288,9 @@ Action 能力使用可选接口 `ActionCapableAdapter`。行政只读阶段和 F
 - 事件先于首次 Wait 到达时立即结算，finding/action_required 不丢失；
 - queued -> dispatched -> running 三态都有真实持久迁移；
 - pending Action 存在时 submit_answer 被拒绝，普通消息不使确认卡失效；
+- 重复 submit 不消耗 protocol_retry；forced + pending 转等待，Action 决议后强制收束成功；
+- 40001 重试耗尽不重复调用模型，Reaper 后续能结算同一个 Wait；
+- 删除 Wait cursors 后只有 delivered_seq 一个水位；
 - 单上游事件序号缺口只隔离对应 Task/Agent，其他 Agent 和三个 Worker 阶段继续；
 - Task Deadline 到点产生 timeout，迟到执行不能发生业务写入；
 - VOC 六条确认路径；

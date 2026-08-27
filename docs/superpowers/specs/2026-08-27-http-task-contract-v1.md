@@ -256,15 +256,24 @@ Parameters，再发出 `action_required`：
 `action_required` 到达时，Platform 必须无条件、原子地持久化 Action 和 Task 状态；active
 wait subscription 只是唤醒通道，永远不是 Proposal 落库或状态转换的前置条件。
 
-为消除“事件先到、Wait 后建”的游标竞态，Platform 为每个 `(loop_id, task_id)` 保存
-`delivered_seq`，它只在事件已经进入持久 Tool Result 后前移。创建 Wait 时必须在同一事务
-内锁定这些游标并检查 `seq > delivered_seq` 的事件：
+为消除“事件先到、Wait 后建”的游标竞态，Platform 为每个 Task 保存唯一权威
+`delivered_seq`，它只在事件已经进入持久 Tool Result 后前移。
 
-- 已存在符合 `wake_on` 的事件时，不创建 active Wait；立即把自上次 `delivered_seq` 后的
-  全部事件写入同一个 Tool Result、推进游标并创建下一 Step；
-- 不存在时才创建 active Wait，订阅保存的是 `delivered_seq`，不能取当前事件最大序号；
-- Event Append 与 Wait Create 使用相同的锁顺序和结算函数，重复事件或并发创建不能产生
-  两次唤醒。
+模型 Step 的提交事务只持久化 Wait，不锁 Event Cursor，也不在该付费事务内做结算。提交
+成功后，由独立、幂等、短事务 `settle_if_undelivered(loop_id)` 检查
+`seq > delivered_seq`；Event Append 成功后也调用同一结算函数，Reaper 每轮再兜底扫描
+active Wait：
+
+- 已存在符合 `wake_on` 的事件时，短事务立即把自上次 `delivered_seq` 后的全部事件写入
+  同一个 Tool Result、推进游标、终结 Wait 并创建下一 Step；
+- 不存在时保留 active Wait；后续 Event Append 或 Reaper 再结算；
+- Event Append、模型提交后的主动调用和 Reaper 使用相同锁顺序和结算函数，重复调用或
+  并发执行不能产生两次唤醒；
+- `40001 serialization_failure` 最多重试三次，使用 10/25/50ms full-jitter 上限；耗尽后
+  保留 active Wait 并报告局部指标，由下一 Reaper Tick 继续，不重新调用模型。
+
+`brain_wait_subscriptions.cursors` 在迁移 049 中删除。订阅不保存第二份可写水位；所有
+唤醒判定、Tool Result 排空和重放都只读 `brain_task_event_cursors.delivered_seq`。
 
 确认、拒绝、过期或明确修改 Action 时：
 
@@ -288,10 +297,25 @@ wait subscription 只是唤醒通道，永远不是 Proposal 落库或状态转�
 - 前端在任何 supersede 操作前明确显示“原确认将失效”；
 - 大脑文字不能自行把 Action 标记 superseded。
 
-只要当前 Turn 仍有归属于 Conversation Owner 的 `pending` Action，`submit_answer` 就是
-协议违规：Runtime 返回 `pending_action_requires_resolution`，不得终结 Loop，也不得把
-Action 转为 expired。大脑必须等待确认、拒绝、过期或明确修改后的权威事件；Action
-解决后才允许提交最终答案。显式停止/取消整个 Turn 仍可终止并过期 Action。
+只要当前 Turn 仍有归属于 Conversation Owner 的 `pending` Action，`submit_answer` 就不
+终结 Loop。Runtime 为该 Tool Call 返回普通 Tool Result：
+
+```json
+{
+  "status": "rejected",
+  "reason": "pending_action_requires_resolution",
+  "required_next_action": "await_agent_events"
+}
+```
+
+该拒绝不计入 `protocol_retry_count`，也不走 `ProtocolViolation`。大脑必须等待确认、拒绝、
+过期或明确修改后的权威事件；Action 解决后才允许提交最终答案。
+
+若任一强制收束条件（任务数、Step 数或活动 Deadline）已经成立且仍有 Pending Action，
+Runtime 不调用模型、不强制 `submit_answer`，而是把 Loop 转为 `waiting_confirmation` 并
+暂停 Brain 活动时钟。Task 自己的有效时钟继续运行，事件继续持久化。Action 决议后恢复；
+此时强制收束仍成立但 Pending 已解除，Runtime 再强制 `submit_answer`，自然完成 Turn。
+显式停止/取消整个 Turn 仍可终止并过期 Action。
 
 ## 11. 错误码
 
@@ -325,6 +349,9 @@ upstream_unavailable
 Release Manifest 同时记录 Commit 和测试目录 SHA-256。Commit 不存在、Hash 不匹配或测试
 未运行均视为合同未通过。
 
+测试驱动器要求 Python `>=3.11`。Platform、FAE 和行政 CI 必须显式选择 3.11 或更高版本，
+不得使用操作系统默认 Python；本仓本地命令统一使用 `backend/.venv/bin/python -m pytest`。
+
 同一套测试至少覆盖：
 
 - 创建快速返回和幂等冲突；
@@ -341,6 +368,8 @@ Release Manifest 同时记录 Commit 和测试目录 SHA-256。Commit 不存在�
 - 事件序号缺口只隔离单 Task/Agent，其他 Agent 的派发、取消和心跳继续；
 - 事件先于首次 Wait 到达时，Wait 创建立即结算而不是把事件当成已读；
 - Pending Action 存在时 `submit_answer` 被拒绝且确认卡仍有效；
+- Pending Action 下重复 `submit_answer` 不消耗协议重试；forced + pending 转等待，Action
+  决议后再强制收束成功；
 - 终态不可逆。
 
 只有合同测试通过并记录具体 Commit 后，Platform 才能为该 Agent 打开
