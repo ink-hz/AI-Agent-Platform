@@ -265,8 +265,18 @@ describe("Executive Operations visual contract", () => {
   });
 
   it("keeps the AI notes home entry quiet and keyboard visible", () => {
+    expect(rule(".brain-home-toolbar")).toContain("display: flex");
+    expect(rule(".brain-home-toolbar")).toContain("justify-content: flex-end");
+    expect(rule(".brain-home-focus")).toContain("width: min(760px, 100%)");
+    expect(rule(".brain-home-focus")).toContain("margin:");
     expect(rule(".brain-ai-notes-entry")).toContain("display: inline-flex");
     expect(rule(".brain-ai-notes-entry")).toContain("min-height: 36px");
+    expect(rule(".brain-ai-notes-entry")).not.toContain("position: fixed");
     expect(rule(".brain-ai-notes-entry:focus-visible")).toContain("outline: 3px solid");
+    expect(rule(".brain-home-focus > h1")).toContain("font-size: clamp(32px, 5vw, 44px)");
+    expect(rule(".brain-composer-actions")).toContain("justify-content: flex-end");
+    const mobile = lastBlock("@media (max-width: 720px)");
+    expect(mobile).toContain(".brain-home-toolbar");
+    expect(mobile).toContain(".brain-home-focus");
   });
 });
