@@ -470,16 +470,19 @@ def test_injected_voc_extension_client_is_registered_and_caller_owned(tmp_path):
             self.closed = True
 
     voc_client = InjectedVocClient()
+    voc_directory = object()
     app = create_app(
         registry_path=str(registry),
         cluster_contract_path=str(contract),
         start_poller=False,
         voc_extension_client=voc_client,
+        voc_submitter_directory=voc_directory,
     )
 
     with TestClient(app) as client:
         assert client.get("/api/v1/extensions/voc/vocs").status_code == 401
         assert app.state.voc_extension_client is voc_client
+        assert app.state.voc_submitter_directory is voc_directory
 
     assert voc_client.closed is False
 

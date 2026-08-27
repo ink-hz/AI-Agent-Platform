@@ -119,6 +119,7 @@ from .review.replay import ReplayRunner
 from .review.service import ReviewService, UnavailableReviewService
 from .spa import SpaStaticFiles, load_public_asset_manifest
 from .voc_extension.client import VocExtensionClient
+from .voc_extension.directory import VocSubmitterDirectory
 from .voc_extension.identity import PlatformVocTokenSigner
 from .voc_extension.routes import build_voc_extension_router
 
@@ -549,6 +550,7 @@ def create_app(
     attachment_service=None,
     identity_auth=None,
     voc_extension_client=None,
+    voc_submitter_directory=None,
     ai_notes_reader: AiNotesReader | None = None,
 ) -> FastAPI:
     owns_review_service = review_service is None
@@ -762,6 +764,16 @@ def create_app(
             ),
             timeout_seconds=config.voc_extension_timeout_seconds,
         )
+    if (
+        voc_extension_client is not None
+        and identity_enabled
+        and voc_submitter_directory is None
+    ):
+        if control_database_url is None:
+            control_database_url = read_secret_file(
+                config.control_plane.control_database_url_file
+            )
+        voc_submitter_directory = VocSubmitterDirectory(control_database_url)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -832,6 +844,7 @@ def create_app(
     app.state.conversation_command_service = conversation_command_service
     app.state.agent_use_authorization = agent_use_authorization
     app.state.voc_extension_client = voc_extension_client
+    app.state.voc_submitter_directory = voc_submitter_directory
     app.state.ai_notes_reader = ai_notes_reader
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
