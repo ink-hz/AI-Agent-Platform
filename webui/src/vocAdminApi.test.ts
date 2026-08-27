@@ -79,6 +79,30 @@ describe("VOC management API", () => {
     expect(fetchMock.mock.calls[0][0]).toContain("VOC-20260826-001%2Funsafe");
   });
 
+  it("accepts attachment-only history with empty text content", async () => {
+    const attachmentOnly = { ...summary, latest_content: "" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ items: [attachmentOnly], next_cursor: null }))
+      .mockResolvedValueOnce(json({
+        ...attachmentOnly,
+        entries: [{
+          revision: 1,
+          entry_type: "original",
+          content: "",
+          created_at: "2026-08-26T09:30:00Z",
+        }],
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createVocAdminApi();
+    const signal = new AbortController().signal;
+
+    const page = await api.list({}, signal);
+    const detail = await api.detail(summary.voc_no, signal);
+
+    expect(page.items[0].latest_content).toBe("");
+    expect(detail.entries[0].content).toBe("");
+  });
+
   it.each([
     { ...summary, unexpected: true },
     { ...summary, revision: 0 },

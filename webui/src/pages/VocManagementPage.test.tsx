@@ -116,6 +116,32 @@ describe("VOC management page", () => {
     expect(container.querySelector('aside[aria-label="VOC 详情"]')).toBeNull();
   });
 
+  it("renders an explicit placeholder for attachment-only history", async () => {
+    const api = fakeApi();
+    const attachmentOnly = summary("VOC-20260826-003", "");
+    api.list.mockResolvedValue({ items: [attachmentOnly], next_cursor: null });
+    api.detail.mockResolvedValue({
+      ...attachmentOnly,
+      entries: [{
+        revision: 1,
+        entry_type: "original",
+        content: "",
+        created_at: "2026-08-26T09:30:00Z",
+      }],
+    });
+
+    await act(async () => root.render(<VocManagementPage api={api} />));
+    await act(async () => undefined);
+    expect(container.textContent).toContain("仅包含附件，暂无文字内容");
+
+    const row = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === attachmentOnly.voc_no);
+    await act(async () => row?.click());
+    await act(async () => undefined);
+    expect(container.querySelector('aside[aria-label="VOC 详情"]')?.textContent)
+      .toContain("仅包含附件，暂无文字内容");
+  });
+
   it("submits mutually exclusive filters, converts date bounds, and appends more", async () => {
     const api = fakeApi();
     api.list

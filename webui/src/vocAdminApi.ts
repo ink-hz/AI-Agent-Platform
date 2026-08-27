@@ -72,6 +72,10 @@ function nonempty(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+function text(value: unknown): value is string {
+  return typeof value === "string";
+}
+
 function positive(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) > 0;
 }
@@ -98,7 +102,7 @@ function summaryValid(value: Record<string, unknown>): boolean {
     && (value.submitter_internal_user_id === null || uuid(value.submitter_internal_user_id))
     && nonempty(value.submitter_name)
     && ["platform", "dingtalk"].includes(String(value.source))
-    && nonempty(value.latest_content)
+    && text(value.latest_content)
     && positive(value.revision)
     && ANALYSIS_STATUSES.includes(String(value.analysis_status))
     && isoTimestamp(value.created_at)
@@ -134,7 +138,7 @@ function parseDetail(value: unknown): VocAdminDetail {
     if (!object(entry) || !exact(entry, ["revision", "entry_type", "content", "created_at"])
       || !positive(entry.revision)
       || !["original", "supplement", "correction"].includes(String(entry.entry_type))
-      || !nonempty(entry.content) || !isoTimestamp(entry.created_at)) {
+      || !text(entry.content) || !isoTimestamp(entry.created_at)) {
       throw new Error("VOC management detail response invalid");
     }
     return entry as unknown as VocAdminEntry;

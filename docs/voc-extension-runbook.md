@@ -23,9 +23,9 @@ chmod 600 '/absolute/private/platform-voc-signing-key' '/absolute/private/orbbec
 
 ## 启动顺序
 
-1. 记录待发布版本：VOC 管理读接口基线为 `7d22735e9430f8940d457eaed830764ac678b409`；Platform 发布 SHA 必须由发布包的 `git rev-parse HEAD` 记录到变更单。
-2. 先部署上述 VOC 版本，并使用迁移专用凭据应用 migration 013–016。不得在 Platform 页面上线后才补 migration 016。
-3. 以仅属于 `voc_platform` 的低权限登录运行 VOC readiness，确认管理只读函数存在且执行授权正确。
+1. 记录待发布版本：VOC 管理读接口和历史空正文兼容基线为 `6a0fe1b7babc84eb1761a8e58daa28828fe83234`；Platform 发布 SHA 必须由发布包的 `git rev-parse HEAD` 记录到变更单。
+2. 先部署上述 VOC 版本，并使用迁移专用凭据应用 migration 013–017。不得在 Platform 页面上线后才补 migration 016–017。
+3. 以仅属于 `voc_platform` 的低权限登录运行 VOC readiness，并用请求的 VOC 发布 SHA 调用 `deploy/linux/verify-remote.sh <VOC_RELEASE_SHA>`，确认当前版本、migration 017、管理只读函数和 `voc_platform` 执行权全部匹配。
 4. 启动 VOC workspace，确认只监听内部网络地址 `172.29.0.3:18130`，且没有 `ports` 映射。
 5. 由 Platform 服务账号签发临时 `voc.read_all` 令牌，验证 `GET /api/platform/v1/admin/vocs` 和 `GET /api/platform/v1/admin/vocs/{voc_no}`。探针只记录 HTTP 状态、条目数量和耗时，不输出正文、人员 UUID 或令牌。
 6. 再部署 Agent Platform，将 Platform API 固定到 `172.29.0.2`，然后完成员工入口和管理入口验收。
@@ -97,6 +97,6 @@ member_admin_status=403 duration_ms=<number>
 2. 确认同源健康接口返回 503、其他 Agent 仍正常。
 3. 停止 VOC workspace。
 4. 回滚 Platform 到上一已验收版本，使 `/admin/voc` 导航和管理 BFF 先消失；确认员工现有功能不受影响。
-5. 如仍需回滚 VOC 容器，再切回上一兼容版本；不要删除 migration 013–016 的表、函数、列或任何 VOC 数据。
+5. 如仍需回滚 VOC 容器，只能切回同样包含 migration 017 空正文兼容的版本；不要删除 migration 013–017 的表、函数、列或任何 VOC 数据。
 
 恢复时重新按“启动顺序”执行。若只需紧急隔离，保留数据库和秘密文件，先禁用 Platform extension，再停止私网 workspace 容器。

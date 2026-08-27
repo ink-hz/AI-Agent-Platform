@@ -34,6 +34,8 @@ const ENTRY_LABEL = {
   correction: "修正记录",
 } as const;
 
+const ATTACHMENT_ONLY_CONTENT = "仅包含附件，暂无文字内容";
+
 const EMPTY_FILTERS: VocAdminFilters = {
   query: null,
   submitterInternalUserId: null,
@@ -236,7 +238,7 @@ export function VocManagementPage({ api = vocAdminApi }: { api?: VocAdminApi }) 
           <tbody>{items.map((item) => <tr key={item.voc_no}>
             <td data-label="VOC 编号"><button type="button" className="voc-management__voc-link" onClick={() => openDetail(item)}>{item.voc_no}</button></td>
             <td data-label="提交人">{item.submitter_name}</td>
-            <td data-label="内容摘要" className="voc-management__summary">{item.latest_content}</td>
+            <td data-label="内容摘要" className="voc-management__summary">{item.latest_content || ATTACHMENT_ONLY_CONTENT}</td>
             <td data-label="来源"><span className={`voc-management__source is-${item.source}`}>{SOURCE_LABEL[item.source]}</span></td>
             <td data-label="提交时间"><time dateTime={item.created_at}>{formatTime(item.created_at)}</time></td>
             <td data-label="分析状态"><span className={`voc-management__status is-${item.analysis_status}`}>{ANALYSIS_LABEL[item.analysis_status]}</span></td>
@@ -262,7 +264,7 @@ export function VocManagementPage({ api = vocAdminApi }: { api?: VocAdminApi }) 
           </dl>
           <div className="voc-management__entries">{detail.entries.map((entry) => <article key={`${entry.revision}-${entry.created_at}`}>
             <header><strong>{ENTRY_LABEL[entry.entry_type]}</strong><span>第 {entry.revision} 版 · {formatTime(entry.created_at)}</span></header>
-            <p>{entry.content}</p>
+            <p>{entry.content || ATTACHMENT_ONLY_CONTENT}</p>
           </article>)}</div>
         </>}
       </aside>}
