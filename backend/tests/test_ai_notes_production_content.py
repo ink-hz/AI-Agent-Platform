@@ -76,3 +76,15 @@ def test_publishes_clean_enterprise_agent_architecture_note() -> None:
     assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("Agent", "系统架构", "AI 工程")
     assert_clean_body(article.markdown)
+
+
+def test_publishes_clean_rag_retrieval_engineering_note() -> None:
+    article = published_article("ai-engineering", "rag-retrieval-engineering")
+    assert article.title == "RAG 检索工程：从向量索引到可验证回答"
+    assert article.filename == "rag-retrieval-engineering.md"
+    assert article.published_at == TODAY
+    assert article.updated_at == TODAY
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
+    assert article.tags == ("RAG", "向量检索", "AI 工程")
+    assert_clean_body(article.markdown)
