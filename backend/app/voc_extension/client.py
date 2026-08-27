@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from ipaddress import ip_address
-from typing import Mapping
 from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
 
-from .identity import PlatformVocTokenSigner, VOC_CAPABILITIES
+from .identity import VOC_CAPABILITIES, PlatformVocTokenSigner
 
 _MAX_RESPONSE_BYTES = 1_048_576
 SELF_SERVICE_CAPABILITIES = frozenset({"voc.submit", "voc.read_self"})

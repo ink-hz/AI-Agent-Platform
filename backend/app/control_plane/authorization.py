@@ -200,7 +200,7 @@ class AuthorizationService:
         if key in _MANAGEMENT_SHELL_ROUTES:
             return AuthorizationDecision(True, 200, "viewer_shell", None)
         if key in _VOC_MANAGEMENT_ROUTES:
-            return AuthorizationDecision(True, 200, "viewer_voc_management", None)
+            return AuthorizationDecision(True, 200, "voc_management", None)
         if key not in VIEWER_R1_ROUTES:
             return self._deny(403, "viewer_route_denied")
         if route_template == "/api/v1/manage/audit/governance":

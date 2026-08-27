@@ -180,6 +180,7 @@ def test_voc_management_reads_allow_exact_management_roles_only(route):
     for context in (VIEWER, ADMIN, OWNER):
         decision = service.decide(context, "GET", route, ())
         assert decision.allowed is True
+        assert decision.reason in {"voc_management", context.role.value}
 
 
 def test_platform_admin_uses_owner_routes_after_fail_closed_gates():
