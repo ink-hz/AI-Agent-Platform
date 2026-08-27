@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { aiNotesClient } from "./aiNotesApi";
-import { AiNotesApiError, AiNotesContractError } from "./aiNotesTypes";
+import { AiNotesApiError, AiNotesContractError, parseAiNotesIndex } from "./aiNotesTypes";
 
 
 const summary = {
@@ -69,6 +69,29 @@ describe("AI notes API", () => {
     }));
 
     await expect(aiNotesClient.fetchIndex()).rejects.toBeInstanceOf(AiNotesContractError);
+  });
+
+  it.each(["2026-99-99", "2026-02-29", "2026-04-31", "0000-01-01"])(
+    "rejects the invalid calendar date %s",
+    (publishedAt) => {
+      expect(() => parseAiNotesIndex({
+        categories: [{
+          slug: "foundations",
+          title: "基础与原理",
+          articles: [{ ...summary, published_at: publishedAt }],
+        }],
+      })).toThrow(AiNotesContractError);
+    },
+  );
+
+  it("accepts a valid leap day", () => {
+    expect(parseAiNotesIndex({
+      categories: [{
+        slug: "foundations",
+        title: "基础与原理",
+        articles: [{ ...summary, published_at: "2028-02-29" }],
+      }],
+    }).categories[0].articles[0].published_at).toBe("2028-02-29");
   });
 
   it.each([401, 404, 503])("preserves HTTP status %s", async (status) => {

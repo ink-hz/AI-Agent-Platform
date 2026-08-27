@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 from urllib.parse import unquote, urlsplit
 
+from markdown_it import MarkdownIt
 import yaml
 
 from .models import AiNotesIndex
@@ -18,16 +19,10 @@ from .repository import (
 
 
 _ALLOWED_LINK_SCHEMES = frozenset({"", "http", "https", "mailto"})
-_INLINE_LINK = re.compile(
-    r"!?\[[^\]]*\]\(\s*(?:<(?P<angle>[^>]+)>|(?P<plain>[^\s)]+))",
-    re.IGNORECASE,
-)
-_REFERENCE_LINK = re.compile(
-    r"^[ \t]{0,3}\[[^\]]+\]:[ \t]*(?:<(?P<angle>[^>]+)>|(?P<plain>\S+))",
-    re.MULTILINE,
-)
-_AUTOLINK = re.compile(r"<(?P<destination>[^<>\s]+:[^<>]*)>")
 _CONTROL_OR_SPACE = re.compile(r"[\x00-\x20\x7f]+")
+_POTENTIAL_AUTOLINK = re.compile(r"<(?P<destination>[^<>\s]+:[^<>]*)>")
+_MARKDOWN = MarkdownIt("commonmark", {"html": False, "linkify": False})
+_MARKDOWN.validateLink = lambda _: True
 
 
 def validate_publication(
@@ -80,11 +75,19 @@ def _load_markers(marker_file: Path) -> tuple[str, ...]:
 
 def _link_destinations(markdown: str) -> tuple[str, ...]:
     destinations: list[str] = []
-    for pattern in (_INLINE_LINK, _REFERENCE_LINK):
-        for matched in pattern.finditer(markdown):
-            destinations.append(matched.group("angle") or matched.group("plain"))
+    for token in _MARKDOWN.parse(markdown):
+        for child in token.children or ():
+            if child.type == "link_open":
+                destination = child.attrGet("href")
+            elif child.type == "image":
+                destination = child.attrGet("src")
+            else:
+                continue
+            if destination is not None:
+                destinations.append(destination)
     destinations.extend(
-        matched.group("destination") for matched in _AUTOLINK.finditer(markdown)
+        matched.group("destination")
+        for matched in _POTENTIAL_AUTOLINK.finditer(markdown)
     )
     return tuple(destinations)
 

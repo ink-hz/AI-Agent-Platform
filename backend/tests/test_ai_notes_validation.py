@@ -68,6 +68,9 @@ def test_rejects_invalid_publication_dates(
         "[x](DATA:text/html,bad)",
         "[x][unsafe]\n\n[unsafe]: vbscript:msgbox(1)",
         "<java&#x73;cript:alert(1)>",
+        "[outer [inner]](javascript:alert(1))",
+        r"[escaped \]](vbscript:msgbox(1))",
+        "![outer [inner]](data:text/html,bad)",
     ],
 )
 def test_publication_rejects_dangerous_links(tmp_path: Path, link: str) -> None:

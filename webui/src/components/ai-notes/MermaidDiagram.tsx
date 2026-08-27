@@ -6,14 +6,23 @@ let diagramSequence = 0;
 let initialized = false;
 
 
+export function mermaidImageSource(renderedSvg: string): string {
+  const sanitized = DOMPurify.sanitize(renderedSvg, {
+    USE_PROFILES: { svg: true, svgFilters: true },
+    FORBID_TAGS: ["script", "foreignObject"],
+  });
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(sanitized)}`;
+}
+
+
 export function MermaidDiagram({ source }: { source: string }) {
-  const [svg, setSvg] = useState<string | null>(null);
+  const [imageSource, setImageSource] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let current = true;
     const identifier = `ai-note-mermaid-${++diagramSequence}`;
-    setSvg(null);
+    setImageSource(null);
     setFailed(false);
     void import("mermaid").then(async ({ default: mermaid }) => {
       if (!initialized) {
@@ -21,16 +30,14 @@ export function MermaidDiagram({ source }: { source: string }) {
           startOnLoad: false,
           securityLevel: "strict",
           theme: "neutral",
+          htmlLabels: false,
+          flowchart: { htmlLabels: false },
         });
         initialized = true;
       }
       const rendered = await mermaid.render(identifier, source);
       if (!current) return;
-      const sanitized = DOMPurify.sanitize(rendered.svg, {
-        USE_PROFILES: { svg: true, svgFilters: true },
-        FORBID_TAGS: ["script", "foreignObject"],
-      });
-      setSvg(sanitized);
+      setImageSource(mermaidImageSource(rendered.svg));
     }).catch(() => {
       if (current) setFailed(true);
     });
@@ -41,11 +48,8 @@ export function MermaidDiagram({ source }: { source: string }) {
     <p>图表暂时无法渲染</p>
     <pre><code>{source}</code></pre>
   </div>;
-  if (!svg) return <div className="mermaid-loading" role="status">正在渲染图表</div>;
-  return <div
-    aria-label="Mermaid 图表"
-    className="mermaid-diagram"
-    dangerouslySetInnerHTML={{ __html: svg }}
-    role="img"
-  />;
+  if (!imageSource) return <div className="mermaid-loading" role="status">正在渲染图表</div>;
+  return <div className="mermaid-diagram">
+    <img alt="Mermaid 图表" onError={() => setFailed(true)} src={imageSource} />
+  </div>;
 }

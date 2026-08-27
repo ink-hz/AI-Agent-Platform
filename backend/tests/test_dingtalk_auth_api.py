@@ -469,6 +469,7 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
 
     root = client.get("/", cookies=cookies, follow_redirects=False)
     assert root.status_code == 200
+    assert "img-src 'self' data:" in root.headers["content-security-policy"]
     assert "x-platform-entry-state" not in root.headers
     assert "LOGIN SHELL" in root.text
     assert "platform-agent-brain-mode" not in root.text

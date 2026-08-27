@@ -40,10 +40,17 @@ describe("MermaidDiagram", () => {
       startOnLoad: false,
       securityLevel: "strict",
       theme: "neutral",
+      htmlLabels: false,
+      flowchart: { htmlLabels: false },
     }));
-    expect(container.querySelector("svg")?.textContent).toContain("ok");
+    const diagram = container.querySelector<HTMLImageElement>('img[alt="Mermaid 图表"]');
+    const encoded = diagram?.getAttribute("src")?.split(",", 2)[1] ?? "";
+    const sanitized = decodeURIComponent(encoded);
+    expect(sanitized).toContain("<text>ok</text>");
+    expect(container.querySelector("svg")).toBeNull();
     expect(container.querySelector("script")).toBeNull();
-    expect(container.innerHTML).not.toContain("onload");
+    expect(sanitized).not.toContain("onload");
+    expect(sanitized).not.toContain("<script");
   });
 
   it("falls back to source when only one diagram fails", async () => {

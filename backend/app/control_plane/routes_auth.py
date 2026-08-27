@@ -38,7 +38,7 @@ def _login_csp(auth) -> str:
         "default-src 'none'; base-uri 'none'; object-src 'none'; "
         "frame-ancestors 'none'; form-action 'none'; "
         f"script-src {asset_source}; style-src {asset_source}; "
-        f"img-src {image_source}; connect-src {connect_source}"
+        f"img-src {image_source} data:; connect-src {connect_source}"
     )
 
 
