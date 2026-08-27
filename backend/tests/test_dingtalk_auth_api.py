@@ -69,6 +69,10 @@ class _NoObservationGrants:
         ("POST", "/api/v1/conversations/{conversation_id}/archive"),
         ("POST", "/api/v1/conversations/{conversation_id}/restore"),
         ("POST", "/api/v1/agents/{agent_id}/conversations"),
+        ("GET", "/api/v1/ai-notes"),
+        ("GET", "/api/v1/ai-notes/{category_slug}/{article_slug}"),
+        ("GET", "/ai-notes"),
+        ("GET", "/ai-notes/{client_path:path}"),
         ("GET", "/missions"),
         ("GET", "/missions/{client_path:path}"),
         ("GET", "/conversations"),
@@ -232,6 +236,7 @@ def _app(
     *,
     registry_document: str = "version: 1\nagents: []\n",
     brain_enabled: bool = False,
+    ai_notes_reader=None,
 ):
     static = tmp_path / "static"
     assets = static / "assets"
@@ -261,6 +266,7 @@ def _app(
         cluster_contract_path=str(contract),
         start_poller=False,
         identity_auth=auth,
+        ai_notes_reader=ai_notes_reader,
     )
 
 
@@ -410,6 +416,7 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
     assert "platform-agent-brain-mode" not in root.text
     for path in (
         "/account", "/agents", "/agents/hr-bot", "/missions", "/conversations",
+        "/ai-notes", "/ai-notes/foundations/handbook",
         "/missions/00000000-0000-0000-0000-000000000001", "/admin",
         "/conversations/00000000-0000-0000-0000-000000000001",
         "/admin/agents", "/admin/sessions/fae%3Aone", "/sessions",
@@ -421,6 +428,72 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
         assert "LOGIN SHELL" in response.text
         assert 'name="platform-identity-mode" content="enabled"' in response.text
     assert client.get("/unknown", cookies=cookies).status_code in {403, 404}
+
+
+class _AiNotesReader:
+    def index(self):
+        return {"categories": []}
+
+    def article(self, category_slug: str, article_slug: str):
+        if (category_slug, article_slug) != ("foundations", "handbook"):
+            return None
+        return {
+            "slug": "handbook",
+            "title": "手册",
+            "filename": "handbook.md",
+            "description": "说明",
+            "published_at": "2026-08-27",
+            "updated_at": None,
+            "tags": [],
+            "reading_minutes": 1,
+            "category_slug": "foundations",
+            "category_title": "基础与原理",
+            "markdown": "# INTERNAL_BODY_SENTINEL",
+        }
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_ai_notes_routes_require_auth_and_allow_every_role(
+    tmp_path, monkeypatch, role: Role
+) -> None:
+    auth = FakeAuth()
+    auth.context = AuthContext(uuid4(), role, uuid4(), False)
+    client = TestClient(
+        _app(tmp_path, monkeypatch, auth, ai_notes_reader=_AiNotesReader())
+    )
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    assert client.get("/api/v1/ai-notes").status_code == 401
+    index = client.get("/api/v1/ai-notes", cookies=cookies)
+    article = client.get(
+        "/api/v1/ai-notes/foundations/handbook", cookies=cookies
+    )
+
+    assert index.status_code == 200
+    assert index.headers["cache-control"] == "no-store"
+    assert article.status_code == 200
+    assert article.json()["markdown"] == "# INTERNAL_BODY_SENTINEL"
+
+
+def test_ai_notes_failure_does_not_break_health_or_account(
+    tmp_path, monkeypatch
+) -> None:
+    class BrokenReader:
+        def index(self):
+            raise RuntimeError("private content")
+
+        def article(self, category_slug: str, article_slug: str):
+            raise RuntimeError(f"private content {category_slug} {article_slug}")
+
+    auth = FakeAuth()
+    client = TestClient(
+        _app(tmp_path, monkeypatch, auth, ai_notes_reader=BrokenReader())
+    )
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    assert client.get("/api/v1/ai-notes", cookies=cookies).status_code == 503
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/account", cookies=cookies).status_code == 200
 
 
 def test_authenticated_root_serves_brain_shell_without_release_metadata(
