@@ -15,6 +15,8 @@ export type Route =
   | { name: "agent"; agentId: string }
   | { name: "agent-conversation"; agentId: string; conversationId: string }
   | { name: "voc-workspace" }
+  | { name: "ai-notes" }
+  | { name: "ai-note"; categorySlug: string; articleSlug: string }
   | { name: "admin-overview" }
   | { name: "admin-agents" }
   | { name: "admin-agent"; agentId: string }
@@ -29,7 +31,7 @@ export type Route =
   | { name: "legacy-redirect"; to: string }
   | { name: "not-found" };
 
-export type RouteSection = "brain" | "conversations" | "agents" | "missions" | "account" | "admin";
+export type RouteSection = "brain" | "conversations" | "agents" | "missions" | "ai-notes" | "account" | "admin";
 
 export type NavigateOptions = {
   replace?: boolean;
@@ -63,6 +65,10 @@ export function parseRoute(pathname: string): Route {
   if (clean === "/missions") return { name: "missions" };
   if (clean === "/agents") return { name: "agents" };
   if (clean === "/agents/voc/workspace") return { name: "voc-workspace" };
+  if (clean === "/ai-notes") return { name: "ai-notes" };
+
+  const aiNote = /^\/ai-notes\/([a-z0-9][a-z0-9-]{0,63})\/([a-z0-9][a-z0-9-]{0,127})$/.exec(clean);
+  if (aiNote) return { name: "ai-note", categorySlug: aiNote[1], articleSlug: aiNote[2] };
 
   if (clean === "/admin" || clean === "/admin/overview") return { name: "admin-overview" };
   if (clean === "/admin/agents") return { name: "admin-agents" };
@@ -141,6 +147,8 @@ export function routePath(route: Route): string {
     case "agent": return `/agents/${encodeURIComponent(route.agentId)}`;
     case "agent-conversation": return `/agents/${encodeURIComponent(route.agentId)}/conversations/${encodeURIComponent(route.conversationId)}`;
     case "voc-workspace": return "/agents/voc/workspace";
+    case "ai-notes": return "/ai-notes";
+    case "ai-note": return `/ai-notes/${encodeURIComponent(route.categorySlug)}/${encodeURIComponent(route.articleSlug)}`;
     case "admin-overview": return "/admin";
     case "admin-agents": return "/admin/agents";
     case "admin-agent": return `/admin/agents/${encodeURIComponent(route.agentId)}`;
@@ -163,6 +171,7 @@ export function routeSection(route: Route): RouteSection | null {
   if (route.name === "conversations" || route.name === "conversation") return "brain";
   if (route.name === "agents" || route.name === "agent" || route.name === "agent-conversation" || route.name === "voc-workspace") return "agents";
   if (route.name === "missions" || route.name === "mission") return "missions";
+  if (route.name === "ai-notes" || route.name === "ai-note") return "ai-notes";
   if (route.name === "account") return "account";
   if (route.name.startsWith("admin-")) return "admin";
   return null;

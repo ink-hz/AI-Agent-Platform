@@ -23,6 +23,24 @@ describe("Platform router", () => {
     expect(parseRoute("/account")).toEqual({ name: "account" });
   });
 
+  it("parses and serializes AI notes routes", () => {
+    expect(parseRoute("/ai-notes")).toEqual({ name: "ai-notes" });
+    const route = parseRoute("/ai-notes/agent-architecture/system-handbook");
+    expect(route).toEqual({
+      name: "ai-note",
+      categorySlug: "agent-architecture",
+      articleSlug: "system-handbook",
+    });
+    expect(routePath(route)).toBe("/ai-notes/agent-architecture/system-handbook");
+    expect(routeSection(route)).toBe("ai-notes");
+  });
+
+  it("rejects malformed AI notes paths", () => {
+    expect(parseRoute("/ai-notes/a/b/c")).toEqual({ name: "not-found" });
+    expect(parseRoute("/ai-notes/../handbook")).toEqual({ name: "not-found" });
+    expect(parseRoute("/ai-notes/UPPER/handbook")).toEqual({ name: "not-found" });
+  });
+
   it("parses and navigates inside the isolated preview prefix", () => {
     window.history.replaceState({}, "", "/_preview/dingtalk-r1/account");
     expect(parseRoute(window.location.pathname)).toEqual({ name: "account" });
