@@ -33,8 +33,8 @@
 专业 Agent 排序固定为：
 
 1. AI FAE Agent
-2. VOC 洞察助手
-3. HR Agent
+2. HR Agent
+3. VOC 洞察助手
 4. 五个 Marketing Agent
 5. AI 行政 Agent
 
@@ -77,7 +77,7 @@ VOC 卡片显示：
 
 1. Catalog 精确包含九个产品 Agent，`voc` 只能是外部工作区。
 2. 后端对有效全员授权返回 VOC，对无授权用户不返回。
-3. `/agents` 中 VOC 位于 FAE 后、HR 前，链接精确为
+3. `/agents` 中 VOC 位于 HR 后、Marketing 前，链接精确为
    `/agents/voc/workspace`，卡片类型为 `voc`。
 4. 恶意或漂移的 VOC 工作区 URL 不会渲染成可点击链接。
 5. 既有 FAE、HR、Marketing、行政顺序和入口不回归。
