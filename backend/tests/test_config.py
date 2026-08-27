@@ -49,7 +49,6 @@ def test_brain_model_defaults_disabled_and_never_accepts_inline_api_key(
 ) -> None:
     for name in (
         "PLATFORM_AGENT_BRAIN_V2_ENABLED",
-        "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED",
         "PLATFORM_BRAIN_MODEL_ENABLED",
         "PLATFORM_BRAIN_PROVIDER_BASE_URL",
         "PLATFORM_BRAIN_PROVIDER_API_KEY_FILE",
@@ -60,7 +59,7 @@ def test_brain_model_defaults_disabled_and_never_accepts_inline_api_key(
 
     config = load_config()
     assert config.agent_brain_v2_enabled is False
-    assert config.agent_brain_collaboration_enabled is False
+    assert not hasattr(config, "agent_brain_collaboration_enabled")
     assert config.brain_model_enabled is False
     assert config.brain_provider_api_key_file == ""
     assert config.brain_provider_base_url == ""
@@ -68,6 +67,16 @@ def test_brain_model_defaults_disabled_and_never_accepts_inline_api_key(
     monkeypatch.setenv("PLATFORM_BRAIN_PROVIDER_API_KEY", "must-not-be-inline")
     with pytest.raises(ValueError, match="secret file"):
         load_config()
+
+
+def test_legacy_brain_collaboration_environment_is_not_a_config_field(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED", "0")
+
+    config = load_config()
+
+    assert not hasattr(config, "agent_brain_collaboration_enabled")
 
 
 def test_remote_sync_config_defaults(monkeypatch) -> None:

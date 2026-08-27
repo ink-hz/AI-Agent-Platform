@@ -63,7 +63,6 @@ def _shell_response(
     opened: OpenedPublicAsset,
     *,
     csp: str,
-    agent_brain_enabled: bool,
     asset_base: str,
 ) -> Response:
     try:
@@ -85,15 +84,6 @@ def _shell_response(
         content = content.replace(b"<head>", b"<head>" + enabled, 1)
     else:
         content = enabled + content
-    brain_mode = (
-        b'<meta name="platform-agent-brain-mode" content="enabled" />'
-        if agent_brain_enabled
-        else b'<meta name="platform-agent-brain-mode" content="disabled" />'
-    )
-    if b"<head>" in content:
-        content = content.replace(b"<head>", b"<head>" + brain_mode, 1)
-    else:
-        content = brain_mode + content
     return Response(
         content=content,
         media_type="text/html",
@@ -179,7 +169,6 @@ def build_auth_router(
     static_dir: str,
     public_assets: frozenset[str],
     detailed_health,
-    agent_brain_enabled: bool,
 ) -> APIRouter:
     router = APIRouter(prefix="" if auth.route_prefix == "/" else auth.route_prefix.rstrip("/"))
 
@@ -189,7 +178,6 @@ def build_auth_router(
             return _shell_response(
                 opened,
                 csp=_login_csp(auth),
-                agent_brain_enabled=agent_brain_enabled,
                 asset_base=auth.route_prefix,
             )
         except PublicAssetUnavailable:
@@ -199,10 +187,6 @@ def build_auth_router(
     async def root(request: Request):
         token = request.cookies.get(auth.cookie_name)
         if token and auth.authenticate(token) is not None:
-            if not agent_brain_enabled:
-                response = application_shell()
-                response.headers["X-Platform-Entry-State"] = "brain-preparing"
-                return response
             return application_shell()
         return RedirectResponse(_local_path(auth, "/login"), status_code=302, headers=_NO_STORE)
 
@@ -217,7 +201,6 @@ def build_auth_router(
             response = _shell_response(
                 opened,
                 csp=csp,
-                agent_brain_enabled=agent_brain_enabled,
                 asset_base=auth.route_prefix,
             )
         issuer = getattr(auth, "issue_browser_challenge", None)

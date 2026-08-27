@@ -405,9 +405,9 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
 
     root = client.get("/", cookies=cookies, follow_redirects=False)
     assert root.status_code == 200
-    assert root.headers["x-platform-entry-state"] == "brain-preparing"
+    assert "x-platform-entry-state" not in root.headers
     assert "LOGIN SHELL" in root.text
-    assert 'name="platform-agent-brain-mode" content="disabled"' in root.text
+    assert "platform-agent-brain-mode" not in root.text
     for path in (
         "/account", "/agents", "/agents/hr-bot", "/missions", "/conversations",
         "/missions/00000000-0000-0000-0000-000000000001", "/admin",
@@ -423,7 +423,7 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
     assert client.get("/unknown", cookies=cookies).status_code in {403, 404}
 
 
-def test_authenticated_root_serves_brain_shell_only_after_feature_enablement(
+def test_authenticated_root_serves_brain_shell_without_release_metadata(
     tmp_path
 ) -> None:
     static = tmp_path / "static"
@@ -437,7 +437,6 @@ def test_authenticated_root_serves_brain_shell_only_after_feature_enablement(
             static_dir=str(static),
             public_assets=frozenset(),
             detailed_health=lambda _request: {},
-            agent_brain_enabled=True,
         )
     )
 
@@ -447,10 +446,10 @@ def test_authenticated_root_serves_brain_shell_only_after_feature_enablement(
 
     assert response.status_code == 200
     assert "BRAIN SHELL" in response.text
-    assert 'name="platform-agent-brain-mode" content="enabled"' in response.text
+    assert "platform-agent-brain-mode" not in response.text
 
 
-def test_authenticated_root_preserves_use_entry_while_brain_is_disabled(
+def test_authenticated_root_never_falls_back_to_a_preparing_state(
     tmp_path, monkeypatch
 ) -> None:
     auth = FakeAuth()
@@ -461,8 +460,8 @@ def test_authenticated_root_preserves_use_entry_while_brain_is_disabled(
     )
 
     assert response.status_code == 200
-    assert response.headers["x-platform-entry-state"] == "brain-preparing"
-    assert 'name="platform-agent-brain-mode" content="disabled"' in response.text
+    assert "x-platform-entry-state" not in response.headers
+    assert "platform-agent-brain-mode" not in response.text
     assert response.headers["cache-control"] == "no-store"
 
 

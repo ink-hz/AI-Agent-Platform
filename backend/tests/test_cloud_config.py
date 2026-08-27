@@ -158,11 +158,16 @@ def test_v2_cutover_requires_v1_brain_and_never_enables_implicitly(
     assert load_config().agent_brain_v2_enabled is False
 
 
-def test_live_collaboration_requires_brain_v2(monkeypatch, tmp_path) -> None:
+def test_legacy_collaboration_flag_is_ignored(
+    monkeypatch, tmp_path
+) -> None:
     _configure_cloud(monkeypatch, tmp_path)
-    monkeypatch.setenv("PLATFORM_AGENT_BRAIN_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_AGENT_BRAIN_ENABLED", "0")
     monkeypatch.setenv("PLATFORM_AGENT_BRAIN_V2_ENABLED", "0")
     monkeypatch.setenv("PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED", "1")
 
-    with pytest.raises(ValueError, match="collaboration requires Agent Brain V2"):
-        load_config()
+    config = load_config()
+
+    assert config.agent_brain_enabled is False
+    assert config.agent_brain_v2_enabled is False
+    assert not hasattr(config, "agent_brain_collaboration_enabled")

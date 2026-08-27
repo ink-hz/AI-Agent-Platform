@@ -139,7 +139,8 @@ def test_direct_agent_runtime_is_started_without_enabling_brain_v1() -> None:
     assert 'v1_mission_modes.append("brain")' in source
     assert "and not config.agent_brain_v2_enabled" in source
     assert "mission_modes=tuple(v1_mission_modes)" in source
-    assert "or config.agent_brain_collaboration_enabled" in source
+    assert "agent_brain_collaboration_enabled" not in source
+    assert "brain_use_enabled" not in source
 
 
 def test_control_bootstrap_runs_execution_job_kind_preflight_before_migrations() -> None:
