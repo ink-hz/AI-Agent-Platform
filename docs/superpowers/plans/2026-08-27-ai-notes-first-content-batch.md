@@ -18,6 +18,9 @@
 - 阅读页单独渲染文章标题，正文不得再包含一级标题；不得包含原始 HTML。
 - Markdown 表格、代码块、链接、标题锚点和 Mermaid 必须在现有阅读器中可用。
 - 五篇文章 `publishedAt` 与 `updatedAt` 固定为当前平台首次内部发布日期 `2026-08-27`。
+- 五篇文章的 `author` 固定为 `苍渊`，`motto` 固定为 `博观而约取，厚积而薄发。`。
+- 阅读页标题下显示 `by 苍渊 · 日期` 和 `// 博观而约取，厚积而薄发。`；“苍渊”使用主色、更高字重和略大字号，其他署名信息使用低对比度等宽字体。
+- 不显示预计阅读时长，不增加头像、作者链接或卡片背景。
 - 每篇文章先以 `draft: true` 完成清洗和校验，达到标准后改为 `draft: false`，独立提交。
 - 工作区现有未跟踪文件属于其他会话，不得添加、修改或删除。
 
@@ -27,7 +30,12 @@
 
 - `backend/app/ai_notes/legacy_markers.yaml`：阻止已确认的旧站和个人品牌标记进入已发布文章。
 - `backend/app/ai_notes/README.md`：更新首次迁移后的内容维护说明。
+- `backend/app/ai_notes/models.py`：为 frontmatter 和 API 模型增加作者与可选座右铭。
+- `backend/app/ai_notes/repository.py`：把作者与座右铭映射到目录摘要和文章详情。
 - `backend/tests/test_ai_notes_production_content.py`：锁定生产目录中的五篇文章、元数据和正文结构。
+- `webui/src/aiNotesTypes.ts`：校验作者和可选座右铭 API 字段。
+- `webui/src/components/ai-notes/AiNoteArticle.tsx`：渲染两行极简作者签名并移除阅读时长。
+- `webui/src/styles.css`：实现作者名突出、其余署名信息克制的样式。
 - `backend/app/ai_notes/content/01-foundations/01-agent-systems-handbook.md`：Agent 系统综合手册。
 - `backend/app/ai_notes/content/02-agent-architecture/01-enterprise-agent-system-architecture.md`：企业 Agent 系统架构。
 - `backend/app/ai_notes/content/03-tools-and-frameworks/01-claude-code-architecture.md`：Claude Code 公开能力与架构启发。
@@ -130,7 +138,201 @@ git add backend/app/ai_notes/legacy_markers.yaml backend/app/ai_notes/README.md 
 git commit -m "test: define first AI notes publication contract"
 ```
 
-### Task 2: 精读并迁移 Claude Code 架构分析
+### Task 2: 增加作者签名内容合同与阅读页展示
+
+**Files:**
+- Modify: `backend/app/ai_notes/models.py`
+- Modify: `backend/app/ai_notes/repository.py`
+- Modify: `backend/app/ai_notes/README.md`
+- Modify: `backend/tests/test_ai_notes_repository.py`
+- Modify: `backend/tests/test_ai_notes_validation.py`
+- Modify: `backend/tests/test_ai_notes_api.py`
+- Modify: `backend/tests/test_ai_notes_production_content.py`
+- Modify: `backend/app/ai_notes/content/03-tools-and-frameworks/01-claude-code-architecture.md`
+- Modify: `backend/app/ai_notes/content/05-thinking-and-methods/01-ai-native-architecture-design.md`
+- Modify: `webui/src/aiNotesTypes.ts`
+- Modify: `webui/src/aiNotesApi.test.ts`
+- Modify: `webui/src/pages/AiNotesPage.test.tsx`
+- Modify: `webui/src/components/ai-notes/AiNotesTree.test.tsx`
+- Modify: `webui/src/components/ai-notes/ArticleMarkdown.test.tsx`
+- Modify: `webui/src/components/ai-notes/AiNoteArticle.tsx`
+- Modify: `webui/src/styles.css`
+- Modify: `webui/src/styles.test.ts`
+
+**Interfaces:**
+- Produces: `ArticleFrontmatter.author: str`
+- Produces: `ArticleFrontmatter.motto: str | None`
+- Produces: `AiNoteSummary.author: str` and `AiNoteSummary.motto: str | None`
+- Produces: `AiNoteSummary.author: string` and `AiNoteSummary.motto: string | null` in TypeScript
+- Preserves: `reading_minutes` in the API contract for future consumers, but does not render it in the article header
+
+- [ ] **Step 1: 写后端作者合同的失败测试**
+
+修改 `write_article`，让所有测试文章带上：
+
+```python
+"author: 苍渊\n"
+"motto: 博观而约取，厚积而薄发。\n"
+```
+
+并在 repository 与 API 测试中增加：
+
+```python
+assert article.author == "苍渊"
+assert article.motto == "博观而约取，厚积而薄发。"
+assert index.json()["categories"][0]["articles"][0]["author"] == "苍渊"
+assert index.json()["categories"][0]["articles"][0]["motto"] == "博观而约取，厚积而薄发。"
+```
+
+在两个已经迁移的生产内容契约测试中增加同样的 `article.author` 和 `article.motto` 断言。
+
+增加缺少作者和空白座右铭的结构校验用例：
+
+```python
+def test_rejects_missing_author_and_blank_motto(tmp_path: Path) -> None:
+    category = write_category(tmp_path, "01-foundations", "基础与原理", "foundations")
+    write_article(category, "01-first.md", slug="first")
+    path = category / "01-first.md"
+    source = path.read_text(encoding="utf-8")
+    path.write_text(source.replace("author: 苍渊\n", ""), encoding="utf-8")
+    with pytest.raises(AiNotesContentError):
+        AiNotesRepository.load(tmp_path, today=date(2026, 8, 27))
+
+    path.write_text(source.replace("motto: 博观而约取，厚积而薄发。", "motto: '   '"), encoding="utf-8")
+    with pytest.raises(AiNotesContentError):
+        AiNotesRepository.load(tmp_path, today=date(2026, 8, 27))
+```
+
+- [ ] **Step 2: 运行后端测试并确认未知字段失败**
+
+Run: `cd backend && .venv/bin/pytest -q tests/test_ai_notes_repository.py tests/test_ai_notes_validation.py tests/test_ai_notes_api.py`
+
+Expected: FAIL，因为现有 `ArticleFrontmatter` 使用 `extra="forbid"`，尚不接受 `author` 和 `motto`。
+
+- [ ] **Step 3: 实现后端模型与映射**
+
+在 `ArticleFrontmatter` 增加：
+
+```python
+author: str = Field(min_length=1)
+motto: str | None = None
+
+_required_text_not_blank = field_validator("title", "description", "author")(_non_blank)
+
+@field_validator("motto")
+@classmethod
+def motto_not_blank(cls, value: str | None) -> str | None:
+    return None if value is None else _non_blank(value)
+```
+
+在 `AiNoteSummary` 增加：
+
+```python
+author: str
+motto: str | None
+```
+
+在 repository 构造 summary 时映射：
+
+```python
+author=frontmatter.author,
+motto=frontmatter.motto,
+```
+
+更新 README frontmatter 示例与约束：`author` 必填，`motto` 可选但存在时不得为空白。给已经迁移的 Claude Code、AI Native 文章以及当前工作区内任何尚未提交的迁移草稿加入：
+
+```yaml
+author: 苍渊
+motto: 博观而约取，厚积而薄发。
+```
+
+- [ ] **Step 4: 运行后端测试并确认绿色**
+
+Run: `cd backend && .venv/bin/pytest -q tests/test_ai_notes_repository.py tests/test_ai_notes_validation.py tests/test_ai_notes_api.py tests/test_ai_notes_production_content.py && .venv/bin/python -m app.ai_notes.validate`
+
+Expected: 全部 PASS。
+
+- [ ] **Step 5: 写前端 API 合同和作者签名的失败测试**
+
+把所有前端 AI notes fixture 增加：
+
+```typescript
+author: "苍渊",
+motto: "博观而约取，厚积而薄发。",
+```
+
+在 `aiNotesApi.test.ts` 增加缺少作者与空白座右铭均被拒绝的断言。在 `ArticleMarkdown.test.tsx` 的文章渲染测试中改为：
+
+```typescript
+expect(html).toContain("by");
+expect(html).toContain('<strong class="ai-note-author">苍渊</strong>');
+expect(html).toContain("// 博观而约取，厚积而薄发。");
+expect(html).toContain('dateTime="2026-08-27"');
+expect(html).toContain("updated");
+expect(html).not.toContain("约 8 分钟");
+```
+
+在 `styles.test.ts` 增加：
+
+```typescript
+expect(rule(".ai-note-signature")).toContain("font-family: ui-monospace");
+expect(rule(".ai-note-author")).toContain("font-weight: 800");
+expect(rule(".ai-note-author")).toContain("color: var(--ink)");
+expect(rule(".ai-note-motto")).toContain("color: var(--ink-faint)");
+```
+
+- [ ] **Step 6: 运行前端测试并确认合同和 DOM 失败**
+
+Run: `cd webui && npm test -- --run src/aiNotesApi.test.ts src/pages/AiNotesPage.test.tsx src/components/ai-notes/AiNotesTree.test.tsx src/components/ai-notes/ArticleMarkdown.test.tsx src/styles.test.ts`
+
+Expected: FAIL，因为类型解析、DOM 和 CSS 尚未实现作者签名。
+
+- [ ] **Step 7: 实现前端合同与两行签名**
+
+在 `AiNoteSummary`、`SUMMARY_KEYS` 和 `summaryFields` 增加 `author` 与 `motto`，其中 `author` 使用 `nonEmptyString`，`motto` 只允许 `null` 或非空字符串。
+
+把 `AiNoteArticle.tsx` 的元数据块改为：
+
+```tsx
+<div className="ai-note-signature">
+  <p className="ai-note-byline">
+    <span>by</span>{" "}
+    <strong className="ai-note-author">{article.author}</strong>
+    <span aria-hidden="true"> · </span>
+    <time dateTime={article.published_at}>{article.published_at}</time>
+    {article.updated_at && article.updated_at !== article.published_at && <>
+      <span aria-hidden="true"> · </span>
+      <span>updated </span><time dateTime={article.updated_at}>{article.updated_at}</time>
+    </>}
+  </p>
+  {article.motto && <p className="ai-note-motto">// {article.motto}</p>}
+</div>
+```
+
+删除现有 `约 {article.reading_minutes} 分钟` 展示，但保留 API 字段。使用以下样式方向：
+
+```css
+.ai-note-signature { margin-top: 17px; color: var(--ink-faint); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.ai-note-byline, .ai-note-motto { margin: 0; }
+.ai-note-byline { font-size: 12px; }
+.ai-note-author { color: var(--ink); font-size: 15px; font-weight: 800; letter-spacing: .01em; }
+.ai-note-motto { margin-top: 7px; color: var(--ink-faint); font-size: 12px; }
+```
+
+- [ ] **Step 8: 运行前端测试并确认绿色**
+
+Run: `cd webui && npm test -- --run src/aiNotesApi.test.ts src/pages/AiNotesPage.test.tsx src/components/ai-notes/AiNotesTree.test.tsx src/components/ai-notes/ArticleMarkdown.test.tsx src/styles.test.ts`
+
+Expected: 全部 PASS。
+
+- [ ] **Step 9: 提交作者签名功能**
+
+```bash
+git add backend/app/ai_notes/models.py backend/app/ai_notes/repository.py backend/app/ai_notes/README.md backend/app/ai_notes/content/03-tools-and-frameworks/01-claude-code-architecture.md backend/app/ai_notes/content/05-thinking-and-methods/01-ai-native-architecture-design.md backend/tests/test_ai_notes_repository.py backend/tests/test_ai_notes_validation.py backend/tests/test_ai_notes_api.py backend/tests/test_ai_notes_production_content.py webui/src/aiNotesTypes.ts webui/src/aiNotesApi.test.ts webui/src/pages/AiNotesPage.test.tsx webui/src/components/ai-notes/AiNotesTree.test.tsx webui/src/components/ai-notes/ArticleMarkdown.test.tsx webui/src/components/ai-notes/AiNoteArticle.tsx webui/src/styles.css webui/src/styles.test.ts
+git commit -m "feat: add AI notes author signature"
+```
+
+### Task 3: 精读并迁移 Claude Code 架构分析
 
 **Files:**
 - Modify: `backend/tests/test_ai_notes_production_content.py`
@@ -159,6 +361,8 @@ def test_publishes_clean_claude_code_architecture_note() -> None:
     assert article.filename == "claude-code-architecture.md"
     assert article.published_at == TODAY
     assert article.updated_at == TODAY
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("Claude Code", "Agent", "AI 开发工具")
     assert_clean_body(article.markdown)
 ```
@@ -178,6 +382,8 @@ Expected: FAIL at `assert article is not None`。
 title: Claude Code 架构分析：公开能力与工程启发
 slug: claude-code-architecture
 description: 基于官方公开能力，分析 Claude Code 的权限、工具、Hooks、上下文、MCP 与可观测性设计。
+author: 苍渊
+motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
 updatedAt: 2026-08-27
 tags:
@@ -209,7 +415,7 @@ git add backend/app/ai_notes/content/03-tools-and-frameworks/01-claude-code-arch
 git commit -m "docs: publish Claude Code architecture note"
 ```
 
-### Task 3: 精读并迁移 AI Native 架构设计方法
+### Task 4: 精读并迁移 AI Native 架构设计方法
 
 **Files:**
 - Modify: `backend/tests/test_ai_notes_production_content.py`
@@ -232,6 +438,8 @@ def test_publishes_clean_ai_native_architecture_design_note() -> None:
     assert article.filename == "ai-native-architecture-design.md"
     assert article.published_at == TODAY
     assert article.updated_at == TODAY
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("AI Native", "架构设计", "工程方法")
     assert_clean_body(article.markdown)
 ```
@@ -249,6 +457,8 @@ Expected: FAIL at `assert article is not None`。
 title: AI Native 辅助架构设计：协作方法与质量控制
 slug: ai-native-architecture-design
 description: 总结 AI 参与架构设计时的材料治理、结构搭建、方案推演、决策记录与质量收敛方法。
+author: 苍渊
+motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
 updatedAt: 2026-08-27
 tags:
@@ -280,7 +490,7 @@ git add backend/app/ai_notes/content/05-thinking-and-methods/01-ai-native-archit
 git commit -m "docs: publish AI Native architecture design note"
 ```
 
-### Task 4: 精读并迁移企业级 Agent 系统架构
+### Task 5: 精读并迁移企业级 Agent 系统架构
 
 **Files:**
 - Modify: `backend/tests/test_ai_notes_production_content.py`
@@ -307,6 +517,8 @@ def test_publishes_clean_enterprise_agent_architecture_note() -> None:
     assert article.filename == "enterprise-agent-system-architecture.md"
     assert article.published_at == TODAY
     assert article.updated_at == TODAY
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("Agent", "系统架构", "AI 工程")
     assert_clean_body(article.markdown)
 ```
@@ -324,6 +536,8 @@ Expected: FAIL at `assert article is not None`。
 title: 企业级 Agent 系统架构：从循环引擎到信任层级
 slug: enterprise-agent-system-architecture
 description: 从 Agent 循环、状态管理、工具边界、信任层级、子 Agent、治理与评估构建可落地的系统架构。
+author: 苍渊
+motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
 updatedAt: 2026-08-27
 tags:
@@ -355,7 +569,7 @@ git add backend/app/ai_notes/content/02-agent-architecture/01-enterprise-agent-s
 git commit -m "docs: publish enterprise Agent architecture note"
 ```
 
-### Task 5: 精读并迁移向量数据库与 RAG
+### Task 6: 精读并迁移向量数据库与 RAG
 
 **Files:**
 - Modify: `backend/tests/test_ai_notes_production_content.py`
@@ -382,6 +596,8 @@ def test_publishes_clean_vector_database_and_rag_note() -> None:
     assert article.filename == "vector-databases-and-rag.md"
     assert article.published_at == TODAY
     assert article.updated_at == TODAY
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("RAG", "向量数据库", "检索")
     assert_clean_body(article.markdown)
 ```
@@ -399,6 +615,8 @@ Expected: FAIL at `assert article is not None`。
 title: 向量数据库与 RAG：原理、检索与工程设计
 slug: vector-databases-and-rag
 description: 从向量表示和近似最近邻检索出发，讲清 RAG、混合检索、评估与生产选型的工程边界。
+author: 苍渊
+motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
 updatedAt: 2026-08-27
 tags:
@@ -430,7 +648,7 @@ git add backend/app/ai_notes/content/04-ai-engineering/01-vector-databases-and-r
 git commit -m "docs: publish vector database and RAG note"
 ```
 
-### Task 6: 精读并迁移 Agent 系统手册
+### Task 7: 精读并迁移 Agent 系统手册
 
 **Files:**
 - Modify: `backend/tests/test_ai_notes_production_content.py`
@@ -457,6 +675,8 @@ def test_publishes_clean_agent_systems_handbook() -> None:
     assert article.filename == "agent-systems-handbook.md"
     assert article.published_at == TODAY
     assert article.updated_at == TODAY
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("Agent", "AI 工程", "系统设计")
     assert_clean_body(article.markdown)
 ```
@@ -474,6 +694,8 @@ Expected: FAIL at `assert article is not None`。
 title: Agent 系统手册：从概念到工程实践
 slug: agent-systems-handbook
 description: 系统梳理 Agent 的最小闭环、运行时、工具、上下文、治理、评估与工程落地路线。
+author: 苍渊
+motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
 updatedAt: 2026-08-27
 tags:
@@ -505,11 +727,11 @@ git add backend/app/ai_notes/content/01-foundations/01-agent-systems-handbook.md
 git commit -m "docs: publish Agent systems handbook"
 ```
 
-### Task 7: 全批次交叉审校、渲染验证与回归
+### Task 8: 全批次交叉审校、渲染验证与回归
 
 **Files:**
 - Modify: `backend/tests/test_ai_notes_production_content.py`
-- Modify only if review finds defects: the five article files from Tasks 2–6
+- Modify only if review finds defects: the five article files from Tasks 3–7
 
 **Interfaces:**
 - Produces: exactly five published production articles across exactly five categories
