@@ -12,7 +12,7 @@ from app.cloud_replica.management_repository import (
     ReplicaReviewRepository,
 )
 from app.fleet.catalog import AgentCatalog
-from app.operations.models import EventFilters
+from app.operations.models import EventFilters, UsageLeader
 
 
 NOW = datetime(2026, 8, 14, 8, 0, tzinfo=UTC)
@@ -269,36 +269,48 @@ def test_excluded_agents_are_absent_from_operation_projections():
 
 
 class _BriefConnection(_Connection):
-    """Serves projection rows, the generation watermark and Session counts."""
+    """Serves projection rows and the generation watermark."""
 
     def __init__(self, rows, session_counts, committed_at=NOW):
         super().__init__(rows)
         self.session_counts = session_counts
         self.committed_at = committed_at
-        self.session_windows: list[tuple] = []
+        self.usage_windows: list[tuple] = []
 
     def execute(self, sql, params=()):
         if "max(committed_at)" in sql:
             return _Result([{"committed_at": self.committed_at}])
-        if "platform_replica.sessions" in sql:
-            self.session_windows.append(params)
-            return _Result([
-                {"agent_id": agent_id, "conversations": count}
-                for agent_id, count in self.session_counts.items()
-            ])
         return super().execute(sql, params)
 
 
 def _brief_repository(connection):
+    catalog = AgentCatalog.default()
+
+    def usage_reader(date_from, date_to, visibility):
+        connection.usage_windows.append((date_from, date_to, visibility))
+        allowed = set(catalog.ids_for_visibility(visibility))
+        values = [
+            UsageLeader(
+                agent_id=agent_id,
+                agent_name=catalog.profile(agent_id, agent_id).name,
+                conversations=count,
+            )
+            for agent_id, count in connection.session_counts.items()
+            if agent_id in allowed and not catalog.is_excluded(agent_id)
+        ]
+        values.sort(key=lambda item: (-item.conversations, item.agent_id))
+        return tuple(values)
+
     return ReplicaOperationsRepository(
         "postgresql://replica",
         cipher=FieldCipher(b"m" * 32),
         connect=lambda *_args, **_kwargs: connection,
         now=lambda: NOW,
+        usage_reader=usage_reader,
     )
 
 
-def test_usage_leaders_counts_business_sessions_and_skips_system_agents():
+def test_usage_leaders_delegate_to_answered_turn_reader():
     connection = _BriefConnection(
         [],
         {
@@ -319,9 +331,8 @@ def test_usage_leaders_counts_business_sessions_and_skips_system_agents():
         ("hr-bot", 3),
     ]
     assert [item.agent_name for item in leaders] == ["Marketing GTM", "HR Agent"]
-    # The window is pushed into SQL rather than filtered in Python.
-    assert connection.session_windows == [
-        (datetime(2026, 8, 13, 8, 0, tzinfo=UTC), NOW)
+    assert connection.usage_windows == [
+        (datetime(2026, 8, 13, 8, 0, tzinfo=UTC), NOW, "business")
     ]
 
 

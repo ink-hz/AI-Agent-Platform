@@ -226,6 +226,10 @@ class ReplicaOperationsRepository(_ProjectionReader):
         "runtime_offline": "runtime",
     }
 
+    def __init__(self, *args, usage_reader=None, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._usage_reader = usage_reader
+
     @classmethod
     def _legacy_event_family(cls, event_type: str) -> str:
         return cls._LEGACY_EVENT_FAMILIES.get(event_type, "execution")
@@ -278,38 +282,16 @@ class ReplicaOperationsRepository(_ProjectionReader):
         date_to: datetime,
         agent_visibility: str = "business",
     ) -> tuple[UsageLeader, ...]:
-        # A cloud conversation count is derived from the replicated Sessions
-        # themselves: one Session created inside the window is one new
-        # conversation. The local poller's usage occurrences are not replicated,
-        # so counting them here would always report zero.
-        allowed = set(self._catalog.ids_for_visibility(agent_visibility))
+        if self._usage_reader is None:
+            raise ReviewRepositoryError("replica usage unavailable")
         try:
-            with self._connection() as connection:
-                rows = list(
-                    connection.execute(
-                        "select agent_id, count(*) as conversations "
-                        "from platform_replica.sessions "
-                        "where created_at >= %s and created_at <= %s "
-                        "group by agent_id",
-                        (date_from, date_to),
-                    ).fetchall()
-                )
+            return tuple(
+                self._usage_reader(date_from, date_to, agent_visibility)
+            )
+        except ReviewRepositoryError:
+            raise
         except Exception as error:
             raise ReviewRepositoryError("replica usage unavailable") from error
-        leaders = [
-            UsageLeader(
-                agent_id=str(row["agent_id"]),
-                agent_name=self._catalog.profile(
-                    str(row["agent_id"]), str(row["agent_id"])
-                ).name,
-                conversations=int(row["conversations"]),
-            )
-            for row in rows
-            if str(row["agent_id"]) in allowed
-            and not self._catalog.is_excluded(str(row["agent_id"]))
-        ]
-        leaders.sort(key=lambda item: (-item.conversations, item.agent_id))
-        return tuple(leaders)
 
     def latest_run(self, run_name: str) -> RunHealth | None:
         # The cloud refresh unit is the replica import, not a local poller. A

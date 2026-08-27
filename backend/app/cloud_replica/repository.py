@@ -29,6 +29,7 @@ from app.observability.models import (
     TurnDetail,
 )
 from app.observability.repository import ObservabilityReadError
+from app.operations.models import UsageLeader
 
 from .crypto import FieldCipher, ReplicaCryptoError
 
@@ -288,6 +289,38 @@ class ReplicaObservabilityRepository:
             limit=limit,
             offset=offset,
         )
+
+    def usage_leaders(
+        self,
+        date_from: datetime,
+        date_to: datetime,
+        agent_visibility: str = "business",
+    ) -> tuple[UsageLeader, ...]:
+        allowed = set(self._catalog.ids_for_visibility(agent_visibility))
+        counts: dict[str, int] = {}
+        for record in self._records():
+            agent_id = str(record.get("agent_id") or "")
+            if agent_id not in allowed or self._catalog.is_excluded(agent_id):
+                continue
+            for turn in record.get("turns", []):
+                occurred_at = _time(turn["created_at"])
+                answer = str(
+                    (turn.get("answer") or {}).get("text") or ""
+                ).strip()
+                if date_from <= occurred_at <= date_to and answer:
+                    counts[agent_id] = counts.get(agent_id, 0) + 1
+        leaders = [
+            UsageLeader(
+                agent_id=agent_id,
+                agent_name=self._catalog.profile(agent_id, agent_id).name,
+                conversations=conversations,
+            )
+            for agent_id, conversations in counts.items()
+        ]
+        leaders.sort(
+            key=lambda item: (-item.conversations, item.agent_name, item.agent_id)
+        )
+        return tuple(leaders)
 
     @staticmethod
     def _attachment(

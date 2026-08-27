@@ -263,6 +263,7 @@ def build_cloud_replica_services(
         cipher=FieldCipher(encryption_key),
         stale_seconds=config.replica_stale_seconds,
         catalog=catalog,
+        usage_reader=repository.usage_leaders,
     )
     observability_service = ObservabilityService(repository)
     fleet_service = FleetReadService(

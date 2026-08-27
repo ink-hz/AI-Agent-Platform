@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from copy import deepcopy
 import hashlib
 import json
 
@@ -277,3 +278,57 @@ def test_repository_excludes_platform_hidden_agents_from_all_read_paths():
     assert "fae-bot" not in {
         item.bot_id for item in repository.usage_snapshot().records
     }
+
+
+def test_usage_leaders_count_answered_turns_not_sessions():
+    now = datetime(2026, 8, 27, 1, 24, tzinfo=UTC)
+    records = []
+    expected_turns = 0
+    for session_index in range(15):
+        turn_count = 2 if session_index == 14 else 3
+        record = _record(
+            now,
+            key=f"{session_index + 1:052x}",
+            agent_id="ai-fae-agent",
+            turn_key=f"{session_index + 101:052x}",
+        )
+        prototype = record["turns"][0]
+        record["turns"] = []
+        for turn_index in range(turn_count):
+            turn = deepcopy(prototype)
+            turn["key"] = f"{session_index * 10 + turn_index + 201:052x}"
+            turn["turn_index"] = turn_index + 1
+            turn["created_at"] = (
+                now - timedelta(minutes=session_index + turn_index)
+            ).isoformat().replace("+00:00", "Z")
+            record["turns"].append(turn)
+            expected_turns += 1
+        records.append(record)
+
+    empty_answer = _record(
+        now, key="e" * 52, agent_id="ai-fae-agent", turn_key="8" * 52
+    )
+    empty_answer["turns"][0]["answer"]["text"] = ""
+    records.append(empty_answer)
+
+    outside_window = _record(
+        now, key="d" * 52, agent_id="ai-fae-agent", turn_key="7" * 52
+    )
+    outside_window["turns"][0]["created_at"] = (
+        now - timedelta(hours=25)
+    ).isoformat().replace("+00:00", "Z")
+    records.append(outside_window)
+
+    records.append(_record(
+        now, key="c" * 52, agent_id="test-bot", turn_key="6" * 52
+    ))
+    repository, _ = _repository(now, tuple(records))
+
+    leaders = repository.usage_leaders(
+        now - timedelta(hours=24), now, "business"
+    )
+
+    assert expected_turns == 44
+    assert [(item.agent_id, item.agent_name, item.conversations) for item in leaders] == [
+        ("ai-fae-agent", "AI FAE Agent", 44),
+    ]

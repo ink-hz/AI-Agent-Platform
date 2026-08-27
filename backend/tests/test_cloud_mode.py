@@ -92,6 +92,9 @@ def test_cloud_fleet_enables_catalog_roster_completion(monkeypatch, tmp_path):
         def check_schema(self):
             return None
 
+        def usage_leaders(self, _date_from, _date_to, _visibility):
+            return ()
+
     repository = ReplicaRepository()
     monkeypatch.setattr("app.main.read_secret_file", lambda _path: "database-url")
     monkeypatch.setattr("app.main.read_key_file", lambda *_args, **_kwargs: b"0" * 32)
@@ -103,9 +106,14 @@ def test_cloud_fleet_enables_catalog_roster_completion(monkeypatch, tmp_path):
         "app.main.ReplicaReviewRepository",
         lambda *_args, **_kwargs: object(),
     )
+    operations_kwargs = {}
+
+    def build_operations_repository(*_args, **kwargs):
+        operations_kwargs.update(kwargs)
+        return object()
+
     monkeypatch.setattr(
-        "app.main.ReplicaOperationsRepository",
-        lambda *_args, **_kwargs: object(),
+        "app.main.ReplicaOperationsRepository", build_operations_repository,
     )
     monkeypatch.setattr(
         "app.main.ReplicaFlywheelRepository",
@@ -132,3 +140,4 @@ def test_cloud_fleet_enables_catalog_roster_completion(monkeypatch, tmp_path):
     assert built_fleet is fleet_service
     assert built_repository is repository
     assert captured["include_catalog_agents"] is True
+    assert operations_kwargs["usage_reader"] == repository.usage_leaders
