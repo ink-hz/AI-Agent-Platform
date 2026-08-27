@@ -179,6 +179,78 @@ def test_operation_projection_restores_safe_event_semantics():
     assert event.source_kind == "admin"
 
 
+def test_platform_operation_projection_restores_null_agent_from_safe_index():
+    cipher = FieldCipher(b"m" * 32)
+    record = {
+        "kind": "operation_event_projection", "key": "p" * 52,
+        "agent_id": None,
+        "event_type": "data_access_recovered",
+        "event_family": "recovery",
+        "severity": "info",
+        "status": "historical",
+        "title": {"text": "flywheel data access recovered"},
+        "summary": {"text": "The source is readable again."},
+        "source_kind": "flywheel",
+        "occurred_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v2",
+    }
+    row = _row(cipher, record)
+    row["agent_id"] = "platform"
+    repository = ReplicaOperationsRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([row]), now=lambda: NOW,
+    )
+
+    event = repository.list_events(EventFilters(), 50, 0).items[0]
+
+    assert event.agent_id is None
+    assert event.event_family == "recovery"
+    assert event.source_kind == "flywheel"
+
+
+def test_active_attention_excludes_historical_attention_events():
+    cipher = FieldCipher(b"m" * 32)
+    records = [
+        {
+            "kind": "operation_event_projection", "key": "a" * 52,
+            "agent_id": "ai-admin-agent",
+            "event_type": "remote_sync_unavailable",
+            "event_family": "data",
+            "severity": "attention",
+            "status": "active",
+            "title": {"text": "Synchronization is unavailable"},
+            "summary": {"text": "The latest synchronization failed."},
+            "source_kind": "admin",
+            "occurred_at": "2026-08-14T08:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        },
+        {
+            "kind": "operation_event_projection", "key": "h" * 52,
+            "agent_id": "ai-fae-agent",
+            "event_type": "fallback",
+            "event_family": "execution",
+            "severity": "attention",
+            "status": "historical",
+            "title": {"text": "A historical fallback occurred"},
+            "summary": {"text": "This event is no longer active."},
+            "source_kind": "fae",
+            "occurred_at": "2026-08-14T07:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        },
+    ]
+    repository = ReplicaOperationsRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record) for record in records]),
+        now=lambda: NOW,
+    )
+
+    attention = repository.list_active_attention("business")
+
+    assert [(item.agent_id, item.status) for item in attention] == [
+        ("ai-admin-agent", "active")
+    ]
+
+
 def test_old_operation_projection_uses_explicit_compatibility_defaults():
     cipher = FieldCipher(b"m" * 32)
     record = {
@@ -361,7 +433,11 @@ def test_brief_reports_current_freshness_and_real_conversation_counts():
         {
             "kind": "operation_event_projection", "key": "c" * 52,
             "agent_id": "hr-bot", "event_type": "execution_failure",
-            "severity": "critical", "summary": {"text": "执行失败"},
+            "event_family": "execution",
+            "severity": "critical", "status": "active",
+            "title": {"text": "执行失败"},
+            "summary": {"text": "执行失败"},
+            "source_kind": "metabot",
             "occurred_at": "2026-08-14T07:30:00.000000Z",
             "sanitizer_policy_version": "v2",
         },

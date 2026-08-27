@@ -19,6 +19,9 @@ from app.review.repository import ReviewRepositoryError
 from .crypto import FieldCipher
 
 
+_PLATFORM_EVENT_AGENT_ID = "platform"
+
+
 def _b64(value: bytes | memoryview) -> str:
     return base64.urlsafe_b64encode(bytes(value)).rstrip(b"=").decode("ascii")
 
@@ -106,11 +109,17 @@ class _ProjectionReader:
         ):
             raise ValueError
         value = json.loads(plaintext)
+        payload_agent_id = value.get("agent_id") if isinstance(value, dict) else None
+        indexed_agent_matches = payload_agent_id == row["agent_id"] or (
+            row["projection_kind"] == "operation_event_projection"
+            and payload_agent_id is None
+            and row["agent_id"] == _PLATFORM_EVENT_AGENT_ID
+        )
         if (
             not isinstance(value, dict)
             or value.get("kind") != row["projection_kind"]
             or value.get("key") != row["record_key"]
-            or value.get("agent_id") != row["agent_id"]
+            or not indexed_agent_matches
         ):
             raise ValueError
         return value
@@ -273,7 +282,8 @@ class ReplicaOperationsRepository(_ProjectionReader):
     def list_active_attention(self, _agent_visibility: str):
         return tuple(
             item for item in self.list_events(EventFilters(), 10_000, 0).items
-            if item.severity in {"attention", "critical"}
+            if item.status == "active"
+            and item.severity in {"attention", "critical"}
         )
 
     def usage_leaders(
