@@ -23,10 +23,10 @@ AI 工程笔记页面已经具备左侧分类树、Markdown 阅读器和首页�
 
 | 分类 | 源文件 | 目标文件 | URL slug | 发布标题 |
 | --- | --- | --- | --- | --- |
-| 基础与原理 | `Agent学习系统手册-从概念到工程实践.md` | `01-foundations/01-agent-systems-handbook.md` | `agent-systems-handbook` | Agent 系统手册：从概念到工程实践 |
+| 基础与原理 | `Agent学习系统手册-从概念到工程实践.md` | `01-foundations/01-agent-engineering-learning-map.md` | `agent-engineering-learning-map` | Agent 工程学习地图：从模型循环到生产系统 |
 | Agent 架构 | `企业级Agent系统架构设计-从循环引擎到信任层级.md` | `02-agent-architecture/01-enterprise-agent-system-architecture.md` | `enterprise-agent-system-architecture` | 企业级 Agent 系统架构：从循环引擎到信任层级 |
 | 工具与框架 | `ClaudeCode架构设计理论分析.md` | `03-tools-and-frameworks/01-claude-code-architecture.md` | `claude-code-architecture` | Claude Code 架构分析：公开能力与工程启发 |
-| AI 工程实践 | `向量数据库与RAG-深度理论知识.md` | `04-ai-engineering/01-vector-databases-and-rag.md` | `vector-databases-and-rag` | 向量数据库与 RAG：原理、检索与工程设计 |
+| AI 工程实践 | `向量数据库与RAG-深度理论知识.md` | `04-ai-engineering/01-rag-retrieval-engineering.md` | `rag-retrieval-engineering` | RAG 检索工程：从向量索引到可验证回答 |
 | 思考与方法 | `AI-Native辅助大型架构总体设计-最佳实践.md` | `05-thinking-and-methods/01-ai-native-architecture-design.md` | `ai-native-architecture-design` | AI Native 辅助架构设计：协作方法与质量控制 |
 
 源仓库只读。目标文章是清洗后的独立副本，不建立符号链接、构建依赖或运行时连接。
@@ -48,10 +48,10 @@ AI 工程笔记页面已经具备左侧分类树、Markdown 阅读器和首页�
 
 ### 文章侧重点
 
-- Agent 系统手册：保留 Agent loop、运行时、工具、上下文、治理、评估和落地路线；压缩重复的框架清单，避免形成过时的产品百科。
+- Agent 工程学习地图：保留概念依赖、递进实验、验收方式和落地路线；详细运行时、工具、治理与评估方案转到企业架构稿，避免重复和过时的产品百科。
 - 企业级 Agent 系统架构：保留状态机、信任层级、Hook、子 Agent、Prompt 分层、上下文、制品和测试体系；完全移除原项目规模、迭代次数和交付周期。
 - Claude Code 架构分析：只把 Anthropic 官方公开能力写成事实；内部实现只能作为明确标注的工程推断。旧链接按当前官方文档结构更新。
-- 向量数据库与 RAG：保留向量检索、Embedding、混合检索、RAG 和 GraphRAG；删除过时的模型知识截止日期示例，修正来源、术语和产品对比。
+- RAG 检索工程：保留向量检索、Embedding、混合检索、RAG 和 GraphRAG；以证据流水线重构全文，删除过时的模型示例和产品排名，修正来源与术语。
 - AI Native 辅助架构设计：保留人机分工、材料治理、迭代审视、决策记录和质量门禁；改写基于“两项目、2800 行、19 轮、3 天”的旧经历叙事。
 
 ## 旧标记防护

@@ -36,10 +36,10 @@
 - `webui/src/aiNotesTypes.ts`：校验作者和可选座右铭 API 字段。
 - `webui/src/components/ai-notes/AiNoteArticle.tsx`：渲染两行极简作者签名并移除阅读时长。
 - `webui/src/styles.css`：实现作者名突出、其余署名信息克制的样式。
-- `backend/app/ai_notes/content/01-foundations/01-agent-systems-handbook.md`：Agent 系统综合手册。
+- `backend/app/ai_notes/content/01-foundations/01-agent-engineering-learning-map.md`：Agent 工程学习地图。
 - `backend/app/ai_notes/content/02-agent-architecture/01-enterprise-agent-system-architecture.md`：企业 Agent 系统架构。
 - `backend/app/ai_notes/content/03-tools-and-frameworks/01-claude-code-architecture.md`：Claude Code 公开能力与架构启发。
-- `backend/app/ai_notes/content/04-ai-engineering/01-vector-databases-and-rag.md`：向量数据库与 RAG 原理和工程设计。
+- `backend/app/ai_notes/content/04-ai-engineering/01-rag-retrieval-engineering.md`：RAG 检索工程与可验证回答。
 - `backend/app/ai_notes/content/05-thinking-and-methods/01-ai-native-architecture-design.md`：AI 辅助架构设计方法。
 
 ### Task 1: 建立生产内容契约与旧标记门禁
@@ -344,7 +344,7 @@ git commit -m "feat: add AI notes author signature"
 
 - [ ] **Step 1: 从头到尾精读 323 行源文**
 
-按顺序阅读全文，不跳过参考来源。对“事实边界、产品形态、权限与工具、Hooks、上下文、MCP、Subagents、可观测性、工程启发、不能断言的部分”逐节判断。重点识别已变更的 Anthropic 文档路径、已经演进的 Hook/配置名称、把公开行为误写成内部实现的段落，以及与 Agent 系统手册重复而不必保留的泛论述。
+按顺序阅读全文，不跳过参考来源。对“事实边界、产品形态、权限与工具、Hooks、上下文、MCP、Subagents、可观测性、工程启发、不能断言的部分”逐节判断。重点识别已变更的 Anthropic 文档路径、已经演进的 Hook/配置名称、把公开行为误写成内部实现的段落，以及与 Agent 工程学习地图重复而不必保留的泛论述。
 
 - [ ] **Step 2: 核验所有产品事实**
 
@@ -569,15 +569,15 @@ git add backend/app/ai_notes/content/02-agent-architecture/01-enterprise-agent-s
 git commit -m "docs: publish enterprise Agent architecture note"
 ```
 
-### Task 6: 精读并迁移向量数据库与 RAG
+### Task 6: 精读并迁移 RAG 检索工程
 
 **Files:**
 - Modify: `backend/tests/test_ai_notes_production_content.py`
-- Create: `backend/app/ai_notes/content/04-ai-engineering/01-vector-databases-and-rag.md`
+- Create: `backend/app/ai_notes/content/04-ai-engineering/01-rag-retrieval-engineering.md`
 
 **Interfaces:**
 - Source: `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/向量数据库与RAG-深度理论知识.md`
-- Produces: `/ai-notes/ai-engineering/vector-databases-and-rag`
+- Produces: `/ai-notes/ai-engineering/rag-retrieval-engineering`
 
 - [ ] **Step 1: 从头到尾精读 1899 行源文**
 
@@ -590,21 +590,21 @@ HNSW、FAISS、原始 RAG、BM25/融合方法和 GraphRAG 使用原论文或维�
 - [ ] **Step 3: 写失败的文章契约测试**
 
 ```python
-def test_publishes_clean_vector_database_and_rag_note() -> None:
-    article = published_article("ai-engineering", "vector-databases-and-rag")
-    assert article.title == "向量数据库与 RAG：原理、检索与工程设计"
-    assert article.filename == "vector-databases-and-rag.md"
+def test_publishes_clean_rag_retrieval_engineering_note() -> None:
+    article = published_article("ai-engineering", "rag-retrieval-engineering")
+    assert article.title == "RAG 检索工程：从向量索引到可验证回答"
+    assert article.filename == "rag-retrieval-engineering.md"
     assert article.published_at == TODAY
     assert article.updated_at == TODAY
     assert article.author == "苍渊"
     assert article.motto == "博观而约取，厚积而薄发。"
-    assert article.tags == ("RAG", "向量数据库", "检索")
+    assert article.tags == ("RAG", "向量检索", "AI 工程")
     assert_clean_body(article.markdown)
 ```
 
 - [ ] **Step 4: 运行测试，确认文章缺失失败**
 
-Run: `cd backend && .venv/bin/pytest -q tests/test_ai_notes_production_content.py::test_publishes_clean_vector_database_and_rag_note`
+Run: `cd backend && .venv/bin/pytest -q tests/test_ai_notes_production_content.py::test_publishes_clean_rag_retrieval_engineering_note`
 
 Expected: FAIL at `assert article is not None`。
 
@@ -612,17 +612,17 @@ Expected: FAIL at `assert article is not None`。
 
 ```yaml
 ---
-title: 向量数据库与 RAG：原理、检索与工程设计
-slug: vector-databases-and-rag
-description: 从向量表示和近似最近邻检索出发，讲清 RAG、混合检索、评估与生产选型的工程边界。
+title: RAG 检索工程：从向量索引到可验证回答
+slug: rag-retrieval-engineering
+description: 把 RAG 拆成可评估的索引、召回、重排、上下文组装与生成链路，理解向量索引、混合检索和 GraphRAG 的工程边界。
 author: 苍渊
 motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
 updatedAt: 2026-08-27
 tags:
   - RAG
-  - 向量数据库
-  - 检索
+  - 向量检索
+  - AI 工程
 draft: true
 ---
 ```
@@ -637,26 +637,26 @@ Expected: 草稿结构通过。随后逐段检查公式、数字、术语和引�
 
 - [ ] **Step 7: 运行文章测试与校验**
 
-Run: `cd backend && .venv/bin/pytest -q tests/test_ai_notes_production_content.py::test_publishes_clean_vector_database_and_rag_note && .venv/bin/python -m app.ai_notes.validate`
+Run: `cd backend && .venv/bin/pytest -q tests/test_ai_notes_production_content.py::test_publishes_clean_rag_retrieval_engineering_note && .venv/bin/python -m app.ai_notes.validate`
 
 Expected: PASS；校验显示 4 篇已发布文章。
 
 - [ ] **Step 8: 提交文章**
 
 ```bash
-git add backend/app/ai_notes/content/04-ai-engineering/01-vector-databases-and-rag.md backend/tests/test_ai_notes_production_content.py
-git commit -m "docs: publish vector database and RAG note"
+git add backend/app/ai_notes/content/04-ai-engineering/01-rag-retrieval-engineering.md backend/tests/test_ai_notes_production_content.py
+git commit -m "docs: publish RAG retrieval engineering note"
 ```
 
-### Task 7: 精读并迁移 Agent 系统手册
+### Task 7: 精读并迁移 Agent 工程学习地图
 
 **Files:**
 - Modify: `backend/tests/test_ai_notes_production_content.py`
-- Create: `backend/app/ai_notes/content/01-foundations/01-agent-systems-handbook.md`
+- Create: `backend/app/ai_notes/content/01-foundations/01-agent-engineering-learning-map.md`
 
 **Interfaces:**
 - Source: `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Agent学习系统手册-从概念到工程实践.md`
-- Produces: `/ai-notes/foundations/agent-systems-handbook`
+- Produces: `/ai-notes/foundations/agent-engineering-learning-map`
 
 - [ ] **Step 1: 从头到尾精读 2452 行源文**
 
@@ -669,21 +669,21 @@ Claude Code、MCP、OpenAI Agents、LangGraph、CrewAI、AutoGen、Dify 等产�
 - [ ] **Step 3: 写失败的文章契约测试**
 
 ```python
-def test_publishes_clean_agent_systems_handbook() -> None:
-    article = published_article("foundations", "agent-systems-handbook")
-    assert article.title == "Agent 系统手册：从概念到工程实践"
-    assert article.filename == "agent-systems-handbook.md"
+def test_publishes_clean_agent_engineering_learning_map() -> None:
+    article = published_article("foundations", "agent-engineering-learning-map")
+    assert article.title == "Agent 工程学习地图：从模型循环到生产系统"
+    assert article.filename == "agent-engineering-learning-map.md"
     assert article.published_at == TODAY
     assert article.updated_at == TODAY
     assert article.author == "苍渊"
     assert article.motto == "博观而约取，厚积而薄发。"
-    assert article.tags == ("Agent", "AI 工程", "系统设计")
+    assert article.tags == ("Agent", "学习地图", "AI 工程")
     assert_clean_body(article.markdown)
 ```
 
 - [ ] **Step 4: 运行测试，确认文章缺失失败**
 
-Run: `cd backend && .venv/bin/pytest -q tests/test_ai_notes_production_content.py::test_publishes_clean_agent_systems_handbook`
+Run: `cd backend && .venv/bin/pytest -q tests/test_ai_notes_production_content.py::test_publishes_clean_agent_engineering_learning_map`
 
 Expected: FAIL at `assert article is not None`。
 
@@ -691,17 +691,17 @@ Expected: FAIL at `assert article is not None`。
 
 ```yaml
 ---
-title: Agent 系统手册：从概念到工程实践
-slug: agent-systems-handbook
-description: 系统梳理 Agent 的最小闭环、运行时、工具、上下文、治理、评估与工程落地路线。
+title: Agent 工程学习地图：从模型循环到生产系统
+slug: agent-engineering-learning-map
+description: 按行动循环、工具、运行时、上下文、治理和评估建立 Agent 工程能力，并用递进实验验证每一阶段是否真正掌握。
 author: 苍渊
 motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
 updatedAt: 2026-08-27
 tags:
   - Agent
+  - 学习地图
   - AI 工程
-  - 系统设计
 draft: true
 ---
 ```
@@ -716,15 +716,15 @@ Expected: 草稿结构通过。随后完整复读目标稿，核对章节之间�
 
 - [ ] **Step 7: 运行文章测试与校验**
 
-Run: `cd backend && .venv/bin/pytest -q tests/test_ai_notes_production_content.py::test_publishes_clean_agent_systems_handbook && .venv/bin/python -m app.ai_notes.validate`
+Run: `cd backend && .venv/bin/pytest -q tests/test_ai_notes_production_content.py::test_publishes_clean_agent_engineering_learning_map && .venv/bin/python -m app.ai_notes.validate`
 
 Expected: PASS；校验显示 5 篇已发布文章。
 
 - [ ] **Step 8: 提交文章**
 
 ```bash
-git add backend/app/ai_notes/content/01-foundations/01-agent-systems-handbook.md backend/tests/test_ai_notes_production_content.py
-git commit -m "docs: publish Agent systems handbook"
+git add backend/app/ai_notes/content/01-foundations/01-agent-engineering-learning-map.md backend/tests/test_ai_notes_production_content.py
+git commit -m "docs: publish Agent engineering learning map"
 ```
 
 ### Task 8: 全批次交叉审校、渲染验证与回归
@@ -748,10 +748,10 @@ def test_first_batch_is_exactly_the_approved_five_articles() -> None:
         for category in index.categories
     }
     assert actual == {
-        "foundations": ("agent-systems-handbook",),
+        "foundations": ("agent-engineering-learning-map",),
         "agent-architecture": ("enterprise-agent-system-architecture",),
         "tools-and-frameworks": ("claude-code-architecture",),
-        "ai-engineering": ("vector-databases-and-rag",),
+        "ai-engineering": ("rag-retrieval-engineering",),
         "thinking-and-methods": ("ai-native-architecture-design",),
     }
 ```
