@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { Account } from "../auth";
-import { conversationInputTooLarge, startConversation, type ConversationSubmission } from "../conversationApi";
+import { ConversationApiError, conversationInputTooLarge, startConversation, type ConversationSubmission } from "../conversationApi";
 import type { Conversation } from "../conversationTypes";
 import { navigate } from "../router";
 
@@ -18,6 +18,13 @@ export interface BrainPageClient {
 
 const DEFAULT_CLIENT: BrainPageClient = { createSubmission: startConversation };
 
+function isBrainUnavailable(error: unknown): boolean {
+  if (!(error instanceof ConversationApiError) || error.status !== 503) return false;
+  const detail = error.detail;
+  return typeof detail === "object" && detail !== null
+    && "detail" in detail && detail.detail === "Agent Brain unavailable";
+}
+
 export function BrainPage({
   account,
   client = DEFAULT_CLIENT,
@@ -31,7 +38,7 @@ export function BrainPage({
 }) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
-  const [failure, setFailure] = useState(false);
+  const [failure, setFailure] = useState<"unavailable" | "other" | null>(null);
   const retained = useRef<{ text: string; submission: ConversationSubmission } | null>(null);
   const submitController = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
@@ -52,14 +59,16 @@ export function BrainPage({
     submitController.current = controller;
     inFlight.current = true;
     setPending(true);
-    setFailure(false);
+    setFailure(null);
     try {
       const result = await selected.submission.send(controller.signal);
       retained.current = null;
       onConversationCreated?.(result.conversation);
       onOpenConversation(`/conversations/${encodeURIComponent(result.conversation.conversation_id)}`);
-    } catch {
-      if (!controller.signal.aborted) setFailure(true);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setFailure(isBrainUnavailable(error) ? "unavailable" : "other");
+      }
     } finally {
       if (submitController.current === controller) {
         inFlight.current = false;
@@ -90,7 +99,7 @@ export function BrainPage({
             const next = event.target.value;
             setText(next);
             if (retained.current?.text !== next.trim()) retained.current = null;
-            setFailure(false);
+            setFailure(null);
           }}
           placeholder="描述目标、背景和希望得到的结果…"
           rows={5}
@@ -105,7 +114,9 @@ export function BrainPage({
       </form>
       {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
       {failure && <div className="brain-submit-error" role="alert">
-        <span>对话暂未创建成功。网络恢复后可使用同一次请求安全重试。</span>
+        <span>{failure === "unavailable"
+          ? "Agent 大脑暂不可用。请稍后使用同一次请求重试。"
+          : "对话暂未创建成功。网络恢复后可使用同一次请求安全重试。"}</span>
         <button className="brain-retry" disabled={pending} onClick={() => void send()} type="button">重新提交</button>
       </div>}
       <div className="brain-examples" aria-label="任务示例">

@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Account } from "../auth";
+import { ConversationApiError } from "../conversationApi";
 import type { ConversationSubmissionResult } from "../conversationTypes";
 import { BrainPage, type BrainPageClient } from "./BrainPage";
 
@@ -115,6 +116,26 @@ describe("BrainPage", () => {
 
     expect(createSubmission).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows an explicit unavailable error for a disabled Brain runtime", async () => {
+    const send = vi.fn().mockRejectedValue(
+      new ConversationApiError(503, { detail: "Agent Brain unavailable" }),
+    );
+    const client: BrainPageClient = {
+      createSubmission: vi.fn().mockReturnValue({ idempotencyKey: "same", send }),
+    };
+    await act(async () => root.render(<BrainPage account={account} client={client} onOpenConversation={vi.fn()} />));
+    const textarea = container.querySelector("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "找视觉人才");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>(".brain-submit")?.click());
+
+    expect(container.textContent).toContain("Agent 大脑暂不可用");
+    expect(container.textContent).toContain("使用同一次请求重试");
+    expect(container.textContent).not.toContain("正在准备");
   });
 
   it("blocks text that exceeds 32 KiB after UTF-8 encoding", async () => {

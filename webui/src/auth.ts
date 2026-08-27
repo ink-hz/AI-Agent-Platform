@@ -41,10 +41,6 @@ export interface GovernanceEvent {
 }
 
 
-export function agentBrainShellEnabled(): boolean {
-  return document.querySelector<HTMLMetaElement>('meta[name="platform-agent-brain-mode"]')?.content !== "disabled";
-}
-
 export class PlatformApiError extends Error {
   constructor(public status: number, public detail: unknown = null) {
     super(`platform API ${status}`);

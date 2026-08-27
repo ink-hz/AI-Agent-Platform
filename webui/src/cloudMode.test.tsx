@@ -25,21 +25,16 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
   document.querySelector('meta[name="platform-identity-mode"]')?.remove();
-  document.querySelector('meta[name="platform-agent-brain-mode"]')?.remove();
   window.history.replaceState({}, "", "/");
 });
 
 
 describe("cloud replica mode", () => {
-  it("shows a useful preparation page instead of a broken Brain composer while Brain is disabled", async () => {
+  it("opens the real Brain composer without a release availability gate", async () => {
     const identityMeta = document.createElement("meta");
     identityMeta.name = "platform-identity-mode";
     identityMeta.content = "enabled";
     document.head.append(identityMeta);
-    const brainMeta = document.createElement("meta");
-    brainMeta.name = "platform-agent-brain-mode";
-    brainMeta.content = "disabled";
-    document.head.append(brainMeta);
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       internal_user_id: "member", display_name: "成员", role: "member",
       departments: [], gender: null, observation_agent_ids: [],
@@ -49,9 +44,8 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(container.querySelector("#brain-preparing-heading")?.textContent).toBe("Agent 大脑正在准备");
-    expect(container.textContent).toContain("专业 Agent");
-    expect(container.querySelector("#brain-request")).toBeNull();
+    expect(container.querySelector("#brain-heading")?.textContent).toBe("Agent 大脑");
+    expect(container.querySelector("#brain-request")).not.toBeNull();
   });
 
   it("opens the authenticated cloud root as the continuous Agent Brain composer", async () => {
@@ -59,10 +53,6 @@ describe("cloud replica mode", () => {
     meta.name = "platform-identity-mode";
     meta.content = "enabled";
     document.head.append(meta);
-    const brainMeta = document.createElement("meta");
-    brainMeta.name = "platform-agent-brain-mode";
-    brainMeta.content = "enabled";
-    document.head.append(brainMeta);
     window.history.replaceState({}, "", "/");
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
