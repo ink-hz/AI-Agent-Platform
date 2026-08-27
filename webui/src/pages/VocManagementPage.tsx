@@ -203,7 +203,7 @@ export function VocManagementPage({ api = vocAdminApi }: { api?: VocAdminApi }) 
     <section className="voc-management" aria-labelledby="voc-management-title">
       <header className="voc-management__header">
         <div>
-          <p className="eyebrow">VOICE OF CUSTOMER</p>
+          <p className="voc-management__kicker">VOICE OF CUSTOMER</p>
           <h1 id="voc-management-title">VOC 管理</h1>
           <p>集中查看所有员工提交的客户反馈和补充记录。</p>
         </div>
@@ -249,7 +249,7 @@ export function VocManagementPage({ api = vocAdminApi }: { api?: VocAdminApi }) 
       </div>
 
       {selected && <aside className="voc-management__drawer" aria-label="VOC 详情">
-        <div className="voc-management__drawer-head"><div><p className="eyebrow">VOC DETAIL</p><h2>{selected.voc_no}</h2></div><button type="button" className="secondary" onClick={closeDetail}>关闭</button></div>
+        <div className="voc-management__drawer-head"><div><p className="voc-management__kicker">VOC DETAIL</p><h2>{selected.voc_no}</h2></div><button type="button" className="secondary" onClick={closeDetail}>关闭</button></div>
         {detailLoading && <p role="status">正在加载详情…</p>}
         {detailError && <div role="alert"><p>暂时无法读取详情。</p><button type="button" onClick={() => openDetail(selected)}>重新加载</button></div>}
         {detail && <>
