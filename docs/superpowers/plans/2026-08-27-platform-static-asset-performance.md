@@ -31,7 +31,7 @@
 
 - [ ] **Step 1: Write failing configuration tests**
 
-Add assertions that both the formal template and the transaction output contain a platform asset block before `location /`, proxy to `127.0.0.1:8080`, hide upstream cache/cookie headers, enable gzip for JavaScript and CSS, and emit `public, max-age=31536000, immutable` without `proxy_buffering off`.
+Add assertions that both the formal template and the transaction output contain a platform asset block before `location /`, proxy to `127.0.0.1:8080`, preserve upstream cache headers, hide upstream cookie headers, enable gzip for `text/javascript`, JavaScript, and CSS, and omit `proxy_buffering off`.
 
 - [ ] **Step 2: Run tests and verify RED**
 
@@ -57,13 +57,11 @@ location ^~ /assets/ {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header Forwarded "";
     proxy_set_header Authorization "";
-    proxy_hide_header Cache-Control;
     proxy_hide_header Set-Cookie;
     gzip on;
     gzip_vary on;
     gzip_min_length 1024;
-    gzip_types text/css application/javascript application/json image/svg+xml font/woff font/woff2;
-    add_header Cache-Control "public, max-age=31536000, immutable";
+    gzip_types text/css application/javascript text/javascript application/json image/svg+xml font/woff font/woff2;
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;

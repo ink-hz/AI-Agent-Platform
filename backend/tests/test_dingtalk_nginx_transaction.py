@@ -83,18 +83,17 @@ def test_transaction_changes_only_platform_root_and_server_shared_auth():
     asset_boundary = transformed[asset_start:root_start]
     for directive in (
         "proxy_pass http://127.0.0.1:8080;",
-        "proxy_hide_header Cache-Control;",
         "proxy_hide_header Set-Cookie;",
         "gzip on;",
         "gzip_vary on;",
         "gzip_min_length 1024;",
-        "gzip_types text/css application/javascript application/json "
+        "gzip_types text/css application/javascript text/javascript application/json "
         "image/svg+xml font/woff font/woff2;",
-        'add_header Cache-Control "public, max-age=31536000, immutable";',
     ):
         assert directive in asset_boundary
+    assert "proxy_hide_header Cache-Control;" not in asset_boundary
+    assert "add_header Cache-Control" not in asset_boundary
     assert "proxy_buffering off;" not in asset_boundary
-    assert 'add_header Cache-Control "no-store"' not in asset_boundary
 
 
 def test_transaction_fails_closed_on_missing_shared_auth_or_ambiguous_root():

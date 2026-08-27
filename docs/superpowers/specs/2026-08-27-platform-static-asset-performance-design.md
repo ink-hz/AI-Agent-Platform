@@ -13,8 +13,8 @@ Production account and VOC bootstrap requests complete in 53–90 ms, while the 
 Add a dedicated `location ^~ /assets/` before the catch-all platform proxy. It will:
 
 - proxy to the existing platform API, preserving the manifest-based asset allowlist;
-- remove upstream cache and cookie headers before emitting one immutable public cache policy;
-- enable gzip for JavaScript, CSS, fonts, SVG, and JSON assets;
+- preserve the backend cache policy so successful assets remain immutable while rejected assets remain `no-store`, and remove upstream cookie headers;
+- enable gzip for the backend's `text/javascript` response as well as JavaScript, CSS, fonts, SVG, and JSON assets;
 - retain the platform security headers;
 - leave HTML, APIs, authentication, and non-fingerprinted paths on the existing no-store catch-all.
 
