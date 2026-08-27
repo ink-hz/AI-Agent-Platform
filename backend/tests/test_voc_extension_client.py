@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from uuid import UUID
 
 import httpx
@@ -26,6 +28,11 @@ GOLDEN_TOKEN = (
 )
 
 
+def _payload(token: str) -> dict[str, object]:
+    segment = token.split(".")[1]
+    return json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
+
+
 def test_signer_matches_voc_golden_vector() -> None:
     token = PlatformVocTokenSigner(SECRET).issue(
         USER_ID,
@@ -39,13 +46,24 @@ def test_signer_matches_voc_golden_vector() -> None:
 
 @pytest.mark.parametrize(
     "capabilities",
-    [set(), {"voc.read_all"}, {"voc.submit", "voc.read_self", "voc.admin"}],
+    [set(), {"voc.delete"}, {"voc.submit", "voc.read_self", "voc.admin"}],
 )
 def test_signer_rejects_empty_or_unknown_capabilities(
     capabilities: set[str],
 ) -> None:
     with pytest.raises(ValueError, match="capabilities"):
         PlatformVocTokenSigner(SECRET).issue(USER_ID, capabilities, now=NOW, jti=JTI)
+
+
+def test_signer_accepts_management_read_as_a_standalone_capability() -> None:
+    token = PlatformVocTokenSigner(SECRET).issue(
+        USER_ID,
+        {"voc.read_all"},
+        now=NOW,
+        jti=JTI,
+    )
+
+    assert _payload(token)["capabilities"] == ["voc.read_all"]
 
 
 @pytest.mark.asyncio
@@ -76,6 +94,36 @@ async def test_client_uses_fixed_loopback_origin_and_actor_bearer() -> None:
     assert len(requests) == 1
     assert requests[0].url == "http://127.0.0.1:18130/api/platform/v1/vocs?query=%E5%8F%91%E7%83%AD"
     assert requests[0].headers["Authorization"].startswith("Bearer ")
+    token = requests[0].headers["Authorization"].removeprefix("Bearer ")
+    assert _payload(token)["capabilities"] == ["voc.read_self", "voc.submit"]
+
+
+@pytest.mark.asyncio
+async def test_client_sends_only_management_read_for_admin_request() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"items": [], "next_cursor": None})
+
+    client = VocExtensionClient(
+        "http://127.0.0.1:18130",
+        PlatformVocTokenSigner(SECRET),
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        response = await client.request(
+            "GET",
+            "/api/platform/v1/admin/vocs",
+            actor_id=USER_ID,
+            capabilities=frozenset({"voc.read_all"}),
+        )
+    finally:
+        await client.aclose()
+
+    assert response.status_code == 200
+    token = requests[0].headers["Authorization"].removeprefix("Bearer ")
+    assert _payload(token)["capabilities"] == ["voc.read_all"]
 
 
 @pytest.mark.asyncio

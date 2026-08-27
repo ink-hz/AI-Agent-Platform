@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from uuid import UUID, uuid4
 
-_CAPABILITIES = frozenset({"voc.submit", "voc.read_self"})
+VOC_CAPABILITIES = frozenset({"voc.submit", "voc.read_self", "voc.read_all"})
 
 
 def _segment(value: dict[str, object]) -> str:
@@ -76,7 +76,7 @@ class PlatformVocTokenSigner:
     ) -> str:
         selected_capabilities = frozenset(capabilities)
         if not selected_capabilities or not selected_capabilities.issubset(
-            _CAPABILITIES
+            VOC_CAPABILITIES
         ):
             raise ValueError("VOC capabilities are invalid")
         if not isinstance(actor_id, UUID):

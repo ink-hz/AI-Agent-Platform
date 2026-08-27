@@ -10,10 +10,10 @@ from uuid import UUID
 
 import httpx
 
-from .identity import PlatformVocTokenSigner
+from .identity import PlatformVocTokenSigner, VOC_CAPABILITIES
 
 _MAX_RESPONSE_BYTES = 1_048_576
-_CAPABILITIES = frozenset({"voc.submit", "voc.read_self"})
+SELF_SERVICE_CAPABILITIES = frozenset({"voc.submit", "voc.read_self"})
 
 
 class VocUpstreamUnavailable(RuntimeError):
@@ -100,11 +100,17 @@ class VocExtensionClient:
         actor_id: UUID,
         json: Mapping[str, object] | None = None,
         query: Mapping[str, object] | None = None,
+        capabilities: frozenset[str] = SELF_SERVICE_CAPABILITIES,
     ) -> VocUpstreamResponse:
         normalized_method = method.upper()
         if normalized_method not in {"GET", "POST", "PATCH"}:
             raise ValueError("VOC request method is not allowed")
-        token = self._signer.issue(actor_id, _CAPABILITIES)
+        selected_capabilities = frozenset(capabilities)
+        if not selected_capabilities or not selected_capabilities.issubset(
+            VOC_CAPABILITIES
+        ):
+            raise ValueError("VOC capabilities are invalid")
+        token = self._signer.issue(actor_id, selected_capabilities)
         try:
             async with self._client.stream(
                 normalized_method,
