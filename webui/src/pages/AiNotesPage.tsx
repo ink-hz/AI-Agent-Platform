@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { aiNotesClient, type AiNotesClient } from "../aiNotesApi";
-import { AiNotesApiError, type AiNoteArticle, type AiNotesIndex } from "../aiNotesTypes";
+import { AiNotesApiError, type AiNoteArticle as AiNoteArticleData, type AiNotesIndex } from "../aiNotesTypes";
 import { AiNotesTree, type AiNotesSelection } from "../components/ai-notes/AiNotesTree";
+import { AiNoteArticle } from "../components/ai-notes/AiNoteArticle";
 import { navigate, type NavigateOptions } from "../router";
 
 
@@ -32,7 +33,7 @@ export function AiNotesPage({
   const [index, setIndex] = useState<AiNotesIndex | null>(null);
   const [indexState, setIndexState] = useState<"loading" | "ready" | "error">("loading");
   const [automaticSelection, setAutomaticSelection] = useState<AiNotesSelection | null>(null);
-  const [article, setArticle] = useState<AiNoteArticle | null>(null);
+  const [article, setArticle] = useState<AiNoteArticleData | null>(null);
   const [articleError, setArticleError] = useState<"missing" | "unavailable" | null>(null);
   const articleRequest = useRef(0);
 
@@ -103,11 +104,7 @@ export function AiNotesPage({
       <section className="ai-notes-reader" aria-live="polite">
         {articleError === "missing" && <div className="ai-notes-reader-notice" role="alert">文章不存在，请从目录选择其他文章。</div>}
         {articleError === "unavailable" && <div className="ai-notes-reader-notice" role="alert">文章暂时无法打开，已保留当前内容。</div>}
-        {article ? <article className="ai-note-article">
-          <p>{article.category_title} / {article.filename}</p>
-          <h1>{article.title}</h1>
-          <pre className="ai-note-temporary-markdown">{article.markdown}</pre>
-        </article> : count === 0
+        {article ? <AiNoteArticle article={article} /> : count === 0
           ? <div className="ai-notes-empty"><h2>暂无已发布文章</h2></div>
           : !articleError && <div className="ai-notes-loading" role="status">正在打开文章</div>}
       </section>
