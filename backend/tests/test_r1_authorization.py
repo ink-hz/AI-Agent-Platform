@@ -40,6 +40,28 @@ class Grants:
         return agent_id in self.allowed
 
 
+@pytest.mark.parametrize("role", list(Role))
+@pytest.mark.parametrize(
+    "route",
+    [
+        "/api/v1/ai-notes",
+        "/api/v1/ai-notes/{category_slug}/{article_slug}",
+        "/ai-notes",
+        "/ai-notes/{client_path:path}",
+    ],
+)
+def test_ai_notes_reads_are_authenticated_self_service(
+    role: Role, route: str
+) -> None:
+    context = AuthContext(uuid4(), role, uuid4(), False)
+    decision = AuthorizationService(Grants()).decide(
+        context, "GET", route, ()
+    )
+
+    assert decision.allowed is True
+    assert decision.reason == "self_service"
+
+
 @pytest.mark.parametrize(
     "route",
     [

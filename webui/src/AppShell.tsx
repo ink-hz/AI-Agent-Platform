@@ -10,6 +10,7 @@ import { platformPath, type Account } from "./auth";
 const USE_NAVIGATION = [
   { label: "Agent 大脑", path: "/", section: "brain" },
   { label: "专业 Agent", path: "/agents", section: "agents" },
+  { label: "AI 工程笔记", path: "/ai-notes", section: "ai-notes" },
 ] as const;
 
 const ADMIN_NAVIGATION = [
@@ -27,7 +28,7 @@ const ADMIN_NAVIGATION = [
 interface NavigationItem {
   label: string;
   path: string;
-  section: "brain" | "conversations" | "agents" | "missions" | "account" | "admin";
+  section: "brain" | "conversations" | "agents" | "missions" | "ai-notes" | "account" | "admin";
 }
 
 
@@ -51,6 +52,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
   const current = routeSection(route);
   const brainWorkspace = route.name === "brain" || route.name === "conversation"
     || route.name === "agent" || route.name === "agent-conversation";
+  const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   useEffect(() => {
     if (current !== "admin") return;
@@ -71,7 +73,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
       ? "数据已过期"
       : "等待首次同步";
   return (
-    <div className={`app${brainWorkspace ? " is-brain-workspace-shell" : ""}`}>
+    <div className={`app${brainWorkspace ? " is-brain-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}`}>
       <header className="topbar">
         <div className="topbar-inner">
           <a className="brand" href={platformPath("/")} onClick={(event) => follow(event, "/")}>
@@ -119,8 +121,8 @@ export function AppShell({ route, children, account }: { route: Route; children:
           href={platformPath(item.path)} key={item.path} onClick={(event) => follow(event, item.path)}
         >{item.label}</a>)}</div>
       </nav>}
-      <main className={`page${brainWorkspace ? " is-brain-workspace" : ""}`}>{children}</main>
-      {!brainWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
+      <main className={`page${brainWorkspace ? " is-brain-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}`}>{children}</main>
+      {!brainWorkspace && !aiNotesWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
     </div>
   );
 }

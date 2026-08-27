@@ -59,6 +59,13 @@ def _is_agent_brain_response_path(path: str | None) -> bool:
     )
 
 
+def _is_ai_notes_response_path(path: str | None) -> bool:
+    return isinstance(path, str) and (
+        path == "/api/v1/ai-notes"
+        or path.startswith("/api/v1/ai-notes/")
+    )
+
+
 def is_execution_worker_request(method: str, path: str) -> bool:
     return method == "POST" and (
         path
@@ -220,6 +227,7 @@ class IdentitySecurityMiddleware:
         identity_response = (
             local_path in _IDENTITY_RESPONSE_PATHS
             or _is_agent_brain_response_path(local_path)
+            or _is_ai_notes_response_path(local_path)
         )
 
         async def protected_send(message):

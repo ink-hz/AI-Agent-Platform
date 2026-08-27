@@ -3,6 +3,7 @@ import logging
 import os
 import ipaddress
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -10,6 +11,12 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .attachments import routes as attachment_routes
+from .ai_notes.repository import AiNotesContentError, AiNotesRepository
+from .ai_notes.routes import (
+    AiNotesReader,
+    UnavailableAiNotesReader,
+    build_ai_notes_router,
+)
 from .attachments.logging import install_attachment_ticket_redaction
 from .attachments.repository import AttachmentRepository
 from .attachments.service import AttachmentService
@@ -542,6 +549,7 @@ def create_app(
     attachment_service=None,
     identity_auth=None,
     voc_extension_client=None,
+    ai_notes_reader: AiNotesReader | None = None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
@@ -631,6 +639,14 @@ def create_app(
         agent_brain_orchestrator.check_ready()
     if identity_enabled and identity_auth is None:
         identity_auth = build_identity_auth(config)
+    if identity_enabled and ai_notes_reader is None:
+        try:
+            ai_notes_reader = AiNotesRepository.load(
+                Path(__file__).resolve().parent / "ai_notes" / "content",
+                today=date.today(),
+            )
+        except AiNotesContentError:
+            ai_notes_reader = UnavailableAiNotesReader()
     cloud_mode = is_cloud_mode(config)
     runtime_pollers_enabled = start_poller and not cloud_mode
     path = registry_path or config.registry_path
@@ -816,6 +832,7 @@ def create_app(
     app.state.conversation_command_service = conversation_command_service
     app.state.agent_use_authorization = agent_use_authorization
     app.state.voc_extension_client = voc_extension_client
+    app.state.ai_notes_reader = ai_notes_reader
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
         control_database_url = read_secret_file(
@@ -870,6 +887,8 @@ def create_app(
     app.include_router(registry_routes.router)
     app.include_router(review_routes.router)
     app.include_router(build_voc_extension_router())
+    if identity_enabled and ai_notes_reader is not None:
+        app.include_router(build_ai_notes_router(ai_notes_reader))
     if execution_relay_router is not None:
         app.include_router(execution_relay_router)
     if agent_use_authorization is not None:

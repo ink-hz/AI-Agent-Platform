@@ -44,6 +44,19 @@ VOC Platform extension 已提供原生员工工作台 `/agents/voc/workspace`。
 
 可通过 `PLATFORM_METABOT_CONTRACT_PATH` 指定其他契约文件。后端会在轮询时重新读取契约，新增、删除或修改实例不需要重启 Platform。
 
+## AI 工程笔记
+
+平台为全部已登录员工提供只读的 `AI 工程笔记`：页面入口为 `/ai-notes`，文章深链接为 `/ai-notes/{category_slug}/{article_slug}`，数据 API 为 `GET /api/v1/ai-notes` 和 `GET /api/v1/ai-notes/{category_slug}/{article_slug}`。文章正文只通过认证 API 返回，不编入公共前端资产。
+
+内容位于 `backend/app/ai_notes/content/`。首期目录只有五个分类元数据，没有迁移文章。提交内容前运行：
+
+```bash
+cd backend
+.venv/bin/python -m app.ai_notes.validate
+```
+
+frontmatter、发布日期、草稿规则和旧文章清洗流程见 `backend/app/ai_notes/README.md`。
+
 ## 本地开发
 
 后端要求 Python 3.11+：

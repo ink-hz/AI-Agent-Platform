@@ -38,7 +38,7 @@ def _login_csp(auth) -> str:
         "default-src 'none'; base-uri 'none'; object-src 'none'; "
         "frame-ancestors 'none'; form-action 'none'; "
         f"script-src {asset_source}; style-src {asset_source}; "
-        f"img-src {image_source}; connect-src {connect_source}"
+        f"img-src {image_source} data:; connect-src {connect_source}"
     )
 
 
@@ -221,6 +221,8 @@ def build_auth_router(
     @router.get("/missions/{client_path:path}", include_in_schema=False)
     @router.get("/conversations", include_in_schema=False)
     @router.get("/conversations/{client_path:path}", include_in_schema=False)
+    @router.get("/ai-notes", include_in_schema=False)
+    @router.get("/ai-notes/{client_path:path}", include_in_schema=False)
     @router.get("/admin", include_in_schema=False)
     @router.get("/admin/{client_path:path}", include_in_schema=False)
     @router.get("/sessions", include_in_schema=False)

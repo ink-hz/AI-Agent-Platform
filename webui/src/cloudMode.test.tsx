@@ -30,6 +30,39 @@ afterEach(async () => {
 
 
 describe("cloud replica mode", () => {
+  it("allows a member to open the AI notes product", async () => {
+    const identityMeta = document.createElement("meta");
+    identityMeta.name = "platform-identity-mode";
+    identityMeta.content = "enabled";
+    document.head.append(identityMeta);
+    window.history.replaceState({}, "", "/ai-notes");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.endsWith("/api/v1/account")) return new Response(JSON.stringify({
+        internal_user_id: "member", display_name: "成员", role: "member",
+        departments: [], gender: null, observation_agent_ids: [],
+        directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (path.endsWith("/api/v1/ai-notes")) return new Response(JSON.stringify({
+        categories: [
+          { slug: "foundations", title: "基础与原理", articles: [] },
+          { slug: "agent-architecture", title: "Agent 架构", articles: [] },
+          { slug: "tools-and-frameworks", title: "工具与框架", articles: [] },
+          { slug: "ai-engineering", title: "AI 工程实践", articles: [] },
+          { slug: "thinking-and-methods", title: "思考与方法", articles: [] },
+        ],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response("{}", { status: 404 });
+    });
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(container.textContent).toContain("暂无已发布文章");
+    expect(container.textContent).toContain("思考与方法");
+    expect(container.textContent).not.toContain("无权访问");
+  });
+
   it("opens the real Brain composer without a release availability gate", async () => {
     const identityMeta = document.createElement("meta");
     identityMeta.name = "platform-identity-mode";
@@ -240,7 +273,7 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(
       <AppShell route={{ name: "account" }} account={member}><p>内容</p></AppShell>,
     ));
-    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent");
+    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 AgentAI 工程笔记");
     expect(container.querySelector<HTMLAnchorElement>("a.account-chip")?.getAttribute("href")).toBe("/account");
 
     const viewer: Account = {
@@ -251,7 +284,7 @@ describe("cloud replica mode", () => {
       <AppShell route={{ name: "admin-governance" }} account={viewer}><p>内容</p></AppShell>,
     ));
     const navigation = container.querySelector(".product-nav")?.textContent || "";
-    expect(navigation).toBe("Agent 大脑专业 Agent");
+    expect(navigation).toBe("Agent 大脑专业 AgentAI 工程笔记");
     expect(navigation).not.toContain("管理中心");
   });
 

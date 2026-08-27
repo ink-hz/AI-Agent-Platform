@@ -69,6 +69,10 @@ class _NoObservationGrants:
         ("POST", "/api/v1/conversations/{conversation_id}/archive"),
         ("POST", "/api/v1/conversations/{conversation_id}/restore"),
         ("POST", "/api/v1/agents/{agent_id}/conversations"),
+        ("GET", "/api/v1/ai-notes"),
+        ("GET", "/api/v1/ai-notes/{category_slug}/{article_slug}"),
+        ("GET", "/ai-notes"),
+        ("GET", "/ai-notes/{client_path:path}"),
         ("GET", "/missions"),
         ("GET", "/missions/{client_path:path}"),
         ("GET", "/conversations"),
@@ -232,6 +236,7 @@ def _app(
     *,
     registry_document: str = "version: 1\nagents: []\n",
     brain_enabled: bool = False,
+    ai_notes_reader=None,
 ):
     static = tmp_path / "static"
     assets = static / "assets"
@@ -261,11 +266,17 @@ def _app(
         cluster_contract_path=str(contract),
         start_poller=False,
         identity_auth=auth,
+        ai_notes_reader=ai_notes_reader,
     )
 
 
 def _app_with_static(
-    tmp_path: Path, monkeypatch, auth: FakeAuth, static: Path
+    tmp_path: Path,
+    monkeypatch,
+    auth: FakeAuth,
+    static: Path,
+    *,
+    ai_notes_reader=None,
 ):
     registry = tmp_path / f"registry-{auth.mode.value}.yaml"
     registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
@@ -277,6 +288,7 @@ def _app_with_static(
         cluster_contract_path=str(contract),
         start_poller=False,
         identity_auth=auth,
+        ai_notes_reader=ai_notes_reader,
     )
 
 
@@ -357,6 +369,58 @@ def test_one_real_vite_build_serves_assets_at_root_and_preview(
         )
 
 
+def test_article_body_requires_auth_and_is_absent_from_public_assets(
+    tmp_path, monkeypatch
+) -> None:
+    sentinel = "INTERNAL_AI_NOTE_SENTINEL_8F2C"
+
+    class SentinelReader(_AiNotesReader):
+        def article(self, category_slug: str, article_slug: str):
+            selected = super().article(category_slug, article_slug)
+            return None if selected is None else {**selected, "markdown": sentinel}
+
+    webui = Path(__file__).parents[2] / "webui"
+    static = tmp_path / "vite-ai-notes-dist"
+    subprocess.run(
+        [
+            "npm", "exec", "vite", "--", "build", "--outDir", str(static),
+            "--emptyOutDir",
+        ],
+        cwd=webui,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    auth = FakeAuth()
+    client = TestClient(
+        _app_with_static(
+            tmp_path,
+            monkeypatch,
+            auth,
+            static,
+            ai_notes_reader=SentinelReader(),
+        )
+    )
+
+    assert client.get("/api/v1/ai-notes/foundations/handbook").status_code == 401
+    assert client.get("/ai-notes").status_code == 401
+    public_bytes = b"".join(
+        path.read_bytes() for path in static.rglob("*") if path.is_file()
+    )
+    assert sentinel.encode() not in public_bytes
+
+    cookies = {auth.cookie_name: "valid-cookie"}
+    article = client.get(
+        "/api/v1/ai-notes/foundations/handbook",
+        cookies=cookies,
+    )
+    shell = client.get("/ai-notes/foundations/handbook", cookies=cookies)
+    assert article.status_code == 200
+    assert article.json()["markdown"] == sentinel
+    assert shell.status_code == 200
+    assert sentinel not in shell.text
+
+
 def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
     client = TestClient(_app(tmp_path, monkeypatch, FakeAuth()))
 
@@ -405,11 +469,13 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
 
     root = client.get("/", cookies=cookies, follow_redirects=False)
     assert root.status_code == 200
+    assert "img-src 'self' data:" in root.headers["content-security-policy"]
     assert "x-platform-entry-state" not in root.headers
     assert "LOGIN SHELL" in root.text
     assert "platform-agent-brain-mode" not in root.text
     for path in (
         "/account", "/agents", "/agents/hr-bot", "/missions", "/conversations",
+        "/ai-notes", "/ai-notes/foundations/handbook",
         "/missions/00000000-0000-0000-0000-000000000001", "/admin",
         "/conversations/00000000-0000-0000-0000-000000000001",
         "/admin/agents", "/admin/sessions/fae%3Aone", "/sessions",
@@ -421,6 +487,72 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
         assert "LOGIN SHELL" in response.text
         assert 'name="platform-identity-mode" content="enabled"' in response.text
     assert client.get("/unknown", cookies=cookies).status_code in {403, 404}
+
+
+class _AiNotesReader:
+    def index(self):
+        return {"categories": []}
+
+    def article(self, category_slug: str, article_slug: str):
+        if (category_slug, article_slug) != ("foundations", "handbook"):
+            return None
+        return {
+            "slug": "handbook",
+            "title": "手册",
+            "filename": "handbook.md",
+            "description": "说明",
+            "published_at": "2026-08-27",
+            "updated_at": None,
+            "tags": [],
+            "reading_minutes": 1,
+            "category_slug": "foundations",
+            "category_title": "基础与原理",
+            "markdown": "# INTERNAL_BODY_SENTINEL",
+        }
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_ai_notes_routes_require_auth_and_allow_every_role(
+    tmp_path, monkeypatch, role: Role
+) -> None:
+    auth = FakeAuth()
+    auth.context = AuthContext(uuid4(), role, uuid4(), False)
+    client = TestClient(
+        _app(tmp_path, monkeypatch, auth, ai_notes_reader=_AiNotesReader())
+    )
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    assert client.get("/api/v1/ai-notes").status_code == 401
+    index = client.get("/api/v1/ai-notes", cookies=cookies)
+    article = client.get(
+        "/api/v1/ai-notes/foundations/handbook", cookies=cookies
+    )
+
+    assert index.status_code == 200
+    assert index.headers["cache-control"] == "no-store"
+    assert article.status_code == 200
+    assert article.json()["markdown"] == "# INTERNAL_BODY_SENTINEL"
+
+
+def test_ai_notes_failure_does_not_break_health_or_account(
+    tmp_path, monkeypatch
+) -> None:
+    class BrokenReader:
+        def index(self):
+            raise RuntimeError("private content")
+
+        def article(self, category_slug: str, article_slug: str):
+            raise RuntimeError(f"private content {category_slug} {article_slug}")
+
+    auth = FakeAuth()
+    client = TestClient(
+        _app(tmp_path, monkeypatch, auth, ai_notes_reader=BrokenReader())
+    )
+    cookies = {auth.cookie_name: "valid-cookie"}
+
+    assert client.get("/api/v1/ai-notes", cookies=cookies).status_code == 503
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/account", cookies=cookies).status_code == 200
 
 
 def test_authenticated_root_serves_brain_shell_without_release_metadata(

@@ -16,6 +16,8 @@ export function routeDocumentTitle(route: Route): string {
     case "agents": return `专业 Agent · ${PLATFORM_TITLE}`;
     case "agent": return `专业 Agent · ${PLATFORM_TITLE}`;
     case "voc-workspace": return `VOC 洞察助手 · ${PLATFORM_TITLE}`;
+    case "ai-notes": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
+    case "ai-note": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
     case "admin-overview": return `管理中心 · ${PLATFORM_TITLE}`;
     case "admin-agents": return `Agent 管理 · ${PLATFORM_TITLE}`;
     case "admin-agent": return `Agent 详情 · ${PLATFORM_TITLE}`;
