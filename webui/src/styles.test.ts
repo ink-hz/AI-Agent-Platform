@@ -244,4 +244,23 @@ describe("Executive Operations visual contract", () => {
     expect(mobile).toContain(".attachment-card { grid-template-columns: 1fr; }");
     expect(mobile).toContain(".attachment-actions { justify-content: flex-start; }");
   });
+
+  it("gives AI notes an independent two-column reading workspace", () => {
+    expect(rule(".app.is-ai-notes-workspace-shell")).toContain("height: 100dvh");
+    expect(rule(".page.is-ai-notes-workspace")).toContain("min-height: 0");
+    expect(rule(".ai-notes-layout")).toContain("grid-template-columns: 19rem minmax(0, 1fr)");
+    expect(rule(".ai-notes-layout")).toContain("min-height: 0");
+    expect(rule(".ai-notes-sidebar")).toContain("overflow-y: auto");
+    expect(rule(".ai-notes-reader")).toContain("overflow-y: auto");
+    expect(rule(".ai-note-article")).toContain("max-width: 820px");
+    expect(rule(".article-table-scroll")).toContain("overflow-x: auto");
+    expect(rule(`.ai-notes-category-toggle:focus-visible,
+.ai-notes-files button:focus-visible,
+.ai-notes-mobile-menu:focus-visible,
+.ai-notes-drawer-close:focus-visible`)).toContain("outline: 3px solid");
+    const mobile = lastBlock("@media (max-width: 720px)");
+    expect(mobile).toContain(".ai-notes-layout { grid-template-columns: minmax(0, 1fr); }");
+    expect(mobile).toContain(".ai-notes-sidebar { display: none; }");
+    expect(mobile).toContain(".ai-notes-mobile-menu { display: inline-flex; }");
+  });
 });

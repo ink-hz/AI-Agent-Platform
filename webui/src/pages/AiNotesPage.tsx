@@ -35,7 +35,26 @@ export function AiNotesPage({
   const [automaticSelection, setAutomaticSelection] = useState<AiNotesSelection | null>(null);
   const [article, setArticle] = useState<AiNoteArticleData | null>(null);
   const [articleError, setArticleError] = useState<"missing" | "unavailable" | null>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const articleRequest = useRef(0);
+  const mobileOpener = useRef<HTMLButtonElement>(null);
+  const mobileCloser = useRef<HTMLButtonElement>(null);
+  const mobileWasOpen = useRef(false);
+
+  useEffect(() => {
+    if (mobileOpen) mobileCloser.current?.focus();
+    else if (mobileWasOpen.current) mobileOpener.current?.focus();
+    mobileWasOpen.current = mobileOpen;
+  }, [mobileOpen]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileOpen]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -92,15 +111,46 @@ export function AiNotesPage({
   }
 
   const count = index.categories.reduce((sum, category) => sum + category.articles.length, 0);
+  const selectArticle = (nextCategory: string, nextArticle: string) => {
+    setMobileOpen(false);
+    onNavigate(`/ai-notes/${nextCategory}/${nextArticle}`);
+  };
   return (
     <div className="ai-notes-layout">
+      <button
+        aria-expanded={mobileOpen}
+        aria-label="打开文章目录"
+        className="ai-notes-mobile-menu"
+        onClick={() => setMobileOpen(true)}
+        ref={mobileOpener}
+        type="button"
+      >目录</button>
       <aside className="ai-notes-sidebar">
         <AiNotesTree
           index={index}
-          onSelect={(nextCategory, nextArticle) => onNavigate(`/ai-notes/${nextCategory}/${nextArticle}`)}
+          onSelect={selectArticle}
           selectedPath={selectedPath}
         />
       </aside>
+      {mobileOpen && <>
+        <button
+          aria-label="关闭文章目录遮罩"
+          className="ai-notes-drawer-backdrop"
+          onClick={() => setMobileOpen(false)}
+          tabIndex={-1}
+          type="button"
+        />
+        <aside aria-label="文章目录" aria-modal="true" className="ai-notes-drawer" role="dialog">
+          <button
+            aria-label="关闭文章目录"
+            className="ai-notes-drawer-close"
+            onClick={() => setMobileOpen(false)}
+            ref={mobileCloser}
+            type="button"
+          >×</button>
+          <AiNotesTree index={index} onSelect={selectArticle} selectedPath={selectedPath} />
+        </aside>
+      </>}
       <section className="ai-notes-reader" aria-live="polite">
         {articleError === "missing" && <div className="ai-notes-reader-notice" role="alert">文章不存在，请从目录选择其他文章。</div>}
         {articleError === "unavailable" && <div className="ai-notes-reader-notice" role="alert">文章暂时无法打开，已保留当前内容。</div>}

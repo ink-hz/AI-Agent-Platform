@@ -113,4 +113,18 @@ describe("AiNotesPage", () => {
     expect(container.textContent).toContain("AI 工程笔记暂时不可用");
     expect(container.textContent).not.toContain("暂无已发布文章");
   });
+
+  it("opens and closes the mobile directory and restores focus", async () => {
+    await act(async () => root.render(<AiNotesPage client={clientWith(index)} />));
+    const opener = container.querySelector<HTMLButtonElement>('button[aria-label="打开文章目录"]')!;
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
+
+    await act(async () => opener.click());
+    expect(container.querySelector('[role="dialog"][aria-label="文章目录"]')).not.toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('button[aria-label="关闭文章目录"]'));
+
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(container.querySelector('[role="dialog"][aria-label="文章目录"]')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
 });

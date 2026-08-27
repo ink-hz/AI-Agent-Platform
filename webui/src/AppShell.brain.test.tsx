@@ -60,6 +60,9 @@ describe("usage navigation", () => {
     const current = container.querySelector<HTMLAnchorElement>('a[href="/ai-notes"]');
     expect(current?.getAttribute("aria-current")).toBe("page");
     expect(current?.textContent).toBe("AI 工程笔记");
+    expect(container.querySelector("main.page.is-ai-notes-workspace")).not.toBeNull();
+    expect(container.querySelector(".app.is-ai-notes-workspace-shell")).not.toBeNull();
+    expect(container.querySelector("footer.site-foot")).toBeNull();
   });
 
   it("marks the employee name as the current account entry on the account page", async () => {
