@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -18,6 +19,9 @@ import { mermaidMetadata } from "./mermaidMetadata";
 
 
 const CONTENT_ROOT = resolve(process.cwd(), "../backend/app/ai_notes/content");
+const BATCH_DRAFT_RELATIVE_PATHS = [
+  "02-agent-architecture/02-agent-identity-access-control.md",
+] as const;
 const SEMANTIC_FILLS = [
   "#DBEAFE", "#EDE9FE", "#CCFBF1", "#FEF3C7",
   "#DCFCE7", "#D1FAE5", "#FEE2E2", "#F3F4F6",
@@ -50,6 +54,20 @@ function publishedArticleFiles(contentRoot = CONTENT_ROOT): string[] {
     .filter((path) => (
       /^draft:\s*false\s*$/m.test(frontmatter(readFileSync(path, "utf8")))
     ));
+}
+
+
+function batchDraftArticleFiles(contentRoot = CONTENT_ROOT): string[] {
+  if (BATCH_DRAFT_RELATIVE_PATHS.length === 0) {
+    throw new Error("batch draft registration must not be empty");
+  }
+  return BATCH_DRAFT_RELATIVE_PATHS.map((relativePath) => {
+    const path = join(contentRoot, relativePath);
+    if (!existsSync(path)) {
+      throw new Error(`registered batch draft does not exist: ${relativePath}`);
+    }
+    return path;
+  });
 }
 
 
@@ -149,6 +167,18 @@ describe("MermaidDiagram with the real renderer", () => {
     }
   });
 
+  it("fails closed when a registered batch draft path is missing", () => {
+    const root = mkdtempSync(join(tmpdir(), "ai-notes-missing-draft-"));
+    try {
+      expect(BATCH_DRAFT_RELATIVE_PATHS.length).toBeGreaterThan(0);
+      expect(() => batchDraftArticleFiles(root)).toThrow(
+        "registered batch draft does not exist",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps flowchart labels in a sanitized CSP-compatible image", async () => {
     const { default: mermaid } = await import("mermaid");
     mermaid.initialize(AI_NOTES_MERMAID_CONFIG);
@@ -197,6 +227,28 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(new Set(metadata.map(({ title }) => title)).size).toBe(sources.length);
     expect(new Set(metadata.map(({ description }) => description)).size).toBe(
       sources.length,
+    );
+  });
+
+  it("renders and sanitizes every registered batch draft Mermaid diagram", async () => {
+    const files = batchDraftArticleFiles();
+    const sources = files.flatMap((path) => {
+      const markdown = readFileSync(path, "utf8");
+      expect(frontmatter(markdown)).toMatch(/^draft:\s*true\s*$/m);
+      return mermaidBlocks(markdown);
+    });
+    expect(files).toHaveLength(BATCH_DRAFT_RELATIVE_PATHS.length);
+    expect(sources.length).toBeGreaterThan(0);
+    await expectProductionDiagramsToRender(sources);
+
+    const publishedSources = publishedArticleFiles().flatMap((path) => (
+      mermaidBlocks(readFileSync(path, "utf8"))
+    ));
+    const metadata = [...publishedSources, ...sources].map(mermaidMetadata);
+    expect(metadata.every(({ description }) => Boolean(description))).toBe(true);
+    expect(new Set(metadata.map(({ title }) => title)).size).toBe(metadata.length);
+    expect(new Set(metadata.map(({ description }) => description)).size).toBe(
+      metadata.length,
     );
   });
 

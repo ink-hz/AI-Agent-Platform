@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 import hashlib
 from pathlib import Path
+import re
 import shutil
 
 import yaml
@@ -39,7 +40,9 @@ BATCH_ARTICLES = (
     ("05-thinking-and-methods/02-intent-driven-ai-business-platform.md", "intent-driven-ai-business-platform"),
 )
 
-COMPLETED_BATCH_ARTICLES: tuple[str, ...] = ()
+COMPLETED_BATCH_ARTICLES: tuple[str, ...] = (
+    "agent-identity-access-control",
+)
 
 ARTICLE_CONTRACTS = {
     "agent-identity-access-control": {
@@ -99,6 +102,30 @@ SOURCE_MANIFEST = (
     ("主流Agent框架深度分析-从架构本质到生产可用性.md", 323, "4edd175b19b9ac82be0ac9a92ed10d69ddfe14cac7611fa7b3df9f0a5866054b", "agent-framework-selection"),
     ("干掉用户旅程-意图驱动的业务平台架构设计.md", 379, "3a165ec7de6b712d9cbbc999ee6d7752b9954691f904f41a80d289bc0585d52b", "intent-driven-ai-business-platform"),
 )
+
+IDENTITY_SOURCE_REVIEW_STATUS = {
+    "身份认证与访问控制-深度理论知识.md": (
+        "已精读：1-2625",
+        "第1-5章：主体、令牌、授权、用户委托",
+        "第3、6-7章：网关样例、旧日期、SSO与厂商清单",
+        "已核验：RFC 8693、NIST、SPIFFE、OWASP（2026-08-28）",
+        "全景与信任层留在主文章；本篇深化委托、授权、审计",
+    ),
+    "身份认证与访问控制-理论架构设计.md": (
+        "已精读：1-2140",
+        "第1、4-5、7.3章：身份、权限交集、最小权限、零信任",
+        "第2-3、6、7.1-7.2及7.4-7.5章：登录网关、旧组织案例、产品横评",
+        "已核验：RFC 8693、NIST、SPIFFE、OWASP（2026-08-28）",
+        "状态机与信任分级留在主文章；本篇深化凭证与证据",
+    ),
+}
+
+IDENTITY_PRIMARY_SOURCES = {
+    "https://www.rfc-editor.org/rfc/rfc8693": "Token Exchange 区分主体与行动者并表达委托链",
+    "https://csrc.nist.gov/pubs/sp/800/207/final": "零信任不因网络位置或资产归属授予隐式信任",
+    "https://spiffe.io/docs/latest/spiffe-about/overview/": "工作负载可取得短时密码学身份文档并相互认证",
+    "https://genai.owasp.org/llmrisk/llm062025-excessive-agency/": "过度功能、权限与自主性需要最小化能力和人工审批",
+}
 
 
 def batch_article_path(slug: str, *, root: Path = CONTENT_ROOT) -> Path:
@@ -185,9 +212,111 @@ def test_source_review_records_the_exact_source_manifest() -> None:
         source = path.read_bytes()
         assert source.count(b"\n") == line_count
         assert hashlib.sha256(source).hexdigest() == digest
+        status = IDENTITY_SOURCE_REVIEW_STATUS.get(
+            filename, ("未开始",) * 5
+        )
         expected_rows.append(
             f"| `{path}` | {line_count} | `{digest}` | {target} | "
-            "未开始 | 未开始 | 未开始 | 未开始 | 未开始 |"
+            f"{' | '.join(status)} |"
         )
 
     assert ledger_rows == tuple(expected_rows)
+
+
+def test_identity_source_review_records_primary_source_verification() -> None:
+    review = SOURCE_REVIEW.read_text(encoding="utf-8")
+
+    assert "访问日期：2026-08-28" in review
+    for url, supported_claim in IDENTITY_PRIMARY_SOURCES.items():
+        assert url in review
+        assert supported_claim in review
+
+
+def test_agent_identity_access_control_draft_meets_contract(
+    tmp_path: Path,
+) -> None:
+    completed_articles = assert_completed_batch_drafts()
+    candidate_index = validate_completed_batch_as_publication_candidates(
+        tmp_path
+    )
+    assert tuple(article.slug for article in completed_articles) == (
+        "agent-identity-access-control",
+    )
+    assert sum(
+        len(category.articles) for category in candidate_index.categories
+    ) == 7
+
+    path = batch_article_path("agent-identity-access-control")
+    frontmatter, markdown = parse_frontmatter(path)
+    assert frontmatter["title"] == (
+        "Agent 身份与最小权限：代表谁、能做什么、如何审计"
+    )
+    assert frontmatter["slug"] == "agent-identity-access-control"
+    assert tuple(frontmatter["tags"]) == (
+        "Agent",
+        "身份与权限",
+        "安全治理",
+    )
+    assert markdown.lstrip().startswith("## ")
+    assert AUTHOR not in markdown
+    assert MOTTO not in markdown
+
+    diagrams = tuple(
+        re.findall(r"```mermaid\n([\s\S]*?)\n```", markdown)
+    )
+    assert len(diagrams) == 3
+    assert tuple(
+        re.search(r"(?m)^\s*accTitle:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    ) == (
+        "Agent 身份与委托链",
+        "Agent 行动授权决策",
+        "高风险操作审批闭环",
+    )
+    assert all(
+        len(
+            set(
+                re.findall(
+                    r"(?m)\b([A-Z][A-Z0-9_]*)\s*(?=[\[\{\(])",
+                    diagram,
+                )
+            )
+        )
+        <= 10
+        for diagram in diagrams
+    )
+
+    for required_topic in (
+        "用户委托",
+        "工作负载身份",
+        "Token Exchange",
+        "最小权限",
+        "审批绑定",
+        "审计证据",
+    ):
+        assert required_topic in markdown
+    assert re.search(
+        r"\]\((?:\./)?enterprise-agent-system-architecture\)",
+        markdown,
+    )
+
+    prohibited_product_or_feature_markers = (
+        "SSO",
+        "Okta",
+        "Auth0",
+        "Keycloak",
+        "AWS IAM",
+        "Azure AD",
+        "Google Cloud IAM",
+        "阿里云RAM",
+        "腾讯云CAM",
+        "华为云IAM",
+        "玉符",
+        "身份宝",
+        "Casdoor",
+    )
+    legacy_markers = tuple(
+        yaml.safe_load(MARKER_FILE.read_text(encoding="utf-8"))["markers"]
+    )
+    for prohibited in prohibited_product_or_feature_markers + legacy_markers:
+        assert prohibited.casefold() not in markdown.casefold()
