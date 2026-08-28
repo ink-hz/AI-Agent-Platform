@@ -1763,10 +1763,11 @@ class BrainLoopRepository:
     def terminalize_blocked_tasks(self, *, limit: int) -> int:
         """Release tasks whose upstream will never deliver.
 
-        settle_batch only advances a Step once every tool call has a result, so a
-        dependent task that can never be dispatched would hang the whole Turn. This
-        is the guarantee that makes declared dependencies safe: an upstream that ends
-        in anything but success resolves its dependents immediately, with the reason.
+        A later await can include a dependent task that never became dispatchable.
+        Without an explicit terminal event that Wait would remain active until the
+        Turn budget expired. This is the guarantee that makes declared dependencies
+        safe: an upstream that ends in anything but success resolves its dependents
+        immediately, with an explicit Platform-origin reason.
         """
 
         return self._reap_tasks(
@@ -1792,7 +1793,10 @@ class BrainLoopRepository:
 
         return self._reap_tasks(
             limit=limit,
-            selector="and task.effective_deadline_at<=clock_timestamp()",
+            selector=(
+                "and task.status not in ('waiting_input','waiting_confirmation') "
+                "and task.effective_deadline_at<=clock_timestamp()"
+            ),
             status="timed_out",
             summary="任务已超过截止时间，未在预算内完成。",
             limitation="任务超时，结果不完整。",
@@ -1823,28 +1827,28 @@ class BrainLoopRepository:
                 ).fetchall()
         except psycopg.Error:
             raise BrainRepositoryError() from None
+        from app.agent_brain.collaboration_models import AgentTaskPublicEventInput
+
+        collaboration = self.collaboration_repository()
+        event_type = "timeout" if status == "timed_out" else "failed"
         reaped = 0
         for row in rows:
-            result = NormalizedTaskResult(
-                status=status,
-                summary=summary,
-                deliverables=(),
-                evidence=(),
-                limitations=(limitation,),
-                attachment_refs=(),
-            )
             try:
-                if self.append_task_event(
-                    AgentTaskEventInput(
+                wake = collaboration.append_task_event_and_wake(
+                    AgentTaskPublicEventInput(
                         task_id=row["task_id"],
                         seq=row["next_event_seq"],
-                        event_type=f"agent.{status}",
+                        event_type=event_type,
                         created_at=datetime.now(timezone.utc),
-                        payload={"status": status, "origin": "platform"},
-                        terminal_status=status,
-                        result=result,
+                        payload={
+                            "status": status,
+                            "summary": summary,
+                            "limitations": [limitation],
+                            "origin": "platform_reaper",
+                        },
                     )
-                ):
+                )
+                if not wake.replayed:
                     reaped += 1
             except BrainRepositoryConflict:
                 # A real Agent event landed on this seq first; that terminal state wins.

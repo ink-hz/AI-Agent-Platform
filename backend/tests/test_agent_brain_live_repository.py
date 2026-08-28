@@ -526,6 +526,67 @@ def test_event_before_wait_is_delivered_once(
     ).settled is False
 
 
+@pytest.mark.postgres
+def test_deadline_reaper_emits_public_timeout_and_wakes_wait(
+    live_database, seeded_live_task
+) -> None:
+    environment, *_unused = live_database
+    repository, loop_repository, loop_id, task_id, _conversation_id = (
+        seeded_live_task
+    )
+    tool_call_id = _seed_wait_step(live_database, loop_id, task_id=task_id)
+    repository.create_wait_subscription(
+        WaitSubscriptionSpec(
+            tool_call_id=tool_call_id,
+            loop_id=loop_id,
+            task_ids=(task_id,),
+            wake_on=("timeout",),
+        )
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_brain.agent_tasks set effective_deadline_at="
+            "clock_timestamp()-interval '1 second' where task_id=%s",
+            (task_id,),
+        )
+
+    assert loop_repository.expire_task_deadlines(limit=10) == 1
+    assert repository.queued_step_count(loop_id) == 1
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select event_type from platform_brain.agent_task_events "
+            "where task_id=%s order by seq desc limit 1",
+            (task_id,),
+        ).fetchone() == ("timeout",)
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("waiting_status", ["waiting_input", "waiting_confirmation"])
+def test_deadline_reaper_preserves_human_waiting_tasks(
+    live_database, seeded_live_task, waiting_status
+) -> None:
+    environment, *_unused = live_database
+    _repository, loop_repository, _loop_id, task_id, _conversation_id = (
+        seeded_live_task
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_brain.agent_tasks set status=%s,"
+            "dispatched_at=clock_timestamp(),started_at=clock_timestamp(),"
+            "effective_deadline_at=clock_timestamp()-interval '1 second' "
+            "where task_id=%s",
+            (waiting_status, task_id),
+        )
+
+    assert loop_repository.expire_task_deadlines(limit=10) == 0
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select status,terminal_at from platform_brain.agent_tasks "
+            "where task_id=%s",
+            (task_id,),
+        ).fetchone() == (waiting_status, None)
+
+
 def test_wait_settlement_retries_serialization_failure(
     seeded_live_task, monkeypatch
 ) -> None:

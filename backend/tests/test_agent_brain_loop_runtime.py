@@ -943,7 +943,7 @@ def test_failed_upstream_releases_its_dependents_with_a_terminal_event(
         assert connection.execute(
             "select status from platform_brain.agent_tasks where task_id=%s",
             (dependent,),
-        ).fetchone() == ("unavailable",)
+        ).fetchone() == ("failed",)
         terminal = connection.execute(
             "select event_type from platform_brain.agent_task_events "
             "where task_id=%s order by seq desc limit 1",
@@ -951,7 +951,7 @@ def test_failed_upstream_releases_its_dependents_with_a_terminal_event(
         ).fetchone()
     # A dependent that can never be dispatched must still reach a terminal event, or
     # a Brain awaiting it would wait until the Turn budget ran out.
-    assert terminal == ("agent.unavailable",)
+    assert terminal == ("failed",)
 
 
 @pytest.mark.postgres
