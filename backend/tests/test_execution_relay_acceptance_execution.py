@@ -372,6 +372,47 @@ def test_gate_04_to_08_runs_real_cli_crashes_exact_children_and_restores(tmp_pat
     assert remote_actions[-1] == "cleanup"
 
 
+def test_gate_04_to_08_accepts_standard_venv_python_symlink_chain(
+    tmp_path: Path,
+) -> None:
+    config, worker_key, dsn = _fixture(tmp_path)
+    python = config.parent.parent / "backend/.venv/bin/python"
+    python.unlink()
+    interpreter = python.parent / "python3.11-real"
+    interpreter.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    interpreter.chmod(0o700)
+    (python.parent / "python3.11").symlink_to(interpreter.name)
+    python.symlink_to("python3.11")
+
+    boundary = Boundary(config.parent)
+    result = _run(config, worker_key, dsn, boundary)
+
+    assert result.duplicate_dispatches == 0
+    assert boundary.process_calls[0]["args"] == (
+        str(python),
+        "-m",
+        "app.execution_relay.worker",
+    )
+
+
+def test_gate_04_to_08_rejects_writable_venv_python_symlink_target(
+    tmp_path: Path,
+) -> None:
+    config, worker_key, dsn = _fixture(tmp_path)
+    python = config.parent.parent / "backend/.venv/bin/python"
+    python.unlink()
+    interpreter = python.parent / "python3.11-real"
+    interpreter.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    interpreter.chmod(0o777)
+    python.symlink_to(interpreter.name)
+    boundary = Boundary(config.parent)
+
+    with pytest.raises(subject.AcceptanceGateError, match="acceptance gate failed"):
+        _run(config, worker_key, dsn, boundary)
+
+    assert boundary.calls == []
+
+
 def test_gate_04_to_08_rejects_non_executable_supervisor_before_stop(
     tmp_path: Path,
 ) -> None:

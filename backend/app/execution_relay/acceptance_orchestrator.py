@@ -683,6 +683,46 @@ def _validate_runtime_file(path: Path, *, executable: bool = False) -> None:
         raise _gate_error() from None
 
 
+def _validate_runtime_python(path: Path) -> None:
+    """Validate a venv interpreter without rejecting its standard symlink chain."""
+    try:
+        metadata = path.lstat()
+        if not path.is_absolute():
+            raise ValueError
+        if stat.S_ISREG(metadata.st_mode):
+            _validate_runtime_file(path, executable=True)
+            return
+        if not stat.S_ISLNK(metadata.st_mode) or metadata.st_uid not in {0, os.geteuid()}:
+            raise ValueError
+        for directory in (path.parent.parent, path.parent):
+            directory_metadata = directory.lstat()
+            if (
+                not stat.S_ISDIR(directory_metadata.st_mode)
+                or directory.is_symlink()
+                or directory_metadata.st_uid not in {0, os.geteuid()}
+                or stat.S_IMODE(directory_metadata.st_mode) & 0o022 != 0
+            ):
+                raise ValueError
+        trusted_owner_uids = {0, os.geteuid()}
+        sudo_uid = os.environ.get("SUDO_UID", "")
+        if sudo_uid.isascii() and sudo_uid.isdigit():
+            trusted_owner_uids.add(int(sudo_uid))
+        resolved = path.resolve(strict=True)
+        resolved_metadata = resolved.stat()
+        if (
+            not stat.S_ISREG(resolved_metadata.st_mode)
+            or resolved_metadata.st_uid not in trusted_owner_uids
+            or resolved_metadata.st_size > 1_048_576
+            or stat.S_IMODE(resolved_metadata.st_mode) & 0o022 != 0
+            or not os.access(resolved, os.X_OK)
+        ):
+            raise ValueError
+    except AcceptanceGateError:
+        raise
+    except Exception:
+        raise _gate_error() from None
+
+
 def _default_process_factory(**values: object):
     environment = values.pop("environment")
     return subprocess.Popen(env=environment, **values)
@@ -885,7 +925,8 @@ def run_gates_04_to_08(
     except Exception:
         raise _gate_error() from None
     python = backend_root / ".venv/bin/python"
-    for path, executable in ((python, True), (worker_supervisor_path, True), (metabot_contract_path, False)):
+    _validate_runtime_python(python)
+    for path, executable in ((worker_supervisor_path, True), (metabot_contract_path, False)):
         _validate_runtime_file(path, executable=executable)
     worker_key = _read_owner_file(private_root, worker_private_key_path, maximum_size=32)
     worker_key_id, _worker_fingerprint = _local_identity(
