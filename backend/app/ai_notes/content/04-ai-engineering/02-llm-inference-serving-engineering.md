@@ -24,7 +24,7 @@ draft: true
 | 指标 | 回答的问题 | 典型风险 |
 | --- | --- | --- |
 | TTFT（Time to First Token） | 请求从到达到首 token 用了多久 | 排队或长输入 Prefill 抬高首包等待 |
-| TPOT（Time per Output Token） | 单请求 Decode 总耗时除以输出 token 数的摊销值 | 长输出或调度干扰抬高单请求平均生成成本 |
+| TPOT（Time per Output Token） | `(端到端延迟 - TTFT) / (输出 token 数 - 1)`，即首 token 之后的 Decode 时间对后续输出 token 的摊销值 | 长输出或调度干扰抬高单请求平均生成成本 |
 | ITL（Inter-Token Latency） | 流式相邻输出事件之间的单次间隔 | 批次干扰或事件聚合造成局部卡顿 |
 | 端到端延迟 | 完整输出何时结束 | 输出长度分布的长尾被平均值遮住 |
 | 输入 / 输出 token 吞吐 | 单位时间实际处理多少工作 | 只报请求数，忽略长度差异 |
@@ -74,7 +74,7 @@ flowchart TB
     style PATH fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
 ```
 
-图中的流式返回与内部执行可以重叠，但不能混淆度量：TTFT 在第一个 token 离开引擎时结束；TPOT 把单请求 Decode 总耗时摊销到输出 token；ITL 则逐次测量相邻流式输出事件的间隔。普通逐 token 流式路径中两者可能接近；投机解码单步可能返回多个 token，此时一个 Decode 步骤、输出 token 数和流式事件数不再一一对应，两者可明显不同。缓存不在连接断开时自然消失，引擎还要明确终止、抢占和释放语义。
+图中的流式返回与内部执行可以重叠，但不能混淆度量：TTFT 在第一个 token 离开引擎时结束；TPOT 按 `(端到端延迟 - TTFT) / (输出 token 数 - 1)` 计算，等价于首 token 之后的 Decode 时间除以首 token 之后的输出 token 数；只有一个输出 token 时没有 TPOT 样本。ITL 则逐次测量相邻流式输出事件的间隔。普通逐 token 流式路径中两者可能接近；投机解码单步可能返回多个 token，此时一个 Decode 步骤、输出 token 数和流式事件数不再一一对应，两者可明显不同。缓存不在连接断开时自然消失，引擎还要明确终止、抢占和释放语义。
 
 ## 三、连续批处理的本质是逐步调度
 

@@ -498,7 +498,8 @@ def test_llm_inference_metrics_cost_and_typography_contract() -> None:
     _, markdown = parse_frontmatter(path)
 
     assert (
-        "| TPOT（Time per Output Token） | 单请求 Decode 总耗时除以输出 token 数的"
+        "| TPOT（Time per Output Token） | `(端到端延迟 - TTFT) / "
+        "(输出 token 数 - 1)`，即首 token 之后的 Decode 时间对后续输出 token 的"
         "摊销值 |"
     ) in markdown
     assert (
@@ -507,8 +508,16 @@ def test_llm_inference_metrics_cost_and_typography_contract() -> None:
     assert "TPOT / ITL" not in markdown
     assert "TPOT/ITL" not in markdown
     assert "投机解码单步可能返回多个 token" in markdown
-    assert "TPOT 把单请求 Decode 总耗时摊销到输出 token" in markdown
+    assert (
+        "TPOT 按 `(端到端延迟 - TTFT) / (输出 token 数 - 1)` 计算"
+    ) in markdown
+    assert (
+        "等价于首 token 之后的 Decode 时间除以首 token 之后的输出 token 数"
+    ) in markdown
+    assert "只有一个输出 token 时没有 TPOT 样本" in markdown
     assert "ITL 则逐次测量相邻流式输出事件的间隔" in markdown
+    assert "单请求 Decode 总耗时除以输出 token 数" not in markdown
+    assert "TPOT 把单请求 Decode 总耗时摊销到输出 token" not in markdown
 
     assert (
         "每个 SLO 内有效输出 token 成本\n"
