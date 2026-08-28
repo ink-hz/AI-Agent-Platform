@@ -156,6 +156,15 @@ export function ConversationPage({
   useEffect(() => {
     if (!streamEpoch || !detail) return;
     const controller = new AbortController();
+    const refreshSnapshot = async () => {
+      const [snapshot, loadedMessages] = await Promise.all([
+        client.fetchConversation(conversationId, controller.signal),
+        client.fetchMessages(conversationId, controller.signal),
+      ]);
+      if (controller.signal.aborted) return null;
+      setDetail(snapshot); setMessages((current) => mergeMessages(current, loadedMessages));
+      return snapshot;
+    };
     const run = async () => {
       while (!controller.signal.aborted) {
         setConnection(eventCursor.current === 0 ? "connecting" : "live");
@@ -170,17 +179,23 @@ export function ConversationPage({
               setConnection("live");
             },
           });
-          const [snapshot, loadedMessages] = await Promise.all([
-            client.fetchConversation(conversationId, controller.signal),
-            client.fetchMessages(conversationId, controller.signal),
-          ]);
-          if (controller.signal.aborted) return;
-          setDetail(snapshot); setMessages((current) => mergeMessages(current, loadedMessages));
+          const snapshot = await refreshSnapshot();
+          if (!snapshot) return;
           setConnection("live");
           if (!turnIsActive(snapshot)) return;
           setConnection("offline");
         } catch {
           if (controller.signal.aborted) return;
+          try {
+            const snapshot = await refreshSnapshot();
+            if (!snapshot) return;
+            if (!turnIsActive(snapshot)) {
+              setConnection("live");
+              return;
+            }
+          } catch {
+            if (controller.signal.aborted) return;
+          }
           setConnection("offline");
         }
         await client.reconnectDelay(controller.signal);
