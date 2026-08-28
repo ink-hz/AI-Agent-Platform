@@ -3,9 +3,12 @@ from __future__ import annotations
 from datetime import date
 import hashlib
 from pathlib import Path
+import posixpath
 import re
 import shutil
+from urllib.parse import urlsplit
 
+from markdown_it import MarkdownIt
 import yaml
 
 from app.ai_notes.models import AiNotesIndex, ArticleFrontmatter
@@ -23,6 +26,14 @@ SOURCE_REVIEW = (
     / "ai-notes-eight-article-source-review.md"
 )
 SOURCE_ROOT = Path("/Users/neo/Developer/personal/starship-blog-source/src/content/blog")
+FRONTEND_MERMAID_INTEGRATION_TEST = (
+    Path(__file__).resolve().parents[2]
+    / "webui"
+    / "src"
+    / "components"
+    / "ai-notes"
+    / "MermaidDiagram.integration.test.tsx"
+)
 TODAY = date(2026, 8, 28)
 FIRST_PUBLICATION_DATE = date(2026, 5, 25)
 AUTHOR = "苍渊"
@@ -50,6 +61,178 @@ COMPLETED_BATCH_ARTICLES: tuple[str, ...] = (
     "agent-framework-selection",
     "intent-driven-ai-business-platform",
 )
+
+EXPECTED_BATCH_RELATIVE_PATHS: tuple[str, ...] = (
+    "02-agent-architecture/02-agent-identity-access-control.md",
+    "04-ai-engineering/02-llm-inference-serving-engineering.md",
+    "04-ai-engineering/03-ai-cloud-native-runtime.md",
+    "04-ai-engineering/04-llm-agent-observability.md",
+    "03-tools-and-frameworks/02-open-source-agent-runtime.md",
+    "03-tools-and-frameworks/03-metabot-agent-control-bus.md",
+    "03-tools-and-frameworks/04-agent-framework-selection.md",
+    "05-thinking-and-methods/02-intent-driven-ai-business-platform.md",
+)
+
+EXPECTED_BATCH_SLUGS: tuple[str, ...] = (
+    "agent-identity-access-control",
+    "llm-inference-serving-engineering",
+    "ai-cloud-native-runtime",
+    "llm-agent-observability",
+    "open-source-agent-runtime",
+    "metabot-agent-control-bus",
+    "agent-framework-selection",
+    "intent-driven-ai-business-platform",
+)
+
+EXPECTED_CANDIDATE_CATALOG = {
+    "foundations": (
+        "agent-engineering-learning-map",
+        "llm-application-system-architecture",
+    ),
+    "agent-architecture": (
+        "enterprise-agent-system-architecture",
+        "agent-identity-access-control",
+    ),
+    "tools-and-frameworks": (
+        "claude-code-architecture",
+        "open-source-agent-runtime",
+        "metabot-agent-control-bus",
+        "agent-framework-selection",
+    ),
+    "ai-engineering": (
+        "rag-retrieval-engineering",
+        "llm-inference-serving-engineering",
+        "ai-cloud-native-runtime",
+        "llm-agent-observability",
+    ),
+    "thinking-and-methods": (
+        "ai-native-architecture-design",
+        "intent-driven-ai-business-platform",
+    ),
+}
+
+SEMANTIC_MERMAID_FILLS = {
+    "#DBEAFE",
+    "#EDE9FE",
+    "#CCFBF1",
+    "#FEF3C7",
+    "#DCFCE7",
+    "#D1FAE5",
+    "#FEE2E2",
+    "#F3F4F6",
+}
+
+LEGACY_ORGANIZATION_MARKERS = (
+    "xvirobotics",
+    "xvi robotics",
+)
+
+STALE_SOURCE_DATE_MARKERS = (
+    "2024-12-31",
+    "2024-01-21",
+    "2025-01-21",
+    "2026-04-16",
+)
+
+SOURCE_REVIEW_SECTIONS = {
+    "agent-identity-access-control": (
+        "## agent-identity-access-control 精读结论",
+        (
+            "身份认证与访问控制-深度理论知识.md",
+            "身份认证与访问控制-理论架构设计.md",
+        ),
+    ),
+    "llm-inference-serving-engineering": (
+        "## llm-inference-serving-engineering 精读结论",
+        (
+            "AI-LLM系统架构深度指南.md",
+            "AI-LLM系统架构理论指南.md",
+        ),
+    ),
+    "ai-cloud-native-runtime": (
+        "## ai-cloud-native-runtime 精读结论",
+        (
+            "ai-cloud-native-opportunity.md",
+            "Kubernetes与容器编排深度指南.md",
+            "Kubernetes与容器编排理论指南.md",
+        ),
+    ),
+    "llm-agent-observability": (
+        "## llm-agent-observability 精读结论",
+        (
+            "可观测性与监控-深度理论知识.md",
+            "AI-LLM系统架构深度指南.md",
+            "AI-LLM系统架构理论指南.md",
+        ),
+    ),
+    "open-source-agent-runtime": (
+        "## open-source-agent-runtime 精读结论",
+        (
+            "Hermes-Agent架构分析与思考.md",
+            "Clawdbot架构理论指南.md",
+        ),
+    ),
+    "metabot-agent-control-bus": (
+        "## metabot-agent-control-bus 精读结论",
+        ("MetaBot架构设计理论分析.md",),
+    ),
+    "agent-framework-selection": (
+        "## agent-framework-selection 精读结论",
+        ("主流Agent框架深度分析-从架构本质到生产可用性.md",),
+    ),
+    "intent-driven-ai-business-platform": (
+        "## intent-driven-ai-business-platform 精读结论",
+        ("干掉用户旅程-意图驱动的业务平台架构设计.md",),
+    ),
+}
+
+FINAL_DEDUPLICATION_PRIMARY_ARTICLES = {
+    "Agent 工程学习次序": "agent-engineering-learning-map",
+    "LLM 应用请求到可靠回答": "llm-application-system-architecture",
+    "Agent 全景、状态与信任层": "enterprise-agent-system-architecture",
+    "身份、委托与行动授权": "agent-identity-access-control",
+    "Claude Code 公开能力": "claude-code-architecture",
+    "开源 Agent 运行时事实": "open-source-agent-runtime",
+    "MetaBot 远程控制总线": "metabot-agent-control-bus",
+    "Agent 框架选型方法": "agent-framework-selection",
+    "RAG 检索与引用": "rag-retrieval-engineering",
+    "LLM 推理性能机制": "llm-inference-serving-engineering",
+    "AI 工作负载运行时包装、调度与恢复": "ai-cloud-native-runtime",
+    "AI 质量信号与反馈闭环": "llm-agent-observability",
+    "AI 辅助架构设计方法": "ai-native-architecture-design",
+    "意图驱动业务平台": "intent-driven-ai-business-platform",
+}
+
+REQUIRED_BATCH_BOUNDARY_LINKS = {
+    "agent-identity-access-control": ("enterprise-agent-system-architecture",),
+    "llm-inference-serving-engineering": (
+        "../foundations/llm-application-system-architecture",
+    ),
+    "ai-cloud-native-runtime": ("./llm-inference-serving-engineering",),
+    "llm-agent-observability": (
+        "../foundations/llm-application-system-architecture",
+        "rag-retrieval-engineering",
+        "../agent-architecture/enterprise-agent-system-architecture",
+    ),
+    "open-source-agent-runtime": (
+        "../agent-architecture/agent-identity-access-control",
+        "../ai-engineering/llm-agent-observability",
+    ),
+    "metabot-agent-control-bus": (
+        "open-source-agent-runtime",
+        "../agent-architecture/agent-identity-access-control",
+        "../ai-engineering/llm-agent-observability",
+    ),
+    "agent-framework-selection": (
+        "claude-code-architecture",
+        "open-source-agent-runtime",
+        "metabot-agent-control-bus",
+    ),
+    "intent-driven-ai-business-platform": (
+        "../agent-architecture/enterprise-agent-system-architecture",
+        "ai-native-architecture-design",
+    ),
+}
 
 ARTICLE_CONTRACTS = {
     "agent-identity-access-control": {
@@ -1019,6 +1202,228 @@ def intent_platform_has_capability_catalog_contract(markdown: str) -> bool:
     )
     normalized = markdown.casefold()
     return all(field.casefold() in normalized for field in fields)
+
+
+def registered_frontend_batch_paths() -> tuple[str, ...]:
+    source = FRONTEND_MERMAID_INTEGRATION_TEST.read_text(encoding="utf-8")
+    matched = re.search(
+        r"const BATCH_DRAFT_RELATIVE_PATHS = \[([\s\S]*?)\]\s+as const;",
+        source,
+    )
+    assert matched is not None
+    return tuple(re.findall(r'"([^"\n]+\.md)"', matched.group(1)))
+
+
+def batch_mermaid_blocks() -> tuple[tuple[str, str], ...]:
+    blocks = []
+    for slug in COMPLETED_BATCH_ARTICLES:
+        _, markdown = parse_frontmatter(batch_article_path(slug))
+        blocks.extend(
+            (slug, diagram)
+            for diagram in re.findall(r"```mermaid\n([\s\S]*?)\n```", markdown)
+        )
+    return tuple(blocks)
+
+
+def mermaid_groups_are_white(diagram: str) -> bool:
+    group_ids = set(
+        re.findall(
+            r"(?mi)^\s*subgraph\s+([A-Za-z_][A-Za-z0-9_-]*)\b",
+            diagram,
+        )
+    )
+    white_style_ids = set(
+        re.findall(
+            r"(?mi)^\s*style\s+([A-Za-z_][A-Za-z0-9_-]*)\s+"
+            r"[^\n]*\bfill:#FFFFFF\b",
+            diagram,
+        )
+    )
+    return group_ids <= white_style_ids
+
+
+def markdown_link_destinations(markdown: str) -> tuple[str, ...]:
+    destinations = []
+    for token in MarkdownIt("commonmark", {"html": True}).parse(markdown):
+        for child in token.children or ():
+            if child.type != "link_open":
+                continue
+            destination = child.attrGet("href")
+            assert destination is not None
+            destinations.append(destination)
+    return tuple(destinations)
+
+
+def assert_safe_resolving_article_link(source_path: Path, destination: str) -> None:
+    parsed = urlsplit(destination)
+    assert parsed.scheme.casefold() not in {"javascript", "data", "vbscript"}
+    if parsed.scheme:
+        assert parsed.scheme.casefold() == "https"
+        return
+    assert not parsed.netloc
+    if not parsed.path:
+        return
+
+    current_category, _ = parse_frontmatter(source_path.parent / "_index.md")
+    normalized_route = posixpath.normpath(
+        f"{current_category['slug']}/{parsed.path}"
+    )
+    route_parts = tuple(part for part in normalized_route.split("/") if part)
+    assert len(route_parts) == 2
+    target_category_slug, target_slug = route_parts
+    if target_slug.endswith(".md"):
+        target_slug = target_slug.removesuffix(".md")
+
+    candidate_categories = tuple(
+        category
+        for category in CONTENT_ROOT.iterdir()
+        if category.is_dir()
+        and (category / "_index.md").is_file()
+        and parse_frontmatter(category / "_index.md")[0].get("slug")
+        == target_category_slug
+    )
+    assert len(candidate_categories) == 1
+    candidates = tuple(
+        candidate
+        for candidate in candidate_categories[0].glob("*.md")
+        if candidate.name != "_index.md"
+        and parse_frontmatter(candidate)[0].get("slug") == target_slug
+    )
+    assert len(candidates) == 1, (
+        f"broken article link: {source_path} -> {destination}"
+    )
+    candidates[0].resolve().relative_to(CONTENT_ROOT.resolve())
+
+
+def final_deduplication_matrix(markdown: str) -> dict[str, tuple[str, str]]:
+    section = source_review_h2_section(markdown, "## 最终跨文章去重矩阵")
+    matrix = {}
+    for line in section.splitlines():
+        if not line.startswith("| ") or line.startswith("| ---"):
+            continue
+        cells = tuple(cell.strip() for cell in line.strip().strip("|").split("|"))
+        if cells[0] == "主题":
+            continue
+        assert len(cells) == 3
+        main_link = re.fullmatch(r"\[[^\]]+\]\(([^)]+)\)", cells[1])
+        assert main_link is not None
+        main_target = (SOURCE_REVIEW.parent / main_link.group(1)).resolve()
+        assert main_target.is_file()
+        main_frontmatter, _ = parse_frontmatter(main_target)
+        matrix[cells[0]] = (main_frontmatter["slug"], cells[2])
+    return matrix
+
+
+def test_batch_registries_match_the_fixed_eight_article_manifest() -> None:
+    assert tuple(path for path, _ in BATCH_ARTICLES) == EXPECTED_BATCH_RELATIVE_PATHS
+    assert tuple(slug for _, slug in BATCH_ARTICLES) == EXPECTED_BATCH_SLUGS
+    assert COMPLETED_BATCH_ARTICLES == EXPECTED_BATCH_SLUGS
+    assert registered_frontend_batch_paths() == EXPECTED_BATCH_RELATIVE_PATHS
+
+
+def test_batch_candidate_catalog_and_diagrams_meet_final_contract(
+    tmp_path: Path,
+) -> None:
+    articles = assert_completed_batch_drafts()
+    assert len(articles) == 8
+    assert all(article.draft is True for article in articles)
+
+    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
+    candidate_catalog = {
+        category.slug: tuple(article.slug for article in category.articles)
+        for category in candidate_index.categories
+    }
+    assert candidate_catalog == EXPECTED_CANDIDATE_CATALOG
+
+    blocks = batch_mermaid_blocks()
+    assert len(blocks) == 24
+    assert all(
+        sum(1 for article_slug, _ in blocks if article_slug == slug) == 3
+        for slug in EXPECTED_BATCH_SLUGS
+    )
+
+    titles = []
+    descriptions = []
+    for _, diagram in blocks:
+        title = re.search(r"(?m)^\s*accTitle:\s*(\S.+?)\s*$", diagram)
+        description = re.search(r"(?m)^\s*accDescr:\s*(\S.+?)\s*$", diagram)
+        assert title is not None
+        assert description is not None
+        titles.append(title.group(1))
+        descriptions.append(description.group(1))
+        assert any(fill in diagram for fill in SEMANTIC_MERMAID_FILLS)
+        assert "fill:#F8FAFC" not in diagram
+        assert mermaid_groups_are_white(diagram)
+        assert len(mermaid_principal_node_ids(diagram)) <= 12
+
+    assert len(set(titles)) == 24
+    assert len(set(descriptions)) == 24
+
+
+def test_batch_articles_are_clean_explained_and_internally_linked() -> None:
+    legacy_markers = tuple(
+        yaml.safe_load(MARKER_FILE.read_text(encoding="utf-8"))["markers"]
+    )
+    forbidden_markers = (
+        *legacy_markers,
+        *LEGACY_ORGANIZATION_MARKERS,
+        *STALE_SOURCE_DATE_MARKERS,
+        "TODO",
+        "TBD",
+    )
+
+    for slug in COMPLETED_BATCH_ARTICLES:
+        source_path = batch_article_path(slug)
+        _, markdown = parse_frontmatter(source_path)
+        assert re.search(r"(?m)^#\s+", markdown) is None
+        tokens = MarkdownIt("commonmark", {"html": True}).parse(markdown)
+        assert not {token.type for token in tokens} & {"html_block", "html_inline"}
+        for marker in forbidden_markers:
+            assert marker.casefold() not in markdown.casefold()
+
+        links = markdown_link_destinations(markdown)
+        for required_link in REQUIRED_BATCH_BOUNDARY_LINKS[slug]:
+            assert required_link in links
+        for destination in links:
+            assert_safe_resolving_article_link(source_path, destination)
+
+        diagrams = tuple(re.finditer(r"```mermaid\n[\s\S]*?\n```", markdown))
+        assert len(diagrams) == 3
+        for diagram in diagrams:
+            before = markdown[max(0, diagram.start() - 480):diagram.start()]
+            after = markdown[diagram.end():diagram.end() + 480]
+            assert re.search(r"[\u4e00-\u9fff]", before)
+            assert re.search(r"[\u4e00-\u9fff]", after)
+
+
+def test_source_review_is_complete_and_records_final_deduplication_matrix() -> None:
+    review = SOURCE_REVIEW.read_text(encoding="utf-8")
+    ledger_rows = tuple(
+        line
+        for line in review.splitlines()
+        if line.startswith(f"| `{SOURCE_ROOT}/")
+    )
+    assert len(ledger_rows) == len(SOURCE_MANIFEST)
+    assert all("未开始" not in row for row in ledger_rows)
+
+    for _, (section_header, source_filenames) in SOURCE_REVIEW_SECTIONS.items():
+        section = source_review_h2_section(review, section_header)
+        assert "访问日期：2026-08-28" in section
+        assert "去重" in section
+        assert section.count("### ") >= 2
+        assert re.search(r"`\d+-\d+`", section)
+        for source_filename in source_filenames:
+            assert source_filename in section
+
+    matrix = final_deduplication_matrix(review)
+    assert {
+        theme: main_slug
+        for theme, (main_slug, _) in matrix.items()
+    } == FINAL_DEDUPLICATION_PRIMARY_ARTICLES
+    assert all(
+        re.search(r"\[[^\]]+\]\([^)]+\)", boundary)
+        for _, boundary in matrix.values()
+    )
 
 
 def test_completed_batch_helpers_enforce_drafts_and_validate_candidates(
