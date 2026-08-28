@@ -614,11 +614,22 @@ def metabot_contains_forbidden_legacy_or_scale_claim(markdown: str) -> bool:
     return any(re.search(pattern, markdown) for pattern in prohibited_patterns)
 
 
+def metabot_claim_clauses(markdown: str) -> tuple[str, ...]:
+    return tuple(
+        clause.strip()
+        for clause in re.split(
+            r"[\n。！？；;,，]|(?:但是|但|然而|却|不过|可是)",
+            markdown,
+        )
+        if clause.strip()
+    )
+
+
 def metabot_contains_design_as_implementation(markdown: str) -> bool:
     explicit_limit = re.compile(
         r"(?:不能|不可|不应|并非|不是|不等于|尚未|未被|没有)"
     )
-    for clause in re.split(r"[\n。！？；;]", markdown):
+    for clause in metabot_claim_clauses(markdown):
         if explicit_limit.search(clause):
             continue
         if re.search(
@@ -633,7 +644,7 @@ def metabot_contains_design_as_implementation(markdown: str) -> bool:
 
 def metabot_contains_boundary_absolutism(markdown: str) -> bool:
     prohibited_patterns = (
-        r"(?:渠道消息身份|sender\s+identity|chatId|session\s+key|会话绑定)"
+        r"(?:渠道(?:消息)?身份|sender\s+identity|chatId|session\s+key|会话绑定)"
         r"[^。；;\n]{0,40}(?:等同于|就是|自动成为)"
         r"[^。；;\n]{0,24}(?:平台授权身份|授权|权限)",
         r"(?:\back\b|\baccepted\b|消息确认|接收确认|已接收)"
@@ -651,7 +662,7 @@ def metabot_contains_boundary_absolutism(markdown: str) -> bool:
         r"≠|do\s+not|cannot|can't|is\s+not|does\s+not)",
         re.IGNORECASE,
     )
-    for clause in re.split(r"[\n。！？；;]", markdown):
+    for clause in metabot_claim_clauses(markdown):
         if explicit_limit.search(clause):
             continue
         if any(re.search(pattern, clause, re.IGNORECASE) for pattern in prohibited_patterns):
@@ -1581,6 +1592,7 @@ def test_metabot_source_review_records_current_code_snapshots() -> None:
         "src/wechat/wechat-bot.ts",
         "src/types.ts",
         "src/bridge/message-bridge.ts",
+        "src/bridge/error-classifiers.ts",
         "src/bridge/prompt-normalizer.ts",
         "src/session/session-registry.ts",
         "src/engines/claude/session-manager.ts",
@@ -1604,6 +1616,10 @@ def test_metabot_source_review_records_current_code_snapshots() -> None:
     assert "公共任务与 relay 状态" in section
     assert "私有会话与执行状态" in section
     assert "目标系统真实副作用" in section
+    assert "provider/process-exit 路径经过 tool-effect gate" in section
+    assert "legacy stale-session/context-overflow fallback" in section
+    assert "尚未统一经过 effect gate" in section
+    assert "可能在已有副作用后重放原 prompt" in section
 
 
 def test_metabot_agent_control_bus_draft_meets_contract(tmp_path: Path) -> None:
@@ -1721,6 +1737,48 @@ def test_metabot_agent_control_bus_draft_meets_contract(tmp_path: Path) -> None:
     assert sum(len(category.articles) for category in candidate_index.categories) == 12
 
 
+def test_metabot_recovery_discloses_legacy_effect_gate_gap() -> None:
+    _, markdown = parse_frontmatter(batch_article_path("metabot-agent-control-bus"))
+
+    for current_fact in (
+        "provider / process-exit recovery 已经过 tool-effect gate",
+        "legacy stale-session / context-overflow fallback 尚未统一经过 effect gate",
+        "可能在已有副作用后重放原 prompt",
+        "安全目标是让所有 replay 进入统一证据门禁",
+        "无法证明只读或无副作用时停止重放并进入对账",
+        "multiple tool_result",
+        "部分恢复判断",
+    ):
+        assert current_fact in markdown
+
+    assert "执行侧恢复更保守" not in markdown
+    assert "当前 turn recovery 会先检查" not in markdown
+
+    recovery_diagram = tuple(
+        re.findall(r"```mermaid\n([\s\S]*?)\n```", markdown)
+    )[2]
+    for diagram_marker in (
+        "journal 去重",
+        "provider / process-exit",
+        "effect gate",
+        "legacy stale / context fallback",
+        "当前缺口",
+        "目标：统一 evidence gate",
+    ):
+        assert diagram_marker in recovery_diagram
+    assert len(mermaid_principal_node_ids(recovery_diagram)) <= 12
+
+
+def test_metabot_audit_does_not_promote_channel_identity() -> None:
+    _, markdown = parse_frontmatter(batch_article_path("metabot-agent-control-bus"))
+
+    assert (
+        "audit 适合回答哪个已观察到的渠道标识从哪个会话触发了什么控制动作，"
+        "但这不是 Platform 验证主体"
+    ) in markdown
+    assert "audit 适合回答谁从哪个会话触发" not in markdown
+
+
 def test_metabot_guards_reject_forbidden_claims() -> None:
     prohibited = (
         "xvirobotics 的旧拓扑当前仍然有效。",
@@ -1734,6 +1792,8 @@ def test_metabot_guards_reject_forbidden_claims() -> None:
         "消息确认等同于命令完成。",
         "重新连接后可以重放所有命令。",
         "未知副作用可以自动重试。",
+        "渠道身份不等于平台授权身份，但会话绑定就是授权",
+        "设计稿不能证明 A，但架构设计说明该能力已经上线",
         "由此可见，所有命令都会安全恢复。",
     )
     guards = (
@@ -1752,6 +1812,8 @@ def test_metabot_guards_allow_precise_boundaries() -> None:
         "accepted 不是命令完成，只是接收确认。",
         "重新连接 ≠ 可以盲目重放，不确定副作用不得自动重复。",
         "设计稿不能证明能力已经实现，本文只采用当前代码证据。",
+        "渠道身份不等于平台授权身份，但会话绑定也不等于授权。",
+        "设计稿不能证明 A，不过当前代码路径 B 直接证明 B 已实现。",
         "从当前公开结构可以推断：三层状态需要分别对账。",
         "本文推断：恢复策略应按副作用类别收窄。",
     )

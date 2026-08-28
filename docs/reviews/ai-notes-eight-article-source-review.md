@@ -274,11 +274,11 @@ metabot-dev 实际读取：
 
 - `CLAUDE.md`、`README.md`：当前项目入口、channel 与持久会话的已提交文档；README 中的营销、动态能力清单和数量不作为实现证据。
 - `src/types.ts`、`src/feishu/event-handler.ts`、`src/telegram/telegram-bot.ts`、`src/wechat/wechat-bot.ts`：各入口映射 `IncomingMessage`；飞书 sender、Telegram sender 与微信 sender 属于渠道标识，代码没有把它们提升为 Platform 授权身份。
-- `src/bridge/prompt-normalizer.ts`、`src/bridge/message-bridge.ts`：引擎命令形式规范化、每 chat 运行与排队、命令处理、输出投递、activity/audit/flywheel 记录以及副作用感知的恢复入口。
+- `src/bridge/prompt-normalizer.ts`、`src/bridge/message-bridge.ts`、`src/bridge/error-classifiers.ts`：引擎命令形式规范化、每 chat 运行与排队、命令处理、输出投递和 activity/audit/flywheel 记录。正常错误分支与 catch 中的 legacy stale-session/context-overflow fallback 会直接 fresh-session 重放原 prompt，尚未统一经过 effect gate，可能在已有副作用后重放原 prompt；`multiple tool_result` 错误也被归入 stale session。
 - `src/session/session-registry.ts`、`src/engines/claude/session-manager.ts`：显式 session link、聊天到引擎 session 的映射和本地持久化；会话绑定不等于授权。
 - `src/engines/claude/executor-registry.ts`、`src/engines/claude/persistent-executor.ts`：按 chat 管理的持久执行、单活动 turn、释放、异常恢复和 resume 边界；session resume 不证明外部副作用可重放。
 - `src/api/routes/core-chat-contract.ts`、`src/api/routes/core-chat-session-store.ts`、`src/api/routes/core-chat-routes.ts`：`core_chat_collaboration_v3`、task session、连续 `messageSeq`、父运行、命令摘要、`active/stopped/failed` journal 和 `accepted/replayed` 接收语义。
-- `src/bridge/provider-turn-recovery.ts`、`src/bridge/claude-turn-recovery.ts`、`src/bridge/tool-effect.ts`、`src/engines/claude/pty/turn-recovery.ts`：只有在无可用终态且副作用条件允许时才做有界恢复；不确定副作用不自动重复。
+- `src/bridge/provider-turn-recovery.ts`、`src/bridge/claude-turn-recovery.ts`、`src/bridge/tool-effect.ts`、`src/engines/claude/pty/turn-recovery.ts`：provider/process-exit 路径经过 tool-effect gate，只在无可用终态、未停止且副作用条件允许等窄条件下做有界恢复；该保证不能外推到上述 legacy fallback。
 - `src/bridge/final-delivery.ts`、`src/reliability/probe-receipt-store.ts`、`src/utils/audit-logger.ts`、`src/flywheel/envelope.ts`、`src/flywheel/queue.ts`：最终投递重试、探针阶段回执、结构化审计、运行证据和异步写入失败边界。
 
 Platform 当前 worktree 实际读取：
@@ -290,15 +290,15 @@ Platform 当前 worktree 实际读取：
 
 ### 事实分级与 Platform 边界
 
-- **当前代码直接证明**：上述入口归一化、chat/session 映射、命令 journal、执行器注册表、relay 状态、callback 顺序、恢复判断和审计记录，只在实际读取路径能定位的范围内陈述。
+- **当前代码直接证明**：上述入口归一化、chat/session 映射、命令 journal、执行器注册表、relay 状态、callback 顺序和审计记录，只在实际读取路径能定位的范围内陈述。恢复判断按路径披露：provider/process-exit 有 effect gate，legacy stale/context fallback 当前没有统一 gate。
 - **已提交文档明示**：部署合同、可靠性控制面与 flywheel 运维边界用于说明目标责任；文档中的规划、动态版本、固定部署数量和端口不被写成当前通用能力。
-- **作者工程推断**：从当前公开结构可以推断，远程控制需要分别对账 Platform 公共状态、MetaBot 私有状态和目标系统副作用；本文推断贯通主体、工具幂等查询与未知结果流程应先于新增渠道。两类推断均在正文逐处显式标注。
+- **作者工程推断**：从当前公开结构可以推断，远程控制需要分别对账 Platform 公共状态、MetaBot 私有状态和目标系统副作用；本文推断所有 replay 应收口到统一证据门禁，无法证明只读或无副作用时停止重放并进入对账。贯通主体、工具幂等查询与未知结果流程也应先于新增渠道。两类推断均在正文逐处显式标注。
 
 双层控制面再加目标系统事实的边界是：Platform 持有**公共任务与 relay 状态**，MetaBot 持有**私有会话与执行状态**，**目标系统真实副作用**由实际业务系统持有。当前 collaboration v3 链路没有贯通 Platform 验证主体：`RequesterSubject` 虽已存在于 Platform relay 模型，但 MetaBotLocalAdapter 没有设置它，MetaBotClient 的 collaboration 请求也没有发送它。渠道消息身份、session key、ack、取消请求和 stop 回执都不能越过这些所有权边界。
 
 ### 旧稿冲突、保留与删除
 
-- **冲突**：旧稿把固定渠道、引擎、服务、队列、超时和恢复参数写成系统全景；当前代码已演化为更细的 Core Chat journal、Platform relay、tool-effect recovery 和多类证据，故以当前提交代码为准。
+- **冲突**：旧稿把固定渠道、引擎、服务、队列、超时和恢复参数写成系统全景；当前代码已演化为 Core Chat journal、Platform relay、已门禁的 provider/process-exit recovery、尚未统一门禁的 legacy fallback 和多类证据，故以当前提交代码为准。
 - **保留**：远程控制总线、channel adapter、message normalization、identity/session binding、persistent executor、command lifecycle、idempotency、reconnect、audit 和 remote-control risk 这些稳定工程问题。
 - **删除**：旧组织、旧部署拓扑、动态版本、代码行数、端口、固定 Agent/进程/用户/渠道数量、营销效果、横向排名和无法从当前代码复核的组件能力。
 - **去重**：通用 Agent loop、Skills/Tools、memory 与 sandbox 留在 `open-source-agent-runtime`；身份与最小权限留在 `agent-identity-access-control`；证据字段和质量闭环留在 `llm-agent-observability`。本篇只展开远程控制与可靠投递。

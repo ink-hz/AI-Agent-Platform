@@ -136,55 +136,69 @@ flowchart LR
 
 取消也不是一个瞬时事实。取消请求表示上游提出意图；Worker 可能把 stop 送到 MetaBot；MetaBot 的 **stop 回执** 只说明停止请求在该边界得到处理。只有运行终止、relay 对账完成并确认目标系统状态后，调用方才能决定任务最终是取消、失败、中断，还是结果不确定。
 
-## 七、断线恢复先判断事实，再决定是否重放
+## 七、断线恢复要区分已门禁路径与 legacy 缺口
 
 连接恢复只解决“现在又能通信”，不解决“断线期间命令到底执行到哪里”。因此，**重新连接 ≠ 可以盲目重放**。
 
 当前代码直接证明，命令 journal 会对规范化命令计算 `sha256`，相同 task session 与 `messageSeq` 的相同摘要返回既有记录，不同摘要产生冲突；序列缺口和错误父引用也被拒绝。这是接收侧 idempotency，能够防止同一命令因响应丢失而被当作新命令再次接收。
 
-执行侧恢复更保守。当前 turn recovery 会先检查是否已经恢复出完整终态、是否观察到工具副作用，以及调用方是否正在停止；provider failure 只有在工具效果为只读、没有可用终态答案且错误属于可恢复类别时才允许有界重放。**不确定副作用不得自动重复**，本地写入或外部行动也不能因为“可能幂等”就被当成只读。
+执行侧当前并不是一条统一路径。当前代码直接证明，**provider / process-exit recovery 已经过 tool-effect gate**：provider failure 只有在工具效果为只读、没有可用终态答案、尚未停止、错误可恢复且未超过次数限制时才允许 fresh replay；process-exit 路径也会结合已恢复完成输出、工具副作用、停止状态与 replay 次数决定是否重放。
+
+但 **legacy stale-session / context-overflow fallback 尚未统一经过 effect gate**。`MessageBridge` 的正常错误分支和 catch fallback 在识别为 stale session 或 context overflow 后，会重置 session 并以 `freshSession` 重放原 prompt，没有先检查 `getTurnRecoveryEvidence().toolEffect`。`error-classifiers` 还把 `multiple tool_result` 一类错误归入 stale session。因而该 legacy 路径**可能在已有副作用后重放原 prompt**；这是一项当前 recovery 缺口与远程控制风险，不应被 provider/process-exit 的窄门禁掩盖。
+
+**安全目标是让所有 replay 进入统一证据门禁**，并在**无法证明只读或无副作用时停止重放并进入对账**。因此，**不确定副作用不得自动重复**是本文要求的安全不变量，不是对当前所有 recovery 分支的现状描述。
 
 ```mermaid
 flowchart TB
     accTitle: 断线恢复与幂等闭环
-    accDescr: 连接恢复后先用命令序列与摘要查重，再依据终态证据和工具副作用决定返回旧确认、有限重放或停止并保留未知结果。
+    accDescr: 当前 journal 在接收侧查重，provider 与 process-exit 恢复经过副作用门禁；legacy stale 或 context fallback 仍可直接重放，目标是统一门禁后再对账。
 
-    R[reconnect 后重送]
-    K[task session + messageSeq<br/>sha256 查重]
-    D{已有相同摘要}
-    A[返回 replayed 确认]
-    C[冲突拒绝]
-    E[接受并执行]
-    T{已有终态证据}
-    X{仅只读且可恢复}
-    B[有界 fresh replay]
-    U[停止重放<br/>结果不确定]
-    P[callback / relay 对账]
+    subgraph RECEIVE["接收侧现状"]
+        J[Core Chat journal 去重]
+        H{messageSeq + sha256}
+        A[返回 replayed]
+        C[冲突拒绝]
+    end
+    subgraph CURRENT["执行侧现状"]
+        F{恢复触发类型}
+        E[provider / process-exit<br/>effect gate]
+        S[只读且证据允许<br/>有界 replay]
+        U[停止重放<br/>结果不确定]
+        L[legacy stale / context fallback]
+        R[当前缺口<br/>freshSession 重放]
+    end
+    subgraph CLOSE["安全收口"]
+        T[目标：统一 evidence gate]
+        P[callback / relay /<br/>目标系统对账]
+    end
 
-    R --> K --> D
-    D -->|是| A --> P
-    D -->|同序列不同摘要| C
-    D -->|否| E --> T
-    T -->|是| P
-    T -->|否| X
-    X -->|是| B --> P
-    X -->|否| U --> P
+    J --> H
+    H -->|相同摘要| A --> P
+    H -->|同序列不同摘要| C --> P
+    H -->|新命令| F
+    F -->|provider / process-exit| E
+    E -->|允许| S --> P
+    E -->|不允许| U --> P
+    F -->|stale / context| L --> R --> P
+    R -.安全目标.-> T --> E
 
-    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
     classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
     classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
     classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
     classDef danger fill:#FEE2E2,stroke:#F87171,color:#172033;
     classDef platform fill:#EDE9FE,stroke:#A78BFA,color:#172033;
-    class R input;
-    class K data;
-    class D,T,X policy;
-    class A,E,B success;
-    class C,U danger;
+    class J,H data;
+    class F,E policy;
+    class A,S success;
+    class C,U,L,R danger;
+    class T platform;
     class P platform;
+    style RECEIVE fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
+    style CURRENT fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
+    style CLOSE fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
 ```
 
-图中“有界 fresh replay”只对应当前代码明确允许的窄条件，不是通用重试承诺。渠道 SDK 的自动重连、HTTP 重试、命令幂等和工具副作用幂等是四个不同层次，必须分别验证。
+图中实线分别呈现当前两类行为：provider/process-exit 分支经过 effect gate，legacy stale/context 分支仍直接 fresh-session fallback；虚线表示尚未实现的安全收口目标。渠道 SDK 自动重连、HTTP 重试、接收侧命令幂等和工具副作用幂等仍是四个不同层次，必须分别验证。
 
 ## 八、三层状态必须对账
 
@@ -206,7 +220,7 @@ flowchart TB
 
 这些记录的用途不同：
 
-- audit 适合回答谁从哪个会话触发了什么控制动作，但其中的 prompt 摘要仍需按敏感数据治理；
+- audit 适合回答哪个已观察到的渠道标识从哪个会话触发了什么控制动作，但这不是 Platform 验证主体，其中的 prompt 摘要仍需按敏感数据治理；
 - flywheel 适合关联消息、执行、工具与证据，写入失败不应反向控制用户消息处理；
 - delivery receipt 只证明某次卡片、文本或文件投递尝试的结果，不证明 Agent 的业务目标已经完成；
 - relay terminal event 是公共任务对账依据，仍应携带目标系统可验证的 deliverable、evidence 和 limitation。
@@ -217,7 +231,7 @@ flowchart TB
 
 远程控制的主要风险不是消息丢了一条，而是低信任入口触发了高权限行动。至少要防范渠道账号被接管、群聊误触发、Prompt 注入扩散、错误会话绑定、密钥泄露、命令重复、取消迟到和敏感结果投递到错误会话。
 
-当前代码中的 bearer API、固定 Bot 策略、队列、会话隔离、恢复判断和证据记录提供了基础控制点，但它们不能合并成“默认安全”的结论。尤其是拥有文件和命令工具的 Agent，仍需确定性的 capability allowlist、参数约束、工作目录隔离、高风险审批、短时凭证和目标系统事务证据。
+当前代码中的 bearer API、固定 Bot 策略、队列、会话隔离、部分恢复判断和证据记录提供了基础控制点，但它们不能合并成“默认安全”的结论。尤其是拥有文件和命令工具的 Agent，仍需确定性的 capability allowlist、参数约束、工作目录隔离、高风险审批、短时凭证和目标系统事务证据。
 
 适用场景是：需要异步通知、跨设备控制、长任务跟进，并且行动边界能够被工具策略与目标系统回执约束的工程任务。不适用场景是：把聊天账号直接当企业授权、把消息发送成功当事务提交，或让不可逆操作在结果未知时自动重放。
 
