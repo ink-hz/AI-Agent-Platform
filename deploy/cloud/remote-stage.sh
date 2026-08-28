@@ -538,14 +538,14 @@ worker_bootstrap_result="$(/usr/bin/docker run --rm --user 0:0 --read-only \
   /run/bootstrap/execution-worker-public-keyring.json)" || fail
 [[ "$worker_bootstrap_result" =~ ^EXECUTION_WORKER_BOOTSTRAP_OK\ status=(registered|existing)\ fingerprint=[0-9a-f]{64}$ ]] || fail
 /usr/bin/test ! -e "$worker_keyring_previous" || fail
-for brain_secret in brain-worker-database-url content-encryption-keyring brain-provider-api-key; do
+for brain_secret in brain-worker-database-url content-encryption-keyring brain-provider-api-key voc-extension-signing-key; do
   [[ -f "$private_path/$brain_secret" && ! -L "$private_path/$brain_secret" ]] || fail
   [[ "$(/usr/bin/stat -c '%a %U' "$private_path/$brain_secret")" == "600 root" ]] || fail
 done
 /usr/bin/docker run --rm --network none \
   -v orbbec-agent-platform-brain-secrets:/target \
   -v "$private_path:/source:ro" alpine:3.22 \
-  sh -ceu 'cp /source/brain-worker-database-url /source/content-encryption-keyring /source/brain-provider-api-key /target/; chown 10001:10001 /target/*; chmod 600 /target/brain-worker-database-url /target/content-encryption-keyring /target/brain-provider-api-key'
+  sh -ceu 'cp /source/brain-worker-database-url /source/content-encryption-keyring /source/brain-provider-api-key /source/voc-extension-signing-key /target/; chown 10001:10001 /target/*; chmod 600 /target/brain-worker-database-url /target/content-encryption-keyring /target/brain-provider-api-key /target/voc-extension-signing-key'
 if [[ -e "$worker_keyring" || -L "$worker_keyring" ]]; then
   /usr/bin/install -o root -g root -m 600 "$worker_keyring" "$worker_keyring_previous"
 else

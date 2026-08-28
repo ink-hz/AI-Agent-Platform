@@ -4,16 +4,14 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
-
-from app.agent_brain.models import load_capability_cards
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
+from app.agent_brain.models import load_capability_cards
 from app.agent_brain.runtime_registry import (
     AgentHealthObservation,
     RuntimeAgentRegistry,
 )
 from app.agent_brain.worker_runtime import RelayAgentHealth
 from app.execution_relay.repository import ExecutionRelayError
-
 
 NOW = datetime(2026, 8, 24, 8, 0, tzinfo=timezone.utc)
 USER_ID = uuid4()
@@ -263,3 +261,17 @@ def test_relay_health_degrades_to_unknown_when_the_relay_fails() -> None:
 
     assert item.availability == "unknown"
     assert item.health_fresh is False
+
+
+def test_non_relay_agent_uses_its_real_private_health_probe() -> None:
+    relay = FakeRelay(available=False)
+    health = RelayAgentHealth(
+        relay,
+        agent_checks={"voc": lambda: True},
+        now=lambda: NOW,
+    )
+
+    observation = health.for_agent("voc")
+
+    assert observation is not None and observation.state == "online"
+    assert relay.agent_ids == []

@@ -75,7 +75,11 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
 
     worker = compose["services"]["platform-brain"]
     assert "ports" not in worker
-    assert set(worker["networks"]) == {"platform-internal", "platform-edge"}
+    assert set(worker["networks"]) == {
+        "platform-internal",
+        "platform-edge",
+        "voc-extension",
+    }
     assert worker["command"] == [
         "python",
         "-m",
@@ -101,7 +105,15 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
     assert worker["environment"]["PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME"] == (
         "${PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME:-bearer}"
     )
+    assert worker["environment"]["PLATFORM_VOC_EXTENSION_BASE_URL"] == (
+        "http://172.29.0.3:18130"
+    )
+    assert worker["environment"]["PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE"] == (
+        "/run/secrets/voc-extension-signing-key"
+    )
+    assert worker["environment"]["PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS"] == "10"
     assert "PLATFORM_DINGTALK_APP_SECRET_FILE" not in worker["environment"]
+    assert worker["networks"]["voc-extension"]["ipv4_address"] == "172.29.0.4"
     assert worker["volumes"] == ["platform-brain-secrets:/run/secrets:ro"]
 
     for name, service in compose["services"].items():
@@ -121,6 +133,7 @@ def test_remote_stage_requires_mode_0600_and_preserves_feature_state() -> None:
         "execution-worker-public-keyring.json",
         "brain-worker-database-url",
         "brain-provider-api-key",
+        "voc-extension-signing-key",
     ):
         assert secret in stage
     assert "stat -c '%a %U'" in stage

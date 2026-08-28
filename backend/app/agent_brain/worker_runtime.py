@@ -19,6 +19,7 @@ from app.agent_brain.adapters.base import AdapterRegistry
 from app.agent_brain.adapters.http_task import HttpTaskAdapter
 from app.agent_brain.adapters.metabot_local import MetaBotLocalAdapter
 from app.agent_brain.adapters.reference import ReferenceAdapter
+from app.agent_brain.adapters.voc import VocBrainAdapter
 from app.agent_brain.anthropic_adapter import AnthropicMessagesAdapter
 from app.agent_brain.authorization import AgentUseAuthorization
 from app.agent_brain.loop_repository import BrainLoopRepository
@@ -38,6 +39,8 @@ from app.execution_relay.repository import (
     ExecutionRelayRepository,
 )
 from app.local_secrets import read_secret_file
+from app.voc_extension.client import VocTaskClient
+from app.voc_extension.identity import PlatformVocTokenSigner
 
 WorkerMode = Literal["brain", "adapter", "reaper", "all"]
 
@@ -71,24 +74,45 @@ class RelayAgentHealth:
         self,
         relay: ExecutionRelayRepository,
         *,
+        agent_checks: Mapping[str, Callable[[], bool]] | None = None,
         freshness_seconds: int = 60,
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         # Duck-typed like RuntimeAgentRegistry's own collaborators, so the projection
         # can be tested without standing up a relay DSN.
-        if not hasattr(relay, "has_active_worker"):
+        selected_checks = dict(agent_checks or {})
+        if not hasattr(relay, "has_active_worker") or any(
+            type(agent_id) is not str or not agent_id or not callable(check)
+            for agent_id, check in selected_checks.items()
+        ):
             raise ValueError("execution relay required")
         if type(freshness_seconds) is not int or freshness_seconds <= 0:
             raise ValueError("relay freshness invalid")
         if not callable(now):
             raise ValueError("relay clock invalid")
         self._relay = relay
+        self._agent_checks = selected_checks
         self._freshness_seconds = freshness_seconds
         self._now = now
 
     def for_agent(self, agent_id: str) -> AgentHealthObservation | None:
         if not isinstance(agent_id, str) or not agent_id:
             return None
+        check = self._agent_checks.get(agent_id)
+        if check is not None:
+            try:
+                available = check()
+            except Exception:
+                return None
+            if type(available) is not bool:
+                return None
+            return AgentHealthObservation(
+                state="online" if available else "offline",
+                sampled_at=self._now(),
+                latency_p50_ms=None,
+                latency_p95_ms=None,
+                sample_count=0,
+            )
         try:
             available = self._relay.has_active_worker(
                 agent_id, freshness_seconds=self._freshness_seconds
@@ -188,6 +212,36 @@ def register_http_task_adapters(
     return tuple(registered)
 
 
+def register_voc_action_adapter(
+    adapters: AdapterRegistry,
+    actions: ActionCommandService,
+    *,
+    environ: Mapping[str, str] = os.environ,
+) -> VocTaskClient | None:
+    """Register the private durable VOC Action path only with complete config."""
+
+    base_url = environ.get("PLATFORM_VOC_EXTENSION_BASE_URL", "").strip()
+    key_file = environ.get("PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE", "").strip()
+    timeout_value = environ.get("PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS", "").strip()
+    if not any((base_url, key_file, timeout_value)):
+        return None
+    if (
+        not base_url
+        or not key_file
+        or not timeout_value
+        or not isinstance(actions, ActionCommandService)
+    ):
+        raise RuntimeError("VOC Action Adapter configuration unavailable")
+    try:
+        timeout = float(timeout_value)
+        signer = PlatformVocTokenSigner.from_file(key_file)
+        client = VocTaskClient(base_url, signer, timeout_seconds=timeout)
+        adapters.register("voc_action", VocBrainAdapter(client, actions))
+    except (OSError, TypeError, ValueError, RuntimeError) as error:
+        raise RuntimeError("VOC Action Adapter configuration unavailable") from error
+    return client
+
+
 def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client]:
     database_path = _required_path("PLATFORM_BRAIN_DATABASE_URL_FILE")
     content_path = _required_path("PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE")
@@ -235,11 +289,19 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
     adapters = AdapterRegistry()
     adapters.register("reference", ReferenceAdapter())
     adapters.register("metabot_local", MetaBotLocalAdapter(relay))
+    voc_task_client = register_voc_action_adapter(adapters, action_commands)
     register_http_task_adapters(adapters, client)
     authorization = AgentUseAuthorization(database_url, dsn_purpose="brain")
     registry = RuntimeAgentRegistry(
         authorization=authorization,
-        health=RelayAgentHealth(relay),
+        health=RelayAgentHealth(
+            relay,
+            agent_checks=(
+                {"voc": voc_task_client.is_healthy}
+                if voc_task_client is not None
+                else None
+            ),
+        ),
         registered_adapter_kinds=adapters.registered_kinds,
     )
     return (

@@ -2,9 +2,11 @@ from pathlib import Path
 
 import pytest
 import yaml
-
-from app.agent_catalog import CANONICAL_AGENT_IDS, AgentCatalogRepository, load_agent_catalog
-
+from app.agent_catalog import (
+    CANONICAL_AGENT_IDS,
+    AgentCatalogRepository,
+    load_agent_catalog,
+)
 
 EXPECTED_IDS = {
     "hr-bot",
@@ -30,7 +32,11 @@ def test_catalog_contains_exactly_the_nine_product_agents() -> None:
     assert set(CANONICAL_AGENT_IDS) == EXPECTED_IDS
     assert tuple(card.agent_id for card in cards) == CANONICAL_AGENT_IDS
     assert not {
-        "fae-bot", "feishu-default", "test-bot", "codex-assistant", "agent-brain-bot",
+        "fae-bot",
+        "feishu-default",
+        "test-bot",
+        "codex-assistant",
+        "agent-brain-bot",
     } & {card.agent_id for card in cards}
 
 
@@ -54,10 +60,10 @@ def test_catalog_expresses_direct_delegated_and_external_modes_explicitly() -> N
     assert fae.workspace_url == "https://fae.orbbec.com.cn/"
     assert fae.adapter_kind is None
     assert fae.dispatchable is False
-    assert voc.interaction_modes == ("external_workspace",)
+    assert voc.interaction_modes == ("external_workspace", "brain_delegation")
     assert voc.workspace_url == "/agents/voc/workspace"
-    assert voc.adapter_kind is None
-    assert voc.dispatchable is False
+    assert voc.adapter_kind == "voc_action"
+    assert voc.dispatchable is True
 
 
 def test_catalog_exposes_public_persona_subtitles() -> None:
@@ -84,15 +90,18 @@ def test_catalog_exposes_public_persona_subtitles() -> None:
         lambda agents: agents[-1].update(adapter_kind="fae_http"),
         lambda agents: agents[0].update(pool_concurrency=2),
         lambda agents: agents[0].update(execution_pool=None),
-        lambda agents: agents[1].update(
-            execution_pool="metabot_local", pool_concurrency=1
-        ),
+        lambda agents: agents[1].update(execution_pool=None),
     ],
     ids=(
-        "duplicate", "missing", "legacy-id", "external-without-workspace",
-        "arbitrary-workspace", "external-with-adapter",
-        "pool-concurrency-conflict", "delegated-without-pool",
-        "external-with-pool",
+        "duplicate",
+        "missing",
+        "legacy-id",
+        "external-without-workspace",
+        "arbitrary-workspace",
+        "external-with-adapter",
+        "pool-concurrency-conflict",
+        "delegated-without-pool",
+        "delegated-without-pool",
     ),
 )
 def test_invalid_catalog_fails_closed(tmp_path: Path, mutate) -> None:
@@ -111,10 +120,15 @@ def test_delegated_agents_declare_the_executor_they_contend_for() -> None:
     # All six MetaBot Agents run on one host that executes strictly one task at a
     # time, so the Brain must not treat them as six parallel slots.
     pooled = [card for card in cards.values() if card.execution_pool is not None]
-    assert {card.execution_pool for card in pooled} == {"metabot_local"}
+    assert {card.execution_pool for card in pooled} == {
+        "metabot_local",
+        "voc_extension",
+    }
     assert {card.pool_concurrency for card in pooled} == {1}
-    assert len(pooled) == 6
+    assert len(pooled) == 7
 
-    for agent_id in ("voc", "ai-admin-agent", "ai-fae-agent"):
+    for agent_id in ("ai-admin-agent", "ai-fae-agent"):
         assert cards[agent_id].execution_pool is None
         assert cards[agent_id].pool_concurrency is None
+    assert cards["voc"].execution_pool == "voc_extension"
+    assert cards["voc"].pool_concurrency == 1

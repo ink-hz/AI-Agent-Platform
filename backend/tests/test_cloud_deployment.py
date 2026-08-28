@@ -2,7 +2,6 @@ from pathlib import Path
 
 import yaml
 
-
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
 
@@ -28,41 +27,100 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     assert "ports" not in services["platform-api"]
     assert services["platform-loopback"]["ports"] == ["127.0.0.1:8080:8080"]
     assert services["platform-loopback"]["command"] == [
-        "uvicorn", "app.cloud_replica.loopback_proxy:create_app", "--factory",
-        "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers",
+        "uvicorn",
+        "app.cloud_replica.loopback_proxy:create_app",
+        "--factory",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+        "--no-proxy-headers",
     ]
     assert services["platform-loopback"]["volumes"] == []
     assert services["platform-loopback"]["read_only"] is True
     assert services["platform-loopback"]["cap_drop"] == ["ALL"]
     assert set(services["platform-loopback"]["networks"]) == {
-        "platform-edge", "platform-internal"
+        "platform-edge",
+        "platform-internal",
     }
-    assert services["platform-postgres"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.2"
-    assert services["platform-loopback"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.3"
-    assert services["platform-api"]["networks"]["platform-internal"]["ipv4_address"] == "172.30.0.4"
+    assert (
+        services["platform-postgres"]["networks"]["platform-internal"]["ipv4_address"]
+        == "172.30.0.2"
+    )
+    assert (
+        services["platform-loopback"]["networks"]["platform-internal"]["ipv4_address"]
+        == "172.30.0.3"
+    )
+    assert (
+        services["platform-api"]["networks"]["platform-internal"]["ipv4_address"]
+        == "172.30.0.4"
+    )
     assert services["platform-api"]["read_only"] is True
     assert services["platform-api"]["cap_drop"] == ["ALL"]
     assert services["platform-api"]["security_opt"] == ["no-new-privileges:true"]
     assert services["platform-api"]["user"] not in {"0", "root", "0:0"}
-    assert services["platform-api"]["environment"]["PLATFORM_DEPLOYMENT_MODE"] == "cloud-replica"
-    assert services["platform-api"]["environment"]["PLATFORM_CLOUD_AUTH_MODE"] == "dingtalk"
+    assert (
+        services["platform-api"]["environment"]["PLATFORM_DEPLOYMENT_MODE"]
+        == "cloud-replica"
+    )
+    assert (
+        services["platform-api"]["environment"]["PLATFORM_CLOUD_AUTH_MODE"]
+        == "dingtalk"
+    )
     assert services["platform-api"]["environment"]["PLATFORM_HOST"] == "127.0.0.1"
     assert services["platform-api"]["environment"]["PLATFORM_REVIEW_ENABLED"] == "0"
     assert services["platform-api"]["environment"]["PLATFORM_ATTACHMENT_ENABLED"] == "0"
-    assert services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_ENABLED"] == "1"
-    assert services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_BASE_URL"] == "http://172.29.0.3:18130"
-    assert services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE"] == "/run/secrets/voc-extension-signing-key"
-    assert services["platform-api"]["environment"]["PLATFORM_AGENT_BRAIN_V2_ENABLED"] == "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
+    assert (
+        services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_ENABLED"] == "1"
+    )
+    assert (
+        services["platform-api"]["environment"]["PLATFORM_VOC_EXTENSION_BASE_URL"]
+        == "http://172.29.0.3:18130"
+    )
+    assert (
+        services["platform-api"]["environment"][
+            "PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE"
+        ]
+        == "/run/secrets/voc-extension-signing-key"
+    )
+    assert (
+        services["platform-api"]["environment"]["PLATFORM_AGENT_BRAIN_V2_ENABLED"]
+        == "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
+    )
     assert "ports" not in services["platform-brain"]
     assert services["platform-brain"]["read_only"] is True
     assert services["platform-brain"]["user"] == "10001:10001"
     assert services["platform-brain"]["cap_drop"] == ["ALL"]
     assert services["platform-brain"]["security_opt"] == ["no-new-privileges:true"]
     assert set(services["platform-brain"]["networks"]) == {
-        "platform-edge", "platform-internal"
+        "platform-edge",
+        "platform-internal",
+        "voc-extension",
     }
-    assert services["platform-api"]["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.3/32"
-    assert services["platform-loopback"]["environment"]["PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS"] == "127.0.0.1/32,172.31.0.1/32"
+    assert (
+        services["platform-brain"]["networks"]["voc-extension"]["ipv4_address"]
+        == "172.29.0.4"
+    )
+    assert (
+        services["platform-brain"]["environment"]["PLATFORM_VOC_EXTENSION_BASE_URL"]
+        == "http://172.29.0.3:18130"
+    )
+    assert (
+        services["platform-brain"]["environment"][
+            "PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE"
+        ]
+        == "/run/secrets/voc-extension-signing-key"
+    )
+    assert (
+        services["platform-api"]["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"]
+        == "172.30.0.3/32"
+    )
+    assert (
+        services["platform-loopback"]["environment"][
+            "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS"
+        ]
+        == "127.0.0.1/32,172.31.0.1/32"
+    )
     assert services["platform-api"]["volumes"] == [
         "platform-api-secrets:/run/secrets:ro"
     ]
@@ -79,7 +137,10 @@ def test_compose_is_isolated_loopback_only_and_hardened():
         "internal": True,
         "ipam": {"config": [{"subnet": "172.29.0.0/29", "gateway": "172.29.0.1"}]},
     }
-    assert services["platform-api"]["networks"]["voc-extension"]["ipv4_address"] == "172.29.0.2"
+    assert (
+        services["platform-api"]["networks"]["voc-extension"]["ipv4_address"]
+        == "172.29.0.2"
+    )
     assert value["networks"]["platform-edge"]["internal"] is False
 
 
@@ -96,7 +157,12 @@ def test_image_is_multistage_nonroot_and_contains_only_runtime_assets():
     assert "uvicorn" in dockerfile
     assert '"--no-proxy-headers"' in dockerfile
     assert "brain-model.release.json" in dockerfile
-    for forbidden in ("copy .git", "copy backend/tests", "sensitive-dictionary", "identity-hmac"):
+    for forbidden in (
+        "copy .git",
+        "copy backend/tests",
+        "sensitive-dictionary",
+        "identity-hmac",
+    ):
         assert forbidden not in dockerfile
 
 
@@ -143,7 +209,7 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
         "[::]:8080",
         "CLOUD_PLATFORM_DEPLOY_OK release=",
         "mode=dingtalk",
-        'up -d --force-recreate platform-postgres',
+        "up -d --force-recreate platform-postgres",
         'docker rm -f "$container_id"',
         "platform-loopback",
     ):
@@ -159,7 +225,7 @@ def test_remote_stage_preflight_and_postflight_preserve_existing_services():
     assert 'previous_release=""' in script
     assert 'if [[ -L "$root_path/current" ]]' in script
     assert '[[ -f "$previous_release/deploy/cloud/compose.yaml" ]] || fail' in script
-    assert 'PLATFORM_CLOUD_AUTH_MODE=dingtalk' in script
+    assert "PLATFORM_CLOUD_AUTH_MODE=dingtalk" in script
     assert 'cloud_auth_mode="ssh-tunnel"' in script
     assert "/api/deployment" not in script
     assert "sync-identity-policy" in script
@@ -242,8 +308,7 @@ def test_control_database_bootstrap_is_isolated_and_least_privilege():
     preview_dsns = tuple(f"preview-{dsn}" for dsn in production_dsns)
     assert _bash_array(script, "dsn_names") == production_dsns + preview_dsns
     assert _bash_array(script, "database_names") == (
-        ("agent_platform_control",) * 6
-        + ("agent_platform_control_preview",) * 6
+        ("agent_platform_control",) * 6 + ("agent_platform_control_preview",) * 6
     )
     assert len(set(production_passwords + preview_passwords)) == 12
     assert len(set(production_dsns + preview_dsns)) == 12
@@ -261,13 +326,11 @@ def test_control_database_bootstrap_is_isolated_and_least_privilege():
     assert "revoke_owner_memberships" in script
     assert "grant platform_control_owner to platform_control_migrator" in script
     assert (
-        "grant platform_control_owner_preview "
-        "to platform_control_migrator_preview"
+        "grant platform_control_owner_preview to platform_control_migrator_preview"
     ) in script
     assert "revoke platform_control_owner from platform_control_migrator" in script
     assert (
-        "revoke platform_control_owner_preview "
-        "from platform_control_migrator_preview"
+        "revoke platform_control_owner_preview from platform_control_migrator_preview"
     ) in script
     assert "join pg_roles member on member.oid = membership.member" in script
     assert "join pg_roles granted on granted.oid = membership.roleid" in script
@@ -290,7 +353,7 @@ def test_control_database_bootstrap_is_isolated_and_least_privilege():
         "create extension postgres_fdw",
         "create extension dblink",
         "login password '$",
-        "login password \"$",
+        'login password "$',
         "echo $",
         "superuser password",
     ):
@@ -306,9 +369,9 @@ def test_control_database_bootstrap_is_isolated_and_least_privilege():
 
 
 def test_control_migrator_uses_only_the_validated_environment_owner_role():
-    runner = (
-        ROOT / "backend" / "app" / "control_plane" / "migrate.py"
-    ).read_text(encoding="utf-8")
+    runner = (ROOT / "backend" / "app" / "control_plane" / "migrate.py").read_text(
+        encoding="utf-8"
+    )
 
     assert '"platform_control_owner"' in runner
     assert '"platform_control_owner_preview"' in runner
@@ -322,7 +385,7 @@ def test_remote_stage_calls_control_bootstrap_without_replacing_replica():
 
     assert '"$release_path/deploy/cloud/bootstrap-control-db.sh"' in stage
     validation = (
-        'for bootstrap_helper in \\\n'
+        "for bootstrap_helper in \\\n"
         '  "$release_path/deploy/cloud/bootstrap-control-db.sh" \\\n'
     )
     invocation = (

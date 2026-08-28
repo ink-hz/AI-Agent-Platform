@@ -204,6 +204,9 @@ services:
       PLATFORM_BRAIN_PROVIDER_BASE_URL: "${PLATFORM_BRAIN_PROVIDER_BASE_URL:-https://cc.nexcor.ai}"
       PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME: "${PLATFORM_BRAIN_PROVIDER_AUTH_SCHEME:-bearer}"
       PLATFORM_BRAIN_PROVIDER_API_KEY_FILE: /run/secrets/brain-provider-api-key
+      PLATFORM_VOC_EXTENSION_BASE_URL: http://172.29.0.3:18130
+      PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE: /run/secrets/voc-extension-signing-key
+      PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS: "10"
     volumes:
       - platform-brain-secrets:/run/secrets:ro
     networks:
@@ -212,6 +215,8 @@ services:
       platform-edge:
         ipv4_address: 172.31.0.7
         gw_priority: 1
+      voc-extension:
+        ipv4_address: 172.29.0.4
     depends_on:
       platform-postgres:
         condition: service_healthy

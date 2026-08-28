@@ -7,13 +7,13 @@ from uuid import UUID, uuid4, uuid5
 
 import psycopg
 import pytest
+from app.agent_brain.action_service import ActionCommandConflict, ActionCommandService
+from app.agent_brain.adapters.base import AdapterDelivery, AdapterRegistry, AdapterTask
+from app.agent_brain.adapters.voc import VocBrainAdapter
+from app.agent_brain.worker_runtime import register_voc_action_adapter
+from app.execution_relay.models import RequesterSubject
 from test_agent_brain_live_repository import live_database, seeded_live_task
 from test_control_plane_migration import control_database
-
-from app.agent_brain.action_service import ActionCommandConflict, ActionCommandService
-from app.agent_brain.adapters.base import AdapterDelivery, AdapterTask
-from app.agent_brain.adapters.voc import VocBrainAdapter
-from app.execution_relay.models import RequesterSubject
 
 
 class DurableFakeVoc:
@@ -82,6 +82,31 @@ def _delivery(task_id) -> AdapterDelivery:
     )
 
 
+def test_worker_registers_voc_only_with_complete_private_configuration(
+    tmp_path,
+) -> None:
+    signing_key = tmp_path / "voc-signing-key"
+    signing_key.write_bytes(b"v" * 32)
+    signing_key.chmod(0o600)
+    actions = object.__new__(ActionCommandService)
+    adapters = AdapterRegistry()
+
+    client = register_voc_action_adapter(
+        adapters,
+        actions,
+        environ={
+            "PLATFORM_VOC_EXTENSION_BASE_URL": "http://172.29.0.3:18130",
+            "PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE": str(signing_key),
+            "PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS": "10",
+        },
+    )
+
+    assert client is not None
+    assert adapters.registered_kinds == ("voc_action",)
+    assert isinstance(adapters.require("voc_action"), VocBrainAdapter)
+    client.close()
+
+
 @pytest.mark.postgres
 def test_voc_action_survives_restarts_and_submits_exactly_once(
     live_database,
@@ -126,8 +151,12 @@ def test_voc_action_survives_restarts_and_submits_exactly_once(
             action.projection.action_id,
             "0" * 64,
         )
-    first = app_actions.confirm(owner_id, action.projection.action_id, action.projection.action_digest)
-    second = app_actions.confirm(owner_id, action.projection.action_id, action.projection.action_digest)
+    first = app_actions.confirm(
+        owner_id, action.projection.action_id, action.projection.action_digest
+    )
+    second = app_actions.confirm(
+        owner_id, action.projection.action_id, action.projection.action_digest
+    )
     assert first == second
 
     after_confirm_restart = VocBrainAdapter(voc, worker_actions)

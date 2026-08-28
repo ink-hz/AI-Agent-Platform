@@ -4,8 +4,14 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
-
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 InteractionMode = Literal["direct_chat", "brain_delegation", "external_workspace"]
 
@@ -45,9 +51,7 @@ class AgentCatalogCard(BaseModel):
     adapter_id: str | None = Field(default=None, max_length=128)
     adapter_kind: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     adapter_config_version: int = Field(default=1, gt=0)
-    execution_pool: str | None = Field(
-        default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$"
-    )
+    execution_pool: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     pool_concurrency: int | None = Field(default=None, ge=1, le=16)
     accepted_input_types: tuple[Literal["text"], ...] = ("text",)
     output_types: tuple[Literal["text"], ...] = ("text",)
@@ -71,26 +75,42 @@ class AgentCatalogCard(BaseModel):
     authorization_policy: Literal["agent_grant"] = "agent_grant"
 
     @field_validator(
-        "capabilities", "exclusions", "required_inputs", "example_tasks", "interaction_modes"
+        "capabilities",
+        "exclusions",
+        "required_inputs",
+        "example_tasks",
+        "interaction_modes",
     )
     @classmethod
     def _unique_values(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         normalized = tuple(value.strip() for value in values)
-        if any(not value for value in normalized) or len(normalized) != len(set(normalized)):
+        if any(not value for value in normalized) or len(normalized) != len(
+            set(normalized)
+        ):
             raise ValueError("catalog list values must be non-empty and unique")
         return normalized
 
     @model_validator(mode="after")
-    def _validate_delivery_contract(self) -> "AgentCatalogCard":
+    def _validate_delivery_contract(self) -> AgentCatalogCard:
         modes = set(self.interaction_modes)
         external_only = modes == {"external_workspace"}
+        has_external_workspace = "external_workspace" in modes
+        is_callable = bool(modes & {"direct_chat", "brain_delegation"})
+        if has_external_workspace:
+            if modes not in (
+                {"external_workspace"},
+                {"external_workspace", "brain_delegation"},
+            ):
+                raise ValueError("interaction mode combination invalid")
+            if self.workspace_url != _WORKSPACE_URLS.get(self.agent_id):
+                raise ValueError("external workspace URL is not allowlisted")
+        elif self.workspace_url is not None:
+            raise ValueError("direct or delegated Agent cannot declare a workspace URL")
         if external_only:
             if self.adapter_kind is not None or self.adapter_id is not None:
                 raise ValueError("external workspace Agent cannot declare an Adapter")
             if self.execution_pool is not None or self.pool_concurrency is not None:
                 raise ValueError("external workspace Agent has no execution pool")
-            if self.workspace_url != _WORKSPACE_URLS.get(self.agent_id):
-                raise ValueError("external workspace URL is not allowlisted")
             if any(
                 (
                     self.supports_persistent_session,
@@ -101,16 +121,18 @@ class AgentCatalogCard(BaseModel):
                     self.supports_attachments,
                 )
             ):
-                raise ValueError("external workspace cannot declare Adapter capabilities")
-        else:
-            if "external_workspace" in modes or not modes <= {"direct_chat", "brain_delegation"}:
-                raise ValueError("interaction mode combination invalid")
-            if self.adapter_kind is None or self.adapter_id is None or self.workspace_url is not None:
-                raise ValueError("direct or delegated Agent requires only an Adapter")
+                raise ValueError(
+                    "external workspace cannot declare Adapter capabilities"
+                )
+        elif is_callable:
+            if self.adapter_kind is None or self.adapter_id is None:
+                raise ValueError("direct or delegated Agent requires an Adapter")
             if self.execution_pool is None or self.pool_concurrency is None:
                 # The Brain schedules against the pool's real capacity, so an Agent
                 # that can be dispatched must say which executor it contends for.
                 raise ValueError("delegated Agent requires an execution pool")
+        else:
+            raise ValueError("interaction mode combination invalid")
         return self
 
     @property
@@ -142,7 +164,9 @@ def _require_consistent_pools(cards: tuple[AgentCatalogCard, ...]) -> None:
 
 
 def load_agent_catalog(path: str | Path | None = None) -> tuple[AgentCatalogCard, ...]:
-    selected = Path(path) if path is not None else Path(__file__).with_name("catalog.yaml")
+    selected = (
+        Path(path) if path is not None else Path(__file__).with_name("catalog.yaml")
+    )
     try:
         payload = yaml.safe_load(selected.read_text(encoding="utf-8"))
         document = _CatalogDocument.model_validate(payload)
@@ -151,5 +175,12 @@ def load_agent_catalog(path: str | Path | None = None) -> tuple[AgentCatalogCard
             raise ValueError
         _require_consistent_pools(document.agents)
         return document.agents
-    except (OSError, UnicodeError, yaml.YAMLError, ValidationError, TypeError, ValueError):
+    except (
+        OSError,
+        UnicodeError,
+        yaml.YAMLError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
         raise ValueError("Agent Catalog invalid") from None

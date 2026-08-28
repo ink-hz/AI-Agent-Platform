@@ -197,7 +197,12 @@ prepare_v2_reference_evidence() {
   remote_release="$(remote '/usr/bin/basename "$(/usr/bin/readlink -f /opt/orbbec-agent-platform/current)"')" || fail
   [[ "$remote_release" == "$local_release" ]] || fail
 
-  acceptance_tests=("tests/test_agent_brain_v2_acceptance.py")
+  acceptance_tests=(
+    "tests/test_agent_brain_v2_acceptance.py"
+    "tests/test_agent_brain_v2_budget.py::test_forced_pending_waits_then_submits"
+    "tests/test_agent_brain_live_repository.py::test_protocol_failure_is_task_local_and_does_not_fabricate_event"
+    "tests/test_agent_brain_voc_action.py::test_voc_action_survives_restarts_and_submits_exactly_once"
+  )
   while IFS= read -r test_ref; do
     [[ "$test_ref" == tests/test_agent_brain_*::* ]] || fail
     acceptance_tests+=("$test_ref")
@@ -205,7 +210,7 @@ prepare_v2_reference_evidence() {
     cd "$repository_root/backend" &&
       "$python" -m app.agent_brain.acceptance_contract pytest-args
   )
-  [[ "${#acceptance_tests[@]}" == "21" ]] || fail
+  [[ "${#acceptance_tests[@]}" == "24" ]] || fail
   (
     cd "$repository_root/backend"
     PYTHONDONTWRITEBYTECODE=1 "$python" -m pytest -q "${acceptance_tests[@]}"
@@ -224,6 +229,10 @@ print(json.dumps({
     'status':'passed',
     'release_sha':release_sha,
     'scenario_count':20,
+    'core_gate_count':3,
+    'pending_action_forced_recovery':'passed',
+    'task_protocol_isolation':'passed',
+    'voc_action_exactly_once':'passed',
     'contract_sha256':contract_sha,
 },separators=(',',':'),sort_keys=True))
 PY
@@ -270,12 +279,19 @@ expected={
     'status':'passed',
     'release_sha':release.name,
     'scenario_count':20,
+    'core_gate_count':3,
+    'pending_action_forced_recovery':'passed',
+    'task_protocol_isolation':'passed',
+    'voc_action_exactly_once':'passed',
     'contract_sha256':hashlib.sha256(contract.read_bytes()).hexdigest(),
 }
 if value != expected or not re.fullmatch(r'[0-9a-f]{40}',value['release_sha']):
     raise SystemExit(1)
 PY
 REFERENCE_RECOVERY=passed
+PENDING_ACTION_FORCED_RECOVERY=passed
+TASK_PROTOCOL_ISOLATION=passed
+VOC_ACTION_EXACTLY_ONCE=passed
 compose_command=(docker compose --env-file "$environment" -f "$compose")
 brain="$("${compose_command[@]}" ps -q platform-brain)"
 postgres="$("${compose_command[@]}" ps -q platform-postgres)"
@@ -310,17 +326,31 @@ chmod 600 "$evidence_dir/provider-evidence.sha256.part"
 chown root:root "$evidence_dir/provider-evidence.sha256.part"
 mv -f "$evidence_dir/provider-evidence.sha256.part" "$evidence_dir/provider-evidence.sha256"
 PROVIDER_PROBE=passed
+MIGRATION_COUNT="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from platform_control.schema_migrations where version in (49,50,51);")"
+WAIT_CURSOR_COLUMNS="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from information_schema.columns where table_schema='platform_brain' and table_name='brain_wait_subscriptions' and column_name='cursors';")"
+BRAIN_CURSOR_WATERLINE_COLUMNS="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from information_schema.columns where table_schema='platform_brain' and table_name='brain_task_event_cursors' and column_name='delivered_seq';")"
+[[ "$MIGRATION_COUNT" == "3" ]] || fail
+[[ "$WAIT_CURSOR_COLUMNS" == "0" ]] || fail
+[[ "$BRAIN_CURSOR_WATERLINE_COLUMNS" == "1" ]] || fail
+MIGRATIONS_049_050_051=applied
+BRAIN_CURSOR_WATERLINE=passed
 V1_NONTERMINAL_MISSIONS="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from platform_control.missions where status in ('planning','delegated','synthesizing');")"
 V2_MISSION_RUN_WRITES="$(docker exec "$postgres" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -c "select count(*) from platform_control.mission_runs run join platform_control.missions mission on mission.mission_id=run.mission_id join platform_brain.brain_loops loop on loop.turn_id=mission.turn_id;")"
 [[ "$V1_NONTERMINAL_MISSIONS" == "0" && "$V2_MISSION_RUN_WRITES" == "0" ]] || fail
 printf '%s\n' \
   "PROVIDER_PROBE=$PROVIDER_PROBE" \
   "REFERENCE_RECOVERY=$REFERENCE_RECOVERY" \
+  "MIGRATIONS_049_050_051=$MIGRATIONS_049_050_051" \
+  "WAIT_CURSOR_COLUMNS=$WAIT_CURSOR_COLUMNS" \
+  "BRAIN_CURSOR_WATERLINE=$BRAIN_CURSOR_WATERLINE" \
+  "PENDING_ACTION_FORCED_RECOVERY=$PENDING_ACTION_FORCED_RECOVERY" \
+  "TASK_PROTOCOL_ISOLATION=$TASK_PROTOCOL_ISOLATION" \
+  "VOC_ACTION_EXACTLY_ONCE=$VOC_ACTION_EXACTLY_ONCE" \
   "V1_NONTERMINAL_MISSIONS=$V1_NONTERMINAL_MISSIONS" \
   "V2_MISSION_RUN_WRITES=$V2_MISSION_RUN_WRITES"
 REMOTE
 )" || fail
-  [[ "$remote_gates" == $'PROVIDER_PROBE=passed\nREFERENCE_RECOVERY=passed\nV1_NONTERMINAL_MISSIONS=0\nV2_MISSION_RUN_WRITES=0' ]] || fail
+  [[ "$remote_gates" == $'PROVIDER_PROBE=passed\nREFERENCE_RECOVERY=passed\nMIGRATIONS_049_050_051=applied\nWAIT_CURSOR_COLUMNS=0\nBRAIN_CURSOR_WATERLINE=passed\nPENDING_ACTION_FORCED_RECOVERY=passed\nTASK_PROTOCOL_ISOLATION=passed\nVOC_ACTION_EXACTLY_ONCE=passed\nV1_NONTERMINAL_MISSIONS=0\nV2_MISSION_RUN_WRITES=0' ]] || fail
   fae_gate_after="$(remote_fae_snapshot)" || fail
   [[ "$fae_gate_after" == "$fae_gate_before" ]] || fail
   FAE_MANAGED_FILES_UNCHANGED=true
@@ -1225,7 +1255,7 @@ REMOTE
   evidence_generation="$evidence_file.generation.$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
   {
     /usr/bin/printf '%s\n' "$remote_evidence"
-    /usr/bin/printf 'brain_v2=true\nscenario_count=20\nconversation_id=%s\nturn_id=%s\nevents=%s\n%s\nreviewer_id=%s\nquality_review=approved\nV2_MISSION_RUN_WRITES=0\nFAE_MANAGED_FILES_UNCHANGED=true\nacceptance_status=complete\n' \
+    /usr/bin/printf 'brain_v2=true\nscenario_count=20\ncore_gate_count=3\nMIGRATIONS_049_050_051=applied\nWAIT_CURSOR_COLUMNS=0\nBRAIN_CURSOR_WATERLINE=passed\nPENDING_ACTION_FORCED_RECOVERY=passed\nTASK_PROTOCOL_ISOLATION=passed\nVOC_ACTION_EXACTLY_ONCE=passed\nconversation_id=%s\nturn_id=%s\nevents=%s\n%s\nreviewer_id=%s\nquality_review=approved\nV2_MISSION_RUN_WRITES=0\nFAE_MANAGED_FILES_UNCHANGED=true\nacceptance_status=complete\n' \
       "$conversation_id" "$turn_id" "$event_summary" "$db_summary" "$reviewer_id"
   } > "$evidence_generation"
   /bin/chmod 600 "$evidence_generation"

@@ -7,9 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent_catalog import load_agent_catalog
 
-
 CALLABLE_AGENT_IDS = (
     "hr-bot",
+    "voc",
     "marketing-prospecting-bot",
     "marketing-inbound-bot",
     "marketing-voice-bot",
@@ -53,9 +53,7 @@ class AgentCapabilityCard(BaseModel):
     adapter_config_version: int = Field(default=1, gt=0)
     execution_pool: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     pool_concurrency: int = Field(ge=1, le=16)
-    output_contract: Literal["normalized_task_result_v1"] = (
-        "normalized_task_result_v1"
-    )
+    output_contract: Literal["normalized_task_result_v1"] = "normalized_task_result_v1"
     capability_version: int = Field(gt=0)
 
 

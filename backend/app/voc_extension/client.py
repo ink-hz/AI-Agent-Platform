@@ -272,5 +272,21 @@ class VocTaskClient:
             "already_submitted": already_submitted,
         }
 
+    def is_healthy(self) -> bool:
+        """Read the private health endpoint without attaching employee identity."""
+
+        try:
+            with self._client.stream("GET", "/health") as response:
+                size = 0
+                for chunk in response.iter_bytes():
+                    size += len(chunk)
+                    if size > _MAX_RESPONSE_BYTES:
+                        raise VocProtocolError("voc_response_too_large")
+                return response.status_code == 200
+        except VocProtocolError:
+            raise
+        except (httpx.TimeoutException, httpx.TransportError):
+            raise VocUpstreamUnavailable("voc_unavailable") from None
+
     def close(self) -> None:
         self._client.close()
