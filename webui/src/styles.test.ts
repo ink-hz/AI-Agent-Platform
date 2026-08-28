@@ -252,7 +252,16 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".ai-notes-layout")).toContain("min-height: 0");
     expect(rule(".ai-notes-sidebar")).toContain("overflow-y: auto");
     expect(rule(".ai-notes-reader")).toContain("overflow-y: auto");
-    expect(rule(".ai-note-article")).toContain("max-width: 820px");
+    expect(rule(".ai-notes-reader-notice")).toContain("max-width: 1040px");
+    expect(rule(".ai-note-article")).toContain("max-width: 1040px");
+    expect(rule(".ai-note-article")).toContain("padding: 48px 48px 80px");
+    expect(rule(".article-markdown")).toContain("font-size: 17px");
+    expect(rule(".article-markdown")).toContain("line-height: 1.78");
+    expect(rule(".article-markdown h2")).toContain("font-size: 25px");
+    expect(rule(".article-markdown h3")).toContain("font-size: 20px");
+    expect(styles).toContain(".article-markdown h4 { font-size: 17px; }");
+    expect(rule(".article-markdown code")).toContain("font-size: 14px");
+    expect(rule(".article-markdown table")).toContain("font-size: 14px");
     expect(rule(".ai-note-signature")).toContain("font-family: ui-monospace");
     expect(rule(".ai-note-author")).toContain("font-weight: 800");
     expect(rule(".ai-note-author")).toContain("color: var(--ink)");
@@ -266,6 +275,8 @@ describe("Executive Operations visual contract", () => {
     expect(mobile).toContain(".ai-notes-layout { grid-template-columns: minmax(0, 1fr); }");
     expect(mobile).toContain(".ai-notes-sidebar { display: none; }");
     expect(mobile).toContain(".ai-notes-mobile-menu { display: inline-flex; }");
+    expect(styles).toContain("  .ai-note-article { padding: 38px 18px 72px; }");
+    expect(styles).toContain("  .article-markdown { font-size: 16px; }");
   });
 
   it("keeps the AI notes home entry quiet and keyboard visible", () => {
