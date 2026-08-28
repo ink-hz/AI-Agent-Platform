@@ -9,6 +9,7 @@ from app.agent_brain.tool_protocol import DelegateTaskCall
 def _call(*, attachment_refs=()):
     return DelegateTaskCall(
         agent_id="hr-bot",
+        capability_version=2,
         objective="判断候选人",
         context_excerpt=("岗位需要视觉经验",),
         constraints=("不联系候选人",),

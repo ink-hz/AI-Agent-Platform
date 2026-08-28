@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -18,7 +19,9 @@ from app.agent_brain.model_adapter import (
     BrainUsage,
     ThinkingDelta,
 )
+from app.agent_brain.models import load_capability_cards
 from app.agent_brain.prompt import BrainSystemPrompt
+from app.agent_brain.runtime_registry import RuntimeAgentRegistry
 from app.agent_brain.conversation_repository import ConversationRepository
 from app.agent_brain.repository import MissionRepository
 from app.execution_relay.content_crypto import SealedContent
@@ -85,11 +88,14 @@ def _list_agents_response() -> BrainModelResponse:
     return _response("list_agents", {"public_reason": "查看可用专业 Agent"})
 
 
-def _delegate_response() -> BrainModelResponse:
+def _delegate_response(
+    *, agent_id: str = "reference-agent", capability_version: int = 1
+) -> BrainModelResponse:
     return _response(
         "delegate_task",
         {
-            "agent_id": "reference-agent",
+            "agent_id": agent_id,
+            "capability_version": capability_version,
             "objective": "生成一份确定性验证结果",
             "context_excerpt": ["验证 durable loop"],
             "constraints": ["不得联网"],
@@ -161,6 +167,49 @@ class UnavailableListRegistry(FakeRegistry):
         raise AgentUseAuthorizationUnavailable()
 
 
+class HrAuthorization:
+    capability_cards = load_capability_cards()
+
+    def __init__(self) -> None:
+        self.generation = uuid4()
+
+    def permitted_agents_for_user_id(self, _user_id):
+        return tuple(
+            card for card in self.capability_cards if card.agent_id == "hr-bot"
+        )
+
+    def decide_for_user_id(self, _user_id, agent_id):
+        allowed = agent_id == "hr-bot"
+        return {
+            "allowed": allowed,
+            "grant_ids": (uuid4(),) if allowed else (),
+            "directory_generation_id": self.generation,
+        }
+
+
+class NoHealth:
+    def for_agent(self, _agent_id):
+        return None
+
+
+def _real_hr_registry() -> RuntimeAgentRegistry:
+    return RuntimeAgentRegistry(
+        authorization=HrAuthorization(),
+        health=NoHealth(),
+        registered_adapter_kinds={"metabot_local"},
+    )
+
+
+def _tool_results(repository, loop_id) -> list[dict[str, object]]:
+    return [
+        json.loads(block["content"])
+        for message in repository.reconstruct_messages(loop_id)
+        if message["role"] == "user" and isinstance(message["content"], list)
+        for block in message["content"]
+        if block.get("type") == "tool_result"
+    ]
+
+
 def _runtime(repository, response=None, *, registry=None, model=None):
     manifest = BrainModelManifest.load(MANIFEST_PATH)
     prompt = BrainSystemPrompt.load(
@@ -179,6 +228,109 @@ def _runtime(repository, response=None, *, registry=None, model=None):
         worker_id="test-brain-worker",
         lease_seconds=45,
     )
+
+
+@pytest.mark.postgres
+def test_real_hr_version_two_creates_task(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    environment, *_unused = loop_database
+    loop_id, _snapshot_id = seeded_loop
+
+    assert _runtime(
+        loop_repository,
+        _delegate_response(agent_id="hr-bot", capability_version=2),
+        registry=_real_hr_registry(),
+    ).advance_one() is True
+
+    with psycopg.connect(environment["admin"]) as connection:
+        task = connection.execute(
+            "select agent_id,capability_version from platform_brain.agent_tasks "
+            "where loop_id=%s",
+            (loop_id,),
+        ).fetchone()
+    assert task == ("hr-bot", 2)
+
+
+@pytest.mark.postgres
+def test_real_registry_list_agents_returns_public_capability_version(
+    loop_repository, seeded_loop
+) -> None:
+    loop_id, _snapshot_id = seeded_loop
+
+    assert _runtime(
+        loop_repository,
+        _list_agents_response(),
+        registry=_real_hr_registry(),
+    ).advance_one() is True
+
+    result = _tool_results(loop_repository, loop_id)[-1]
+    assert result["status"] == "completed"
+    agents = result["agents"]
+    assert isinstance(agents, list)
+    assert agents[0]["agent_id"] == "hr-bot"
+    assert agents[0]["capability_version"] == 2
+    assert "grant_ids" not in agents[0]
+    assert "directory_generation_id" not in agents[0]
+    assert "effective_decision_hash" not in agents[0]
+
+
+@pytest.mark.postgres
+def test_stale_hr_version_returns_capability_changed_without_task(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    environment, *_unused = loop_database
+    loop_id, _snapshot_id = seeded_loop
+
+    assert _runtime(
+        loop_repository,
+        _delegate_response(agent_id="hr-bot", capability_version=1),
+        registry=_real_hr_registry(),
+    ).advance_one() is True
+
+    assert _tool_results(loop_repository, loop_id)[-1] == {
+        "status": "rejected",
+        "reason": "capability_changed",
+        "current_capability_version": 2,
+        "must_call_list_agents": True,
+    }
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_brain.agent_tasks where loop_id=%s",
+            (loop_id,),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_second_capability_mismatch_stops_dispatch_intent(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    environment, *_unused = loop_database
+    loop_id, _snapshot_id = seeded_loop
+    registry = _real_hr_registry()
+
+    assert _runtime(
+        loop_repository,
+        _delegate_response(agent_id="hr-bot", capability_version=1),
+        registry=registry,
+    ).advance_one() is True
+    assert _runtime(
+        loop_repository,
+        _delegate_response(agent_id="hr-bot", capability_version=1),
+        registry=registry,
+    ).advance_one() is True
+
+    assert _tool_results(loop_repository, loop_id)[-1] == {
+        "status": "rejected",
+        "reason": "capability_version_unstable",
+        "current_capability_version": 2,
+        "must_call_list_agents": False,
+    }
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_brain.agent_tasks where loop_id=%s",
+            (loop_id,),
+        ).fetchone() == (0,)
 
 
 @pytest.mark.postgres

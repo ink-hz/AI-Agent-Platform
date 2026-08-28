@@ -48,6 +48,7 @@ def _delegate_block() -> dict[str, object]:
         "name": "delegate_task",
         "input": {
             "agent_id": "hr-bot",
+            "capability_version": 1,
             "objective": "分析候选人的复合能力",
             "context_excerpt": ["视觉技术、英文和硬件产品经验"],
             "constraints": ["不联系候选人"],

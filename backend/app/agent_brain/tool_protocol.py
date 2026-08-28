@@ -98,6 +98,7 @@ class ListAgentsCall(_StrictToolCall):
 
 class DelegateTaskCall(_StrictToolCall):
     agent_id: str
+    capability_version: int
     objective: str
     context_excerpt: tuple[str, ...]
     constraints: tuple[str, ...]
@@ -109,6 +110,13 @@ class DelegateTaskCall(_StrictToolCall):
     def _agent_id_is_valid(cls, value: str) -> str:
         if not _valid_agent_id(value):
             raise ValueError("Agent ID invalid")
+        return value
+
+    @field_validator("capability_version")
+    @classmethod
+    def _capability_version_is_positive(cls, value: int) -> int:
+        if type(value) is not int or value <= 0:
+            raise ValueError("Capability version invalid")
         return value
 
     @field_validator("objective")

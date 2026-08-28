@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
+
 from app.agent_brain.models import load_capability_cards
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.agent_brain.runtime_registry import (
@@ -49,6 +51,22 @@ def _registry(authorization=None, health=None, registered=None):
         now=lambda: NOW,
         freshness_seconds=120,
     )
+
+
+@pytest.fixture()
+def real_registry() -> RuntimeAgentRegistry:
+    return _registry()
+
+
+@pytest.fixture()
+def owner_id():
+    return USER_ID
+
+
+def test_real_hr_version_two_can_authorize(real_registry, owner_id) -> None:
+    decision = real_registry.authorize_task(owner_id, "hr-bot", 2)
+    assert decision.allowed is True
+    assert decision.capability_version == 2
 
 
 def test_directory_generation_change_does_not_change_effective_hash() -> None:

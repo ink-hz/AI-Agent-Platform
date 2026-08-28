@@ -66,6 +66,20 @@ def test_prompt_names_exact_tools_and_enforces_behavioral_boundaries() -> None:
     assert "narrate self-correction" in prompt
 
 
+def test_prompt_requires_fresh_capability_version_for_delegation() -> None:
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    prompt = BrainSystemPrompt.load(
+        PROMPT,
+        expected_sha256=manifest["system_prompt_sha256"],
+    ).text
+
+    assert (
+        "delegate_task.capability_version 必须原样使用最近一次 list_agents 返回的版本；\n"
+        "收到 capability_changed 后先重新 list_agents，同一 Agent 连续两次变化后停止派发。"
+        in prompt
+    )
+
+
 @pytest.mark.parametrize(
     "raw",
     [

@@ -78,12 +78,13 @@ def _stop_block(task_id: UUID = TASK_ID) -> dict[str, object]:
 
 
 def _delegate_block(
-    index: int,
+    index: int = 1,
     *,
+    capability_version: int | None = None,
     attachment_refs: list[str] | None = None,
     public_reason: str = "需要专业 Agent 处理",
 ) -> dict[str, object]:
-    return {
+    block: dict[str, object] = {
         "type": "tool_use",
         "id": f"toolu_{index}",
         "name": "delegate_task",
@@ -97,6 +98,11 @@ def _delegate_block(
             "public_reason": public_reason,
         },
     }
+    if capability_version is not None:
+        tool_input = block["input"]
+        assert isinstance(tool_input, dict)
+        tool_input["capability_version"] = capability_version
+    return block
 
 
 def _submit_block(
@@ -120,9 +126,16 @@ def _submit_block(
     }
 
 
+def test_delegate_requires_capability_version() -> None:
+    block = _delegate_block()
+    with pytest.raises(ProtocolViolation) as error:
+        parse_tool_batch([block], ToolLimits())
+    assert error.value.code == "invalid_tool_input"
+
+
 def test_delegate_batch_accepts_first_four_and_pairs_every_call() -> None:
     batch = parse_tool_batch(
-        [_delegate_block(index) for index in range(6)],
+        [_delegate_block(index, capability_version=2) for index in range(6)],
         ToolLimits(max_parallel_tasks=4),
     )
 
@@ -162,10 +175,16 @@ def test_zero_tool_use_discards_free_text_and_is_a_protocol_violation() -> None:
             ],
             "unknown_tool",
         ),
-        ([_delegate_block(1), _delegate_block(1)], "duplicate_tool_call_id"),
         (
             [
-                _delegate_block(1),
+                _delegate_block(1, capability_version=2),
+                _delegate_block(1, capability_version=2),
+            ],
+            "duplicate_tool_call_id",
+        ),
+        (
+            [
+                _delegate_block(1, capability_version=2),
                 {
                     "type": "tool_use",
                     "id": "toolu_agents",
@@ -190,7 +209,10 @@ def test_public_reason_must_be_nonempty_valid_utf8_and_at_most_512_bytes(
     reason: str,
 ) -> None:
     with pytest.raises(ProtocolViolation) as error:
-        parse_tool_batch([_delegate_block(1, public_reason=reason)], ToolLimits())
+        parse_tool_batch(
+            [_delegate_block(1, capability_version=2, public_reason=reason)],
+            ToolLimits(),
+        )
     assert error.value.code == "invalid_tool_input"
 
 
@@ -221,7 +243,11 @@ def test_task_and_attachment_references_must_belong_to_current_loop() -> None:
     for block in (
         _submit_block(task_ids=[str(foreign_task)]),
         _submit_block(attachment_refs=[str(foreign_attachment)]),
-        _delegate_block(1, attachment_refs=[str(foreign_attachment)]),
+        _delegate_block(
+            1,
+            capability_version=2,
+            attachment_refs=[str(foreign_attachment)],
+        ),
     ):
         with pytest.raises(ProtocolViolation) as error:
             parse_tool_batch([block], limits)
@@ -247,7 +273,7 @@ def test_answer_and_total_argument_utf8_limits_are_enforced() -> None:
 
     with pytest.raises(ProtocolViolation) as argument_error:
         parse_tool_batch(
-            [_delegate_block(1)],
+            [_delegate_block(1, capability_version=2)],
             ToolLimits(max_tool_argument_bytes=32),
         )
     assert argument_error.value.code == "tool_arguments_too_large"
@@ -301,7 +327,9 @@ def test_collaboration_tools_enforce_step_homogeneity() -> None:
     assert isinstance(stopped.calls[0].call, StopAgentTaskCall)
 
     with pytest.raises(ProtocolViolation) as error:
-        parse_tool_batch([_delegate_block(1), _await_block()], limits)
+        parse_tool_batch(
+            [_delegate_block(1, capability_version=2), _await_block()], limits
+        )
     assert error.value.code == "mixed_tool_batch"
     with pytest.raises(ProtocolViolation) as multiple_waits:
         parse_tool_batch(
@@ -400,7 +428,7 @@ def test_runtime_models_are_frozen_and_use_exact_status_values() -> None:
 
 
 def test_tool_models_forbid_unknown_fields_and_non_string_scalars() -> None:
-    block = _delegate_block(1)
+    block = _delegate_block(1, capability_version=2)
     tool_input = block["input"]
     assert isinstance(tool_input, dict)
     tool_input["unexpected"] = True
@@ -408,7 +436,7 @@ def test_tool_models_forbid_unknown_fields_and_non_string_scalars() -> None:
         parse_tool_batch([block], ToolLimits())
     assert extra_error.value.code == "invalid_tool_input"
 
-    block = _delegate_block(2)
+    block = _delegate_block(2, capability_version=2)
     tool_input = block["input"]
     assert isinstance(tool_input, dict)
     tool_input["objective"] = 123

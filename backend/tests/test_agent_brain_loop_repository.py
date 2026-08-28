@@ -44,6 +44,7 @@ def _delegate_block(
         "name": "delegate_task",
         "input": {
             "agent_id": "hr-bot",
+            "capability_version": 1,
             "objective": objective,
             "context_excerpt": ["岗位要求视觉和硬件经验"],
             "constraints": ["不联系候选人"],

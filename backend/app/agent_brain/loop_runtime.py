@@ -87,8 +87,9 @@ class BrainLoopRuntime:
                     lease.loop_id, "authorization_changed"
                 )
                 return True
+        persisted_messages = self._repository.reconstruct_messages(lease.loop_id)
         messages = self._context_policy.build_brain_context(
-            self._repository.reconstruct_messages(lease.loop_id)
+            persisted_messages
         ).messages
         owned_task_ids = self._repository.task_ids_for_loop(lease.loop_id)
         active_task_ids = self._repository.active_session_task_ids(lease.loop_id)
@@ -252,9 +253,36 @@ class BrainLoopRuntime:
                     )
                     continue
                 decision = self._runtime_registry.authorize_task(
-                    owner_id, parsed.call.agent_id, 1
+                    owner_id,
+                    parsed.call.agent_id,
+                    parsed.call.capability_version,
                 )
                 if not decision.allowed:
+                    if decision.reason_code == "capability_changed":
+                        unstable = (
+                            _consecutive_capability_mismatches(
+                                persisted_messages, parsed.call.agent_id
+                            )
+                            >= 1
+                        )
+                        immediate.append(
+                            ImmediateToolResult(
+                                parsed.tool_index,
+                                {
+                                    "status": "rejected",
+                                    "reason": (
+                                        "capability_version_unstable"
+                                        if unstable
+                                        else "capability_changed"
+                                    ),
+                                    "current_capability_version": (
+                                        decision.capability_version
+                                    ),
+                                    "must_call_list_agents": not unstable,
+                                },
+                            )
+                        )
+                        continue
                     immediate.append(
                         ImmediateToolResult(
                             parsed.tool_index,
@@ -554,7 +582,62 @@ def _public_value(value: object) -> dict[str, object]:
     if isinstance(value, dict):
         return dict(value)
     if is_dataclass(value):
-        return asdict(value)
+        public = asdict(value)
+        for field in (
+            "grant_ids",
+            "directory_generation_id",
+            "effective_decision_hash",
+        ):
+            public.pop(field, None)
+        sampled_at = public.get("health_sampled_at")
+        if isinstance(sampled_at, datetime):
+            public["health_sampled_at"] = sampled_at.isoformat()
+        return public
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
     raise ValueError("runtime Agent snapshot invalid")
+
+
+def _consecutive_capability_mismatches(
+    messages: tuple[dict[str, object], ...], agent_id: str
+) -> int:
+    delegated_agents: dict[str, str] = {}
+    mismatches = 0
+    for message in messages:
+        content = message.get("content")
+        if message.get("role") == "assistant" and isinstance(content, list):
+            for block in content:
+                if (
+                    not isinstance(block, dict)
+                    or block.get("type") != "tool_use"
+                    or block.get("name") != "delegate_task"
+                    or not isinstance(block.get("id"), str)
+                    or not isinstance(block.get("input"), dict)
+                ):
+                    continue
+                delegated_agent = block["input"].get("agent_id")
+                if isinstance(delegated_agent, str):
+                    delegated_agents[block["id"]] = delegated_agent
+        elif message.get("role") == "user" and isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    continue
+                tool_use_id = block.get("tool_use_id")
+                if delegated_agents.get(tool_use_id) != agent_id:
+                    continue
+                raw_result = block.get("content")
+                if not isinstance(raw_result, str):
+                    continue
+                try:
+                    result = json.loads(raw_result)
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(result, dict):
+                    continue
+                if result.get("reason") == "capability_changed":
+                    mismatches += 1
+                elif result.get("reason") == "capability_version_unstable":
+                    mismatches = 2
+                else:
+                    mismatches = 0
+    return mismatches
