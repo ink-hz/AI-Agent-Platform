@@ -106,6 +106,30 @@ def _delegate_response(
     )
 
 
+def _hr_delegate_batch_response(*capability_versions: int) -> BrainModelResponse:
+    blocks = tuple(
+        _delegate_response(
+            agent_id="hr-bot", capability_version=capability_version
+        ).content_blocks[1]
+        | {
+            "id": f"toolu_hr_batch_{index}",
+            "input": {
+                **_delegate_response(
+                    agent_id="hr-bot", capability_version=capability_version
+                ).content_blocks[1]["input"],
+                "objective": f"HR batch task {index}",
+            },
+        }
+        for index, capability_version in enumerate(capability_versions)
+    )
+    return BrainModelResponse(
+        provider_request_id=f"msg_hr_batch_{uuid4()}",
+        content_blocks=blocks,
+        stop_reason="tool_use",
+        usage=BrainUsage(input_tokens=100, output_tokens=40),
+    )
+
+
 def _submit_response() -> BrainModelResponse:
     return _response(
         "submit_answer",
@@ -207,6 +231,25 @@ def _tool_results(repository, loop_id) -> list[dict[str, object]]:
         if message["role"] == "user" and isinstance(message["content"], list)
         for block in message["content"]
         if block.get("type") == "tool_result"
+    ]
+
+
+def _ready_tool_results(repository, environment, loop_id) -> list[dict[str, object]]:
+    with psycopg.connect(environment["admin"]) as connection:
+        rows = connection.execute(
+            "select call.brain_tool_call_id,call.result_ciphertext,"
+            "call.result_key_version from platform_brain.brain_tool_calls call "
+            "join platform_brain.brain_steps step on step.step_id=call.step_id "
+            "where step.loop_id=%s and call.result_ciphertext is not null "
+            "order by step.step_seq,call.tool_index",
+            (loop_id,),
+        ).fetchall()
+    return [
+        repository.content_codec.unseal_json(
+            f"brain-tool-call:{row[0]}:result",
+            SealedContent(bytes(row[1]), row[2]),
+        )
+        for row in rows
     ]
 
 
@@ -331,6 +374,73 @@ def test_second_capability_mismatch_stops_dispatch_intent(
             "select count(*) from platform_brain.agent_tasks where loop_id=%s",
             (loop_id,),
         ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_same_batch_second_capability_mismatch_stops_dispatch_intent(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    environment, *_unused = loop_database
+    loop_id, _snapshot_id = seeded_loop
+
+    assert _runtime(
+        loop_repository,
+        _hr_delegate_batch_response(1, 1),
+        registry=_real_hr_registry(),
+    ).advance_one() is True
+
+    assert _tool_results(loop_repository, loop_id)[-2:] == [
+        {
+            "status": "rejected",
+            "reason": "capability_changed",
+            "current_capability_version": 2,
+            "must_call_list_agents": True,
+        },
+        {
+            "status": "rejected",
+            "reason": "capability_version_unstable",
+            "current_capability_version": 2,
+            "must_call_list_agents": False,
+        },
+    ]
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_brain.agent_tasks where loop_id=%s",
+            (loop_id,),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_same_batch_success_resets_historical_capability_mismatch(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    environment, *_unused = loop_database
+    loop_id, _snapshot_id = seeded_loop
+    registry = _real_hr_registry()
+
+    assert _runtime(
+        loop_repository,
+        _delegate_response(agent_id="hr-bot", capability_version=1),
+        registry=registry,
+    ).advance_one() is True
+    assert _runtime(
+        loop_repository,
+        _hr_delegate_batch_response(2, 1),
+        registry=registry,
+    ).advance_one() is True
+
+    assert _ready_tool_results(loop_repository, environment, loop_id)[-1] == {
+        "status": "rejected",
+        "reason": "capability_changed",
+        "current_capability_version": 2,
+        "must_call_list_agents": True,
+    }
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select agent_id,capability_version from platform_brain.agent_tasks "
+            "where loop_id=%s",
+            (loop_id,),
+        ).fetchall() == [("hr-bot", 2)]
 
 
 @pytest.mark.postgres

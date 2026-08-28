@@ -234,6 +234,13 @@ class BrainLoopRuntime:
                 )
             )
         elif batch.kind == "delegate_tasks":
+            capability_mismatches = {
+                parsed.call.agent_id: _consecutive_capability_mismatches(
+                    persisted_messages, parsed.call.agent_id
+                )
+                for parsed in batch.calls
+                if parsed.accepted and isinstance(parsed.call, DelegateTaskCall)
+            }
             for parsed in batch.calls:
                 if not parsed.accepted or not isinstance(parsed.call, DelegateTaskCall):
                     continue
@@ -251,6 +258,7 @@ class BrainLoopRuntime:
                             },
                         )
                     )
+                    capability_mismatches[parsed.call.agent_id] = 0
                     continue
                 decision = self._runtime_registry.authorize_task(
                     owner_id,
@@ -259,12 +267,8 @@ class BrainLoopRuntime:
                 )
                 if not decision.allowed:
                     if decision.reason_code == "capability_changed":
-                        unstable = (
-                            _consecutive_capability_mismatches(
-                                persisted_messages, parsed.call.agent_id
-                            )
-                            >= 1
-                        )
+                        unstable = capability_mismatches[parsed.call.agent_id] >= 1
+                        capability_mismatches[parsed.call.agent_id] += 1
                         immediate.append(
                             ImmediateToolResult(
                                 parsed.tool_index,
@@ -283,6 +287,7 @@ class BrainLoopRuntime:
                             )
                         )
                         continue
+                    capability_mismatches[parsed.call.agent_id] = 0
                     immediate.append(
                         ImmediateToolResult(
                             parsed.tool_index,
@@ -290,6 +295,7 @@ class BrainLoopRuntime:
                         )
                     )
                     continue
+                capability_mismatches[parsed.call.agent_id] = 0
                 snapshot_id = self._repository.create_authorization_snapshot(
                     internal_user_id=owner_id,
                     agent_id=parsed.call.agent_id,
