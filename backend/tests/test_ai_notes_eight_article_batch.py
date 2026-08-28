@@ -7,7 +7,7 @@ import shutil
 
 import yaml
 
-from app.ai_notes.models import ArticleFrontmatter
+from app.ai_notes.models import AiNotesIndex, ArticleFrontmatter
 from app.ai_notes.repository import AiNotesRepository, parse_frontmatter
 from app.ai_notes.validation import validate_publication
 
@@ -108,9 +108,12 @@ def batch_article_path(slug: str, *, root: Path = CONTENT_ROOT) -> Path:
     raise AssertionError(f"unknown batch article: {slug}")
 
 
-def assert_completed_batch_drafts(*, root: Path = CONTENT_ROOT) -> None:
+def assert_completed_batch_drafts(
+    *, root: Path = CONTENT_ROOT
+) -> tuple[ArticleFrontmatter, ...]:
     repository = AiNotesRepository.load(root, today=TODAY)
     assert repository.index().categories
+    completed_articles = []
 
     for slug in COMPLETED_BATCH_ARTICLES:
         path = batch_article_path(slug, root=root)
@@ -129,9 +132,12 @@ def assert_completed_batch_drafts(*, root: Path = CONTENT_ROOT) -> None:
         assert FIRST_PUBLICATION_DATE <= article.published_at <= TODAY
         assert article.updated_at is None or article.updated_at >= article.published_at
         assert markdown.strip()
+        completed_articles.append(article)
+
+    return tuple(completed_articles)
 
 
-def validate_completed_batch_as_publication_candidates(tmp_path: Path) -> None:
+def validate_completed_batch_as_publication_candidates(tmp_path: Path) -> AiNotesIndex:
     candidate_root = tmp_path / "content"
     shutil.copytree(CONTENT_ROOT, candidate_root)
 
@@ -146,7 +152,22 @@ def validate_completed_batch_as_publication_candidates(tmp_path: Path) -> None:
             f"---\n{serialized_frontmatter}\n---\n\n{markdown}", encoding="utf-8"
         )
 
-    validate_publication(candidate_root, MARKER_FILE, today=TODAY)
+    return validate_publication(candidate_root, MARKER_FILE, today=TODAY)
+
+
+def test_completed_batch_helpers_enforce_drafts_and_validate_candidates(
+    tmp_path: Path,
+) -> None:
+    completed_articles = assert_completed_batch_drafts()
+    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
+
+    assert tuple(article.slug for article in completed_articles) == (
+        COMPLETED_BATCH_ARTICLES
+    )
+    assert len(candidate_index.categories) == 5
+    assert sum(
+        len(category.articles) for category in candidate_index.categories
+    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_source_review_records_the_exact_source_manifest() -> None:
