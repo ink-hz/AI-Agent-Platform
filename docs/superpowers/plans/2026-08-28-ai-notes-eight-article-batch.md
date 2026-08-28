@@ -44,11 +44,10 @@
 **Files:**
 - Create: `docs/reviews/ai-notes-eight-article-source-review.md`
 - Create: `backend/tests/test_ai_notes_eight_article_batch.py`
-- Modify: `webui/src/components/ai-notes/MermaidDiagram.integration.test.tsx`
 
 **Interfaces:**
 - Consumes: `AiNotesRepository`、`validate_publication()`、现有 Mermaid 生产渲染辅助函数。
-- Produces: 八篇固定目录、已完成草稿清单、发布候选副本校验器、草稿 Mermaid 真实渲染辅助函数和精读证据格式。
+- Produces: 八篇固定目录、已完成草稿清单、发布候选副本校验器和精读证据格式。
 
 - [ ] **Step 1: 使用 `using-git-worktrees` 创建隔离分支**
 
@@ -87,18 +86,14 @@ COMPLETED_BATCH_ARTICLES: tuple[str, ...] = ()
 
 测试辅助必须能：解析草稿 frontmatter 和正文；对 `COMPLETED_BATCH_ARTICLES` 逐篇断言 `draft is True`、作者、座右铭、标题、slug、分类、标签和日期合法；把已完成草稿的内存副本改为 `draft: false` 并与既有正式文章一起调用 `validate_publication()`。本任务只加入研究台账清单测试，要求 13 个源文件的绝对路径、行数和 SHA-256 精确存在；不提前加入“八篇必须都存在”的断言。
 
-在前端集成测试中增加空的 `BATCH_DRAFT_RELATIVE_PATHS: string[]` 和 `draftBatchArticleFiles()`，再增加两条测试：列入清单但不存在的文件必须报错；清单中的实际草稿必须复用 `expectProductionDiagramsToRender()` 真实渲染。清单为空时没有待渲染草稿，因此通过；Task 2–9 每完成一篇就同时把路径加入清单，绝不把缺失文件静默过滤掉。
-
 Run:
 
 ```bash
 cd backend
 .venv/bin/python -m pytest tests/test_ai_notes_eight_article_batch.py -q
-cd ../webui
-npm test -- --run src/components/ai-notes/MermaidDiagram.integration.test.tsx
 ```
 
-Expected: 后端研究台账测试 RED，原因是台账尚不存在；前端辅助测试和既有正式文章测试为绿。
+Expected: 后端研究台账测试 RED，原因是台账尚不存在；既有正式文章测试仍为绿。
 
 - [ ] **Step 4: 创建研究台账骨架并保持真实状态**
 
@@ -122,16 +117,16 @@ Expected: 后端研究台账测试 RED，原因是台账尚不存在；前端辅
 
 用 `shasum -a 256` 和 `wc -l` 重新核对源文件；任一值变化时，更新台账和测试为执行时真实值并在提交说明变化，不使用旧值强行通过。
 
-重新运行本任务测试。Expected: 后端台账合同和前端草稿发现辅助均 GREEN，完整测试套件不保留已知失败。
+重新运行本任务测试。Expected: 后端台账合同 GREEN，完整测试套件不保留已知失败。
 
 - [ ] **Step 5: 提交批次脚手架**
 
 ```bash
-git add docs/reviews/ai-notes-eight-article-source-review.md backend/tests/test_ai_notes_eight_article_batch.py webui/src/components/ai-notes/MermaidDiagram.integration.test.tsx
+git add docs/reviews/ai-notes-eight-article-source-review.md backend/tests/test_ai_notes_eight_article_batch.py
 git commit -m "test(ai-notes): define eight-article migration batch"
 ```
 
-Expected: 提交后批次脚手架、既有生产内容和前端 Mermaid 测试全部为绿。
+Expected: 提交后批次脚手架和既有生产内容测试全部为绿。
 
 ---
 
@@ -160,7 +155,7 @@ Expected: 提交后批次脚手架、既有生产内容和前端 Mermaid 测试�
 
 - [ ] **Step 2: 先写文章内容合同并验证 RED**
 
-把本篇加入后端 `COMPLETED_BATCH_ARTICLES` 和前端 `BATCH_DRAFT_RELATIVE_PATHS`，再新增断言：标题和 slug 精确匹配；标签为 `("Agent", "身份与权限", "安全治理")`；恰好 3 张 Mermaid；正文必须覆盖“用户委托”“工作负载身份”“Token Exchange”“最小权限”“审批绑定”“审计证据”；必须链接同分类的 `enterprise-agent-system-architecture`；不得出现 SSO 产品横评、旧组织标记和云厂商 IAM 功能清单。三张图的唯一标题固定为：
+先在前端集成测试中创建 `BATCH_DRAFT_RELATIVE_PATHS`，只列入本篇路径；增加“清单路径不存在时必须报错”和“清单中草稿 Mermaid 必须真实渲染并清洗”两条非空测试。再把本篇加入后端 `COMPLETED_BATCH_ARTICLES`，新增断言：标题和 slug 精确匹配；标签为 `("Agent", "身份与权限", "安全治理")`；恰好 3 张 Mermaid；正文必须覆盖“用户委托”“工作负载身份”“Token Exchange”“最小权限”“审批绑定”“审计证据”；必须链接同分类的 `enterprise-agent-system-architecture`；不得出现 SSO 产品横评、旧组织标记和云厂商 IAM 功能清单。三张图的唯一标题固定为：
 
 - `Agent 身份与委托链`
 - `Agent 行动授权决策`
@@ -714,9 +709,20 @@ git commit -m "feat(ai-notes): publish eight engineering articles"
 ### Task 12: 全量验证、独立审查与合并
 
 **Files:**
-- Verify all changed files; modify only to fix traced failures or review findings.
+- Modify: `webui/package.json`
+- Modify: `webui/package-lock.json`
+- Verify all other changed files; modify them only to fix traced failures or review findings.
 
-- [ ] **Step 1: 使用 `verification-before-completion` 运行完整本地门禁**
+- [ ] **Step 1: 清理基线依赖漏洞并验证前端兼容性**
+
+先运行 `cd webui && npm audit --audit-level=high`，保存其对现有 8 个漏洞（3 moderate、4 high、1 critical）的失败证据。使用 npm advisory 和各依赖官方发布信息选择最小安全版本；先应用非破坏性升级，对仍需主版本升级的 Vitest/Vite 工具链逐项升级，禁止直接接受 `npm audit fix --force` 产生的未审查改动。每轮更新后运行 `npm test -- --run` 与 `npm run build`，修复真实兼容性问题，最终要求 `npm audit --audit-level=high` 退出 0。把依赖治理作为独立提交：
+
+```bash
+git add webui/package.json webui/package-lock.json
+git commit -m "chore(webui): remediate audited dependencies"
+```
+
+- [ ] **Step 2: 使用 `verification-before-completion` 运行完整本地门禁**
 
 ```bash
 cd backend
@@ -733,7 +739,7 @@ git diff --check
 
 Expected: 后端和前端零失败、生产构建成功、无 high/critical 审计问题、本地云发布门禁成功、内容验证精确为 5 分类/14 篇。
 
-- [ ] **Step 2: 运行最终内容扫描和提交边界检查**
+- [ ] **Step 3: 运行最终内容扫描和提交边界检查**
 
 ```bash
 rg -n "inkbot\.cn|Ink Blog|STARSHIP|星舰|TODO|TBD|javascript:|data:text/html|^# " backend/app/ai_notes/content docs/reviews/ai-notes-eight-article-source-review.md
@@ -745,11 +751,11 @@ git diff --check master...HEAD
 
 Expected: 正文和台账无旧品牌、占位符、危险协议、H1；工作树只有已知用户未跟踪文件或完全干净；提交序列包含批次脚手架、八篇单篇提交、可选审查修正和单一发布提交。
 
-- [ ] **Step 3: 使用 `requesting-code-review` 做独立审查**
+- [ ] **Step 4: 使用 `requesting-code-review` 做独立审查**
 
 审查范围必须覆盖：八篇正文质量、研究台账证据、事实与来源边界、跨文章去重、相对链接、Mermaid 可读性/唯一元数据、草稿到正式的一次性开关、测试是否能防止回归。修复所有 Critical 和 Important 问题并重跑受影响门禁；修复提交使用 `fix(ai-notes): address batch publication review`。
 
-- [ ] **Step 4: 使用 `finishing-a-development-branch` 快进集成**
+- [ ] **Step 5: 使用 `finishing-a-development-branch` 快进集成**
 
 执行前获取远端并确认 `master` 没有来自其他会话的新提交。若有新提交，先把隔离分支基于最新 `origin/master` 重放或合并并重跑完整门禁。随后在根仓库：
 
