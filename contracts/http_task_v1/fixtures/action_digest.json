@@ -1,0 +1,9 @@
+{
+  "input": {
+    "platform_task_id": "0d8f0764-91be-4af5-b4d8-e79d58ab3b07",
+    "action_seq": 1,
+    "action_kind": "voc.submit",
+    "parameters": {"title": "机器人客户反馈", "priority": 2}
+  },
+  "lowercase_hex": "0f7a671c2f01c4c4e9ce5ec974fd4bf7706290765319bfcee1071d28c8578486"
+}

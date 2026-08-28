@@ -11,3 +11,4 @@ dingtalk-stream==0.24.3
 pytest>=8.0
 pytest-asyncio>=0.24
 respx>=0.21
+jcs==0.2.1
