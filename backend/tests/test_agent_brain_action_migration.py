@@ -12,7 +12,7 @@ from test_control_plane_migration import control_database
 MIGRATION = (
     Path(__file__).parents[1]
     / "control_migrations"
-    / "050_agent_brain_actions.sql"
+    / "051_agent_brain_actions.sql"
 )
 
 
@@ -40,7 +40,7 @@ def test_action_schema_and_web_update_boundary(
             row[0]
             for row in connection.execute(
                 "select proname from pg_proc where pronamespace="
-                "'platform_brain'::regnamespace and proname like '%action%v50'"
+                    "'platform_brain'::regnamespace and proname like '%action%v51'"
             )
         }
     assert {
@@ -59,12 +59,12 @@ def test_action_schema_and_web_update_boundary(
         "execution_deadline_at",
     } <= columns
     assert {
-        "propose_agent_task_action_v50",
-        "confirm_agent_task_action_v50",
-        "reject_agent_task_action_v50",
-        "expire_agent_task_actions_v50",
-        "supersede_agent_task_action_v50",
-        "resume_action_resolution_v50",
+        "propose_agent_task_action_v51",
+        "confirm_agent_task_action_v51",
+        "reject_agent_task_action_v51",
+        "expire_agent_task_actions_v51",
+        "supersede_agent_task_action_v51",
+        "resume_action_resolution_v51",
     } <= functions
 
     app_role = next(role for role in environment["roles"] if "control_app" in role)
@@ -73,4 +73,3 @@ def test_action_schema_and_web_update_boundary(
             "select has_table_privilege(%s,%s,'update')",
             (app_role, "platform_brain.agent_task_actions"),
         ).fetchone()[0] is False
-

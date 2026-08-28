@@ -7,10 +7,11 @@
   "thinking_type": "adaptive",
   "thinking_display": "summarized",
   "thinking_effort": "high",
+  "thinking_effort_routing": "medium",
   "max_output_tokens": 65536,
   "max_answer_bytes": 65536,
   "prompt_cache_enabled": true,
   "stable_cache_ttl": "1h",
   "rolling_cache_ttl": "5m",
-  "system_prompt_sha256": "b0b22afb2648075cf771b17eb388c7d51a32fe08668d03e79219f2be9b1cd8bf"
+  "system_prompt_sha256": "5aa913a30fa1f214b02e3abda2ac423de7ea746d679665e7c279a663d47effeb"
 }

@@ -21,14 +21,40 @@ describe("MermaidDiagram", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
+    Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+      configurable: true,
+      value: vi.fn(function show(this: HTMLDialogElement) {
+        Object.defineProperty(this, "open", { configurable: true, value: true });
+      }),
+    });
+    Object.defineProperty(HTMLDialogElement.prototype, "close", {
+      configurable: true,
+      value: vi.fn(function close(this: HTMLDialogElement) {
+        Object.defineProperty(this, "open", { configurable: true, value: false });
+      }),
+    });
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   });
 
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    document.body.style.overflow = "";
+    Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
+    Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
     vi.restoreAllMocks();
   });
+
+  async function settleMermaid() {
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  }
+
+  function button(name: string): HTMLButtonElement {
+    const result = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((candidate) => candidate.getAttribute("aria-label") === name || candidate.textContent === name);
+    if (!result) throw new Error(`missing button: ${name}`);
+    return result;
+  }
 
   it("renders a sanitized local Mermaid diagram in strict mode", async () => {
     render.mockResolvedValue({ svg: '<svg onload="evil()"><text>ok</text><script>bad()</script></svg>' });
@@ -61,5 +87,40 @@ describe("MermaidDiagram", () => {
 
     expect(container.textContent).toContain("图表暂时无法渲染");
     expect(container.textContent).toContain("graph broken");
+  });
+
+  it("uses Mermaid metadata and opens the rendered image without rendering twice", async () => {
+    render.mockResolvedValue({ svg: "<svg><text>ok</text></svg>" });
+    await act(async () => root.render(<MermaidDiagram source={`flowchart LR
+      accTitle: Agent 行动循环
+      accDescr: Agent 在目标、工具结果和完成证据之间循环。
+      A-->B`} />));
+    await settleMermaid();
+
+    const trigger = container.querySelector<HTMLButtonElement>(".mermaid-diagram-trigger")!;
+    expect(trigger.getAttribute("aria-label")).toBe("查看大图：Agent 行动循环");
+    expect(trigger.querySelector("img")?.alt).toBe("Agent 行动循环");
+
+    await act(async () => trigger.click());
+    expect(container.querySelector("dialog")?.getAttribute("aria-label")).toBe("Agent 行动循环");
+    expect(render).toHaveBeenCalledTimes(1);
+
+    const cancel = new Event("cancel", { cancelable: true });
+    await act(async () => container.querySelector("dialog")!.dispatchEvent(cancel));
+    expect(container.querySelector("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("keeps the inline diagram readable when modal dialogs are unsupported", async () => {
+    render.mockResolvedValue({ svg: "<svg><text>ok</text></svg>" });
+    await act(async () => root.render(<MermaidDiagram source="flowchart LR; A-->B" />));
+    await settleMermaid();
+    Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
+
+    const trigger = container.querySelector<HTMLButtonElement>(".mermaid-diagram-trigger")!;
+    await act(async () => trigger.click());
+
+    expect(container.querySelector("dialog")).toBeNull();
+    expect(trigger.querySelector("img")).not.toBeNull();
   });
 });

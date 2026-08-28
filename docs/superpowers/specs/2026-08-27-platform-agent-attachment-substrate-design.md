@@ -8,7 +8,7 @@
 
 ## 1. 项目定位
 
-附件底座是独立于 Agent Brain Action 确认机制的并行项目。它不阻塞迁移 049/050 和 VOC
+附件底座是独立于 Agent Brain Action 确认机制的并行项目。它不阻塞迁移 049/050/051 和 VOC
 确认链路；必须在 FAE 以“支持图片/文档”的能力正式开放给 Brain 前完成。
 
 所有相关仓库、对象存储配置、Worker 和 Agent 代码都由 Orbbec 团队掌控，可以统一修改。
@@ -67,7 +67,7 @@ Platform 是企业 Agent 附件事实源。MinIO 只是 Blob Store，不能作�
 ## 4. 数据模型
 
 使用独立 `platform_attachments` schema，不放入只读 `platform_replica`，也不塞进
-Action 迁移 049/050。迁移编号在 049/050 合并后按主线下一个可用编号确定。
+Action 迁移 049/050/051。迁移编号在 049/050/051 合并后按主线下一个可用编号确定。
 
 ```text
 attachments

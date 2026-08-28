@@ -4,7 +4,7 @@
 
 **Goal:** Make Agent Platform the durable top-level Brain for nine professional Agents, with correct capability versioning, one event-delivery waterline, user-owned Action confirmation, task-local failure isolation, and a shared HTTP contract runner.
 
-**Architecture:** Extend the existing 041/045/046 durable loop rather than replacing it. Migration 049 owns Task/Loop/Wait/event mechanics; migration 050 owns Action authorization and execution. Model-step persistence never competes on event cursors: Wait settlement runs as an idempotent short transaction after commit, after event append, and from the Reaper.
+**Architecture:** Extend the existing 041/045/046 durable loop rather than replacing it. Migration 049 owns same-batch Task dependencies; migration 050 owns Task/Loop/Wait/event mechanics; migration 051 owns Action authorization and execution. Model-step persistence never competes on event cursors: Wait settlement runs as an idempotent short transaction after commit, after event append, and from the Reaper.
 
 **Tech Stack:** Python 3.11, FastAPI, Pydantic, psycopg 3, PostgreSQL, pytest, Anthropic Messages API, React 18, TypeScript, Vitest.
 
@@ -12,7 +12,7 @@
 
 - Run backend tests with `backend/.venv/bin/python -m pytest`; interpreter must be Python `>=3.11`.
 - Keep migrations 041/045/046 readable as history; add 049 and 050 instead of editing applied migrations.
-- Migration 049 removes `brain_wait_subscriptions.cursors`; `brain_task_event_cursors.delivered_seq` is the sole waterline.
+- Migration 050 removes `brain_wait_subscriptions.cursors`; `brain_task_event_cursors.delivered_seq` is the sole waterline.
 - `submit_answer` with a Pending Action returns a normal rejected Tool Result and never increments `protocol_retry_count`.
 - forced + pending transitions to `waiting_confirmation`; it never calls the Provider and never uses `forced_submission_failed`.
 - 40001 retries occur only around the short settlement transaction: three retries with 10/25/50ms full-jitter limits.
@@ -503,10 +503,10 @@ git add deploy/cloud/http-task-contract.release.json
 git commit -m "chore: freeze corrected HTTP task contract release"
 ```
 
-### Task 4: Add migration 049 state, cursor, and Wait schema
+### Task 4: Add migration 050 state, cursor, and Wait schema
 
 **Files:**
-- Create: `backend/control_migrations/049_agent_brain_task_wait_state.sql`
+- Create: `backend/control_migrations/050_agent_brain_task_wait_state.sql`
 - Create: `backend/tests/test_agent_brain_task_wait_migration.py`
 - Modify: `backend/tests/test_control_plane_migration.py`
 - Modify: `backend/app/agent_brain/loop_models.py`
@@ -518,7 +518,7 @@ git commit -m "chore: freeze corrected HTTP task contract release"
 
 ```python
 @pytest.mark.postgres
-def test_v49_has_one_delivery_waterline(control_database) -> None:
+def test_v50_has_one_delivery_waterline(control_database) -> None:
     with psycopg.connect(control_database["environments"]["production"]["admin"]) as db:
         columns = _columns(db, "platform_brain", "brain_wait_subscriptions")
         assert "cursors" not in columns
@@ -535,9 +535,9 @@ Add tests for `dispatched_at`, `terminal_reason_code`, `intervention_expires_at`
 backend/.venv/bin/python -m pytest -q backend/tests/test_agent_brain_task_wait_migration.py
 ```
 
-Expected: FAIL because migration 049 is missing.
+Expected: FAIL because migration 050 is missing.
 
-- [ ] **Step 3: Write migration 049**
+- [ ] **Step 3: Write migration 050**
 
 The migration must:
 
@@ -583,7 +583,7 @@ backend/.venv/bin/python -m pytest -q \
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/control_migrations/049_agent_brain_task_wait_state.sql \
+git add backend/control_migrations/050_agent_brain_task_wait_state.sql \
   backend/tests/test_agent_brain_task_wait_migration.py \
   backend/tests/test_control_plane_migration.py \
   backend/app/agent_brain/loop_models.py
@@ -600,7 +600,7 @@ git commit -m "feat: add durable task wait state"
 - Test: `backend/tests/test_agent_brain_v2_recovery.py`
 
 **Interfaces:**
-- Produces: `create_wait_subscription_v49(...)`; `settle_if_undelivered(loop_id: UUID) -> WaitSettlementResult`.
+- Produces: `create_wait_subscription_v50(...)`; `settle_if_undelivered(loop_id: UUID) -> WaitSettlementResult`.
 
 - [ ] **Step 1: Write the event-before-Wait and one-waterline tests**
 
@@ -689,7 +689,7 @@ git commit -m "feat: settle agent waits after model commit"
 ### Task 6: Implement dispatched/waiting Task transitions and local protocol isolation
 
 **Files:**
-- Modify: `backend/control_migrations/049_agent_brain_task_wait_state.sql`
+- Modify: `backend/control_migrations/050_agent_brain_task_wait_state.sql`
 - Modify: `backend/app/agent_brain/loop_repository.py`
 - Modify: `backend/app/agent_brain/loop_runtime.py`
 - Modify: `backend/app/agent_brain/worker_runtime.py`
@@ -698,7 +698,7 @@ git commit -m "feat: settle agent waits after model commit"
 - Test: `backend/tests/test_control_plane_worker_runtime.py`
 
 **Interfaces:**
-- Produces: `mark_adapter_delivery_dispatched_v49`; `fail_agent_task_protocol_v49`.
+- Produces: `mark_adapter_delivery_dispatched_v50`; `fail_agent_task_protocol_v50`.
 
 - [ ] **Step 1: Write failing state and isolation tests**
 
@@ -736,11 +736,11 @@ update platform_brain.agent_tasks set
 where task_id=selected_task_id and status='queued';
 ```
 
-`append_agent_task_event_v49` moves `queued/dispatched` to `running` only for a real `work_update`; terminal events may set `started_at` and `terminal_at` together.
+`append_agent_task_event_v50` moves `queued/dispatched` to `running` only for a real `work_update`; terminal events may set `started_at` and `terminal_at` together.
 
 - [ ] **Step 4: Add task-local protocol failure**
 
-`fail_agent_task_protocol_v49` sets:
+`fail_agent_task_protocol_v50` sets:
 
 ```sql
 status='failed',
@@ -774,7 +774,7 @@ backend/.venv/bin/python -m pytest -q \
 - [ ] **Step 7: Commit**
 
 ```bash
-git add backend/control_migrations/049_agent_brain_task_wait_state.sql \
+git add backend/control_migrations/050_agent_brain_task_wait_state.sql \
   backend/app/agent_brain/loop_repository.py \
   backend/app/agent_brain/loop_runtime.py \
   backend/app/agent_brain/worker_runtime.py \
@@ -784,10 +784,10 @@ git add backend/control_migrations/049_agent_brain_task_wait_state.sql \
 git commit -m "feat: isolate professional agent task failures"
 ```
 
-### Task 7: Add migration 050 and the Action domain service
+### Task 7: Add migration 051 and the Action domain service
 
 **Files:**
-- Create: `backend/control_migrations/050_agent_brain_actions.sql`
+- Create: `backend/control_migrations/051_agent_brain_actions.sql`
 - Create: `backend/app/agent_brain/action_models.py`
 - Create: `backend/app/agent_brain/action_service.py`
 - Create: `backend/tests/test_agent_brain_action_migration.py`
@@ -838,9 +838,9 @@ class ActionProposal(BaseModel):
 
 Reuse `contracts/http_task_v1` JCS implementation; store summary, impact, and parameters as ciphertext/key-version/hash triplets.
 
-- [ ] **Step 4: Implement migration 050 functions**
+- [ ] **Step 4: Implement migration 051 functions**
 
-Create `propose_agent_task_action_v50`, `confirm_agent_task_action_v50`, `reject_agent_task_action_v50`, `expire_agent_task_actions_v50`, `supersede_agent_task_action_v50`, and `resume_action_resolution_v50`. Each function validates `session_user`, owner Join path, pending state, digest, expiry, and loop state.
+Create `propose_agent_task_action_v51`, `confirm_agent_task_action_v51`, `reject_agent_task_action_v51`, `expire_agent_task_actions_v51`, `supersede_agent_task_action_v51`, and `resume_action_resolution_v51`. Each function validates `session_user`, owner Join path, pending state, digest, expiry, and loop state.
 
 - [ ] **Step 5: Implement service methods**
 
@@ -865,7 +865,7 @@ backend/.venv/bin/python -m pytest -q \
 - [ ] **Step 7: Commit**
 
 ```bash
-git add backend/control_migrations/050_agent_brain_actions.sql \
+git add backend/control_migrations/051_agent_brain_actions.sql \
   backend/app/agent_brain/action_models.py \
   backend/app/agent_brain/action_service.py \
   backend/app/agent_brain/loop_repository.py \
@@ -1260,7 +1260,7 @@ git commit -m "feat: show owner-confirmed actions in workroom"
 
 - [ ] **Step 1: Write failing acceptance assertions**
 
-Assert P0 version 2, migration 049/050 presence, no Wait cursors, one cursor waterline, zero V2 mission writes, Pending Action forced recovery, task-local protocol isolation, VOC exactly-once confirmation, and unchanged FAE/Admin public paths.
+Assert P0 version 2, migration 049/050/051 presence, no Wait cursors, one cursor waterline, zero V2 mission writes, Pending Action forced recovery, task-local protocol isolation, VOC exactly-once confirmation, and unchanged FAE/Admin public paths.
 
 - [ ] **Step 2: Run RED against the pre-release candidate**
 

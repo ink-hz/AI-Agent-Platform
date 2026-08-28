@@ -45,6 +45,10 @@ class AgentCatalogCard(BaseModel):
     adapter_id: str | None = Field(default=None, max_length=128)
     adapter_kind: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     adapter_config_version: int = Field(default=1, gt=0)
+    execution_pool: str | None = Field(
+        default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$"
+    )
+    pool_concurrency: int | None = Field(default=None, ge=1, le=16)
     accepted_input_types: tuple[Literal["text"], ...] = ("text",)
     output_types: tuple[Literal["text"], ...] = ("text",)
     supports_attachments_in: bool = False
@@ -83,6 +87,8 @@ class AgentCatalogCard(BaseModel):
         if external_only:
             if self.adapter_kind is not None or self.adapter_id is not None:
                 raise ValueError("external workspace Agent cannot declare an Adapter")
+            if self.execution_pool is not None or self.pool_concurrency is not None:
+                raise ValueError("external workspace Agent has no execution pool")
             if self.workspace_url != _WORKSPACE_URLS.get(self.agent_id):
                 raise ValueError("external workspace URL is not allowlisted")
             if any(
@@ -101,6 +107,10 @@ class AgentCatalogCard(BaseModel):
                 raise ValueError("interaction mode combination invalid")
             if self.adapter_kind is None or self.adapter_id is None or self.workspace_url is not None:
                 raise ValueError("direct or delegated Agent requires only an Adapter")
+            if self.execution_pool is None or self.pool_concurrency is None:
+                # The Brain schedules against the pool's real capacity, so an Agent
+                # that can be dispatched must say which executor it contends for.
+                raise ValueError("delegated Agent requires an execution pool")
         return self
 
     @property
@@ -114,6 +124,23 @@ class _CatalogDocument(BaseModel):
     agents: tuple[AgentCatalogCard, ...] = Field(min_length=1)
 
 
+def _require_consistent_pools(cards: tuple[AgentCatalogCard, ...]) -> None:
+    """Reject a Catalog where one execution pool declares two capacities.
+
+    The Brain admits work against the pool's declared concurrency. If two cards in
+    the same pool disagree, the Brain plans against whichever card it read last and
+    the pool silently queues behind it.
+    """
+
+    declared: dict[str, int] = {}
+    for card in cards:
+        if card.execution_pool is None or card.pool_concurrency is None:
+            continue
+        existing = declared.setdefault(card.execution_pool, card.pool_concurrency)
+        if existing != card.pool_concurrency:
+            raise ValueError("execution pool concurrency conflict")
+
+
 def load_agent_catalog(path: str | Path | None = None) -> tuple[AgentCatalogCard, ...]:
     selected = Path(path) if path is not None else Path(__file__).with_name("catalog.yaml")
     try:
@@ -122,6 +149,7 @@ def load_agent_catalog(path: str | Path | None = None) -> tuple[AgentCatalogCard
         ids = tuple(card.agent_id for card in document.agents)
         if ids != CANONICAL_AGENT_IDS or len(ids) != len(set(ids)):
             raise ValueError
+        _require_consistent_pools(document.agents)
         return document.agents
     except (OSError, UnicodeError, yaml.YAMLError, ValidationError, TypeError, ValueError):
         raise ValueError("Agent Catalog invalid") from None

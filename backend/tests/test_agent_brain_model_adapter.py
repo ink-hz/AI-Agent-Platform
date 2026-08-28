@@ -280,3 +280,56 @@ def test_stream_failure_after_first_event_is_not_retried() -> None:
         adapter.complete(_request())
     assert calls == 1
     assert "raw-private" not in repr(error.value)
+
+
+def _built(**kwargs):
+    return BrainRequestBuilder(BrainModelManifest.load(MANIFEST)).build(
+        messages=({"role": "user", "content": "介绍一下你自己"},),
+        step_seq=1,
+        system_prompt="stable system prompt " * 40,
+        **kwargs,
+    )
+
+
+def test_agent_roster_becomes_a_second_cached_system_block() -> None:
+    request = _built(agent_roster="# 已授权的专业 Agent\n\n## hr-bot")
+
+    assert [block["type"] for block in request.system] == ["text", "text"]
+    assert request.system[1]["text"].startswith("# 已授权的专业 Agent")
+    # One marker at the end of the system prefix caches both blocks, so the roster
+    # costs no extra breakpoint against the provider limit of four.
+    assert "cache_control" not in request.system[0]
+    assert request.system[1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+    assert [point.layer for point in request.cache_breakpoints] == [
+        "tools",
+        "system",
+        "rolling",
+    ]
+
+
+def test_system_prompt_alone_still_carries_the_cache_marker() -> None:
+    request = _built()
+
+    assert len(request.system) == 1
+    assert request.system[0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+    assert [point.layer for point in request.cache_breakpoints] == [
+        "tools",
+        "system",
+        "rolling",
+    ]
+
+
+def test_blank_agent_roster_is_rejected_rather_than_silently_dropped() -> None:
+    with pytest.raises(ValueError):
+        _built(agent_roster="   ")
+    with pytest.raises(ValueError):
+        _built(agent_roster=b"roster")
+
+
+def test_routing_effort_is_declared_by_the_release_manifest() -> None:
+    manifest = BrainModelManifest.load(MANIFEST)
+
+    assert manifest.thinking_effort == "high"
+    assert manifest.thinking_effort_routing == "medium"
+    assert _built(effort=manifest.thinking_effort_routing).effort == "medium"
+    assert _built().effort == "high"

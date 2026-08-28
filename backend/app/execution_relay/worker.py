@@ -460,6 +460,7 @@ class WorkerRuntime:
         jitter: Callable[[float, float], float] = random.uniform,
         logger: logging.Logger = _LOG,
         acceptance_hooks: Any | None = None,
+        max_concurrent_runs: int = 1,
     ) -> None:
         if (
             not isinstance(worker_id, str)
@@ -468,9 +469,17 @@ class WorkerRuntime:
             or not isinstance(callback_port, int)
             or not 0 <= callback_port <= 65535
             or heartbeat_interval <= 0
+            or isinstance(max_concurrent_runs, bool)
+            or not isinstance(max_concurrent_runs, int)
+            or not 1 <= max_concurrent_runs <= 16
         ):
             raise WorkerRuntimeError()
         self.worker_id = worker_id
+        # Each MetaBot Agent is a separate service on its own port, so running more
+        # than one at a time is a configuration decision rather than a constraint.
+        # The Brain schedules against the pool concurrency declared in the Catalog,
+        # so this must not be raised without raising that too.
+        self.max_concurrent_runs = max_concurrent_runs
         self.cloud = cloud
         self.store = store
         self.runtime_map = runtime_map
@@ -594,7 +603,7 @@ class WorkerRuntime:
     async def lease_once(self) -> bool:
         async with self._lease_lock:
             async with self._state_lock:
-                at_capacity = bool(self._runs)
+                at_capacity = len(self._runs) >= self.max_concurrent_runs
             if at_capacity:
                 return True
             async with self._state_lock:

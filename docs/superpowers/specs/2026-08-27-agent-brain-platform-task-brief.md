@@ -60,15 +60,22 @@ Platform、FAE、行政、VOC 和 MetaBot 代码及部署都由 Orbbec 掌控。
 
 ### 3.3 提交和发布
 
-该阶段必须形成独立 Commit、Release 和验收记录。不能和迁移 049/050 混合，便于快速回滚和
+该阶段必须形成独立 Commit、Release 和验收记录。不能和迁移 049/050/051 混合，便于快速回滚和
 定位 Prompt Cache 首次失效成本。
 
-## 4. 迁移 049 与 050
+## 4. 迁移 049、050 与 051
 
-### 4.1 迁移 049：状态、事件与唤醒
+### 4.0 迁移 049：任务依赖与调度截止
+
+- 保存同批次 `depends_on_task_ids`；
+- 依赖未终态前阻止下游领取；
+- 上游失败时显式终结下游；
+- 为任务截止强制提供持久字段和索引。
+
+### 4.1 迁移 050：状态、事件与唤醒
 
 - 扩展 `agent_tasks.status`；
-- 增加 `dispatched_at`，并以 `mark_adapter_delivery_dispatched_v49` 替换会把 Task 直接
+- 增加 `dispatched_at`，并以 `mark_adapter_delivery_dispatched_v50` 替换会把 Task 直接
   写成 running 的 v45 函数；
 - 为 Task 增加暂停/恢复所需已消耗执行时间；
 - 为 Task 增加受约束 `terminal_reason_code`，协议错误落为
@@ -84,12 +91,12 @@ Platform、FAE、行政、VOC 和 MetaBot 代码及部署都由 Orbbec 掌控。
 - 短结算事务遇到 `40001` 最多重试三次，使用 10/25/50ms full-jitter 上限；耗尽后保留
   active Wait 给 Reaper 重试，不重新调用模型；
 - 按 HTTP Task Contract v1 统一 `timeout`、`input_required`、`action_required`；
-- 替换 `append_agent_task_event_v45` 为 v49，包含新状态映射；
+- 替换 `append_agent_task_event_v45` 为 v50，包含新状态映射；
 - 增加单 Task 协议隔离函数，序号缺口/乱序/未知事件不得让 CheckViolation 逃逸并拖垮
   整个 Worker；
 - 重新审计 Worker/App 的列级 Grant。
 
-### 4.2 迁移 050：Action 与执行
+### 4.2 迁移 051：Action 与执行
 
 - 新增 `agent_task_actions`，Summary/Impact/Parameters 全部按 Ciphertext + Key Version +
   SHA-256 保存；
@@ -103,17 +110,17 @@ Platform、FAE、行政、VOC 和 MetaBot 代码及部署都由 Orbbec 掌控。
 
 至少提供：
 
-- `propose_agent_task_action_v50`：Worker 身份，幂等创建或取代 Action；
-- `confirm_agent_task_action_v50`：App 身份，校验 Owner/Digest/Expiry 并创建执行投递；
-- `reject_agent_task_action_v50`：App 身份，原子拒绝并唤醒；
-- `expire_agent_task_actions_v50`：Worker/Reaper 身份，批量过期并唤醒；
-- `supersede_agent_task_action_v50`：只取代被明确修改的 Action；
-- `append_agent_task_event_v49`：包含新增事件和任务状态映射。
-- `mark_adapter_delivery_dispatched_v49`：Delivery dispatched 时只把 queued Task 转为
+- `propose_agent_task_action_v51`：Worker 身份，幂等创建或取代 Action；
+- `confirm_agent_task_action_v51`：App 身份，校验 Owner/Digest/Expiry 并创建执行投递；
+- `reject_agent_task_action_v51`：App 身份，原子拒绝并唤醒；
+- `expire_agent_task_actions_v51`：Worker/Reaper 身份，批量过期并唤醒；
+- `supersede_agent_task_action_v51`：只取代被明确修改的 Action；
+- `append_agent_task_event_v50`：包含新增事件和任务状态映射。
+- `mark_adapter_delivery_dispatched_v50`：Delivery dispatched 时只把 queued Task 转为
   dispatched；首条真实进度/终态才写 running/started_at；
-- `create_wait_subscription_v49`：只创建 active Wait，不锁 Cursor、不结算事件；
-- `settle_if_undelivered_v49`：独立短事务锁唯一 delivered cursor，幂等结算已有事件；
-- `fail_agent_task_protocol_v49`：仅隔离一个 Task/Session/Delivery 并写 Agent 健康事实，
+- `create_wait_subscription_v50`：只创建 active Wait，不锁 Cursor、不结算事件；
+- `settle_if_undelivered_v50`：独立短事务锁唯一 delivered cursor，幂等结算已有事件；
+- `fail_agent_task_protocol_v50`：仅隔离一个 Task/Session/Delivery 并写 Agent 健康事实，
   不伪造上游缺失序号；有 Wait 时直接写 Platform-origin Tool Result，无 Wait 时由下一次
   Wait 创建读取 Task 控制面终态并立即结算。
 
@@ -221,7 +228,7 @@ Action 能力使用可选接口 `ActionCapableAdapter`。行政只读阶段和 F
 
 ## 9. 附件并行项目边界
 
-统一附件底座不属于迁移 049/050，也不阻塞 VOC Action。完整实现按
+统一附件底座不属于迁移 049/050/051，也不阻塞 VOC Action。完整实现按
 `2026-08-27-platform-agent-attachment-substrate-design.md` 建立独立分支、迁移、计划和
 验收。
 

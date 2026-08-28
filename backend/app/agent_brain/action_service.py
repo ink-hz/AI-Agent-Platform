@@ -79,7 +79,7 @@ class ActionCommandService:
         try:
             with self._connection() as connection:
                 connection.execute(
-                    "select platform_brain.propose_agent_task_action_v50("
+                    "select platform_brain.propose_agent_task_action_v51("
                     "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         proposal.action_id,
@@ -124,7 +124,7 @@ class ActionCommandService:
             idempotency_key = f"action-execution:{action_id}"
             with self._connection() as connection:
                 connection.execute(
-                    "select platform_brain.confirm_agent_task_action_v50("
+                    "select platform_brain.confirm_agent_task_action_v51("
                     "%s,%s,%s,%s,%s)",
                     (owner_id, action_id, digest, delivery_id, idempotency_key),
                 )
@@ -140,7 +140,7 @@ class ActionCommandService:
         try:
             with self._connection() as connection:
                 connection.execute(
-                    "select platform_brain.reject_agent_task_action_v50(%s,%s)",
+                    "select platform_brain.reject_agent_task_action_v51(%s,%s)",
                     (owner_id, action_id),
                 )
             return self.get(action_id)
@@ -155,7 +155,7 @@ class ActionCommandService:
         try:
             with self._connection() as connection:
                 connection.execute(
-                    "select platform_brain.supersede_agent_task_action_v50(%s)",
+                    "select platform_brain.supersede_agent_task_action_v51(%s)",
                     (action_id,),
                 )
             return self.get(action_id)

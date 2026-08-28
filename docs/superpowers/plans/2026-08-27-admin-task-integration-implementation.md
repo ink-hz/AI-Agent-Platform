@@ -344,7 +344,7 @@ git commit -m "feat: add admin task follow-up and cancellation"
 
 - [ ] **Step 1: Keep this task disabled until Platform/VOC confirmation acceptance passes**
 
-Record the accepted Platform release and migration 050 evidence in the Admin implementation log.
+Record the accepted Platform release and migration 051 evidence in the Admin implementation log.
 
 - [ ] **Step 2: Write failing Action tests**
 

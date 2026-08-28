@@ -40,11 +40,11 @@ RUN_ID = UUID("00000000-0000-4000-8000-000000000101")
 JOB_ID = UUID("00000000-0000-4000-8000-000000000111")
 
 
-def _lease(*, cancelled: bool = False) -> RelayLease:
+def _lease(*, cancelled: bool = False, run_id: UUID = RUN_ID) -> RelayLease:
     return RelayLease(
         job_id=JOB_ID,
         payload=RelayJobPayload(
-            run_id=RUN_ID,
+            run_id=run_id,
             conversation_id=UUID("00000000-0000-4000-8000-000000000102"),
             trigger_message_id=UUID("00000000-0000-4000-8000-000000000103"),
             agent_id="hr-bot",
@@ -342,8 +342,10 @@ def _runtime(
     metabot: FakeMetaBot | None = None,
     sleep=None,
     acceptance_hooks=None,
+    max_concurrent_runs=1,
 ) -> WorkerRuntime:
     return WorkerRuntime(
+        max_concurrent_runs=max_concurrent_runs,
         worker_id="worker-a",
         cloud=cloud or FakeCloud(),
         store=store or FakeStore(),
@@ -1734,3 +1736,31 @@ async def test_heartbeat_success_waits_exactly_fifteen_seconds() -> None:
     await heartbeat_loop(runtime)
 
     assert delays == [15.0]
+
+
+@pytest.mark.asyncio
+async def test_worker_holds_one_run_at_a_time_by_default() -> None:
+    cloud = FakeCloud([_lease(), _lease(run_id=UUID("00000000-0000-4000-8000-0000000009f1"))])
+    runtime = _runtime(cloud=cloud)
+
+    assert await runtime.lease_once() is True
+    # Six MetaBot Agents share this worker, and the default keeps the shipped
+    # behaviour: one run at a time until concurrency is validated.
+    assert await runtime.lease_once() is True
+    assert len(runtime._runs) == 1
+
+
+@pytest.mark.asyncio
+async def test_worker_concurrency_is_configurable_above_one() -> None:
+    cloud = FakeCloud([_lease(), _lease(run_id=UUID("00000000-0000-4000-8000-0000000009f1"))])
+    runtime = _runtime(cloud=cloud, max_concurrent_runs=2)
+
+    assert await runtime.lease_once() is True
+    assert await runtime.lease_once() is True
+    assert len(runtime._runs) == 2
+
+
+def test_worker_rejects_a_concurrency_outside_the_declared_bound() -> None:
+    for invalid in (0, 17, True, "2"):
+        with pytest.raises(WorkerRuntimeError):
+            _runtime(max_concurrent_runs=invalid)

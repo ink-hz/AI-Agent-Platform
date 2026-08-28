@@ -90,11 +90,98 @@ def test_adapter_streams_provider_summary_before_returning_tool_commit() -> None
     response = adapter.complete(_request(), on_thinking_delta=seen.append)
 
     assert [(item.block_index, item.delta_seq, item.text) for item in seen] == [
-        (0, 1, "需要先拆分"),
-        (0, 2, "任务。"),
+        (0, 1, "需要先拆分任务。"),
     ]
     assert all(item.provider_run_ref == "msg_live" for item in seen)
     assert response.content_blocks[0]["signature"] == "sig"
+
+
+def _thinking_stream(*chunks: str) -> bytes:
+    return _events(
+        {"type": "message_start", "message": {"id": "msg_live", "usage": {}}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking", "thinking": ""},
+        },
+        *(
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": chunk},
+            }
+            for chunk in chunks
+        ),
+        {"type": "content_block_stop", "index": 0},
+        {
+            "type": "content_block_start",
+            "index": 1,
+            "content_block": {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "list_agents",
+                "input": {},
+            },
+        },
+        {"type": "content_block_stop", "index": 1},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "tool_use"},
+            "usage": {"output_tokens": 10},
+        },
+        {"type": "message_stop"},
+    )
+
+
+def _coalescing_adapter(stream: bytes, clock: list[float]):
+    return AnthropicMessagesAdapter(
+        base_url="https://gateway.example",
+        api_key="secret",
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(200, content=stream)
+            )
+        ),
+        now=lambda: clock.pop(0) if len(clock) > 1 else clock[0],
+    )
+
+
+def test_thinking_deltas_coalesce_until_the_flush_window_elapses() -> None:
+    seen: list[ThinkingDelta] = []
+    # add() reads the clock once per delta (twice on the first, to open the window),
+    # and flush() reads it once to reopen. The third delta is the one that crosses
+    # 0.5s, so 甲乙丙 lands as one write and 丁 waits for the block to stop.
+    clock = [0.0, 0.0, 0.1, 0.6, 0.6, 0.7, 0.7, 10.0]
+
+    _coalescing_adapter(_thinking_stream("甲", "乙", "丙", "丁"), clock).complete(
+        _request(), on_thinking_delta=seen.append
+    )
+
+    assert [(item.delta_seq, item.text) for item in seen] == [
+        (1, "甲乙丙"),
+        (2, "丁"),
+    ]
+
+
+def test_thinking_delta_flushes_once_the_byte_threshold_is_reached() -> None:
+    seen: list[ThinkingDelta] = []
+
+    _coalescing_adapter(_thinking_stream("x" * 5000, "尾"), [0.0]).complete(
+        _request(), on_thinking_delta=seen.append
+    )
+
+    # Strictly consecutive sequence numbers per block are the repository contract.
+    assert [(item.delta_seq, len(item.text)) for item in seen] == [(1, 5000), (2, 1)]
+
+
+def test_thinking_summary_is_flushed_when_its_block_stops() -> None:
+    seen: list[ThinkingDelta] = []
+
+    _coalescing_adapter(_thinking_stream("只有一小段"), [0.0]).complete(
+        _request(), on_thinking_delta=seen.append
+    )
+
+    assert [(item.delta_seq, item.text) for item in seen] == [(1, "只有一小段")]
 
 
 def test_interrupted_stream_keeps_emitted_summary_and_never_retries() -> None:
@@ -193,3 +280,37 @@ def test_runtime_marks_partial_summary_interrupted_without_tool_call(
         ).fetchone()[0]
     assert status == "interrupted"
     assert tool_count == 0
+
+
+def test_interruption_inside_the_read_loop_still_persists_buffered_thinking() -> None:
+    # A malformed data line raises from inside the loop, before any block stops and
+    # before the flush window elapses. Every delta was durable at this point before
+    # coalescing, so the buffer must not be dropped.
+    stream = _events(
+        {"type": "message_start", "message": {"id": "msg_partial", "usage": {}}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking", "thinking": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "thinking_delta", "thinking": "已开始分析"},
+        },
+    ) + b"data: {not-json\n\n"
+    adapter = AnthropicMessagesAdapter(
+        base_url="https://gateway.example",
+        api_key="secret",
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(200, content=stream)
+            )
+        ),
+    )
+    seen: list[ThinkingDelta] = []
+
+    with pytest.raises(ProviderInterrupted):
+        adapter.complete(_request(), on_thinking_delta=seen.append)
+
+    assert [(item.delta_seq, item.text) for item in seen] == [(1, "已开始分析")]

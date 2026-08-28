@@ -26,7 +26,7 @@
 ## Workstream order
 
 1. Execute [Platform Brain Core Implementation Plan](2026-08-27-agent-brain-platform-core-implementation.md).
-2. Start [Shared Attachment Substrate Implementation Plan](2026-08-27-agent-attachment-substrate-implementation.md) after Platform migration 050 is frozen; it may run in parallel with FAE/Admin task work.
+2. Start [Shared Attachment Substrate Implementation Plan](2026-08-27-agent-attachment-substrate-implementation.md) after Platform migration 051 is frozen; it may run in parallel with FAE/Admin task work.
 3. Execute [FAE Task Integration Implementation Plan](2026-08-27-fae-task-integration-implementation.md) after the Platform contract runner and HTTP adapter base are released.
 4. Execute [AI ADMIN Task Integration Implementation Plan](2026-08-27-admin-task-integration-implementation.md) after the same contract runner release; first release is read-only.
 5. Enable FAE and AI ADMIN in Catalog one at a time after contract, identity, deadline, and rollback acceptance.
@@ -34,8 +34,9 @@
 ## Cross-workstream release gates
 
 - [ ] Platform P0 proves a real Catalog `capability_version=2` HR delegation without a Reference-only fake.
-- [ ] Migration 049 proves event-before-Wait, one-waterline behavior, 40001 retry exhaustion, Reaper recovery, task-local protocol isolation, and forced+pending behavior.
-- [ ] Migration 050 proves six Action outcomes and crash recovery after proposal, before confirmation, and after confirmation.
+- [ ] Migration 049 proves same-batch dependency validation, blocked delivery gating, upstream-result injection, and deadline enforcement.
+- [ ] Migration 050 proves event-before-Wait, one-waterline behavior, 40001 retry exhaustion, Reaper recovery, task-local protocol isolation, and forced+pending behavior.
+- [ ] Migration 051 proves six Action outcomes and crash recovery after proposal, before confirmation, and after confirmation.
 - [ ] `contracts/http_task_v1/` runs under Python 3.11+ in Platform, FAE, and AI ADMIN from the same pinned Commit/SHA-256.
 - [ ] FAE and AI ADMIN enforce `capability_version`, Scope, Task Deadline, and terminal irreversibility themselves.
 - [ ] Attachment A0-A2 passes before any new Agent advertises image/document capability; A3 passes before FAE advertises it.

@@ -18,6 +18,7 @@ _MANIFEST_FIELDS = {
     "thinking_type",
     "thinking_display",
     "thinking_effort",
+    "thinking_effort_routing",
     "max_output_tokens",
     "max_answer_bytes",
     "prompt_cache_enabled",
@@ -62,6 +63,7 @@ class BrainModelManifest:
     thinking_type: Literal["adaptive"]
     thinking_display: Literal["summarized"]
     thinking_effort: Literal["medium", "high", "xhigh"]
+    thinking_effort_routing: Literal["medium", "high", "xhigh"]
     max_output_tokens: int
     max_answer_bytes: int
     prompt_cache_enabled: bool
@@ -176,6 +178,7 @@ class BrainRequestBuilder:
         tool_choice: dict[str, str] | None = None,
         budget_notice: str | None = None,
         effort: Literal["medium", "high", "xhigh"] | None = None,
+        agent_roster: str | None = None,
     ) -> BrainModelRequest:
         if (
             type(messages) is not tuple
@@ -190,16 +193,20 @@ class BrainRequestBuilder:
             "type": "ephemeral",
             "ttl": self.manifest.stable_cache_ttl,
         }
-        system = (
-            {
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {
-                    "type": "ephemeral",
-                    "ttl": self.manifest.stable_cache_ttl,
-                },
-            },
-        )
+        system_blocks: list[dict[str, object]] = [
+            {"type": "text", "text": system_prompt}
+        ]
+        if agent_roster is not None:
+            if not isinstance(agent_roster, str) or not agent_roster.strip():
+                raise ValueError("Brain agent roster invalid")
+            system_blocks.append({"type": "text", "text": agent_roster})
+        # One marker at the end of the system prefix caches every preceding block,
+        # so adding the roster does not consume another of the four breakpoints.
+        system_blocks[-1]["cache_control"] = {
+            "type": "ephemeral",
+            "ttl": self.manifest.stable_cache_ttl,
+        }
+        system = tuple(system_blocks)
         rendered_messages = json.loads(_canonical_json(messages))
         breakpoints = [
             CacheBreakpoint("tools", "1h"),

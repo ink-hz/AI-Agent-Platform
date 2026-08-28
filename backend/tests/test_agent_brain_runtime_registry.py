@@ -11,6 +11,8 @@ from app.agent_brain.runtime_registry import (
     AgentHealthObservation,
     RuntimeAgentRegistry,
 )
+from app.agent_brain.worker_runtime import RelayAgentHealth
+from app.execution_relay.repository import ExecutionRelayError
 
 
 NOW = datetime(2026, 8, 24, 8, 0, tzinfo=timezone.utc)
@@ -185,3 +187,79 @@ def test_snapshot_exposes_adapter_and_public_capability_contract() -> None:
     assert item.supports_cancel is True
     assert item.supports_attachments is False
     assert item.typical_latency_seconds == 90
+
+
+class CountingAuthorization(FakeAuthorization):
+    def __init__(self) -> None:
+        super().__init__()
+        self.decision_calls = 0
+
+    def decide_for_user_id(self, user_id, agent_id):
+        self.decision_calls += 1
+        return super().decide_for_user_id(user_id, agent_id)
+
+
+def test_roster_for_user_avoids_the_per_agent_decision_round_trip() -> None:
+    authorization = CountingAuthorization()
+    registry = _registry(authorization=authorization)
+
+    roster = registry.roster_for_user(USER_ID)
+
+    assert tuple(card.agent_id for card in roster) == ("hr-bot",)
+    # The roster is rebuilt on every Step, so it must not fan out per Agent the way
+    # list_for_user does.
+    assert authorization.decision_calls == 0
+
+
+def test_roster_for_user_drops_agents_without_a_registered_adapter() -> None:
+    registry = _registry(registered={"reference"})
+
+    assert registry.roster_for_user(USER_ID) == ()
+
+
+def test_roster_for_user_reports_unavailable_authorization() -> None:
+    class Unavailable(FakeAuthorization):
+        def permitted_agents_for_user_id(self, _user_id):
+            raise AgentUseAuthorizationUnavailable()
+
+    with pytest.raises(AgentUseAuthorizationUnavailable):
+        _registry(authorization=Unavailable()).roster_for_user(USER_ID)
+
+
+class FakeRelay:
+    def __init__(self, *, available: bool = True, error: bool = False) -> None:
+        self.available = available
+        self.error = error
+        self.agent_ids: list[str] = []
+
+    def has_active_worker(self, agent_id, *, freshness_seconds):
+        self.agent_ids.append(agent_id)
+        if self.error:
+            raise ExecutionRelayError("execution relay unavailable")
+        return self.available
+
+
+def test_relay_health_projects_worker_liveness_into_availability() -> None:
+    online = _registry(
+        health=RelayAgentHealth(FakeRelay(available=True), now=lambda: NOW)
+    )
+    offline = _registry(
+        health=RelayAgentHealth(FakeRelay(available=False), now=lambda: NOW)
+    )
+
+    assert online.list_for_user(USER_ID)[0].availability == "healthy"
+    assert online.list_for_user(USER_ID)[0].health_fresh is True
+    # Before this projection every Agent read back "unknown", so the Brain could not
+    # tell a live Agent from a powered-off host.
+    assert offline.list_for_user(USER_ID)[0].availability == "offline"
+
+
+def test_relay_health_degrades_to_unknown_when_the_relay_fails() -> None:
+    registry = _registry(
+        health=RelayAgentHealth(FakeRelay(error=True), now=lambda: NOW)
+    )
+
+    item = registry.list_for_user(USER_ID)[0]
+
+    assert item.availability == "unknown"
+    assert item.health_fresh is False

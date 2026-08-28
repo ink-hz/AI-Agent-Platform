@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -11,6 +12,7 @@ from app.agent_brain.adapters.base import (
     AdapterTask,
     AgentEventProtocolError,
 )
+from app.agent_brain.agent_roster import ROSTER_UNAVAILABLE, render_agent_roster
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.agent_brain.collaboration_models import AgentTaskPublicEventInput
 from app.agent_brain.collaboration_models import (
@@ -22,6 +24,7 @@ from app.agent_brain.loop_repository import (
     AgentTaskEventInput,
     BrainLoopRepository,
     BrainRepositoryConflict,
+    BrainRepositoryError,
     ImmediateToolResult,
     ModelStepCommit,
     TaskDispatchSpec,
@@ -41,6 +44,35 @@ from app.agent_brain.tool_protocol import (
     ToolLimits,
     parse_tool_batch,
 )
+
+
+_LEASE_RENEW_INTERVAL_SECONDS = 15.0
+
+# Per-task window. Reading it from the authorized capability card instead is the
+# Platform task brief's §12 item; the chain-depth formula below already has the
+# right shape for it.
+_TASK_SECONDS = 300
+
+
+def _chain_depth(batch, tool_index: int) -> int:
+    """Return the longest declared dependency path ending at this call.
+
+    A dependent task is not dispatched until its upstream finishes, so its window
+    has to cover the chain ahead of it. Without this a task deep in a chain would
+    burn its own deadline while still queued and be reaped before it ever ran --
+    a failure mode that data edges introduce and must therefore answer for.
+
+    depends_on may only reference an earlier position, so one forward pass in
+    declaration order is a valid topological order.
+    """
+
+    depths: dict[int, int] = {}
+    for call in batch.calls:
+        upstream = getattr(call.call, "depends_on", ())
+        depths[call.tool_index] = max(
+            (depths.get(index, 0) + 1 for index in upstream), default=0
+        )
+    return depths.get(tool_index, 0)
 
 
 class BrainLoopRuntime:
@@ -108,6 +140,11 @@ class BrainLoopRuntime:
             messages=messages,
             step_seq=lease.step_seq,
             system_prompt=self._system_prompt.text,
+            agent_roster=self._agent_roster(owner_id),
+            effort=self._select_effort(
+                forced=forced,
+                has_settled_task=self._repository.has_settled_task(lease.loop_id),
+            ),
             tool_choice=(
                 {"type": "tool", "name": "submit_answer"} if forced else None
             ),
@@ -119,8 +156,10 @@ class BrainLoopRuntime:
             ),
         )
         thinking_blocks: set[int] = set()
+        last_renewed = time.monotonic()
 
         def persist_thinking(delta: ThinkingDelta) -> None:
+            nonlocal last_renewed
             thinking_blocks.add(delta.block_index)
             self._collaboration.append_thinking_delta(
                 StoredThinkingDelta(
@@ -131,6 +170,20 @@ class BrainLoopRuntime:
                     provider_run_ref=delta.provider_run_ref,
                 )
             )
+            elapsed = time.monotonic() - last_renewed
+            if elapsed >= _LEASE_RENEW_INTERVAL_SECONDS:
+                last_renewed = time.monotonic()
+                # Best effort: the lease already outlives a normal Step, so a failed
+                # renewal must not abort a paid model call. A stolen Step is caught
+                # by commit_model_step's lease_worker_id check.
+                try:
+                    self._repository.renew_step_lease(
+                        lease.step_id,
+                        self._worker_id,
+                        lease_seconds=self._lease_seconds,
+                    )
+                except BrainRepositoryError:
+                    pass
 
         try:
             response = self._model.complete(
@@ -187,6 +240,8 @@ class BrainLoopRuntime:
                 messages=messages,
                 step_seq=lease.step_seq,
                 system_prompt=self._system_prompt.text,
+                agent_roster=self._agent_roster(owner_id),
+                effort=self._request_builder.manifest.thinking_effort_routing,
                 budget_notice=(
                     "上一响应违反工具协议。不要输出自由文本；本次必须只调用一个"
                     "合法工具。"
@@ -244,6 +299,7 @@ class BrainLoopRuntime:
                 for parsed in batch.calls
                 if parsed.accepted and isinstance(parsed.call, DelegateTaskCall)
             }
+            pool_admissions: dict[str, int] = {}
             for parsed in batch.calls:
                 if not parsed.accepted or not isinstance(parsed.call, DelegateTaskCall):
                     continue
@@ -299,6 +355,29 @@ class BrainLoopRuntime:
                     )
                     continue
                 capability_mismatches[parsed.call.agent_id] = 0
+                # Same-pool tasks contend for one executor. A chained task never runs
+                # beside its upstream, so only unchained calls are counted -- which is
+                # exactly the shape the rejection hint asks the Brain to switch to.
+                if not parsed.call.depends_on and decision.execution_pool is not None:
+                    admitted = pool_admissions.get(decision.execution_pool, 0)
+                    if admitted >= (decision.pool_concurrency or 1):
+                        immediate.append(
+                            ImmediateToolResult(
+                                parsed.tool_index,
+                                {
+                                    "status": "rejected",
+                                    "reason": "pool_saturated",
+                                    "execution_pool": decision.execution_pool,
+                                    "pool_concurrency": decision.pool_concurrency,
+                                    "hint": (
+                                        "同池 Agent 共用一个执行器；"
+                                        "请用 depends_on 串接而不是并行派发。"
+                                    ),
+                                },
+                            )
+                        )
+                        continue
+                    pool_admissions[decision.execution_pool] = admitted + 1
                 snapshot_id = self._repository.create_authorization_snapshot(
                     internal_user_id=owner_id,
                     agent_id=parsed.call.agent_id,
@@ -315,9 +394,13 @@ class BrainLoopRuntime:
                         capability_version=decision.capability_version,
                         authorization_snapshot_id=snapshot_id,
                         effective_deadline_at=min(
-                            now + timedelta(seconds=300),
+                            now
+                            + timedelta(
+                                seconds=_TASK_SECONDS
+                                * (1 + _chain_depth(batch, parsed.tool_index))
+                            ),
                             loop.active_deadline_at
-                            or now + timedelta(seconds=300),
+                            or now + timedelta(seconds=_TASK_SECONDS),
                         ),
                         task_context={
                             "objective": parsed.call.objective,
@@ -357,6 +440,36 @@ class BrainLoopRuntime:
             ),
         )
         return True
+
+    def _agent_roster(self, owner_id) -> str:
+        """Render the caller's delegatable Agents for the cached system prefix.
+
+        Without this the Brain has no way to learn that any Agent exists except by
+        spending a whole model Step on list_agents, which is why a bare "what can
+        you do" question used to cost two Steps and could exhaust the Turn budget.
+        """
+
+        try:
+            return render_agent_roster(
+                self._runtime_registry.roster_for_user(owner_id)
+            )
+        except AgentUseAuthorizationUnavailable:
+            return ROSTER_UNAVAILABLE
+
+    def _select_effort(self, *, forced: bool, has_settled_task: bool) -> str:
+        """Choose reasoning effort from persisted state only, so replays reproduce it.
+
+        A forced close-out only writes up what is already in context, and a Step with
+        no settled Agent result is routing rather than synthesis; both take the
+        cheaper routing tier. Every Step used the synthesis tier before this, which
+        let one Turn spend its whole active budget on the Brain's own thinking before
+        any Agent finished.
+        """
+
+        manifest = self._request_builder.manifest
+        if not forced and has_settled_task:
+            return manifest.thinking_effort
+        return manifest.thinking_effort_routing
 
     def _finalize_thinking(
         self, step_id, block_indexes: set[int], *, interrupted: bool

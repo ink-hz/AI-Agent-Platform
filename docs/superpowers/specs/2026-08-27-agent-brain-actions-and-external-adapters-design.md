@@ -191,7 +191,7 @@ queued
 `protocol_violation` 混进 Status 枚举。
 
 `dispatched` 是真实持久状态，不是 UI 标签。迁移 `049` 必须用
-`mark_adapter_delivery_dispatched_v49` 替换 v45：初始 Delivery 从 `leased` 转
+`mark_adapter_delivery_dispatched_v50` 替换 v45：初始 Delivery 从 `leased` 转
 `dispatched` 时，Task 只从 `queued` 转 `dispatched` 并写 `dispatched_at`；只有收到首条
 真实 `work_update` 或终态事件时才写 `running/started_at`。Repository 不得继续调用会把
 Task 直接写成 `running` 的 v45 函数。
@@ -410,7 +410,7 @@ Tool Result 排空和重放一律读 `brain_task_event_cursors.delivered_seq`。
 - Platform Adapter 不猜测未知事件，遇到未知 Kind 明确报 `protocol_violation`。
 
 事件页在入库前必须验证从请求 `after + 1` 开始连续。未知 Kind、缺口、乱序或同序冲突
-都是 Task/Agent 局部协议错误：调用 `fail_agent_task_protocol_v49`（名称可保持版本后缀但
+都是 Task/Agent 局部协议错误：调用 `fail_agent_task_protocol_v50`（名称可保持版本后缀但
 语义必须一致）原子写入 Task 的 `failed/protocol_violation` 控制面终态、终结其
 Session/Delivery，并更新该 Agent 的持久健康投影；
 不能让 PostgreSQL `check_violation` 逃逸到整个 Worker Tick。

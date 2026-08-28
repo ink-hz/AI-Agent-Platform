@@ -23,7 +23,7 @@ from test_control_plane_migration import control_database
 MIGRATION = (
     Path(__file__).parents[1]
     / "control_migrations"
-    / "049_agent_brain_task_wait_state.sql"
+    / "050_agent_brain_task_wait_state.sql"
 )
 
 
@@ -89,7 +89,7 @@ def test_python_state_and_event_contract_includes_intervention_states() -> None:
 
 
 @pytest.mark.postgres
-def test_v49_has_one_delivery_waterline(control_database) -> None:
+def test_v50_has_one_delivery_waterline(control_database) -> None:
     for environment in control_database["environments"].values():
         with psycopg.connect(environment["admin"]) as connection:
             wait_columns = _columns(
@@ -122,7 +122,7 @@ def test_v49_has_one_delivery_waterline(control_database) -> None:
 
 
 @pytest.mark.postgres
-def test_v49_extends_task_loop_and_turn_state(control_database) -> None:
+def test_v50_extends_task_loop_and_turn_state(control_database) -> None:
     required_task_states = {
         "queued",
         "dispatched",
@@ -177,7 +177,7 @@ def test_v49_extends_task_loop_and_turn_state(control_database) -> None:
 
 
 @pytest.mark.postgres
-def test_v49_extends_wait_and_event_allowlists(control_database) -> None:
+def test_v50_extends_wait_and_event_allowlists(control_database) -> None:
     for environment in control_database["environments"].values():
         with psycopg.connect(environment["admin"]) as connection:
             wait_checks = _constraint_text(
@@ -205,7 +205,7 @@ def test_v49_extends_wait_and_event_allowlists(control_database) -> None:
 
             function_body = connection.execute(
                 "select pg_get_functiondef(" 
-                "'platform_brain.append_agent_task_event_v49(uuid,integer,text,"
+                "'platform_brain.append_agent_task_event_v50(uuid,integer,text,"
                 "bytea,integer,bytea,timestamptz)'::regprocedure)"
             ).fetchone()[0]
             assert "'input_required'" in function_body
@@ -213,7 +213,7 @@ def test_v49_extends_wait_and_event_allowlists(control_database) -> None:
 
             dispatch_body = connection.execute(
                 "select pg_get_functiondef("
-                "'platform_brain.mark_adapter_delivery_dispatched_v49(uuid,uuid)'"
+                "'platform_brain.mark_adapter_delivery_dispatched_v50(uuid,uuid)'"
                 "::regprocedure)"
             ).fetchone()[0]
             assert "status='dispatched'" in dispatch_body
@@ -221,7 +221,7 @@ def test_v49_extends_wait_and_event_allowlists(control_database) -> None:
 
             failure_body = connection.execute(
                 "select pg_get_functiondef("
-                "'platform_brain.fail_agent_task_protocol_v49(uuid)'"
+                "'platform_brain.fail_agent_task_protocol_v50(uuid)'"
                 "::regprocedure)"
             ).fetchone()[0]
             assert "terminal_reason_code='protocol_violation'" in failure_body
@@ -234,7 +234,7 @@ def test_v49_extends_wait_and_event_allowlists(control_database) -> None:
 
 
 @pytest.mark.postgres
-def test_v49_cursor_and_function_grants_are_environment_scoped(
+def test_v50_cursor_and_function_grants_are_environment_scoped(
     control_database,
 ) -> None:
     for environment in control_database["environments"].values():
@@ -274,23 +274,23 @@ def test_v49_cursor_and_function_grants_are_environment_scoped(
             ).fetchone() == (True, True, True, False, False, False)
             assert connection.execute(
                 "select has_function_privilege(%s,"
-                "'platform_brain.append_agent_task_event_v49(uuid,integer,text,"
+                "'platform_brain.append_agent_task_event_v50(uuid,integer,text,"
                 "bytea,integer,bytea,timestamptz)','execute'),"
                 "has_function_privilege(%s,"
-                "'platform_brain.append_agent_task_event_v49(uuid,integer,text,"
+                "'platform_brain.append_agent_task_event_v50(uuid,integer,text,"
                 "bytea,integer,bytea,timestamptz)','execute'),"
                 "has_function_privilege(%s,"
-                "'platform_brain.append_agent_task_event_v49(uuid,integer,text,"
+                "'platform_brain.append_agent_task_event_v50(uuid,integer,text,"
                 "bytea,integer,bytea,timestamptz)','execute')",
                 (brain_role, app_role, opposite_role),
             ).fetchone() == (True, False, False)
             assert connection.execute(
                 "select has_function_privilege(%s,"
-                "'platform_brain.mark_adapter_delivery_dispatched_v49(uuid,uuid)',"
+                "'platform_brain.mark_adapter_delivery_dispatched_v50(uuid,uuid)',"
                 "'execute'),has_function_privilege(%s,"
-                "'platform_brain.fail_agent_task_protocol_v49(uuid)','execute'),"
+                "'platform_brain.fail_agent_task_protocol_v50(uuid)','execute'),"
                 "has_function_privilege(%s,"
-                "'platform_brain.fail_agent_task_protocol_v49(uuid)','execute')",
+                "'platform_brain.fail_agent_task_protocol_v50(uuid)','execute')",
                 (brain_role, brain_role, app_role),
             ).fetchone() == (True, True, False)
             assert connection.execute(

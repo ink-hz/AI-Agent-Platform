@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Literal, TypeAlias
 from uuid import UUID, uuid5
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.agent_brain.loop_models import _require_utf8_text
 
@@ -103,6 +103,24 @@ class DelegateTaskCall(_StrictToolCall):
     constraints: tuple[str, ...]
     attachment_refs: tuple[UUID, ...]
     expected_output: str
+    depends_on: tuple[int, ...] = Field(
+        default=(),
+        max_length=4,
+        description=(
+            "Zero-based positions of earlier delegate_task calls in this same batch "
+            "whose results this task needs. Each position must be smaller than this "
+            "call's own position, so declare producers before consumers. The Platform "
+            "holds this task until those tasks finish and then hands their results to "
+            "the Agent directly, so a chain costs no extra turn of your own."
+        ),
+    )
+
+    @field_validator("depends_on")
+    @classmethod
+    def _depends_on_is_distinct(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+        if any(item < 0 for item in value) or len(set(value)) != len(value):
+            raise ValueError("task dependency invalid")
+        return value
 
     @field_validator("agent_id")
     @classmethod
@@ -419,6 +437,18 @@ def parse_tool_batch(
 
     tool_name = parsed[0].name
     if tool_name == "delegate_task":
+        # Dependencies may only point at an earlier call in the same batch. That makes
+        # a cycle unrepresentable rather than merely rejected, keeps the declaration
+        # order a valid topological order, and guarantees that a call dropped by the
+        # parallel limit cannot leave a dependent behind -- dependents always have a
+        # higher index and are dropped with it.
+        for call in parsed:
+            if not isinstance(call.call, DelegateTaskCall):
+                continue
+            if any(
+                upstream >= call.tool_index for upstream in call.call.depends_on
+            ):
+                raise ProtocolViolation("task_dependency_invalid")
         parsed = [
             call
             if index < limits.max_parallel_tasks
@@ -462,6 +492,12 @@ def _normalize_arguments(name: str, raw: dict[object, object]) -> dict[object, o
     if name == "delegate_task":
         tuple_fields = ("context_excerpt", "constraints", "attachment_refs")
         uuid_fields = ("attachment_refs",)
+        if "depends_on" in normalized:
+            # Optional, so it cannot join tuple_fields, which requires presence.
+            depends_on = normalized["depends_on"]
+            if type(depends_on) is not list:
+                raise TypeError
+            normalized["depends_on"] = tuple(depends_on)
     elif name == "await_agent_events":
         tuple_fields = ("task_ids", "wake_on")
         uuid_fields = ("task_ids",)

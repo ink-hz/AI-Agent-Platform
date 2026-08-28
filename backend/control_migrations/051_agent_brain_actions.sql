@@ -75,7 +75,7 @@ create table platform_brain.agent_action_deliveries (
   check ((status in ('completed','failed')) = (terminal_at is not null))
 );
 
-create function platform_brain.propose_agent_task_action_v50(
+create function platform_brain.propose_agent_task_action_v51(
   selected_action_id uuid,
   selected_task_id uuid,
   selected_action_seq integer,
@@ -160,7 +160,7 @@ begin
 end
 $function$;
 
-create function platform_brain.confirm_agent_task_action_v50(
+create function platform_brain.confirm_agent_task_action_v51(
   selected_owner_id uuid,
   selected_action_id uuid,
   selected_action_digest bytea,
@@ -236,7 +236,7 @@ begin
 end
 $function$;
 
-create function platform_brain.reject_agent_task_action_v50(
+create function platform_brain.reject_agent_task_action_v51(
   selected_owner_id uuid,
   selected_action_id uuid
 ) returns boolean
@@ -284,7 +284,7 @@ begin
 end
 $function$;
 
-create function platform_brain.expire_agent_task_actions_v50(
+create function platform_brain.expire_agent_task_actions_v51(
   selected_limit integer
 ) returns integer
 language plpgsql
@@ -319,7 +319,7 @@ begin
 end
 $function$;
 
-create function platform_brain.supersede_agent_task_action_v50(
+create function platform_brain.supersede_agent_task_action_v51(
   selected_action_id uuid
 ) returns boolean
 language plpgsql
@@ -345,7 +345,7 @@ begin
 end
 $function$;
 
-create function platform_brain.resume_action_resolution_v50(
+create function platform_brain.resume_action_resolution_v51(
   selected_action_id uuid
 ) returns boolean
 language plpgsql
@@ -375,20 +375,20 @@ revoke all on table
   platform_brain.agent_task_actions,
   platform_brain.agent_action_deliveries
 from public;
-revoke all on function platform_brain.propose_agent_task_action_v50(
+revoke all on function platform_brain.propose_agent_task_action_v51(
   uuid,uuid,integer,text,bytea,integer,bytea,bytea,integer,bytea,
   bytea,integer,bytea,bytea,timestamptz,integer
 ) from public;
-revoke all on function platform_brain.confirm_agent_task_action_v50(
+revoke all on function platform_brain.confirm_agent_task_action_v51(
   uuid,uuid,bytea,uuid,text
 ) from public;
-revoke all on function platform_brain.reject_agent_task_action_v50(uuid,uuid)
+revoke all on function platform_brain.reject_agent_task_action_v51(uuid,uuid)
   from public;
-revoke all on function platform_brain.expire_agent_task_actions_v50(integer)
+revoke all on function platform_brain.expire_agent_task_actions_v51(integer)
   from public;
-revoke all on function platform_brain.supersede_agent_task_action_v50(uuid)
+revoke all on function platform_brain.supersede_agent_task_action_v51(uuid)
   from public;
-revoke all on function platform_brain.resume_action_resolution_v50(uuid)
+revoke all on function platform_brain.resume_action_resolution_v51(uuid)
   from public;
 
 do $migration$
@@ -433,28 +433,28 @@ begin
     'platform_brain.agent_action_deliveries to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_brain.propose_agent_task_action_v50('
+    'grant execute on function platform_brain.propose_agent_task_action_v51('
     'uuid,uuid,integer,text,bytea,integer,bytea,bytea,integer,bytea,'
     'bytea,integer,bytea,bytea,timestamptz,integer) to %I',selected_brain
   );
   execute format(
-    'grant execute on function platform_brain.confirm_agent_task_action_v50('
+    'grant execute on function platform_brain.confirm_agent_task_action_v51('
     'uuid,uuid,bytea,uuid,text) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_brain.reject_agent_task_action_v50('
+    'grant execute on function platform_brain.reject_agent_task_action_v51('
     'uuid,uuid) to %I',selected_app
   );
   execute format(
-    'grant execute on function platform_brain.expire_agent_task_actions_v50('
+    'grant execute on function platform_brain.expire_agent_task_actions_v51('
     'integer) to %I',selected_brain
   );
   execute format(
-    'grant execute on function platform_brain.supersede_agent_task_action_v50('
+    'grant execute on function platform_brain.supersede_agent_task_action_v51('
     'uuid) to %I',selected_brain
   );
   execute format(
-    'grant execute on function platform_brain.resume_action_resolution_v50('
+    'grant execute on function platform_brain.resume_action_resolution_v51('
     'uuid) to %I',selected_brain
   );
 end

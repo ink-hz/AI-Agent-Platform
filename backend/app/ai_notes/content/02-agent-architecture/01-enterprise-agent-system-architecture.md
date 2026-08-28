@@ -5,7 +5,7 @@ description: 从 Agent 循环、状态管理、工具边界、信任层级、子
 author: 苍渊
 motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
-updatedAt: 2026-08-27
+updatedAt: 2026-08-28
 tags:
   - Agent
   - 系统架构
@@ -33,20 +33,60 @@ draft: false
 
 ```mermaid
 flowchart TB
-    U[用户、事件或 API 目标] --> R[Agent 运行时]
-    C[上下文与任务状态] --> R
-    R --> M[模型推理]
-    M --> P[行动提案]
-    P --> G[策略与信任决策]
+    accTitle: 企业级 Agent 系统分层
+    accDescr: 入口与任务状态进入智能决策，行动经过信任控制和工具执行，并持续产生验证与审计证据。
+
+    subgraph ENTRY["入口与状态"]
+        direction LR
+        U[用户、事件或 API 目标]
+        C[上下文与任务状态]
+    end
+    subgraph INTELLIGENCE["智能决策"]
+        direction TB
+        R[Agent 运行时] --> M[模型推理]
+        M --> P[行动提案]
+    end
+    subgraph CONTROL["控制与执行"]
+        direction TB
+        G[策略与信任决策] -->|允许| T[工具执行层]
+        T --> S[业务系统与数据]
+        S --> T
+    end
+    subgraph EVIDENCE["证据与观测"]
+        direction LR
+        V[验证与完成证据]
+        O[日志、指标、追踪与审计]
+    end
+
+    U --> R
+    C --> R
+    P --> G
     G -->|拒绝或需确认| R
-    G -->|允许| T[工具执行层]
-    T --> S[业务系统与数据]
-    S --> T
     T --> R
-    R --> V[验证与完成证据]
-    R --> O[日志、指标、追踪与审计]
+    R --> V
+    R --> O
     G --> O
     T --> O
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    classDef infra fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    class U input;
+    class C,S data;
+    class R infra;
+    class M,P model;
+    class G policy;
+    class T tool;
+    class V success;
+    class O infra;
+    style ENTRY fill:#EFF6FF,stroke:#93C5FD,color:#172033;
+    style INTELLIGENCE fill:#FAF5FF,stroke:#C4B5FD,color:#172033;
+    style CONTROL fill:#FFFBEB,stroke:#FCD34D,color:#172033;
+    style EVIDENCE fill:#F0FDF4,stroke:#86EFAC,color:#172033;
 ```
 
 ## 二、分层架构
@@ -90,15 +130,42 @@ flowchart TB
 
 ### 3.1 最小行动循环
 
-```text
-读取目标与当前状态
-  -> 模型提出下一步行动或完成声明
-  -> 校验行动结构与工具是否存在
-  -> 计算身份、策略和上下文风险
-  -> 允许、拒绝或进入审批
-  -> 执行工具并记录结果
-  -> 把必要反馈写回任务状态
-  -> 验证是否完成，否则继续
+```mermaid
+flowchart TB
+    accTitle: Agent 受控运行循环
+    accDescr: Agent 读取状态、提出行动，经过结构和信任校验后执行工具，直到完成证据满足或返回修正。
+
+    subgraph CYCLE["运行循环"]
+        A[读取目标与当前状态] --> B[模型提出行动或完成声明]
+        B --> C{结构合法且工具存在}
+        C -->|否| X[拒绝行动并返回可修正反馈]
+        C -->|是| D{身份、策略与上下文风险}
+        D -->|拒绝| X
+        D -->|需要确认| Y[等待绑定精确行动的审批]
+        Y --> D
+        D -->|允许| E[执行工具并记录结果]
+        E --> F[把必要反馈写回任务状态]
+        F --> G{完成证据是否满足}
+        G -->|否| A
+        G -->|是| H[验证并交付]
+        X --> A
+    end
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+    class A input;
+    class B model;
+    class C,D,G,Y policy;
+    class E tool;
+    class F data;
+    class H success;
+    class X risk;
+    style CYCLE fill:#F8FAFC,stroke:#CBD5E1,color:#172033;
 ```
 
 每一轮都要有上限。最少需要控制：
@@ -119,6 +186,10 @@ flowchart TB
 
 ```mermaid
 stateDiagram-v2
+    accTitle: Agent 任务生命周期
+    accDescr: 任务在就绪、运行、等待审批、等待外部结果、暂停、完成、失败和取消状态之间转换。
+    direction LR
+
     [*] --> Ready
     Ready --> Running: 开始或恢复
     Running --> WaitingApproval: 高风险行动待确认
@@ -135,6 +206,15 @@ stateDiagram-v2
     Completed --> [*]
     Failed --> [*]
     Cancelled --> [*]
+
+    classDef infra fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+    class Ready,Running infra;
+    class WaitingApproval,WaitingExternal policy;
+    class Completed success;
+    class Suspended,Failed,Cancelled risk;
 ```
 
 持久化记录至少包括状态版本、当前目标、完成证据、待执行行动、已使用预算、审批引用和最后一次安全检查结果。状态更新使用乐观锁或等价并发控制，避免两个执行器同时推进同一任务。
@@ -214,15 +294,37 @@ MCP 为 AI 应用连接工具和数据提供开放协议。采用 MCP 可以统�
 
 ### 5.3 完整决策链
 
-```text
-验证主体与委托关系
-  -> 应用组织级不可覆盖策略
-  -> 校验工具和资源级授权
-  -> 根据参数与上下文计算动态风险
-  -> 允许、拒绝或创建审批请求
-  -> 把审批绑定到精确行动
-  -> 执行前再次验证状态和策略版本
-  -> 执行并写入审计证据
+```mermaid
+flowchart LR
+    accTitle: Agent 信任决策链路
+    accDescr: 行动依次经过主体、组织策略、资源授权、动态风险、审批和执行前复验，再执行并写入审计证据。
+
+    subgraph TRUST["信任决策"]
+        A[验证主体与委托关系] --> B[应用组织级不可覆盖策略]
+        B --> C[校验工具与资源级授权]
+        C --> D[根据参数与上下文计算动态风险]
+        D --> E{行动决策}
+        E -->|拒绝| X[拒绝并记录原因]
+        E -->|需要确认| F[创建审批并绑定精确行动]
+        E -->|允许| G[执行前复验状态与策略版本]
+        F --> G
+        G -->|状态已变化| X
+        G -->|仍然允许| H[执行工具]
+        H --> I[写入结果与审计证据]
+    end
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+    class A input;
+    class B,C,D,E,F,G policy;
+    class H tool;
+    class I success;
+    class X risk;
+    style TRUST fill:#FFFBEB,stroke:#FCD34D,color:#172033;
 ```
 
 审批不能只绑定一句自然语言摘要。至少要绑定工具、目标资源、关键参数、影响范围、策略版本、过期时间和 `action_id`。参数、资源版本或策略变化后，旧审批自动失效。
@@ -381,11 +483,24 @@ Agent 不应重写已经验证的业务内核。常见做法是让传统 UI 和 
 
 ```mermaid
 flowchart TB
+    accTitle: 传统 UI 与 Agent 复用领域服务
+    accDescr: 传统界面 API 和 Agent 工具接口共同调用领域服务，再访问数据与外部系统。
+
     UI[传统 UI] --> API[面向界面的 API]
     A[Agent 运行时] --> AT[Agent 工具接口]
     API --> D[领域服务]
     AT --> D
     D --> DB[数据与外部系统]
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef infra fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    class UI input;
+    class A infra;
+    class API,AT tool;
+    class D infra;
+    class DB data;
 ```
 
 Agent 工具可以提供更适合推理的聚合查询和明确的副作用动作，但不能绕过领域层的授权和业务校验。

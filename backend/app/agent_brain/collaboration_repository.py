@@ -676,7 +676,7 @@ class CollaborationRepository:
             with self._connection() as connection, connection.transaction():
                 connection.execute("set transaction isolation level serializable")
                 inserted = connection.execute(
-                    "select platform_brain.append_agent_task_event_v49("
+                    "select platform_brain.append_agent_task_event_v50("
                     "%s,%s,%s,%s,%s,%s,%s) as inserted",
                     (
                         event.task_id,

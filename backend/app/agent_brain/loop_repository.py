@@ -434,6 +434,35 @@ class BrainLoopRepository:
         except psycopg.Error:
             raise BrainRepositoryError() from None
 
+    def renew_step_lease(
+        self, step_id: UUID, worker_id: str, *, lease_seconds: int
+    ) -> bool:
+        """Extend a held Step lease while a long model call is still streaming.
+
+        A single model call routinely outlives any sane lease, and expire_leases
+        returns expired Steps to the queue, so without renewal a second Brain
+        worker can re-lease the Step and pay for the same model call again.
+        """
+
+        _require_uuid(step_id)
+        _require_worker(worker_id)
+        if type(lease_seconds) is not int or not 1 <= lease_seconds <= 300:
+            raise ValueError("Brain Step lease invalid")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "update platform_brain.brain_steps set "
+                    "lease_expires_at=clock_timestamp()+(%s*interval '1 second'),"
+                    "updated_at=clock_timestamp() "
+                    "where step_id=%s and lease_worker_id=%s "
+                    "and status in ('leased','requesting_model') "
+                    "returning step_id",
+                    (lease_seconds, step_id, worker_id),
+                ).fetchone()
+            return row is not None
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
     def commit_model_step(
         self,
         loop_id: UUID,
@@ -701,8 +730,8 @@ class BrainLoopRepository:
                     "task_id,loop_id,brain_tool_call_id,agent_id,adapter_kind,"
                     "capability_version,authorization_snapshot_id,"
                     "task_context_ciphertext,task_context_key_version,status,"
-                    "effective_deadline_at) values ("
-                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s)",
+                    "effective_deadline_at,depends_on_task_ids) values ("
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s)",
                     (
                         task_id,
                         loop_id,
@@ -714,6 +743,13 @@ class BrainLoopRepository:
                         sealed_context.ciphertext,
                         sealed_context.key_version,
                         spec.effective_deadline_at,
+                        # depends_on holds positions in this same batch, and
+                        # stable_runtime_id is deterministic, so the upstream task IDs
+                        # are known here without a second pass.
+                        [
+                            stable_runtime_id(loop_id, step_seq, upstream, "task")
+                            for upstream in parsed.call.depends_on
+                        ],
                     ),
                 )
                 connection.execute(
@@ -1533,6 +1569,26 @@ class BrainLoopRepository:
         except psycopg.Error:
             raise BrainRepositoryError() from None
 
+    def has_settled_task(self, loop_id: UUID) -> bool:
+        """Report whether any Agent task of this Loop has reached a terminal state.
+
+        An active adapter session is not the same signal: a task can hold a session
+        open with no result yet, and a finished task can have no session at all.
+        Only terminal_at means a result is in the Brain's context to reconcile.
+        """
+
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select exists(select 1 from platform_brain.agent_tasks "
+                    "where loop_id=%s and terminal_at is not null) as settled",
+                    (loop_id,),
+                ).fetchone()
+            return bool(row["settled"])
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
     def active_session_task_ids(self, loop_id: UUID) -> frozenset[UUID]:
         _require_uuid(loop_id)
         try:
@@ -1562,7 +1618,8 @@ class BrainLoopRepository:
                     row = connection.execute(
                         "select delivery.*,task.loop_id,task.agent_id,task.adapter_kind,"
                         "task.task_context_ciphertext,task.task_context_key_version,"
-                        "task.effective_deadline_at,session.child_session_id,"
+                        "task.effective_deadline_at,task.depends_on_task_ids,"
+                        "session.child_session_id,"
                         "session.adapter_session_ref_ciphertext,"
                         "session.adapter_session_ref_key_version,"
                         "snapshot.internal_user_id as requester_user_id,"
@@ -1579,6 +1636,9 @@ class BrainLoopRepository:
                         "where session.status='active' and (delivery.status in ('queued','expired') "
                         "or (delivery.status='leased' and "
                         "delivery.lease_expires_at<clock_timestamp())) "
+                        "and not exists (select 1 from platform_brain.agent_tasks up "
+                        "where up.task_id=any(task.depends_on_task_ids) "
+                        "and up.terminal_at is null) "
                         "order by delivery.created_at,delivery.delivery_id "
                         "for update of delivery skip locked limit 1"
                     ).fetchone()
@@ -1625,6 +1685,11 @@ class BrainLoopRepository:
                         message_text = message_value.get("text")
                         if type(message_text) is not str:
                             raise ContentCryptoError("content decrypt failed")
+                    upstream = self._upstream_results_locked(
+                        connection, row["depends_on_task_ids"]
+                    )
+                    if upstream:
+                        value = {**value, "upstream_results": upstream}
                     return TaskDeliveryLease(
                         task_id=row["task_id"],loop_id=row["loop_id"],
                         agent_id=row["agent_id"],adapter_kind=row["adapter_kind"],
@@ -1645,6 +1710,146 @@ class BrainLoopRepository:
             raise
         except (ContentCryptoError, psycopg.Error):
             raise BrainRepositoryError() from None
+
+    def _upstream_results_locked(
+        self, connection: Any, upstream_task_ids: Any
+    ) -> tuple[dict[str, object], ...]:
+        """Hand a dependent task its upstream output without spending a Brain turn.
+
+        The authoritative Agent output is the upstream task's terminal event payload:
+        delegate_task is non-blocking, so a delegate tool call keeps its dispatch
+        receipt and the real result only ever lands on the event. This is the same
+        payload await_agent_events would have relayed to the Brain, which is what
+        made every hop of a chain cost a paid model Step.
+        """
+
+        ordered = list(upstream_task_ids or ())
+        if not ordered:
+            return ()
+        rows = connection.execute(
+            "select task.task_id,task.agent_id,task.status,event.seq,"
+            "event.payload_ciphertext,event.payload_key_version "
+            "from platform_brain.agent_tasks task left join "
+            "platform_brain.agent_task_events event on event.task_id=task.task_id "
+            "and event.seq=(select max(inner_event.seq) from "
+            "platform_brain.agent_task_events inner_event "
+            "where inner_event.task_id=task.task_id) "
+            "where task.task_id=any(%s)",
+            (ordered,),
+        ).fetchall()
+        by_id = {row["task_id"]: row for row in rows}
+        results: list[dict[str, object]] = []
+        for task_id in ordered:
+            row = by_id.get(task_id)
+            if row is None:
+                continue
+            payload: object = None
+            if row["payload_ciphertext"] is not None:
+                payload = self.content_codec.unseal_json(
+                    _task_event_subject(row["task_id"], row["seq"]),
+                    SealedContent(
+                        bytes(row["payload_ciphertext"]), row["payload_key_version"]
+                    ),
+                )
+            results.append(
+                {
+                    "agent_id": row["agent_id"],
+                    "status": row["status"],
+                    "result": payload,
+                }
+            )
+        return tuple(results)
+
+    def terminalize_blocked_tasks(self, *, limit: int) -> int:
+        """Release tasks whose upstream will never deliver.
+
+        settle_batch only advances a Step once every tool call has a result, so a
+        dependent task that can never be dispatched would hang the whole Turn. This
+        is the guarantee that makes declared dependencies safe: an upstream that ends
+        in anything but success resolves its dependents immediately, with the reason.
+        """
+
+        return self._reap_tasks(
+            limit=limit,
+            selector=(
+                "and cardinality(task.depends_on_task_ids)>0 and exists ("
+                "select 1 from platform_brain.agent_tasks up "
+                "where up.task_id=any(task.depends_on_task_ids) "
+                "and up.terminal_at is not null and up.status<>'completed')"
+            ),
+            status="unavailable",
+            summary="上游任务未成功，本任务未执行。",
+            limitation="依赖的上游任务未成功交付。",
+        )
+
+    def expire_task_deadlines(self, *, limit: int) -> int:
+        """Terminalize tasks that have passed their own deadline.
+
+        Nothing enforced effective_deadline_at before this: a slow or queued task
+        simply held its Step open until the Turn budget ran out. This is what bounds
+        a Turn when an Agent stalls or an execution pool is saturated.
+        """
+
+        return self._reap_tasks(
+            limit=limit,
+            selector="and task.effective_deadline_at<=clock_timestamp()",
+            status="timed_out",
+            summary="任务已超过截止时间，未在预算内完成。",
+            limitation="任务超时，结果不完整。",
+        )
+
+    def _reap_tasks(
+        self,
+        *,
+        limit: int,
+        selector: str,
+        status: Literal["unavailable", "timed_out"],
+        summary: str,
+        limitation: str,
+    ) -> int:
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("Brain task reap limit invalid")
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select task.task_id,(select coalesce(max(event.seq),0)+1 from "
+                    "platform_brain.agent_task_events event "
+                    "where event.task_id=task.task_id) as next_event_seq "
+                    "from platform_brain.agent_tasks task join "
+                    "platform_brain.brain_loops loop on loop.loop_id=task.loop_id "
+                    "where loop.terminal_at is null and task.terminal_at is null "
+                    f"{selector} order by task.created_at limit %s",
+                    (limit,),
+                ).fetchall()
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+        reaped = 0
+        for row in rows:
+            result = NormalizedTaskResult(
+                status=status,
+                summary=summary,
+                deliverables=(),
+                evidence=(),
+                limitations=(limitation,),
+                attachment_refs=(),
+            )
+            try:
+                if self.append_task_event(
+                    AgentTaskEventInput(
+                        task_id=row["task_id"],
+                        seq=row["next_event_seq"],
+                        event_type=f"agent.{status}",
+                        created_at=datetime.now(timezone.utc),
+                        payload={"status": status, "origin": "platform"},
+                        terminal_status=status,
+                        result=result,
+                    )
+                ):
+                    reaped += 1
+            except BrainRepositoryConflict:
+                # A real Agent event landed on this seq first; that terminal state wins.
+                continue
+        return reaped
 
     def complete_delivery(
         self, lease: TaskDeliveryLease, result: NormalizedTaskResult
@@ -1676,7 +1881,7 @@ class BrainLoopRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select platform_brain.mark_adapter_delivery_dispatched_v49("
+                    "select platform_brain.mark_adapter_delivery_dispatched_v50("
                     "%s,%s) as updated",
                     (lease.delivery_id, lease.task_id),
                 ).fetchone()
@@ -1692,7 +1897,7 @@ class BrainLoopRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select platform_brain.fail_agent_task_protocol_v49(%s) as failed",
+                    "select platform_brain.fail_agent_task_protocol_v50(%s) as failed",
                     (task_id,),
                 ).fetchone()
                 loop = connection.execute(

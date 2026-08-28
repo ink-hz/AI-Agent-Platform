@@ -99,5 +99,5 @@ def test_production_prompt_digest_is_recorded_in_probe_evidence() -> None:
         provider=FakeProvider(),
     )
     assert evidence["system_prompt_sha256"] == (
-        "b0b22afb2648075cf771b17eb388c7d51a32fe08668d03e79219f2be9b1cd8bf"
+        "5aa913a30fa1f214b02e3abda2ac423de7ea746d679665e7c279a663d47effeb"
     )

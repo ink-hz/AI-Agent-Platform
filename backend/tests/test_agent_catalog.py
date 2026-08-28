@@ -82,10 +82,17 @@ def test_catalog_exposes_public_persona_subtitles() -> None:
         lambda agents: agents[0].update(interaction_modes=["external_workspace"]),
         lambda agents: agents[0].update(workspace_url="https://evil.example/"),
         lambda agents: agents[-1].update(adapter_kind="fae_http"),
+        lambda agents: agents[0].update(pool_concurrency=2),
+        lambda agents: agents[0].update(execution_pool=None),
+        lambda agents: agents[1].update(
+            execution_pool="metabot_local", pool_concurrency=1
+        ),
     ],
     ids=(
         "duplicate", "missing", "legacy-id", "external-without-workspace",
         "arbitrary-workspace", "external-with-adapter",
+        "pool-concurrency-conflict", "delegated-without-pool",
+        "external-with-pool",
     ),
 )
 def test_invalid_catalog_fails_closed(tmp_path: Path, mutate) -> None:
@@ -96,3 +103,18 @@ def test_invalid_catalog_fails_closed(tmp_path: Path, mutate) -> None:
 
     with pytest.raises(ValueError, match="Agent Catalog invalid"):
         load_agent_catalog(path)
+
+
+def test_delegated_agents_declare_the_executor_they_contend_for() -> None:
+    cards = {card.agent_id: card for card in load_agent_catalog()}
+
+    # All six MetaBot Agents run on one host that executes strictly one task at a
+    # time, so the Brain must not treat them as six parallel slots.
+    pooled = [card for card in cards.values() if card.execution_pool is not None]
+    assert {card.execution_pool for card in pooled} == {"metabot_local"}
+    assert {card.pool_concurrency for card in pooled} == {1}
+    assert len(pooled) == 6
+
+    for agent_id in ("voc", "ai-admin-agent", "ai-fae-agent"):
+        assert cards[agent_id].execution_pool is None
+        assert cards[agent_id].pool_concurrency is None

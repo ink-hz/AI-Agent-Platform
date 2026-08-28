@@ -13,10 +13,10 @@ alter table platform_brain.agent_tasks
     'queued','dispatched','running','waiting_input','waiting_confirmation',
     'completed','failed','cancelled','timed_out','unavailable'
   )),
-  add constraint agent_tasks_active_elapsed_v49 check (
+  add constraint agent_tasks_active_elapsed_v50 check (
     active_elapsed_ms >= 0
   ),
-  add constraint agent_tasks_terminal_reason_v49 check (
+  add constraint agent_tasks_terminal_reason_v50 check (
     terminal_reason_code is null
     or terminal_reason_code ~ '^[a-z][a-z0-9_]{0,63}$'
   );
@@ -47,7 +47,7 @@ end
 $migration$;
 
 alter table platform_brain.agent_tasks
-  add constraint agent_tasks_state_v49 check (
+  add constraint agent_tasks_state_v50 check (
     (
       status='queued'
       and dispatched_at is null
@@ -70,7 +70,7 @@ alter table platform_brain.agent_tasks
       and terminal_at is not null
     )
   ),
-  add constraint agent_tasks_terminal_reason_status_v49 check (
+  add constraint agent_tasks_terminal_reason_status_v50 check (
     terminal_reason_code is null
     or status in ('failed','cancelled','timed_out','unavailable')
   );
@@ -108,7 +108,7 @@ end
 $migration$;
 
 alter table platform_brain.brain_loops
-  add constraint brain_loops_active_clock_v49 check (
+  add constraint brain_loops_active_clock_v50 check (
     (
       status='waiting_user'
       and active_started_at is null
@@ -229,7 +229,7 @@ end
 $migration$;
 
 alter table platform_brain.brain_wait_subscriptions
-  add constraint brain_wait_subscriptions_terminal_v49 check (
+  add constraint brain_wait_subscriptions_terminal_v50 check (
     (status='active' and terminal_at is null
       and triggered_task_id is null and triggered_event_seq is null)
     or (status='triggered' and terminal_at is not null
@@ -264,7 +264,7 @@ alter table platform_control.conversation_events
     'agent.task_recovered','agent.input_required','agent.action_required'
   ));
 
-create function platform_brain.append_agent_task_event_v49(
+create function platform_brain.append_agent_task_event_v50(
   selected_task_id uuid,
   selected_seq integer,
   selected_event_type text,
@@ -293,7 +293,7 @@ begin
      )
   then
     raise insufficient_privilege using
-      message = 'Brain task event v49 caller invalid';
+      message = 'Brain task event v50 caller invalid';
   end if;
   if selected_seq <= 0
      or selected_event_type not in (
@@ -306,7 +306,7 @@ begin
      or octet_length(selected_payload_sha256) <> 32
      or selected_created_at is null
   then
-    raise check_violation using message = 'Brain task event v49 invalid';
+    raise check_violation using message = 'Brain task event v50 invalid';
   end if;
 
   select status into current_status
@@ -327,7 +327,7 @@ begin
     then
       return false;
     end if;
-    raise check_violation using message = 'Brain task event v49 conflict';
+    raise check_violation using message = 'Brain task event v50 conflict';
   end if;
 
   if current_status in (
@@ -340,7 +340,7 @@ begin
   select coalesce(max(seq),0) into previous_seq
   from platform_brain.agent_task_events where task_id=selected_task_id;
   if selected_seq <> previous_seq + 1 then
-    raise check_violation using message = 'Brain task event v49 sequence invalid';
+    raise check_violation using message = 'Brain task event v50 sequence invalid';
   end if;
 
   insert into platform_brain.agent_task_events (
@@ -403,7 +403,7 @@ begin
 end
 $function$;
 
-create function platform_brain.mark_adapter_delivery_dispatched_v49(
+create function platform_brain.mark_adapter_delivery_dispatched_v50(
   selected_delivery_id uuid,
   selected_task_id uuid
 ) returns boolean
@@ -425,7 +425,7 @@ begin
      )
   then
     raise insufficient_privilege using
-      message = 'Brain collaboration delivery v49 caller invalid';
+      message = 'Brain collaboration delivery v50 caller invalid';
   end if;
 
   update platform_brain.adapter_deliveries set
@@ -445,13 +445,13 @@ begin
   where task_id=selected_task_id and status='queued';
   if not found then
     raise check_violation using
-      message = 'Brain collaboration task dispatch v49 invalid';
+      message = 'Brain collaboration task dispatch v50 invalid';
   end if;
   return true;
 end
 $function$;
 
-create function platform_brain.fail_agent_task_protocol_v49(
+create function platform_brain.fail_agent_task_protocol_v50(
   selected_task_id uuid
 ) returns boolean
 language plpgsql
@@ -528,13 +528,13 @@ $function$;
 
 revoke all on table platform_brain.brain_task_event_cursors from public;
 revoke all on table platform_brain.agent_runtime_health from public;
-revoke all on function platform_brain.append_agent_task_event_v49(
+revoke all on function platform_brain.append_agent_task_event_v50(
   uuid,integer,text,bytea,integer,bytea,timestamptz
 ) from public;
-revoke all on function platform_brain.mark_adapter_delivery_dispatched_v49(
+revoke all on function platform_brain.mark_adapter_delivery_dispatched_v50(
   uuid,uuid
 ) from public;
-revoke all on function platform_brain.fail_agent_task_protocol_v49(uuid)
+revoke all on function platform_brain.fail_agent_task_protocol_v50(uuid)
   from public;
 
 do $migration$
@@ -577,18 +577,18 @@ begin
     );
     execute format(
       'revoke all on function '
-      'platform_brain.append_agent_task_event_v49('
+      'platform_brain.append_agent_task_event_v50('
       'uuid,integer,text,bytea,integer,bytea,timestamptz) from %I',
       role_name
     );
     execute format(
       'revoke all on function '
-      'platform_brain.mark_adapter_delivery_dispatched_v49(uuid,uuid) from %I',
+      'platform_brain.mark_adapter_delivery_dispatched_v50(uuid,uuid) from %I',
       role_name
     );
     execute format(
       'revoke all on function '
-      'platform_brain.fail_agent_task_protocol_v49(uuid) from %I',
+      'platform_brain.fail_agent_task_protocol_v50(uuid) from %I',
       role_name
     );
   end loop;
@@ -609,18 +609,18 @@ begin
   );
   execute format(
     'grant execute on function '
-    'platform_brain.append_agent_task_event_v49('
+    'platform_brain.append_agent_task_event_v50('
     'uuid,integer,text,bytea,integer,bytea,timestamptz) to %I',
     selected_brain
   );
   execute format(
     'grant execute on function '
-    'platform_brain.mark_adapter_delivery_dispatched_v49(uuid,uuid) to %I',
+    'platform_brain.mark_adapter_delivery_dispatched_v50(uuid,uuid) to %I',
     selected_brain
   );
   execute format(
     'grant execute on function '
-    'platform_brain.fail_agent_task_protocol_v49(uuid) to %I',
+    'platform_brain.fail_agent_task_protocol_v50(uuid) to %I',
     selected_brain
   );
 end

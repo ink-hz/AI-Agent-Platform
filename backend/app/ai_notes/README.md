@@ -58,6 +58,25 @@ draft: true
 - 阅读时长由后端根据正文规模派生，不写入 frontmatter。
 - Markdown 不支持原始 HTML；图表使用 fenced `mermaid` 代码块。
 
+## 图示语言
+
+系统全景图使用低饱和浅色 `subgraph` 表达层级，普通流程图使用固定语义色。颜色只帮助识别角色，节点名称和连线标签仍需完整表达含义，不能把颜色作为唯一信息通道。
+
+统一语义类如下：
+
+```mermaid
+classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+classDef infra fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+```
+
+架构边界、组件关系、数据流、状态机和多阶段流程优先使用 Mermaid；协议取值、公式、短命令和需要原样复制的内容保留文本或代码块。每张图前说明观察重点，图后解释关键路径或权衡。发布前必须用平台锁定的 Mermaid 版本真实渲染，并在桌面和手机宽度下检查；手机上缩小后无法辨认的图必须拆分。
+
 ## 校验与预览
 
 在仓库根目录执行：

@@ -5,7 +5,7 @@ description: 把 RAG 拆成可评估的索引、召回、重排、上下文组�
 author: 苍渊
 motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
-updatedAt: 2026-08-27
+updatedAt: 2026-08-28
 tags:
   - RAG
   - 向量检索
@@ -21,14 +21,35 @@ RAG 的价值不是让模型“知道更多”，而是在回答时为模型提�
 
 RAG 处理的是“从外部知识中找到证据并约束生成”，它并不自动保证事实正确。
 
-```text
-用户问题
-  -> 查询理解与权限上下文
-  -> 候选召回
-  -> 过滤、融合与重排
-  -> 上下文组装
-  -> 基于证据生成
-  -> 引用校验与结果返回
+```mermaid
+flowchart LR
+    accTitle: RAG 查询链路
+    accDescr: 用户问题经过查询理解、权限约束、候选召回、融合重排、上下文组装、证据生成和引用校验后返回。
+
+    subgraph QUERY["查询链路"]
+        Q[用户问题] --> U[查询理解]
+        U --> P[权限、有效期与业务约束]
+        P --> R[候选召回]
+        R --> F[过滤、融合与重排]
+        F --> C[上下文组装]
+        C --> G[基于证据生成]
+        G --> V[引用校验]
+        V --> A[结果与来源返回]
+    end
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    class Q input;
+    class U,G model;
+    class P,F policy;
+    class R tool;
+    class C data;
+    class V,A success;
+    style QUERY fill:#F8FAFC,stroke:#CBD5E1,color:#172033;
 ```
 
 每一段都有不同失败方式：
@@ -66,6 +87,33 @@ content_hash: sha256:...
 这些字段不是装饰。它们决定去重、增量更新、访问控制、引用回链和删除传播。只存文本与向量，后续很难解释两个冲突版本哪个有效，也无法证明某个用户是否有权看到结果。
 
 索引任务至少记录解析器版本、分块策略、Embedding 模型与版本、向量维度、索引配置和完成时间。任一关键配置变化，都应能识别哪些数据需要重建。
+
+把这些责任放到同一条“索引链路”中，可以看出向量只是多种派生制品之一；元数据与版本始终跟随文档和分块，可选的图结构只在问题类型需要时生成。
+
+```mermaid
+flowchart LR
+    accTitle: RAG 索引链路
+    accDescr: 原始文档经过解析和语义分块，生成向量、词法、元数据权限以及可选图实体索引。
+
+    subgraph INDEX["索引链路"]
+        D[原始文档] --> P[解析结构与内容]
+        P --> C[按语义与结构分块]
+        C --> E[Embedding]
+        E --> V[向量索引]
+        C --> L[词法索引]
+        C --> M[元数据、权限与版本]
+        C -.按问题需要.-> G[可选图实体与摘要]
+    end
+
+    classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef infra fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    class D,M,V,L,G data;
+    class P,C tool;
+    class E model;
+    style INDEX fill:#F0FDFA,stroke:#5EEAD4,color:#172033;
+```
 
 ### 2.2 解析质量是检索质量的上限
 
@@ -147,12 +195,29 @@ HNSW 为向量建立多层邻近图。高层节点少，适合快速跨越空间
 
 ```mermaid
 flowchart TD
-    Q[查询向量] --> H[从最高层入口开始]
-    H --> G[在当前层扩展更近邻居]
-    G --> D{是否到最底层}
-    D -->|否| L[下降一层]
-    L --> G
-    D -->|是| K[从候选集合返回 Top-K]
+    accTitle: HNSW 多层导航
+    accDescr: 查询向量从最高层入口逐层扩展近邻并下降，最终在底层候选集合返回 Top-K。
+
+    subgraph HNSW["HNSW 多层导航"]
+        Q[查询向量] --> H[从最高层入口开始]
+        H --> G[在当前层扩展更近邻居]
+        G --> D{是否到最底层}
+        D -->|否| L[下降一层]
+        L --> G
+        D -->|是| K[从候选集合返回 Top-K]
+    end
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    class Q input;
+    class H,L data;
+    class G tool;
+    class D policy;
+    class K success;
+    style HNSW fill:#F0FDFA,stroke:#5EEAD4,color:#172033;
 ```
 
 核心取舍来自图连接度、构建候选宽度和查询候选宽度。更大的搜索范围通常提升召回，也增加延迟；更多连接通常增加内存和构建成本。删除、过滤、持久化和分布式行为取决于具体实现，不能从 HNSW 论文直接推导出某个数据库的全部能力。
@@ -177,12 +242,24 @@ BM25 对词频做饱和处理，并对文档长度进行归一化，是常用的
 
 ```mermaid
 flowchart LR
+    accTitle: 混合检索与重排
+    accDescr: 查询同时进入 BM25 和向量召回，结果去重融合并重排序，形成上下文候选。
+
     Q[查询] --> B[BM25 召回]
     Q --> V[向量召回]
     B --> F[去重与融合]
     V --> F
     F --> R[重排序]
     R --> C[上下文候选]
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    class Q input;
+    class B,V tool;
+    class F,R policy;
+    class C success;
 ```
 
 不同检索器的原始分数通常不可直接相加。RRF 使用名次而不是原始分数进行融合：

@@ -74,7 +74,7 @@ AGENT_BRAIN_DURABLE_LOOP_MIGRATION = (
     MIGRATIONS / "041_agent_brain_durable_loop.sql"
 )
 AGENT_BRAIN_TASK_WAIT_MIGRATION = (
-    MIGRATIONS / "049_agent_brain_task_wait_state.sql"
+    MIGRATIONS / "050_agent_brain_task_wait_state.sql"
 )
 DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION = (
     MIGRATIONS / "039_directory_member_employee_profile.sql"
@@ -651,7 +651,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                        (version, 64) for version in range(1, 51)
+                        (version, 64) for version in range(1, 52)
                 ]
 
     changed = tmp_path / "migrations"
