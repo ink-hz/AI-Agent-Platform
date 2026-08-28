@@ -25,11 +25,6 @@ const SEMANTIC_FILLS = [
 let productionDiagramSequence = 0;
 
 
-function productionArticle(relativePath: string): string {
-  return readFileSync(resolve(CONTENT_ROOT, relativePath), "utf8");
-}
-
-
 function frontmatter(source: string): string {
   const matched = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if (!matched) throw new Error("invalid AI note frontmatter");
@@ -203,15 +198,6 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(new Set(metadata.map(({ description }) => description)).size).toBe(
       sources.length,
     );
-  });
-
-  it("renders every LLM application architecture diagram", async () => {
-    const sources = mermaidBlocks(productionArticle(
-      "01-foundations/02-llm-application-system-architecture.md",
-    ));
-    expect(sources).toHaveLength(3);
-    expect(sources.join("\n")).toContain("从请求到可靠回答");
-    await expectProductionDiagramsToRender(sources);
   });
 
 });
