@@ -218,12 +218,12 @@ Hermes 快照实际读取：
 - `agent/conversation_loop.py` 与 `run_agent.py`：循环、会话持久化、system prompt 恢复、压缩、重试与结束边界。
 - `model_tools.py`、`tools/skills_tool.py`：工具注册与会话范围过滤，Skill 的元数据列表、按需加载和路径安全。
 - `tools/terminal_tool.py`、`docs/security/network-egress-isolation.md`：本地、容器、远程执行后端，审批与网络隔离边界。
-- `gateway/session_db_recovery.py`、`docs/micro-compaction.md`：SessionDB handle 的有界重试和退避，以及压缩失败的最佳努力语义。
+- `gateway/session_db_recovery.py`、`docs/micro-compaction.md`：SessionDB handle 的单飞打开、失败后续访问继续尝试、封顶指数退避，以及压缩失败的最佳努力语义；前者没有总重试次数上限。
 
 OpenClaw 快照实际读取：
 
 - `README.md`、`docs/concepts/architecture.md`：Gateway、clients、nodes、WebSocket 与 channel 接入边界。
-- `docs/concepts/agent-runtimes.md`、`docs/agent-runtime-architecture.md`、`docs/openclaw-agent-runtime.md`：provider/model/runtime/channel 分层，runtime ownership、代码布局与运行时选择。
+- `docs/concepts/agent-runtimes.md`、`docs/agent-runtime-architecture.md`、`docs/openclaw-agent-runtime.md`：provider/model/runtime/channel 分层；selected runtime 负责 prepared model loop，canonical thread/context/tools/compaction 的所有权随 runtime 合同变化，channel delivery 仍由 OpenClaw 承担。
 - `docs/concepts/agent-loop.md`、`src/agents/embedded-agent-runner/run.ts`、`src/agents/agent-tools.ts`：会话串行、上下文装配、模型调用、工具执行、流式事件与持久化边界。
 - `docs/concepts/context-engine.md`、`docs/concepts/session.md`、`docs/concepts/memory.md`：上下文引擎、会话路由与存储、长期记忆与压缩关系。
 - `docs/tools/skills.md`、`docs/gateway/sandbox-vs-tool-policy-vs-elevated.md`：Skill 加载和快照，sandbox、tool policy 与 elevated exec 的独立责任。
@@ -235,12 +235,12 @@ OpenClaw 快照实际读取：
 | --- | --- | --- |
 | [Hermes Agent official repository](https://github.com/NousResearch/hermes-agent) | 官方文档 + 公开代码 | Hermes 公开仓库 main@35328345d5e3b5badc47271bdb8828e1fd2d25f4；README 支持 CLI/Gateway、Skills、memory 与多执行后端的入口事实，循环、工具过滤和局部恢复语义由上述代码路径分别证明。 |
 | [OpenClaw official repository](https://github.com/openclaw/openclaw) | 官方文档 + 公开代码 | OpenClaw 公开仓库 main@468054f93c431bfe192327f439efe325be52f2b4；Gateway、session、agent loop、Skills、memory、sandbox 和 recovery 责任只在当前文档与相应代码路径范围内陈述。 |
-| [OpenClaw Agent runtimes](https://github.com/openclaw/openclaw/blob/main/docs/concepts/agent-runtimes.md) | 官方文档 | provider、model、agent runtime 与 channel 是四个不同责任层；runtime 的 loop、thread、tools、context、compaction 所有权必须分别声明。 |
-| [OpenClaw Agent runtime architecture](https://github.com/openclaw/openclaw/blob/main/docs/agent-runtime-architecture.md) | 官方文档 | OpenClaw 官方文档列出 built-in runtime 的代码布局与边界；本文据此记录上下文、工具、会话、组件注册与 model/provider transport 的所有权。 |
+| [OpenClaw Agent runtimes](https://github.com/openclaw/openclaw/blob/468054f93c431bfe192327f439efe325be52f2b4/docs/concepts/agent-runtimes.md) | 官方文档 | provider、model、agent runtime 与 channel 是四个不同责任层；selected runtime 接收 prepared turn、驱动模型输出、处理 native tool calls 并返回 finished turn。canonical thread/context/tools/compaction 的 ownership 随 runtime 合同变化，channel delivery 仍由 OpenClaw 承担。 |
+| [OpenClaw Agent runtime architecture](https://github.com/openclaw/openclaw/blob/468054f93c431bfe192327f439efe325be52f2b4/docs/agent-runtime-architecture.md) | 官方文档 | OpenClaw 官方文档列出 built-in runtime、session、tools、harness 与 model/provider transport 的代码布局；布局本身不证明 selected runtime 拥有 Gateway session、平台策略或恢复编排。 |
 
 ### 保留、删除与抽象边界
 
 - **保留**：Agent loop、context/session、Skills/Tools、memory、channel/远程执行、sandbox/permissions、recovery 与 ownership boundary 这些共同工程问题。
 - **删除**：旧日期、动态版本、功能或渠道数量、社区热度、产品优劣、无法复核的生产效果和泛化安全承诺。
 - **公开代码直接证明**：只在实际读取路径能定位的循环、策略、持久化与恢复语义范围内陈述。
-- **从公开结构可以推断**：两个项目都可抽象为入口与会话、上下文与循环、行动与恢复三类责任；这是本文比较模型，不是组件等价或隐藏执行顺序的事实声明。
+- **从公开结构可以推断**：两个项目都可用入口与会话、上下文与循环、行动与恢复三类问题来评审；这是本文比较模型，不是组件等价或隐藏执行顺序的事实声明。对 OpenClaw，host/Gateway 与 selected runtime 保持相邻边界，不把 Gateway session、channel delivery、平台策略和恢复编排塞入 runtime 内部。

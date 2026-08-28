@@ -31,8 +31,12 @@ draft: true
 | --- | --- | --- |
 | provider（模型/API 提供方） | 认证、端点、模型发现与请求传输 | 不拥有业务会话和渠道路由 |
 | model（模型） | 完成本轮推理，产生文本或工具调用提议 | 不单独执行确定性权限策略 |
-| agent runtime（Agent 运行时） | 装配上下文，驱动 Agent loop，调用模型与工具，维护会话和停止条件 | 不应与模型名称或接入渠道绑死 |
-| channel（消息渠道） | 接收消息、识别会话来源、确定性地投递回复 | 不决定模型内部循环和工具权限 |
+| agent runtime（Agent 运行时） | 在 OpenClaw 的当前合同中，接收 prepared turn，驱动 model loop，处理 native tool calls，返回 finished turn | 不自动拥有 Gateway session、channel delivery、平台策略和恢复编排 |
+| channel（消息渠道） | 接收与发送平台消息，承载来源和投递目标 | 不决定模型循环、canonical thread 或工具权限 |
+
+对 OpenClaw 还要把 OpenClaw host/Gateway 与 selected agent runtime 分开：前者负责 session 与 channel delivery、策略与恢复编排；后者负责准备好的一轮模型循环。canonical thread、context、tools 与 compaction 由谁拥有，要看所选 runtime 的明确合同；host 通过投影、镜像或集成来连接这些状态，而不是把它们强行重写成同一种内部实现。
+
+这样的 host/runtime 分工，才构成可核验的 ownership boundary。
 
 ## 二、共同的运行主线
 
@@ -74,9 +78,9 @@ flowchart LR
 
 Hermes 的官方 README 明示把 CLI 与消息 Gateway 作为入口，并提供跨会话搜索、记忆和上下文压缩。当前公开代码中，`agent/conversation_loop.py` 会恢复或构建 system prompt，保存会话，并在模型窗口压力下调用压缩路径。这些是公开代码可以直接核对的责任。
 
-OpenClaw 的官方 Agent loop 文档则把一次运行写成按 session 串行的链路：入口验证、上下文装配、模型推理、工具执行、流式输出和持久化。会话文档进一步明确，Gateway 拥有会话状态，直聊、群组、定时任务与 Webhook 按来源路由到不同的 session。
+OpenClaw 的会话文档明确，Gateway 拥有平台 session 状态，直聊、群组、定时任务与 Webhook 按来源路由到不同 session。它的 runtime 文档把 selected agent runtime 收窄为一个 prepared model loop：接收 prepared turn、驱动模型输出、处理 native tool calls，再把 finished turn 交回 OpenClaw。若某个 runtime 合同拥有 canonical thread、context 或 compaction，host 会投影或镜像所需状态，而不是把 Gateway session 与 runtime thread 当成同一个对象。
 
-因此，context 至少包括稳定规则、当前任务状态、会话历史、工具结果与压缩摘要；session 还要回答串行、存储、重置、并发与恢复。把它们都缩成一个 messages 数组，长任务一定会丢失 ownership boundary。
+因此，context 至少包括稳定规则、当前任务状态、会话历史、工具结果与压缩摘要；session 还要回答串行、存储、重置、并发与恢复。缺少独立状态与所有权合同时，长任务容易使这些边界变得不可验证。
 
 ## 四、Skills 与 Tools：知道怎么做，不等于被允许做
 
@@ -104,11 +108,11 @@ Hermes 的 README 把终端界面与消息 Gateway 列为两类入口；其终�
 
 沙箱回答“在哪里执行”，工具策略回答“允许调哪个工具”，参数约束和人工审批回答“这一次具体行动能否发生”。更完整的主体、委托和最小权限设计，见 [Agent 身份与最小权限](../agent-architecture/agent-identity-access-control)。
 
-Hermes 当前公开代码可以证明，终端路径有执行后端和审批检查，工具目录还会按会话授予范围缩小。其 `gateway/session_db_recovery.py` 中的恢复对象是按路径缓存的 SessionDB handle，通过有界重试与退避在进程内自愈；这不等于证明所有中断工具都能在重启后续跑。
+Hermes 当前公开代码可以证明，终端路径有执行后端和审批检查，工具目录还会按会话授予范围缩小。其 `gateway/session_db_recovery.py` 中的恢复对象是按路径缓存的 SessionDB handle：同一路径采用单飞打开；失败后在后续访问继续尝试；指数退避间隔封顶。这里没有“总重试次数上限”的合同，也不等于证明所有中断工具都能在重启后续跑。
 
-OpenClaw 官方文档明示把 sandbox、tool policy 和 elevated exec 分成不同控制面；重启恢复文档还规定哪些会话、投递、后台任务与定时状态持久化，以及副作用结果不确定时如何限制恢复工具。它同时列出了不会恢复的进程内终端等边界，因此不能简化为“重启完全无感”。
+OpenClaw 官方文档明示把 sandbox、tool policy 和 elevated exec 分成不同控制面；host/Gateway 的重启恢复文档还规定哪些会话、投递、后台任务与定时状态持久化，以及副作用结果不确定时如何限制恢复工具。它同时列出了不会恢复的进程内终端等边界，因此不能简化为“重启完全无感”，更不能把恢复编排笼统算成 selected agent runtime 的内部能力。
 
-恢复之前要先把工具分成可重放、幂等、已有完成回执、结果不确定与不可重放。没有这个契约，recovery 只会把一次故障放大成重复副作用。运行时还应暴露中断原因、尝试、工具结果和投递回执，证据模型见 [LLM / Agent 可观测性](../ai-engineering/llm-agent-observability)。
+恢复之前要先把工具分成可重放、幂等、已有完成回执、结果不确定与不可重放。没有这个契约，recovery 可能把一次故障放大成重复副作用。host 与 selected runtime 的集成边界还应暴露中断原因、尝试、工具结果和投递回执，证据模型见 [LLM / Agent 可观测性](../ai-engineering/llm-agent-observability)。
 
 ## 八、两个项目的责任映射
 
@@ -128,8 +132,8 @@ flowchart TB
     subgraph OFACT["OpenClaw：官方可核验能力"]
         direction LR
         O1[Channel 与 Gateway 路由]
-        O2[Runtime 与 session 所有权]
-        O3[Tools、sandbox 与 restart recovery]
+        O2[Gateway session 与 runtime 合同]
+        O3[Tools、sandbox 与 host recovery]
     end
     subgraph ABSTRACT["本文责任抽象"]
         direction LR
@@ -157,66 +161,70 @@ flowchart TB
     style ABSTRACT fill:#FFFFFF,stroke:#86EFAC,color:#172033;
 ```
 
-从公开结构可以推断：Hermes 将很多工程力量放在一个可从终端或消息入口驱动的长期 Agent 上，而 OpenClaw 更显式地将 Gateway、channel、session 与可替换 runtime 的所有权写进当前文档。这个差异是阅读视角，不是优劣结论。
+从公开结构可以推断：Hermes 将很多工程力量放在一个可从终端或消息入口驱动的长期 Agent 上，而 OpenClaw 更显式地分别声明 host/Gateway 与可替换 runtime 的合同。这个差异是阅读视角，不是优劣结论；它也不表示 Gateway session 与 runtime canonical thread 是等价实现。
 
 本文推断：选择开源 Agent 运行时时，比“已经接了哪些功能”更值得追问的，是会话真相、工具权限、远程路由和失败恢复分别属于谁。
 
 ## 九、能力边界如何验收
 
-一个可维护的 Agent runtime 不应用一层提示词包办所有责任。它应让每一层都有独立契约，并在跨层时传递身份、会话、权限、回执和错误证据。
+一个可维护的 Agent 系统不应用一层提示词或一个 runtime 名称包办所有责任。对于 OpenClaw，host/Gateway 与 selected agent runtime 是相邻而非吞并关系；状态所有权由 runtime 合同逐项声明。
 
 ```mermaid
 flowchart TB
     accTitle: Agent 运行时能力边界
-    accDescr: provider 与 model 提供推理，channel 承载消息，runtime 拥有上下文、策略、工具与恢复证据。
+    accDescr: OpenClaw host 和 selected agent runtime 相邻协作，平台会话与投递不被误算成模型运行循环的内部状态。
 
-    subgraph EXTERNAL["外部边界"]
+    subgraph EXTERNAL["外部系统"]
         direction LR
         P[provider]
         M[model]
         C[channel]
     end
-    subgraph RUNTIME["agent runtime ownership boundary"]
+    subgraph HOST["OpenClaw host / Gateway"]
         direction LR
-        S[session 与 context]
-        L[Agent loop]
-        G[工具策略与审批]
-        T[Tools]
-        X[sandbox 或远程执行]
-        R[recovery 与证据]
+        H1[session 与 channel delivery]
+        H2[策略与恢复编排]
+        H3[投影、镜像与集成]
+    end
+    subgraph SELECTED["selected agent runtime"]
+        direction LR
+        R1[prepared turn]
+        R2[model loop]
+        R3[native tool calls]
+        R4[合同拥有的 thread/context/tools/compaction]
     end
 
-    C --> S
-    S --> L
-    L --> P --> M
-    M --> L
-    L --> G --> T --> X
-    X --> R --> L
-    R --> C
+    C <--> H1
+    H1 --> H3 --> R1 --> R2
+    R2 --> P --> M --> R2
+    R2 --> R3 --> H2
+    H2 --> H1
+    R4 --> H3
 
     classDef external fill:#DBEAFE,stroke:#60A5FA,color:#172033;
-    classDef state fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef host fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
     classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef runtime fill:#DCFCE7,stroke:#4ADE80,color:#172033;
     classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
-    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
-    classDef evidence fill:#D1FAE5,stroke:#10B981,color:#172033;
     class P,C external;
     class M model;
-    class S,L state;
-    class G policy;
-    class T,X tool;
-    class R evidence;
+    class H1,H3 host;
+    class H2 policy;
+    class R1,R2,R3,R4 runtime;
     style EXTERNAL fill:#FFFFFF,stroke:#93C5FD,color:#172033;
-    style RUNTIME fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
+    style HOST fill:#FFFFFF,stroke:#5EEAD4,color:#172033;
+    style SELECTED fill:#FFFFFF,stroke:#86EFAC,color:#172033;
 ```
+
+这张图只表达当前 OpenClaw 合同：channel delivery 和平台 session 留在 host/Gateway；selected runtime 完成 prepared turn。若所选 runtime 原生拥有 canonical thread、context、tools 或 compaction，host 通过投影、镜像或集成衔接，而不是夺取其内部真相。
 
 实际验收时，可以用以下问题取代产品宣传页：
 
 - provider 或 model 切换后，会话所有权和工具策略是否仍然一致；
-- session 中哪些内容是原始证据，哪些是压缩摘要，是否可回溯；
+- Gateway session、runtime canonical thread 与压缩摘要分别由谁拥有，哪些只是投影或镜像；
 - Skills 的可见性、Tools 的可调用性与 sandbox 的执行位置是否分开；
 - channel 身份、会话路由与远程节点权限是否能对应到同一次行动；
-- 恢复前能否识别已完成、可重放、结果不确定和不可重放的副作用；
+- host 的恢复编排与 selected runtime 的续跑能力怎样交接，能否识别已完成、可重放、结果不确定和不可重放的副作用；
 - 最终回复之外，是否保留了模型路由、工具决策、执行结果和投递回执。
 
 Hermes 和 OpenClaw 提供了两份不同的公开工程样本。真正可迁移的知识不是它们当前的功能多少，而是如何把模型推理、长期状态、可执行能力和可恢复证据组成一个有边界的运行时。
@@ -225,7 +233,8 @@ Hermes 和 OpenClaw 提供了两份不同的公开工程样本。真正可迁移
 
 - Nous Research：[Hermes Agent 官方仓库](https://github.com/NousResearch/hermes-agent)
 - OpenClaw：[OpenClaw 官方仓库](https://github.com/openclaw/openclaw)
-- OpenClaw：[Agent runtimes](https://github.com/openclaw/openclaw/blob/main/docs/concepts/agent-runtimes.md)
-- OpenClaw：[Agent runtime architecture](https://github.com/openclaw/openclaw/blob/main/docs/agent-runtime-architecture.md)
-- OpenClaw：[Agent loop](https://github.com/openclaw/openclaw/blob/main/docs/concepts/agent-loop.md)
-- OpenClaw：[Restart recovery](https://github.com/openclaw/openclaw/blob/main/docs/gateway/restart-recovery.md)
+- Hermes：[SessionDB recovery source](https://github.com/NousResearch/hermes-agent/blob/35328345d5e3b5badc47271bdb8828e1fd2d25f4/gateway/session_db_recovery.py)
+- OpenClaw：[Agent runtimes](https://github.com/openclaw/openclaw/blob/468054f93c431bfe192327f439efe325be52f2b4/docs/concepts/agent-runtimes.md)
+- OpenClaw：[Agent runtime architecture](https://github.com/openclaw/openclaw/blob/468054f93c431bfe192327f439efe325be52f2b4/docs/agent-runtime-architecture.md)
+- OpenClaw：[Agent loop](https://github.com/openclaw/openclaw/blob/468054f93c431bfe192327f439efe325be52f2b4/docs/concepts/agent-loop.md)
+- OpenClaw：[Restart recovery](https://github.com/openclaw/openclaw/blob/468054f93c431bfe192327f439efe325be52f2b4/docs/gateway/restart-recovery.md)

@@ -251,11 +251,11 @@ OPEN_SOURCE_RUNTIME_PRIMARY_SOURCES = {
     "https://github.com/openclaw/openclaw": (
         "OpenClaw 公开仓库 main@468054f93c431bfe192327f439efe325be52f2b4"
     ),
-    "https://github.com/openclaw/openclaw/blob/main/docs/concepts/agent-runtimes.md": (
-        "provider、model、agent runtime 与 channel 是四个不同责任层"
+    "https://github.com/openclaw/openclaw/blob/468054f93c431bfe192327f439efe325be52f2b4/docs/concepts/agent-runtimes.md": (
+        "selected runtime 接收 prepared turn、驱动模型输出、处理 native tool calls 并返回 finished turn"
     ),
-    "https://github.com/openclaw/openclaw/blob/main/docs/agent-runtime-architecture.md": (
-        "OpenClaw 官方文档列出 built-in runtime 的代码布局与边界"
+    "https://github.com/openclaw/openclaw/blob/468054f93c431bfe192327f439efe325be52f2b4/docs/agent-runtime-architecture.md": (
+        "布局本身不证明 selected runtime 拥有 Gateway session、平台策略或恢复编排"
     ),
 }
 
@@ -550,14 +550,32 @@ def open_source_runtime_contains_dynamic_ranking(markdown: str) -> bool:
     return any(re.search(pattern, markdown) for pattern in prohibited_patterns)
 
 
-def open_source_runtime_contains_unmarked_inference(markdown: str) -> bool:
+def open_source_runtime_contains_recovery_absolutism(markdown: str) -> bool:
+    structure_cue = re.compile(r"(?:目录(?:结构)?|代码(?:结构)?|仓库(?:结构)?)")
+    recovery_cue = re.compile(r"(?:恢复|续跑)")
+    absolute_cue = re.compile(r"(?:所有|全部|一定|必然|完全无感|自动恢复)")
+    explicit_limit = re.compile(r"(?:不能|不足以|不等于|并不|无法)")
     for clause in re.split(r"[\n。！？；;]", markdown):
-        if "推断" not in clause:
+        if explicit_limit.search(clause):
             continue
-        if "从公开结构可以推断" in clause or "本文推断" in clause:
-            continue
-        return True
+        if (
+            structure_cue.search(clause)
+            and recovery_cue.search(clause)
+            and absolute_cue.search(clause)
+        ):
+            return True
     return False
+
+
+def open_source_runtime_confuses_openclaw_ownership(markdown: str) -> bool:
+    return bool(
+        re.search(
+            r"(?i)(?:selected\s+)?(?:agent\s+)?runtime\s*"
+            r"(?:拥有|负责|管理|维护)[^。；;\n]{0,48}"
+            r"(?:gateway\s+session|channel\s+delivery|Gateway\s*会话|渠道投递)",
+            markdown,
+        )
+    )
 
 
 def open_source_runtime_confuses_layers(markdown: str) -> bool:
@@ -1376,6 +1394,32 @@ def test_open_source_runtime_draft_meets_contract(
     assert markdown.count("Clawdbot") == 1
     assert "渠道只负责消息入口、回复路由与平台协议适配" in markdown
     assert "远程执行必须回到运行时的工具与权限边界" in markdown
+    for ownership_marker in (
+        "prepared turn",
+        "selected agent runtime",
+        "native tool calls",
+        "OpenClaw host/Gateway",
+        "session 与 channel delivery",
+        "策略与恢复编排",
+        "投影、镜像或集成",
+    ):
+        assert ownership_marker in markdown
+    for diagram_marker in (
+        "OpenClaw host / Gateway",
+        "selected agent runtime",
+        "session 与 channel delivery",
+        "策略与恢复编排",
+        "prepared turn",
+        "native tool calls",
+        "合同拥有的 thread/context/tools/compaction",
+    ):
+        assert diagram_marker in diagrams[2]
+    assert "agent runtime ownership boundary" not in diagrams[2]
+    assert "有界重试" not in markdown
+    assert "失败后在后续访问继续尝试" in markdown
+    assert "指数退避间隔封顶" in markdown
+    assert "长任务一定会丢失 ownership boundary" not in markdown
+    assert "/blob/main/" not in markdown
     assert re.search(
         r"\]\(\.\./agent-architecture/agent-identity-access-control\)",
         markdown,
@@ -1386,7 +1430,8 @@ def test_open_source_runtime_draft_meets_contract(
     )
     assert not open_source_runtime_uses_legacy_name_as_current(markdown)
     assert not open_source_runtime_contains_dynamic_ranking(markdown)
-    assert not open_source_runtime_contains_unmarked_inference(markdown)
+    assert not open_source_runtime_contains_recovery_absolutism(markdown)
+    assert not open_source_runtime_confuses_openclaw_ownership(markdown)
     assert not open_source_runtime_confuses_layers(markdown)
 
     candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
@@ -1400,13 +1445,16 @@ def test_open_source_runtime_guards_reject_forbidden_claims() -> None:
         "Clawdbot 的当前运行时以 Gateway 为核心。",
         "Hermes 有 40+ 个工具并且 Star 数排名第一。",
         "它的目录说明运行时一定会自动恢复，这个推断就是实现事实。",
+        "目录结构证明所有任务一定会恢复。",
+        "runtime 拥有 Gateway session 和 channel delivery。",
         "provider 就是 model。",
         "agent runtime 等同于 channel。",
     )
     guards = (
         open_source_runtime_uses_legacy_name_as_current,
         open_source_runtime_contains_dynamic_ranking,
-        open_source_runtime_contains_unmarked_inference,
+        open_source_runtime_contains_recovery_absolutism,
+        open_source_runtime_confuses_openclaw_ownership,
         open_source_runtime_confuses_layers,
     )
     for claim in prohibited:
@@ -1420,9 +1468,11 @@ def test_open_source_runtime_guards_allow_precise_boundaries() -> None:
         "从公开结构可以推断：责任边界比功能清单更稳定。",
         "本文推断：渠道与运行时分层有利于故障定位。",
         "provider 解决认证与模型目录；model 是本轮所选模型；agent runtime 执行循环；channel 承载消息。",
+        "OpenClaw host/Gateway 负责 session 与 channel delivery、策略与恢复编排；selected agent runtime 接收 prepared turn、驱动 model loop、处理 native tool calls，并按合同拥有 canonical thread/context/tools/compaction。",
     )
     for claim in allowed:
         assert not open_source_runtime_uses_legacy_name_as_current(claim)
         assert not open_source_runtime_contains_dynamic_ranking(claim)
-        assert not open_source_runtime_contains_unmarked_inference(claim)
+        assert not open_source_runtime_contains_recovery_absolutism(claim)
+        assert not open_source_runtime_confuses_openclaw_ownership(claim)
         assert not open_source_runtime_confuses_layers(claim)
