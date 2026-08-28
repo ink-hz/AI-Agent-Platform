@@ -68,6 +68,9 @@ trap cleanup ERR EXIT
 /bin/chmod 600 "$generated" "$generated.pub"
 public_line="$(<"$generated.pub")" || fail
 [[ "$public_line" =~ ^ssh-ed25519\ [A-Za-z0-9+/=]+\ orbbec-agentops-acceptance$ ]] || fail
+IFS=' ' read -r public_type public_blob public_comment public_extra <<< "$public_line"
+[[ "$public_type" == "ssh-ed25519" && "$public_blob" =~ ^[A-Za-z0-9+/=]+$ &&
+   "$public_comment" == "orbbec-agentops-acceptance" && -z "$public_extra" ]] || fail
 fingerprint="$("$ssh_keygen_bin" -lf "$generated.pub" | /usr/bin/awk '{print $2}')" || fail
 [[ "$fingerprint" =~ ^SHA256:[A-Za-z0-9+/]+$ ]] || fail
 
@@ -83,10 +86,12 @@ transaction_token="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
 
 prepare_remote_transaction() {
   "$ssh_bin" "${ssh_options[@]}" "$cloud_admin_host" /bin/bash -s -- \
-    "$transaction_token" "$public_line" "$fingerprint" <<'REMOTE'
+    "$transaction_token" "$public_blob" "$fingerprint" <<'REMOTE'
 set -euo pipefail
 umask 077
-token="$1"; public_line="$2"; fingerprint="$3"
+token="$1"; public_blob="$2"; fingerprint="$3"
+[[ "$public_blob" =~ ^[A-Za-z0-9+/=]+$ ]] || exit 1
+public_line="ssh-ed25519 $public_blob orbbec-agentops-acceptance"
 source_ip="${SSH_CONNECTION%% *}"
 /usr/bin/python3 - "$source_ip" <<'PY'
 import ipaddress,sys

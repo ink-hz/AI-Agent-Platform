@@ -57,6 +57,9 @@ def test_key_provision_has_remote_prepare_commit_and_rollback() -> None:
     assert source.index("prepare_remote_transaction") < source.index(
         "commit_remote_transaction"
     )
+    assert '"$transaction_token" "$public_blob" "$fingerprint"' in source
+    assert '"$transaction_token" "$public_line" "$fingerprint"' not in source
+    assert 'public_line="ssh-ed25519 $public_blob orbbec-agentops-acceptance"' in source
 
 
 def test_root_installer_consumes_pending_key_without_copying_neos_key() -> None:
