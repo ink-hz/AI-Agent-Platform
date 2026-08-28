@@ -26,5 +26,17 @@
     "events": [],
     "next_after": 0,
     "terminal": false
+  },
+  "TokenBrokerRequest": {
+    "profile": "valid",
+    "agent_id": "ai-fae-agent",
+    "platform_task_id": "0d8f0764-91be-4af5-b4d8-e79d58ab3b07",
+    "capability_version": 2,
+    "authorized_scopes": ["fae.answer"],
+    "task_deadline_at": "2026-08-27T10:15:00Z",
+    "action_execution_deadline_at": null
+  },
+  "TokenBrokerResponse": {
+    "token": "opaque"
   }
 }

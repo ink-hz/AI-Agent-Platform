@@ -242,6 +242,35 @@ class ErrorEnvelope(StrictContractModel):
     error: ContractError
 
 
+class TokenBrokerRequest(StrictContractModel):
+    profile: Literal[
+        "valid",
+        "expired",
+        "wrong_scope",
+        "wrong_audience",
+        "wrong_task_binding",
+        "retired_kid",
+    ]
+    agent_id: str = Field(min_length=1)
+    platform_task_id: UUID
+    capability_version: PositiveInt
+    authorized_scopes: tuple[str, ...]
+    task_deadline_at: datetime
+    action_execution_deadline_at: datetime | None
+
+    _sorted_scopes = field_validator("authorized_scopes")(_require_sorted_unique)
+    _task_deadline_is_utc = field_validator("task_deadline_at")(_require_utc)
+
+    @field_validator("action_execution_deadline_at")
+    @classmethod
+    def _action_deadline_is_utc(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else _require_utc(value)
+
+
+class TokenBrokerResponse(StrictContractModel):
+    token: str = Field(min_length=1)
+
+
 class ActionDigestInput(StrictContractModel):
 
     platform_task_id: UUID

@@ -37,6 +37,9 @@ class ContractTarget:
         self.requests.append(request)
         assert request.headers["authorization"] == "Bearer task-token"
         assert request.headers["x-orbbec-task-contract"] == "orbbec-http-task/v1"
+        return self._dispatch(request)
+
+    def _dispatch(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if request.method == "GET" and path.endswith("/capabilities"):
             return self._json(
@@ -322,7 +325,9 @@ def test_runner_executes_the_complete_http_contract() -> None:
 
     report = runner.ContractRunner(
         base_url="https://agent.example",
-        task_token="task-token",
+        token_broker=StaticTokenBroker(),
+        agent_id="ai-fae-agent",
+        authorized_scopes=("fae.answer",),
         transport=httpx.MockTransport(target),
     ).run()
 
@@ -358,7 +363,9 @@ def test_nonblocking_limit_does_not_apply_to_action_execution() -> None:
 
     report = runner.ContractRunner(
         base_url="https://agent.example",
-        task_token="task-token",
+        token_broker=StaticTokenBroker(),
+        agent_id="ai-fae-agent",
+        authorized_scopes=("fae.answer",),
         transport=httpx.MockTransport(SlowActionTarget()),
         max_request_seconds=0.01,
     ).run()
@@ -603,15 +610,152 @@ def test_event_page_requires_contract_and_downstream_identity() -> None:
             EventPage.model_validate_json(json.dumps(invalid))
 
 
+def _write_token_broker(
+    path: Path, *, response: str = '{"token":"issued-token"}', exit_code: int = 0
+) -> Path:
+    path.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "request = json.loads(sys.stdin.readline())\n"
+        "assert request['platform_task_id']\n"
+        f"print({response!r})\n"
+        f"raise SystemExit({exit_code})\n",
+        "utf-8",
+    )
+    path.chmod(0o700)
+    return path
+
+
+def _token_request():
+    _runner_module()
+    from orbbec_task_contract.models import TokenBrokerRequest
+
+    return TokenBrokerRequest.model_validate_json(
+        json.dumps(
+            {
+                "profile": "valid",
+                "agent_id": "ai-fae-agent",
+                "platform_task_id": "0d8f0764-91be-4af5-b4d8-e79d58ab3b07",
+                "capability_version": 2,
+                "authorized_scopes": ["fae.answer"],
+                "task_deadline_at": "2026-08-27T10:15:00Z",
+                "action_execution_deadline_at": None,
+            }
+        )
+    )
+
+
+def test_token_broker_issues_a_dynamic_task_token(tmp_path: Path) -> None:
+    from orbbec_task_contract.token_broker import TaskTokenBroker
+
+    executable = _write_token_broker(tmp_path / "broker with spaces")
+    broker = TaskTokenBroker(executable)
+
+    assert broker.issue(_token_request()) == "issued-token"
+
+
+def test_token_broker_requires_an_absolute_executable_path() -> None:
+    from orbbec_task_contract.token_broker import TaskTokenBroker
+
+    with pytest.raises(ValueError, match="absolute"):
+        TaskTokenBroker(Path("relative-broker"))
+
+
+@pytest.mark.parametrize(
+    ("response", "exit_code", "message"),
+    [
+        ('{"token":"secret-token","extra":true}', 0, "invalid response"),
+        ('{"token":""}', 0, "invalid response"),
+        ('{"token":"secret-token"}', 9, "exited with status 9"),
+    ],
+)
+def test_token_broker_rejects_invalid_output_without_leaking_the_token(
+    tmp_path: Path, response: str, exit_code: int, message: str
+) -> None:
+    from orbbec_task_contract.token_broker import TaskTokenBroker, TokenBrokerError
+
+    executable = _write_token_broker(
+        tmp_path / "broker", response=response, exit_code=exit_code
+    )
+    broker = TaskTokenBroker(executable)
+
+    with pytest.raises(TokenBrokerError, match=message) as caught:
+        broker.issue(_token_request())
+    assert "secret-token" not in str(caught.value)
+
+
+class RecordingTokenBroker:
+    def __init__(self) -> None:
+        self.requests: list[Any] = []
+
+    def issue(self, request: Any) -> str:
+        self.requests.append(request)
+        return f"task-token:{request.platform_task_id}"
+
+
+class StaticTokenBroker:
+    def issue(self, request: Any) -> str:
+        return "task-token"
+
+
+class DynamicTokenTarget(ContractTarget):
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        assert request.headers["x-orbbec-task-contract"] == "orbbec-http-task/v1"
+        path = request.url.path
+        if request.method == "POST" and path.endswith("/tasks"):
+            expected_task_id = self._body(request)["platform_task_id"]
+        elif "/tasks/" in path:
+            expected_task_id = path.split("/tasks/", 1)[1].split("/", 1)[0]
+        else:
+            expected_task_id = None
+        if expected_task_id is not None:
+            assert request.headers["authorization"] == (
+                f"Bearer task-token:{expected_task_id}"
+            )
+        return self._dispatch(request)
+
+
+def test_runner_issues_tokens_for_each_dynamic_task_id() -> None:
+    runner = _runner_module()
+    broker = RecordingTokenBroker()
+    target = DynamicTokenTarget()
+
+    report = runner.ContractRunner(
+        base_url="https://agent.example",
+        token_broker=broker,
+        agent_id="ai-fae-agent",
+        authorized_scopes=("fae.answer",),
+        transport=httpx.MockTransport(target),
+    ).run()
+
+    assert report.executed_cases
+    issued_task_ids = {str(request.platform_task_id) for request in broker.requests}
+    assert set(target.tasks).issubset(issued_task_ids)
+
+
 BASE_URL = os.getenv("ORBBEC_TASK_CONTRACT_BASE_URL")
-TASK_TOKEN = os.getenv("ORBBEC_TASK_CONTRACT_TOKEN")
+TOKEN_BROKER = os.getenv("ORBBEC_TASK_CONTRACT_TOKEN_BROKER")
+AGENT_ID = os.getenv("ORBBEC_TASK_CONTRACT_AGENT_ID")
+SCOPES = tuple(
+    scope
+    for scope in os.getenv("ORBBEC_TASK_CONTRACT_SCOPES", "").split(",")
+    if scope
+)
 
 
 @pytest.mark.skipif(
-    not BASE_URL or not TASK_TOKEN,
+    not BASE_URL or not TOKEN_BROKER or not AGENT_ID or not SCOPES,
     reason="target repository did not supply its HTTP contract fixture",
 )
 def test_target_repository_http_task_contract() -> None:
     runner = _runner_module()
-    report = runner.ContractRunner(base_url=BASE_URL, task_token=TASK_TOKEN).run()
+    from orbbec_task_contract.token_broker import TaskTokenBroker
+
+    report = runner.ContractRunner(
+        base_url=BASE_URL,
+        token_broker=TaskTokenBroker(Path(TOKEN_BROKER)),
+        agent_id=AGENT_ID,
+        authorized_scopes=SCOPES,
+    ).run()
     assert report.executed_cases

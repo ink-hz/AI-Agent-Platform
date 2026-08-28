@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from time import monotonic, sleep
-from typing import Any
-from uuid import UUID, uuid4, uuid5
+from typing import Any, Protocol
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import httpx
 from pydantic import ValidationError
@@ -20,11 +20,12 @@ from .models import (
     ActionDigestInput,
     ActionProposal,
     EventPage,
+    TokenBrokerRequest,
     action_digest,
 )
+from .token_broker import TaskTokenBroker, TokenBrokerError
 
 API_PREFIX = "/internal/platform/v1"
-TOKEN_ENV = "ORBBEC_TASK_CONTRACT_TOKEN"
 
 
 class ContractViolation(AssertionError):
@@ -35,6 +36,10 @@ class ContractViolation(AssertionError):
 class ContractReport:
     contract_version: str
     executed_cases: tuple[str, ...]
+
+
+class TokenIssuer(Protocol):
+    def issue(self, request: TokenBrokerRequest) -> str: ...
 
 
 def require_supported_python(version: Sequence[int] = sys.version_info) -> None:
@@ -82,7 +87,9 @@ class ContractRunner:
         self,
         *,
         base_url: str,
-        task_token: str,
+        token_broker: TokenIssuer,
+        agent_id: str,
+        authorized_scopes: Sequence[str],
         transport: httpx.BaseTransport | None = None,
         max_request_seconds: float = 2.0,
         operation_timeout_seconds: float = 905.0,
@@ -91,8 +98,11 @@ class ContractRunner:
     ) -> None:
         if not base_url.strip():
             raise ValueError("base_url is required")
-        if not task_token.strip():
-            raise ValueError("task_token is required")
+        if not agent_id.strip():
+            raise ValueError("agent_id is required")
+        scopes = tuple(sorted(set(authorized_scopes)))
+        if not scopes:
+            raise ValueError("at least one authorized scope is required")
         if (
             max_request_seconds <= 0
             or operation_timeout_seconds < 900
@@ -105,10 +115,14 @@ class ContractRunner:
         self._operation_timeout_seconds = operation_timeout_seconds
         self._case_timeout_seconds = case_timeout_seconds
         self._poll_interval_seconds = poll_interval_seconds
+        self._token_broker = token_broker
+        self._agent_id = agent_id
+        self._authorized_scopes = scopes
+        self._probe_task_id = uuid5(NAMESPACE_URL, f"{base_url.rstrip('/')}:{agent_id}")
+        self._task_deadlines: dict[UUID, datetime] = {}
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             headers={
-                "Authorization": f"Bearer {task_token}",
                 "X-Orbbec-Task-Contract": CONTRACT_VERSION,
                 "Accept": "application/json",
             },
@@ -482,6 +496,7 @@ class ContractRunner:
         expected: set[int],
         json_body: Mapping[str, object] | None = None,
         params: Mapping[str, object] | None = None,
+        token_profile: str = "valid",
     ) -> httpx.Response:
         started = monotonic()
         must_be_nonblocking = (method == "POST" and path == f"{API_PREFIX}/tasks") or (
@@ -492,12 +507,29 @@ class ContractRunner:
             if must_be_nonblocking
             else self._operation_timeout_seconds
         )
+        task_id, task_deadline = self._request_task_identity(path, json_body)
+        capability_version = self._capability_version or 1
+        try:
+            token = self._token_broker.issue(
+                TokenBrokerRequest(
+                    profile=token_profile,
+                    agent_id=self._agent_id,
+                    platform_task_id=task_id,
+                    capability_version=capability_version,
+                    authorized_scopes=self._authorized_scopes,
+                    task_deadline_at=task_deadline,
+                    action_execution_deadline_at=None,
+                )
+            )
+        except TokenBrokerError as exc:
+            raise ContractViolation("task token broker failed") from exc
         try:
             response = self._client.request(
                 method,
                 path,
                 json=json_body,
                 params=params,
+                headers={"Authorization": f"Bearer {token}"},
                 timeout=request_timeout,
             )
         except httpx.HTTPError as exc:
@@ -515,6 +547,25 @@ class ContractRunner:
                 f"{method} {path} returned HTTP {response.status_code}; expected {sorted(expected)}"
             )
         return response
+
+    def _request_task_identity(
+        self, path: str, json_body: Mapping[str, object] | None
+    ) -> tuple[UUID, datetime]:
+        if path == f"{API_PREFIX}/tasks" and json_body is not None:
+            task_id = UUID(str(json_body["platform_task_id"]))
+            deadline = datetime.fromisoformat(
+                str(json_body["deadline_at"]).replace("Z", "+00:00")
+            )
+            self._task_deadlines[task_id] = deadline
+            return task_id, deadline
+        if "/tasks/" in path:
+            raw_task_id = path.split("/tasks/", 1)[1].split("/", 1)[0]
+            task_id = UUID(raw_task_id)
+            deadline = self._task_deadlines.get(
+                task_id, datetime.now(UTC) + timedelta(minutes=5)
+            )
+            return task_id, deadline
+        return self._probe_task_id, datetime.now(UTC) + timedelta(minutes=5)
 
     @staticmethod
     def _response_json(response: httpx.Response) -> dict[str, Any]:
@@ -538,10 +589,13 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run Orbbec HTTP Task Contract v1")
     parser.add_argument("--base-url", required=True, help="target service base URL")
     parser.add_argument(
-        "--task-token",
-        default=None,
-        help=f"Task Token; prefer the {TOKEN_ENV} environment variable",
+        "--token-broker",
+        required=True,
+        type=Path,
+        help="absolute path to the local Task Token Broker executable",
     )
+    parser.add_argument("--agent-id", required=True)
+    parser.add_argument("--scope", action="append", required=True)
     return parser
 
 
@@ -549,12 +603,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         require_supported_python()
         args = _parser().parse_args(argv)
-        token = args.task_token or os.getenv(TOKEN_ENV)
-        if not token:
-            raise ContractViolation(
-                f"a Task Token is required via --task-token or {TOKEN_ENV}"
-            )
-        runner = ContractRunner(base_url=args.base_url, task_token=token)
+        runner = ContractRunner(
+            base_url=args.base_url,
+            token_broker=TaskTokenBroker(args.token_broker),
+            agent_id=args.agent_id,
+            authorized_scopes=args.scope,
+        )
         try:
             report = runner.run()
         finally:

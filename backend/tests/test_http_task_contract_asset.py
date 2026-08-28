@@ -105,6 +105,8 @@ def test_contract_commits_strict_schema_and_example_assets() -> None:
         "TaskEvent",
         "EventPage",
         "ErrorEnvelope",
+        "TokenBrokerRequest",
+        "TokenBrokerResponse",
     }
     assert required.issubset(schema["$defs"])
 
