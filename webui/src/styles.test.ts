@@ -278,6 +278,7 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".mermaid-lightbox-image")).toContain("transform-origin: center");
     expect(rule(".mermaid-lightbox-close")).toContain("position: absolute");
     expect(styles).not.toContain(".mermaid-lightbox-toolbar");
+    expect(styles).not.toContain(".mermaid-diagram-zoom-hint");
     expect(rule(".mermaid-diagram-trigger:focus-visible")).toContain("outline: 3px solid");
     expect(rule(`.ai-notes-category-toggle:focus-visible,
 .ai-notes-files button:focus-visible,
@@ -293,7 +294,7 @@ describe("Executive Operations visual contract", () => {
     expect(aiNotesMobile).toContain(".article-markdown { font-size: 16px; }");
     expect(aiNotesMobile).toContain(".mermaid-diagram-trigger > img { max-height: 68svh; }");
     expect(block("@media print")).toContain(".mermaid-diagram-trigger > img { max-height: none; }");
-    expect(block("@media print")).toContain(".mermaid-diagram-zoom-hint, .mermaid-lightbox { display: none !important; }");
+    expect(block("@media print")).toContain(".mermaid-lightbox { display: none !important; }");
   });
 
   it("keeps the AI notes home entry quiet and keyboard visible", () => {

@@ -100,6 +100,8 @@ describe("MermaidDiagram", () => {
     const trigger = container.querySelector<HTMLButtonElement>(".mermaid-diagram-trigger")!;
     expect(trigger.getAttribute("aria-label")).toBe("查看大图：Agent 行动循环");
     expect(trigger.querySelector("img")?.alt).toBe("Agent 行动循环");
+    expect(trigger.querySelector(".mermaid-diagram-zoom-hint")).toBeNull();
+    expect(trigger.textContent).not.toContain("查看大图");
 
     await act(async () => trigger.click());
     expect(container.querySelector("dialog")?.getAttribute("aria-label")).toBe("Agent 行动循环");

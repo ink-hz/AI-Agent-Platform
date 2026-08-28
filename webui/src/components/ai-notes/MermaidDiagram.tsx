@@ -83,7 +83,6 @@ export function MermaidDiagram({ source }: { source: string }) {
       type="button"
     >
       <img alt={metadata.title} onError={() => setFailed(true)} src={imageSource} />
-      <span aria-hidden="true" className="mermaid-diagram-zoom-hint">查看大图 ↗</span>
     </button>
     {metadata.description && <figcaption className="mermaid-visually-hidden">{metadata.description}</figcaption>}
     {expanded && <MermaidLightbox
