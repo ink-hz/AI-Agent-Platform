@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 import hashlib
+import os
 from pathlib import Path
 import posixpath
 import re
@@ -25,7 +26,11 @@ SOURCE_REVIEW = (
     / "reviews"
     / "ai-notes-eight-article-source-review.md"
 )
-SOURCE_ROOT = Path("/Users/neo/Developer/personal/starship-blog-source/src/content/blog")
+SOURCE_ROOT_ENV = "AI_NOTES_SOURCE_ROOT"
+SOURCE_LEDGER_HEADER = (
+    "| 源文件（相对 `AI_NOTES_SOURCE_ROOT`） | 行数 | SHA-256 | 目标文章 | "
+    "完整阅读 | 保留 | 删除 | 事实核验 | 去重 |"
+)
 TODAY = date(2026, 8, 28)
 BATCH_PUBLISHED_ON = date(2026, 8, 28)
 AUTHOR = "苍渊"
@@ -518,6 +523,17 @@ INTENT_PLATFORM_SOURCE_REVIEW_STATUS = {
     ),
 }
 
+SOURCE_REVIEW_STATUS = {
+    **IDENTITY_SOURCE_REVIEW_STATUS,
+    **INFERENCE_SOURCE_REVIEW_STATUS,
+    **CLOUD_NATIVE_SOURCE_REVIEW_STATUS,
+    **OBSERVABILITY_SOURCE_REVIEW_STATUS,
+    **OPEN_SOURCE_RUNTIME_SOURCE_REVIEW_STATUS,
+    **METABOT_SOURCE_REVIEW_STATUS,
+    **FRAMEWORK_SELECTION_SOURCE_REVIEW_STATUS,
+    **INTENT_PLATFORM_SOURCE_REVIEW_STATUS,
+}
+
 FRAMEWORK_SELECTION_PRIMARY_SOURCES = {
     "https://docs.langchain.com/oss/python/langgraph/overview": (
         "低层编排框架与运行时，聚焦持久执行、流式输出、人在回路与持久化；页面未给出明确 lifecycle 状态"
@@ -559,6 +575,53 @@ INTENT_PLATFORM_PRIMARY_SOURCES = {
         "代码优先的 Agents SDK 运行 agent loop，服务器仍拥有部署、工具实现、状态存储与审批决策"
     ),
 }
+
+
+def source_manifest_ledger_rows(review: str) -> tuple[str, ...]:
+    lines = review.splitlines()
+    assert SOURCE_LEDGER_HEADER in lines
+    header_index = lines.index(SOURCE_LEDGER_HEADER)
+    assert lines[header_index + 1].startswith("| ---")
+
+    rows = []
+    for line in lines[header_index + 2 :]:
+        if not line.startswith("|"):
+            break
+        rows.append(line)
+    return tuple(rows)
+
+
+def expected_source_manifest_ledger_rows() -> tuple[str, ...]:
+    expected_rows = []
+    for relative_path, line_count, digest, target in SOURCE_MANIFEST:
+        status = SOURCE_REVIEW_STATUS.get(relative_path)
+        assert status is not None, f"missing review status: {relative_path}"
+        expected_rows.append(
+            f"| `{relative_path}` | {line_count} | `{digest}` | {target} | "
+            f"{' | '.join(status)} |"
+        )
+    return tuple(expected_rows)
+
+
+def verify_source_provenance(source_root: Path) -> None:
+    assert source_root.is_dir(), (
+        f"{SOURCE_ROOT_ENV} directory does not exist: {source_root}"
+    )
+    resolved_root = source_root.resolve()
+
+    for relative_path, line_count, digest, _ in SOURCE_MANIFEST:
+        manifest_path = Path(relative_path)
+        assert not manifest_path.is_absolute()
+        assert ".." not in manifest_path.parts
+        source_path = resolved_root / manifest_path
+        assert source_path.is_file(), f"source file missing: {relative_path}"
+        source = source_path.read_bytes()
+        assert source.count(b"\n") == line_count, (
+            f"source line count mismatch: {relative_path}"
+        )
+        assert hashlib.sha256(source).hexdigest() == digest, (
+            f"source sha256 mismatch: {relative_path}"
+        )
 
 
 def batch_article_path(slug: str, *, root: Path = CONTENT_ROOT) -> Path:
@@ -1626,11 +1689,7 @@ def test_final_deduplication_matrix_rejects_wrong_boundary_article() -> None:
 
 def test_source_review_is_complete_and_records_final_deduplication_matrix() -> None:
     review = SOURCE_REVIEW.read_text(encoding="utf-8")
-    ledger_rows = tuple(
-        line
-        for line in review.splitlines()
-        if line.startswith(f"| `{SOURCE_ROOT}/")
-    )
+    ledger_rows = source_manifest_ledger_rows(review)
     assert len(ledger_rows) == len(SOURCE_MANIFEST)
     assert all("未开始" not in row for row in ledger_rows)
 
@@ -1654,6 +1713,32 @@ def test_source_review_is_complete_and_records_final_deduplication_matrix() -> N
     )
 
 
+def test_source_manifest_and_ledger_paths_are_portable() -> None:
+    review = SOURCE_REVIEW.read_text(encoding="utf-8")
+
+    assert not re.search(r"`/(?:Users|home)/", review)
+    for relative_path, _, _, _ in SOURCE_MANIFEST:
+        path = Path(relative_path)
+        assert not path.is_absolute()
+        assert ".." not in path.parts
+
+
+def test_source_provenance_rejects_missing_opt_in_root(tmp_path: Path) -> None:
+    with pytest.raises(
+        AssertionError,
+        match="AI_NOTES_SOURCE_ROOT directory does not exist",
+    ):
+        verify_source_provenance(tmp_path / "missing")
+
+
+def test_opt_in_source_provenance_matches_manifest() -> None:
+    configured_root = os.environ.get(SOURCE_ROOT_ENV)
+    if configured_root is None:
+        pytest.skip(f"set {SOURCE_ROOT_ENV} to run local source provenance")
+
+    verify_source_provenance(Path(configured_root))
+
+
 def test_completed_batch_helpers_enforce_publication_contract() -> None:
     completed_articles = assert_published_batch_articles()
     published_index = validate_published_batch()
@@ -1669,35 +1754,9 @@ def test_completed_batch_helpers_enforce_publication_contract() -> None:
 
 def test_source_review_records_the_exact_source_manifest() -> None:
     review = SOURCE_REVIEW.read_text(encoding="utf-8")
-    ledger_rows = tuple(
-        line
-        for line in review.splitlines()
-        if line.startswith(f"| `{SOURCE_ROOT}/")
+    assert source_manifest_ledger_rows(review) == (
+        expected_source_manifest_ledger_rows()
     )
-    expected_rows = []
-
-    for filename, line_count, digest, target in SOURCE_MANIFEST:
-        path = SOURCE_ROOT / filename
-        assert path.is_file()
-        source = path.read_bytes()
-        assert source.count(b"\n") == line_count
-        assert hashlib.sha256(source).hexdigest() == digest
-        status = {
-            **IDENTITY_SOURCE_REVIEW_STATUS,
-            **INFERENCE_SOURCE_REVIEW_STATUS,
-            **CLOUD_NATIVE_SOURCE_REVIEW_STATUS,
-            **OBSERVABILITY_SOURCE_REVIEW_STATUS,
-            **OPEN_SOURCE_RUNTIME_SOURCE_REVIEW_STATUS,
-            **METABOT_SOURCE_REVIEW_STATUS,
-            **FRAMEWORK_SELECTION_SOURCE_REVIEW_STATUS,
-            **INTENT_PLATFORM_SOURCE_REVIEW_STATUS,
-        }.get(filename, ("未开始",) * 5)
-        expected_rows.append(
-            f"| `{path}` | {line_count} | `{digest}` | {target} | "
-            f"{' | '.join(status)} |"
-        )
-
-    assert ledger_rows == tuple(expected_rows)
 
 
 def test_identity_source_review_records_primary_source_verification() -> None:

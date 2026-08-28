@@ -1,26 +1,25 @@
 ## AI 工程笔记八篇迁移：源稿研究台账
 
-隔离 worktree：`/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/ai-notes-eight-article-batch`
+本台账仅记录迁移前的源稿清单与研究状态。源文件路径相对于可选的
+`AI_NOTES_SOURCE_ROOT`；该变量在本地取证时应指向只读源仓的
+`src/content/blog` 目录。行数与 SHA-256 已于 2026-08-28 使用 `wc -l`
+和 `shasum -a 256` 复核。
 
-本台账仅记录迁移前的源稿清单与研究状态。源稿位于只读目录
-`/Users/neo/Developer/personal/starship-blog-source/src/content/blog/`；行数与
-SHA-256 已于 2026-08-28 使用 `wc -l` 和 `shasum -a 256` 复核。
-
-| 源文件（绝对路径） | 行数 | SHA-256 | 目标文章 | 完整阅读 | 保留 | 删除 | 事实核验 | 去重 |
+| 源文件（相对 `AI_NOTES_SOURCE_ROOT`） | 行数 | SHA-256 | 目标文章 | 完整阅读 | 保留 | 删除 | 事实核验 | 去重 |
 | --- | ---: | --- | --- | --- | --- | --- | --- | --- |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/身份认证与访问控制-深度理论知识.md` | 2625 | `9df1b094bf6064974314e93985e65332803c500061a495f8fffc9f0408662ea5` | agent-identity-access-control | 已精读：1-2625 | 第1-5章：主体、令牌、授权、用户委托 | 第3、6-7章：网关样例、旧日期、SSO与厂商清单 | 已核验：RFC 8693、NIST、SPIFFE、OWASP（2026-08-28） | 全景与信任层留在主文章；本篇深化委托、授权、审计 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/身份认证与访问控制-理论架构设计.md` | 2140 | `c693c2e5ca30a47019191e001f0a8708beaed585dc03e7cdf67413e253efac01` | agent-identity-access-control | 已精读：1-2140 | 第1、4-5、7.3章：身份、权限交集、最小权限、零信任 | 第2-3、6、7.1-7.2及7.4-7.5章：登录网关、旧组织案例、产品横评 | 已核验：RFC 8693、NIST、SPIFFE、OWASP（2026-08-28） | 状态机与信任分级留在主文章；本篇深化凭证与证据 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/AI-LLM系统架构深度指南.md` | 2483 | `f21f1316a7c66c5a5c920efe8c0f352dc2532af15d82265d35b58dfbab7dc784` | llm-inference-serving-engineering；辅助 llm-agent-observability | 已精读：1-2483 | 第2、4章：KV Cache、连续批处理、投机解码、路由问题框架 | 第1、3、4.3章及总结：Agent、RAG、MCP、旧 API 样例与固定性能数字 | 已核验：PagedAttention、vLLM、TensorRT-LLM、SGLang（2026-08-28） | 应用请求链与 RAG 留在既有文章；本篇只写模型服务内部数据路径 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/AI-LLM系统架构理论指南.md` | 1550 | `c897f77ba9511c48358164c2c50b8f144703c983c0aa1dcedde9b20a6b145d8f` | llm-inference-serving-engineering；辅助 llm-agent-observability | 已精读：1-1550 | 第2、4.1-4.2章：Prefill/Decode、分页缓存、批调度、容量与路由取舍 | 第1、3、4.3章及总结：Agent、RAG、MCP、厂商层级、固定价格与倍率 | 已核验：PagedAttention、vLLM、TensorRT-LLM、SGLang（2026-08-28） | 不重述 Prompt/工具/输出验证与检索链；重写排队、缓存、路由与单位成本 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/ai-cloud-native-opportunity.md` | 124 | `9c04bf78390c08bbe3c89e685bf4f407434c6f96c0ec63828662db75239c0a07` | ai-cloud-native-runtime | 已精读：1-124 | 问题与原则：异构资源、弹性、发布、容错 | 架构样例、厂商选型、固定倍率与 HPA 万能化表述 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 推理算法留在既有篇；本篇只写运行时资源与运维闭环 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Kubernetes与容器编排深度指南.md` | 250 | `4908263dc8ebdbe69106f50b8aa8f2b5030dd0a7e9fc5827945784e02dd31df4` | 辅助 ai-cloud-native-runtime | 已精读：1-250（通用概念辅助） | 调度、隔离、声明式发布、故障恢复概念 | 安装命令、对象清单、旧版本行为与厂商 GPU 功能 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 不迁移 Kubernetes 百科；只辅助 AI 运行时边界 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Kubernetes与容器编排理论指南.md` | 1705 | `12361a569b863b0de58f43366420c822f5b8568b42f243c38aab16aa0eef53ff` | 辅助 ai-cloud-native-runtime | 已精读：1-1705（通用概念辅助） | 一致性、队列调度、隔离、渐进发布与恢复概念 | 组件百科、Helm/GitOps 教程、厂商设备与固定性能数字 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 不复述通用编排；重写为制品、调度和恢复链 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/可观测性与监控-深度理论知识.md` | 1857 | `546ea435a32227f0ec75e73e946e45e4cb5a6e092ee55deaf7d456de3c43b8ed` | llm-agent-observability | 已精读：1-1857 | 上下文传播、结构化 trace、采样、高基数、SLO 与信号关联 | 通用三支柱教材、产品栈与配置、固定阈值、采样率和成本数字 | 已核验：OpenTelemetry GenAI、W3C Trace Context、NIST（2026-08-28） | RAG 算法与 Agent 状态机留在主文章；本篇只记录证据与质量信号 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Hermes-Agent架构分析与思考.md` | 390 | `aac8a4c575a11ae1a129c3e03d49e6217d2c02a92363b0689d5c5306c70227ad` | open-source-agent-runtime | 已精读：1-390 | Agent loop、context/session、skills/tools、memory、sandbox 与 recovery 问题框架 | 动态版本、数量、排行、营销结论与无法复核的生产效果 | 已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28） | Claude Code 使用体验留在既有文章；本篇只比较运行时责任边界 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Clawdbot架构理论指南.md` | 284 | `838ae6a89bfeca305bb70bc016f975d7b12f34abef9fe73dd4638c22dedb6961` | open-source-agent-runtime | 已精读：1-284 | Gateway、channel routing、session、tools/skills、sandbox 与 recovery 问题框架 | 旧项目名当现名、动态渠道数、成熟度结论与安全泛化承诺 | 已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28） | 企业 Agent 全景留在主文章；本篇抽象 provider/model/runtime/channel 和 ownership |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/MetaBot架构设计理论分析.md` | 515 | `f526d770501328c0aa12bb926ae379c640bebb3cd9540fe4b569a581caebded5` | metabot-agent-control-bus | 已精读：1-515 | 远程控制、渠道适配、消息桥、持久执行与恢复问题框架 | 旧组织、旧拓扑、代码规模、固定数量、端口、版本与营销结论 | 已核验：两个当前代码仓与 Platform relay 边界（2026-08-28） | 通用运行循环留在既有篇；本篇只写远程控制、可靠投递与状态所有权 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/主流Agent框架深度分析-从架构本质到生产可用性.md` | 323 | `4edd175b19b9ac82be0ac9a92ed10d69ddfe14cac7611fa7b3df9f0a5866054b` | agent-framework-selection | 已精读：1-323 | 产品形态、生产责任维度与选型问题框架 | 旧候选集、功能表、宣传语、成熟度判断与永久排名 | 已逐页核验：8 个官方入口（2026-08-28） | 三篇同类文章留下具体架构；本篇只给出选型方法与退出条件 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/干掉用户旅程-意图驱动的业务平台架构设计.md` | 379 | `3a165ec7de6b712d9cbbc999ee6d7752b9954691f904f41a80d289bc0585d52b` | intent-driven-ai-business-platform | 已精读：1-379 | 第1-4、10章：固定旅程边界、能力原子化、受控编排与渐进迁移问题框架 | 标题与第2-9章：唯一对话入口、UI消失、完全自治、自演进取代发布及营销结论 | 已核验：Anthropic、NIST、OpenAI PDF 与 Agents 文档（2026-08-28） | 信任全景留在企业 Agent；AI 协作方法留在 AI Native；本篇只写受控意图执行 |
+| `身份认证与访问控制-深度理论知识.md` | 2625 | `9df1b094bf6064974314e93985e65332803c500061a495f8fffc9f0408662ea5` | agent-identity-access-control | 已精读：1-2625 | 第1-5章：主体、令牌、授权、用户委托 | 第3、6-7章：网关样例、旧日期、SSO与厂商清单 | 已核验：RFC 8693、NIST、SPIFFE、OWASP（2026-08-28） | 全景与信任层留在主文章；本篇深化委托、授权、审计 |
+| `身份认证与访问控制-理论架构设计.md` | 2140 | `c693c2e5ca30a47019191e001f0a8708beaed585dc03e7cdf67413e253efac01` | agent-identity-access-control | 已精读：1-2140 | 第1、4-5、7.3章：身份、权限交集、最小权限、零信任 | 第2-3、6、7.1-7.2及7.4-7.5章：登录网关、旧组织案例、产品横评 | 已核验：RFC 8693、NIST、SPIFFE、OWASP（2026-08-28） | 状态机与信任分级留在主文章；本篇深化凭证与证据 |
+| `AI-LLM系统架构深度指南.md` | 2483 | `f21f1316a7c66c5a5c920efe8c0f352dc2532af15d82265d35b58dfbab7dc784` | llm-inference-serving-engineering；辅助 llm-agent-observability | 已精读：1-2483 | 第2、4章：KV Cache、连续批处理、投机解码、路由问题框架 | 第1、3、4.3章及总结：Agent、RAG、MCP、旧 API 样例与固定性能数字 | 已核验：PagedAttention、vLLM、TensorRT-LLM、SGLang（2026-08-28） | 应用请求链与 RAG 留在既有文章；本篇只写模型服务内部数据路径 |
+| `AI-LLM系统架构理论指南.md` | 1550 | `c897f77ba9511c48358164c2c50b8f144703c983c0aa1dcedde9b20a6b145d8f` | llm-inference-serving-engineering；辅助 llm-agent-observability | 已精读：1-1550 | 第2、4.1-4.2章：Prefill/Decode、分页缓存、批调度、容量与路由取舍 | 第1、3、4.3章及总结：Agent、RAG、MCP、厂商层级、固定价格与倍率 | 已核验：PagedAttention、vLLM、TensorRT-LLM、SGLang（2026-08-28） | 不重述 Prompt/工具/输出验证与检索链；重写排队、缓存、路由与单位成本 |
+| `ai-cloud-native-opportunity.md` | 124 | `9c04bf78390c08bbe3c89e685bf4f407434c6f96c0ec63828662db75239c0a07` | ai-cloud-native-runtime | 已精读：1-124 | 问题与原则：异构资源、弹性、发布、容错 | 架构样例、厂商选型、固定倍率与 HPA 万能化表述 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 推理算法留在既有篇；本篇只写运行时资源与运维闭环 |
+| `Kubernetes与容器编排深度指南.md` | 250 | `4908263dc8ebdbe69106f50b8aa8f2b5030dd0a7e9fc5827945784e02dd31df4` | 辅助 ai-cloud-native-runtime | 已精读：1-250（通用概念辅助） | 调度、隔离、声明式发布、故障恢复概念 | 安装命令、对象清单、旧版本行为与厂商 GPU 功能 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 不迁移 Kubernetes 百科；只辅助 AI 运行时边界 |
+| `Kubernetes与容器编排理论指南.md` | 1705 | `12361a569b863b0de58f43366420c822f5b8568b42f243c38aab16aa0eef53ff` | 辅助 ai-cloud-native-runtime | 已精读：1-1705（通用概念辅助） | 一致性、队列调度、隔离、渐进发布与恢复概念 | 组件百科、Helm/GitOps 教程、厂商设备与固定性能数字 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 不复述通用编排；重写为制品、调度和恢复链 |
+| `可观测性与监控-深度理论知识.md` | 1857 | `546ea435a32227f0ec75e73e946e45e4cb5a6e092ee55deaf7d456de3c43b8ed` | llm-agent-observability | 已精读：1-1857 | 上下文传播、结构化 trace、采样、高基数、SLO 与信号关联 | 通用三支柱教材、产品栈与配置、固定阈值、采样率和成本数字 | 已核验：OpenTelemetry GenAI、W3C Trace Context、NIST（2026-08-28） | RAG 算法与 Agent 状态机留在主文章；本篇只记录证据与质量信号 |
+| `Hermes-Agent架构分析与思考.md` | 390 | `aac8a4c575a11ae1a129c3e03d49e6217d2c02a92363b0689d5c5306c70227ad` | open-source-agent-runtime | 已精读：1-390 | Agent loop、context/session、skills/tools、memory、sandbox 与 recovery 问题框架 | 动态版本、数量、排行、营销结论与无法复核的生产效果 | 已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28） | Claude Code 使用体验留在既有文章；本篇只比较运行时责任边界 |
+| `Clawdbot架构理论指南.md` | 284 | `838ae6a89bfeca305bb70bc016f975d7b12f34abef9fe73dd4638c22dedb6961` | open-source-agent-runtime | 已精读：1-284 | Gateway、channel routing、session、tools/skills、sandbox 与 recovery 问题框架 | 旧项目名当现名、动态渠道数、成熟度结论与安全泛化承诺 | 已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28） | 企业 Agent 全景留在主文章；本篇抽象 provider/model/runtime/channel 和 ownership |
+| `MetaBot架构设计理论分析.md` | 515 | `f526d770501328c0aa12bb926ae379c640bebb3cd9540fe4b569a581caebded5` | metabot-agent-control-bus | 已精读：1-515 | 远程控制、渠道适配、消息桥、持久执行与恢复问题框架 | 旧组织、旧拓扑、代码规模、固定数量、端口、版本与营销结论 | 已核验：两个当前代码仓与 Platform relay 边界（2026-08-28） | 通用运行循环留在既有篇；本篇只写远程控制、可靠投递与状态所有权 |
+| `主流Agent框架深度分析-从架构本质到生产可用性.md` | 323 | `4edd175b19b9ac82be0ac9a92ed10d69ddfe14cac7611fa7b3df9f0a5866054b` | agent-framework-selection | 已精读：1-323 | 产品形态、生产责任维度与选型问题框架 | 旧候选集、功能表、宣传语、成熟度判断与永久排名 | 已逐页核验：8 个官方入口（2026-08-28） | 三篇同类文章留下具体架构；本篇只给出选型方法与退出条件 |
+| `干掉用户旅程-意图驱动的业务平台架构设计.md` | 379 | `3a165ec7de6b712d9cbbc999ee6d7752b9954691f904f41a80d289bc0585d52b` | intent-driven-ai-business-platform | 已精读：1-379 | 第1-4、10章：固定旅程边界、能力原子化、受控编排与渐进迁移问题框架 | 标题与第2-9章：唯一对话入口、UI消失、完全自治、自演进取代发布及营销结论 | 已核验：Anthropic、NIST、OpenAI PDF 与 Agents 文档（2026-08-28） | 信任全景留在企业 Agent；AI 协作方法留在 AI Native；本篇只写受控意图执行 |
 
 ## 精读证据格式
 
@@ -260,8 +259,8 @@ OpenClaw 快照实际读取：
 
 | 仓库 | 完整 HEAD SHA | 证据用途 |
 | --- | --- | --- |
-| `/Users/neo/Developer/work/Orbbec-Agent-Team` | `94e1c128f33a153b980ef45b8c002d5bb8d2bac9` | 已提交部署合同、可靠性恢复和 flywheel 存储边界；仓内未跟踪文件未读取为实现，也未修改。 |
-| `/Users/neo/Developer/work/metabot-dev` | `73e172192e21621c4bb1d9bf307ab8755ac643cf` | 当前 channel、bridge、session、executor、Core Chat、恢复、回执与 audit/flywheel 运行代码；仓内未跟踪 `.tools/` 未读取为实现，也未修改。 |
+| `Orbbec-Agent-Team` | `94e1c128f33a153b980ef45b8c002d5bb8d2bac9` | 已提交部署合同、可靠性恢复和 flywheel 存储边界；仓内未跟踪文件未读取为实现，也未修改。 |
+| `metabot-dev` | `73e172192e21621c4bb1d9bf307ab8755ac643cf` | 当前 channel、bridge、session、executor、Core Chat、恢复、回执与 audit/flywheel 运行代码；仓内未跟踪 `.tools/` 未读取为实现，也未修改。 |
 
 Orbbec-Agent-Team 实际读取：
 
