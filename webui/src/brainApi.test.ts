@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createMissionSubmission, streamMissionEvents } from "./brainApi";
+import { createMissionSubmission, fetchAgentCatalog, streamMissionEvents } from "./brainApi";
 
 
 afterEach(() => {
@@ -12,6 +12,37 @@ afterEach(() => {
 
 
 describe("Agent Brain API", () => {
+  it("accepts an Agent that has both a workspace and Brain delegation", async () => {
+    const voc = {
+      agent_id: "voc", display_name: "VOC Agent", persona_subtitle: null,
+      domain_group: "客户洞察", mission: "分析客户声音并生成受控业务动作。",
+      capabilities: ["VOC 分析"], exclusions: ["不绕过用户确认执行写操作"],
+      example_tasks: ["分析近期客户反馈"], required_inputs: ["分析目标"],
+      accepted_input_types: ["text"], output_types: ["text"],
+      supports_attachments_in: false, supports_attachments_out: false,
+      supports_evidence: true, supports_streaming: true,
+      supports_cancellation: true, supports_idempotency: true,
+      supports_persistent_session: true, supports_followup_message: true,
+      supports_progress_events: true, supports_thinking_summary: true,
+      supports_cancel: true, supports_attachments: false,
+      typical_latency_seconds: 30, max_duration_seconds: 300,
+      data_classification: "internal",
+      interaction_modes: ["external_workspace", "brain_delegation"],
+      workspace_url: "/agents/voc/workspace",
+      adapter_id: "voc-extension", adapter_kind: "reference",
+      adapter_config_version: 1, execution_pool: "platform_cloud",
+      pool_concurrency: 4, output_contract: "normalized_task_result_v1",
+      capability_version: 2, authorization_policy: "agent_grant",
+      dispatchable: true,
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ agents: [voc] }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )));
+
+    await expect(fetchAgentCatalog()).resolves.toEqual([voc]);
+  });
+
   it("rejects a UTF-8 payload over 32 KiB before any network write", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

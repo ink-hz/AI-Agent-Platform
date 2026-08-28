@@ -77,6 +77,8 @@ function parseCapabilityCard(value: unknown): AgentCapabilityCard {
     ? value.interaction_modes : [];
   const validModes = modes.length > 0 && modes.every((mode) =>
     mode === "direct_chat" || mode === "brain_delegation" || mode === "external_workspace");
+  const hasExternalWorkspace = modes.includes("external_workspace");
+  const isCallable = modes.includes("direct_chat") || modes.includes("brain_delegation");
   const externalOnly = modes.length === 1 && modes[0] === "external_workspace";
   if (!isObject(value)
     || typeof value.agent_id !== "string" || !value.agent_id
@@ -99,9 +101,10 @@ function parseCapabilityCard(value: unknown): AgentCapabilityCard {
     || (value.adapter_kind !== null && (typeof value.adapter_kind !== "string" || !value.adapter_kind))
     || !Number.isSafeInteger(value.adapter_config_version) || Number(value.adapter_config_version) <= 0
     || value.output_contract !== "normalized_task_result_v1"
-    || (externalOnly
-      ? (value.adapter_id !== null || value.adapter_kind !== null || typeof value.workspace_url !== "string")
-      : (typeof value.adapter_id !== "string" || typeof value.adapter_kind !== "string" || value.workspace_url !== null))
+    || (hasExternalWorkspace ? typeof value.workspace_url !== "string" : value.workspace_url !== null)
+    || (isCallable
+      ? (typeof value.adapter_id !== "string" || typeof value.adapter_kind !== "string")
+      : (!externalOnly || value.adapter_id !== null || value.adapter_kind !== null))
     || !Number.isSafeInteger(value.capability_version) || Number(value.capability_version) <= 0
   ) throw new Error("Agent catalog response invalid");
   return value as unknown as AgentCapabilityCard;
