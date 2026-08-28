@@ -1,0 +1,6 @@
+neo ALL=(agentops) NOPASSWD: /Library/PrivilegedHelperTools/orbbec-agentops-control relay-canary
+neo ALL=(agentops) NOPASSWD: /Library/PrivilegedHelperTools/orbbec-agentops-control worker-stop
+neo ALL=(agentops) NOPASSWD: /Library/PrivilegedHelperTools/orbbec-agentops-control worker-restore
+neo ALL=(agentops) NOPASSWD: /Library/PrivilegedHelperTools/orbbec-agentops-control metabot-release-sha
+neo ALL=(agentops) NOPASSWD: /Library/PrivilegedHelperTools/orbbec-agentops-control agent-team-release-sha
+neo ALL=(agentops) NOPASSWD: /Library/PrivilegedHelperTools/orbbec-agentops-control status
