@@ -760,17 +760,16 @@ def framework_selection_violation_is_locally_negated(
     negating_predicate_prefix = re.compile(
         r"(?i)(?:(?:不应|不得|不要|不能|不可)"
         r"(?:被)?(?:称为|写成|视为|当作|宣称为|认为是|列为|排为)|"
-        r"并非|不是|没有|不存在|不做|不比较|拒绝|避免|禁止|"
+        r"并非|不是|没有|不存在|不做|拒绝|避免|禁止|"
         r"not|never|cannot|can't|should\s+not\s+(?:be\s+)?"
         r"(?:called|described|ranked)|must\s+not\s+(?:be\s+)?"
         r"(?:called|described|ranked)|do\s+not\s+(?:compare|rank|score))"
         r"[^\n。！？；;,，]{0,28}$"
     )
     negated_relation_to_target = re.compile(
-        r"(?i)(?:不等于|不代表|不意味着|不能证明|并非|"
-        r"并不是|不是|不写成|不得写成|不应写成|"
-        r"is\s+not|isn't|does\s+not\s+mean)"
-        r"[^\n。！？；,，]{0,28}"
+        r"(?i)(?:(?:不等于|不代表|不意味着|不能证明)\s*"
+        r"(?:已证明\s*)?|(?:并非|并不是|不是|不写成|不得写成|"
+        r"不应写成)\s*|(?:is\s+not|isn't|does\s+not\s+mean)\s*)"
         r"(?:生产可用|已成熟|稳定(?:承诺)?|production[- ]ready|stable)$"
     )
     negating_predicate_suffix = re.compile(
@@ -2115,6 +2114,8 @@ def test_framework_selection_guards_reject_rankings_and_false_maturity() -> None
         "页面存在就代表 production-ready。",
         "页面存在不等于文档齐全，仍代表 production-ready。",
         "本文不比较 Star 数，LangGraph 排名第一。",
+        "本文不比较社区热度仍将 LangGraph 排名第一。",
+        "页面存在不等于文档齐全仍代表 production-ready。",
     )
     for claim in prohibited:
         assert framework_selection_contains_forbidden_ranking_or_maturity(claim), claim
