@@ -99,7 +99,7 @@ def test_publication_rejects_dangerous_links(tmp_path: Path, link: str) -> None:
     category = write_category(
         content, "01-foundations", "基础与原理", "foundations"
     )
-    write_article(category, "01-first.md", slug="first", body=f"# 正文\n\n{link}\n")
+    write_article(category, "01-first.md", slug="first", body=f"## 正文\n\n{link}\n")
     markers = tmp_path / "markers.yaml"
     markers.write_text("markers: []\n", encoding="utf-8")
 
@@ -117,7 +117,7 @@ def test_publication_rejects_markers_without_leaking_values(tmp_path: Path) -> N
         category,
         "01-first.md",
         slug="first",
-        body="# 正文\n\n包含旧组织代号。\n",
+        body="## 正文\n\n包含旧组织代号。\n",
     )
     markers = tmp_path / "markers.yaml"
     markers.write_text("markers:\n  - 旧组织代号\n", encoding="utf-8")
@@ -127,6 +127,30 @@ def test_publication_rejects_markers_without_leaking_values(tmp_path: Path) -> N
 
     assert str(raised.value) == "AI notes content unavailable"
     assert "旧组织代号" not in str(raised.value)
+    assert str(tmp_path) not in str(raised.value)
+
+
+def test_publication_policy_errors_are_generic(tmp_path: Path) -> None:
+    content = tmp_path / "content"
+    content.mkdir()
+    category = write_category(
+        content, "01-foundations", "基础与原理", "foundations"
+    )
+    write_article(category, "01-first.md", slug="first", body="## 正文\n\n敏感正文。\n")
+    article = category / "01-first.md"
+    article.write_text(
+        article.read_text(encoding="utf-8").replace("author: 苍渊", "author: 其他作者"),
+        encoding="utf-8",
+    )
+    markers = tmp_path / "markers.yaml"
+    markers.write_text("markers: []\n", encoding="utf-8")
+
+    with pytest.raises(AiNotesContentError) as raised:
+        validate_publication(content, markers, today=date(2026, 8, 28))
+
+    assert str(raised.value) == "AI notes content unavailable"
+    assert "其他作者" not in str(raised.value)
+    assert "敏感正文" not in str(raised.value)
     assert str(tmp_path) not in str(raised.value)
 
 
@@ -163,7 +187,7 @@ def test_publication_accepts_internal_and_https_links(tmp_path: Path) -> None:
         category,
         "01-first.md",
         slug="first",
-        body="# 正文\n\n[章节](#section) [站内](/ai-notes) [官方](https://example.com)\n",
+        body="## 正文\n\n[章节](#section) [站内](/ai-notes) [官方](https://example.com)\n",
     )
     markers = tmp_path / "markers.yaml"
     markers.write_text("markers: []\n", encoding="utf-8")

@@ -11,6 +11,7 @@ from markdown_it import MarkdownIt
 import yaml
 
 from .models import AiNotesIndex
+from .publication_policy import validate_published_article_policy
 from .repository import (
     AiNotesContentError,
     AiNotesRepository,
@@ -31,7 +32,9 @@ def validate_publication(
     try:
         repository = AiNotesRepository.load(root, today=today)
         markers = _load_markers(marker_file)
-        for _, frontmatter, markdown in iter_validated_articles(root, today=today):
+        entries = tuple(iter_validated_articles(root, today=today))
+        validate_published_article_policy(entries)
+        for _, frontmatter, markdown in entries:
             if frontmatter.draft:
                 continue
             searchable = json.dumps(
