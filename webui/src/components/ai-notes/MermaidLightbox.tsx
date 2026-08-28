@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { WheelEvent as ReactWheelEvent } from "react";
 
@@ -27,6 +28,7 @@ export function MermaidLightbox({ imageSource, title, description, onClose }: Me
   const dragRef = useRef<DragState | null>(null);
   const suppressClickRef = useRef(false);
   const descriptionId = useId();
+  const instructionsId = useId();
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState<Point>(ORIGIN);
 
@@ -41,14 +43,48 @@ export function MermaidLightbox({ imageSource, title, description, onClose }: Me
     };
   }, []);
 
-  function wheel(event: ReactWheelEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const delta = event.deltaY < 0 ? .25 : -.25;
+  function changeScale(delta: number) {
     setScale((current) => {
       const next = Math.min(4, Math.max(1, Number((current + delta).toFixed(2))));
       if (next === 1) setOffset(ORIGIN);
       return next;
     });
+  }
+
+  function wheel(event: ReactWheelEvent<HTMLDivElement>) {
+    if (event.deltaY === 0) return;
+    event.preventDefault();
+    changeScale(event.deltaY < 0 ? .25 : -.25);
+  }
+
+  function keyDown(event: ReactKeyboardEvent<HTMLDialogElement>) {
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      changeScale(.25);
+      return;
+    }
+    if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      changeScale(-.25);
+      return;
+    }
+    if (event.key === "0") {
+      event.preventDefault();
+      setScale(1);
+      setOffset(ORIGIN);
+      return;
+    }
+    if (scale === 1 || !event.key.startsWith("Arrow")) return;
+    const movement: Record<string, Point> = {
+      ArrowUp: { x: 0, y: 32 },
+      ArrowDown: { x: 0, y: -32 },
+      ArrowLeft: { x: 32, y: 0 },
+      ArrowRight: { x: -32, y: 0 },
+    };
+    const delta = movement[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    setOffset((current) => ({ x: current.x + delta.x, y: current.y + delta.y }));
   }
 
   function pointerDown(event: ReactPointerEvent<HTMLDivElement>) {
@@ -73,9 +109,9 @@ export function MermaidLightbox({ imageSource, title, description, onClose }: Me
     setOffset({ x: drag.originX + deltaX, y: drag.originY + deltaY });
   }
 
-  function pointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+  function finishPointer(event: ReactPointerEvent<HTMLDivElement>, suppressClick: boolean) {
     if (dragRef.current?.pointerId !== event.pointerId) return;
-    if (dragRef.current.moved) suppressClickRef.current = true;
+    if (suppressClick && dragRef.current.moved) suppressClickRef.current = true;
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -93,21 +129,23 @@ export function MermaidLightbox({ imageSource, title, description, onClose }: Me
   }
 
   return <dialog
-    aria-describedby={description ? descriptionId : undefined}
+    aria-describedby={`${description ? `${descriptionId} ` : ""}${instructionsId}`}
     aria-label={title}
     className="mermaid-lightbox"
     onCancel={(event) => { event.preventDefault(); onClose(); }}
+    onKeyDown={keyDown}
     ref={dialogRef}
   >
     {description && <p className="mermaid-visually-hidden" id={descriptionId}>{description}</p>}
+    <p className="mermaid-visually-hidden" id={instructionsId}>使用加减键缩放，方向键移动，数字 0 恢复；点击图片或按 Esc 退出。</p>
     <button aria-label="关闭大图" autoFocus className="mermaid-lightbox-close" onClick={onClose} type="button">×</button>
     <div
       className={`mermaid-lightbox-canvas${scale > 1 ? " is-zoomed" : ""}`}
       onClick={closeFromCanvas}
-      onPointerCancel={pointerEnd}
+      onPointerCancel={(event) => finishPointer(event, false)}
       onPointerDown={pointerDown}
       onPointerMove={pointerMove}
-      onPointerUp={pointerEnd}
+      onPointerUp={(event) => finishPointer(event, true)}
       onWheel={wheel}
     >
       <img

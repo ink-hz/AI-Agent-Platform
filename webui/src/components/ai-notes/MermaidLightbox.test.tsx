@@ -80,13 +80,14 @@ describe("MermaidLightbox", () => {
     await renderLightbox();
 
     const dialog = container.querySelector("dialog")!;
-    const descriptionId = dialog.getAttribute("aria-describedby")!;
+    const descriptionIds = dialog.getAttribute("aria-describedby")!.split(" ");
     expect(showModal).toHaveBeenCalledOnce();
     expect(dialog.getAttribute("aria-label")).toBe("RAG 查询链路");
-    expect(container.querySelector(`#${descriptionId}`)?.textContent).toBe("从问题到答案的检索过程。");
+    expect(descriptionIds.some((id) => container.querySelector(`#${id}`)?.textContent === "从问题到答案的检索过程。")).toBe(true);
+    expect(descriptionIds.some((id) => container.querySelector(`#${id}`)?.textContent?.includes("方向键"))).toBe(true);
     expect(document.body.style.overflow).toBe("hidden");
     expect(container.querySelector("output")).toBeNull();
-    expect(container.textContent).not.toContain("恢复");
+    expect([...container.querySelectorAll("button")].some((candidate) => candidate.textContent === "恢复")).toBe(false);
     expect(() => button("放大")).toThrow("missing button");
     expect(() => button("缩小")).toThrow("missing button");
 
@@ -109,6 +110,8 @@ describe("MermaidLightbox", () => {
 
     await act(async () => canvas.dispatchEvent(wheel(-100)));
     expect(image.style.transform).toContain("scale(1.25)");
+    await act(async () => canvas.dispatchEvent(wheel(0)));
+    expect(image.style.transform).toContain("scale(1.25)");
     await act(async () => {
       canvas.dispatchEvent(pointer("pointerdown", 7, 10, 10));
       canvas.dispatchEvent(pointer("pointermove", 7, 35, 25));
@@ -123,6 +126,24 @@ describe("MermaidLightbox", () => {
     for (let index = 0; index < 20; index += 1) {
       await act(async () => canvas.dispatchEvent(wheel(100)));
     }
+    expect(image.style.transform).toBe("translate(0px, 0px) scale(1)");
+  });
+
+  it("supports keyboard zoom, panning, and reset without visible controls", async () => {
+    await renderLightbox(null);
+    const dialog = container.querySelector("dialog")!;
+    const image = container.querySelector<HTMLImageElement>(".mermaid-lightbox-image")!;
+
+    await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "+" })));
+    expect(image.style.transform).toContain("scale(1.25)");
+    await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "ArrowRight" })));
+    await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "ArrowDown" })));
+    expect(image.style.transform).toContain("translate(-32px, -32px)");
+
+    await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "-" })));
+    expect(image.style.transform).toBe("translate(0px, 0px) scale(1)");
+    await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "+" })));
+    await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "0" })));
     expect(image.style.transform).toBe("translate(0px, 0px) scale(1)");
   });
 
@@ -156,6 +177,20 @@ describe("MermaidLightbox", () => {
     });
     expect(onClose).not.toHaveBeenCalled();
 
+    await act(async () => image.click());
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("does not suppress the next real click after a cancelled pointer", async () => {
+    await renderLightbox();
+    const canvas = container.querySelector<HTMLElement>(".mermaid-lightbox-canvas")!;
+    const image = container.querySelector<HTMLImageElement>(".mermaid-lightbox-image")!;
+    await act(async () => canvas.dispatchEvent(wheel(-100)));
+    await act(async () => {
+      canvas.dispatchEvent(pointer("pointerdown", 9, 10, 10));
+      canvas.dispatchEvent(pointer("pointermove", 9, 35, 25));
+      canvas.dispatchEvent(pointer("pointercancel", 9, 35, 25));
+    });
     await act(async () => image.click());
     expect(onClose).toHaveBeenCalledOnce();
   });
