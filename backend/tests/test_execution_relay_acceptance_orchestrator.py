@@ -192,6 +192,8 @@ def test_gate_01_to_03_uses_pinned_ssh_and_process_owned_listener_probe(tmp_path
         assert b'/usr/bin/docker exec -i "$postgres_id" psql' in remote_script
         assert b' -c \\\n  "select concat' not in remote_script
         assert b"9101-9108" in remote_script
+        assert b"sensitive_nonpublic = {5432, 8000, 8080, *range(9101, 9121)}" in remote_script
+        assert b"elif port in sensitive_nonpublic:" in remote_script
         assert b"127.0.0.1:8000" in remote_script
         assert b"127.0.0.1:8080" in remote_script
         assert timeout == 30

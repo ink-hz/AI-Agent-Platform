@@ -348,16 +348,20 @@ api, database, heartbeat, fingerprint, raw = sys.argv[1:]
 listeners = [line for line in raw.splitlines() if line]
 public = []
 loopback = []
+sensitive_nonpublic = {5432, 8000, 8080, *range(9101, 9121)}
 for value in listeners:
     if value.startswith("127.0.0.1:"):
         if value in {"127.0.0.1:8000", "127.0.0.1:8080"}:
             loopback.append(value)
         continue
     match = re.search(r":([0-9]+)$", value)
-    if match and int(match.group(1)) in {22, 80, 443}:
+    if not match:
+        continue
+    port = int(match.group(1))
+    if port in {22, 80, 443}:
         public.append(value)
-    elif match:
-        public.append(value)
+    elif port in sensitive_nonpublic:
+        raise SystemExit(1)
 print(json.dumps({
     "schema_version": 1,
     "cloud_api_healthy": api == "true",
