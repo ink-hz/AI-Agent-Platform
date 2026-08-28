@@ -5,7 +5,7 @@ description: 总结 AI 参与架构设计时的材料治理、结构搭建、方
 author: 苍渊
 motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
-updatedAt: 2026-08-27
+updatedAt: 2026-08-28
 tags:
   - AI Native
   - 架构设计
@@ -23,14 +23,29 @@ AI 参与架构设计，真正有价值的部分不是代写一份很长的文�
 
 ```mermaid
 flowchart LR
-    A[原始材料] --> B[来源分级与提纯]
-    B --> C[架构问题与约束]
-    C --> D[候选方案推演]
-    D --> E[人做决策]
-    E --> F[设计文档与决策记录]
-    F --> G[一致性和风险检查]
-    G -->|发现问题| C
-    G -->|证据充分| H[评审与验证]
+    subgraph COLLAB["AI Native 协作闭环"]
+        A["原始材料"] --> B["来源分级与提纯"]
+        B --> C["架构问题与约束"]
+        C --> D["候选方案推演"]
+        D --> E["人做决策"]
+        E --> F["设计文档与决策记录"]
+        F --> G["一致性和风险检查"]
+        G -->|"发现问题"| C
+        G -->|"证据充分"| H["评审与验证"]
+    end
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033
+    classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033
+
+    class A,B,F data
+    class C,E input
+    class D model
+    class G policy
+    class H success
+    style COLLAB fill:#F8FAFC,stroke:#CBD5E1,color:#172033
 ```
 
 这个过程中，AI 适合做高覆盖率工作，人负责高责任判断：
@@ -44,6 +59,41 @@ flowchart LR
 | 决策记录 | 整理讨论和影响范围 | 说明为什么这样做以及谁负责 |
 
 一句话概括：AI 扩大分析覆盖率，人保持决策权和责任链。
+
+```mermaid
+flowchart TB
+    subgraph HUMAN["人负责"]
+        direction LR
+        H1["目标与约束"] --> H2["取舍与决策"] --> H3["批准与责任"] --> H4["评审与验证"]
+    end
+
+    subgraph AI["AI 辅助"]
+        direction LR
+        A1["材料提取"] --> A2["冲突发现"] --> A3["候选方案"] --> A4["一致性与风险检查"]
+    end
+
+    H1 --> A1
+    A2 --> H2
+    A3 --> H2
+    H2 --> A4
+    A4 --> H3
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033
+    classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033
+
+    class H1,H2,H3 input
+    class H4 success
+    class A1,A2 data
+    class A3 model
+    class A4 policy
+    style HUMAN fill:#EFF6FF,stroke:#93C5FD,color:#172033
+    style AI fill:#F5F3FF,stroke:#C4B5FD,color:#172033
+```
+
+AI 在材料提取、冲突发现、候选方案和风险检查上提供速度与广度；人必须闭合目标、取舍、批准和验证，确保每个关键决定都有明确的责任主体。
 
 ## 二、阶段一：材料治理决定质量上限
 

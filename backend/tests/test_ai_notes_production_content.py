@@ -75,11 +75,22 @@ def test_publishes_clean_ai_native_architecture_design_note() -> None:
     assert article.title == "AI Native 辅助架构设计：协作方法与质量控制"
     assert article.filename == "ai-native-architecture-design.md"
     assert article.published_at == PUBLISHED_ON
-    assert article.updated_at == PUBLISHED_ON
+    assert article.updated_at == TODAY
     assert article.author == "苍渊"
     assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("AI Native", "架构设计", "工程方法")
     assert_clean_body(article.markdown)
+
+
+def test_ai_native_note_visualizes_human_ai_responsibility() -> None:
+    article = published_article("thinking-and-methods", "ai-native-architecture-design")
+    diagrams = mermaid_blocks(article.markdown)
+    combined = "\n".join(diagrams)
+    assert len(diagrams) == 2
+    for label in ("AI 辅助", "人负责", "目标与约束", "候选方案", "批准与责任"):
+        assert label in combined
+    assert all("classDef" in diagram or "style" in diagram for diagram in diagrams)
+    assert article.updated_at == TODAY
 
 
 def test_publishes_clean_enterprise_agent_architecture_note() -> None:

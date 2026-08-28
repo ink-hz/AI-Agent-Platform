@@ -152,4 +152,13 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(sources.join("\n")).toContain("查询链路");
     await expectProductionDiagramsToRender(sources);
   });
+
+  it("renders every AI Native collaboration diagram", async () => {
+    const sources = mermaidBlocks(productionArticle(
+      "05-thinking-and-methods/01-ai-native-architecture-design.md",
+    ));
+    expect(sources).toHaveLength(2);
+    expect(sources.join("\n")).toContain("人负责");
+    await expectProductionDiagramsToRender(sources);
+  });
 });
