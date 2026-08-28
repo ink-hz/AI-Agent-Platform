@@ -408,7 +408,7 @@ def mermaid_has_white_group(source: str) -> bool:
             source,
         )
     )
-    return bool(group_ids & white_style_ids)
+    return bool(group_ids) and group_ids <= white_style_ids
 
 
 def cloud_native_contains_forbidden_tutorial_or_hpa(markdown: str) -> bool:
@@ -741,7 +741,7 @@ def framework_selection_claim_clauses(markdown: str) -> tuple[str, ...]:
     return tuple(
         clause.strip()
         for clause in re.split(
-            r"[\n。！？；;,，]|(?:并且|而且|且|但是|但|然而|却|不过|可是|"
+            r"[\n。！？；;,]|(?:并且|而且|且|但是|但|然而|却|不过|可是|"
             r"所以|因此|因而|故而|\b(?:and|but|however|then|therefore)\b)",
             markdown,
             flags=re.IGNORECASE,
@@ -766,19 +766,27 @@ def framework_selection_violation_is_locally_negated(
         r"(?:called|described|ranked)|do\s+not\s+(?:compare|rank|score))"
         r"[^\n。！？；;,，]{0,28}$"
     )
-    negated_relation = re.compile(
+    negated_relation_to_target = re.compile(
         r"(?i)(?:不等于|不代表|不意味着|不能证明|并非|"
         r"并不是|不是|不写成|不得写成|不应写成|"
         r"is\s+not|isn't|does\s+not\s+mean)"
+        r"[^\n。！？；,，]{0,28}"
+        r"(?:生产可用|已成熟|稳定(?:承诺)?|production[- ]ready|stable)$"
     )
     negating_predicate_suffix = re.compile(
         r"(?i)^\s*(?:并不成立|并不存在|不存在|"
         r"不成立|is\s+not\s+claimed)"
     )
+    negated_ranking_enumeration = re.compile(
+        r"(?i)(?:不比较|不做比较)\s*"
+        r"(?:(?:stars?|Star\s*数|星级|评分|总分|象限|永久排名|"
+        r"排名(?:第)?|最佳|最好)\s*(?:、|，|或|和|与|以及)\s*)*$"
+    )
     return bool(
         negating_predicate_prefix.search(prefix)
-        or negated_relation.search(matched)
+        or negated_relation_to_target.search(matched)
         or negating_predicate_suffix.search(suffix)
+        or negated_ranking_enumeration.search(clause[:violation.start()])
     )
 
 
@@ -794,7 +802,7 @@ def framework_selection_contains_forbidden_ranking_or_maturity(
         r"(?:页面|文档|官网|项目页)[^\n。；]{0,32}"
         r"(?:存在|可访问|已上线)[^\n。；]{0,32}"
         r"(?:证明|代表|等于|意味着)[^\n。；]{0,24}"
-        r"(?:生产可用|已成熟|稳定)",
+        r"(?:生产可用|已成熟|稳定|production[- ]ready)",
         r"(?:preview|public\s+preview|experimental|预览|实验性)"
         r"[^\n。；]{0,32}(?:就是|已是|等同于|稳定承诺|"
         r"stable|production[- ]ready)",
@@ -2104,6 +2112,9 @@ def test_framework_selection_guards_reject_rankings_and_false_maturity() -> None
         "LangGraph 排名第一且不会改变",
         "public preview 已是 stable 并且不需要复核",
         "不应忽略复核风险所以 LangGraph 排名第一",
+        "页面存在就代表 production-ready。",
+        "页面存在不等于文档齐全，仍代表 production-ready。",
+        "本文不比较 Star 数，LangGraph 排名第一。",
     )
     for claim in prohibited:
         assert framework_selection_contains_forbidden_ranking_or_maturity(claim), claim
@@ -2112,6 +2123,7 @@ def test_framework_selection_guards_reject_rankings_and_false_maturity() -> None
 def test_framework_selection_guards_allow_time_boundaries_and_uncertainty() -> None:
     allowed = (
         "本文不比较 Star 数、评分或永久排名。",
+        "本文不比较 Star 数，评分或永久排名。",
         "页面存在不等于已证明生产可用。",
         "Go 版截至 2026-08-28 明确为 public preview，不得写成稳定承诺。",
         "截至 2026-08-28，官方页面未给出明确 lifecycle 状态。",
@@ -2158,9 +2170,24 @@ flowchart LR
         + [f"    N{index}[节点{index}]" for index in range(13)]
         + ["    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;"]
     )
+    partially_white = """
+flowchart LR
+    subgraph FIRST[第一组]
+        A[输入] --> B[处理]
+    end
+    subgraph SECOND[第二组]
+        C[检查] --> D[输出]
+    end
+    style FIRST fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
+"""
+    fully_white = partially_white + (
+        "    style SECOND fill:#FFFFFF,stroke:#CBD5E1,color:#172033;\n"
+    )
     assert len(mermaid_principal_node_ids(compact_styled)) <= 12
     assert re.search(r"(?m)^\s*classDef\s+", compact_styled)
     assert mermaid_has_white_group(compact_styled)
+    assert not mermaid_has_white_group(partially_white)
+    assert mermaid_has_white_group(fully_white)
     assert len(mermaid_principal_node_ids(too_wide)) > 12
     assert not re.search(r"(?m)^\s*classDef\s+", "flowchart LR\nA --> B")
     assert not mermaid_has_white_group(
