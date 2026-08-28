@@ -1121,7 +1121,7 @@ git commit -m "feat: add authenticated HTTP task adapters"
 **Interfaces:**
 - Produces: settlement source/result counters and immediate-settlement rate.
 
-- [ ] **Step 1: Write failing telemetry tests**
+- [x] **Step 1: Write failing telemetry tests**
 
 ```python
 def test_wait_telemetry_separates_source_and_result() -> None:
@@ -1136,21 +1136,21 @@ def test_wait_telemetry_separates_source_and_result() -> None:
     assert telemetry.wait_settlement_sources["post_commit"] == 1
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```bash
 backend/.venv/bin/python -m pytest -q backend/tests/test_agent_brain_telemetry.py
 ```
 
-- [ ] **Step 3: Add bounded content-free counters**
+- [x] **Step 3: Add bounded content-free counters**
 
 Extend `BrainTurnSnapshot` and `BrainTurnTelemetry` with integer maps limited to the exact source/result enums, `immediate_settlement_count`, and `immediate_settlement_step_count`. Do not include Agent IDs, prompts, or Action parameters in metric labels.
 
-- [ ] **Step 4: Add the evaluation matrix**
+- [x] **Step 4: Add the evaluation matrix**
 
 Run fixed scripted scenarios at max steps 12, 16, and 24, reporting token growth, cache hit paths, immediate settlement rate, steps consumed by immediate waits, latency, and answer outcome.
 
-- [ ] **Step 5: Run GREEN**
+- [x] **Step 5: Run GREEN**
 
 ```bash
 backend/.venv/bin/python -m pytest -q \
@@ -1158,7 +1158,7 @@ backend/.venv/bin/python -m pytest -q \
   backend/tests/test_agent_brain_v2_budget.py
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/agent_brain/telemetry.py \

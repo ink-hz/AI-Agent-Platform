@@ -194,9 +194,7 @@ def seeded_live_task(live_database):
     yield repository, loop_repository, loop_id, task_id, conversation_id
 
 
-def _seed_wait_step(
-    live_database, loop_id: UUID, *, task_id: UUID
-) -> UUID:
+def _seed_wait_step(live_database, loop_id: UUID, *, task_id: UUID) -> UUID:
     environment, codec, *_unused = live_database
     wait_tool_call_id = uuid4()
     arguments = codec.seal_json(
@@ -244,9 +242,7 @@ def test_task_session_and_messages_are_encrypted_and_round_trip(
     live_database, seeded_live_task
 ) -> None:
     environment, *_unused = live_database
-    repository, _loop_repository, _loop_id, task_id, _conversation_id = (
-        seeded_live_task
-    )
+    repository, _loop_repository, _loop_id, task_id, _conversation_id = seeded_live_task
     session = repository.task_session(task_id)
     assert session.adapter_session_ref == {"remote_session_id": "remote-hr-1"}
 
@@ -267,12 +263,8 @@ def test_dispatch_ack_does_not_claim_execution_started(
     live_database, seeded_live_task
 ) -> None:
     environment, *_unused = live_database
-    repository, loop_repository, _loop_id, task_id, _conversation_id = (
-        seeded_live_task
-    )
-    delivery = loop_repository.lease_task_delivery(
-        "adapter-worker", lease_seconds=45
-    )
+    repository, loop_repository, _loop_id, task_id, _conversation_id = seeded_live_task
+    delivery = loop_repository.lease_task_delivery("adapter-worker", lease_seconds=45)
     assert delivery is not None
 
     loop_repository.mark_delivery_dispatched(delivery)
@@ -310,9 +302,7 @@ def test_protocol_failure_is_task_local_and_does_not_fabricate_event(
     live_database, seeded_live_task
 ) -> None:
     environment, *_unused = live_database
-    repository, loop_repository, loop_id, task_id, _conversation_id = (
-        seeded_live_task
-    )
+    repository, loop_repository, loop_id, task_id, _conversation_id = seeded_live_task
 
     assert loop_repository.fail_agent_task_protocol(task_id) is True
 
@@ -385,9 +375,7 @@ def test_protocol_failure_is_task_local_and_does_not_fabricate_event(
 def test_messages_are_monotonic_conflict_safe_and_followups_are_capped(
     seeded_live_task,
 ) -> None:
-    repository, _loop_repository, _loop_id, task_id, _conversation_id = (
-        seeded_live_task
-    )
+    repository, _loop_repository, _loop_id, task_id, _conversation_id = seeded_live_task
     with pytest.raises(BrainRepositoryConflict):
         repository.append_task_message(
             AgentTaskMessageInput(
@@ -436,9 +424,7 @@ def test_messages_are_monotonic_conflict_safe_and_followups_are_capped(
 
 @pytest.mark.postgres
 def test_event_wakes_one_subscription_once(live_database, seeded_live_task) -> None:
-    repository, _loop_repository, loop_id, task_id, _conversation_id = (
-        seeded_live_task
-    )
+    repository, _loop_repository, loop_id, task_id, _conversation_id = seeded_live_task
     tool_call_id = _seed_wait_step(live_database, loop_id, task_id=task_id)
     wait = repository.create_wait_subscription(
         WaitSubscriptionSpec(
@@ -476,9 +462,7 @@ def test_event_wakes_one_subscription_once(live_database, seeded_live_task) -> N
 
 @pytest.mark.postgres
 def test_wait_rejects_foreign_task(live_database, seeded_live_task) -> None:
-    repository, _loop_repository, loop_id, task_id, _conversation_id = (
-        seeded_live_task
-    )
+    repository, _loop_repository, loop_id, task_id, _conversation_id = seeded_live_task
     tool_call_id = _seed_wait_step(live_database, loop_id, task_id=task_id)
     with pytest.raises(BrainRepositoryConflict):
         repository.create_wait_subscription(
@@ -492,12 +476,8 @@ def test_wait_rejects_foreign_task(live_database, seeded_live_task) -> None:
 
 
 @pytest.mark.postgres
-def test_event_before_wait_is_delivered_once(
-    live_database, seeded_live_task
-) -> None:
-    repository, _loop_repository, loop_id, task_id, _conversation_id = (
-        seeded_live_task
-    )
+def test_event_before_wait_is_delivered_once(live_database, seeded_live_task) -> None:
+    repository, _loop_repository, loop_id, task_id, _conversation_id = seeded_live_task
     event = AgentTaskPublicEventInput(
         task_id=task_id,
         seq=1,
@@ -521,9 +501,7 @@ def test_event_before_wait_is_delivered_once(
     settled = repository.settle_if_undelivered(loop_id, source="post_commit")
     assert settled.settled is True
     assert [item.seq for item in settled.events] == [1]
-    assert repository.settle_if_undelivered(
-        loop_id, source="reaper"
-    ).settled is False
+    assert repository.settle_if_undelivered(loop_id, source="reaper").settled is False
 
 
 @pytest.mark.postgres
@@ -531,9 +509,7 @@ def test_deadline_reaper_emits_public_timeout_and_wakes_wait(
     live_database, seeded_live_task
 ) -> None:
     environment, *_unused = live_database
-    repository, loop_repository, loop_id, task_id, _conversation_id = (
-        seeded_live_task
-    )
+    repository, loop_repository, loop_id, task_id, _conversation_id = seeded_live_task
     tool_call_id = _seed_wait_step(live_database, loop_id, task_id=task_id)
     repository.create_wait_subscription(
         WaitSubscriptionSpec(
@@ -566,9 +542,7 @@ def test_deadline_reaper_preserves_human_waiting_tasks(
     live_database, seeded_live_task, waiting_status
 ) -> None:
     environment, *_unused = live_database
-    _repository, loop_repository, _loop_id, task_id, _conversation_id = (
-        seeded_live_task
-    )
+    _repository, loop_repository, _loop_id, task_id, _conversation_id = seeded_live_task
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "update platform_brain.agent_tasks set status=%s,"
@@ -590,9 +564,7 @@ def test_deadline_reaper_preserves_human_waiting_tasks(
 def test_wait_settlement_retries_serialization_failure(
     seeded_live_task, monkeypatch
 ) -> None:
-    repository, _loop_repository, loop_id, _task_id, _conversation_id = (
-        seeded_live_task
-    )
+    repository, _loop_repository, loop_id, _task_id, _conversation_id = seeded_live_task
     attempts: list[int] = []
 
     def flaky(_loop_id, *, source, attempt):
@@ -619,14 +591,31 @@ def test_wait_settlement_retries_serialization_failure(
     assert attempts == [0, 1, 2]
 
 
+def test_wait_settlement_observer_receives_only_bounded_source_and_result(
+    live_database,
+) -> None:
+    environment, codec, *_unused = live_database
+    observed: list[tuple[str, str]] = []
+    repository = CollaborationRepository(
+        environment["urls"]["platform_brain_worker"],
+        content_codec=codec,
+        wait_settlement_observer=lambda source, result: observed.append(
+            (source, result)
+        ),
+    )
+
+    result = repository.settle_if_undelivered(uuid4(), source="reaper")
+
+    assert result.settled is False
+    assert observed == [("reaper", "pending")]
+
+
 @pytest.mark.postgres
 def test_thinking_deltas_are_ordered_and_can_be_interrupted(
     live_database, seeded_live_task
 ) -> None:
     environment, *_unused = live_database
-    repository, _loop_repository, loop_id, _task_id, _conversation_id = (
-        seeded_live_task
-    )
+    repository, _loop_repository, loop_id, _task_id, _conversation_id = seeded_live_task
     with psycopg.connect(environment["admin"]) as connection:
         step_id = connection.execute(
             "select step_id from platform_brain.brain_steps "
@@ -645,18 +634,14 @@ def test_thinking_deltas_are_ordered_and_can_be_interrupted(
         repository.append_thinking_delta(
             BrainThinkingDelta(step_id, 0, 4, "跳号", "msg_provider_live")
         )
-    interrupted = repository.finalize_thinking_summary(
-        step_id, 0, interrupted=True
-    )
+    interrupted = repository.finalize_thinking_summary(step_id, 0, interrupted=True)
     assert interrupted.status == "interrupted"
 
 
 @pytest.mark.postgres
 def test_intervention_is_claimed_once(live_database, seeded_live_task) -> None:
     environment, codec, _owner_id, conversation_id, _turn_id = live_database
-    repository, _loop_repository, loop_id, _task_id, _conversation_id = (
-        seeded_live_task
-    )
+    repository, _loop_repository, loop_id, _task_id, _conversation_id = seeded_live_task
     message_id = uuid4()
     sealed = codec.seal_json(
         message_subject(conversation_id, message_id), {"text": "只看深圳"}
@@ -705,9 +690,7 @@ def test_crash_after_event_commit_is_recovered_by_reaper_settlement(
     live_database, seeded_live_task
 ) -> None:
     environment, *_unused = live_database
-    repository, _loop_repository, loop_id, task_id, _conversation_id = (
-        seeded_live_task
-    )
+    repository, _loop_repository, loop_id, task_id, _conversation_id = seeded_live_task
     tool_call_id = _seed_wait_step(live_database, loop_id, task_id=task_id)
     wait = repository.create_wait_subscription(
         WaitSubscriptionSpec(
@@ -743,22 +726,24 @@ def test_crash_after_event_commit_is_recovered_by_reaper_settlement(
             connection.execute(
                 "drop trigger fail_live_step_insert on platform_brain.brain_steps"
             )
-            connection.execute(
-                "drop function platform_brain.fail_live_step_insert()"
-            )
+            connection.execute("drop function platform_brain.fail_live_step_insert()")
     with psycopg.connect(environment["admin"]) as connection:
-        assert connection.execute(
-            "select count(*) from platform_brain.agent_task_events "
-            "where task_id=%s",
-            (task_id,),
-        ).fetchone()[0] == 1
-        assert connection.execute(
-            "select status from platform_brain.brain_wait_subscriptions "
-            "where wait_id=%s",
-            (wait.wait_id,),
-        ).fetchone()[0] == "active"
+        assert (
+            connection.execute(
+                "select count(*) from platform_brain.agent_task_events "
+                "where task_id=%s",
+                (task_id,),
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            connection.execute(
+                "select status from platform_brain.brain_wait_subscriptions "
+                "where wait_id=%s",
+                (wait.wait_id,),
+            ).fetchone()[0]
+            == "active"
+        )
     recovered = repository.settle_if_undelivered(loop_id, source="reaper")
     assert recovered.settled is True
-    assert recovered.events[0].payload["summary"] == (
-        "事件已经提交，等待稍后恢复"
-    )
+    assert recovered.events[0].payload["summary"] == ("事件已经提交，等待稍后恢复")

@@ -97,6 +97,7 @@ class CollaborationRepository:
         *,
         content_codec: ContentCodec,
         connect: Callable[..., Any] = psycopg.connect,
+        wait_settlement_observer: Callable[[str, str], None] | None = None,
     ) -> None:
         parsed = validate_control_dsn(control_database_url, purpose="brain")
         if not isinstance(content_codec, ContentCodec):
@@ -105,6 +106,11 @@ class CollaborationRepository:
         self._control_database_url = control_database_url
         self._content_codec = content_codec
         self._connect = connect
+        if wait_settlement_observer is not None and not callable(
+            wait_settlement_observer
+        ):
+            raise ValueError("wait settlement observer invalid")
+        self._wait_settlement_observer = wait_settlement_observer
         self._sleep = time.sleep
         self._random = random.SystemRandom()
 
@@ -138,7 +144,10 @@ class CollaborationRepository:
             or not 16 <= len(child_session_id) <= 256
             or _ADAPTER_KIND.fullmatch(adapter_kind) is None
             or type(capability_snapshot) is not dict
-            or (adapter_session_ref is not None and type(adapter_session_ref) is not dict)
+            or (
+                adapter_session_ref is not None
+                and type(adapter_session_ref) is not dict
+            )
         ):
             raise ValueError("task session invalid")
         _canonical_json(capability_snapshot)
@@ -158,8 +167,7 @@ class CollaborationRepository:
                     (str(task_id),),
                 )
                 task = connection.execute(
-                    "select task_id from platform_brain.agent_tasks "
-                    "where task_id=%s",
+                    "select task_id from platform_brain.agent_tasks where task_id=%s",
                     (task_id,),
                 ).fetchone()
                 if task is None:
@@ -255,8 +263,7 @@ class CollaborationRepository:
                     (str(message.task_id),),
                 )
                 task = connection.execute(
-                    "select task_id from platform_brain.agent_tasks "
-                    "where task_id=%s",
+                    "select task_id from platform_brain.agent_tasks where task_id=%s",
                     (message.task_id,),
                 ).fetchone()
                 if task is None:
@@ -451,16 +458,28 @@ class CollaborationRepository:
         delays = (0.010, 0.025, 0.050)
         for attempt in range(4):
             try:
-                return self._settle_once(
+                result = self._settle_once(
                     loop_id,
                     source=source,
                     attempt=attempt,
                 )
+                self._observe_wait_settlement(
+                    source, "immediate" if result.settled else "pending"
+                )
+                return result
             except psycopg.errors.SerializationFailure:
                 if attempt == 3:
-                    return WaitSettlementResult(False, source, (), 3)
+                    result = WaitSettlementResult(False, source, (), 3)
+                    self._observe_wait_settlement(
+                        source, "serialization_retry_exhausted"
+                    )
+                    return result
                 self._sleep(self._random.uniform(0.0, delays[attempt]))
         raise AssertionError("unreachable")
+
+    def _observe_wait_settlement(self, source: str, result: str) -> None:
+        if self._wait_settlement_observer is not None:
+            self._wait_settlement_observer(source, result)
 
     def _settle_once(
         self,
@@ -500,9 +519,7 @@ class CollaborationRepository:
                     (list(wait["task_ids"]),),
                 ).fetchall()
                 pending_rows = tuple(
-                    row
-                    for row in event_rows
-                    if row["seq"] > delivered[row["task_id"]]
+                    row for row in event_rows if row["seq"] > delivered[row["task_id"]]
                 )
                 trigger_row = next(
                     (
@@ -616,9 +633,7 @@ class CollaborationRepository:
                 )
                 highest: dict[UUID, int] = dict(delivered)
                 for row in pending_rows:
-                    highest[row["task_id"]] = max(
-                        highest[row["task_id"]], row["seq"]
-                    )
+                    highest[row["task_id"]] = max(highest[row["task_id"]], row["seq"])
                 for task_id, sequence in highest.items():
                     connection.execute(
                         "update platform_brain.brain_task_event_cursors set "
@@ -862,14 +877,10 @@ class CollaborationRepository:
         except (ContentCryptoError, psycopg.Error):
             raise BrainRepositoryError() from None
 
-    def _thinking_from_row(
-        self, row: Mapping[str, Any]
-    ) -> BrainThinkingSummaryRecord:
+    def _thinking_from_row(self, row: Mapping[str, Any]) -> BrainThinkingSummaryRecord:
         value = self._content_codec.unseal_json(
             _thinking_subject(row["step_id"], row["block_index"]),
-            SealedContent(
-                bytes(row["summary_ciphertext"]), row["summary_key_version"]
-            ),
+            SealedContent(bytes(row["summary_ciphertext"]), row["summary_key_version"]),
         )
         text = value.get("text")
         if type(text) is not str:
@@ -891,8 +902,7 @@ class CollaborationRepository:
         try:
             with self._connection() as connection, connection.transaction():
                 step = connection.execute(
-                    "select loop_id from platform_brain.brain_steps "
-                    "where step_id=%s",
+                    "select loop_id from platform_brain.brain_steps where step_id=%s",
                     (consuming_step_id,),
                 ).fetchone()
                 if step is None:
