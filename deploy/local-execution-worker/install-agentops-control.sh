@@ -20,6 +20,7 @@ dispatcher_source="$repository_root/$dispatcher_relative"
 sudoers_source="$repository_root/$sudoers_relative"
 dispatcher_target=/Library/PrivilegedHelperTools/orbbec-agentops-control
 sudoers_target=/etc/sudoers.d/orbbec-agentops-control
+legacy_sudoers_target=/etc/sudoers.d/agentops-management
 sudoers_root=/etc/sudoers
 staging_root=/Users/neo/.orbbec-agent-platform/agentops-control
 pending_private="$staging_root/cloud-admin-ed25519.pending"
@@ -122,6 +123,7 @@ dispatcher_backup="$transaction/dispatcher.backup"
 sudoers_backup="$transaction/sudoers.backup"
 cloud_key_backup="$transaction/cloud-key.backup"
 relay_config_backup="$transaction/relay-config.backup"
+legacy_sudoers_backup="$transaction/legacy-sudoers.backup"
 dispatcher_candidate="$dispatcher_target.candidate.$$"
 sudoers_candidate="$sudoers_target.candidate.$$"
 cloud_key_candidate="$cloud_key_target.candidate.$$"
@@ -130,6 +132,7 @@ dispatcher_existed=0
 sudoers_existed=0
 cloud_key_existed=0
 relay_config_existed=0
+legacy_sudoers_existed=0
 success=0
 
 validate_existing() {
@@ -137,6 +140,12 @@ validate_existing() {
   expected_mode="$2"
   [[ -f "$target" && ! -L "$target" ]] || return 1
   [[ "$(/usr/bin/stat -f '%Su %Sg %Lp' "$target")" == "$target_owner $target_group $expected_mode" ]]
+}
+
+validate_legacy_sudoers() {
+  [[ -f "$legacy_sudoers_target" && ! -L "$legacy_sudoers_target" ]] || return 1
+  [[ "$(/usr/bin/stat -f '%Su %Sg %Lp %z' "$legacy_sudoers_target")" == "$target_owner $target_group 440 33" ]] || return 1
+  [[ "$(<"$legacy_sudoers_target")" == "neo ALL=(agentops) NOPASSWD: ALL" ]]
 }
 
 cleanup() {
@@ -163,11 +172,14 @@ cleanup() {
     else
       /bin/rm -f -- "$relay_config_target" || status=1
     fi
+    if [[ "$legacy_sudoers_existed" == 1 ]]; then
+      "$install_bin" -o "$target_owner" -g "$target_group" -m 0440 "$legacy_sudoers_backup" "$legacy_sudoers_target" || status=1
+    fi
   fi
   /bin/rm -f -- "$dispatcher_candidate" "$sudoers_candidate" \
     "$cloud_key_candidate" "$relay_config_candidate" \
     "$dispatcher_backup" "$sudoers_backup" "$cloud_key_backup" \
-    "$relay_config_backup" || status=1
+    "$relay_config_backup" "$legacy_sudoers_backup" || status=1
   /bin/rmdir "$transaction" >/dev/null 2>&1 || status=1
   exit "$status"
 }
@@ -195,6 +207,11 @@ if [[ -e "$relay_config_target" || -L "$relay_config_target" ]]; then
   /bin/cp -p "$relay_config_target" "$relay_config_backup"
   relay_config_existed=1
 fi
+if [[ -e "$legacy_sudoers_target" || -L "$legacy_sudoers_target" ]]; then
+  validate_legacy_sudoers || fail
+  /bin/cp -p "$legacy_sudoers_target" "$legacy_sudoers_backup"
+  legacy_sudoers_existed=1
+fi
 [[ ! -e "$dispatcher_candidate" && ! -L "$dispatcher_candidate" ]] || fail
 [[ ! -e "$sudoers_candidate" && ! -L "$sudoers_candidate" ]] || fail
 "$install_bin" -o "$target_owner" -g "$target_group" -m 0755 "$dispatcher_source" "$dispatcher_candidate"
@@ -211,6 +228,12 @@ fi
 if [[ "$staged_key" == 1 ]]; then
   /bin/mv -f "$cloud_key_candidate" "$cloud_key_target"
   /bin/mv -f "$relay_config_candidate" "$relay_config_target"
+fi
+if [[ "$legacy_sudoers_existed" == 1 ]]; then
+  validate_legacy_sudoers || fail
+  /bin/rm -f -- "$legacy_sudoers_target"
+else
+  [[ ! -e "$legacy_sudoers_target" && ! -L "$legacy_sudoers_target" ]] || fail
 fi
 "$visudo_bin" -cf "$sudoers_root" >/dev/null
 status_output="$($sudo_bin -n -H -u "$agentops_user" "$dispatcher_target" status)" || fail

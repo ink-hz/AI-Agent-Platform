@@ -178,6 +178,7 @@ def _materialize_installation_fixture(tmp_path: Path) -> tuple[Path, Path, Path,
     helper_root = tmp_path / "helpers"
     dispatcher_target = helper_root / "orbbec-agentops-control"
     sudoers_target = tmp_path / "sudoers.d/orbbec-agentops-control"
+    legacy_sudoers_target = tmp_path / "sudoers.d/agentops-management"
     home = tmp_path / "agentops"
     runtime = home / "AgentRuntime"
     fake_visudo = tmp_path / "visudo"
@@ -217,6 +218,10 @@ def _materialize_installation_fixture(tmp_path: Path) -> tuple[Path, Path, Path,
     )
     (tmp_path / "sudoers").write_text("# fixture\n", encoding="utf-8")
     (tmp_path / "sudoers.d").mkdir()
+    legacy_sudoers_target.write_text(
+        "neo ALL=(agentops) NOPASSWD: ALL\n", encoding="utf-8"
+    )
+    legacy_sudoers_target.chmod(0o440)
     helper_root.mkdir()
     (runtime / "private").mkdir(parents=True, mode=0o700)
     staging_root = tmp_path / "staging"
@@ -272,6 +277,9 @@ def _materialize_installation_fixture(tmp_path: Path) -> tuple[Path, Path, Path,
         "sudoers_target=/etc/sudoers.d/orbbec-agentops-control": (
             f"sudoers_target={sudoers_target}"
         ),
+        "legacy_sudoers_target=/etc/sudoers.d/agentops-management": (
+            f"legacy_sudoers_target={legacy_sudoers_target}"
+        ),
         "sudoers_root=/etc/sudoers": f"sudoers_root={tmp_path / 'sudoers'}",
         "staging_root=/Users/neo/.orbbec-agent-platform/agentops-control": (
             f"staging_root={staging_root}"
@@ -320,6 +328,7 @@ def test_installer_is_idempotent_and_uninstaller_is_exact(tmp_path: Path) -> Non
     assert first.stdout.strip() == "AGENTOPS_CONTROL_INSTALL_OK"
     assert dispatcher.stat().st_mode & 0o777 == 0o755
     assert sudoers.stat().st_mode & 0o777 == 0o440
+    assert not (installer.parent / "sudoers.d/agentops-management").exists()
 
     second = _run(installer)
     assert second.returncode == 0, second.stderr
@@ -341,6 +350,8 @@ def test_installer_rolls_back_both_targets_when_global_visudo_fails(
     sudoers.chmod(0o440)
     before_dispatcher = dispatcher.read_bytes()
     before_sudoers = sudoers.read_bytes()
+    legacy_sudoers = installer.parent / "sudoers.d/agentops-management"
+    before_legacy_sudoers = legacy_sudoers.read_bytes()
 
     env = os.environ.copy()
     env["FAIL_FULL_VISUDO"] = "1"
@@ -350,6 +361,7 @@ def test_installer_rolls_back_both_targets_when_global_visudo_fails(
     assert failed.returncode == 1
     assert dispatcher.read_bytes() == before_dispatcher
     assert sudoers.read_bytes() == before_sudoers
+    assert legacy_sudoers.read_bytes() == before_legacy_sudoers
 
 
 def test_agentops_boundary_has_no_password_storage_or_generic_sudo() -> None:

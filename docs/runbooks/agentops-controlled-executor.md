@@ -43,6 +43,11 @@ AGENTOPS_ACCEPTANCE_KEY_STAGED_OK
 AGENTOPS_CONTROL_INSTALL_OK
 ```
 
+安装器会识别并事务化移除唯一允许的历史规则
+`/etc/sudoers.d/agentops-management`（其内容必须逐字等于
+`neo ALL=(agentops) NOPASSWD: ALL`）；文件内容、所有权或权限不符时失败关闭，
+不会删除未知 sudoers 配置。
+
 验证此后的调用不再询问密码：
 
 ```bash
@@ -55,6 +60,9 @@ sudo -n -H -u agentops \
 ```text
 AGENTOPS_CONTROL_OK commands=6
 ```
+
+`sudo -n -l -U neo` 的结果中不得再出现 `(agentops) NOPASSWD: ALL`，且只应有
+上述执行器的六条固定命令。
 
 ## 3. Relay Canary
 
@@ -139,4 +147,3 @@ curl -fsS -o /dev/null -w '%{http_code}\n' http://47.106.112.69/
 - 不使用 `sudo -S`、Keychain 密码导出或密码环境变量。
 - 不增加通用 NOPASSWD、`/usr/bin/env *`、`/bin/sh` 或任意参数入口。
 - 不在日志、报告或命令输出中打印 Cookie、Token、私钥、钉钉身份或业务正文。
-

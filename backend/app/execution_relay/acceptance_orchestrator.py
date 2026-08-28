@@ -333,8 +333,10 @@ fi
 if [[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$postgres_id")" == healthy ]]; then
   cloud_database_healthy=true
 fi
-relay_identity="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v expected_key_id="$expected_key_id" -c \
-  "select concat(worker.last_seen_at > clock_timestamp() - interval '60 seconds', ':', encode(sha256(worker_key.public_key), 'hex')) from platform_control.execution_workers worker join platform_control.execution_worker_keys worker_key using(worker_id) where worker.worker_id='agentops-mac-primary' and worker_key.key_id=:'expected_key_id' and worker.status='active' and worker_key.status='active'")"
+relay_identity="$(/usr/bin/docker exec -i "$postgres_id" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v expected_key_id="$expected_key_id" <<'SQL'
+select concat(worker.last_seen_at > clock_timestamp() - interval '60 seconds', ':', encode(sha256(worker_key.public_key), 'hex')) from platform_control.execution_workers worker join platform_control.execution_worker_keys worker_key using(worker_id) where worker.worker_id='agentops-mac-primary' and worker_key.key_id=:'expected_key_id' and worker.status='active' and worker_key.status='active';
+SQL
+)"
 registered_public_key_sha256="${relay_identity#*:}"
 if [[ "$relay_identity" == t:* ]]; then worker_heartbeat_fresh=true; fi
 listeners="$(/usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/sort -u)"
