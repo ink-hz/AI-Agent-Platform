@@ -16,8 +16,8 @@ SHA-256 已于 2026-08-28 使用 `wc -l` 和 `shasum -a 256` 复核。
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Kubernetes与容器编排深度指南.md` | 250 | `4908263dc8ebdbe69106f50b8aa8f2b5030dd0a7e9fc5827945784e02dd31df4` | 辅助 ai-cloud-native-runtime | 已精读：1-250（通用概念辅助） | 调度、隔离、声明式发布、故障恢复概念 | 安装命令、对象清单、旧版本行为与厂商 GPU 功能 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 不迁移 Kubernetes 百科；只辅助 AI 运行时边界 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Kubernetes与容器编排理论指南.md` | 1705 | `12361a569b863b0de58f43366420c822f5b8568b42f243c38aab16aa0eef53ff` | 辅助 ai-cloud-native-runtime | 已精读：1-1705（通用概念辅助） | 一致性、队列调度、隔离、渐进发布与恢复概念 | 组件百科、Helm/GitOps 教程、厂商设备与固定性能数字 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 不复述通用编排；重写为制品、调度和恢复链 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/可观测性与监控-深度理论知识.md` | 1857 | `546ea435a32227f0ec75e73e946e45e4cb5a6e092ee55deaf7d456de3c43b8ed` | llm-agent-observability | 已精读：1-1857 | 上下文传播、结构化 trace、采样、高基数、SLO 与信号关联 | 通用三支柱教材、产品栈与配置、固定阈值、采样率和成本数字 | 已核验：OpenTelemetry GenAI、W3C Trace Context、NIST（2026-08-28） | RAG 算法与 Agent 状态机留在主文章；本篇只记录证据与质量信号 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Hermes-Agent架构分析与思考.md` | 390 | `aac8a4c575a11ae1a129c3e03d49e6217d2c02a92363b0689d5c5306c70227ad` | open-source-agent-runtime | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Clawdbot架构理论指南.md` | 284 | `838ae6a89bfeca305bb70bc016f975d7b12f34abef9fe73dd4638c22dedb6961` | open-source-agent-runtime | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
+| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Hermes-Agent架构分析与思考.md` | 390 | `aac8a4c575a11ae1a129c3e03d49e6217d2c02a92363b0689d5c5306c70227ad` | open-source-agent-runtime | 已精读：1-390 | Agent loop、context/session、skills/tools、memory、sandbox 与 recovery 问题框架 | 动态版本、数量、排行、营销结论与无法复核的生产效果 | 已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28） | Claude Code 使用体验留在既有文章；本篇只比较运行时责任边界 |
+| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Clawdbot架构理论指南.md` | 284 | `838ae6a89bfeca305bb70bc016f975d7b12f34abef9fe73dd4638c22dedb6961` | open-source-agent-runtime | 已精读：1-284 | Gateway、channel routing、session、tools/skills、sandbox 与 recovery 问题框架 | 旧项目名当现名、动态渠道数、成熟度结论与安全泛化承诺 | 已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28） | 企业 Agent 全景留在主文章；本篇抽象 provider/model/runtime/channel 和 ownership |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/MetaBot架构设计理论分析.md` | 515 | `f526d770501328c0aa12bb926ae379c640bebb3cd9540fe4b569a581caebded5` | metabot-agent-control-bus | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/主流Agent框架深度分析-从架构本质到生产可用性.md` | 323 | `4edd175b19b9ac82be0ac9a92ed10d69ddfe14cac7611fa7b3df9f0a5866054b` | agent-framework-selection | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/干掉用户旅程-意图驱动的业务平台架构设计.md` | 379 | `3a165ec7de6b712d9cbbc999ee6d7752b9954691f904f41a80d289bc0585d52b` | intent-driven-ai-business-platform | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
@@ -177,3 +177,70 @@ SHA-256 已于 2026-08-28 使用 `wc -l` 和 `shasum -a 256` 复核。
 | [OpenTelemetry GenAI attribute registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/) | 原属性注册表中的 GenAI 字段已标为 Deprecated 并指向独立仓库；本文不把历史 `gen_ai.*` 名称写成永久字段合同。 |
 | [W3C Trace Context](https://www.w3.org/TR/trace-context/) | traceparent 提供跨组件关联所需的 trace-id、parent-id 与 trace-flags；tracestate 用于可选厂商信息，传播上下文不等同于接受上游身份或采样决策。 |
 | [NIST Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence) | 持续监测、内容来源、结构化反馈和独立评估共同支撑生成式 AI 风险管理；本文据此把线上证据、人工诊断、版本化反馈集和发布门禁闭合为改进循环。 |
+
+## open-source-agent-runtime 精读结论
+
+### `Hermes-Agent架构分析与思考.md`
+
+- `1-120`（定位、全景）：保留从入口、Agent loop、工具、执行环境、会话与记忆观察运行时的问题框架；版本、测试量、提交量、平台数、模型数和“早期生产”结论全部删除。
+- `121-220`（学习、Skills、Tools、执行后端）：保留“记住什么”、“知道怎么做”和“被允许做什么”应分层的问题；任何固定功能数量、平台枚举和云环境成本结论不进入新文。
+- `221-310`（循环、依赖、亮点与不足）：保留模型—工具—结果的反馈循环、上下文压缩和中断问题；“同步核心”、自动技能质量、配置数量等主张不沿用，改为向当前代码核验。
+- `311-390`（横向对比与总结）：功能象限、优劣排名、“唯一”和未经核验的用户规模删除；只保留“持续状态需要可预测、可追溯、可恢复”这一设计问题。
+- 原稿的分析时间、版本号、功能数、提交数、PR 数、性能结论和“已证明生产可用”均不进入正文。
+
+### `Clawdbot架构理论指南.md`
+
+- `1-65`（名称、Gateway）：保留项目已使用 OpenClaw 现名、Gateway 是长期运行连接与会话入口的核心问题；旧名不再当成当前产品名，动态渠道清单不迁移。
+- `66-137`（Tools、Skills、Plugins、安全）：保留指令、行动接口与运行时扩展分层，以及工具可见性应在模型调用前收窄的原则；“有安全选项即生产安全”类泛化不采用。
+- `138-218`（责任分层与设计借鉴）：保留入口、控制面、运行循环、能力和本地状态的评估问题；具体内部调度、压缩、重试和恢复行为改为官方当前文档与代码证据。
+- `219-284`（评估与结论）：保留最小闭环、安全默认值、状态位置、工具副作用与项目限制的评审方法；通道覆盖、平台计数和成熟度判断删除。
+- 旧稿基于更早日期的文档描述；新文不直接继承任何路径、存储格式或安全默认值，全部以执行日仓库快照重新核验。
+
+### 与既有文章的去重
+
+- 已复读 `backend/app/ai_notes/content/03-tools-and-frameworks/01-claude-code-architecture.md` 全文 `1-361`，SHA-256 为 `c04ed6a9c02fe35397949197f9fd63bea9fae6076d7846002043df235faac21d`。新文不重述 Claude Code 的开发者体验、Hooks、MCP、子 Agent 或自研 Agent 全景，只复用“公开事实与工程抽象分开”的证据方法。
+- `enterprise-agent-system-architecture` 已承担企业 Agent 全景、运行循环、持久化状态、信任与子任务；本篇不重画全景，只比较两个开源运行时的 ownership boundary。
+- 身份与授权细节链接到 `agent-identity-access-control`；运行证据链接到 `llm-agent-observability`。本篇只说明运行时应暴露的接口，不重述两个专题。
+- 不提前给出框架选型结论，不建立功能排行榜；本篇只提供会话、工具、远程执行与恢复的责任检查项。
+
+### 官方仓库快照与实际读取路径
+
+访问日期：2026-08-28
+
+| 项目 | Remote | 默认分支 | 完整 HEAD SHA |
+| --- | --- | --- | --- |
+| Hermes Agent | `https://github.com/NousResearch/hermes-agent.git` | `main` | `35328345d5e3b5badc47271bdb8828e1fd2d25f4` |
+| OpenClaw | `https://github.com/openclaw/openclaw.git` | `main` | `468054f93c431bfe192327f439efe325be52f2b4` |
+
+Hermes 快照实际读取：
+
+- `README.md`：定位、CLI/Gateway、provider/model 切换、学习、记忆、Skills 与执行后端的官方入口。
+- `agent/conversation_loop.py` 与 `run_agent.py`：循环、会话持久化、system prompt 恢复、压缩、重试与结束边界。
+- `model_tools.py`、`tools/skills_tool.py`：工具注册与会话范围过滤，Skill 的元数据列表、按需加载和路径安全。
+- `tools/terminal_tool.py`、`docs/security/network-egress-isolation.md`：本地、容器、远程执行后端，审批与网络隔离边界。
+- `gateway/session_db_recovery.py`、`docs/micro-compaction.md`：SessionDB handle 的有界重试和退避，以及压缩失败的最佳努力语义。
+
+OpenClaw 快照实际读取：
+
+- `README.md`、`docs/concepts/architecture.md`：Gateway、clients、nodes、WebSocket 与 channel 接入边界。
+- `docs/concepts/agent-runtimes.md`、`docs/agent-runtime-architecture.md`、`docs/openclaw-agent-runtime.md`：provider/model/runtime/channel 分层，runtime ownership、代码布局与运行时选择。
+- `docs/concepts/agent-loop.md`、`src/agents/embedded-agent-runner/run.ts`、`src/agents/agent-tools.ts`：会话串行、上下文装配、模型调用、工具执行、流式事件与持久化边界。
+- `docs/concepts/context-engine.md`、`docs/concepts/session.md`、`docs/concepts/memory.md`：上下文引擎、会话路由与存储、长期记忆与压缩关系。
+- `docs/tools/skills.md`、`docs/gateway/sandbox-vs-tool-policy-vs-elevated.md`：Skill 加载和快照，sandbox、tool policy 与 elevated exec 的独立责任。
+- `docs/gateway/restart-recovery.md`、`docs/channels/channel-routing.md`：重启恢复、重复副作用防护、不恢复状态，以及由 host 决定的消息路由。
+
+### 一手来源核验
+
+| 一手来源 | 证据级别 | 本文采用的受支持论点 |
+| --- | --- | --- |
+| [Hermes Agent official repository](https://github.com/NousResearch/hermes-agent) | 官方文档 + 公开代码 | Hermes 公开仓库 main@35328345d5e3b5badc47271bdb8828e1fd2d25f4；README 支持 CLI/Gateway、Skills、memory 与多执行后端的入口事实，循环、工具过滤和局部恢复语义由上述代码路径分别证明。 |
+| [OpenClaw official repository](https://github.com/openclaw/openclaw) | 官方文档 + 公开代码 | OpenClaw 公开仓库 main@468054f93c431bfe192327f439efe325be52f2b4；Gateway、session、agent loop、Skills、memory、sandbox 和 recovery 责任只在当前文档与相应代码路径范围内陈述。 |
+| [OpenClaw Agent runtimes](https://github.com/openclaw/openclaw/blob/main/docs/concepts/agent-runtimes.md) | 官方文档 | provider、model、agent runtime 与 channel 是四个不同责任层；runtime 的 loop、thread、tools、context、compaction 所有权必须分别声明。 |
+| [OpenClaw Agent runtime architecture](https://github.com/openclaw/openclaw/blob/main/docs/agent-runtime-architecture.md) | 官方文档 | OpenClaw 官方文档列出 built-in runtime 的代码布局与边界；本文据此记录上下文、工具、会话、组件注册与 model/provider transport 的所有权。 |
+
+### 保留、删除与抽象边界
+
+- **保留**：Agent loop、context/session、Skills/Tools、memory、channel/远程执行、sandbox/permissions、recovery 与 ownership boundary 这些共同工程问题。
+- **删除**：旧日期、动态版本、功能或渠道数量、社区热度、产品优劣、无法复核的生产效果和泛化安全承诺。
+- **公开代码直接证明**：只在实际读取路径能定位的循环、策略、持久化与恢复语义范围内陈述。
+- **从公开结构可以推断**：两个项目都可抽象为入口与会话、上下文与循环、行动与恢复三类责任；这是本文比较模型，不是组件等价或隐藏执行顺序的事实声明。

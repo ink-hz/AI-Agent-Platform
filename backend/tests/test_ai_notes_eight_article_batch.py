@@ -45,6 +45,7 @@ COMPLETED_BATCH_ARTICLES: tuple[str, ...] = (
     "llm-inference-serving-engineering",
     "ai-cloud-native-runtime",
     "llm-agent-observability",
+    "open-source-agent-runtime",
 )
 
 ARTICLE_CONTRACTS = {
@@ -223,6 +224,38 @@ OBSERVABILITY_PRIMARY_SOURCES = {
     ),
     "https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence": (
         "持续监测、内容来源、结构化反馈和独立评估共同支撑生成式 AI 风险管理"
+    ),
+}
+
+OPEN_SOURCE_RUNTIME_SOURCE_REVIEW_STATUS = {
+    "Hermes-Agent架构分析与思考.md": (
+        "已精读：1-390",
+        "Agent loop、context/session、skills/tools、memory、sandbox 与 recovery 问题框架",
+        "动态版本、数量、排行、营销结论与无法复核的生产效果",
+        "已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28）",
+        "Claude Code 使用体验留在既有文章；本篇只比较运行时责任边界",
+    ),
+    "Clawdbot架构理论指南.md": (
+        "已精读：1-284",
+        "Gateway、channel routing、session、tools/skills、sandbox 与 recovery 问题框架",
+        "旧项目名当现名、动态渠道数、成熟度结论与安全泛化承诺",
+        "已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28）",
+        "企业 Agent 全景留在主文章；本篇抽象 provider/model/runtime/channel 和 ownership",
+    ),
+}
+
+OPEN_SOURCE_RUNTIME_PRIMARY_SOURCES = {
+    "https://github.com/NousResearch/hermes-agent": (
+        "Hermes 公开仓库 main@35328345d5e3b5badc47271bdb8828e1fd2d25f4"
+    ),
+    "https://github.com/openclaw/openclaw": (
+        "OpenClaw 公开仓库 main@468054f93c431bfe192327f439efe325be52f2b4"
+    ),
+    "https://github.com/openclaw/openclaw/blob/main/docs/concepts/agent-runtimes.md": (
+        "provider、model、agent runtime 与 channel 是四个不同责任层"
+    ),
+    "https://github.com/openclaw/openclaw/blob/main/docs/agent-runtime-architecture.md": (
+        "OpenClaw 官方文档列出 built-in runtime 的代码布局与边界"
     ),
 }
 
@@ -497,6 +530,49 @@ def observability_has_call_level_usage_contract(markdown: str) -> bool:
     return all(marker.casefold() in normalized for marker in required_markers)
 
 
+def open_source_runtime_uses_legacy_name_as_current(markdown: str) -> bool:
+    allowed_boundary = (
+        "源稿旧称 `Clawdbot` 仅用于项目更名核验；"
+        "当前项目名是 OpenClaw。"
+    )
+    return "Clawdbot" in markdown.replace(allowed_boundary, "")
+
+
+def open_source_runtime_contains_dynamic_ranking(markdown: str) -> bool:
+    prohibited_patterns = (
+        r"(?i)\bstar\s*(?:数|量|count)?\b|\bstars?\b",
+        r"(?:功能|项目|框架)?(?:排行榜|排名第)",
+        r"(?i)(?<![\w.])\d[\d,.]*[kKmM]?\+?\s*"
+        r"(?:个|种|条|款)?\s*"
+        r"(?:模型|工具|渠道|平台|执行环境|providers?|models?|tools?|channels?)\b",
+        r"(?i)(?<![\w.])\d[\d,.]*[kKmM]?\+?\s*(?:commits?|PRs?)\b",
+    )
+    return any(re.search(pattern, markdown) for pattern in prohibited_patterns)
+
+
+def open_source_runtime_contains_unmarked_inference(markdown: str) -> bool:
+    for clause in re.split(r"[\n。！？；;]", markdown):
+        if "推断" not in clause:
+            continue
+        if "从公开结构可以推断" in clause or "本文推断" in clause:
+            continue
+        return True
+    return False
+
+
+def open_source_runtime_confuses_layers(markdown: str) -> bool:
+    prohibited_patterns = (
+        r"(?i)\bprovider\b\s*(?:就是|等同于|=)\s*(?:\bmodel\b|模型本身)",
+        r"(?i)\bmodel\b\s*(?:就是|等同于|=)\s*"
+        r"(?:\bprovider\b|模型\s*/?\s*API\s*提供方)",
+        r"(?i)(?:\bagent\s+)?\bruntime\b\s*(?:就是|等同于|=)\s*"
+        r"(?:\bprovider\b|\bchannel\b|模型提供方|渠道)",
+        r"(?i)\bchannel\b\s*(?:就是|等同于|=)\s*"
+        r"(?:\bprovider\b|\bmodel\b|(?:\bagent\s+)?\bruntime\b|模型|运行时)",
+    )
+    return any(re.search(pattern, markdown) for pattern in prohibited_patterns)
+
+
 def test_completed_batch_helpers_enforce_drafts_and_validate_candidates(
     tmp_path: Path,
 ) -> None:
@@ -532,6 +608,7 @@ def test_source_review_records_the_exact_source_manifest() -> None:
             **INFERENCE_SOURCE_REVIEW_STATUS,
             **CLOUD_NATIVE_SOURCE_REVIEW_STATUS,
             **OBSERVABILITY_SOURCE_REVIEW_STATUS,
+            **OPEN_SOURCE_RUNTIME_SOURCE_REVIEW_STATUS,
         }.get(filename, ("未开始",) * 5)
         expected_rows.append(
             f"| `{path}` | {line_count} | `{digest}` | {target} | "
@@ -602,6 +679,36 @@ def test_observability_source_review_section_stops_at_next_h2() -> None:
     assert "https://www.w3.org/TR/trace-context/" not in section
 
 
+def test_open_source_runtime_source_review_records_repo_snapshots() -> None:
+    review = SOURCE_REVIEW.read_text(encoding="utf-8")
+    section_header = "## open-source-agent-runtime 精读结论"
+
+    assert section_header in review
+    section = source_review_h2_section(review, section_header)
+    assert "访问日期：2026-08-28" in section
+    for url, supported_claim in OPEN_SOURCE_RUNTIME_PRIMARY_SOURCES.items():
+        assert url in section
+        assert supported_claim in section
+    for evidence_path in (
+        "README.md",
+        "agent/conversation_loop.py",
+        "model_tools.py",
+        "tools/skills_tool.py",
+        "tools/terminal_tool.py",
+        "gateway/session_db_recovery.py",
+        "docs/concepts/agent-runtimes.md",
+        "docs/agent-runtime-architecture.md",
+        "docs/concepts/agent-loop.md",
+        "docs/concepts/session.md",
+        "docs/concepts/memory.md",
+        "docs/tools/skills.md",
+        "docs/gateway/sandbox-vs-tool-policy-vs-elevated.md",
+        "docs/gateway/restart-recovery.md",
+        "docs/channels/channel-routing.md",
+    ):
+        assert evidence_path in section
+
+
 def test_agent_identity_access_control_draft_meets_contract(
     tmp_path: Path,
 ) -> None:
@@ -648,7 +755,7 @@ def test_agent_identity_access_control_draft_meets_contract(
     )
     assert sum(
         len(category.articles) for category in candidate_index.categories
-    ) == 10
+    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
     assert all(
         len(
             set(
@@ -804,7 +911,7 @@ def test_llm_inference_serving_engineering_draft_meets_contract(
     )
     assert sum(
         len(category.articles) for category in candidate_index.categories
-    ) == 10
+    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_llm_inference_metrics_cost_and_typography_contract() -> None:
@@ -945,7 +1052,7 @@ def test_ai_cloud_native_runtime_draft_meets_contract(
     )
     assert sum(
         len(category.articles) for category in candidate_index.categories
-    ) == 10
+    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_cloud_native_contract_guards_reject_bypass_variants() -> None:
@@ -1005,10 +1112,7 @@ def test_llm_agent_observability_draft_meets_contract(
 ) -> None:
     completed_articles = assert_completed_batch_drafts()
     assert tuple(article.slug for article in completed_articles) == (
-        "agent-identity-access-control",
-        "llm-inference-serving-engineering",
-        "ai-cloud-native-runtime",
-        "llm-agent-observability",
+        COMPLETED_BATCH_ARTICLES
     )
 
     path = batch_article_path("llm-agent-observability")
@@ -1111,7 +1215,7 @@ def test_llm_agent_observability_draft_meets_contract(
     )
     assert sum(
         len(category.articles) for category in candidate_index.categories
-    ) == 10
+    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_observability_contract_guards_schema_and_tutorial_boundaries() -> None:
@@ -1178,3 +1282,147 @@ execution_usage:
 """
     assert observability_has_effective_context_contract(complete_contract)
     assert observability_has_call_level_usage_contract(complete_contract)
+
+
+def test_open_source_runtime_draft_meets_contract(
+    tmp_path: Path,
+) -> None:
+    completed_articles = assert_completed_batch_drafts()
+    assert tuple(article.slug for article in completed_articles) == (
+        "agent-identity-access-control",
+        "llm-inference-serving-engineering",
+        "ai-cloud-native-runtime",
+        "llm-agent-observability",
+        "open-source-agent-runtime",
+    )
+
+    path = batch_article_path("open-source-agent-runtime")
+    frontmatter, markdown = parse_frontmatter(path)
+    assert frontmatter["title"] == (
+        "Hermes 与 OpenClaw：开源 Agent 运行时的设计边界"
+    )
+    assert frontmatter["slug"] == "open-source-agent-runtime"
+    assert tuple(frontmatter["tags"]) == ("Agent", "开源运行时", "架构分析")
+    assert frontmatter["draft"] is True
+    assert frontmatter["author"] == AUTHOR
+    assert frontmatter["motto"] == MOTTO
+    assert frontmatter["publishedAt"] == TODAY
+    assert frontmatter["updatedAt"] == TODAY
+    assert markdown.lstrip().startswith("## ")
+    assert AUTHOR not in markdown
+    assert MOTTO not in markdown
+
+    diagrams = tuple(re.findall(r"```mermaid\n([\s\S]*?)\n```", markdown))
+    assert len(diagrams) == 3
+    assert tuple(
+        re.search(r"(?m)^\s*accTitle:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    ) == (
+        "开源 Agent 运行时共同循环",
+        "Hermes 与 OpenClaw 能力责任映射",
+        "Agent 运行时能力边界",
+    )
+    descriptions = tuple(
+        re.search(r"(?m)^\s*accDescr:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    )
+    assert all(descriptions)
+    assert len(set(descriptions)) == 3
+    assert all(re.search(r"(?m)^\s*classDef\s+", diagram) for diagram in diagrams)
+    assert all(
+        re.search(
+            r"(?m)^\s*classDef\s+\w+\s+fill:#(?:DBEAFE|EDE9FE|"
+            r"CCFBF1|FEF3C7|DCFCE7|D1FAE5|FEE2E2|F3F4F6)",
+            diagram,
+        )
+        for diagram in diagrams
+    )
+    assert all(
+        len(mermaid_principal_node_ids(diagram)) <= 12
+        for diagram in diagrams
+    )
+    assert "官方可核验能力" in diagrams[1]
+    assert "本文责任抽象" in diagrams[1]
+
+    for required_topic in (
+        "Agent loop",
+        "context",
+        "session",
+        "Skills",
+        "Tools",
+        "memory",
+        "sandbox",
+        "recovery",
+        "ownership boundary",
+        "provider（模型/API 提供方）",
+        "model（模型）",
+        "agent runtime（Agent 运行时）",
+        "channel（消息渠道）",
+    ):
+        assert required_topic.casefold() in markdown.casefold()
+
+    for evidence_grade in (
+        "官方文档明示",
+        "公开代码直接证明",
+        "从公开结构可以推断",
+        "本文推断",
+    ):
+        assert evidence_grade in markdown
+
+    assert (
+        "源稿旧称 `Clawdbot` 仅用于项目更名核验；"
+        "当前项目名是 OpenClaw。"
+    ) in markdown
+    assert markdown.count("Clawdbot") == 1
+    assert "渠道只负责消息入口、回复路由与平台协议适配" in markdown
+    assert "远程执行必须回到运行时的工具与权限边界" in markdown
+    assert re.search(
+        r"\]\(\.\./agent-architecture/agent-identity-access-control\)",
+        markdown,
+    )
+    assert re.search(
+        r"\]\(\.\./ai-engineering/llm-agent-observability\)",
+        markdown,
+    )
+    assert not open_source_runtime_uses_legacy_name_as_current(markdown)
+    assert not open_source_runtime_contains_dynamic_ranking(markdown)
+    assert not open_source_runtime_contains_unmarked_inference(markdown)
+    assert not open_source_runtime_confuses_layers(markdown)
+
+    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
+    assert sum(
+        len(category.articles) for category in candidate_index.categories
+    ) == 11
+
+
+def test_open_source_runtime_guards_reject_forbidden_claims() -> None:
+    prohibited = (
+        "Clawdbot 的当前运行时以 Gateway 为核心。",
+        "Hermes 有 40+ 个工具并且 Star 数排名第一。",
+        "它的目录说明运行时一定会自动恢复，这个推断就是实现事实。",
+        "provider 就是 model。",
+        "agent runtime 等同于 channel。",
+    )
+    guards = (
+        open_source_runtime_uses_legacy_name_as_current,
+        open_source_runtime_contains_dynamic_ranking,
+        open_source_runtime_contains_unmarked_inference,
+        open_source_runtime_confuses_layers,
+    )
+    for claim in prohibited:
+        assert any(guard(claim) for guard in guards)
+
+
+def test_open_source_runtime_guards_allow_precise_boundaries() -> None:
+    allowed = (
+        "源稿旧称 `Clawdbot` 仅用于项目更名核验；当前项目名是 OpenClaw。",
+        "本文不按工具数量、渠道数量或社区热度排名。",
+        "从公开结构可以推断：责任边界比功能清单更稳定。",
+        "本文推断：渠道与运行时分层有利于故障定位。",
+        "provider 解决认证与模型目录；model 是本轮所选模型；agent runtime 执行循环；channel 承载消息。",
+    )
+    for claim in allowed:
+        assert not open_source_runtime_uses_legacy_name_as_current(claim)
+        assert not open_source_runtime_contains_dynamic_ranking(claim)
+        assert not open_source_runtime_contains_unmarked_inference(claim)
+        assert not open_source_runtime_confuses_layers(claim)
