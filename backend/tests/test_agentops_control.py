@@ -11,6 +11,8 @@ CONTROL = ROOT / "deploy/local-execution-worker/agentops-control.sh"
 SUDOERS = ROOT / "deploy/local-execution-worker/agentops-control.sudoers"
 INSTALL = ROOT / "deploy/local-execution-worker/install-agentops-control.sh"
 REMOVE = ROOT / "deploy/local-execution-worker/remove-agentops-control.sh"
+RUNBOOK = ROOT / "docs/runbooks/agentops-controlled-executor.md"
+README = ROOT / "README.md"
 ALLOWED = {
     "relay-canary",
     "worker-stop",
@@ -348,3 +350,46 @@ def test_installer_rolls_back_both_targets_when_global_visudo_fails(
     assert failed.returncode == 1
     assert dispatcher.read_bytes() == before_dispatcher
     assert sudoers.read_bytes() == before_sudoers
+
+
+def test_agentops_boundary_has_no_password_storage_or_generic_sudo() -> None:
+    sources = (
+        CONTROL,
+        SUDOERS,
+        INSTALL,
+        REMOVE,
+        ROOT / "deploy/cloud/accept.sh",
+        ROOT / "deploy/cloud/provision-agentops-acceptance-key.sh",
+        ROOT / "deploy/cloud/revoke-agentops-acceptance-key.sh",
+    )
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in sources)
+    for forbidden in (
+        "sudo -S",
+        "find-generic-password -w",
+        "SUDO_PASSWORD",
+        "ADMIN_PASSWORD",
+        "neo ALL=(ALL)",
+        "NOPASSWD: /usr/bin/env",
+    ):
+        assert forbidden not in combined
+
+
+def test_agentops_control_runbook_freezes_install_rotate_revoke_and_rollback() -> None:
+    assert RUNBOOK.exists()
+    source = RUNBOOK.read_text(encoding="utf-8")
+    for required in (
+        "AGENTOPS_CONTROL_INSTALL_OK",
+        "AGENTOPS_CONTROL_OK commands=6",
+        "AGENTOPS_ACCEPTANCE_KEY_STAGED_OK",
+        "AGENTOPS_ACCEPTANCE_KEY_REVOKED_OK",
+        "AGENT_EXECUTION_RELAY_OK",
+        "AGENT_BRAIN_V2_ACCEPTANCE_OK",
+        "/office/?view=services",
+        "fae.orbbec.com.cn",
+        "remove-agentops-control.sh",
+        "回滚",
+    ):
+        assert required in source
+    assert "docs/runbooks/agentops-controlled-executor.md" in README.read_text(
+        encoding="utf-8"
+    )

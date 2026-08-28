@@ -13,6 +13,8 @@ Operations 继续作为管理与数据飞轮能力。FAE 保持独立对外入�
 [Agent execution relay runbook](docs/runbooks/agent-execution-relay.md)。
 Agent Brain V2 的 20 场景矩阵、真实 Provider 探测、恢复演练、质量评审与发布门禁见
 [Agent Brain V2 acceptance runbook](docs/runbooks/agent-brain-v2-acceptance.md)。
+本机 `neo` 到 `agentops` 的固定免密运维边界、专用云端密钥、安装、轮换与撤销见
+[AgentOps controlled executor runbook](docs/runbooks/agentops-controlled-executor.md)。
 
 VOC Platform extension 已提供原生员工工作台 `/agents/voc/workspace`。Platform 复用现有企业登录、CSRF 和账号权限，只把短期、员工绑定的请求转发给 Docker 内部私网上的 VOC 业务服务；自然语言先形成可编辑草稿，点击确认后才正式入库。部署、密钥轮换、验收与回滚见 [VOC extension runbook](docs/voc-extension-runbook.md)。
 

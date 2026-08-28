@@ -730,7 +730,13 @@ def test_local_provisioning_wrapper_has_narrow_hba_transaction_and_fixed_sudo() 
     assert "worker-pm2.sh" in INSTALL.read_text(encoding="utf-8")
     accept_source = ACCEPT.read_text(encoding="utf-8")
     assert "launchctl" not in accept_source
-    assert "worker-pm2.sh" in accept_source
+    assert (
+        "agentops_control=/Library/PrivilegedHelperTools/orbbec-agentops-control"
+        in accept_source
+    )
+    assert "run_agentops_control worker-stop" in accept_source
+    assert "run_agentops_control worker-restore" in accept_source
+    assert "worker-pm2.sh" not in accept_source
     subprocess.run(["/bin/bash", "-n", str(PROVISION)], check=True)
     subprocess.run(["/bin/bash", "-n", str(AGENTOPS)], check=True)
 
@@ -1709,10 +1715,15 @@ def test_acceptance_coordinator_keeps_cloud_key_neo_owned_and_commands_fixed() -
     assert "cloud_admin_key=/Users/neo/.ssh/orbbec_aliyun_ed25519" in source
     assert "/Users/agentops/AgentRuntime/private/cloud-admin" not in source
     assert "cloud_admin_key" not in source.split("keys = {", 1)[1].split("}", 1)[0]
-    assert "/usr/bin/sudo -n -u agentops" in source
+    assert (
+        "/usr/bin/sudo -n -H -u agentops \"$agentops_control\" \"$1\""
+        in source
+    )
     assert "sudo -n -u agentops /bin/bash -c" not in source
     assert "sudo -n -u agentops /bin/zsh -c" not in source
-    assert "/bin/sh -c 'cd /Users/agentops && exec \"$@\"' sh \"$@\"" in source
+    assert "relay-canary|worker-stop|worker-restore" in source
+    assert "metabot-release-sha|agent-team-release-sha" in source
+    assert "/bin/sh -c 'cd /Users/agentops" not in source
     assert "cp " + "/Users/neo/.ssh/orbbec_aliyun_ed25519" not in source
     assert "order by created_at desc" in source
     assert "order by activated_at" not in source
