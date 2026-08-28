@@ -14,12 +14,21 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 import httpx
 from pydantic import ValidationError
 
+from .cases import ACTION_CASE_ID, BASE_UPSTREAM_HTTP_CASE_IDS
 from .models import (
     CONTRACT_VERSION,
     TERMINAL_EVENT_KINDS,
+    ActionExecuteReceipt,
     ActionDigestInput,
     ActionProposal,
+    CancelReceipt,
+    CapabilitiesResponse,
+    CreateTaskReceipt,
+    ErrorEnvelope,
     EventPage,
+    HealthResponse,
+    MessageReceipt,
+    TaskResponse,
     TokenBrokerRequest,
     action_digest,
 )
@@ -92,8 +101,10 @@ class ContractRunner:
         authorized_scopes: Sequence[str],
         transport: httpx.BaseTransport | None = None,
         max_request_seconds: float = 2.0,
-        operation_timeout_seconds: float = 905.0,
-        case_timeout_seconds: float = 3.0,
+        request_timeout_seconds: float = 5.0,
+        case_timeout_seconds: float = 15.0,
+        slow_case_timeout_seconds: float = 30.0,
+        profile_timeout_seconds: float = 180.0,
         poll_interval_seconds: float = 0.02,
     ) -> None:
         if not base_url.strip():
@@ -105,28 +116,33 @@ class ContractRunner:
             raise ValueError("at least one authorized scope is required")
         if (
             max_request_seconds <= 0
-            or operation_timeout_seconds < 900
+            or request_timeout_seconds <= 0
             or case_timeout_seconds <= 0
+            or slow_case_timeout_seconds < case_timeout_seconds
+            or profile_timeout_seconds < slow_case_timeout_seconds
         ):
             raise ValueError("contract timeouts must be positive")
         if poll_interval_seconds <= 0:
             raise ValueError("poll_interval_seconds must be positive")
         self._max_request_seconds = max_request_seconds
-        self._operation_timeout_seconds = operation_timeout_seconds
+        self._request_timeout_seconds = request_timeout_seconds
         self._case_timeout_seconds = case_timeout_seconds
+        self._slow_case_timeout_seconds = slow_case_timeout_seconds
+        self._profile_timeout_seconds = profile_timeout_seconds
         self._poll_interval_seconds = poll_interval_seconds
         self._token_broker = token_broker
         self._agent_id = agent_id
         self._authorized_scopes = scopes
         self._probe_task_id = uuid5(NAMESPACE_URL, f"{base_url.rstrip('/')}:{agent_id}")
         self._task_deadlines: dict[UUID, datetime] = {}
+        self._downstream_task_ids: dict[UUID, str] = {}
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             headers={
                 "X-Orbbec-Task-Contract": CONTRACT_VERSION,
                 "Accept": "application/json",
             },
-            timeout=httpx.Timeout(operation_timeout_seconds),
+            timeout=httpx.Timeout(request_timeout_seconds),
             transport=transport,
             trust_env=False,
         )
@@ -134,33 +150,51 @@ class ContractRunner:
 
     def run(self) -> ContractReport:
         require_supported_python()
+        profile_started = monotonic()
         capabilities = self._request_json(
             "GET", f"{API_PREFIX}/capabilities", expected={200}
         )
-        self._validate_capabilities(capabilities)
+        parsed_capabilities = self._validate_capabilities(capabilities)
+        health = self._parse_model(
+            HealthResponse,
+            self._request_json("GET", f"{API_PREFIX}/health", expected={200}),
+            "health",
+        )
+        if health.capability_version != parsed_capabilities.capability_version:
+            raise ContractViolation("health capability_version does not match capabilities")
         executed = [
+            "health",
+            *self._check_authorization_matrix(),
             self._check_create_idempotency_capability(),
             self._check_event_pages_sequence_terminal(),
             self._check_follow_up(),
             self._check_cancel(),
             self._check_deadline(),
         ]
-        if capabilities.get("supports_actions") is True:
+        if parsed_capabilities.supports_actions:
             executed.append(self._check_action_proposal_execute())
+        expected_cases = (
+            (*BASE_UPSTREAM_HTTP_CASE_IDS, ACTION_CASE_ID)
+            if parsed_capabilities.supports_actions
+            else BASE_UPSTREAM_HTTP_CASE_IDS
+        )
+        if tuple(executed) != tuple(expected_cases):
+            raise ContractViolation("upstream_http case catalog drifted")
+        if monotonic() - profile_started > self._profile_timeout_seconds:
+            raise ContractViolation("upstream_http profile exceeded 180 seconds")
         return ContractReport(CONTRACT_VERSION, tuple(executed))
 
     def close(self) -> None:
         self._client.close()
 
-    def _validate_capabilities(self, document: Mapping[str, object]) -> None:
-        if document.get("contract_version") != CONTRACT_VERSION:
-            raise ContractViolation("capabilities returned the wrong contract_version")
-        version = document.get("capability_version")
-        if type(version) is not int or version <= 0:
-            raise ContractViolation("capability_version must be a positive integer")
-        if type(document.get("supports_actions")) is not bool:
-            raise ContractViolation("supports_actions must be a boolean")
-        self._capability_version = version
+    def _validate_capabilities(
+        self, document: Mapping[str, object]
+    ) -> CapabilitiesResponse:
+        parsed = self._parse_model(CapabilitiesResponse, document, "capabilities")
+        if parsed.agent_id != self._agent_id:
+            raise ContractViolation("capabilities returned the wrong agent_id")
+        self._capability_version = parsed.capability_version
+        return parsed
 
     def _task_payload(
         self,
@@ -196,34 +230,60 @@ class ContractRunner:
         receipt = self._request_json(
             "POST", f"{API_PREFIX}/tasks", expected={202}, json_body=payload
         )
-        self._validate_create_receipt(receipt, duplicate=False)
+        parsed = self._validate_create_receipt(receipt, duplicate=False)
+        self._downstream_task_ids[task_id] = parsed.downstream_task_id
         return task_id, receipt
 
-    @staticmethod
     def _validate_create_receipt(
-        document: Mapping[str, object], *, duplicate: bool
-    ) -> None:
-        if document.get("contract_version") != CONTRACT_VERSION:
-            raise ContractViolation(
-                "create receipt returned the wrong contract_version"
-            )
-        if document.get("status") != "queued":
-            raise ContractViolation("create must quickly return status=queued")
-        if document.get("next_event_seq") != 1:
-            raise ContractViolation("new tasks must start with next_event_seq=1")
-        if document.get("duplicate") is not duplicate:
+        self, document: Mapping[str, object], *, duplicate: bool
+    ) -> CreateTaskReceipt:
+        parsed = self._parse_model(CreateTaskReceipt, document, "create receipt")
+        if parsed.duplicate is not duplicate:
             raise ContractViolation("create duplicate flag is incorrect")
-        downstream_id = document.get("downstream_task_id")
-        if not isinstance(downstream_id, str) or not downstream_id:
-            raise ContractViolation("create receipt requires downstream_task_id")
+        return parsed
+
+    def _check_authorization_matrix(self) -> tuple[str, ...]:
+        cases = (
+            ("missing", 401, "auth_missing"),
+            ("expired", 401, "auth_expired"),
+            ("wrong_audience", 401, "auth_wrong_audience"),
+            ("retired_kid", 401, "auth_retired_kid"),
+            ("wrong_scope", 403, "auth_wrong_scope"),
+            ("wrong_task_binding", 403, "auth_wrong_task_binding"),
+        )
+        executed: list[str] = []
+        for profile, status, case_id in cases:
+            task_id = uuid4()
+            payload = self._task_payload(
+                f"fixture:{case_id}",
+                task_id=task_id,
+                idempotency_key=f"fixture:{case_id}:{task_id}",
+            )
+            response = self._request(
+                "POST",
+                f"{API_PREFIX}/tasks",
+                expected={status},
+                json_body=payload,
+                token_profile="valid" if profile == "missing" else profile,
+                omit_token=profile == "missing",
+            )
+            self._parse_error(response)
+            valid = self._request_json(
+                "POST", f"{API_PREFIX}/tasks", expected={202}, json_body=payload
+            )
+            receipt = self._validate_create_receipt(valid, duplicate=False)
+            self._downstream_task_ids[task_id] = receipt.downstream_task_id
+            executed.append(case_id)
+        return tuple(executed)
 
     def _check_create_idempotency_capability(self) -> str:
         task_id = uuid4()
-        payload = self._task_payload("contract:create-idempotency", task_id=task_id)
+        payload = self._task_payload("fixture/create-idempotency", task_id=task_id)
         first = self._request_json(
             "POST", f"{API_PREFIX}/tasks", expected={202}, json_body=payload
         )
-        self._validate_create_receipt(first, duplicate=False)
+        first_receipt = self._validate_create_receipt(first, duplicate=False)
+        self._downstream_task_ids[task_id] = first_receipt.downstream_task_id
         duplicate = self._request_json(
             "POST", f"{API_PREFIX}/tasks", expected={202}, json_body=payload
         )
@@ -240,7 +300,12 @@ class ContractRunner:
         )
         self._assert_error(response, "idempotency_conflict")
 
-        stale = self._task_payload("contract:stale-capability")
+        stale_task_id = uuid4()
+        stale = self._task_payload(
+            "fixture/stale-capability",
+            task_id=stale_task_id,
+            idempotency_key=f"contract-stale:{stale_task_id}",
+        )
         stale["capability_version"] = self._capability_version + 1
         response = self._request(
             "POST", f"{API_PREFIX}/tasks", expected={409}, json_body=stale
@@ -254,6 +319,14 @@ class ContractRunner:
             raise ContractViolation(
                 "capability_changed must require capability refresh"
             )
+        corrected = {**stale, "capability_version": self._capability_version}
+        corrected_receipt = self._validate_create_receipt(
+            self._request_json(
+                "POST", f"{API_PREFIX}/tasks", expected={202}, json_body=corrected
+            ),
+            duplicate=False,
+        )
+        self._downstream_task_ids[stale_task_id] = corrected_receipt.downstream_task_id
         return "create_idempotency_capability"
 
     def _event_page(self, task_id: UUID, *, after: int, limit: int) -> EventPage:
@@ -268,9 +341,13 @@ class ContractRunner:
             raise ContractViolation(
                 "event endpoint must return a finite JSON page, not a stream"
             )
-        return validate_event_page(
+        page = validate_event_page(
             self._response_json(response), after=after, limit=limit
         )
+        expected_downstream = self._downstream_task_ids.get(task_id)
+        if expected_downstream is not None and page.downstream_task_id != expected_downstream:
+            raise ContractViolation("event page changed downstream_task_id")
+        return page
 
     def _wait_for_events(self, task_id: UUID, *, after: int, limit: int) -> EventPage:
         expires_at = monotonic() + self._case_timeout_seconds
@@ -286,35 +363,45 @@ class ContractRunner:
                 )
             sleep(self._poll_interval_seconds)
 
+    def _observe_terminal_stability(self, task_id: UUID, *, after: int) -> None:
+        started = monotonic()
+        for read_index in range(3):
+            page = self._event_page(task_id, after=after, limit=100)
+            if page.events or page.next_after != after or not page.terminal:
+                raise ContractViolation("terminal task changed after completion")
+            if read_index < 2:
+                remaining = max(0.0, 0.5 - (monotonic() - started))
+                sleep(remaining / (2 - read_index))
+        if monotonic() - started < 0.5:
+            raise ContractViolation("terminal stability window was shorter than 500ms")
+
     def _check_event_pages_sequence_terminal(self) -> str:
-        task_id, _ = self._create("contract:event-sequence-terminal")
-        first = self._event_page(task_id, after=0, limit=2)
+        task_id, _ = self._create("fixture/event-sequence-terminal")
+        first = self._wait_for_events(task_id, after=0, limit=2)
         if [event.seq for event in first.events] != [1, 2] or first.terminal:
             raise ContractViolation(
                 "event fixture must expose a finite nonterminal first page"
             )
-        second = self._event_page(task_id, after=2, limit=2)
+        second = self._wait_for_events(task_id, after=2, limit=2)
         if [event.kind for event in second.events] != ["result"] or not second.terminal:
             raise ContractViolation("event fixture must terminate with result")
         replay = self._event_page(task_id, after=2, limit=2)
         if replay != second:
             raise ContractViolation("event page replay from after was not exact")
-        exhausted = self._event_page(task_id, after=3, limit=2)
-        if exhausted.events or exhausted.next_after != 3 or not exhausted.terminal:
-            raise ContractViolation(
-                "terminal empty event page changed the cursor or terminal state"
-            )
-        task = self._request_json(
-            "GET", f"{API_PREFIX}/tasks/{task_id}", expected={200}
+        self._observe_terminal_stability(task_id, after=3)
+        task = self._parse_model(
+            TaskResponse,
+            self._request_json("GET", f"{API_PREFIX}/tasks/{task_id}", expected={200}),
+            "task",
         )
-        if task.get("status") != "completed":
+        if task.status != "completed":
             raise ContractViolation(
                 "result terminal event must project status=completed"
             )
         return "finite_event_pages_sequence_terminal"
 
     def _check_follow_up(self) -> str:
-        task_id, _ = self._create("contract:follow-up")
+        task_id, _ = self._create("fixture/follow-up")
         body: dict[str, object] = {
             "contract_version": CONTRACT_VERSION,
             "message_seq": 1,
@@ -334,10 +421,19 @@ class ContractRunner:
             expected={202},
             json_body=body,
         )
-        if first.get("message_seq") != 1 or first.get("duplicate") is not False:
+        first_receipt = self._parse_model(MessageReceipt, first, "message receipt")
+        duplicate_receipt = self._parse_model(
+            MessageReceipt, duplicate, "message receipt"
+        )
+        if first_receipt.message_seq != 1 or first_receipt.duplicate is not False:
             raise ContractViolation("first follow-up message was not accepted")
-        if duplicate.get("message_seq") != 1 or duplicate.get("duplicate") is not True:
+        if (
+            duplicate_receipt.message_seq != 1
+            or duplicate_receipt.duplicate is not True
+        ):
             raise ContractViolation("follow-up message replay was not idempotent")
+        if first_receipt.downstream_task_id != duplicate_receipt.downstream_task_id:
+            raise ContractViolation("follow-up replay changed downstream_task_id")
         collision = {**body, "content": "different content"}
         response = self._request(
             "POST",
@@ -349,54 +445,73 @@ class ContractRunner:
         return "follow_up"
 
     def _check_cancel(self) -> str:
-        task_id, _ = self._create("contract:cancel")
+        task_id, _ = self._create("fixture/cancel")
+        body = {
+            "contract_version": CONTRACT_VERSION,
+            "idempotency_key": f"contract-cancel:{task_id}",
+        }
         first = self._request_json(
             "POST",
             f"{API_PREFIX}/tasks/{task_id}/cancel",
             expected={200, 202},
-            json_body={},
+            json_body=body,
         )
         replay = self._request_json(
             "POST",
             f"{API_PREFIX}/tasks/{task_id}/cancel",
             expected={200, 202},
-            json_body={},
+            json_body=body,
         )
-        if first != replay:
-            raise ContractViolation("repeated cancel must return the same result")
-        if first.get("status") not in {"cancelled", "cancel_requested"}:
-            raise ContractViolation(
-                "cancel did not persist cancel_requested or cancellation"
-            )
+        first_receipt = self._parse_model(CancelReceipt, first, "cancel receipt")
+        replay_receipt = self._parse_model(CancelReceipt, replay, "cancel receipt")
+        if first_receipt.duplicate or not replay_receipt.duplicate:
+            raise ContractViolation("cancel duplicate flags are incorrect")
+        if first_receipt.cancel_request_id != replay_receipt.cancel_request_id:
+            raise ContractViolation("repeated cancel changed cancel_request_id")
         page = self._event_page(task_id, after=0, limit=100)
         if [event.kind for event in page.events] != ["cancelled"] or not page.terminal:
             raise ContractViolation(
                 "cancel fixture must emit exactly one cancelled terminal event"
             )
-        exhausted = self._event_page(task_id, after=1, limit=100)
-        if exhausted.events or not exhausted.terminal:
-            raise ContractViolation("late event changed the cancelled terminal state")
-        task = self._request_json(
-            "GET", f"{API_PREFIX}/tasks/{task_id}", expected={200}
+        self._observe_terminal_stability(task_id, after=1)
+        task = self._parse_model(
+            TaskResponse,
+            self._request_json("GET", f"{API_PREFIX}/tasks/{task_id}", expected={200}),
+            "task",
         )
-        if task.get("status") != "cancelled":
+        if task.status != "cancelled":
             raise ContractViolation(
                 "cancelled terminal event must project status=cancelled"
             )
         return "cancel"
 
     def _check_deadline(self) -> str:
+        expired_task_id = uuid4()
         expired = self._task_payload(
-            "contract:expired-deadline",
+            "fixture/expired-deadline",
+            task_id=expired_task_id,
+            idempotency_key=f"contract-expired:{expired_task_id}",
             deadline_at=datetime.now(UTC) - timedelta(seconds=1),
         )
         response = self._request(
             "POST", f"{API_PREFIX}/tasks", expected={409}, json_body=expired
         )
         self._assert_error(response, "deadline_expired")
+        corrected_deadline = datetime.now(UTC) + timedelta(minutes=5)
+        corrected = {
+            **expired,
+            "deadline_at": corrected_deadline.isoformat().replace("+00:00", "Z"),
+        }
+        corrected_receipt = self._validate_create_receipt(
+            self._request_json(
+                "POST", f"{API_PREFIX}/tasks", expected={202}, json_body=corrected
+            ),
+            duplicate=False,
+        )
+        self._downstream_task_ids[expired_task_id] = corrected_receipt.downstream_task_id
 
         deadline = datetime.now(UTC) + timedelta(milliseconds=100)
-        task_id, _ = self._create("contract:deadline", deadline_at=deadline)
+        task_id, _ = self._create("fixture/deadline", deadline_at=deadline)
         page = self._wait_for_events(task_id, after=0, limit=100)
         if [event.kind for event in page.events] != ["timeout"] or not page.terminal:
             raise ContractViolation(
@@ -406,20 +521,20 @@ class ContractRunner:
             raise ContractViolation(
                 "timeout event was emitted before the task deadline"
             )
-        exhausted = self._event_page(task_id, after=1, limit=100)
-        if exhausted.events or not exhausted.terminal:
-            raise ContractViolation("late result changed the deadline terminal state")
-        task = self._request_json(
-            "GET", f"{API_PREFIX}/tasks/{task_id}", expected={200}
+        self._observe_terminal_stability(task_id, after=1)
+        task = self._parse_model(
+            TaskResponse,
+            self._request_json("GET", f"{API_PREFIX}/tasks/{task_id}", expected={200}),
+            "task",
         )
-        if task.get("status") != "timed_out":
+        if task.status != "timed_out":
             raise ContractViolation(
                 "timeout terminal event must project status=timed_out"
             )
         return "deadline"
 
     def _check_action_proposal_execute(self) -> str:
-        task_id, _ = self._create("contract:action")
+        task_id, _ = self._create("fixture/action")
         page = self._event_page(task_id, after=0, limit=100)
         if len(page.events) != 1 or page.events[0].kind != "action_required":
             raise ContractViolation(
@@ -449,6 +564,7 @@ class ContractRunner:
                 "action proposal digest does not match canonical parameters"
             )
         body = {
+            "contract_version": CONTRACT_VERSION,
             "action_id": str(proposal.action_id),
             "action_digest": proposal.action_digest,
             "idempotency_key": f"contract-execute:{proposal.action_id}",
@@ -460,10 +576,16 @@ class ContractRunner:
         replay = self._request_json(
             "POST", endpoint, expected={200, 202}, json_body=body
         )
-        if first != replay:
-            raise ContractViolation(
-                "repeated action execute changed its business result"
-            )
+        first_receipt = self._parse_model(
+            ActionExecuteReceipt, first, "action execute receipt"
+        )
+        replay_receipt = self._parse_model(
+            ActionExecuteReceipt, replay, "action execute receipt"
+        )
+        if first_receipt.duplicate or not replay_receipt.duplicate:
+            raise ContractViolation("action execute duplicate flags are incorrect")
+        if first_receipt.execution_id != replay_receipt.execution_id:
+            raise ContractViolation("repeated action execute changed execution_id")
         bad_digest = (
             "1" if proposal.action_digest[0] == "0" else "0"
         ) + proposal.action_digest[1:]
@@ -474,6 +596,15 @@ class ContractRunner:
         }
         response = self._request("POST", endpoint, expected={409}, json_body=mismatch)
         self._assert_error(response, "action_digest_mismatch")
+        result_page = self._wait_for_events(task_id, after=1, limit=100)
+        if [event.kind for event in result_page.events] != ["result"]:
+            raise ContractViolation("action execution did not produce one result")
+        payload = result_page.events[0].payload
+        if payload.get("execution_id") != first_receipt.execution_id:
+            raise ContractViolation("action result changed execution_id")
+        if payload.get("fixture_business_effect_count") != 1:
+            raise ContractViolation("duplicate action execute repeated the business effect")
+        self._observe_terminal_stability(task_id, after=2)
         return "action_proposal_execute"
 
     def _request_json(
@@ -497,39 +628,39 @@ class ContractRunner:
         json_body: Mapping[str, object] | None = None,
         params: Mapping[str, object] | None = None,
         token_profile: str = "valid",
+        omit_token: bool = False,
     ) -> httpx.Response:
         started = monotonic()
         must_be_nonblocking = (method == "POST" and path == f"{API_PREFIX}/tasks") or (
             method == "GET" and path.endswith("/events")
         )
-        request_timeout = (
-            self._max_request_seconds
-            if must_be_nonblocking
-            else self._operation_timeout_seconds
-        )
+        request_timeout = min(self._max_request_seconds, self._request_timeout_seconds)
         task_id, task_deadline = self._request_task_identity(path, json_body)
         capability_version = self._capability_version or 1
-        try:
-            token = self._token_broker.issue(
-                TokenBrokerRequest(
-                    profile=token_profile,
-                    agent_id=self._agent_id,
-                    platform_task_id=task_id,
-                    capability_version=capability_version,
-                    authorized_scopes=self._authorized_scopes,
-                    task_deadline_at=task_deadline,
-                    action_execution_deadline_at=None,
+        headers: dict[str, str] = {}
+        if not omit_token:
+            try:
+                token = self._token_broker.issue(
+                    TokenBrokerRequest(
+                        profile=token_profile,
+                        agent_id=self._agent_id,
+                        platform_task_id=task_id,
+                        capability_version=capability_version,
+                        authorized_scopes=self._authorized_scopes,
+                        task_deadline_at=task_deadline,
+                        action_execution_deadline_at=None,
+                    )
                 )
-            )
-        except TokenBrokerError as exc:
-            raise ContractViolation("task token broker failed") from exc
+            except TokenBrokerError as exc:
+                raise ContractViolation("task token broker failed") from exc
+            headers["Authorization"] = f"Bearer {token}"
         try:
             response = self._client.request(
                 method,
                 path,
                 json=json_body,
                 params=params,
-                headers={"Authorization": f"Bearer {token}"},
+                headers=headers,
                 timeout=request_timeout,
             )
         except httpx.HTTPError as exc:
@@ -577,12 +708,25 @@ class ContractRunner:
             raise ContractViolation("HTTP response JSON must be an object")
         return document
 
+    @staticmethod
+    def _parse_model(
+        model: type[Any], document: Mapping[str, object], label: str
+    ) -> Any:
+        try:
+            return model.model_validate_json(_json_model_bytes(document))
+        except (TypeError, ValueError, ValidationError) as exc:
+            raise ContractViolation(f"invalid {label} response: {exc}") from exc
+
+    def _parse_error(self, response: httpx.Response) -> ErrorEnvelope:
+        return self._parse_model(
+            ErrorEnvelope, self._response_json(response), "error envelope"
+        )
+
     def _assert_error(self, response: httpx.Response, code: str) -> dict[str, Any]:
-        document = self._response_json(response)
-        error = document.get("error", document)
-        if not isinstance(error, dict) or error.get("code") != code:
+        envelope = self._parse_error(response)
+        if envelope.error.code != code:
             raise ContractViolation(f"expected error code {code}")
-        return error
+        return envelope.error.details.model_dump(exclude_none=True)
 
 
 def _parser() -> argparse.ArgumentParser:

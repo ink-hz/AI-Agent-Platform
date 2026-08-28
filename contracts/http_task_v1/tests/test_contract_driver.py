@@ -31,12 +31,34 @@ class ContractTarget:
         self.message_keys: dict[tuple[str, str], dict[str, Any]] = {}
         self.cancel_responses: dict[str, dict[str, Any]] = {}
         self.execute_keys: dict[tuple[str, str], dict[str, Any]] = {}
+        self.action_effects: dict[str, int] = {}
+        self.rejected_task_ids: set[str] = set()
+        self.policy_rejected_task_ids: set[str] = set()
         self.requests: list[httpx.Request] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
-        assert request.headers["authorization"] == "Bearer task-token"
         assert request.headers["x-orbbec-task-contract"] == "orbbec-http-task/v1"
+        if request.method == "POST" and request.url.path.endswith("/tasks"):
+            body = self._body(request)
+            authorization = request.headers.get("authorization", "")
+            profile = (
+                authorization.split(":", 2)[1]
+                if authorization.startswith("Bearer profile:")
+                else "missing"
+            )
+            status_by_profile = {
+                "missing": 401,
+                "expired": 401,
+                "wrong_audience": 401,
+                "retired_kid": 401,
+                "wrong_scope": 403,
+                "wrong_task_binding": 403,
+            }
+            if profile in status_by_profile:
+                self.rejected_task_ids.add(body["platform_task_id"])
+                code = "scope_denied" if profile == "wrong_scope" else "protocol_violation"
+                return self._error(status_by_profile[profile], code)
         return self._dispatch(request)
 
     def _dispatch(self, request: httpx.Request) -> httpx.Response:
@@ -46,8 +68,21 @@ class ContractTarget:
                 200,
                 {
                     "contract_version": "orbbec-http-task/v1",
+                    "agent_id": "ai-fae-agent",
                     "capability_version": 2,
                     "supports_actions": True,
+                    "max_duration_seconds": 600,
+                    "supported_scopes": ["fae.answer"],
+                    "supported_event_kinds": ["action_required", "result"],
+                },
+            )
+        if request.method == "GET" and path.endswith("/health"):
+            return self._json(
+                200,
+                {
+                    "contract_version": "orbbec-http-task/v1",
+                    "status": "healthy",
+                    "capability_version": 2,
                 },
             )
         if request.method == "POST" and path.endswith("/tasks"):
@@ -70,6 +105,22 @@ class ContractTarget:
             status, json=document, headers={"content-type": "application/json"}
         )
 
+    @classmethod
+    def _error(
+        cls, status: int, code: str, details: dict[str, Any] | None = None
+    ) -> httpx.Response:
+        return cls._json(
+            status,
+            {
+                "contract_version": "orbbec-http-task/v1",
+                "error": {
+                    "code": code,
+                    "message": "request rejected by contract fixture",
+                    "details": details or {},
+                },
+            },
+        )
+
     @staticmethod
     def _body(request: httpx.Request) -> dict[str, Any]:
         return json.loads(request.content)
@@ -78,26 +129,26 @@ class ContractTarget:
         body = self._body(request)
         assert body["contract_version"] == "orbbec-http-task/v1"
         if body["capability_version"] != 2:
-            return self._json(
+            self.policy_rejected_task_ids.add(body["platform_task_id"])
+            return self._error(
                 409,
+                "capability_changed",
                 {
-                    "error": {
-                        "code": "capability_changed",
-                        "current_capability_version": 2,
-                        "must_refresh_capabilities": True,
-                    }
+                    "current_capability_version": 2,
+                    "must_refresh_capabilities": True,
                 },
             )
         if datetime.fromisoformat(
             body["deadline_at"].replace("Z", "+00:00")
         ) <= datetime.now(UTC):
-            return self._json(409, {"error": {"code": "deadline_expired"}})
+            self.policy_rejected_task_ids.add(body["platform_task_id"])
+            return self._error(409, "deadline_expired")
         key = body["idempotency_key"]
         existing = self.create_keys.get(key)
         if existing is not None:
             original, response = existing
             if body != original:
-                return self._json(409, {"error": {"code": "idempotency_conflict"}})
+                return self._error(409, "idempotency_conflict")
             return self._json(202, {**response, "duplicate": True})
         task_id = body["platform_task_id"]
         response = {
@@ -125,10 +176,12 @@ class ContractTarget:
         existing = self.message_keys.get(key)
         if existing is not None:
             if body != existing:
-                return self._json(409, {"error": {"code": "message_sequence_conflict"}})
+                return self._error(409, "message_sequence_conflict")
             return self._json(
                 202,
                 {
+                    "contract_version": "orbbec-http-task/v1",
+                    "downstream_task_id": self._downstream_id(task_id),
                     "status": "accepted",
                     "message_seq": body["message_seq"],
                     "duplicate": True,
@@ -138,6 +191,8 @@ class ContractTarget:
         return self._json(
             202,
             {
+                "contract_version": "orbbec-http-task/v1",
+                "downstream_task_id": self._downstream_id(task_id),
                 "status": "accepted",
                 "message_seq": body["message_seq"],
                 "duplicate": False,
@@ -146,15 +201,24 @@ class ContractTarget:
 
     def _cancel(self, request: httpx.Request) -> httpx.Response:
         task_id = request.url.path.split("/tasks/", 1)[1].split("/", 1)[0]
-        response = self.cancel_responses.setdefault(
-            task_id,
-            {
-                "contract_version": "orbbec-http-task/v1",
-                "status": "cancelled",
-                "cancel_requested": True,
-            },
-        )
+        body = self._body(request)
+        assert set(body) == {"contract_version", "idempotency_key"}
+        existing = self.cancel_responses.get(task_id)
+        if existing is not None:
+            return self._json(202, {**existing, "duplicate": True})
+        response = {
+            "contract_version": "orbbec-http-task/v1",
+            "downstream_task_id": self._downstream_id(task_id),
+            "cancel_request_id": f"cancel-{task_id}",
+            "status": "cancelled",
+            "duplicate": False,
+        }
+        self.cancel_responses[task_id] = response
         return self._json(202, response)
+
+    def _downstream_id(self, task_id: str) -> str:
+        body = self.tasks[task_id]
+        return self.create_keys[body["idempotency_key"]][1]["downstream_task_id"]
 
     def _events(self, request: httpx.Request) -> httpx.Response:
         task_id = request.url.path.split("/tasks/", 1)[1].split("/", 1)[0]
@@ -165,7 +229,7 @@ class ContractTarget:
         limit = int(query["limit"][0])
         assert 1 <= limit <= 100
         turn_ref = task["turn_ref"]
-        if turn_ref == "contract:event-sequence-terminal":
+        if turn_ref == "fixture/event-sequence-terminal":
             events = [
                 {
                     "seq": 1,
@@ -186,7 +250,7 @@ class ContractTarget:
                     "payload": {"outcome": "completed"},
                 },
             ]
-        elif turn_ref == "contract:cancel":
+        elif turn_ref == "fixture/cancel":
             events = [
                 {
                     "seq": 1,
@@ -195,7 +259,7 @@ class ContractTarget:
                     "payload": {"reason_code": "cancel_requested"},
                 }
             ]
-        elif turn_ref == "contract:deadline":
+        elif turn_ref == "fixture/deadline":
             deadline = datetime.fromisoformat(
                 task["deadline_at"].replace("Z", "+00:00")
             )
@@ -212,7 +276,7 @@ class ContractTarget:
                 if now >= deadline
                 else []
             )
-        elif turn_ref == "contract:action":
+        elif turn_ref == "fixture/action":
             platform_task_id = UUID(task_id)
             action_id = uuid5(platform_task_id, "action:1")
             from orbbec_task_contract.models import ActionDigestInput, action_digest
@@ -243,25 +307,43 @@ class ContractTarget:
                     },
                 }
             ]
+            execution = next(
+                (
+                    value
+                    for (stored_action_id, _), value in self.execute_keys.items()
+                    if stored_action_id == str(action_id)
+                ),
+                None,
+            )
+            if execution is not None:
+                events.append(
+                    {
+                        "seq": 2,
+                        "kind": "result",
+                        "created_at": "2026-08-27T10:00:01Z",
+                        "payload": {
+                            "execution_id": execution["execution_id"],
+                            "fixture_business_effect_count": self.action_effects[
+                                str(action_id)
+                            ],
+                        },
+                    }
+                )
         else:
             events = []
         page = events[after : after + limit]
         next_after = page[-1]["seq"] if page else after
-        terminal = (
-            bool(events)
-            and turn_ref
-            in {
-                "contract:event-sequence-terminal",
-                "contract:cancel",
-                "contract:deadline",
-            }
-            and (next_after >= len(events))
-        )
+        terminal_turn = turn_ref in {
+            "fixture/event-sequence-terminal",
+            "fixture/cancel",
+            "fixture/deadline",
+        } or (turn_ref == "fixture/action" and len(events) == 2)
+        terminal = bool(events) and terminal_turn and next_after >= len(events)
         return self._json(
             200,
             {
                 "contract_version": "orbbec-http-task/v1",
-                "downstream_task_id": f"downstream-{list(self.tasks).index(task_id) + 1}",
+                "downstream_task_id": self._downstream_id(task_id),
                 "events": page,
                 "next_after": next_after,
                 "terminal": terminal,
@@ -272,25 +354,42 @@ class ContractTarget:
         task_id = request.url.path.split("/tasks/", 1)[1]
         turn_ref = self.tasks[task_id]["turn_ref"]
         statuses = {
-            "contract:event-sequence-terminal": "completed",
-            "contract:cancel": "cancelled",
-            "contract:deadline": "timed_out",
+            "fixture/event-sequence-terminal": "completed",
+            "fixture/cancel": "cancelled",
+            "fixture/deadline": "timed_out",
         }
+        status = statuses.get(turn_ref, "queued")
+        if turn_ref == "fixture/action" and any(
+            action_id == str(uuid5(UUID(task_id), "action:1"))
+            for action_id, _ in self.execute_keys
+        ):
+            status = "completed"
+        terminal = status in {"completed", "failed", "cancelled", "timed_out"}
         return self._json(
             200,
             {
                 "contract_version": "orbbec-http-task/v1",
+                "downstream_task_id": self._downstream_id(task_id),
                 "platform_task_id": task_id,
-                "status": statuses.get(turn_ref, "queued"),
+                "status": status,
+                "cancel_requested": task_id in self.cancel_responses,
+                "next_event_seq": 3 if turn_ref == "fixture/action" and terminal else 2,
+                "terminal": terminal,
+                "created_at": "2026-08-27T10:00:00Z",
+                "updated_at": "2026-08-27T10:00:01Z",
             },
         )
 
     def _execute(self, request: httpx.Request) -> httpx.Response:
-        assert request.extensions["timeout"]["read"] >= 900
         task_id = request.url.path.split("/tasks/", 1)[1].split("/", 1)[0]
         action_id = request.url.path.split("/actions/", 1)[1].split("/", 1)[0]
         body = self._body(request)
-        assert set(body) == {"action_id", "action_digest", "idempotency_key"}
+        assert set(body) == {
+            "contract_version",
+            "action_id",
+            "action_digest",
+            "idempotency_key",
+        }
         assert body["action_id"] == action_id
         platform_task_id = UUID(task_id)
         expected_action_id = str(uuid5(platform_task_id, "action:1"))
@@ -306,16 +405,20 @@ class ContractTarget:
             )
         )
         if body["action_digest"] != expected_digest:
-            return self._json(409, {"error": {"code": "action_digest_mismatch"}})
+            return self._error(409, "action_digest_mismatch")
         key = (action_id, body["idempotency_key"])
-        response = self.execute_keys.setdefault(
-            key,
-            {
-                "contract_version": "orbbec-http-task/v1",
-                "status": "completed",
-                "result": {"business_record_id": "record-1"},
-            },
-        )
+        existing = self.execute_keys.get(key)
+        if existing is not None:
+            return self._json(200, {**existing, "duplicate": True})
+        response = {
+            "contract_version": "orbbec-http-task/v1",
+            "action_id": action_id,
+            "execution_id": f"execution-{action_id}",
+            "status": "completed",
+            "duplicate": False,
+        }
+        self.execute_keys[key] = response
+        self.action_effects[action_id] = self.action_effects.get(action_id, 0) + 1
         return self._json(200, response)
 
 
@@ -332,6 +435,13 @@ def test_runner_executes_the_complete_http_contract() -> None:
     ).run()
 
     assert report.executed_cases == (
+        "health",
+        "auth_missing",
+        "auth_expired",
+        "auth_wrong_audience",
+        "auth_retired_kid",
+        "auth_wrong_scope",
+        "auth_wrong_task_binding",
         "create_idempotency_capability",
         "finite_event_pages_sequence_terminal",
         "follow_up",
@@ -345,7 +455,7 @@ def test_runner_executes_the_complete_http_contract() -> None:
     cancel_task_id = next(
         task_id
         for task_id, task in target.tasks.items()
-        if task["turn_ref"] == "contract:cancel"
+        if task["turn_ref"] == "fixture/cancel"
     )
     assert any(
         request.url.path.endswith(f"/tasks/{cancel_task_id}/events")
@@ -353,12 +463,12 @@ def test_runner_executes_the_complete_http_contract() -> None:
     )
 
 
-def test_nonblocking_limit_does_not_apply_to_action_execution() -> None:
+def test_all_contract_requests_use_bounded_http_timeouts() -> None:
     runner = _runner_module()
 
     class SlowActionTarget(ContractTarget):
         def _execute(self, request: httpx.Request) -> httpx.Response:
-            sleep(0.05)
+            assert request.extensions["timeout"]["read"] <= 5
             return super()._execute(request)
 
     report = runner.ContractRunner(
@@ -367,7 +477,6 @@ def test_nonblocking_limit_does_not_apply_to_action_execution() -> None:
         agent_id="ai-fae-agent",
         authorized_scopes=("fae.answer",),
         transport=httpx.MockTransport(SlowActionTarget()),
-        max_request_seconds=0.01,
     ).run()
 
     assert "action_proposal_execute" in report.executed_cases
@@ -690,12 +799,12 @@ class RecordingTokenBroker:
 
     def issue(self, request: Any) -> str:
         self.requests.append(request)
-        return f"task-token:{request.platform_task_id}"
+        return f"profile:{request.profile}:{request.platform_task_id}"
 
 
 class StaticTokenBroker:
     def issue(self, request: Any) -> str:
-        return "task-token"
+        return f"profile:{request.profile}:{request.platform_task_id}"
 
 
 class DynamicTokenTarget(ContractTarget):
@@ -703,6 +812,18 @@ class DynamicTokenTarget(ContractTarget):
         self.requests.append(request)
         assert request.headers["x-orbbec-task-contract"] == "orbbec-http-task/v1"
         path = request.url.path
+        authorization = request.headers.get("authorization", "")
+        profile = (
+            authorization.split(":", 2)[1]
+            if authorization.startswith("Bearer profile:")
+            else "missing"
+        )
+        if request.method == "POST" and path.endswith("/tasks") and profile != "valid":
+            body = self._body(request)
+            self.rejected_task_ids.add(body["platform_task_id"])
+            status = 403 if profile in {"wrong_scope", "wrong_task_binding"} else 401
+            code = "scope_denied" if profile == "wrong_scope" else "protocol_violation"
+            return self._error(status, code)
         if request.method == "POST" and path.endswith("/tasks"):
             expected_task_id = self._body(request)["platform_task_id"]
         elif "/tasks/" in path:
@@ -711,7 +832,7 @@ class DynamicTokenTarget(ContractTarget):
             expected_task_id = None
         if expected_task_id is not None:
             assert request.headers["authorization"] == (
-                f"Bearer task-token:{expected_task_id}"
+                f"Bearer profile:valid:{expected_task_id}"
             )
         return self._dispatch(request)
 
@@ -732,6 +853,220 @@ def test_runner_issues_tokens_for_each_dynamic_task_id() -> None:
     assert report.executed_cases
     issued_task_ids = {str(request.platform_task_id) for request in broker.requests}
     assert set(target.tasks).issubset(issued_task_ids)
+
+
+class DelayedEventTarget(ContractTarget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.event_reads: dict[tuple[str, int], int] = {}
+
+    def _events(self, request: httpx.Request) -> httpx.Response:
+        task_id = request.url.path.split("/tasks/", 1)[1].split("/", 1)[0]
+        query = parse_qs(request.url.query.decode())
+        after = int(query["after"][0])
+        key = (task_id, after)
+        self.event_reads[key] = self.event_reads.get(key, 0) + 1
+        task = self.tasks[task_id]
+        if (
+            task["turn_ref"] == "fixture/event-sequence-terminal"
+            and after == 0
+            and self.event_reads[key] <= 2
+        ):
+            return self._json(
+                200,
+                {
+                    "contract_version": "orbbec-http-task/v1",
+                    "downstream_task_id": self.create_keys[task["idempotency_key"]][1][
+                        "downstream_task_id"
+                    ],
+                    "events": [],
+                    "next_after": 0,
+                    "terminal": False,
+                },
+            )
+        return super()._events(request)
+
+
+def test_runner_polls_nonblocking_pages_until_delayed_events_arrive() -> None:
+    runner = _runner_module()
+    target = DelayedEventTarget()
+
+    report = runner.ContractRunner(
+        base_url="https://agent.example",
+        token_broker=StaticTokenBroker(),
+        agent_id="ai-fae-agent",
+        authorized_scopes=("fae.answer",),
+        transport=httpx.MockTransport(target),
+        poll_interval_seconds=0.001,
+    ).run()
+
+    assert "finite_event_pages_sequence_terminal" in report.executed_cases
+    event_task_id = next(
+        task_id
+        for task_id, task in target.tasks.items()
+        if task["turn_ref"] == "fixture/event-sequence-terminal"
+    )
+    assert target.event_reads[(event_task_id, 0)] >= 3
+
+
+def test_runner_rejects_unknown_capability_response_fields() -> None:
+    runner = _runner_module()
+
+    class ExtraCapabilityTarget(ContractTarget):
+        def _dispatch(self, request: httpx.Request) -> httpx.Response:
+            if request.method == "GET" and request.url.path.endswith("/capabilities"):
+                return self._json(
+                    200,
+                    {
+                        "contract_version": "orbbec-http-task/v1",
+                        "agent_id": "ai-fae-agent",
+                        "capability_version": 2,
+                        "supports_actions": True,
+                        "max_duration_seconds": 600,
+                        "supported_scopes": ["fae.answer"],
+                        "supported_event_kinds": ["action_required", "result"],
+                        "unknown": "must be rejected",
+                    },
+                )
+            return super()._dispatch(request)
+
+    with pytest.raises(runner.ContractViolation, match="capabilities"):
+        runner.ContractRunner(
+            base_url="https://agent.example",
+            token_broker=StaticTokenBroker(),
+            agent_id="ai-fae-agent",
+            authorized_scopes=("fae.answer",),
+            transport=httpx.MockTransport(ExtraCapabilityTarget()),
+        ).run()
+
+
+def test_runner_observes_terminal_state_three_times() -> None:
+    runner = _runner_module()
+    target = DelayedEventTarget()
+
+    runner.ContractRunner(
+        base_url="https://agent.example",
+        token_broker=StaticTokenBroker(),
+        agent_id="ai-fae-agent",
+        authorized_scopes=("fae.answer",),
+        transport=httpx.MockTransport(target),
+        poll_interval_seconds=0.001,
+    ).run()
+
+    event_task_id = next(
+        task_id
+        for task_id, task in target.tasks.items()
+        if task["turn_ref"] == "fixture/event-sequence-terminal"
+    )
+    assert target.event_reads[(event_task_id, 3)] >= 3
+
+
+class ProfileTokenBroker:
+    def issue(self, request: Any) -> str:
+        return f"profile:{request.profile}:{request.platform_task_id}"
+
+
+class SecurityMatrixTarget(ContractTarget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rejected_task_ids: set[str] = set()
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if request.method == "POST" and request.url.path.endswith("/tasks"):
+            body = self._body(request)
+            authorization = request.headers.get("authorization", "")
+            if not authorization:
+                profile = "missing"
+            else:
+                profile = authorization.split(":", 2)[1]
+            status_by_profile = {
+                "missing": 401,
+                "expired": 401,
+                "wrong_audience": 401,
+                "retired_kid": 401,
+                "wrong_scope": 403,
+                "wrong_task_binding": 403,
+            }
+            if profile in status_by_profile:
+                self.rejected_task_ids.add(body["platform_task_id"])
+                code = "scope_denied" if profile == "wrong_scope" else "protocol_violation"
+                return self._json(
+                    status_by_profile[profile],
+                    {
+                        "contract_version": "orbbec-http-task/v1",
+                        "error": {
+                            "code": code,
+                            "message": "request is not authorized",
+                            "details": {},
+                        },
+                    },
+                )
+        return self._dispatch(request)
+
+
+def test_runner_executes_security_matrix_without_persisting_rejections() -> None:
+    runner = _runner_module()
+    target = SecurityMatrixTarget()
+
+    report = runner.ContractRunner(
+        base_url="https://agent.example",
+        token_broker=ProfileTokenBroker(),
+        agent_id="ai-fae-agent",
+        authorized_scopes=("fae.answer",),
+        transport=httpx.MockTransport(target),
+    ).run()
+
+    assert {
+        "auth_missing",
+        "auth_expired",
+        "auth_wrong_audience",
+        "auth_retired_kid",
+        "auth_wrong_scope",
+        "auth_wrong_task_binding",
+    }.issubset(report.executed_cases)
+    assert target.rejected_task_ids
+    assert target.rejected_task_ids.issubset(target.tasks)
+
+
+def test_runner_proves_capability_and_deadline_rejections_do_not_persist() -> None:
+    runner = _runner_module()
+    target = ContractTarget()
+
+    runner.ContractRunner(
+        base_url="https://agent.example",
+        token_broker=StaticTokenBroker(),
+        agent_id="ai-fae-agent",
+        authorized_scopes=("fae.answer",),
+        transport=httpx.MockTransport(target),
+    ).run()
+
+    assert len(target.policy_rejected_task_ids) == 2
+    assert target.policy_rejected_task_ids.issubset(target.tasks)
+    for task_id in target.policy_rejected_task_ids:
+        receipt = target.create_keys[target.tasks[task_id]["idempotency_key"]][1]
+        assert receipt["duplicate"] is False
+
+
+def test_upstream_case_catalog_is_stable_and_complete() -> None:
+    from orbbec_task_contract.cases import UPSTREAM_HTTP_CASE_IDS
+
+    assert UPSTREAM_HTTP_CASE_IDS == (
+        "health",
+        "auth_missing",
+        "auth_expired",
+        "auth_wrong_audience",
+        "auth_retired_kid",
+        "auth_wrong_scope",
+        "auth_wrong_task_binding",
+        "create_idempotency_capability",
+        "finite_event_pages_sequence_terminal",
+        "follow_up",
+        "cancel",
+        "deadline",
+        "action_proposal_execute",
+    )
+    assert len(UPSTREAM_HTTP_CASE_IDS) == len(set(UPSTREAM_HTTP_CASE_IDS))
 
 
 BASE_URL = os.getenv("ORBBEC_TASK_CONTRACT_BASE_URL")
