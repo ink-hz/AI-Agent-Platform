@@ -55,7 +55,8 @@ describe("BrainWorkspacePage", () => {
       fetchMessages: vi.fn().mockResolvedValue([]),
       fetchTaskDetail: vi.fn(),
       createMessageSubmission: vi.fn(), streamEvents: vi.fn().mockResolvedValue(undefined),
-      cancelCurrentTurn: vi.fn(), submitFeedback: vi.fn(), reconnectDelay: vi.fn().mockResolvedValue(undefined),
+      cancelCurrentTurn: vi.fn(), confirmAction: vi.fn(), rejectAction: vi.fn(),
+      submitFeedback: vi.fn(), reconnectDelay: vi.fn().mockResolvedValue(undefined),
       retryTurn: vi.fn(),
     };
     await act(async () => root.render(<BrainWorkspacePage

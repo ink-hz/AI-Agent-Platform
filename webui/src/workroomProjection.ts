@@ -2,6 +2,7 @@ import type { ConversationEvent } from "./conversationTypes";
 import { professionalAgentLabel } from "./components/conversation/agentLabels";
 import type {
   WorkroomDeliverable,
+  WorkroomAction,
   WorkroomSourceKind,
   WorkroomStatus,
   WorkroomTask,
@@ -54,6 +55,54 @@ function stringItems(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
     : [];
+}
+
+
+const ACTION_STATUSES = new Set<WorkroomAction["status"]>([
+  "pending", "confirmed", "rejected", "expired", "superseded",
+]);
+const ACTION_EXECUTION_STATUSES = new Set<WorkroomAction["executionStatus"]>([
+  "not_started", "queued", "running", "completed", "failed",
+]);
+
+
+function projectedAction(event: ConversationEvent, tasks: Map<string, WorkroomTask>): WorkroomAction | null {
+  if (event.event_type !== "agent.action_required") return null;
+  const actionId = stringValue(event.payload.action_id);
+  const taskId = stringValue(event.payload.task_id);
+  const actionKind = stringValue(event.payload.action_kind);
+  const summary = stringValue(event.payload.summary);
+  const impact = stringValue(event.payload.impact);
+  const actionDigest = stringValue(event.payload.action_digest);
+  const expiresAt = stringValue(event.payload.expires_at);
+  const status = String(event.payload.status) as WorkroomAction["status"];
+  const executionStatus = String(event.payload.execution_status) as WorkroomAction["executionStatus"];
+  const confirmedAt = event.payload.confirmed_at === null
+    ? null
+    : stringValue(event.payload.confirmed_at);
+  const confirmedBy = event.payload.confirmed_by === null
+    ? null
+    : stringValue(event.payload.confirmed_by);
+  if (
+    !actionId || !taskId || !tasks.has(taskId) || !actionKind || !summary || !impact
+    || !actionDigest || !/^[0-9a-f]{64}$/.test(actionDigest) || !expiresAt
+    || !ACTION_STATUSES.has(status) || !ACTION_EXECUTION_STATUSES.has(executionStatus)
+    || (event.payload.confirmed_at !== null && !confirmedAt)
+    || (event.payload.confirmed_by !== null && !confirmedBy)
+  ) return null;
+  return {
+    actionId,
+    taskId,
+    actionKind,
+    status,
+    executionStatus,
+    summary,
+    impact,
+    actionDigest,
+    expiresAt,
+    confirmedAt,
+    confirmedBy,
+  };
 }
 
 
@@ -248,11 +297,17 @@ export function projectWorkroom(events: ConversationEvent[]): WorkroomTurn | nul
     }
   }
   const selectedTasks = [...tasks.values()];
+  const actions = new Map<string, WorkroomAction>();
+  for (const event of ordered) {
+    const action = projectedAction(event, tasks);
+    if (action) actions.set(action.actionId, action);
+  }
   const status = workroomStatus(ordered, selectedTasks);
   return {
     turnId: ordered.find((event) => event.turn_id)?.turn_id ?? "unknown-turn",
     status,
     defaultExpanded: status === "running",
+    actions: [...actions.values()],
     tasks: selectedTasks,
     timeline: ordered.flatMap((event) => {
       const selected = timelineItem(event, tasks);

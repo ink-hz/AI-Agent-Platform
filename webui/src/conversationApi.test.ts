@@ -6,12 +6,15 @@ import {
   appendConversationMessage,
   archiveConversation,
   cancelCurrentTurn,
+  confirmConversationAction,
   createConversationMessageSubmission,
   fetchConversation,
   fetchConversationMessages,
   fetchConversationTaskDetail,
+  listConversationActions,
   listConversations,
   renameConversation,
+  rejectConversationAction,
   restoreConversation,
   startConversation,
   streamConversationEvents,
@@ -174,6 +177,91 @@ describe("continuous Conversation API", () => {
       `/api/v1/conversations/${CONVERSATION_ID}/turns/${TURN_ID}/tasks/task-1`,
       expect.objectContaining({ credentials: "include" }),
     );
+  });
+
+  it("lists and mutates only strict server-projected Actions", async () => {
+    const action = {
+      action_id: "f6a459d8-b081-58dd-908f-083976d0b481",
+      task_id: "074557ca-58a5-4555-b5a2-5793ef30a298",
+      action_kind: "voc.submit_draft",
+      summary: "提交本次 VOC 草稿",
+      impact: "确认后会提交当前草稿。",
+      status: "pending",
+      execution_status: "not_started",
+      action_digest: "a".repeat(64),
+      action_digest_prefix: "a".repeat(12),
+      expires_at: "2026-08-28T12:00:00+00:00",
+      confirmed_at: null,
+      execution_deadline_at: null,
+    };
+    const confirmed = {
+      ...action,
+      status: "confirmed",
+      execution_status: "queued",
+      confirmed_at: "2026-08-28T10:01:00+00:00",
+      execution_deadline_at: "2026-08-28T10:06:00+00:00",
+    };
+    const rejected = { ...action, status: "rejected" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [action] }))
+      .mockResolvedValueOnce(jsonResponse(confirmed))
+      .mockResolvedValueOnce(jsonResponse(rejected));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listConversationActions(CONVERSATION_ID)).resolves.toEqual([
+      expect.objectContaining({
+        actionId: action.action_id,
+        actionKind: "voc.submit_draft",
+        summary: "提交本次 VOC 草稿",
+        status: "pending",
+        confirmedBy: null,
+      }),
+    ]);
+    await expect(confirmConversationAction(
+      CONVERSATION_ID, action.action_id, action.action_digest, "csrf",
+    )).resolves.toEqual(expect.objectContaining({ status: "confirmed", executionStatus: "queued" }));
+    await expect(rejectConversationAction(
+      CONVERSATION_ID, action.action_id, "csrf",
+    )).resolves.toEqual(expect.objectContaining({ status: "rejected" }));
+
+    expect(fetchMock.mock.calls[0]).toEqual([
+      `/api/v1/conversations/${CONVERSATION_ID}/actions`,
+      expect.objectContaining({ credentials: "include" }),
+    ]);
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: "POST",
+      credentials: "include",
+      headers: expect.objectContaining({ "X-CSRF-Token": "csrf" }),
+      body: JSON.stringify({ action_digest: action.action_digest }),
+    });
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({
+      method: "POST",
+      credentials: "include",
+      headers: expect.objectContaining({ "X-CSRF-Token": "csrf" }),
+    });
+  });
+
+  it("rejects Action projections containing parameters or internal owner identifiers", async () => {
+    const unsafe = {
+      action_id: "f6a459d8-b081-58dd-908f-083976d0b481",
+      task_id: "074557ca-58a5-4555-b5a2-5793ef30a298",
+      action_kind: "voc.submit_draft",
+      summary: "提交草稿",
+      impact: "提交",
+      status: "pending",
+      execution_status: "not_started",
+      action_digest: "a".repeat(64),
+      action_digest_prefix: "a".repeat(12),
+      expires_at: "2026-08-28T12:00:00+00:00",
+      confirmed_at: null,
+      execution_deadline_at: null,
+      parameters: { raw: true },
+      confirmed_by_internal_user_id: "29cf0e76-e572-4ce0-8e24-f8eb69b8620a",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ items: [unsafe] })));
+
+    await expect(listConversationActions(CONVERSATION_ID))
+      .rejects.toThrow("Action response invalid");
   });
 
   it("accepts only the member-safe message shape without mission identifiers", async () => {

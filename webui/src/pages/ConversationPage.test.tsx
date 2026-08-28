@@ -92,6 +92,8 @@ function client(overrides: Partial<ConversationPageClient> = {}): ConversationPa
     })),
     streamEvents: vi.fn().mockImplementation(async (_id, options) => options.onEvent(event)),
     cancelCurrentTurn: vi.fn(),
+    confirmAction: vi.fn(),
+    rejectAction: vi.fn(),
     submitFeedback: vi.fn(),
     retryTurn: vi.fn().mockImplementation((_conversationId, _turnId) => ({
       idempotencyKey: "retry-same",
@@ -194,6 +196,53 @@ describe("ConversationPage", () => {
     expect(cancelCurrentTurn).toHaveBeenCalledWith(conversationId, account.csrf_token, expect.any(AbortSignal));
     expect(container.textContent).toContain("正在停止");
     expect(container.querySelector("textarea[aria-label='补充当前任务']")).not.toBeNull();
+  });
+
+  it("confirms only a real server-projected Action with the account CSRF token", async () => {
+    const digest = "a".repeat(64);
+    const confirmAction = vi.fn().mockResolvedValue({
+      actionId: "action-1", taskId: "task-1", actionKind: "voc.submit_draft",
+      status: "confirmed", executionStatus: "queued", summary: "提交本次 VOC 草稿",
+      impact: "确认后会提交当前草稿。", actionDigest: digest,
+      expiresAt: "2026-08-28T12:00:00Z", confirmedAt: "2026-08-28T10:01:00Z",
+      confirmedBy: null,
+    });
+    const streamEvents = vi.fn().mockImplementation(async (_id, options) => {
+      options.onEvent({
+        event_id: "event-task", conversation_id: conversationId, seq: 1, turn_id: "turn-1",
+        event_type: "agent.task_dispatched", created_at: "2026-08-28T10:00:00Z",
+        payload: {
+          task_id: "task-1", child_session_id: "child-1", agent_id: "voc",
+          objective_summary: "整理 VOC 草稿", public_reason: "需要 VOC Agent",
+          status: "running",
+        },
+      });
+      options.onEvent({
+        event_id: "event-action", conversation_id: conversationId, seq: 2, turn_id: "turn-1",
+        event_type: "agent.action_required", created_at: "2026-08-28T10:00:01Z",
+        payload: {
+          task_id: "task-1", action_id: "action-1", action_kind: "voc.submit_draft",
+          summary: "提交本次 VOC 草稿", impact: "确认后会提交当前草稿。",
+          status: "pending", execution_status: "not_started", action_digest: digest,
+          expires_at: "2026-08-28T12:00:00Z", confirmed_at: null, confirmed_by: null,
+        },
+      });
+    });
+    const pageClient = client({ confirmAction, streamEvents });
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      client={pageClient}
+      conversationId={conversationId}
+    />));
+
+    expect(container.textContent).toContain("提交本次 VOC 草稿");
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((item) => item.textContent === "确认执行");
+    await act(async () => button?.click());
+
+    expect(confirmAction).toHaveBeenCalledWith(
+      conversationId, "action-1", digest, account.csrf_token,
+    );
   });
 
   it("resumes SSE from the last accepted sequence after reconnect", async () => {

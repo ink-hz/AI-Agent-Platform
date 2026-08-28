@@ -7,6 +7,7 @@ export type ConversationTurnStatus =
   | "running"
   | "waiting_agents"
   | "waiting_user"
+  | "waiting_confirmation"
   | "completing"
   | "completed"
   | "failed"

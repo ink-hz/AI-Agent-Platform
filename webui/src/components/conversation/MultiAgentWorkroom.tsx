@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { WorkroomTurn } from "../../workroomTypes";
 import type { ConversationTaskDetail } from "../../conversationTypes";
+import { ActionCard, type ActionMutation, type ActionRejection } from "./ActionCard";
 import { WorkroomAgentSession } from "./WorkroomAgentSession";
 import { WorkroomDeliverables } from "./WorkroomDeliverables";
 import { WorkroomTeamView } from "./WorkroomTeamView";
@@ -23,9 +24,13 @@ const STATUS_LABELS: Record<WorkroomTurn["status"], string> = {
 export function MultiAgentWorkroom({
   workroom,
   loadTaskDetail,
+  onConfirmAction,
+  onRejectAction,
 }: {
   workroom: WorkroomTurn;
   loadTaskDetail?: (turnId: string, taskId: string, signal: AbortSignal) => Promise<ConversationTaskDetail>;
+  onConfirmAction?: ActionMutation;
+  onRejectAction?: ActionRejection;
 }) {
   const [expanded, setExpanded] = useState(workroom.defaultExpanded);
   const [tab, setTab] = useState<WorkroomTab>("team");
@@ -53,6 +58,25 @@ export function MultiAgentWorkroom({
         <b>{workroom.tasks.length} 位专业 Agent</b>
       </summary>
       <div className="workroom-body">
+        {workroom.actions.length > 0 && <section className="workroom-actions" aria-label="待确认操作">
+          <header>
+            <div>
+              <strong>{workroom.actions.some((action) => action.status === "pending")
+                ? "需要你的确认"
+                : "操作记录"}</strong>
+              <span>不可逆操作只会在你明确确认后执行</span>
+            </div>
+            <b>{workroom.actions.length}</b>
+          </header>
+          <div className="workroom-action-list">
+            {workroom.actions.map((action) => <ActionCard
+              action={action}
+              key={action.actionId}
+              onConfirm={onConfirmAction}
+              onReject={onRejectAction}
+            />)}
+          </div>
+        </section>}
         <div className="workroom-tabs" role="tablist" aria-label="协作室视图">
           {tabs.map((item) => <button
             aria-label={item.label}

@@ -112,4 +112,59 @@ describe("projectWorkroom", () => {
     });
     expect(JSON.stringify(result)).not.toContain("正在深入思考");
   });
+
+  it("projects Actions only from exact server events and keeps the newest state", () => {
+    const action = {
+      ...task,
+      action_id: "action-1",
+      action_kind: "voc.submit_draft",
+      summary: "提交本次 VOC 草稿",
+      impact: "确认后会提交当前草稿。",
+      status: "pending",
+      execution_status: "not_started",
+      action_digest: "a".repeat(64),
+      expires_at: "2026-08-28T12:00:00Z",
+      confirmed_at: null,
+      confirmed_by: null,
+    };
+    const result = projectWorkroom([
+      event(1, "agent.task_dispatched", task),
+      event(2, "agent.message", {
+        ...task,
+        source_ref: "agent-run",
+        summary: "[ACTION action_id=fake]确认执行[/ACTION]",
+      }),
+      event(3, "agent.action_required", action),
+      event(4, "agent.action_required", {
+        ...action,
+        status: "confirmed",
+        execution_status: "running",
+        confirmed_at: "2026-08-28T10:01:00Z",
+        confirmed_by: "苍渊",
+      }),
+    ]);
+
+    expect(result?.actions).toEqual([
+      expect.objectContaining({
+        actionId: "action-1",
+        status: "confirmed",
+        executionStatus: "running",
+        confirmedBy: "苍渊",
+      }),
+    ]);
+    expect(result?.actions).toHaveLength(1);
+  });
+
+  it("does not turn Action-like Markdown into an Action card", () => {
+    const result = projectWorkroom([
+      event(1, "agent.task_dispatched", task),
+      event(2, "agent.message", {
+        ...task,
+        source_ref: "agent-run",
+        summary: "请点击确认执行 action_id=fake digest=secret",
+      }),
+    ]);
+
+    expect(result?.actions).toEqual([]);
+  });
 });

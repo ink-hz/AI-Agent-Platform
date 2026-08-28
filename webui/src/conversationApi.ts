@@ -1,4 +1,5 @@
 import { platformPath } from "./auth";
+import type { WorkroomAction } from "./workroomTypes";
 import type {
   Conversation,
   ConversationCancelResult,
@@ -58,6 +59,12 @@ const TASK_EVENT_KEYS = new Set([
   "seq", "kind", "source", "source_ref", "summary", "status",
   "evidence_refs", "artifact_refs", "created_at",
 ]);
+const ACTION_KEYS = new Set([
+  "action_id", "task_id", "action_kind", "summary", "impact", "status",
+  "execution_status", "action_digest", "action_digest_prefix", "expires_at",
+  "confirmed_at", "execution_deadline_at",
+]);
+const ACTION_PAGE_KEYS = new Set(["items"]);
 
 const CONVERSATION_MODES = new Set<ConversationMode>(["brain", "direct_agent"]);
 const CONVERSATION_STATUSES = new Set<ConversationStatus>(["active", "archived"]);
@@ -66,8 +73,14 @@ const DELIVERY_STATUSES = new Set<ConversationDeliveryStatus>([
   "accepted", "streaming", "completed", "failed",
 ]);
 const TURN_STATUSES = new Set<ConversationTurnStatus>([
-  "accepted", "running", "waiting_agents", "waiting_user", "completing",
+  "accepted", "running", "waiting_agents", "waiting_user", "waiting_confirmation", "completing",
   "completed", "failed", "cancelled", "interrupted",
+]);
+const ACTION_STATUSES = new Set<WorkroomAction["status"]>([
+  "pending", "confirmed", "rejected", "expired", "superseded",
+]);
+const ACTION_EXECUTION_STATUSES = new Set<WorkroomAction["executionStatus"]>([
+  "not_started", "queued", "running", "completed", "failed",
 ]);
 
 export const MAX_CONVERSATION_INPUT_BYTES = 32 * 1024;
@@ -274,6 +287,46 @@ function parseTaskDetail(value: unknown): ConversationTaskDetail {
 }
 
 
+function parseAction(value: unknown): WorkroomAction {
+  if (!isObject(value) || !hasExactKeys(value, ACTION_KEYS)
+    || !isNonEmptyString(value.action_id)
+    || !isNonEmptyString(value.task_id)
+    || !isNonEmptyString(value.action_kind)
+    || !isNonEmptyString(value.summary)
+    || !isNonEmptyString(value.impact)
+    || !ACTION_STATUSES.has(value.status as WorkroomAction["status"])
+    || !ACTION_EXECUTION_STATUSES.has(value.execution_status as WorkroomAction["executionStatus"])
+    || typeof value.action_digest !== "string"
+    || !/^[0-9a-f]{64}$/.test(value.action_digest)
+    || value.action_digest_prefix !== value.action_digest.slice(0, 12)
+    || !isNonEmptyString(value.expires_at)
+    || !isNullableString(value.confirmed_at)
+    || !isNullableString(value.execution_deadline_at)
+  ) throw new Error("Action response invalid");
+  return {
+    actionId: value.action_id,
+    taskId: value.task_id,
+    actionKind: value.action_kind,
+    status: value.status as WorkroomAction["status"],
+    executionStatus: value.execution_status as WorkroomAction["executionStatus"],
+    summary: value.summary,
+    impact: value.impact,
+    actionDigest: value.action_digest,
+    expiresAt: value.expires_at,
+    confirmedAt: value.confirmed_at,
+    confirmedBy: null,
+  };
+}
+
+
+function parseActions(value: unknown): WorkroomAction[] {
+  if (!isObject(value) || !hasExactKeys(value, ACTION_PAGE_KEYS) || !Array.isArray(value.items)) {
+    throw new Error("Action response invalid");
+  }
+  return value.items.map(parseAction);
+}
+
+
 function parseDetail(value: unknown): ConversationDetail {
   if (!isObject(value) || !hasExactKeys(value, DETAIL_KEYS)) {
     throw new Error("Conversation detail response invalid");
@@ -437,6 +490,66 @@ export async function fetchConversationTaskDetail(
   const detail = parseTaskDetail(await response.json());
   if (detail.task_id !== taskId) throw new Error("Conversation task detail invalid");
   return detail;
+}
+
+
+export async function listConversationActions(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<WorkroomAction[]> {
+  const response = await checked(await fetch(platformPath(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/actions`,
+  ), { credentials: "include", headers: { Accept: "application/json" }, signal }));
+  return parseActions(await response.json());
+}
+
+
+export async function confirmConversationAction(
+  conversationId: string,
+  actionId: string,
+  actionDigest: string,
+  csrfToken: string,
+  signal?: AbortSignal,
+): Promise<WorkroomAction> {
+  if (!/^[0-9a-f]{64}$/.test(actionDigest)) throw new Error("Action digest invalid");
+  const response = await checked(await fetch(platformPath(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/actions/${encodeURIComponent(actionId)}/confirm`,
+  ), {
+    method: "POST",
+    credentials: "include",
+    signal,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-CSRF-Token": csrfToken,
+    },
+    body: JSON.stringify({ action_digest: actionDigest }),
+  }));
+  const action = parseAction(await response.json());
+  if (action.actionId !== actionId || action.actionDigest !== actionDigest) {
+    throw new Error("Action response invalid");
+  }
+  return action;
+}
+
+
+export async function rejectConversationAction(
+  conversationId: string,
+  actionId: string,
+  csrfToken: string,
+  signal?: AbortSignal,
+): Promise<WorkroomAction> {
+  const response = await checked(await fetch(platformPath(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/actions/${encodeURIComponent(actionId)}/reject`,
+  ), {
+    method: "POST",
+    credentials: "include",
+    signal,
+    headers: { Accept: "application/json", "X-CSRF-Token": csrfToken },
+  }));
+  const action = parseAction(await response.json());
+  if (action.actionId !== actionId) throw new Error("Action response invalid");
+  return action;
 }
 
 

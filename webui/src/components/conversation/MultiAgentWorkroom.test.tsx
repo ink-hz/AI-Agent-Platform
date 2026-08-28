@@ -14,6 +14,7 @@ function fixture(status: WorkroomTurn["status"] = "running"): WorkroomTurn {
     turnId: "turn-1",
     status,
     defaultExpanded: status === "running",
+    actions: [],
     tasks: [
       {
         taskId: "task-1", childSessionId: "child-1", agentId: "hr-bot", agentLabel: "HR Agent",
@@ -116,5 +117,30 @@ describe("MultiAgentWorkroom", () => {
     expect(loadTaskDetail).toHaveBeenCalledWith("turn-1", "task-1", expect.any(AbortSignal));
     expect(container.textContent).toContain("请聚焦深圳");
     expect(container.textContent).toContain("已调整搜索范围");
+  });
+
+  it("renders Action cards from the workroom projection without a separate page", async () => {
+    const workroom = fixture();
+    workroom.actions = [{
+      actionId: "action-1", taskId: "task-1", actionKind: "voc.submit_draft",
+      status: "pending", executionStatus: "not_started", summary: "提交本次 VOC 草稿",
+      impact: "确认后会提交当前草稿。", actionDigest: "a".repeat(64),
+      expiresAt: "2026-08-28T12:00:00Z", confirmedAt: null, confirmedBy: null,
+    }];
+    const confirm = vi.fn().mockResolvedValue({
+      ...workroom.actions[0], status: "confirmed", executionStatus: "queued",
+    });
+    await act(async () => root.render(<MultiAgentWorkroom
+      onConfirmAction={confirm}
+      onRejectAction={vi.fn()}
+      workroom={workroom}
+    />));
+
+    expect(container.textContent).toContain("需要你的确认");
+    expect(container.textContent).toContain("提交本次 VOC 草稿");
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((item) => item.textContent === "确认执行");
+    await act(async () => button?.click());
+    expect(confirm).toHaveBeenCalledWith("action-1", "a".repeat(64));
   });
 });

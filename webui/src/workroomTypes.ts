@@ -53,10 +53,25 @@ export interface WorkroomDeliverable {
   label: string;
 }
 
+export interface WorkroomAction {
+  actionId: string;
+  taskId: string;
+  actionKind: string;
+  status: "pending" | "confirmed" | "rejected" | "expired" | "superseded";
+  executionStatus: "not_started" | "queued" | "running" | "completed" | "failed";
+  summary: string;
+  impact: string;
+  actionDigest: string;
+  expiresAt: string;
+  confirmedAt: string | null;
+  confirmedBy: string | null;
+}
+
 export interface WorkroomTurn {
   turnId: string;
   status: WorkroomStatus;
   defaultExpanded: boolean;
+  actions: WorkroomAction[];
   tasks: WorkroomTask[];
   timeline: WorkroomTimelineItem[];
   deliverables: WorkroomDeliverable[];

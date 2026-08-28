@@ -3,10 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Account } from "../auth";
 import {
   cancelCurrentTurn,
+  confirmConversationAction,
   createConversationMessageSubmission,
   fetchConversation,
   fetchConversationMessages,
   fetchConversationTaskDetail,
+  rejectConversationAction,
   retryConversationTurn,
   streamConversationEvents,
   submitConversationFeedback,
@@ -27,6 +29,7 @@ import type {
   ConversationTaskDetail,
 } from "../conversationTypes";
 import { TERMINAL_CONVERSATION_TURN_STATUSES } from "../conversationTypes";
+import type { WorkroomAction } from "../workroomTypes";
 import { reconnectDelay } from "../brainApi";
 import { ConversationComposer } from "../components/conversation/ConversationComposer";
 import { ConversationMessages } from "../components/conversation/ConversationMessages";
@@ -43,6 +46,8 @@ export interface ConversationPageClient {
   fetchTaskDetail(conversationId: string, turnId: string, taskId: string, signal?: AbortSignal): Promise<ConversationTaskDetail>;
   streamEvents(conversationId: string, options: ConversationStreamOptions): Promise<void>;
   cancelCurrentTurn(conversationId: string, csrfToken: string, signal?: AbortSignal): Promise<ConversationCancelResult>;
+  confirmAction(conversationId: string, actionId: string, actionDigest: string, csrfToken: string, signal?: AbortSignal): Promise<WorkroomAction>;
+  rejectAction(conversationId: string, actionId: string, csrfToken: string, signal?: AbortSignal): Promise<WorkroomAction>;
   submitFeedback(messageId: string, rating: ConversationFeedbackRating, reason: ConversationFeedbackReason | null, comment: string | null, csrfToken: string, signal?: AbortSignal): Promise<ConversationFeedback>;
   retryTurn(conversationId: string, turnId: string, csrfToken: string): ConversationSubmission;
   reconnectDelay(signal: AbortSignal): Promise<void>;
@@ -55,6 +60,8 @@ const DEFAULT_CLIENT: ConversationPageClient = {
   fetchTaskDetail: fetchConversationTaskDetail,
   streamEvents: streamConversationEvents,
   cancelCurrentTurn,
+  confirmAction: confirmConversationAction,
+  rejectAction: rejectConversationAction,
   submitFeedback: submitConversationFeedback,
   retryTurn: retryConversationTurn,
   reconnectDelay,
@@ -322,6 +329,12 @@ export function ConversationPage({
         const workroom = workrooms.get(turnId);
         return workroom ? <MultiAgentWorkroom
           loadTaskDetail={loadTaskDetail}
+          onConfirmAction={account.hard_stale_read_only ? undefined : (actionId, actionDigest) => client.confirmAction(
+            conversationId, actionId, actionDigest, account.csrf_token,
+          )}
+          onRejectAction={account.hard_stale_read_only ? undefined : (actionId) => client.rejectAction(
+            conversationId, actionId, account.csrf_token,
+          )}
           workroom={workroom}
         /> : null;
       }}
