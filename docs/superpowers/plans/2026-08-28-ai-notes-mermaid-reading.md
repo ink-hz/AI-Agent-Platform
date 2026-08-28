@@ -489,17 +489,23 @@ git commit -m "style: fit Mermaid diagrams to the reading viewport"
 - Consumes: Mermaid `accTitle`、`accDescr`。
 - Produces: 7 张有唯一标题和描述的图；2 张调整方向，1 张重写结构。
 
-- [ ] **Step 1: 先让生产图元数据门禁失败**
+- [ ] **Step 1: 先让本批 7 张生产图的元数据门禁失败**
 
-在 `expectProductionDiagramsToRender` 循环开头加入：
+新增测试 helper：
 
 ```ts
-expect(source).toMatch(/^\s*accTitle:\s*\S.+$/m);
-expect(source).toMatch(/^\s*accDescr:\s*\S.+$/m);
+function expectAccessibilityMetadata(sources: string[]) {
+  for (const source of sources) {
+    expect(source).toMatch(/^\s*accTitle:\s*\S.+$/m);
+    expect(source).toMatch(/^\s*accDescr:\s*\S.+$/m);
+  }
+}
 ```
 
+只在“Agent 工程学习地图”和“企业 Agent 架构”两个现有测试中，把 `sources` 交给该 helper；另外三篇暂不启用该门禁。
+
 Run: `cd webui && npm test -- --run src/components/ai-notes/MermaidDiagram.integration.test.tsx`  
-Expected: 5 个生产文章用例均 FAIL，指出缺少 `accTitle`。
+Expected: 2 个本批文章用例 FAIL，指出缺少 `accTitle`；其余 4 个用例通过。
 
 - [ ] **Step 2: 治理学习地图 2 张图**
 
@@ -546,10 +552,10 @@ E -->|评估化| F
 
 每张图在类型声明后加入表中完整 `accTitle` 和 `accDescr`；不得缩写或复用同一标题。
 
-- [ ] **Step 4: 运行部分 GREEN**
+- [ ] **Step 4: 运行本批 GREEN**
 
 Run: `cd webui && npm test -- --run src/components/ai-notes/MermaidDiagram.integration.test.tsx`  
-Expected: 学习地图、企业架构通过；其余 3 篇仍因缺少元数据失败。
+Expected: 1 file、6 tests 全部通过；本批 7 张图通过元数据门禁，另外 9 张继续通过原有真实渲染与安全门禁。
 
 - [ ] **Step 5: 提交**
 
@@ -600,7 +606,9 @@ Tasks 6 的 9 张图都在类型声明后逐字加入对应表格行的完整 `a
 
 - [ ] **Step 4: 运行 16 张图真实渲染门禁**
 
-先在 integration test 中加入跨文章唯一性用例：
+先把 `expectAccessibilityMetadata(sources)` 移入 `expectProductionDiagramsToRender` 的开头，并删除 Task 5 中两个文章用例里的重复调用。此时全部 16 张图统一经过元数据、真实渲染与安全门禁。
+
+再加入跨文章唯一性用例：
 
 ```ts
 it("gives every production diagram unique accessibility metadata", () => {
