@@ -36,6 +36,7 @@ def _materialize_control(tmp_path: Path) -> tuple[Path, Path]:
     fake_logger = tmp_path / "logger"
     relay_config = runtime / "private/acceptance-config.json"
     relay_config.parent.mkdir(parents=True, exist_ok=True)
+    relay_config.parent.chmod(0o700)
     relay_config.write_text("{}\n", encoding="utf-8")
     relay_config.chmod(0o600)
     _write_executable(
@@ -215,6 +216,36 @@ def _materialize_installation_fixture(tmp_path: Path) -> tuple[Path, Path, Path,
     (tmp_path / "sudoers").write_text("# fixture\n", encoding="utf-8")
     (tmp_path / "sudoers.d").mkdir()
     helper_root.mkdir()
+    (runtime / "private").mkdir(parents=True, mode=0o700)
+    staging_root = tmp_path / "staging"
+    staging_root.mkdir(mode=0o700)
+    pending_private = staging_root / "cloud-admin-ed25519.pending"
+    subprocess.run(
+        [
+            "/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "",
+            "-C", "orbbec-agentops-acceptance", "-f", str(pending_private),
+        ],
+        check=True,
+    )
+    pending_private.chmod(0o600)
+    pending_public = staging_root / "cloud-admin-ed25519.pending.pub"
+    pending_public.chmod(0o600)
+    fingerprint = subprocess.run(
+        ["/usr/bin/ssh-keygen", "-lf", str(pending_public)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()[1]
+    (staging_root / "cloud-admin-ed25519.fingerprint").write_text(
+        fingerprint + "\n", encoding="utf-8"
+    )
+    (staging_root / "cloud-admin-ed25519.fingerprint").chmod(0o600)
+    (staging_root / "acceptance-config.pending.json").write_text(
+        '{"schema_version":1,"cloud_admin_host":"root@47.106.112.69",'
+        f'"cloud_admin_key":"{runtime / "private/cloud-admin-ed25519"}"}}\n',
+        encoding="utf-8",
+    )
+    (staging_root / "acceptance-config.pending.json").chmod(0o600)
 
     _git(repository, "init", "-q")
     _git(repository, "config", "user.email", "tests@example.invalid")
@@ -228,6 +259,7 @@ def _materialize_installation_fixture(tmp_path: Path) -> tuple[Path, Path, Path,
         "required_uid=0": f"required_uid={os.getuid()}",
         "target_owner=root": f"target_owner={os.environ['USER']}",
         "target_group=wheel": f"target_group={subprocess.check_output(['/usr/bin/id', '-gn'], text=True).strip()}",
+        "agentops_group=staff": f"agentops_group={subprocess.check_output(['/usr/bin/id', '-gn'], text=True).strip()}",
         'repository_root="$(cd "$(dirname "$0")/../.." && pwd)"': (
             f"repository_root={repository}"
         ),
@@ -239,6 +271,12 @@ def _materialize_installation_fixture(tmp_path: Path) -> tuple[Path, Path, Path,
             f"sudoers_target={sudoers_target}"
         ),
         "sudoers_root=/etc/sudoers": f"sudoers_root={tmp_path / 'sudoers'}",
+        "staging_root=/Users/neo/.orbbec-agent-platform/agentops-control": (
+            f"staging_root={staging_root}"
+        ),
+        "agentops_private=/Users/agentops/AgentRuntime/private": (
+            f"agentops_private={runtime / 'private'}"
+        ),
         "visudo_bin=/usr/sbin/visudo": f"visudo_bin={fake_visudo}",
         "sudo_bin=/usr/bin/sudo": f"sudo_bin={fake_sudo}",
     }
