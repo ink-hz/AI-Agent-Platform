@@ -106,7 +106,7 @@ flowchart TB
     W --> X
     A --> X
     X --> V
-    V -. "未满足则修正或停止" .-> I
+    V -. "人工确认并修正合同后重新提交" .-> I
 
     classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
     classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
@@ -126,7 +126,7 @@ flowchart TB
     style EXEC fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
 ```
 
-这张图的关键不是增加了多少组件，而是让边界可执行：模型没有能力目录之外的动作；编排没有策略之外的捷径；目标系统的业务规则不会因入口变化而被绕开；平台也不能凭生成的文字自行宣布完成。
+这张图的关键不是增加了多少组件，而是让边界可执行：模型没有能力目录之外的动作；编排没有策略之外的捷径；目标系统的业务规则不会因入口变化而被绕开；平台也不能凭生成的文字自行宣布完成。虚线不是运行时自动回环，只有人工确认并修正合同后，任务才会重新提交；停止或证据未知的任务必须保持停止、等待对账。
 
 ## 五、确定性 workflow 与 Agent 的边界
 
@@ -169,7 +169,7 @@ human-in-the-loop 不是失败后的人工装饰。人要在系统设计时拥�
 ```mermaid
 flowchart TB
     accTitle: 用户意图到完成证据执行链
-    accDescr: 意图合同先做完整性与授权检查，再由工作流或 Agent 规划；高风险动作等待审批，执行后以目标系统证据验证，失败则拒绝、补偿或回到修正。
+    accDescr: 意图合同先做完整性与授权检查，再由工作流或 Agent 规划；高风险动作等待审批，证据不满足时停止，只有人工对账并修正合同后才能重新提交。
 
     subgraph CHAIN["受控执行链"]
         I["解析意图合同"] --> G{"合同完整且已授权"}
@@ -181,8 +181,9 @@ flowchart TB
         A --> X
         X --> V{"真实完成证据满足"}
         V -->|"是"| S["交付结果并留审计"]
-        V -->|"否"| C["停止、对账或补偿"]
-        C --> P
+        V -->|"否"| C["停止并记录未知状态"]
+        C -. "人工接管" .-> M["人工对账与补偿决策"]
+        M -. "修正合同后重新提交" .-> I
     end
 
     classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
@@ -192,7 +193,7 @@ flowchart TB
     classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
     classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
     class I input;
-    class G,H,A policy;
+    class G,H,A,M policy;
     class P model;
     class X tool;
     class V policy;
@@ -200,6 +201,8 @@ flowchart TB
     class R,C risk;
     style CHAIN fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
 ```
+
+图中的“停止并记录未知状态”是终态，不会自行返回规划。人工接管可以对账并决定是否补偿；若仍要继续，必须先修正合同并从入口重新提交，再次经过完整性、授权、风险和审批门禁。
 
 完成证据必须来自目标系统真实状态、事务回执或可验证交付物，并且能够关联意图版本、`action_id`、授权主体和目标对象。不同任务的证据不同：退款需要支付或订单系统中的事务状态，报告需要可读取且通过校验的制品，通知需要区分“平台受理”“渠道投递”和“收件人确认”。
 

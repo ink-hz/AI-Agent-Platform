@@ -884,18 +884,22 @@ def intent_platform_claim_clauses(markdown: str) -> tuple[str, ...]:
 
 
 def intent_platform_contains_forbidden_absolutism(markdown: str) -> bool:
-    prohibited_patterns = (
+    ui_prohibited_patterns = (
         r"(?:消灭|取代|淘汰|移除|取消|删除)[^。；;\n]{0,20}"
         r"(?:所有|全部)?\s*(?:UI|页面|表单|界面)",
         r"(?:所有|全部)?\s*(?:UI|页面|表单|界面)"
         r"[^。；;\n]{0,20}(?:全部|都|完全)?\s*(?:会|将|要)?\s*"
         r"(?:消失|被取代|被消灭)",
+    )
+    prohibited_patterns = (
         r"(?:规则|确定性流程)[^。；;\n]{0,24}"
         r"(?:全部|都|完全)\s*(?:会|将|要)?\s*(?:消失|被取代|被移除)",
         r"(?:完全|无限)\s*自治",
-        r"无需[^。；;\n]{0,16}(?:人类|人工|审批|治理|human)",
+        r"(?:无需|无须|不需要)[^。；;\n]{0,16}"
+        r"(?:人类|人工|审批|治理|human)",
         r"(?:自我进化|自演进)[^。；;\n]{0,24}取代[^。；;\n]{0,16}发布流程",
-        r"所有业务[^。；;\n]{0,20}(?:交给|委托给|由)\s*Agent",
+        r"(?:所有|全部)业务[^。；;\n]{0,20}"
+        r"(?:交给|委托给|由)\s*Agent(?:\s*处理)?",
         r"(?:模型自述|模型说|HTTP\s*200|消息已发送|流程到末节点)"
         r"[^。；;\n]{0,24}(?:等同于|代表|证明|就是)[^。；;\n]{0,20}"
         r"(?:完成|成功)",
@@ -903,9 +907,9 @@ def intent_platform_contains_forbidden_absolutism(markdown: str) -> bool:
         r"[^。；;\n]{0,16}(?:完整的?)?意图合同",
     )
     direct_negation = re.compile(
-        r"(?:不会|不能|不可|不得|不应|不要|并非|不是|无法|没有|"
-        r"不能用|并不|"
-        r"do\s+not|does\s+not|cannot|can't|is\s+not|isn't)",
+        r"(?:不会|不能|不可|不得|不应|不要|并非|不是|无法|"
+        r"不能用|并不|没有(?:实现|达到)?|"
+        r"do\s+not|does\s+not|cannot|can't|is\s+not|isn't)\s*$",
         re.IGNORECASE,
     )
     internal_negation = re.compile(
@@ -915,12 +919,33 @@ def intent_platform_contains_forbidden_absolutism(markdown: str) -> bool:
         r"自治|完成|成功|意图合同)",
         re.IGNORECASE,
     )
+    scoped_ui_prefix = re.compile(
+        r"(?:试点(?:范围)?内|局部|特定|限定|部分|某个|某些|当前)"
+        r"[^。；;\n]{0,8}$"
+    )
+
+    def is_locally_negated(clause: str, violation: re.Match[str]) -> bool:
+        prefix = clause[max(0, violation.start() - 12):violation.start()]
+        return bool(
+            direct_negation.search(prefix)
+            or internal_negation.search(violation.group(0))
+        )
+
     for clause in intent_platform_claim_clauses(markdown):
+        for pattern in ui_prohibited_patterns:
+            for violation in re.finditer(pattern, clause, re.IGNORECASE):
+                if is_locally_negated(clause, violation):
+                    continue
+                prefix = clause[:violation.start()]
+                has_global_quantifier = bool(
+                    re.search(r"(?:所有|全部|一切)", violation.group(0))
+                )
+                if not has_global_quantifier and scoped_ui_prefix.search(prefix):
+                    continue
+                return True
         for pattern in prohibited_patterns:
             for violation in re.finditer(pattern, clause, re.IGNORECASE):
-                prefix = clause[max(0, violation.start() - 8):violation.start()]
-                matched = violation.group(0)
-                if direct_negation.search(prefix) or internal_negation.search(matched):
+                if is_locally_negated(clause, violation):
                     continue
                 return True
     return False
@@ -2445,9 +2470,16 @@ def test_intent_platform_guards_reject_absolute_and_mixed_claims() -> None:
         "不能用模型自述证明完成，但 HTTP 200 就代表业务完成。",
         "不应忽略风险，所以系统将实现完全自治。",
         "不会消灭 UI，同时页面和表单都会消失。",
+        "没有治理便实现完全自治。",
+        "系统不需要人工审批和治理。",
+        "全部业务都由 Agent 处理。",
     )
-    for claim in prohibited:
-        assert intent_platform_contains_forbidden_absolutism(claim), claim
+    missed_claims = tuple(
+        claim
+        for claim in prohibited
+        if not intent_platform_contains_forbidden_absolutism(claim)
+    )
+    assert not missed_claims
 
 
 def test_intent_platform_guards_allow_explicit_limits() -> None:
@@ -2459,9 +2491,32 @@ def test_intent_platform_guards_allow_explicit_limits() -> None:
         "自然语言只是意图入口之一，不等于结构化意图合同。",
         "消息已发送不代表业务完成。",
         "HTTP 200 不等于完成证据。",
+        "试点范围内取代页面入口，其他 UI 继续保留。",
     )
-    for claim in allowed:
-        assert not intent_platform_contains_forbidden_absolutism(claim), claim
+    false_positives = tuple(
+        claim
+        for claim in allowed
+        if intent_platform_contains_forbidden_absolutism(claim)
+    )
+    assert not false_positives
+
+
+def test_intent_platform_execution_chain_requires_guarded_restart() -> None:
+    _, markdown = parse_frontmatter(
+        batch_article_path("intent-driven-ai-business-platform")
+    )
+    diagrams = tuple(re.findall(r"```mermaid\n([\s\S]*?)\n```", markdown))
+    execution_chain = diagrams[1]
+
+    assert 'V -->|"否"| C["停止并记录未知状态"]' in execution_chain
+    assert not re.search(r"(?m)^\s*C\s*-->\s*P\s*$", execution_chain)
+    assert 'C -. "人工接管" .-> M["人工对账与补偿决策"]' in execution_chain
+    assert 'M -. "修正合同后重新提交" .-> I' in execution_chain
+    assert re.search(
+        r'(?m)^\s*I(?:\["[^\n]+"\])?\s*-->\s*G\b',
+        execution_chain,
+    )
+    assert "只有人工确认并修正合同后，任务才会重新提交" in markdown
 
 
 def test_intent_platform_contract_helpers_fail_closed() -> None:
