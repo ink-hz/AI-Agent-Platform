@@ -16,7 +16,20 @@ CONTENT_ROOT = MODULE_ROOT / "content"
 MARKER_FILE = MODULE_ROOT / "legacy_markers.yaml"
 PUBLISHED_ON = date(2026, 8, 27)
 TODAY = date(2026, 8, 28)
-SECOND_BATCH_PUBLISHED_ON = date(2026, 8, 28)
+LLM_APPLICATION_PUBLISHED_ON = date(2026, 8, 28)
+BATCH_PUBLISHED_ON = date(2026, 8, 28)
+FIRST_EMPLOYMENT_DATE = date(2026, 5, 25)
+
+BATCH_ARTICLES = (
+    ("agent-architecture", "agent-identity-access-control"),
+    ("ai-engineering", "llm-inference-serving-engineering"),
+    ("ai-engineering", "ai-cloud-native-runtime"),
+    ("ai-engineering", "llm-agent-observability"),
+    ("tools-and-frameworks", "open-source-agent-runtime"),
+    ("tools-and-frameworks", "metabot-agent-control-bus"),
+    ("tools-and-frameworks", "agent-framework-selection"),
+    ("thinking-and-methods", "intent-driven-ai-business-platform"),
+)
 
 
 def published_article(category_slug: str, article_slug: str) -> AiNoteArticle:
@@ -200,8 +213,8 @@ def test_publishes_clean_llm_application_system_architecture_note() -> None:
     assert article.filename == "llm-application-system-architecture.md"
     assert article.author == "苍渊"
     assert article.motto == "博观而约取，厚积而薄发。"
-    assert article.published_at == SECOND_BATCH_PUBLISHED_ON
-    assert article.updated_at == SECOND_BATCH_PUBLISHED_ON
+    assert article.published_at == LLM_APPLICATION_PUBLISHED_ON
+    assert article.updated_at == LLM_APPLICATION_PUBLISHED_ON
     assert article.tags == ("LLM", "系统架构", "AI 工程")
     assert_clean_body(article.markdown)
 
@@ -240,7 +253,7 @@ def test_llm_application_note_visualizes_reliable_answer_boundary() -> None:
     assert all("classDef" in diagram or "style" in diagram for diagram in diagrams)
 
 
-def test_production_catalog_preserves_first_batch_and_adds_second_batch() -> None:
+def test_production_catalog_contains_exactly_fourteen_articles() -> None:
     index = validate_publication(CONTENT_ROOT, MARKER_FILE, today=TODAY)
     actual = {
         category.slug: tuple(article.slug for article in category.articles)
@@ -251,8 +264,36 @@ def test_production_catalog_preserves_first_batch_and_adds_second_batch() -> Non
             "agent-engineering-learning-map",
             "llm-application-system-architecture",
         ),
-        "agent-architecture": ("enterprise-agent-system-architecture",),
-        "tools-and-frameworks": ("claude-code-architecture",),
-        "ai-engineering": ("rag-retrieval-engineering",),
-        "thinking-and-methods": ("ai-native-architecture-design",),
+        "agent-architecture": (
+            "enterprise-agent-system-architecture",
+            "agent-identity-access-control",
+        ),
+        "tools-and-frameworks": (
+            "claude-code-architecture",
+            "open-source-agent-runtime",
+            "metabot-agent-control-bus",
+            "agent-framework-selection",
+        ),
+        "ai-engineering": (
+            "rag-retrieval-engineering",
+            "llm-inference-serving-engineering",
+            "ai-cloud-native-runtime",
+            "llm-agent-observability",
+        ),
+        "thinking-and-methods": (
+            "ai-native-architecture-design",
+            "intent-driven-ai-business-platform",
+        ),
     }
+
+
+def test_eight_article_batch_is_published_together_on_the_execution_date() -> None:
+    assert BATCH_PUBLISHED_ON >= FIRST_EMPLOYMENT_DATE
+    articles = tuple(
+        published_article(category_slug, article_slug)
+        for category_slug, article_slug in BATCH_ARTICLES
+    )
+
+    assert len(articles) == 8
+    assert all(article.published_at == BATCH_PUBLISHED_ON for article in articles)
+    assert all(article.updated_at == BATCH_PUBLISHED_ON for article in articles)

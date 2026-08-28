@@ -5,7 +5,6 @@ import hashlib
 from pathlib import Path
 import posixpath
 import re
-import shutil
 from urllib.parse import urlsplit
 
 from markdown_it import MarkdownIt
@@ -27,16 +26,8 @@ SOURCE_REVIEW = (
     / "ai-notes-eight-article-source-review.md"
 )
 SOURCE_ROOT = Path("/Users/neo/Developer/personal/starship-blog-source/src/content/blog")
-FRONTEND_MERMAID_INTEGRATION_TEST = (
-    Path(__file__).resolve().parents[2]
-    / "webui"
-    / "src"
-    / "components"
-    / "ai-notes"
-    / "MermaidDiagram.integration.test.tsx"
-)
 TODAY = date(2026, 8, 28)
-FIRST_PUBLICATION_DATE = date(2026, 5, 25)
+BATCH_PUBLISHED_ON = date(2026, 8, 28)
 AUTHOR = "苍渊"
 MOTTO = "博观而约取，厚积而薄发。"
 
@@ -85,7 +76,7 @@ EXPECTED_BATCH_SLUGS: tuple[str, ...] = (
     "intent-driven-ai-business-platform",
 )
 
-EXPECTED_CANDIDATE_CATALOG = {
+EXPECTED_PUBLISHED_CATALOG = {
     "foundations": (
         "agent-engineering-learning-map",
         "llm-application-system-architecture",
@@ -577,7 +568,7 @@ def batch_article_path(slug: str, *, root: Path = CONTENT_ROOT) -> Path:
     raise AssertionError(f"unknown batch article: {slug}")
 
 
-def assert_completed_batch_drafts(
+def assert_published_batch_articles(
     *, root: Path = CONTENT_ROOT
 ) -> tuple[ArticleFrontmatter, ...]:
     repository = AiNotesRepository.load(root, today=TODAY)
@@ -591,37 +582,23 @@ def assert_completed_batch_drafts(
         contract = ARTICLE_CONTRACTS[slug]
         category_frontmatter, _ = parse_frontmatter(path.parent / "_index.md")
 
-        assert article.draft is True
+        assert article.draft is False
         assert article.author == AUTHOR
         assert article.motto == MOTTO
         assert article.title == contract["title"]
         assert article.slug == slug
         assert category_frontmatter["slug"] == contract["category"]
         assert article.tags == contract["tags"]
-        assert FIRST_PUBLICATION_DATE <= article.published_at <= TODAY
-        assert article.updated_at is None or article.updated_at >= article.published_at
+        assert article.published_at == BATCH_PUBLISHED_ON
+        assert article.updated_at == BATCH_PUBLISHED_ON
         assert markdown.strip()
         completed_articles.append(article)
 
     return tuple(completed_articles)
 
 
-def validate_completed_batch_as_publication_candidates(tmp_path: Path) -> AiNotesIndex:
-    candidate_root = tmp_path / "content"
-    shutil.copytree(CONTENT_ROOT, candidate_root)
-
-    for slug in COMPLETED_BATCH_ARTICLES:
-        path = batch_article_path(slug, root=candidate_root)
-        frontmatter, markdown = parse_frontmatter(path)
-        frontmatter["draft"] = False
-        serialized_frontmatter = yaml.safe_dump(
-            frontmatter, allow_unicode=True, sort_keys=False
-        ).strip()
-        path.write_text(
-            f"---\n{serialized_frontmatter}\n---\n\n{markdown}", encoding="utf-8"
-        )
-
-    return validate_publication(candidate_root, MARKER_FILE, today=TODAY)
+def validate_published_batch() -> AiNotesIndex:
+    return validate_publication(CONTENT_ROOT, MARKER_FILE, today=TODAY)
 
 
 def mermaid_principal_node_ids(source: str) -> set[str]:
@@ -1293,16 +1270,6 @@ def intent_platform_has_capability_catalog_contract(markdown: str) -> bool:
     return all(field.casefold() in normalized for field in fields)
 
 
-def registered_frontend_batch_paths() -> tuple[str, ...]:
-    source = FRONTEND_MERMAID_INTEGRATION_TEST.read_text(encoding="utf-8")
-    matched = re.search(
-        r"const BATCH_DRAFT_RELATIVE_PATHS = \[([\s\S]*?)\]\s+as const;",
-        source,
-    )
-    assert matched is not None
-    return tuple(re.findall(r'"([^"\n]+\.md)"', matched.group(1)))
-
-
 def batch_mermaid_blocks() -> tuple[tuple[str, str], ...]:
     blocks = []
     for slug in COMPLETED_BATCH_ARTICLES:
@@ -1383,10 +1350,10 @@ def assert_safe_resolving_article_link(source_path: Path, destination: str) -> N
     candidates[0].resolve().relative_to(CONTENT_ROOT.resolve())
 
 
-def candidate_article_paths_by_slug() -> dict[str, Path]:
+def published_article_paths_by_slug() -> dict[str, Path]:
     expected_slugs = {
         slug
-        for category_slugs in EXPECTED_CANDIDATE_CATALOG.values()
+        for category_slugs in EXPECTED_PUBLISHED_CATALOG.values()
         for slug in category_slugs
     }
     paths_by_slug = {}
@@ -1422,7 +1389,7 @@ def source_review_article_link_slug(
 
 def final_deduplication_matrix(markdown: str) -> dict[str, tuple[str, str]]:
     section = source_review_h2_section(markdown, "## 最终跨文章去重矩阵")
-    paths_by_slug = candidate_article_paths_by_slug()
+    paths_by_slug = published_article_paths_by_slug()
     matrix = {}
     for line in section.splitlines():
         if not line.startswith("| ") or line.startswith("| ---"):
@@ -1472,22 +1439,19 @@ def test_batch_registries_match_the_fixed_eight_article_manifest() -> None:
     assert tuple(path for path, _ in BATCH_ARTICLES) == EXPECTED_BATCH_RELATIVE_PATHS
     assert tuple(slug for _, slug in BATCH_ARTICLES) == EXPECTED_BATCH_SLUGS
     assert COMPLETED_BATCH_ARTICLES == EXPECTED_BATCH_SLUGS
-    assert registered_frontend_batch_paths() == EXPECTED_BATCH_RELATIVE_PATHS
 
 
-def test_batch_candidate_catalog_and_diagrams_meet_final_contract(
-    tmp_path: Path,
-) -> None:
-    articles = assert_completed_batch_drafts()
+def test_published_batch_catalog_and_diagrams_meet_final_contract() -> None:
+    articles = assert_published_batch_articles()
     assert len(articles) == 8
-    assert all(article.draft is True for article in articles)
+    assert all(article.draft is False for article in articles)
 
-    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
-    candidate_catalog = {
+    published_index = validate_published_batch()
+    published_catalog = {
         category.slug: tuple(article.slug for article in category.articles)
-        for category in candidate_index.categories
+        for category in published_index.categories
     }
-    assert candidate_catalog == EXPECTED_CANDIDATE_CATALOG
+    assert published_catalog == EXPECTED_PUBLISHED_CATALOG
 
     blocks = batch_mermaid_blocks()
     assert len(blocks) == 24
@@ -1690,18 +1654,16 @@ def test_source_review_is_complete_and_records_final_deduplication_matrix() -> N
     )
 
 
-def test_completed_batch_helpers_enforce_drafts_and_validate_candidates(
-    tmp_path: Path,
-) -> None:
-    completed_articles = assert_completed_batch_drafts()
-    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
+def test_completed_batch_helpers_enforce_publication_contract() -> None:
+    completed_articles = assert_published_batch_articles()
+    published_index = validate_published_batch()
 
     assert tuple(article.slug for article in completed_articles) == (
         COMPLETED_BATCH_ARTICLES
     )
-    assert len(candidate_index.categories) == 5
+    assert len(published_index.categories) == 5
     assert sum(
-        len(category.articles) for category in candidate_index.categories
+        len(category.articles) for category in published_index.categories
     ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
@@ -1829,10 +1791,8 @@ def test_open_source_runtime_source_review_records_repo_snapshots() -> None:
         assert evidence_path in section
 
 
-def test_agent_identity_access_control_draft_meets_contract(
-    tmp_path: Path,
-) -> None:
-    completed_articles = assert_completed_batch_drafts()
+def test_agent_identity_access_control_published_meets_contract() -> None:
+    completed_articles = assert_published_batch_articles()
     assert tuple(article.slug for article in completed_articles) == (
         COMPLETED_BATCH_ARTICLES
     )
@@ -1870,11 +1830,9 @@ def test_agent_identity_access_control_draft_meets_contract(
         re.search(r"(?m)^\s*classDef\s+", diagram)
         for diagram in diagrams
     )
-    candidate_index = validate_completed_batch_as_publication_candidates(
-        tmp_path
-    )
+    published_index = validate_published_batch()
     assert sum(
-        len(category.articles) for category in candidate_index.categories
+        len(category.articles) for category in published_index.categories
     ) == 6 + len(COMPLETED_BATCH_ARTICLES)
     assert all(
         len(
@@ -1942,10 +1900,8 @@ def test_agent_identity_article_preserves_rfc_8693_client_auth_boundary() -> Non
     assert "授权服务器仍需验证客户端或工作负载" not in markdown
 
 
-def test_llm_inference_serving_engineering_draft_meets_contract(
-    tmp_path: Path,
-) -> None:
-    completed_articles = assert_completed_batch_drafts()
+def test_llm_inference_serving_engineering_published_meets_contract() -> None:
+    completed_articles = assert_published_batch_articles()
     assert tuple(article.slug for article in completed_articles) == (
         COMPLETED_BATCH_ARTICLES
     )
@@ -1961,7 +1917,7 @@ def test_llm_inference_serving_engineering_draft_meets_contract(
         "推理服务",
         "AI 工程",
     )
-    assert frontmatter["draft"] is True
+    assert frontmatter["draft"] is False
     assert frontmatter["author"] == AUTHOR
     assert frontmatter["motto"] == MOTTO
     assert frontmatter["publishedAt"] == TODAY
@@ -2026,11 +1982,9 @@ def test_llm_inference_serving_engineering_draft_meets_contract(
     for boundary_marker in ("RAG", "工具调用", "Prompt 组装", "输出验证"):
         assert markdown.casefold().count(boundary_marker.casefold()) <= 1
 
-    candidate_index = validate_completed_batch_as_publication_candidates(
-        tmp_path
-    )
+    published_index = validate_published_batch()
     assert sum(
-        len(category.articles) for category in candidate_index.categories
+        len(category.articles) for category in published_index.categories
     ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
@@ -2070,10 +2024,8 @@ def test_llm_inference_metrics_cost_and_typography_contract() -> None:
     assert "希缺资源" not in markdown
 
 
-def test_ai_cloud_native_runtime_draft_meets_contract(
-    tmp_path: Path,
-) -> None:
-    completed_articles = assert_completed_batch_drafts()
+def test_ai_cloud_native_runtime_published_meets_contract() -> None:
+    completed_articles = assert_published_batch_articles()
     assert tuple(article.slug for article in completed_articles) == (
         COMPLETED_BATCH_ARTICLES
     )
@@ -2089,7 +2041,7 @@ def test_ai_cloud_native_runtime_draft_meets_contract(
         "云原生",
         "运行时",
     )
-    assert frontmatter["draft"] is True
+    assert frontmatter["draft"] is False
     assert frontmatter["author"] == AUTHOR
     assert frontmatter["motto"] == MOTTO
     assert frontmatter["publishedAt"] == TODAY
@@ -2167,11 +2119,9 @@ def test_ai_cloud_native_runtime_draft_meets_contract(
 
     assert not cloud_native_contains_forbidden_tutorial_or_hpa(markdown)
 
-    candidate_index = validate_completed_batch_as_publication_candidates(
-        tmp_path
-    )
+    published_index = validate_published_batch()
     assert sum(
-        len(category.articles) for category in candidate_index.categories
+        len(category.articles) for category in published_index.categories
     ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
@@ -2227,10 +2177,8 @@ def test_cloud_native_hpa_guard_allows_clause_level_negation() -> None:
         assert not cloud_native_contains_forbidden_tutorial_or_hpa(allowed)
 
 
-def test_llm_agent_observability_draft_meets_contract(
-    tmp_path: Path,
-) -> None:
-    completed_articles = assert_completed_batch_drafts()
+def test_llm_agent_observability_published_meets_contract() -> None:
+    completed_articles = assert_published_batch_articles()
     assert tuple(article.slug for article in completed_articles) == (
         COMPLETED_BATCH_ARTICLES
     )
@@ -2242,7 +2190,7 @@ def test_llm_agent_observability_draft_meets_contract(
     )
     assert frontmatter["slug"] == "llm-agent-observability"
     assert tuple(frontmatter["tags"]) == ("LLM", "Agent", "可观测性")
-    assert frontmatter["draft"] is True
+    assert frontmatter["draft"] is False
     assert frontmatter["author"] == AUTHOR
     assert frontmatter["motto"] == MOTTO
     assert frontmatter["publishedAt"] == TODAY
@@ -2330,11 +2278,9 @@ def test_llm_agent_observability_draft_meets_contract(
     assert not observability_contains_fixed_genai_schema_claim(markdown)
     assert not observability_contains_duplicate_rag_or_agent_tutorial(markdown)
 
-    candidate_index = validate_completed_batch_as_publication_candidates(
-        tmp_path
-    )
+    published_index = validate_published_batch()
     assert sum(
-        len(category.articles) for category in candidate_index.categories
+        len(category.articles) for category in published_index.categories
     ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
@@ -2404,10 +2350,8 @@ execution_usage:
     assert observability_has_call_level_usage_contract(complete_contract)
 
 
-def test_open_source_runtime_draft_meets_contract(
-    tmp_path: Path,
-) -> None:
-    completed_articles = assert_completed_batch_drafts()
+def test_open_source_runtime_published_meets_contract() -> None:
+    completed_articles = assert_published_batch_articles()
     assert tuple(article.slug for article in completed_articles) == (
         COMPLETED_BATCH_ARTICLES
     )
@@ -2419,7 +2363,7 @@ def test_open_source_runtime_draft_meets_contract(
     )
     assert frontmatter["slug"] == "open-source-agent-runtime"
     assert tuple(frontmatter["tags"]) == ("Agent", "开源运行时", "架构分析")
-    assert frontmatter["draft"] is True
+    assert frontmatter["draft"] is False
     assert frontmatter["author"] == AUTHOR
     assert frontmatter["motto"] == MOTTO
     assert frontmatter["publishedAt"] == TODAY
@@ -2532,9 +2476,9 @@ def test_open_source_runtime_draft_meets_contract(
     assert not open_source_runtime_confuses_openclaw_ownership(markdown)
     assert not open_source_runtime_confuses_layers(markdown)
 
-    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
+    published_index = validate_published_batch()
     assert sum(
-        len(category.articles) for category in candidate_index.categories
+        len(category.articles) for category in published_index.categories
     ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
@@ -2632,8 +2576,8 @@ def test_metabot_source_review_records_current_code_snapshots() -> None:
     assert "可能在已有副作用后重放原 prompt" in section
 
 
-def test_metabot_agent_control_bus_draft_meets_contract(tmp_path: Path) -> None:
-    completed_articles = assert_completed_batch_drafts()
+def test_metabot_agent_control_bus_published_meets_contract() -> None:
+    completed_articles = assert_published_batch_articles()
     assert tuple(article.slug for article in completed_articles) == (
         COMPLETED_BATCH_ARTICLES
     )
@@ -2643,7 +2587,7 @@ def test_metabot_agent_control_bus_draft_meets_contract(tmp_path: Path) -> None:
     assert frontmatter["title"] == "MetaBot 架构：Agent 的多渠道远程控制总线"
     assert frontmatter["slug"] == "metabot-agent-control-bus"
     assert tuple(frontmatter["tags"]) == ("Agent", "MetaBot", "远程控制")
-    assert frontmatter["draft"] is True
+    assert frontmatter["draft"] is False
     assert frontmatter["author"] == AUTHOR
     assert frontmatter["motto"] == MOTTO
     assert frontmatter["publishedAt"] == TODAY
@@ -2738,9 +2682,9 @@ def test_metabot_agent_control_bus_draft_meets_contract(tmp_path: Path) -> None:
     assert not metabot_contains_boundary_absolutism(markdown)
     assert not metabot_contains_unlabelled_inference(markdown)
 
-    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
+    published_index = validate_published_batch()
     assert sum(
-        len(category.articles) for category in candidate_index.categories
+        len(category.articles) for category in published_index.categories
     ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
@@ -2842,8 +2786,8 @@ def test_framework_selection_source_review_records_current_official_boundaries()
         assert supported_claim in section
 
 
-def test_agent_framework_selection_draft_meets_contract(tmp_path: Path) -> None:
-    completed_articles = assert_completed_batch_drafts()
+def test_agent_framework_selection_published_meets_contract() -> None:
+    completed_articles = assert_published_batch_articles()
     assert tuple(article.slug for article in completed_articles) == (
         COMPLETED_BATCH_ARTICLES
     )
@@ -2853,7 +2797,7 @@ def test_agent_framework_selection_draft_meets_contract(tmp_path: Path) -> None:
     assert frontmatter["title"] == "主流 Agent 框架选型：从开发工具到生产运行时"
     assert frontmatter["slug"] == "agent-framework-selection"
     assert tuple(frontmatter["tags"]) == ("Agent", "框架选型", "工程决策")
-    assert frontmatter["draft"] is True
+    assert frontmatter["draft"] is False
     assert frontmatter["author"] == AUTHOR
     assert frontmatter["motto"] == MOTTO
     assert frontmatter["publishedAt"] == TODAY
@@ -2943,9 +2887,9 @@ def test_agent_framework_selection_draft_meets_contract(tmp_path: Path) -> None:
         assert boundary in markdown
     assert not framework_selection_contains_forbidden_ranking_or_maturity(markdown)
 
-    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
+    published_index = validate_published_batch()
     assert sum(
-        len(category.articles) for category in candidate_index.categories
+        len(category.articles) for category in published_index.categories
     ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
@@ -3076,10 +3020,8 @@ def test_intent_platform_source_review_section_stops_at_next_h2() -> None:
     assert "不属于本节" not in section
 
 
-def test_intent_driven_ai_business_platform_draft_meets_contract(
-    tmp_path: Path,
-) -> None:
-    completed_articles = assert_completed_batch_drafts()
+def test_intent_driven_ai_business_platform_published_meets_contract() -> None:
+    completed_articles = assert_published_batch_articles()
     assert tuple(article.slug for article in completed_articles) == (
         COMPLETED_BATCH_ARTICLES
     )
@@ -3089,7 +3031,7 @@ def test_intent_driven_ai_business_platform_draft_meets_contract(
     assert frontmatter["title"] == "意图驱动的 AI 业务平台：从固定旅程到受控执行"
     assert frontmatter["slug"] == "intent-driven-ai-business-platform"
     assert tuple(frontmatter["tags"]) == ("AI Native", "业务平台", "意图驱动")
-    assert frontmatter["draft"] is True
+    assert frontmatter["draft"] is False
     assert frontmatter["author"] == AUTHOR
     assert frontmatter["motto"] == MOTTO
     assert frontmatter["publishedAt"] == TODAY
@@ -3152,8 +3094,8 @@ def test_intent_driven_ai_business_platform_draft_meets_contract(
     assert re.search(r"\]\(ai-native-architecture-design\)", markdown)
     assert not intent_platform_contains_forbidden_absolutism(markdown)
 
-    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
-    assert sum(len(category.articles) for category in candidate_index.categories) == 14
+    published_index = validate_published_batch()
+    assert sum(len(category.articles) for category in published_index.categories) == 14
 
 
 def test_intent_platform_guards_reject_absolute_and_mixed_claims() -> None:

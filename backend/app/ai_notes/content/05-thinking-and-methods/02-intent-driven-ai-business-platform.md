@@ -10,7 +10,7 @@ tags:
   - AI Native
   - 业务平台
   - 意图驱动
-draft: true
+draft: false
 ---
 
 ## 一、固定旅程解决什么，又遗漏什么

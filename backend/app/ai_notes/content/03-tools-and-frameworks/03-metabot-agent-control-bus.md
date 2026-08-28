@@ -10,7 +10,7 @@ tags:
   - Agent
   - MetaBot
   - 远程控制
-draft: true
+draft: false
 ---
 
 ## 一、远程控制不是把聊天消息转发给 Agent

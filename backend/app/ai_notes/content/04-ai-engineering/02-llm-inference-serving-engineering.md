@@ -10,7 +10,7 @@ tags:
   - LLM
   - 推理服务
   - AI 工程
-draft: true
+draft: false
 ---
 
 ## 一、先把推理服务写成可验收的契约

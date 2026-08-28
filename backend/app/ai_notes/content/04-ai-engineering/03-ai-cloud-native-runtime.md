@@ -10,7 +10,7 @@ tags:
   - AI 基础设施
   - 云原生
   - 运行时
-draft: true
+draft: false
 ---
 
 ## 一、AI 工作负载为何不能照搬普通无状态服务
