@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 from hashlib import sha256
 from pathlib import Path
 
 import tomllib
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "http_task_v1"
@@ -135,9 +137,64 @@ def test_contract_directory_hash_is_path_sensitive_and_ignores_generated_files(
     assert digest == expected
 
 
+def test_contract_hash_includes_nested_source_build_directories(tmp_path: Path) -> None:
+    hash_module = _hash_module()
+    source = tmp_path / "contract"
+    nested = source / "package" / "build"
+    nested.mkdir(parents=True)
+    (nested / "source.py").write_bytes(b"tracked source")
+    root_build = source / "build"
+    root_build.mkdir()
+    (root_build / "generated.py").write_bytes(b"ignored")
+
+    digest = hash_module.directory_sha256(source)
+
+    expected = sha256(b"package/build/source.py\0tracked source\0").hexdigest()
+    assert digest == expected
+
+
+def test_manifest_hashes_a_commit_and_rejects_a_dirty_contract_tree(
+    tmp_path: Path,
+) -> None:
+    hash_module = _hash_module()
+    repository = tmp_path / "repository"
+    contract = repository / "contracts" / "http_task_v1"
+    contract.mkdir(parents=True)
+    (contract / "contract.json").write_text('{"version":1}\n', "utf-8")
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "config", "user.email", "contract@example"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repository), "config", "user.name", "Contract Test"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(repository), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "commit", "-qm", "contract"], check=True
+    )
+    commit = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    archive_digest = hash_module.archive_sha256(repository, commit)
+    assert archive_digest == hash_module.directory_sha256(contract)
+
+    (contract / "contract.json").write_text('{"version":2}\n', "utf-8")
+    with pytest.raises(ValueError, match="working contract tree differs"):
+        hash_module.write_manifest(
+            repository=repository,
+            source_commit=commit,
+            output=repository / "release.json",
+        )
+
+
 def test_release_manifest_matches_contract_when_present() -> None:
-    if not RELEASE.exists():
-        return
+    assert RELEASE.is_file()
     hash_module = _hash_module()
     manifest = json.loads(RELEASE.read_text("utf-8"))
     assert set(manifest) == {
@@ -148,4 +205,7 @@ def test_release_manifest_matches_contract_when_present() -> None:
     }
     assert manifest["contract_version"] == "orbbec-http-task/v1"
     assert manifest["requires_python"] == ">=3.11"
+    assert manifest["sha256"] == hash_module.archive_sha256(
+        ROOT, manifest["source_commit"]
+    )
     assert manifest["sha256"] == hash_module.directory_sha256(CONTRACT)
