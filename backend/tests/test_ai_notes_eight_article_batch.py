@@ -394,6 +394,23 @@ def mermaid_principal_node_ids(source: str) -> set[str]:
     return node_ids - subgraph_ids
 
 
+def mermaid_has_white_group(source: str) -> bool:
+    group_ids = set(
+        re.findall(
+            r"(?mi)^\s*subgraph\s+([A-Za-z_][A-Za-z0-9_-]*)\b",
+            source,
+        )
+    )
+    white_style_ids = set(
+        re.findall(
+            r"(?mi)^\s*style\s+([A-Za-z_][A-Za-z0-9_-]*)\s+"
+            r"[^\n]*\bfill:#FFFFFF\b",
+            source,
+        )
+    )
+    return bool(group_ids & white_style_ids)
+
+
 def cloud_native_contains_forbidden_tutorial_or_hpa(markdown: str) -> bool:
     prohibited_patterns = (
         r"(?im)^#{2,}\s+.*(?:install(?:ing|ation)?\s+kubernetes|"
@@ -724,21 +741,50 @@ def framework_selection_claim_clauses(markdown: str) -> tuple[str, ...]:
     return tuple(
         clause.strip()
         for clause in re.split(
-            r"[\n。！？；;,，]|(?:但是|但|然而|却|不过|可是)",
+            r"[\n。！？；;,，]|(?:并且|而且|且|但是|但|然而|却|不过|可是|"
+            r"所以|因此|因而|故而|\b(?:and|but|however|then|therefore)\b)",
             markdown,
+            flags=re.IGNORECASE,
         )
         if clause.strip()
+    )
+
+
+def framework_selection_violation_is_locally_negated(
+    clause: str,
+    violation: re.Match[str],
+) -> bool:
+    prefix = clause[max(0, violation.start() - 40):violation.start()]
+    matched = violation.group(0)
+    suffix = clause[violation.end():violation.end() + 20]
+    negating_predicate_prefix = re.compile(
+        r"(?i)(?:(?:不应|不得|不要|不能|不可)"
+        r"(?:被)?(?:称为|写成|视为|当作|宣称为|认为是|列为|排为)|"
+        r"并非|不是|没有|不存在|不做|不比较|拒绝|避免|禁止|"
+        r"not|never|cannot|can't|should\s+not\s+(?:be\s+)?"
+        r"(?:called|described|ranked)|must\s+not\s+(?:be\s+)?"
+        r"(?:called|described|ranked)|do\s+not\s+(?:compare|rank|score))"
+        r"[^\n。！？；;,，]{0,28}$"
+    )
+    negated_relation = re.compile(
+        r"(?i)(?:不等于|不代表|不意味着|不能证明|并非|"
+        r"并不是|不是|不写成|不得写成|不应写成|"
+        r"is\s+not|isn't|does\s+not\s+mean)"
+    )
+    negating_predicate_suffix = re.compile(
+        r"(?i)^\s*(?:并不成立|并不存在|不存在|"
+        r"不成立|is\s+not\s+claimed)"
+    )
+    return bool(
+        negating_predicate_prefix.search(prefix)
+        or negated_relation.search(matched)
+        or negating_predicate_suffix.search(suffix)
     )
 
 
 def framework_selection_contains_forbidden_ranking_or_maturity(
     markdown: str,
 ) -> bool:
-    negation = re.compile(
-        r"(?:不|无|没有|拒绝|避免|禁止|不等于|不能|不可|"
-        r"not|no\s+|never|does\s+not|cannot|can't)",
-        re.IGNORECASE,
-    )
     prohibited_patterns = (
         r"(?:最佳|最好|第一|唯一正确|永久排名|排名第|"
         r"best\s+framework|only\s+correct|permanent\s+ranking)",
@@ -754,12 +800,13 @@ def framework_selection_contains_forbidden_ranking_or_maturity(
         r"stable|production[- ]ready)",
     )
     for clause in framework_selection_claim_clauses(markdown):
-        if negation.search(clause):
-            continue
-        if any(re.search(pattern, clause, re.IGNORECASE) for pattern in prohibited_patterns):
-            return True
-        if any(re.search(pattern, clause, re.IGNORECASE) for pattern in maturity_patterns):
-            return True
+        for pattern in (*prohibited_patterns, *maturity_patterns):
+            for violation in re.finditer(pattern, clause, re.IGNORECASE):
+                if not framework_selection_violation_is_locally_negated(
+                    clause,
+                    violation,
+                ):
+                    return True
     return False
 
 
@@ -1986,6 +2033,30 @@ def test_agent_framework_selection_draft_meets_contract(tmp_path: Path) -> None:
         for diagram in diagrams
     )
     assert all(len(mermaid_principal_node_ids(diagram)) <= 12 for diagram in diagrams)
+    assert all(mermaid_has_white_group(diagram) for diagram in diagrams)
+    for diagram in (diagrams[0], diagrams[2]):
+        for semantic_class, fill in (
+            ("tool", "DBEAFE"),
+            ("library", "EDE9FE"),
+            ("runtime", "DCFCE7"),
+            ("platform", "FEF3C7"),
+        ):
+            assert re.search(
+                rf"(?m)^\s*classDef\s+{semantic_class}\s+fill:#{fill}\b",
+                diagram,
+            )
+    decision_diagram = diagrams[2]
+    for decision_marker in (
+        "终端 / IDE 直接辅助开发",
+        "嵌入应用或服务",
+        "code-first",
+        "可视化交付",
+        "跨形态运行时检查",
+        "agent runtime 责任边界",
+    ):
+        assert decision_marker in decision_diagram
+    assert "主要操作者" not in decision_diagram
+    assert re.search(r"(?m)^\s*class\s+P\s+platform\s*;", decision_diagram)
     assert framework_selection_has_four_product_forms(markdown)
     assert framework_selection_has_eight_responsibility_dimensions(markdown)
 
@@ -2030,6 +2101,9 @@ def test_framework_selection_guards_reject_rankings_and_false_maturity() -> None
         "项目页可访问就证明已成熟。",
         "public preview 就是 stable 承诺。",
         "本文不做最佳框架，但 LangGraph 排名第一。",
+        "LangGraph 排名第一且不会改变",
+        "public preview 已是 stable 并且不需要复核",
+        "不应忽略复核风险所以 LangGraph 排名第一",
     )
     for claim in prohibited:
         assert framework_selection_contains_forbidden_ranking_or_maturity(claim), claim
@@ -2042,6 +2116,9 @@ def test_framework_selection_guards_allow_time_boundaries_and_uncertainty() -> N
         "Go 版截至 2026-08-28 明确为 public preview，不得写成稳定承诺。",
         "截至 2026-08-28，官方页面未给出明确 lifecycle 状态。",
         "官方未说明成熟度，因此保留不确定性。",
+        "不应称为最佳框架。",
+        "public preview 并不是 stable。",
+        "页面存在不等于 production-ready。",
     )
     for claim in allowed:
         assert not framework_selection_contains_forbidden_ranking_or_maturity(claim), claim
@@ -2069,9 +2146,12 @@ def test_framework_selection_dimension_guards_fail_closed() -> None:
 def test_framework_selection_diagram_contract_rejects_width_and_missing_style() -> None:
     compact_styled = """
 flowchart LR
-    A[需求] --> B[责任]
+    subgraph GROUP[决策]
+        A[需求] --> B[责任]
+    end
     classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
     class A input;
+    style GROUP fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
 """
     too_wide = "\n".join(
         ["flowchart LR"]
@@ -2080,5 +2160,9 @@ flowchart LR
     )
     assert len(mermaid_principal_node_ids(compact_styled)) <= 12
     assert re.search(r"(?m)^\s*classDef\s+", compact_styled)
+    assert mermaid_has_white_group(compact_styled)
     assert len(mermaid_principal_node_ids(too_wide)) > 12
     assert not re.search(r"(?m)^\s*classDef\s+", "flowchart LR\nA --> B")
+    assert not mermaid_has_white_group(
+        "flowchart LR\nsubgraph GROUP[决策]\nA --> B\nend"
+    )

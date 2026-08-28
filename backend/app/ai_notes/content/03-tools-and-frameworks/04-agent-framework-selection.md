@@ -171,52 +171,62 @@ flowchart TB
 
 ## 七、决策树：先收窄形态，再做 PoC
 
-决策树不输出产品名称。它只是先判断需求、责任所有者、恢复与部署约束，将候选收窄到一类形态，然后用同一套 PoC 门禁进行实证。
+决策树不输出产品名称。它先判断确定性实现是否已足够，再按交付场景收窄形态：在终端或 IDE 中直接辅助开发，才进入 developer tool；嵌入应用或服务，则继续区分 code-first 编排与可视化交付。长任务、恢复和部署是跨形态检查；它们决定是否需要引入或补齐 agent runtime 责任边界，之后才统一进入 PoC。
 
 ```mermaid
 flowchart TB
     accTitle: Agent 框架选型决策树
-    accDescr: 从确定性需求、主要操作者、代码或可视化交付、恢复与部署约束收窄产品形态，最后经过 PoC 门禁。
+    accDescr: 从确定性需求与交付场景收窄产品形态，再跨形态检查长任务、恢复与部署责任，最后统一经过 PoC 门禁。
 
-    Q{确定性函数或状态机足够吗}
-    F[不引入 Agent 框架]
-    O{主要操作者是谁}
-    D[developer tool]
-    C{代码嵌入还是可视化交付}
-    L[orchestration library / SDK]
-    P[end-to-end platform]
-    R{有长任务恢复或托管约束吗}
-    T[agent runtime 责任边界]
-    G[PoC 门禁<br/>故障、权限、迁移、证据]
-    X[淘汰或重新分层]
-    A[记录责任后准入]
+    subgraph DELIVERY["交付场景与产品形态"]
+        direction TB
+        Q{确定性函数或状态机足够吗}
+        F[不引入 Agent 框架]
+        S{交付场景}
+        D[终端 / IDE 直接辅助开发<br/>developer tool]
+        C[嵌入应用或服务]
+        L[code-first<br/>orchestration library / SDK]
+        P[可视化交付<br/>end-to-end platform]
+    end
+    subgraph GATES["跨形态运行时检查与 PoC"]
+        direction TB
+        R{长任务 / 恢复 / 部署约束<br/>当前形态已承担吗}
+        T[引入或补齐<br/>agent runtime 责任边界]
+        G[PoC 门禁<br/>故障、权限、迁移、证据]
+        X[淘汰或重新分层]
+        A[记录责任后准入]
+    end
 
     Q -->|是| F
-    Q -->|否| O
-    O -->|开发者| D
-    O -->|业务团队| C
-    C -->|代码嵌入| L
+    Q -->|否| S
+    S -->|终端 / IDE| D
+    S -->|嵌入应用或服务| C
+    C -->|code-first| L
     C -->|可视化交付| P
-    D --> G
+    D --> R
     L --> R
     P --> R
-    R -->|有| T --> G
-    R -->|无| G
+    R -->|尚未承担| T --> G
+    R -->|已承担| G
     G -->|未通过| X
     G -->|通过| A
 
     classDef decision fill:#FEF3C7,stroke:#F59E0B,color:#172033;
     classDef tool fill:#DBEAFE,stroke:#60A5FA,color:#172033;
     classDef library fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef platform fill:#FEF3C7,stroke:#F59E0B,color:#172033;
     classDef runtime fill:#DCFCE7,stroke:#4ADE80,color:#172033;
     classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
     classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
-    class Q,O,C,R,G decision;
+    class Q,S,C,R,G decision;
     class D tool;
-    class L,P library;
+    class L library;
+    class P platform;
     class T runtime;
     class X risk;
     class F,A success;
+    style DELIVERY fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
+    style GATES fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
 ```
 
 通过 PoC 不表示候选从此不会变。准入记录应保留执行日、官方定位、未确定项、实验证据、责任人和退出条件；当这些边界发生变化时，重新跑门禁。
