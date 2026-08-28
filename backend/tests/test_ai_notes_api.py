@@ -36,7 +36,7 @@ def test_index_and_article_are_no_store(tmp_path: Path) -> None:
     assert index.json()["categories"][0]["articles"][0]["motto"] == "博观而约取，厚积而薄发。"
     assert article.status_code == 200
     assert article.headers["cache-control"] == "no-store"
-    assert article.json()["markdown"].startswith("# 正文")
+    assert article.json()["markdown"].startswith("## 正文")
 
 
 def test_unknown_draft_and_invalid_keys_are_generic_404(tmp_path: Path) -> None:

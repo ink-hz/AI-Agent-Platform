@@ -16,6 +16,7 @@ CONTENT_ROOT = MODULE_ROOT / "content"
 MARKER_FILE = MODULE_ROOT / "legacy_markers.yaml"
 PUBLISHED_ON = date(2026, 8, 27)
 TODAY = date(2026, 8, 28)
+SECOND_BATCH_PUBLISHED_ON = date(2026, 8, 28)
 
 
 def published_article(category_slug: str, article_slug: str) -> AiNoteArticle:
@@ -193,14 +194,63 @@ def test_mermaid_group_backgrounds_do_not_use_neutral_gray_panels() -> None:
                 ) is None
 
 
-def test_first_batch_is_exactly_the_approved_five_articles() -> None:
+def test_publishes_clean_llm_application_system_architecture_note() -> None:
+    article = published_article("foundations", "llm-application-system-architecture")
+    assert article.title == "LLM 应用系统架构：从一次请求到可靠回答"
+    assert article.filename == "llm-application-system-architecture.md"
+    assert article.author == "苍渊"
+    assert article.motto == "博观而约取，厚积而薄发。"
+    assert article.published_at == SECOND_BATCH_PUBLISHED_ON
+    assert article.updated_at == SECOND_BATCH_PUBLISHED_ON
+    assert article.tags == ("LLM", "系统架构", "AI 工程")
+    assert_clean_body(article.markdown)
+
+
+def test_llm_application_note_visualizes_reliable_answer_boundary() -> None:
+    article = published_article("foundations", "llm-application-system-architecture")
+    diagrams = mermaid_blocks(article.markdown)
+    assert len(diagrams) == 3
+    application_layers, reliable_answer, capability_choice = diagrams
+
+    assert "应用系统分层" in application_layers
+    assert "模型推理" in application_layers
+    assert "检索" in application_layers
+    assert "工具" in application_layers
+    assert "class N,O,G infra;" in application_layers
+    assert "class M,X model;" in application_layers
+    assert "class I,V policy;" in application_layers
+
+    assert "从请求到可靠回答" in reliable_answer
+    assert "输出验证" in reliable_answer
+    assert "完成证据" in reliable_answer
+    assert "class P,Z success;" in reliable_answer
+    assert "class X risk;" in reliable_answer
+    assert "class C,F,V policy;" in reliable_answer
+
+    assert "能力选择边界" in capability_choice
+    assert "需要调用外部工具" in capability_choice
+    assert "叠加 RAG 检索证据" in capability_choice
+    assert "异步任务运行时包装" in capability_choice
+    assert "class Q,I,W infra;" in capability_choice
+    assert "class S,G model;" in capability_choice
+    assert "class T,P,K,L policy;" in capability_choice
+    assert "class F success;" in capability_choice
+
+    assert all("flowchart LR" not in diagram for diagram in diagrams)
+    assert all("classDef" in diagram or "style" in diagram for diagram in diagrams)
+
+
+def test_production_catalog_preserves_first_batch_and_adds_second_batch() -> None:
     index = validate_publication(CONTENT_ROOT, MARKER_FILE, today=TODAY)
     actual = {
         category.slug: tuple(article.slug for article in category.articles)
         for category in index.categories
     }
     assert actual == {
-        "foundations": ("agent-engineering-learning-map",),
+        "foundations": (
+            "agent-engineering-learning-map",
+            "llm-application-system-architecture",
+        ),
         "agent-architecture": ("enterprise-agent-system-architecture",),
         "tools-and-frameworks": ("claude-code-architecture",),
         "ai-engineering": ("rag-retrieval-engineering",),

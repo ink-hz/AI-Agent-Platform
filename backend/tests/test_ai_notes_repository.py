@@ -24,7 +24,7 @@ def write_article(
     slug: str,
     draft: bool = False,
     title: str = "Agent 系统手册",
-    body: str = "# 正文\n\n内容。\n",
+    body: str = "## 正文\n\n内容。\n",
 ) -> None:
     category.joinpath(filename).write_text(
         "---\n"
@@ -66,7 +66,7 @@ def test_builds_ordered_published_index_and_whitelist(tmp_path: Path) -> None:
     assert article is not None
     assert article.author == "苍渊"
     assert article.motto == "博观而约取，厚积而薄发。"
-    assert article.markdown.startswith("# 正文")
+    assert article.markdown.startswith("## 正文")
     assert article.reading_minutes == 1
 
 
