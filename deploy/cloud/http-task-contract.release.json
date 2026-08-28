@@ -1,0 +1,6 @@
+{
+  "contract_version": "orbbec-http-task/v1",
+  "source_commit": "3bd9e34a7dc4f5090950cbe313c3a331c7106cea",
+  "sha256": "9b041e4e085257bbab37c82311fdca630cead51213bdd0ec8cec6b61d2a5e915",
+  "requires_python": ">=3.11"
+}
