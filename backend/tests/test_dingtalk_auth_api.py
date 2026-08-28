@@ -237,6 +237,7 @@ def _app(
     registry_document: str = "version: 1\nagents: []\n",
     brain_enabled: bool = False,
     ai_notes_reader=None,
+    agent_launch_service=None,
 ):
     static = tmp_path / "static"
     assets = static / "assets"
@@ -267,6 +268,7 @@ def _app(
         start_poller=False,
         identity_auth=auth,
         ai_notes_reader=ai_notes_reader,
+        agent_launch_service=agent_launch_service,
     )
 
 

@@ -2,7 +2,12 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createMissionSubmission, fetchAgentCatalog, streamMissionEvents } from "./brainApi";
+import {
+  createMissionSubmission,
+  fetchAgentCatalog,
+  launchAgent,
+  streamMissionEvents,
+} from "./brainApi";
 
 
 afterEach(() => {
@@ -12,6 +17,29 @@ afterEach(() => {
 
 
 describe("Agent Brain API", () => {
+  it("issues an authenticated one-time launch without exposing identity fields", async () => {
+    const launchCode = "l".repeat(43);
+    const launch = {
+      launch_url: `https://fae.orbbec.com.cn/app/#platform_launch=${launchCode}`,
+      expires_at: "2026-08-28T12:01:00Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(launch), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(launchAgent("ai-fae-agent", "csrf-memory-only")).resolves.toEqual(launch);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/agents/ai-fae-agent/launch",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        headers: expect.objectContaining({ "X-CSRF-Token": "csrf-memory-only" }),
+      }),
+    );
+  });
+
   it("accepts an Agent that has both a workspace and Brain delegation", async () => {
     const voc = {
       agent_id: "voc", display_name: "VOC Agent", persona_subtitle: null,

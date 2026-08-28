@@ -18,6 +18,33 @@ export class BrainApiError extends Error {
     super(`Agent Brain API ${status}`);
   }
 }
+
+export interface AgentLaunch {
+  launch_url: string;
+  expires_at: string;
+}
+
+function parseAgentLaunch(value: unknown): AgentLaunch {
+  if (!isObject(value)
+    || typeof value.launch_url !== "string"
+    || typeof value.expires_at !== "string"
+    || !Number.isFinite(Date.parse(value.expires_at))) {
+    throw new Error("Agent launch response invalid");
+  }
+  let target: URL;
+  try {
+    target = new URL(value.launch_url);
+  } catch {
+    throw new Error("Agent launch response invalid");
+  }
+  if (target.origin !== "https://fae.orbbec.com.cn"
+    || target.pathname !== "/app/"
+    || target.search !== ""
+    || !/^#platform_launch=[A-Za-z0-9_-]{32,256}$/.test(target.hash)) {
+    throw new Error("Agent launch response invalid");
+  }
+  return { launch_url: value.launch_url, expires_at: value.expires_at };
+}
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -141,6 +168,22 @@ export async function fetchAgentCatalog(signal?: AbortSignal): Promise<AgentCapa
   const value: unknown = await response.json();
   if (!isObject(value) || !Array.isArray(value.agents)) throw new Error("Agent catalog response invalid");
   return value.agents.map(parseCapabilityCard);
+}
+
+export async function launchAgent(
+  agentId: string,
+  csrfToken: string,
+  signal?: AbortSignal,
+): Promise<AgentLaunch> {
+  const response = await checked(await fetch(platformPath(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/launch`,
+  ), {
+    method: "POST",
+    credentials: "include",
+    signal,
+    headers: { Accept: "application/json", "X-CSRF-Token": csrfToken },
+  }));
+  return parseAgentLaunch(await response.json());
 }
 
 export interface MissionSubmission {

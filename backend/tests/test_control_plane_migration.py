@@ -167,6 +167,8 @@ TABLES = {
     "conversation_events",
     "conversation_feedback",
     "content_key_canaries",
+    "agent_launch_codes",
+    "agent_identity_bindings",
 }
 
 IMMUTABLE_MIGRATION_SHA256 = {
@@ -651,7 +653,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                        (version, 64) for version in range(1, 52)
+                        (version, 64) for version in range(1, 53)
                 ]
 
     changed = tmp_path / "migrations"

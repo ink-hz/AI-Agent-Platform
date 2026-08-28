@@ -141,7 +141,7 @@ class AuthSecrets:
     def digest(self, purpose: str, token: str) -> bytes:
         if purpose not in {
             "oauth-state", "pkce-verifier", "session", "csrf",
-            "browser-challenge",
+            "browser-challenge", "agent-launch",
         }:
             raise ValueError("authentication hash purpose invalid")
         if not isinstance(token, str) or not token:

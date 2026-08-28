@@ -35,6 +35,11 @@ from .cloud_replica.management_repository import (
 )
 from .control_room import routes as control_room_routes
 from .control_room.service import ControlRoomService
+from .control_plane.agent_launch import (
+    AgentLaunchRepository,
+    AgentLaunchService,
+    build_agent_launch_router,
+)
 from .control_plane.middleware import (
     DisabledExecutionWorkerNamespaceMiddleware,
     IdentitySecurityMiddleware,
@@ -553,6 +558,7 @@ def create_app(
     voc_extension_client=None,
     voc_submitter_directory=None,
     ai_notes_reader: AiNotesReader | None = None,
+    agent_launch_service: AgentLaunchService | None = None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
@@ -648,6 +654,18 @@ def create_app(
         agent_brain_orchestrator.check_ready()
     if identity_enabled and identity_auth is None:
         identity_auth = build_identity_auth(config)
+    if identity_enabled and agent_launch_service is None and owns_identity_auth:
+        if control_database_url is None:
+            control_database_url = read_secret_file(
+                config.control_plane.control_database_url_file
+            )
+        if agent_use_authorization is None:
+            agent_use_authorization = AgentUseAuthorization(control_database_url)
+        agent_launch_service = AgentLaunchService(
+            repository=AgentLaunchRepository(control_database_url),
+            secrets=identity_auth.secrets,
+            authorization=agent_use_authorization,
+        )
     if identity_enabled and ai_notes_reader is None:
         try:
             ai_notes_reader = AiNotesRepository.load(
@@ -854,6 +872,7 @@ def create_app(
     app.state.voc_extension_client = voc_extension_client
     app.state.voc_submitter_directory = voc_submitter_directory
     app.state.ai_notes_reader = ai_notes_reader
+    app.state.agent_launch_service = agent_launch_service
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
         control_database_url = read_secret_file(
@@ -908,6 +927,8 @@ def create_app(
     app.include_router(registry_routes.router)
     app.include_router(review_routes.router)
     app.include_router(build_voc_extension_router())
+    if agent_launch_service is not None:
+        app.include_router(build_agent_launch_router(agent_launch_service))
     if identity_enabled and ai_notes_reader is not None:
         app.include_router(build_ai_notes_router(ai_notes_reader))
     if execution_relay_router is not None:

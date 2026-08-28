@@ -131,6 +131,20 @@ def test_hard_stale_owner_is_read_only_and_cloud_review_mutations_are_disabled()
     ).status_code == 403
 
 
+def test_agent_launch_is_authenticated_self_service_but_hard_stale_is_denied():
+    service = AuthorizationService(Grants())
+    route = "/api/v1/agents/{agent_id}/launch"
+
+    allowed = service.decide(MEMBER, "POST", route, ("ai-fae-agent",))
+    stale = service.decide(STALE_MEMBER, "POST", route, ("ai-fae-agent",))
+
+    assert allowed.allowed is True
+    assert allowed.reason == "self_service"
+    assert stale.allowed is False
+    assert stale.status_code == 503
+    assert stale.reason == "hard_stale_read_only"
+
+
 @pytest.mark.parametrize(
     ("method", "route"),
     [

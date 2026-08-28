@@ -33,6 +33,7 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/internal/session/subject"),
     ("POST", "/api/v1/auth/logout"),
     ("GET", "/api/v1/catalog/agents"),
+    ("POST", "/api/v1/agents/{agent_id}/launch"),
     ("GET", "/api/v1/brain/missions"),
     ("POST", "/api/v1/brain/missions"),
     ("GET", "/api/v1/brain/missions/{mission_id}"),
@@ -89,6 +90,10 @@ _VOC_MUTATION_ROUTES = frozenset({
     ("POST", "/api/v1/extensions/voc/drafts/{draft_id}/cancel"),
     ("POST", "/api/v1/extensions/voc/drafts/{draft_id}/submit"),
     ("POST", "/api/v1/extensions/voc/vocs/{voc_no}/supplements"),
+})
+
+_HARD_STALE_SELF_MUTATION_ROUTES = _VOC_MUTATION_ROUTES | frozenset({
+    ("POST", "/api/v1/agents/{agent_id}/launch"),
 })
 
 _VOC_MANAGEMENT_ROUTES = frozenset({
@@ -181,7 +186,7 @@ class AuthorizationService:
         if auth is None:
             return self._deny(401, "authentication_required")
         if key in _AUTHENTICATED_SELF_ROUTES:
-            if auth.hard_stale_read_only and key in _VOC_MUTATION_ROUTES:
+            if auth.hard_stale_read_only and key in _HARD_STALE_SELF_MUTATION_ROUTES:
                 return self._deny(503, "hard_stale_read_only")
             return AuthorizationDecision(True, 200, "self_service", None)
         if key not in _OWNER_ROUTES:
