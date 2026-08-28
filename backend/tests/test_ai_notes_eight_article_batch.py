@@ -236,15 +236,9 @@ def test_agent_identity_access_control_draft_meets_contract(
     tmp_path: Path,
 ) -> None:
     completed_articles = assert_completed_batch_drafts()
-    candidate_index = validate_completed_batch_as_publication_candidates(
-        tmp_path
-    )
     assert tuple(article.slug for article in completed_articles) == (
         "agent-identity-access-control",
     )
-    assert sum(
-        len(category.articles) for category in candidate_index.categories
-    ) == 7
 
     path = batch_article_path("agent-identity-access-control")
     frontmatter, markdown = parse_frontmatter(path)
@@ -257,6 +251,8 @@ def test_agent_identity_access_control_draft_meets_contract(
         "身份与权限",
         "安全治理",
     )
+    assert frontmatter["publishedAt"] == TODAY
+    assert frontmatter["updatedAt"] == TODAY
     assert markdown.lstrip().startswith("## ")
     assert AUTHOR not in markdown
     assert MOTTO not in markdown
@@ -273,6 +269,16 @@ def test_agent_identity_access_control_draft_meets_contract(
         "Agent 行动授权决策",
         "高风险操作审批闭环",
     )
+    assert all(
+        re.search(r"(?m)^\s*classDef\s+", diagram)
+        for diagram in diagrams
+    )
+    candidate_index = validate_completed_batch_as_publication_candidates(
+        tmp_path
+    )
+    assert sum(
+        len(category.articles) for category in candidate_index.categories
+    ) == 7
     assert all(
         len(
             set(
@@ -320,3 +326,20 @@ def test_agent_identity_access_control_draft_meets_contract(
     )
     for prohibited in prohibited_product_or_feature_markers + legacy_markers:
         assert prohibited.casefold() not in markdown.casefold()
+
+
+def test_agent_identity_article_preserves_rfc_8693_client_auth_boundary() -> None:
+    path = batch_article_path("agent-identity-access-control")
+    _, markdown = parse_frontmatter(path)
+
+    assert (
+        "RFC 8693 要求授权服务器验证 `subject_token`，并在请求提供 "
+        "`actor_token` 时验证它。"
+    ) in markdown
+    assert (
+        "是否接受未认证客户端由授权服务器的部署策略决定。"
+    ) in markdown
+    assert (
+        "本文建议把 Agent 工作负载作为已认证的 OAuth client"
+    ) in markdown
+    assert "授权服务器仍需验证客户端或工作负载" not in markdown
