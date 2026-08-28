@@ -395,6 +395,17 @@ def test_gate_04_to_08_accepts_standard_venv_python_symlink_chain(
     )
 
 
+def test_runtime_python_owner_uids_include_fixed_operator_home_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(subject, "_OPERATOR_HOME", tmp_path)
+    monkeypatch.setattr(subject.os, "geteuid", lambda: 999_999)
+    monkeypatch.delenv("SUDO_UID", raising=False)
+
+    assert os.getuid() in subject._trusted_runtime_python_owner_uids()
+
+
 def test_gate_04_to_08_rejects_writable_venv_python_symlink_target(
     tmp_path: Path,
 ) -> None:

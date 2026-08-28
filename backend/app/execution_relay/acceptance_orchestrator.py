@@ -37,6 +37,7 @@ _CLOUD_HOST = "root@47.106.112.69"
 _CLOUD_KNOWN_HOSTS = Path(
     "/Users/agentops/AgentRuntime/private/cloud-known-hosts"
 )
+_OPERATOR_HOME = Path("/Users/neo")
 _AGENTS = (
     "hr-bot",
     "fae-bot",
@@ -683,6 +684,25 @@ def _validate_runtime_file(path: Path, *, executable: bool = False) -> None:
         raise _gate_error() from None
 
 
+def _trusted_runtime_python_owner_uids() -> set[int]:
+    trusted_owner_uids = {0, os.geteuid()}
+    sudo_uid = os.environ.get("SUDO_UID", "")
+    if sudo_uid.isascii() and sudo_uid.isdigit():
+        trusted_owner_uids.add(int(sudo_uid))
+    try:
+        operator_metadata = _OPERATOR_HOME.lstat()
+        if (
+            stat.S_ISDIR(operator_metadata.st_mode)
+            and not _OPERATOR_HOME.is_symlink()
+            and operator_metadata.st_uid > 0
+            and stat.S_IMODE(operator_metadata.st_mode) & 0o022 == 0
+        ):
+            trusted_owner_uids.add(operator_metadata.st_uid)
+    except Exception:
+        pass
+    return trusted_owner_uids
+
+
 def _validate_runtime_python(path: Path) -> None:
     """Validate a venv interpreter without rejecting its standard symlink chain."""
     try:
@@ -703,15 +723,11 @@ def _validate_runtime_python(path: Path) -> None:
                 or stat.S_IMODE(directory_metadata.st_mode) & 0o022 != 0
             ):
                 raise ValueError
-        trusted_owner_uids = {0, os.geteuid()}
-        sudo_uid = os.environ.get("SUDO_UID", "")
-        if sudo_uid.isascii() and sudo_uid.isdigit():
-            trusted_owner_uids.add(int(sudo_uid))
         resolved = path.resolve(strict=True)
         resolved_metadata = resolved.stat()
         if (
             not stat.S_ISREG(resolved_metadata.st_mode)
-            or resolved_metadata.st_uid not in trusted_owner_uids
+            or resolved_metadata.st_uid not in _trusted_runtime_python_owner_uids()
             or resolved_metadata.st_size > 1_048_576
             or stat.S_IMODE(resolved_metadata.st_mode) & 0o022 != 0
             or not os.access(resolved, os.X_OK)
