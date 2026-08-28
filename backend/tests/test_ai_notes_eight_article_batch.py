@@ -949,7 +949,10 @@ def intent_platform_contains_forbidden_absolutism(markdown: str) -> bool:
     evidentiary_negation = re.compile(
         r"(?:没有|缺乏)(?:足够|充分)?(?:证据|依据)"
         r"(?:能够|可以|足以)?(?:证明|表明|支持)"
-        r"[^\n。！？；;,，]{0,12}$"
+        r"(?:该|此|这个|本)?(?:平台|系统|Agent|智能体|模型|它)?"
+        r"(?:将|会|能够|可以|能|已经|已)?"
+        r"(?:实现|达到|达成|进入|具备)?$",
+        re.IGNORECASE,
     )
     scoped_ui_prefix = re.compile(
         r"(?:试点(?:范围)?内|局部|特定|限定|部分|某个|某些|当前)"
@@ -2505,6 +2508,7 @@ def test_intent_platform_guards_reject_absolute_and_mixed_claims() -> None:
         "不应忽略风险，所以系统将实现完全自治。",
         "不会消灭 UI，同时页面和表单都会消失。",
         "没有治理便实现完全自治。",
+        "没有证据证明需要治理便实现完全自治。",
         "系统不需要人工审批和治理。",
         "全部业务都由 Agent 处理。",
     )
