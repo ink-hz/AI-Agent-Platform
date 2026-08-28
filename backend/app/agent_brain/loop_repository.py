@@ -434,6 +434,35 @@ class BrainLoopRepository:
         except psycopg.Error:
             raise BrainRepositoryError() from None
 
+    def renew_step_lease(
+        self, step_id: UUID, worker_id: str, *, lease_seconds: int
+    ) -> bool:
+        """Extend a held Step lease while a long model call is still streaming.
+
+        A single model call routinely outlives any sane lease, and expire_leases
+        returns expired Steps to the queue, so without renewal a second Brain
+        worker can re-lease the Step and pay for the same model call again.
+        """
+
+        _require_uuid(step_id)
+        _require_worker(worker_id)
+        if type(lease_seconds) is not int or not 1 <= lease_seconds <= 300:
+            raise ValueError("Brain Step lease invalid")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "update platform_brain.brain_steps set "
+                    "lease_expires_at=clock_timestamp()+(%s*interval '1 second'),"
+                    "updated_at=clock_timestamp() "
+                    "where step_id=%s and lease_worker_id=%s "
+                    "and status in ('leased','requesting_model') "
+                    "returning step_id",
+                    (lease_seconds, step_id, worker_id),
+                ).fetchone()
+            return row is not None
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
     def commit_model_step(
         self,
         loop_id: UUID,
@@ -1502,6 +1531,26 @@ class BrainLoopRepository:
                         (loop_id,),
                     )
                 )
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def has_settled_task(self, loop_id: UUID) -> bool:
+        """Report whether any Agent task of this Loop has reached a terminal state.
+
+        An active adapter session is not the same signal: a task can hold a session
+        open with no result yet, and a finished task can have no session at all.
+        Only terminal_at means a result is in the Brain's context to reconcile.
+        """
+
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select exists(select 1 from platform_brain.agent_tasks "
+                    "where loop_id=%s and terminal_at is not null) as settled",
+                    (loop_id,),
+                ).fetchone()
+            return bool(row["settled"])
         except psycopg.Error:
             raise BrainRepositoryError() from None
 

@@ -113,6 +113,32 @@ class RuntimeAgentRegistry:
         self._cards = tuple(cards) if cards is not None else load_capability_cards()
         self._cards_by_id = {card.agent_id: card for card in self._cards}
 
+    def roster_for_user(
+        self, internal_user_id: UUID
+    ) -> tuple[AgentCapabilityCard, ...]:
+        """Return delegatable cards for the cached prompt roster in one query.
+
+        This deliberately avoids list_for_user's per-Agent decision round-trip and
+        health composition: the roster is a cached prompt prefix, so it must carry
+        only stable facts. Live availability stays in list_agents.
+        """
+
+        if not isinstance(internal_user_id, UUID):
+            raise AgentUseAuthorizationUnavailable()
+        try:
+            permitted = self._authorization.permitted_agents_for_user_id(
+                internal_user_id
+            )
+        except AgentUseAuthorizationUnavailable:
+            raise
+        except (KeyError, TypeError, ValueError) as exc:
+            raise AgentUseAuthorizationUnavailable() from exc
+        return tuple(
+            card
+            for card in permitted
+            if card.adapter_kind in self._registered_adapter_kinds
+        )
+
     def list_for_user(
         self, internal_user_id: UUID
     ) -> tuple[RuntimeAgentSnapshot, ...]:

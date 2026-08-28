@@ -9,7 +9,10 @@ import pytest
 
 from app.agent_brain.adapters.base import AdapterRegistry
 from app.agent_brain.adapters.reference import ReferenceAdapter
+from app.agent_brain import loop_repository as loop_repository_module
+from app.agent_brain import loop_runtime, worker_runtime
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
+from app.agent_brain.models import AgentCapabilityCard
 from app.agent_brain.loop_runtime import BrainLoopRuntime
 from app.agent_brain.model_adapter import (
     BrainModelManifest,
@@ -29,6 +32,32 @@ from test_control_plane_migration import control_database
 ROOT = Path(__file__).parents[2]
 MANIFEST_PATH = ROOT / "deploy/cloud/brain-model.release.json"
 PROMPT_PATH = ROOT / "backend/app/agent_brain/prompts/brain_v1.md"
+
+REFERENCE_CARD = AgentCapabilityCard(
+    agent_id="reference-agent",
+    display_name="Reference Agent",
+    domain_group="Reference",
+    mission="供运行时契约测试使用的参考 Agent。",
+    capabilities=("回显结构化任务结果",),
+    exclusions=("不承担任何真实业务操作",),
+    example_tasks=("回显一次参考任务",),
+    required_inputs=("任务目标",),
+    supports_evidence=False,
+    supports_streaming=False,
+    supports_cancellation=True,
+    supports_idempotency=True,
+    supports_persistent_session=False,
+    supports_followup_message=False,
+    supports_progress_events=False,
+    supports_thinking_summary=False,
+    supports_cancel=True,
+    supports_attachments=False,
+    typical_latency_seconds=5,
+    max_duration_seconds=60,
+    adapter_id="reference",
+    adapter_kind="reference",
+    capability_version=1,
+)
 
 
 class ScriptedModel:
@@ -100,7 +129,7 @@ def _delegate_response() -> BrainModelResponse:
     )
 
 
-def _submit_response() -> BrainModelResponse:
+def _submit_response(*, thinking: str = "") -> BrainModelResponse:
     return _response(
         "submit_answer",
         {
@@ -110,6 +139,7 @@ def _submit_response() -> BrainModelResponse:
             "attachment_refs": [],
             "public_reason": "整合验证结果并交付",
         },
+        thinking=thinking,
     )
 
 
@@ -138,6 +168,11 @@ class FakeRegistry:
     def __init__(self, *, allowed: bool = True, reason_code: str = "allowed"):
         self.allowed = allowed
         self.reason_code = reason_code
+        self.roster_calls = 0
+
+    def roster_for_user(self, _user_id):
+        self.roster_calls += 1
+        return (REFERENCE_CARD,)
 
     def list_for_user(self, _user_id):
         return (
@@ -362,3 +397,153 @@ def test_live_revocation_fails_loop_before_model(
             "select status,reason_code from platform_brain.brain_loops where loop_id=%s",
             (loop_id,),
         ).fetchone() == ("failed", "authorization_changed")
+
+
+class UnavailableRosterRegistry(FakeRegistry):
+    def roster_for_user(self, _user_id):
+        raise AgentUseAuthorizationUnavailable()
+
+
+@pytest.mark.postgres
+def test_every_step_carries_the_authorized_agent_roster(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    model = ScriptedModel(_submit_response())
+    runtime = _runtime(loop_repository)
+    runtime._model = model
+
+    assert runtime.advance_one() is True
+
+    system = model.requests[0].system
+    # Without this block the Brain cannot know any Agent exists without spending a
+    # whole model Step on list_agents.
+    assert len(system) == 2
+    assert "reference-agent" in system[1]["text"]
+    assert "capability_version: 1" in system[1]["text"]
+
+
+@pytest.mark.postgres
+def test_unreadable_authorization_degrades_the_roster_without_failing_the_step(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    loop_id, _snapshot = seeded_loop
+    model = ScriptedModel(_submit_response())
+    runtime = _runtime(loop_repository, registry=UnavailableRosterRegistry())
+    runtime._model = model
+
+    assert runtime.advance_one() is True
+
+    assert "list_agents" in model.requests[0].system[1]["text"]
+    with psycopg.connect(loop_database[0]["admin"]) as connection:
+        assert connection.execute(
+            "select status from platform_brain.brain_loops where loop_id=%s",
+            (loop_id,),
+        ).fetchone() == ("completed",)
+
+
+@pytest.mark.postgres
+def test_effort_rises_to_synthesis_only_once_agent_results_have_settled(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    # One runtime throughout: the Reference Adapter keeps its sessions in memory, and
+    # a real worker is a single process.
+    runtime = _runtime(loop_repository)
+    efforts = []
+    for response in (_list_agents_response(), _delegate_response()):
+        runtime._model = ScriptedModel(response)
+        assert runtime.advance_one() is True
+        efforts.append(runtime._model.requests[0].effort)
+    assert runtime.dispatch_one() is True
+    assert runtime.reconcile_one() is True
+
+    runtime._model = ScriptedModel(_submit_response())
+    assert runtime.advance_one() is True
+    efforts.append(runtime._model.requests[0].effort)
+
+    # Routing and dispatch only decide; the write-up is the Step that has an Agent
+    # result to reconcile. Every Step used the synthesis tier before this.
+    assert efforts == ["medium", "medium", "high"]
+
+
+@pytest.mark.postgres
+def test_forced_close_out_stays_on_the_routing_tier(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    loop_id, _snapshot = seeded_loop
+    with psycopg.connect(loop_database[0]["admin"]) as connection:
+        connection.execute(
+            "update platform_brain.brain_loops set max_steps=1 where loop_id=%s",
+            (loop_id,),
+        )
+    model = ScriptedModel(_submit_response())
+    runtime = _runtime(loop_repository)
+    runtime._model = model
+
+    assert runtime.advance_one() is True
+
+    assert model.requests[0].tool_choice == {
+        "type": "tool",
+        "name": "submit_answer",
+    }
+    assert model.requests[0].effort == "medium"
+
+
+@pytest.mark.postgres
+def test_step_lease_is_renewed_while_the_response_streams(
+    loop_database, loop_repository, seeded_loop, monkeypatch
+) -> None:
+    monkeypatch.setattr(loop_runtime, "_LEASE_RENEW_INTERVAL_SECONDS", 0.0)
+    renewals: list[tuple] = []
+    original = loop_repository.renew_step_lease
+
+    def spy(step_id, worker_id, *, lease_seconds):
+        renewals.append((worker_id, lease_seconds))
+        return original(step_id, worker_id, lease_seconds=lease_seconds)
+
+    monkeypatch.setattr(loop_repository, "renew_step_lease", spy)
+    runtime = _runtime(loop_repository)
+    runtime._model = ScriptedModel(_submit_response(thinking="正在整理。"))
+
+    assert runtime.advance_one() is True
+
+    # A single Opus 5 call outlives any sane lease, so the holder must extend it or
+    # a second worker re-leases the Step and pays for the same call again.
+    assert renewals == [(runtime._worker_id, runtime._lease_seconds)]
+
+
+@pytest.mark.postgres
+def test_renew_step_lease_only_extends_the_holding_worker(
+    loop_database, loop_repository, seeded_loop
+) -> None:
+    lease = loop_repository.lease_step("platform-brain.aaaa1111", lease_seconds=60)
+    assert lease is not None
+
+    assert (
+        loop_repository.renew_step_lease(
+            lease.step_id, "platform-brain.aaaa1111", lease_seconds=120
+        )
+        is True
+    )
+    assert (
+        loop_repository.renew_step_lease(
+            lease.step_id, "platform-brain.bbbb2222", lease_seconds=120
+        )
+        is False
+    )
+    with psycopg.connect(loop_database[0]["admin"]) as connection:
+        held = connection.execute(
+            "select lease_worker_id,lease_expires_at>clock_timestamp()+interval '90 seconds' "
+            "from platform_brain.brain_steps where step_id=%s",
+            (lease.step_id,),
+        ).fetchone()
+    assert held == ("platform-brain.aaaa1111", True)
+
+
+def test_generated_worker_identity_is_accepted_by_the_repository() -> None:
+    first = worker_runtime._worker_id()
+    second = worker_runtime._worker_id()
+
+    # Every Brain worker shared one constant identity before this, which let two
+    # workers both pass the commit lease check for the same Step.
+    assert first != second
+    assert loop_repository_module._require_worker(first) == first

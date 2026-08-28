@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import os
 from pathlib import Path
+import re
+import secrets
 import signal
 import time
-from typing import Literal, cast
+from typing import Callable, Literal, cast
 
 import httpx
 import psycopg
@@ -19,15 +22,30 @@ from app.agent_brain.loop_repository import BrainLoopRepository
 from app.agent_brain.loop_runtime import BrainLoopRuntime
 from app.agent_brain.model_adapter import BrainModelManifest, BrainRequestBuilder
 from app.agent_brain.prompt import BrainSystemPrompt
-from app.agent_brain.runtime_registry import RuntimeAgentRegistry
+from app.agent_brain.runtime_registry import (
+    AgentHealthObservation,
+    RuntimeAgentRegistry,
+)
 from app.control_plane.crypto import IdentityKeyring
 from app.control_plane.dsn import validate_control_dsn
 from app.execution_relay.content_crypto import ContentCodec
-from app.execution_relay.repository import ExecutionRelayRepository
+from app.execution_relay.repository import (
+    ExecutionRelayError,
+    ExecutionRelayRepository,
+)
 from app.local_secrets import read_secret_file
 
 
 WorkerMode = Literal["brain", "adapter", "reaper", "all"]
+
+# Mirrors the brain_steps.lease_worker_id check in control migration 041; a test
+# asserts the generated identity is accepted by the repository validator.
+_WORKER_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
+
+# A single Opus 5 Step routinely runs past a minute, and expire_leases returns any
+# expired Step to the queue, so the lease must outlive a normal call. The runtime
+# also renews it while the response streams.
+_STEP_LEASE_SECONDS = 180
 
 
 def validate_worker_mode(value: str) -> WorkerMode:
@@ -36,9 +54,67 @@ def validate_worker_mode(value: str) -> WorkerMode:
     return value  # type: ignore[return-value]
 
 
-class _UnknownHealth:
-    def for_agent(self, agent_id: str):
-        return None
+class RelayAgentHealth:
+    """Project real execution-relay worker liveness into Brain Agent availability.
+
+    list_agents reported "unknown" for every Agent before this, because the Brain
+    worker was wired to a stub health source. The relay already tracks whether the
+    local worker hosting an Agent is alive -- the Adapter uses the same call to
+    decide whether to dispatch -- so the Brain could not tell a healthy Agent from
+    a powered-off Mac.
+    """
+
+    def __init__(
+        self,
+        relay: ExecutionRelayRepository,
+        *,
+        freshness_seconds: int = 60,
+        now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    ) -> None:
+        # Duck-typed like RuntimeAgentRegistry's own collaborators, so the projection
+        # can be tested without standing up a relay DSN.
+        if not hasattr(relay, "has_active_worker"):
+            raise ValueError("execution relay required")
+        if type(freshness_seconds) is not int or freshness_seconds <= 0:
+            raise ValueError("relay freshness invalid")
+        if not callable(now):
+            raise ValueError("relay clock invalid")
+        self._relay = relay
+        self._freshness_seconds = freshness_seconds
+        self._now = now
+
+    def for_agent(self, agent_id: str) -> AgentHealthObservation | None:
+        if not isinstance(agent_id, str) or not agent_id:
+            return None
+        try:
+            available = self._relay.has_active_worker(
+                agent_id, freshness_seconds=self._freshness_seconds
+            )
+        except ExecutionRelayError:
+            return None
+        return AgentHealthObservation(
+            state="online" if available else "offline",
+            sampled_at=self._now(),
+            latency_p50_ms=None,
+            latency_p95_ms=None,
+            sample_count=0,
+        )
+
+
+def _worker_id() -> str:
+    """Return a per-process Brain worker identity.
+
+    Every Brain worker shared the constant "platform-brain" before this. Because
+    lease_step re-leases any Step whose lease has expired, two workers with the
+    same identity could both pass commit_model_step's lease check after each paid
+    for the same model call.
+    """
+
+    configured = os.getenv("PLATFORM_BRAIN_WORKER_ID", "").strip()
+    candidate = configured or f"platform-brain.{secrets.token_hex(4)}"
+    if _WORKER_ID.fullmatch(candidate) is None:
+        raise RuntimeError("Brain worker configuration unavailable")
+    return candidate
 
 
 def _required_path(name: str) -> Path:
@@ -94,7 +170,7 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
     authorization = AgentUseAuthorization(database_url, dsn_purpose="brain")
     registry = RuntimeAgentRegistry(
         authorization=authorization,
-        health=_UnknownHealth(),
+        health=RelayAgentHealth(relay),
         registered_adapter_kinds=("reference", "metabot_local"),
     )
     return (
@@ -105,8 +181,8 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
             system_prompt=prompt,
             runtime_registry=registry,
             adapters=adapters,
-            worker_id="platform-brain",
-            lease_seconds=45,
+            worker_id=_worker_id(),
+            lease_seconds=_STEP_LEASE_SECONDS,
         ),
         repository,
         client,

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import time
 from typing import Any, Callable, Literal
 
 import httpx
@@ -21,6 +22,70 @@ from app.agent_brain.model_adapter import (
 )
 
 
+_THINKING_FLUSH_SECONDS = 0.5
+_THINKING_FLUSH_BYTES = 4096
+
+
+class _ThinkingCoalescer:
+    """Batch thinking deltas before handing them to the persistence callback.
+
+    The Provider emits a thinking delta every few tokens and the Brain persists each
+    one synchronously inside the stream read loop: a fresh database connection, two
+    locking selects, a decrypt of the whole accumulated summary, a re-encrypt of the
+    whole summary, an update and a commit. The conversation stream shows the user the
+    accumulated snapshot on a one-second poll, so anything finer is invisible while
+    still stalling the read loop.
+
+    delta_seq counts flushes, not Provider deltas, which keeps the repository's
+    strictly-consecutive contract intact.
+    """
+
+    def __init__(
+        self,
+        sink: Callable[[ThinkingDelta], None],
+        *,
+        now: Callable[[], float],
+        flush_seconds: float = _THINKING_FLUSH_SECONDS,
+        flush_bytes: int = _THINKING_FLUSH_BYTES,
+    ) -> None:
+        self._sink = sink
+        self._now = now
+        self._flush_seconds = flush_seconds
+        self._flush_bytes = flush_bytes
+        self._pending: dict[int, list[str]] = {}
+        self._pending_bytes: dict[int, int] = {}
+        self._sequences: dict[int, int] = {}
+        self._opened_at: dict[int, float] = {}
+
+    def add(self, index: int, text: str, provider_id: str) -> None:
+        if index not in self._pending:
+            self._pending[index] = []
+            self._pending_bytes[index] = 0
+            self._opened_at[index] = self._now()
+        self._pending[index].append(text)
+        self._pending_bytes[index] += len(text.encode("utf-8"))
+        if (
+            self._pending_bytes[index] >= self._flush_bytes
+            or self._now() - self._opened_at[index] >= self._flush_seconds
+        ):
+            self.flush(index, provider_id)
+
+    def flush(self, index: int, provider_id: str | None) -> None:
+        if provider_id is None or not self._pending.get(index):
+            return
+        text = "".join(self._pending[index])
+        self._pending[index] = []
+        self._pending_bytes[index] = 0
+        self._opened_at[index] = self._now()
+        sequence = self._sequences.get(index, 0) + 1
+        self._sequences[index] = sequence
+        self._sink(ThinkingDelta(index, sequence, text, provider_id))
+
+    def flush_all(self, provider_id: str | None) -> None:
+        for index in sorted(self._pending):
+            self.flush(index, provider_id)
+
+
 class AnthropicMessagesAdapter(BrainModelAdapter):
     def __init__(
         self,
@@ -29,6 +94,7 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
         api_key: str,
         auth_scheme: Literal["x-api-key", "bearer"] = "x-api-key",
         client: httpx.Client,
+        now: Callable[[], float] = time.monotonic,
     ) -> None:
         if (
             not isinstance(base_url, str)
@@ -37,12 +103,14 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
             or not api_key
             or auth_scheme not in {"x-api-key", "bearer"}
             or not isinstance(client, httpx.Client)
+            or not callable(now)
         ):
             raise ValueError("Anthropic Adapter configuration invalid")
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._auth_scheme = auth_scheme
         self._client = client
+        self._now = now
 
     @classmethod
     def from_secret_file(
@@ -113,45 +181,52 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
                         raise ProviderUnavailable()
                     events: list[dict[str, object]] = []
                     provider_id: str | None = None
-                    thinking_sequences: dict[int, int] = {}
-                    for line in response.iter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        try:
-                            event = json.loads(line[6:])
-                        except (UnicodeError, json.JSONDecodeError):
-                            raise ProviderInterrupted() from None
-                        if type(event) is not dict:
-                            raise ProviderInterrupted()
-                        saw_event = True
-                        events.append(event)
-                        event_type = event.get("type")
-                        if event_type == "message_start":
-                            message = event.get("message")
-                            if not isinstance(message, dict) or not isinstance(
-                                message.get("id"), str
-                            ):
+                    coalescer = _ThinkingCoalescer(
+                        on_thinking_delta or (lambda _delta: None), now=self._now
+                    )
+                    try:
+                        for line in response.iter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            try:
+                                event = json.loads(line[6:])
+                            except (UnicodeError, json.JSONDecodeError):
+                                raise ProviderInterrupted() from None
+                            if type(event) is not dict:
                                 raise ProviderInterrupted()
-                            provider_id = message["id"]
-                        elif event_type == "content_block_delta":
-                            index = event.get("index")
-                            delta = event.get("delta")
-                            if (
-                                type(index) is int
-                                and isinstance(delta, dict)
-                                and delta.get("type") == "thinking_delta"
-                            ):
-                                text = delta.get("thinking")
-                                if provider_id is None or type(text) is not str:
+                            saw_event = True
+                            events.append(event)
+                            event_type = event.get("type")
+                            if event_type == "message_start":
+                                message = event.get("message")
+                                if not isinstance(message, dict) or not isinstance(
+                                    message.get("id"), str
+                                ):
                                     raise ProviderInterrupted()
-                                if not text:
-                                    continue
-                                sequence = thinking_sequences.get(index, 0) + 1
-                                thinking_sequences[index] = sequence
-                                if on_thinking_delta is not None:
-                                    on_thinking_delta(
-                                        ThinkingDelta(index, sequence, text, provider_id)
-                                    )
+                                provider_id = message["id"]
+                            elif event_type == "content_block_delta":
+                                index = event.get("index")
+                                delta = event.get("delta")
+                                if (
+                                    type(index) is int
+                                    and isinstance(delta, dict)
+                                    and delta.get("type") == "thinking_delta"
+                                ):
+                                    text = delta.get("thinking")
+                                    if provider_id is None or type(text) is not str:
+                                        raise ProviderInterrupted()
+                                    if not text:
+                                        continue
+                                    coalescer.add(index, text, provider_id)
+                            elif event_type == "content_block_stop":
+                                index = event.get("index")
+                                if type(index) is int:
+                                    coalescer.flush(index, provider_id)
+                    finally:
+                        # Persist whatever thinking already arrived even when the
+                        # stream is interrupted; before coalescing every delta was
+                        # already durable at this point.
+                        coalescer.flush_all(provider_id)
                     return _aggregate_events(events)
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
                 if saw_event or attempt == 1:

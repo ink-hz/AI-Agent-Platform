@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
 import json
+import time
 
 from app.agent_brain.adapters.base import (
     AdapterDelivery,
@@ -10,6 +11,7 @@ from app.agent_brain.adapters.base import (
     AdapterRegistry,
     AdapterTask,
 )
+from app.agent_brain.agent_roster import ROSTER_UNAVAILABLE, render_agent_roster
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.agent_brain.collaboration_models import AgentTaskPublicEventInput
 from app.agent_brain.collaboration_models import BrainThinkingDelta as StoredThinkingDelta
@@ -17,6 +19,7 @@ from app.agent_brain.context_policy import BrainContextPolicy
 from app.agent_brain.loop_repository import (
     AgentTaskEventInput,
     BrainLoopRepository,
+    BrainRepositoryError,
     ImmediateToolResult,
     ModelStepCommit,
     TaskDispatchSpec,
@@ -38,6 +41,9 @@ from app.agent_brain.tool_protocol import (
     ProtocolViolation,
     parse_tool_batch,
 )
+
+
+_LEASE_RENEW_INTERVAL_SECONDS = 15.0
 
 
 class BrainLoopRuntime:
@@ -104,6 +110,11 @@ class BrainLoopRuntime:
             messages=messages,
             step_seq=lease.step_seq,
             system_prompt=self._system_prompt.text,
+            agent_roster=self._agent_roster(owner_id),
+            effort=self._select_effort(
+                forced=forced,
+                has_settled_task=self._repository.has_settled_task(lease.loop_id),
+            ),
             tool_choice=(
                 {"type": "tool", "name": "submit_answer"} if forced else None
             ),
@@ -115,8 +126,10 @@ class BrainLoopRuntime:
             ),
         )
         thinking_blocks: set[int] = set()
+        last_renewed = time.monotonic()
 
         def persist_thinking(delta: ThinkingDelta) -> None:
+            nonlocal last_renewed
             thinking_blocks.add(delta.block_index)
             self._collaboration.append_thinking_delta(
                 StoredThinkingDelta(
@@ -127,6 +140,20 @@ class BrainLoopRuntime:
                     provider_run_ref=delta.provider_run_ref,
                 )
             )
+            elapsed = time.monotonic() - last_renewed
+            if elapsed >= _LEASE_RENEW_INTERVAL_SECONDS:
+                last_renewed = time.monotonic()
+                # Best effort: the lease already outlives a normal Step, so a failed
+                # renewal must not abort a paid model call. A stolen Step is caught
+                # by commit_model_step's lease_worker_id check.
+                try:
+                    self._repository.renew_step_lease(
+                        lease.step_id,
+                        self._worker_id,
+                        lease_seconds=self._lease_seconds,
+                    )
+                except BrainRepositoryError:
+                    pass
 
         try:
             response = self._model.complete(
@@ -183,6 +210,8 @@ class BrainLoopRuntime:
                 messages=messages,
                 step_seq=lease.step_seq,
                 system_prompt=self._system_prompt.text,
+                agent_roster=self._agent_roster(owner_id),
+                effort=self._request_builder.manifest.thinking_effort_routing,
                 budget_notice=(
                     "上一响应违反工具协议。不要输出自由文本；本次必须只调用一个"
                     "合法工具。"
@@ -320,6 +349,36 @@ class BrainLoopRuntime:
             ),
         )
         return True
+
+    def _agent_roster(self, owner_id) -> str:
+        """Render the caller's delegatable Agents for the cached system prefix.
+
+        Without this the Brain has no way to learn that any Agent exists except by
+        spending a whole model Step on list_agents, which is why a bare "what can
+        you do" question used to cost two Steps and could exhaust the Turn budget.
+        """
+
+        try:
+            return render_agent_roster(
+                self._runtime_registry.roster_for_user(owner_id)
+            )
+        except AgentUseAuthorizationUnavailable:
+            return ROSTER_UNAVAILABLE
+
+    def _select_effort(self, *, forced: bool, has_settled_task: bool) -> str:
+        """Choose reasoning effort from persisted state only, so replays reproduce it.
+
+        A forced close-out only writes up what is already in context, and a Step with
+        no settled Agent result is routing rather than synthesis; both take the
+        cheaper routing tier. Every Step used the synthesis tier before this, which
+        let one Turn spend its whole active budget on the Brain's own thinking before
+        any Agent finished.
+        """
+
+        manifest = self._request_builder.manifest
+        if not forced and has_settled_task:
+            return manifest.thinking_effort
+        return manifest.thinking_effort_routing
 
     def _finalize_thinking(
         self, step_id, block_indexes: set[int], *, interrupted: bool
