@@ -491,3 +491,30 @@ def test_llm_inference_serving_engineering_draft_meets_contract(
     assert sum(
         len(category.articles) for category in candidate_index.categories
     ) == 8
+
+
+def test_llm_inference_metrics_cost_and_typography_contract() -> None:
+    path = batch_article_path("llm-inference-serving-engineering")
+    _, markdown = parse_frontmatter(path)
+
+    assert (
+        "| TPOT（Time per Output Token） | 单请求 Decode 总耗时除以输出 token 数的"
+        "摊销值 |"
+    ) in markdown
+    assert (
+        "| ITL（Inter-Token Latency） | 流式相邻输出事件之间的单次间隔 |"
+    ) in markdown
+    assert "TPOT / ITL" not in markdown
+    assert "TPOT/ITL" not in markdown
+    assert "投机解码单步可能返回多个 token" in markdown
+    assert "TPOT 把单请求 Decode 总耗时摊销到输出 token" in markdown
+    assert "ITL 则逐次测量相邻流式输出事件的间隔" in markdown
+
+    assert (
+        "每个 SLO 内有效输出 token 成本\n"
+        "= 推理服务总实付成本 / SLO 内有效输出 token 数"
+    ) in markdown
+    assert "闲置、失败重算和缓存传输通过这些实际账单进入分子" in markdown
+    assert "各桶必须互斥" in markdown
+    assert "(加速器租用 + 主机与传输 + 闲置容量 + 失败重算)" not in markdown
+    assert "希缺资源" not in markdown
