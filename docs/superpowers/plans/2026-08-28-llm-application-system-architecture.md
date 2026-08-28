@@ -1,6 +1,6 @@
 # 《LLM 应用系统架构》单篇迁移 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `executing-plans` task by task. Use `test-driven-development` for content/rendering contracts, `requesting-code-review` before merge, and `verification-before-completion` before release.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `executing-plans` task by task. Use `test-driven-development` for content/rendering contracts, `requesting-code-review` before merge, and `verification-before-completion` before release. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 精读两篇旧源稿，核验并重新创作《LLM 应用系统架构：从一次请求到可靠回答》，作为第二批“生产级 AI 系统”专题的第一篇文章，独立评审、独立上线。
 
@@ -15,6 +15,7 @@
 - 旧稿仅是材料。产品能力、协议、安全和性能结论使用迁移当天的一手资料核验。
 - 以新问题结构重写；不恢复旧组织、旧项目、旧日期、版本示例、营销数字或预测。
 - 作者 `苍渊`，座右铭 `博观而约取，厚积而薄发。`；首次发布日期使用实际上线日。
+- 本篇实际首次发布日期与更新时间固定为 `2026-08-28`。
 - 先写 `draft: true`；正文、图示、来源、交叉复读和真实渲染通过后才改为 `false`。
 - 全景图用浅色分区，流程图用固定语义色；手机不可读的长横图改为 TB 或拆图。
 - 质量不是字数或图数。与首批文章或后续专篇重复的章节必须删除或只保留接口说明。
@@ -61,6 +62,7 @@ This article does not own:
 3. **能力选择边界（TB）**：根据外部知识、副作用和运行时长分流到简单调用、RAG、工具调用或异步任务；Agent 不是默认答案。
 
 模型网关和运行时用 `infra`，模型推理用 `model`，控制门禁用 `policy`，失败分支用 `risk`，证据用 `success`。图前说明观察问题，图后解释权衡。
+三张图分别使用唯一的 `accTitle` 与 `accDescr`，并与现有 16 张生产图一起通过唯一性和真实 Mermaid 渲染门禁。
 
 ---
 
@@ -146,6 +148,8 @@ it("renders every LLM application architecture diagram", async () => {
 });
 ```
 
+同时把生产图元数据唯一性测试的文件列表加入新文章，并把总数从 `16` 更新为 `19`；三张新图的标题和描述不得与已有图重复。
+
 - [ ] **Step 3: 运行并保存 RED 证据**
 
 ```bash
@@ -170,8 +174,8 @@ slug: llm-application-system-architecture
 description: 从应用层解释请求入口、上下文、RAG、工具、模型访问、输出验证与反馈如何共同形成可靠回答。
 author: 苍渊
 motto: 博观而约取，厚积而薄发。
-publishedAt: <实际发布日期>
-updatedAt: <实际发布日期>
+publishedAt: 2026-08-28
+updatedAt: 2026-08-28
 tags:
   - LLM
   - 系统架构
@@ -228,7 +232,7 @@ draft: true
 
 - [ ] **Step 4: 打开发行开关并跑 GREEN**
 
-仅当前三步通过后，把 `draft` 改为 `false`，填实际 `publishedAt/updatedAt`。Expected: 目录为 5 分类、6 篇文章；后端合同与真实 Mermaid 测试全部 PASS。
+仅当前三步通过后，把 `draft` 改为 `false`，确认 `publishedAt/updatedAt` 均为 `2026-08-28`。Expected: 目录为 5 分类、6 篇文章；后端合同与真实 Mermaid 测试全部 PASS。
 
 - [ ] **Step 5: 单篇提交**
 
@@ -277,7 +281,7 @@ npm run build
 ./deploy/cloud/deploy.sh "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/cloud-replica/deploy.env"
 ```
 
-Expected: `CLOUD_PLATFORM_DEPLOY_OK release=<master SHA> mode=dingtalk`。
+Expected: 输出 `CLOUD_PLATFORM_DEPLOY_OK release=... mode=dingtalk`，其中 release 必须精确等于部署前 `git rev-parse HEAD` 的 40 位 SHA。
 
 - [ ] **Step 5: 生产后独立核验**
 
