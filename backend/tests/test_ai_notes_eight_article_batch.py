@@ -297,13 +297,35 @@ def cloud_native_contains_forbidden_tutorial_or_hpa(markdown: str) -> bool:
     if any(re.search(pattern, markdown) for pattern in prohibited_patterns):
         return True
 
-    hpa_terms = tuple(
-        re.finditer(
-            r"(?i)\bHPA\b|Horizontal\s+Pod\s+Autoscal(?:er|ing)|"
-            r"水平\s*Pod\s*自动扩缩容",
-            markdown,
-        )
+    hpa_pattern = (
+        r"(?:\bHPA\b|Horizontal\s+Pod\s+Autoscal(?:er|ing)|"
+        r"水平\s*Pod\s*自动扩缩容)"
     )
+    exclusivity_or_sufficiency_patterns = (
+        rf"(?:仅|只)(?:用|靠|依赖)?\s*{hpa_pattern}",
+        rf"(?:单靠|单独依赖)\s*{hpa_pattern}",
+        rf"{hpa_pattern}\s*(?:本身\s*)?(?:就\s*)?"
+        r"(?:够(?:了)?|足够|足以|即可)",
+        rf"{hpa_pattern}\s*(?:单独|独自)\s*(?:就\s*)?"
+        r"(?:能|可以|足以|够)",
+        rf"(?:only\s+{hpa_pattern}|(?:use|need)\s+only\s+{hpa_pattern})\b",
+        rf"(?:use|rely\s+on)\s+{hpa_pattern}\s+only\b",
+        rf"{hpa_pattern}\s+alone\s+(?:can|will|solves?|handles?|works?|"
+        r"is\s+(?:sufficient|enough))\b",
+        rf"{hpa_pattern}\s+(?:is\s+)?(?:enough|sufficient)\b",
+    )
+    negating_prefix = re.compile(
+        r"(?i)(?:不要|不能|不可|不应|并非|不是|并不|无需|不必|"
+        r"do\s+not|don't|cannot|can't|should\s+not|not)\s*$"
+    )
+    for pattern in exclusivity_or_sufficiency_patterns:
+        for claim in re.finditer(rf"(?i){pattern}", markdown):
+            prefix = markdown[max(0, claim.start() - 16):claim.start()]
+            if negating_prefix.search(prefix):
+                continue
+            return True
+
+    hpa_terms = tuple(re.finditer(rf"(?i){hpa_pattern}", markdown))
     absolute_terms = tuple(
         re.finditer(
             r"(?i)万能|所有|普遍|一律|唯一|必然|必须|都应|通用|"
@@ -318,17 +340,30 @@ def cloud_native_contains_forbidden_tutorial_or_hpa(markdown: str) -> bool:
             ) - min(hpa_term.end(), absolute_term.end())
             if distance > 48:
                 continue
-            window_start = max(0, min(hpa_term.start(), absolute_term.start()) - 16)
-            window_end = min(
-                len(markdown), max(hpa_term.end(), absolute_term.end()) + 16
-            )
-            window = markdown[window_start:window_end]
-            if re.search(
-                r"(?i)并非|不是|并不|不应|不适用|不能|不可|未必|"
-                r"\bnot\b|isn't|is not|\bnever\b",
-                window,
-            ):
+            between_start = min(hpa_term.end(), absolute_term.end())
+            between_end = max(hpa_term.start(), absolute_term.start())
+            between = markdown[between_start:between_end]
+            if re.search(r"[。！？.!?；;\n]", between):
                 continue
+            if hpa_term.end() <= absolute_term.start():
+                if re.fullmatch(
+                    r"(?i)\s*(?:并非|不是|并不|isn't|is\s+not|not)\s*",
+                    between,
+                ):
+                    continue
+                if re.fullmatch(
+                    r"\s*(?:并非|不是)\s*所有[^,，。！？；;\n]{0,24}\s*",
+                    between,
+                ):
+                    continue
+            else:
+                prefix = markdown[max(0, absolute_term.start() - 16):absolute_term.start()]
+                if re.search(
+                    r"(?i)(?:并非|不是|并不|不应|不要|无需|不必|"
+                    r"not|should\s+not|do\s+not)\s*$",
+                    prefix,
+                ):
+                    continue
             return True
     return False
 
@@ -776,9 +811,23 @@ def test_cloud_native_contract_guards_reject_bypass_variants() -> None:
         "HPA 能解决所有推理服务的弹性问题。",
         "Horizontal Pod Autoscaler is the universal strategy.",
         "所有推理服务都应使用水平 Pod 自动扩缩容。",
+        "仅 HPA 可以解决推理服务弹性。",
+        "推理服务只用 HPA 就能完成弹性治理。",
+        "推理服务弹性使用 HPA 就够。",
+        "推理服务弹性使用 HPA 就够了。",
+        "HPA alone solves inference elasticity.",
+        "Use only HPA for inference elasticity.",
+        "Use HPA only for inference elasticity.",
+        "HPA is enough for inference elasticity.",
+        "HPA 不能感知模型冷启动，但所有推理服务都应只用它。",
     ):
         assert cloud_native_contains_forbidden_tutorial_or_hpa(prohibited)
 
-    assert not cloud_native_contains_forbidden_tutorial_or_hpa(
-        "HPA 并非所有推理服务的万能策略。"
-    )
+    for allowed in (
+        "HPA 并非所有推理服务的万能策略。",
+        "不要仅靠 HPA。",
+        "HPA 不能单独解决推理服务弹性。",
+        "Do not rely on HPA alone.",
+        "HPA alone is not enough.",
+    ):
+        assert not cloud_native_contains_forbidden_tutorial_or_hpa(allowed)
