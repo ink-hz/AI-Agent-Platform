@@ -49,7 +49,7 @@ flowchart LR
     class R tool;
     class C data;
     class V,A success;
-    style QUERY fill:#F8FAFC,stroke:#CBD5E1,color:#172033;
+    style QUERY fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
 ```
 
 每一段都有不同失败方式：

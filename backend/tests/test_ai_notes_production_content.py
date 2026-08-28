@@ -180,6 +180,19 @@ def test_learning_map_visualizes_the_system_and_progression() -> None:
     assert article.updated_at == TODAY
 
 
+def test_mermaid_group_backgrounds_do_not_use_neutral_gray_panels() -> None:
+    repository = AiNotesRepository.load(CONTENT_ROOT, today=TODAY)
+    for category in repository.index().categories:
+        for summary in category.articles:
+            article = repository.article(category.slug, summary.slug)
+            assert article is not None
+            for diagram in mermaid_blocks(article.markdown):
+                assert re.search(
+                    r"(?mi)^\s*style\s+\S+\s+fill:#F8FAFC\b",
+                    diagram,
+                ) is None
+
+
 def test_first_batch_is_exactly_the_approved_five_articles() -> None:
     index = validate_publication(CONTENT_ROOT, MARKER_FILE, today=TODAY)
     actual = {

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { mermaidImageSource } from "./MermaidDiagram";
+import { AI_NOTES_MERMAID_CONFIG, mermaidImageSource } from "./MermaidDiagram";
 import { mermaidMetadata } from "./mermaidMetadata";
 
 
@@ -45,13 +45,7 @@ function expectAccessibilityMetadata(sources: string[]): void {
 async function expectProductionDiagramsToRender(sources: string[]): Promise<void> {
   expectAccessibilityMetadata(sources);
   const { default: mermaid } = await import("mermaid");
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: "strict",
-    theme: "neutral",
-    htmlLabels: false,
-    flowchart: { htmlLabels: false },
-  });
+  mermaid.initialize(AI_NOTES_MERMAID_CONFIG);
   for (const source of sources) {
     expectSemanticStyling(source);
     const rendered = await mermaid.render(
@@ -102,13 +96,7 @@ describe("MermaidDiagram with the real renderer", () => {
 
   it("keeps flowchart labels in a sanitized CSP-compatible image", async () => {
     const { default: mermaid } = await import("mermaid");
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      theme: "neutral",
-      htmlLabels: false,
-      flowchart: { htmlLabels: false },
-    });
+    mermaid.initialize(AI_NOTES_MERMAID_CONFIG);
 
     const { svg } = await mermaid.render(
       "ai-note-mermaid-integration",
@@ -122,6 +110,24 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(rendered).toContain("End");
     expect(rendered).not.toContain("foreignObject");
     expect(document.querySelector("style")).toBeNull();
+  });
+
+  it("renders unstyled groups on the white article canvas", async () => {
+    const { default: mermaid } = await import("mermaid");
+    mermaid.initialize(AI_NOTES_MERMAID_CONFIG);
+
+    const { svg } = await mermaid.render(
+      "ai-note-white-group-integration",
+      `flowchart TB
+        subgraph GROUP[系统边界]
+          A[输入] --> B[输出]
+        end`,
+    );
+    const source = mermaidImageSource(svg);
+    const rendered = decodeURIComponent(source.split(",", 2)[1] ?? "");
+
+    expect(rendered).toMatch(/\.cluster rect\s*\{[^}]*fill:\s*#FFFFFF;/s);
+    expect(rendered).toMatch(/\.cluster rect\s*\{[^}]*stroke:\s*#CBD5E1;/s);
   });
 
   it("renders the styled Agent engineering learning map", async () => {

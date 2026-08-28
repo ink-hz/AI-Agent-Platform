@@ -66,6 +66,11 @@ describe("MermaidDiagram", () => {
       startOnLoad: false,
       securityLevel: "strict",
       theme: "neutral",
+      themeVariables: {
+        background: "#FFFFFF",
+        clusterBkg: "#FFFFFF",
+        clusterBorder: "#CBD5E1",
+      },
       htmlLabels: false,
       flowchart: { htmlLabels: false },
     }));
@@ -100,15 +105,24 @@ describe("MermaidDiagram", () => {
     const trigger = container.querySelector<HTMLButtonElement>(".mermaid-diagram-trigger")!;
     expect(trigger.getAttribute("aria-label")).toBe("查看大图：Agent 行动循环");
     expect(trigger.querySelector("img")?.alt).toBe("Agent 行动循环");
+    expect(trigger.querySelector(".mermaid-diagram-zoom-hint")).toBeNull();
+    expect(trigger.textContent).not.toContain("查看大图");
 
     await act(async () => trigger.click());
     expect(container.querySelector("dialog")?.getAttribute("aria-label")).toBe("Agent 行动循环");
     expect(render).toHaveBeenCalledTimes(1);
 
-    const cancel = new Event("cancel", { cancelable: true });
-    await act(async () => container.querySelector("dialog")!.dispatchEvent(cancel));
+    await act(async () => container.querySelector<HTMLImageElement>(".mermaid-lightbox-image")!.click());
     expect(container.querySelector("dialog")).toBeNull();
     expect(document.activeElement).toBe(trigger);
+
+    await act(async () => trigger.click());
+    const cancel = new Event("cancel", { cancelable: true });
+    await act(async () => container.querySelector("dialog")!.dispatchEvent(cancel));
+    expect(cancel.defaultPrevented).toBe(true);
+    expect(container.querySelector("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(render).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the inline diagram readable when modal dialogs are unsupported", async () => {
