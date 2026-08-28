@@ -90,15 +90,15 @@ describe("professional Agent use pages", () => {
     expect(cards[0].textContent).toContain("AI FAE Agent");
     expect(cards[cards.length - 1].textContent).toContain("AI 行政 Agent");
     expect(cards.map((node) => node.getAttribute("href"))).toEqual([
-      "https://fae.orbbec.com.cn/",
+      "/agents/ai-fae-agent",
       "/agents/hr-bot",
       "/agents/voc/workspace",
       "/agents/marketing-gtm-bot",
       "/office/?view=services",
     ]);
     expect(container.querySelector("a[href='/office/?view=services']")?.textContent).toContain("AI 行政 Agent");
-    expect(container.querySelector("a[href='https://fae.orbbec.com.cn/']")?.textContent).toContain("AI FAE Agent");
-    expect(container.querySelector("a[href='https://fae.orbbec.com.cn/']")?.getAttribute("data-agent-kind")).toBe("fae");
+    expect(container.querySelector("a[href='/agents/ai-fae-agent']")?.textContent).toContain("AI FAE Agent");
+    expect(container.querySelector("a[href='/agents/ai-fae-agent']")?.getAttribute("data-agent-kind")).toBe("fae");
     expect(container.querySelector("a[href='/agents/hr-bot']")?.getAttribute("data-agent-kind")).toBe("hr");
     expect(container.querySelector("a[href='/agents/voc/workspace']")?.getAttribute("data-agent-kind")).toBe("voc");
     expect(container.querySelector("a[href='/agents/marketing-gtm-bot']")?.getAttribute("data-agent-kind")).toBe("marketing");
@@ -106,7 +106,30 @@ describe("professional Agent use pages", () => {
     expect(container.querySelectorAll(".agent-use-card-action")).toHaveLength(5);
     expect(container.querySelectorAll(".agent-use-card-arrow")).toHaveLength(5);
     expect(container.querySelector("a[href='/agents/hr-bot']")?.getAttribute("aria-label")).toBe("进入 HR Agent");
-    expect(container.querySelector("a[href='https://fae.orbbec.com.cn/']")?.getAttribute("aria-label")).toBe("打开 AI FAE Agent 工作区");
+    expect(container.querySelector("a[href='/agents/ai-fae-agent']")?.getAttribute("aria-label")).toBe("进入 AI FAE Agent");
+  });
+
+  it("opens FAE through a one-time Platform enterprise launch", async () => {
+    const launchCode = "l".repeat(43);
+    const launchAgent = vi.fn().mockResolvedValue({
+      launch_url: `https://fae.orbbec.com.cn/app/#platform_launch=${launchCode}`,
+      expires_at: "2026-08-28T12:01:00Z",
+    });
+    const onLaunchReady = vi.fn();
+    await act(async () => root.render(<AgentUsePage
+      account={account} agentId="ai-fae-agent"
+      loadCatalog={vi.fn().mockResolvedValue([faeCard])}
+      historyClient={historyClient}
+      launchAgent={launchAgent}
+      onLaunchReady={onLaunchReady}
+    />));
+
+    await act(async () => container.querySelector<HTMLButtonElement>(".workspace-open-button")?.click());
+
+    expect(launchAgent).toHaveBeenCalledWith("ai-fae-agent", "csrf");
+    expect(onLaunchReady).toHaveBeenCalledWith(
+      `https://fae.orbbec.com.cn/app/#platform_launch=${launchCode}`,
+    );
   });
 
   it("never renders an unallowlisted external workspace URL", async () => {

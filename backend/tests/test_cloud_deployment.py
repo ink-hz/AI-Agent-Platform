@@ -119,7 +119,7 @@ def test_compose_is_isolated_loopback_only_and_hardened():
         services["platform-loopback"]["environment"][
             "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS"
         ]
-        == "127.0.0.1/32,172.31.0.1/32"
+        == "127.0.0.1/32,172.31.0.1/32,172.31.0.8/32"
     )
     assert services["platform-api"]["volumes"] == [
         "platform-api-secrets:/run/secrets:ro"

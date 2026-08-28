@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import re
+from ipaddress import ip_address
 from urllib.parse import urlsplit
 
 from starlette.datastructures import Headers, MutableHeaders, QueryParams
@@ -43,6 +44,29 @@ _DIRECT_AGENT_MISSION_RESPONSE = re.compile(
 _DIRECT_AGENT_CONVERSATION_RESPONSE = re.compile(
     r"/api/v1/agents/[^/]+/conversations\Z"
 )
+_AGENT_BINDING_VALIDATION_ROUTE = re.compile(
+    r"/api/v1/internal/agent-bindings/"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/validate\Z"
+)
+
+
+def is_agent_identity_backchannel_request(method: str, path: str) -> bool:
+    return method == "POST" and (
+        path == "/api/v1/internal/agent-launch/exchange"
+        or _AGENT_BINDING_VALIDATION_ROUTE.fullmatch(path) is not None
+    )
+
+
+def _source_is_loopback(scope, edge_source) -> bool:
+    if edge_source is not None:
+        return bool(edge_source.ip.is_loopback)
+    client = scope.get("client")
+    if not client:
+        return False
+    try:
+        return bool(ip_address(client[0]).is_loopback)
+    except (TypeError, ValueError):
+        return False
 
 
 def _is_agent_brain_response_path(path: str | None) -> bool:
@@ -226,6 +250,10 @@ class IdentitySecurityMiddleware:
         local_path = _unprefixed(path, self.auth.route_prefix)
         identity_response = (
             local_path in _IDENTITY_RESPONSE_PATHS
+            or (
+                isinstance(local_path, str)
+                and is_agent_identity_backchannel_request(method, local_path)
+            )
             or _is_agent_brain_response_path(local_path)
             or _is_ai_notes_response_path(local_path)
         )
@@ -265,6 +293,24 @@ class IdentitySecurityMiddleware:
                 )(scope, receive, protected_send)
                 return
             scope.setdefault("state", {})["edge_source"] = edge_source
+
+        internal_agent_identity = (
+            isinstance(local_path, str)
+            and is_agent_identity_backchannel_request(method, local_path)
+        )
+        if internal_agent_identity:
+            if (
+                not _has_canonical_ascii_raw_path(scope, path)
+                or not _source_is_loopback(scope, edge_source)
+            ):
+                await JSONResponse(
+                    {"detail": "not found"},
+                    status_code=404,
+                    headers=_NO_STORE,
+                )(scope, receive, protected_send)
+                return
+            await self.app(scope, receive, protected_send)
+            return
 
         if self.auth.route_prefix == "/" and _is_execution_worker_namespace(path):
             if not _has_canonical_ascii_raw_path(

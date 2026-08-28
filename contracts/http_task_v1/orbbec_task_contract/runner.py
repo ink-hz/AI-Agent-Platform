@@ -18,8 +18,8 @@ from .cases import ACTION_CASE_ID, BASE_UPSTREAM_HTTP_CASE_IDS
 from .models import (
     CONTRACT_VERSION,
     TERMINAL_EVENT_KINDS,
-    ActionExecuteReceipt,
     ActionDigestInput,
+    ActionExecuteReceipt,
     ActionProposal,
     CancelReceipt,
     CapabilitiesResponse,
@@ -219,7 +219,7 @@ class ContractRunner:
             "capability_version": self._capability_version,
             "idempotency_key": idempotency_key or f"contract-create:{platform_task_id}",
             "deadline_at": deadline.isoformat().replace("+00:00", "Z"),
-            "authorized_scopes": ["contract.test"],
+            "authorized_scopes": list(self._authorized_scopes),
         }
 
     def _create(

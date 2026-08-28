@@ -18,6 +18,26 @@ LATEST_AGENT_BRAIN_MIGRATION = (
 )
 
 
+def test_cloud_acceptance_uses_only_named_agentops_control_commands() -> None:
+    source = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+
+    assert "run_agentops()" not in source
+    assert "/usr/bin/sudo -n -u agentops /usr/bin/env -i" not in source
+    assert "/bin/sh -c 'cd /Users/agentops" not in source
+    assert (
+        "agentops_control=/Library/PrivilegedHelperTools/orbbec-agentops-control"
+        in source
+    )
+    for command in (
+        "relay-canary",
+        "worker-stop",
+        "worker-restore",
+        "metabot-release-sha",
+        "agent-team-release-sha",
+    ):
+        assert f"run_agentops_control {command}" in source
+
+
 def test_control_bootstrap_provisions_brain_worker_credentials() -> None:
     script = (CLOUD / "bootstrap-control-db.sh").read_text(encoding="utf-8")
 
@@ -533,9 +553,9 @@ def test_acceptance_is_private_real_idempotent_and_rollback_safe() -> None:
         "mission.interrupted",
         "platform_control.mission_runs",
         "platform_control.mission_events",
-        "worker-pm2.sh",
-        '"$worker_supervisor" stop',
-        '"$worker_supervisor" restore online',
+        "run_agentops_control worker-stop",
+        "run_agentops_control worker-restore",
+        "/Library/PrivilegedHelperTools/orbbec-agentops-control",
         "127.0.0.1:9110",
         "fae.orbbec.com.cn",
         "http://47.106.112.69/",
@@ -720,8 +740,7 @@ def test_worker_restore_executes_fixed_pm2_online_path(tmp_path: Path) -> None:
     function = function.replace("/usr/bin/nc", str(fake_nc))
     shell = f"""set -eEuo pipefail
 worker_stopped=1
-worker_supervisor=/fixed/worker-pm2.sh
-run_agentops() {{ echo "$*" >> {str(log)!r}; }}
+run_agentops_control() {{ echo "$*" >> {str(log)!r}; }}
 {function}
 restore_worker
 [[ "$worker_stopped" == 0 ]]
@@ -736,7 +755,7 @@ restore_worker
 
     assert result.returncode == 0, result.stderr
     calls = log.read_text(encoding="utf-8")
-    assert "/fixed/worker-pm2.sh restore online" in calls
+    assert "worker-restore" in calls
     assert "launchctl" not in calls
     assert "nc:-z -w 2 127.0.0.1 9120" in calls
 

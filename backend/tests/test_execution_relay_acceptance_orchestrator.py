@@ -176,6 +176,7 @@ def test_gate_01_to_03_uses_pinned_ssh_and_process_owned_listener_probe(tmp_path
         assert "BatchMode=yes" in arguments
         assert "IdentitiesOnly=yes" in arguments
         assert "StrictHostKeyChecking=yes" in arguments
+        assert "UserKnownHostsFile=/Users/agentops/AgentRuntime/private/cloud-known-hosts" in arguments
         assert "ConnectTimeout=8" in arguments
         assert arguments[-4:] == (
             "root@47.106.112.69",
@@ -189,7 +190,11 @@ def test_gate_01_to_03_uses_pinned_ssh_and_process_owned_listener_probe(tmp_path
         assert b"worker_heartbeat_fresh" in remote_script
         assert b'expected_key_id="$1"' in remote_script
         assert b"worker_key.key_id=:'expected_key_id'" in remote_script
+        assert b'/usr/bin/docker exec -i "$postgres_id" psql' in remote_script
+        assert b' -c \\\n  "select concat' not in remote_script
         assert b"9101-9108" in remote_script
+        assert b"sensitive_nonpublic = {5432, 8000, 8080, *range(9101, 9121)}" in remote_script
+        assert b"elif port in sensitive_nonpublic:" in remote_script
         assert b"127.0.0.1:8000" in remote_script
         assert b"127.0.0.1:8080" in remote_script
         assert timeout == 30

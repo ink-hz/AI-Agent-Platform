@@ -249,6 +249,7 @@ describe("ConversationPage", () => {
     const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
     const fetchConversation = vi.fn()
       .mockResolvedValueOnce({ conversation, current_turn: active })
+      .mockResolvedValueOnce({ conversation, current_turn: active })
       .mockResolvedValue({ conversation, current_turn: completedTurn });
     const streamEvents = vi.fn()
       .mockImplementationOnce(async (_id, options) => {
@@ -266,6 +267,35 @@ describe("ConversationPage", () => {
     expect(streamEvents).toHaveBeenNthCalledWith(1, conversationId, expect.objectContaining({ after: 0 }));
     expect(streamEvents).toHaveBeenNthCalledWith(2, conversationId, expect.objectContaining({ after: 1 }));
     expect(reconnectDelay).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers a completed professional-Agent turn when the SSE slot is temporarily unavailable", async () => {
+    const directConversation = { ...conversation, mode: "direct_agent" as const, direct_agent_id: "hr-bot" };
+    const active: ConversationTurn = { ...completedTurn, assistant_message_id: null, status: "running" };
+    const fetchConversation = vi.fn()
+      .mockResolvedValueOnce({ conversation: directConversation, current_turn: active })
+      .mockResolvedValueOnce({ conversation: directConversation, current_turn: completedTurn });
+    const fetchMessages = vi.fn()
+      .mockResolvedValueOnce(messages.slice(0, 1))
+      .mockResolvedValueOnce(messages);
+    const streamEvents = vi.fn().mockRejectedValue(new Error("Conversation stream limit reached"));
+    const reconnectDelay = vi.fn().mockResolvedValue(undefined);
+    const pageClient = client({ fetchConversation, fetchMessages, streamEvents, reconnectDelay });
+
+    await act(async () => root.render(<ConversationPage
+      account={account}
+      assistantLabel="HR Agent"
+      client={pageClient}
+      conversationId={conversationId}
+      expectedAgentId="hr-bot"
+    />));
+
+    expect(streamEvents).toHaveBeenCalledTimes(1);
+    expect(fetchConversation).toHaveBeenCalledTimes(2);
+    expect(fetchMessages).toHaveBeenCalledTimes(2);
+    expect(reconnectDelay).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("建议从 GitHub 开始");
+    expect(container.textContent).not.toContain("连接暂时中断");
   });
 
   it("is read-only when directory freshness is hard stale", async () => {

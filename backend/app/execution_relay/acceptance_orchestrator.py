@@ -34,6 +34,10 @@ _WORKER_SUPERVISOR = Path(
     "/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh"
 )
 _CLOUD_HOST = "root@47.106.112.69"
+_CLOUD_KNOWN_HOSTS = Path(
+    "/Users/agentops/AgentRuntime/private/cloud-known-hosts"
+)
+_OPERATOR_HOME = Path("/Users/neo")
 _AGENTS = (
     "hr-bot",
     "fae-bot",
@@ -333,8 +337,10 @@ fi
 if [[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$postgres_id")" == healthy ]]; then
   cloud_database_healthy=true
 fi
-relay_identity="$(/usr/bin/docker exec "$postgres_id" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v expected_key_id="$expected_key_id" -c \
-  "select concat(worker.last_seen_at > clock_timestamp() - interval '60 seconds', ':', encode(sha256(worker_key.public_key), 'hex')) from platform_control.execution_workers worker join platform_control.execution_worker_keys worker_key using(worker_id) where worker.worker_id='agentops-mac-primary' and worker_key.key_id=:'expected_key_id' and worker.status='active' and worker_key.status='active'")"
+relay_identity="$(/usr/bin/docker exec -i "$postgres_id" psql -X -A -t -U platform_owner -d agent_platform_control -v ON_ERROR_STOP=1 -v expected_key_id="$expected_key_id" <<'SQL'
+select concat(worker.last_seen_at > clock_timestamp() - interval '60 seconds', ':', encode(sha256(worker_key.public_key), 'hex')) from platform_control.execution_workers worker join platform_control.execution_worker_keys worker_key using(worker_id) where worker.worker_id='agentops-mac-primary' and worker_key.key_id=:'expected_key_id' and worker.status='active' and worker_key.status='active';
+SQL
+)"
 registered_public_key_sha256="${relay_identity#*:}"
 if [[ "$relay_identity" == t:* ]]; then worker_heartbeat_fresh=true; fi
 listeners="$(/usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/sort -u)"
@@ -346,16 +352,20 @@ api, database, heartbeat, fingerprint, raw = sys.argv[1:]
 listeners = [line for line in raw.splitlines() if line]
 public = []
 loopback = []
+sensitive_nonpublic = {5432, 8000, 8080, *range(9101, 9121)}
 for value in listeners:
     if value.startswith("127.0.0.1:"):
         if value in {"127.0.0.1:8000", "127.0.0.1:8080"}:
             loopback.append(value)
         continue
     match = re.search(r":([0-9]+)$", value)
-    if match and int(match.group(1)) in {22, 80, 443}:
+    if not match:
+        continue
+    port = int(match.group(1))
+    if port in {22, 80, 443}:
         public.append(value)
-    elif match:
-        public.append(value)
+    elif port in sensitive_nonpublic:
+        raise SystemExit(1)
 print(json.dumps({
     "schema_version": 1,
     "cloud_api_healthy": api == "true",
@@ -523,6 +533,8 @@ def run_gates_01_to_03(
                 "-o",
                 "StrictHostKeyChecking=yes",
                 "-o",
+                f"UserKnownHostsFile={_CLOUD_KNOWN_HOSTS}",
+                "-o",
                 "ConnectTimeout=8",
                 "-i",
                 str(config.cloud_admin_key),
@@ -635,6 +647,7 @@ def _remote_action(
             "-o", "BatchMode=yes",
             "-o", "IdentitiesOnly=yes",
             "-o", "StrictHostKeyChecking=yes",
+            "-o", f"UserKnownHostsFile={_CLOUD_KNOWN_HOSTS}",
             "-o", "ConnectTimeout=8",
             "-i", str(config.cloud_admin_key),
             config.cloud_admin_host,
@@ -667,6 +680,61 @@ def _validate_runtime_file(path: Path, *, executable: bool = False) -> None:
             or (not executable and stat.S_IMODE(metadata.st_mode) & 0o022 != 0)
         ):
             raise ValueError
+    except Exception:
+        raise _gate_error() from None
+
+
+def _trusted_runtime_python_owner_uids() -> set[int]:
+    trusted_owner_uids = {0, os.geteuid()}
+    sudo_uid = os.environ.get("SUDO_UID", "")
+    if sudo_uid.isascii() and sudo_uid.isdigit():
+        trusted_owner_uids.add(int(sudo_uid))
+    try:
+        operator_metadata = _OPERATOR_HOME.lstat()
+        if (
+            stat.S_ISDIR(operator_metadata.st_mode)
+            and not _OPERATOR_HOME.is_symlink()
+            and operator_metadata.st_uid > 0
+            and stat.S_IMODE(operator_metadata.st_mode) & 0o022 == 0
+        ):
+            trusted_owner_uids.add(operator_metadata.st_uid)
+    except Exception:
+        pass
+    return trusted_owner_uids
+
+
+def _validate_runtime_python(path: Path) -> None:
+    """Validate a venv interpreter without rejecting its standard symlink chain."""
+    try:
+        metadata = path.lstat()
+        if not path.is_absolute():
+            raise ValueError
+        if stat.S_ISREG(metadata.st_mode):
+            _validate_runtime_file(path, executable=True)
+            return
+        if not stat.S_ISLNK(metadata.st_mode) or metadata.st_uid not in {0, os.geteuid()}:
+            raise ValueError
+        for directory in (path.parent.parent, path.parent):
+            directory_metadata = directory.lstat()
+            if (
+                not stat.S_ISDIR(directory_metadata.st_mode)
+                or directory.is_symlink()
+                or directory_metadata.st_uid not in {0, os.geteuid()}
+                or stat.S_IMODE(directory_metadata.st_mode) & 0o022 != 0
+            ):
+                raise ValueError
+        resolved = path.resolve(strict=True)
+        resolved_metadata = resolved.stat()
+        if (
+            not stat.S_ISREG(resolved_metadata.st_mode)
+            or resolved_metadata.st_uid not in _trusted_runtime_python_owner_uids()
+            or resolved_metadata.st_size > 1_048_576
+            or stat.S_IMODE(resolved_metadata.st_mode) & 0o022 != 0
+            or not os.access(resolved, os.X_OK)
+        ):
+            raise ValueError
+    except AcceptanceGateError:
+        raise
     except Exception:
         raise _gate_error() from None
 
@@ -873,7 +941,8 @@ def run_gates_04_to_08(
     except Exception:
         raise _gate_error() from None
     python = backend_root / ".venv/bin/python"
-    for path, executable in ((python, True), (worker_supervisor_path, True), (metabot_contract_path, False)):
+    _validate_runtime_python(python)
+    for path, executable in ((worker_supervisor_path, True), (metabot_contract_path, False)):
         _validate_runtime_file(path, executable=executable)
     worker_key = _read_owner_file(private_root, worker_private_key_path, maximum_size=32)
     worker_key_id, _worker_fingerprint = _local_identity(
@@ -1140,7 +1209,8 @@ esac
 def _final_remote_action(config: AcceptanceConfig, runner: CommandRunner, action: str, *values: str) -> dict[str, object]:
     output = _require_command(runner, (
         "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
-        "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=8", "-i",
+        "-o", "StrictHostKeyChecking=yes", "-o", f"UserKnownHostsFile={_CLOUD_KNOWN_HOSTS}",
+        "-o", "ConnectTimeout=8", "-i",
         str(config.cloud_admin_key), config.cloud_admin_host, "/bin/bash -s --", action, *values,
     ), input_bytes=_final_remote_script(), timeout=60)
     try:

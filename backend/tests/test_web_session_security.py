@@ -28,6 +28,7 @@ def test_auth_random_values_have_256_bits_and_are_domain_separated() -> None:
     assert len(csrf) >= 43
     assert len({state, verifier, session, csrf}) == 4
     assert secrets.digest("oauth-state", state) != secrets.digest("session", state)
+    assert secrets.digest("agent-launch", state) != secrets.digest("session", state)
     assert secrets.matches("csrf", csrf, secrets.digest("csrf", csrf))
     assert not secrets.matches("csrf", csrf + "x", secrets.digest("csrf", csrf))
 
