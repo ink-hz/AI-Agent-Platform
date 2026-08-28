@@ -28,6 +28,8 @@ def test_key_policy_is_dedicated_restricted_and_atomic() -> None:
         "BEGIN ORBBEC AGENTOPS ACCEPTANCE KEY",
         "END ORBBEC AGENTOPS ACCEPTANCE KEY",
         "cloud-admin-ed25519.pending",
+        "cloud-known-hosts.pending",
+        "cloud_known_hosts=/Users/neo/.ssh/known_hosts",
         "StrictHostKeyChecking=yes",
         "IdentitiesOnly=yes",
         "BatchMode=yes",
@@ -76,6 +78,20 @@ def test_provision_stages_real_ed25519_key_and_private_config(tmp_path: Path) ->
     cloud_key = tmp_path / "bootstrap-ed25519"
     cloud_key.write_text("test-bootstrap-key\n", encoding="utf-8")
     cloud_key.chmod(0o600)
+    known_hosts = tmp_path / "known_hosts"
+    host_key = tmp_path / "host-ed25519"
+    subprocess.run(
+        [
+            "/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "",
+            "-C", "host", "-f", str(host_key),
+        ],
+        check=True,
+    )
+    host_parts = (host_key.with_suffix(".pub")).read_text(encoding="utf-8").split()
+    known_hosts.write_text(
+        f"47.106.112.69 {host_parts[0]} {host_parts[1]}\n", encoding="utf-8"
+    )
+    known_hosts.chmod(0o600)
     fake_ssh = tmp_path / "ssh"
     calls = tmp_path / "ssh-calls"
     _write_executable(
@@ -95,6 +111,9 @@ def test_provision_stages_real_ed25519_key_and_private_config(tmp_path: Path) ->
         "cloud_admin_key=/Users/neo/.ssh/orbbec_aliyun_ed25519": (
             f"cloud_admin_key={cloud_key}"
         ),
+        "cloud_known_hosts=/Users/neo/.ssh/known_hosts": (
+            f"cloud_known_hosts={known_hosts}"
+        ),
         "ssh_bin=/usr/bin/ssh": f"ssh_bin={fake_ssh}",
     }
     for before, after in replacements.items():
@@ -111,10 +130,14 @@ def test_provision_stages_real_ed25519_key_and_private_config(tmp_path: Path) ->
     private = state / "cloud-admin-ed25519.pending"
     public = state / "cloud-admin-ed25519.pending.pub"
     config = state / "acceptance-config.pending.json"
+    staged_known_hosts = state / "cloud-known-hosts.pending"
     fingerprint = state / "cloud-admin-ed25519.fingerprint"
-    for path in (private, public, config, fingerprint):
+    for path in (private, public, config, staged_known_hosts, fingerprint):
         assert path.is_file() and not path.is_symlink()
         assert path.stat().st_mode & 0o777 == 0o600
+    assert staged_known_hosts.read_text(encoding="utf-8") == known_hosts.read_text(
+        encoding="utf-8"
+    )
     derived = subprocess.run(
         ["/usr/bin/ssh-keygen", "-y", "-f", str(private)],
         check=True,

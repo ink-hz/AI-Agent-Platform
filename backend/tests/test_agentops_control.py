@@ -253,6 +253,11 @@ def _materialize_installation_fixture(tmp_path: Path) -> tuple[Path, Path, Path,
         encoding="utf-8",
     )
     (staging_root / "acceptance-config.pending.json").chmod(0o600)
+    (staging_root / "cloud-known-hosts.pending").write_text(
+        "47.106.112.69 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestHostKey\n",
+        encoding="utf-8",
+    )
+    (staging_root / "cloud-known-hosts.pending").chmod(0o600)
 
     _git(repository, "init", "-q")
     _git(repository, "config", "user.email", "tests@example.invalid")
@@ -286,6 +291,9 @@ def _materialize_installation_fixture(tmp_path: Path) -> tuple[Path, Path, Path,
         ),
         "agentops_private=/Users/agentops/AgentRuntime/private": (
             f"agentops_private={runtime / 'private'}"
+        ),
+        'cloud_known_hosts_target="$agentops_private/cloud-known-hosts"': (
+            f"cloud_known_hosts_target={runtime / 'private/cloud-known-hosts'}"
         ),
         "visudo_bin=/usr/sbin/visudo": f"visudo_bin={fake_visudo}",
         "sudo_bin=/usr/bin/sudo": f"sudo_bin={fake_sudo}",
@@ -329,6 +337,10 @@ def test_installer_is_idempotent_and_uninstaller_is_exact(tmp_path: Path) -> Non
     assert dispatcher.stat().st_mode & 0o777 == 0o755
     assert sudoers.stat().st_mode & 0o777 == 0o440
     assert not (installer.parent / "sudoers.d/agentops-management").exists()
+    installed_known_hosts = (
+        installer.parent / "agentops/AgentRuntime/private/cloud-known-hosts"
+    )
+    assert installed_known_hosts.stat().st_mode & 0o777 == 0o600
 
     second = _run(installer)
     assert second.returncode == 0, second.stderr

@@ -27,9 +27,11 @@ pending_private="$staging_root/cloud-admin-ed25519.pending"
 pending_public="$staging_root/cloud-admin-ed25519.pending.pub"
 pending_fingerprint="$staging_root/cloud-admin-ed25519.fingerprint"
 pending_config="$staging_root/acceptance-config.pending.json"
+pending_known_hosts="$staging_root/cloud-known-hosts.pending"
 agentops_private=/Users/agentops/AgentRuntime/private
 cloud_key_target="$agentops_private/cloud-admin-ed25519"
 relay_config_target="$agentops_private/acceptance-config.json"
+cloud_known_hosts_target="$agentops_private/cloud-known-hosts"
 visudo_bin=/usr/sbin/visudo
 sudo_bin=/usr/bin/sudo
 git_bin=/usr/bin/git
@@ -54,16 +56,16 @@ expected_fingerprint="$(<"$pending_fingerprint")"
 [[ "$expected_fingerprint" =~ ^SHA256:[A-Za-z0-9+/]+$ ]] || fail
 
 pending_count=0
-for pending_path in "$pending_private" "$pending_public" "$pending_config"; do
+for pending_path in "$pending_private" "$pending_public" "$pending_config" "$pending_known_hosts"; do
   if [[ -e "$pending_path" || -L "$pending_path" ]]; then
     pending_count=$((pending_count + 1))
   fi
 done
-[[ "$pending_count" == 0 || "$pending_count" == 3 ]] || fail
+[[ "$pending_count" == 0 || "$pending_count" == 4 ]] || fail
 staged_key=0
-if [[ "$pending_count" == 3 ]]; then
+if [[ "$pending_count" == 4 ]]; then
   staged_key=1
-  for pending_path in "$pending_private" "$pending_public" "$pending_config"; do
+  for pending_path in "$pending_private" "$pending_public" "$pending_config" "$pending_known_hosts"; do
     [[ -f "$pending_path" && ! -L "$pending_path" ]] || fail
     [[ "$(/usr/bin/stat -f '%Lp %Su' "$pending_path")" == "600 $source_user" ]] || fail
   done
@@ -80,6 +82,18 @@ if value!=expected: raise SystemExit(1)
 PY
 }
 
+validate_cloud_known_hosts() {
+  known_hosts_path="$1"
+  /usr/bin/python3 - "$known_hosts_path" <<'PY'
+import pathlib,re,sys
+lines=pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+if len(lines)!=1: raise SystemExit(1)
+parts=lines[0].split()
+if len(parts)!=3 or parts[:2]!=["47.106.112.69","ssh-ed25519"]: raise SystemExit(1)
+if re.fullmatch(r"[A-Za-z0-9+/=]+",parts[2]) is None: raise SystemExit(1)
+PY
+}
+
 validate_key_pair() {
   private_path="$1"
   public_path="$2"
@@ -93,6 +107,7 @@ validate_key_pair() {
 if [[ "$staged_key" == 1 ]]; then
   validate_key_pair "$pending_private" "$pending_public" || fail
   validate_config "$pending_config" || fail
+  validate_cloud_known_hosts "$pending_known_hosts" || fail
 else
   [[ -f "$cloud_key_target" && ! -L "$cloud_key_target" ]] || fail
   [[ "$(/usr/bin/stat -f '%Lp %Su %Sg' "$cloud_key_target")" == "600 $agentops_user $agentops_group" ]] || fail
@@ -105,6 +120,9 @@ else
   [[ -f "$relay_config_target" && ! -L "$relay_config_target" ]] || fail
   [[ "$(/usr/bin/stat -f '%Lp %Su %Sg' "$relay_config_target")" == "600 $agentops_user $agentops_group" ]] || fail
   validate_config "$relay_config_target" || fail
+  [[ -f "$cloud_known_hosts_target" && ! -L "$cloud_known_hosts_target" ]] || fail
+  [[ "$(/usr/bin/stat -f '%Lp %Su %Sg' "$cloud_known_hosts_target")" == "600 $agentops_user $agentops_group" ]] || fail
+  validate_cloud_known_hosts "$cloud_known_hosts_target" || fail
 fi
 
 verify_tracked_source() {
@@ -123,15 +141,18 @@ dispatcher_backup="$transaction/dispatcher.backup"
 sudoers_backup="$transaction/sudoers.backup"
 cloud_key_backup="$transaction/cloud-key.backup"
 relay_config_backup="$transaction/relay-config.backup"
+cloud_known_hosts_backup="$transaction/cloud-known-hosts.backup"
 legacy_sudoers_backup="$transaction/legacy-sudoers.backup"
 dispatcher_candidate="$dispatcher_target.candidate.$$"
 sudoers_candidate="$sudoers_target.candidate.$$"
 cloud_key_candidate="$cloud_key_target.candidate.$$"
 relay_config_candidate="$relay_config_target.candidate.$$"
+cloud_known_hosts_candidate="$cloud_known_hosts_target.candidate.$$"
 dispatcher_existed=0
 sudoers_existed=0
 cloud_key_existed=0
 relay_config_existed=0
+cloud_known_hosts_existed=0
 legacy_sudoers_existed=0
 success=0
 
@@ -172,14 +193,19 @@ cleanup() {
     else
       /bin/rm -f -- "$relay_config_target" || status=1
     fi
+    if [[ "$cloud_known_hosts_existed" == 1 ]]; then
+      "$install_bin" -o "$agentops_user" -g "$agentops_group" -m 0600 "$cloud_known_hosts_backup" "$cloud_known_hosts_target" || status=1
+    else
+      /bin/rm -f -- "$cloud_known_hosts_target" || status=1
+    fi
     if [[ "$legacy_sudoers_existed" == 1 ]]; then
       "$install_bin" -o "$target_owner" -g "$target_group" -m 0440 "$legacy_sudoers_backup" "$legacy_sudoers_target" || status=1
     fi
   fi
   /bin/rm -f -- "$dispatcher_candidate" "$sudoers_candidate" \
-    "$cloud_key_candidate" "$relay_config_candidate" \
+    "$cloud_key_candidate" "$relay_config_candidate" "$cloud_known_hosts_candidate" \
     "$dispatcher_backup" "$sudoers_backup" "$cloud_key_backup" \
-    "$relay_config_backup" "$legacy_sudoers_backup" || status=1
+    "$relay_config_backup" "$cloud_known_hosts_backup" "$legacy_sudoers_backup" || status=1
   /bin/rmdir "$transaction" >/dev/null 2>&1 || status=1
   exit "$status"
 }
@@ -207,6 +233,13 @@ if [[ -e "$relay_config_target" || -L "$relay_config_target" ]]; then
   /bin/cp -p "$relay_config_target" "$relay_config_backup"
   relay_config_existed=1
 fi
+if [[ -e "$cloud_known_hosts_target" || -L "$cloud_known_hosts_target" ]]; then
+  [[ -f "$cloud_known_hosts_target" && ! -L "$cloud_known_hosts_target" ]] || fail
+  [[ "$(/usr/bin/stat -f '%Lp %Su %Sg' "$cloud_known_hosts_target")" == "600 $agentops_user $agentops_group" ]] || fail
+  validate_cloud_known_hosts "$cloud_known_hosts_target" || fail
+  /bin/cp -p "$cloud_known_hosts_target" "$cloud_known_hosts_backup"
+  cloud_known_hosts_existed=1
+fi
 if [[ -e "$legacy_sudoers_target" || -L "$legacy_sudoers_target" ]]; then
   validate_legacy_sudoers || fail
   /bin/cp -p "$legacy_sudoers_target" "$legacy_sudoers_backup"
@@ -219,8 +252,10 @@ fi
 if [[ "$staged_key" == 1 ]]; then
   [[ ! -e "$cloud_key_candidate" && ! -L "$cloud_key_candidate" ]] || fail
   [[ ! -e "$relay_config_candidate" && ! -L "$relay_config_candidate" ]] || fail
+  [[ ! -e "$cloud_known_hosts_candidate" && ! -L "$cloud_known_hosts_candidate" ]] || fail
   "$install_bin" -o "$agentops_user" -g "$agentops_group" -m 0600 "$pending_private" "$cloud_key_candidate"
   "$install_bin" -o "$agentops_user" -g "$agentops_group" -m 0600 "$pending_config" "$relay_config_candidate"
+  "$install_bin" -o "$agentops_user" -g "$agentops_group" -m 0600 "$pending_known_hosts" "$cloud_known_hosts_candidate"
 fi
 "$visudo_bin" -cf "$sudoers_candidate" >/dev/null
 /bin/mv -f "$dispatcher_candidate" "$dispatcher_target"
@@ -228,6 +263,7 @@ fi
 if [[ "$staged_key" == 1 ]]; then
   /bin/mv -f "$cloud_key_candidate" "$cloud_key_target"
   /bin/mv -f "$relay_config_candidate" "$relay_config_target"
+  /bin/mv -f "$cloud_known_hosts_candidate" "$cloud_known_hosts_target"
 fi
 if [[ "$legacy_sudoers_existed" == 1 ]]; then
   validate_legacy_sudoers || fail
@@ -239,7 +275,7 @@ fi
 status_output="$($sudo_bin -n -H -u "$agentops_user" "$dispatcher_target" status)" || fail
 [[ "$status_output" == "AGENTOPS_CONTROL_OK commands=6" ]] || fail
 if [[ "$staged_key" == 1 ]]; then
-  /bin/rm -f -- "$pending_private" "$pending_public" "$pending_config"
+  /bin/rm -f -- "$pending_private" "$pending_public" "$pending_config" "$pending_known_hosts"
 fi
 success=1
 /usr/bin/printf '%s\n' AGENTOPS_CONTROL_INSTALL_OK

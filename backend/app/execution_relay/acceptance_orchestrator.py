@@ -34,6 +34,9 @@ _WORKER_SUPERVISOR = Path(
     "/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh"
 )
 _CLOUD_HOST = "root@47.106.112.69"
+_CLOUD_KNOWN_HOSTS = Path(
+    "/Users/agentops/AgentRuntime/private/cloud-known-hosts"
+)
 _AGENTS = (
     "hr-bot",
     "fae-bot",
@@ -529,6 +532,8 @@ def run_gates_01_to_03(
                 "-o",
                 "StrictHostKeyChecking=yes",
                 "-o",
+                f"UserKnownHostsFile={_CLOUD_KNOWN_HOSTS}",
+                "-o",
                 "ConnectTimeout=8",
                 "-i",
                 str(config.cloud_admin_key),
@@ -641,6 +646,7 @@ def _remote_action(
             "-o", "BatchMode=yes",
             "-o", "IdentitiesOnly=yes",
             "-o", "StrictHostKeyChecking=yes",
+            "-o", f"UserKnownHostsFile={_CLOUD_KNOWN_HOSTS}",
             "-o", "ConnectTimeout=8",
             "-i", str(config.cloud_admin_key),
             config.cloud_admin_host,
@@ -1146,7 +1152,8 @@ esac
 def _final_remote_action(config: AcceptanceConfig, runner: CommandRunner, action: str, *values: str) -> dict[str, object]:
     output = _require_command(runner, (
         "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
-        "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=8", "-i",
+        "-o", "StrictHostKeyChecking=yes", "-o", f"UserKnownHostsFile={_CLOUD_KNOWN_HOSTS}",
+        "-o", "ConnectTimeout=8", "-i",
         str(config.cloud_admin_key), config.cloud_admin_host, "/bin/bash -s --", action, *values,
     ), input_bytes=_final_remote_script(), timeout=60)
     try:

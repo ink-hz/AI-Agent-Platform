@@ -11,23 +11,27 @@ required_user=neo
 state_root=/Users/neo/.orbbec-agent-platform/agentops-control
 cloud_admin_host=root@47.106.112.69
 cloud_admin_key=/Users/neo/.ssh/orbbec_aliyun_ed25519
+cloud_known_hosts=/Users/neo/.ssh/known_hosts
 ssh_bin=/usr/bin/ssh
 ssh_keygen_bin=/usr/bin/ssh-keygen
 pending_private="$state_root/cloud-admin-ed25519.pending"
 pending_public="$state_root/cloud-admin-ed25519.pending.pub"
 fingerprint_file="$state_root/cloud-admin-ed25519.fingerprint"
 pending_config="$state_root/acceptance-config.pending.json"
+pending_known_hosts="$state_root/cloud-known-hosts.pending"
 
 [[ $# -eq 0 && "$(/usr/bin/id -un)" == "$required_user" ]] || fail
 [[ -f "$cloud_admin_key" && ! -L "$cloud_admin_key" ]] || fail
 [[ "$(/usr/bin/stat -f '%Lp %Su' "$cloud_admin_key")" == "600 $required_user" ]] || fail
+[[ -f "$cloud_known_hosts" && ! -L "$cloud_known_hosts" ]] || fail
+[[ "$(/usr/bin/stat -f '%Lp %Su' "$cloud_known_hosts")" == "600 $required_user" ]] || fail
 if [[ -e "$state_root" || -L "$state_root" ]]; then
   [[ -d "$state_root" && ! -L "$state_root" ]] || fail
   [[ "$(/usr/bin/stat -f '%Lp %Su' "$state_root")" == "700 $required_user" ]] || fail
 else
   /bin/mkdir -m 700 "$state_root"
 fi
-for target in "$pending_private" "$pending_public" "$pending_config"; do
+for target in "$pending_private" "$pending_public" "$pending_config" "$pending_known_hosts"; do
   [[ ! -e "$target" && ! -L "$target" ]] || fail
 done
 
@@ -51,14 +55,15 @@ cleanup() {
     rollback_remote_transaction >/dev/null 2>&1 || status=1
   fi
   if [[ "$status" != 0 && "$published_local" == 1 ]]; then
-    /bin/rm -f -- "$pending_private" "$pending_public" "$pending_config" "$fingerprint_file" || status=1
+    /bin/rm -f -- "$pending_private" "$pending_public" "$pending_config" \
+      "$pending_known_hosts" "$fingerprint_file" || status=1
     if [[ "$fingerprint_existed" == 1 ]]; then
       /bin/mv "$temporary/previous-fingerprint" "$fingerprint_file" || status=1
     fi
   fi
   /bin/rm -f -- "$generated" "$generated.pub" \
     "$temporary/fingerprint" "$temporary/acceptance-config.json" \
-    "$temporary/previous-fingerprint" || status=1
+    "$temporary/cloud-known-hosts" "$temporary/previous-fingerprint" || status=1
   /bin/rmdir "$temporary" >/dev/null 2>&1 || status=1
   exit "$status"
 }
@@ -71,6 +76,19 @@ public_line="$(<"$generated.pub")" || fail
 IFS=' ' read -r public_type public_blob public_comment public_extra <<< "$public_line"
 [[ "$public_type" == "ssh-ed25519" && "$public_blob" =~ ^[A-Za-z0-9+/=]+$ &&
    "$public_comment" == "orbbec-agentops-acceptance" && -z "$public_extra" ]] || fail
+"/usr/bin/python3" - "$cloud_known_hosts" "$temporary/cloud-known-hosts" <<'PY'
+import os,pathlib,re,sys
+source,target=map(pathlib.Path,sys.argv[1:])
+selected=[]
+for raw in source.read_text(encoding="utf-8").splitlines():
+    parts=raw.split()
+    if len(parts)>=3 and parts[0]=="47.106.112.69" and parts[1]=="ssh-ed25519":
+        selected.append(parts[:3])
+if len(selected)!=1 or re.fullmatch(r"[A-Za-z0-9+/=]+",selected[0][2]) is None:
+    raise SystemExit(1)
+target.write_text(" ".join(selected[0])+"\n",encoding="utf-8")
+os.chmod(target,0o600)
+PY
 fingerprint="$("$ssh_keygen_bin" -lf "$generated.pub" | /usr/bin/awk '{print $2}')" || fail
 [[ "$fingerprint" =~ ^SHA256:[A-Za-z0-9+/]+$ ]] || fail
 
@@ -233,7 +251,9 @@ PY
 /bin/mv "$generated.pub" "$pending_public"
 /bin/mv "$temporary/fingerprint" "$fingerprint_file"
 /bin/mv "$temporary/acceptance-config.json" "$pending_config"
-/bin/chmod 600 "$pending_private" "$pending_public" "$fingerprint_file" "$pending_config"
+/bin/mv "$temporary/cloud-known-hosts" "$pending_known_hosts"
+/bin/chmod 600 "$pending_private" "$pending_public" "$fingerprint_file" \
+  "$pending_config" "$pending_known_hosts"
 published_local=1
 commit_remote_transaction
 remote_transaction_active=0

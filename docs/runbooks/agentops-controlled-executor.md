@@ -19,7 +19,8 @@ curl -fsS -o /dev/null -w '%{http_code}\n' https://fae.orbbec.com.cn/
 
 ## 2. 首次安装
 
-先生成独立 AgentOps 云端密钥：
+先生成独立 AgentOps 云端密钥，并从 `neo` 的受信任主机记录中提取唯一的
+`47.106.112.69 ssh-ed25519` 公钥：
 
 ```bash
 deploy/cloud/provision-agentops-acceptance-key.sh
@@ -47,6 +48,11 @@ AGENTOPS_CONTROL_INSTALL_OK
 `/etc/sudoers.d/agentops-management`（其内容必须逐字等于
 `neo ALL=(agentops) NOPASSWD: ALL`）；文件内容、所有权或权限不符时失败关闭，
 不会删除未知 sudoers 配置。
+
+安装器还会把该单条云端主机公钥以 `0600 agentops:staff` 安装到
+`/Users/agentops/AgentRuntime/private/cloud-known-hosts`。所有验收 SSH 请求
+都同时启用 `StrictHostKeyChecking=yes` 和固定的 `UserKnownHostsFile`；不得
+退回 `accept-new`、关闭主机校验或复制 `neo` 的完整 `known_hosts`。
 
 验证此后的调用不再询问密码：
 
@@ -129,7 +135,9 @@ AGENTOPS_ACCEPTANCE_KEY_REVOKED_OK
 
 ## 8. 回滚与不变性
 
-安装失败时安装器自动恢复原执行器、sudoers、AgentOps 云端私钥和验收配置。远端密钥 prepare 后任何本地失败都会恢复旧 `authorized_keys`；若哈希被外部并发修改，事务失败并保留证据，不覆盖并发变更。
+安装失败时安装器自动恢复原执行器、sudoers、AgentOps 云端私钥、固定主机公钥
+和验收配置。远端密钥 prepare 后任何本地失败都会恢复旧 `authorized_keys`；若
+哈希被外部并发修改，事务失败并保留证据，不覆盖并发变更。
 
 每次安装、轮换、验收和回滚后都执行：
 

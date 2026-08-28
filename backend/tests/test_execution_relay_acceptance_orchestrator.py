@@ -176,6 +176,7 @@ def test_gate_01_to_03_uses_pinned_ssh_and_process_owned_listener_probe(tmp_path
         assert "BatchMode=yes" in arguments
         assert "IdentitiesOnly=yes" in arguments
         assert "StrictHostKeyChecking=yes" in arguments
+        assert "UserKnownHostsFile=/Users/agentops/AgentRuntime/private/cloud-known-hosts" in arguments
         assert "ConnectTimeout=8" in arguments
         assert arguments[-4:] == (
             "root@47.106.112.69",
