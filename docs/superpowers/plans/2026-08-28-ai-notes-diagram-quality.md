@@ -40,12 +40,9 @@
 
 ```tsx
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
-const CONTENT_ROOT = fileURLToPath(new URL(
-  "../../../../backend/app/ai_notes/content/",
-  import.meta.url,
-));
+const CONTENT_ROOT = resolve(process.cwd(), "../backend/app/ai_notes/content");
 const SEMANTIC_FILLS = [
   "#DBEAFE", "#EDE9FE", "#CCFBF1", "#FEF3C7",
   "#DCFCE7", "#D1FAE5", "#FEE2E2", "#F3F4F6",
@@ -53,7 +50,7 @@ const SEMANTIC_FILLS = [
 let productionDiagramSequence = 0;
 
 function productionArticle(relativePath: string): string {
-  return readFileSync(`${CONTENT_ROOT}${relativePath}`, "utf8");
+  return readFileSync(resolve(CONTENT_ROOT, relativePath), "utf8");
 }
 
 function mermaidBlocks(markdown: string): string[] {
