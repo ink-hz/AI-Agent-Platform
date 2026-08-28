@@ -883,6 +883,33 @@ def intent_platform_claim_clauses(markdown: str) -> tuple[str, ...]:
     )
 
 
+def intent_platform_ui_claim_clauses(markdown: str) -> tuple[str, ...]:
+    immediate_scope = re.compile(
+        r"(?!.*(?:不在|并非|不是|超出|以外|之外))"
+        r"(?:在)?[^\n。！？；;,，]{0,12}试点(?:范围)?内"
+    )
+    sections = re.split(
+        r"[\n。！？；;]|(?:但是|但|然而|却|不过|可是|"
+        r"所以|因此|同时|并且|而且|仍然|仍|"
+        r"\b(?:but|however|yet|therefore|meanwhile)\b)",
+        markdown,
+        flags=re.IGNORECASE,
+    )
+    clauses: list[str] = []
+    for section in sections:
+        segments = tuple(
+            segment.strip()
+            for segment in re.split(r"[,，]", section)
+            if segment.strip()
+        )
+        for index, segment in enumerate(segments):
+            if index and immediate_scope.fullmatch(segments[index - 1]):
+                clauses.append(f"{segments[index - 1]}，{segment}")
+            else:
+                clauses.append(segment)
+    return tuple(clauses)
+
+
 def intent_platform_contains_forbidden_absolutism(markdown: str) -> bool:
     ui_prohibited_patterns = (
         r"(?:消灭|取代|淘汰|移除|取消|删除)[^。；;\n]{0,20}"
@@ -919,6 +946,11 @@ def intent_platform_contains_forbidden_absolutism(markdown: str) -> bool:
         r"自治|完成|成功|意图合同)",
         re.IGNORECASE,
     )
+    evidentiary_negation = re.compile(
+        r"(?:没有|缺乏)(?:足够|充分)?(?:证据|依据)"
+        r"(?:能够|可以|足以)?(?:证明|表明|支持)"
+        r"[^\n。！？；;,，]{0,12}$"
+    )
     scoped_ui_prefix = re.compile(
         r"(?:试点(?:范围)?内|局部|特定|限定|部分|某个|某些|当前)"
         r"[^。；;\n]{0,8}$"
@@ -928,10 +960,11 @@ def intent_platform_contains_forbidden_absolutism(markdown: str) -> bool:
         prefix = clause[max(0, violation.start() - 12):violation.start()]
         return bool(
             direct_negation.search(prefix)
+            or evidentiary_negation.search(clause[:violation.start()])
             or internal_negation.search(violation.group(0))
         )
 
-    for clause in intent_platform_claim_clauses(markdown):
+    for clause in intent_platform_ui_claim_clauses(markdown):
         for pattern in ui_prohibited_patterns:
             for violation in re.finditer(pattern, clause, re.IGNORECASE):
                 if is_locally_negated(clause, violation):
@@ -943,6 +976,7 @@ def intent_platform_contains_forbidden_absolutism(markdown: str) -> bool:
                 if not has_global_quantifier and scoped_ui_prefix.search(prefix):
                     continue
                 return True
+    for clause in intent_platform_claim_clauses(markdown):
         for pattern in prohibited_patterns:
             for violation in re.finditer(pattern, clause, re.IGNORECASE):
                 if is_locally_negated(clause, violation):
@@ -2492,6 +2526,8 @@ def test_intent_platform_guards_allow_explicit_limits() -> None:
         "消息已发送不代表业务完成。",
         "HTTP 200 不等于完成证据。",
         "试点范围内取代页面入口，其他 UI 继续保留。",
+        "在退款试点范围内，取代页面入口，其他 UI 继续保留。",
+        "没有证据证明平台会实现完全自治。",
     )
     false_positives = tuple(
         claim
