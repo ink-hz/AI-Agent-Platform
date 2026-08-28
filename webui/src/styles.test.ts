@@ -271,12 +271,14 @@ describe("Executive Operations visual contract", () => {
 .ai-notes-files button:focus-visible,
 .ai-notes-mobile-menu:focus-visible,
 .ai-notes-drawer-close:focus-visible`)).toContain("outline: 3px solid");
-    const mobile = lastBlock("@media (max-width: 720px)");
-    expect(mobile).toContain(".ai-notes-layout { grid-template-columns: minmax(0, 1fr); }");
-    expect(mobile).toContain(".ai-notes-sidebar { display: none; }");
-    expect(mobile).toContain(".ai-notes-mobile-menu { display: inline-flex; }");
-    expect(styles).toContain("  .ai-note-article { padding: 38px 18px 72px; }");
-    expect(styles).toContain("  .article-markdown { font-size: 16px; }");
+    const aiNotesMobile = block(
+      "@media (max-width: 720px) {\n  .ai-notes-layout { grid-template-columns: minmax(0, 1fr); }\n  .ai-notes-sidebar { display: none; }\n  .ai-notes-mobile-menu { position: fixed",
+    );
+    expect(aiNotesMobile).toContain(".ai-notes-layout { grid-template-columns: minmax(0, 1fr); }");
+    expect(aiNotesMobile).toContain(".ai-notes-sidebar { display: none; }");
+    expect(aiNotesMobile).toContain(".ai-notes-mobile-menu { position: fixed");
+    expect(aiNotesMobile).toContain(".ai-note-article { padding: 38px 18px 72px; }");
+    expect(aiNotesMobile).toContain(".article-markdown { font-size: 16px; }");
   });
 
   it("keeps the AI notes home entry quiet and keyboard visible", () => {
