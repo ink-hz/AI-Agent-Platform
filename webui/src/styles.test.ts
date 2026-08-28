@@ -267,6 +267,13 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".ai-note-author")).toContain("color: var(--ink)");
     expect(rule(".ai-note-motto")).toContain("color: var(--ink-faint)");
     expect(rule(".article-table-scroll")).toContain("overflow-x: auto");
+    expect(rule(".mermaid-diagram-trigger")).toContain("cursor: zoom-in");
+    expect(rule(".mermaid-diagram img")).toContain("max-height: min(720px, 70vh)");
+    expect(rule(".mermaid-diagram img")).toContain("object-fit: contain");
+    expect(rule(".mermaid-lightbox")).toContain("height: 100dvh");
+    expect(rule(".mermaid-lightbox-canvas")).toContain("touch-action: none");
+    expect(rule(".mermaid-lightbox-image")).toContain("transform-origin: center");
+    expect(rule(".mermaid-diagram-trigger:focus-visible")).toContain("outline: 3px solid");
     expect(rule(`.ai-notes-category-toggle:focus-visible,
 .ai-notes-files button:focus-visible,
 .ai-notes-mobile-menu:focus-visible,
@@ -279,6 +286,9 @@ describe("Executive Operations visual contract", () => {
     expect(aiNotesMobile).toContain(".ai-notes-mobile-menu { position: fixed");
     expect(aiNotesMobile).toContain(".ai-note-article { padding: 38px 18px 72px; }");
     expect(aiNotesMobile).toContain(".article-markdown { font-size: 16px; }");
+    expect(aiNotesMobile).toContain(".mermaid-diagram img { max-height: 68svh; }");
+    expect(block("@media print")).toContain(".mermaid-diagram img { max-height: none; }");
+    expect(block("@media print")).toContain(".mermaid-diagram-zoom-hint, .mermaid-lightbox { display: none !important; }");
   });
 
   it("keeps the AI notes home entry quiet and keyboard visible", () => {
