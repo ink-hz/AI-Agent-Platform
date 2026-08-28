@@ -78,6 +78,9 @@ def test_enqueue_is_exact_agent_and_fixed_synthetic_prompt(
     assert payload.agent_id == "hr-bot"
     assert payload.prompt == f"relay acceptance synthetic run {RUN_ID}"
     assert payload.max_turns == 2
+    assert payload.job_kind == "metabot_local"
+    assert payload.collaboration_contract == "core_chat_collaboration_v3"
+    assert payload.task_session_id == f"relay-acceptance:{RUN_ID}"
 
     arguments[1] = "fae-bot"
     assert acceptance_cli.main(arguments) == 1

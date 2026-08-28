@@ -180,6 +180,9 @@ def main(arguments: list[str] | None = None) -> int:
                 agent_id=agent_id,
                 prompt=_prompt(run_id),
                 max_turns=2,
+                job_kind="metabot_local",
+                collaboration_contract="core_chat_collaboration_v3",
+                task_session_id=f"relay-acceptance:{run_id}",
             )
             job_id = _repository(root).enqueue(payload)
             result = {"job_id": str(job_id), "run_id": str(run_id), "status": "queued"}
