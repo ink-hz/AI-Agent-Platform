@@ -19,7 +19,7 @@ SHA-256 已于 2026-08-28 使用 `wc -l` 和 `shasum -a 256` 复核。
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Hermes-Agent架构分析与思考.md` | 390 | `aac8a4c575a11ae1a129c3e03d49e6217d2c02a92363b0689d5c5306c70227ad` | open-source-agent-runtime | 已精读：1-390 | Agent loop、context/session、skills/tools、memory、sandbox 与 recovery 问题框架 | 动态版本、数量、排行、营销结论与无法复核的生产效果 | 已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28） | Claude Code 使用体验留在既有文章；本篇只比较运行时责任边界 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Clawdbot架构理论指南.md` | 284 | `838ae6a89bfeca305bb70bc016f975d7b12f34abef9fe73dd4638c22dedb6961` | open-source-agent-runtime | 已精读：1-284 | Gateway、channel routing、session、tools/skills、sandbox 与 recovery 问题框架 | 旧项目名当现名、动态渠道数、成熟度结论与安全泛化承诺 | 已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28） | 企业 Agent 全景留在主文章；本篇抽象 provider/model/runtime/channel 和 ownership |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/MetaBot架构设计理论分析.md` | 515 | `f526d770501328c0aa12bb926ae379c640bebb3cd9540fe4b569a581caebded5` | metabot-agent-control-bus | 已精读：1-515 | 远程控制、渠道适配、消息桥、持久执行与恢复问题框架 | 旧组织、旧拓扑、代码规模、固定数量、端口、版本与营销结论 | 已核验：两个当前代码仓与 Platform relay 边界（2026-08-28） | 通用运行循环留在既有篇；本篇只写远程控制、可靠投递与状态所有权 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/主流Agent框架深度分析-从架构本质到生产可用性.md` | 323 | `4edd175b19b9ac82be0ac9a92ed10d69ddfe14cac7611fa7b3df9f0a5866054b` | agent-framework-selection | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
+| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/主流Agent框架深度分析-从架构本质到生产可用性.md` | 323 | `4edd175b19b9ac82be0ac9a92ed10d69ddfe14cac7611fa7b3df9f0a5866054b` | agent-framework-selection | 已精读：1-323 | 产品形态、生产责任维度与选型问题框架 | 旧候选集、功能表、宣传语、成熟度判断与永久排名 | 已逐页核验：8 个官方入口（2026-08-28） | 三篇同类文章留下具体架构；本篇只给出选型方法与退出条件 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/干掉用户旅程-意图驱动的业务平台架构设计.md` | 379 | `3a165ec7de6b712d9cbbc999ee6d7752b9954691f904f41a80d289bc0585d52b` | intent-driven-ai-business-platform | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
 
 ## 精读证据格式
@@ -302,3 +302,46 @@ Platform 当前 worktree 实际读取：
 - **保留**：远程控制总线、channel adapter、message normalization、identity/session binding、persistent executor、command lifecycle、idempotency、reconnect、audit 和 remote-control risk 这些稳定工程问题。
 - **删除**：旧组织、旧部署拓扑、动态版本、代码行数、端口、固定 Agent/进程/用户/渠道数量、营销效果、横向排名和无法从当前代码复核的组件能力。
 - **去重**：通用 Agent loop、Skills/Tools、memory 与 sandbox 留在 `open-source-agent-runtime`；身份与最小权限留在 `agent-identity-access-control`；证据字段和质量闭环留在 `llm-agent-observability`。本篇只展开远程控制与可靠投递。
+
+## agent-framework-selection 精读结论
+
+### `主流Agent框架深度分析-从架构本质到生产可用性.md`
+
+- `1-46`（口径与分类）：保留“先分产品形态，再问责任边界”的方法；旧候选集、旧访问日期、三类固定分法与“适合生产”判断不直接沿用。
+- `47-74`（生产维度）：保留状态、恢复、权限、观测、部署与团队所有权的问题意识；重写为八个可验收维度，不给产品打分。
+- `75-137`（开发者工具）：只保留 developer tool 与服务端底座的责任差异；Claude Code、Codex CLI 和 Cursor 的功能枚举及场景表删除，具体工程设计留在已有 Claude Code 文章。
+- `138-207`（编排库）：保留控制流、状态、角色协作和消息拓扑是不同抽象的观察；LangGraph、CrewAI 和旧 AutoGen 的旧定位、适用/不适用结论和成熟度评价全部向执行日官方文档重核。
+- `208-260`（平台与运行时）：保留可视化平台与代码嵌入式运行时责任不同的问题；Dify、Coze Studio、Hermes 的宣传语、功能表和泛化上线判断不进新文。
+- `261-323`（自研与检查清单）：保留企业权限、审计、租户、幂等和回滚不会被框架自动承担的原则；“常需自研”改为先判断是否需要框架，再用退出条件和 PoC 门禁决策。
+- 原稿中的 `2026-04-16`、旧 URL、产品列表、功能横评、宣传用语、任何瞬时热度与永久排名均删除。
+
+### 三篇同类文章复读与去重
+
+- 已复读 `01-claude-code-architecture.md` 全文 `1-361`，SHA-256 `c04ed6a9c02fe35397949197f9fd63bea9fae6076d7846002043df235faac21d`。新文只把它作为 developer tool 形态样本，不重述 Hooks、MCP、权限或 Agent loop。
+- 已复读 `02-open-source-agent-runtime.md` 全文 `1-240`，SHA-256 `47d887d2b46e6201ae5b4a56b3f946e2bf4d939e7dc4d196c25596b29f2c54f0`。新文只把 Hermes/OpenClaw 作为 agent runtime 与 ownership boundary 样本，不重画 provider/model/runtime/channel 或 recovery。
+- 已复读 `03-metabot-agent-control-bus.md` 全文 `1-240`，SHA-256 `c1286562fde608cf014d75ffa63080bc38d9bd15158c89d6f8c6131b12deec95`。新文只用它说明远程控制总线与运行时/平台的边界，不重述渠道、幂等、断线恢复或三层对账。
+- 具体产品架构留在上述三篇；本篇只定义四类产品形态、八维责任、锁定/退出成本、淘汰条件和 PoC 门禁。
+
+### 执行日官方来源核验
+
+访问日期：2026-08-28
+
+| 官方来源 | 执行日定位、显式状态与可确认边界 |
+| --- | --- |
+| [LangGraph overview](https://docs.langchain.com/oss/python/langgraph/overview) | 低层编排框架与运行时，聚焦持久执行、流式输出、人在回路与持久化；页面未给出明确 lifecycle 状态 |
+| [CrewAI Documentation](https://docs.crewai.com/index) | 以 Agents、Crews 和 Flows 构建协作与编排，部署和 RBAC 等能力属于 Enterprise journey；页面未给出明确 lifecycle 状态 |
+| [Microsoft Agent Framework](https://learn.microsoft.com/en-us/agent-framework/overview/) | Microsoft Agent Framework 是 AutoGen 与 Semantic Kernel 的直接继任者；Go 版明确为 public preview |
+| [OpenAI Agents SDK](https://developers.openai.com/api/docs/guides/agents) | 代码优先的 Agents SDK 运行 agent loop，服务器仍拥有部署、工具实现、状态存储与审批决策；页面未给出明确 lifecycle 状态 |
+| [Google ADK](https://adk.dev/) | 旧 Google ADK 入口已重定向 adk.dev；当前定位覆盖多语言开发框架、Agent Runtime、部署、观测与评估，页面未给出统一 lifecycle 状态 |
+| [Dify Documentation](https://docs.dify.ai/en/home) | 开源 AI 应用平台，覆盖 Agent、工作流、聊天应用、Web/API 发布与云端或自托管；页面未给出明确 lifecycle 状态 |
+| [Coze Studio official repository](https://github.com/coze-dev/coze-studio) | 开源一站式可视化 Agent 开发平台；公网部署需评估安全风险，开源版与商业版存在能力差异 |
+| [Claude Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview) | Python/TypeScript 库在自有进程运行 Claude Code agent loop；托管长任务属于独立 Managed Agents 产品，页面未给出 SDK 明确 lifecycle 状态 |
+
+OpenAI 事实仅采用 OpenAI Docs 的 canonical Agents SDK 页面；没有从原稿旧链接、第三方榜单或搜索摘要补充产品结论。Google 采用重定向后的官方入口；Microsoft 按当前继任关系取代原稿 AutoGen 独立候选定位。页面存在不等于生产准入，官方未说明的维度一律保留为未知，留给 PoC 验收。
+
+### 保留、删除与不确定性
+
+- **保留**：先判断是否需要框架；再按 developer tool、orchestration library / SDK、agent runtime、end-to-end platform 划定责任；最后用八维问题、淘汰条件和 PoC 证据决策。
+- **删除**：功能宽表、分数、星级、象限、社区热度、瞬时版本和任何“框架已替团队解决生产责任”的结论。
+- **时点限定**：某个候选可跨相邻形态，文中只写截至 2026-08-28 的主要定位和本文用途，不把分类写成永久唯一归属。
+- **不确定性**：除 Microsoft Go 版显式 public preview 外，上表所列官方入口若未给出 lifecycle 标签，只记为“官方页面未给出明确状态”；不从文档丰富度或宣传语推导成熟度。

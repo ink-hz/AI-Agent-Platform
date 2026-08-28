@@ -47,6 +47,7 @@ COMPLETED_BATCH_ARTICLES: tuple[str, ...] = (
     "llm-agent-observability",
     "open-source-agent-runtime",
     "metabot-agent-control-bus",
+    "agent-framework-selection",
 )
 
 ARTICLE_CONTRACTS = {
@@ -267,6 +268,43 @@ METABOT_SOURCE_REVIEW_STATUS = {
         "旧组织、旧拓扑、代码规模、固定数量、端口、版本与营销结论",
         "已核验：两个当前代码仓与 Platform relay 边界（2026-08-28）",
         "通用运行循环留在既有篇；本篇只写远程控制、可靠投递与状态所有权",
+    ),
+}
+
+FRAMEWORK_SELECTION_SOURCE_REVIEW_STATUS = {
+    "主流Agent框架深度分析-从架构本质到生产可用性.md": (
+        "已精读：1-323",
+        "产品形态、生产责任维度与选型问题框架",
+        "旧候选集、功能表、宣传语、成熟度判断与永久排名",
+        "已逐页核验：8 个官方入口（2026-08-28）",
+        "三篇同类文章留下具体架构；本篇只给出选型方法与退出条件",
+    ),
+}
+
+FRAMEWORK_SELECTION_PRIMARY_SOURCES = {
+    "https://docs.langchain.com/oss/python/langgraph/overview": (
+        "低层编排框架与运行时，聚焦持久执行、流式输出、人在回路与持久化；页面未给出明确 lifecycle 状态"
+    ),
+    "https://docs.crewai.com/index": (
+        "以 Agents、Crews 和 Flows 构建协作与编排，部署和 RBAC 等能力属于 Enterprise journey；页面未给出明确 lifecycle 状态"
+    ),
+    "https://learn.microsoft.com/en-us/agent-framework/overview/": (
+        "Microsoft Agent Framework 是 AutoGen 与 Semantic Kernel 的直接继任者；Go 版明确为 public preview"
+    ),
+    "https://developers.openai.com/api/docs/guides/agents": (
+        "代码优先的 Agents SDK 运行 agent loop，服务器仍拥有部署、工具实现、状态存储与审批决策；页面未给出明确 lifecycle 状态"
+    ),
+    "https://adk.dev/": (
+        "旧 Google ADK 入口已重定向 adk.dev；当前定位覆盖多语言开发框架、Agent Runtime、部署、观测与评估，页面未给出统一 lifecycle 状态"
+    ),
+    "https://docs.dify.ai/en/home": (
+        "开源 AI 应用平台，覆盖 Agent、工作流、聊天应用、Web/API 发布与云端或自托管；页面未给出明确 lifecycle 状态"
+    ),
+    "https://github.com/coze-dev/coze-studio": (
+        "开源一站式可视化 Agent 开发平台；公网部署需评估安全风险，开源版与商业版存在能力差异"
+    ),
+    "https://code.claude.com/docs/en/agent-sdk/overview": (
+        "Python/TypeScript 库在自有进程运行 Claude Code agent loop；托管长任务属于独立 Managed Agents 产品，页面未给出 SDK 明确 lifecycle 状态"
     ),
 }
 
@@ -682,6 +720,75 @@ def metabot_contains_unlabelled_inference(markdown: str) -> bool:
     )
 
 
+def framework_selection_claim_clauses(markdown: str) -> tuple[str, ...]:
+    return tuple(
+        clause.strip()
+        for clause in re.split(
+            r"[\n。！？；;,，]|(?:但是|但|然而|却|不过|可是)",
+            markdown,
+        )
+        if clause.strip()
+    )
+
+
+def framework_selection_contains_forbidden_ranking_or_maturity(
+    markdown: str,
+) -> bool:
+    negation = re.compile(
+        r"(?:不|无|没有|拒绝|避免|禁止|不等于|不能|不可|"
+        r"not|no\s+|never|does\s+not|cannot|can't)",
+        re.IGNORECASE,
+    )
+    prohibited_patterns = (
+        r"(?:最佳|最好|第一|唯一正确|永久排名|排名第|"
+        r"best\s+framework|only\s+correct|permanent\s+ranking)",
+        r"(?:\bstars?\b|Star\s*数|星级|评分|总分|象限)",
+    )
+    maturity_patterns = (
+        r"(?:页面|文档|官网|项目页)[^\n。；]{0,32}"
+        r"(?:存在|可访问|已上线)[^\n。；]{0,32}"
+        r"(?:证明|代表|等于|意味着)[^\n。；]{0,24}"
+        r"(?:生产可用|已成熟|稳定)",
+        r"(?:preview|public\s+preview|experimental|预览|实验性)"
+        r"[^\n。；]{0,32}(?:就是|已是|等同于|稳定承诺|"
+        r"stable|production[- ]ready)",
+    )
+    for clause in framework_selection_claim_clauses(markdown):
+        if negation.search(clause):
+            continue
+        if any(re.search(pattern, clause, re.IGNORECASE) for pattern in prohibited_patterns):
+            return True
+        if any(re.search(pattern, clause, re.IGNORECASE) for pattern in maturity_patterns):
+            return True
+    return False
+
+
+def framework_selection_has_four_product_forms(markdown: str) -> bool:
+    forms = (
+        "developer tool",
+        "orchestration library / SDK",
+        "agent runtime",
+        "end-to-end platform",
+    )
+    normalized = markdown.casefold()
+    return all(form.casefold() in normalized for form in forms)
+
+
+def framework_selection_has_eight_responsibility_dimensions(markdown: str) -> bool:
+    dimensions = (
+        "control flow",
+        "state persistence",
+        "tool / permission",
+        "recovery",
+        "evaluation",
+        "deployment",
+        "observability",
+        "team ownership",
+    )
+    normalized = markdown.casefold()
+    return all(dimension.casefold() in normalized for dimension in dimensions)
+
+
 def test_completed_batch_helpers_enforce_drafts_and_validate_candidates(
     tmp_path: Path,
 ) -> None:
@@ -719,6 +826,7 @@ def test_source_review_records_the_exact_source_manifest() -> None:
             **OBSERVABILITY_SOURCE_REVIEW_STATUS,
             **OPEN_SOURCE_RUNTIME_SOURCE_REVIEW_STATUS,
             **METABOT_SOURCE_REVIEW_STATUS,
+            **FRAMEWORK_SELECTION_SOURCE_REVIEW_STATUS,
         }.get(filename, ("未开始",) * 5)
         expected_rows.append(
             f"| `{path}` | {line_count} | `{digest}` | {target} | "
@@ -1625,12 +1733,7 @@ def test_metabot_source_review_records_current_code_snapshots() -> None:
 def test_metabot_agent_control_bus_draft_meets_contract(tmp_path: Path) -> None:
     completed_articles = assert_completed_batch_drafts()
     assert tuple(article.slug for article in completed_articles) == (
-        "agent-identity-access-control",
-        "llm-inference-serving-engineering",
-        "ai-cloud-native-runtime",
-        "llm-agent-observability",
-        "open-source-agent-runtime",
-        "metabot-agent-control-bus",
+        COMPLETED_BATCH_ARTICLES
     )
 
     path = batch_article_path("metabot-agent-control-bus")
@@ -1734,7 +1837,9 @@ def test_metabot_agent_control_bus_draft_meets_contract(tmp_path: Path) -> None:
     assert not metabot_contains_unlabelled_inference(markdown)
 
     candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
-    assert sum(len(category.articles) for category in candidate_index.categories) == 12
+    assert sum(
+        len(category.articles) for category in candidate_index.categories
+    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_metabot_recovery_discloses_legacy_effect_gate_gap() -> None:
@@ -1822,3 +1927,158 @@ def test_metabot_guards_allow_precise_boundaries() -> None:
         assert not metabot_contains_design_as_implementation(claim)
         assert not metabot_contains_boundary_absolutism(claim)
         assert not metabot_contains_unlabelled_inference(claim)
+
+
+def test_framework_selection_source_review_records_current_official_boundaries() -> None:
+    review = SOURCE_REVIEW.read_text(encoding="utf-8")
+    section_header = "## agent-framework-selection 精读结论"
+
+    section = source_review_h2_section(review, section_header)
+    assert "访问日期：2026-08-28" in section
+    for url, supported_claim in FRAMEWORK_SELECTION_PRIMARY_SOURCES.items():
+        assert url in section
+        assert supported_claim in section
+
+
+def test_agent_framework_selection_draft_meets_contract(tmp_path: Path) -> None:
+    completed_articles = assert_completed_batch_drafts()
+    assert tuple(article.slug for article in completed_articles) == (
+        COMPLETED_BATCH_ARTICLES
+    )
+
+    path = batch_article_path("agent-framework-selection")
+    frontmatter, markdown = parse_frontmatter(path)
+    assert frontmatter["title"] == "主流 Agent 框架选型：从开发工具到生产运行时"
+    assert frontmatter["slug"] == "agent-framework-selection"
+    assert tuple(frontmatter["tags"]) == ("Agent", "框架选型", "工程决策")
+    assert frontmatter["draft"] is True
+    assert frontmatter["author"] == AUTHOR
+    assert frontmatter["motto"] == MOTTO
+    assert frontmatter["publishedAt"] == TODAY
+    assert frontmatter["updatedAt"] == TODAY
+    assert markdown.lstrip().startswith("## ")
+    assert AUTHOR not in markdown
+    assert MOTTO not in markdown
+
+    diagrams = tuple(re.findall(r"```mermaid\n([\s\S]*?)\n```", markdown))
+    assert len(diagrams) == 3
+    assert tuple(
+        re.search(r"(?m)^\s*accTitle:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    ) == (
+        "Agent 产品形态与责任边界",
+        "生产级 Agent 能力矩阵",
+        "Agent 框架选型决策树",
+    )
+    descriptions = tuple(
+        re.search(r"(?m)^\s*accDescr:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    )
+    assert all(descriptions)
+    assert len(set(descriptions)) == 3
+    assert all(re.search(r"(?m)^\s*classDef\s+", diagram) for diagram in diagrams)
+    assert all(
+        re.search(
+            r"(?m)^\s*classDef\s+\w+\s+fill:#(?:DBEAFE|EDE9FE|"
+            r"CCFBF1|FEF3C7|DCFCE7|D1FAE5|FEE2E2|F3F4F6)",
+            diagram,
+        )
+        for diagram in diagrams
+    )
+    assert all(len(mermaid_principal_node_ids(diagram)) <= 12 for diagram in diagrams)
+    assert framework_selection_has_four_product_forms(markdown)
+    assert framework_selection_has_eight_responsibility_dimensions(markdown)
+
+    for candidate in (
+        "LangGraph",
+        "CrewAI",
+        "Microsoft Agent Framework",
+        "OpenAI Agents SDK",
+        "Google ADK",
+        "Dify",
+        "Coze Studio",
+        "Claude Agent SDK",
+    ):
+        assert candidate in markdown
+    for linked_slug in (
+        "claude-code-architecture",
+        "open-source-agent-runtime",
+        "metabot-agent-control-bus",
+    ):
+        assert re.search(rf"\]\((?:\./)?{linked_slug}\)", markdown)
+    for boundary in (
+        "框架提供机制 ≠ 团队责任被外包",
+        "数据/状态可迁移性",
+        "扩展点",
+        "运行环境",
+        "退出成本",
+        "PoC 门禁",
+    ):
+        assert boundary in markdown
+    assert not framework_selection_contains_forbidden_ranking_or_maturity(markdown)
+
+    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
+    assert sum(len(category.articles) for category in candidate_index.categories) == 13
+
+
+def test_framework_selection_guards_reject_rankings_and_false_maturity() -> None:
+    prohibited = (
+        "LangGraph 是最佳框架。",
+        "CrewAI 排名第一。",
+        "Coze Studio 有五星评分。",
+        "这张象限图给出永久排名。",
+        "项目页可访问就证明已成熟。",
+        "public preview 就是 stable 承诺。",
+        "本文不做最佳框架，但 LangGraph 排名第一。",
+    )
+    for claim in prohibited:
+        assert framework_selection_contains_forbidden_ranking_or_maturity(claim), claim
+
+
+def test_framework_selection_guards_allow_time_boundaries_and_uncertainty() -> None:
+    allowed = (
+        "本文不比较 Star 数、评分或永久排名。",
+        "页面存在不等于已证明生产可用。",
+        "Go 版截至 2026-08-28 明确为 public preview，不得写成稳定承诺。",
+        "截至 2026-08-28，官方页面未给出明确 lifecycle 状态。",
+        "官方未说明成熟度，因此保留不确定性。",
+    )
+    for claim in allowed:
+        assert not framework_selection_contains_forbidden_ranking_or_maturity(claim), claim
+
+
+def test_framework_selection_dimension_guards_fail_closed() -> None:
+    four_forms = (
+        "developer tool; orchestration library / SDK; agent runtime; "
+        "end-to-end platform"
+    )
+    eight_dimensions = (
+        "control flow; state persistence; tool / permission; recovery; "
+        "evaluation; deployment; observability; team ownership"
+    )
+    assert framework_selection_has_four_product_forms(four_forms)
+    assert not framework_selection_has_four_product_forms(
+        four_forms.replace("agent runtime", "")
+    )
+    assert framework_selection_has_eight_responsibility_dimensions(eight_dimensions)
+    assert not framework_selection_has_eight_responsibility_dimensions(
+        eight_dimensions.replace("team ownership", "")
+    )
+
+
+def test_framework_selection_diagram_contract_rejects_width_and_missing_style() -> None:
+    compact_styled = """
+flowchart LR
+    A[需求] --> B[责任]
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    class A input;
+"""
+    too_wide = "\n".join(
+        ["flowchart LR"]
+        + [f"    N{index}[节点{index}]" for index in range(13)]
+        + ["    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;"]
+    )
+    assert len(mermaid_principal_node_ids(compact_styled)) <= 12
+    assert re.search(r"(?m)^\s*classDef\s+", compact_styled)
+    assert len(mermaid_principal_node_ids(too_wide)) > 12
+    assert not re.search(r"(?m)^\s*classDef\s+", "flowchart LR\nA --> B")

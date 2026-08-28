@@ -26,6 +26,7 @@ const BATCH_DRAFT_RELATIVE_PATHS = [
   "04-ai-engineering/04-llm-agent-observability.md",
   "03-tools-and-frameworks/02-open-source-agent-runtime.md",
   "03-tools-and-frameworks/03-metabot-agent-control-bus.md",
+  "03-tools-and-frameworks/04-agent-framework-selection.md",
 ] as const;
 const SEMANTIC_FILLS = [
   "#DBEAFE", "#EDE9FE", "#CCFBF1", "#FEF3C7",
@@ -243,7 +244,7 @@ describe("MermaidDiagram with the real renderer", () => {
       return mermaidBlocks(markdown);
     });
     expect(files).toHaveLength(BATCH_DRAFT_RELATIVE_PATHS.length);
-    expect(sources).toHaveLength(18);
+    expect(sources).toHaveLength(21);
     await expectProductionDiagramsToRender(sources);
 
     const publishedSources = publishedArticleFiles().flatMap((path) => (
