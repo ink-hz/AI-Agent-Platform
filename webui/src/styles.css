@@ -957,22 +957,19 @@ body {
 .article-markdown th, .article-markdown td { padding: 10px 12px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
 .article-markdown th { background: #edf2f7; }
 .mermaid-diagram { max-width: 100%; margin: 28px 0; text-align: center; }
-.mermaid-diagram-trigger { position: relative; display: inline-block; max-width: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: zoom-in; }
+.mermaid-diagram-trigger { position: relative; display: block; width: 100%; max-width: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: zoom-in; }
 .mermaid-diagram-trigger:focus-visible { outline: 3px solid rgba(36,104,197,.34); outline-offset: 4px; }
-.mermaid-diagram-trigger > img { display: block; width: auto; max-width: 100%; height: auto; max-height: min(720px, 70vh); margin: 0 auto; object-fit: contain; }
+.mermaid-diagram-trigger > img { display: block; width: 100%; max-width: 100%; height: auto; max-height: min(720px, 70vh); margin: 0 auto; object-fit: contain; }
 .mermaid-diagram-zoom-hint { position: absolute; right: 10px; bottom: 10px; padding: 5px 8px; border: 1px solid rgba(255,255,255,.72); border-radius: 999px; background: rgba(18,63,120,.9); color: #fff; font-size: 11.5px; font-weight: 700; box-shadow: 0 4px 12px rgba(15,27,45,.18); }
 .mermaid-visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .mermaid-lightbox { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: 0; overflow: hidden; border: 0; background: #f8fafc; color: var(--ink); }
 .mermaid-lightbox::backdrop { background: rgba(15,27,45,.72); }
-.mermaid-lightbox-toolbar { position: absolute; z-index: 2; top: max(14px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right)); display: flex; min-height: 44px; align-items: center; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.96); box-shadow: 0 10px 28px rgba(15,27,45,.16); }
-.mermaid-lightbox-toolbar output { min-width: 48px; color: var(--ink-soft); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
-.mermaid-lightbox-toolbar button { min-width: 34px; min-height: 34px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
-.mermaid-lightbox-toolbar button:disabled { cursor: default; opacity: .42; }
-.mermaid-lightbox-toolbar button:focus-visible { outline: 3px solid rgba(36,104,197,.34); outline-offset: 1px; }
-.mermaid-lightbox-canvas { display: grid; width: 100%; height: 100%; overflow: hidden; padding: 78px 28px 28px; cursor: default; place-items: center; touch-action: none; }
+.mermaid-lightbox-close { position: absolute; z-index: 2; top: max(14px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right)); display: grid; width: 42px; height: 42px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: rgba(255,255,255,.96); color: var(--ink); font: inherit; font-size: 22px; line-height: 1; cursor: pointer; place-items: center; box-shadow: 0 8px 24px rgba(15,27,45,.16); }
+.mermaid-lightbox-close:focus-visible { outline: 3px solid rgba(36,104,197,.34); outline-offset: 2px; }
+.mermaid-lightbox-canvas { display: grid; width: 100%; height: 100%; overflow: hidden; padding: 78px 28px 28px; cursor: zoom-out; place-items: center; touch-action: none; }
 .mermaid-lightbox-canvas.is-zoomed { cursor: grab; }
 .mermaid-lightbox-canvas.is-zoomed:active { cursor: grabbing; }
-.mermaid-lightbox-image { display: block; max-width: calc(100vw - 56px); max-height: calc(100dvh - 106px); user-select: none; transform-origin: center; will-change: transform; }
+.mermaid-lightbox-image { display: block; max-width: calc(100vw - 56px); max-height: calc(100dvh - 106px); cursor: inherit; user-select: none; transform-origin: center; will-change: transform; }
 .mermaid-loading, .mermaid-fallback { margin: 20px 0; padding: 14px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink-soft); font-size: 12.5px; }
 .mermaid-fallback p { margin-top: 0; }
 .ai-notes-mobile-menu, .ai-notes-drawer, .ai-notes-drawer-backdrop { display: none; }

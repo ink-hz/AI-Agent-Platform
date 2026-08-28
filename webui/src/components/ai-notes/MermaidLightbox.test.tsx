@@ -18,6 +18,11 @@ function pointer(type: string, pointerId: number, clientX: number, clientY: numb
 }
 
 
+function wheel(deltaY: number): WheelEvent {
+  return new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY });
+}
+
+
 describe("MermaidLightbox", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
@@ -80,13 +85,17 @@ describe("MermaidLightbox", () => {
     expect(dialog.getAttribute("aria-label")).toBe("RAG 查询链路");
     expect(container.querySelector(`#${descriptionId}`)?.textContent).toBe("从问题到答案的检索过程。");
     expect(document.body.style.overflow).toBe("hidden");
+    expect(container.querySelector("output")).toBeNull();
+    expect(container.textContent).not.toContain("恢复");
+    expect(() => button("放大")).toThrow("missing button");
+    expect(() => button("缩小")).toThrow("missing button");
 
     await act(async () => root.unmount());
     expect(document.body.style.overflow).toBe("clip");
     root = createRoot(container);
   });
 
-  it("clamps zoom, pans only when enlarged, and resets the view", async () => {
+  it("zooms with the wheel, pans only when enlarged, and resets at fit", async () => {
     await renderLightbox(null);
     const canvas = container.querySelector<HTMLElement>(".mermaid-lightbox-canvas")!;
     const image = container.querySelector<HTMLImageElement>(".mermaid-lightbox-image")!;
@@ -98,7 +107,7 @@ describe("MermaidLightbox", () => {
     });
     expect(image.style.transform).toBe("translate(0px, 0px) scale(1)");
 
-    await act(async () => button("放大").click());
+    await act(async () => canvas.dispatchEvent(wheel(-100)));
     expect(image.style.transform).toContain("scale(1.25)");
     await act(async () => {
       canvas.dispatchEvent(pointer("pointerdown", 7, 10, 10));
@@ -107,25 +116,47 @@ describe("MermaidLightbox", () => {
     });
     expect(image.style.transform).toContain("translate(25px, 15px)");
 
-    await act(async () => button("恢复").click());
+    for (let index = 0; index < 20; index += 1) {
+      await act(async () => canvas.dispatchEvent(wheel(-100)));
+    }
+    expect(image.style.transform).toContain("scale(4)");
+    for (let index = 0; index < 20; index += 1) {
+      await act(async () => canvas.dispatchEvent(wheel(100)));
+    }
     expect(image.style.transform).toBe("translate(0px, 0px) scale(1)");
-    expect(button("缩小").disabled).toBe(true);
-
-    for (let index = 0; index < 20; index += 1) await act(async () => button("放大").click());
-    expect(container.querySelector("output")?.textContent).toBe("400%");
-    expect(button("放大").disabled).toBe(true);
-    for (let index = 0; index < 20; index += 1) await act(async () => button("缩小").click());
-    expect(container.querySelector("output")?.textContent).toBe("100%");
   });
 
-  it("closes from cancel and the explicit control", async () => {
+  it("closes from the image, empty canvas, cancel, and explicit control", async () => {
     await renderLightbox();
+    await act(async () => container.querySelector<HTMLImageElement>(".mermaid-lightbox-image")!.click());
+    expect(onClose).toHaveBeenCalledOnce();
+
+    await act(async () => container.querySelector<HTMLElement>(".mermaid-lightbox-canvas")!.click());
+    expect(onClose).toHaveBeenCalledTimes(2);
+
     const cancel = new Event("cancel", { cancelable: true });
     await act(async () => container.querySelector("dialog")!.dispatchEvent(cancel));
     expect(cancel.defaultPrevented).toBe(true);
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledTimes(3);
 
     await act(async () => button("关闭大图").click());
-    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(onClose).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not close from the click synthesized after a drag", async () => {
+    await renderLightbox();
+    const canvas = container.querySelector<HTMLElement>(".mermaid-lightbox-canvas")!;
+    const image = container.querySelector<HTMLImageElement>(".mermaid-lightbox-image")!;
+    await act(async () => canvas.dispatchEvent(wheel(-100)));
+    await act(async () => {
+      canvas.dispatchEvent(pointer("pointerdown", 8, 10, 10));
+      canvas.dispatchEvent(pointer("pointermove", 8, 35, 25));
+      canvas.dispatchEvent(pointer("pointerup", 8, 35, 25));
+      image.click();
+    });
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => image.click());
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

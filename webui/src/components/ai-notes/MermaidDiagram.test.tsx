@@ -105,8 +105,7 @@ describe("MermaidDiagram", () => {
     expect(container.querySelector("dialog")?.getAttribute("aria-label")).toBe("Agent 行动循环");
     expect(render).toHaveBeenCalledTimes(1);
 
-    const cancel = new Event("cancel", { cancelable: true });
-    await act(async () => container.querySelector("dialog")!.dispatchEvent(cancel));
+    await act(async () => container.querySelector<HTMLImageElement>(".mermaid-lightbox-image")!.click());
     expect(container.querySelector("dialog")).toBeNull();
     expect(document.activeElement).toBe(trigger);
   });
