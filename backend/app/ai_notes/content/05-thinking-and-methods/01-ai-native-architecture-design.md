@@ -22,7 +22,7 @@ AI 参与架构设计，真正有价值的部分不是代写一份很长的文�
 “AI Native”不是把需求文档全部交给模型，然后接受一份自动生成的总体设计。更准确的定义是：把 AI 作为持续参与设计过程的分析和检查能力，让材料、决策、验证和修订形成可追溯闭环。
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph COLLAB["AI Native 协作闭环"]
         A["原始材料"] --> B["来源分级与提纯"]
         B --> C["架构问题与约束"]
@@ -40,10 +40,10 @@ flowchart LR
     classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033
     classDef success fill:#D1FAE5,stroke:#10B981,color:#172033
 
-    class A,B,F data
+    class A,F data
     class C,E input
     class D model
-    class G policy
+    class B,G policy
     class H success
     style COLLAB fill:#F8FAFC,stroke:#CBD5E1,color:#172033
 ```
@@ -63,12 +63,12 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph HUMAN["人负责"]
-        direction LR
+        direction TB
         H1["目标与约束"] --> H2["取舍与决策"] --> H3["批准与责任"] --> H4["评审与验证"]
     end
 
     subgraph AI["AI 辅助"]
-        direction LR
+        direction TB
         A1["材料提取"] --> A2["冲突发现"] --> A3["候选方案"] --> A4["一致性与风险检查"]
     end
 
@@ -86,8 +86,7 @@ flowchart TB
 
     class H1,H2,H3 input
     class H4 success
-    class A1,A2 data
-    class A3 model
+    class A1,A2,A3 model
     class A4 policy
     style HUMAN fill:#EFF6FF,stroke:#93C5FD,color:#172033
     style AI fill:#F5F3FF,stroke:#C4B5FD,color:#172033

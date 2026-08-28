@@ -477,12 +477,11 @@ flowchart TB
     D --> DB[数据与外部系统]
 
     classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
-    classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
     classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
     classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
     classDef infra fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
     class UI input;
-    class A model;
+    class A infra;
     class API,AT tool;
     class D infra;
     class DB data;

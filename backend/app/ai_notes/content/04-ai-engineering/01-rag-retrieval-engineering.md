@@ -101,10 +101,11 @@ flowchart TB
 
     classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
     classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
     classDef infra fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
-    class D,P,C,M,G data;
+    class D,M,V,L,G data;
+    class P,C tool;
     class E model;
-    class V,L infra;
     style INDEX fill:#F0FDFA,stroke:#5EEAD4,color:#172033;
 ```
 
@@ -231,7 +232,7 @@ Recall@K <-> 内存与磁盘占用
 BM25 对词频做饱和处理，并对文档长度进行归一化，是常用的词法排序基线。混合检索分别取得词法与向量候选，再融合排名：
 
 ```mermaid
-flowchart LR
+flowchart TB
     Q[查询] --> B[BM25 召回]
     Q --> V[向量召回]
     B --> F[去重与融合]

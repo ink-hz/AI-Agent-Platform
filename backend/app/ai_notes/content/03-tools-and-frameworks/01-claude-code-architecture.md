@@ -259,7 +259,8 @@ flowchart TB
     end
     subgraph CONTROL["权限与生命周期控制"]
         direction TB
-        O --> P[权限与策略]
+        O --> M[模型推理与行动提议]
+        M --> P[权限与策略]
         H[Hooks 与质量门禁] --> P
     end
     subgraph CAPABILITY["工具与环境"]
@@ -289,7 +290,8 @@ flowchart TB
     classDef infra fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
     class U input;
     class C data;
-    class O model;
+    class O infra;
+    class M model;
     class P,H policy;
     class T tool;
     class E,B infra;

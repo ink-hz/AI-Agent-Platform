@@ -54,6 +54,7 @@ async function expectProductionDiagramsToRender(sources: string[]): Promise<void
     expect(sanitized).toContain("<svg");
     expect(sanitized).not.toContain("<script");
     expect(sanitized).not.toContain("<foreignObject");
+    expect(SEMANTIC_FILLS.some((color) => sanitized.includes(color))).toBe(true);
   }
 }
 
