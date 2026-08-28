@@ -252,20 +252,43 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".ai-notes-layout")).toContain("min-height: 0");
     expect(rule(".ai-notes-sidebar")).toContain("overflow-y: auto");
     expect(rule(".ai-notes-reader")).toContain("overflow-y: auto");
-    expect(rule(".ai-note-article")).toContain("max-width: 820px");
+    expect(rule(".ai-notes-reader-notice")).toContain("max-width: 1040px");
+    expect(rule(".ai-note-article")).toContain("max-width: 1040px");
+    expect(rule(".ai-note-article")).toContain("padding: 48px 48px 80px");
+    expect(rule(".article-markdown")).toContain("font-size: 17px");
+    expect(rule(".article-markdown")).toContain("line-height: 1.78");
+    expect(rule(".article-markdown h2")).toContain("font-size: 25px");
+    expect(rule(".article-markdown h3")).toContain("font-size: 20px");
+    expect(styles).toContain(".article-markdown h4 { font-size: 17px; }");
+    expect(rule(".article-markdown code")).toContain("font-size: 14px");
+    expect(rule(".article-markdown table")).toContain("font-size: 14px");
     expect(rule(".ai-note-signature")).toContain("font-family: ui-monospace");
     expect(rule(".ai-note-author")).toContain("font-weight: 800");
     expect(rule(".ai-note-author")).toContain("color: var(--ink)");
     expect(rule(".ai-note-motto")).toContain("color: var(--ink-faint)");
     expect(rule(".article-table-scroll")).toContain("overflow-x: auto");
+    expect(rule(".mermaid-diagram-trigger")).toContain("cursor: zoom-in");
+    expect(rule(".mermaid-diagram-trigger > img")).toContain("max-height: min(720px, 70vh)");
+    expect(rule(".mermaid-diagram-trigger > img")).toContain("object-fit: contain");
+    expect(rule(".mermaid-lightbox")).toContain("height: 100dvh");
+    expect(rule(".mermaid-lightbox-canvas")).toContain("touch-action: none");
+    expect(rule(".mermaid-lightbox-image")).toContain("transform-origin: center");
+    expect(rule(".mermaid-diagram-trigger:focus-visible")).toContain("outline: 3px solid");
     expect(rule(`.ai-notes-category-toggle:focus-visible,
 .ai-notes-files button:focus-visible,
 .ai-notes-mobile-menu:focus-visible,
 .ai-notes-drawer-close:focus-visible`)).toContain("outline: 3px solid");
-    const mobile = lastBlock("@media (max-width: 720px)");
-    expect(mobile).toContain(".ai-notes-layout { grid-template-columns: minmax(0, 1fr); }");
-    expect(mobile).toContain(".ai-notes-sidebar { display: none; }");
-    expect(mobile).toContain(".ai-notes-mobile-menu { display: inline-flex; }");
+    const aiNotesMobile = block(
+      "@media (max-width: 720px) {\n  .ai-notes-layout { grid-template-columns: minmax(0, 1fr); }\n  .ai-notes-sidebar { display: none; }\n  .ai-notes-mobile-menu { position: fixed",
+    );
+    expect(aiNotesMobile).toContain(".ai-notes-layout { grid-template-columns: minmax(0, 1fr); }");
+    expect(aiNotesMobile).toContain(".ai-notes-sidebar { display: none; }");
+    expect(aiNotesMobile).toContain(".ai-notes-mobile-menu { position: fixed");
+    expect(aiNotesMobile).toContain(".ai-note-article { padding: 38px 18px 72px; }");
+    expect(aiNotesMobile).toContain(".article-markdown { font-size: 16px; }");
+    expect(aiNotesMobile).toContain(".mermaid-diagram-trigger > img { max-height: 68svh; }");
+    expect(block("@media print")).toContain(".mermaid-diagram-trigger > img { max-height: none; }");
+    expect(block("@media print")).toContain(".mermaid-diagram-zoom-hint, .mermaid-lightbox { display: none !important; }");
   });
 
   it("keeps the AI notes home entry quiet and keyboard visible", () => {

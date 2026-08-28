@@ -5,7 +5,7 @@ description: 基于官方公开能力，分析 Claude Code 的权限、工具、
 author: 苍渊
 motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
-updatedAt: 2026-08-27
+updatedAt: 2026-08-28
 tags:
   - Claude Code
   - Agent
@@ -31,12 +31,64 @@ Claude Code 值得研究的地方，不是某个未经公开的内部调度算�
 
 它们不支持我们直接断言 Claude Code 内部使用了某种隐藏状态机、固定数量的 Hook、固定的上下文阈值，或者某个版本具有未经官方披露的性能提升。
 
+把当前公开能力按责任而不是产品菜单组织，可以得到下面这张图。入口形态会继续演进，但官方文档明确说明这些界面共享同一套 Agent 工作循环；图中的分层是便于理解的工程分解，不是对内部组件的还原。
+
+```mermaid
+flowchart TB
+    accTitle: Claude Code 多入口共享架构
+    accDescr: 终端、IDE、桌面、Web、远程控制和 CI/CD 共用上下文、推理、权限、工具与验证工作循环。
+
+    subgraph ENTRY["公开入口"]
+        direction LR
+        E1[终端与 IDE]
+        E2[桌面与 Web]
+        E3[远程控制与 CI/CD]
+    end
+    subgraph CORE["共享的 Agent 工作循环"]
+        direction TB
+        C[项目、会话与规则上下文] --> L[理解目标并选择下一步行动]
+        L --> P[权限与策略]
+        P --> T[内置工具]
+        P --> M[MCP 外部工具]
+        H[Hooks 生命周期控制] --> P
+        T --> F[代码库、终端与开发环境]
+        M --> X[外部服务与数据]
+        F --> L
+        X --> L
+        L --> V[测试、结果检查与验证]
+    end
+
+    E1 --> C
+    E2 --> C
+    E3 --> C
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    classDef infra fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    class E1,E2,E3 input;
+    class C data;
+    class L model;
+    class P,H policy;
+    class T,M tool;
+    class F,X infra;
+    class V success;
+    style ENTRY fill:#EFF6FF,stroke:#93C5FD,color:#172033;
+    style CORE fill:#FAF5FF,stroke:#C4B5FD,color:#172033;
+```
+
 ## 二、核心不是聊天，而是受控行动循环
 
 传统代码补全的主要执行单位是“下一段代码”；工程 Agent 的执行单位更接近“为完成目标而采取的下一步行动”。一个简化循环如下：
 
 ```mermaid
-flowchart TD
+flowchart LR
+    accTitle: Claude Code Agent 工作循环
+    accDescr: 从用户目标和代码库约束出发，行动经过权限判断和工具执行，直到验证目标达到。
+
     A[用户目标] --> B[理解代码库与约束]
     B --> C[提出下一步工具调用]
     C --> D{权限与策略是否允许}
@@ -47,6 +99,21 @@ flowchart TD
     H -->|否| C
     H -->|是| I[验证并交付]
     E --> C
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    classDef risk fill:#FEE2E2,stroke:#F87171,color:#172033;
+    class A input;
+    class B,G data;
+    class C model;
+    class D,H policy;
+    class F tool;
+    class I success;
+    class E risk;
 ```
 
 这张图是通用工程抽象，不是对 Claude Code 内部调用顺序的还原。它强调四个互相制约的角色：
@@ -191,19 +258,57 @@ Claude Code 官方监控文档提供基于 OpenTelemetry 的指标、事件和�
 
 ```mermaid
 flowchart TB
-    U[用户与任务入口] --> O[Agent 编排与状态]
-    C[上下文管理] --> O
-    O --> P[权限与策略]
-    P --> T[内置工具与 MCP 工具]
-    T --> E[代码库和外部系统]
-    E --> T
-    T --> O
-    H[Hooks 与质量门禁] --> P
-    H --> T
-    O --> V[测试、评估与完成证据]
-    O --> B[日志、指标与追踪]
+    accTitle: Claude Code 核心责任分区
+    accDescr: 上下文与编排连接权限控制、工具环境、验证和观测，形成完整工程运行时。
+
+    subgraph CONTEXT["上下文与编排"]
+        direction TB
+        U[用户与任务入口] --> O[Agent 编排与状态]
+        C[上下文管理] --> O
+    end
+    subgraph CONTROL["权限与生命周期控制"]
+        direction TB
+        O --> M[模型推理与行动提议]
+        M --> P[权限与策略]
+        H[Hooks 与质量门禁] --> P
+    end
+    subgraph CAPABILITY["工具与环境"]
+        direction TB
+        P --> T[内置工具与 MCP 工具]
+        T --> E[代码库和外部系统]
+        E --> T
+        T --> O
+    end
+    subgraph EVIDENCE["验证与观测"]
+        direction LR
+        V[测试、评估与完成证据]
+        B[日志、指标与追踪]
+    end
+
+    O --> V
+    O --> B
     P --> B
     T --> B
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    classDef infra fill:#F3F4F6,stroke:#9CA3AF,color:#172033;
+    class U input;
+    class C data;
+    class O infra;
+    class M model;
+    class P,H policy;
+    class T tool;
+    class E,B infra;
+    class V success;
+    style CONTEXT fill:#EFF6FF,stroke:#93C5FD,color:#172033;
+    style CONTROL fill:#FFFBEB,stroke:#FCD34D,color:#172033;
+    style CAPABILITY fill:#F0FDF4,stroke:#86EFAC,color:#172033;
+    style EVIDENCE fill:#F8FAFC,stroke:#CBD5E1,color:#172033;
 ```
 
 这套架构最容易被低估的是权限、状态和验证。Demo 可以在无约束环境中展示工具调用；生产系统却必须处理任务中断、并发修改、凭证、私有数据、外部副作用、上下文膨胀和结果验收。

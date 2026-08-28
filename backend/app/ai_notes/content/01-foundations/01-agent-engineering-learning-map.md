@@ -5,7 +5,7 @@ description: 按行动循环、工具、运行时、上下文、治理和评估�
 author: 苍渊
 motto: 博观而约取，厚积而薄发。
 publishedAt: 2026-08-27
-updatedAt: 2026-08-27
+updatedAt: 2026-08-28
 tags:
   - Agent
   - 学习地图
@@ -37,12 +37,39 @@ draft: false
 
 先记住一条抽象链路：
 
-```text
-目标与当前状态
-  -> 模型提出行动
-  -> 系统校验与执行
-  -> 外部结果成为新观察
-  -> 继续、追问、停止或交还给人
+```mermaid
+flowchart TB
+    accTitle: Agent 最小行动循环
+    accDescr: Agent 从目标和当前状态出发，经过行动提议、策略校验、工具执行和结果观察，最终继续、追问、停止或交还人工。
+
+    subgraph LOOP["最小行动循环"]
+        direction TB
+        A[目标与当前状态] --> B[模型提出行动]
+        B --> C{策略与结构校验}
+        C -->|允许| D[工具执行]
+        C -->|拒绝或需确认| F{下一步决策}
+        D --> E[外部结果成为新观察]
+        E --> F
+        F -->|继续| B
+        F -->|追问| G[向用户补充信息]
+        G --> A
+        F -->|停止| H[验证证据并交付]
+        F -->|交还| I[人工接管]
+    end
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef model fill:#EDE9FE,stroke:#A78BFA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    class A,G input;
+    class B model;
+    class E data;
+    class C,F,I policy;
+    class D tool;
+    class H success;
+    style LOOP fill:#F8FAFC,stroke:#CBD5E1,color:#172033;
 ```
 
 模型处理语义不确定性；确定性软件处理权限、预算、状态、幂等、审批和审计。后面的所有学习内容，都是在这条链路上逐步增加工程约束。
@@ -255,14 +282,39 @@ Agent 评估不能只看最终文字是否流畅。先沿行动链路把问题�
 
 可以使用“根据服务异常生成调查结论，并在批准后创建处理工单”贯穿整条路线：
 
-```text
-第一版：读取固定日志并输出带证据结论
-第二版：通过工具搜索和读取真实记录
-第三版：保存任务并从故障中恢复
-第四版：读取规范、历史事件和必要检索证据
-第五版：批准后幂等创建工单
-第六版：用真实失败建立回归集
-第七版：验证是否需要独立调查子 Agent
+```mermaid
+flowchart LR
+    accTitle: Agent 工程能力递进路线
+    accDescr: 从固定证据和真实工具开始，逐步增加持久运行、知识检索、审批执行、失败评估和子 Agent 验证。
+
+    subgraph FOUNDATION["基础闭环"]
+        direction LR
+        A[固定日志与证据结论] --> B[工具搜索真实记录]
+    end
+    subgraph RUNTIME["生产运行"]
+        direction LR
+        C[持久任务与故障恢复] --> D[规范、历史与检索证据] --> E[审批后幂等创建工单]
+    end
+    subgraph QUALITY["质量进化"]
+        direction LR
+        F[真实失败回归集] --> G[验证是否需要独立子 Agent]
+    end
+    B -->|状态化| C
+    E -->|评估化| F
+
+    classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
+    classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
+    classDef policy fill:#FEF3C7,stroke:#F59E0B,color:#172033;
+    classDef tool fill:#DCFCE7,stroke:#4ADE80,color:#172033;
+    classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
+    class A input;
+    class B tool;
+    class C,D data;
+    class E policy;
+    class F,G success;
+    style FOUNDATION fill:#EFF6FF,stroke:#93C5FD,color:#172033;
+    style RUNTIME fill:#F0FDFA,stroke:#5EEAD4,color:#172033;
+    style QUALITY fill:#F0FDF4,stroke:#86EFAC,color:#172033;
 ```
 
 每个版本保存同一组数据：任务是否完成、必要证据是否命中、工具调用次数、恢复是否正确、人工在哪里接管、延迟和成本。这样学习结果会形成可比较的工程曲线，而不是一组互不相关的 Demo。
