@@ -51,6 +51,8 @@ class AgentCapabilityCard(BaseModel):
         default="metabot_local", pattern=r"^[a-z][a-z0-9_]{0,63}$"
     )
     adapter_config_version: int = Field(default=1, gt=0)
+    execution_pool: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    pool_concurrency: int = Field(ge=1, le=16)
     output_contract: Literal["normalized_task_result_v1"] = (
         "normalized_task_result_v1"
     )
@@ -100,6 +102,8 @@ def load_capability_cards(
                 adapter_id=card.adapter_id,
                 adapter_kind=card.adapter_kind,
                 adapter_config_version=card.adapter_config_version,
+                execution_pool=card.execution_pool,
+                pool_concurrency=card.pool_concurrency,
                 output_contract=card.output_contract,
                 capability_version=card.capability_version,
             )

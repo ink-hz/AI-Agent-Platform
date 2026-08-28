@@ -240,6 +240,14 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
             calls.append("expire-users")
             return 1
 
+        def terminalize_blocked_tasks(self, *, limit):
+            calls.append("release-blocked")
+            return 1
+
+        def expire_task_deadlines(self, *, limit):
+            calls.append("expire-task-deadlines")
+            return 1
+
         def erase_expired_model_responses(self, *, limit):
             calls.append("erase-responses")
             return 1
@@ -250,12 +258,13 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
 
     changed = tick(validate_worker_mode("all"), Runtime(), Repository())
 
-    assert changed == 11
+    assert changed == 13
     assert calls == [
         "brain", "settle", "heartbeat:agent-brain-step:healthy",
         "adapter", "reconcile:persistent", "reconcile:metabot_local", "cancel",
         "heartbeat:agent-brain-adapter:healthy", "expire-steps",
-        "expire-deliveries", "expire-users", "erase-responses",
+        "expire-deliveries", "expire-users", "release-blocked",
+        "expire-task-deadlines", "erase-responses",
         "erase-conversations",
         "heartbeat:agent-brain-reaper:healthy",
     ]

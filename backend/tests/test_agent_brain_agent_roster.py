@@ -53,3 +53,14 @@ def test_roster_rejects_values_that_are_not_capability_cards() -> None:
         render_agent_roster("hr-bot")
     with pytest.raises(ValueError):
         render_agent_roster(({"agent_id": "hr-bot"},))
+
+
+def test_roster_groups_agents_by_the_executor_they_share() -> None:
+    rendered = render_agent_roster(load_capability_cards())
+
+    # The pool section states the constraint once, up front: six Agents, one slot.
+    assert "## 执行池" in rendered
+    assert "metabot_local：同时最多 1 个任务" in rendered
+    assert "hr-bot / marketing-gtm-bot" in rendered
+    # And each Agent repeats it, so a delegation decision cannot miss it.
+    assert rendered.count("- 执行池: metabot_local（并发 1）") == 6

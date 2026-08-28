@@ -45,6 +45,32 @@ from app.agent_brain.tool_protocol import (
 
 _LEASE_RENEW_INTERVAL_SECONDS = 15.0
 
+# Per-task window. Reading it from the authorized capability card instead is the
+# Platform task brief's §12 item; the chain-depth formula below already has the
+# right shape for it.
+_TASK_SECONDS = 300
+
+
+def _chain_depth(batch, tool_index: int) -> int:
+    """Return the longest declared dependency path ending at this call.
+
+    A dependent task is not dispatched until its upstream finishes, so its window
+    has to cover the chain ahead of it. Without this a task deep in a chain would
+    burn its own deadline while still queued and be reaped before it ever ran --
+    a failure mode that data edges introduce and must therefore answer for.
+
+    depends_on may only reference an earlier position, so one forward pass in
+    declaration order is a valid topological order.
+    """
+
+    depths: dict[int, int] = {}
+    for call in batch.calls:
+        upstream = getattr(call.call, "depends_on", ())
+        depths[call.tool_index] = max(
+            (depths.get(index, 0) + 1 for index in upstream), default=0
+        )
+    return depths.get(tool_index, 0)
+
 
 class BrainLoopRuntime:
     def __init__(
@@ -262,6 +288,7 @@ class BrainLoopRuntime:
                 )
             )
         elif batch.kind == "delegate_tasks":
+            pool_admissions: dict[str, int] = {}
             for parsed in batch.calls:
                 if not parsed.accepted or not isinstance(parsed.call, DelegateTaskCall):
                     continue
@@ -291,6 +318,29 @@ class BrainLoopRuntime:
                         )
                     )
                     continue
+                # Same-pool tasks contend for one executor. A chained task never runs
+                # beside its upstream, so only unchained calls are counted -- which is
+                # exactly the shape the rejection hint asks the Brain to switch to.
+                if not parsed.call.depends_on and decision.execution_pool is not None:
+                    admitted = pool_admissions.get(decision.execution_pool, 0)
+                    if admitted >= (decision.pool_concurrency or 1):
+                        immediate.append(
+                            ImmediateToolResult(
+                                parsed.tool_index,
+                                {
+                                    "status": "rejected",
+                                    "reason": "pool_saturated",
+                                    "execution_pool": decision.execution_pool,
+                                    "pool_concurrency": decision.pool_concurrency,
+                                    "hint": (
+                                        "同池 Agent 共用一个执行器；"
+                                        "请用 depends_on 串接而不是并行派发。"
+                                    ),
+                                },
+                            )
+                        )
+                        continue
+                    pool_admissions[decision.execution_pool] = admitted + 1
                 snapshot_id = self._repository.create_authorization_snapshot(
                     internal_user_id=owner_id,
                     agent_id=parsed.call.agent_id,
@@ -307,9 +357,13 @@ class BrainLoopRuntime:
                         capability_version=decision.capability_version,
                         authorization_snapshot_id=snapshot_id,
                         effective_deadline_at=min(
-                            now + timedelta(seconds=300),
+                            now
+                            + timedelta(
+                                seconds=_TASK_SECONDS
+                                * (1 + _chain_depth(batch, parsed.tool_index))
+                            ),
                             loop.active_deadline_at
-                            or now + timedelta(seconds=300),
+                            or now + timedelta(seconds=_TASK_SECONDS),
                         ),
                         task_context={
                             "objective": parsed.call.objective,

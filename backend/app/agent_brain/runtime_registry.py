@@ -37,6 +37,8 @@ class RuntimeAgentSnapshot:
     output_contract: str
     adapter_kind: str
     adapter_config_version: int
+    execution_pool: str
+    pool_concurrency: int
     capability_version: int
     availability: Availability
     health_sampled_at: datetime | None
@@ -78,6 +80,8 @@ class AuthorizationDecision:
     grant_ids: tuple[UUID, ...]
     directory_generation_id: UUID | None
     effective_decision_hash: bytes | None
+    execution_pool: str | None = None
+    pool_concurrency: int | None = None
 
 
 class _HealthSource(Protocol):
@@ -227,6 +231,8 @@ class RuntimeAgentRegistry:
             value["grant_ids"],
             value["directory_generation_id"],
             digest,
+            card.execution_pool,
+            card.pool_concurrency,
         )
 
     def _compose(
@@ -267,6 +273,8 @@ class RuntimeAgentRegistry:
             output_contract=card.output_contract,
             adapter_kind=card.adapter_kind,
             adapter_config_version=card.adapter_config_version,
+            execution_pool=card.execution_pool,
+            pool_concurrency=card.pool_concurrency,
             capability_version=card.capability_version,
             availability=availability,
             health_sampled_at=sampled_at,

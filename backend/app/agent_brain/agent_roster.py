@@ -35,10 +35,22 @@ def render_agent_roster(cards: Sequence[AgentCapabilityCard]) -> str:
         raise ValueError("agent roster cards invalid")
     if not cards:
         return ROSTER_EMPTY
+    ordered = sorted(cards, key=lambda item: item.agent_id)
     sections = [ROSTER_HEADING, ""]
-    for card in sorted(cards, key=lambda item: item.agent_id):
+    sections.append("## 执行池")
+    for pool, members in _pools(ordered):
+        concurrency = members[0].pool_concurrency
+        sections.append(
+            f"- {pool}：同时最多 {concurrency} 个任务，成员 "
+            f"{' / '.join(card.agent_id for card in members)}"
+        )
+    sections.append("")
+    for card in ordered:
         sections.append(f"## {card.agent_id} · {card.display_name}（{card.domain_group}）")
         sections.append(f"- capability_version: {card.capability_version}")
+        sections.append(
+            f"- 执行池: {card.execution_pool}（并发 {card.pool_concurrency}）"
+        )
         sections.append(f"- 职责: {card.mission}")
         sections.append(f"- 能力: {_join(card.capabilities)}")
         sections.append(f"- 不承担: {_join(card.exclusions)}")
@@ -50,6 +62,15 @@ def render_agent_roster(cards: Sequence[AgentCapabilityCard]) -> str:
         )
         sections.append("")
     return "\n".join(sections)
+
+
+def _pools(
+    ordered: list[AgentCapabilityCard],
+) -> list[tuple[str, list[AgentCapabilityCard]]]:
+    grouped: dict[str, list[AgentCapabilityCard]] = {}
+    for card in ordered:
+        grouped.setdefault(card.execution_pool, []).append(card)
+    return sorted(grouped.items())
 
 
 def _join(values: Sequence[str]) -> str:

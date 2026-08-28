@@ -11,6 +11,8 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
+    execution_pool: metabot_local
+    pool_concurrency: 1
     supports_persistent_session: true
     supports_followup_message: true
     supports_progress_events: true
@@ -51,6 +53,8 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
+    execution_pool: metabot_local
+    pool_concurrency: 1
     supports_persistent_session: true
     supports_followup_message: true
     supports_progress_events: true
@@ -72,6 +76,8 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
+    execution_pool: metabot_local
+    pool_concurrency: 1
     supports_persistent_session: true
     supports_followup_message: true
     supports_progress_events: true
@@ -93,6 +99,8 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
+    execution_pool: metabot_local
+    pool_concurrency: 1
     supports_evidence: false
     supports_persistent_session: true
     supports_followup_message: true
@@ -115,6 +123,8 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
+    execution_pool: metabot_local
+    pool_concurrency: 1
     supports_persistent_session: true
     supports_followup_message: true
     supports_progress_events: true
@@ -136,6 +146,8 @@ agents:
     interaction_modes: [direct_chat, brain_delegation]
     adapter_id: metabot-core-chat
     adapter_kind: metabot_local
+    execution_pool: metabot_local
+    pool_concurrency: 1
     supports_persistent_session: true
     supports_followup_message: true
     supports_progress_events: true

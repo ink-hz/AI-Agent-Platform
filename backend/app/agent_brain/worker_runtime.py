@@ -205,6 +205,8 @@ def tick(mode: WorkerMode, runtime: BrainLoopRuntime, repository) -> int:
         changed += repository.expire_leases(limit=100)
         changed += repository.expire_delivery_leases(limit=100)
         changed += repository.expire_waiting_users(limit=100)
+        changed += repository.terminalize_blocked_tasks(limit=100)
+        changed += repository.expire_task_deadlines(limit=100)
         changed += repository.erase_expired_model_responses(limit=100)
         changed += repository.erase_expired_conversations(limit=100)
         repository.heartbeat("agent-brain-reaper", status="healthy")
