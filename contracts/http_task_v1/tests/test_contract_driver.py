@@ -5,7 +5,6 @@ import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from time import sleep
 from typing import Any
 from urllib.parse import parse_qs
 from uuid import UUID, uuid5
@@ -452,6 +451,10 @@ def test_runner_executes_the_complete_http_contract() -> None:
     assert any(request.url.path.endswith("/messages") for request in target.requests)
     assert any(request.url.path.endswith("/cancel") for request in target.requests)
     assert any(request.url.path.endswith("/execute") for request in target.requests)
+    assert {
+        tuple(task["authorized_scopes"])
+        for task in target.tasks.values()
+    } == {("fae.answer",)}
     cancel_task_id = next(
         task_id
         for task_id, task in target.tasks.items()
