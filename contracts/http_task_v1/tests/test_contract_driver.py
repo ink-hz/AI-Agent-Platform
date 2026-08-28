@@ -12,6 +12,7 @@ from uuid import UUID, uuid5
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 CONTRACT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(CONTRACT_ROOT))
@@ -254,7 +255,14 @@ class ContractTarget:
             and (next_after >= len(events))
         )
         return self._json(
-            200, {"events": page, "next_after": next_after, "terminal": terminal}
+            200,
+            {
+                "contract_version": "orbbec-http-task/v1",
+                "downstream_task_id": f"downstream-{list(self.tasks).index(task_id) + 1}",
+                "events": page,
+                "next_after": next_after,
+                "terminal": terminal,
+            },
         )
 
     def _task(self, request: httpx.Request) -> httpx.Response:
@@ -368,9 +376,11 @@ def test_runner_rejects_python_310() -> None:
 @pytest.mark.parametrize(
     ("document", "message"),
     [
-        (
-            {
-                "events": [
+            (
+                {
+                    "contract_version": "orbbec-http-task/v1",
+                    "downstream_task_id": "downstream-1",
+                    "events": [
                     {
                         "seq": 2,
                         "kind": "message",
@@ -383,9 +393,11 @@ def test_runner_rejects_python_310() -> None:
             },
             "strictly continuous",
         ),
-        (
-            {
-                "events": [
+            (
+                {
+                    "contract_version": "orbbec-http-task/v1",
+                    "downstream_task_id": "downstream-1",
+                    "events": [
                     {
                         "seq": 1,
                         "kind": "timed_out",
@@ -398,9 +410,11 @@ def test_runner_rejects_python_310() -> None:
             },
             "event kind",
         ),
-        (
-            {
-                "events": [
+            (
+                {
+                    "contract_version": "orbbec-http-task/v1",
+                    "downstream_task_id": "downstream-1",
+                    "events": [
                     {
                         "seq": 1,
                         "kind": "result",
@@ -431,8 +445,6 @@ def test_event_page_rejects_protocol_violations(
 
 
 def test_action_digest_model_is_strict_and_forbids_extra_fields() -> None:
-    from pydantic import ValidationError
-
     _runner_module()
     from orbbec_task_contract.models import ActionDigestInput
 
@@ -446,6 +458,149 @@ def test_action_digest_model_is_strict_and_forbids_extra_fields() -> None:
                 "summary": "excluded",
             }
         )
+
+
+STRICT_MODEL_EXAMPLES: dict[str, dict[str, Any]] = {
+    "CapabilitiesResponse": {
+        "contract_version": "orbbec-http-task/v1",
+        "agent_id": "ai-fae-agent",
+        "capability_version": 2,
+        "supports_actions": True,
+        "max_duration_seconds": 600,
+        "supported_scopes": ["fae.answer"],
+        "supported_event_kinds": ["action_required", "result"],
+    },
+    "HealthResponse": {
+        "contract_version": "orbbec-http-task/v1",
+        "status": "healthy",
+        "capability_version": 2,
+    },
+    "TaskResponse": {
+        "contract_version": "orbbec-http-task/v1",
+        "downstream_task_id": "downstream-1",
+        "platform_task_id": "0d8f0764-91be-4af5-b4d8-e79d58ab3b07",
+        "status": "running",
+        "cancel_requested": False,
+        "next_event_seq": 1,
+        "terminal": False,
+        "created_at": "2026-08-27T10:00:00Z",
+        "updated_at": "2026-08-27T10:00:01Z",
+    },
+    "CreateTaskRequest": {
+        "contract_version": "orbbec-http-task/v1",
+        "platform_task_id": "0d8f0764-91be-4af5-b4d8-e79d58ab3b07",
+        "conversation_ref": "conversation-1",
+        "turn_ref": "turn-1",
+        "objective": "diagnose USB errors",
+        "context_excerpt": ["camera disconnects"],
+        "constraints": ["cite evidence"],
+        "attachment_refs": [],
+        "expected_output": "diagnosis",
+        "capability_version": 2,
+        "idempotency_key": "create-1",
+        "deadline_at": "2026-08-27T10:15:00Z",
+        "authorized_scopes": ["fae.answer"],
+    },
+    "CreateTaskReceipt": {
+        "contract_version": "orbbec-http-task/v1",
+        "downstream_task_id": "downstream-1",
+        "status": "queued",
+        "next_event_seq": 1,
+        "duplicate": False,
+    },
+    "MessageRequest": {
+        "contract_version": "orbbec-http-task/v1",
+        "message_seq": 1,
+        "content": "new evidence",
+        "attachment_refs": [],
+        "idempotency_key": "message-1",
+    },
+    "MessageReceipt": {
+        "contract_version": "orbbec-http-task/v1",
+        "downstream_task_id": "downstream-1",
+        "message_seq": 1,
+        "status": "accepted",
+        "duplicate": False,
+    },
+    "CancelRequest": {
+        "contract_version": "orbbec-http-task/v1",
+        "idempotency_key": "cancel-1",
+    },
+    "CancelReceipt": {
+        "contract_version": "orbbec-http-task/v1",
+        "downstream_task_id": "downstream-1",
+        "cancel_request_id": "cancel-request-1",
+        "status": "cancel_requested",
+        "duplicate": False,
+    },
+    "ActionExecuteRequest": {
+        "contract_version": "orbbec-http-task/v1",
+        "action_id": "7d8f0764-91be-4af5-b4d8-e79d58ab3b07",
+        "action_digest": "0" * 64,
+        "idempotency_key": "execute-1",
+    },
+    "ActionExecuteReceipt": {
+        "contract_version": "orbbec-http-task/v1",
+        "action_id": "7d8f0764-91be-4af5-b4d8-e79d58ab3b07",
+        "execution_id": "execution-1",
+        "status": "queued",
+        "duplicate": False,
+    },
+    "ErrorEnvelope": {
+        "contract_version": "orbbec-http-task/v1",
+        "error": {
+            "code": "scope_denied",
+            "message": "task scope is not authorized",
+            "details": {},
+        },
+    },
+}
+
+
+@pytest.mark.parametrize(("model_name", "document"), STRICT_MODEL_EXAMPLES.items())
+def test_frozen_models_accept_exact_documents_and_reject_unknown_fields(
+    model_name: str, document: dict[str, Any]
+) -> None:
+    _runner_module()
+    from orbbec_task_contract import models
+
+    model = getattr(models, model_name, None)
+    assert model is not None, f"missing frozen model {model_name}"
+    encoded = json.dumps(document, ensure_ascii=False).encode("utf-8")
+    assert model.model_validate_json(encoded)
+
+    with pytest.raises(ValidationError):
+        model.model_validate_json(
+            json.dumps({**document, "unknown": "rejected"}).encode("utf-8")
+        )
+
+
+def test_integer_fields_reject_json_booleans() -> None:
+    _runner_module()
+    from orbbec_task_contract import models
+
+    document = {**STRICT_MODEL_EXAMPLES["CapabilitiesResponse"]}
+    document["capability_version"] = True
+    with pytest.raises(ValidationError):
+        models.CapabilitiesResponse.model_validate_json(json.dumps(document))
+
+
+def test_event_page_requires_contract_and_downstream_identity() -> None:
+    _runner_module()
+    from orbbec_task_contract.models import EventPage
+
+    valid = {
+        "contract_version": "orbbec-http-task/v1",
+        "downstream_task_id": "downstream-1",
+        "events": [],
+        "next_after": 0,
+        "terminal": False,
+    }
+    assert EventPage.model_validate_json(json.dumps(valid))
+    for missing in ("contract_version", "downstream_task_id"):
+        invalid = {key: value for key, value in valid.items() if key != missing}
+        with pytest.raises(ValidationError):
+            EventPage.model_validate_json(json.dumps(invalid))
 
 
 BASE_URL = os.getenv("ORBBEC_TASK_CONTRACT_BASE_URL")

@@ -14,6 +14,9 @@ PROJECT = CONTRACT / "pyproject.toml"
 FIXTURE = CONTRACT / "fixtures" / "action_digest.json"
 HASH_SCRIPT = ROOT / "scripts" / "hash_http_task_contract.py"
 RELEASE = ROOT / "deploy" / "cloud" / "http-task-contract.release.json"
+SCHEMA = CONTRACT / "schema" / "http-task-contract-v1.schema.json"
+VALID_EXAMPLES = CONTRACT / "fixtures" / "valid_examples.json"
+ERROR_EXAMPLES = CONTRACT / "fixtures" / "error_examples.json"
 
 
 def _contract_models():
@@ -80,6 +83,30 @@ def test_contract_runner_is_importable_and_exposes_main() -> None:
     finally:
         sys.path.pop(0)
     assert callable(runner.main)
+
+
+def test_contract_commits_strict_schema_and_example_assets() -> None:
+    assert SCHEMA.is_file()
+    assert VALID_EXAMPLES.is_file()
+    assert ERROR_EXAMPLES.is_file()
+    schema = json.loads(SCHEMA.read_text("utf-8"))
+    required = {
+        "CapabilitiesResponse",
+        "HealthResponse",
+        "TaskResponse",
+        "CreateTaskRequest",
+        "CreateTaskReceipt",
+        "MessageRequest",
+        "MessageReceipt",
+        "CancelRequest",
+        "CancelReceipt",
+        "ActionExecuteRequest",
+        "ActionExecuteReceipt",
+        "TaskEvent",
+        "EventPage",
+        "ErrorEnvelope",
+    }
+    assert required.issubset(schema["$defs"])
 
 
 def test_contract_directory_hash_is_path_sensitive_and_ignores_generated_files(

@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.orbbec.com.cn/contracts/http-task/v1/schema",
+  "title": "Orbbec HTTP Task Contract v1",
+  "$defs": {
+    "CapabilitiesResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "agent_id", "capability_version", "supports_actions", "max_duration_seconds", "supported_scopes", "supported_event_kinds"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "agent_id": {"type": "string", "minLength": 1},
+        "capability_version": {"type": "integer", "minimum": 1},
+        "supports_actions": {"type": "boolean"},
+        "max_duration_seconds": {"type": "integer", "minimum": 1, "maximum": 900},
+        "supported_scopes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "supported_event_kinds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/EventKind"}}
+      }
+    },
+    "HealthResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "status", "capability_version"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "status": {"enum": ["healthy", "degraded", "unavailable"]},
+        "capability_version": {"type": "integer", "minimum": 1}
+      }
+    },
+    "TaskResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "downstream_task_id", "platform_task_id", "status", "cancel_requested", "next_event_seq", "terminal", "created_at", "updated_at"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "downstream_task_id": {"type": "string", "minLength": 1},
+        "platform_task_id": {"$ref": "#/$defs/Uuid"},
+        "status": {"$ref": "#/$defs/TaskStatus"},
+        "cancel_requested": {"type": "boolean"},
+        "next_event_seq": {"type": "integer", "minimum": 1},
+        "terminal": {"type": "boolean"},
+        "created_at": {"$ref": "#/$defs/UtcTimestamp"},
+        "updated_at": {"$ref": "#/$defs/UtcTimestamp"}
+      }
+    },
+    "CreateTaskRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "platform_task_id", "conversation_ref", "turn_ref", "objective", "context_excerpt", "constraints", "attachment_refs", "expected_output", "capability_version", "idempotency_key", "deadline_at", "authorized_scopes"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "platform_task_id": {"$ref": "#/$defs/Uuid"},
+        "conversation_ref": {"type": "string", "minLength": 1},
+        "turn_ref": {"type": "string", "minLength": 1},
+        "objective": {"type": "string", "minLength": 1},
+        "context_excerpt": {"type": "array", "items": {"type": "string"}},
+        "constraints": {"type": "array", "items": {"type": "string"}},
+        "attachment_refs": {"type": "array", "items": {"$ref": "#/$defs/Uuid"}},
+        "expected_output": {"type": "string", "minLength": 1},
+        "capability_version": {"type": "integer", "minimum": 1},
+        "idempotency_key": {"type": "string", "minLength": 1},
+        "deadline_at": {"$ref": "#/$defs/UtcTimestamp"},
+        "authorized_scopes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "CreateTaskReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "downstream_task_id", "status", "next_event_seq", "duplicate"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "downstream_task_id": {"type": "string", "minLength": 1},
+        "status": {"const": "queued"},
+        "next_event_seq": {"const": 1},
+        "duplicate": {"type": "boolean"}
+      }
+    },
+    "MessageRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "message_seq", "content", "attachment_refs", "idempotency_key"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "message_seq": {"type": "integer", "minimum": 1},
+        "content": {"type": "string", "minLength": 1},
+        "attachment_refs": {"type": "array", "items": {"$ref": "#/$defs/Uuid"}},
+        "idempotency_key": {"type": "string", "minLength": 1}
+      }
+    },
+    "MessageReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "downstream_task_id", "message_seq", "status", "duplicate"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "downstream_task_id": {"type": "string", "minLength": 1},
+        "message_seq": {"type": "integer", "minimum": 1},
+        "status": {"const": "accepted"},
+        "duplicate": {"type": "boolean"}
+      }
+    },
+    "CancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "idempotency_key"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "idempotency_key": {"type": "string", "minLength": 1}
+      }
+    },
+    "CancelReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "downstream_task_id", "cancel_request_id", "status", "duplicate"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "downstream_task_id": {"type": "string", "minLength": 1},
+        "cancel_request_id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["cancel_requested", "cancelled", "completed", "failed", "timed_out"]},
+        "duplicate": {"type": "boolean"}
+      }
+    },
+    "ActionExecuteRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "action_id", "action_digest", "idempotency_key"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "action_id": {"$ref": "#/$defs/Uuid"},
+        "action_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "idempotency_key": {"type": "string", "minLength": 1}
+      }
+    },
+    "ActionExecuteReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "action_id", "execution_id", "status", "duplicate"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "action_id": {"$ref": "#/$defs/Uuid"},
+        "execution_id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["queued", "running", "completed", "failed"]},
+        "duplicate": {"type": "boolean"}
+      }
+    },
+    "TaskEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "kind", "created_at", "payload"],
+      "properties": {
+        "seq": {"type": "integer", "minimum": 1},
+        "kind": {"$ref": "#/$defs/EventKind"},
+        "created_at": {"$ref": "#/$defs/UtcTimestamp"},
+        "payload": {"type": "object"}
+      }
+    },
+    "EventPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "downstream_task_id", "events", "next_after", "terminal"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "downstream_task_id": {"type": "string", "minLength": 1},
+        "events": {"type": "array", "items": {"$ref": "#/$defs/TaskEvent"}},
+        "next_after": {"type": "integer", "minimum": 0},
+        "terminal": {"type": "boolean"}
+      }
+    },
+    "ErrorEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "error"],
+      "properties": {
+        "contract_version": {"const": "orbbec-http-task/v1"},
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "details"],
+          "properties": {
+            "code": {"enum": ["contract_version_unsupported", "protocol_violation", "idempotency_conflict", "scope_denied", "task_not_found", "task_terminal", "message_sequence_conflict", "event_sequence_conflict", "action_conflict", "action_digest_mismatch", "action_expired", "capability_changed", "deadline_expired", "attachment_unsupported", "upstream_unavailable"]},
+            "message": {"type": "string", "minLength": 1},
+            "details": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "current_capability_version": {"type": "integer", "minimum": 1},
+                "must_refresh_capabilities": {"const": true},
+                "expected_sequence": {"type": "integer", "minimum": 0},
+                "supported_contract_versions": {"type": "array", "items": {"type": "string"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    "Uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "UtcTimestamp": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "TaskStatus": {"enum": ["queued", "running", "waiting_input", "waiting_confirmation", "completed", "failed", "cancelled", "timed_out"]},
+    "EventKind": {"enum": ["thinking_summary", "message", "work_update", "artifact", "input_required", "action_required", "finding", "result", "failed", "timeout", "cancelled"]}
+  }
+}

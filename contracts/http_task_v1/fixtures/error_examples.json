@@ -1,0 +1,21 @@
+{
+  "scope_denied": {
+    "contract_version": "orbbec-http-task/v1",
+    "error": {
+      "code": "scope_denied",
+      "message": "task scope is not authorized",
+      "details": {}
+    }
+  },
+  "capability_changed": {
+    "contract_version": "orbbec-http-task/v1",
+    "error": {
+      "code": "capability_changed",
+      "message": "agent capability version changed",
+      "details": {
+        "current_capability_version": 2,
+        "must_refresh_capabilities": true
+      }
+    }
+  }
+}

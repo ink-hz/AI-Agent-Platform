@@ -1,0 +1,30 @@
+{
+  "CapabilitiesResponse": {
+    "contract_version": "orbbec-http-task/v1",
+    "agent_id": "ai-fae-agent",
+    "capability_version": 2,
+    "supports_actions": true,
+    "max_duration_seconds": 600,
+    "supported_scopes": ["fae.answer"],
+    "supported_event_kinds": ["action_required", "result"]
+  },
+  "HealthResponse": {
+    "contract_version": "orbbec-http-task/v1",
+    "status": "healthy",
+    "capability_version": 2
+  },
+  "CreateTaskReceipt": {
+    "contract_version": "orbbec-http-task/v1",
+    "downstream_task_id": "downstream-1",
+    "status": "queued",
+    "next_event_seq": 1,
+    "duplicate": false
+  },
+  "EventPage": {
+    "contract_version": "orbbec-http-task/v1",
+    "downstream_task_id": "downstream-1",
+    "events": [],
+    "next_after": 0,
+    "terminal": false
+  }
+}
