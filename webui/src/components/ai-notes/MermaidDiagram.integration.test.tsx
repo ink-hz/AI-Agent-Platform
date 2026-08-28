@@ -123,4 +123,14 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(sources.join("\n")).toContain("能力递进");
     await expectProductionDiagramsToRender(sources);
   });
+
+  it("renders every enterprise Agent architecture diagram", async () => {
+    const sources = mermaidBlocks(productionArticle(
+      "02-agent-architecture/01-enterprise-agent-system-architecture.md",
+    ));
+    expect(sources).toHaveLength(5);
+    expect(sources.join("\n")).toContain("运行循环");
+    expect(sources.join("\n")).toContain("信任决策");
+    await expectProductionDiagramsToRender(sources);
+  });
 });

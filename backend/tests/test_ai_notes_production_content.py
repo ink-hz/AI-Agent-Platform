@@ -76,11 +76,23 @@ def test_publishes_clean_enterprise_agent_architecture_note() -> None:
     assert article.title == "企业级 Agent 系统架构：从循环引擎到信任层级"
     assert article.filename == "enterprise-agent-system-architecture.md"
     assert article.published_at == PUBLISHED_ON
-    assert article.updated_at == PUBLISHED_ON
+    assert article.updated_at == TODAY
     assert article.author == "苍渊"
     assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("Agent", "系统架构", "AI 工程")
     assert_clean_body(article.markdown)
+
+
+def test_enterprise_agent_note_visualizes_runtime_and_trust() -> None:
+    article = published_article("agent-architecture", "enterprise-agent-system-architecture")
+    diagrams = mermaid_blocks(article.markdown)
+    combined = "\n".join(diagrams)
+    assert len(diagrams) == 5
+    assert "运行循环" in combined
+    assert "信任决策" in combined
+    assert "WaitingApproval" in combined
+    assert all("classDef" in diagram or "style" in diagram for diagram in diagrams)
+    assert article.updated_at == TODAY
 
 
 def test_publishes_clean_rag_retrieval_engineering_note() -> None:
