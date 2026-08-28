@@ -672,19 +672,23 @@ def mermaid_subgraph_ids(source: str) -> tuple[str, ...] | None:
     return tuple(group_ids)
 
 
-def mermaid_white_style_ids(source: str) -> set[str]:
-    white_style_ids = set()
+def mermaid_style_fill_values(source: str) -> dict[str, tuple[str, ...]]:
+    fill_values_by_id: dict[str, list[str]] = {}
     for styled in re.finditer(
         r"(?mi)^\s*style\s+([A-Za-z_][A-Za-z0-9_-]*)\s+([^\n]*)$",
         source,
     ):
-        properties = styled.group(2)
-        if re.search(
-            r"(?i)(?:^|,)\s*fill\s*:\s*#ffffff\s*(?=,|;|$)",
-            properties,
-        ):
-            white_style_ids.add(styled.group(1))
-    return white_style_ids
+        fills = re.findall(
+            r"(?i)(?:^|,)\s*fill\s*:\s*([^,;]+?)\s*(?=,|;|$)",
+            styled.group(2),
+        )
+        fill_values_by_id.setdefault(styled.group(1), []).extend(
+            fill.strip().upper() for fill in fills
+        )
+    return {
+        style_id: tuple(fill_values)
+        for style_id, fill_values in fill_values_by_id.items()
+    }
 
 
 def mermaid_groups_have_white_styles(
@@ -693,8 +697,12 @@ def mermaid_groups_have_white_styles(
     group_ids = mermaid_subgraph_ids(source)
     if group_ids is None or (require_group and not group_ids):
         return False
-    white_style_ids = mermaid_white_style_ids(source)
-    return all(group_id in white_style_ids for group_id in group_ids)
+    fill_values_by_id = mermaid_style_fill_values(source)
+    for group_id in group_ids:
+        fill_values = fill_values_by_id.get(group_id, ())
+        if not fill_values or any(fill != "#FFFFFF" for fill in fill_values):
+            return False
+    return True
 
 
 def mermaid_has_white_group(source: str) -> bool:
@@ -1592,6 +1600,31 @@ flowchart LR
         A[输入] --> B[输出]
     end
     style GROUP fill:#F3F4F6,stroke:#CBD5E1,color:#172033;
+"""
+    assert not mermaid_groups_are_white(diagram)
+    assert not mermaid_has_white_group(diagram)
+
+
+def test_mermaid_group_guard_rejects_later_gray_style_override() -> None:
+    diagram = """
+flowchart LR
+    subgraph GROUP[分组]
+        A[输入] --> B[输出]
+    end
+    style GROUP fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
+    style GROUP fill:#F3F4F6,stroke:#CBD5E1,color:#172033;
+"""
+    assert not mermaid_groups_are_white(diagram)
+    assert not mermaid_has_white_group(diagram)
+
+
+def test_mermaid_group_guard_rejects_conflicting_fills_in_one_style() -> None:
+    diagram = """
+flowchart LR
+    subgraph GROUP[分组]
+        A[输入] --> B[输出]
+    end
+    style GROUP fill:#FFFFFF,fill:#F3F4F6,stroke:#CBD5E1,color:#172033;
 """
     assert not mermaid_groups_are_white(diagram)
     assert not mermaid_has_white_group(diagram)
