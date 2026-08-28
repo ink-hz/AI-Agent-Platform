@@ -73,6 +73,9 @@ AGENT_BRAIN_SUMMARY_PHASE_MIGRATION = (
 AGENT_BRAIN_DURABLE_LOOP_MIGRATION = (
     MIGRATIONS / "041_agent_brain_durable_loop.sql"
 )
+AGENT_BRAIN_TASK_WAIT_MIGRATION = (
+    MIGRATIONS / "049_agent_brain_task_wait_state.sql"
+)
 DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION = (
     MIGRATIONS / "039_directory_member_employee_profile.sql"
 )
@@ -295,6 +298,10 @@ def test_first_control_migration_exists() -> None:
     assert AGENT_BRAIN_DURABLE_LOOP_MIGRATION.is_file(), (
         "missing durable Agent Brain migration: "
         f"{AGENT_BRAIN_DURABLE_LOOP_MIGRATION}"
+    )
+    assert AGENT_BRAIN_TASK_WAIT_MIGRATION.is_file(), (
+        "missing Agent Brain task/wait migration: "
+        f"{AGENT_BRAIN_TASK_WAIT_MIGRATION}"
     )
 
 
@@ -644,7 +651,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                        (version, 64) for version in range(1, 49)
+                        (version, 64) for version in range(1, 50)
                 ]
 
     changed = tmp_path / "migrations"

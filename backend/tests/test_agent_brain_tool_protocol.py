@@ -3,8 +3,6 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import ValidationError
-
 from app.agent_brain.loop_models import (
     AgentTaskStatus,
     BrainLoopStatus,
@@ -12,8 +10,8 @@ from app.agent_brain.loop_models import (
     NormalizedTaskResult,
 )
 from app.agent_brain.tool_protocol import (
-    AwaitAgentEventsCall,
     BRAIN_TOOL_SCHEMAS,
+    AwaitAgentEventsCall,
     BrainToolBatch,
     DelegateTaskCall,
     ProtocolViolation,
@@ -24,7 +22,7 @@ from app.agent_brain.tool_protocol import (
     parse_tool_batch,
     stable_runtime_id,
 )
-
+from pydantic import ValidationError
 
 TASK_ID = UUID("00000000-0000-4000-8000-000000000101")
 
@@ -397,11 +395,25 @@ def test_await_accepts_only_exact_unique_wake_kinds(wake_on: list[str]) -> None:
     assert error.value.code == "invalid_tool_input"
 
 
+def test_await_accepts_user_and_action_intervention_wake_kinds() -> None:
+    limits = ToolLimits(allowed_task_ids=frozenset({TASK_ID}))
+    waited = parse_tool_batch(
+        [_await_block(wake_on=["input_required", "action_required"])],
+        limits,
+    )
+    assert isinstance(waited.calls[0].call, AwaitAgentEventsCall)
+    assert waited.calls[0].call.wake_on == (
+        "input_required",
+        "action_required",
+    )
+
+
 def test_runtime_models_are_frozen_and_use_exact_status_values() -> None:
     assert {status.value for status in BrainLoopStatus} >= {
         "queued",
         "waiting_agents",
         "waiting_user",
+        "waiting_confirmation",
         "completing",
         "interrupted",
     }
@@ -411,6 +423,9 @@ def test_runtime_models_are_frozen_and_use_exact_status_values() -> None:
         "waiting_tool_results",
     }
     assert {status.value for status in AgentTaskStatus} >= {
+        "dispatched",
+        "waiting_input",
+        "waiting_confirmation",
         "timed_out",
         "unavailable",
     }

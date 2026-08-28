@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-
 AgentTaskMessageSender = Literal["brain", "agent"]
 AgentTaskMessageKind = Literal["initial", "followup", "question", "reply", "result"]
 AgentTaskPublicEventKind = Literal[
@@ -20,8 +19,18 @@ AgentTaskPublicEventKind = Literal[
     "failed",
     "timeout",
     "cancelled",
+    "input_required",
+    "action_required",
 ]
-WaitWakeKind = Literal["question", "finding", "result", "failed", "timeout"]
+WaitWakeKind = Literal[
+    "question",
+    "finding",
+    "result",
+    "failed",
+    "timeout",
+    "input_required",
+    "action_required",
+]
 
 PUBLIC_EVENT_KINDS = frozenset(
     {
@@ -35,9 +44,21 @@ PUBLIC_EVENT_KINDS = frozenset(
         "failed",
         "timeout",
         "cancelled",
+        "input_required",
+        "action_required",
     }
 )
-WAIT_WAKE_KINDS = frozenset({"question", "finding", "result", "failed", "timeout"})
+WAIT_WAKE_KINDS = frozenset(
+    {
+        "question",
+        "finding",
+        "result",
+        "failed",
+        "timeout",
+        "input_required",
+        "action_required",
+    }
+)
 
 
 def _require_uuid(value: object, name: str) -> None:

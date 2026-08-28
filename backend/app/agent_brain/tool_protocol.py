@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import re
+from dataclasses import dataclass
 from typing import ClassVar, Literal, TypeAlias
 from uuid import UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from app.agent_brain.loop_models import _require_utf8_text
-
 
 _AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _TOOL_CALL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$")
@@ -164,7 +163,16 @@ class RequestUserInputCall(_StrictToolCall):
 class AwaitAgentEventsCall(_StrictToolCall):
     task_ids: tuple[UUID, ...]
     wake_on: tuple[
-        Literal["question", "finding", "result", "failed", "timeout"], ...
+        Literal[
+            "question",
+            "finding",
+            "result",
+            "failed",
+            "timeout",
+            "input_required",
+            "action_required",
+        ],
+        ...,
     ]
 
     @field_validator("task_ids")
@@ -179,10 +187,28 @@ class AwaitAgentEventsCall(_StrictToolCall):
     def _wake_kinds_are_exact(
         cls,
         value: tuple[
-            Literal["question", "finding", "result", "failed", "timeout"], ...
+            Literal[
+                "question",
+                "finding",
+                "result",
+                "failed",
+                "timeout",
+                "input_required",
+                "action_required",
+            ],
+            ...,
         ],
     ) -> tuple[
-        Literal["question", "finding", "result", "failed", "timeout"], ...
+        Literal[
+            "question",
+            "finding",
+            "result",
+            "failed",
+            "timeout",
+            "input_required",
+            "action_required",
+        ],
+        ...,
     ]:
         if not value or len(set(value)) != len(value):
             raise ValueError("wake kinds invalid")

@@ -14,6 +14,7 @@ class BrainLoopStatus(StrEnum):
     RUNNING = "running"
     WAITING_AGENTS = "waiting_agents"
     WAITING_USER = "waiting_user"
+    WAITING_CONFIRMATION = "waiting_confirmation"
     COMPLETING = "completing"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -40,7 +41,10 @@ class BrainToolCallStatus(StrEnum):
 
 class AgentTaskStatus(StrEnum):
     QUEUED = "queued"
+    DISPATCHED = "dispatched"
     RUNNING = "running"
+    WAITING_INPUT = "waiting_input"
+    WAITING_CONFIRMATION = "waiting_confirmation"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -136,6 +140,7 @@ class BrainLoopRecord:
     updated_at: datetime
     active_deadline_at: datetime | None = None
     waiting_user_expires_at: datetime | None = None
+    intervention_expires_at: datetime | None = None
     reason_code: str | None = None
     fallback_used: bool = False
 
@@ -167,6 +172,9 @@ class AgentTaskRecord:
     effective_deadline_at: datetime
     cancel_requested: bool
     row_version: int
+    dispatched_at: datetime | None = None
+    active_elapsed_ms: int = 0
+    terminal_reason_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,4 +187,3 @@ class AdapterDeliveryRecord:
     idempotency_key: str
     lease_worker_id: str | None = None
     lease_expires_at: datetime | None = None
-
