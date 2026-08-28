@@ -9,6 +9,12 @@ let diagramSequence = 0;
 let initialized = false;
 
 
+function supportsModalDialog(): boolean {
+  return typeof HTMLDialogElement !== "undefined"
+    && typeof HTMLDialogElement.prototype.showModal === "function";
+}
+
+
 export function mermaidImageSource(renderedSvg: string): string {
   const sanitized = DOMPurify.sanitize(renderedSvg, {
     USE_PROFILES: { svg: true, svgFilters: true },
@@ -72,7 +78,7 @@ export function MermaidDiagram({ source }: { source: string }) {
     <button
       aria-label={`查看大图：${metadata.title}`}
       className="mermaid-diagram-trigger"
-      onClick={() => setExpanded(true)}
+      onClick={() => { if (supportsModalDialog()) setExpanded(true); }}
       ref={triggerRef}
       type="button"
     >

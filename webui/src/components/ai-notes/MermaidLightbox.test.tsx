@@ -91,6 +91,13 @@ describe("MermaidLightbox", () => {
     const canvas = container.querySelector<HTMLElement>(".mermaid-lightbox-canvas")!;
     const image = container.querySelector<HTMLImageElement>(".mermaid-lightbox-image")!;
 
+    await act(async () => {
+      canvas.dispatchEvent(pointer("pointerdown", 6, 10, 10));
+      canvas.dispatchEvent(pointer("pointermove", 6, 35, 25));
+      canvas.dispatchEvent(pointer("pointerup", 6, 35, 25));
+    });
+    expect(image.style.transform).toBe("translate(0px, 0px) scale(1)");
+
     await act(async () => button("放大").click());
     expect(image.style.transform).toContain("scale(1.25)");
     await act(async () => {
