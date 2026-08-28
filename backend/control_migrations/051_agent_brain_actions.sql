@@ -293,6 +293,7 @@ set search_path = pg_catalog, platform_brain
 as $function$
 declare
   changed integer;
+  selected_action_id uuid;
 begin
   if (
        current_database()='agent_platform_control'
@@ -307,14 +308,20 @@ begin
   then
     raise insufficient_privilege using message='Action expiry caller invalid';
   end if;
-  with selected as (
+  changed := 0;
+  for selected_action_id in
     select action_id from platform_brain.agent_task_actions
     where status='pending' and expires_at<=clock_timestamp()
     order by expires_at,action_id for update skip locked limit selected_limit
-  ) update platform_brain.agent_task_actions action set
-    status='expired',terminal_at=clock_timestamp(),updated_at=clock_timestamp()
-  from selected where action.action_id=selected.action_id;
-  get diagnostics changed = row_count;
+  loop
+    update platform_brain.agent_task_actions set
+      status='expired',terminal_at=clock_timestamp(),updated_at=clock_timestamp()
+    where action_id=selected_action_id and status='pending';
+    if found then
+      changed := changed + 1;
+      perform platform_brain.resume_action_resolution_v51(selected_action_id);
+    end if;
+  end loop;
   return changed;
 end
 $function$;
@@ -352,22 +359,51 @@ language plpgsql
 security definer
 set search_path = pg_catalog, platform_brain
 as $function$
+declare
+  selected_loop platform_brain.brain_loops%rowtype;
 begin
   if (
        current_database()='agent_platform_control'
-       and session_user<>'platform_brain_worker'
+       and session_user not in ('platform_brain_worker','platform_control_app')
      ) or (
        current_database()='agent_platform_control_preview'
-       and session_user<>'platform_brain_worker_preview'
+       and session_user not in (
+         'platform_brain_worker_preview','platform_control_app_preview'
+       )
      ) or current_database() not in (
        'agent_platform_control','agent_platform_control_preview'
      )
   then raise insufficient_privilege using message='Action resume caller invalid';
   end if;
-  return exists (
-    select 1 from platform_brain.agent_task_actions
-    where action_id=selected_action_id and status<>'pending'
-  );
+
+  select loop.* into selected_loop
+  from platform_brain.agent_task_actions action
+  join platform_brain.agent_tasks task on task.task_id=action.task_id
+  join platform_brain.brain_loops loop on loop.loop_id=task.loop_id
+  where action.action_id=selected_action_id and action.status<>'pending'
+  for update of loop;
+  if not found or selected_loop.status<>'waiting_confirmation' then
+    return false;
+  end if;
+  if exists (
+    select 1 from platform_brain.agent_task_actions action
+    join platform_brain.agent_tasks task on task.task_id=action.task_id
+    where task.loop_id=selected_loop.loop_id and action.status='pending'
+  ) then
+    return false;
+  end if;
+
+  update platform_brain.brain_loops set
+    status='running',active_started_at=clock_timestamp(),
+    active_deadline_at=clock_timestamp()+(
+      greatest(0,active_budget_ms-active_elapsed_ms)*interval '1 millisecond'
+    ),intervention_expires_at=null,updated_at=clock_timestamp(),
+    row_version=row_version+1
+  where loop_id=selected_loop.loop_id;
+  update platform_control.conversation_turns set
+    status='running',updated_at=clock_timestamp()
+  where turn_id=selected_loop.turn_id;
+  return true;
 end
 $function$;
 
@@ -456,6 +492,10 @@ begin
   execute format(
     'grant execute on function platform_brain.resume_action_resolution_v51('
     'uuid) to %I',selected_brain
+  );
+  execute format(
+    'grant execute on function platform_brain.resume_action_resolution_v51('
+    'uuid) to %I',selected_app
   );
 end
 $migration$;

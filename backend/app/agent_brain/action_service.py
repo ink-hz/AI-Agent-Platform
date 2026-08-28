@@ -128,6 +128,10 @@ class ActionCommandService:
                     "%s,%s,%s,%s,%s)",
                     (owner_id, action_id, digest, delivery_id, idempotency_key),
                 )
+                connection.execute(
+                    "select platform_brain.resume_action_resolution_v51(%s)",
+                    (action_id,),
+                )
             return self.get(action_id)
         except psycopg.errors.InsufficientPrivilege:
             raise ActionCommandDenied() from None
@@ -143,6 +147,10 @@ class ActionCommandService:
                     "select platform_brain.reject_agent_task_action_v51(%s,%s)",
                     (owner_id, action_id),
                 )
+                connection.execute(
+                    "select platform_brain.resume_action_resolution_v51(%s)",
+                    (action_id,),
+                )
             return self.get(action_id)
         except psycopg.errors.InsufficientPrivilege:
             raise ActionCommandDenied() from None
@@ -156,6 +164,10 @@ class ActionCommandService:
             with self._connection() as connection:
                 connection.execute(
                     "select platform_brain.supersede_agent_task_action_v51(%s)",
+                    (action_id,),
+                )
+                connection.execute(
+                    "select platform_brain.resume_action_resolution_v51(%s)",
                     (action_id,),
                 )
             return self.get(action_id)

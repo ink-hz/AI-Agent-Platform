@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID, uuid4, uuid5
@@ -406,7 +406,8 @@ class BrainLoopRepository:
                     row = connection.execute(
                         "select step.* from platform_brain.brain_steps step "
                         "join platform_brain.brain_loops loop on loop.loop_id=step.loop_id "
-                        "where not loop.cancel_requested and loop.terminal_at is null and ("
+                        "where not loop.cancel_requested and loop.terminal_at is null "
+                        "and loop.status in ('queued','running','waiting_agents') and ("
                         "step.status='queued' or (step.status in "
                         "('leased','requesting_model') and step.lease_expires_at<clock_timestamp())"
                         ") order by step.created_at,step.step_id "
@@ -552,11 +553,39 @@ class BrainLoopRepository:
                         raise BrainRepositoryNotFound()
                     if loop["task_count"] + len(commit.task_specs) > loop["max_tasks"]:
                         raise BrainRepositoryConflict()
+                    effective_commit = commit
+                    if commit.batch.kind == "submit_answer":
+                        has_pending_action = connection.execute(
+                            "select exists (select 1 from "
+                            "platform_brain.agent_task_actions action join "
+                            "platform_brain.agent_tasks task "
+                            "on task.task_id=action.task_id where task.loop_id=%s "
+                            "and action.status='pending') as pending",
+                            (loop_id,),
+                        ).fetchone()["pending"]
+                        if has_pending_action:
+                            effective_commit = replace(
+                                commit,
+                                immediate_results=(
+                                    ImmediateToolResult(
+                                        tool_index=0,
+                                        value={
+                                            "status": "rejected",
+                                            "reason": (
+                                                "pending_action_requires_resolution"
+                                            ),
+                                            "required_next_action": (
+                                                "await_agent_events"
+                                            ),
+                                        },
+                                    ),
+                                ),
+                            )
                     sealed_response = self.content_codec.seal_json(
                         _step_response_subject(step["step_id"]), response_value
                     )
                     task_ids = self._insert_tool_calls_locked(
-                        connection, loop_id, step["step_id"], commit
+                        connection, loop_id, step["step_id"], effective_commit
                     )
                     pending = connection.execute(
                         "select count(*) from platform_brain.brain_tool_calls "
@@ -564,9 +593,14 @@ class BrainLoopRepository:
                         (step["step_id"],),
                     ).fetchone()["count"]
                     final_call = (
-                        commit.batch.calls[0].call
-                        if commit.batch.kind == "submit_answer"
+                        effective_commit.batch.calls[0].call
+                        if effective_commit.batch.kind == "submit_answer"
                         else None
+                    )
+                    submit_accepted = any(
+                        result.tool_index == 0
+                        and result.value.get("status") == "accepted"
+                        for result in effective_commit.immediate_results
                     )
                     step_status = "completed" if pending == 0 else "waiting_tool_results"
                     connection.execute(
@@ -590,7 +624,7 @@ class BrainLoopRepository:
                             step["step_id"],
                         ),
                     )
-                    if isinstance(final_call, SubmitAnswerCall):
+                    if isinstance(final_call, SubmitAnswerCall) and submit_accepted:
                         self._complete_answer_locked(
                             connection, loop, final_call
                         )
@@ -607,7 +641,7 @@ class BrainLoopRepository:
                             "where loop_id=%s",
                             (len(task_ids), loop_id),
                         )
-                    elif commit.batch.kind == "request_user_input":
+                    elif effective_commit.batch.kind == "request_user_input":
                         connection.execute(
                             "update platform_control.conversation_turns set "
                             "status='waiting_user',updated_at=clock_timestamp() "
@@ -1011,6 +1045,115 @@ class BrainLoopRepository:
                 raise BrainRepositoryNotFound()
             return _loop_from_row(row)
         except BrainRepositoryNotFound:
+            raise
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def pending_action_ids(self, loop_id: UUID) -> tuple[UUID, ...]:
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select action.action_id from "
+                    "platform_brain.agent_task_actions action join "
+                    "platform_brain.agent_tasks task on task.task_id=action.task_id "
+                    "where task.loop_id=%s and action.status='pending' "
+                    "order by action.expires_at,action.action_id",
+                    (loop_id,),
+                ).fetchall()
+            return tuple(row["action_id"] for row in rows)
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def earliest_action_expiry(self, loop_id: UUID) -> datetime | None:
+        _require_uuid(loop_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select min(action.expires_at) as expires_at from "
+                    "platform_brain.agent_task_actions action join "
+                    "platform_brain.agent_tasks task on task.task_id=action.task_id "
+                    "where task.loop_id=%s and action.status='pending'",
+                    (loop_id,),
+                ).fetchone()
+            return row["expires_at"] if row is not None else None
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def pause_for_pending_actions(
+        self,
+        loop_id: UUID,
+        step_id: UUID,
+        worker_id: str,
+        *,
+        intervention_expires_at: datetime,
+    ) -> bool:
+        """Atomically park a forced Step while its owner decides an Action.
+
+        The leased Step is returned to the queue before the Loop clock is paused.
+        `lease_step` excludes waiting-confirmation Loops, so another Worker cannot
+        run the forced submission until an Action resolution resumes the Loop.
+        """
+
+        _require_uuid(loop_id)
+        _require_uuid(step_id)
+        _require_worker(worker_id)
+        if (
+            not isinstance(intervention_expires_at, datetime)
+            or intervention_expires_at.tzinfo is None
+        ):
+            raise ValueError("Action intervention expiry invalid")
+        try:
+            with self._connection() as connection, connection.transaction():
+                loop = connection.execute(
+                    "select * from platform_brain.brain_loops where loop_id=%s "
+                    "for update",
+                    (loop_id,),
+                ).fetchone()
+                if loop is None:
+                    raise BrainRepositoryNotFound()
+                pending_expires_at = connection.execute(
+                    "select min(action.expires_at) as expires_at from "
+                    "platform_brain.agent_task_actions action join "
+                    "platform_brain.agent_tasks task on task.task_id=action.task_id "
+                    "where task.loop_id=%s and action.status='pending'",
+                    (loop_id,),
+                ).fetchone()["expires_at"]
+                if pending_expires_at is None or loop["terminal_at"] is not None:
+                    return False
+                step = connection.execute(
+                    "select step_id from platform_brain.brain_steps where step_id=%s "
+                    "and loop_id=%s and status in ('leased','requesting_model') "
+                    "and lease_worker_id=%s for update",
+                    (step_id, loop_id, worker_id),
+                ).fetchone()
+                if step is None:
+                    raise BrainRepositoryConflict()
+                connection.execute(
+                    "update platform_brain.brain_steps set status='queued',"
+                    "lease_worker_id=null,lease_expires_at=null,"
+                    "updated_at=clock_timestamp() where step_id=%s",
+                    (step_id,),
+                )
+                connection.execute(
+                    "update platform_brain.brain_loops set "
+                    "status='waiting_confirmation',"
+                    "active_elapsed_ms=least(active_budget_ms,active_elapsed_ms+"
+                    "greatest(0,extract(epoch from (clock_timestamp()-"
+                    "active_started_at))*1000)::bigint),active_started_at=null,"
+                    "active_deadline_at=null,waiting_user_expires_at=null,"
+                    "intervention_expires_at=%s,updated_at=clock_timestamp(),"
+                    "row_version=row_version+1 where loop_id=%s",
+                    (min(intervention_expires_at, pending_expires_at), loop_id),
+                )
+                connection.execute(
+                    "update platform_control.conversation_turns set "
+                    "status='waiting_confirmation',updated_at=clock_timestamp() "
+                    "where turn_id=%s",
+                    (loop["turn_id"],),
+                )
+            return True
+        except (BrainRepositoryConflict, BrainRepositoryNotFound):
             raise
         except psycopg.Error:
             raise BrainRepositoryError() from None

@@ -14,7 +14,9 @@ from app.agent_brain.adapters.base import (
 )
 from app.agent_brain.agent_roster import ROSTER_UNAVAILABLE, render_agent_roster
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
-from app.agent_brain.collaboration_models import AgentTaskPublicEventInput
+from app.agent_brain.collaboration_models import (
+    AgentTaskPublicEventInput,
+)
 from app.agent_brain.collaboration_models import (
     BrainThinkingDelta as StoredThinkingDelta,
 )
@@ -44,7 +46,6 @@ from app.agent_brain.tool_protocol import (
     ToolLimits,
     parse_tool_batch,
 )
-
 
 _LEASE_RENEW_INTERVAL_SECONDS = 15.0
 
@@ -136,6 +137,23 @@ class BrainLoopRuntime:
                 and loop.active_deadline_at <= datetime.now(timezone.utc)
             )
         )
+        pending_actions = self._repository.pending_action_ids(lease.loop_id)
+        if forced and pending_actions:
+            intervention_expires_at = self._repository.earliest_action_expiry(
+                lease.loop_id
+            )
+            if (
+                intervention_expires_at is not None
+                and self._repository.pause_for_pending_actions(
+                    lease.loop_id,
+                    lease.step_id,
+                    self._worker_id,
+                    intervention_expires_at=intervention_expires_at,
+                )
+            ):
+                return True
+            # The Action may have resolved between the read and the atomic pause.
+            pending_actions = self._repository.pending_action_ids(lease.loop_id)
         request = self._request_builder.build(
             messages=messages,
             step_seq=lease.step_seq,
@@ -415,8 +433,20 @@ class BrainLoopRuntime:
         elif batch.kind == "submit_answer":
             call = batch.calls[0].call
             assert isinstance(call, SubmitAnswerCall)
+            pending_actions = self._repository.pending_action_ids(lease.loop_id)
             immediate.append(
-                ImmediateToolResult(0, {"status": "accepted"})
+                ImmediateToolResult(
+                    0,
+                    (
+                        {
+                            "status": "rejected",
+                            "reason": "pending_action_requires_resolution",
+                            "required_next_action": "await_agent_events",
+                        }
+                        if pending_actions
+                        else {"status": "accepted"}
+                    ),
+                )
             )
         self._repository.commit_model_step(
             lease.loop_id,
