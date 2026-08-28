@@ -21,6 +21,7 @@ import { mermaidMetadata } from "./mermaidMetadata";
 const CONTENT_ROOT = resolve(process.cwd(), "../backend/app/ai_notes/content");
 const BATCH_DRAFT_RELATIVE_PATHS = [
   "02-agent-architecture/02-agent-identity-access-control.md",
+  "04-ai-engineering/02-llm-inference-serving-engineering.md",
 ] as const;
 const SEMANTIC_FILLS = [
   "#DBEAFE", "#EDE9FE", "#CCFBF1", "#FEF3C7",
@@ -238,7 +239,7 @@ describe("MermaidDiagram with the real renderer", () => {
       return mermaidBlocks(markdown);
     });
     expect(files).toHaveLength(BATCH_DRAFT_RELATIVE_PATHS.length);
-    expect(sources.length).toBeGreaterThan(0);
+    expect(sources).toHaveLength(6);
     await expectProductionDiagramsToRender(sources);
 
     const publishedSources = publishedArticleFiles().flatMap((path) => (

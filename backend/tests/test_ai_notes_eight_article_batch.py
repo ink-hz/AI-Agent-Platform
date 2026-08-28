@@ -42,6 +42,7 @@ BATCH_ARTICLES = (
 
 COMPLETED_BATCH_ARTICLES: tuple[str, ...] = (
     "agent-identity-access-control",
+    "llm-inference-serving-engineering",
 )
 
 ARTICLE_CONTRACTS = {
@@ -125,6 +126,38 @@ IDENTITY_PRIMARY_SOURCES = {
     "https://csrc.nist.gov/pubs/sp/800/207/final": "零信任不因网络位置或资产归属授予隐式信任",
     "https://spiffe.io/docs/latest/spiffe-about/overview/": "工作负载可取得短时密码学身份文档并相互认证",
     "https://genai.owasp.org/llmrisk/llm062025-excessive-agency/": "过度功能、权限与自主性需要最小化能力和人工审批",
+}
+
+INFERENCE_SOURCE_REVIEW_STATUS = {
+    "AI-LLM系统架构深度指南.md": (
+        "已精读：1-2483",
+        "第2、4章：KV Cache、连续批处理、投机解码、路由问题框架",
+        "第1、3、4.3章及总结：Agent、RAG、MCP、旧 API 样例与固定性能数字",
+        "已核验：PagedAttention、vLLM、TensorRT-LLM、SGLang（2026-08-28）",
+        "应用请求链与 RAG 留在既有文章；本篇只写模型服务内部数据路径",
+    ),
+    "AI-LLM系统架构理论指南.md": (
+        "已精读：1-1550",
+        "第2、4.1-4.2章：Prefill/Decode、分页缓存、批调度、容量与路由取舍",
+        "第1、3、4.3章及总结：Agent、RAG、MCP、厂商层级、固定价格与倍率",
+        "已核验：PagedAttention、vLLM、TensorRT-LLM、SGLang（2026-08-28）",
+        "不重述 Prompt/工具/输出验证与检索链；重写排队、缓存、路由与单位成本",
+    ),
+}
+
+INFERENCE_PRIMARY_SOURCES = {
+    "https://arxiv.org/abs/2309.06180": (
+        "分页块让动态增长的 KV Cache 按需分配并支持请求内与请求间共享"
+    ),
+    "https://docs.vllm.ai/": (
+        "前缀缓存只跳过共享前缀的 Prefill 计算，不缩短新 token 的 Decode"
+    ),
+    "https://nvidia.github.io/TensorRT-LLM/architecture/overview.html": (
+        "调度器逐步选择活动请求，KV Cache 管理器负责分配、释放与维护缓存"
+    ),
+    "https://docs.sglang.ai/": (
+        "Prefill 偏计算密集，Decode 偏内存密集；路由可连接分离的两类实例"
+    ),
 }
 
 
@@ -212,9 +245,10 @@ def test_source_review_records_the_exact_source_manifest() -> None:
         source = path.read_bytes()
         assert source.count(b"\n") == line_count
         assert hashlib.sha256(source).hexdigest() == digest
-        status = IDENTITY_SOURCE_REVIEW_STATUS.get(
-            filename, ("未开始",) * 5
-        )
+        status = {
+            **IDENTITY_SOURCE_REVIEW_STATUS,
+            **INFERENCE_SOURCE_REVIEW_STATUS,
+        }.get(filename, ("未开始",) * 5)
         expected_rows.append(
             f"| `{path}` | {line_count} | `{digest}` | {target} | "
             f"{' | '.join(status)} |"
@@ -232,12 +266,25 @@ def test_identity_source_review_records_primary_source_verification() -> None:
         assert supported_claim in review
 
 
+def test_llm_serving_source_review_records_primary_source_verification() -> None:
+    review = SOURCE_REVIEW.read_text(encoding="utf-8")
+    section_header = "## llm-inference-serving-engineering 精读结论"
+
+    assert section_header in review
+    section = review.split(section_header, 1)[1]
+    assert "访问日期：2026-08-28" in section
+    for url, supported_claim in INFERENCE_PRIMARY_SOURCES.items():
+        assert url in section
+        assert supported_claim in section
+
+
 def test_agent_identity_access_control_draft_meets_contract(
     tmp_path: Path,
 ) -> None:
     completed_articles = assert_completed_batch_drafts()
     assert tuple(article.slug for article in completed_articles) == (
         "agent-identity-access-control",
+        "llm-inference-serving-engineering",
     )
 
     path = batch_article_path("agent-identity-access-control")
@@ -278,7 +325,7 @@ def test_agent_identity_access_control_draft_meets_contract(
     )
     assert sum(
         len(category.articles) for category in candidate_index.categories
-    ) == 7
+    ) == 8
     assert all(
         len(
             set(
@@ -343,3 +390,104 @@ def test_agent_identity_article_preserves_rfc_8693_client_auth_boundary() -> Non
         "本文建议把 Agent 工作负载作为已认证的 OAuth client"
     ) in markdown
     assert "授权服务器仍需验证客户端或工作负载" not in markdown
+
+
+def test_llm_inference_serving_engineering_draft_meets_contract(
+    tmp_path: Path,
+) -> None:
+    completed_articles = assert_completed_batch_drafts()
+    assert tuple(article.slug for article in completed_articles) == (
+        "agent-identity-access-control",
+        "llm-inference-serving-engineering",
+    )
+
+    path = batch_article_path("llm-inference-serving-engineering")
+    frontmatter, markdown = parse_frontmatter(path)
+    assert frontmatter["title"] == (
+        "LLM 推理服务工程：吞吐、延迟、缓存、路由与成本"
+    )
+    assert frontmatter["slug"] == "llm-inference-serving-engineering"
+    assert tuple(frontmatter["tags"]) == (
+        "LLM",
+        "推理服务",
+        "AI 工程",
+    )
+    assert frontmatter["draft"] is True
+    assert frontmatter["author"] == AUTHOR
+    assert frontmatter["motto"] == MOTTO
+    assert frontmatter["publishedAt"] == TODAY
+    assert frontmatter["updatedAt"] == TODAY
+    assert markdown.lstrip().startswith("## ")
+    assert AUTHOR not in markdown
+    assert MOTTO not in markdown
+
+    diagrams = tuple(
+        re.findall(r"```mermaid\n([\s\S]*?)\n```", markdown)
+    )
+    assert len(diagrams) == 3
+    assert tuple(
+        re.search(r"(?m)^\s*accTitle:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    ) == (
+        "LLM 推理请求数据路径",
+        "连续批处理与 KV Cache 生命周期",
+        "推理路由与容量决策",
+    )
+    descriptions = tuple(
+        re.search(r"(?m)^\s*accDescr:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    )
+    assert all(descriptions)
+    assert len(set(descriptions)) == 3
+    assert all(re.search(r"(?m)^\s*classDef\s+", diagram) for diagram in diagrams)
+    assert all(
+        re.search(
+            r"(?m)^\s*classDef\s+\w+\s+fill:#(?:DBEAFE|EDE9FE|"
+            r"CCFBF1|FEF3C7|DCFCE7|D1FAE5|FEE2E2|F3F4F6)",
+            diagram,
+        )
+        for diagram in diagrams
+    )
+    assert all(
+        len(
+            set(
+                re.findall(
+                    r"(?m)\b([A-Z][A-Z0-9_]*)\s*(?=[\[\{\(])",
+                    diagram,
+                )
+            )
+        )
+        <= 12
+        for diagram in diagrams
+    )
+
+    for required_topic in (
+        "Prefill",
+        "Decode",
+        "连续批处理",
+        "KV Cache",
+        "量化",
+        "投机解码",
+        "路由",
+        "排队",
+        "容量",
+        "单位成本",
+    ):
+        assert required_topic in markdown
+    assert re.search(
+        r"\]\(\.\./foundations/llm-application-system-architecture\)",
+        markdown,
+    )
+    assert not re.search(
+        r"(?mi)^#{2,}\s+.*(?:RAG|工具调用|Prompt (?:编排|组装)|输出验证)",
+        markdown,
+    )
+    for boundary_marker in ("RAG", "工具调用", "Prompt 组装", "输出验证"):
+        assert markdown.casefold().count(boundary_marker.casefold()) <= 1
+
+    candidate_index = validate_completed_batch_as_publication_candidates(
+        tmp_path
+    )
+    assert sum(
+        len(category.articles) for category in candidate_index.categories
+    ) == 8
