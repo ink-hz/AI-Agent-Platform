@@ -302,6 +302,207 @@ git add deploy/cloud/http-task-contract.release.json
 git commit -m "chore: freeze HTTP task contract release"
 ```
 
+#### Task 3A: Replace permissive documents with frozen strict models and schemas
+
+The first Task 3 implementation (`3bd9e34`, `b5c06cf`) is a rejected baseline. The approved
+2026-08-28 amendment in `2026-08-27-http-task-contract-v1.md` reopens Task 3. Do not preserve a
+behavior merely because the baseline test already passes.
+
+**Files:**
+- Modify: `contracts/http_task_v1/orbbec_task_contract/models.py`
+- Create: `contracts/http_task_v1/schema/http-task-contract-v1.schema.json`
+- Create: `contracts/http_task_v1/fixtures/valid_examples.json`
+- Create: `contracts/http_task_v1/fixtures/error_examples.json`
+- Modify: `contracts/http_task_v1/tests/test_contract_driver.py`
+- Modify: `backend/tests/test_http_task_contract_asset.py`
+
+**Interfaces:**
+- Produces strict Pydantic models for capabilities, health, create/message/cancel/action receipts,
+  task state, finite event pages and the common error envelope.
+- Produces one JSON Schema bundle whose `$defs` names match those model names.
+
+- [ ] **Step 1: Write RED tests for every strict response and committed schema asset**
+
+Add parameterized tests that accept each object from `valid_examples.json`, reject an added
+`unknown` key, reject `true` in every integer field, and verify the event page includes
+`contract_version` and `downstream_task_id`. Add an asset test that requires the schema and both
+example files and rejects missing `$defs` for any request/response named in Contract §3–§11.
+
+- [ ] **Step 2: Run RED**
+
+```bash
+backend/.venv/bin/python -m pytest -q \
+  contracts/http_task_v1/tests/test_contract_driver.py \
+  backend/tests/test_http_task_contract_asset.py
+```
+
+Expected: FAIL because the baseline models are permissive/incomplete and the three frozen assets
+do not exist.
+
+- [ ] **Step 3: Implement the minimal strict models and schema/examples**
+
+Use one frozen base model:
+
+```python
+class StrictContractModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+```
+
+Define the exact fields and literals from Contract §3–§11. Generate the committed JSON Schema from
+the model bundle, then freeze the valid and error examples as source assets. Domain event payloads
+remain JSON objects, but the event envelope itself rejects unknown keys.
+
+- [ ] **Step 4: Run GREEN and commit**
+
+```bash
+backend/.venv/bin/python -m pytest -q \
+  contracts/http_task_v1/tests/test_contract_driver.py \
+  backend/tests/test_http_task_contract_asset.py
+git add contracts/http_task_v1 backend/tests/test_http_task_contract_asset.py
+git commit -m "feat: freeze HTTP task contract schemas"
+```
+
+#### Task 3B: Add the local per-task Token Broker boundary
+
+**Files:**
+- Create: `contracts/http_task_v1/orbbec_task_contract/token_broker.py`
+- Modify: `contracts/http_task_v1/orbbec_task_contract/models.py`
+- Modify: `contracts/http_task_v1/orbbec_task_contract/runner.py`
+- Modify: `contracts/http_task_v1/tests/test_contract_driver.py`
+
+**Interfaces:**
+- Produces `TaskTokenBroker.issue(request: TokenBrokerRequest) -> str`.
+- Runner consumes an absolute executable path and profiles `valid`, `expired`, `wrong_scope`,
+  `wrong_audience`, `wrong_task_binding`, and `retired_kid`.
+
+- [ ] **Step 1: Write RED broker tests**
+
+Tests must prove: the broker is invoked without a shell; receives one JSON line with the dynamic
+`platform_task_id`; rejects a relative executable path, nonzero exit, extra output fields and an
+empty token; and no exception/report contains the returned token.
+
+- [ ] **Step 2: Run RED**
+
+```bash
+backend/.venv/bin/python -m pytest -q \
+  contracts/http_task_v1/tests/test_contract_driver.py -k token_broker
+```
+
+Expected: FAIL because `TaskTokenBroker` does not exist and `ContractRunner` still requires one
+static token.
+
+- [ ] **Step 3: Implement the minimal broker and move authorization to request time**
+
+Use `subprocess.run([absolute_path], input=json_line, text=True, capture_output=True,
+timeout=5, check=False, shell=False)`. The runner asks the broker for a token after allocating each
+dynamic Task ID; it never stores a token in `ContractReport`, pytest parameters or error text.
+
+- [ ] **Step 4: Run GREEN and commit**
+
+```bash
+backend/.venv/bin/python -m pytest -q \
+  contracts/http_task_v1/tests/test_contract_driver.py -k 'token_broker or authorization'
+git add contracts/http_task_v1/orbbec_task_contract \
+  contracts/http_task_v1/tests/test_contract_driver.py
+git commit -m "feat: issue per-task contract tokens"
+```
+
+#### Task 3C: Make the upstream runner asynchronous, bounded and lifecycle-complete
+
+**Files:**
+- Create: `contracts/http_task_v1/orbbec_task_contract/cases.py`
+- Modify: `contracts/http_task_v1/orbbec_task_contract/runner.py`
+- Modify: `contracts/http_task_v1/tests/test_contract_driver.py`
+
+**Interfaces:**
+- Produces Profile `upstream_http` with the stable Case Matrix from Contract §12.2.
+- Consumes a target process that dependency-injects `ContractExecutionBackend`; production code must
+  not recognize fixture names or `contract:*` strings.
+
+- [ ] **Step 1: Write RED lifecycle/security tests against an asynchronous test target**
+
+Replace the immediate `ContractTarget` with a test-only backend plus a real in-memory Facade/Store.
+Tests first assert the runner fails the baseline on: missing/expired/wrong token profiles, rejection
+followed by a valid `duplicate=false` create, delayed event polling, strict message/cancel receipts,
+three post-terminal reads over at least 500ms, one Action `execution_id`, and
+`fixture_business_effect_count == 1` after duplicate Execute.
+
+- [ ] **Step 2: Run RED**
+
+```bash
+backend/.venv/bin/python -m pytest -q contracts/http_task_v1/tests/test_contract_driver.py
+```
+
+Expected: FAIL on the first newly asserted frozen behavior; specifically the baseline's static token,
+immediate-event assumption, permissive receipts or 905-second timeout.
+
+- [ ] **Step 3: Implement the minimal Profile runner**
+
+Keep request timeouts finite and uniform. Poll only finite JSON pages with `wait_seconds=0`, advancing
+`after` only after full-page validation. Use 15-second ordinary Case deadlines, 30 seconds for async
+cancel/deadline, and a 180-second Profile deadline. Action Execute returns a quick receipt; no HTTP
+operation receives a special 905-second timeout. Reject invalid security/version/deadline attempts
+before persistence, then retry the same Task/idempotency key with valid input and require
+`duplicate=false`.
+
+- [ ] **Step 4: Run GREEN and commit**
+
+```bash
+backend/.venv/bin/python -m pytest -q \
+  contracts/http_task_v1/tests/test_contract_driver.py \
+  backend/tests/test_http_task_contract_asset.py
+git add contracts/http_task_v1 backend/tests/test_http_task_contract_asset.py
+git commit -m "feat: enforce HTTP task contract lifecycle"
+```
+
+#### Task 3D: Hash the committed source and freeze the corrected release
+
+**Files:**
+- Modify: `scripts/hash_http_task_contract.py`
+- Modify: `backend/tests/test_http_task_contract_asset.py`
+- Modify: `deploy/cloud/http-task-contract.release.json`
+
+**Interfaces:**
+- `archive_sha256(repository: Path, source_commit: str) -> str` hashes
+  `contracts/http_task_v1/` from `git archive`.
+- `write_manifest(...)` refuses an absent commit or a working contract tree different from that
+  commit.
+
+- [ ] **Step 1: Write RED archive and dirty-tree tests**
+
+Create a temporary Git repository in the test, commit a contract tree, alter the working tree, and
+assert manifest generation fails. Assert nested source directories named `build` remain in the hash,
+while only root `build/`, root `dist/`, caches, bytecode and `*.egg-info/` are excluded. Remove the
+existing test's conditional skip when the release manifest is absent.
+
+- [ ] **Step 2: Run RED**
+
+```bash
+backend/.venv/bin/python -m pytest -q backend/tests/test_http_task_contract_asset.py
+```
+
+Expected: FAIL because the baseline hashes the working directory, accepts dirty source and excludes
+every nested directory named `build`.
+
+- [ ] **Step 3: Implement archive hashing, commit source, then regenerate manifest**
+
+First commit the hash implementation and tests. Then run the generator with that full commit SHA; it
+must independently compare archive and worktree digests before writing the release manifest.
+
+- [ ] **Step 4: Run full Task 3 verification and freeze commit**
+
+```bash
+backend/.venv/bin/python -m pytest -q \
+  contracts/http_task_v1/tests/test_contract_driver.py \
+  backend/tests/test_http_task_contract_asset.py
+backend/.venv/bin/python scripts/hash_http_task_contract.py \
+  --repository . \
+  --source-commit "$(git rev-parse HEAD)" \
+  --output deploy/cloud/http-task-contract.release.json
+git add deploy/cloud/http-task-contract.release.json
+git commit -m "chore: freeze corrected HTTP task contract release"
+```
+
 ### Task 4: Add migration 049 state, cursor, and Wait schema
 
 **Files:**
