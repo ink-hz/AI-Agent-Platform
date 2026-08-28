@@ -143,22 +143,11 @@ def test_dispatcher_rejects_unknown_extra_symlink_and_wrong_mode(tmp_path: Path)
     assert _run(dispatcher, "status").returncode == 1
 
 
-def test_sudoers_allows_only_exact_dispatcher_subcommands() -> None:
+def test_sudoers_allows_neo_to_run_any_agentops_command_without_a_password() -> None:
     assert SUDOERS.exists()
     lines = [line for line in SUDOERS.read_text(encoding="utf-8").splitlines() if line]
-    assert lines == [
-        "neo ALL=(agentops) NOPASSWD: "
-        f"/Library/PrivilegedHelperTools/orbbec-agentops-control {command}"
-        for command in (
-            "relay-canary",
-            "worker-stop",
-            "worker-restore",
-            "metabot-release-sha",
-            "agent-team-release-sha",
-            "status",
-        )
-    ]
-    for forbidden in ("*", "/bin/sh", "/usr/bin/env", "ALL=(ALL)", "sudo -S"):
+    assert lines == ["neo ALL=(agentops) NOPASSWD: ALL"]
+    for forbidden in ("ALL=(ALL)", "(root)", "sudo -S"):
         assert forbidden not in SUDOERS.read_text(encoding="utf-8")
 
 
@@ -336,6 +325,9 @@ def test_installer_is_idempotent_and_uninstaller_is_exact(tmp_path: Path) -> Non
     assert first.stdout.strip() == "AGENTOPS_CONTROL_INSTALL_OK"
     assert dispatcher.stat().st_mode & 0o777 == 0o755
     assert sudoers.stat().st_mode & 0o777 == 0o440
+    assert sudoers.read_text(encoding="utf-8") == (
+        "neo ALL=(agentops) NOPASSWD: ALL\n"
+    )
     assert not (installer.parent / "sudoers.d/agentops-management").exists()
     installed_known_hosts = (
         installer.parent / "agentops/AgentRuntime/private/cloud-known-hosts"
@@ -376,7 +368,7 @@ def test_installer_rolls_back_both_targets_when_global_visudo_fails(
     assert legacy_sudoers.read_bytes() == before_legacy_sudoers
 
 
-def test_agentops_boundary_has_no_password_storage_or_generic_sudo() -> None:
+def test_agentops_boundary_has_no_password_storage_or_passwordless_root() -> None:
     sources = (
         CONTROL,
         SUDOERS,
@@ -393,9 +385,11 @@ def test_agentops_boundary_has_no_password_storage_or_generic_sudo() -> None:
         "SUDO_PASSWORD",
         "ADMIN_PASSWORD",
         "neo ALL=(ALL)",
-        "NOPASSWD: /usr/bin/env",
     ):
         assert forbidden not in combined
+    assert "neo ALL=(agentops) NOPASSWD: ALL" in SUDOERS.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_agentops_control_runbook_freezes_install_rotate_revoke_and_rollback() -> None:
@@ -404,6 +398,7 @@ def test_agentops_control_runbook_freezes_install_rotate_revoke_and_rollback() -
     for required in (
         "AGENTOPS_CONTROL_INSTALL_OK",
         "AGENTOPS_CONTROL_OK commands=6",
+        "neo ALL=(agentops) NOPASSWD: ALL",
         "AGENTOPS_ACCEPTANCE_KEY_STAGED_OK",
         "AGENTOPS_ACCEPTANCE_KEY_REVOKED_OK",
         "AGENT_EXECUTION_RELAY_OK",

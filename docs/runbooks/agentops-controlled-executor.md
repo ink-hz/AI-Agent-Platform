@@ -1,6 +1,8 @@
-# AgentOps 受控执行器运行手册
+# AgentOps 完整免密执行运行手册
 
-本手册维护 `neo` → `agentops` 的固定运维能力。它不保存 macOS 密码，不提供任意 shell，也不改变 AI ADMIN、FAE 或 Nginx。
+本手册维护 `neo` → `agentops` 的完整免密执行能力。它不保存 macOS 密码，允许
+`neo` 以 `agentops` 身份运行任意命令，但不授予 `root` 或其他系统账户权限，
+也不改变 AI ADMIN、FAE 或 Nginx。
 
 ## 1. 前置检查
 
@@ -44,19 +46,28 @@ AGENTOPS_ACCEPTANCE_KEY_STAGED_OK
 AGENTOPS_CONTROL_INSTALL_OK
 ```
 
-安装器会识别并事务化移除唯一允许的历史规则
+安装器把正式规则安装为：
+
+```sudoers
+neo ALL=(agentops) NOPASSWD: ALL
+```
+
+同时识别并事务化移除唯一允许的历史重复规则
 `/etc/sudoers.d/agentops-management`（其内容必须逐字等于
 `neo ALL=(agentops) NOPASSWD: ALL`）；文件内容、所有权或权限不符时失败关闭，
-不会删除未知 sudoers 配置。
+不会删除未知 sudoers 配置。正式规则只保留在
+`/etc/sudoers.d/orbbec-agentops-control`。
 
 安装器还会把该单条云端主机公钥以 `0600 agentops:staff` 安装到
 `/Users/agentops/AgentRuntime/private/cloud-known-hosts`。所有验收 SSH 请求
 都同时启用 `StrictHostKeyChecking=yes` 和固定的 `UserKnownHostsFile`；不得
 退回 `accept-new`、关闭主机校验或复制 `neo` 的完整 `known_hosts`。
 
-验证此后的调用不再询问密码：
+验证此后的任意 `agentops` 命令不再询问密码：
 
 ```bash
+sudo -n -H -u agentops /usr/bin/id -un
+sudo -n -H -u agentops /bin/sh -c 'cd /Users/agentops && pwd'
 sudo -n -H -u agentops \
   /Library/PrivilegedHelperTools/orbbec-agentops-control status
 ```
@@ -64,11 +75,14 @@ sudo -n -H -u agentops \
 预期：
 
 ```text
+agentops
+/Users/agentops
 AGENTOPS_CONTROL_OK commands=6
 ```
 
-`sudo -n -l -U neo` 的结果中不得再出现 `(agentops) NOPASSWD: ALL`，且只应有
-上述执行器的六条固定命令。
+`sudo -n -l -U neo` 的结果中必须且只能出现一条
+`(agentops) NOPASSWD: ALL`；不得出现 `ALL=(ALL)`、`(root)` 或其他免密目标。
+原有执行器继续保留为稳定的 Canary/启停快捷入口，但不再是权限白名单边界。
 
 ## 3. Relay Canary
 
@@ -83,7 +97,14 @@ sudo -n -H -u agentops \
 AGENT_EXECUTION_RELAY_OK worker=agentops-mac-primary agents=7 accepted_job_kinds=direct_agent,metabot_local public_ports_added=0 duplicate_dispatches=0
 ```
 
-失败时不要临时开放 shell 或复制密码；保持 Brain 关闭，检查执行器审计、Worker 9120 和云端任务状态。
+失败时可直接以 `agentops` 身份执行只读诊断，不需要密码：
+
+```bash
+sudo -n -H -u agentops /bin/sh -c \
+  'cd /Users/agentops/AgentRuntime/platform/backend && exec .venv/bin/python -m app.execution_relay.acceptance_orchestrator /Users/agentops/AgentRuntime/private/acceptance-config.json'
+```
+
+保持 Brain 关闭，检查 Worker 9120 和云端任务状态。
 
 ## 4. Agent Brain 正式验收
 
@@ -149,9 +170,10 @@ curl -fsS -o /dev/null -w '%{http_code}\n' http://47.106.112.69/
 
 三项必须均为 `200`。同时比较 FAE container ID、image ID、StartedAt、RestartCount、Config hash 和 Mounts hash；任何变化都视为失败。
 
-## 9. 安全禁令
+## 9. 权限边界
 
 - 不保存或提取管理员密码。
 - 不使用 `sudo -S`、Keychain 密码导出或密码环境变量。
-- 不增加通用 NOPASSWD、`/usr/bin/env *`、`/bin/sh` 或任意参数入口。
+- 允许 `neo` 免密执行任意 `agentops` 命令。
+- 不允许 `neo` 免密成为 `root`，也不允许切换到其他系统账户。
 - 不在日志、报告或命令输出中打印 Cookie、Token、私钥、钉钉身份或业务正文。
