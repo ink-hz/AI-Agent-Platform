@@ -54,16 +54,15 @@ W3C Trace Context 规定了跨组件传播 `traceparent` 与可选 `tracestate` 
 ```mermaid
 flowchart LR
     accTitle: LLM Agent 端到端证据链
-    accDescr: 一次目标从入口进入受控编排，检索、模型和工具步骤分别留下版本与结果证据，验证后形成可交付结果和反馈关联。
+    accDescr: 一次目标与检索、工具结果进入上下文装配，实际有效上下文形成不可变证据后送入模型调用，再经过验证、交付和反馈关联。
 
     subgraph RUN["一次 AI 执行"]
-        A[目标与身份摘要] --> B[编排与预算]
-        B --> C[检索证据]
-        B --> D[模型调用]
-        B --> E[工具调用]
-        C --> F[结果验证]
-        D --> F
-        E --> F
+        A[目标与身份摘要] --> B[上下文装配]
+        C[检索证据引用] --> B
+        E[工具调用与结果引用] --> B
+        B --> X[有效上下文证据]
+        X --> D[模型调用]
+        D --> F[结果验证]
         F --> G[交付结果]
         G --> H[评价与反馈]
     end
@@ -76,14 +75,14 @@ flowchart LR
     classDef success fill:#D1FAE5,stroke:#10B981,color:#172033;
     class A input;
     class B,F policy;
-    class C data;
+    class C,X data;
     class D model;
     class E tool;
     class G,H success;
     style RUN fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
 ```
 
-这条链允许步骤并行、重复或分支，但每个结果都必须能回到同一个执行证据单元。检索只记录选中了哪些来源和版本，工具只记录提出、授权、执行与返回的事实；算法和运行循环仍由各自主文章负责。
+这条链允许步骤并行、重复或分支，但每个结果都必须能回到同一个执行证据单元。尤其要区分“有哪些可用信息”和“模型这一次实际看到了什么”：检索候选、工具历史与完整会话都只是输入来源，只有经过权限、优先级、截断和 token 预算处理后送入模型的 effective context，才能解释本次输出。检索只记录选中了哪些来源和版本，工具只记录提出、授权、执行与返回的事实；算法和运行循环仍由各自主文章负责。
 
 ### 2.1 内部证据模型要稳定，外部语义映射要可演进
 
@@ -101,11 +100,33 @@ versions:
   prompt_template: support-answer-v12
   tool_contracts: [ticket-read-v4]
   knowledge_snapshot: kb-2026-08-28-09
+effective_context:
+  assembly_rule_version: context-assembler-v8
+  task_state_snapshot_ref: state://task/exe-42/v7
+  prompt_messages_ref: evidence://prompt-messages/exe-42/call-1
+  retrieval_evidence_refs: [ev-17, ev-23]
+  tool_result_refs: [tool-result-81]
+  input_token_budget: 32000
+  used_input_tokens: 2400
+  truncated: true
+  content_digest: sha256:...
 steps:
   retrieval_evidence_ids: [ev-17, ev-23]
   tool_action_ids: [act-81]
-usage:
-  input_tokens: 1800
+model_calls:
+  - call_id: call-1
+    resolved_model: model-family/revision
+    usage_source: provider_response
+    billing_or_tokenizer_basis: provider/revision
+    retry_of: null
+    input_tokens: 2400
+    output_tokens: 260
+    cache_read_tokens: 1200
+    cache_write_tokens: 0
+    reasoning_tokens: null
+execution_usage:
+  source_call_ids: [call-1]
+  input_tokens: 2400
   output_tokens: 260
 outcome:
   status: delivered
@@ -113,7 +134,9 @@ outcome:
   limitations: []
 ```
 
-这里强调的是语义责任，不是要求所有团队使用相同存储表。版本字段要保存平台实际采用的标识；如果供应商只提供模型别名，也要记录调用时解析到的供应商、端点、参数策略和响应标识，避免未来把相同别名误认为相同实现。
+这里强调的是语义责任，不是要求所有团队使用相同存储表。`effective_context` 是模型调用前冻结的不可变证据：它同时引用装配规则、会话或任务状态快照、实际采用的 Prompt 变量与消息摘要、真正进入模型输入的检索和工具结果，以及截断、token 预算与最终内容摘要。默认保存内容哈希或受控引用，不保存敏感原文；需要调查原文时，通过单独授权的证据存储解引用。
+
+版本字段要保存平台实际采用的标识；如果供应商只提供模型别名，也要记录调用时解析到的供应商、端点、参数策略和响应标识，避免未来把相同别名误认为相同实现。对于多轮或工具型任务，每次模型调用都产生自己的 effective context；后续调用不能借用第一次调用的上下文摘要冒充实际输入。
 
 截至 2026-08-28，OpenTelemetry 官方页面已把 GenAI semantic conventions 迁到独立仓库，当前整体状态仍标为 **Development**；原属性注册表中的 GenAI 条目也已标为 Deprecated 并指向新仓库，独立仓库的 Schema URL 仍是待完成项。因此，`gen_ai.*` 不是永久字段合同。更稳妥的做法是：
 
@@ -216,6 +239,10 @@ flowchart TB
 
 延迟定义必须与[LLM 推理服务工程](llm-inference-serving-engineering)保持一致。可观测平台负责关联并展示这些信号，不在本文重新解释 Prefill、Decode 或服务内部调度。
 
+usage 必须按每次模型调用记录，并绑定 `call_id`、实际模型、供应商返回来源以及计费或 tokenizer 口径。重试调用也生成独立记录并计入执行级汇总，不能用最后一次成功响应覆盖前面的消耗。供应商可用时，将缓存读取、缓存写入、推理 token 等额外计费分类分桶，并保留供应商原始字段、单位和计费版本；供应商未返回的类别标记为未知，不推算成零。
+
+执行级 token 和费用由调用级记录按 `source_call_ids` 归集，因此一次包含规划、工具回填、重试和最终生成的任务不会被误写成单次调用。不同模型的 tokenizer 和计费分类可能不同，跨模型比较优先使用实付成本/有效结果，不直接比较裸 token；token 更适合解释同一口径下的上下文和生成变化。
+
 ### 4.2 步骤行为信号
 
 步骤层关心外部能力是否按合同工作：
@@ -278,14 +305,15 @@ Prompt 版本不能只用“最新”表示。推荐保存不可变版本号与�
 
 ### 6.2 成本要按执行归集
 
-一次执行成本不仅有模型 token：还可能包括模型调用、检索与重排、工具服务、推理资源、存储与传输、失败重试以及人工复核。先把每项实付或分摊成本关联到 `execution_id`，再计算：
+一次执行成本不仅有模型 token：还可能包括模型调用、检索与重排、工具服务、推理资源、存储与传输、失败重试以及人工复核。先把每项实付或分摊成本关联到 `execution_id`，再固定测量窗口 `W` 与资格任务集合 `Q`；分子和分母必须使用同一窗口、同一集合：
 
 ```text
 每个 SLO 内有效结果成本
-= 全部 AI 执行相关实付成本 / 通过质量与时限门禁的结果数
+= `W` 内 `Q` 的全部执行相关实付成本
+  / `W` 内 `Q` 通过质量与时限门禁的有效结果数
 ```
 
-这个指标能暴露“便宜模型导致更多重试”“更长 Prompt 提升一次通过率”之类的真实取舍。成本归因不完备时要标记覆盖率，不用估算值冒充财务账单。
+分子包含 `W` 内 `Q` 的失败、重试、降级与最终成功所产生的相关成本，不能只统计成功调用后再除以较窄的有效结果数。这个指标能暴露“便宜模型导致更多重试”“更长 Prompt 提升一次通过率”之类的真实取舍。成本归因不完备时要标记覆盖率，不用估算值冒充财务账单。
 
 ### 6.3 避免指标基数失控
 

@@ -448,6 +448,55 @@ def observability_contains_duplicate_rag_or_agent_tutorial(markdown: str) -> boo
     )
 
 
+def source_review_h2_section(markdown: str, section_header: str) -> str:
+    matched = re.search(
+        rf"(?m)^{re.escape(section_header)}\s*$",
+        markdown,
+    )
+    if matched is None:
+        raise AssertionError(f"missing source review section: {section_header}")
+    remainder = markdown[matched.end():]
+    next_h2 = re.search(r"(?m)^##\s+", remainder)
+    return remainder[:next_h2.start()] if next_h2 else remainder
+
+
+def observability_has_effective_context_contract(markdown: str) -> bool:
+    required_markers = (
+        "effective_context:",
+        "assembly_rule_version:",
+        "task_state_snapshot_ref:",
+        "prompt_messages_ref:",
+        "retrieval_evidence_refs:",
+        "tool_result_refs:",
+        "input_token_budget:",
+        "used_input_tokens:",
+        "truncated:",
+        "content_digest:",
+    )
+    normalized = markdown.casefold()
+    return all(marker.casefold() in normalized for marker in required_markers)
+
+
+def observability_has_call_level_usage_contract(markdown: str) -> bool:
+    required_markers = (
+        "model_calls:",
+        "call_id:",
+        "resolved_model:",
+        "usage_source:",
+        "billing_or_tokenizer_basis:",
+        "retry_of:",
+        "input_tokens:",
+        "output_tokens:",
+        "cache_read_tokens:",
+        "cache_write_tokens:",
+        "reasoning_tokens:",
+        "execution_usage:",
+        "source_call_ids:",
+    )
+    normalized = markdown.casefold()
+    return all(marker.casefold() in normalized for marker in required_markers)
+
+
 def test_completed_batch_helpers_enforce_drafts_and_validate_candidates(
     tmp_path: Path,
 ) -> None:
@@ -530,11 +579,27 @@ def test_llm_agent_observability_source_review_records_primary_sources() -> None
     section_header = "## llm-agent-observability 精读结论"
 
     assert section_header in review
-    section = review.split(section_header, 1)[1]
+    section = source_review_h2_section(review, section_header)
     assert "访问日期：2026-08-28" in section
     for url, supported_claim in OBSERVABILITY_PRIMARY_SOURCES.items():
         assert url in section
         assert supported_claim in section
+
+
+def test_observability_source_review_section_stops_at_next_h2() -> None:
+    section_header = "## llm-agent-observability 精读结论"
+    fixture = (
+        f"{section_header}\n\n只属于本节。\n\n"
+        "## open-source-agent-runtime 精读结论\n\n"
+        "https://www.w3.org/TR/trace-context/\n"
+        "traceparent 提供跨组件关联所需的 trace-id、parent-id 与 trace-flags\n"
+    )
+
+    section = source_review_h2_section(fixture, section_header)
+
+    assert "只属于本节" in section
+    assert "open-source-agent-runtime" not in section
+    assert "https://www.w3.org/TR/trace-context/" not in section
 
 
 def test_agent_identity_access_control_draft_meets_contract(
@@ -1015,6 +1080,29 @@ def test_llm_agent_observability_draft_meets_contract(
     assert "Development" in markdown
     assert "可演进映射" in markdown
     assert "内部证据模型" in markdown
+    assert observability_has_effective_context_contract(markdown)
+    assert observability_has_call_level_usage_contract(markdown)
+    context_node = re.search(r"\b(\w+)\[上下文装配[^\]]*\]", diagrams[0])
+    effective_node = re.search(r"\b(\w+)\[有效上下文[^\]]*\]", diagrams[0])
+    model_node = re.search(r"\b(\w+)\[模型调用[^\]]*\]", diagrams[0])
+    assert context_node and effective_node and model_node
+    assert re.search(
+        rf"(?m)^\s*{context_node.group(1)}\s*-->\s*"
+        rf"{effective_node.group(1)}\[",
+        diagrams[0],
+    )
+    assert re.search(
+        rf"(?m)^\s*{effective_node.group(1)}\s*-->\s*"
+        rf"{model_node.group(1)}\[",
+        diagrams[0],
+    )
+    assert "usage 必须按每次模型调用记录" in markdown
+    assert "重试调用也生成独立记录并计入执行级汇总" in markdown
+    assert "跨模型比较优先使用实付成本/有效结果" in markdown
+    assert "测量窗口 `W`" in markdown
+    assert "资格任务集合 `Q`" in markdown
+    assert "`W` 内 `Q` 的全部执行相关实付成本" in markdown
+    assert "`W` 内 `Q` 通过质量与时限门禁的有效结果数" in markdown
     assert not observability_contains_fixed_genai_schema_claim(markdown)
     assert not observability_contains_duplicate_rag_or_agent_tutorial(markdown)
 
@@ -1048,3 +1136,45 @@ def test_observability_contract_guards_schema_and_tutorial_boundaries() -> None:
     ):
         assert not observability_contains_fixed_genai_schema_claim(allowed)
         assert not observability_contains_duplicate_rag_or_agent_tutorial(allowed)
+
+
+def test_observability_context_and_usage_guards_reject_execution_only_summary() -> None:
+    execution_only = """
+conversation_id: conv-7
+versions:
+  resolved_model: model-family/revision
+  prompt_template: support-answer-v12
+usage:
+  input_tokens: 1800
+  output_tokens: 260
+"""
+    assert not observability_has_effective_context_contract(execution_only)
+    assert not observability_has_call_level_usage_contract(execution_only)
+
+    complete_contract = """
+effective_context:
+  assembly_rule_version: context-v8
+  task_state_snapshot_ref: state://task/42/v7
+  prompt_messages_ref: evidence://prompt/42
+  retrieval_evidence_refs: [ev-17]
+  tool_result_refs: [tool-result-81]
+  input_token_budget: 32000
+  used_input_tokens: 2400
+  truncated: false
+  content_digest: sha256:abc
+model_calls:
+  - call_id: call-1
+    resolved_model: model-family/revision
+    usage_source: provider_response
+    billing_or_tokenizer_basis: provider/revision
+    retry_of: null
+    input_tokens: 2400
+    output_tokens: 260
+    cache_read_tokens: 0
+    cache_write_tokens: 0
+    reasoning_tokens: null
+execution_usage:
+  source_call_ids: [call-1]
+"""
+    assert observability_has_effective_context_contract(complete_contract)
+    assert observability_has_call_level_usage_contract(complete_contract)
