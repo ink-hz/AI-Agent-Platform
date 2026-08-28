@@ -66,6 +66,11 @@ describe("MermaidDiagram", () => {
       startOnLoad: false,
       securityLevel: "strict",
       theme: "neutral",
+      themeVariables: {
+        background: "#FFFFFF",
+        clusterBkg: "#FFFFFF",
+        clusterBorder: "#CBD5E1",
+      },
       htmlLabels: false,
       flowchart: { htmlLabels: false },
     }));

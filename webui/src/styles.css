@@ -961,7 +961,7 @@ body {
 .mermaid-diagram-trigger:focus-visible { outline: 3px solid rgba(36,104,197,.34); outline-offset: 4px; }
 .mermaid-diagram-trigger > img { display: block; width: 100%; max-width: 100%; height: auto; max-height: min(720px, 70vh); margin: 0 auto; object-fit: contain; }
 .mermaid-visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-.mermaid-lightbox { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: 0; overflow: hidden; border: 0; background: #f8fafc; color: var(--ink); }
+.mermaid-lightbox { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: 0; overflow: hidden; border: 0; background: #fff; color: var(--ink); }
 .mermaid-lightbox::backdrop { background: rgba(15,27,45,.72); }
 .mermaid-lightbox-close { position: absolute; z-index: 2; top: max(14px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right)); display: grid; width: 42px; height: 42px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: rgba(255,255,255,.96); color: var(--ink); font: inherit; font-size: 22px; line-height: 1; cursor: pointer; place-items: center; box-shadow: 0 8px 24px rgba(15,27,45,.16); }
 .mermaid-lightbox-close:focus-visible { outline: 3px solid rgba(36,104,197,.34); outline-offset: 2px; }

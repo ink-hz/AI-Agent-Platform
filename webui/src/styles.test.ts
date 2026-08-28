@@ -274,6 +274,7 @@ describe("Executive Operations visual contract", () => {
     expect(rule(".mermaid-diagram-trigger > img")).toContain("max-height: min(720px, 70vh)");
     expect(rule(".mermaid-diagram-trigger > img")).toContain("object-fit: contain");
     expect(rule(".mermaid-lightbox")).toContain("height: 100dvh");
+    expect(rule(".mermaid-lightbox")).toContain("background: #fff");
     expect(rule(".mermaid-lightbox-canvas")).toContain("touch-action: none");
     expect(rule(".mermaid-lightbox-image")).toContain("transform-origin: center");
     expect(rule(".mermaid-lightbox-close")).toContain("position: absolute");

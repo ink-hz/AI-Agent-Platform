@@ -48,7 +48,7 @@ flowchart LR
     class D model
     class B,G policy
     class H success
-    style COLLAB fill:#F8FAFC,stroke:#CBD5E1,color:#172033
+    style COLLAB fill:#FFFFFF,stroke:#CBD5E1,color:#172033
 ```
 
 这个过程中，AI 适合做高覆盖率工作，人负责高责任判断：

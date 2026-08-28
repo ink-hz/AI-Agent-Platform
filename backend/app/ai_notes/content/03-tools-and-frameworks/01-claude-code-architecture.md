@@ -308,7 +308,7 @@ flowchart TB
     style CONTEXT fill:#EFF6FF,stroke:#93C5FD,color:#172033;
     style CONTROL fill:#FFFBEB,stroke:#FCD34D,color:#172033;
     style CAPABILITY fill:#F0FDF4,stroke:#86EFAC,color:#172033;
-    style EVIDENCE fill:#F8FAFC,stroke:#CBD5E1,color:#172033;
+    style EVIDENCE fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
 ```
 
 这套架构最容易被低估的是权限、状态和验证。Demo 可以在无约束环境中展示工具调用；生产系统却必须处理任务中断、并发修改、凭证、私有数据、外部副作用、上下文膨胀和结果验收。

@@ -9,6 +9,20 @@ let diagramSequence = 0;
 let initialized = false;
 
 
+export const AI_NOTES_MERMAID_CONFIG = {
+  startOnLoad: false,
+  securityLevel: "strict",
+  theme: "neutral",
+  themeVariables: {
+    background: "#FFFFFF",
+    clusterBkg: "#FFFFFF",
+    clusterBorder: "#CBD5E1",
+  },
+  htmlLabels: false,
+  flowchart: { htmlLabels: false },
+} as const;
+
+
 function supportsModalDialog(): boolean {
   return typeof HTMLDialogElement !== "undefined"
     && typeof HTMLDialogElement.prototype.showModal === "function";
@@ -40,13 +54,7 @@ export function MermaidDiagram({ source }: { source: string }) {
     setExpanded(false);
     void import("mermaid").then(async ({ default: mermaid }) => {
       if (!initialized) {
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: "strict",
-          theme: "neutral",
-          htmlLabels: false,
-          flowchart: { htmlLabels: false },
-        });
+        mermaid.initialize(AI_NOTES_MERMAID_CONFIG);
         initialized = true;
       }
       const rendered = await mermaid.render(identifier, source);

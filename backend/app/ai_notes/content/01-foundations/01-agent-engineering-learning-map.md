@@ -69,7 +69,7 @@ flowchart TB
     class C,F,I policy;
     class D tool;
     class H success;
-    style LOOP fill:#F8FAFC,stroke:#CBD5E1,color:#172033;
+    style LOOP fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
 ```
 
 模型处理语义不确定性；确定性软件处理权限、预算、状态、幂等、审批和审计。后面的所有学习内容，都是在这条链路上逐步增加工程约束。

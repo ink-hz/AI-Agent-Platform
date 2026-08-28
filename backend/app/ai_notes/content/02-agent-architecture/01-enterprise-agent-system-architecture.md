@@ -165,7 +165,7 @@ flowchart TB
     class F data;
     class H success;
     class X risk;
-    style CYCLE fill:#F8FAFC,stroke:#CBD5E1,color:#172033;
+    style CYCLE fill:#FFFFFF,stroke:#CBD5E1,color:#172033;
 ```
 
 每一轮都要有上限。最少需要控制：
