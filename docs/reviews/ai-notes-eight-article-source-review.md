@@ -15,7 +15,7 @@ SHA-256 已于 2026-08-28 使用 `wc -l` 和 `shasum -a 256` 复核。
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/ai-cloud-native-opportunity.md` | 124 | `9c04bf78390c08bbe3c89e685bf4f407434c6f96c0ec63828662db75239c0a07` | ai-cloud-native-runtime | 已精读：1-124 | 问题与原则：异构资源、弹性、发布、容错 | 架构样例、厂商选型、固定倍率与 HPA 万能化表述 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 推理算法留在既有篇；本篇只写运行时资源与运维闭环 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Kubernetes与容器编排深度指南.md` | 250 | `4908263dc8ebdbe69106f50b8aa8f2b5030dd0a7e9fc5827945784e02dd31df4` | 辅助 ai-cloud-native-runtime | 已精读：1-250（通用概念辅助） | 调度、隔离、声明式发布、故障恢复概念 | 安装命令、对象清单、旧版本行为与厂商 GPU 功能 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 不迁移 Kubernetes 百科；只辅助 AI 运行时边界 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Kubernetes与容器编排理论指南.md` | 1705 | `12361a569b863b0de58f43366420c822f5b8568b42f243c38aab16aa0eef53ff` | 辅助 ai-cloud-native-runtime | 已精读：1-1705（通用概念辅助） | 一致性、队列调度、隔离、渐进发布与恢复概念 | 组件百科、Helm/GitOps 教程、厂商设备与固定性能数字 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 不复述通用编排；重写为制品、调度和恢复链 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/可观测性与监控-深度理论知识.md` | 1857 | `546ea435a32227f0ec75e73e946e45e4cb5a6e092ee55deaf7d456de3c43b8ed` | llm-agent-observability | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
+| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/可观测性与监控-深度理论知识.md` | 1857 | `546ea435a32227f0ec75e73e946e45e4cb5a6e092ee55deaf7d456de3c43b8ed` | llm-agent-observability | 已精读：1-1857 | 上下文传播、结构化 trace、采样、高基数、SLO 与信号关联 | 通用三支柱教材、产品栈与配置、固定阈值、采样率和成本数字 | 已核验：OpenTelemetry GenAI、W3C Trace Context、NIST（2026-08-28） | RAG 算法与 Agent 状态机留在主文章；本篇只记录证据与质量信号 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Hermes-Agent架构分析与思考.md` | 390 | `aac8a4c575a11ae1a129c3e03d49e6217d2c02a92363b0689d5c5306c70227ad` | open-source-agent-runtime | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Clawdbot架构理论指南.md` | 284 | `838ae6a89bfeca305bb70bc016f975d7b12f34abef9fe73dd4638c22dedb6961` | open-source-agent-runtime | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/MetaBot架构设计理论分析.md` | 515 | `f526d770501328c0aa12bb926ae379c640bebb3cd9540fe4b569a581caebded5` | metabot-agent-control-bus | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
@@ -145,3 +145,35 @@ SHA-256 已于 2026-08-28 使用 `wc -l` 和 `shasum -a 256` 复核。
 | [Kueue Overview](https://kueue.sigs.k8s.io/docs/overview/) | Kueue 管理配额消费并决定工作负载等待、准入或抢占；Pod 到节点调度与任务生命周期仍由既有 Kubernetes 组件负责。 |
 | [KServe official docs](https://kserve.github.io/website/) | KServe 控制面覆盖模型生命周期、版本跟踪与灰度发布；数据面承接预测和生成模型的请求接口。本文只采用这一发布责任边界，不复制快速安装和对象清单。 |
 | [Kubernetes Device Plugins](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/) | Device Plugin 向 kubelet 暴露 GPU 等设备资源供工作负载请求；扩展资源按整数计数、不能超配，且不会自动表达显存、拓扑和模型兼容性。 |
+
+## llm-agent-observability 精读结论
+
+### `可观测性与监控-深度理论知识.md`
+
+- `1-400`（可观测性、OpenTelemetry、上下文传播）：保留“输出要能反推内部状态”的问题意识、Trace/Span 数据模型、日志与追踪关联以及 W3C Trace Context 的跨组件相关性；控制论推导、通用三支柱对照、成熟度模型、Collector 产品管道和旧时间线不进入 AI 专题。
+- `401-800`（采样、分布式追踪）：保留头部/尾部采样取舍、父子步骤、事件、异步因果关联和关键路径；固定 QPS、固定采样率、支付系统示例、存储产品横评与通用追踪可视化教材删除。
+- `801-1200`（日志）：只保留结构化事件、Trace ID 关联、敏感内容最小采集和保留分层；日志级别教程、Agent/Sidecar 采集方式、压缩算法、查询语法和具体日志产品配置全部删除。
+- `1201-1600`（指标、告警、SLO）：保留高基数 ID 不进入时序标签、面向用户结果的 SLI、告警可操作性、错误预算和分母定义；PromQL 教程、固定阈值、固定响应级别和通用资源监控清单删除。
+- `1601-1857`（架构与最佳实践）：保留信号关联、分层存储和采样需要由用途驱动的原则；固定周期、固定压缩比例、产品选型表、部署路线和生态清单删除。
+- 原稿中的 `2024-01-21`、`2025-01-21`、固定保留天数、固定采样比例、固定成本节省比例和具体厂商推荐均视为旧示例，不进入正文。
+
+### 两份 LLM 源稿的相关范围复查
+
+- `AI-LLM系统架构深度指南.md` 的 `2001-2400` 仅复查用量、延迟、费用、限流和模型路由的记录需求；示例代码、厂商模型、API 价格、静态复杂度分类器和 MCP 教程不迁移。
+- `AI-LLM系统架构理论指南.md` 的 `1201-1550` 仅复查多实例负载、请求速率、模型层级和成本约束如何形成观测信号；固定 RPM、延迟、价格、实例数、加速倍率和任务关键词规则全部删除。
+- 上述模型服务内容已经由 `llm-inference-serving-engineering` 承担。本篇只关联实际模型、token、延迟、路由、成本和发布批次，不重复 Prefill/Decode、KV Cache 或调度机制。
+
+### 与既有文章的去重
+
+`llm-application-system-architecture` 已承担请求契约、上下文装配、工具编排、输出验证和可靠交付；`rag-retrieval-engineering` 已承担数据接入、分块、召回、重排、证据化生成和检索评估；`enterprise-agent-system-architecture` 已承担运行循环、持久化状态、工具授权、审批和子任务。本篇不重画这些流程，只规定它们为一次执行留下的版本、检索证据、工具调用、质量、安全、成本与反馈信号。
+
+### 一手来源核验
+
+访问日期：2026-08-28
+
+| 一手来源 | 本文采用的受支持论点 |
+| --- | --- |
+| [OpenTelemetry Generative AI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) | GenAI 约定已迁至独立官方仓库，当前整体状态为 Development；独立仓库的 Schema URL 仍是待完成项，因此本文把外部字段作为带版本的可演进映射。 |
+| [OpenTelemetry GenAI attribute registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/) | 原属性注册表中的 GenAI 字段已标为 Deprecated 并指向独立仓库；本文不把历史 `gen_ai.*` 名称写成永久字段合同。 |
+| [W3C Trace Context](https://www.w3.org/TR/trace-context/) | traceparent 提供跨组件关联所需的 trace-id、parent-id 与 trace-flags；tracestate 用于可选厂商信息，传播上下文不等同于接受上游身份或采样决策。 |
+| [NIST Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence) | 持续监测、内容来源、结构化反馈和独立评估共同支撑生成式 AI 风险管理；本文据此把线上证据、人工诊断、版本化反馈集和发布门禁闭合为改进循环。 |

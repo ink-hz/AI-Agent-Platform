@@ -44,6 +44,7 @@ COMPLETED_BATCH_ARTICLES: tuple[str, ...] = (
     "agent-identity-access-control",
     "llm-inference-serving-engineering",
     "ai-cloud-native-runtime",
+    "llm-agent-observability",
 )
 
 ARTICLE_CONTRACTS = {
@@ -197,6 +198,31 @@ CLOUD_NATIVE_PRIMARY_SOURCES = {
     ),
     "https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/": (
         "Device Plugin 向 kubelet 暴露 GPU 等设备资源供工作负载请求"
+    ),
+}
+
+OBSERVABILITY_SOURCE_REVIEW_STATUS = {
+    "可观测性与监控-深度理论知识.md": (
+        "已精读：1-1857",
+        "上下文传播、结构化 trace、采样、高基数、SLO 与信号关联",
+        "通用三支柱教材、产品栈与配置、固定阈值、采样率和成本数字",
+        "已核验：OpenTelemetry GenAI、W3C Trace Context、NIST（2026-08-28）",
+        "RAG 算法与 Agent 状态机留在主文章；本篇只记录证据与质量信号",
+    ),
+}
+
+OBSERVABILITY_PRIMARY_SOURCES = {
+    "https://opentelemetry.io/docs/specs/semconv/gen-ai/": (
+        "GenAI 约定已迁至独立官方仓库，当前整体状态为 Development"
+    ),
+    "https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/": (
+        "原属性注册表中的 GenAI 字段已标为 Deprecated 并指向独立仓库"
+    ),
+    "https://www.w3.org/TR/trace-context/": (
+        "traceparent 提供跨组件关联所需的 trace-id、parent-id 与 trace-flags"
+    ),
+    "https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence": (
+        "持续监测、内容来源、结构化反馈和独立评估共同支撑生成式 AI 风险管理"
     ),
 }
 
@@ -381,6 +407,47 @@ def cloud_native_contains_forbidden_tutorial_or_hpa(markdown: str) -> bool:
     return False
 
 
+def observability_contains_fixed_genai_schema_claim(markdown: str) -> bool:
+    subject = r"(?:`?gen_ai\.[a-z0-9_.*]+`?|OpenTelemetry\s+GenAI\s+(?:属性|字段|schema))"
+    permanence = (
+        r"(?:已经是|现已是|是|属于|provides?|is|are)?\s*(?:a\s+)?"
+        r"(?:永久(?:的)?字段合同|固定(?:的)?\s*(?:schema|字段合同)|"
+        r"稳定(?:的)?\s*(?:schema|字段合同|属性)|永不变化|"
+        r"permanent\s+(?:schema|contract)|stable\s+(?:schema|contract|attributes?))"
+    )
+    negation = re.compile(
+        r"(?i)(?:不是|并非|不能视为|不应视为|not|isn't|is\s+not)\s*$"
+    )
+    clause_separator = re.compile(r"[。！？.!?；;\n]")
+    for claim in re.finditer(rf"(?i){subject}\s*{permanence}", markdown):
+        prefix = clause_separator.split(markdown[:claim.start()])[-1]
+        if negation.search(prefix):
+            continue
+        return True
+    return False
+
+
+def observability_contains_duplicate_rag_or_agent_tutorial(markdown: str) -> bool:
+    if re.search(
+        r"(?mi)^#{2,}\s+.*(?:向量检索|RAG\s*(?:算法|实现)|"
+        r"Agent\s*(?:状态机|运行循环)|智能体\s*(?:状态机|运行循环))",
+        markdown,
+    ):
+        return True
+
+    rag_tutorial_markers = ("HNSW", "IVF", "BM25", "Embedding")
+    agent_tutorial_markers = ("ReAct", "Plan-and-Execute", "WaitingApproval")
+    return (
+        sum(marker.casefold() in markdown.casefold() for marker in rag_tutorial_markers)
+        >= 2
+        or sum(
+            marker.casefold() in markdown.casefold()
+            for marker in agent_tutorial_markers
+        )
+        >= 2
+    )
+
+
 def test_completed_batch_helpers_enforce_drafts_and_validate_candidates(
     tmp_path: Path,
 ) -> None:
@@ -415,6 +482,7 @@ def test_source_review_records_the_exact_source_manifest() -> None:
             **IDENTITY_SOURCE_REVIEW_STATUS,
             **INFERENCE_SOURCE_REVIEW_STATUS,
             **CLOUD_NATIVE_SOURCE_REVIEW_STATUS,
+            **OBSERVABILITY_SOURCE_REVIEW_STATUS,
         }.get(filename, ("未开始",) * 5)
         expected_rows.append(
             f"| `{path}` | {line_count} | `{digest}` | {target} | "
@@ -457,14 +525,24 @@ def test_cloud_native_source_review_records_primary_source_verification() -> Non
         assert supported_claim in section
 
 
+def test_llm_agent_observability_source_review_records_primary_sources() -> None:
+    review = SOURCE_REVIEW.read_text(encoding="utf-8")
+    section_header = "## llm-agent-observability 精读结论"
+
+    assert section_header in review
+    section = review.split(section_header, 1)[1]
+    assert "访问日期：2026-08-28" in section
+    for url, supported_claim in OBSERVABILITY_PRIMARY_SOURCES.items():
+        assert url in section
+        assert supported_claim in section
+
+
 def test_agent_identity_access_control_draft_meets_contract(
     tmp_path: Path,
 ) -> None:
     completed_articles = assert_completed_batch_drafts()
     assert tuple(article.slug for article in completed_articles) == (
-        "agent-identity-access-control",
-        "llm-inference-serving-engineering",
-        "ai-cloud-native-runtime",
+        COMPLETED_BATCH_ARTICLES
     )
 
     path = batch_article_path("agent-identity-access-control")
@@ -505,7 +583,7 @@ def test_agent_identity_access_control_draft_meets_contract(
     )
     assert sum(
         len(category.articles) for category in candidate_index.categories
-    ) == 9
+    ) == 10
     assert all(
         len(
             set(
@@ -577,9 +655,7 @@ def test_llm_inference_serving_engineering_draft_meets_contract(
 ) -> None:
     completed_articles = assert_completed_batch_drafts()
     assert tuple(article.slug for article in completed_articles) == (
-        "agent-identity-access-control",
-        "llm-inference-serving-engineering",
-        "ai-cloud-native-runtime",
+        COMPLETED_BATCH_ARTICLES
     )
 
     path = batch_article_path("llm-inference-serving-engineering")
@@ -663,7 +739,7 @@ def test_llm_inference_serving_engineering_draft_meets_contract(
     )
     assert sum(
         len(category.articles) for category in candidate_index.categories
-    ) == 9
+    ) == 10
 
 
 def test_llm_inference_metrics_cost_and_typography_contract() -> None:
@@ -707,9 +783,7 @@ def test_ai_cloud_native_runtime_draft_meets_contract(
 ) -> None:
     completed_articles = assert_completed_batch_drafts()
     assert tuple(article.slug for article in completed_articles) == (
-        "agent-identity-access-control",
-        "llm-inference-serving-engineering",
-        "ai-cloud-native-runtime",
+        COMPLETED_BATCH_ARTICLES
     )
 
     path = batch_article_path("ai-cloud-native-runtime")
@@ -806,7 +880,7 @@ def test_ai_cloud_native_runtime_draft_meets_contract(
     )
     assert sum(
         len(category.articles) for category in candidate_index.categories
-    ) == 9
+    ) == 10
 
 
 def test_cloud_native_contract_guards_reject_bypass_variants() -> None:
@@ -859,3 +933,118 @@ def test_cloud_native_hpa_guard_allows_clause_level_negation() -> None:
         "HPA is not a universal strategy",
     ):
         assert not cloud_native_contains_forbidden_tutorial_or_hpa(allowed)
+
+
+def test_llm_agent_observability_draft_meets_contract(
+    tmp_path: Path,
+) -> None:
+    completed_articles = assert_completed_batch_drafts()
+    assert tuple(article.slug for article in completed_articles) == (
+        "agent-identity-access-control",
+        "llm-inference-serving-engineering",
+        "ai-cloud-native-runtime",
+        "llm-agent-observability",
+    )
+
+    path = batch_article_path("llm-agent-observability")
+    frontmatter, markdown = parse_frontmatter(path)
+    assert frontmatter["title"] == (
+        "LLM / Agent 可观测性：从调用链到质量闭环"
+    )
+    assert frontmatter["slug"] == "llm-agent-observability"
+    assert tuple(frontmatter["tags"]) == ("LLM", "Agent", "可观测性")
+    assert frontmatter["draft"] is True
+    assert frontmatter["author"] == AUTHOR
+    assert frontmatter["motto"] == MOTTO
+    assert frontmatter["publishedAt"] == TODAY
+    assert frontmatter["updatedAt"] == TODAY
+    assert markdown.lstrip().startswith("## ")
+    assert AUTHOR not in markdown
+    assert MOTTO not in markdown
+
+    diagrams = tuple(re.findall(r"```mermaid\n([\s\S]*?)\n```", markdown))
+    assert len(diagrams) == 3
+    assert tuple(
+        re.search(r"(?m)^\s*accTitle:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    ) == (
+        "LLM Agent 端到端证据链",
+        "AI 可观测性分层信号模型",
+        "线上反馈到离线评估闭环",
+    )
+    descriptions = tuple(
+        re.search(r"(?m)^\s*accDescr:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    )
+    assert all(descriptions)
+    assert len(set(descriptions)) == 3
+    assert all(re.search(r"(?m)^\s*classDef\s+", diagram) for diagram in diagrams)
+    assert all(
+        re.search(
+            r"(?m)^\s*classDef\s+\w+\s+fill:#(?:DBEAFE|EDE9FE|"
+            r"CCFBF1|FEF3C7|DCFCE7|D1FAE5|FEE2E2|F3F4F6)",
+            diagram,
+        )
+        for diagram in diagrams
+    )
+    assert all(
+        len(mermaid_principal_node_ids(diagram)) <= 12
+        for diagram in diagrams
+    )
+
+    for required_topic in (
+        "trace",
+        "模型版本",
+        "Prompt 版本",
+        "token",
+        "延迟",
+        "成本",
+        "检索证据",
+        "工具调用",
+        "质量评估",
+        "反馈集",
+    ):
+        assert required_topic.casefold() in markdown.casefold()
+    for required_link in (
+        "../foundations/llm-application-system-architecture",
+        "rag-retrieval-engineering",
+        "../agent-architecture/enterprise-agent-system-architecture",
+    ):
+        assert re.search(rf"\]\((?:\./)?{re.escape(required_link)}\)", markdown)
+
+    assert "Development" in markdown
+    assert "可演进映射" in markdown
+    assert "内部证据模型" in markdown
+    assert not observability_contains_fixed_genai_schema_claim(markdown)
+    assert not observability_contains_duplicate_rag_or_agent_tutorial(markdown)
+
+    candidate_index = validate_completed_batch_as_publication_candidates(
+        tmp_path
+    )
+    assert sum(
+        len(category.articles) for category in candidate_index.categories
+    ) == 10
+
+
+def test_observability_contract_guards_schema_and_tutorial_boundaries() -> None:
+    for prohibited in (
+        "gen_ai.usage.input_tokens 是永久字段合同。",
+        "OpenTelemetry GenAI 属性已经是稳定字段合同。",
+        "gen_ai.request.model provides a permanent schema contract.",
+        "## RAG 算法实现\nHNSW 的完整教程。",
+        "HNSW、IVF 和 BM25 的参数选择如下。",
+        "## Agent 状态机\n逐项解释所有状态。",
+        "ReAct、Plan-and-Execute 和 WaitingApproval 的转换如下。",
+    ):
+        assert (
+            observability_contains_fixed_genai_schema_claim(prohibited)
+            or observability_contains_duplicate_rag_or_agent_tutorial(prohibited)
+        )
+
+    for allowed in (
+        "gen_ai.usage.input_tokens 不是永久字段合同。",
+        "OpenTelemetry GenAI 字段不能视为固定 schema。",
+        "本文只记录检索证据与工具调用结果，不重述对应实现。",
+    ):
+        assert not observability_contains_fixed_genai_schema_claim(allowed)
+        assert not observability_contains_duplicate_rag_or_agent_tutorial(allowed)
