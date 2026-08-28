@@ -84,6 +84,7 @@ from .execution_relay.repository import ExecutionRelayRepository
 from .execution_relay.routes import build_execution_relay_router
 from .execution_relay.worker_auth import WorkerRequestVerifier
 from .agent_brain.authorization import AgentUseAuthorization
+from .agent_brain.action_service import ActionCommandService
 from .agent_brain.conversation_context import ConversationContextBuilder
 from .agent_brain.conversation_projection import ConversationProjection
 from .agent_brain.conversation_repository import ConversationRepository
@@ -569,6 +570,7 @@ def create_app(
     mission_repository = None
     conversation_repository = None
     conversation_command_service = None
+    action_command_service = None
     agent_use_authorization = None
     control_database_url = None
     content_codec = None
@@ -612,6 +614,11 @@ def create_app(
         conversation_command_service = ConversationCommandService(
             conversation_repository,
             v2_enabled=config.agent_brain_v2_enabled,
+        )
+        action_command_service = ActionCommandService(
+            control_database_url,
+            content_codec=content_codec,
+            dsn_purpose="app",
         )
         agent_use_authorization = AgentUseAuthorization(control_database_url)
     if config.direct_agent_enabled:
@@ -842,6 +849,7 @@ def create_app(
     app.state.mission_repository = mission_repository
     app.state.conversation_repository = conversation_repository
     app.state.conversation_command_service = conversation_command_service
+    app.state.action_command_service = action_command_service
     app.state.agent_use_authorization = agent_use_authorization
     app.state.voc_extension_client = voc_extension_client
     app.state.voc_submitter_directory = voc_submitter_directory
@@ -912,6 +920,7 @@ def create_app(
                 conversation_repository,
                 agent_use_authorization,
                 command_service=conversation_command_service,
+                action_service=action_command_service,
                 cursor_codec=ConversationCursorCodec(identity_auth.secrets),
                 session_revalidator=identity_auth.authenticate,
                 session_cookie_name=identity_auth.cookie_name,

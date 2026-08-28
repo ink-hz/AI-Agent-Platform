@@ -45,6 +45,8 @@ PUBLIC_BRAIN_EVENT_TYPES = frozenset(
         "agent.work_update",
         "agent.artifact",
         "agent.question",
+        "agent.input_required",
+        "agent.action_required",
         "agent.cancelled",
         "agent.task_recovered",
     }
@@ -67,6 +69,15 @@ PUBLIC_BRAIN_PAYLOAD_KEYS = frozenset(
         "summary",
         "evidence_refs",
         "artifact_refs",
+        "action_id",
+        "action_kind",
+        "impact",
+        "execution_status",
+        "action_digest",
+        "action_digest_prefix",
+        "expires_at",
+        "confirmed_at",
+        "confirmed_by",
         "created_at",
     }
 )
@@ -362,6 +373,12 @@ class ConversationProjection:
                                 ),
                             )
                             stored_type = task_event["event_type"]
+                            if stored_type == "action_required":
+                                # Action cards come only from the verified,
+                                # encrypted Action record below. The raw
+                                # Adapter event is a wake signal, not a UI
+                                # projection authority.
+                                continue
                             event_type = {
                                 "thinking_summary": "agent.thinking_summary",
                                 "message": "agent.message",
@@ -369,6 +386,7 @@ class ConversationProjection:
                                 "finding": "agent.work_update",
                                 "artifact": "agent.artifact",
                                 "question": "agent.question",
+                                "input_required": "agent.input_required",
                                 "result": "agent.task_completed",
                                 "failed": "agent.task_failed",
                                 "timeout": "agent.task_timed_out",
@@ -401,6 +419,68 @@ class ConversationProjection:
                                     turn_id,
                                     event_type,
                                     event_payload,
+                                )
+                            )
+                        actions = cursor.execute(
+                            "select action.*,confirmed.display_name as confirmed_by "
+                            "from platform_brain.agent_task_actions action left join "
+                            "platform_control.internal_users confirmed on "
+                            "confirmed.internal_user_id="
+                            "action.confirmed_by_internal_user_id "
+                            "where action.task_id=%s order by "
+                            "action.created_at,action.action_id",
+                            (task["task_id"],),
+                        ).fetchall()
+                        for action in actions:
+                            action_id = action["action_id"]
+                            summary = self.repository.content_codec.unseal_json(
+                                f"brain-action:{action_id}:summary",
+                                SealedContent(
+                                    bytes(action["summary_ciphertext"]),
+                                    action["summary_key_version"],
+                                ),
+                            ).get("text")
+                            impact = self.repository.content_codec.unseal_json(
+                                f"brain-action:{action_id}:impact",
+                                SealedContent(
+                                    bytes(action["impact_ciphertext"]),
+                                    action["impact_key_version"],
+                                ),
+                            ).get("text")
+                            if not isinstance(summary, str) or not isinstance(
+                                impact, str
+                            ):
+                                raise ValueError("Action projection content invalid")
+                            digest = bytes(action["action_digest"]).hex()
+                            candidates.append(
+                                (
+                                    action["updated_at"],
+                                    f"action:{action_id}:{action['status']}:"
+                                    f"{action['execution_status']}",
+                                    turn_id,
+                                    "agent.action_required",
+                                    {
+                                        "action_id": str(action_id),
+                                        "task_id": str(task["task_id"]),
+                                        "action_kind": action["action_kind"],
+                                        "summary": summary,
+                                        "impact": impact,
+                                        "status": action["status"],
+                                        "execution_status": action[
+                                            "execution_status"
+                                        ],
+                                        "action_digest": digest,
+                                        "action_digest_prefix": digest[:12],
+                                        "expires_at": action[
+                                            "expires_at"
+                                        ].isoformat(),
+                                        "confirmed_at": (
+                                            action["confirmed_at"].isoformat()
+                                            if action["confirmed_at"] is not None
+                                            else None
+                                        ),
+                                        "confirmed_by": action["confirmed_by"],
+                                    },
                                 )
                             )
                     for step in steps:

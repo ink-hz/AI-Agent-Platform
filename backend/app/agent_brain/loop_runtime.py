@@ -89,6 +89,7 @@ class BrainLoopRuntime:
         worker_id: str,
         lease_seconds: int,
         context_policy: BrainContextPolicy | None = None,
+        action_commands: object | None = None,
     ) -> None:
         self._repository = repository
         self._model = model
@@ -100,6 +101,11 @@ class BrainLoopRuntime:
         self._lease_seconds = lease_seconds
         self._context_policy = context_policy or BrainContextPolicy()
         self._collaboration = repository.collaboration_repository()
+        self._action_commands = action_commands
+
+    def expire_actions(self) -> int:
+        expire = getattr(self._action_commands, "expire", None)
+        return expire(limit=100) if callable(expire) else 0
 
     def advance_one(self) -> bool:
         if self._model is None or not hasattr(self._model, "complete"):

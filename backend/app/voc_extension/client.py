@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as json_module
 from collections.abc import Mapping
 from dataclasses import dataclass
 from ipaddress import ip_address
@@ -148,3 +149,128 @@ class VocExtensionClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+class VocTaskClient:
+    """Synchronous narrow client used by the durable Brain worker."""
+
+    def __init__(
+        self,
+        base_url: str,
+        signer: PlatformVocTokenSigner,
+        *,
+        timeout_seconds: float = 10.0,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        if not 1 <= timeout_seconds <= 60:
+            raise ValueError("VOC timeout must be between 1 and 60 seconds")
+        self._signer = signer
+        self._client = httpx.Client(
+            base_url=_validated_base_url(base_url),
+            timeout=timeout_seconds,
+            transport=transport,
+            trust_env=False,
+        )
+
+    def _request(
+        self,
+        path: str,
+        *,
+        actor_id: UUID,
+        payload: Mapping[str, object],
+    ) -> dict[str, object]:
+        token = self._signer.issue(actor_id, SELF_SERVICE_CAPABILITIES)
+        try:
+            with self._client.stream(
+                "POST",
+                _validated_path(path),
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+            ) as response:
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    body.extend(chunk)
+                    if len(body) > _MAX_RESPONSE_BYTES:
+                        raise VocProtocolError("voc_response_too_large")
+                if response.status_code not in {200, 201}:
+                    raise VocProtocolError("voc_action_rejected")
+        except VocProtocolError:
+            raise
+        except (httpx.TimeoutException, httpx.TransportError):
+            raise VocUpstreamUnavailable("voc_unavailable") from None
+        try:
+            decoded = json_module.loads(bytes(body))
+        except (UnicodeDecodeError, ValueError):
+            raise VocProtocolError("voc_response_invalid") from None
+        if not isinstance(decoded, dict):
+            raise VocProtocolError("voc_response_invalid")
+        return dict(decoded)
+
+    def create_draft(
+        self, *, actor_id: UUID, request_id: UUID, source_text: str
+    ) -> dict[str, object]:
+        if (
+            not isinstance(actor_id, UUID)
+            or not isinstance(request_id, UUID)
+            or type(source_text) is not str
+            or not source_text.strip()
+            or len(source_text) > 4000
+        ):
+            raise ValueError("VOC draft request invalid")
+        value = self._request(
+            "/api/platform/v1/drafts",
+            actor_id=actor_id,
+            payload={"request_id": str(request_id), "source_text": source_text},
+        )
+        try:
+            draft_id = str(UUID(str(value["draft_id"])))
+            version = value["version"]
+            if type(version) is not int or version <= 0:
+                raise ValueError
+        except (KeyError, TypeError, ValueError):
+            raise VocProtocolError("voc_draft_response_invalid") from None
+        return {"draft_id": draft_id, "version": version}
+
+    def submit_draft(
+        self,
+        *,
+        actor_id: UUID,
+        draft_id: UUID,
+        request_id: UUID,
+        expected_version: int,
+    ) -> dict[str, object]:
+        if (
+            not isinstance(actor_id, UUID)
+            or not isinstance(draft_id, UUID)
+            or not isinstance(request_id, UUID)
+            or type(expected_version) is not int
+            or expected_version <= 0
+        ):
+            raise ValueError("VOC submit request invalid")
+        value = self._request(
+            f"/api/platform/v1/drafts/{draft_id}/submit",
+            actor_id=actor_id,
+            payload={
+                "request_id": str(request_id),
+                "expected_version": expected_version,
+            },
+        )
+        voc_no = value.get("voc_no")
+        revision = value.get("revision")
+        already_submitted = value.get("already_submitted")
+        if (
+            type(voc_no) is not str
+            or not voc_no.startswith("VOC-")
+            or type(revision) is not int
+            or revision <= 0
+            or type(already_submitted) is not bool
+        ):
+            raise VocProtocolError("voc_submit_response_invalid")
+        return {
+            "voc_no": voc_no,
+            "revision": revision,
+            "already_submitted": already_submitted,
+        }
+
+    def close(self) -> None:
+        self._client.close()

@@ -30,6 +30,9 @@ create table platform_brain.agent_task_actions (
     execution_status in ('not_started','queued','running','completed','failed')
   ),
   execution_deadline_at timestamptz,
+  execution_result_ciphertext bytea,
+  execution_result_key_version integer,
+  execution_result_sha256 bytea,
   created_at timestamptz not null default clock_timestamp(),
   updated_at timestamptz not null default clock_timestamp(),
   terminal_at timestamptz,
@@ -46,6 +49,16 @@ create table platform_brain.agent_task_actions (
     or (status in ('rejected','expired','superseded') and terminal_at is not null
       and confirmed_by_internal_user_id is null and confirmed_at is null
       and execution_status='not_started' and execution_deadline_at is null)
+  ),
+  check (
+    (execution_result_ciphertext is null
+      and execution_result_key_version is null
+      and execution_result_sha256 is null
+      and execution_status in ('not_started','queued','running'))
+    or (octet_length(execution_result_ciphertext) between 29 and 1048576
+      and execution_result_key_version > 0
+      and octet_length(execution_result_sha256) = 32
+      and execution_status in ('completed','failed'))
   )
 );
 

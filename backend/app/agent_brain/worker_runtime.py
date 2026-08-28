@@ -16,6 +16,7 @@ import psycopg
 from app.agent_brain.adapters.base import AdapterRegistry
 from app.agent_brain.adapters.metabot_local import MetaBotLocalAdapter
 from app.agent_brain.adapters.reference import ReferenceAdapter
+from app.agent_brain.action_service import ActionCommandService
 from app.agent_brain.anthropic_adapter import AnthropicMessagesAdapter
 from app.agent_brain.authorization import AgentUseAuthorization
 from app.agent_brain.loop_repository import BrainLoopRepository
@@ -160,6 +161,11 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
         client=client,
     )
     repository = BrainLoopRepository(database_url, content_codec=codec)
+    action_commands = ActionCommandService(
+        database_url,
+        content_codec=codec,
+        dsn_purpose="brain",
+    )
     relay = ExecutionRelayRepository(
         database_url, content_codec=codec, dsn_purpose="brain"
     )
@@ -182,6 +188,7 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
             adapters=adapters,
             worker_id=_worker_id(),
             lease_seconds=_STEP_LEASE_SECONDS,
+            action_commands=action_commands,
         ),
         repository,
         client,
@@ -218,7 +225,8 @@ def tick(mode: WorkerMode, runtime: BrainLoopRuntime, repository) -> int:
 
     def reaper_tick() -> int:
         return (
-            repository.settle_active_waits(limit=100)
+            runtime.expire_actions()
+            + repository.settle_active_waits(limit=100)
             + repository.expire_leases(limit=100)
             + repository.expire_delivery_leases(limit=100)
             + repository.expire_waiting_users(limit=100)

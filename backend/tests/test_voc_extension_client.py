@@ -10,6 +10,7 @@ import pytest
 from app.voc_extension.client import (
     VocExtensionClient,
     VocProtocolError,
+    VocTaskClient,
     VocUpstreamUnavailable,
 )
 from app.voc_extension.identity import PlatformVocTokenSigner
@@ -148,6 +149,55 @@ async def test_client_accepts_only_the_fixed_platform_private_service_address() 
 def test_client_rejects_any_non_fixed_private_origin(base_url: str) -> None:
     with pytest.raises(ValueError, match="private"):
         VocExtensionClient(base_url, PlatformVocTokenSigner(SECRET))
+
+
+def test_task_client_creates_and_submits_with_actor_bound_idempotency() -> None:
+    requests: list[httpx.Request] = []
+    draft_id = UUID("33333333-3333-4333-8333-333333333333")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/api/platform/v1/drafts":
+            return httpx.Response(
+                200,
+                json={"draft_id": str(draft_id), "version": 2},
+            )
+        return httpx.Response(
+            200,
+            json={
+                "voc_no": "VOC-20260828-001",
+                "revision": 1,
+                "already_submitted": False,
+            },
+        )
+
+    client = VocTaskClient(
+        "http://127.0.0.1:18130",
+        PlatformVocTokenSigner(SECRET),
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        created = client.create_draft(
+            actor_id=USER_ID,
+            request_id=JTI,
+            source_text="客户反馈设备发热",
+        )
+        submitted = client.submit_draft(
+            actor_id=USER_ID,
+            draft_id=draft_id,
+            request_id=JTI,
+            expected_version=2,
+        )
+    finally:
+        client.close()
+
+    assert created == {"draft_id": str(draft_id), "version": 2}
+    assert submitted["voc_no"] == "VOC-20260828-001"
+    assert [request.url.path for request in requests] == [
+        "/api/platform/v1/drafts",
+        f"/api/platform/v1/drafts/{draft_id}/submit",
+    ]
+    assert all(request.headers["Authorization"].startswith("Bearer ") for request in requests)
 
 
 @pytest.mark.asyncio

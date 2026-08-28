@@ -129,6 +129,12 @@ def test_owner_confirmation_is_exactly_once_and_non_owner_is_denied(
 
     pending = worker.propose(proposal)
     assert pending.status == "pending"
+    assert app.get_for_owner(owner_id, _conversation_id, action_id) == pending
+    assert app.list_for_owner(owner_id, _conversation_id) == (pending,)
+    with pytest.raises(ActionCommandDenied):
+        app.get_for_owner(uuid4(), _conversation_id, action_id)
+    with pytest.raises(ActionCommandDenied):
+        app.get_for_owner(owner_id, uuid4(), action_id)
     with pytest.raises(ActionCommandConflict):
         app.confirm(owner_id, action_id, "0" * 64)
     with pytest.raises(ActionCommandDenied):

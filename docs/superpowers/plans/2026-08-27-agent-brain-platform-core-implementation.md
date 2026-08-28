@@ -985,7 +985,7 @@ git commit -m "fix: preserve pending actions at brain limits"
 **Interfaces:**
 - Produces: `POST /api/v1/conversations/{conversation_id}/actions/{action_id}/confirm|reject`; VOC proposal/execute path.
 
-- [ ] **Step 1: Write failing owner/CSRF and exactly-once tests**
+- [x] **Step 1: Write failing owner/CSRF and exactly-once tests**
 
 ```python
 def test_non_owner_cannot_confirm(client, other_owner_action) -> None:
@@ -1000,7 +1000,7 @@ def test_voc_duplicate_confirmation_submits_once(voc_action_client) -> None:
     assert voc_action_client.submit_count == 1
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```bash
 backend/.venv/bin/python -m pytest -q \
@@ -1008,15 +1008,15 @@ backend/.venv/bin/python -m pytest -q \
   backend/tests/test_agent_brain_voc_action.py
 ```
 
-- [ ] **Step 3: Add authenticated routes and projections**
+- [x] **Step 3: Add authenticated routes and projections**
 
 Routes pass only verified `request.state.identity.internal_user_id`, `action_id`, and digest into `ActionCommandService`; responses expose status, summary, impact, expiry, confirmed time, and digest prefix, never parameters ciphertext.
 
-- [ ] **Step 4: Implement VOC proposal and execution**
+- [x] **Step 4: Implement VOC proposal and execution**
 
 The VOC Adapter persists the Draft, creates `ActionProposal(action_kind="voc.submit", ...)`, and emits `action_required`. Confirmation calls existing VOC submit with an idempotency key derived from `action_id`; repeated calls return the same record.
 
-- [ ] **Step 5: Test six outcomes and three crash points**
+- [x] **Step 5: Test six outcomes and three crash points**
 
 ```bash
 backend/.venv/bin/python -m pytest -q backend/tests/test_agent_brain_voc_action.py

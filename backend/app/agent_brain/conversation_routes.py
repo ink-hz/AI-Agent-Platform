@@ -12,6 +12,13 @@ from uuid import UUID
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.agent_brain.action_models import ActionProjection
+from app.agent_brain.action_service import (
+    ActionCommandConflict,
+    ActionCommandDenied,
+    ActionCommandError,
+    ActionCommandService,
+)
 from app.control_plane.auth import AuthSecrets
 from app.control_plane.models import AuthContext
 
@@ -101,6 +108,12 @@ class ConversationRenameBody(BaseModel):
         if not selected:
             raise ValueError("Conversation title required")
         return selected
+
+
+class ActionConfirmBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    action_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ConversationCursorCodec:
@@ -243,6 +256,39 @@ def _validate_input_bytes(text: str) -> None:
         raise HTTPException(
             413, "Conversation text exceeds 32 KiB", headers=_NO_STORE
         )
+
+
+def _action_payload(action: ActionProjection) -> dict[str, object]:
+    return {
+        "action_id": str(action.action_id),
+        "task_id": str(action.task_id),
+        "action_kind": action.action_kind,
+        "summary": action.summary,
+        "impact": action.impact,
+        "status": action.status,
+        "execution_status": action.execution_status,
+        "action_digest": action.action_digest,
+        "action_digest_prefix": action.action_digest[:12],
+        "expires_at": action.expires_at.isoformat(),
+        "confirmed_at": (
+            action.confirmed_at.isoformat()
+            if action.confirmed_at is not None
+            else None
+        ),
+        "execution_deadline_at": (
+            action.execution_deadline_at.isoformat()
+            if action.execution_deadline_at is not None
+            else None
+        ),
+    }
+
+
+def _action_http_error(error: ActionCommandError) -> HTTPException:
+    if isinstance(error, ActionCommandDenied):
+        return HTTPException(403, "Action use denied", headers=_NO_STORE)
+    if isinstance(error, ActionCommandConflict):
+        return HTTPException(409, "Action state conflict", headers=_NO_STORE)
+    return HTTPException(503, "Action service unavailable", headers=_NO_STORE)
 
 
 def _repository_http_error(error: ConversationRepositoryError) -> HTTPException:
@@ -512,6 +558,7 @@ def build_conversation_router(
     agent_use_authorization,
     *,
     command_service: ConversationCommandService | None = None,
+    action_service: ActionCommandService | None = None,
     cursor_codec: ConversationCursorCodec,
     session_revalidator: Callable[[str], object],
     session_cookie_name: str,
@@ -835,6 +882,88 @@ def build_conversation_router(
             raise _repository_http_error(error) from None
         response.headers.update(_NO_STORE)
         return detail
+
+    @router.get("/api/v1/conversations/{conversation_id}/actions")
+    async def conversation_actions(
+        conversation_id: UUID,
+        request: Request,
+        response: Response,
+    ):
+        context = _auth_context(request)
+        if action_service is None:
+            raise HTTPException(503, "Action service unavailable", headers=_NO_STORE)
+        try:
+            actions = await asyncio.to_thread(
+                action_service.list_for_owner,
+                context.internal_user_id,
+                conversation_id,
+            )
+        except ActionCommandError as error:
+            raise _action_http_error(error) from None
+        response.headers.update(_NO_STORE)
+        return {"items": [_action_payload(action) for action in actions]}
+
+    @router.post(
+        "/api/v1/conversations/{conversation_id}/actions/{action_id}/confirm"
+    )
+    async def confirm_action(
+        conversation_id: UUID,
+        action_id: UUID,
+        body: ActionConfirmBody,
+        request: Request,
+        response: Response,
+    ):
+        context = _auth_context(request)
+        _ensure_writable(context)
+        if action_service is None:
+            raise HTTPException(503, "Action service unavailable", headers=_NO_STORE)
+        try:
+            await asyncio.to_thread(
+                action_service.get_for_owner,
+                context.internal_user_id,
+                conversation_id,
+                action_id,
+            )
+            action = await asyncio.to_thread(
+                action_service.confirm,
+                context.internal_user_id,
+                action_id,
+                body.action_digest,
+            )
+        except ActionCommandError as error:
+            raise _action_http_error(error) from None
+        response.headers.update(_NO_STORE)
+        return _action_payload(action)
+
+    @router.post(
+        "/api/v1/conversations/{conversation_id}/actions/{action_id}/reject"
+    )
+    async def reject_action(
+        conversation_id: UUID,
+        action_id: UUID,
+        request: Request,
+        response: Response,
+    ):
+        context = _auth_context(request)
+        _ensure_writable(context)
+        if action_service is None:
+            raise HTTPException(503, "Action service unavailable", headers=_NO_STORE)
+        try:
+            await asyncio.to_thread(
+                action_service.get_for_owner,
+                context.internal_user_id,
+                conversation_id,
+                action_id,
+            )
+            action = await asyncio.to_thread(
+                action_service.reject,
+                context.internal_user_id,
+                action_id,
+            )
+        except ActionCommandError as error:
+            raise _action_http_error(error) from None
+        response.headers.update(_NO_STORE)
+        return _action_payload(action)
 
     @router.post(
         "/api/v1/conversations/{conversation_id}/turns/{turn_id}/retry",

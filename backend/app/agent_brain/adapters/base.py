@@ -82,6 +82,10 @@ class AdapterEvent:
         "message",
         "artifact",
         "question",
+        "input_required",
+        "action_required",
+        "cancelled",
+        "timeout",
         "result",
         "error",
     ]

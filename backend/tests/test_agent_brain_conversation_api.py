@@ -11,6 +11,8 @@ import pytest
 
 from app.agent_brain.conversation_projection import ConversationProjection
 from app.agent_brain.conversation_models import ConversationEventRecord
+from app.agent_brain.action_models import ActionProjection
+from app.agent_brain.action_service import ActionCommandDenied
 from app.agent_brain.conversation_routes import (
     ConversationCursorCodec,
     _event_payload,
@@ -43,6 +45,7 @@ def _app(
     role: Role = Role.MEMBER,
     agent_use: FakeAgentUse | None = None,
     command_service=None,
+    action_service=None,
     brain_enabled: bool = True,
 ):
     context = AuthContext(owner, role, uuid4(), False)
@@ -55,6 +58,7 @@ def _app(
             conversations,
             agent_use,
             command_service=command_service,
+            action_service=action_service,
             cursor_codec=ConversationCursorCodec(
                 AuthSecrets(b"x" * 32, key_version=1)
             ),
@@ -73,6 +77,41 @@ def _app(
         routes=tuple(app.router.routes),
     )
     return app, auth, agent_use
+
+
+class FakeActionService:
+    def __init__(self, projection: ActionProjection, *, denied: bool = False) -> None:
+        self.projection = projection
+        self.denied = denied
+        self.calls: list[tuple[UUID, UUID, str]] = []
+
+    def get_for_owner(self, owner, conversation_id, action_id):
+        if self.denied:
+            raise ActionCommandDenied()
+        return self.projection
+
+    def list_for_owner(self, owner, conversation_id):
+        if self.denied:
+            raise ActionCommandDenied()
+        return (self.projection,)
+
+    def confirm(self, owner, action_id, digest):
+        self.calls.append((owner, action_id, digest))
+        if self.denied:
+            raise ActionCommandDenied()
+        return self.projection.model_copy(
+            update={
+                "status": "confirmed",
+                "execution_status": "queued",
+                "confirmed_by_internal_user_id": owner,
+                "confirmed_at": datetime.now(timezone.utc),
+            }
+        )
+
+    def reject(self, owner, action_id):
+        if self.denied:
+            raise ActionCommandDenied()
+        return self.projection.model_copy(update={"status": "rejected"})
 
 
 def _post(client, auth, path: str, text: str, request_id: UUID | None = None):
@@ -220,6 +259,91 @@ def test_conversation_routes_enforce_auth_origin_csrf_and_owner(
         f"/api/v1/conversations/{foreign.conversation.conversation_id}",
         **_credentials(auth),
     ).status_code == 404
+
+
+def _pending_action_projection() -> ActionProjection:
+    return ActionProjection(
+        action_id=uuid4(),
+        task_id=uuid4(),
+        action_seq=1,
+        action_kind="voc.submit",
+        summary="提交本次 VOC 草稿",
+        impact="将生成正式业务记录",
+        action_digest="a" * 64,
+        status="pending",
+        expires_at=datetime.now(timezone.utc),
+        execution_status="not_started",
+        confirmed_by_internal_user_id=None,
+        confirmed_at=None,
+        execution_deadline_at=None,
+    )
+
+
+@pytest.mark.postgres
+def test_action_confirmation_uses_verified_owner_and_csrf(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner, _other = conversation_database
+    conversation = repository.start(owner, uuid4(), "整理客户反馈").conversation
+    action = _pending_action_projection()
+    actions = FakeActionService(action)
+    app, auth, _agent_use = _app(owner, repository, action_service=actions)
+    client = TestClient(app)
+    path = (
+        f"/api/v1/conversations/{conversation.conversation_id}/actions/"
+        f"{action.action_id}/confirm"
+    )
+
+    listed = client.get(
+        f"/api/v1/conversations/{conversation.conversation_id}/actions",
+        **_credentials(auth),
+    )
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["action_digest"] == action.action_digest
+    assert "parameters" not in listed.text
+
+    assert client.post(
+        path,
+        cookies=_credentials(auth)["cookies"],
+        json={"action_digest": action.action_digest},
+    ).status_code == 403
+    confirmed = client.post(
+        path,
+        headers=_write_credentials(auth)["headers"],
+        cookies=_credentials(auth)["cookies"],
+        json={"action_digest": action.action_digest},
+    )
+
+    assert confirmed.status_code == 200, confirmed.text
+    assert actions.calls == [(owner, action.action_id, action.action_digest)]
+    assert confirmed.json()["status"] == "confirmed"
+    assert confirmed.json()["action_digest"] == action.action_digest
+    assert "parameters" not in confirmed.json()
+    assert "confirmed_by_internal_user_id" not in confirmed.json()
+
+
+@pytest.mark.postgres
+def test_non_owner_cannot_confirm_action(
+    conversation_database,
+    repository,
+) -> None:
+    _environment, owner, _other = conversation_database
+    conversation = repository.start(owner, uuid4(), "整理客户反馈").conversation
+    action = _pending_action_projection()
+    actions = FakeActionService(action, denied=True)
+    app, auth, _agent_use = _app(owner, repository, action_service=actions)
+    client = TestClient(app)
+
+    response = client.post(
+        f"/api/v1/conversations/{conversation.conversation_id}/actions/"
+        f"{action.action_id}/confirm",
+        headers=_write_credentials(auth)["headers"],
+        cookies=_credentials(auth)["cookies"],
+        json={"action_digest": action.action_digest},
+    )
+
+    assert response.status_code == 403
 
 
 @pytest.mark.postgres

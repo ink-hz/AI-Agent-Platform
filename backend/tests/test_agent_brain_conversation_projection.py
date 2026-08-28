@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import psycopg
@@ -9,6 +10,13 @@ from app.agent_brain.conversation_projection import (
     ConversationProjection,
     PrivateBrainEvent,
 )
+from app.agent_brain.action_models import (
+    ActionProposal,
+    proposal_digest,
+    stable_action_id,
+)
+from app.agent_brain.action_service import ActionCommandService
+from app.agent_brain.collaboration_models import AgentTaskPublicEventInput
 from app.agent_brain.conversation_service import ConversationCommandService
 from app.agent_brain.loop_repository import BrainLoopRepository
 from test_agent_brain_conversation_context import _complete_mission
@@ -215,3 +223,92 @@ def test_v2_projection_is_idempotent_and_separates_agent_from_brain_resume(
         "task_id", "child_session_id", "source", "source_ref", "kind",
         "summary", "evidence_refs", "artifact_refs", "created_at",
     }
+
+
+@pytest.mark.postgres
+def test_action_card_projects_only_from_persisted_action_record(
+    conversation_database,
+    repository,
+) -> None:
+    environment, owner, _other = conversation_database
+    started = ConversationCommandService(repository, v2_enabled=True).start(
+        owner, uuid4(), "准备提交 VOC 草稿"
+    )
+    loops = BrainLoopRepository(
+        environment["urls"]["platform_brain_worker"],
+        content_codec=repository.content_codec,
+    )
+    from test_agent_brain_loop_runtime import _delegate_response, _runtime
+
+    assert _runtime(loops, _delegate_response()).advance_one() is True
+    with psycopg.connect(environment["admin"]) as connection:
+        task_id = connection.execute(
+            "select task_id from platform_brain.agent_tasks where loop_id=("
+            "select loop_id from platform_brain.brain_loops where conversation_id=%s)",
+            (started.conversation.conversation_id,),
+        ).fetchone()[0]
+    action_id = stable_action_id(task_id, 1)
+    parameters = {"draft_id": "draft-1", "private_note": "不得进入公开事件"}
+    digest = proposal_digest(
+        platform_task_id=task_id,
+        action_seq=1,
+        action_kind="voc.submit",
+        parameters=parameters,
+    )
+    actions = ActionCommandService(
+        environment["urls"]["platform_brain_worker"],
+        content_codec=repository.content_codec,
+        dsn_purpose="brain",
+    )
+    actions.propose(
+        ActionProposal(
+            action_id=action_id,
+            platform_task_id=task_id,
+            action_seq=1,
+            action_kind="voc.submit",
+            summary="提交 VOC 草稿",
+            impact="将写入正式 VOC 业务记录",
+            parameters=parameters,
+            action_digest=digest,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=2),
+            execution_timeout_seconds=300,
+        )
+    )
+    loops.collaboration_repository().append_task_event_and_wake(
+        AgentTaskPublicEventInput(
+            task_id=task_id,
+            seq=1,
+            event_type="action_required",
+            payload={
+                "summary": "伪造的事件文案",
+                "parameters": parameters,
+                "action_id": str(action_id),
+            },
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+
+    projector = ConversationProjection(repository)
+    assert projector.project_brain_pending(started.conversation.conversation_id) > 0
+    events = repository.events_after(
+        owner, started.conversation.conversation_id, after=0, limit=100
+    )
+    cards = [item for item in events if item.event_type == "agent.action_required"]
+
+    assert len(cards) == 1
+    assert cards[0].payload == {
+        "action_id": str(action_id),
+        "task_id": str(task_id),
+        "action_kind": "voc.submit",
+        "summary": "提交 VOC 草稿",
+        "impact": "将写入正式 VOC 业务记录",
+        "status": "pending",
+        "execution_status": "not_started",
+        "action_digest": digest,
+        "action_digest_prefix": digest[:12],
+        "expires_at": cards[0].payload["expires_at"],
+        "confirmed_at": None,
+        "confirmed_by": None,
+    }
+    assert "private_note" not in str(cards[0].payload)
+    assert "伪造的事件文案" not in str(cards[0].payload)
