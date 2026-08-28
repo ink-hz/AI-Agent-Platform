@@ -9,6 +9,7 @@ import shutil
 from urllib.parse import urlsplit
 
 from markdown_it import MarkdownIt
+import pytest
 import yaml
 
 from app.ai_notes.models import AiNotesIndex, ArticleFrontmatter
@@ -201,6 +202,57 @@ FINAL_DEDUPLICATION_PRIMARY_ARTICLES = {
     "AI 质量信号与反馈闭环": "llm-agent-observability",
     "AI 辅助架构设计方法": "ai-native-architecture-design",
     "意图驱动业务平台": "intent-driven-ai-business-platform",
+}
+
+FINAL_DEDUPLICATION_BOUNDARY_ARTICLES = {
+    "Agent 工程学习次序": (
+        "enterprise-agent-system-architecture",
+        "rag-retrieval-engineering",
+        "claude-code-architecture",
+    ),
+    "LLM 应用请求到可靠回答": (
+        "llm-inference-serving-engineering",
+        "llm-agent-observability",
+    ),
+    "Agent 全景、状态与信任层": (
+        "agent-identity-access-control",
+        "intent-driven-ai-business-platform",
+    ),
+    "身份、委托与行动授权": ("enterprise-agent-system-architecture",),
+    "Claude Code 公开能力": ("agent-framework-selection",),
+    "开源 Agent 运行时事实": (
+        "metabot-agent-control-bus",
+        "agent-framework-selection",
+    ),
+    "MetaBot 远程控制总线": (
+        "open-source-agent-runtime",
+        "agent-framework-selection",
+    ),
+    "Agent 框架选型方法": (
+        "claude-code-architecture",
+        "open-source-agent-runtime",
+        "metabot-agent-control-bus",
+    ),
+    "RAG 检索与引用": (
+        "llm-application-system-architecture",
+        "llm-agent-observability",
+    ),
+    "LLM 推理性能机制": (
+        "ai-cloud-native-runtime",
+        "llm-agent-observability",
+    ),
+    "AI 工作负载运行时包装、调度与恢复": (
+        "llm-inference-serving-engineering",
+    ),
+    "AI 质量信号与反馈闭环": (
+        "llm-application-system-architecture",
+        "enterprise-agent-system-architecture",
+    ),
+    "AI 辅助架构设计方法": ("intent-driven-ai-business-platform",),
+    "意图驱动业务平台": (
+        "enterprise-agent-system-architecture",
+        "ai-native-architecture-design",
+    ),
 }
 
 REQUIRED_BATCH_BOUNDARY_LINKS = {
@@ -603,21 +655,50 @@ def mermaid_principal_node_ids(source: str) -> set[str]:
     return node_ids - subgraph_ids
 
 
+def mermaid_subgraph_ids(source: str) -> tuple[str, ...] | None:
+    declarations = re.findall(r"(?mi)^\s*subgraph\b[^\n]*$", source)
+    group_ids = []
+    for declaration in declarations:
+        parsed = re.fullmatch(
+            r"\s*subgraph\s+([A-Za-z_][A-Za-z0-9_-]*)"
+            r"(?:\s*\[[^\n]*\])?\s*",
+            declaration,
+            flags=re.IGNORECASE,
+        )
+        if parsed is not None:
+            group_ids.append(parsed.group(1))
+    if len(group_ids) != len(declarations):
+        return None
+    return tuple(group_ids)
+
+
+def mermaid_white_style_ids(source: str) -> set[str]:
+    white_style_ids = set()
+    for styled in re.finditer(
+        r"(?mi)^\s*style\s+([A-Za-z_][A-Za-z0-9_-]*)\s+([^\n]*)$",
+        source,
+    ):
+        properties = styled.group(2)
+        if re.search(
+            r"(?i)(?:^|,)\s*fill\s*:\s*#ffffff\s*(?=,|;|$)",
+            properties,
+        ):
+            white_style_ids.add(styled.group(1))
+    return white_style_ids
+
+
+def mermaid_groups_have_white_styles(
+    source: str, *, require_group: bool
+) -> bool:
+    group_ids = mermaid_subgraph_ids(source)
+    if group_ids is None or (require_group and not group_ids):
+        return False
+    white_style_ids = mermaid_white_style_ids(source)
+    return all(group_id in white_style_ids for group_id in group_ids)
+
+
 def mermaid_has_white_group(source: str) -> bool:
-    group_ids = set(
-        re.findall(
-            r"(?mi)^\s*subgraph\s+([A-Za-z_][A-Za-z0-9_-]*)\b",
-            source,
-        )
-    )
-    white_style_ids = set(
-        re.findall(
-            r"(?mi)^\s*style\s+([A-Za-z_][A-Za-z0-9_-]*)\s+"
-            r"[^\n]*\bfill:#FFFFFF\b",
-            source,
-        )
-    )
-    return bool(group_ids) and group_ids <= white_style_ids
+    return mermaid_groups_have_white_styles(source, require_group=True)
 
 
 def cloud_native_contains_forbidden_tutorial_or_hpa(markdown: str) -> bool:
@@ -1226,20 +1307,7 @@ def batch_mermaid_blocks() -> tuple[tuple[str, str], ...]:
 
 
 def mermaid_groups_are_white(diagram: str) -> bool:
-    group_ids = set(
-        re.findall(
-            r"(?mi)^\s*subgraph\s+([A-Za-z_][A-Za-z0-9_-]*)\b",
-            diagram,
-        )
-    )
-    white_style_ids = set(
-        re.findall(
-            r"(?mi)^\s*style\s+([A-Za-z_][A-Za-z0-9_-]*)\s+"
-            r"[^\n]*\bfill:#FFFFFF\b",
-            diagram,
-        )
-    )
-    return group_ids <= white_style_ids
+    return mermaid_groups_have_white_styles(diagram, require_group=False)
 
 
 def markdown_link_destinations(markdown: str) -> tuple[str, ...]:
@@ -1252,6 +1320,18 @@ def markdown_link_destinations(markdown: str) -> tuple[str, ...]:
             assert destination is not None
             destinations.append(destination)
     return tuple(destinations)
+
+
+def markdown_has_forbidden_h1_or_html(markdown: str) -> bool:
+    pending_tokens = list(MarkdownIt("commonmark", {"html": True}).parse(markdown))
+    while pending_tokens:
+        token = pending_tokens.pop()
+        if token.type == "heading_open" and token.tag == "h1":
+            return True
+        if token.type in {"html_block", "html_inline"}:
+            return True
+        pending_tokens.extend(token.children or ())
+    return False
 
 
 def assert_safe_resolving_article_link(source_path: Path, destination: str) -> None:
@@ -1295,8 +1375,46 @@ def assert_safe_resolving_article_link(source_path: Path, destination: str) -> N
     candidates[0].resolve().relative_to(CONTENT_ROOT.resolve())
 
 
+def candidate_article_paths_by_slug() -> dict[str, Path]:
+    expected_slugs = {
+        slug
+        for category_slugs in EXPECTED_CANDIDATE_CATALOG.values()
+        for slug in category_slugs
+    }
+    paths_by_slug = {}
+    for path in CONTENT_ROOT.glob("*/*.md"):
+        if path.name == "_index.md":
+            continue
+        frontmatter, _ = parse_frontmatter(path)
+        slug = frontmatter.get("slug")
+        if slug not in expected_slugs:
+            continue
+        assert slug not in paths_by_slug
+        paths_by_slug[slug] = path.resolve()
+    assert set(paths_by_slug) == expected_slugs
+    return paths_by_slug
+
+
+def source_review_article_link_slug(
+    destination: str, *, paths_by_slug: dict[str, Path]
+) -> str:
+    parsed = urlsplit(destination)
+    assert not parsed.scheme
+    assert not parsed.netloc
+    assert parsed.path
+    target = (SOURCE_REVIEW.parent / parsed.path).resolve()
+    assert target.is_file()
+    matching_slugs = tuple(
+        slug for slug, article_path in paths_by_slug.items()
+        if article_path == target
+    )
+    assert len(matching_slugs) == 1
+    return matching_slugs[0]
+
+
 def final_deduplication_matrix(markdown: str) -> dict[str, tuple[str, str]]:
     section = source_review_h2_section(markdown, "## 最终跨文章去重矩阵")
+    paths_by_slug = candidate_article_paths_by_slug()
     matrix = {}
     for line in section.splitlines():
         if not line.startswith("| ") or line.startswith("| ---"):
@@ -1307,11 +1425,39 @@ def final_deduplication_matrix(markdown: str) -> dict[str, tuple[str, str]]:
         assert len(cells) == 3
         main_link = re.fullmatch(r"\[[^\]]+\]\(([^)]+)\)", cells[1])
         assert main_link is not None
-        main_target = (SOURCE_REVIEW.parent / main_link.group(1)).resolve()
-        assert main_target.is_file()
-        main_frontmatter, _ = parse_frontmatter(main_target)
-        matrix[cells[0]] = (main_frontmatter["slug"], cells[2])
+        main_slug = source_review_article_link_slug(
+            main_link.group(1), paths_by_slug=paths_by_slug
+        )
+
+        boundary_links = markdown_link_destinations(cells[2])
+        assert boundary_links
+        boundary_slugs = tuple(
+            source_review_article_link_slug(
+                destination, paths_by_slug=paths_by_slug
+            )
+            for destination in boundary_links
+        )
+        assert len(boundary_slugs) == len(set(boundary_slugs))
+        assert cells[0] in FINAL_DEDUPLICATION_BOUNDARY_ARTICLES
+        assert set(boundary_slugs) == set(
+            FINAL_DEDUPLICATION_BOUNDARY_ARTICLES[cells[0]]
+        )
+        matrix[cells[0]] = (main_slug, cells[2])
     return matrix
+
+
+def final_deduplication_matrix_fixture(boundary: str) -> str:
+    main_article = (
+        "../../backend/app/ai_notes/content/"
+        "01-foundations/01-agent-engineering-learning-map.md"
+    )
+    return f"""
+## 最终跨文章去重矩阵
+
+| 主题 | 唯一主文章 | 其他文章保留的边界与站内链接 |
+| --- | --- | --- |
+| Agent 工程学习次序 | [Agent 工程学习地图]({main_article}) | {boundary} |
+"""
 
 
 def test_batch_registries_match_the_fixed_eight_article_manifest() -> None:
@@ -1375,9 +1521,7 @@ def test_batch_articles_are_clean_explained_and_internally_linked() -> None:
     for slug in COMPLETED_BATCH_ARTICLES:
         source_path = batch_article_path(slug)
         _, markdown = parse_frontmatter(source_path)
-        assert re.search(r"(?m)^#\s+", markdown) is None
-        tokens = MarkdownIt("commonmark", {"html": True}).parse(markdown)
-        assert not {token.type for token in tokens} & {"html_block", "html_inline"}
+        assert not markdown_has_forbidden_h1_or_html(markdown)
         for marker in forbidden_markers:
             assert marker.casefold() not in markdown.casefold()
 
@@ -1394,6 +1538,93 @@ def test_batch_articles_are_clean_explained_and_internally_linked() -> None:
             after = markdown[diagram.end():diagram.end() + 480]
             assert re.search(r"[\u4e00-\u9fff]", before)
             assert re.search(r"[\u4e00-\u9fff]", after)
+
+
+def test_markdown_structure_guard_rejects_setext_h1() -> None:
+    assert markdown_has_forbidden_h1_or_html("Setext 标题\n===========\n")
+
+
+def test_markdown_structure_guard_rejects_inline_html() -> None:
+    assert markdown_has_forbidden_h1_or_html(
+        "正文中嵌入 <span>原始 HTML</span>。\n"
+    )
+
+
+def test_mermaid_group_guard_rejects_unicode_id_gray_fill_bypass() -> None:
+    diagram = """
+flowchart LR
+    subgraph 分组[灰色分组]
+        A[输入] --> B[输出]
+    end
+    style 分组 fill:#F3F4F6,stroke:#CBD5E1,color:#172033;
+"""
+    assert not mermaid_groups_are_white(diagram)
+    assert not mermaid_has_white_group(diagram)
+
+
+def test_mermaid_group_guard_rejects_title_only_subgraph() -> None:
+    diagram = """
+flowchart LR
+    subgraph [没有稳定 ID]
+        A[输入] --> B[输出]
+    end
+"""
+    assert not mermaid_groups_are_white(diagram)
+    assert not mermaid_has_white_group(diagram)
+
+
+def test_mermaid_group_guard_normalizes_white_fill() -> None:
+    diagram = """
+flowchart LR
+    subgraph GROUP[分组]
+        A[输入] --> B[输出]
+    end
+    style GROUP fill : #ffffff, stroke:#CBD5E1,color:#172033;
+"""
+    assert mermaid_groups_are_white(diagram)
+    assert mermaid_has_white_group(diagram)
+
+
+def test_mermaid_group_guard_rejects_stable_id_gray_fill() -> None:
+    diagram = """
+flowchart LR
+    subgraph GROUP[灰色分组]
+        A[输入] --> B[输出]
+    end
+    style GROUP fill:#F3F4F6,stroke:#CBD5E1,color:#172033;
+"""
+    assert not mermaid_groups_are_white(diagram)
+    assert not mermaid_has_white_group(diagram)
+
+
+def test_final_deduplication_matrix_rejects_broken_boundary_link() -> None:
+    fixture = final_deduplication_matrix_fixture(
+        "转到[不存在文章](../../backend/app/ai_notes/content/"
+        "01-foundations/missing.md)。"
+    )
+    with pytest.raises(AssertionError):
+        final_deduplication_matrix(fixture)
+
+
+def test_final_deduplication_matrix_rejects_external_boundary_link() -> None:
+    fixture = final_deduplication_matrix_fixture(
+        "转到[外部页面](https://example.com/ai-note)。"
+    )
+    with pytest.raises(AssertionError):
+        final_deduplication_matrix(fixture)
+
+
+def test_final_deduplication_matrix_rejects_wrong_boundary_article() -> None:
+    fixture = final_deduplication_matrix_fixture(
+        "参见[企业级 Agent](../../backend/app/ai_notes/content/"
+        "02-agent-architecture/01-enterprise-agent-system-architecture.md)、"
+        "[RAG](../../backend/app/ai_notes/content/"
+        "04-ai-engineering/01-rag-retrieval-engineering.md)和"
+        "[错误的身份文章](../../backend/app/ai_notes/content/"
+        "02-agent-architecture/02-agent-identity-access-control.md)。"
+    )
+    with pytest.raises(AssertionError):
+        final_deduplication_matrix(fixture)
 
 
 def test_source_review_is_complete_and_records_final_deduplication_matrix() -> None:
