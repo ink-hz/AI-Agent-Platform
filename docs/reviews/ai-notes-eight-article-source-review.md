@@ -1,4 +1,4 @@
-# AI 工程笔记八篇迁移：源稿研究台账
+## AI 工程笔记八篇迁移：源稿研究台账
 
 隔离 worktree：`/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/ai-notes-eight-article-batch`
 
