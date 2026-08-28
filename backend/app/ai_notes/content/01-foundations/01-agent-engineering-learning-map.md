@@ -39,6 +39,9 @@ draft: false
 
 ```mermaid
 flowchart TB
+    accTitle: Agent 最小行动循环
+    accDescr: Agent 从目标和当前状态出发，经过行动提议、策略校验、工具执行和结果观察，最终继续、追问、停止或交还人工。
+
     subgraph LOOP["最小行动循环"]
         direction TB
         A[目标与当前状态] --> B[模型提出行动]
@@ -280,25 +283,24 @@ Agent 评估不能只看最终文字是否流畅。先沿行动链路把问题�
 可以使用“根据服务异常生成调查结论，并在批准后创建处理工单”贯穿整条路线：
 
 ```mermaid
-flowchart TB
-    subgraph ROADMAP["能力递进"]
-        direction TB
-        subgraph FOUNDATION["基础闭环"]
-            direction TB
-            A[固定日志与证据结论] --> B[工具搜索真实记录]
-        end
-        subgraph RUNTIME["生产运行"]
-            direction TB
-            C[持久任务与故障恢复] -->|知识化| D[规范、历史与检索证据]
-            D --> E[审批后幂等创建工单]
-        end
-        subgraph QUALITY["质量进化"]
-            direction TB
-            F[真实失败回归集] --> G[验证是否需要独立子 Agent]
-        end
-        B -->|状态化| C
-        E -->|评估化| F
+flowchart LR
+    accTitle: Agent 工程能力递进路线
+    accDescr: 从固定证据和真实工具开始，逐步增加持久运行、知识检索、审批执行、失败评估和子 Agent 验证。
+
+    subgraph FOUNDATION["基础闭环"]
+        direction LR
+        A[固定日志与证据结论] --> B[工具搜索真实记录]
     end
+    subgraph RUNTIME["生产运行"]
+        direction LR
+        C[持久任务与故障恢复] --> D[规范、历史与检索证据] --> E[审批后幂等创建工单]
+    end
+    subgraph QUALITY["质量进化"]
+        direction LR
+        F[真实失败回归集] --> G[验证是否需要独立子 Agent]
+    end
+    B -->|状态化| C
+    E -->|评估化| F
 
     classDef input fill:#DBEAFE,stroke:#60A5FA,color:#172033;
     classDef data fill:#CCFBF1,stroke:#5EEAD4,color:#172033;
@@ -310,7 +312,6 @@ flowchart TB
     class C,D data;
     class E policy;
     class F,G success;
-    style ROADMAP fill:#F8FAFC,stroke:#CBD5E1,color:#172033;
     style FOUNDATION fill:#EFF6FF,stroke:#93C5FD,color:#172033;
     style RUNTIME fill:#F0FDFA,stroke:#5EEAD4,color:#172033;
     style QUALITY fill:#F0FDF4,stroke:#86EFAC,color:#172033;

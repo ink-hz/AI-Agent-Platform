@@ -33,6 +33,9 @@ draft: false
 
 ```mermaid
 flowchart TB
+    accTitle: 企业级 Agent 系统分层
+    accDescr: 入口与任务状态进入智能决策，行动经过信任控制和工具执行，并持续产生验证与审计证据。
+
     subgraph ENTRY["入口与状态"]
         direction LR
         U[用户、事件或 API 目标]
@@ -129,6 +132,9 @@ flowchart TB
 
 ```mermaid
 flowchart TB
+    accTitle: Agent 受控运行循环
+    accDescr: Agent 读取状态、提出行动，经过结构和信任校验后执行工具，直到完成证据满足或返回修正。
+
     subgraph CYCLE["运行循环"]
         A[读取目标与当前状态] --> B[模型提出行动或完成声明]
         B --> C{结构合法且工具存在}
@@ -180,6 +186,10 @@ flowchart TB
 
 ```mermaid
 stateDiagram-v2
+    accTitle: Agent 任务生命周期
+    accDescr: 任务在就绪、运行、等待审批、等待外部结果、暂停、完成、失败和取消状态之间转换。
+    direction LR
+
     [*] --> Ready
     Ready --> Running: 开始或恢复
     Running --> WaitingApproval: 高风险行动待确认
@@ -285,7 +295,10 @@ MCP 为 AI 应用连接工具和数据提供开放协议。采用 MCP 可以统�
 ### 5.3 完整决策链
 
 ```mermaid
-flowchart TB
+flowchart LR
+    accTitle: Agent 信任决策链路
+    accDescr: 行动依次经过主体、组织策略、资源授权、动态风险、审批和执行前复验，再执行并写入审计证据。
+
     subgraph TRUST["信任决策"]
         A[验证主体与委托关系] --> B[应用组织级不可覆盖策略]
         B --> C[校验工具与资源级授权]
@@ -470,6 +483,9 @@ Agent 不应重写已经验证的业务内核。常见做法是让传统 UI 和 
 
 ```mermaid
 flowchart TB
+    accTitle: 传统 UI 与 Agent 复用领域服务
+    accDescr: 传统界面 API 和 Agent 工具接口共同调用领域服务，再访问数据与外部系统。
+
     UI[传统 UI] --> API[面向界面的 API]
     A[Agent 运行时] --> AT[Agent 工具接口]
     API --> D[领域服务]

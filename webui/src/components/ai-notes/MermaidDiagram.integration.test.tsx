@@ -33,6 +33,14 @@ function expectSemanticStyling(source: string): void {
 }
 
 
+function expectAccessibilityMetadata(sources: string[]): void {
+  for (const source of sources) {
+    expect(source).toMatch(/^\s*accTitle:\s*\S.+$/m);
+    expect(source).toMatch(/^\s*accDescr:\s*\S.+$/m);
+  }
+}
+
+
 async function expectProductionDiagramsToRender(sources: string[]): Promise<void> {
   const { default: mermaid } = await import("mermaid");
   mermaid.initialize({
@@ -122,6 +130,7 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(sources).toHaveLength(2);
     expect(sources.join("\n")).toContain("最小行动循环");
     expect(sources.join("\n")).toContain("能力递进");
+    expectAccessibilityMetadata(sources);
     await expectProductionDiagramsToRender(sources);
   });
 
@@ -132,6 +141,7 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(sources).toHaveLength(5);
     expect(sources.join("\n")).toContain("运行循环");
     expect(sources.join("\n")).toContain("信任决策");
+    expectAccessibilityMetadata(sources);
     await expectProductionDiagramsToRender(sources);
   });
 
