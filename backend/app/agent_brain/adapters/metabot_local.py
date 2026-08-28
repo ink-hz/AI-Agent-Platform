@@ -38,9 +38,7 @@ class _Relay(Protocol):
 
     def events(self, run_id: UUID): ...
 
-    def has_active_worker(
-        self, agent_id: str, *, freshness_seconds: int
-    ) -> bool: ...
+    def has_active_worker(self, agent_id: str, *, freshness_seconds: int) -> bool: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +99,10 @@ class MetaBotLocalAdapter(AgentAdapter):
         child_session_id: str,
         message: AdapterMessage,
         delivery: AdapterDelivery,
+        *,
+        task: AdapterTask | None = None,
     ) -> MessageDeliveryReceipt:
+        del task
         try:
             task_id, loop_id, agent_id = self._session_parts(child_session_id)
         except (TypeError, ValueError):
@@ -132,8 +133,13 @@ class MetaBotLocalAdapter(AgentAdapter):
         )
 
     def read_events(
-        self, child_session_id: str, *, after: int
+        self,
+        child_session_id: str,
+        *,
+        after: int,
+        task: AdapterTask | None = None,
     ) -> tuple[AdapterEvent, ...]:
+        del task
         try:
             task_id, _loop_id, _agent_id = self._session_parts(child_session_id)
         except (TypeError, ValueError):
@@ -152,7 +158,10 @@ class MetaBotLocalAdapter(AgentAdapter):
         child_session_id: str,
         reason: str,
         delivery: AdapterDelivery,
+        *,
+        task: AdapterTask | None = None,
     ) -> StopDeliveryReceipt:
+        del task
         try:
             task_id, loop_id, agent_id = self._session_parts(child_session_id)
         except (TypeError, ValueError):
@@ -175,10 +184,10 @@ class MetaBotLocalAdapter(AgentAdapter):
         )
         return StopDeliveryReceipt(self._enqueue(payload), True)
 
-    def dispatch(
-        self, task: AdapterTask, delivery: AdapterDelivery
-    ) -> DispatchReceipt:
-        if task.agent_id == "agent-brain-bot" or not self._worker_available(task.agent_id):
+    def dispatch(self, task: AdapterTask, delivery: AdapterDelivery) -> DispatchReceipt:
+        if task.agent_id == "agent-brain-bot" or not self._worker_available(
+            task.agent_id
+        ):
             return DispatchReceipt(
                 accepted=False,
                 result=NormalizedTaskResult(
@@ -251,13 +260,12 @@ class MetaBotLocalAdapter(AgentAdapter):
             except ExecutionRelayNotFound:
                 break
             run_ids.append(candidate)
-        events = [
-            event
-            for run_id in run_ids
-            for event in self._relay.events(run_id)
-        ]
+        events = [event for run_id in run_ids for event in self._relay.events(run_id)]
         return tuple(
-            sorted(events, key=lambda event: (event.created_at, str(event.run_id), event.seq))
+            sorted(
+                events,
+                key=lambda event: (event.created_at, str(event.run_id), event.seq),
+            )
         )
 
     @staticmethod

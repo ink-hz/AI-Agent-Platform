@@ -130,9 +130,7 @@ class BrainLoopRuntime:
                 )
                 return True
         persisted_messages = self._repository.reconstruct_messages(lease.loop_id)
-        messages = self._context_policy.build_brain_context(
-            persisted_messages
-        ).messages
+        messages = self._context_policy.build_brain_context(persisted_messages).messages
         owned_task_ids = self._repository.task_ids_for_loop(lease.loop_id)
         active_task_ids = self._repository.active_session_task_ids(lease.loop_id)
         forced = (
@@ -169,9 +167,7 @@ class BrainLoopRuntime:
                 forced=forced,
                 has_settled_task=self._repository.has_settled_task(lease.loop_id),
             ),
-            tool_choice=(
-                {"type": "tool", "name": "submit_answer"} if forced else None
-            ),
+            tool_choice=({"type": "tool", "name": "submit_answer"} if forced else None),
             budget_notice=(
                 "执行预算已到达上限。请立即使用 submit_answer 提交已有结果，"
                 "并明确说明未完成部分。"
@@ -210,9 +206,7 @@ class BrainLoopRuntime:
                     pass
 
         try:
-            response = self._model.complete(
-                request, on_thinking_delta=persist_thinking
-            )
+            response = self._model.complete(request, on_thinking_delta=persist_thinking)
         except ProviderRefused:
             self._finalize_thinking(lease.step_id, thinking_blocks, interrupted=True)
             self._repository.fail_with_platform_summary(
@@ -230,9 +224,7 @@ class BrainLoopRuntime:
             batch = parse_tool_batch(
                 response.content_blocks,
                 ToolLimits(
-                    max_parallel_tasks=max(
-                        1, min(4, loop.max_tasks - loop.task_count)
-                    ),
+                    max_parallel_tasks=max(1, min(4, loop.max_tasks - loop.task_count)),
                     allowed_task_ids=owned_task_ids,
                     active_task_ids=active_task_ids,
                 ),
@@ -256,9 +248,7 @@ class BrainLoopRuntime:
                     lease.loop_id, "protocol_violation_after_retry"
                 )
                 return True
-            self._finalize_thinking(
-                lease.step_id, thinking_blocks, interrupted=True
-            )
+            self._finalize_thinking(lease.step_id, thinking_blocks, interrupted=True)
             thinking_blocks.clear()
             correction = self._request_builder.build(
                 messages=messages,
@@ -486,9 +476,7 @@ class BrainLoopRuntime:
         """
 
         try:
-            return render_agent_roster(
-                self._runtime_registry.roster_for_user(owner_id)
-            )
+            return render_agent_roster(self._runtime_registry.roster_for_user(owner_id))
         except AgentUseAuthorizationUnavailable:
             return ROSTER_UNAVAILABLE
 
@@ -565,7 +553,10 @@ class BrainLoopRuntime:
         task = AdapterTask(
             task_id=lease.task_id,
             loop_id=lease.loop_id,
+            conversation_id=lease.conversation_id,
+            turn_id=lease.turn_id,
             agent_id=lease.agent_id,
+            capability_version=lease.capability_version,
             context=lease.context,
             effective_deadline_at=lease.effective_deadline_at,
             requester_subject=lease.requester_subject,
@@ -620,6 +611,7 @@ class BrainLoopRuntime:
                     created_at=datetime.now(timezone.utc),
                 ),
                 delivery,
+                task=task,
             )
             self._repository.complete_leased_delivery(lease)
         else:
@@ -627,6 +619,7 @@ class BrainLoopRuntime:
                 remote_child_id,
                 "Agent 大脑已请求停止当前专业任务。",
                 delivery,
+                task=task,
             )
             self._repository.complete_leased_delivery(lease)
         return True
@@ -643,17 +636,27 @@ class BrainLoopRuntime:
             else selected.child_session_id
         )
         try:
+            task = AdapterTask(
+                task_id=selected.task_id,
+                loop_id=selected.loop_id,
+                conversation_id=selected.conversation_id,
+                turn_id=selected.turn_id,
+                agent_id=selected.agent_id,
+                capability_version=selected.capability_version,
+                context={},
+                effective_deadline_at=(
+                    selected.effective_deadline_at or datetime.now(timezone.utc)
+                ),
+                requester_subject=selected.requester_subject,
+            )
             events = adapter.read_events(
-                remote_child_id, after=selected.after_event_seq
+                remote_child_id, after=selected.after_event_seq, task=task
             )
         except AgentEventProtocolError:
             self._repository.fail_agent_task_protocol(selected.task_id)
             return True
         expected_seq = selected.after_event_seq + 1
-        if any(
-            event.seq != expected_seq + index
-            for index, event in enumerate(events)
-        ):
+        if any(event.seq != expected_seq + index for index, event in enumerate(events)):
             self._repository.fail_agent_task_protocol(selected.task_id)
             return True
         changed = False
@@ -692,9 +695,7 @@ class BrainLoopRuntime:
             self._repository.fail_agent_task_protocol(selected.task_id)
             return True
         if saw_result:
-            self._repository.complete_initial_delivery_after_events(
-                selected.task_id
-            )
+            self._repository.complete_initial_delivery_after_events(selected.task_id)
         self._repository.touch_adapter_session(selected.task_id)
         return changed
 

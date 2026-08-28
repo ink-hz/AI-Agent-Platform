@@ -46,9 +46,12 @@ def test_reference_adapter_supports_live_session() -> None:
     opened = adapter.start_session(_task(), _delivery())
 
     assert opened.accepted is True
-    assert opened.child_session_id == adapter.start_session(
-        _task(), _delivery(key="reference-delivery-01")
-    ).child_session_id
+    assert (
+        opened.child_session_id
+        == adapter.start_session(
+            _task(), _delivery(key="reference-delivery-01")
+        ).child_session_id
+    )
     initial = adapter.read_events(opened.child_session_id, after=0)
     assert [event.kind for event in initial] == [
         "thinking_summary",
@@ -59,9 +62,7 @@ def test_reference_adapter_supports_live_session() -> None:
     assert initial[0].source == "provider"
     assert all(event.source_ref for event in initial)
 
-    sent = adapter.send_message(
-        opened.child_session_id, _message(), _delivery(2)
-    )
+    sent = adapter.send_message(opened.child_session_id, _message(), _delivery(2))
     replay = adapter.send_message(
         opened.child_session_id,
         _message(),
@@ -121,7 +122,8 @@ def test_event_gap_fails_only_selected_task_without_escaping_worker_phase() -> N
     failures: list[UUID] = []
 
     class GapAdapter(ReferenceAdapter):
-        def read_events(self, child_session_id: str, *, after: int):
+        def read_events(self, child_session_id: str, *, after: int, task=None):
+            assert isinstance(task, AdapterTask)
             assert child_session_id == "remote-gap-task"
             assert after == 0
             return (
@@ -172,7 +174,8 @@ def test_adapter_protocol_error_is_converted_to_task_local_failure() -> None:
     failures: list[UUID] = []
 
     class InvalidPageAdapter(ReferenceAdapter):
-        def read_events(self, _child_session_id: str, *, after: int):
+        def read_events(self, _child_session_id: str, *, after: int, task=None):
+            assert isinstance(task, AdapterTask)
             assert after == 0
             raise AgentEventProtocolError("private upstream detail")
 

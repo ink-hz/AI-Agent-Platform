@@ -11,7 +11,10 @@ MISSION_SCHEMA_MIGRATION = (
     ROOT / "backend" / "control_migrations" / "029_agent_brain_mvp.sql"
 )
 LATEST_AGENT_BRAIN_MIGRATION = (
-    ROOT / "backend" / "control_migrations" / "047_agent_brain_collaboration_retention.sql"
+    ROOT
+    / "backend"
+    / "control_migrations"
+    / "047_agent_brain_collaboration_retention.sql"
 )
 
 
@@ -52,9 +55,18 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
     assert environment["PLATFORM_DIRECT_AGENT_ENABLED"] == (
         "${PLATFORM_DIRECT_AGENT_ENABLED:-0}"
     )
-    assert environment["PLATFORM_AGENT_BRAIN_ENABLED"] == "${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
-    assert environment["PLATFORM_CONTROL_DATABASE_URL_FILE"] == "/run/secrets/control-database-url"
-    assert environment["PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE"] == "/run/secrets/content-encryption-keyring"
+    assert (
+        environment["PLATFORM_AGENT_BRAIN_ENABLED"]
+        == "${PLATFORM_AGENT_BRAIN_ENABLED:-0}"
+    )
+    assert (
+        environment["PLATFORM_CONTROL_DATABASE_URL_FILE"]
+        == "/run/secrets/control-database-url"
+    )
+    assert (
+        environment["PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE"]
+        == "/run/secrets/content-encryption-keyring"
+    )
     assert api["volumes"] == ["platform-api-secrets:/run/secrets:ro"]
     assert environment["PLATFORM_AGENT_BRAIN_V2_ENABLED"] == (
         "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
@@ -65,7 +77,10 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
     assert "ports" not in worker
     assert set(worker["networks"]) == {"platform-internal", "platform-edge"}
     assert worker["command"] == [
-        "python", "-m", "app.agent_brain.worker_runtime", "all"
+        "python",
+        "-m",
+        "app.agent_brain.worker_runtime",
+        "all",
     ]
     assert worker["user"] == "10001:10001"
     assert worker["read_only"] is True
@@ -113,12 +128,17 @@ def test_remote_stage_requires_mode_0600_and_preserves_feature_state() -> None:
     assert '"600 10001"' in stage
     assert "PLATFORM_EXECUTION_RELAY_ENABLED=1" in stage
     assert 'PLATFORM_AGENT_BRAIN_ENABLED="${PLATFORM_AGENT_BRAIN_ENABLED:-0}"' in stage
-    assert 'PLATFORM_AGENT_BRAIN_V2_ENABLED="${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"' in stage
+    assert (
+        'PLATFORM_AGENT_BRAIN_V2_ENABLED="${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"'
+        in stage
+    )
     assert "PLATFORM_AGENT_BRAIN_COLLABORATION_ENABLED" not in stage
     assert '[[ "$PLATFORM_AGENT_BRAIN_ENABLED" == "0" ]] || fail' not in stage
     assert '[[ "$PLATFORM_AGENT_BRAIN_V2_ENABLED" == "0" ]] || fail' not in stage
     assert "read_previous_feature" in stage
-    assert 'PLATFORM_DIRECT_AGENT_ENABLED="${PLATFORM_DIRECT_AGENT_ENABLED:-1}"' in stage
+    assert (
+        'PLATFORM_DIRECT_AGENT_ENABLED="${PLATFORM_DIRECT_AGENT_ENABLED:-1}"' in stage
+    )
     assert '[[ "$PLATFORM_DIRECT_AGENT_ENABLED" == "1" ]] || fail' in stage
     assert "orbbec-agent-platform-brain-secrets" in stage
     assert (
@@ -138,7 +158,9 @@ def test_direct_agent_runtime_is_started_without_enabling_brain_v1() -> None:
     assert "brain_use_enabled" not in source
 
 
-def test_control_bootstrap_runs_execution_job_kind_preflight_before_migrations() -> None:
+def test_control_bootstrap_runs_execution_job_kind_preflight_before_migrations() -> (
+    None
+):
     bootstrap = (CLOUD / "bootstrap-control-db.sh").read_text(encoding="utf-8")
     helper = CLOUD / "preflight-execution-job-kind.sh"
 
@@ -175,9 +197,9 @@ def test_v2_cutover_has_exact_fail_closed_gates() -> None:
 
 
 def test_v2_rollback_stops_intake_without_rewriting_history() -> None:
-    script = (CLOUD / "rollback-dingtalk-production.sh").read_text(
-        encoding="utf-8"
-    ).lower()
+    script = (
+        (CLOUD / "rollback-dingtalk-production.sh").read_text(encoding="utf-8").lower()
+    )
 
     assert "platform_agent_brain_v2_enabled=0" in script
     assert "platform_agent_brain_collaboration_enabled" not in script
@@ -221,6 +243,10 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
             calls.append("cancel")
             return 1
 
+        def expire_actions(self):
+            calls.append("expire-actions")
+            return 1
+
     class Repository:
         def heartbeat(self, name, *, status, error_code=None):
             calls.append(f"heartbeat:{name}:{status}")
@@ -259,13 +285,24 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
 
     changed = tick(validate_worker_mode("all"), Runtime(), Repository())
 
-    assert changed == 14
+    assert changed == 15
     assert calls == [
-        "brain", "settle", "heartbeat:agent-brain-step:healthy",
-        "adapter", "reconcile:persistent", "reconcile:metabot_local", "cancel",
-        "heartbeat:agent-brain-adapter:healthy", "settle-waits", "expire-steps",
-        "expire-deliveries", "expire-users", "release-blocked",
-        "expire-task-deadlines", "erase-responses",
+        "brain",
+        "settle",
+        "heartbeat:agent-brain-step:healthy",
+        "adapter",
+        "reconcile:persistent",
+        "reconcile:metabot_local",
+        "cancel",
+        "heartbeat:agent-brain-adapter:healthy",
+        "expire-actions",
+        "settle-waits",
+        "expire-steps",
+        "expire-deliveries",
+        "expire-users",
+        "release-blocked",
+        "expire-task-deadlines",
+        "erase-responses",
         "erase-conversations",
         "heartbeat:agent-brain-reaper:healthy",
     ]
@@ -295,6 +332,9 @@ def test_private_worker_phase_failure_does_not_skip_other_durable_lanes() -> Non
         def reconcile_cancellations(self):
             calls.append("cancel")
             return 1
+
+        def expire_actions(self):
+            return 0
 
     class Repository:
         def heartbeat(self, name, *, status, error_code=None):
@@ -367,16 +407,16 @@ def test_formal_nginx_keeps_platform_root_and_proxies_office_safely() -> None:
     assert "proxy_cache off;" in nginx
     assert "proxy_read_timeout 330s;" in nginx
     assert "proxy_send_timeout 330s;" in nginx
-    assert 'Content-Security-Policy "default-src \'none\'' in nginx
+    assert "Content-Security-Policy \"default-src 'none'" in nginx
     assert 'Permissions-Policy "camera=(), microphone=(), geolocation=()"' in nginx
     assert "listen 80;" in nginx
     assert "listen 443 ssl;" in nginx
     assert "listen 8080" not in nginx
     assert "error_log /var/log/nginx/ai-fae-agent.error.log crit;" in nginx
     assert "location = /api/v1/internal/session/subject" in nginx
-    internal_block = nginx.split(
-        "location = /api/v1/internal/session/subject", 1
-    )[1].split("}", 1)[0]
+    internal_block = nginx.split("location = /api/v1/internal/session/subject", 1)[
+        1
+    ].split("}", 1)[0]
     assert "return 404;" in internal_block
     assert "proxy_pass" not in internal_block
     assert "location = /office" in nginx
@@ -411,7 +451,7 @@ def test_formal_nginx_keeps_platform_root_and_proxies_office_safely() -> None:
     assert nginx.count("location = /admin {") == 1
     assert nginx.count("location ^~ /admin/ {") == 1
     admin_boundary = nginx[
-        nginx.index("location = /admin {"):nginx.index("location = /office {")
+        nginx.index("location = /admin {") : nginx.index("location = /office {")
     ]
     assert "proxy_pass http://127.0.0.1:8080;" in admin_boundary
     assert "127.0.0.1:8011" not in admin_boundary
@@ -579,8 +619,8 @@ def test_acceptance_proves_continuous_conversation_release_and_restore() -> None
         "/api/operations/conversation-metrics",
     ):
         assert required in script
-    assert script.index("/api/v1/conversations\"") < script.index(
-        "/api/v1/conversations/$conversation_id/messages\""
+    assert script.index('/api/v1/conversations"') < script.index(
+        '/api/v1/conversations/$conversation_id/messages"'
     )
     assert "delete from platform_control.conversations" not in script.lower()
 
@@ -617,9 +657,13 @@ def test_enable_failure_executes_real_fail_closed_brain_and_lock_cleanup(
     tmp_path: Path,
 ) -> None:
     script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
-    function = "enable_with_rollback() {" + script.split(
-        "enable_with_rollback() {", 1
-    )[1].split("\n}\n\ncase \"$action\"", 1)[0] + "\n}\n"
+    function = (
+        "enable_with_rollback() {"
+        + script.split("enable_with_rollback() {", 1)[1].split(
+            '\n}\n\ncase "$action"', 1
+        )[0]
+        + "\n}\n"
+    )
     log = tmp_path / "calls"
     shell = f"""set -eEuo pipefail
 log={str(log)!r}
@@ -646,13 +690,17 @@ enable_with_rollback
 
 def test_worker_restore_executes_fixed_pm2_online_path(tmp_path: Path) -> None:
     script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
-    function = "restore_worker() {" + script.split("  restore_worker() {", 1)[1].split(
-        "\n  }\n  cleanup_accept_resources()", 1
-    )[0] + "\n}\n"
+    function = (
+        "restore_worker() {"
+        + script.split("  restore_worker() {", 1)[1].split(
+            "\n  }\n  cleanup_accept_resources()", 1
+        )[0]
+        + "\n}\n"
+    )
     log = tmp_path / "calls"
     fake_nc = tmp_path / "nc"
     fake_nc.write_text(
-        "#!/bin/bash\necho \"nc:$*\" >> \"$HARNESS_LOG\"\nexit 0\n",
+        '#!/bin/bash\necho "nc:$*" >> "$HARNESS_LOG"\nexit 0\n',
         encoding="utf-8",
     )
     fake_nc.chmod(0o700)

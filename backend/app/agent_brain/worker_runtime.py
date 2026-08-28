@@ -1,22 +1,24 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import os
-from pathlib import Path
 import re
 import secrets
 import signal
 import time
-from typing import Callable, Literal, cast
+from collections.abc import Callable, Mapping
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Literal, cast
 
 import httpx
 import psycopg
 
+from app.agent_brain.action_service import ActionCommandService
 from app.agent_brain.adapters.base import AdapterRegistry
+from app.agent_brain.adapters.http_task import HttpTaskAdapter
 from app.agent_brain.adapters.metabot_local import MetaBotLocalAdapter
 from app.agent_brain.adapters.reference import ReferenceAdapter
-from app.agent_brain.action_service import ActionCommandService
 from app.agent_brain.anthropic_adapter import AnthropicMessagesAdapter
 from app.agent_brain.authorization import AgentUseAuthorization
 from app.agent_brain.loop_repository import BrainLoopRepository
@@ -27,6 +29,7 @@ from app.agent_brain.runtime_registry import (
     AgentHealthObservation,
     RuntimeAgentRegistry,
 )
+from app.agent_brain.task_identity import SignedTaskTokenIssuer
 from app.control_plane.crypto import IdentityKeyring
 from app.control_plane.dsn import validate_control_dsn
 from app.execution_relay.content_crypto import ContentCodec
@@ -125,6 +128,66 @@ def _required_path(name: str) -> Path:
     return path
 
 
+def register_http_task_adapters(
+    adapters: AdapterRegistry,
+    client: httpx.Client,
+    *,
+    environ: Mapping[str, str] = os.environ,
+) -> tuple[str, ...]:
+    """Register configured internal HTTP Agents without changing Catalog exposure."""
+
+    definitions = (
+        (
+            "fae_http",
+            "PLATFORM_FAE_TASK_BASE_URL",
+            "ai-fae-agent",
+            ("fae.answer",),
+        ),
+        (
+            "admin_http",
+            "PLATFORM_ADMIN_TASK_BASE_URL",
+            "ai-admin-agent",
+            (
+                "feedback.own.read",
+                "lodging.read",
+                "service_catalog.read",
+                "shuttle.read",
+            ),
+        ),
+    )
+    selected = tuple(
+        definition
+        for definition in definitions
+        if environ.get(definition[1], "").strip()
+    )
+    if not selected:
+        return ()
+    key_path = environ.get("PLATFORM_TASK_SIGNING_PRIVATE_KEY_FILE", "").strip()
+    key_id = environ.get("PLATFORM_TASK_SIGNING_KEY_ID", "").strip()
+    if not key_path or not key_id:
+        raise RuntimeError("HTTP Task Adapter configuration unavailable")
+    try:
+        issuer = SignedTaskTokenIssuer.from_file(key_path, kid=key_id)
+    except (RuntimeError, ValueError) as error:
+        raise RuntimeError("HTTP Task Adapter configuration unavailable") from error
+    registered: list[str] = []
+    for kind, environment_name, agent_id, scopes in selected:
+        try:
+            adapter = HttpTaskAdapter(
+                client,
+                base_url=environ[environment_name].strip(),
+                token_issuer=issuer,
+                agent_id=agent_id,
+                audience=agent_id,
+                authorized_scopes=scopes,
+            )
+        except ValueError as error:
+            raise RuntimeError("HTTP Task Adapter configuration unavailable") from error
+        adapters.register(kind, adapter)
+        registered.append(kind)
+    return tuple(registered)
+
+
 def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client]:
     database_path = _required_path("PLATFORM_BRAIN_DATABASE_URL_FILE")
     content_path = _required_path("PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE")
@@ -172,11 +235,12 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
     adapters = AdapterRegistry()
     adapters.register("reference", ReferenceAdapter())
     adapters.register("metabot_local", MetaBotLocalAdapter(relay))
+    register_http_task_adapters(adapters, client)
     authorization = AgentUseAuthorization(database_url, dsn_purpose="brain")
     registry = RuntimeAgentRegistry(
         authorization=authorization,
         health=RelayAgentHealth(relay),
-        registered_adapter_kinds=("reference", "metabot_local"),
+        registered_adapter_kinds=adapters.registered_kinds,
     )
     return (
         BrainLoopRuntime(

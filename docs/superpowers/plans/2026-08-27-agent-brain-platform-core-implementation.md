@@ -580,7 +580,7 @@ backend/.venv/bin/python -m pytest -q \
   backend/tests/test_agent_brain_migration.py
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/control_migrations/050_agent_brain_task_wait_state.sql \
@@ -1024,7 +1024,7 @@ backend/.venv/bin/python -m pytest -q backend/tests/test_agent_brain_voc_action.
 
 Expected cases: confirmed, rejected, expired, digest mismatch, duplicate confirm, superseded; process restart after propose, before confirm, and after confirm.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/agent_brain/conversation_routes.py \
@@ -1050,7 +1050,7 @@ git commit -m "feat: confirm VOC actions through agent brain"
 **Interfaces:**
 - Produces: `HttpTaskAdapter`; `SignedTaskTokenIssuer.issue(...)`; finite event-page validation.
 
-- [ ] **Step 1: Write failing token, deadline, and nonblocking tests**
+- [x] **Step 1: Write failing token, deadline, and nonblocking tests**
 
 ```python
 def test_http_adapter_always_uses_nonblocking_events(fake_http) -> None:
@@ -1065,7 +1065,7 @@ def test_task_token_binds_deadline_and_capability(issuer) -> None:
     assert claims["task_deadline_at"] == "2026-08-27T10:15:00Z"
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```bash
 backend/.venv/bin/python -m pytest -q \
@@ -1073,21 +1073,21 @@ backend/.venv/bin/python -m pytest -q \
   backend/tests/test_agent_brain_task_identity.py
 ```
 
-- [ ] **Step 3: Implement strict request/response models**
+- [x] **Step 3: Implement strict request/response models**
 
 `CreateTaskRequest` includes contract version, Platform Task/Conversation/Turn refs, objective, context, constraints, attachments, expected output, capability version, idempotency key, UTC deadline, and scopes. Reject extra fields.
 
 `TaskEventPage` enforces `next_after`, finite `events`, exact sequence continuity, canonical event kinds, and terminal irreversibility.
 
-- [ ] **Step 4: Implement signed identity**
+- [x] **Step 4: Implement signed identity**
 
 Generalize the VOC signer with `kid`, issuer, audience, task, internal user, scopes, capability version, task deadline, optional action execution deadline, 0600 key checks, and no symlink following.
 
-- [ ] **Step 5: Register adapters without enabling Catalog delegation**
+- [x] **Step 5: Register adapters without enabling Catalog delegation**
 
 Register `fae_http` and `admin_http` only when their endpoint/key configuration exists. A missing Adapter remains visible as `unavailable`; it is never silently removed.
 
-- [ ] **Step 6: Run GREEN**
+- [x] **Step 6: Run GREEN**
 
 ```bash
 backend/.venv/bin/python -m pytest -q \
@@ -1096,7 +1096,7 @@ backend/.venv/bin/python -m pytest -q \
   backend/tests/test_agent_brain_live_adapter.py
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/app/agent_brain/adapters/http_task.py \

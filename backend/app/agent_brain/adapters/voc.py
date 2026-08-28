@@ -173,8 +173,7 @@ class VocBrainAdapter(AgentAdapter):
                 impact="确认后将把草稿写入正式 VOC 业务记录。",
                 parameters=parameters,
                 action_digest=digest,
-                expires_at=self._now()
-                + timedelta(seconds=self._action_ttl_seconds),
+                expires_at=self._now() + timedelta(seconds=self._action_ttl_seconds),
                 execution_timeout_seconds=300,
             )
         )
@@ -185,8 +184,13 @@ class VocBrainAdapter(AgentAdapter):
         )
 
     def read_events(
-        self, child_session_id: str, *, after: int
+        self,
+        child_session_id: str,
+        *,
+        after: int,
+        task: AdapterTask | None = None,
     ) -> tuple[AdapterEvent, ...]:
+        del task
         if type(after) is not int or after < 0:
             raise ValueError("VOC event cursor invalid")
         task_id = self._task_id(child_session_id)
@@ -239,9 +243,7 @@ class VocBrainAdapter(AgentAdapter):
                             actor_id=lease.actor_id,
                             draft_id=UUID(str(lease.parameters["draft_id"])),
                             request_id=lease.action_id,
-                            expected_version=int(
-                                lease.parameters["expected_version"]
-                            ),
+                            expected_version=int(lease.parameters["expected_version"]),
                         )
                     except VocUpstreamUnavailable:
                         return tuple(event for event in events if event.seq > after)
@@ -252,9 +254,7 @@ class VocBrainAdapter(AgentAdapter):
                             succeeded=False,
                         )
                     else:
-                        self._actions.finish_execution(
-                            lease, result, succeeded=True
-                        )
+                        self._actions.finish_execution(lease, result, succeeded=True)
             state = self._actions.for_task(task_id)
             if state is None:
                 raise LookupError("VOC Action not found")
@@ -354,7 +354,10 @@ class VocBrainAdapter(AgentAdapter):
         child_session_id: str,
         message: AdapterMessage,
         delivery: AdapterDelivery,
+        *,
+        task: AdapterTask | None = None,
     ) -> MessageDeliveryReceipt:
+        del task
         raise LookupError("VOC follow-up is not supported")
 
     def request_stop(
@@ -362,12 +365,13 @@ class VocBrainAdapter(AgentAdapter):
         child_session_id: str,
         reason: str,
         delivery: AdapterDelivery,
+        *,
+        task: AdapterTask | None = None,
     ) -> StopDeliveryReceipt:
+        del task
         return StopDeliveryReceipt(False, False)
 
-    def dispatch(
-        self, task: AdapterTask, delivery: AdapterDelivery
-    ) -> DispatchReceipt:
+    def dispatch(self, task: AdapterTask, delivery: AdapterDelivery) -> DispatchReceipt:
         receipt = self.start_session(task, delivery)
         return DispatchReceipt(receipt.accepted, None, receipt.external_run_id)
 

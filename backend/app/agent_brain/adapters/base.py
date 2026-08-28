@@ -25,6 +25,9 @@ class AdapterTask:
     context: dict[str, object] = field(repr=False)
     effective_deadline_at: datetime
     requester_subject: RequesterSubject | None = field(default=None, repr=False)
+    conversation_id: UUID | None = None
+    turn_id: UUID | None = None
+    capability_version: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,11 +125,17 @@ class AgentAdapter(ABC):
         child_session_id: str,
         message: AdapterMessage,
         delivery: AdapterDelivery,
+        *,
+        task: AdapterTask | None = None,
     ) -> MessageDeliveryReceipt: ...
 
     @abstractmethod
     def read_events(
-        self, child_session_id: str, *, after: int
+        self,
+        child_session_id: str,
+        *,
+        after: int,
+        task: AdapterTask | None = None,
     ) -> tuple[AdapterEvent, ...]: ...
 
     @abstractmethod
@@ -135,6 +144,8 @@ class AgentAdapter(ABC):
         child_session_id: str,
         reason: str,
         delivery: AdapterDelivery,
+        *,
+        task: AdapterTask | None = None,
     ) -> StopDeliveryReceipt: ...
 
     @abstractmethod
@@ -167,3 +178,7 @@ class AdapterRegistry:
 
     def is_registered(self, kind: str) -> bool:
         return isinstance(kind, str) and kind in self._adapters
+
+    @property
+    def registered_kinds(self) -> tuple[str, ...]:
+        return tuple(self._adapters)

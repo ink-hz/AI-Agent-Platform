@@ -98,9 +98,9 @@ class AgentTaskEventInput:
     event_type: str
     created_at: datetime
     payload: dict[str, object] = field(repr=False)
-    terminal_status: Literal[
-        "completed", "failed", "cancelled", "timed_out", "unavailable"
-    ] | None = None
+    terminal_status: (
+        Literal["completed", "failed", "cancelled", "timed_out", "unavailable"] | None
+    ) = None
     result: NormalizedTaskResult | None = field(default=None, repr=False)
 
 
@@ -114,8 +114,11 @@ class ImmediateToolResult:
 class TaskDeliveryLease:
     task_id: UUID
     loop_id: UUID
+    conversation_id: UUID
+    turn_id: UUID
     agent_id: str
     adapter_kind: str
+    capability_version: int
     context: dict[str, object] = field(repr=False)
     effective_deadline_at: datetime
     delivery_id: UUID
@@ -160,6 +163,11 @@ class AdapterSessionPoll:
     child_session_id: str
     adapter_session_ref: dict[str, object] | None = field(default=None, repr=False)
     after_event_seq: int = 0
+    conversation_id: UUID | None = None
+    turn_id: UUID | None = None
+    capability_version: int | None = None
+    effective_deadline_at: datetime | None = None
+    requester_subject: RequesterSubject | None = field(default=None, repr=False)
 
 
 def _model_config_subject(loop_id: UUID) -> str:
@@ -602,7 +610,9 @@ class BrainLoopRepository:
                         and result.value.get("status") == "accepted"
                         for result in effective_commit.immediate_results
                     )
-                    step_status = "completed" if pending == 0 else "waiting_tool_results"
+                    step_status = (
+                        "completed" if pending == 0 else "waiting_tool_results"
+                    )
                     connection.execute(
                         "update platform_brain.brain_steps set "
                         "status=%s,lease_worker_id=null,"
@@ -625,9 +635,7 @@ class BrainLoopRepository:
                         ),
                     )
                     if isinstance(final_call, SubmitAnswerCall) and submit_accepted:
-                        self._complete_answer_locked(
-                            connection, loop, final_call
-                        )
+                        self._complete_answer_locked(connection, loop, final_call)
                     elif pending == 0:
                         connection.execute(
                             "insert into platform_brain.brain_steps "
@@ -686,7 +694,9 @@ class BrainLoopRepository:
         commit: ModelStepCommit,
     ) -> tuple[UUID, ...]:
         specs = {spec.tool_index: spec for spec in commit.task_specs}
-        immediate = {result.tool_index: result.value for result in commit.immediate_results}
+        immediate = {
+            result.tool_index: result.value for result in commit.immediate_results
+        }
         task_ids: list[UUID] = []
         step_seq = self._step_seq_locked(connection, step_id)
         for parsed in commit.batch.calls:
@@ -789,7 +799,7 @@ class BrainLoopRepository:
                 connection.execute(
                     "insert into platform_brain.brain_task_event_cursors "
                     "(task_id,loop_id,delivered_seq) values (%s,%s,0)",
-                    (task_id,loop_id),
+                    (task_id, loop_id),
                 )
                 child_session_id = str(uuid5(task_id, "platform-child-session"))
                 connection.execute(
@@ -844,9 +854,7 @@ class BrainLoopRepository:
                     "task_id": str(task_id),
                     "child_session_id": child_session_id,
                 }
-                self._set_tool_result_locked(
-                    connection, tool_call_id, dispatched
-                )
+                self._set_tool_result_locked(connection, tool_call_id, dispatched)
                 task_ids.append(task_id)
             elif (
                 parsed.accepted
@@ -865,7 +873,7 @@ class BrainLoopRepository:
                         "insert into platform_brain.brain_task_event_cursors "
                         "(task_id,loop_id,delivered_seq) values (%s,%s,0) "
                         "on conflict (task_id) do nothing",
-                        (task_id,loop_id),
+                        (task_id, loop_id),
                     )
                 connection.execute(
                     "insert into platform_brain.brain_wait_subscriptions ("
@@ -892,7 +900,11 @@ class BrainLoopRepository:
                     "where session.task_id=%s for update of session",
                     (task_id,),
                 ).fetchone()
-                if session is None or session["loop_id"] != loop_id or session["status"] != "active":
+                if (
+                    session is None
+                    or session["loop_id"] != loop_id
+                    or session["status"] != "active"
+                ):
                     raise BrainRepositoryConflict()
                 message_state = connection.execute(
                     "select coalesce(max(seq),0) as seq,count(*) filter "
@@ -953,7 +965,11 @@ class BrainLoopRepository:
                     "where session.task_id=%s for update of session",
                     (task_id,),
                 ).fetchone()
-                if session is None or session["loop_id"] != loop_id or session["status"] != "active":
+                if (
+                    session is None
+                    or session["loop_id"] != loop_id
+                    or session["status"] != "active"
+                ):
                     raise BrainRepositoryConflict()
                 connection.execute(
                     "insert into platform_brain.adapter_deliveries ("
@@ -985,9 +1001,7 @@ class BrainLoopRepository:
     def _set_tool_result_locked(
         self, connection: Any, tool_call_id: UUID, value: dict[str, object]
     ) -> None:
-        sealed = self.content_codec.seal_json(
-            _tool_result_subject(tool_call_id), value
-        )
+        sealed = self.content_codec.seal_json(_tool_result_subject(tool_call_id), value)
         updated = connection.execute(
             "update platform_brain.brain_tool_calls set status='result_ready',"
             "result_ciphertext=%s,result_key_version=%s,result_sha256=%s,"
@@ -1016,8 +1030,14 @@ class BrainLoopRepository:
             "message_id,conversation_id,seq,role,content_ciphertext,"
             "encryption_key_version,turn_id,delivery_status,completed_at) "
             "values (%s,%s,%s,'assistant',%s,%s,%s,'completed',clock_timestamp())",
-            (message_id, loop["conversation_id"], seq, sealed.ciphertext,
-             sealed.key_version, loop["turn_id"]),
+            (
+                message_id,
+                loop["conversation_id"],
+                seq,
+                sealed.ciphertext,
+                sealed.key_version,
+                loop["turn_id"],
+            ),
         )
         connection.execute(
             "update platform_control.conversation_turns set assistant_message_id=%s,"
@@ -1208,8 +1228,14 @@ class BrainLoopRepository:
                     "message_id,conversation_id,seq,role,content_ciphertext,"
                     "encryption_key_version,turn_id,delivery_status,completed_at) "
                     "values (%s,%s,%s,'assistant',%s,%s,%s,'failed',clock_timestamp())",
-                    (message_id,loop["conversation_id"],seq,sealed.ciphertext,
-                     sealed.key_version,loop["turn_id"]),
+                    (
+                        message_id,
+                        loop["conversation_id"],
+                        seq,
+                        sealed.ciphertext,
+                        sealed.key_version,
+                        loop["turn_id"],
+                    ),
                 )
                 connection.execute(
                     "update platform_control.conversation_turns set "
@@ -1373,9 +1399,7 @@ class BrainLoopRepository:
         except psycopg.Error:
             raise BrainRepositoryError() from None
 
-    def reconstruct_messages(
-        self, loop_id: UUID
-    ) -> tuple[dict[str, object], ...]:
+    def reconstruct_messages(self, loop_id: UUID) -> tuple[dict[str, object], ...]:
         _require_uuid(loop_id)
         try:
             with self._connection() as connection:
@@ -1428,7 +1452,9 @@ class BrainLoopRepository:
                             (step["step_id"],),
                         )
                     )
-                    if calls and all(row["result_ciphertext"] is not None for row in calls):
+                    if calls and all(
+                        row["result_ciphertext"] is not None for row in calls
+                    ):
                         results = []
                         for call in calls:
                             result = self.content_codec.unseal_json(
@@ -1759,7 +1785,8 @@ class BrainLoopRepository:
             with self._connection() as connection:
                 with connection.transaction():
                     row = connection.execute(
-                        "select delivery.*,task.loop_id,task.agent_id,task.adapter_kind,"
+                        "select delivery.*,task.loop_id,loop.conversation_id,loop.turn_id,"
+                        "task.agent_id,task.adapter_kind,task.capability_version,"
                         "task.task_context_ciphertext,task.task_context_key_version,"
                         "task.effective_deadline_at,task.depends_on_task_ids,"
                         "session.child_session_id,"
@@ -1769,6 +1796,7 @@ class BrainLoopRepository:
                         "requester.display_name as requester_display_name from "
                         "platform_brain.adapter_deliveries delivery join "
                         "platform_brain.agent_tasks task on task.task_id=delivery.task_id "
+                        "join platform_brain.brain_loops loop on loop.loop_id=task.loop_id "
                         "join platform_brain.agent_task_sessions session on "
                         "session.task_id=task.task_id "
                         "join platform_brain.authorization_snapshots snapshot on "
@@ -1797,8 +1825,10 @@ class BrainLoopRepository:
                     )
                     value = self.content_codec.unseal_json(
                         _task_context_subject(row["task_id"]),
-                        SealedContent(bytes(row["task_context_ciphertext"]),
-                                      row["task_context_key_version"]),
+                        SealedContent(
+                            bytes(row["task_context_ciphertext"]),
+                            row["task_context_key_version"],
+                        ),
                     )
                     session_ref = None
                     if row["adapter_session_ref_ciphertext"] is not None:
@@ -1819,7 +1849,9 @@ class BrainLoopRepository:
                         if message_row is None:
                             raise BrainRepositoryConflict()
                         message_value = self.content_codec.unseal_json(
-                            _task_message_subject(row["task_id"], row["source_message_seq"]),
+                            _task_message_subject(
+                                row["task_id"], row["source_message_seq"]
+                            ),
                             SealedContent(
                                 bytes(message_row["content_ciphertext"]),
                                 message_row["content_key_version"],
@@ -1834,10 +1866,17 @@ class BrainLoopRepository:
                     if upstream:
                         value = {**value, "upstream_results": upstream}
                     return TaskDeliveryLease(
-                        task_id=row["task_id"],loop_id=row["loop_id"],
-                        agent_id=row["agent_id"],adapter_kind=row["adapter_kind"],
-                        context=value,effective_deadline_at=row["effective_deadline_at"],
-                        delivery_id=row["delivery_id"],attempt=attempt,
+                        task_id=row["task_id"],
+                        loop_id=row["loop_id"],
+                        conversation_id=row["conversation_id"],
+                        turn_id=row["turn_id"],
+                        agent_id=row["agent_id"],
+                        adapter_kind=row["adapter_kind"],
+                        capability_version=row["capability_version"],
+                        context=value,
+                        effective_deadline_at=row["effective_deadline_at"],
+                        delivery_id=row["delivery_id"],
+                        attempt=attempt,
                         idempotency_key=row["idempotency_key"],
                         delivery_kind=row["delivery_kind"],
                         source_message_seq=row["source_message_seq"],
@@ -2003,9 +2042,13 @@ class BrainLoopRepository:
     ) -> None:
         inserted = self.append_task_event(
             AgentTaskEventInput(
-                task_id=lease.task_id,seq=1,event_type=f"agent.{result.status}",
-                created_at=datetime.now().astimezone(),payload={"status": result.status},
-                terminal_status=result.status,result=result,
+                task_id=lease.task_id,
+                seq=1,
+                event_type=f"agent.{result.status}",
+                created_at=datetime.now().astimezone(),
+                payload={"status": result.status},
+                terminal_status=result.status,
+                result=result,
             )
         )
         try:
@@ -2109,12 +2152,21 @@ class BrainLoopRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select session.*,task.loop_id,task.agent_id,"
+                    "select session.*,task.loop_id,loop.conversation_id,loop.turn_id,"
+                    "task.agent_id,task.capability_version,task.effective_deadline_at,"
+                    "snapshot.internal_user_id as requester_user_id,"
+                    "requester.display_name as requester_display_name,"
                     "coalesce((select max(event.seq) from "
                     "platform_brain.agent_task_events event where "
                     "event.task_id=task.task_id),0) as after_event_seq from "
                     "platform_brain.agent_task_sessions session join "
                     "platform_brain.agent_tasks task on task.task_id=session.task_id "
+                    "join platform_brain.brain_loops loop on loop.loop_id=task.loop_id "
+                    "join platform_brain.authorization_snapshots snapshot on "
+                    "snapshot.authorization_snapshot_id=task.authorization_snapshot_id "
+                    "join platform_control.internal_users requester on "
+                    "requester.internal_user_id=snapshot.internal_user_id and "
+                    "requester.status='active' "
                     "where session.status='active' and "
                     "session.adapter_session_ref_ciphertext is not null and exists ("
                     "select 1 from platform_brain.adapter_deliveries delivery where "
@@ -2139,6 +2191,14 @@ class BrainLoopRepository:
                 child_session_id=row["child_session_id"],
                 adapter_session_ref=reference,
                 after_event_seq=row["after_event_seq"],
+                conversation_id=row["conversation_id"],
+                turn_id=row["turn_id"],
+                capability_version=row["capability_version"],
+                effective_deadline_at=row["effective_deadline_at"],
+                requester_subject=RequesterSubject(
+                    internal_user_id=row["requester_user_id"],
+                    display_name=row["requester_display_name"],
+                ),
             )
         except (ContentCryptoError, psycopg.Error):
             raise BrainRepositoryError() from None
@@ -2275,12 +2335,16 @@ class BrainLoopRepository:
                 ).fetchall()
             return tuple(
                 CancellationTask(
-                    task_id=row["task_id"],loop_id=row["loop_id"],
-                    agent_id=row["agent_id"],adapter_kind=row["adapter_kind"],
+                    task_id=row["task_id"],
+                    loop_id=row["loop_id"],
+                    agent_id=row["agent_id"],
+                    adapter_kind=row["adapter_kind"],
                     context=self.content_codec.unseal_json(
                         _task_context_subject(row["task_id"]),
-                        SealedContent(bytes(row["task_context_ciphertext"]),
-                                      row["task_context_key_version"]),
+                        SealedContent(
+                            bytes(row["task_context_ciphertext"]),
+                            row["task_context_key_version"],
+                        ),
                     ),
                     effective_deadline_at=row["effective_deadline_at"],
                     next_event_seq=row["next_event_seq"],
@@ -2380,9 +2444,7 @@ def _validate_commit(step_seq: int, commit: ModelStepCommit) -> None:
     _canonical_json({"content": list(commit.content_blocks)})
     for values in (commit.usage, commit.cache_usage):
         if any(
-            type(key) is not str
-            or type(value) is not int
-            or value < 0
+            type(key) is not str or type(value) is not int or value < 0
             for key, value in values.items()
         ):
             raise ValueError("model usage invalid")
@@ -2417,10 +2479,7 @@ def _validate_task_event(event: AgentTaskEventInput) -> None:
             event.terminal_status is not None
             and event.terminal_status not in _TERMINAL_TASK_STATUSES
         )
-        or (
-            event.result is not None
-            and event.result.status != event.terminal_status
-        )
+        or (event.result is not None and event.result.status != event.terminal_status)
     ):
         raise ValueError("Agent task event invalid")
 

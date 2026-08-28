@@ -72,7 +72,9 @@ class ReferenceAdapter(AgentAdapter):
         with self._lock:
             existing = self._sessions.get(child_session_id)
             if existing is not None:
-                return _deduplicated(existing, delivery.idempotency_key, signature, receipt)
+                return _deduplicated(
+                    existing, delivery.idempotency_key, signature, receipt
+                )
             now = datetime.now(timezone.utc)
             session = _ReferenceSession(
                 task=task,
@@ -121,7 +123,10 @@ class ReferenceAdapter(AgentAdapter):
         child_session_id: str,
         message: AdapterMessage,
         delivery: AdapterDelivery,
+        *,
+        task: AdapterTask | None = None,
     ) -> MessageDeliveryReceipt:
+        del task
         if (
             type(child_session_id) is not str
             or not isinstance(message, AdapterMessage)
@@ -129,7 +134,11 @@ class ReferenceAdapter(AgentAdapter):
         ):
             raise ValueError("Adapter message invalid")
         signature = _digest(
-            {"child_session_id": child_session_id, "seq": message.seq, "text": message.text}
+            {
+                "child_session_id": child_session_id,
+                "seq": message.seq,
+                "text": message.text,
+            }
         )
         with self._lock:
             session = self._require_session(child_session_id)
@@ -140,9 +149,7 @@ class ReferenceAdapter(AgentAdapter):
                 )
             if session.stopped or message.seq != session.last_message_seq + 1:
                 raise ValueError("Adapter message sequence invalid")
-            run_id = uuid5(
-                session.task.task_id, f"reference-run:message:{message.seq}"
-            )
+            run_id = uuid5(session.task.task_id, f"reference-run:message:{message.seq}")
             receipt = MessageDeliveryReceipt(True, run_id)
             next_seq = len(session.events) + 1
             session.events.extend(
@@ -170,8 +177,13 @@ class ReferenceAdapter(AgentAdapter):
             return receipt
 
     def read_events(
-        self, child_session_id: str, *, after: int
+        self,
+        child_session_id: str,
+        *,
+        after: int,
+        task: AdapterTask | None = None,
     ) -> tuple[AdapterEvent, ...]:
+        del task
         if type(child_session_id) is not str or type(after) is not int or after < 0:
             raise ValueError("Adapter event cursor invalid")
         with self._lock:
@@ -186,7 +198,10 @@ class ReferenceAdapter(AgentAdapter):
         child_session_id: str,
         reason: str,
         delivery: AdapterDelivery,
+        *,
+        task: AdapterTask | None = None,
     ) -> StopDeliveryReceipt:
+        del task
         if (
             type(child_session_id) is not str
             or type(reason) is not str
@@ -207,9 +222,7 @@ class ReferenceAdapter(AgentAdapter):
             session.deliveries[delivery.idempotency_key] = (signature, receipt)
             return receipt
 
-    def dispatch(
-        self, task: AdapterTask, delivery: AdapterDelivery
-    ) -> DispatchReceipt:
+    def dispatch(self, task: AdapterTask, delivery: AdapterDelivery) -> DispatchReceipt:
         opened = self.start_session(task, delivery)
         return DispatchReceipt(
             accepted=opened.accepted,
