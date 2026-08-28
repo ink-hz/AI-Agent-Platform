@@ -35,6 +35,9 @@ Claude Code 值得研究的地方，不是某个未经公开的内部调度算�
 
 ```mermaid
 flowchart TB
+    accTitle: Claude Code 多入口共享架构
+    accDescr: 终端、IDE、桌面、Web、远程控制和 CI/CD 共用上下文、推理、权限、工具与验证工作循环。
+
     subgraph ENTRY["公开入口"]
         direction LR
         E1[终端与 IDE]
@@ -82,7 +85,10 @@ flowchart TB
 传统代码补全的主要执行单位是“下一段代码”；工程 Agent 的执行单位更接近“为完成目标而采取的下一步行动”。一个简化循环如下：
 
 ```mermaid
-flowchart TD
+flowchart LR
+    accTitle: Claude Code Agent 工作循环
+    accDescr: 从用户目标和代码库约束出发，行动经过权限判断和工具执行，直到验证目标达到。
+
     A[用户目标] --> B[理解代码库与约束]
     B --> C[提出下一步工具调用]
     C --> D{权限与策略是否允许}
@@ -252,6 +258,9 @@ Claude Code 官方监控文档提供基于 OpenTelemetry 的指标、事件和�
 
 ```mermaid
 flowchart TB
+    accTitle: Claude Code 核心责任分区
+    accDescr: 上下文与编排连接权限控制、工具环境、验证和观测，形成完整工程运行时。
+
     subgraph CONTEXT["上下文与编排"]
         direction TB
         U[用户与任务入口] --> O[Agent 编排与状态]

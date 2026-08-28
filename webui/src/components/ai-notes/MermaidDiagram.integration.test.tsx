@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { mermaidImageSource } from "./MermaidDiagram";
+import { mermaidMetadata } from "./mermaidMetadata";
 
 
 const CONTENT_ROOT = resolve(process.cwd(), "../backend/app/ai_notes/content");
@@ -42,6 +43,7 @@ function expectAccessibilityMetadata(sources: string[]): void {
 
 
 async function expectProductionDiagramsToRender(sources: string[]): Promise<void> {
+  expectAccessibilityMetadata(sources);
   const { default: mermaid } = await import("mermaid");
   mermaid.initialize({
     startOnLoad: false,
@@ -130,7 +132,6 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(sources).toHaveLength(2);
     expect(sources.join("\n")).toContain("最小行动循环");
     expect(sources.join("\n")).toContain("能力递进");
-    expectAccessibilityMetadata(sources);
     await expectProductionDiagramsToRender(sources);
   });
 
@@ -141,7 +142,6 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(sources).toHaveLength(5);
     expect(sources.join("\n")).toContain("运行循环");
     expect(sources.join("\n")).toContain("信任决策");
-    expectAccessibilityMetadata(sources);
     await expectProductionDiagramsToRender(sources);
   });
 
@@ -171,5 +171,21 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(sources).toHaveLength(2);
     expect(sources.join("\n")).toContain("人负责");
     await expectProductionDiagramsToRender(sources);
+  });
+
+  it("gives every production diagram unique accessibility metadata", () => {
+    const files = [
+      "01-foundations/01-agent-engineering-learning-map.md",
+      "02-agent-architecture/01-enterprise-agent-system-architecture.md",
+      "03-tools-and-frameworks/01-claude-code-architecture.md",
+      "04-ai-engineering/01-rag-retrieval-engineering.md",
+      "05-thinking-and-methods/01-ai-native-architecture-design.md",
+    ];
+    const sources = files.flatMap((file) => mermaidBlocks(productionArticle(file)));
+    const metadata = sources.map(mermaidMetadata);
+    expect(sources).toHaveLength(16);
+    expect(metadata.every(({ description }) => Boolean(description))).toBe(true);
+    expect(new Set(metadata.map(({ title }) => title)).size).toBe(16);
+    expect(new Set(metadata.map(({ description }) => description)).size).toBe(16);
   });
 });

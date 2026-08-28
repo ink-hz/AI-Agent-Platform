@@ -22,7 +22,10 @@ RAG 的价值不是让模型“知道更多”，而是在回答时为模型提�
 RAG 处理的是“从外部知识中找到证据并约束生成”，它并不自动保证事实正确。
 
 ```mermaid
-flowchart TB
+flowchart LR
+    accTitle: RAG 查询链路
+    accDescr: 用户问题经过查询理解、权限约束、候选召回、融合重排、上下文组装、证据生成和引用校验后返回。
+
     subgraph QUERY["查询链路"]
         Q[用户问题] --> U[查询理解]
         U --> P[权限、有效期与业务约束]
@@ -88,7 +91,10 @@ content_hash: sha256:...
 把这些责任放到同一条“索引链路”中，可以看出向量只是多种派生制品之一；元数据与版本始终跟随文档和分块，可选的图结构只在问题类型需要时生成。
 
 ```mermaid
-flowchart TB
+flowchart LR
+    accTitle: RAG 索引链路
+    accDescr: 原始文档经过解析和语义分块，生成向量、词法、元数据权限以及可选图实体索引。
+
     subgraph INDEX["索引链路"]
         D[原始文档] --> P[解析结构与内容]
         P --> C[按语义与结构分块]
@@ -189,6 +195,9 @@ HNSW 为向量建立多层邻近图。高层节点少，适合快速跨越空间
 
 ```mermaid
 flowchart TD
+    accTitle: HNSW 多层导航
+    accDescr: 查询向量从最高层入口逐层扩展近邻并下降，最终在底层候选集合返回 Top-K。
+
     subgraph HNSW["HNSW 多层导航"]
         Q[查询向量] --> H[从最高层入口开始]
         H --> G[在当前层扩展更近邻居]
@@ -232,7 +241,10 @@ Recall@K <-> 内存与磁盘占用
 BM25 对词频做饱和处理，并对文档长度进行归一化，是常用的词法排序基线。混合检索分别取得词法与向量候选，再融合排名：
 
 ```mermaid
-flowchart TB
+flowchart LR
+    accTitle: 混合检索与重排
+    accDescr: 查询同时进入 BM25 和向量召回，结果去重融合并重排序，形成上下文候选。
+
     Q[查询] --> B[BM25 召回]
     Q --> V[向量召回]
     B --> F[去重与融合]
