@@ -91,8 +91,10 @@ def test_ai_native_note_visualizes_human_ai_responsibility() -> None:
     assert len(diagrams) == 2
     for label in ("AI 辅助", "人负责", "目标与约束", "候选方案", "批准与责任"):
         assert label in combined
-    assert "flowchart LR" not in combined
-    assert "direction LR" not in combined
+    assert [diagram.splitlines()[0] for diagram in diagrams] == [
+        "flowchart LR",
+        "flowchart LR",
+    ]
     assert "class A1,A2,A3 model" in combined
     assert all("classDef" in diagram or "style" in diagram for diagram in diagrams)
     assert article.updated_at == TODAY
@@ -143,7 +145,12 @@ def test_rag_note_visualizes_index_and_query_pipelines() -> None:
     assert len(diagrams) == 4
     for label in ("索引链路", "查询链路", "HNSW", "BM25", "引用校验"):
         assert label in combined
-    assert "flowchart LR" not in combined
+    assert [diagram.splitlines()[0] for diagram in diagrams] == [
+        "flowchart LR",
+        "flowchart LR",
+        "flowchart TD",
+        "flowchart LR",
+    ]
     assert "class P,C tool;" in combined
     assert all("classDef" in diagram or "style" in diagram for diagram in diagrams)
     assert article.updated_at == TODAY
