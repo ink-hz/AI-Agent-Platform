@@ -12,9 +12,9 @@ SHA-256 已于 2026-08-28 使用 `wc -l` 和 `shasum -a 256` 复核。
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/身份认证与访问控制-理论架构设计.md` | 2140 | `c693c2e5ca30a47019191e001f0a8708beaed585dc03e7cdf67413e253efac01` | agent-identity-access-control | 已精读：1-2140 | 第1、4-5、7.3章：身份、权限交集、最小权限、零信任 | 第2-3、6、7.1-7.2及7.4-7.5章：登录网关、旧组织案例、产品横评 | 已核验：RFC 8693、NIST、SPIFFE、OWASP（2026-08-28） | 状态机与信任分级留在主文章；本篇深化凭证与证据 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/AI-LLM系统架构深度指南.md` | 2483 | `f21f1316a7c66c5a5c920efe8c0f352dc2532af15d82265d35b58dfbab7dc784` | llm-inference-serving-engineering；辅助 llm-agent-observability | 已精读：1-2483 | 第2、4章：KV Cache、连续批处理、投机解码、路由问题框架 | 第1、3、4.3章及总结：Agent、RAG、MCP、旧 API 样例与固定性能数字 | 已核验：PagedAttention、vLLM、TensorRT-LLM、SGLang（2026-08-28） | 应用请求链与 RAG 留在既有文章；本篇只写模型服务内部数据路径 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/AI-LLM系统架构理论指南.md` | 1550 | `c897f77ba9511c48358164c2c50b8f144703c983c0aa1dcedde9b20a6b145d8f` | llm-inference-serving-engineering；辅助 llm-agent-observability | 已精读：1-1550 | 第2、4.1-4.2章：Prefill/Decode、分页缓存、批调度、容量与路由取舍 | 第1、3、4.3章及总结：Agent、RAG、MCP、厂商层级、固定价格与倍率 | 已核验：PagedAttention、vLLM、TensorRT-LLM、SGLang（2026-08-28） | 不重述 Prompt/工具/输出验证与检索链；重写排队、缓存、路由与单位成本 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/ai-cloud-native-opportunity.md` | 124 | `9c04bf78390c08bbe3c89e685bf4f407434c6f96c0ec63828662db75239c0a07` | ai-cloud-native-runtime | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Kubernetes与容器编排深度指南.md` | 250 | `4908263dc8ebdbe69106f50b8aa8f2b5030dd0a7e9fc5827945784e02dd31df4` | 辅助 ai-cloud-native-runtime | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Kubernetes与容器编排理论指南.md` | 1705 | `12361a569b863b0de58f43366420c822f5b8568b42f243c38aab16aa0eef53ff` | 辅助 ai-cloud-native-runtime | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
+| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/ai-cloud-native-opportunity.md` | 124 | `9c04bf78390c08bbe3c89e685bf4f407434c6f96c0ec63828662db75239c0a07` | ai-cloud-native-runtime | 已精读：1-124 | 问题与原则：异构资源、弹性、发布、容错 | 架构样例、厂商选型、固定倍率与 HPA 万能化表述 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 推理算法留在既有篇；本篇只写运行时资源与运维闭环 |
+| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Kubernetes与容器编排深度指南.md` | 250 | `4908263dc8ebdbe69106f50b8aa8f2b5030dd0a7e9fc5827945784e02dd31df4` | 辅助 ai-cloud-native-runtime | 已精读：1-250（通用概念辅助） | 调度、隔离、声明式发布、故障恢复概念 | 安装命令、对象清单、旧版本行为与厂商 GPU 功能 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 不迁移 Kubernetes 百科；只辅助 AI 运行时边界 |
+| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Kubernetes与容器编排理论指南.md` | 1705 | `12361a569b863b0de58f43366420c822f5b8568b42f243c38aab16aa0eef53ff` | 辅助 ai-cloud-native-runtime | 已精读：1-1705（通用概念辅助） | 一致性、队列调度、隔离、渐进发布与恢复概念 | 组件百科、Helm/GitOps 教程、厂商设备与固定性能数字 | 已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28） | 不复述通用编排；重写为制品、调度和恢复链 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/可观测性与监控-深度理论知识.md` | 1857 | `546ea435a32227f0ec75e73e946e45e4cb5a6e092ee55deaf7d456de3c43b8ed` | llm-agent-observability | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Hermes-Agent架构分析与思考.md` | 390 | `aac8a4c575a11ae1a129c3e03d49e6217d2c02a92363b0689d5c5306c70227ad` | open-source-agent-runtime | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Clawdbot架构理论指南.md` | 284 | `838ae6a89bfeca305bb70bc016f975d7b12f34abef9fe73dd4638c22dedb6961` | open-source-agent-runtime | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
@@ -104,3 +104,44 @@ SHA-256 已于 2026-08-28 使用 `wc -l` 和 `shasum -a 256` 复核。
 | [vLLM official docs](https://docs.vllm.ai/) | 前缀缓存只跳过共享前缀的 Prefill 计算，不缩短新 token 的 Decode；量化和投机方法的真实收益需按模型、流量、硬件与采样设置复测。 |
 | [TensorRT-LLM architecture](https://nvidia.github.io/TensorRT-LLM/architecture/overview.html) | 调度器逐步选择活动请求，KV Cache 管理器负责分配、释放与维护缓存；官方架构将调度、缓存和模型执行分为独立责任。 |
 | [SGLang official docs](https://docs.sglang.ai/) | Prefill 偏计算密集，Decode 偏内存密集；路由可连接分离的两类实例。分离会新增 KV 传输与故障边界，因此本文仅把它作为需实测的容量选项。 |
+
+## ai-cloud-native-runtime 精读结论
+
+### `ai-cloud-native-opportunity.md`
+
+- `1-37`（前言、为什么是 AI × 云原生）：保留 AI 工作负载资源密集、负载变化、模型迭代和运行形态多样的问题框架；“必须深度结合”“完美匹配”等结论性口号改写为资源、制品、就绪和恢复的可验收条件。
+- `38-75`（痛点、设计原则、推理服务架构）：保留弹性、资源隔离、灰度、可观测与容错作为运行时目标；删除单一 Ingress—GPU Pod—PV 架构图、对象名堆叠和“模型热加载即可避免重启”的泛化结论。
+- `76-97`（成本优化、技术选型）：厂商 GPU 产品、推理引擎和监控栈选型全部删除；固定利用率、成本降低和延迟降低比例没有可迁移证据，不进入正文。
+- `98-124`（性能、安全、下期预告）：KV Cache、PagedAttention、Flash Attention、连续批处理等算法机制留在既有推理服务篇；通用鉴权和脱敏只作隔离背景，不扩写为安全专题。
+- 旧稿的 `HPA/VPA 实现自动扩缩容` 被删除。新文把弹性重写为队列年龄、实际就绪容量、冷启动、设备压力与 SLO 的多信号控制，不把 HPA 当作所有推理服务的万能策略。
+
+### `Kubernetes与容器编排深度指南.md`（通用概念辅助）
+
+- `1-61`（架构与术语）：只保留声明式期望状态、控制循环和职责分层；control plane 组件、网络与存储链路清单不进入 AI 专题。
+- `62-89`（容器运行时）：镜像构建与节点运行解耦这一原则用于区分运行时镜像和模型制品；CRI、containerd、cgroup 与版本迁移细节删除。
+- `90-138`（调度、网络、存储）：保留资源请求影响放置、异构节点需要显式约束、存储恢复需要演练；CNI/CSI 选型表和故障百科删除，队列与准入行为改由 Kueue 官方资料核验。
+- `139-166`（安全）：只保留运行时权限、网络、存储和租户配额需要共同形成隔离边界；PSP/PSA 版本史、配置模式和通用安全清单不迁移。
+- `167-250`（GPU、升级、恢复、排障）：Device Plugin 暴露特殊硬件这一概念向 Kubernetes 官方页重核；GPU Operator、MIG、time-slicing、MPS、CDI、厂商指标、升级命令、etcd 细节和通用症状表全部删除。只重写 AI 工作负载的设备故障、检查点与结果验证。
+
+### `Kubernetes与容器编排理论指南.md`（通用概念辅助）
+
+- `1-400`（架构、控制面、调度、控制器）：保留声明式收敛、资源约束、优先级和滚动替换的问题意识；组件职责百科、过时术语、固定时间阈值、对象配置和大图全部删除。调度当前定义以 Kubernetes 官方入口为准。
+- `401-800`（节点、网络、GPU 调度）：健康检查用于区分进程存活与模型真正就绪；kube-proxy 模式、固定复杂度、厂商设备拓扑、GPU 共享方式和性能结论删除。Device Plugin 只保留官方支持的注册、上报和整数扩展资源边界。
+- `801-1200`（隔离、配额、RBAC、Helm）：保留配额、运行时、网络、存储与缓存共同隔离的抽象；Namespace/RBAC/NetworkPolicy/Helm 教程、角色样例和对象清单全部删除。
+- `1201-1600`（Helm、GitOps、渐进式交付、CRD/Operator）：只保留不可变声明、版本化、持续调谐、灰度和回滚的通用原则；命令、模板、ArgoCD 行为、固定流量比例与产品能力不迁移。模型发布边界由 KServe 官方资料重新核验。
+- `1601-1705`（Operator、调度器扩展、总结）：保留控制循环和过滤—放置的职责意识；调度扩展点百科、厂商拓扑打分和固定分数删除。新文不教授定制调度器，而是聚焦队列、准入、制品和恢复证据。
+
+### 与既有文章的去重
+
+`llm-inference-serving-engineering` 已承担 Prefill/Decode、连续批处理、KV Cache、量化、投机解码、路由、容量与单位成本。本篇仅用一句边界链接指向该文，不复述算法和引擎内部状态；模型在本篇是被打包、调度、缓存、扩展、发布和恢复的运行单元。两份 Kubernetes 长文仅提供声明式、一致性、调度、隔离、渐进发布与恢复的通用概念，不迁移成 Kubernetes 安装、对象或组件百科。
+
+### 一手来源核验
+
+访问日期：2026-08-28
+
+| 一手来源 | 本文采用的受支持论点 |
+| --- | --- |
+| [Kubernetes Scheduling, Preemption and Eviction](https://kubernetes.io/docs/concepts/scheduling-eviction/) | 调度把 Pod 匹配到节点；抢占与驱逐分别处理优先级和中断。本文据此区分节点放置、优先级抢占与故障恢复，不把它们混成一个调度动作。 |
+| [Kueue Overview](https://kueue.sigs.k8s.io/docs/overview/) | Kueue 管理配额消费并决定工作负载等待、准入或抢占；Pod 到节点调度与任务生命周期仍由既有 Kubernetes 组件负责。 |
+| [KServe official docs](https://kserve.github.io/website/) | KServe 控制面覆盖模型生命周期、版本跟踪与灰度发布；数据面承接预测和生成模型的请求接口。本文只采用这一发布责任边界，不复制快速安装和对象清单。 |
+| [Kubernetes Device Plugins](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/) | Device Plugin 向 kubelet 暴露 GPU 等设备资源供工作负载请求；扩展资源按整数计数、不能超配，且不会自动表达显存、拓扑和模型兼容性。 |

@@ -43,6 +43,7 @@ BATCH_ARTICLES = (
 COMPLETED_BATCH_ARTICLES: tuple[str, ...] = (
     "agent-identity-access-control",
     "llm-inference-serving-engineering",
+    "ai-cloud-native-runtime",
 )
 
 ARTICLE_CONTRACTS = {
@@ -160,6 +161,45 @@ INFERENCE_PRIMARY_SOURCES = {
     ),
 }
 
+CLOUD_NATIVE_SOURCE_REVIEW_STATUS = {
+    "ai-cloud-native-opportunity.md": (
+        "已精读：1-124",
+        "问题与原则：异构资源、弹性、发布、容错",
+        "架构样例、厂商选型、固定倍率与 HPA 万能化表述",
+        "已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28）",
+        "推理算法留在既有篇；本篇只写运行时资源与运维闭环",
+    ),
+    "Kubernetes与容器编排深度指南.md": (
+        "已精读：1-250（通用概念辅助）",
+        "调度、隔离、声明式发布、故障恢复概念",
+        "安装命令、对象清单、旧版本行为与厂商 GPU 功能",
+        "已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28）",
+        "不迁移 Kubernetes 百科；只辅助 AI 运行时边界",
+    ),
+    "Kubernetes与容器编排理论指南.md": (
+        "已精读：1-1705（通用概念辅助）",
+        "一致性、队列调度、隔离、渐进发布与恢复概念",
+        "组件百科、Helm/GitOps 教程、厂商设备与固定性能数字",
+        "已核验：Kubernetes、Kueue、KServe、Device Plugin（2026-08-28）",
+        "不复述通用编排；重写为制品、调度和恢复链",
+    ),
+}
+
+CLOUD_NATIVE_PRIMARY_SOURCES = {
+    "https://kubernetes.io/docs/concepts/scheduling-eviction/": (
+        "调度把 Pod 匹配到节点；抢占与驱逐分别处理优先级和中断"
+    ),
+    "https://kueue.sigs.k8s.io/docs/overview/": (
+        "Kueue 管理配额消费并决定工作负载等待、准入或抢占"
+    ),
+    "https://kserve.github.io/website/": (
+        "KServe 控制面覆盖模型生命周期、版本跟踪与灰度发布"
+    ),
+    "https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/": (
+        "Device Plugin 向 kubelet 暴露 GPU 等设备资源供工作负载请求"
+    ),
+}
+
 
 def batch_article_path(slug: str, *, root: Path = CONTENT_ROOT) -> Path:
     for relative_path, article_slug in BATCH_ARTICLES:
@@ -215,6 +255,50 @@ def validate_completed_batch_as_publication_candidates(tmp_path: Path) -> AiNote
     return validate_publication(candidate_root, MARKER_FILE, today=TODAY)
 
 
+def mermaid_principal_node_ids(source: str) -> set[str]:
+    subgraph_ids = set(
+        re.findall(
+            r"(?mi)^\s*subgraph\s+([A-Za-z_][A-Za-z0-9_-]*)\b",
+            source,
+        )
+    )
+    node_ids = set(
+        re.findall(
+            r"(?m)\b([A-Za-z_][A-Za-z0-9_-]*)\s*(?=[\[\{\(])",
+            source,
+        )
+    )
+    edge_operator = r"(?:-->|---|==>|-\.[^\n]*?\.->)"
+    node_ids.update(
+        re.findall(
+            rf"(?m)(?:^|[;\s])([A-Za-z_][A-Za-z0-9_-]*)\s*"
+            rf"(?={edge_operator})",
+            source,
+        )
+    )
+    node_ids.update(
+        re.findall(
+            rf"(?m){edge_operator}\s*(?:\|[^|\n]*\|\s*)?"
+            r"([A-Za-z_][A-Za-z0-9_-]*)\b",
+            source,
+        )
+    )
+    return node_ids - subgraph_ids
+
+
+def cloud_native_contains_forbidden_tutorial_or_hpa(markdown: str) -> bool:
+    prohibited_patterns = (
+        r"(?im)^#{2,}\s+.*(?:install(?:ing|ation)?\s+kubernetes|"
+        r"kubernetes\s+(?:install(?:ing|ation)?|安装)|安装\s*kubernetes)",
+        r"(?im)^```\s*(?:ya?ml|bash|sh|shell)\b",
+        r"(?i)(?<![\w])(?:kubectl|kubeadm)(?![\w])",
+        r"(?i)\bhelm\s+install\b",
+        r"(?i)\bHPA\b|Horizontal\s+Pod\s+Autoscal(?:er|ing)|"
+        r"水平\s*Pod\s*自动扩缩容",
+    )
+    return any(re.search(pattern, markdown) for pattern in prohibited_patterns)
+
+
 def test_completed_batch_helpers_enforce_drafts_and_validate_candidates(
     tmp_path: Path,
 ) -> None:
@@ -248,6 +332,7 @@ def test_source_review_records_the_exact_source_manifest() -> None:
         status = {
             **IDENTITY_SOURCE_REVIEW_STATUS,
             **INFERENCE_SOURCE_REVIEW_STATUS,
+            **CLOUD_NATIVE_SOURCE_REVIEW_STATUS,
         }.get(filename, ("未开始",) * 5)
         expected_rows.append(
             f"| `{path}` | {line_count} | `{digest}` | {target} | "
@@ -278,6 +363,18 @@ def test_llm_serving_source_review_records_primary_source_verification() -> None
         assert supported_claim in section
 
 
+def test_cloud_native_source_review_records_primary_source_verification() -> None:
+    review = SOURCE_REVIEW.read_text(encoding="utf-8")
+    section_header = "## ai-cloud-native-runtime 精读结论"
+
+    assert section_header in review
+    section = review.split(section_header, 1)[1]
+    assert "访问日期：2026-08-28" in section
+    for url, supported_claim in CLOUD_NATIVE_PRIMARY_SOURCES.items():
+        assert url in section
+        assert supported_claim in section
+
+
 def test_agent_identity_access_control_draft_meets_contract(
     tmp_path: Path,
 ) -> None:
@@ -285,6 +382,7 @@ def test_agent_identity_access_control_draft_meets_contract(
     assert tuple(article.slug for article in completed_articles) == (
         "agent-identity-access-control",
         "llm-inference-serving-engineering",
+        "ai-cloud-native-runtime",
     )
 
     path = batch_article_path("agent-identity-access-control")
@@ -325,7 +423,7 @@ def test_agent_identity_access_control_draft_meets_contract(
     )
     assert sum(
         len(category.articles) for category in candidate_index.categories
-    ) == 8
+    ) == 9
     assert all(
         len(
             set(
@@ -399,6 +497,7 @@ def test_llm_inference_serving_engineering_draft_meets_contract(
     assert tuple(article.slug for article in completed_articles) == (
         "agent-identity-access-control",
         "llm-inference-serving-engineering",
+        "ai-cloud-native-runtime",
     )
 
     path = batch_article_path("llm-inference-serving-engineering")
@@ -449,15 +548,7 @@ def test_llm_inference_serving_engineering_draft_meets_contract(
         for diagram in diagrams
     )
     assert all(
-        len(
-            set(
-                re.findall(
-                    r"(?m)\b([A-Z][A-Z0-9_]*)\s*(?=[\[\{\(])",
-                    diagram,
-                )
-            )
-        )
-        <= 12
+        len(mermaid_principal_node_ids(diagram)) <= 12
         for diagram in diagrams
     )
 
@@ -490,7 +581,7 @@ def test_llm_inference_serving_engineering_draft_meets_contract(
     )
     assert sum(
         len(category.articles) for category in candidate_index.categories
-    ) == 8
+    ) == 9
 
 
 def test_llm_inference_metrics_cost_and_typography_contract() -> None:
@@ -527,3 +618,120 @@ def test_llm_inference_metrics_cost_and_typography_contract() -> None:
     assert "各桶必须互斥" in markdown
     assert "(加速器租用 + 主机与传输 + 闲置容量 + 失败重算)" not in markdown
     assert "希缺资源" not in markdown
+
+
+def test_ai_cloud_native_runtime_draft_meets_contract(
+    tmp_path: Path,
+) -> None:
+    completed_articles = assert_completed_batch_drafts()
+    assert tuple(article.slug for article in completed_articles) == (
+        "agent-identity-access-control",
+        "llm-inference-serving-engineering",
+        "ai-cloud-native-runtime",
+    )
+
+    path = batch_article_path("ai-cloud-native-runtime")
+    frontmatter, markdown = parse_frontmatter(path)
+    assert frontmatter["title"] == (
+        "AI × 云原生运行时：调度、弹性、发布与故障恢复"
+    )
+    assert frontmatter["slug"] == "ai-cloud-native-runtime"
+    assert tuple(frontmatter["tags"]) == (
+        "AI 基础设施",
+        "云原生",
+        "运行时",
+    )
+    assert frontmatter["draft"] is True
+    assert frontmatter["author"] == AUTHOR
+    assert frontmatter["motto"] == MOTTO
+    assert frontmatter["publishedAt"] == TODAY
+    assert frontmatter["updatedAt"] == TODAY
+    assert markdown.lstrip().startswith("## ")
+    assert AUTHOR not in markdown
+    assert MOTTO not in markdown
+
+    diagrams = tuple(re.findall(r"```mermaid\n([\s\S]*?)\n```", markdown))
+    assert len(diagrams) == 3
+    assert tuple(
+        re.search(r"(?m)^\s*accTitle:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    ) == (
+        "AI 云原生运行时分层",
+        "模型制品到灰度发布链",
+        "AI 工作负载故障恢复流程",
+    )
+    descriptions = tuple(
+        re.search(r"(?m)^\s*accDescr:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    )
+    assert all(descriptions)
+    assert len(set(descriptions)) == 3
+    assert all(re.search(r"(?m)^\s*classDef\s+", diagram) for diagram in diagrams)
+    assert all(
+        re.search(
+            r"(?m)^\s*classDef\s+\w+\s+fill:#(?:DBEAFE|EDE9FE|"
+            r"CCFBF1|FEF3C7|DCFCE7|D1FAE5|FEE2E2|F3F4F6)",
+            diagram,
+        )
+        for diagram in diagrams
+    )
+    assert all(
+        len(mermaid_principal_node_ids(diagram)) <= 12
+        for diagram in diagrams
+    )
+
+    for required_topic in (
+        "CPU",
+        "GPU",
+        "Device Plugin",
+        "调度",
+        "排队",
+        "模型制品",
+        "节点缓存",
+        "隔离",
+        "弹性",
+        "灰度",
+        "回滚",
+        "检查点",
+        "故障恢复",
+    ):
+        assert required_topic in markdown
+    assert re.search(
+        r"\]\((?:\./)?llm-inference-serving-engineering\)",
+        markdown,
+    )
+    for inference_detail in (
+        "PagedAttention",
+        "连续批处理",
+        "投机解码",
+        "KV Cache",
+    ):
+        assert markdown.casefold().count(inference_detail.casefold()) <= 1
+
+    assert not cloud_native_contains_forbidden_tutorial_or_hpa(markdown)
+
+    candidate_index = validate_completed_batch_as_publication_candidates(
+        tmp_path
+    )
+    assert sum(
+        len(category.articles) for category in candidate_index.categories
+    ) == 9
+
+
+def test_cloud_native_contract_guards_reject_bypass_variants() -> None:
+    bare_nodes = "flowchart LR\n" + "\n".join(
+        f"N{index} --> N{index + 1}" for index in range(12)
+    )
+    assert len(mermaid_principal_node_ids(bare_nodes)) == 13
+
+    for prohibited in (
+        "## Installing Kubernetes",
+        "```YAML\nkind: Pod\n```",
+        "Run `kubectl` apply next.",
+        "kubeadm init",
+        "helm   install runtime chart",
+        "HPA 能解决所有推理服务的弹性问题。",
+        "Horizontal Pod Autoscaler is the universal strategy.",
+        "所有推理服务都应使用水平 Pod 自动扩缩容。",
+    ):
+        assert cloud_native_contains_forbidden_tutorial_or_hpa(prohibited)
