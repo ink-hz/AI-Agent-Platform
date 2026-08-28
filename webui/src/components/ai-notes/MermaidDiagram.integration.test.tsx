@@ -1,7 +1,15 @@
 /** @vitest-environment jsdom */
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -19,6 +27,34 @@ let productionDiagramSequence = 0;
 
 function productionArticle(relativePath: string): string {
   return readFileSync(resolve(CONTENT_ROOT, relativePath), "utf8");
+}
+
+
+function frontmatter(source: string): string {
+  const matched = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!matched) throw new Error("invalid AI note frontmatter");
+  return matched[1] ?? "";
+}
+
+
+function publishedArticleFiles(contentRoot = CONTENT_ROOT): string[] {
+  return readdirSync(contentRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .flatMap((category) => {
+      const categoryPath = join(contentRoot, category.name);
+      return readdirSync(categoryPath, { withFileTypes: true })
+        .filter((entry) => (
+          entry.isFile()
+          && entry.name !== "_index.md"
+          && entry.name.endsWith(".md")
+        ))
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((entry) => join(categoryPath, entry.name));
+    })
+    .filter((path) => (
+      /^draft:\s*false\s*$/m.test(frontmatter(readFileSync(path, "utf8")))
+    ));
 }
 
 
@@ -94,6 +130,30 @@ describe("MermaidDiagram with the real renderer", () => {
     Reflect.deleteProperty(SVGElement.prototype, "getComputedTextLength");
   });
 
+  it("discovers published articles without a registration list", () => {
+    const root = mkdtempSync(join(tmpdir(), "ai-notes-discovery-"));
+    try {
+      const category = join(root, "01-foundations");
+      mkdirSync(category);
+      writeFileSync(
+        join(category, "_index.md"),
+        "---\ntitle: 基础\nslug: foundations\n---\n",
+      );
+      writeFileSync(
+        join(category, "01-live.md"),
+        "---\ndraft: false\n---\n\n## 正文\n",
+      );
+      writeFileSync(
+        join(category, "02-draft.md"),
+        "---\ndraft: true\n---\n\n## 草稿\n",
+      );
+
+      expect(publishedArticleFiles(root)).toEqual([join(category, "01-live.md")]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps flowchart labels in a sanitized CSP-compatible image", async () => {
     const { default: mermaid } = await import("mermaid");
     mermaid.initialize(AI_NOTES_MERMAID_CONFIG);
@@ -130,68 +190,28 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(rendered).toMatch(/\.cluster rect\s*\{[^}]*stroke:\s*#CBD5E1;/s);
   });
 
-  it("renders the styled Agent engineering learning map", async () => {
-    const markdown = productionArticle(
-      "01-foundations/01-agent-engineering-learning-map.md",
+  it("renders every published Mermaid diagram with unique metadata", async () => {
+    const files = publishedArticleFiles();
+    const sources = files.flatMap((path) => mermaidBlocks(readFileSync(path, "utf8")));
+    expect(files.length).toBeGreaterThan(0);
+    expect(sources.length).toBeGreaterThan(0);
+    await expectProductionDiagramsToRender(sources);
+
+    const metadata = sources.map(mermaidMetadata);
+    expect(metadata.every(({ description }) => Boolean(description))).toBe(true);
+    expect(new Set(metadata.map(({ title }) => title)).size).toBe(sources.length);
+    expect(new Set(metadata.map(({ description }) => description)).size).toBe(
+      sources.length,
     );
-    const sources = mermaidBlocks(markdown);
-    expect(sources).toHaveLength(2);
-    expect(sources.join("\n")).toContain("最小行动循环");
-    expect(sources.join("\n")).toContain("能力递进");
-    await expectProductionDiagramsToRender(sources);
   });
 
-  it("renders every enterprise Agent architecture diagram", async () => {
+  it("renders every LLM application architecture diagram", async () => {
     const sources = mermaidBlocks(productionArticle(
-      "02-agent-architecture/01-enterprise-agent-system-architecture.md",
-    ));
-    expect(sources).toHaveLength(5);
-    expect(sources.join("\n")).toContain("运行循环");
-    expect(sources.join("\n")).toContain("信任决策");
-    await expectProductionDiagramsToRender(sources);
-  });
-
-  it("renders every Claude Code public architecture diagram", async () => {
-    const sources = mermaidBlocks(productionArticle(
-      "03-tools-and-frameworks/01-claude-code-architecture.md",
+      "01-foundations/02-llm-application-system-architecture.md",
     ));
     expect(sources).toHaveLength(3);
-    expect(sources.join("\n")).toContain("公开入口");
+    expect(sources.join("\n")).toContain("从请求到可靠回答");
     await expectProductionDiagramsToRender(sources);
   });
 
-  it("renders every RAG engineering diagram", async () => {
-    const sources = mermaidBlocks(productionArticle(
-      "04-ai-engineering/01-rag-retrieval-engineering.md",
-    ));
-    expect(sources).toHaveLength(4);
-    expect(sources.join("\n")).toContain("索引链路");
-    expect(sources.join("\n")).toContain("查询链路");
-    await expectProductionDiagramsToRender(sources);
-  });
-
-  it("renders every AI Native collaboration diagram", async () => {
-    const sources = mermaidBlocks(productionArticle(
-      "05-thinking-and-methods/01-ai-native-architecture-design.md",
-    ));
-    expect(sources).toHaveLength(2);
-    expect(sources.join("\n")).toContain("人负责");
-    await expectProductionDiagramsToRender(sources);
-  });
-
-  it("gives every production diagram unique accessibility metadata", () => {
-    const files = [
-      "01-foundations/01-agent-engineering-learning-map.md",
-      "02-agent-architecture/01-enterprise-agent-system-architecture.md",
-      "03-tools-and-frameworks/01-claude-code-architecture.md",
-      "04-ai-engineering/01-rag-retrieval-engineering.md",
-      "05-thinking-and-methods/01-ai-native-architecture-design.md",
-    ];
-    const sources = files.flatMap((file) => mermaidBlocks(productionArticle(file)));
-    const metadata = sources.map(mermaidMetadata);
-    expect(sources).toHaveLength(16);
-    expect(metadata.every(({ description }) => Boolean(description))).toBe(true);
-    expect(new Set(metadata.map(({ title }) => title)).size).toBe(16);
-    expect(new Set(metadata.map(({ description }) => description)).size).toBe(16);
-  });
 });
