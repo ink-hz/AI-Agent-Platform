@@ -76,11 +76,16 @@ remote() {
   /usr/bin/ssh "${ssh_options[@]}" "$cloud_admin_host" "$@"
 }
 
-run_agentops() {
-  /usr/bin/sudo -n -u agentops /usr/bin/env -i \
-    HOME=/Users/agentops USER=agentops LOGNAME=agentops \
-    PATH=/Users/agentops/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
-    /bin/sh -c 'cd /Users/agentops && exec "$@"' sh "$@"
+agentops_control=/Library/PrivilegedHelperTools/orbbec-agentops-control
+run_agentops_control() {
+  [[ $# -eq 1 ]] || fail
+  case "$1" in
+    relay-canary|worker-stop|worker-restore|metabot-release-sha|agent-team-release-sha) ;;
+    *) fail ;;
+  esac
+  [[ -x "$agentops_control" && ! -L "$agentops_control" ]] || fail
+  [[ "$(/usr/bin/stat -f '%Lp %Su %Sg' "$agentops_control")" == "755 root wheel" ]] || fail
+  /usr/bin/sudo -n -H -u agentops "$agentops_control" "$1"
 }
 
 action_lock_token=""
@@ -180,11 +185,8 @@ local_runtime_preflight() {
 }
 
 run_relay_canary() {
-  [[ -f "$relay_acceptance_config" && ! -L "$relay_acceptance_config" ]] || fail
-  [[ "$(/usr/bin/stat -f '%Lp %Su' "$relay_acceptance_config")" == "600 agentops" ]] || fail
-  relay_accept=/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/accept.sh
-  [[ -x "$relay_accept" && ! -L "$relay_accept" ]] || fail
-  relay_result="$(run_agentops "$relay_accept" "$relay_acceptance_config")" || fail
+  [[ "$relay_acceptance_config" == /Users/agentops/AgentRuntime/private/acceptance-config.json ]] || fail
+  relay_result="$(run_agentops_control relay-canary)" || fail
   [[ "$relay_result" == "AGENT_EXECUTION_RELAY_OK worker=agentops-mac-primary agents=7 accepted_job_kinds=direct_agent,metabot_local public_ports_added=0 duplicate_dispatches=0" ]] || fail
   LOCAL_WORKER_ACCEPTS=metabot_local
   [[ "$LOCAL_WORKER_ACCEPTS" == "metabot_local" ]] || fail
@@ -736,10 +738,9 @@ accept_real() {
   temporary="$(/usr/bin/mktemp -d)"
   chrome_pid=""
   worker_stopped=0
-  worker_supervisor=/Users/agentops/AgentRuntime/platform/deploy/local-execution-worker/worker-pm2.sh
   restore_worker() {
     [[ "$worker_stopped" == "1" ]] || return 0
-    run_agentops "$worker_supervisor" restore online >/dev/null || return 1
+    run_agentops_control worker-restore >/dev/null || return 1
     for _attempt in $(/usr/bin/seq 1 12); do
       if /usr/bin/nc -z -w 2 127.0.0.1 9120 >/dev/null 2>&1; then worker_stopped=0; return 0; fi
       /bin/sleep 5
@@ -1052,7 +1053,7 @@ REMOTE
     /bin/sleep 5
   done
   [[ "$child_run_id" =~ ^[0-9a-f-]{36}$ && "$child_run_state" == "running" ]] || fail
-  run_agentops "$worker_supervisor" stop >/dev/null || fail
+  run_agentops_control worker-stop >/dev/null || fail
   worker_stopped=1
   for _attempt in $(/usr/bin/seq 1 12); do
     ! /usr/bin/nc -z -w 2 127.0.0.1 9120 >/dev/null 2>&1 && break
@@ -1102,8 +1103,8 @@ printf 'release_sha=%s\napi_container_id=%s\napi_started_at=%s\nworker_key_id=%s
   "$(sha256sum /etc/nginx/sites-available/agent-domain.conf | awk '{print $1}')"
 REMOTE
   )" || fail
-  metabot_release_sha="$(run_agentops /usr/bin/git -C /Users/agentops/AgentRuntime/metabot rev-parse HEAD)" || fail
-  agent_team_release_sha="$(run_agentops /usr/bin/git -C /Users/agentops/Developer/work/Orbbec-Agent-Team rev-parse HEAD)" || fail
+  metabot_release_sha="$(run_agentops_control metabot-release-sha)" || fail
+  agent_team_release_sha="$(run_agentops_control agent-team-release-sha)" || fail
   [[ "$metabot_release_sha" =~ ^[0-9a-f]{40}$ && "$agent_team_release_sha" =~ ^[0-9a-f]{40}$ ]] || fail
   local_listener_table="$(/usr/sbin/lsof -nP -iTCP -sTCP:LISTEN | /usr/bin/awk 'NR>1 && $9 ~ /^127\.0\.0\.1:(9101|9102|9103|9104|9105|9107|9108|9110|9120)$/ {print $9}' | /usr/bin/sort -u | /usr/bin/paste -sd, -)"
   [[ "$local_listener_table" == *"127.0.0.1:9110"* && "$local_listener_table" == *"127.0.0.1:9120"* ]] || fail
