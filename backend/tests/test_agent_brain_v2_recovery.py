@@ -15,6 +15,15 @@ from test_agent_brain_loop_runtime import (
 from test_control_plane_migration import control_database
 
 
+class _SettlementCrash:
+    def claim_intervention(self, _loop_id, _step_id):
+        return None
+
+    def settle_if_undelivered(self, _loop_id, *, source):
+        assert source == "post_commit"
+        raise psycopg.errors.SerializationFailure()
+
+
 @pytest.mark.postgres
 def test_crash_before_model_commit_reclaims_step_without_duplicate_calls(
     loop_database, loop_repository, seeded_loop
@@ -39,6 +48,30 @@ def test_crash_before_model_commit_reclaims_step_without_duplicate_calls(
             "where step.loop_id=%s",
             (loop_id,),
         ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_model_commit_survives_post_commit_settlement_failure(
+    loop_database, loop_repository, seeded_loop, monkeypatch
+) -> None:
+    environment, *_unused = loop_database
+    loop_id, _snapshot_id = seeded_loop
+    monkeypatch.setattr(
+        loop_repository,
+        "collaboration_repository",
+        lambda: _SettlementCrash(),
+    )
+
+    assert _runtime(loop_repository, _list_agents_response()).advance_one() is True
+
+    with psycopg.connect(environment["admin"]) as connection:
+        persisted = connection.execute(
+            "select count(*) filter (where model_response_ciphertext is not null),"
+            "count(*) filter (where status='queued') "
+            "from platform_brain.brain_steps where loop_id=%s",
+            (loop_id,),
+        ).fetchone()
+    assert persisted == (1, 1)
 
 
 @pytest.mark.postgres

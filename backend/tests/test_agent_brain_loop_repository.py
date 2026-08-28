@@ -95,6 +95,7 @@ def _clear_v2(connection) -> None:
     for table in (
         "brain_user_interventions",
         "brain_wait_subscriptions",
+        "brain_task_event_cursors",
         "brain_thinking_summaries",
         "agent_task_messages",
         "agent_task_sessions",

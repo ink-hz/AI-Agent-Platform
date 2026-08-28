@@ -273,7 +273,6 @@ def test_intervention_events_validate_in_python_models() -> None:
         loop_id=uuid4(),
         task_ids=(task_id,),
         wake_on=("input_required", "action_required"),
-        cursors={task_id: 0},
     )
     assert event.event_type == "action_required"
     assert wait.wake_on == ("input_required", "action_required")

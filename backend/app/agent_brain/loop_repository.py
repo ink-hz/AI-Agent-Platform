@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import hashlib
 import json
 import re
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID, uuid4, uuid5
 
@@ -22,13 +22,10 @@ from app.agent_brain.loop_models import (
     BrainStepStatus,
     NormalizedTaskResult,
 )
-from app.execution_relay.models import RequesterSubject
 from app.agent_brain.tool_protocol import (
     AwaitAgentEventsCall,
     BrainToolBatch,
     DelegateTaskCall,
-    ParsedToolCall,
-    RequestUserInputCall,
     SendAgentMessageCall,
     StopAgentTaskCall,
     SubmitAnswerCall,
@@ -40,7 +37,7 @@ from app.execution_relay.content_crypto import (
     ContentCryptoError,
     SealedContent,
 )
-
+from app.execution_relay.models import RequesterSubject
 
 _WORKER_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _TERMINAL_TASK_STATUSES = frozenset(
@@ -242,6 +239,9 @@ class BrainLoopRepository:
             connect=self._connect,
         )
 
+    def settle_active_waits(self, *, limit: int) -> int:
+        return self.collaboration_repository().settle_active_waits(limit=limit)
+
     def heartbeat(
         self,
         worker_name: str,
@@ -435,6 +435,30 @@ class BrainLoopRepository:
             raise BrainRepositoryError() from None
 
     def commit_model_step(
+        self,
+        loop_id: UUID,
+        step_seq: int,
+        worker_id: str,
+        commit: ModelStepCommit,
+    ) -> ModelStepCommitResult:
+        result = self._commit_model_step_transaction(
+            loop_id,
+            step_seq,
+            worker_id,
+            commit,
+        )
+        try:
+            self.collaboration_repository().settle_if_undelivered(
+                loop_id,
+                source="post_commit",
+            )
+        except (BrainRepositoryError, psycopg.errors.SerializationFailure):
+            # Model persistence has already committed. Event append and the
+            # Reaper provide two independent, durable settlement retries.
+            pass
+        return result
+
+    def _commit_model_step_transaction(
         self,
         loop_id: UUID,
         step_seq: int,
@@ -692,6 +716,11 @@ class BrainLoopRepository:
                         spec.effective_deadline_at,
                     ),
                 )
+                connection.execute(
+                    "insert into platform_brain.brain_task_event_cursors "
+                    "(task_id,loop_id,delivered_seq) values (%s,%s,0)",
+                    (task_id,loop_id),
+                )
                 child_session_id = str(uuid5(task_id, "platform-child-session"))
                 connection.execute(
                     "insert into platform_brain.agent_task_sessions ("
@@ -754,7 +783,6 @@ class BrainLoopRepository:
                 and parsed.tool_index not in immediate
                 and isinstance(parsed.call, AwaitAgentEventsCall)
             ):
-                cursors: dict[str, int] = {}
                 for task_id in parsed.call.task_ids:
                     owned = connection.execute(
                         "select loop_id from platform_brain.agent_tasks "
@@ -763,22 +791,22 @@ class BrainLoopRepository:
                     ).fetchone()
                     if owned is None or owned["loop_id"] != loop_id:
                         raise BrainRepositoryConflict()
-                    cursors[str(task_id)] = connection.execute(
-                        "select coalesce(max(seq),0) as seq from "
-                        "platform_brain.agent_task_events where task_id=%s",
-                        (task_id,),
-                    ).fetchone()["seq"]
+                    connection.execute(
+                        "insert into platform_brain.brain_task_event_cursors "
+                        "(task_id,loop_id,delivered_seq) values (%s,%s,0) "
+                        "on conflict (task_id) do nothing",
+                        (task_id,loop_id),
+                    )
                 connection.execute(
                     "insert into platform_brain.brain_wait_subscriptions ("
-                    "wait_id,brain_tool_call_id,loop_id,task_ids,wake_on,cursors,status) "
-                    "values (%s,%s,%s,%s,%s,%s,'active')",
+                    "wait_id,brain_tool_call_id,loop_id,task_ids,wake_on,status) "
+                    "values (%s,%s,%s,%s,%s,'active')",
                     (
                         uuid4(),
                         tool_call_id,
                         loop_id,
                         list(parsed.call.task_ids),
                         list(parsed.call.wake_on),
-                        Jsonb(cursors),
                     ),
                 )
             elif (

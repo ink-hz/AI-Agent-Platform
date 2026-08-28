@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import hashlib
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-
 from app.agent_brain.collaboration_models import (
     AgentTaskMessageInput,
     AgentTaskPublicEventInput,
     BrainThinkingDelta,
+    WaitSettlementResult,
     WaitSubscriptionSpec,
 )
 from app.agent_brain.collaboration_repository import CollaborationRepository
@@ -18,7 +18,6 @@ from app.agent_brain.conversation_repository import message_subject
 from app.agent_brain.loop_repository import (
     BrainLoopRepository,
     BrainRepositoryConflict,
-    BrainRepositoryError,
     ModelStepCommit,
     TaskDispatchSpec,
 )
@@ -26,7 +25,6 @@ from app.agent_brain.tool_protocol import ToolLimits, parse_tool_batch
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
 from test_control_plane_migration import control_database
-
 
 NOW = datetime(2026, 8, 25, 2, 0, tzinfo=timezone.utc)
 
@@ -64,6 +62,7 @@ def _clear_live(connection) -> None:
     for table in (
         "brain_user_interventions",
         "brain_wait_subscriptions",
+        "brain_task_event_cursors",
         "brain_thinking_summaries",
         "agent_task_messages",
         "agent_task_sessions",
@@ -325,7 +324,6 @@ def test_event_wakes_one_subscription_once(live_database, seeded_live_task) -> N
             loop_id=loop_id,
             task_ids=(task_id,),
             wake_on=("finding", "result"),
-            cursors={task_id: 0},
         )
     )
     event = AgentTaskPublicEventInput(
@@ -367,9 +365,75 @@ def test_wait_rejects_foreign_task(live_database, seeded_live_task) -> None:
                 loop_id=uuid4(),
                 task_ids=(task_id,),
                 wake_on=("result",),
-                cursors={task_id: 0},
             )
         )
+
+
+@pytest.mark.postgres
+def test_event_before_wait_is_delivered_once(
+    live_database, seeded_live_task
+) -> None:
+    repository, _loop_repository, loop_id, task_id, _conversation_id = (
+        seeded_live_task
+    )
+    event = AgentTaskPublicEventInput(
+        task_id=task_id,
+        seq=1,
+        event_type="finding",
+        payload={"summary": "先于等待到达的发现"},
+        created_at=NOW,
+    )
+    first = repository.append_task_event_and_wake(event)
+    assert first.woken_wait_id is None
+
+    tool_call_id = _seed_wait_step(live_database, loop_id, task_id=task_id)
+    repository.create_wait_subscription(
+        WaitSubscriptionSpec(
+            tool_call_id=tool_call_id,
+            loop_id=loop_id,
+            task_ids=(task_id,),
+            wake_on=("finding", "result"),
+        )
+    )
+
+    settled = repository.settle_if_undelivered(loop_id, source="post_commit")
+    assert settled.settled is True
+    assert [item.seq for item in settled.events] == [1]
+    assert repository.settle_if_undelivered(
+        loop_id, source="reaper"
+    ).settled is False
+
+
+def test_wait_settlement_retries_serialization_failure(
+    seeded_live_task, monkeypatch
+) -> None:
+    repository, _loop_repository, loop_id, _task_id, _conversation_id = (
+        seeded_live_task
+    )
+    attempts: list[int] = []
+
+    def flaky(_loop_id, *, source, attempt):
+        attempts.append(attempt)
+        if attempt < 2:
+            raise psycopg.errors.SerializationFailure()
+        return WaitSettlementResult(
+            settled=False,
+            source=source,
+            events=(),
+            serialization_retries=attempt,
+        )
+
+    monkeypatch.setattr(repository, "_settle_once", flaky, raising=False)
+    monkeypatch.setattr(repository, "_sleep", lambda _seconds: None, raising=False)
+    monkeypatch.setattr(
+        repository,
+        "_random",
+        type("FixedRandom", (), {"uniform": staticmethod(lambda _a, _b: 0.0)})(),
+        raising=False,
+    )
+    result = repository.settle_if_undelivered(loop_id, source="reaper")
+    assert result.serialization_retries == 2
+    assert attempts == [0, 1, 2]
 
 
 @pytest.mark.postgres
@@ -454,7 +518,7 @@ def test_intervention_is_claimed_once(live_database, seeded_live_task) -> None:
 
 
 @pytest.mark.postgres
-def test_crash_after_event_before_step_rolls_back_atomic_wake(
+def test_crash_after_event_commit_is_recovered_by_reaper_settlement(
     live_database, seeded_live_task
 ) -> None:
     environment, *_unused = live_database
@@ -468,7 +532,6 @@ def test_crash_after_event_before_step_rolls_back_atomic_wake(
             loop_id=loop_id,
             task_ids=(task_id,),
             wake_on=("finding",),
-            cursors={task_id: 0},
         )
     )
     with psycopg.connect(environment["admin"]) as connection:
@@ -482,16 +545,16 @@ def test_crash_after_event_before_step_rolls_back_atomic_wake(
             "platform_brain.fail_live_step_insert()"
         )
     try:
-        with pytest.raises(BrainRepositoryError):
-            repository.append_task_event_and_wake(
-                AgentTaskPublicEventInput(
-                    task_id=task_id,
-                    seq=1,
-                    event_type="finding",
-                    payload={"summary": "必须整体回滚"},
-                    created_at=NOW,
-                )
+        result = repository.append_task_event_and_wake(
+            AgentTaskPublicEventInput(
+                task_id=task_id,
+                seq=1,
+                event_type="finding",
+                payload={"summary": "事件已经提交，等待稍后恢复"},
+                created_at=NOW,
             )
+        )
+        assert result.woken_wait_id is None
     finally:
         with psycopg.connect(environment["admin"]) as connection:
             connection.execute(
@@ -505,9 +568,14 @@ def test_crash_after_event_before_step_rolls_back_atomic_wake(
             "select count(*) from platform_brain.agent_task_events "
             "where task_id=%s",
             (task_id,),
-        ).fetchone()[0] == 0
+        ).fetchone()[0] == 1
         assert connection.execute(
             "select status from platform_brain.brain_wait_subscriptions "
             "where wait_id=%s",
             (wait.wait_id,),
         ).fetchone()[0] == "active"
+    recovered = repository.settle_if_undelivered(loop_id, source="reaper")
+    assert recovered.settled is True
+    assert recovered.events[0].payload["summary"] == (
+        "事件已经提交，等待稍后恢复"
+    )

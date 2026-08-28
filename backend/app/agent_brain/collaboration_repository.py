@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from datetime import datetime
 import hashlib
 import json
+import random
 import re
+import time
+from collections.abc import Callable, Mapping
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -23,6 +24,7 @@ from app.agent_brain.collaboration_models import (
     EventWakeResult,
     TaskMessageAppendResult,
     UserInterventionRecord,
+    WaitSettlementResult,
     WaitSubscriptionRecord,
     WaitSubscriptionSpec,
 )
@@ -37,7 +39,6 @@ from app.execution_relay.content_crypto import (
     ContentCryptoError,
     SealedContent,
 )
-
 
 _ADAPTER_KIND = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
@@ -104,6 +105,8 @@ class CollaborationRepository:
         self._control_database_url = control_database_url
         self._content_codec = content_codec
         self._connect = connect
+        self._sleep = time.sleep
+        self._random = random.SystemRandom()
 
     def __repr__(self) -> str:
         return (
@@ -348,7 +351,6 @@ class CollaborationRepository:
     ) -> WaitSubscriptionRecord:
         if not isinstance(spec, WaitSubscriptionSpec):
             raise ValueError("wait subscription invalid")
-        cursor_json = {str(task_id): cursor for task_id, cursor in spec.cursors.items()}
         try:
             with self._connection() as connection, connection.transaction():
                 call = connection.execute(
@@ -374,6 +376,13 @@ class CollaborationRepository:
                     row["loop_id"] != spec.loop_id for row in tasks
                 ):
                     raise BrainRepositoryConflict()
+                for task_id in spec.task_ids:
+                    connection.execute(
+                        "insert into platform_brain.brain_task_event_cursors "
+                        "(task_id,loop_id,delivered_seq) values (%s,%s,0) "
+                        "on conflict (task_id) do nothing",
+                        (task_id, spec.loop_id),
+                    )
                 existing = connection.execute(
                     "select * from platform_brain.brain_wait_subscriptions "
                     "where brain_tool_call_id=%s",
@@ -385,22 +394,20 @@ class CollaborationRepository:
                         record.loop_id != spec.loop_id
                         or record.task_ids != spec.task_ids
                         or record.wake_on != spec.wake_on
-                        or dict(record.cursors) != dict(spec.cursors)
                     ):
                         raise BrainRepositoryConflict()
                     return record
                 wait_id = uuid4()
                 connection.execute(
                     "insert into platform_brain.brain_wait_subscriptions "
-                    "(wait_id,brain_tool_call_id,loop_id,task_ids,wake_on,cursors,status) "
-                    "values (%s,%s,%s,%s,%s,%s,'active')",
+                    "(wait_id,brain_tool_call_id,loop_id,task_ids,wake_on,status) "
+                    "values (%s,%s,%s,%s,%s,'active')",
                     (
                         wait_id,
                         spec.tool_call_id,
                         spec.loop_id,
                         list(spec.task_ids),
                         list(spec.wake_on),
-                        Jsonb(cursor_json),
                     ),
                 )
             return WaitSubscriptionRecord(
@@ -409,7 +416,6 @@ class CollaborationRepository:
                 loop_id=spec.loop_id,
                 task_ids=spec.task_ids,
                 wake_on=spec.wake_on,
-                cursors=dict(spec.cursors),
                 status="active",
             )
         except (BrainRepositoryConflict, BrainRepositoryNotFound):
@@ -427,78 +433,92 @@ class CollaborationRepository:
             loop_id=row["loop_id"],
             task_ids=tuple(row["task_ids"]),
             wake_on=tuple(row["wake_on"]),
-            cursors={UUID(key): int(value) for key, value in row["cursors"].items()},
             status=row["status"],
         )
 
-    def append_task_event_and_wake(
-        self, event: AgentTaskPublicEventInput
-    ) -> EventWakeResult:
-        if not isinstance(event, AgentTaskPublicEventInput):
-            raise ValueError("public Agent event invalid")
-        payload = dict(event.payload)
-        _canonical_json(payload)
-        payload_hash = _json_hash(payload)
-        sealed_payload = self._content_codec.seal_json(
-            _event_subject(event.task_id, event.seq), payload
-        )
+    def settle_if_undelivered(
+        self,
+        loop_id: UUID,
+        *,
+        source: str,
+    ) -> WaitSettlementResult:
+        if not isinstance(loop_id, UUID) or source not in {
+            "post_commit",
+            "event_append",
+            "reaper",
+        }:
+            raise ValueError("wait settlement input invalid")
+        delays = (0.010, 0.025, 0.050)
+        for attempt in range(4):
+            try:
+                return self._settle_once(
+                    loop_id,
+                    source=source,
+                    attempt=attempt,
+                )
+            except psycopg.errors.SerializationFailure:
+                if attempt == 3:
+                    return WaitSettlementResult(False, source, (), 3)
+                self._sleep(self._random.uniform(0.0, delays[attempt]))
+        raise AssertionError("unreachable")
+
+    def _settle_once(
+        self,
+        loop_id: UUID,
+        *,
+        source: str,
+        attempt: int,
+    ) -> WaitSettlementResult:
         try:
             with self._connection() as connection, connection.transaction():
                 connection.execute("set transaction isolation level serializable")
-                inserted = connection.execute(
-                    "select platform_brain.append_agent_task_event_v45("
-                    "%s,%s,%s,%s,%s,%s,%s) as inserted",
-                    (
-                        event.task_id,
-                        event.seq,
-                        event.event_type,
-                        sealed_payload.ciphertext,
-                        sealed_payload.key_version,
-                        payload_hash,
-                        event.created_at,
-                    ),
-                ).fetchone()["inserted"]
-                if not inserted:
-                    return EventWakeResult(True, None, (), None)
-                task = connection.execute(
-                    "select loop_id from platform_brain.agent_tasks where task_id=%s",
-                    (event.task_id,),
-                ).fetchone()
-                if task is None:
-                    raise BrainRepositoryNotFound()
                 wait = connection.execute(
                     "select * from platform_brain.brain_wait_subscriptions "
-                    "where loop_id=%s and status='active' and %s=any(task_ids) "
-                    "and %s=any(wake_on) and "
-                    "coalesce((cursors->>%s)::integer,-1)<%s "
-                    "order by created_at,wait_id for update skip locked limit 1",
-                    (
-                        task["loop_id"],
-                        event.task_id,
-                        event.event_type,
-                        str(event.task_id),
-                        event.seq,
-                    ),
+                    "where loop_id=%s and status='active' "
+                    "order by created_at,wait_id for update limit 1",
+                    (loop_id,),
                 ).fetchone()
                 if wait is None:
-                    return EventWakeResult(False, None, (), None)
+                    return WaitSettlementResult(False, source, (), attempt)
+
+                cursor_rows = connection.execute(
+                    "select task_id,delivered_seq from "
+                    "platform_brain.brain_task_event_cursors "
+                    "where loop_id=%s and task_id=any(%s) "
+                    "order by task_id for update",
+                    (loop_id, list(wait["task_ids"])),
+                ).fetchall()
+                if {row["task_id"] for row in cursor_rows} != set(wait["task_ids"]):
+                    raise BrainRepositoryConflict()
+                delivered = {
+                    row["task_id"]: row["delivered_seq"] for row in cursor_rows
+                }
                 event_rows = connection.execute(
                     "select event.* from platform_brain.agent_task_events event "
-                    "where event.task_id=any(%s) order by event.created_at,event.task_id,event.seq",
+                    "where event.task_id=any(%s) "
+                    "order by event.created_at,event.task_id,event.seq",
                     (list(wait["task_ids"]),),
                 ).fetchall()
-                cursors = {
-                    UUID(key): int(value) for key, value in wait["cursors"].items()
-                }
-                events = tuple(
-                    self._event_from_row(row)
+                pending_rows = tuple(
+                    row
                     for row in event_rows
-                    if row["seq"] > cursors.get(row["task_id"], 0)
+                    if row["seq"] > delivered[row["task_id"]]
                 )
+                trigger_row = next(
+                    (
+                        row
+                        for row in pending_rows
+                        if row["event_type"] in set(wait["wake_on"])
+                    ),
+                    None,
+                )
+                if trigger_row is None:
+                    return WaitSettlementResult(False, source, (), attempt)
+                events = tuple(self._event_from_row(row) for row in pending_rows)
                 tool_result = {
                     "status": "events_ready",
-                    "triggered_task_id": str(event.task_id),
-                    "triggered_event_seq": event.seq,
+                    "triggered_task_id": str(trigger_row["task_id"]),
+                    "triggered_event_seq": trigger_row["seq"],
                     "events": [
                         {
                             "task_id": str(item.task_id),
@@ -518,7 +538,11 @@ class CollaborationRepository:
                     "status='triggered',triggered_task_id=%s,triggered_event_seq=%s,"
                     "terminal_at=clock_timestamp(),updated_at=clock_timestamp() "
                     "where wait_id=%s and status='active'",
-                    (event.task_id, event.seq, wait["wait_id"]),
+                    (
+                        trigger_row["task_id"],
+                        trigger_row["seq"],
+                        wait["wait_id"],
+                    ),
                 ).rowcount
                 if updated != 1:
                     raise BrainRepositoryConflict()
@@ -564,15 +588,104 @@ class CollaborationRepository:
                     "updated_at=clock_timestamp() where turn_id=%s",
                     (loop["turn_id"],),
                 )
-                return EventWakeResult(
-                    False, wait["wait_id"], events, queued_step_id
+                highest: dict[UUID, int] = dict(delivered)
+                for row in pending_rows:
+                    highest[row["task_id"]] = max(
+                        highest[row["task_id"]], row["seq"]
+                    )
+                for task_id, sequence in highest.items():
+                    connection.execute(
+                        "update platform_brain.brain_task_event_cursors set "
+                        "delivered_seq=%s,updated_at=clock_timestamp() "
+                        "where task_id=%s and loop_id=%s",
+                        (sequence, task_id, loop_id),
+                    )
+                return WaitSettlementResult(
+                    True,
+                    source,
+                    events,
+                    attempt,
+                    wait["wait_id"],
+                    queued_step_id,
                 )
+        except (BrainRepositoryConflict, BrainRepositoryNotFound):
+            raise
+        except psycopg.errors.SerializationFailure:
+            raise
+        except (ContentCryptoError, psycopg.Error):
+            raise BrainRepositoryError() from None
+
+    def active_wait_loop_ids(self, *, limit: int) -> tuple[UUID, ...]:
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("active wait scan limit invalid")
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select loop_id from platform_brain.brain_wait_subscriptions "
+                    "where status='active' order by updated_at,wait_id limit %s",
+                    (limit,),
+                ).fetchall()
+            return tuple(row["loop_id"] for row in rows)
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def settle_active_waits(self, *, limit: int) -> int:
+        return sum(
+            self.settle_if_undelivered(loop_id, source="reaper").settled
+            for loop_id in self.active_wait_loop_ids(limit=limit)
+        )
+
+    def append_task_event_and_wake(
+        self, event: AgentTaskPublicEventInput
+    ) -> EventWakeResult:
+        if not isinstance(event, AgentTaskPublicEventInput):
+            raise ValueError("public Agent event invalid")
+        payload = dict(event.payload)
+        _canonical_json(payload)
+        payload_hash = _json_hash(payload)
+        sealed_payload = self._content_codec.seal_json(
+            _event_subject(event.task_id, event.seq), payload
+        )
+        try:
+            with self._connection() as connection, connection.transaction():
+                connection.execute("set transaction isolation level serializable")
+                inserted = connection.execute(
+                    "select platform_brain.append_agent_task_event_v49("
+                    "%s,%s,%s,%s,%s,%s,%s) as inserted",
+                    (
+                        event.task_id,
+                        event.seq,
+                        event.event_type,
+                        sealed_payload.ciphertext,
+                        sealed_payload.key_version,
+                        payload_hash,
+                        event.created_at,
+                    ),
+                ).fetchone()["inserted"]
+                task = connection.execute(
+                    "select loop_id from platform_brain.agent_tasks where task_id=%s",
+                    (event.task_id,),
+                ).fetchone()
+                if task is None:
+                    raise BrainRepositoryNotFound()
         except (BrainRepositoryConflict, BrainRepositoryNotFound):
             raise
         except psycopg.errors.CheckViolation:
             raise BrainRepositoryConflict() from None
         except (ContentCryptoError, psycopg.Error):
             raise BrainRepositoryError() from None
+        try:
+            settlement = self.settle_if_undelivered(
+                task["loop_id"], source="event_append"
+            )
+        except BrainRepositoryError:
+            settlement = WaitSettlementResult(False, "event_append", (), 0)
+        return EventWakeResult(
+            not inserted,
+            settlement.woken_wait_id,
+            settlement.events,
+            settlement.queued_step_id,
+        )
 
     def _event_from_row(self, row: Mapping[str, Any]) -> AgentTaskPublicEventRecord:
         payload = self._content_codec.unseal_json(

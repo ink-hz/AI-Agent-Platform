@@ -1,12 +1,9 @@
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
-import pytest
 import yaml
-
 from app.agent_brain.worker_runtime import tick, validate_worker_mode
-
 
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
@@ -228,6 +225,10 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
         def heartbeat(self, name, *, status, error_code=None):
             calls.append(f"heartbeat:{name}:{status}")
 
+        def settle_active_waits(self, *, limit):
+            calls.append("settle-waits")
+            return 1
+
         def expire_leases(self, *, limit):
             calls.append("expire-steps")
             return 1
@@ -250,11 +251,11 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
 
     changed = tick(validate_worker_mode("all"), Runtime(), Repository())
 
-    assert changed == 11
+    assert changed == 12
     assert calls == [
         "brain", "settle", "heartbeat:agent-brain-step:healthy",
         "adapter", "reconcile:persistent", "reconcile:metabot_local", "cancel",
-        "heartbeat:agent-brain-adapter:healthy", "expire-steps",
+        "heartbeat:agent-brain-adapter:healthy", "settle-waits", "expire-steps",
         "expire-deliveries", "expire-users", "erase-responses",
         "erase-conversations",
         "heartbeat:agent-brain-reaper:healthy",

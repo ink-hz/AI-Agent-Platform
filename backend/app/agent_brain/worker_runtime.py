@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import signal
 import time
+from pathlib import Path
 from typing import Literal, cast
 
 import httpx
@@ -25,7 +25,6 @@ from app.control_plane.dsn import validate_control_dsn
 from app.execution_relay.content_crypto import ContentCodec
 from app.execution_relay.repository import ExecutionRelayRepository
 from app.local_secrets import read_secret_file
-
 
 WorkerMode = Literal["brain", "adapter", "reaper", "all"]
 
@@ -126,6 +125,7 @@ def tick(mode: WorkerMode, runtime: BrainLoopRuntime, repository) -> int:
         changed += runtime.reconcile_cancellations()
         repository.heartbeat("agent-brain-adapter", status="healthy")
     if mode in {"reaper", "all"}:
+        changed += repository.settle_active_waits(limit=100)
         changed += repository.expire_leases(limit=100)
         changed += repository.expire_delivery_leases(limit=100)
         changed += repository.expire_waiting_users(limit=100)

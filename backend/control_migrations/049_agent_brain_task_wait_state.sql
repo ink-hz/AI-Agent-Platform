@@ -168,8 +168,8 @@ select
   task.task_id,
   task.loop_id,
   max(coalesce((wait.cursors ->> task.task_id::text)::integer,0))
-from platform_brain.brain_wait_subscriptions wait
-join platform_brain.agent_tasks task
+from platform_brain.agent_tasks task
+left join platform_brain.brain_wait_subscriptions wait
   on task.loop_id=wait.loop_id and task.task_id=any(wait.task_ids)
 group by task.task_id,task.loop_id;
 

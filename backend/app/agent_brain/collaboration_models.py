@@ -148,7 +148,6 @@ class WaitSubscriptionSpec:
     loop_id: UUID
     task_ids: tuple[UUID, ...]
     wake_on: tuple[WaitWakeKind, ...]
-    cursors: Mapping[UUID, int]
 
     def __post_init__(self) -> None:
         _require_uuid(self.tool_call_id, "Tool Call ID")
@@ -167,12 +166,6 @@ class WaitSubscriptionSpec:
             or len(set(self.wake_on)) != len(self.wake_on)
         ):
             raise ValueError("wait event kinds invalid")
-        if (
-            not isinstance(self.cursors, Mapping)
-            or set(self.cursors) != set(self.task_ids)
-            or any(type(cursor) is not int or cursor < 0 for cursor in self.cursors.values())
-        ):
-            raise ValueError("wait cursors invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,8 +219,17 @@ class WaitSubscriptionRecord:
     loop_id: UUID
     task_ids: tuple[UUID, ...]
     wake_on: tuple[str, ...]
-    cursors: Mapping[UUID, int]
     status: Literal["active", "triggered", "cancelled", "expired"]
+
+
+@dataclass(frozen=True, slots=True)
+class WaitSettlementResult:
+    settled: bool
+    source: Literal["post_commit", "event_append", "reaper"]
+    events: tuple[AgentTaskPublicEventRecord, ...]
+    serialization_retries: int
+    woken_wait_id: UUID | None = None
+    queued_step_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
