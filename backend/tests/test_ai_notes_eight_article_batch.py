@@ -293,10 +293,44 @@ def cloud_native_contains_forbidden_tutorial_or_hpa(markdown: str) -> bool:
         r"(?im)^```\s*(?:ya?ml|bash|sh|shell)\b",
         r"(?i)(?<![\w])(?:kubectl|kubeadm)(?![\w])",
         r"(?i)\bhelm\s+install\b",
-        r"(?i)\bHPA\b|Horizontal\s+Pod\s+Autoscal(?:er|ing)|"
-        r"水平\s*Pod\s*自动扩缩容",
     )
-    return any(re.search(pattern, markdown) for pattern in prohibited_patterns)
+    if any(re.search(pattern, markdown) for pattern in prohibited_patterns):
+        return True
+
+    hpa_terms = tuple(
+        re.finditer(
+            r"(?i)\bHPA\b|Horizontal\s+Pod\s+Autoscal(?:er|ing)|"
+            r"水平\s*Pod\s*自动扩缩容",
+            markdown,
+        )
+    )
+    absolute_terms = tuple(
+        re.finditer(
+            r"(?i)万能|所有|普遍|一律|唯一|必然|必须|都应|通用|"
+            r"universal|\ball\b|\bevery\b",
+            markdown,
+        )
+    )
+    for hpa_term in hpa_terms:
+        for absolute_term in absolute_terms:
+            distance = max(
+                hpa_term.start(), absolute_term.start()
+            ) - min(hpa_term.end(), absolute_term.end())
+            if distance > 48:
+                continue
+            window_start = max(0, min(hpa_term.start(), absolute_term.start()) - 16)
+            window_end = min(
+                len(markdown), max(hpa_term.end(), absolute_term.end()) + 16
+            )
+            window = markdown[window_start:window_end]
+            if re.search(
+                r"(?i)并非|不是|并不|不应|不适用|不能|不可|未必|"
+                r"\bnot\b|isn't|is not|\bnever\b",
+                window,
+            ):
+                continue
+            return True
+    return False
 
 
 def test_completed_batch_helpers_enforce_drafts_and_validate_candidates(
@@ -696,6 +730,15 @@ def test_ai_cloud_native_runtime_draft_meets_contract(
         "故障恢复",
     ):
         assert required_topic in markdown
+    assert (
+        "Pending Pod 会进入 kube-scheduler 的调度队列，但这不等于平台已经有"
+        "具备租户配额、公平和取消语义的工作负载级队列。"
+    ) in markdown
+    assert (
+        "对 Kueue 管理的工作负载，准入决定何时可以开始创建 Pod，随后才由 "
+        "kube-scheduler 完成 Pod 到节点的放置；未纳入 Kueue 管理的普通 Pod "
+        "不经过这层准入。"
+    ) in markdown
     assert re.search(
         r"\]\((?:\./)?llm-inference-serving-engineering\)",
         markdown,
@@ -735,3 +778,7 @@ def test_cloud_native_contract_guards_reject_bypass_variants() -> None:
         "所有推理服务都应使用水平 Pod 自动扩缩容。",
     ):
         assert cloud_native_contains_forbidden_tutorial_or_hpa(prohibited)
+
+    assert not cloud_native_contains_forbidden_tutorial_or_hpa(
+        "HPA 并非所有推理服务的万能策略。"
+    )
