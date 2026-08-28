@@ -312,16 +312,28 @@ def cloud_native_contains_forbidden_tutorial_or_hpa(markdown: str) -> bool:
         rf"(?:use|rely\s+on)\s+{hpa_pattern}\s+only\b",
         rf"{hpa_pattern}\s+alone\s+(?:can|will|solves?|handles?|works?|"
         r"is\s+(?:sufficient|enough))\b",
+        rf"{hpa_pattern}\s+only\s+works?\s+for\s+"
+        r"(?:inference\s+)?elasticity\b",
         rf"{hpa_pattern}\s+(?:is\s+)?(?:enough|sufficient)\b",
     )
     negating_prefix = re.compile(
         r"(?i)(?:不要|不能|不可|不应|并非|不是|并不|无需|不必|"
         r"do\s+not|don't|cannot|can't|should\s+not|not)\s*$"
     )
+    negating_suffix = re.compile(
+        r"(?i)^\s*(?:(?:本身\s*)?(?:是|也|仍然)?\s*(?:并)?"
+        r"(?:不够|不足|不能|不可|不应|无法)|"
+        r"(?:is|are|was|were)\s+not\s+(?:enough|sufficient)|"
+        r"(?:cannot|can't|does\s+not|doesn't)\b)"
+    )
+    clause_separator = re.compile(r"[。！？.!?；;，,\n]")
     for pattern in exclusivity_or_sufficiency_patterns:
         for claim in re.finditer(rf"(?i){pattern}", markdown):
-            prefix = markdown[max(0, claim.start() - 16):claim.start()]
+            prefix = clause_separator.split(markdown[:claim.start()])[-1]
             if negating_prefix.search(prefix):
+                continue
+            suffix = clause_separator.split(markdown[claim.end():], maxsplit=1)[0]
+            if negating_suffix.search(suffix):
                 continue
             return True
 
@@ -347,7 +359,8 @@ def cloud_native_contains_forbidden_tutorial_or_hpa(markdown: str) -> bool:
                 continue
             if hpa_term.end() <= absolute_term.start():
                 if re.fullmatch(
-                    r"(?i)\s*(?:并非|不是|并不|isn't|is\s+not|not)\s*",
+                    r"(?i)\s*(?:并非|不是|并不|isn't|"
+                    r"is\s+not(?:\s+an?)?|not(?:\s+an?)?)\s*",
                     between,
                 ):
                     continue
@@ -829,5 +842,20 @@ def test_cloud_native_contract_guards_reject_bypass_variants() -> None:
         "HPA 不能单独解决推理服务弹性。",
         "Do not rely on HPA alone.",
         "HPA alone is not enough.",
+    ):
+        assert not cloud_native_contains_forbidden_tutorial_or_hpa(allowed)
+
+
+def test_cloud_native_hpa_guard_rejects_postpositive_exclusivity() -> None:
+    assert cloud_native_contains_forbidden_tutorial_or_hpa(
+        "HPA only works for elasticity"
+    )
+
+
+def test_cloud_native_hpa_guard_allows_clause_level_negation() -> None:
+    for allowed in (
+        "仅靠 HPA 是不够的",
+        "Only HPA is not enough",
+        "HPA is not a universal strategy",
     ):
         assert not cloud_native_contains_forbidden_tutorial_or_hpa(allowed)
