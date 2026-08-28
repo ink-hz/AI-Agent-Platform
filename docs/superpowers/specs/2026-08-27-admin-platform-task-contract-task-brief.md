@@ -12,6 +12,9 @@
 `2026-08-27-http-task-contract-v1.md`、
 `2026-08-27-platform-agent-attachment-substrate-design.md`
 
+HTTP 请求、响应、错误信封、事件映射、测试 Fixture 和 Token Broker 只以
+`2026-08-27-http-task-contract-v1.md` 为准；本任务书不得另定义同名模型或事件。
+
 ## 1. 事实基线
 
 当前行政仓库已经有持久化 Jobs，不要重复创建一套队列：
@@ -142,7 +145,8 @@ GET  /internal/platform/v1/health
 ### 6.1 后续消息
 
 新增 Job Message Store：`(job_id, seq)` 唯一，按 idempotency key 防重复。Worker 在
-安全边界消费消息，并发出 `message_queued`、`message_consumed` 和真实回复事件。
+安全边界消费消息，并分别发出 `work_update` 事件，其 `payload.phase` 为
+`message_queued` / `message_consumed`，以及真实回复事件。
 
 消息必须进入同一行政任务上下文，不能新开无关联 `/chat` Session，也不能声称已影响
 一个已经完成的答案。

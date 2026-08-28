@@ -2,7 +2,7 @@
 
 **日期：** 2026-08-27
 
-**状态：** 待 Platform、FAE、行政三方书面评审
+**状态：** v1 基线已冻结；2026-08-28 测试夹具、Token Broker 与严格响应模型修订待确认
 
 **适用仓库：** AI-Agent-Platform、AI-FAE-Agent、AI-ADMIN-Agent
 
@@ -52,9 +52,137 @@ POST /internal/platform/v1/tasks/{task_id}/actions/{action_id}/execute
 这些端点都验证 Platform 签发的短时 Task Token，不依赖浏览器 Cookie，也不信任请求体中
 自称的用户、部门、角色或管理员标记。
 
+### 3.1 严格响应模型
+
+所有 v1 JSON 请求与响应都拒绝未知字段。布尔值不得作为整数通过校验；时间使用带时区的
+RFC 3339 UTC 字符串；UUID 使用带连字符的小写字符串。
+
+`GET /internal/platform/v1/capabilities` 返回：
+
+```json
+{
+  "contract_version": "orbbec-http-task/v1",
+  "agent_id": "ai-fae-agent",
+  "capability_version": 2,
+  "supports_actions": false,
+  "max_duration_seconds": 600,
+  "supported_scopes": ["fae.answer"],
+  "supported_event_kinds": ["artifact", "cancelled", "failed", "finding", "input_required", "message", "result", "thinking_summary", "timeout", "work_update"]
+}
+```
+
+`supported_scopes` 与 `supported_event_kinds` 是去重后的字典序数组；事件只能来自 §6
+规范词表。`supports_actions=true` 时必须包含 `action_required`。
+
+`GET /internal/platform/v1/health` 只返回可用于调度的最小状态，不暴露依赖正文：
+
+```json
+{
+  "contract_version": "orbbec-http-task/v1",
+  "status": "healthy",
+  "capability_version": 2
+}
+```
+
+`status` 只允许 `healthy | degraded | unavailable`。
+
+`GET /internal/platform/v1/tasks/{task_id}` 返回：
+
+```json
+{
+  "contract_version": "orbbec-http-task/v1",
+  "downstream_task_id": "opaque",
+  "platform_task_id": "uuid",
+  "status": "running",
+  "cancel_requested": false,
+  "next_event_seq": 3,
+  "terminal": false,
+  "created_at": "2026-08-27T10:00:00Z",
+  "updated_at": "2026-08-27T10:00:05Z"
+}
+```
+
+任务 `status` 只允许：
+
+```text
+queued | running | waiting_input | waiting_confirmation |
+completed | failed | cancelled | timed_out
+```
+
+`terminal=true` 当且仅当状态属于 `completed | failed | cancelled | timed_out`。
+`next_event_seq` 始终等于当前最大事件序号加一，新任务为 `1`。
+
+### 3.2 消息、取消与 Action Execute 回执
+
+消息请求固定为：
+
+```json
+{
+  "contract_version": "orbbec-http-task/v1",
+  "message_seq": 1,
+  "content": "补充现场日志",
+  "attachment_refs": [],
+  "idempotency_key": "opaque"
+}
+```
+
+成功返回 HTTP `202`：
+
+```json
+{
+  "contract_version": "orbbec-http-task/v1",
+  "downstream_task_id": "opaque",
+  "message_seq": 1,
+  "status": "accepted",
+  "duplicate": false
+}
+```
+
+`accepted` 只表示消息已经持久化，不表示已经影响当前推理。
+
+取消请求固定为：
+
+```json
+{
+  "contract_version": "orbbec-http-task/v1",
+  "idempotency_key": "opaque"
+}
+```
+
+成功返回 HTTP `200` 或 `202`：
+
+```json
+{
+  "contract_version": "orbbec-http-task/v1",
+  "downstream_task_id": "opaque",
+  "cancel_request_id": "opaque",
+  "status": "cancel_requested",
+  "duplicate": false
+}
+```
+
+`status` 可以是 `cancel_requested | cancelled` 或任务既有终态。重复取消必须返回相同
+`cancel_request_id`；`duplicate=true`，但 `status` 可以从 `cancel_requested` 前进到
+`cancelled`，不能倒退。
+
+Action Execute 成功返回 HTTP `200` 或 `202`：
+
+```json
+{
+  "contract_version": "orbbec-http-task/v1",
+  "action_id": "uuid",
+  "execution_id": "opaque",
+  "status": "queued",
+  "duplicate": false
+}
+```
+
+`status` 只允许 `queued | running | completed | failed`。相同幂等键重复执行必须返回相同
+`execution_id`，`duplicate=true`；当前执行状态可以单向前进。该回执不携带业务参数。
+
 ## 4. 创建、消息与取消
 
-创建任务至少包含：
+创建任务固定包含：
 
 ```json
 {
@@ -123,6 +251,8 @@ wait_seconds = 0
 
 ```json
 {
+  "contract_version": "orbbec-http-task/v1",
+  "downstream_task_id": "opaque",
   "events": [],
   "next_after": 12,
   "terminal": false
@@ -132,6 +262,10 @@ wait_seconds = 0
 `next_after` 是本页最后一个已返回序号；无新事件时等于请求 `after`。上游可以保留面向
 其他消费者的 SSE 或长轮询端点，但 Platform 内部合同端点不得阻塞等待。未来若拆出独立
 Reconcile Worker，必须另写设计和独立心跳，不能悄悄改变 v1 语义。
+
+`events` 中每个对象严格包含 `seq`、`kind`、`created_at` 和 `payload`；`payload` 必须是
+JSON 对象。事件页拒绝未知顶层字段，事件对象拒绝未知字段；具体 `payload` 由事件种类对应
+Schema 约束。
 
 事件序号从 1 开始严格连续。相同 `(task_id, seq)` 只允许幂等重放完全相同的事件。
 Platform 在写库前验证整页事件从 `after + 1` 开始且页内连续。发现缺口、乱序或同序不同
@@ -167,6 +301,9 @@ HTTP Task Contract v1 在线只允许以下 `kind`：
 | `accepted` | 无事件 | 创建任务的 `202` 回执已表达接受；Platform 任务转 `dispatched` |
 | `started` | `work_update` | `payload.phase="started"` |
 | `progress` | `work_update` | 保留真实阶段、百分比或摘要；不得按时间伪造 |
+| `message_queued` | `work_update` | `payload.phase="message_queued"`；后续消息已持久化但尚未消费 |
+| `message_consumed` | `work_update` | `payload.phase="message_consumed"`；后续消息已进入任务上下文 |
+| `cancel_pending` | `work_update` | `payload.phase="cancel_pending"`；已持久化取消请求、正等待安全边界 |
 | `sources` | `artifact` | `payload.artifact_type="sources"` |
 | `done` / `succeeded` | `result` | 只在上游真实终态时产生 |
 | `timed_out` | `timeout` | 必须在上游 Facade 改名 |
@@ -238,6 +375,7 @@ Parameters，再发出 `action_required`：
 
 ```json
 {
+  "contract_version": "orbbec-http-task/v1",
   "action_id": "uuid",
   "action_digest": "lowercase-hex-sha256",
   "idempotency_key": "..."
@@ -341,6 +479,42 @@ upstream_unavailable
 
 错误返回不包含 Token、Cookie、数据库正文、文件路径、对象键或 Provider 敏感信息。
 
+### 11.1 错误信封与 HTTP 状态
+
+所有合同错误使用同一个严格信封：
+
+```json
+{
+  "contract_version": "orbbec-http-task/v1",
+  "error": {
+    "code": "scope_denied",
+    "message": "task scope is not authorized",
+    "details": {}
+  }
+}
+```
+
+`message` 是稳定、安全、非敏感的展示文本；客户端不得依赖它分支。`details` 默认空对象，
+只允许以下例外字段：
+
+- `capability_changed`：`current_capability_version`、`must_refresh_capabilities=true`；
+- 序号冲突：对应的 `expected_sequence`；
+- 不支持的合同版本：`supported_contract_versions`。
+
+HTTP 状态固定为：
+
+| 状态 | 错误 |
+|---:|---|
+| 401 | Token 缺失、签名错误、过期、错误 Audience、未知或已退休 `kid` |
+| 403 | `scope_denied`、Token 与路径 Task 绑定不一致 |
+| 404 | `task_not_found` |
+| 409 | 所有幂等/序号/Action 冲突、`capability_changed`、`deadline_expired`、`task_terminal` |
+| 422 | 请求 JSON/字段违反 v1 Schema 或 `contract_version_unsupported` |
+| 503 | `upstream_unavailable` |
+
+认证类响应不能说明具体是签名、Audience、Task、`kid` 还是人员状态错误；精确原因只进入
+受控审计。
+
 ## 12. 合同测试
 
 唯一测试源位于 AI-Agent-Platform 仓库 `contracts/http_task_v1/`，包含 JSON Schema、
@@ -374,3 +548,124 @@ Release Manifest 同时记录 Commit 和测试目录 SHA-256。Commit 不存在�
 
 只有合同测试通过并记录具体 Commit 后，Platform 才能为该 Agent 打开
 `brain_delegation`。
+
+### 12.1 两个测试 Profile
+
+唯一测试源仍位于 `contracts/http_task_v1/`，但分为两个明确 Profile：
+
+1. `upstream_http`：FAE、行政和 Platform 的 HTTP Reference Adapter 都运行；只通过本节
+   正式 HTTP 端点检查上游 Facade 合同。
+2. `platform_integration`：只在 Agent Platform 运行，覆盖事件缺口后的 Task/Agent 隔离、
+   Event-before-Wait、Pending Action、协议重试预算和 forced + pending。这些是 Platform
+   Brain Runtime 语义，不要求 FAE/行政暴露测试控制端点。
+
+FAE/行政 CI 运行 `upstream_http`；Platform 同时运行两个 Profile。两者共享同一份 Schema、
+事件词表、固定样例和 Digest 实现，不能复制或重写合同。
+
+事件缺口的责任边界固定为：
+
+- FAE/行政内部生产者若制造缺口，Facade 在本服务内终结该任务并用下一个连续序号输出
+  `failed`，`payload.reason_code="protocol_violation"`；不得把缺口页面暴露给 Platform。
+- `platform_integration` 使用 Reference Fault Adapter 注入原始非法 HTTP 页面，验证
+  Platform 只隔离该 Task/Agent，其他 Agent 的派发、取消和心跳继续。
+
+### 12.2 测试执行器与依赖注入边界
+
+`upstream_http` 使用固定 Fixture Scenario，但生产代码不得识别 Fixture 名称。下游 CI
+必须通过依赖注入启动真实 Task Facade、真实持久 Store 和一个仅测试进程存在的
+`ContractExecutionBackend`。只有该测试 Backend 解释固定 `turn_ref`/objective 并产生确定性
+内部事件；生产 Loop、编排器和领域 Gateway 不包含 `contract:*` 分支。
+
+固定场景至少包括：创建幂等、异步事件分页、后续消息、异步取消、运行中超时、
+`input_required`、普通 `message`、全部旧事件规范化、Action 提案/执行/冲突/过期、内部事件
+缺口、迟到结果和隔离后的健康任务。
+
+`upstream_http` 必须以稳定 Case ID 实现以下最小矩阵，不能按上游仓库删减：
+
+| 类别 | 必须覆盖的 Case |
+|---|---|
+| Schema | 未知字段、错误类型、布尔冒充整数、非法 UUID/时间、错误合同版本均在持久化前拒绝 |
+| 认证 | 缺 Token、过期 Token、错误 Audience、退休 `kid` 返回 401；错误 Scope、Task 绑定返回 403 |
+| 创建 | 首次 202；同键同 Payload 返回同任务且 `duplicate=true`；同键异 Payload 返回 409 |
+| 能力与截止 | 过期 Capability、已过 Deadline 均拒绝；修正后同 Task/幂等键创建为 `duplicate=false` |
+| 消息 | 序号连续、同键重放、同序冲突、终态后拒绝；queued/consumed 映射为规范 `work_update` |
+| 事件 | 非阻塞分页、精确重放、内部事件规范化、连续序号、终态后稳定且无迟到结果 |
+| 取消 | queued 与 running 两条路径、重复取消同一 `cancel_request_id`、终态不可逆 |
+| Action | Proposal/Digest、Execute 不带参数、重复 Execute 同 `execution_id` 且业务效果计数仍为 1 |
+
+固定 Case ID、请求、预期 HTTP 状态和错误码进入同一份测试清单；测试选择只能按 Profile，
+不能通过环境变量逐项跳过安全或生命周期 Case。
+
+执行器不得假定创建后立即有事件。它只循环调用有限 JSON 页：
+
+- 每次都发送 `wait_seconds=0`；
+- 只有完整校验一页后才推进 `after`；
+- 在 Case Deadline 内等待目标事实；
+- 达到终态后至少执行三次非阻塞读取，且观察窗口不短于 500ms；
+- 终态后任何新事件、状态倒退、第二个 Action 执行事实或迟到业务结果均失败。
+
+Fixture 不调用真实模型或外部业务系统，因此普通 Case Deadline 固定为 15 秒，异步取消与
+硬截止 Case 固定为 30 秒；单个 `upstream_http` Profile 的进程级 Deadline 为 180 秒。
+启动目标服务的部署等待由 CI 在 Runner 外单独控制。Runner 和 pytest 配置不得再设置
+905 秒或其他覆盖全部 Case 的长超时。
+
+Action Fixture 的规范 `result` 事件必须带稳定 `execution_id` 和
+`fixture_business_effect_count=1`。这是测试 Backend 的可观测证明，不是生产业务 Payload 的
+通用必填字段。重复 Execute 后仍只能存在一个该执行事实。
+
+### 12.3 Task Token Broker
+
+单个静态 Token 无法覆盖一个执行器创建的多个动态 `platform_task_id`。下游 CI 必须提供
+本地 Token Broker 可执行文件；它不是 HTTP 服务，也不进入生产镜像。Runner 以无 Shell 的
+子进程调用绝对路径，向 stdin 写一条 JSON、从 stdout 读取一条 JSON：
+
+```json
+{
+  "profile": "valid",
+  "agent_id": "ai-fae-agent",
+  "platform_task_id": "uuid",
+  "capability_version": 2,
+  "authorized_scopes": ["fae.answer"],
+  "task_deadline_at": "2026-08-27T10:15:00Z",
+  "action_execution_deadline_at": null
+}
+```
+
+输出严格为：
+
+```json
+{"token": "opaque"}
+```
+
+`profile` 只允许：
+
+```text
+valid | expired | wrong_scope | wrong_audience | wrong_task_binding | retired_kid
+```
+
+Broker 使用固定测试人员，但为每个请求的动态 Task ID 单独签名。Runner 不读取密钥、不解析或
+记录 Token，也不把 Token 放入 pytest 参数、错误文本或报告。`retired_kid` 由测试 Keyring
+签发一个已从服务验证集合移除的旧 `kid`；`expired` 使用当前 `kid` 但把 `expires_at` 固定为
+当前时间之前；`valid` 使用当前 `kid`，从而分别验证时效与真实轮换行为。
+
+错误 Scope、Audience、Task Binding、退休 Key、过期 Deadline 和过期 Capability 的请求
+被拒绝后，Runner 使用同一个 `platform_task_id` 与幂等键、修正后的有效凭证/Payload 再次
+创建，并要求 `duplicate=false`，以证明拒绝发生在任务和幂等键持久化之前。
+
+### 12.4 Schema、样例与 Manifest
+
+`contracts/http_task_v1/` 必须提交：
+
+- 本文全部请求、响应、事件与错误信封的 JSON Schema；
+- 每个 Schema 至少一个固定有效样例；
+- 认证、冲突、终态与非法事件的固定失败样例；
+- `upstream_http` Runner 和 `platform_integration` 共用的模型/Digest 模块。
+
+Release Manifest 不信任工作树。生成器必须从传入的 Git Commit 读取
+`contracts/http_task_v1/`（例如 `git archive`），按相对路径字典序计算路径敏感 Digest；
+Commit 不存在或工作树合同目录与该 Commit 不一致时拒绝生成。Manifest 测试不得因文件缺失
+而跳过，并必须从归档独立复算 Hash。
+
+生成物排除规则只允许精确目录/后缀：`__pycache__/`、`.pytest_cache/`、`*.pyc`、
+`*.pyo`、`*.egg-info/`、根目录 `build/` 与 `dist/`。其他名为 `build` 的源码目录不得被
+通配排除。

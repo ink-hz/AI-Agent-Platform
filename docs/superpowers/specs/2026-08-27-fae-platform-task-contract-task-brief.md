@@ -12,6 +12,9 @@
 `2026-08-27-http-task-contract-v1.md`、
 `2026-08-27-platform-agent-attachment-substrate-design.md`
 
+HTTP 请求、响应、错误信封、事件映射、测试 Fixture 和 Token Broker 只以
+`2026-08-27-http-task-contract-v1.md` 为准；本任务书不得另定义同名模型或事件。
+
 ## 1. 背景
 
 FAE 继续是独立、对外的专业 Agent。`fae.orbbec.com.cn`、公网 `/chat`、客户 Session、
@@ -184,7 +187,8 @@ context/planner/synthesis，不新建无关联 Session。若当前执行不可�
 
 - 持久化消息；
 - 当前执行到稳定边界后消费；
-- 发出明确 `message_queued`/`message_consumed` 事件；
+- 分别发出 `work_update` 事件，且 `payload.phase` 为
+  `message_queued` / `message_consumed`；
 - 不得假装消息已经影响正在生成的答案。
 
 ## 9. 取消
@@ -193,7 +197,8 @@ context/planner/synthesis，不新建无关联 Session。若当前执行不可�
 
 - 尚未开始：直接 cancelled；
 - 正在检索/规划：在下一个可取消边界停止；
-- Provider 请求无法取消：明确 `cancel_pending`，丢弃未授权后的输出投影，最终转 cancelled；
+- Provider 请求无法取消：发出 `work_update` 且 `payload.phase="cancel_pending"`，丢弃
+  取消后的输出投影，最终转 cancelled；
 - 已终态：返回既有终态，不改写结果。
 
 ## 10. 身份与安全
