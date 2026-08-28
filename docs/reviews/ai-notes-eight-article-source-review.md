@@ -20,7 +20,7 @@ SHA-256 已于 2026-08-28 使用 `wc -l` 和 `shasum -a 256` 复核。
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Clawdbot架构理论指南.md` | 284 | `838ae6a89bfeca305bb70bc016f975d7b12f34abef9fe73dd4638c22dedb6961` | open-source-agent-runtime | 已精读：1-284 | Gateway、channel routing、session、tools/skills、sandbox 与 recovery 问题框架 | 旧项目名当现名、动态渠道数、成熟度结论与安全泛化承诺 | 已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28） | 企业 Agent 全景留在主文章；本篇抽象 provider/model/runtime/channel 和 ownership |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/MetaBot架构设计理论分析.md` | 515 | `f526d770501328c0aa12bb926ae379c640bebb3cd9540fe4b569a581caebded5` | metabot-agent-control-bus | 已精读：1-515 | 远程控制、渠道适配、消息桥、持久执行与恢复问题框架 | 旧组织、旧拓扑、代码规模、固定数量、端口、版本与营销结论 | 已核验：两个当前代码仓与 Platform relay 边界（2026-08-28） | 通用运行循环留在既有篇；本篇只写远程控制、可靠投递与状态所有权 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/主流Agent框架深度分析-从架构本质到生产可用性.md` | 323 | `4edd175b19b9ac82be0ac9a92ed10d69ddfe14cac7611fa7b3df9f0a5866054b` | agent-framework-selection | 已精读：1-323 | 产品形态、生产责任维度与选型问题框架 | 旧候选集、功能表、宣传语、成熟度判断与永久排名 | 已逐页核验：8 个官方入口（2026-08-28） | 三篇同类文章留下具体架构；本篇只给出选型方法与退出条件 |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/干掉用户旅程-意图驱动的业务平台架构设计.md` | 379 | `3a165ec7de6b712d9cbbc999ee6d7752b9954691f904f41a80d289bc0585d52b` | intent-driven-ai-business-platform | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
+| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/干掉用户旅程-意图驱动的业务平台架构设计.md` | 379 | `3a165ec7de6b712d9cbbc999ee6d7752b9954691f904f41a80d289bc0585d52b` | intent-driven-ai-business-platform | 已精读：1-379 | 第1-4、10章：固定旅程边界、能力原子化、受控编排与渐进迁移问题框架 | 标题与第2-9章：唯一对话入口、UI消失、完全自治、自演进取代发布及营销结论 | 已核验：Anthropic、NIST、OpenAI PDF 与 Agents 文档（2026-08-28） | 信任全景留在企业 Agent；AI 协作方法留在 AI Native；本篇只写受控意图执行 |
 
 ## 精读证据格式
 
@@ -345,3 +345,48 @@ OpenAI 事实仅采用 OpenAI Docs 的 canonical Agents SDK 页面；没有从�
 - **删除**：功能宽表、分数、星级、象限、社区热度、瞬时版本和任何“框架已替团队解决生产责任”的结论。
 - **时点限定**：某个候选可跨相邻形态，文中只写截至 2026-08-28 的主要定位和本文用途，不把分类写成永久唯一归属。
 - **不确定性**：除 Microsoft Go 版显式 public preview 外，上表所列官方入口若未给出 lifecycle 标签，只记为“官方页面未给出明确状态”；不从文档丰富度或宣传语推导成熟度。
+
+## intent-driven-ai-business-platform 精读结论
+
+### `干掉用户旅程-意图驱动的业务平台架构设计.md`
+
+- 完整阅读：已精读：1-379；执行时使用 `wc -l` 核对为 379 行，SHA-256 为 `3a165ec7de6b712d9cbbc999ee6d7752b9954691f904f41a80d289bc0585d52b`，源目录保持只读。
+- `1-82`（传统旅程与入口）：保留固定页面难以覆盖跨模块、开放目标这一问题；删除原题、旧日期、自然语言唯一入口、导航和页面必然退出等绝对结论。新文明确自然语言、表单、页面、API 与事件可以并存。
+- `83-198`（能力模型、工具和经验固化）：保留能力原子化、描述与 Schema、风险和副作用、确定性流程与开放判断需要分层的问题；删除固定倍率、固定相似度阈值、零 token、结构化生成错误低一个数量级等未经复核数字，并删除模型自行生成制品后直接生效的叙事。
+- `200-237`（信任与自动化分级）：保留风险决定自动化程度、审批和人工接管；删除“完全自主”“全自主运营”和人只做战略决策等终局承诺。完整信任决策链不在本篇重画。
+- `239-338`（自演进、跨平台协作与护城河）：只保留候选制品需要验证、评审、灰度和持续监测这一工程问题；删除永不停歇的自演进、无需能力发现或错误语义、所有容错自然发生、网络效应和护城河等宣传性论证。
+- `340-379`（迁移路径与结语）：保留不重写业务内核、从低风险链路渐进迁移；删除关闭传统界面、能力自动覆盖所有场景、生态已经成熟以及平台自行生长等泛化结论。
+
+### 两篇站内文章复读与去重
+
+- 已复读 `backend/app/ai_notes/content/02-agent-architecture/01-enterprise-agent-system-architecture.md` 全文 `1-578` 至 EOF。主体、委托、完整信任模型、Agent loop、工具副作用、任务状态和审计全景留在该文；新文只引用建议、草拟、审批后执行与有限自治如何绑定具体业务意图。
+- 已复读 `backend/app/ai_notes/content/05-thinking-and-methods/01-ai-native-architecture-design.md` 全文 `1-364` 至 EOF。材料治理、方案推演、决策记录和 AI 辅助架构协作方法留在该文；新文只写业务平台从固定旅程到受控意图执行的产品与工程边界。
+
+### 执行日官方来源核验
+
+访问日期：2026-08-28
+
+| 官方来源 | 本文采用的稳定边界 |
+| --- | --- |
+| [Anthropic, Building effective agents](https://www.anthropic.com/research/building-effective-agents) | workflows 使用预定义代码路径，agents 动态决定过程与工具；从简单方案开始，只在结果证明必要时增加复杂度 |
+| [NIST Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence) | 按组织风险容忍度治理，明确人的监督责任，并持续监测部署后的风险控制 |
+| [OpenAI, A practical guide to building agents](https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf) | 编排应渐进增加复杂度，guardrails 采用分层防御，失败阈值与高风险行动触发人工介入 |
+| [OpenAI Agents SDK](https://developers.openai.com/api/docs/guides/agents) | 代码优先的 Agents SDK 运行 agent loop，服务器仍拥有部署、工具实现、状态存储与审批决策 |
+
+Anthropic 只用于 workflows / agents 的定义边界、简单优先和按需增加复杂度，不外推 Claude 产品能力。NIST 官方出版页及 NIST AI 600-1 原文用于风险容忍度、监督责任、持续监测、可停用和恢复等治理原则，不把跨行业建议写成特定业务的固定等级。
+
+OpenAI PDF 以只读方式下载到临时 `tmp/pdfs/openai-practical-guide-building-agents.pdf`。`pdfinfo` 核验 PDF 共 34 页、无加密、PDF 1.7；文件 SHA-256 为 `1903c2b1837b206d1951d8a3d1124515aee1bebebd8f2448c630c75a6b0aad86`。`pdftotext -layout` 完整提取 1659 行用于定位；`pdftoppm` 渲染并人工核验页面 13、25、31：第 13 页是单 Agent / 多 Agent 编排及渐进复杂度，第 25 页是分层 guardrails 图，第 31 页是失败阈值与高风险动作触发人工介入。PDF 没有被编辑或重新导出。
+
+OpenAI 的时点性产品事实再以当前 `https://developers.openai.com/api/docs/guides/agents` 交叉核验：Agents SDK 是代码优先的 agent loop，服务端继续拥有工具实现、状态存储和审批决策。正文只采用编排、分层 guardrails 和人工介入的稳定原则，不把 2025 PDF 中的 SDK 样例或当前产品行为写成永久合同。
+
+### 绝对叙事清理与新文边界
+
+- **入口**：删除“对话是唯一入口”“导航式 UI 必然退出”；改为自然语言只是入口之一，页面、表单、API 和事件共享结构化意图合同。
+- **意图**：删除“用户说一句话即可执行”；改为目标、对象、约束、权限主体、风险、预算、完成条件、证据与补偿边界组成的可验证合同。
+- **编排**：删除规则和确定性流程被取代的叙事；改为确定性 workflow 拥有已知顺序和硬约束，Agent 只处理开放判断。
+- **自治**：删除完全或无限自治、无需审批治理、所有业务交给 Agent；改为建议、草拟、审批后执行、有限自治四个受风险和责任约束的层级。
+- **演进**：删除自我进化取代发布流程；候选规则、workflow 和能力仍经过测试、评审、灰度、监测和可回滚发布。
+- **完成**：模型自述、HTTP 200、消息投递或流程末节点都不提升为业务完成；只接受目标系统真实状态、事务回执和可验证交付物。
+- **迁移**：从观测与建议开始，经受控执行和验证逐步扩大；每阶段都可停、可降级、可回滚。
+
+本篇最终只负责“固定旅程覆盖不足时，业务平台如何把多入口请求转成受控意图执行”这一问题，不复刻企业 Agent 全景或 AI Native 架构协作方法。

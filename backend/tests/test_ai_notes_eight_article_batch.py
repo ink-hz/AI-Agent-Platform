@@ -48,6 +48,7 @@ COMPLETED_BATCH_ARTICLES: tuple[str, ...] = (
     "open-source-agent-runtime",
     "metabot-agent-control-bus",
     "agent-framework-selection",
+    "intent-driven-ai-business-platform",
 )
 
 ARTICLE_CONTRACTS = {
@@ -281,6 +282,16 @@ FRAMEWORK_SELECTION_SOURCE_REVIEW_STATUS = {
     ),
 }
 
+INTENT_PLATFORM_SOURCE_REVIEW_STATUS = {
+    "干掉用户旅程-意图驱动的业务平台架构设计.md": (
+        "已精读：1-379",
+        "第1-4、10章：固定旅程边界、能力原子化、受控编排与渐进迁移问题框架",
+        "标题与第2-9章：唯一对话入口、UI消失、完全自治、自演进取代发布及营销结论",
+        "已核验：Anthropic、NIST、OpenAI PDF 与 Agents 文档（2026-08-28）",
+        "信任全景留在企业 Agent；AI 协作方法留在 AI Native；本篇只写受控意图执行",
+    ),
+}
+
 FRAMEWORK_SELECTION_PRIMARY_SOURCES = {
     "https://docs.langchain.com/oss/python/langgraph/overview": (
         "低层编排框架与运行时，聚焦持久执行、流式输出、人在回路与持久化；页面未给出明确 lifecycle 状态"
@@ -305,6 +316,21 @@ FRAMEWORK_SELECTION_PRIMARY_SOURCES = {
     ),
     "https://code.claude.com/docs/en/agent-sdk/overview": (
         "Python/TypeScript 库在自有进程运行 Claude Code agent loop；托管长任务属于独立 Managed Agents 产品，页面未给出 SDK 明确 lifecycle 状态"
+    ),
+}
+
+INTENT_PLATFORM_PRIMARY_SOURCES = {
+    "https://www.anthropic.com/research/building-effective-agents": (
+        "workflows 使用预定义代码路径，agents 动态决定过程与工具；从简单方案开始，只在结果证明必要时增加复杂度"
+    ),
+    "https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence": (
+        "按组织风险容忍度治理，明确人的监督责任，并持续监测部署后的风险控制"
+    ),
+    "https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf": (
+        "编排应渐进增加复杂度，guardrails 采用分层防御，失败阈值与高风险行动触发人工介入"
+    ),
+    "https://developers.openai.com/api/docs/guides/agents": (
+        "代码优先的 Agents SDK 运行 agent loop，服务器仍拥有部署、工具实现、状态存储与审批决策"
     ),
 }
 
@@ -843,6 +869,96 @@ def framework_selection_has_eight_responsibility_dimensions(markdown: str) -> bo
     return all(dimension.casefold() in normalized for dimension in dimensions)
 
 
+def intent_platform_claim_clauses(markdown: str) -> tuple[str, ...]:
+    return tuple(
+        clause.strip()
+        for clause in re.split(
+            r"[\n。！？；;,，]|(?:但是|但|然而|却|不过|可是|"
+            r"所以|因此|同时|并且|而且|仍然|仍|"
+            r"\b(?:but|however|yet|therefore|meanwhile)\b)",
+            markdown,
+            flags=re.IGNORECASE,
+        )
+        if clause.strip()
+    )
+
+
+def intent_platform_contains_forbidden_absolutism(markdown: str) -> bool:
+    prohibited_patterns = (
+        r"(?:消灭|取代|淘汰|移除|取消|删除)[^。；;\n]{0,20}"
+        r"(?:所有|全部)?\s*(?:UI|页面|表单|界面)",
+        r"(?:所有|全部)?\s*(?:UI|页面|表单|界面)"
+        r"[^。；;\n]{0,20}(?:全部|都|完全)?\s*(?:会|将|要)?\s*"
+        r"(?:消失|被取代|被消灭)",
+        r"(?:规则|确定性流程)[^。；;\n]{0,24}"
+        r"(?:全部|都|完全)\s*(?:会|将|要)?\s*(?:消失|被取代|被移除)",
+        r"(?:完全|无限)\s*自治",
+        r"无需[^。；;\n]{0,16}(?:人类|人工|审批|治理|human)",
+        r"(?:自我进化|自演进)[^。；;\n]{0,24}取代[^。；;\n]{0,16}发布流程",
+        r"所有业务[^。；;\n]{0,20}(?:交给|委托给|由)\s*Agent",
+        r"(?:模型自述|模型说|HTTP\s*200|消息已发送|流程到末节点)"
+        r"[^。；;\n]{0,24}(?:等同于|代表|证明|就是)[^。；;\n]{0,20}"
+        r"(?:完成|成功)",
+        r"自然语言[^。；;\n]{0,20}(?:等同于|就是|代表)"
+        r"[^。；;\n]{0,16}(?:完整的?)?意图合同",
+    )
+    direct_negation = re.compile(
+        r"(?:不会|不能|不可|不得|不应|不要|并非|不是|无法|没有|"
+        r"不能用|并不|"
+        r"do\s+not|does\s+not|cannot|can't|is\s+not|isn't)",
+        re.IGNORECASE,
+    )
+    internal_negation = re.compile(
+        r"(?:不会|不能|不可|不得|不应|不要|并非|不是|不等于|"
+        r"不代表|不意味着|无法|没有|并不)"
+        r"[^。；;\n]{0,6}(?:消灭|取代|淘汰|移除|取消|删除|消失|"
+        r"自治|完成|成功|意图合同)",
+        re.IGNORECASE,
+    )
+    for clause in intent_platform_claim_clauses(markdown):
+        for pattern in prohibited_patterns:
+            for violation in re.finditer(pattern, clause, re.IGNORECASE):
+                prefix = clause[max(0, violation.start() - 8):violation.start()]
+                matched = violation.group(0)
+                if direct_negation.search(prefix) or internal_negation.search(matched):
+                    continue
+                return True
+    return False
+
+
+def intent_platform_has_structured_intent_contract(markdown: str) -> bool:
+    fields = (
+        "目标",
+        "对象",
+        "约束",
+        "权限主体",
+        "风险等级",
+        "预算 / 时限",
+        "完成条件",
+        "证据要求",
+        "可撤销 / 补偿边界",
+    )
+    return all(field in markdown for field in fields)
+
+
+def intent_platform_has_capability_catalog_contract(markdown: str) -> bool:
+    fields = (
+        "capability_id:",
+        "input_schema:",
+        "output_schema:",
+        "authorization:",
+        "risk_level:",
+        "idempotency:",
+        "side_effects:",
+        "slo:",
+        "owner:",
+        "evidence:",
+        "version:",
+    )
+    normalized = markdown.casefold()
+    return all(field.casefold() in normalized for field in fields)
+
+
 def test_completed_batch_helpers_enforce_drafts_and_validate_candidates(
     tmp_path: Path,
 ) -> None:
@@ -881,6 +997,7 @@ def test_source_review_records_the_exact_source_manifest() -> None:
             **OPEN_SOURCE_RUNTIME_SOURCE_REVIEW_STATUS,
             **METABOT_SOURCE_REVIEW_STATUS,
             **FRAMEWORK_SELECTION_SOURCE_REVIEW_STATUS,
+            **INTENT_PLATFORM_SOURCE_REVIEW_STATUS,
         }.get(filename, ("未开始",) * 5)
         expected_rows.append(
             f"| `{path}` | {line_count} | `{digest}` | {target} | "
@@ -2096,7 +2213,9 @@ def test_agent_framework_selection_draft_meets_contract(tmp_path: Path) -> None:
     assert not framework_selection_contains_forbidden_ranking_or_maturity(markdown)
 
     candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
-    assert sum(len(category.articles) for category in candidate_index.categories) == 13
+    assert sum(
+        len(category.articles) for category in candidate_index.categories
+    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_framework_selection_guards_reject_rankings_and_false_maturity() -> None:
@@ -2193,4 +2312,174 @@ flowchart LR
     assert not re.search(r"(?m)^\s*classDef\s+", "flowchart LR\nA --> B")
     assert not mermaid_has_white_group(
         "flowchart LR\nsubgraph GROUP[决策]\nA --> B\nend"
+    )
+
+
+def test_intent_platform_source_review_records_official_boundaries() -> None:
+    review = SOURCE_REVIEW.read_text(encoding="utf-8")
+    section_header = "## intent-driven-ai-business-platform 精读结论"
+    section = source_review_h2_section(review, section_header)
+
+    assert "已精读：1-379" in section
+    assert "3a165ec7de6b712d9cbbc999ee6d7752b9954691f904f41a80d289bc0585d52b" in section
+    assert "访问日期：2026-08-28" in section
+    assert "PDF 共 34 页" in section
+    assert "页面 13、25、31" in section
+    for url, supported_claim in INTENT_PLATFORM_PRIMARY_SOURCES.items():
+        assert url in section
+        assert supported_claim in section
+
+
+def test_intent_platform_source_review_section_stops_at_next_h2() -> None:
+    fixture = """
+## intent-driven-ai-business-platform 精读结论
+只属于本节
+## 后续任务
+不属于本节
+"""
+    section = source_review_h2_section(
+        fixture,
+        "## intent-driven-ai-business-platform 精读结论",
+    )
+    assert "只属于本节" in section
+    assert "不属于本节" not in section
+
+
+def test_intent_driven_ai_business_platform_draft_meets_contract(
+    tmp_path: Path,
+) -> None:
+    completed_articles = assert_completed_batch_drafts()
+    assert tuple(article.slug for article in completed_articles) == (
+        COMPLETED_BATCH_ARTICLES
+    )
+
+    path = batch_article_path("intent-driven-ai-business-platform")
+    frontmatter, markdown = parse_frontmatter(path)
+    assert frontmatter["title"] == "意图驱动的 AI 业务平台：从固定旅程到受控执行"
+    assert frontmatter["slug"] == "intent-driven-ai-business-platform"
+    assert tuple(frontmatter["tags"]) == ("AI Native", "业务平台", "意图驱动")
+    assert frontmatter["draft"] is True
+    assert frontmatter["author"] == AUTHOR
+    assert frontmatter["motto"] == MOTTO
+    assert frontmatter["publishedAt"] == TODAY
+    assert frontmatter["updatedAt"] == TODAY
+    assert markdown.lstrip().startswith("## ")
+    assert AUTHOR not in markdown
+    assert MOTTO not in markdown
+
+    diagrams = tuple(re.findall(r"```mermaid\n([\s\S]*?)\n```", markdown))
+    assert len(diagrams) == 3
+    assert tuple(
+        re.search(r"(?m)^\s*accTitle:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    ) == (
+        "意图驱动 AI 业务平台分层",
+        "用户意图到完成证据执行链",
+        "业务平台渐进演进路线",
+    )
+    descriptions = tuple(
+        re.search(r"(?m)^\s*accDescr:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    )
+    assert all(descriptions)
+    assert len(set(descriptions)) == 3
+    assert all(re.search(r"(?m)^\s*classDef\s+", diagram) for diagram in diagrams)
+    assert all(
+        re.search(
+            r"(?m)^\s*classDef\s+\w+\s+fill:#(?:DBEAFE|EDE9FE|"
+            r"CCFBF1|FEF3C7|DCFCE7|D1FAE5|FEE2E2|F3F4F6)",
+            diagram,
+        )
+        for diagram in diagrams
+    )
+    assert all(len(mermaid_principal_node_ids(diagram)) <= 12 for diagram in diagrams)
+    assert all(mermaid_has_white_group(diagram) for diagram in diagrams)
+
+    assert intent_platform_has_structured_intent_contract(markdown)
+    assert intent_platform_has_capability_catalog_contract(markdown)
+    for boundary in (
+        "自然语言只是入口之一",
+        "确定性 workflow",
+        "Agent 只处理开放判断",
+        "建议",
+        "草拟",
+        "审批后执行",
+        "有限自治",
+        "human-in-the-loop",
+        "目标系统真实状态",
+        "事务回执",
+        "可验证交付物",
+        "可停",
+        "可降级",
+        "可回滚",
+    ):
+        assert boundary in markdown
+    assert re.search(
+        r"\]\(\.\./agent-architecture/enterprise-agent-system-architecture\)",
+        markdown,
+    )
+    assert re.search(r"\]\(ai-native-architecture-design\)", markdown)
+    assert not intent_platform_contains_forbidden_absolutism(markdown)
+
+    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
+    assert sum(len(category.articles) for category in candidate_index.categories) == 14
+
+
+def test_intent_platform_guards_reject_absolute_and_mixed_claims() -> None:
+    prohibited = (
+        "我们将消灭所有 UI。",
+        "页面和表单都会消失。",
+        "规则和确定性流程都会消失。",
+        "系统将实现完全自治。",
+        "系统无需人类审批与治理。",
+        "自我进化将取代发布流程。",
+        "所有业务都交给 Agent。",
+        "模型自述代表任务完成。",
+        "模型说完成就是真实完成。",
+        "HTTP 200 就代表业务完成。",
+        "消息已发送就代表业务完成。",
+        "流程到末节点就代表任务完成。",
+        "自然语言就是完整的意图合同。",
+        "我们不会消灭 UI，但页面和表单都会消失。",
+        "并非完全自治，但所有业务都交给 Agent。",
+        "不能用模型自述证明完成，但 HTTP 200 就代表业务完成。",
+        "不应忽略风险，所以系统将实现完全自治。",
+        "不会消灭 UI，同时页面和表单都会消失。",
+    )
+    for claim in prohibited:
+        assert intent_platform_contains_forbidden_absolutism(claim), claim
+
+
+def test_intent_platform_guards_allow_explicit_limits() -> None:
+    allowed = (
+        "意图入口不会消灭 UI。",
+        "平台并非完全自治。",
+        "不能用模型自述证明完成。",
+        "规则和确定性流程不会全部消失。",
+        "自然语言只是意图入口之一，不等于结构化意图合同。",
+        "消息已发送不代表业务完成。",
+        "HTTP 200 不等于完成证据。",
+    )
+    for claim in allowed:
+        assert not intent_platform_contains_forbidden_absolutism(claim), claim
+
+
+def test_intent_platform_contract_helpers_fail_closed() -> None:
+    intent_fields = (
+        "目标；对象；约束；权限主体；风险等级；预算 / 时限；完成条件；"
+        "证据要求；可撤销 / 补偿边界"
+    )
+    capability_fields = (
+        "capability_id: x\ninput_schema: {}\noutput_schema: {}\n"
+        "authorization: delegated\nrisk_level: low\nidempotency: required\n"
+        "side_effects: none\nslo: defined\nowner: team\nevidence: receipt\n"
+        "version: v1"
+    )
+    assert intent_platform_has_structured_intent_contract(intent_fields)
+    assert not intent_platform_has_structured_intent_contract(
+        intent_fields.replace("证据要求", "")
+    )
+    assert intent_platform_has_capability_catalog_contract(capability_fields)
+    assert not intent_platform_has_capability_catalog_contract(
+        capability_fields.replace("authorization:", "")
     )
