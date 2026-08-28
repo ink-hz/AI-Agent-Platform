@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-import re
 from typing import Literal
 from uuid import UUID
 
 from app.agent_brain.loop_models import NormalizedTaskResult
 from app.execution_relay.models import RequesterSubject
 
-
 _KIND = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+class AgentEventProtocolError(RuntimeError):
+    """One upstream Task returned a non-conforming event page."""
 
 
 @dataclass(frozen=True, slots=True)

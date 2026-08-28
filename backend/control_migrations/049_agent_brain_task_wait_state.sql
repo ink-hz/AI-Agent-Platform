@@ -176,6 +176,21 @@ group by task.task_id,task.loop_id;
 create index brain_task_event_cursors_loop
   on platform_brain.brain_task_event_cursors(loop_id,task_id);
 
+create table platform_brain.agent_runtime_health (
+  agent_id text primary key
+    check (agent_id ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'),
+  status text not null check (status in ('healthy','unhealthy')),
+  reason_code text check (
+    reason_code is null or reason_code ~ '^[a-z][a-z0-9_]{0,63}$'
+  ),
+  source_task_id uuid,
+  updated_at timestamptz not null default clock_timestamp(),
+  check (
+    (status='healthy' and reason_code is null)
+    or (status='unhealthy' and reason_code is not null)
+  )
+);
+
 alter table platform_brain.brain_wait_subscriptions
   drop constraint brain_wait_subscriptions_wake_on_check,
   add constraint brain_wait_subscriptions_wake_on_check check (
@@ -186,7 +201,46 @@ alter table platform_brain.brain_wait_subscriptions
     ]::text[]
     and array_position(wake_on,null) is null
   ),
-  drop column cursors;
+  drop column cursors,
+  add column trigger_origin text not null default 'agent_event'
+    check (trigger_origin in ('agent_event','platform_control'));
+
+do $migration$
+declare
+  selected_constraint name;
+begin
+  select conname into selected_constraint
+  from pg_constraint
+  where conrelid='platform_brain.brain_wait_subscriptions'::regclass
+    and contype='c'
+    and pg_get_constraintdef(oid) like '%triggered_task_id%'
+    and pg_get_constraintdef(oid) like '%triggered_event_seq%'
+  order by conname
+  limit 1;
+  if selected_constraint is null then
+    raise check_violation using
+      message = 'Brain wait terminal-state constraint missing';
+  end if;
+  execute format(
+    'alter table platform_brain.brain_wait_subscriptions drop constraint %I',
+    selected_constraint
+  );
+end
+$migration$;
+
+alter table platform_brain.brain_wait_subscriptions
+  add constraint brain_wait_subscriptions_terminal_v49 check (
+    (status='active' and terminal_at is null
+      and triggered_task_id is null and triggered_event_seq is null)
+    or (status='triggered' and terminal_at is not null
+      and triggered_task_id is not null
+      and (
+        (trigger_origin='agent_event' and triggered_event_seq is not null)
+        or (trigger_origin='platform_control' and triggered_event_seq is null)
+      ))
+    or (status in ('cancelled','expired') and terminal_at is not null
+      and triggered_task_id is null and triggered_event_seq is null)
+  );
 
 alter table platform_control.conversation_events
   drop constraint conversation_events_event_type_check,
@@ -349,24 +403,156 @@ begin
 end
 $function$;
 
+create function platform_brain.mark_adapter_delivery_dispatched_v49(
+  selected_delivery_id uuid,
+  selected_task_id uuid
+) returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_brain
+as $function$
+declare
+  selected_kind text;
+begin
+  if (
+       current_database() = 'agent_platform_control'
+       and session_user <> 'platform_brain_worker'
+     ) or (
+       current_database() = 'agent_platform_control_preview'
+       and session_user <> 'platform_brain_worker_preview'
+     ) or current_database() not in (
+       'agent_platform_control','agent_platform_control_preview'
+     )
+  then
+    raise insufficient_privilege using
+      message = 'Brain collaboration delivery v49 caller invalid';
+  end if;
+
+  update platform_brain.adapter_deliveries set
+    status='dispatched',lease_worker_id=null,lease_expires_at=null,
+    updated_at=clock_timestamp()
+  where delivery_id=selected_delivery_id and task_id=selected_task_id
+    and delivery_kind='initial' and status='leased'
+  returning delivery_kind into selected_kind;
+  if selected_kind is null then
+    return false;
+  end if;
+
+  update platform_brain.agent_tasks set
+    status='dispatched',
+    dispatched_at=coalesce(dispatched_at,clock_timestamp()),
+    updated_at=clock_timestamp(),row_version=row_version+1
+  where task_id=selected_task_id and status='queued';
+  if not found then
+    raise check_violation using
+      message = 'Brain collaboration task dispatch v49 invalid';
+  end if;
+  return true;
+end
+$function$;
+
+create function platform_brain.fail_agent_task_protocol_v49(
+  selected_task_id uuid
+) returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, platform_brain
+as $function$
+declare
+  selected_agent_id text;
+  selected_status text;
+  selected_reason text;
+begin
+  if (
+       current_database() = 'agent_platform_control'
+       and session_user <> 'platform_brain_worker'
+     ) or (
+       current_database() = 'agent_platform_control_preview'
+       and session_user <> 'platform_brain_worker_preview'
+     ) or current_database() not in (
+       'agent_platform_control','agent_platform_control_preview'
+     )
+  then
+    raise insufficient_privilege using
+      message = 'Brain task protocol failure caller invalid';
+  end if;
+
+  select agent_id,status,terminal_reason_code
+  into selected_agent_id,selected_status,selected_reason
+  from platform_brain.agent_tasks
+  where task_id=selected_task_id
+  for update;
+  if not found then
+    raise no_data_found using message = 'Brain task missing';
+  end if;
+  if selected_status in (
+       'completed','failed','cancelled','timed_out','unavailable'
+     )
+  then
+    return selected_status='failed'
+      and selected_reason='protocol_violation';
+  end if;
+
+  update platform_brain.agent_tasks set
+    status='failed',
+    dispatched_at=coalesce(dispatched_at,created_at),
+    started_at=coalesce(started_at,clock_timestamp()),
+    terminal_reason_code='protocol_violation',
+    terminal_at=clock_timestamp(),updated_at=clock_timestamp(),
+    row_version=row_version+1
+  where task_id=selected_task_id;
+
+  update platform_brain.agent_task_sessions set
+    status='failed',terminal_at=coalesce(terminal_at,clock_timestamp()),
+    updated_at=clock_timestamp()
+  where task_id=selected_task_id and status='active';
+
+  update platform_brain.adapter_deliveries set
+    status='failed',lease_worker_id=null,lease_expires_at=null,
+    terminal_at=coalesce(terminal_at,clock_timestamp()),
+    updated_at=clock_timestamp()
+  where task_id=selected_task_id
+    and status in ('queued','leased','dispatched','expired');
+
+  insert into platform_brain.agent_runtime_health (
+    agent_id,status,reason_code,source_task_id,updated_at
+  ) values (
+    selected_agent_id,'unhealthy','protocol_violation',selected_task_id,
+    clock_timestamp()
+  ) on conflict (agent_id) do update set
+    status=excluded.status,reason_code=excluded.reason_code,
+    source_task_id=excluded.source_task_id,updated_at=excluded.updated_at;
+  return true;
+end
+$function$;
+
 revoke all on table platform_brain.brain_task_event_cursors from public;
+revoke all on table platform_brain.agent_runtime_health from public;
 revoke all on function platform_brain.append_agent_task_event_v49(
   uuid,integer,text,bytea,integer,bytea,timestamptz
 ) from public;
+revoke all on function platform_brain.mark_adapter_delivery_dispatched_v49(
+  uuid,uuid
+) from public;
+revoke all on function platform_brain.fail_agent_task_protocol_v49(uuid)
+  from public;
 
 do $migration$
 declare
   selected_brain name;
+  selected_app name;
   role_name name;
 begin
   if current_database() = 'agent_platform_control'
      and current_user = 'platform_control_owner'
   then
     selected_brain := 'platform_brain_worker';
+    selected_app := 'platform_control_app';
   elsif current_database() = 'agent_platform_control_preview'
      and current_user = 'platform_control_owner_preview'
   then
     selected_brain := 'platform_brain_worker_preview';
+    selected_app := 'platform_control_app_preview';
   else
     raise insufficient_privilege using
       message = 'Brain task/wait migration owner/environment mismatch';
@@ -386,9 +572,23 @@ begin
       role_name
     );
     execute format(
+      'revoke all on platform_brain.agent_runtime_health from %I',
+      role_name
+    );
+    execute format(
       'revoke all on function '
       'platform_brain.append_agent_task_event_v49('
       'uuid,integer,text,bytea,integer,bytea,timestamptz) from %I',
+      role_name
+    );
+    execute format(
+      'revoke all on function '
+      'platform_brain.mark_adapter_delivery_dispatched_v49(uuid,uuid) from %I',
+      role_name
+    );
+    execute format(
+      'revoke all on function '
+      'platform_brain.fail_agent_task_protocol_v49(uuid) from %I',
       role_name
     );
   end loop;
@@ -399,9 +599,28 @@ begin
     selected_brain
   );
   execute format(
+    'grant select,insert,update on '
+    'platform_brain.agent_runtime_health to %I',
+    selected_brain
+  );
+  execute format(
+    'grant select on platform_brain.agent_runtime_health to %I',
+    selected_app
+  );
+  execute format(
     'grant execute on function '
     'platform_brain.append_agent_task_event_v49('
     'uuid,integer,text,bytea,integer,bytea,timestamptz) to %I',
+    selected_brain
+  );
+  execute format(
+    'grant execute on function '
+    'platform_brain.mark_adapter_delivery_dispatched_v49(uuid,uuid) to %I',
+    selected_brain
+  );
+  execute format(
+    'grant execute on function '
+    'platform_brain.fail_agent_task_protocol_v49(uuid) to %I',
     selected_brain
   );
 end
@@ -409,3 +628,5 @@ $migration$;
 
 comment on table platform_brain.brain_task_event_cursors is
   'Sole durable per-task delivery waterline for Agent Brain wait settlement.';
+comment on table platform_brain.agent_runtime_health is
+  'Persistent Agent-local health projection; protocol failures never degrade unrelated workers.';

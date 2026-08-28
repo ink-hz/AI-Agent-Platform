@@ -512,35 +512,61 @@ class CollaborationRepository:
                     ),
                     None,
                 )
-                if trigger_row is None:
+                control_failure = None
+                if trigger_row is None and "failed" in set(wait["wake_on"]):
+                    control_failure = connection.execute(
+                        "select task_id,terminal_reason_code from "
+                        "platform_brain.agent_tasks where task_id=any(%s) "
+                        "and status='failed' and terminal_reason_code is not null "
+                        "order by updated_at,task_id limit 1",
+                        (list(wait["task_ids"]),),
+                    ).fetchone()
+                if trigger_row is None and control_failure is None:
                     return WaitSettlementResult(False, source, (), attempt)
                 events = tuple(self._event_from_row(row) for row in pending_rows)
-                tool_result = {
-                    "status": "events_ready",
-                    "triggered_task_id": str(trigger_row["task_id"]),
-                    "triggered_event_seq": trigger_row["seq"],
-                    "events": [
-                        {
-                            "task_id": str(item.task_id),
-                            "seq": item.seq,
-                            "event_type": item.event_type,
-                            "payload": dict(item.payload),
-                            "created_at": item.created_at.isoformat(),
-                        }
-                        for item in events
-                    ],
-                }
+                if control_failure is None:
+                    triggered_task_id = trigger_row["task_id"]
+                    triggered_event_seq = trigger_row["seq"]
+                    trigger_origin = "agent_event"
+                    tool_result = {
+                        "status": "events_ready",
+                        "triggered_task_id": str(triggered_task_id),
+                        "triggered_event_seq": triggered_event_seq,
+                        "events": [
+                            {
+                                "task_id": str(item.task_id),
+                                "seq": item.seq,
+                                "event_type": item.event_type,
+                                "payload": dict(item.payload),
+                                "created_at": item.created_at.isoformat(),
+                            }
+                            for item in events
+                        ],
+                    }
+                else:
+                    triggered_task_id = control_failure["task_id"]
+                    triggered_event_seq = None
+                    trigger_origin = "platform_control"
+                    tool_result = {
+                        "status": "task_failed",
+                        "task_id": str(triggered_task_id),
+                        "reason_code": control_failure["terminal_reason_code"],
+                        "origin": "platform_control",
+                        "events": [],
+                    }
                 sealed_result = self._content_codec.seal_json(
                     _tool_result_subject(wait["brain_tool_call_id"]), tool_result
                 )
                 updated = connection.execute(
                     "update platform_brain.brain_wait_subscriptions set "
                     "status='triggered',triggered_task_id=%s,triggered_event_seq=%s,"
+                    "trigger_origin=%s,"
                     "terminal_at=clock_timestamp(),updated_at=clock_timestamp() "
                     "where wait_id=%s and status='active'",
                     (
-                        trigger_row["task_id"],
-                        trigger_row["seq"],
+                        triggered_task_id,
+                        triggered_event_seq,
+                        trigger_origin,
                         wait["wait_id"],
                     ),
                 ).rowcount

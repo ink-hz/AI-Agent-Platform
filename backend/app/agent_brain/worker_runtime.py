@@ -113,25 +113,50 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
 
 
 def tick(mode: WorkerMode, runtime: BrainLoopRuntime, repository) -> int:
+    def run_phase(name: str, operation) -> int:
+        try:
+            changed = operation()
+            repository.heartbeat(name, status="healthy")
+            return changed
+        except Exception:
+            try:
+                repository.heartbeat(
+                    name,
+                    status="degraded",
+                    error_code="worker_pass_failed",
+                )
+            except Exception:
+                pass
+            return 0
+
+    def brain_tick() -> int:
+        return int(runtime.advance_one()) + runtime.scan_settled_batches()
+
+    def adapter_tick() -> int:
+        return (
+            int(runtime.dispatch_one())
+            + int(runtime.reconcile_one())
+            + runtime.reconcile_adapter_tasks("metabot_local")
+            + runtime.reconcile_cancellations()
+        )
+
+    def reaper_tick() -> int:
+        return (
+            repository.settle_active_waits(limit=100)
+            + repository.expire_leases(limit=100)
+            + repository.expire_delivery_leases(limit=100)
+            + repository.expire_waiting_users(limit=100)
+            + repository.erase_expired_model_responses(limit=100)
+            + repository.erase_expired_conversations(limit=100)
+        )
+
     changed = 0
     if mode in {"brain", "all"}:
-        changed += int(runtime.advance_one())
-        changed += runtime.scan_settled_batches()
-        repository.heartbeat("agent-brain-step", status="healthy")
+        changed += run_phase("agent-brain-step", brain_tick)
     if mode in {"adapter", "all"}:
-        changed += int(runtime.dispatch_one())
-        changed += int(runtime.reconcile_one())
-        changed += runtime.reconcile_adapter_tasks("metabot_local")
-        changed += runtime.reconcile_cancellations()
-        repository.heartbeat("agent-brain-adapter", status="healthy")
+        changed += run_phase("agent-brain-adapter", adapter_tick)
     if mode in {"reaper", "all"}:
-        changed += repository.settle_active_waits(limit=100)
-        changed += repository.expire_leases(limit=100)
-        changed += repository.expire_delivery_leases(limit=100)
-        changed += repository.expire_waiting_users(limit=100)
-        changed += repository.erase_expired_model_responses(limit=100)
-        changed += repository.erase_expired_conversations(limit=100)
-        repository.heartbeat("agent-brain-reaper", status="healthy")
+        changed += run_phase("agent-brain-reaper", reaper_tick)
     return changed
 
 

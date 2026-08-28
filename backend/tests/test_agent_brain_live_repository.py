@@ -23,7 +23,7 @@ from app.agent_brain.loop_repository import (
 )
 from app.agent_brain.tool_protocol import ToolLimits, parse_tool_batch
 from app.control_plane.crypto import IdentityKeyring
-from app.execution_relay.content_crypto import ContentCodec
+from app.execution_relay.content_crypto import ContentCodec, SealedContent
 from test_control_plane_migration import control_database
 
 NOW = datetime(2026, 8, 25, 2, 0, tzinfo=timezone.utc)
@@ -63,6 +63,7 @@ def _clear_live(connection) -> None:
         "brain_user_interventions",
         "brain_wait_subscriptions",
         "brain_task_event_cursors",
+        "agent_runtime_health",
         "brain_thinking_summaries",
         "agent_task_messages",
         "agent_task_sessions",
@@ -257,6 +258,125 @@ def test_task_session_and_messages_are_encrypted_and_round_trip(
             ).fetchone()[0]
         )
     assert "分析候选人".encode() not in raw
+
+
+@pytest.mark.postgres
+def test_dispatch_ack_does_not_claim_execution_started(
+    live_database, seeded_live_task
+) -> None:
+    environment, *_unused = live_database
+    repository, loop_repository, _loop_id, task_id, _conversation_id = (
+        seeded_live_task
+    )
+    delivery = loop_repository.lease_task_delivery(
+        "adapter-worker", lease_seconds=45
+    )
+    assert delivery is not None
+
+    loop_repository.mark_delivery_dispatched(delivery)
+
+    with psycopg.connect(environment["admin"]) as connection:
+        task = connection.execute(
+            "select status,dispatched_at,started_at from "
+            "platform_brain.agent_tasks where task_id=%s",
+            (task_id,),
+        ).fetchone()
+    assert task[0] == "dispatched"
+    assert task[1] is not None
+    assert task[2] is None
+
+    repository.append_task_event_and_wake(
+        AgentTaskPublicEventInput(
+            task_id=task_id,
+            seq=1,
+            event_type="work_update",
+            payload={"phase": "started"},
+            created_at=NOW,
+        )
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        started = connection.execute(
+            "select status,started_at from platform_brain.agent_tasks where task_id=%s",
+            (task_id,),
+        ).fetchone()
+    assert started[0] == "running"
+    assert started[1] is not None
+
+
+@pytest.mark.postgres
+def test_protocol_failure_is_task_local_and_does_not_fabricate_event(
+    live_database, seeded_live_task
+) -> None:
+    environment, *_unused = live_database
+    repository, loop_repository, loop_id, task_id, _conversation_id = (
+        seeded_live_task
+    )
+
+    assert loop_repository.fail_agent_task_protocol(task_id) is True
+
+    with psycopg.connect(environment["admin"]) as connection:
+        task = connection.execute(
+            "select status,terminal_reason_code from platform_brain.agent_tasks "
+            "where task_id=%s",
+            (task_id,),
+        ).fetchone()
+        session_status = connection.execute(
+            "select status from platform_brain.agent_task_sessions where task_id=%s",
+            (task_id,),
+        ).fetchone()[0]
+        delivery_status = connection.execute(
+            "select status from platform_brain.adapter_deliveries where task_id=%s",
+            (task_id,),
+        ).fetchone()[0]
+        event_count = connection.execute(
+            "select count(*) from platform_brain.agent_task_events where task_id=%s",
+            (task_id,),
+        ).fetchone()[0]
+        health = connection.execute(
+            "select status,reason_code,source_task_id from "
+            "platform_brain.agent_runtime_health where agent_id='hr-bot'",
+        ).fetchone()
+    assert task == ("failed", "protocol_violation")
+    assert session_status == "failed"
+    assert delivery_status == "failed"
+    assert event_count == 0
+    assert health == ("unhealthy", "protocol_violation", task_id)
+
+    tool_call_id = _seed_wait_step(live_database, loop_id, task_id=task_id)
+    wait = repository.create_wait_subscription(
+        WaitSubscriptionSpec(
+            tool_call_id=tool_call_id,
+            loop_id=loop_id,
+            task_ids=(task_id,),
+            wake_on=("failed",),
+        )
+    )
+    settled = repository.settle_if_undelivered(loop_id, source="post_commit")
+    assert settled.settled is True
+    assert settled.events == ()
+    with psycopg.connect(environment["admin"]) as connection:
+        wait_row = connection.execute(
+            "select status,trigger_origin,triggered_event_seq from "
+            "platform_brain.brain_wait_subscriptions where wait_id=%s",
+            (wait.wait_id,),
+        ).fetchone()
+        result_row = connection.execute(
+            "select result_ciphertext,result_key_version from "
+            "platform_brain.brain_tool_calls where brain_tool_call_id=%s",
+            (tool_call_id,),
+        ).fetchone()
+    tool_result = loop_repository.content_codec.unseal_json(
+        f"brain-tool-call:{tool_call_id}:result",
+        SealedContent(bytes(result_row[0]), result_row[1]),
+    )
+    assert wait_row == ("triggered", "platform_control", None)
+    assert tool_result == {
+        "status": "task_failed",
+        "task_id": str(task_id),
+        "reason_code": "protocol_violation",
+        "origin": "platform_control",
+        "events": [],
+    }
 
 
 @pytest.mark.postgres

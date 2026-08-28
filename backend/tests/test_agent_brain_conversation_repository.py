@@ -36,6 +36,7 @@ def _clear_conversations(connection) -> None:
         "brain_user_interventions",
         "brain_wait_subscriptions",
         "brain_task_event_cursors",
+        "agent_runtime_health",
         "brain_thinking_summaries",
         "agent_task_messages",
         "agent_task_sessions",

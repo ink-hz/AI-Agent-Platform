@@ -1,27 +1,31 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
-import json
 
 from app.agent_brain.adapters.base import (
     AdapterDelivery,
     AdapterMessage,
     AdapterRegistry,
     AdapterTask,
+    AgentEventProtocolError,
 )
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.agent_brain.collaboration_models import AgentTaskPublicEventInput
-from app.agent_brain.collaboration_models import BrainThinkingDelta as StoredThinkingDelta
+from app.agent_brain.collaboration_models import (
+    BrainThinkingDelta as StoredThinkingDelta,
+)
 from app.agent_brain.context_policy import BrainContextPolicy
+from app.agent_brain.loop_models import NormalizedTaskResult
 from app.agent_brain.loop_repository import (
     AgentTaskEventInput,
     BrainLoopRepository,
+    BrainRepositoryConflict,
     ImmediateToolResult,
     ModelStepCommit,
     TaskDispatchSpec,
 )
-from app.agent_brain.loop_models import NormalizedTaskResult
 from app.agent_brain.model_adapter import (
     BrainModelAdapter,
     BrainModelError,
@@ -32,10 +36,9 @@ from app.agent_brain.model_adapter import (
 from app.agent_brain.prompt import BrainSystemPrompt
 from app.agent_brain.tool_protocol import (
     DelegateTaskCall,
-    ListAgentsCall,
+    ProtocolViolation,
     SubmitAnswerCall,
     ToolLimits,
-    ProtocolViolation,
     parse_tool_batch,
 )
 
@@ -490,37 +493,55 @@ class BrainLoopRuntime:
             and selected.adapter_session_ref.get("child_session_id")
             else selected.child_session_id
         )
-        events = adapter.read_events(
-            remote_child_id, after=selected.after_event_seq
-        )
+        try:
+            events = adapter.read_events(
+                remote_child_id, after=selected.after_event_seq
+            )
+        except AgentEventProtocolError:
+            self._repository.fail_agent_task_protocol(selected.task_id)
+            return True
+        expected_seq = selected.after_event_seq + 1
+        if any(
+            event.seq != expected_seq + index
+            for index, event in enumerate(events)
+        ):
+            self._repository.fail_agent_task_protocol(selected.task_id)
+            return True
         changed = False
         saw_result = False
-        for event in events:
-            event_type = event.kind
-            if event.kind == "work_update" and event.payload.get("kind") == "finding":
-                event_type = "finding"
-            elif event.kind == "error":
-                event_type = "failed"
-            outcome = self._collaboration.append_task_event_and_wake(
-                AgentTaskPublicEventInput(
-                    task_id=selected.task_id,
-                    seq=event.seq,
-                    event_type=event_type,
-                    payload={
-                        **dict(event.payload),
-                        "source": event.source,
-                        "source_ref": event.source_ref,
-                    },
-                    created_at=event.created_at,
+        try:
+            for event in events:
+                event_type = event.kind
+                if (
+                    event.kind == "work_update"
+                    and event.payload.get("kind") == "finding"
+                ):
+                    event_type = "finding"
+                elif event.kind == "error":
+                    event_type = "failed"
+                outcome = self._collaboration.append_task_event_and_wake(
+                    AgentTaskPublicEventInput(
+                        task_id=selected.task_id,
+                        seq=event.seq,
+                        event_type=event_type,
+                        payload={
+                            **dict(event.payload),
+                            "source": event.source,
+                            "source_ref": event.source_ref,
+                        },
+                        created_at=event.created_at,
+                    )
                 )
-            )
-            changed = changed or not outcome.replayed
-            saw_result = saw_result or event_type in {
-                "result",
-                "failed",
-                "timeout",
-                "cancelled",
-            }
+                changed = changed or not outcome.replayed
+                saw_result = saw_result or event_type in {
+                    "result",
+                    "failed",
+                    "timeout",
+                    "cancelled",
+                }
+        except (BrainRepositoryConflict, ValueError):
+            self._repository.fail_agent_task_protocol(selected.task_id)
+            return True
         if saw_result:
             self._repository.complete_initial_delivery_after_events(
                 selected.task_id

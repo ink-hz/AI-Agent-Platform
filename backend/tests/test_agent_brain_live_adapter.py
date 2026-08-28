@@ -5,11 +5,15 @@ from uuid import UUID, uuid4
 
 from app.agent_brain.adapters.base import (
     AdapterDelivery,
+    AdapterEvent,
     AdapterMessage,
+    AdapterRegistry,
     AdapterTask,
+    AgentEventProtocolError,
 )
 from app.agent_brain.adapters.reference import ReferenceAdapter
-
+from app.agent_brain.loop_repository import AdapterSessionPoll
+from app.agent_brain.loop_runtime import BrainLoopRuntime
 
 NOW = datetime(2026, 8, 26, 1, 0, tzinfo=timezone.utc)
 TASK_ID = UUID("00000000-0000-4000-8000-000000000201")
@@ -109,3 +113,92 @@ def test_reference_adapter_stop_is_idempotent_and_factual() -> None:
     assert first == replay
     assert first.accepted is True
     assert first.supported is True
+
+
+def test_event_gap_fails_only_selected_task_without_escaping_worker_phase() -> None:
+    task_id = uuid4()
+    loop_id = uuid4()
+    failures: list[UUID] = []
+
+    class GapAdapter(ReferenceAdapter):
+        def read_events(self, child_session_id: str, *, after: int):
+            assert child_session_id == "remote-gap-task"
+            assert after == 0
+            return (
+                AdapterEvent(
+                    seq=2,
+                    kind="work_update",
+                    source="agent",
+                    source_ref="remote-gap-task",
+                    created_at=NOW,
+                    payload={"phase": "started"},
+                ),
+            )
+
+    class Repository:
+        def next_adapter_session_poll(self):
+            return AdapterSessionPoll(
+                task_id=task_id,
+                loop_id=loop_id,
+                agent_id="fae-bot",
+                adapter_kind="gap",
+                child_session_id="remote-gap-task",
+            )
+
+        def fail_agent_task_protocol(self, selected_task_id):
+            failures.append(selected_task_id)
+            return True
+
+        def touch_adapter_session(self, _task_id):
+            raise AssertionError("protocol-invalid task must not advance its session")
+
+    class Collaboration:
+        def append_task_event_and_wake(self, _event):
+            raise AssertionError("gapped event page must be rejected before append")
+
+    adapters = AdapterRegistry()
+    adapters.register("gap", GapAdapter())
+    runtime = object.__new__(BrainLoopRuntime)
+    runtime._repository = Repository()
+    runtime._collaboration = Collaboration()
+    runtime._adapters = adapters
+
+    assert runtime.reconcile_one() is True
+    assert failures == [task_id]
+
+
+def test_adapter_protocol_error_is_converted_to_task_local_failure() -> None:
+    task_id = uuid4()
+    failures: list[UUID] = []
+
+    class InvalidPageAdapter(ReferenceAdapter):
+        def read_events(self, _child_session_id: str, *, after: int):
+            assert after == 0
+            raise AgentEventProtocolError("private upstream detail")
+
+    class Repository:
+        def next_adapter_session_poll(self):
+            return AdapterSessionPoll(
+                task_id=task_id,
+                loop_id=uuid4(),
+                agent_id="admin-bot",
+                adapter_kind="invalid_page",
+                child_session_id="remote-invalid-page",
+            )
+
+        def fail_agent_task_protocol(self, selected_task_id):
+            failures.append(selected_task_id)
+            return True
+
+    class Collaboration:
+        pass
+
+    adapters = AdapterRegistry()
+    adapters.register("invalid_page", InvalidPageAdapter())
+    runtime = object.__new__(BrainLoopRuntime)
+    runtime._repository = Repository()
+    runtime._collaboration = Collaboration()
+    runtime._adapters = adapters
+
+    assert runtime.reconcile_one() is True
+    assert failures == [task_id]

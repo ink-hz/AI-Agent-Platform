@@ -1676,13 +1676,38 @@ class BrainLoopRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select platform_brain.mark_adapter_delivery_dispatched_v45("
+                    "select platform_brain.mark_adapter_delivery_dispatched_v49("
                     "%s,%s) as updated",
                     (lease.delivery_id, lease.task_id),
                 ).fetchone()
             if row is None or row["updated"] is not True:
                 raise BrainRepositoryConflict()
         except BrainRepositoryConflict:
+            raise
+        except psycopg.Error:
+            raise BrainRepositoryError() from None
+
+    def fail_agent_task_protocol(self, task_id: UUID) -> bool:
+        _require_uuid(task_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select platform_brain.fail_agent_task_protocol_v49(%s) as failed",
+                    (task_id,),
+                ).fetchone()
+                loop = connection.execute(
+                    "select loop_id from platform_brain.agent_tasks where task_id=%s",
+                    (task_id,),
+                ).fetchone()
+            if row is None or loop is None:
+                raise BrainRepositoryNotFound()
+            failed = row["failed"] is True
+            if failed:
+                self.collaboration_repository().settle_if_undelivered(
+                    loop["loop_id"], source="event_append"
+                )
+            return failed
+        except (BrainRepositoryNotFound, BrainRepositoryConflict):
             raise
         except psycopg.Error:
             raise BrainRepositoryError() from None

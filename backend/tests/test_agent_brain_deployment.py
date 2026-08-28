@@ -262,6 +262,68 @@ def test_private_worker_all_mode_runs_each_durable_lane_and_heartbeats() -> None
     ]
 
 
+def test_private_worker_phase_failure_does_not_skip_other_durable_lanes() -> None:
+    calls: list[str] = []
+
+    class Runtime:
+        def advance_one(self):
+            calls.append("brain:failed")
+            raise RuntimeError("isolated step failure")
+
+        def scan_settled_batches(self):
+            raise AssertionError("failed phase must stop locally")
+
+        def dispatch_one(self):
+            calls.append("adapter")
+            return True
+
+        def reconcile_one(self):
+            return False
+
+        def reconcile_adapter_tasks(self, _kind):
+            return 0
+
+        def reconcile_cancellations(self):
+            calls.append("cancel")
+            return 1
+
+    class Repository:
+        def heartbeat(self, name, *, status, error_code=None):
+            calls.append(f"heartbeat:{name}:{status}:{error_code or '-'}")
+
+        def settle_active_waits(self, *, limit):
+            calls.append("reaper")
+            return 1
+
+        def expire_leases(self, *, limit):
+            return 0
+
+        def expire_delivery_leases(self, *, limit):
+            return 0
+
+        def expire_waiting_users(self, *, limit):
+            return 0
+
+        def erase_expired_model_responses(self, *, limit):
+            return 0
+
+        def erase_expired_conversations(self, *, limit):
+            return 0
+
+    changed = tick(validate_worker_mode("all"), Runtime(), Repository())
+
+    assert changed == 3
+    assert calls == [
+        "brain:failed",
+        "heartbeat:agent-brain-step:degraded:worker_pass_failed",
+        "adapter",
+        "cancel",
+        "heartbeat:agent-brain-adapter:healthy:-",
+        "reaper",
+        "heartbeat:agent-brain-reaper:healthy:-",
+    ]
+
+
 def test_api_process_does_not_start_v1_scheduler_when_v2_is_enabled() -> None:
     source = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
     guard = "and not config.agent_brain_v2_enabled"

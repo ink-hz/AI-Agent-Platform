@@ -187,6 +187,15 @@ def test_v49_extends_wait_and_event_allowlists(control_database) -> None:
             assert "'action_required'::text" in wait_checks
             assert "cardinality(wake_on) >= 1" in wait_checks
             assert "cardinality(wake_on) <= 7" in wait_checks
+            assert "trigger_origin" in wait_checks
+            wait_columns = _columns(
+                connection, "platform_brain", "brain_wait_subscriptions"
+            )
+            assert wait_columns["trigger_origin"] == (
+                "text",
+                "NO",
+                "'agent_event'::text",
+            )
 
             event_checks = _constraint_text(
                 connection, "platform_control", "conversation_events"
@@ -201,6 +210,27 @@ def test_v49_extends_wait_and_event_allowlists(control_database) -> None:
             ).fetchone()[0]
             assert "'input_required'" in function_body
             assert "'action_required'" in function_body
+
+            dispatch_body = connection.execute(
+                "select pg_get_functiondef("
+                "'platform_brain.mark_adapter_delivery_dispatched_v49(uuid,uuid)'"
+                "::regprocedure)"
+            ).fetchone()[0]
+            assert "status='dispatched'" in dispatch_body
+            assert "started_at" not in dispatch_body
+
+            failure_body = connection.execute(
+                "select pg_get_functiondef("
+                "'platform_brain.fail_agent_task_protocol_v49(uuid)'"
+                "::regprocedure)"
+            ).fetchone()[0]
+            assert "terminal_reason_code='protocol_violation'" in failure_body
+            health_columns = _columns(
+                connection, "platform_brain", "agent_runtime_health"
+            )
+            assert {"agent_id", "status", "reason_code", "source_task_id"} <= set(
+                health_columns
+            )
 
 
 @pytest.mark.postgres
@@ -254,6 +284,31 @@ def test_v49_cursor_and_function_grants_are_environment_scoped(
                 "bytea,integer,bytea,timestamptz)','execute')",
                 (brain_role, app_role, opposite_role),
             ).fetchone() == (True, False, False)
+            assert connection.execute(
+                "select has_function_privilege(%s,"
+                "'platform_brain.mark_adapter_delivery_dispatched_v49(uuid,uuid)',"
+                "'execute'),has_function_privilege(%s,"
+                "'platform_brain.fail_agent_task_protocol_v49(uuid)','execute'),"
+                "has_function_privilege(%s,"
+                "'platform_brain.fail_agent_task_protocol_v49(uuid)','execute')",
+                (brain_role, brain_role, app_role),
+            ).fetchone() == (True, True, False)
+            assert connection.execute(
+                "select has_table_privilege(%s,%s,'select'),"
+                "has_table_privilege(%s,%s,'update'),"
+                "has_table_privilege(%s,%s,'select'),"
+                "has_table_privilege(%s,%s,'update')",
+                (
+                    brain_role,
+                    "platform_brain.agent_runtime_health",
+                    brain_role,
+                    "platform_brain.agent_runtime_health",
+                    app_role,
+                    "platform_brain.agent_runtime_health",
+                    app_role,
+                    "platform_brain.agent_runtime_health",
+                ),
+            ).fetchone() == (True, True, True, False)
 
 
 def test_intervention_events_validate_in_python_models() -> None:
