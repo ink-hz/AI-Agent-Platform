@@ -52,11 +52,22 @@ def test_publishes_clean_claude_code_architecture_note() -> None:
     assert article.title == "Claude Code 架构分析：公开能力与工程启发"
     assert article.filename == "claude-code-architecture.md"
     assert article.published_at == PUBLISHED_ON
-    assert article.updated_at == PUBLISHED_ON
+    assert article.updated_at == TODAY
     assert article.author == "苍渊"
     assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("Claude Code", "Agent", "AI 开发工具")
     assert_clean_body(article.markdown)
+
+
+def test_claude_code_note_visualizes_public_capabilities() -> None:
+    article = published_article("tools-and-frameworks", "claude-code-architecture")
+    diagrams = mermaid_blocks(article.markdown)
+    combined = "\n".join(diagrams)
+    assert len(diagrams) == 3
+    for label in ("公开入口", "上下文", "权限与策略", "内置工具", "MCP", "Hooks", "验证"):
+        assert label in combined
+    assert all("classDef" in diagram or "style" in diagram for diagram in diagrams)
+    assert article.updated_at == TODAY
 
 
 def test_publishes_clean_ai_native_architecture_design_note() -> None:

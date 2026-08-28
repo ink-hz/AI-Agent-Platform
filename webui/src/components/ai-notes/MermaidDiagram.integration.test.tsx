@@ -133,4 +133,13 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(sources.join("\n")).toContain("信任决策");
     await expectProductionDiagramsToRender(sources);
   });
+
+  it("renders every Claude Code public architecture diagram", async () => {
+    const sources = mermaidBlocks(productionArticle(
+      "03-tools-and-frameworks/01-claude-code-architecture.md",
+    ));
+    expect(sources).toHaveLength(3);
+    expect(sources.join("\n")).toContain("公开入口");
+    await expectProductionDiagramsToRender(sources);
+  });
 });
