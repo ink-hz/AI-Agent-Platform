@@ -142,4 +142,14 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(sources.join("\n")).toContain("公开入口");
     await expectProductionDiagramsToRender(sources);
   });
+
+  it("renders every RAG engineering diagram", async () => {
+    const sources = mermaidBlocks(productionArticle(
+      "04-ai-engineering/01-rag-retrieval-engineering.md",
+    ));
+    expect(sources).toHaveLength(4);
+    expect(sources.join("\n")).toContain("索引链路");
+    expect(sources.join("\n")).toContain("查询链路");
+    await expectProductionDiagramsToRender(sources);
+  });
 });

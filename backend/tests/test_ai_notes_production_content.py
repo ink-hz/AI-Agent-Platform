@@ -111,11 +111,22 @@ def test_publishes_clean_rag_retrieval_engineering_note() -> None:
     assert article.title == "RAG 检索工程：从向量索引到可验证回答"
     assert article.filename == "rag-retrieval-engineering.md"
     assert article.published_at == PUBLISHED_ON
-    assert article.updated_at == PUBLISHED_ON
+    assert article.updated_at == TODAY
     assert article.author == "苍渊"
     assert article.motto == "博观而约取，厚积而薄发。"
     assert article.tags == ("RAG", "向量检索", "AI 工程")
     assert_clean_body(article.markdown)
+
+
+def test_rag_note_visualizes_index_and_query_pipelines() -> None:
+    article = published_article("ai-engineering", "rag-retrieval-engineering")
+    diagrams = mermaid_blocks(article.markdown)
+    combined = "\n".join(diagrams)
+    assert len(diagrams) == 4
+    for label in ("索引链路", "查询链路", "HNSW", "BM25", "引用校验"):
+        assert label in combined
+    assert all("classDef" in diagram or "style" in diagram for diagram in diagrams)
+    assert article.updated_at == TODAY
 
 
 def test_publishes_clean_agent_engineering_learning_map() -> None:
