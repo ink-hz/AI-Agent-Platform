@@ -46,6 +46,7 @@ COMPLETED_BATCH_ARTICLES: tuple[str, ...] = (
     "ai-cloud-native-runtime",
     "llm-agent-observability",
     "open-source-agent-runtime",
+    "metabot-agent-control-bus",
 )
 
 ARTICLE_CONTRACTS = {
@@ -256,6 +257,16 @@ OPEN_SOURCE_RUNTIME_PRIMARY_SOURCES = {
     ),
     "https://github.com/openclaw/openclaw/blob/468054f93c431bfe192327f439efe325be52f2b4/docs/agent-runtime-architecture.md": (
         "布局本身不证明 selected runtime 拥有 Gateway session、平台策略或恢复编排"
+    ),
+}
+
+METABOT_SOURCE_REVIEW_STATUS = {
+    "MetaBot架构设计理论分析.md": (
+        "已精读：1-515",
+        "远程控制、渠道适配、消息桥、持久执行与恢复问题框架",
+        "旧组织、旧拓扑、代码规模、固定数量、端口、版本与营销结论",
+        "已核验：两个当前代码仓与 Platform relay 边界（2026-08-28）",
+        "通用运行循环留在既有篇；本篇只写远程控制、可靠投递与状态所有权",
     ),
 }
 
@@ -591,6 +602,75 @@ def open_source_runtime_confuses_layers(markdown: str) -> bool:
     return any(re.search(pattern, markdown) for pattern in prohibited_patterns)
 
 
+def metabot_contains_forbidden_legacy_or_scale_claim(markdown: str) -> bool:
+    prohibited_patterns = (
+        r"(?i)xvirobotics|XVI\s+Robotics",
+        r"(?i)(?<![\w.])v\d+\.\d+\.\d+(?![\w.])",
+        r"(?i)\bLOC\b|代码行数|lines?\s+of\s+code",
+        r"(?i)(?:端口|port)\s*[:：]?\s*\d{2,5}\b",
+        r"(?i)(?<![\w.])\d+\s*(?:个|名|台|种|条)?\s*"
+        r"(?:Agents?|Bots?|进程|用户|渠道|实例|部署节点)\b",
+    )
+    return any(re.search(pattern, markdown) for pattern in prohibited_patterns)
+
+
+def metabot_contains_design_as_implementation(markdown: str) -> bool:
+    explicit_limit = re.compile(
+        r"(?:不能|不可|不应|并非|不是|不等于|尚未|未被|没有)"
+    )
+    for clause in re.split(r"[\n。！？；;]", markdown):
+        if explicit_limit.search(clause):
+            continue
+        if re.search(
+            r"(?:设计稿|规划文档|架构设计)[^。；;\n]{0,48}"
+            r"(?:证明|表明|说明)[^。；;\n]{0,48}"
+            r"(?:已经|已)[^。；;\n]{0,24}(?:实现|上线|运行)",
+            clause,
+        ):
+            return True
+    return False
+
+
+def metabot_contains_boundary_absolutism(markdown: str) -> bool:
+    prohibited_patterns = (
+        r"(?:渠道消息身份|sender\s+identity|chatId|session\s+key|会话绑定)"
+        r"[^。；;\n]{0,40}(?:等同于|就是|自动成为)"
+        r"[^。；;\n]{0,24}(?:平台授权身份|授权|权限)",
+        r"(?:\back\b|\baccepted\b|消息确认|接收确认|已接收)"
+        r"[^。；;\n]{0,32}(?:等同于|就是|代表|证明)"
+        r"[^。；;\n]{0,24}(?:命令完成|任务完成|执行成功|完成|成功)",
+        r"(?:重连|重新连接|断线恢复)[^。；;\n]{0,40}"
+        r"(?:自动|可以|应当)[^。；;\n]{0,24}(?:重放|重试)"
+        r"[^。；;\n]{0,16}(?:所有|全部|命令|副作用)",
+        r"(?:未知|不确定)[^。；;\n]{0,16}副作用[^。；;\n]{0,32}"
+        r"(?:自动|直接|继续)[^。；;\n]{0,16}(?:重试|重放|重复)",
+    )
+    explicit_limit = re.compile(
+        r"(?:不能|不可|不应|不得|并非|不是|不等于|并不|无法|没有|"
+        r"尚未|未曾|未被|未能|"
+        r"≠|do\s+not|cannot|can't|is\s+not|does\s+not)",
+        re.IGNORECASE,
+    )
+    for clause in re.split(r"[\n。！？；;]", markdown):
+        if explicit_limit.search(clause):
+            continue
+        if any(re.search(pattern, clause, re.IGNORECASE) for pattern in prohibited_patterns):
+            return True
+    return False
+
+
+def metabot_contains_unlabelled_inference(markdown: str) -> bool:
+    allowed_markers = ("从当前公开结构可以推断", "本文推断")
+    inference_cues = re.compile(
+        r"(?:由此可见|显然|这说明|可以断定|可以认为|必然意味着)"
+    )
+    return any(
+        inference_cues.search(line)
+        and not any(marker in line for marker in allowed_markers)
+        for line in markdown.splitlines()
+    )
+
+
 def test_completed_batch_helpers_enforce_drafts_and_validate_candidates(
     tmp_path: Path,
 ) -> None:
@@ -627,6 +707,7 @@ def test_source_review_records_the_exact_source_manifest() -> None:
             **CLOUD_NATIVE_SOURCE_REVIEW_STATUS,
             **OBSERVABILITY_SOURCE_REVIEW_STATUS,
             **OPEN_SOURCE_RUNTIME_SOURCE_REVIEW_STATUS,
+            **METABOT_SOURCE_REVIEW_STATUS,
         }.get(filename, ("未开始",) * 5)
         expected_rows.append(
             f"| `{path}` | {line_count} | `{digest}` | {target} | "
@@ -1307,11 +1388,7 @@ def test_open_source_runtime_draft_meets_contract(
 ) -> None:
     completed_articles = assert_completed_batch_drafts()
     assert tuple(article.slug for article in completed_articles) == (
-        "agent-identity-access-control",
-        "llm-inference-serving-engineering",
-        "ai-cloud-native-runtime",
-        "llm-agent-observability",
-        "open-source-agent-runtime",
+        COMPLETED_BATCH_ARTICLES
     )
 
     path = batch_article_path("open-source-agent-runtime")
@@ -1437,7 +1514,7 @@ def test_open_source_runtime_draft_meets_contract(
     candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
     assert sum(
         len(category.articles) for category in candidate_index.categories
-    ) == 11
+    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_open_source_runtime_guards_reject_forbidden_claims() -> None:
@@ -1476,3 +1553,210 @@ def test_open_source_runtime_guards_allow_precise_boundaries() -> None:
         assert not open_source_runtime_contains_recovery_absolutism(claim)
         assert not open_source_runtime_confuses_openclaw_ownership(claim)
         assert not open_source_runtime_confuses_layers(claim)
+
+
+def test_metabot_source_review_records_current_code_snapshots() -> None:
+    review = SOURCE_REVIEW.read_text(encoding="utf-8")
+    section_header = "## metabot-agent-control-bus 精读结论"
+
+    assert section_header in review
+    section = source_review_h2_section(review, section_header)
+    for sha in (
+        "94e1c128f33a153b980ef45b8c002d5bb8d2bac9",
+        "73e172192e21621c4bb1d9bf307ab8755ac643cf",
+    ):
+        assert sha in section
+    for evidence_grade in (
+        "当前代码直接证明",
+        "已提交文档明示",
+        "作者工程推断",
+    ):
+        assert evidence_grade in section
+    for evidence_path in (
+        "deploy/metabot.runtime-contract.json",
+        "scripts/reliability/recovery.mjs",
+        "flywheel/migrations/003_api.sql",
+        "src/feishu/event-handler.ts",
+        "src/telegram/telegram-bot.ts",
+        "src/wechat/wechat-bot.ts",
+        "src/types.ts",
+        "src/bridge/message-bridge.ts",
+        "src/bridge/prompt-normalizer.ts",
+        "src/session/session-registry.ts",
+        "src/engines/claude/session-manager.ts",
+        "src/engines/claude/executor-registry.ts",
+        "src/engines/claude/persistent-executor.ts",
+        "src/api/routes/core-chat-session-store.ts",
+        "src/api/routes/core-chat-routes.ts",
+        "src/bridge/provider-turn-recovery.ts",
+        "src/bridge/claude-turn-recovery.ts",
+        "src/reliability/probe-receipt-store.ts",
+        "src/utils/audit-logger.ts",
+        "src/flywheel/envelope.ts",
+        "backend/app/agent_brain/adapters/metabot_local.py",
+        "backend/app/execution_relay/models.py",
+        "backend/app/execution_relay/repository.py",
+        "backend/app/execution_relay/worker.py",
+        "backend/app/execution_relay/metabot_client.py",
+    ):
+        assert evidence_path in section
+    assert "当前 collaboration v3 链路没有贯通 Platform 验证主体" in section
+    assert "公共任务与 relay 状态" in section
+    assert "私有会话与执行状态" in section
+    assert "目标系统真实副作用" in section
+
+
+def test_metabot_agent_control_bus_draft_meets_contract(tmp_path: Path) -> None:
+    completed_articles = assert_completed_batch_drafts()
+    assert tuple(article.slug for article in completed_articles) == (
+        "agent-identity-access-control",
+        "llm-inference-serving-engineering",
+        "ai-cloud-native-runtime",
+        "llm-agent-observability",
+        "open-source-agent-runtime",
+        "metabot-agent-control-bus",
+    )
+
+    path = batch_article_path("metabot-agent-control-bus")
+    frontmatter, markdown = parse_frontmatter(path)
+    assert frontmatter["title"] == "MetaBot 架构：Agent 的多渠道远程控制总线"
+    assert frontmatter["slug"] == "metabot-agent-control-bus"
+    assert tuple(frontmatter["tags"]) == ("Agent", "MetaBot", "远程控制")
+    assert frontmatter["draft"] is True
+    assert frontmatter["author"] == AUTHOR
+    assert frontmatter["motto"] == MOTTO
+    assert frontmatter["publishedAt"] == TODAY
+    assert frontmatter["updatedAt"] == TODAY
+    assert markdown.lstrip().startswith("## ")
+    assert AUTHOR not in markdown
+    assert MOTTO not in markdown
+
+    diagrams = tuple(re.findall(r"```mermaid\n([\s\S]*?)\n```", markdown))
+    assert len(diagrams) == 3
+    assert tuple(
+        re.search(r"(?m)^\s*accTitle:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    ) == (
+        "MetaBot 多渠道 Agent 控制平面",
+        "远程命令持久状态机",
+        "断线恢复与幂等闭环",
+    )
+    descriptions = tuple(
+        re.search(r"(?m)^\s*accDescr:\s*(.+?)\s*$", diagram).group(1)
+        for diagram in diagrams
+    )
+    assert all(descriptions)
+    assert len(set(descriptions)) == 3
+    assert all(re.search(r"(?m)^\s*classDef\s+", diagram) for diagram in diagrams)
+    assert all(
+        re.search(
+            r"(?m)^\s*classDef\s+\w+\s+fill:#(?:DBEAFE|EDE9FE|"
+            r"CCFBF1|FEF3C7|DCFCE7|D1FAE5|FEE2E2|F3F4F6)",
+            diagram,
+        )
+        for diagram in diagrams
+    )
+    assert all(len(mermaid_principal_node_ids(diagram)) <= 12 for diagram in diagrams)
+
+    for required_topic in (
+        "channel adapter",
+        "message normalization",
+        "identity/session binding",
+        "persistent executor",
+        "command lifecycle",
+        "idempotency",
+        "reconnect",
+        "audit",
+        "remote-control risk",
+        "IncomingMessage",
+        "MessageBridge",
+        "SessionManager",
+        "CoreChatSessionStore",
+        "ExecutorRegistry",
+        "core_chat_collaboration_v3",
+        "messageSeq",
+        "sha256",
+    ):
+        assert required_topic.casefold() in markdown.casefold()
+
+    for evidence_grade in (
+        "当前代码直接证明",
+        "已提交文档明示",
+        "从当前公开结构可以推断",
+        "本文推断",
+    ):
+        assert evidence_grade in markdown
+
+    for boundary in (
+        "渠道消息身份 ≠ 平台授权身份",
+        "会话绑定 ≠ 授权",
+        "消息确认 ≠ 命令完成",
+        "重新连接 ≠ 可以盲目重放",
+        "不确定副作用不得自动重复",
+        "Platform 持有公共任务与 relay 状态",
+        "MetaBot 持有私有会话与执行状态",
+        "目标系统持有真实副作用",
+        "当前 collaboration v3 请求没有贯通 Platform 验证主体",
+    ):
+        assert boundary in markdown
+
+    for state_marker in (
+        "`active`",
+        "`stopped`",
+        "`failed`",
+        "`accepted`",
+        "`replayed`",
+        "取消请求",
+        "stop 回执",
+        "结果不确定",
+    ):
+        assert state_marker in markdown
+
+    assert not metabot_contains_forbidden_legacy_or_scale_claim(markdown)
+    assert not metabot_contains_design_as_implementation(markdown)
+    assert not metabot_contains_boundary_absolutism(markdown)
+    assert not metabot_contains_unlabelled_inference(markdown)
+
+    candidate_index = validate_completed_batch_as_publication_candidates(tmp_path)
+    assert sum(len(category.articles) for category in candidate_index.categories) == 12
+
+
+def test_metabot_guards_reject_forbidden_claims() -> None:
+    prohibited = (
+        "xvirobotics 的旧拓扑当前仍然有效。",
+        "message-bridge.ts 有 2753 LOC。",
+        "服务运行在 port 9100。",
+        "当前部署了 9 个 Bot。",
+        "设计稿证明这条恢复链已经上线。",
+        "渠道消息身份就是平台授权身份。",
+        "会话绑定自动成为授权。",
+        "accepted 代表任务完成。",
+        "消息确认等同于命令完成。",
+        "重新连接后可以重放所有命令。",
+        "未知副作用可以自动重试。",
+        "由此可见，所有命令都会安全恢复。",
+    )
+    guards = (
+        metabot_contains_forbidden_legacy_or_scale_claim,
+        metabot_contains_design_as_implementation,
+        metabot_contains_boundary_absolutism,
+        metabot_contains_unlabelled_inference,
+    )
+    for claim in prohibited:
+        assert any(guard(claim) for guard in guards), claim
+
+
+def test_metabot_guards_allow_precise_boundaries() -> None:
+    allowed = (
+        "渠道消息身份 ≠ 平台授权身份；会话绑定 ≠ 授权。",
+        "accepted 不是命令完成，只是接收确认。",
+        "重新连接 ≠ 可以盲目重放，不确定副作用不得自动重复。",
+        "设计稿不能证明能力已经实现，本文只采用当前代码证据。",
+        "从当前公开结构可以推断：三层状态需要分别对账。",
+        "本文推断：恢复策略应按副作用类别收窄。",
+    )
+    for claim in allowed:
+        assert not metabot_contains_forbidden_legacy_or_scale_claim(claim)
+        assert not metabot_contains_design_as_implementation(claim)
+        assert not metabot_contains_boundary_absolutism(claim)
+        assert not metabot_contains_unlabelled_inference(claim)

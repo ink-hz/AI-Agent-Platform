@@ -18,7 +18,7 @@ SHA-256 已于 2026-08-28 使用 `wc -l` 和 `shasum -a 256` 复核。
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/可观测性与监控-深度理论知识.md` | 1857 | `546ea435a32227f0ec75e73e946e45e4cb5a6e092ee55deaf7d456de3c43b8ed` | llm-agent-observability | 已精读：1-1857 | 上下文传播、结构化 trace、采样、高基数、SLO 与信号关联 | 通用三支柱教材、产品栈与配置、固定阈值、采样率和成本数字 | 已核验：OpenTelemetry GenAI、W3C Trace Context、NIST（2026-08-28） | RAG 算法与 Agent 状态机留在主文章；本篇只记录证据与质量信号 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Hermes-Agent架构分析与思考.md` | 390 | `aac8a4c575a11ae1a129c3e03d49e6217d2c02a92363b0689d5c5306c70227ad` | open-source-agent-runtime | 已精读：1-390 | Agent loop、context/session、skills/tools、memory、sandbox 与 recovery 问题框架 | 动态版本、数量、排行、营销结论与无法复核的生产效果 | 已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28） | Claude Code 使用体验留在既有文章；本篇只比较运行时责任边界 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/Clawdbot架构理论指南.md` | 284 | `838ae6a89bfeca305bb70bc016f975d7b12f34abef9fe73dd4638c22dedb6961` | open-source-agent-runtime | 已精读：1-284 | Gateway、channel routing、session、tools/skills、sandbox 与 recovery 问题框架 | 旧项目名当现名、动态渠道数、成熟度结论与安全泛化承诺 | 已核验：Hermes 与 OpenClaw 官方仓库快照（2026-08-28） | 企业 Agent 全景留在主文章；本篇抽象 provider/model/runtime/channel 和 ownership |
-| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/MetaBot架构设计理论分析.md` | 515 | `f526d770501328c0aa12bb926ae379c640bebb3cd9540fe4b569a581caebded5` | metabot-agent-control-bus | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
+| `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/MetaBot架构设计理论分析.md` | 515 | `f526d770501328c0aa12bb926ae379c640bebb3cd9540fe4b569a581caebded5` | metabot-agent-control-bus | 已精读：1-515 | 远程控制、渠道适配、消息桥、持久执行与恢复问题框架 | 旧组织、旧拓扑、代码规模、固定数量、端口、版本与营销结论 | 已核验：两个当前代码仓与 Platform relay 边界（2026-08-28） | 通用运行循环留在既有篇；本篇只写远程控制、可靠投递与状态所有权 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/主流Agent框架深度分析-从架构本质到生产可用性.md` | 323 | `4edd175b19b9ac82be0ac9a92ed10d69ddfe14cac7611fa7b3df9f0a5866054b` | agent-framework-selection | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
 | `/Users/neo/Developer/personal/starship-blog-source/src/content/blog/干掉用户旅程-意图驱动的业务平台架构设计.md` | 379 | `3a165ec7de6b712d9cbbc999ee6d7752b9954691f904f41a80d289bc0585d52b` | intent-driven-ai-business-platform | 未开始 | 未开始 | 未开始 | 未开始 | 未开始 |
 
@@ -244,3 +244,61 @@ OpenClaw 快照实际读取：
 - **删除**：旧日期、动态版本、功能或渠道数量、社区热度、产品优劣、无法复核的生产效果和泛化安全承诺。
 - **公开代码直接证明**：只在实际读取路径能定位的循环、策略、持久化与恢复语义范围内陈述。
 - **从公开结构可以推断**：两个项目都可用入口与会话、上下文与循环、行动与恢复三类问题来评审；这是本文比较模型，不是组件等价或隐藏执行顺序的事实声明。对 OpenClaw，host/Gateway 与 selected runtime 保持相邻边界，不把 Gateway session、channel delivery、平台策略和恢复编排塞入 runtime 内部。
+
+## metabot-agent-control-bus 精读结论
+
+### `MetaBot架构设计理论分析.md`
+
+- `1-112`（定位、全景与规模）：保留“聊天入口连接远程 Agent”这一问题意识，以及 channel、bridge、engine、session 的分层视角；旧组织署名、旧仓库定位、版本、部署拓扑、代码行数、端口、固定组件与引擎数量全部删除。
+- `113-270`（引擎、MessageBridge、persistent executor）：保留消息规范化、控制协调、持久执行与跨轮会话的问题框架；具体接口、超时、队列、窗口、成本与实验阶段全部向当前代码重核，不继承旧稿数值和“核心创新”评价。
+- `271-400`（memory、skills、session、federation、voice）：仅保留 session linking 需要与身份、授权分开的边界；memory、skill 工厂、语音、联邦和产品功能清单不属于本篇，全部删除。
+- `401-515`（模式、对比、亮点与结论）：保留 adapter、persistent execution、恢复与审计的通用工程问题；项目排行、代码规模比较、营销结论、用户场景故事和未经复核的安全承诺全部删除。
+
+### 当前代码仓快照
+
+访问日期：2026-08-28
+
+| 仓库 | 完整 HEAD SHA | 证据用途 |
+| --- | --- | --- |
+| `/Users/neo/Developer/work/Orbbec-Agent-Team` | `94e1c128f33a153b980ef45b8c002d5bb8d2bac9` | 已提交部署合同、可靠性恢复和 flywheel 存储边界；仓内未跟踪文件未读取为实现，也未修改。 |
+| `/Users/neo/Developer/work/metabot-dev` | `73e172192e21621c4bb1d9bf307ab8755ac643cf` | 当前 channel、bridge、session、executor、Core Chat、恢复、回执与 audit/flywheel 运行代码；仓内未跟踪 `.tools/` 未读取为实现，也未修改。 |
+
+Orbbec-Agent-Team 实际读取：
+
+- `CLAUDE.md`、`README.md`、`flywheel/README.md`：当前工作区指导、部署责任和 flywheel 只存储原始执行证据的已提交文档边界。
+- `deploy/metabot.runtime-contract.json`：当前部署合同声明 collaboration 能力与隔离方式；其中的动态版本、固定 Bot、端口和规模没有进入正文。
+- `scripts/reliability/recovery.mjs`、`scripts/reliability/metabot-client.mjs`：恢复动作会排除真实用户或重复投递风险，重验收要求新 attempt 且不重放原 turn；探针客户端区分运行结果和分阶段 receipt。
+- `flywheel/migrations/002_tables.sql`、`flywheel/migrations/003_api.sql`：消息、run、event、evidence 和身份映射的持久事实；event ID 与平台消息约束支持重复检测，但存储提交不等于业务副作用完成。
+
+metabot-dev 实际读取：
+
+- `CLAUDE.md`、`README.md`：当前项目入口、channel 与持久会话的已提交文档；README 中的营销、动态能力清单和数量不作为实现证据。
+- `src/types.ts`、`src/feishu/event-handler.ts`、`src/telegram/telegram-bot.ts`、`src/wechat/wechat-bot.ts`：各入口映射 `IncomingMessage`；飞书 sender、Telegram sender 与微信 sender 属于渠道标识，代码没有把它们提升为 Platform 授权身份。
+- `src/bridge/prompt-normalizer.ts`、`src/bridge/message-bridge.ts`：引擎命令形式规范化、每 chat 运行与排队、命令处理、输出投递、activity/audit/flywheel 记录以及副作用感知的恢复入口。
+- `src/session/session-registry.ts`、`src/engines/claude/session-manager.ts`：显式 session link、聊天到引擎 session 的映射和本地持久化；会话绑定不等于授权。
+- `src/engines/claude/executor-registry.ts`、`src/engines/claude/persistent-executor.ts`：按 chat 管理的持久执行、单活动 turn、释放、异常恢复和 resume 边界；session resume 不证明外部副作用可重放。
+- `src/api/routes/core-chat-contract.ts`、`src/api/routes/core-chat-session-store.ts`、`src/api/routes/core-chat-routes.ts`：`core_chat_collaboration_v3`、task session、连续 `messageSeq`、父运行、命令摘要、`active/stopped/failed` journal 和 `accepted/replayed` 接收语义。
+- `src/bridge/provider-turn-recovery.ts`、`src/bridge/claude-turn-recovery.ts`、`src/bridge/tool-effect.ts`、`src/engines/claude/pty/turn-recovery.ts`：只有在无可用终态且副作用条件允许时才做有界恢复；不确定副作用不自动重复。
+- `src/bridge/final-delivery.ts`、`src/reliability/probe-receipt-store.ts`、`src/utils/audit-logger.ts`、`src/flywheel/envelope.ts`、`src/flywheel/queue.ts`：最终投递重试、探针阶段回执、结构化审计、运行证据和异步写入失败边界。
+
+Platform 当前 worktree 实际读取：
+
+- `backend/app/agent_brain/adapters/metabot_local.py`：dispatch 接收不等于完成；公共任务通过 relay event 另行 reconcile，重复 enqueue 只在相同 job kind 边界内接受。
+- `backend/app/execution_relay/models.py`、`backend/app/execution_relay/repository.py`：加密 job/event、租约、取消意图、事件序列和 terminal 状态属于 Platform relay。
+- `backend/app/execution_relay/worker.py`、`backend/app/execution_relay/metabot_client.py`：Worker 在本地持久状态、MetaBot callback 与云端 relay 之间转送；异常响应进入 interrupted 或后续对账，不以一次 HTTP 确认冒充任务完成。
+- `backend/app/agent_brain/loop_models.py`、`backend/app/agent_brain/loop_repository.py`：公共 loop、task、delivery、授权快照和结果归一化由 Platform 持有。
+
+### 事实分级与 Platform 边界
+
+- **当前代码直接证明**：上述入口归一化、chat/session 映射、命令 journal、执行器注册表、relay 状态、callback 顺序、恢复判断和审计记录，只在实际读取路径能定位的范围内陈述。
+- **已提交文档明示**：部署合同、可靠性控制面与 flywheel 运维边界用于说明目标责任；文档中的规划、动态版本、固定部署数量和端口不被写成当前通用能力。
+- **作者工程推断**：从当前公开结构可以推断，远程控制需要分别对账 Platform 公共状态、MetaBot 私有状态和目标系统副作用；本文推断贯通主体、工具幂等查询与未知结果流程应先于新增渠道。两类推断均在正文逐处显式标注。
+
+双层控制面再加目标系统事实的边界是：Platform 持有**公共任务与 relay 状态**，MetaBot 持有**私有会话与执行状态**，**目标系统真实副作用**由实际业务系统持有。当前 collaboration v3 链路没有贯通 Platform 验证主体：`RequesterSubject` 虽已存在于 Platform relay 模型，但 MetaBotLocalAdapter 没有设置它，MetaBotClient 的 collaboration 请求也没有发送它。渠道消息身份、session key、ack、取消请求和 stop 回执都不能越过这些所有权边界。
+
+### 旧稿冲突、保留与删除
+
+- **冲突**：旧稿把固定渠道、引擎、服务、队列、超时和恢复参数写成系统全景；当前代码已演化为更细的 Core Chat journal、Platform relay、tool-effect recovery 和多类证据，故以当前提交代码为准。
+- **保留**：远程控制总线、channel adapter、message normalization、identity/session binding、persistent executor、command lifecycle、idempotency、reconnect、audit 和 remote-control risk 这些稳定工程问题。
+- **删除**：旧组织、旧部署拓扑、动态版本、代码行数、端口、固定 Agent/进程/用户/渠道数量、营销效果、横向排名和无法从当前代码复核的组件能力。
+- **去重**：通用 Agent loop、Skills/Tools、memory 与 sandbox 留在 `open-source-agent-runtime`；身份与最小权限留在 `agent-identity-access-control`；证据字段和质量闭环留在 `llm-agent-observability`。本篇只展开远程控制与可靠投递。
