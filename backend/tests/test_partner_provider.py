@@ -6,12 +6,12 @@ import importlib
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from types import ModuleType
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 from uuid import UUID
 
 import psycopg
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 from test_control_plane_migration import MIGRATIONS, ROLES, control_database
 from test_dingtalk_auth_api import FakeAuth, _app
@@ -175,6 +175,56 @@ def _router_client(
         )
     )
     return TestClient(app), provider, service
+
+
+def _post_callback_endpoint(broker):
+    routes = importlib.import_module("app.control_plane.routes_partner")
+    router = routes.build_partner_auth_router(
+        broker,
+        callback_method="POST",
+        callback_path="/partner-auth/callback",
+    )
+    return next(
+        route.endpoint
+        for route in router.routes
+        if route.path == "/partner-auth/callback"
+    )
+
+
+def _chunked_form_request(chunks: list[bytes]):
+    messages = [
+        {
+            "type": "http.request",
+            "body": chunk,
+            "more_body": index < len(chunks) - 1,
+        }
+        for index, chunk in enumerate(chunks)
+    ]
+    receive_calls: list[int] = []
+
+    async def receive():
+        receive_calls.append(len(receive_calls) + 1)
+        if not messages:
+            raise AssertionError("callback read beyond the request body")
+        return messages.pop(0)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "https",
+        "path": "/partner-auth/callback",
+        "raw_path": b"/partner-auth/callback",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"content-type", b"application/x-www-form-urlencoded"),
+        ],
+        "client": ("127.0.0.1", 12345),
+        "server": ("agent.example.test", 443),
+    }
+    return Request(scope, receive), messages, receive_calls
 
 
 @pytest.mark.asyncio
@@ -600,6 +650,67 @@ def test_configured_post_callback_accepts_form_encoded_provider_fields() -> None
     assert response.status_code == 403
     assert response.json() == {"detail": {"code": "partner_binding_required"}}
     assert provider.events.count("provider.finish") == 1
+
+
+@pytest.mark.asyncio
+async def test_post_callback_accepts_exact_streaming_body_limit() -> None:
+    broker, provider, service = _broker()
+    endpoint = _post_callback_endpoint(broker)
+    broker.begin_auth()
+    prefix = urlencode({"state": provider.state, "code": "ok", "padding": ""}).encode()
+    body = prefix + b"x" * (16_384 - len(prefix))
+    request, pending_messages, receive_calls = _chunked_form_request(
+        [body[:4096], body[4096:12288], body[12288:]]
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        await endpoint(request)
+
+    assert len(body) == 16_384
+    assert caught.value.status_code == 403
+    assert caught.value.detail == {"code": "partner_binding_required"}
+    assert pending_messages == []
+    assert len(receive_calls) == 3
+    assert service.calls == ["state.create", "state.consume", "identity.resolve"]
+    assert provider.events[-2:] == ["provider.finish", "provider.check"]
+
+
+@pytest.mark.asyncio
+async def test_post_callback_rejects_exactly_one_byte_over_streaming_limit() -> None:
+    broker, provider, service = _broker()
+    endpoint = _post_callback_endpoint(broker)
+    request, pending_messages, receive_calls = _chunked_form_request(
+        [b"a" * 8192, b"b" * 8192, b"c"]
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        await endpoint(request)
+
+    assert caught.value.status_code == 401
+    assert caught.value.detail == {"code": "partner_auth_invalid"}
+    assert pending_messages == []
+    assert len(receive_calls) == 3
+    assert service.calls == []
+    assert provider.events == []
+
+
+@pytest.mark.asyncio
+async def test_post_callback_stops_stream_at_first_oversized_chunk() -> None:
+    broker, provider, service = _broker()
+    endpoint = _post_callback_endpoint(broker)
+    request, pending_messages, receive_calls = _chunked_form_request(
+        [b"a" * 8192, b"b" * 8192, b"c", b"unread" * 2048]
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        await endpoint(request)
+
+    assert caught.value.status_code == 401
+    assert caught.value.detail == {"code": "partner_auth_invalid"}
+    assert len(pending_messages) == 1
+    assert len(receive_calls) == 3
+    assert service.calls == []
+    assert provider.events == []
 
 
 def test_start_rejects_arbitrary_return_url() -> None:

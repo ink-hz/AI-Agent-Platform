@@ -529,13 +529,18 @@ def build_partner_auth_router(
         callback: dict[str, str] = {}
         values: list[tuple[str, str]] = list(request.query_params.multi_items())
         if selected_method == "POST":
-            body = await request.body()
+            body = bytearray()
+            async for chunk in request.stream():
+                if len(body) + len(chunk) > 16_384:
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"code": "partner_auth_invalid"},
+                        headers=_NO_STORE,
+                    )
+                body.extend(chunk)
             content_type = request.headers.get("content-type", "").split(";", 1)[0]
             if body:
-                if (
-                    content_type != "application/x-www-form-urlencoded"
-                    or len(body) > 16_384
-                ):
+                if content_type != "application/x-www-form-urlencoded":
                     raise HTTPException(
                         status_code=401,
                         detail={"code": "partner_auth_invalid"},
