@@ -4,7 +4,7 @@ from __future__ import annotations
 # ruff: noqa: F401,F811
 import importlib
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import ModuleType
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -21,7 +21,7 @@ from app.control_plane.auth import AuthSecrets
 from app.control_plane.authorization import AuthorizationService
 from app.control_plane.crypto import IdentityKeyring
 from app.control_plane.middleware import IdentitySecurityMiddleware, is_public_request
-from app.control_plane.models import AuthContext, Role
+from app.control_plane.models import AuthContext, ControlPlaneConfig, IdentityMode, Role
 from app.control_plane.partner_identity_crypto import PartnerProviderIdentityCodec
 from app.control_plane.partner_models import (
     PartnerAccessDecision,
@@ -217,6 +217,57 @@ def test_reference_provider_is_rejected_in_production(monkeypatch) -> None:
         load_config()
 
 
+def test_reference_provider_is_rejected_by_existing_cloud_production_contract(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("PLATFORM_DEPLOYMENT_MODE", "cloud-replica")
+    monkeypatch.setenv("PLATFORM_IDENTITY_MODE", "production")
+    monkeypatch.delenv("PLATFORM_ENVIRONMENT", raising=False)
+    monkeypatch.setenv("PLATFORM_PARTNER_PROVIDER_KIND", "reference")
+
+    with pytest.raises(ValueError, match="^partner_reference_provider_forbidden$"):
+        load_config()
+
+
+def test_main_does_not_mount_injected_reference_provider_in_existing_production_mode(
+    tmp_path, monkeypatch
+) -> None:
+    config_module = importlib.import_module("app.config")
+    monkeypatch.setattr(
+        config_module,
+        "_load_control_plane_config",
+        lambda: ControlPlaneConfig(
+            mode=IdentityMode.PRODUCTION,
+            control_database_url_file="",
+            audit_database_url_file="",
+            public_base_url="https://agent.orbbec.com.cn",
+            route_prefix="/",
+            cookie_name="__Host-platform_session",
+            dingtalk_app_key="",
+            dingtalk_agent_id="",
+            dingtalk_corp_id="",
+            dingtalk_app_secret_file="",
+            encryption_keyring_file="",
+            hmac_keyring_file="",
+        ),
+    )
+    monkeypatch.setenv("PLATFORM_IDENTITY_MODE", "production")
+    monkeypatch.delenv("PLATFORM_ENVIRONMENT", raising=False)
+    provider = _provider_module().ReferencePartnerIdentityProvider({})
+    service = FakePartnerService(provider)
+    auth = FakeAuth(mode=IdentityMode.PRODUCTION)
+    auth.secrets = AuthSecrets(b"s" * 32, key_version=7)
+
+    with pytest.raises(ValueError, match="^partner_reference_provider_forbidden$"):
+        _app(
+            tmp_path,
+            monkeypatch,
+            auth,
+            partner_service=service,
+            partner_provider=provider,
+        )
+
+
 def test_production_rejects_provider_without_registered_release(monkeypatch) -> None:
     monkeypatch.setenv("PLATFORM_ENVIRONMENT", "production")
     monkeypatch.setenv("PLATFORM_PARTNER_PROVIDER_KIND", "unregistered-provider")
@@ -258,6 +309,8 @@ def test_production_accepts_only_explicitly_registered_release(monkeypatch) -> N
         ("GET", "/partner-auth//callback"),
         ("GET", "/partner-auth/回调"),
         ("GET", "/another/callback"),
+        ("GET", "/partner-auth/start"),
+        ("POST", "/partner-auth/start"),
     ],
 )
 def test_partner_callback_config_rejects_non_exact_boundary(
@@ -270,6 +323,19 @@ def test_partner_callback_config_rejects_non_exact_boundary(
 
     with pytest.raises(ValueError, match="partner_callback"):
         load_config()
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_partner_auth_router_rejects_start_as_callback(method: str) -> None:
+    routes = importlib.import_module("app.control_plane.routes_partner")
+    broker, _provider, _service = _broker()
+
+    with pytest.raises(ValueError, match="^partner_callback_path_invalid$"):
+        routes.build_partner_auth_router(
+            broker,
+            callback_method=method,
+            callback_path="/partner-auth/start",
+        )
 
 
 def test_begin_auth_stores_only_digest_and_has_fixed_fae_return_path() -> None:
@@ -748,6 +814,12 @@ def test_partner_state_migration_has_least_privilege_atomic_boundary() -> None:
     assert sql.count("security definer") >= 2
     assert sql.count("require_partner_app_v54") >= 2
     assert "interval'10minutes'" in compact
+    create_function_sql = sql.split(
+        "create function platform_control.create_partner_login_attempt_v56", 1
+    )[1].split("create function platform_control.consume_partner_login_attempt_v56", 1)[
+        0
+    ]
+    assert create_function_sql.count("clock_timestamp()") == 1
     assert "for update" in sql
     assert (
         "state_digest bytea"
@@ -829,7 +901,7 @@ def test_partner_login_state_is_digest_only_single_use_and_explicitly_expired(
         ).fetchone()
         assert bytes(stored[0]) == state_digest
         assert stored[1] == "consumed"
-        assert stored[2].total_seconds() == pytest.approx(600, abs=1)
+        assert stored[2] == timedelta(minutes=10)
         assert raw_state.encode() not in bytes(stored[0])
         connection.execute(
             "update platform_control.partner_login_attempts "

@@ -8,6 +8,8 @@ language plpgsql
 security definer
 set search_path=pg_catalog,platform_control
 as $function$
+declare
+  attempt_created_at timestamptz;
 begin
   perform platform_control.require_partner_app_v54();
   if selected_login_attempt_id is null
@@ -23,13 +25,14 @@ begin
   then
     raise check_violation using message='partner login attempt invalid';
   end if;
+  attempt_created_at := clock_timestamp();
   insert into platform_control.partner_login_attempts(
     login_attempt_id,provider_kind,state_digest,state_key_version,status,
     created_at,expires_at
   ) values (
     selected_login_attempt_id,selected_provider_kind,selected_state_digest,
-    selected_state_key_version,'pending',clock_timestamp(),
-    clock_timestamp()+interval '10 minutes'
+    selected_state_key_version,'pending',attempt_created_at,
+    attempt_created_at+interval '10 minutes'
   );
   return selected_login_attempt_id;
 exception

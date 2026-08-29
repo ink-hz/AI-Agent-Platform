@@ -27,6 +27,7 @@ def validate_partner_callback(method: str, path: str) -> tuple[str, str]:
     if (
         not isinstance(path, str)
         or _CALLBACK_PATH.fullmatch(path) is None
+        or path == "/partner-auth/start"
         or path.endswith("/")
         or "//" in path
         or any(segment in {".", ".."} for segment in path.split("/"))

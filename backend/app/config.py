@@ -189,9 +189,16 @@ def _positive_environment_int(name: str, default: int) -> int:
 
 
 def _partner_provider_settings() -> tuple[str, str, str, str]:
-    environment = os.getenv("PLATFORM_ENVIRONMENT", "development").strip()
+    configured_environment = os.getenv("PLATFORM_ENVIRONMENT")
+    environment = (
+        configured_environment.strip()
+        if configured_environment is not None
+        else "development"
+    )
     if environment not in {"development", "test", "production"}:
         raise ValueError("partner_environment_invalid")
+    if os.getenv("PLATFORM_IDENTITY_MODE", "disabled") == "production":
+        environment = "production"
     kind = os.getenv("PLATFORM_PARTNER_PROVIDER_KIND", "").strip()
     callback_method = os.getenv("PLATFORM_PARTNER_CALLBACK_METHOD", "GET")
     callback_path = os.getenv(

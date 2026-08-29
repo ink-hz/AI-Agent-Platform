@@ -585,16 +585,11 @@ def create_app(
             config.partner_provider_kind
         )
     if selected_partner_provider is not None:
-        if (
-            config.environment == "production"
-            and (
-                selected_partner_provider.kind == "reference"
-                or not partner_provider_release_registered(
-                    selected_partner_provider.kind
-                )
-            )
-        ):
-            raise ValueError("partner_provider_release_not_registered")
+        if config.environment == "production":
+            if selected_partner_provider.kind == "reference":
+                raise ValueError("partner_reference_provider_forbidden")
+            if not partner_provider_release_registered(selected_partner_provider.kind):
+                raise ValueError("partner_provider_release_not_registered")
         if (
             config.partner_provider_kind
             and selected_partner_provider.kind != config.partner_provider_kind
