@@ -705,6 +705,8 @@ def create_app(
             repository=AgentLaunchRepository(control_database_url),
             secrets=identity_auth.secrets,
             authorization=agent_use_authorization,
+            partner_service=partner_service,
+            partner_provider=selected_partner_provider,
         )
     if identity_enabled and ai_notes_reader is None:
         try:
@@ -1012,6 +1014,7 @@ def create_app(
             app.include_router(
                 routes_partner.build_partner_auth_router(
                     partner_auth_broker,
+                    agent_launch_service=agent_launch_service,
                     callback_method=config.partner_callback_method,
                     callback_path=config.partner_callback_path,
                 )

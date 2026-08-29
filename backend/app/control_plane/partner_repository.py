@@ -434,6 +434,24 @@ class PartnerRepository:
         except psycopg.Error as error:
             self._raise_database_error(error, mutation=False)
 
+    def get_fae_subject_identity(
+        self, subject_id: UUID, provider_kind: str
+    ) -> dict[str, Any]:
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select * from platform_control."
+                    "get_partner_fae_subject_v57(%s,%s)",
+                    (subject_id, provider_kind),
+                ).fetchall()
+            if len(rows) != 1:
+                raise PartnerRepositoryError("provider_identity_inactive", 403)
+            return dict(rows[0])
+        except PartnerRepositoryError:
+            raise
+        except psycopg.Error as error:
+            self._raise_database_error(error, mutation=False)
+
     @staticmethod
     def _protected_from_row(row: dict[str, Any]) -> ProtectedPartnerProviderIdentity:
         return ProtectedPartnerProviderIdentity(

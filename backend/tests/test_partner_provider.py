@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from urllib.parse import parse_qs, urlencode, urlsplit
 from uuid import UUID
 
@@ -144,6 +144,20 @@ class FakePartnerService:
         )
 
 
+class FakePartnerLaunchService:
+    def __init__(self) -> None:
+        self.calls: list[UUID] = []
+
+    async def issue_partner(self, subject_id: UUID):
+        self.calls.append(subject_id)
+        return SimpleNamespace(
+            launch_url=(
+                "https://fae.orbbec.com.cn/app/"
+                "#partner_launch=opaque-partner-launch-code-123456"
+            )
+        )
+
+
 def _broker(
     *, provider: FakeProvider | None = None, service: FakePartnerService | None = None
 ):
@@ -162,7 +176,10 @@ def _broker(
 
 
 def _router_client(
-    *, callback_method: str = "GET", callback_path: str = "/partner-auth/callback"
+    *,
+    callback_method: str = "GET",
+    callback_path: str = "/partner-auth/callback",
+    launch_service=None,
 ):
     routes = importlib.import_module("app.control_plane.routes_partner")
     broker, provider, service = _broker()
@@ -170,6 +187,7 @@ def _router_client(
     app.include_router(
         routes.build_partner_auth_router(
             broker,
+            agent_launch_service=launch_service,
             callback_method=callback_method,
             callback_path=callback_path,
         )
@@ -431,6 +449,59 @@ async def test_callback_consumes_state_before_identity_resolution() -> None:
     assert result.status == "partner_authenticated"
     assert result.return_path == "/app/"
     assert RAW_SUBJECT not in repr(result)
+
+
+def test_linked_active_callback_issues_code_and_redirects_only_to_fixed_fae_app(
+    caplog,
+) -> None:
+    launch_service = FakePartnerLaunchService()
+    client, _provider, service = _router_client(launch_service=launch_service)
+    service.resolution = PartnerIdentityResolution(
+        subject_id=SUBJECT_ID,
+        partner_operator_id=UUID("30000000-0000-4000-8000-000000000001"),
+        partner_organization_id=UUID("20000000-0000-4000-8000-000000000001"),
+        binding_request_id=None,
+        status="linked",
+    )
+    start = client.get("/partner-auth/start", follow_redirects=False)
+    state = parse_qs(urlsplit(start.headers["location"]).query)["state"][0]
+
+    response = client.get(
+        "/partner-auth/callback",
+        params={"state": state, "code": "ok"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == (
+        "https://fae.orbbec.com.cn/app/"
+        "#partner_launch=opaque-partner-launch-code-123456"
+    )
+    assert response.headers["cache-control"] == "no-store"
+    assert "set-cookie" not in response.headers
+    assert launch_service.calls == [SUBJECT_ID]
+    serialized = response.headers["location"] + response.text + caplog.text
+    assert str(SUBJECT_ID) not in serialized
+    assert RAW_SUBJECT not in serialized
+
+
+def test_unknown_callback_never_issues_partner_launch_code() -> None:
+    launch_service = FakePartnerLaunchService()
+    client, _provider, _service = _router_client(launch_service=launch_service)
+    start = client.get("/partner-auth/start", follow_redirects=False)
+    state = parse_qs(urlsplit(start.headers["location"]).query)["state"][0]
+
+    response = client.get(
+        "/partner-auth/callback",
+        params={"state": state, "code": "ok"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": {"code": "partner_binding_required"}}
+    assert launch_service.calls == []
+    assert "location" not in response.headers
+    assert RAW_SUBJECT not in response.text
 
 
 @pytest.mark.asyncio

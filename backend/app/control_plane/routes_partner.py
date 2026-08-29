@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 from starlette.responses import JSONResponse, RedirectResponse
 
+from .agent_launch import AgentLaunchError
 from .models import AuthContext, Role
 from .partner_models import PartnerIdentityError, PartnerStatus
 from .partner_provider import PartnerAuthenticationBroker, validate_partner_callback
@@ -498,6 +499,7 @@ def _partner_auth_error(error: PartnerIdentityError) -> HTTPException:
 def build_partner_auth_router(
     broker: PartnerAuthenticationBroker,
     *,
+    agent_launch_service=None,
     callback_method: str = "GET",
     callback_path: str = "/partner-auth/callback",
 ) -> APIRouter:
@@ -573,6 +575,22 @@ def build_partner_auth_router(
             completed = await broker.finish_auth(callback)
         except PartnerIdentityError as error:
             raise _partner_auth_error(error) from None
+        if agent_launch_service is not None:
+            try:
+                issued = await agent_launch_service.issue_partner(
+                    completed.subject_id
+                )
+            except AgentLaunchError as error:
+                raise HTTPException(
+                    status_code=error.status_code,
+                    detail={"code": error.code},
+                    headers=_NO_STORE,
+                ) from None
+            return RedirectResponse(
+                issued.launch_url,
+                status_code=302,
+                headers=_NO_STORE,
+            )
         return JSONResponse(
             {
                 "status": completed.status,

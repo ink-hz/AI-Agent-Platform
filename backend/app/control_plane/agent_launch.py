@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from ipaddress import ip_address
-from typing import Protocol
+from typing import Literal, Protocol
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
@@ -18,6 +18,7 @@ from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 
 from .dsn import validate_control_dsn
 from .models import AuthContext
+from .partner_models import PartnerIdentityError
 
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 _FAE_AGENT_ID = "ai-fae-agent"
@@ -41,18 +42,26 @@ class IssuedAgentLaunch:
 
 
 @dataclass(frozen=True)
-class ExchangedAgentIdentity:
-    internal_user_id: UUID
+class ExchangedAgentSubject:
+    subject_id: UUID
+    subject_type: Literal["enterprise_member", "partner_operator"]
     identity_binding_id: UUID
     agent_id: str
+    internal_user_id: UUID | None = None
+    display_name: str | None = None
+    partner_display_name: str | None = None
 
 
 @dataclass(frozen=True)
 class AgentBindingValidation:
+    subject_id: UUID | None
+    subject_type: Literal["enterprise_member", "partner_operator"] | None
     identity_binding_id: UUID
     agent_id: str
     active: bool
     internal_user_id: UUID | None = None
+    display_name: str | None = None
+    partner_display_name: str | None = None
 
 
 class AgentLaunchRepositoryProtocol(Protocol):
@@ -60,11 +69,15 @@ class AgentLaunchRepositoryProtocol(Protocol):
 
     def exchange(
         self, *, code_digest: bytes, code_key_version: int, now: datetime
-    ) -> tuple[UUID, UUID, str] | None: ...
+    ) -> tuple[UUID, str, UUID, str, UUID | None, str | None] | None: ...
 
     def validate_binding(
         self, *, binding_id: UUID, agent_id: str, now: datetime
-    ) -> UUID | None: ...
+    ) -> tuple[UUID, str, UUID, str, UUID | None, str | None, bool] | None: ...
+
+    def revoke_binding(
+        self, *, binding_id: UUID, agent_id: str, now: datetime
+    ) -> None: ...
 
 
 class AgentLaunchRepository:
@@ -93,8 +106,10 @@ class AgentLaunchRepository:
         *,
         code_digest: bytes,
         code_key_version: int,
-        source_session_id: UUID,
-        internal_user_id: UUID,
+        subject_id: UUID,
+        subject_type: Literal["enterprise_member", "partner_operator"],
+        source_session_id: UUID | None,
+        internal_user_id: UUID | None,
         agent_id: str,
         binding_id: UUID,
         now: datetime,
@@ -104,12 +119,14 @@ class AgentLaunchRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select platform_control.issue_agent_launch_v52("
-                    "%s,%s,%s,%s,%s,%s,%s,%s) as expires_at",
+                    "select platform_control.issue_agent_launch_v57("
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) as expires_at",
                     (
                         uuid4(),
                         code_digest,
                         code_key_version,
+                        subject_id,
+                        subject_type,
                         source_session_id,
                         internal_user_id,
                         agent_id,
@@ -129,36 +146,63 @@ class AgentLaunchRepository:
 
     def exchange(
         self, *, code_digest: bytes, code_key_version: int, now: datetime
-    ) -> tuple[UUID, UUID, str] | None:
+    ) -> tuple[UUID, str, UUID, str, UUID | None, str | None] | None:
         del now
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select * from platform_control.exchange_agent_launch_v52(%s,%s)",
+                    "select * from platform_control.exchange_agent_launch_v57(%s,%s)",
                     (code_digest, code_key_version),
                 ).fetchone()
             if row is None:
                 return None
             return (
-                row["internal_user_id"],
+                row["subject_id"],
+                str(row["subject_type"]),
                 row["identity_binding_id"],
                 str(row["agent_id"]),
+                row["internal_user_id"],
+                row["display_name"],
             )
         except psycopg.Error:
             raise AgentLaunchError("launch_unavailable") from None
 
     def validate_binding(
         self, *, binding_id: UUID, agent_id: str, now: datetime
-    ) -> UUID | None:
+    ) -> tuple[UUID, str, UUID, str, UUID | None, str | None, bool] | None:
         del now
         try:
             with self._connection() as connection:
                 row = connection.execute(
                     "select * from platform_control."
-                    "validate_agent_identity_binding_v52(%s,%s)",
+                    "validate_agent_identity_binding_v57(%s,%s)",
                     (binding_id, agent_id),
                 ).fetchone()
-            return None if row is None else row["internal_user_id"]
+            if row is None:
+                return None
+            return (
+                row["subject_id"],
+                str(row["subject_type"]),
+                row["identity_binding_id"],
+                str(row["agent_id"]),
+                row["internal_user_id"],
+                row["display_name"],
+                bool(row["active"]),
+            )
+        except psycopg.Error:
+            raise AgentLaunchError("binding_unavailable") from None
+
+    def revoke_binding(
+        self, *, binding_id: UUID, agent_id: str, now: datetime
+    ) -> None:
+        del now
+        try:
+            with self._connection() as connection:
+                connection.execute(
+                    "select platform_control."
+                    "revoke_agent_identity_binding_v57(%s,%s)",
+                    (binding_id, agent_id),
+                ).fetchone()
         except psycopg.Error:
             raise AgentLaunchError("binding_unavailable") from None
 
@@ -170,49 +214,89 @@ class AgentLaunchService:
         repository: AgentLaunchRepositoryProtocol,
         secrets,
         authorization,
+        partner_service=None,
+        partner_provider=None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._secrets = secrets
         self._authorization = authorization
+        self._partner_service = partner_service
+        self._partner_provider = partner_provider
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def issue(self, context: AuthContext, agent_id: str) -> IssuedAgentLaunch:
+        if agent_id != _FAE_AGENT_ID:
+            raise AgentLaunchError("agent_denied", 403)
+        return self.issue_enterprise(context)
+
+    def issue_enterprise(self, context: AuthContext) -> IssuedAgentLaunch:
         if not isinstance(context, AuthContext):
             raise AgentLaunchError("authentication_required", 401)
         if context.hard_stale_read_only:
             raise AgentLaunchError("directory_stale", 503)
-        if agent_id != _FAE_AGENT_ID:
-            raise AgentLaunchError("agent_denied", 403)
         try:
             decision = self._authorization.decide_for_user_id(
-                context.internal_user_id, agent_id
+                context.internal_user_id, _FAE_AGENT_ID
             )
         except AgentUseAuthorizationUnavailable:
             raise AgentLaunchError("authorization_unavailable") from None
         if not decision.allowed:
             raise AgentLaunchError("agent_denied", 403)
+        return self._issue(
+            subject_id=context.internal_user_id,
+            subject_type="enterprise_member",
+            source_session_id=context.session_id,
+            internal_user_id=context.internal_user_id,
+            launch_parameter="platform_launch",
+        )
+
+    async def issue_partner(self, subject_id: UUID) -> IssuedAgentLaunch:
+        if not isinstance(subject_id, UUID):
+            raise AgentLaunchError("partner_subject_invalid", 422)
+        await self._require_partner(subject_id)
+        return self._issue(
+            subject_id=subject_id,
+            subject_type="partner_operator",
+            source_session_id=None,
+            internal_user_id=None,
+            launch_parameter="partner_launch",
+        )
+
+    def _issue(
+        self,
+        *,
+        subject_id: UUID,
+        subject_type: Literal["enterprise_member", "partner_operator"],
+        source_session_id: UUID | None,
+        internal_user_id: UUID | None,
+        launch_parameter: str,
+    ) -> IssuedAgentLaunch:
         code = self._secrets.random_token()
         binding_id = uuid4()
         now = self._clock()
         expires_at = self._repository.issue(
             code_digest=self._secrets.digest("agent-launch", code),
             code_key_version=self._secrets.key_version,
-            source_session_id=context.session_id,
-            internal_user_id=context.internal_user_id,
-            agent_id=agent_id,
+            subject_id=subject_id,
+            subject_type=subject_type,
+            source_session_id=source_session_id,
+            internal_user_id=internal_user_id,
+            agent_id=_FAE_AGENT_ID,
             binding_id=binding_id,
             now=now,
             ttl_seconds=60,
         )
         return IssuedAgentLaunch(
-            launch_url=f"{_FAE_LAUNCH_BASE}#platform_launch={quote(code, safe='')}",
+            launch_url=(
+                f"{_FAE_LAUNCH_BASE}#{launch_parameter}={quote(code, safe='')}"
+            ),
             expires_at=expires_at,
             binding_id=binding_id,
             code=code,
         )
 
-    def exchange(self, code: str) -> ExchangedAgentIdentity:
+    async def exchange(self, code: str) -> ExchangedAgentSubject:
         if not isinstance(code, str) or _LAUNCH_CODE.fullmatch(code) is None:
             raise AgentLaunchError("launch_code_invalid", 401)
         row = self._repository.exchange(
@@ -222,24 +306,108 @@ class AgentLaunchService:
         )
         if row is None:
             raise AgentLaunchError("launch_code_invalid", 401)
-        return ExchangedAgentIdentity(*row)
+        try:
+            (
+                subject_id,
+                subject_type,
+                binding_id,
+                agent_id,
+                internal_user_id,
+                display_name,
+            ) = row
+        except (TypeError, ValueError):
+            raise AgentLaunchError("launch_unavailable") from None
+        if subject_type == "partner_operator":
+            projection = await self._require_partner(
+                subject_id, binding_id=binding_id
+            )
+            display_name = projection.display_name
+            partner_display_name = projection.partner_display_name
+        elif subject_type == "enterprise_member" and internal_user_id == subject_id:
+            partner_display_name = None
+        else:
+            raise AgentLaunchError("launch_unavailable")
+        return ExchangedAgentSubject(
+            subject_id=subject_id,
+            subject_type=subject_type,
+            identity_binding_id=binding_id,
+            agent_id=agent_id,
+            internal_user_id=internal_user_id,
+            display_name=display_name,
+            partner_display_name=partner_display_name,
+        )
 
-    def validate_binding(
+    async def validate_binding(
         self, binding_id: UUID, agent_id: str
     ) -> AgentBindingValidation:
         if agent_id != _FAE_AGENT_ID:
-            return AgentBindingValidation(binding_id, agent_id, False)
-        internal_user_id = self._repository.validate_binding(
+            return AgentBindingValidation(None, None, binding_id, agent_id, False)
+        row = self._repository.validate_binding(
             binding_id=binding_id,
             agent_id=agent_id,
             now=self._clock(),
         )
+        if row is None:
+            return AgentBindingValidation(None, None, binding_id, agent_id, False)
+        try:
+            (
+                subject_id,
+                subject_type,
+                selected_binding_id,
+                selected_agent_id,
+                internal_user_id,
+                display_name,
+                active,
+            ) = row
+        except (TypeError, ValueError):
+            raise AgentLaunchError("binding_unavailable") from None
+        partner_display_name = None
+        if active and subject_type == "partner_operator":
+            projection = await self._require_partner(
+                subject_id, binding_id=selected_binding_id
+            )
+            display_name = projection.display_name
+            partner_display_name = projection.partner_display_name
+        elif subject_type != "enterprise_member" and subject_type != "partner_operator":
+            raise AgentLaunchError("binding_unavailable")
         return AgentBindingValidation(
-            binding_id,
-            agent_id,
-            internal_user_id is not None,
-            internal_user_id,
+            subject_id=subject_id,
+            subject_type=subject_type,
+            identity_binding_id=selected_binding_id,
+            agent_id=selected_agent_id,
+            active=active,
+            internal_user_id=internal_user_id,
+            display_name=display_name,
+            partner_display_name=partner_display_name,
         )
+
+    async def _require_partner(
+        self, subject_id: UUID, *, binding_id: UUID | None = None
+    ):
+        if self._partner_service is None or self._partner_provider is None:
+            raise AgentLaunchError("partner_identity_unavailable")
+        try:
+            return await self._partner_service.require_active_fae_subject(
+                subject_id, self._partner_provider
+            )
+        except PartnerIdentityError as error:
+            if error.status_code == 403 and binding_id is not None:
+                try:
+                    self._repository.revoke_binding(
+                        binding_id=binding_id,
+                        agent_id=_FAE_AGENT_ID,
+                        now=self._clock(),
+                    )
+                except AgentLaunchError:
+                    raise AgentLaunchError("binding_unavailable") from None
+            code = (
+                error.code
+                if error.status_code == 403
+                else "partner_identity_unavailable"
+            )
+            raise AgentLaunchError(code, error.status_code) from None
+        except Exception:  # noqa: BLE001 - partner boundary is fail-closed
+            raise AgentLaunchError("partner_identity_unavailable") from None
 
 
 class _ExchangeBody(BaseModel):
@@ -288,14 +456,22 @@ def build_agent_launch_router(service: AgentLaunchService) -> APIRouter:
         if not _loopback(request):
             raise HTTPException(404, "not found", headers=_NO_STORE)
         try:
-            result = service.exchange(body.code)
+            result = await service.exchange(body.code)
         except AgentLaunchError as exc:
             _raise(exc)
         response.headers.update(_NO_STORE)
         return {
-            "internal_user_id": str(result.internal_user_id),
+            "subject_id": str(result.subject_id),
+            "subject_type": result.subject_type,
             "identity_binding_id": str(result.identity_binding_id),
             "agent_id": result.agent_id,
+            "internal_user_id": (
+                None
+                if result.internal_user_id is None
+                else str(result.internal_user_id)
+            ),
+            "display_name": result.display_name,
+            "partner_display_name": result.partner_display_name,
         }
 
     @router.post("/api/v1/internal/agent-bindings/{binding_id}/validate")
@@ -308,16 +484,24 @@ def build_agent_launch_router(service: AgentLaunchService) -> APIRouter:
         if not _loopback(request):
             raise HTTPException(404, "not found", headers=_NO_STORE)
         try:
-            result = service.validate_binding(binding_id, body.agent_id)
+            result = await service.validate_binding(binding_id, body.agent_id)
         except AgentLaunchError as exc:
             _raise(exc)
-        if not result.active or result.internal_user_id is None:
+        if not result.active or result.subject_id is None or result.subject_type is None:
             raise HTTPException(401, "binding_inactive", headers=_NO_STORE)
         response.headers.update(_NO_STORE)
         return {
-            "internal_user_id": str(result.internal_user_id),
+            "subject_id": str(result.subject_id),
+            "subject_type": result.subject_type,
             "identity_binding_id": str(result.identity_binding_id),
             "agent_id": result.agent_id,
+            "internal_user_id": (
+                None
+                if result.internal_user_id is None
+                else str(result.internal_user_id)
+            ),
+            "display_name": result.display_name,
+            "partner_display_name": result.partner_display_name,
             "active": True,
         }
 

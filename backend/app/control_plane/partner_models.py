@@ -94,6 +94,13 @@ class PartnerAccessDecision:
 
 
 @dataclass(frozen=True)
+class PartnerFaeSubject:
+    subject_id: UUID
+    display_name: str
+    partner_display_name: str
+
+
+@dataclass(frozen=True)
 class VerifiedProviderSubject:
     provider_kind: str
     provider_subject: str = field(repr=False)

@@ -81,6 +81,7 @@ class _MemoryPartnerRepository:
             reason=values["reason"],
         )
         self.organizations[record.partner_organization_id] = record
+        self.organization_values = values
         return record
 
     def create_operator(self, **values) -> PartnerOperator:
@@ -174,6 +175,37 @@ class _MemoryPartnerRepository:
 
     def resolve_provider_identity(self, protected):
         return self.identities.get(self._identity_key(protected))
+
+    def get_fae_subject_identity(self, subject_id: UUID, provider_kind: str):
+        operator = next(
+            item for item in self.operators.values() if item.subject_id == subject_id
+        )
+        protected = next(
+            candidate
+            for candidate in self.binding_protected.values()
+            if candidate.provider_kind == provider_kind
+            and self.identities.get(self._identity_key(candidate), None) is not None
+        )
+        return {
+            "identity_kind": protected.provider_kind,
+            "identity_lookup_hmac": protected.provider_subject_lookup_hmac,
+            "identity_lookup_key_version": protected.lookup_key_version,
+            "identity_ciphertext": protected.provider_subject_ciphertext,
+            "identity_encryption_key_version": protected.encryption_key_version,
+            "display_name_ciphertext": self.last_operator_values[
+                "display_name_ciphertext"
+            ],
+            "display_name_key_version": self.last_operator_values[
+                "display_name_key_version"
+            ],
+            "partner_organization_id": operator.partner_organization_id,
+            "partner_name_ciphertext": self.organization_values[
+                "display_name_ciphertext"
+            ],
+            "partner_name_key_version": self.organization_values[
+                "display_name_key_version"
+            ],
+        }
 
     def record_binding_request(self, **values) -> PartnerBindingRequest:
         protected = values["protected_identity"]
@@ -578,6 +610,164 @@ def test_access_decision_fails_closed_on_unrecognized_repository_reason(
 
     with pytest.raises(PartnerIdentityError, match="^partner_identity_unavailable$"):
         service.decide_fae_access(uuid4())
+
+
+@pytest.mark.asyncio
+async def test_active_fae_subject_decrypts_provider_only_at_check_boundary(
+    service: PartnerService,
+) -> None:
+    raw_subject = "raw-provider-seat-42@example.invalid"
+    _organization, operator = _seed_partner(service)
+    pending = service.resolve_verified_identity(
+        VerifiedProviderSubject(
+            provider_kind="partner-sso",
+            provider_subject=raw_subject,
+            verified_at=NOW,
+        )
+    )
+    service.link_binding_request(
+        actor_id=OWNER_ID,
+        binding_request_id=pending.binding_request_id,
+        operator_id=operator.partner_operator_id,
+        reason="verified pilot roster",
+        request_id=uuid4(),
+    )
+    service.grant_fae(
+        actor_id=OWNER_ID,
+        operator_id=operator.partner_operator_id,
+        reason="pilot",
+        request_id=uuid4(),
+    )
+
+    class Provider:
+        kind = "partner-sso"
+
+        def __init__(self) -> None:
+            self.checked: list[str] = []
+
+        async def check_subject(self, provider_subject: str) -> str:
+            self.checked.append(provider_subject)
+            return "active"
+
+    provider = Provider()
+    projection = await service.require_active_fae_subject(
+        operator.subject_id, provider
+    )
+
+    assert provider.checked == [raw_subject]
+    assert projection.subject_id == operator.subject_id
+    assert projection.display_name == "坐席甲"
+    assert projection.partner_display_name == "合作方甲"
+    assert raw_subject not in repr(projection)
+    assert raw_subject not in repr(service)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "error_code", "status_code"),
+    [
+        ("inactive", "provider_identity_inactive", 403),
+        ("unexpected", "partner_identity_unavailable", 503),
+    ],
+)
+async def test_active_fae_subject_provider_status_fails_closed_without_raw_leak(
+    service: PartnerService,
+    status: str,
+    error_code: str,
+    status_code: int,
+    caplog,
+) -> None:
+    raw_subject = "raw-provider-seat-99@example.invalid"
+    _organization, operator = _seed_partner(service)
+    pending = service.resolve_verified_identity(
+        VerifiedProviderSubject(
+            provider_kind="partner-sso",
+            provider_subject=raw_subject,
+            verified_at=NOW,
+        )
+    )
+    service.link_binding_request(
+        actor_id=OWNER_ID,
+        binding_request_id=pending.binding_request_id,
+        operator_id=operator.partner_operator_id,
+        reason="verified pilot roster",
+        request_id=uuid4(),
+    )
+    service.grant_fae(
+        actor_id=OWNER_ID,
+        operator_id=operator.partner_operator_id,
+        reason="pilot",
+        request_id=uuid4(),
+    )
+
+    class Provider:
+        kind = "partner-sso"
+
+        @staticmethod
+        async def check_subject(provider_subject: str) -> str:
+            assert provider_subject == raw_subject
+            return status
+
+    with pytest.raises(PartnerIdentityError, match=f"^{error_code}$") as caught:
+        await service.require_active_fae_subject(operator.subject_id, Provider())
+
+    assert caught.value.status_code == status_code
+    assert raw_subject not in repr(caught.value)
+    assert raw_subject not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_owned_error", [False, True])
+async def test_active_fae_subject_provider_exception_is_stable_and_rechecked(
+    service: PartnerService,
+    caplog,
+    provider_owned_error: bool,
+) -> None:
+    raw_subject = "raw-provider-seat-timeout@example.invalid"
+    _organization, operator = _seed_partner(service)
+    pending = service.resolve_verified_identity(
+        VerifiedProviderSubject(
+            provider_kind="partner-sso",
+            provider_subject=raw_subject,
+            verified_at=NOW,
+        )
+    )
+    service.link_binding_request(
+        actor_id=OWNER_ID,
+        binding_request_id=pending.binding_request_id,
+        operator_id=operator.partner_operator_id,
+        reason="verified pilot roster",
+        request_id=uuid4(),
+    )
+    service.grant_fae(
+        actor_id=OWNER_ID,
+        operator_id=operator.partner_operator_id,
+        reason="pilot",
+        request_id=uuid4(),
+    )
+    calls = 0
+
+    class Provider:
+        kind = "partner-sso"
+
+        @staticmethod
+        async def check_subject(provider_subject: str) -> str:
+            nonlocal calls
+            calls += 1
+            if provider_owned_error:
+                raise PartnerIdentityError(provider_subject, 418)
+            raise TimeoutError(provider_subject)
+
+    for _attempt in range(2):
+        with pytest.raises(
+            PartnerIdentityError, match="^partner_identity_unavailable$"
+        ) as caught:
+            await service.require_active_fae_subject(operator.subject_id, Provider())
+        assert caught.value.status_code == 503
+
+    assert calls == 2
+    assert raw_subject not in caplog.text
+    assert raw_subject not in repr(caught.value)
 
 
 def test_unknown_verified_identity_only_creates_one_pending_binding_request(

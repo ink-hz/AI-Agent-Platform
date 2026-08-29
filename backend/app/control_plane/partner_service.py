@@ -19,6 +19,7 @@ from .partner_models import (
     PartnerBindingRequest,
     PartnerBindingRequestProjection,
     PartnerBindingStatus,
+    PartnerFaeSubject,
     PartnerIdentityError,
     PartnerIdentityResolution,
     PartnerOperator,
@@ -400,6 +401,88 @@ class PartnerService:
             )
         except PartnerRepositoryError as error:
             raise self._translate(error) from None
+
+    async def require_active_fae_subject(
+        self, subject_id: UUID, provider
+    ) -> PartnerFaeSubject:
+        selected_subject = self._uuid(subject_id, "partner_subject_invalid")
+        provider_kind = getattr(provider, "kind", None)
+        check_subject = getattr(provider, "check_subject", None)
+        if (
+            not isinstance(provider_kind, str)
+            or not provider_kind
+            or provider_kind != provider_kind.strip()
+            or ":" in provider_kind
+            or not callable(check_subject)
+        ):
+            raise PartnerIdentityError("partner_identity_unavailable")
+
+        decision = self.decide_fae_access(selected_subject)
+        if not decision.allowed:
+            raise PartnerIdentityError(decision.reason, 403)
+        try:
+            record = self.repository.get_fae_subject_identity(
+                selected_subject, provider_kind
+            )
+            protected = self._protected_provider_identity(record)
+        except PartnerIdentityError:
+            raise
+        except PartnerRepositoryError as error:
+            raise self._translate(error) from None
+        try:
+            provider_status = await check_subject(
+                self.identity_codec.unseal(protected)
+            )
+        except Exception:  # noqa: BLE001 - raw identity cannot cross provider boundary
+            raise PartnerIdentityError("partner_identity_unavailable") from None
+
+        if provider_status == "inactive":
+            raise PartnerIdentityError("provider_identity_inactive", 403)
+        if provider_status != "active":
+            raise PartnerIdentityError("partner_identity_unavailable")
+        try:
+            organization_id = self._field(record, "partner_organization_id")
+            if not isinstance(organization_id, UUID):
+                raise PartnerIdentityError("partner_identity_unavailable")
+            return PartnerFaeSubject(
+                subject_id=selected_subject,
+                display_name=self._display_name(
+                    subject=f"agent-subject-display:{selected_subject}",
+                    ciphertext=self._field(record, "display_name_ciphertext"),
+                    key_version=self._field(record, "display_name_key_version"),
+                ),
+                partner_display_name=self._display_name(
+                    subject=f"partner-organization-display:{organization_id}",
+                    ciphertext=self._field(record, "partner_name_ciphertext"),
+                    key_version=self._field(record, "partner_name_key_version"),
+                ),
+            )
+        except PartnerIdentityError:
+            raise
+        except (KeyError, AttributeError, TypeError, ValueError):
+            raise PartnerIdentityError("partner_identity_unavailable") from None
+
+    def _protected_provider_identity(self, record):
+        try:
+            from .partner_identity_crypto import ProtectedPartnerProviderIdentity
+
+            return ProtectedPartnerProviderIdentity(
+                provider_kind=self._field(record, "identity_kind"),
+                provider_subject_lookup_hmac=bytes(
+                    self._field(record, "identity_lookup_hmac")
+                ),
+                lookup_key_version=self._field(
+                    record, "identity_lookup_key_version"
+                ),
+                provider_subject_ciphertext=bytes(
+                    self._field(record, "identity_ciphertext")
+                ),
+                encryption_key_version=self._field(
+                    record, "identity_encryption_key_version"
+                ),
+            )
+        except (KeyError, AttributeError, TypeError, ValueError):
+            raise PartnerIdentityError("partner_identity_unavailable") from None
 
     @staticmethod
     def _state_digest(value: bytes) -> bytes:
