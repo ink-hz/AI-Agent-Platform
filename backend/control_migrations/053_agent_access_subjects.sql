@@ -40,7 +40,15 @@ begin
     raise check_violation using message='Enterprise subject type required';
   end if;
 
-  if new.subject_type='partner_operator'
+  if new.subject_type='enterprise_member'
+     and num_nonnulls(
+       new.display_name_ciphertext,
+       new.display_name_key_version
+     )<>0
+  then
+    raise check_violation using
+      message='Enterprise subject display name must be null';
+  elsif new.subject_type='partner_operator'
      and num_nonnulls(
        new.display_name_ciphertext,
        new.display_name_key_version

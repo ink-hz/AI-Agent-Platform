@@ -8,6 +8,7 @@ import psycopg
 import pytest
 from test_control_plane_migration import (
     MIGRATIONS,
+    ROLES,
     control_database,
 )
 
@@ -98,6 +99,75 @@ def test_v53_enforces_subject_display_and_enterprise_link_shapes(
                     "(subject_id,internal_user_id) values (%s,%s)",
                     (partner_subject_id, partner_subject_id),
                 )
+
+
+@pytest.mark.postgres
+def test_v53_rejects_enterprise_subject_with_encrypted_display_fields(
+    control_database,
+) -> None:
+    for environment in control_database["environments"].values():
+        with (
+            psycopg.connect(environment["admin"], autocommit=True) as connection,
+            pytest.raises(
+                psycopg.errors.CheckViolation,
+                match="Enterprise subject display name must be null",
+            ),
+        ):
+            connection.execute(
+                "insert into platform_control.agent_access_subjects "
+                "(subject_id,subject_type,status,display_name_ciphertext,"
+                "display_name_key_version) "
+                "values (%s,'enterprise_member','active',%s,1)",
+                (uuid.uuid4(), b"must-not-be-stored"),
+            )
+
+
+@pytest.mark.postgres
+def test_v53_rejects_partner_to_enterprise_mutation_with_encrypted_display(
+    control_database,
+) -> None:
+    for environment in control_database["environments"].values():
+        with psycopg.connect(environment["admin"], autocommit=True) as connection:
+            subject_id = uuid.uuid4()
+            connection.execute(
+                "insert into platform_control.agent_access_subjects "
+                "(subject_id,subject_type,status,display_name_ciphertext,"
+                "display_name_key_version) "
+                "values (%s,'partner_operator','active',%s,1)",
+                (subject_id, b"sealed-display-name"),
+            )
+
+            with pytest.raises(
+                psycopg.errors.CheckViolation,
+                match="Enterprise subject display name must be null",
+            ):
+                connection.execute(
+                    "update platform_control.agent_access_subjects "
+                    "set subject_type='enterprise_member' where subject_id=%s",
+                    (subject_id,),
+                )
+
+
+@pytest.mark.postgres
+def test_v53_subject_tables_deny_runtime_mutations(control_database) -> None:
+    tables = ("agent_access_subjects", "enterprise_subject_links")
+    privileges = ("INSERT", "UPDATE", "DELETE")
+    grantees = ("public", *ROLES)
+
+    for environment in control_database["environments"].values():
+        with psycopg.connect(environment["admin"]) as connection:
+            rows = connection.execute(
+                "select role_name,table_name,privilege_name,"
+                "has_table_privilege(role_name,'platform_control.' || table_name,"
+                "privilege_name) "
+                "from unnest(%s::text[]) role_rows(role_name) "
+                "cross join unnest(%s::text[]) table_rows(table_name) "
+                "cross join unnest(%s::text[]) privilege_rows(privilege_name)",
+                (list(grantees), list(tables), list(privileges)),
+            ).fetchall()
+
+        assert len(rows) == len(grantees) * len(tables) * len(privileges)
+        assert all(not allowed for *_labels, allowed in rows)
 
 
 @pytest.mark.postgres
