@@ -182,6 +182,14 @@ partner_provider_identities
   provider_subject_ciphertext / encryption_key_version
   verified_at / revoked_at
 
+partner_identity_binding_requests
+  binding_request_id
+  provider_kind
+  provider_subject_lookup_hmac / lookup_key_version
+  provider_subject_ciphertext / encryption_key_version
+  status pending | linked | rejected | expired
+  expires_at / resolved_at
+
 partner_agent_grants
   grant_id
   subject_id
@@ -234,7 +242,8 @@ GET fae.orbbec.com.cn/partner/login
   -> Platform 创建短时 state
   -> Provider 认证
   -> Platform callback 服务端验证
-  -> 查找或创建 partner_operator + subject_id
+  -> 查找已绑定的 partner_operator + subject_id
+  -> 未绑定身份只创建短期待绑定请求，不创建开放账号、不签发 Launch Code
   -> 校验组织、坐席与 FAE grant 均 active
   -> 签发 60 秒单次 Launch Code
   -> 302 到 fae.orbbec.com.cn/app/#partner_launch=<code>
