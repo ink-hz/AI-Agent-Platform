@@ -137,7 +137,7 @@ begin
         )
     ) into selected_allowed;
 
-    if selected_allowed then
+    if selected_allowed is true then
       insert into platform_control.agent_access_subjects(
         subject_id,subject_type,status,created_at,updated_at,invalidated_at
       )
@@ -219,7 +219,7 @@ begin
     ) into selected_allowed;
   end if;
 
-  if not selected_allowed then
+  if selected_allowed is distinct from true then
     raise insufficient_privilege using message='Agent launch denied';
   end if;
 
@@ -334,7 +334,10 @@ begin
     ) into selected_allowed;
   end if;
 
-  if not selected_allowed then
+  if selected_allowed is distinct from true then
+    update platform_control.agent_launch_codes code
+      set consumed_at=database_now
+      where code.launch_code_id=selected.launch_code_id;
     return;
   end if;
 
@@ -450,7 +453,8 @@ begin
     ) into selected_active;
   end if;
 
-  if selected_active then
+  selected_active := coalesce(selected_active,false);
+  if selected_active is true then
     update platform_control.agent_identity_bindings binding
       set last_validated_at=database_now
       where binding.identity_binding_id=selected.identity_binding_id;

@@ -97,6 +97,10 @@ def test_v57_functions_are_security_definer_and_old_execute_is_retired() -> None
         "revoke all on function platform_control.validate_agent_identity_binding_v52"
         in sql
     )
+    assert "if not selected_allowed then" not in sql
+    assert sql.count("if selected_allowed is distinct from true then") == 2
+    assert "if selected_active is true then" in sql
+    assert "selected_active := coalesce(selected_active,false);" in sql
     for forbidden in ("provider_subject text", "provider_token", "cookie", "http://", "https://"):
         assert forbidden not in sql
 
@@ -167,6 +171,121 @@ def test_v57_lazily_projects_enterprise_user_created_after_migration(
             "where subject.subject_id=%s",
             (internal_user_id,),
         ).fetchone() == ("enterprise_member", internal_user_id)
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("revoked_layer", ["session", "directory", "grant"])
+def test_v57_exchange_consumes_and_rejects_enterprise_code_revoked_after_issue(
+    control_database,  # noqa: F811
+    revoked_layer: str,
+) -> None:
+    environment = control_database["environments"]["production"]
+    app_url = environment["urls"]["platform_control_app"]
+    session_id = uuid4()
+    launch_code_id = uuid4()
+    binding_id = uuid4()
+    code_hash = hashlib.sha256(uuid4().bytes).digest()
+    with psycopg.connect(environment["admin"]) as admin:
+        internal_user_id, *_directory = _seed_active_directory(admin)
+        grant_id = _insert_grant(
+            admin,
+            agent_id="ai-fae-agent",
+            target_kind="user",
+            actor_id=internal_user_id,
+            user_id=internal_user_id,
+        )
+        admin.execute(
+            "insert into platform_control.web_sessions "
+            "(session_id,internal_user_id,token_hash,token_hash_key_version,"
+            "csrf_hash,csrf_hash_key_version,idle_expires_at,absolute_expires_at) "
+            "values (%s,%s,%s,1,%s,1,now()+interval '1 hour',"
+            "now()+interval '2 hours')",
+            (
+                session_id,
+                internal_user_id,
+                hashlib.sha256(uuid4().bytes).digest(),
+                hashlib.sha256(uuid4().bytes).digest(),
+            ),
+        )
+
+    with psycopg.connect(app_url) as app:
+        assert app.execute(
+            "select platform_control.issue_agent_launch_v57("
+            "%s,%s,1,%s,'enterprise_member',%s,%s,'ai-fae-agent',%s,60)",
+            (
+                launch_code_id,
+                code_hash,
+                internal_user_id,
+                session_id,
+                internal_user_id,
+                binding_id,
+            ),
+        ).fetchone()[0] is not None
+
+    with psycopg.connect(environment["admin"]) as admin:
+        if revoked_layer == "session":
+            admin.execute(
+                "update platform_control.web_sessions set revoked_at=now() "
+                "where session_id=%s",
+                (session_id,),
+            )
+        elif revoked_layer == "directory":
+            admin.execute(
+                "update platform_control.internal_users set status='inactive' "
+                "where internal_user_id=%s",
+                (internal_user_id,),
+            )
+        else:
+            admin.execute(
+                "update platform_control.agent_use_grants "
+                "set revoked_at=now(),revoked_by=%s "
+                "where agent_use_grant_id=%s",
+                (internal_user_id, grant_id),
+            )
+
+    with psycopg.connect(app_url) as app:
+        rejected = app.execute(
+            "select * from platform_control.exchange_agent_launch_v57(%s,1)",
+            (code_hash,),
+        ).fetchone()
+
+    assert rejected is None
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select consumed_at is not null from platform_control.agent_launch_codes "
+            "where launch_code_id=%s",
+            (launch_code_id,),
+        ).fetchone() == (True,)
+        assert admin.execute(
+            "select 1 from platform_control.agent_identity_bindings "
+            "where identity_binding_id=%s",
+            (binding_id,),
+        ).fetchone() is None
+        if revoked_layer == "session":
+            admin.execute(
+                "update platform_control.web_sessions set revoked_at=null "
+                "where session_id=%s",
+                (session_id,),
+            )
+        elif revoked_layer == "directory":
+            admin.execute(
+                "update platform_control.internal_users set status='active' "
+                "where internal_user_id=%s",
+                (internal_user_id,),
+            )
+        else:
+            admin.execute(
+                "update platform_control.agent_use_grants "
+                "set revoked_at=null,revoked_by=null "
+                "where agent_use_grant_id=%s",
+                (grant_id,),
+            )
+
+    with psycopg.connect(app_url) as app:
+        assert app.execute(
+            "select * from platform_control.exchange_agent_launch_v57(%s,1)",
+            (code_hash,),
+        ).fetchone() is None
 
 
 def _seed_partner_launch_subject(connection):
