@@ -401,6 +401,60 @@ class PartnerService:
         except PartnerRepositoryError as error:
             raise self._translate(error) from None
 
+    @staticmethod
+    def _state_digest(value: bytes) -> bytes:
+        if not isinstance(value, bytes) or len(value) != 32:
+            raise PartnerIdentityError("partner_auth_state_invalid", 401)
+        return value
+
+    @staticmethod
+    def _state_key_version(value: int) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise PartnerIdentityError("partner_auth_state_invalid", 401)
+        return value
+
+    def create_login_attempt(
+        self,
+        *,
+        provider_kind: str,
+        state_digest: bytes,
+        state_key_version: int,
+    ) -> UUID:
+        selected_kind = self._text(
+            provider_kind, "partner_provider_kind_invalid", maximum=128
+        )
+        if ":" in selected_kind:
+            raise PartnerIdentityError("partner_provider_kind_invalid", 422)
+        try:
+            return self.repository.create_login_attempt(
+                provider_kind=selected_kind,
+                state_digest=self._state_digest(state_digest),
+                state_key_version=self._state_key_version(state_key_version),
+            )
+        except PartnerRepositoryError as error:
+            raise self._translate(error) from None
+
+    def consume_login_attempt(
+        self,
+        *,
+        provider_kind: str,
+        state_digest: bytes,
+        state_key_version: int,
+    ) -> None:
+        selected_kind = self._text(
+            provider_kind, "partner_provider_kind_invalid", maximum=128
+        )
+        if ":" in selected_kind:
+            raise PartnerIdentityError("partner_auth_state_invalid", 401)
+        try:
+            self.repository.consume_login_attempt(
+                provider_kind=selected_kind,
+                state_digest=self._state_digest(state_digest),
+                state_key_version=self._state_key_version(state_key_version),
+            )
+        except PartnerRepositoryError as error:
+            raise self._translate(error) from None
+
     def record_binding_request(
         self, verified: VerifiedProviderSubject
     ) -> PartnerBindingRequest:

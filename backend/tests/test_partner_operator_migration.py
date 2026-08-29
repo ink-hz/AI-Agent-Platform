@@ -33,6 +33,7 @@ from app.execution_relay.content_crypto import ContentCodec
 
 MIGRATION = MIGRATIONS / "054_partner_operator_identity.sql"
 MANAGEMENT_REJECTION_MIGRATION = MIGRATIONS / "055_partner_management_rejection.sql"
+PARTNER_AUTHENTICATION_MIGRATION = MIGRATIONS / "056_partner_authentication.sql"
 TASK2_V54_SHA256 = "d1d89d5ca37d6c65c58e0362766173805d0262f9c9a5e02d790bf6ef03a421fc"
 PARTNER_TABLES = {
     "partner_organizations",
@@ -59,7 +60,7 @@ def test_v54_bytes_remain_task2_immutable() -> None:
 
 
 @pytest.mark.postgres
-def test_already_applied_v54_upgrades_additively_to_v55(
+def test_already_applied_v54_upgrades_additively_to_v56(
     tmp_path,
 ) -> None:
     from app.control_plane.migrate import migrate_control_database
@@ -175,7 +176,7 @@ def test_already_applied_v54_upgrades_additively_to_v55(
         with psycopg.connect(database_admin_url) as connection:
             rows = connection.execute(
                 "select version,sha256 from platform_control.schema_migrations "
-                "where version in (54,55) order by version"
+                "where version in (54,55,56) order by version"
             ).fetchall()
             assert rows == [
                 (54, TASK2_V54_SHA256),
@@ -185,11 +186,22 @@ def test_already_applied_v54_upgrades_additively_to_v55(
                         MANAGEMENT_REJECTION_MIGRATION.read_bytes()
                     ).hexdigest(),
                 ),
+                (
+                    56,
+                    hashlib.sha256(
+                        PARTNER_AUTHENTICATION_MIGRATION.read_bytes()
+                    ).hexdigest(),
+                ),
             ]
             assert connection.execute(
                 "select to_regprocedure("
                 "'platform_control.reject_partner_binding_request_v54("
                 "uuid,uuid,text,uuid,uuid)') is not null"
+            ).fetchone() == (True,)
+            assert connection.execute(
+                "select to_regprocedure("
+                "'platform_control.consume_partner_login_attempt_v56("
+                "text,bytea,integer)') is not null"
             ).fetchone() == (True,)
     finally:
         subprocess.run(

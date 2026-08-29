@@ -164,6 +164,65 @@ class PartnerRepository:
         except psycopg.Error as error:
             self._raise_database_error(error, mutation=False)
 
+    def create_login_attempt(
+        self,
+        *,
+        provider_kind: str,
+        state_digest: bytes,
+        state_key_version: int,
+    ) -> UUID:
+        login_attempt_id = uuid4()
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select platform_control.create_partner_login_attempt_v56("
+                    "%s,%s,%s,%s) as login_attempt_id",
+                    (
+                        login_attempt_id,
+                        provider_kind,
+                        state_digest,
+                        state_key_version,
+                    ),
+                ).fetchone()
+            if row is None or row["login_attempt_id"] != login_attempt_id:
+                raise PartnerRepositoryError("partner_identity_unavailable")
+            return login_attempt_id
+        except PartnerRepositoryError:
+            raise
+        except psycopg.Error as error:
+            self._raise_database_error(error, mutation=True)
+
+    def consume_login_attempt(
+        self,
+        *,
+        provider_kind: str,
+        state_digest: bytes,
+        state_key_version: int,
+    ) -> None:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select platform_control.consume_partner_login_attempt_v56("
+                    "%s,%s,%s) as status",
+                    (provider_kind, state_digest, state_key_version),
+                ).fetchone()
+            status = row["status"] if row is not None else None
+            if status == "consumed":
+                return
+            errors = {
+                "invalid": "partner_auth_state_invalid",
+                "replay": "partner_auth_state_replay",
+                "expired": "partner_auth_state_expired",
+            }
+            code = errors.get(status)
+            if code is None:
+                raise PartnerRepositoryError("partner_identity_unavailable")
+            raise PartnerRepositoryError(code, 401)
+        except PartnerRepositoryError:
+            raise
+        except psycopg.Error as error:
+            self._raise_database_error(error, mutation=True)
+
     def create_organization(
         self,
         *,

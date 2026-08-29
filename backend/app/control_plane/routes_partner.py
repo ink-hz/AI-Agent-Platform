@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from typing import Annotated, Any
+from urllib.parse import parse_qsl
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
+from starlette.responses import JSONResponse, RedirectResponse
 
 from .models import AuthContext, Role
 from .partner_models import PartnerIdentityError, PartnerStatus
+from .partner_provider import PartnerAuthenticationBroker, validate_partner_callback
 from .partner_service import PartnerService
 from .routes_manage import authenticated_context, csrf_protection
 
@@ -16,6 +19,8 @@ router = APIRouter(
     prefix="/api/v1/manage/partners",
     tags=["partner-identity-management"],
 )
+
+_NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
 
 def _strict_json_uuid(value: object) -> UUID:
@@ -480,3 +485,100 @@ def reject_partner_binding_request(
         }
 
     return _mutate(body.request_id, apply)
+
+
+def _partner_auth_error(error: PartnerIdentityError) -> HTTPException:
+    return HTTPException(
+        status_code=error.status_code,
+        detail={"code": error.code},
+        headers=_NO_STORE,
+    )
+
+
+def build_partner_auth_router(
+    broker: PartnerAuthenticationBroker,
+    *,
+    callback_method: str = "GET",
+    callback_path: str = "/partner-auth/callback",
+) -> APIRouter:
+    selected_method, callback_path = validate_partner_callback(
+        callback_method, callback_path
+    )
+
+    auth_router = APIRouter(tags=["partner-authentication"])
+
+    @auth_router.get("/partner-auth/start")
+    def start_partner_authentication(request: Request):
+        if request.url.query:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "partner_return_path_invalid"},
+                headers=_NO_STORE,
+            )
+        try:
+            started = broker.begin_auth()
+        except PartnerIdentityError as error:
+            raise _partner_auth_error(error) from None
+        return RedirectResponse(
+            started.authorization_url,
+            status_code=302,
+            headers=_NO_STORE,
+        )
+
+    async def finish_partner_authentication(request: Request):
+        callback: dict[str, str] = {}
+        values: list[tuple[str, str]] = list(request.query_params.multi_items())
+        if selected_method == "POST":
+            body = await request.body()
+            content_type = request.headers.get("content-type", "").split(";", 1)[0]
+            if body:
+                if (
+                    content_type != "application/x-www-form-urlencoded"
+                    or len(body) > 16_384
+                ):
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"code": "partner_auth_invalid"},
+                        headers=_NO_STORE,
+                    )
+                try:
+                    values.extend(
+                        parse_qsl(
+                            body.decode("utf-8"),
+                            keep_blank_values=True,
+                            strict_parsing=True,
+                            max_num_fields=64,
+                        )
+                    )
+                except (UnicodeError, ValueError):
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"code": "partner_auth_invalid"},
+                        headers=_NO_STORE,
+                    ) from None
+        for key, value in values:
+            if key in callback:
+                raise HTTPException(
+                    status_code=401,
+                    detail={"code": "partner_auth_invalid"},
+                    headers=_NO_STORE,
+                )
+            callback[key] = value
+        try:
+            completed = await broker.finish_auth(callback)
+        except PartnerIdentityError as error:
+            raise _partner_auth_error(error) from None
+        return JSONResponse(
+            {
+                "status": completed.status,
+                "return_path": completed.return_path,
+            },
+            headers=_NO_STORE,
+        )
+
+    auth_router.add_api_route(
+        callback_path,
+        finish_partner_authentication,
+        methods=[selected_method],
+    )
+    return auth_router

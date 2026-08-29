@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
@@ -366,3 +367,34 @@ def test_partner_mutation_5xx_is_explicitly_indeterminate_with_client_request_id
             "request_id": str(REQUEST_ID),
         }
     }
+
+
+def test_public_partner_auth_router_does_not_weaken_owner_management_boundary() -> None:
+    partner_routes = importlib.import_module("app.control_plane.routes_partner")
+
+    class Broker:
+        def begin_auth(self):
+            return type(
+                "Started",
+                (),
+                {
+                    "authorization_url": "https://provider.invalid/login",
+                    "return_path": "/app/",
+                },
+            )()
+
+        async def finish_auth(self, _callback):
+            raise PartnerIdentityError("partner_binding_required", 403)
+
+    app = FastAPI()
+    app.state.partner_service = FakePartnerService()
+    app.include_router(router)
+    app.include_router(partner_routes.build_partner_auth_router(Broker()))
+    app.dependency_overrides[authenticated_context] = lambda: AuthContext(
+        uuid4(), Role.MEMBER, uuid4(), False
+    )
+
+    management = TestClient(app).get("/api/v1/manage/partners/organizations")
+
+    assert management.status_code == 403
+    assert management.json() == {"detail": "platform owner required"}

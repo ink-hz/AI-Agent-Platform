@@ -53,6 +53,12 @@ from .control_plane import routes_manage, routes_partner
 from .control_plane.audit import AuditWriter
 from .control_plane.routes_manage import ManagementRepository, ManagementService
 from .control_plane.partner_service import PartnerService
+from .control_plane.partner_provider import (
+    PartnerAuthenticationBroker,
+    PartnerIdentityProvider,
+    create_registered_partner_provider,
+    partner_provider_release_registered,
+)
 from .control_plane.models import DirectoryFreshness, IdentityMode
 from .control_plane.routes_auth import build_auth_router
 from .control_plane.auth import (
@@ -561,6 +567,7 @@ def create_app(
     ai_notes_reader: AiNotesReader | None = None,
     agent_launch_service: AgentLaunchService | None = None,
     partner_service: PartnerService | None = None,
+    partner_provider: PartnerIdentityProvider | None = None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
@@ -572,6 +579,28 @@ def create_app(
         identity_auth is not None
         or config.control_plane.mode is not IdentityMode.DISABLED
     )
+    selected_partner_provider = partner_provider
+    if selected_partner_provider is None and config.partner_provider_kind:
+        selected_partner_provider = create_registered_partner_provider(
+            config.partner_provider_kind
+        )
+    if selected_partner_provider is not None:
+        if (
+            config.environment == "production"
+            and (
+                selected_partner_provider.kind == "reference"
+                or not partner_provider_release_registered(
+                    selected_partner_provider.kind
+                )
+            )
+        ):
+            raise ValueError("partner_provider_release_not_registered")
+        if (
+            config.partner_provider_kind
+            and selected_partner_provider.kind != config.partner_provider_kind
+        ):
+            raise ValueError("partner_provider_kind_mismatch")
+    partner_auth_broker = None
     execution_relay_repository = None
     execution_relay_router = None
     agent_brain_orchestrator = None
@@ -656,6 +685,20 @@ def create_app(
         agent_brain_orchestrator.check_ready()
     if identity_enabled and identity_auth is None:
         identity_auth = build_identity_auth(config)
+    if config.partner_provider_kind and (
+        not identity_enabled or partner_service is None
+    ):
+        raise RuntimeError("partner_identity_unavailable")
+    if (
+        identity_enabled
+        and selected_partner_provider is not None
+        and partner_service is not None
+    ):
+        partner_auth_broker = PartnerAuthenticationBroker(
+            selected_partner_provider,
+            partner_service,
+            state_secrets=identity_auth.secrets,
+        )
     if identity_enabled and agent_launch_service is None and owns_identity_auth:
         if control_database_url is None:
             control_database_url = read_secret_file(
@@ -876,6 +919,8 @@ def create_app(
     app.state.ai_notes_reader = ai_notes_reader
     app.state.agent_launch_service = agent_launch_service
     app.state.partner_service = partner_service
+    app.state.partner_provider = selected_partner_provider
+    app.state.partner_auth_broker = partner_auth_broker
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
         control_database_url = read_secret_file(
@@ -968,6 +1013,14 @@ def create_app(
     if identity_enabled:
         app.include_router(routes_manage.router)
         app.include_router(routes_partner.router)
+        if partner_auth_broker is not None:
+            app.include_router(
+                routes_partner.build_partner_auth_router(
+                    partner_auth_broker,
+                    callback_method=config.partner_callback_method,
+                    callback_path=config.partner_callback_path,
+                )
+            )
 
         def request_auth_context(request: Request):
             return request.state.auth_context
@@ -1010,6 +1063,16 @@ def create_app(
             public_assets=public_assets,
             authorization=authorization_service,
             routes=tuple(app.router.routes),
+            partner_callback_method=(
+                config.partner_callback_method
+                if partner_auth_broker is not None
+                else None
+            ),
+            partner_callback_path=(
+                config.partner_callback_path
+                if partner_auth_broker is not None
+                else None
+            ),
         )
     if not config.execution_relay_enabled:
         app.add_middleware(DisabledExecutionWorkerNamespaceMiddleware)

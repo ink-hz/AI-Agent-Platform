@@ -106,6 +106,26 @@ def test_member_and_unknown_route_default_deny_but_owner_reads_known_routes():
     ).allowed is True
 
 
+@pytest.mark.parametrize("context", [OWNER, ADMIN, VIEWER, MEMBER])
+@pytest.mark.parametrize(
+    ("method", "route"),
+    [
+        ("GET", "/partner-auth/start"),
+        ("GET", "/partner-auth/callback"),
+        ("GET", "/partner-auth/reference"),
+        ("POST", "/partner-auth/callback"),
+    ],
+)
+def test_partner_auth_namespace_never_grants_platform_authorization(
+    context: AuthContext, method: str, route: str
+) -> None:
+    decision = AuthorizationService(Grants()).decide(context, method, route, ())
+
+    assert decision.allowed is False
+    assert decision.status_code == 403
+    assert decision.reason == "route_not_authorized"
+
+
 @pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.MANAGEMENT_VIEWER])
 @pytest.mark.parametrize("route", ["/admin", "/admin/{client_path:path}"])
 def test_management_shell_is_not_member_self_service_but_remains_available_to_management_roles(

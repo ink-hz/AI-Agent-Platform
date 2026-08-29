@@ -9,6 +9,11 @@ from urllib.parse import urlparse
 
 from .control_plane.models import ControlPlaneConfig, IdentityMode
 from .control_plane.crypto import IdentityCryptoError, IdentityKeyring
+from .control_plane.partner_provider import (
+    partner_provider_registered,
+    partner_provider_release_registered,
+    validate_partner_callback,
+)
 from .local_secrets import SecretFileUnavailable, read_secret_file
 
 
@@ -78,6 +83,10 @@ class Config:
     content_encryption_keyring_file: str
     execution_relay_lease_seconds: int
     execution_relay_max_body_bytes: int
+    environment: Literal["development", "test", "production"]
+    partner_provider_kind: str
+    partner_callback_method: Literal["GET", "POST"]
+    partner_callback_path: str
     control_plane: ControlPlaneConfig
 
 
@@ -177,6 +186,28 @@ def _positive_environment_int(name: str, default: int) -> int:
     if value <= 0:
         raise ValueError(f"{name} must be positive")
     return value
+
+
+def _partner_provider_settings() -> tuple[str, str, str, str]:
+    environment = os.getenv("PLATFORM_ENVIRONMENT", "development").strip()
+    if environment not in {"development", "test", "production"}:
+        raise ValueError("partner_environment_invalid")
+    kind = os.getenv("PLATFORM_PARTNER_PROVIDER_KIND", "").strip()
+    callback_method = os.getenv("PLATFORM_PARTNER_CALLBACK_METHOD", "GET")
+    callback_path = os.getenv(
+        "PLATFORM_PARTNER_CALLBACK_PATH", "/partner-auth/callback"
+    )
+    callback_method, callback_path = validate_partner_callback(
+        callback_method, callback_path
+    )
+    if kind:
+        if environment == "production" and kind == "reference":
+            raise ValueError("partner_reference_provider_forbidden")
+        if environment == "production" and not partner_provider_release_registered(kind):
+            raise ValueError("partner_provider_release_not_registered")
+        if not partner_provider_registered(kind):
+            raise ValueError("partner_provider_not_registered")
+    return environment, kind, callback_method, callback_path
 
 
 def _normalize_route_prefix(value: str) -> str:
@@ -638,6 +669,12 @@ def load_config() -> Config:
         execution_relay_lease_seconds,
         execution_relay_max_body_bytes,
     ) = _execution_relay_settings()
+    (
+        environment,
+        partner_provider_kind,
+        partner_callback_method,
+        partner_callback_path,
+    ) = _partner_provider_settings()
     config = Config(
         deployment_mode=os.getenv("PLATFORM_DEPLOYMENT_MODE", "local"),
         cloud_auth_mode=os.getenv("PLATFORM_CLOUD_AUTH_MODE", "ssh-tunnel"),
@@ -770,6 +807,10 @@ def load_config() -> Config:
         content_encryption_keyring_file=content_encryption_keyring_file,
         execution_relay_lease_seconds=execution_relay_lease_seconds,
         execution_relay_max_body_bytes=execution_relay_max_body_bytes,
+        environment=environment,
+        partner_provider_kind=partner_provider_kind,
+        partner_callback_method=partner_callback_method,
+        partner_callback_path=partner_callback_path,
         control_plane=_load_control_plane_config(),
     )
     _validate_cloud_config(config)
