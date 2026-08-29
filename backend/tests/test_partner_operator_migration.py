@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import shutil
+import socket
+import subprocess
 import uuid
 
 # Pytest fixture is imported into this module's namespace for discovery.
@@ -8,7 +12,14 @@ from datetime import datetime, timezone
 
 import psycopg
 import pytest
-from test_control_plane_migration import MIGRATIONS, ROLES, control_database
+from test_control_plane_migration import (
+    MIGRATIONS,
+    OWNER_ROLES,
+    PRODUCTION_ROLES,
+    ROLE_PASSWORDS,
+    ROLES,
+    control_database,
+)
 
 from app.control_plane.crypto import IdentityKeyring
 from app.control_plane.partner_identity_crypto import PartnerProviderIdentityCodec
@@ -21,6 +32,8 @@ from app.control_plane.partner_service import PartnerService
 from app.execution_relay.content_crypto import ContentCodec
 
 MIGRATION = MIGRATIONS / "054_partner_operator_identity.sql"
+MANAGEMENT_REJECTION_MIGRATION = MIGRATIONS / "055_partner_management_rejection.sql"
+TASK2_V54_SHA256 = "d1d89d5ca37d6c65c58e0362766173805d0262f9c9a5e02d790bf6ef03a421fc"
 PARTNER_TABLES = {
     "partner_organizations",
     "partner_operators",
@@ -29,16 +42,162 @@ PARTNER_TABLES = {
     "partner_agent_grants",
     "partner_login_attempts",
 }
-OWNER_FUNCTIONS = {
-    "create_partner_organization_v54",
-    "create_partner_operator_v54",
-    "set_partner_organization_status_v54",
-    "set_partner_operator_status_v54",
-    "grant_partner_fae_v54",
-    "revoke_partner_fae_v54",
-    "link_partner_binding_request_v54",
-    "reject_partner_binding_request_v54",
+OWNER_FUNCTION_MIGRATIONS = {
+    "create_partner_organization_v54": MIGRATION,
+    "create_partner_operator_v54": MIGRATION,
+    "set_partner_organization_status_v54": MIGRATION,
+    "set_partner_operator_status_v54": MIGRATION,
+    "grant_partner_fae_v54": MIGRATION,
+    "revoke_partner_fae_v54": MIGRATION,
+    "link_partner_binding_request_v54": MIGRATION,
+    "reject_partner_binding_request_v54": MANAGEMENT_REJECTION_MIGRATION,
 }
+
+
+def test_v54_bytes_remain_task2_immutable() -> None:
+    assert hashlib.sha256(MIGRATION.read_bytes()).hexdigest() == TASK2_V54_SHA256
+
+
+@pytest.mark.postgres
+def test_already_applied_v54_upgrades_additively_to_v55(
+    tmp_path,
+) -> None:
+    from app.control_plane.migrate import migrate_control_database
+
+    database_name = "agent_platform_control"
+    owner_role = "platform_control_owner"
+    migrator_role = "platform_control_migrator"
+    data = tmp_path / "data"
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = int(listener.getsockname()[1])
+    subprocess.run(
+        [
+            "initdb",
+            "-D",
+            str(data),
+            "--auth=trust",
+            "--encoding=UTF8",
+            "--no-locale",
+            "--username=control_test_admin",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [
+            "pg_ctl",
+            "-D",
+            str(data),
+            "-l",
+            str(tmp_path / "postgres.log"),
+            "-o",
+            f"-F -h 127.0.0.1 -p {port} -k /tmp",
+            "start",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    admin_url = f"postgresql://control_test_admin@127.0.0.1:{port}/postgres"
+    database_admin_url = (
+        f"postgresql://control_test_admin@127.0.0.1:{port}/{database_name}"
+    )
+    migrator_url = (
+        f"postgresql://{migrator_role}:{ROLE_PASSWORDS[migrator_role]}@"
+        f"127.0.0.1:{port}/{database_name}"
+    )
+    through_v54 = tmp_path / "through-v54"
+    through_v54.mkdir()
+    for migration in MIGRATIONS.glob("*.sql"):
+        if int(migration.name.split("_", 1)[0]) <= 54:
+            shutil.copy2(migration, through_v54 / migration.name)
+
+    try:
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            for role in OWNER_ROLES:
+                connection.execute(
+                    psycopg.sql.SQL(
+                        "create role {} nologin nosuperuser nocreatedb "
+                        "nocreaterole noreplication nobypassrls noinherit"
+                    ).format(psycopg.sql.Identifier(role))
+                )
+            for role in ROLES:
+                inheritance = "noinherit" if "migrator" in role else "inherit"
+                connection.execute(
+                    psycopg.sql.SQL(
+                        "create role {} login password {} nosuperuser "
+                        "nocreatedb nocreaterole noreplication nobypassrls "
+                        + inheritance
+                    ).format(
+                        psycopg.sql.Identifier(role),
+                        psycopg.sql.Literal(ROLE_PASSWORDS[role]),
+                    )
+                )
+            connection.execute(
+                psycopg.sql.SQL(
+                    "create database {} owner {} template template0"
+                ).format(
+                    psycopg.sql.Identifier(database_name),
+                    psycopg.sql.Identifier(owner_role),
+                )
+            )
+            connection.execute(
+                psycopg.sql.SQL("revoke connect on database {} from public").format(
+                    psycopg.sql.Identifier(database_name)
+                )
+            )
+            connection.execute(
+                psycopg.sql.SQL("grant connect on database {} to {}").format(
+                    psycopg.sql.Identifier(database_name),
+                    psycopg.sql.SQL(", ").join(
+                        psycopg.sql.Identifier(role) for role in PRODUCTION_ROLES
+                    ),
+                )
+            )
+            connection.execute(
+                psycopg.sql.SQL("grant {} to {}").format(
+                    psycopg.sql.Identifier(owner_role),
+                    psycopg.sql.Identifier(migrator_role),
+                )
+            )
+
+        migrate_control_database(migrator_url, through_v54, owner_role=owner_role)
+        with psycopg.connect(database_admin_url) as connection:
+            before = connection.execute(
+                "select sha256 from platform_control.schema_migrations where version=54"
+            ).fetchone()
+            assert before == (TASK2_V54_SHA256,)
+
+        migrate_control_database(migrator_url, MIGRATIONS, owner_role=owner_role)
+
+        with psycopg.connect(database_admin_url) as connection:
+            rows = connection.execute(
+                "select version,sha256 from platform_control.schema_migrations "
+                "where version in (54,55) order by version"
+            ).fetchall()
+            assert rows == [
+                (54, TASK2_V54_SHA256),
+                (
+                    55,
+                    hashlib.sha256(
+                        MANAGEMENT_REJECTION_MIGRATION.read_bytes()
+                    ).hexdigest(),
+                ),
+            ]
+            assert connection.execute(
+                "select to_regprocedure("
+                "'platform_control.reject_partner_binding_request_v54("
+                "uuid,uuid,text,uuid,uuid)') is not null"
+            ).fetchone() == (True,)
+    finally:
+        subprocess.run(
+            ["pg_ctl", "-D", str(data), "stop", "-m", "immediate"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
 
 
 def test_partner_schema_has_exact_tables_and_protected_identity_columns() -> None:
@@ -73,10 +232,11 @@ def test_pending_binding_and_owner_function_boundaries_are_explicit() -> None:
     assert "interval '24 hours'" in normalized
     assert "wherestatus='pending'" in normalized.replace(" ", "")
     assert "pending binding transition invalid" in normalized
-    for function_name in OWNER_FUNCTIONS:
-        body = normalized.split(f"create function platform_control.{function_name}", 1)[
-            1
-        ].split("$function$;", 1)[0]
+    for function_name, migration in OWNER_FUNCTION_MIGRATIONS.items():
+        migration_sql = " ".join(migration.read_text(encoding="utf-8").lower().split())
+        body = migration_sql.split(
+            f"create function platform_control.{function_name}", 1
+        )[1].split("$function$;", 1)[0]
         assert "security definer" in body
         assert "session_user" in body or "require_partner_owner_v54" in body
         assert "for update" in body or "require_partner_owner_v54" in body
@@ -434,7 +594,7 @@ def test_v54_unknown_identity_only_becomes_linkable_pending_request(
 
 
 @pytest.mark.postgres
-def test_v54_owner_rejection_is_atomic_audited_and_app_only(control_database) -> None:
+def test_v55_owner_rejection_is_atomic_audited_and_app_only(control_database) -> None:
     environment = control_database["environments"]["production"]
     app_url = environment["urls"][environment["roles"][1]]
     rejected_request_id = uuid.uuid4()

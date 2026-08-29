@@ -197,3 +197,73 @@ The pre-existing modified `.superpowers/sdd/task-2-report.md` is intentionally p
 - There are no blocking Task 3 concerns.
 - Production construction of the independent partner identity/content keyrings is intentionally not inferred here. Until the caller injects a correctly configured `PartnerService`, the management routes fail closed with 503 rather than borrowing incompatible enterprise keys.
 - The pre-existing Vite chunk-size advisory remains unchanged.
+
+## Formal review follow-up: immutable migration upgrade path
+
+Formal review identified that Task 3 had appended rejection SQL to already-committed migration 054. The control-plane runner records each migration's SHA-256 and rejects changed bytes, so a database that had already applied Task 2's 054 could not upgrade to the Task 3 state.
+
+The correction restores `054_partner_operator_identity.sql` byte-for-byte to the Task 2 version and moves every Task 3 SQL addition into additive `055_partner_management_rejection.sql`: the audit-validator replacement, rejection function, public and per-role revokes, environment/owner validation, and app-only grant. The callable rejection function keeps its existing `_v54` name so the shipped repository contract does not change; only its defining migration moves forward.
+
+The immutable Task 2 checksum is:
+
+```text
+d1d89d5ca37d6c65c58e0362766173805d0262f9c9a5e02d790bf6ef03a421fc  backend/control_migrations/054_partner_operator_identity.sql
+```
+
+TDD RED was captured before the production correction. The byte regression reported the modified checksum `7ec802a26c33702957c15a1f7ceafc7d30908d392894935e5432c6c8a6e605bd` instead of the Task 2 checksum. The disposable-PostgreSQL upgrade regression independently recorded that same wrong 054 checksum after applying migrations through 054.
+
+After restoring 054 and adding 055, the exact regression pair passed:
+
+```bash
+cd backend
+/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q \
+  tests/test_partner_operator_migration.py::test_v54_bytes_remain_task2_immutable \
+  tests/test_partner_operator_migration.py::test_already_applied_v54_upgrades_additively_to_v55
+```
+
+```text
+2 passed in 0.88s
+```
+
+The PostgreSQL regression creates a disposable cluster with the real production control-database and role names, applies only migrations 001 through unchanged 054, verifies the persisted 054 checksum, then runs the current migration directory and verifies that 055 applies without changing the 054 ledger entry. It also confirms the rejection function exists after the upgrade.
+
+Focused migration, API, and service verification:
+
+```bash
+cd backend
+/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q \
+  tests/test_partner_operator_migration.py \
+  tests/test_partner_management_api.py \
+  tests/test_partner_service.py \
+  tests/test_control_plane_migration.py::test_control_migration_versions_are_unique_and_contiguous \
+  tests/test_control_plane_migration.py::test_migration_is_idempotent_and_checksum_guarded
+```
+
+```text
+79 passed in 3.32s
+```
+
+Fresh full backend regression after the correction:
+
+```bash
+cd backend
+/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest -q
+```
+
+```text
+3347 passed, 2 skipped, 179 warnings in 287.00s (0:04:46)
+```
+
+No UI code changed in this follow-up, so the UI suite and build were not rerun. The prior Task 3 UI verification remains applicable.
+
+Formal-review follow-up files:
+
+```text
+.superpowers/sdd/task-3-report.md
+backend/control_migrations/054_partner_operator_identity.sql
+backend/control_migrations/055_partner_management_rejection.sql
+backend/tests/test_control_plane_migration.py
+backend/tests/test_partner_operator_migration.py
+```
+
+An independent read-only follow-up review verified the base hash, additive upgrade, validator and rejection behavior, least-privilege grants, PostgreSQL regression, migration expectation, and report. It approved the correction with no Critical, Important, or Minor findings.
