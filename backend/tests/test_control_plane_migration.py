@@ -171,6 +171,12 @@ TABLES = {
     "agent_identity_bindings",
     "agent_access_subjects",
     "enterprise_subject_links",
+    "partner_organizations",
+    "partner_operators",
+    "partner_provider_identities",
+    "partner_identity_binding_requests",
+    "partner_agent_grants",
+    "partner_login_attempts",
 }
 
 IMMUTABLE_MIGRATION_SHA256 = {
@@ -655,7 +661,7 @@ def test_migration_is_idempotent_and_checksum_guarded(control_database, tmp_path
                     "from platform_control.schema_migrations order by version"
                 )
                 assert cursor.fetchall() == [
-                        (version, 64) for version in range(1, 54)
+                        (version, 64) for version in range(1, 55)
                 ]
 
     changed = tmp_path / "migrations"
