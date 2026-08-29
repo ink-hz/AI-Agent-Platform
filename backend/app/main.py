@@ -49,9 +49,10 @@ from .control_plane.authorization import (
     AuthorizationRepository,
     AuthorizationService,
 )
-from .control_plane import routes_manage
+from .control_plane import routes_manage, routes_partner
 from .control_plane.audit import AuditWriter
 from .control_plane.routes_manage import ManagementRepository, ManagementService
+from .control_plane.partner_service import PartnerService
 from .control_plane.models import DirectoryFreshness, IdentityMode
 from .control_plane.routes_auth import build_auth_router
 from .control_plane.auth import (
@@ -559,6 +560,7 @@ def create_app(
     voc_submitter_directory=None,
     ai_notes_reader: AiNotesReader | None = None,
     agent_launch_service: AgentLaunchService | None = None,
+    partner_service: PartnerService | None = None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
@@ -873,6 +875,7 @@ def create_app(
     app.state.voc_submitter_directory = voc_submitter_directory
     app.state.ai_notes_reader = ai_notes_reader
     app.state.agent_launch_service = agent_launch_service
+    app.state.partner_service = partner_service
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
         control_database_url = read_secret_file(
@@ -964,6 +967,8 @@ def create_app(
         )
     if identity_enabled:
         app.include_router(routes_manage.router)
+        app.include_router(routes_partner.router)
+
         def request_auth_context(request: Request):
             return request.state.auth_context
 

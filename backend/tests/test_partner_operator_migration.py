@@ -37,6 +37,7 @@ OWNER_FUNCTIONS = {
     "grant_partner_fae_v54",
     "revoke_partner_fae_v54",
     "link_partner_binding_request_v54",
+    "reject_partner_binding_request_v54",
 }
 
 
@@ -430,6 +431,110 @@ def test_v54_unknown_identity_only_becomes_linkable_pending_request(
             "where subject_id=%s and revoked_at is null",
             (subject_id,),
         ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_v54_owner_rejection_is_atomic_audited_and_app_only(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    app_url = environment["urls"][environment["roles"][1]]
+    rejected_request_id = uuid.uuid4()
+    rollback_request_id = uuid.uuid4()
+    operation_id = uuid.uuid4()
+    with psycopg.connect(environment["admin"], autocommit=True) as admin:
+        owner_id = _seed_owner(admin)
+    with psycopg.connect(app_url) as app:
+        for request_id, lookup in (
+            (rejected_request_id, b"r" * 32),
+            (rollback_request_id, b"b" * 32),
+        ):
+            app.execute(
+                "select * from platform_control.record_partner_binding_request_v54("
+                "%s,'partner-sso',%s,1,array[1],array[%s::bytea],%s,1,null,null,now())",
+                (request_id, lookup, lookup, b"sealed-provider-subject-with-aead-tag"),
+            )
+        result = app.execute(
+            "select * from platform_control.reject_partner_binding_request_v54("
+            "%s,%s,'not on roster',%s,%s)",
+            (owner_id, rejected_request_id, operation_id, uuid.uuid4()),
+        ).fetchone()
+        assert result[0:2] == (rejected_request_id, "rejected")
+
+    with psycopg.connect(environment["admin"], autocommit=True) as admin:
+        row = admin.execute(
+            "select request.status,request.resolved_at is not null,audit.event_type,"
+            "audit.reason_code,audit.sanitized_before_after "
+            "from platform_control.partner_identity_binding_requests request "
+            "join platform_control.audit_events audit "
+            "on audit.request_id=%s where request.binding_request_id=%s",
+            (operation_id, rejected_request_id),
+        ).fetchone()
+        assert row[:4] == (
+            "rejected",
+            True,
+            "partner_identity_rejected",
+            "not on roster",
+        )
+        assert set(row[4]) == {
+            "binding_request_id",
+            "operation_id",
+            "provider_kind",
+            "status",
+        }
+        with pytest.raises(
+            psycopg.errors.InsufficientPrivilege,
+            match="partner owner mutation caller invalid",
+        ):
+            admin.execute(
+                "select * from platform_control.reject_partner_binding_request_v54("
+                "%s,%s,'admin bypass',%s,%s)",
+                (owner_id, rollback_request_id, uuid.uuid4(), uuid.uuid4()),
+            )
+        admin.execute(
+            "create function platform_control.fail_partner_rejection_audit_test() "
+            "returns trigger language plpgsql as $$ begin "
+            "raise check_violation using message='forced partner audit failure'; "
+            "end $$"
+        )
+        admin.execute(
+            "create trigger fail_partner_rejection_audit_test before insert "
+            "on platform_control.audit_events for each row execute function "
+            "platform_control.fail_partner_rejection_audit_test()"
+        )
+    try:
+        with (
+            psycopg.connect(app_url) as app,
+            pytest.raises(psycopg.Error, match="required_audit_unavailable"),
+        ):
+            app.execute(
+                "select * from platform_control.reject_partner_binding_request_v54("
+                "%s,%s,'must rollback',%s,%s)",
+                (owner_id, rollback_request_id, uuid.uuid4(), uuid.uuid4()),
+            )
+    finally:
+        with psycopg.connect(environment["admin"], autocommit=True) as admin:
+            admin.execute(
+                "drop trigger fail_partner_rejection_audit_test "
+                "on platform_control.audit_events"
+            )
+            admin.execute(
+                "drop function platform_control.fail_partner_rejection_audit_test()"
+            )
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select status,resolved_at from "
+            "platform_control.partner_identity_binding_requests "
+            "where binding_request_id=%s",
+            (rollback_request_id,),
+        ).fetchone() == ("pending", None)
+    # Resolve the deliberately rolled-back request through the same audited,
+    # app-only boundary so this module-scoped database remains eligible for
+    # the transition-policy tests below.
+    with psycopg.connect(app_url) as app:
+        app.execute(
+            "select * from platform_control.reject_partner_binding_request_v54("
+            "%s,%s,'test cleanup after rollback proof',%s,%s)",
+            (owner_id, rollback_request_id, uuid.uuid4(), uuid.uuid4()),
+        )
 
 
 @pytest.mark.postgres

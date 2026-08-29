@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from app.execution_relay.content_crypto import ContentCodec, ContentCryptoError
+from app.execution_relay.content_crypto import (
+    ContentCodec,
+    ContentCryptoError,
+    SealedContent,
+)
 
 from .partner_identity_crypto import (
     PartnerProviderIdentityCodec,
@@ -13,10 +17,14 @@ from .partner_identity_crypto import (
 from .partner_models import (
     PartnerAccessDecision,
     PartnerBindingRequest,
+    PartnerBindingRequestProjection,
+    PartnerBindingStatus,
     PartnerIdentityError,
     PartnerIdentityResolution,
     PartnerOperator,
+    PartnerOperatorProjection,
     PartnerOrganization,
+    PartnerOrganizationProjection,
     PartnerStatus,
     VerifiedProviderSubject,
 )
@@ -76,9 +84,152 @@ class PartnerService:
     def _translate(error: PartnerRepositoryError) -> PartnerIdentityError:
         return PartnerIdentityError(error.code, error.status_code)
 
-    def list_organizations(self) -> tuple[PartnerOrganization, ...]:
+    @staticmethod
+    def _field(record: object, name: str):
+        if isinstance(record, Mapping):
+            return record[name]
+        return getattr(record, name)
+
+    def _display_name(
+        self,
+        *,
+        subject: str,
+        ciphertext: object,
+        key_version: object,
+        optional: bool = False,
+    ) -> str | None:
+        if optional and ciphertext is None and key_version is None:
+            return None
+        if not isinstance(ciphertext, bytes) or not isinstance(key_version, int):
+            raise PartnerIdentityError("partner_identity_unavailable")
         try:
-            return self.repository.list_organizations()
+            value = self.content_codec.unseal_json(
+                subject,
+                SealedContent(ciphertext=ciphertext, key_version=key_version),
+            )
+        except ContentCryptoError:
+            raise PartnerIdentityError("partner_identity_unavailable") from None
+        if set(value) != {"display_name"}:
+            raise PartnerIdentityError("partner_identity_unavailable")
+        display_name = value["display_name"]
+        if (
+            not isinstance(display_name, str)
+            or not display_name
+            or display_name != display_name.strip()
+            or "\0" in display_name
+            or len(display_name) > 512
+        ):
+            raise PartnerIdentityError("partner_identity_unavailable")
+        return display_name
+
+    @staticmethod
+    def _projection_text(value: object, *, maximum: int) -> str:
+        if (
+            not isinstance(value, str)
+            or not value
+            or value != value.strip()
+            or "\0" in value
+            or len(value) > maximum
+        ):
+            raise PartnerIdentityError("partner_identity_unavailable")
+        return value
+
+    def list_organizations(self) -> tuple[PartnerOrganizationProjection, ...]:
+        try:
+            records = self.repository.list_organizations()
+            return tuple(
+                PartnerOrganizationProjection(
+                    partner_organization_id=self._field(
+                        record, "partner_organization_id"
+                    ),
+                    display_name=self._display_name(
+                        subject=(
+                            "partner-organization-display:"
+                            f"{self._field(record, 'partner_organization_id')}"
+                        ),
+                        ciphertext=self._field(record, "name_ciphertext"),
+                        key_version=self._field(record, "name_key_version"),
+                    ),
+                    status=PartnerStatus(self._field(record, "status")),
+                    created_at=self._field(record, "created_at"),
+                    updated_at=self._field(record, "updated_at"),
+                    invalidated_at=self._field(record, "invalidated_at"),
+                )
+                for record in records
+            )
+        except (KeyError, AttributeError, TypeError, ValueError):
+            raise PartnerIdentityError("partner_identity_unavailable") from None
+        except PartnerRepositoryError as error:
+            raise self._translate(error) from None
+
+    def list_operators(self) -> tuple[PartnerOperatorProjection, ...]:
+        try:
+            records = self.repository.list_operators()
+            return tuple(
+                PartnerOperatorProjection(
+                    partner_operator_id=self._field(record, "partner_operator_id"),
+                    subject_id=self._field(record, "subject_id"),
+                    partner_organization_id=self._field(
+                        record, "partner_organization_id"
+                    ),
+                    display_name=self._display_name(
+                        subject=(
+                            f"agent-subject-display:{self._field(record, 'subject_id')}"
+                        ),
+                        ciphertext=self._field(record, "display_name_ciphertext"),
+                        key_version=self._field(record, "display_name_key_version"),
+                    ),
+                    status=PartnerStatus(self._field(record, "status")),
+                    fae_grant_active=(
+                        self._field(record, "fae_granted_at") is not None
+                    ),
+                    fae_granted_at=self._field(record, "fae_granted_at"),
+                    created_at=self._field(record, "created_at"),
+                    updated_at=self._field(record, "updated_at"),
+                    invalidated_at=self._field(record, "invalidated_at"),
+                )
+                for record in records
+            )
+        except (KeyError, AttributeError, TypeError, ValueError):
+            raise PartnerIdentityError("partner_identity_unavailable") from None
+        except PartnerRepositoryError as error:
+            raise self._translate(error) from None
+
+    def list_binding_requests(
+        self,
+    ) -> tuple[PartnerBindingRequestProjection, ...]:
+        try:
+            records = self.repository.list_binding_requests()
+            return tuple(
+                PartnerBindingRequestProjection(
+                    binding_request_id=self._field(record, "binding_request_id"),
+                    provider_kind=self._projection_text(
+                        self._field(record, "provider_kind"), maximum=128
+                    ),
+                    display_name=self._display_name(
+                        subject=(
+                            "partner-binding-display:"
+                            f"{self._field(record, 'binding_request_id')}"
+                        ),
+                        ciphertext=self._field(record, "display_name_ciphertext"),
+                        key_version=self._field(record, "display_name_key_version"),
+                        optional=True,
+                    ),
+                    status=PartnerBindingStatus(self._field(record, "status")),
+                    verified_at=self._field(record, "verified_at"),
+                    requested_at=self._field(record, "requested_at"),
+                    expires_at=self._field(record, "expires_at"),
+                    resolved_at=self._field(record, "resolved_at"),
+                    linked_partner_operator_id=self._field(
+                        record, "linked_partner_operator_id"
+                    ),
+                )
+                for record in records
+            )
+        except PartnerIdentityError:
+            raise PartnerIdentityError("partner_identity_unavailable") from None
+        except (KeyError, AttributeError, TypeError, ValueError):
+            raise PartnerIdentityError("partner_identity_unavailable") from None
         except PartnerRepositoryError as error:
             raise self._translate(error) from None
 
@@ -343,6 +494,26 @@ class PartnerService:
                     binding_request_id, "binding_request_invalid"
                 ),
                 partner_operator_id=self._uuid(operator_id, "partner_operator_invalid"),
+                reason=self._text(reason, "reason_invalid"),
+                request_id=self._uuid(request_id, "request_id_invalid"),
+            )
+        except PartnerRepositoryError as error:
+            raise self._translate(error) from None
+
+    def reject_binding_request(
+        self,
+        *,
+        actor_id: UUID,
+        binding_request_id: UUID,
+        reason: str,
+        request_id: UUID,
+    ) -> PartnerBindingRequest:
+        try:
+            return self.repository.reject_binding_request(
+                actor_id=self._uuid(actor_id, "owner_required"),
+                binding_request_id=self._uuid(
+                    binding_request_id, "binding_request_invalid"
+                ),
                 reason=self._text(reason, "reason_invalid"),
                 request_id=self._uuid(request_id, "request_id_invalid"),
             )

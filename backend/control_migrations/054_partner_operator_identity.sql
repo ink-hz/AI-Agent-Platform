@@ -452,6 +452,11 @@ begin
         'binding_request_id','operation_id','partner_operator_id',
         'provider_identity_id','subject_id'
       ];
+    when 'partner_identity_rejected' then
+      expected_target := 'partner_binding_request';
+      expected_keys := array[
+        'binding_request_id','operation_id','provider_kind','status'
+      ];
     else
       raise check_violation using message='partner audit event invalid';
   end case;
@@ -477,8 +482,13 @@ begin
   ) then
     raise check_violation using message='partner audit metadata invalid';
   end if;
-  if details ? 'status'
-     and details->>'status' not in ('active','suspended','disabled')
+  if details ? 'status' and (
+    (event_name='partner_identity_rejected'
+      and details->>'status'<>'rejected')
+    or
+    (event_name<>'partner_identity_rejected'
+      and details->>'status' not in ('active','suspended','disabled'))
+  )
   then
     raise check_violation using message='partner audit metadata invalid';
   end if;
@@ -1247,6 +1257,54 @@ begin
 end
 $function$;
 
+create function platform_control.reject_partner_binding_request_v54(
+  selected_actor_id uuid,
+  selected_binding_request_id uuid,
+  selected_reason text,
+  selected_request_id uuid,
+  selected_audit_event_id uuid
+) returns table(
+  binding_request_id uuid,
+  status text,
+  expires_at timestamptz
+)
+language plpgsql
+security definer
+set search_path=pg_catalog,platform_control
+as $function$
+declare
+  binding platform_control.partner_identity_binding_requests%rowtype;
+begin
+  perform platform_control.require_partner_owner_v54(selected_actor_id);
+  select request.* into binding
+  from platform_control.partner_identity_binding_requests request
+  where request.binding_request_id=selected_binding_request_id
+  for update;
+  if binding.binding_request_id is null
+     or binding.status<>'pending'
+     or binding.expires_at<=clock_timestamp()
+     or selected_request_id is null
+     or selected_audit_event_id is null
+  then
+    raise check_violation using message='binding_request_unavailable';
+  end if;
+  update platform_control.partner_identity_binding_requests request
+  set status='rejected',resolved_at=clock_timestamp()
+  where request.binding_request_id=selected_binding_request_id;
+  perform platform_control.append_partner_audit_v54(
+    selected_audit_event_id,selected_actor_id,'partner_identity_rejected',
+    'partner_binding_request',selected_binding_request_id,
+    selected_request_id,selected_reason,jsonb_build_object(
+      'binding_request_id',selected_binding_request_id::text,
+      'operation_id',selected_request_id::text,
+      'provider_kind',binding.provider_kind,'status','rejected'
+    )
+  );
+  return query select selected_binding_request_id,'rejected'::text,
+    binding.expires_at;
+end
+$function$;
+
 revoke all on platform_control.partner_organizations from public;
 revoke all on platform_control.partner_operators from public;
 revoke all on platform_control.partner_provider_identities from public;
@@ -1297,6 +1355,9 @@ revoke all on function platform_control.decide_partner_fae_access_v54(uuid)
   from public;
 revoke all on function platform_control.link_partner_binding_request_v54(
   uuid,uuid,uuid,uuid,text,uuid,uuid
+) from public;
+revoke all on function platform_control.reject_partner_binding_request_v54(
+  uuid,uuid,text,uuid,uuid
 ) from public;
 
 do $migration$
@@ -1401,6 +1462,10 @@ begin
       'revoke all on function platform_control.link_partner_binding_request_v54(uuid,uuid,uuid,uuid,text,uuid,uuid) from %I',
       role_name
     );
+    execute format(
+      'revoke all on function platform_control.reject_partner_binding_request_v54(uuid,uuid,text,uuid,uuid) from %I',
+      role_name
+    );
   end loop;
 
   execute format(
@@ -1449,6 +1514,10 @@ begin
   );
   execute format(
     'grant execute on function platform_control.link_partner_binding_request_v54(uuid,uuid,uuid,uuid,text,uuid,uuid) to %I',
+    selected_app
+  );
+  execute format(
+    'grant execute on function platform_control.reject_partner_binding_request_v54(uuid,uuid,text,uuid,uuid) to %I',
     selected_app
   );
 end

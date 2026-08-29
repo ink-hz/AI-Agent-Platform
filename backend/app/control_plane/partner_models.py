@@ -41,6 +41,43 @@ class PartnerBindingRequest:
 
 
 @dataclass(frozen=True)
+class PartnerOrganizationProjection:
+    partner_organization_id: UUID
+    display_name: str
+    status: PartnerStatus
+    created_at: datetime
+    updated_at: datetime
+    invalidated_at: datetime | None
+
+
+@dataclass(frozen=True)
+class PartnerOperatorProjection:
+    partner_operator_id: UUID
+    subject_id: UUID
+    partner_organization_id: UUID
+    display_name: str
+    status: PartnerStatus
+    fae_grant_active: bool
+    fae_granted_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    invalidated_at: datetime | None
+
+
+@dataclass(frozen=True)
+class PartnerBindingRequestProjection:
+    binding_request_id: UUID
+    provider_kind: str
+    display_name: str | None
+    status: PartnerBindingStatus
+    verified_at: datetime
+    requested_at: datetime
+    expires_at: datetime
+    resolved_at: datetime | None
+    linked_partner_operator_id: UUID | None
+
+
+@dataclass(frozen=True)
 class PartnerIdentityResolution:
     subject_id: UUID | None
     partner_operator_id: UUID | None

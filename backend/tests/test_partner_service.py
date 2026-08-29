@@ -220,6 +220,21 @@ class _MemoryPartnerRepository:
         self.identities[self._identity_key(protected)] = resolved
         return resolved
 
+    def reject_binding_request(self, **values) -> PartnerBindingRequest:
+        request = self.binding_requests[values["binding_request_id"]]
+        if request.status != "pending":
+            raise PartnerRepositoryError("binding_request_unavailable", 409)
+        self.audit.append(
+            event_type="partner_identity_rejected",
+            actor_id=values["actor_id"],
+            target_id=request.binding_request_id,
+            request_id=values["request_id"],
+            reason=values["reason"],
+        )
+        rejected = replace(request, status="rejected")
+        self.binding_requests[request.binding_request_id] = rejected
+        return rejected
+
 
 @pytest.fixture
 def audit() -> _Audit:
@@ -293,6 +308,187 @@ def test_partner_mutation_fails_closed_when_atomic_audit_append_fails(
         )
 
     assert service.list_organizations() == ()
+
+
+def test_service_decrypts_only_safe_partner_management_projections(
+    codec: PartnerProviderIdentityCodec,
+    content_codec: ContentCodec,
+) -> None:
+    organization_id = uuid4()
+    operator_id = uuid4()
+    subject_id = uuid4()
+    binding_request_id = uuid4()
+    organization_name = content_codec.seal_json(
+        f"partner-organization-display:{organization_id}",
+        {"display_name": "合作方甲"},
+    )
+    operator_name = content_codec.seal_json(
+        f"agent-subject-display:{subject_id}",
+        {"display_name": "合作方客服"},
+    )
+    request_name = content_codec.seal_json(
+        f"partner-binding-display:{binding_request_id}",
+        {"display_name": "待绑定坐席"},
+    )
+    repository = SimpleNamespace(
+        list_organizations=lambda: (
+            {
+                "partner_organization_id": organization_id,
+                "status": "active",
+                "name_ciphertext": organization_name.ciphertext,
+                "name_key_version": organization_name.key_version,
+                "created_at": NOW,
+                "updated_at": NOW,
+                "invalidated_at": None,
+            },
+        ),
+        list_operators=lambda: (
+            {
+                "partner_operator_id": operator_id,
+                "subject_id": subject_id,
+                "partner_organization_id": organization_id,
+                "status": "active",
+                "display_name_ciphertext": operator_name.ciphertext,
+                "display_name_key_version": operator_name.key_version,
+                "fae_granted_at": NOW,
+                "created_at": NOW,
+                "updated_at": NOW,
+                "invalidated_at": None,
+            },
+        ),
+        list_binding_requests=lambda: (
+            {
+                "binding_request_id": binding_request_id,
+                "provider_kind": "qianniu",
+                "display_name_ciphertext": request_name.ciphertext,
+                "display_name_key_version": request_name.key_version,
+                "status": "pending",
+                "verified_at": NOW,
+                "requested_at": NOW,
+                "expires_at": NOW + timedelta(hours=24),
+                "resolved_at": None,
+                "linked_partner_operator_id": None,
+            },
+        ),
+    )
+    service = PartnerService(
+        repository,
+        identity_codec=codec,
+        content_codec=content_codec,
+        now=lambda: NOW,
+    )
+
+    organization = service.list_organizations()[0]
+    operator = service.list_operators()[0]
+    request = service.list_binding_requests()[0]
+
+    assert organization.display_name == "合作方甲"
+    assert operator.display_name == "合作方客服"
+    assert operator.fae_grant_active is True
+    assert request.display_name == "待绑定坐席"
+    assert request.provider_kind == "qianniu"
+    serialized_names = {field for field in vars(request)}
+    assert not any(
+        forbidden in field
+        for field in serialized_names
+        for forbidden in (
+            "provider_subject",
+            "ciphertext",
+            "lookup_hmac",
+            "token",
+            "secret",
+        )
+    )
+
+
+def test_management_projection_decryption_fails_closed(
+    service: PartnerService,
+    repository: _MemoryPartnerRepository,
+) -> None:
+    repository.list_organizations = lambda: (
+        {
+            "partner_organization_id": uuid4(),
+            "status": "active",
+            "name_ciphertext": b"not-valid-ciphertext-but-long-enough",
+            "name_key_version": 1,
+            "created_at": NOW,
+            "updated_at": NOW,
+            "invalidated_at": None,
+        },
+    )
+
+    with pytest.raises(PartnerIdentityError, match="^partner_identity_unavailable$"):
+        service.list_organizations()
+
+
+@pytest.mark.parametrize("provider_kind", ["   ", " partner-sso "])
+def test_binding_projection_validation_fails_closed_as_unavailable(
+    provider_kind: str,
+    codec: PartnerProviderIdentityCodec,
+    content_codec: ContentCodec,
+) -> None:
+    repository = SimpleNamespace(
+        list_binding_requests=lambda: (
+            {
+                "binding_request_id": uuid4(),
+                "provider_kind": provider_kind,
+                "display_name_ciphertext": None,
+                "display_name_key_version": None,
+                "status": "pending",
+                "verified_at": NOW,
+                "requested_at": NOW,
+                "expires_at": NOW + timedelta(hours=24),
+                "resolved_at": None,
+                "linked_partner_operator_id": None,
+            },
+        )
+    )
+    service = PartnerService(
+        repository,
+        identity_codec=codec,
+        content_codec=content_codec,
+        now=lambda: NOW,
+    )
+
+    with pytest.raises(
+        PartnerIdentityError, match="^partner_identity_unavailable$"
+    ) as captured:
+        service.list_binding_requests()
+
+    assert captured.value.status_code == 503
+
+
+def test_reject_binding_request_is_audited_and_fails_closed(
+    service: PartnerService,
+    repository: _MemoryPartnerRepository,
+    audit: _Audit,
+) -> None:
+    pending = service.resolve_verified_identity(
+        VerifiedProviderSubject(
+            provider_kind="partner-sso",
+            provider_subject="synthetic-rejected-seat",
+            verified_at=NOW,
+        )
+    )
+    audit.fail = True
+
+    with pytest.raises(PartnerIdentityError, match="^required_audit_unavailable$"):
+        service.reject_binding_request(
+            actor_id=OWNER_ID,
+            binding_request_id=pending.binding_request_id,
+            reason="not on pilot roster",
+            request_id=REQUEST_ID,
+        )
+
+    assert repository.binding_requests[pending.binding_request_id].status == "pending"
+    audit.fail = False
+    rejected = service.reject_binding_request(
+        actor_id=OWNER_ID,
+        binding_request_id=pending.binding_request_id,
+        reason="not on pilot roster",
+        request_id=REQUEST_ID,
+    )
+    assert rejected.status == "rejected"
 
 
 def test_create_operator_seals_display_name_and_does_not_auto_grant(

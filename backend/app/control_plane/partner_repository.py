@@ -111,15 +111,56 @@ class PartnerRepository:
         code, status_code = cls._database_code(error, mutation=mutation)
         raise PartnerRepositoryError(code, status_code) from None
 
-    def list_organizations(self) -> tuple[PartnerOrganization, ...]:
+    def list_organizations(self) -> tuple[dict[str, Any], ...]:
         try:
             with self._connection() as connection:
                 rows = connection.execute(
-                    "select partner_organization_id,status "
+                    "select partner_organization_id,status,name_ciphertext,"
+                    "name_key_version,created_at,updated_at,invalidated_at "
                     "from platform_control.partner_organizations "
                     "order by created_at,partner_organization_id"
                 ).fetchall()
-            return tuple(self._organization(row) for row in rows)
+            return tuple(dict(row) for row in rows)
+        except psycopg.Error as error:
+            self._raise_database_error(error, mutation=False)
+
+    def list_operators(self) -> tuple[dict[str, Any], ...]:
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select operator.partner_operator_id,operator.subject_id,"
+                    "operator.partner_organization_id,operator.status,"
+                    "subject.display_name_ciphertext,"
+                    "subject.display_name_key_version,operator.created_at,"
+                    "operator.updated_at,operator.invalidated_at,"
+                    "grant_row.created_at as fae_granted_at "
+                    "from platform_control.partner_operators operator "
+                    "join platform_control.agent_access_subjects subject "
+                    "on subject.subject_id=operator.subject_id "
+                    "left join lateral (select grant_item.created_at from "
+                    "platform_control.partner_agent_grants grant_item where "
+                    "grant_item.subject_id=operator.subject_id and "
+                    "grant_item.agent_id='ai-fae-agent' and "
+                    "grant_item.revoked_at is null order by "
+                    "grant_item.created_at desc limit 1) grant_row on true "
+                    "order by operator.created_at,operator.partner_operator_id"
+                ).fetchall()
+            return tuple(dict(row) for row in rows)
+        except psycopg.Error as error:
+            self._raise_database_error(error, mutation=False)
+
+    def list_binding_requests(self) -> tuple[dict[str, Any], ...]:
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select binding_request_id,provider_kind,"
+                    "display_name_ciphertext,display_name_key_version,status,"
+                    "verified_at,requested_at,expires_at,resolved_at,"
+                    "linked_partner_operator_id from "
+                    "platform_control.partner_identity_binding_requests "
+                    "order by requested_at desc,binding_request_id desc"
+                ).fetchall()
+            return tuple(dict(row) for row in rows)
         except psycopg.Error as error:
             self._raise_database_error(error, mutation=False)
 
@@ -512,6 +553,39 @@ class PartnerRepository:
                 partner_organization_id=row["partner_organization_id"],
                 binding_request_id=binding_request_id,
                 status="linked",
+            )
+        except PartnerRepositoryError:
+            raise
+        except psycopg.Error as error:
+            self._raise_database_error(error, mutation=True)
+
+    def reject_binding_request(
+        self,
+        *,
+        actor_id: UUID,
+        binding_request_id: UUID,
+        reason: str,
+        request_id: UUID,
+    ) -> PartnerBindingRequest:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select * from platform_control."
+                    "reject_partner_binding_request_v54(%s,%s,%s,%s,%s)",
+                    (
+                        actor_id,
+                        binding_request_id,
+                        reason,
+                        request_id,
+                        uuid4(),
+                    ),
+                ).fetchone()
+            if row is None:
+                raise PartnerRepositoryError("partner_identity_unavailable")
+            return PartnerBindingRequest(
+                binding_request_id=row["binding_request_id"],
+                status=row["status"],
+                expires_at=row["expires_at"],
             )
         except PartnerRepositoryError:
             raise
