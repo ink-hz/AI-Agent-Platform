@@ -12,7 +12,6 @@ import json
 import logging
 import subprocess
 import sys
-import tomllib
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
@@ -20,6 +19,7 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
+import tomllib
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 

@@ -79,7 +79,9 @@ def message_schema(name: str) -> dict:
 def validator(name: str) -> Draft202012Validator:
     schema = message_schema(name)
     Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema)
+    return Draft202012Validator(
+        schema, format_checker=Draft202012Validator.FORMAT_CHECKER
+    )
 
 
 def load_fixture(name: str) -> dict:
@@ -148,6 +150,7 @@ def archive_digest(repository: Path | str, commit: str) -> str:
             str(repository),
             "archive",
             "--format=tar",
+            "--",
             f"{commit}:{CONTRACT_RELATIVE_PATH}",
         ],
         check=False,

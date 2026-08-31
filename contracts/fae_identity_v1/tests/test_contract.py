@@ -13,10 +13,9 @@ import json
 from hashlib import sha256
 from pathlib import Path
 
+import orbbec_fae_identity_contract as contract
 import pytest
 from jsonschema import Draft202012Validator, ValidationError
-
-import orbbec_fae_identity_contract as contract
 
 FIXTURES = ("enterprise.json", "partner.json")
 EXCHANGE_FIELDS = {
@@ -135,6 +134,7 @@ def test_display_projections_appear_only_in_the_two_back_channel_messages(
         {"agent_id": "another-agent"},
         {"subject_type": "public_customer"},
         {"subject_id": "3F0D5C62-9B1E-4A7D-8C15-2AD4E6F70B11"},
+        {"subject_id": "3f0d5c62-9b1e-4a7d-8c15-2ad4e6f70b11\n"},
         {"identity_binding_id": "not-a-uuid"},
         {"department": "R&D"},
         {"role": "member"},
@@ -143,6 +143,7 @@ def test_display_projections_appear_only_in_the_two_back_channel_messages(
         {"session_token": "t"},
         {"active": True},
         {"display_name": "line\nbreak"},
+        {"display_name": "Name\n"},
         {"display_name": " padded"},
         {"display_name": "n" * 65},
         {"display_name": ""},
