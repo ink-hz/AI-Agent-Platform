@@ -186,34 +186,50 @@ class OfficeRecipientDirectoryRepository:
         except (IdentityCryptoError, KeyError, TypeError, ValueError):
             raise OfficeRecipientDirectoryError("directory_identity_invalid") from None
 
-    def _member(
-        self, row: dict, generation_id: UUID, *, include_recipient_id: bool
+    @staticmethod
+    def _status(row: dict) -> Literal["active", "inactive", "disabled"]:
+        status = str(row["status"])
+        if status not in {"active", "inactive", "disabled"}:
+            raise OfficeRecipientDirectoryError("directory_identity_invalid")
+        return status
+
+    def _search_member(
+        self, row: dict, generation_id: UUID
     ) -> OfficeDirectoryMember:
         member_id = row["directory_member_id"]
         try:
-            status = str(row["status"])
-            if status not in {"active", "inactive", "disabled"}:
-                raise ValueError
-            recipient_id = None
-            if include_recipient_id:
-                plaintext = self._identity_codec.unseal(
-                    ProtectedProviderId(
-                        subject_kind="employee",
-                        lookup_hmac=b"\0" * 32,
-                        lookup_key_version=1,
-                        ciphertext=bytes(row["encrypted_provider_id"]),
-                        encryption_key_version=int(row["encryption_key_version"]),
-                    )
-                )
-                recipient_id = corporate_userid(self._corp_id, plaintext)
             return OfficeDirectoryMember(
                 directory_member_id=member_id,
                 internal_user_id=row.get("internal_user_id"),
                 display_name=str(row["display_name"]),
                 real_name=self._real_name(row, generation_id, member_id),
                 departments=tuple(row.get("departments") or ()),
-                status=status,
-                dingtalk_user_id=recipient_id,
+                status=self._status(row),
+            )
+        except OfficeRecipientDirectoryError:
+            raise
+        except (KeyError, TypeError, ValueError):
+            raise OfficeRecipientDirectoryError("directory_identity_invalid") from None
+
+    def _resolved_member(self, row: dict) -> OfficeDirectoryMember:
+        try:
+            plaintext = self._identity_codec.unseal(
+                ProtectedProviderId(
+                    subject_kind="employee",
+                    lookup_hmac=b"\0" * 32,
+                    lookup_key_version=1,
+                    ciphertext=bytes(row["encrypted_provider_id"]),
+                    encryption_key_version=int(row["encryption_key_version"]),
+                )
+            )
+            return OfficeDirectoryMember(
+                directory_member_id=row["directory_member_id"],
+                internal_user_id=row.get("internal_user_id"),
+                display_name="",
+                real_name=None,
+                departments=(),
+                status=self._status(row),
+                dingtalk_user_id=corporate_userid(self._corp_id, plaintext),
             )
         except OfficeRecipientDirectoryError:
             raise
@@ -239,7 +255,7 @@ class OfficeRecipientDirectoryRepository:
         )
         generation_id = self._generation(rows)
         members = tuple(
-            self._member(row, generation_id, include_recipient_id=False)
+            self._search_member(row, generation_id)
             for row in rows
             if row.get("row_kind") == "member"
         )
@@ -271,7 +287,7 @@ class OfficeRecipientDirectoryRepository:
             if row.get("row_kind") != "member":
                 continue
             try:
-                member = self._member(row, generation_id, include_recipient_id=True)
+                member = self._resolved_member(row)
             except OfficeRecipientDirectoryError:
                 issues.append(OfficeDirectoryIssue(requested_id, "identity_invalid"))
                 continue

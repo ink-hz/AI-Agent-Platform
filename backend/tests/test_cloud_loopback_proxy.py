@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import httpx
 
@@ -38,7 +38,7 @@ def test_real_uvicorn_proxy_boundary_preserves_peer_and_overwrites_headers(tmp_p
         "async def app(scope, receive, send):\n"
         "    request = Request(scope, receive)\n"
         "    edge = resolve_edge_source(request, (ip_network(os.environ['PROBE_TRUSTED']),))\n"
-        "    await JSONResponse({'peer': request.client.host, 'edge': str(edge.ip), 'scheme': edge.scheme, 'xff': request.headers.get('x-forwarded-for')})(scope, receive, send)\n"
+        "    await JSONResponse({'peer': request.client.host, 'edge': str(edge.ip), 'scheme': edge.scheme, 'xff': request.headers.get('x-forwarded-for'), 'authorization': request.headers.get('authorization')})(scope, receive, send)\n"
         ,
         encoding="utf-8",
     )
@@ -80,6 +80,15 @@ def test_real_uvicorn_proxy_boundary_preserves_peer_and_overwrites_headers(tmp_p
         "PLATFORM_LOOPBACK_TARGET_BASE_URL": f"http://127.0.0.1:{proxy_upstream_port}",
         "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS": "127.0.0.1/32",
     }
+    office_bearer = tmp_path / "office-recipient-bearer"
+    office_bearer.write_text("s" * 32, encoding="utf-8")
+    office_bearer.chmod(0o600)
+    proxy_env.update(
+        {
+            "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED": "1",
+            "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE": str(office_bearer),
+        }
+    )
     proxy = subprocess.Popen(
         [
             sys.executable, "-m", "uvicorn",
@@ -100,13 +109,15 @@ def test_real_uvicorn_proxy_boundary_preserves_peer_and_overwrites_headers(tmp_p
         )
         _wait_ready(f"http://127.0.0.1:{proxy_port}/")
         direct_via_proxy = httpx.get(
-            f"http://127.0.0.1:{proxy_port}/"
+            f"http://127.0.0.1:{proxy_port}/",
+            headers={"Authorization": "Bearer must-never-reach-upstream"},
         ).json()
         assert direct_via_proxy == {
             "peer": "127.0.0.1",
             "edge": "127.0.0.1",
             "scheme": "http",
             "xff": "127.0.0.1",
+            "authorization": None,
         }
         spoofed = httpx.get(
             f"http://127.0.0.1:{raw_upstream_port}/",
@@ -121,6 +132,7 @@ def test_real_uvicorn_proxy_boundary_preserves_peer_and_overwrites_headers(tmp_p
             "edge": "127.0.0.1",
             "scheme": "http",
             "xff": "203.0.113.90",
+            "authorization": None,
         }
 
         proxied = httpx.get(
@@ -137,7 +149,29 @@ def test_real_uvicorn_proxy_boundary_preserves_peer_and_overwrites_headers(tmp_p
             "edge": "203.0.113.91",
             "scheme": "https",
             "xff": "203.0.113.91",
+            "authorization": None,
         }
+
+        office_url = (
+            f"http://127.0.0.1:{proxy_port}"
+            "/api/v1/internal/office/recipient-directory/search"
+        )
+        correct = httpx.post(
+            office_url,
+            headers={"Authorization": f"Bearer {'s' * 32}"},
+            json={"query": "苍渊"},
+        )
+        missing = httpx.post(office_url, json={"query": "苍渊"})
+        wrong = httpx.post(
+            office_url,
+            headers={"Authorization": f"Bearer {'x' * 32}"},
+            json={"query": "苍渊"},
+        )
+
+        assert correct.status_code == 200
+        assert correct.json()["authorization"] == f"Bearer {'s' * 32}"
+        assert missing.status_code == 404
+        assert wrong.status_code == 404
     finally:
         proxy.terminate()
         raw_upstream.terminate()

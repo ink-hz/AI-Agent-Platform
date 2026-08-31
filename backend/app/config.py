@@ -1,16 +1,15 @@
-import os
-from dataclasses import dataclass
 import ipaddress
-from pathlib import Path
+import os
 import re
 import stat
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-from .control_plane.models import ControlPlaneConfig, IdentityMode
 from .control_plane.crypto import IdentityCryptoError, IdentityKeyring
+from .control_plane.models import ControlPlaneConfig, IdentityMode
 from .local_secrets import SecretFileUnavailable, read_secret_file
-
 
 DEFAULT_SECRETS_DIR = (
     Path.home()
@@ -205,7 +204,7 @@ def _validate_public_hostname(hostname: str, *, bracketed: bool) -> None:
     except ValueError:
         pass
 
-    dns_hostname = hostname[:-1] if hostname.endswith(".") else hostname
+    dns_hostname = hostname.removesuffix(".")
     if (
         not dns_hostname
         or len(dns_hostname) > 253
@@ -616,7 +615,7 @@ def _validate_voc_extension_config(config: Config) -> None:
 
 
 def _validate_office_recipient_directory_config(config: Config) -> None:
-    if os.getenv("PLATFORM_OFFICE_RECIPIENT_BEARER"):
+    if "PLATFORM_OFFICE_RECIPIENT_BEARER" in os.environ:
         raise ValueError("Office recipient bearer must use a secret file")
     if not config.office_recipient_directory_enabled:
         return

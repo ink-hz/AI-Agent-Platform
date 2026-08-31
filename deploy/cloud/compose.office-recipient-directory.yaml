@@ -1,0 +1,23 @@
+services:
+  # Opt-in overlay. The host bearer must be a regular non-symlink file owned by
+  # UID 10001 with mode 0600. Provision it out of band; never store its content
+  # in Compose, the environment file, an image, or source control.
+  platform-api:
+    environment:
+      PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED: "1"
+      PLATFORM_OFFICE_RECIPIENT_BEARER_FILE: /run/secrets/platform-office-recipient-bearer
+    volumes:
+      - type: bind
+        source: ${PLATFORM_OFFICE_RECIPIENT_BEARER_SOURCE_FILE:?required}
+        target: /run/secrets/platform-office-recipient-bearer
+        read_only: true
+
+  platform-loopback:
+    environment:
+      PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED: "1"
+      PLATFORM_OFFICE_RECIPIENT_BEARER_FILE: /run/secrets/platform-office-recipient-bearer
+    volumes:
+      - type: bind
+        source: ${PLATFORM_OFFICE_RECIPIENT_BEARER_SOURCE_FILE:?required}
+        target: /run/secrets/platform-office-recipient-bearer
+        read_only: true

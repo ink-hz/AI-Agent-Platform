@@ -560,10 +560,8 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     assert api["environment"]["PLATFORM_PUBLIC_BASE_URL"] == "https://agent.orbbec.com.cn"
     assert api["environment"]["PLATFORM_ROUTE_PREFIX"] == "/"
     assert api["environment"]["PLATFORM_COOKIE_NAME"] == "__Host-platform_session"
-    assert api["environment"]["PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED"] == "1"
-    assert api["environment"]["PLATFORM_OFFICE_RECIPIENT_BEARER_FILE"] == (
-        "/run/secrets/platform-office-recipient-bearer"
-    )
+    assert api["environment"]["PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED"] == "0"
+    assert "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE" not in api["environment"]
     assert api["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.3/32"
     assert set(api["networks"]) == {
         "platform-internal",
@@ -612,12 +610,8 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     for forbidden in ("clientSecret:", "dingtalk-app-secret:", "corp-id:"):
         assert forbidden not in serialized
     assert services["platform-loopback"]["ports"] == ["127.0.0.1:8080:8080"]
-    office_bearer_mount = (
-        "${PLATFORM_OFFICE_RECIPIENT_BEARER_FILE}:"
-        "/run/secrets/platform-office-recipient-bearer:ro"
-    )
-    assert office_bearer_mount in api["volumes"]
-    assert office_bearer_mount in services["platform-loopback"]["volumes"]
+    assert api["volumes"] == ["platform-api-secrets:/run/secrets:ro"]
+    assert services["platform-loopback"]["volumes"] == []
     assert services["platform-loopback"]["environment"] == {
         "PLATFORM_LOOPBACK_TARGET_BASE_URL": "http://172.30.0.4:8080",
         "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS": (
@@ -628,6 +622,35 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     for name, service in services.items():
         if name != "platform-loopback":
             assert "ports" not in service
+
+
+def test_office_recipient_directory_compose_override_is_explicit_and_private():
+    override_path = CLOUD / "compose.office-recipient-directory.yaml"
+    assert override_path.is_file()
+    serialized = override_path.read_text(encoding="utf-8")
+    override = yaml.safe_load(serialized)
+    services = override["services"]
+    target = "/run/secrets/platform-office-recipient-bearer"
+
+    for name in ("platform-api", "platform-loopback"):
+        service = services[name]
+        assert service["environment"] == {
+            "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED": "1",
+            "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE": target,
+        }
+        assert service["volumes"] == [
+            {
+                "type": "bind",
+                "source": "${PLATFORM_OFFICE_RECIPIENT_BEARER_SOURCE_FILE:?required}",
+                "target": target,
+                "read_only": True,
+            }
+        ]
+        assert "ports" not in service
+
+    assert "UID 10001" in serialized
+    assert "mode 0600" in serialized
+    assert "Bearer " not in serialized
 
 
 def test_runtime_image_contains_control_migrations():

@@ -6,12 +6,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.control_plane.crypto import IdentityKeyring, ProviderIdentityCodec
 from app.control_plane.middleware import is_office_recipient_directory_request
 from app.control_plane.office_recipients import (
     OfficeDirectoryIssue,
     OfficeDirectoryMember,
     OfficeDirectoryPage,
     OfficeRecipientDirectoryError,
+    OfficeRecipientDirectoryRepository,
     build_office_recipient_router,
     corporate_userid,
 )
@@ -228,3 +230,50 @@ def test_identity_middleware_recognizes_only_the_three_office_backchannels():
     assert not is_office_recipient_directory_request("GET", f"{base}/search")
     assert not is_office_recipient_directory_request("POST", f"{base}/departments")
     assert not is_office_recipient_directory_request("POST", f"{base}/search/extra")
+
+
+def test_resolve_ignores_corrupt_optional_real_name_ciphertext():
+    codec = ProviderIdentityCodec(
+        IdentityKeyring(1, "provider-encryption", {1: b"e" * 32}),
+        IdentityKeyring(
+            1,
+            "provider-lookup-hmac",
+            {1: b"h" * 32},
+            transition_versions=(1,),
+        ),
+    )
+    protected = codec.seal("employee", "9:ding-corpstaff-001")
+
+    class Repository(OfficeRecipientDirectoryRepository):
+        def __init__(self):
+            self._identity_codec = codec
+            self._corp_id = "ding-corp"
+
+        def _read(self, *_args, **_kwargs):
+            return [
+                {
+                    "directory_generation_id": GENERATION_ID,
+                    "row_kind": "member",
+                    "directory_member_id": MEMBER_ID,
+                    "internal_user_id": USER_ID,
+                    "display_name": "苍渊",
+                    "status": "active",
+                    "encrypted_provider_id": protected.ciphertext,
+                    "encryption_key_version": protected.encryption_key_version,
+                    "real_name_ciphertext": b"invalid-ciphertext",
+                    "real_name_nonce": b"n" * 12,
+                    "real_name_encryption_key_version": 1,
+                    "departments": ["AI Lab"],
+                    "requested_id": MEMBER_ID,
+                }
+            ]
+
+    page = Repository().resolve(
+        directory_member_ids=(MEMBER_ID,),
+        internal_user_ids=(),
+    )
+
+    assert [(member.directory_member_id, member.dingtalk_user_id) for member in page.members] == [
+        (MEMBER_ID, "staff-001")
+    ]
+    assert page.unresolved == ()

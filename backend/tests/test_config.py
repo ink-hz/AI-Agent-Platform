@@ -7,7 +7,6 @@ import pytest
 from app.config import load_config
 from app.control_plane.models import IdentityMode
 
-
 CONTROL_PLANE_ENV = (
     "PLATFORM_IDENTITY_MODE",
     "PLATFORM_CONTROL_DATABASE_URL_FILE",
@@ -48,6 +47,13 @@ def test_office_recipient_directory_defaults_disabled(monkeypatch) -> None:
 
 def test_office_recipient_directory_rejects_inline_bearer(monkeypatch) -> None:
     monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_BEARER", "s" * 32)
+
+    with pytest.raises(ValueError, match="secret file"):
+        load_config()
+
+
+def test_office_recipient_directory_rejects_empty_inline_bearer(monkeypatch) -> None:
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_BEARER", "")
 
     with pytest.raises(ValueError, match="secret file"):
         load_config()

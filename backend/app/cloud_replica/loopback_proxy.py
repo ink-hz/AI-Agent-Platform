@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from ipaddress import ip_address, ip_network
+import hmac
 import os
+from ipaddress import ip_address, ip_network
 from urllib.parse import urlsplit
 
 import httpx
@@ -13,7 +14,7 @@ from app.control_plane.client_address import (
     UntrustedForwardingHeaders,
     resolve_edge_source,
 )
-
+from app.local_secrets import SecretFileUnavailable, read_secret_file
 
 _HOP_BY_HOP = frozenset(
     {
@@ -35,6 +36,14 @@ _REPLACED = frozenset(
         b"x-forwarded-for",
         b"x-forwarded-proto",
         b"x-real-ip",
+    }
+)
+_NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
+_OFFICE_RECIPIENT_ROUTES = frozenset(
+    {
+        ("POST", "/api/v1/internal/office/recipient-directory/search"),
+        ("POST", "/api/v1/internal/office/recipient-directory/resolve"),
+        ("GET", "/api/v1/internal/office/recipient-directory/departments"),
     }
 )
 
@@ -77,6 +86,7 @@ class LoopbackProxy:
         target_base_url: str,
         trusted_peer_cidrs: str,
         source_address: str | None = None,
+        office_recipient_bearer: str | None = None,
     ) -> None:
         self.target_base_url = _target(target_base_url)
         self.trusted_peers = _exact_networks(trusted_peer_cidrs)
@@ -86,6 +96,16 @@ class LoopbackProxy:
             except ValueError as error:
                 raise RuntimeError("loopback proxy source address invalid") from error
         self.source_address = source_address
+        if office_recipient_bearer is not None and (
+            not isinstance(office_recipient_bearer, str)
+            or len(office_recipient_bearer.encode("utf-8")) < 32
+        ):
+            raise RuntimeError("loopback Office recipient bearer invalid")
+        self._office_authorization = (
+            f"Bearer {office_recipient_bearer}".encode()
+            if office_recipient_bearer is not None
+            else None
+        )
 
     async def _lifespan(self, receive, send) -> None:
         while True:
@@ -151,6 +171,32 @@ class LoopbackProxy:
             )(scope, receive, send)
             return
 
+        method = scope["method"].upper()
+        path = scope.get("path", "")
+        try:
+            canonical_raw_path = path.encode("ascii")
+        except (AttributeError, UnicodeError):
+            canonical_raw_path = b""
+        office_request = (
+            (method, path) in _OFFICE_RECIPIENT_ROUTES
+            and scope.get("raw_path") == canonical_raw_path
+        )
+        if office_request and self._office_authorization is not None:
+            supplied_authorization = [
+                value
+                for name, value in scope.get("headers", ())
+                if name.lower() == b"authorization"
+            ]
+            if len(supplied_authorization) != 1 or not hmac.compare_digest(
+                supplied_authorization[0], self._office_authorization
+            ):
+                await JSONResponse(
+                    {"detail": "not found"},
+                    status_code=404,
+                    headers=_NO_STORE,
+                )(scope, receive, send)
+                return
+
         headers = [
             (name, value)
             for name, value in scope.get("headers", ())
@@ -164,6 +210,8 @@ class LoopbackProxy:
                 (b"x-forwarded-proto", edge.scheme.encode("ascii")),
             )
         )
+        if office_request and self._office_authorization is not None:
+            headers.append((b"authorization", self._office_authorization))
         transport = httpx.AsyncHTTPTransport(local_address=self.source_address)
         client = httpx.AsyncClient(transport=transport, timeout=None)
         upstream = None
@@ -210,6 +258,18 @@ class LoopbackProxy:
 
 
 def create_app() -> LoopbackProxy:
+    office_enabled = os.getenv(
+        "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED", "0"
+    ) not in {"0", "false", "False"}
+    office_bearer = None
+    if office_enabled:
+        bearer_file = os.getenv("PLATFORM_OFFICE_RECIPIENT_BEARER_FILE", "").strip()
+        if not bearer_file:
+            raise RuntimeError("loopback Office recipient bearer file required")
+        try:
+            office_bearer = read_secret_file(bearer_file)
+        except SecretFileUnavailable:
+            raise RuntimeError("loopback Office recipient bearer unavailable") from None
     return LoopbackProxy(
         target_base_url=os.getenv(
             "PLATFORM_LOOPBACK_TARGET_BASE_URL", "http://platform-api:8080"
@@ -218,4 +278,5 @@ def create_app() -> LoopbackProxy:
             "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS", "127.0.0.1/32,::1/128"
         ),
         source_address=os.getenv("PLATFORM_LOOPBACK_SOURCE_ADDRESS") or None,
+        office_recipient_bearer=office_bearer,
     )
