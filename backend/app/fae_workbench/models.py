@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 FAE_AGENT_ID = "ai-fae-agent"
 FAE_SOURCE_KIND = "fae"
+FAE_SOURCE_ENVIRONMENT = "production"
 
 
 class FaeTrendPoint(BaseModel):
@@ -34,3 +35,13 @@ class FaeOperationalSnapshot(BaseModel):
     p95_duration_ms: int | None
     trend: list[FaeTrendPoint] = Field(default_factory=list)
     attention: list[FaeSessionAttention] = Field(default_factory=list)
+
+
+class FaeFeedbackProjection(BaseModel):
+    """A complete period-bounded cloud feedback projection for FAE."""
+
+    period_start: datetime
+    period_end: datetime
+    negative_feedback_events: int = Field(ge=0)
+    negative_turn_count: int = Field(ge=0)
+    daily_negative_turns: dict[date, int] = Field(default_factory=dict)

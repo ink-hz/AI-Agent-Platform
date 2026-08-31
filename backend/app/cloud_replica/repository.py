@@ -281,7 +281,7 @@ class ReplicaObservabilityRepository:
                     }
                 )
             day = _time(record["last_active_at"]).astimezone(_SHANGHAI).date()
-            bucket = trends.setdefault(day, {"sessions": 0, "negative_turns": 0})
+            bucket = trends.setdefault(day, {"sessions": 0})
             bucket["sessions"] += 1
         attention.sort(key=lambda item: (-item["last_active_at"].timestamp(), item["session_key"]))
         return {

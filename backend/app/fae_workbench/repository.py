@@ -9,7 +9,9 @@ from psycopg.rows import dict_row
 
 from .models import (
     FAE_AGENT_ID,
+    FAE_SOURCE_ENVIRONMENT,
     FAE_SOURCE_KIND,
+    FaeFeedbackProjection,
     FaeOperationalSnapshot,
     FaeSessionAttention,
     FaeTrendPoint,
@@ -137,10 +139,22 @@ class FaeWorkbenchRepository(Protocol):
     def fae_turn_exists(self, turn_key: str) -> bool: ...
 
 
+class FaeFeedbackProjectionReader(Protocol):
+    def read_fae_feedback(
+        self, period_start: datetime, period_end: datetime
+    ) -> FaeFeedbackProjection | None: ...
+
+
 class PsycopgFaeWorkbenchRepository:
     def __init__(
-        self, database_url: str, *, connect: Callable[..., Any] = psycopg.connect
+        self,
+        database_url: str,
+        *,
+        connect: Callable[..., Any] = psycopg.connect,
+        source_environment: str = FAE_SOURCE_ENVIRONMENT,
     ) -> None:
+        if source_environment != FAE_SOURCE_ENVIRONMENT:
+            raise ValueError("fae_workbench_production_required")
         self._database_url = database_url
         self._connect = connect
 
@@ -193,11 +207,13 @@ class ReplicaFaeWorkbenchRepository:
         self,
         repository: Any,
         *,
-        feedback_totals: Callable[[datetime, datetime], tuple[int, int] | None]
-        | None = None,
+        feedback_reader: FaeFeedbackProjectionReader,
+        source_environment: str = FAE_SOURCE_ENVIRONMENT,
     ) -> None:
+        if source_environment != FAE_SOURCE_ENVIRONMENT:
+            raise ValueError("fae_workbench_production_required")
         self._repository = repository
-        self._feedback_totals = feedback_totals
+        self._feedback_reader = feedback_reader
 
     def snapshot(
         self, period_start: datetime, period_end: datetime
@@ -206,19 +222,30 @@ class ReplicaFaeWorkbenchRepository:
             aggregate = self._repository.fae_operational_aggregate(
                 period_start, period_end
             )
-            feedback = (
-                self._feedback_totals(period_start, period_end)
-                if self._feedback_totals is not None
-                else None
+            feedback = self._feedback_reader.read_fae_feedback(
+                period_start, period_end
             )
-            if feedback is None:
+            if (
+                feedback is None
+                or feedback.period_start != period_start
+                or feedback.period_end != period_end
+            ):
                 raise ValueError
-            negative_feedback_events, negative_turn_count = feedback
+            trend_days = {item["day"] for item in aggregate["trend"]}
+            if trend_days != set(feedback.daily_negative_turns):
+                raise ValueError
+            aggregate["trend"] = [
+                {
+                    **item,
+                    "negative_turns": feedback.daily_negative_turns[item["day"]],
+                }
+                for item in aggregate["trend"]
+            ]
             return FaeOperationalSnapshot(
                 period_start=period_start,
                 period_end=period_end,
-                negative_feedback_events=negative_feedback_events,
-                negative_turn_count=negative_turn_count,
+                negative_feedback_events=feedback.negative_feedback_events,
+                negative_turn_count=feedback.negative_turn_count,
                 **aggregate,
             )
         except Exception:

@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 
 from app.fae_workbench.repository import (
+    FAE_SOURCE_ENVIRONMENT,
     FaeWorkbenchReadError,
     PsycopgFaeWorkbenchRepository,
 )
@@ -115,6 +116,15 @@ def test_turn_scope_requires_both_fae_agent_and_source():
     assert "agent_id='ai-fae-agent'" in "".join(statement.split())
     assert "source_kind='fae'" in "".join(statement.split())
     assert params == ("fae:turn-1",)
+
+
+def test_local_repository_rejects_nonproduction_environment():
+    with pytest.raises(ValueError, match="^fae_workbench_production_required$"):
+        PsycopgFaeWorkbenchRepository(
+            "postgresql://platform", source_environment="staging"
+        )
+
+    assert FAE_SOURCE_ENVIRONMENT == "production"
 
 
 def test_snapshot_preserves_unavailable_freshness_and_null_duration_percentiles():
