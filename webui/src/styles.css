@@ -1025,7 +1025,7 @@ body {
 @media (max-width: 900px) {
   .fae-workbench { grid-template-columns: 1fr; gap: 16px; padding-top: 20px; }
   .fae-workbench__sidebar { gap: 16px; }
-  .fae-workbench__sidebar nav { display: flex; flex-wrap: wrap; }
+  .fae-workbench__sidebar nav { display: flex; flex-wrap: nowrap; overflow-x: auto; }
 }
 
 .app.is-brain-workspace-shell { height: 100dvh; overflow: hidden; }

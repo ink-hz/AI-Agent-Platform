@@ -38,6 +38,29 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 
 describe("FAE workbench API", () => {
+  it("preserves nullable metrics and unavailable sections from a valid overview", async () => {
+    const value = {
+      ...overview,
+      summary: {
+        ...overview.summary,
+        data: { ...overview.summary.data, p50_duration_ms: null, p95_duration_ms: null },
+      },
+      attention: {
+        state: { status: "unavailable", as_of: null, error_code: "operational_summary_unavailable" }, items: [],
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(value), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    })));
+
+    await expect(faeWorkbenchApi.overview()).resolves.toMatchObject({
+      summary: { data: { open_issue_count: null, p50_duration_ms: null, p95_duration_ms: null } },
+      attention: { state: { status: "unavailable", as_of: null, error_code: "operational_summary_unavailable" }, items: [] },
+      issues: { state: { status: "unavailable", as_of: null, error_code: "issues_unavailable" } },
+      reports: { state: { status: "unavailable", as_of: null, error_code: "reports_not_integrated" } },
+    });
+  });
+
   it("sends only server-accepted session filters", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       items: [], total: 0, limit: 20, offset: 0,

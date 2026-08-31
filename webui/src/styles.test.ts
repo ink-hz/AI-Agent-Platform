@@ -83,6 +83,11 @@ describe("Executive Operations visual contract", () => {
     }
   });
 
+  it("keeps compact FAE workbench navigation in one keyboard-scrollable row", () => {
+    const compact = block("@media (max-width: 900px)");
+    expect(compact).toContain(".fae-workbench__sidebar nav { display: flex; flex-wrap: nowrap; overflow-x: auto; }");
+  });
+
   it("gives summary and insight cards visible resting weight", () => {
     expect(rule(".fleet-summary-card")).toContain("min-height: 150px");
     expect(rule(".fleet-summary-card")).toContain("padding: 24px");

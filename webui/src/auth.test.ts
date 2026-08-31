@@ -30,6 +30,7 @@ import {
   type Account,
   type ManagedUser,
 } from "./auth";
+import { routePath } from "./router";
 
 
 afterEach(() => {
@@ -58,6 +59,14 @@ function accountResponse(): Response {
 
 
 describe("login return path", () => {
+  it.each([
+    routePath({ name: "admin-fae-session", sessionKey: "fae:session-1" }),
+    routePath({ name: "admin-fae-report", reportId: "weekly:2026-08-31" }),
+  ])("round-trips a canonical encoded FAE detail path through the login query: %s", (path) => {
+    const search = `?${new URLSearchParams({ return_path: path })}`;
+    expect(loginReturnPath(search)).toBe(path);
+  });
+
   it.each([
     ["?return_path=/admin/", "/admin/"],
     ["?return_path=%2Fadmin%2F", "/admin/"],
