@@ -4,13 +4,18 @@ from uuid import uuid4
 import psycopg
 import pytest
 
-from test_control_plane_migration import control_database
+pytest_plugins = ("test_control_plane_migration",)
 
 
 MIGRATION = (
     Path(__file__).parents[1]
     / "control_migrations"
     / "053_office_recipient_directory.sql"
+)
+MIGRATION_FIX = (
+    Path(__file__).parents[1]
+    / "control_migrations"
+    / "054_office_recipient_directory_department_order.sql"
 )
 
 
@@ -39,6 +44,19 @@ def test_v53_reader_is_bounded_to_the_complete_active_generation():
     assert "inactive" in sql
     assert "disabled" in sql
     assert "not_found" in sql
+
+
+def test_v54_reader_preserves_security_boundary_and_wraps_department_ordering():
+    sql = " ".join(MIGRATION_FIX.read_text(encoding="utf-8").lower().split())
+
+    assert "read_office_recipient_directory_v54" in sql
+    assert "security definer" in sql
+    assert "set search_path = pg_catalog, platform_control" in sql
+    assert "from ( select tree.generation_id" in sql
+    assert ") as ordered(" in sql
+    assert "order by ordered.department_name" in sql
+    assert "revoke all" in sql
+    assert "grant execute" in sql
 
 
 @pytest.mark.postgres
@@ -73,7 +91,7 @@ def test_v53_reader_has_exact_environment_grants(control_database):
 
 
 @pytest.mark.postgres
-def test_v53_reader_searches_descendants_and_resolves_inactive_states(
+def test_v54_reader_searches_descendants_resolves_states_and_lists_departments(
     control_database,
 ):
     environment = control_database["environments"]["production"]
@@ -163,12 +181,12 @@ def test_v53_reader_searches_descendants_and_resolves_inactive_states(
 
     with psycopg.connect(environment["urls"]["platform_control_app"]) as connection:
         search = connection.execute(
-            "select * from platform_control.read_office_recipient_directory_v53("
+            "select * from platform_control.read_office_recipient_directory_v54("
             "'search','苍渊',%s::uuid[],true,20,null,%s::uuid[],%s::uuid[])",
             ([root_department_id], [], []),
         ).fetchall()
         resolved = connection.execute(
-            "select * from platform_control.read_office_recipient_directory_v53("
+            "select * from platform_control.read_office_recipient_directory_v54("
             "'resolve','',%s::uuid[],false,20,null,%s::uuid[],%s::uuid[])",
             (
                 [],
@@ -181,6 +199,11 @@ def test_v53_reader_searches_descendants_and_resolves_inactive_states(
                 [],
             ),
         ).fetchall()
+        departments = connection.execute(
+            "select * from platform_control.read_office_recipient_directory_v54("
+            "'departments','',%s::uuid[],false,20,null,%s::uuid[],%s::uuid[])",
+            ([], [], []),
+        ).fetchall()
 
     assert [(row[1], row[2], row[3], row[11]) for row in search] == [
         ("member", active_member_id, internal_user_id, ["AI Lab"])
@@ -192,3 +215,7 @@ def test_v53_reader_searches_descendants_and_resolves_inactive_states(
         disabled_member_id: ("issue", "disabled"),
         missing_member_id: ("issue", "not_found"),
     }
+    assert [(row[15], row[16], row[17]) for row in departments] == [
+        (child_department_id, root_department_id, "AI Lab"),
+        (root_department_id, None, "Office"),
+    ]

@@ -139,7 +139,7 @@ class OfficeRecipientDirectoryRepository:
             with self._connection() as connection:
                 rows = connection.execute(
                     "select * from platform_control."
-                    "read_office_recipient_directory_v53("
+                    "read_office_recipient_directory_v54("
                     "%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         operation,
