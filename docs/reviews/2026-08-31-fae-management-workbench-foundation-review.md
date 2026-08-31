@@ -12,7 +12,8 @@
 **最终 Important 修复 implementation head：** `7521efdb01527956a5253ba288dddb55191921e5`
 **whole-branch follow-up 修复范围：** `0f2723c008729d47f8ea90d32e5a74084a33daea..fb7f95c635cd9ab5f0378de6193914d018d2a4d0`
 **release-handoff canonical truth implementation head：** `58591892305a6cf97729a8d3488ee4da8a80fe70`
-**最终 cumulative implementation head：** `58591892305a6cf97729a8d3488ee4da8a80fe70`
+**canonical audit pair structural implementation head：** `d89e18ab0229442131d931aed6a2610ff91c0a6d`
+**最终 cumulative implementation head：** `d89e18ab0229442131d931aed6a2610ff91c0a6d`
 **结论：** Foundation 的代码、自动化回归和静态上线契约满足进入部署流程的条件；本次复审没有部署、没有调用生产环境，也不构成生产验收。
 
 ## 2026-09-01 whole-branch Important 修复补充
@@ -72,6 +73,35 @@ TDD RED 首先证明 shared pair predicate/target event 合同缺失；最终 ac
 cloud backend 为 `239 passed`。Python compileall、commit-range/staged diff、canonical writer/event
 全仓搜索、shared local/cloud predicate 搜索、新增行 credential scan 与 progress-ledger diff 均
 PASS。本次没有 frontend 变更，按复审要求未重复 frontend/build；未部署、未调用生产、未合并。
+
+## 2026-09-01 canonical audit pair structural 修复
+
+最后一项 duplicate-disposition cross-contract 缺陷已在 cumulative implementation head
+`d89e18ab0229442131d931aed6a2610ff91c0a6d` 关闭。唯一 canonical-edge mutation helper
+`_mutate_canonical_edge` 现在把 Agent advisory lock、稳定端点锁、Agent ownership、递归可达性、
+状态更新以及 source `issue_merged` / target `issue_absorbed` 精确事件对收敛到同一 transaction；
+generic merge、duplicate disposition 与 release handoff 都只能通过该 helper 创建 edge。重复提交同一
+source/target 在校验 row version 后返回已存状态，不重复状态更新、merge/absorbed pair 或
+`issue_disposition_set`。
+
+本地与 cloud 共用的 scope predicate 现在还要求每个当前非空 `canonical_issue_id` 至少存在一个
+与当前 source/target、Agent、actor 和 reason 精确匹配的双侧事件对；单独存在
+`issue_disposition_set` 不能代替 merge/absorbed contract。历史 legacy canonical row 若缺少或错误
+配对会有意 fail closed；它需要独立核验后的显式运维修复，读取路径不会补造不可变历史事件。
+
+TDD RED 为 `5 failed`，分别证明统一 mutation helper、current-row pair proof、generic/FAE duplicate
+pair 与结构性 writer 约束缺失。最终 actual repository/facade 测试覆盖 generic 和 FAE duplicate 的
+edge + pair + disposition、row-version idempotent repeat、local/cloud shared scope、legacy missing / actor
+mismatch fail closed、merge/handoff 不重复以及 cycle rollback；AST 结构测试同时证明全仓唯一非空
+canonical assignment、唯一事件写入位置和三个受支持 caller。
+
+绑定 `d89e18ab0229442131d931aed6a2610ff91c0a6d` 的 consolidated backend 为
+`265 passed, 1 warning`；fresh canonical backend 为
+`3588 passed, 2 skipped, 180 warnings`（322.39 秒）；cloud backend 为
+`239 passed, 1 warning`（20.20 秒）。Python compileall、commit diff check、canonical writer/event
+全仓搜索、shared local/cloud predicate 检查、新增行 credential scan 和 progress-ledger diff 均
+PASS。没有 frontend 文件变化，按指令未重复 frontend/build；未部署、未调用生产、未合并、未修改
+progress ledger。
 
 ## 自动化结果
 
