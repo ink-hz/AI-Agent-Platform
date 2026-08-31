@@ -14,6 +14,7 @@ from .control_plane.partner_provider import (
     partner_provider_release_registered,
     validate_partner_callback,
 )
+from .control_plane.partner_release import validate_partner_release
 from .local_secrets import SecretFileUnavailable, read_secret_file
 
 
@@ -84,7 +85,10 @@ class Config:
     execution_relay_lease_seconds: int
     execution_relay_max_body_bytes: int
     environment: Literal["development", "test", "production"]
+    partner_identity_enabled: bool
     partner_provider_kind: str
+    partner_provider_release_file: str
+    partner_provider_release_sha256: str
     partner_callback_method: Literal["GET", "POST"]
     partner_callback_path: str
     control_plane: ControlPlaneConfig
@@ -92,6 +96,26 @@ class Config:
 
 def _enabled(name: str, default: str = "0") -> bool:
     return os.getenv(name, default) not in {"0", "false", "False"}
+
+
+_STRICT_FLAG_TRUE = frozenset({"1", "true", "yes", "on"})
+_STRICT_FLAG_FALSE = frozenset({"", "0", "false", "no", "off"})
+
+
+def _strict_flag(name: str, code: str) -> bool:
+    """Strict boolean for gates that must never be enabled by a typo.
+
+    ``_enabled`` treats every unrecognised value as true, which is the wrong
+    default for a production identity gate: an ambiguous value fails closed and
+    loudly instead.
+    """
+    value = os.getenv(name, "")
+    lowered = value.lower()
+    if lowered in _STRICT_FLAG_FALSE:
+        return False
+    if lowered in _STRICT_FLAG_TRUE:
+        return True
+    raise ValueError(f"{code}_invalid")
 
 
 def _loopback(value: str) -> bool:
@@ -188,7 +212,7 @@ def _positive_environment_int(name: str, default: int) -> int:
     return value
 
 
-def _partner_provider_settings() -> tuple[str, str, str, str]:
+def _partner_provider_settings() -> tuple[str, str, str, str, bool, str, str]:
     configured_environment = os.getenv("PLATFORM_ENVIRONMENT")
     environment = (
         configured_environment.strip()
@@ -214,7 +238,20 @@ def _partner_provider_settings() -> tuple[str, str, str, str]:
             raise ValueError("partner_provider_release_not_registered")
         if not partner_provider_registered(kind):
             raise ValueError("partner_provider_not_registered")
-    return environment, kind, callback_method, callback_path
+    identity_enabled = _strict_flag(
+        "PLATFORM_PARTNER_IDENTITY_ENABLED", "partner_identity_enabled"
+    )
+    release_file = os.getenv("PLATFORM_PARTNER_PROVIDER_RELEASE_FILE", "").strip()
+    release_sha256 = os.getenv("PLATFORM_PARTNER_PROVIDER_RELEASE_SHA256", "").strip()
+    return (
+        environment,
+        kind,
+        callback_method,
+        callback_path,
+        identity_enabled,
+        release_file,
+        release_sha256,
+    )
 
 
 def _normalize_route_prefix(value: str) -> str:
@@ -651,6 +688,18 @@ def _validate_voc_extension_config(config: Config) -> None:
         raise RuntimeError("VOC extension signing key is unavailable") from error
 
 
+def _validate_partner_release_config(config: Config) -> None:
+    """Production partner identity requires validated Provider release evidence.
+
+    Outside production the gate is a no-op so dev and test keep using the
+    Reference Provider. In production an enabled gate without valid evidence is
+    a startup failure, never a partial enable.
+    """
+    if config.environment != "production" or not config.partner_identity_enabled:
+        return
+    validate_partner_release(config)
+
+
 def is_cloud_mode(config: Config) -> bool:
     return config.deployment_mode == "cloud-replica"
 
@@ -681,6 +730,9 @@ def load_config() -> Config:
         partner_provider_kind,
         partner_callback_method,
         partner_callback_path,
+        partner_identity_enabled,
+        partner_provider_release_file,
+        partner_provider_release_sha256,
     ) = _partner_provider_settings()
     config = Config(
         deployment_mode=os.getenv("PLATFORM_DEPLOYMENT_MODE", "local"),
@@ -815,7 +867,10 @@ def load_config() -> Config:
         execution_relay_lease_seconds=execution_relay_lease_seconds,
         execution_relay_max_body_bytes=execution_relay_max_body_bytes,
         environment=environment,
+        partner_identity_enabled=partner_identity_enabled,
         partner_provider_kind=partner_provider_kind,
+        partner_provider_release_file=partner_provider_release_file,
+        partner_provider_release_sha256=partner_provider_release_sha256,
         partner_callback_method=partner_callback_method,
         partner_callback_path=partner_callback_path,
         control_plane=_load_control_plane_config(),
@@ -826,4 +881,5 @@ def load_config() -> Config:
     _validate_agent_brain_config(config)
     _validate_brain_model_config(config)
     _validate_voc_extension_config(config)
+    _validate_partner_release_config(config)
     return config

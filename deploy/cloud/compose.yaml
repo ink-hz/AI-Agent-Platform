@@ -86,6 +86,16 @@ services:
       PLATFORM_VOC_EXTENSION_BASE_URL: http://172.29.0.3:18130
       PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE: /run/secrets/voc-extension-signing-key
       PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS: "10"
+      # FAE partner operator identity is production-disabled: no real Partner
+      # Provider has been selected yet. These values are deliberately empty so
+      # the release gate fails closed and no Partner start or callback route is
+      # mounted. Enabling requires validated Provider release evidence created
+      # by docs/runbooks/fae-partner-provider-probe.md; the Reference Provider
+      # can never be used here.
+      PLATFORM_PARTNER_IDENTITY_ENABLED: "0"
+      PLATFORM_PARTNER_PROVIDER_KIND: ""
+      PLATFORM_PARTNER_PROVIDER_RELEASE_FILE: ""
+      PLATFORM_PARTNER_PROVIDER_RELEASE_SHA256: ""
     volumes:
       - platform-api-secrets:/run/secrets:ro
     networks:

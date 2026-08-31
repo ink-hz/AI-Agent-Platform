@@ -59,6 +59,7 @@ from .control_plane.partner_provider import (
     create_registered_partner_provider,
     partner_provider_release_registered,
 )
+from .control_plane.partner_release import validate_partner_release
 from .control_plane.models import DirectoryFreshness, IdentityMode
 from .control_plane.routes_auth import build_auth_router
 from .control_plane.auth import (
@@ -590,6 +591,11 @@ def create_app(
                 raise ValueError("partner_reference_provider_forbidden")
             if not partner_provider_release_registered(selected_partner_provider.kind):
                 raise ValueError("partner_provider_release_not_registered")
+            # Production partner login exists only behind validated Provider
+            # release evidence. An injected Provider is not an exemption: the
+            # gate must be enabled and the evidence must name a registered,
+            # non-reference kind, so nothing can be substituted at startup.
+            validate_partner_release(config)
         if (
             config.partner_provider_kind
             and selected_partner_provider.kind != config.partner_provider_kind

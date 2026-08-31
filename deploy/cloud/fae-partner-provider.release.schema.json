@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent.orbbec.com.cn/contracts/fae-partner-provider/v1/release",
+  "title": "Orbbec FAE Partner Provider Release Evidence v1",
+  "description": "Release evidence that a real Partner Provider passed the dev real-account probe. The Reference Provider can never satisfy this contract. The document carries booleans, one probe timestamp and one digest only; no partner sign-in material of any kind may appear here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "provider_kind",
+    "stable_subject_verified",
+    "two_distinct_subjects_verified",
+    "active_status_or_local_revocation_verified",
+    "shared_password_forbidden",
+    "state_and_callback_replay_verified",
+    "dev_real_account_tested_at",
+    "evidence_sha256"
+  ],
+  "properties": {
+    "contract_version": {
+      "description": "Pinned release contract version.",
+      "const": "orbbec-fae-partner-provider/v1"
+    },
+    "provider_kind": {
+      "description": "Registered Partner Provider kind. The Reference Provider is forbidden.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_-]{0,127}$",
+      "not": {"const": "reference"}
+    },
+    "stable_subject_verified": {"type": "boolean", "const": true},
+    "two_distinct_subjects_verified": {"type": "boolean", "const": true},
+    "active_status_or_local_revocation_verified": {"type": "boolean", "const": true},
+    "shared_password_forbidden": {"type": "boolean", "const": true},
+    "state_and_callback_replay_verified": {"type": "boolean", "const": true},
+    "dev_real_account_tested_at": {
+      "description": "RFC3339 timestamp of the dev real-account probe. Never in the future, and inside the 180 day evidence freshness window.",
+      "type": "string",
+      "format": "date-time",
+      "minLength": 20,
+      "maxLength": 40
+    },
+    "evidence_sha256": {
+      "description": "Lowercase SHA-256 digest of the archived probe evidence bundle. The bundle itself is never stored in this repository.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "$comment": "Threshold booleans are const true so a partially verified Provider cannot be released: stable_subject_verified proves a stable non-reassignable subject; two_distinct_subjects_verified proves two real operators map to two subjects; active_status_or_local_revocation_verified proves status reporting or sufficient local revocation; shared_password_forbidden proves no shared sign-in path authenticates an operator; state_and_callback_replay_verified proves start-state binding and callback replay rejection."
+}
