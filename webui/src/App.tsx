@@ -8,6 +8,7 @@ import { AgentsPage } from "./pages/AgentsPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
 import { AgentRuntimePage } from "./pages/AgentRuntimePage";
 import { SessionsPage } from "./pages/SessionsPage";
+import { FaeSessionsPage } from "./pages/FaeSessionsPage";
 import { SessionDetailPage } from "./pages/SessionDetailPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { ReviewPage } from "./pages/ReviewPage";
@@ -124,7 +125,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-governance": return <GovernancePage />;
     case "admin-voc": return <VocManagementPage />;
     case "admin-fae-overview": return <FaeWorkbenchPendingPage section="overview" />;
-    case "admin-fae-sessions":
+    case "admin-fae-sessions": return <FaeSessionsPage />;
     case "admin-fae-session": return <FaeWorkbenchPendingPage section="sessions" />;
     case "admin-fae-issues":
     case "admin-fae-issue": return <FaeWorkbenchPendingPage section="issues" />;

@@ -80,7 +80,7 @@ describe("observability directory components", () => {
   });
 
   it("preserves original Session language and links encoded keys", () => {
-    const html = renderToStaticMarkup(<SessionListItem session={session} />);
+    const html = renderToStaticMarkup(<SessionListItem session={session} detailHref={`/admin/sessions/${encodeURIComponent(session.session_key)}`} />);
 
     expect(html).toContain("Gemini 335L 如何排查？");
     expect(html).toContain("DingTalk");

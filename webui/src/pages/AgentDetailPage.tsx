@@ -117,7 +117,7 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
             : <div className="operational-event-list">{activity.items.slice(0, 8).map((event) => <OperationalEventItem event={event} key={event.event_id} />)}</div>}
     </section>
     <section className="detail-section"><div className="section-heading"><div><h2>最近 Session</h2></div><PlatformLink href={`/admin/sessions?agent_id=${encodeURIComponent(agent.id)}`}>查看全部 {sessions.total} 个 →</PlatformLink></div>
-      {sessions.items.length ? <div className="session-list">{sessions.items.map((session) => <SessionListItem key={session.session_key} session={session} />)}</div> : <EmptyState title="暂无 Session" description="该 Agent 正在运行，但还没有采集到 Session。" />}
+      {sessions.items.length ? <div className="session-list">{sessions.items.map((session) => <SessionListItem key={session.session_key} session={session} detailHref={`/admin/sessions/${encodeURIComponent(session.session_key)}`} />)}</div> : <EmptyState title="暂无 Session" description="该 Agent 正在运行，但还没有采集到 Session。" />}
     </section>
   </>;
 }

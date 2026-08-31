@@ -15,9 +15,11 @@ function dateTime(value: string) {
 
 export function SessionListItem({
   session,
+  detailHref,
   showSignals = true,
 }: {
   session: SessionSummary;
+  detailHref: string;
   showSignals?: boolean;
 }) {
   const sender = session.source_kind === "metabot"
@@ -25,7 +27,7 @@ export function SessionListItem({
     : null;
   const additionalParticipants = additionalParticipantLabel(session.participant_count);
   return (
-    <PlatformLink className="session-row" href={`/admin/sessions/${encodeURIComponent(session.session_key)}`} preserveSessionContext>
+    <PlatformLink className="session-row" href={detailHref} preserveSessionContext>
       <div className="session-source"><span>{session.source_kind.toUpperCase()}</span><b>{session.channel}</b></div>
       <div className="session-title">
         <strong>{session.title || "未命名 Session"}</strong>

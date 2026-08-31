@@ -129,6 +129,15 @@ describe("SessionsPage URL state", () => {
     expect(container.textContent).not.toContain("CONVERSATION RECORD");
   });
 
+  it("canonicalizes FAE-only filters away from generic Session URLs", async () => {
+    window.history.replaceState({}, "", "/admin/sessions?channel=fae&sentiment=negative");
+
+    await renderPage();
+
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/sessions");
+    expect(sessionPaths[sessionPaths.length - 1]).toBe("/api/sessions?limit=50");
+  });
+
   it("replaces the URL when filters are applied", async () => {
     await renderPage();
 

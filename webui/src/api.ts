@@ -106,8 +106,12 @@ export interface SessionQuery {
   agent_id?: string;
   source_kind?: string;
   q?: string;
+  channel?: string;
   sentiment?: string;
   review_status?: string;
+  outcome?: string;
+  date_from?: string;
+  date_to?: string;
   limit?: number;
   offset?: number;
 }
