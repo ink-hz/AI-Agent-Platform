@@ -826,3 +826,61 @@ The temporary public entry does not approve the one-year backfill or
 five-minute synchronization. Those remain separate gates: the private sanitizer dictionary,
 canary scan, reconciliation, stale-state test, restore drill, and local scheduler
 must pass before real Session data is considered available or current.
+
+## Office recipient resolver scoped release (`office_recipient_resolver_release`)
+
+此能力只能在已完成常规不可变 release 后单独启用。通用 `deploy.sh` 明确拒绝
+`PLATFORM_OFFICE_RECIPIENT_BEARER`、`PLATFORM_OFFICE_RECIPIENT_BEARER_FILE` 和
+`PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED`，防止私有解析能力随普通发布被隐式开启。
+
+1. 在 owner-only 终端创建共享秘密文件，不经过标准输出：
+
+   ```bash
+   umask 077
+   install -o 10001 -g 10001 -m 600 /dev/null /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+   openssl rand -hex 32 > /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+   chown 10001:10001 /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+   chmod 600 /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+   ```
+
+   文件必须是容器服务账号 UID 10001、GID 10001 所有的普通非符号链接、mode 0600、至少
+   32 字节；root 所有的 mode 0600 文件无法被容器读取，必须阻断发布。不得打印、复制到工单、
+   放入 argv 或提交仓库。AI ADMIN 通过独立的受保护部署步骤读取同一份秘密。
+
+2. 记录当前两个目标容器的 Container ID、Image ID、StartedAt、RestartCount、配置摘要和
+   mounts 摘要。确认当前 release 包含
+   `backend/control_migrations/058_office_recipient_directory.sql` 与
+   `backend/control_migrations/059_office_recipient_directory_department_order.sql`，随后用既有
+   owner migration runner 依次应用并验证 058、059；不得手工粘贴或改写 SQL。
+
+   早期 scoped feature release 曾以 053、054 发布同一组 Office 函数；主线随后已占用 053–057，
+   因此合并后的正式编号固定为 058、059。若目标库的 migration ledger 已记录早期 Office
+   053、054，必须先停止通用 migrator，核对旧 SQL checksum 与函数定义，再在受控维护窗口迁移
+   ledger 到 058、059，之后才能应用主线 053–057；不得让 checksum guard 失败后继续部署。
+
+3. 在目标机的 protected environment 中只设置：
+
+   ```dotenv
+   PLATFORM_OFFICE_RECIPIENT_BEARER_SOURCE_FILE=/opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+   ```
+
+   使用 base Compose 与显式 override，仅重建两个目标服务：
+
+   ```bash
+   docker compose --env-file /opt/orbbec-agent-platform/private/platform.env \
+     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.yaml \
+     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.office-recipient-directory.yaml \
+     config --services
+   docker compose --env-file /opt/orbbec-agent-platform/private/platform.env \
+     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.yaml \
+     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.office-recipient-directory.yaml \
+     up -d --no-deps platform-api platform-loopback
+   ```
+
+4. 从目标机验证回环请求加正确 bearer 成功；缺失 bearer、错误 bearer 和非本地 peer 均返回
+   404。响应必须为 `Cache-Control: no-store`，搜索响应不得包含解密后的收件人 ID，resolve
+   响应只在这个服务间边界返回最小字段。
+
+5. 回退时先停止 AI ADMIN 新通知准备，确认没有依赖解析器的可认领发送，再用 base Compose
+   配置重建这两个服务，使 feature flag 恢复为 0。保留 migration 058、059 和目录数据，不删除表；
+   重新核对两个目标容器与公开页面状态。

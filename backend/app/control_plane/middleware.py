@@ -57,6 +57,15 @@ def is_agent_identity_backchannel_request(method: str, path: str) -> bool:
     )
 
 
+def is_office_recipient_directory_request(method: str, path: str) -> bool:
+    base = "/api/v1/internal/office/recipient-directory"
+    return (method, path) in {
+        ("POST", f"{base}/search"),
+        ("POST", f"{base}/resolve"),
+        ("GET", f"{base}/departments"),
+    }
+
+
 def _source_is_loopback(scope, edge_source) -> bool:
     if edge_source is not None:
         return bool(edge_source.ip.is_loopback)
@@ -286,6 +295,10 @@ class IdentitySecurityMiddleware:
             )
             or _is_agent_brain_response_path(local_path)
             or _is_ai_notes_response_path(local_path)
+            or (
+                isinstance(local_path, str)
+                and is_office_recipient_directory_request(method, local_path)
+            )
         )
 
         async def protected_send(message):
@@ -329,11 +342,14 @@ class IdentitySecurityMiddleware:
                 return
             scope.setdefault("state", {})["edge_source"] = edge_source
 
-        internal_agent_identity = (
+        internal_backchannel = (
             isinstance(local_path, str)
-            and is_agent_identity_backchannel_request(method, local_path)
+            and (
+                is_agent_identity_backchannel_request(method, local_path)
+                or is_office_recipient_directory_request(method, local_path)
+            )
         )
-        if internal_agent_identity:
+        if internal_backchannel:
             if (
                 not _has_canonical_ascii_raw_path(scope, path)
                 or not _source_is_loopback(scope, edge_source)

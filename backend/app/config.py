@@ -1,14 +1,14 @@
-import os
-from dataclasses import dataclass
 import ipaddress
-from pathlib import Path
+import os
 import re
 import stat
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-from .control_plane.models import ControlPlaneConfig, IdentityMode
 from .control_plane.crypto import IdentityCryptoError, IdentityKeyring
+from .control_plane.models import ControlPlaneConfig, IdentityMode
 from .control_plane.partner_provider import (
     partner_provider_registered,
     partner_provider_release_registered,
@@ -16,7 +16,6 @@ from .control_plane.partner_provider import (
 )
 from .control_plane.partner_release import validate_partner_release
 from .local_secrets import SecretFileUnavailable, read_secret_file
-
 
 DEFAULT_SECRETS_DIR = (
     Path.home()
@@ -77,6 +76,8 @@ class Config:
     brain_provider_base_url: str
     brain_provider_api_key_file: str
     brain_model_manifest_path: str
+    office_recipient_directory_enabled: bool
+    office_recipient_bearer_file: str
     voc_extension_enabled: bool
     voc_extension_base_url: str
     voc_extension_signing_key_file: str
@@ -278,7 +279,7 @@ def _validate_public_hostname(hostname: str, *, bracketed: bool) -> None:
     except ValueError:
         pass
 
-    dns_hostname = hostname[:-1] if hostname.endswith(".") else hostname
+    dns_hostname = hostname.removesuffix(".")
     if (
         not dns_hostname
         or len(dns_hostname) > 253
@@ -700,6 +701,30 @@ def _validate_partner_release_config(config: Config) -> None:
     validate_partner_release(config)
 
 
+def _validate_office_recipient_directory_config(config: Config) -> None:
+    if "PLATFORM_OFFICE_RECIPIENT_BEARER" in os.environ:
+        raise ValueError("Office recipient bearer must use a secret file")
+    if not config.office_recipient_directory_enabled:
+        return
+    if not config.office_recipient_bearer_file:
+        raise ValueError(
+            "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE is required when the "
+            "Office recipient directory is enabled"
+        )
+    _validate_private_file(
+        config.office_recipient_bearer_file,
+        "Office recipient bearer",
+    )
+    try:
+        bearer = read_secret_file(config.office_recipient_bearer_file)
+        if len(bearer.encode("utf-8")) < 32:
+            raise RuntimeError(
+                "Office recipient bearer must contain at least 32 bytes"
+            )
+    except (OSError, SecretFileUnavailable) as error:
+        raise RuntimeError("Office recipient bearer is unavailable") from error
+
+
 def is_cloud_mode(config: Config) -> bool:
     return config.deployment_mode == "cloud-replica"
 
@@ -852,6 +877,12 @@ def load_config() -> Config:
         brain_model_manifest_path=os.getenv(
             "PLATFORM_BRAIN_MODEL_MANIFEST_PATH", ""
         ).strip(),
+        office_recipient_directory_enabled=_enabled(
+            "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED"
+        ),
+        office_recipient_bearer_file=os.getenv(
+            "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE", ""
+        ).strip(),
         voc_extension_enabled=_enabled("PLATFORM_VOC_EXTENSION_ENABLED"),
         voc_extension_base_url=os.getenv(
             "PLATFORM_VOC_EXTENSION_BASE_URL", "http://127.0.0.1:18130"
@@ -880,6 +911,7 @@ def load_config() -> Config:
     _validate_execution_relay_config(config)
     _validate_agent_brain_config(config)
     _validate_brain_model_config(config)
+    _validate_office_recipient_directory_config(config)
     _validate_voc_extension_config(config)
     _validate_partner_release_config(config)
     return config

@@ -20,6 +20,9 @@ set -a
 # shellcheck disable=SC1090
 source "$config_path"
 set +a
+[[ -z "${PLATFORM_OFFICE_RECIPIENT_BEARER+x}" ]] || fail
+[[ -z "${PLATFORM_OFFICE_RECIPIENT_BEARER_FILE+x}" ]] || fail
+[[ -z "${PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED+x}" ]] || fail
 for required_name in CLOUD_ADMIN_HOST CLOUD_ADMIN_KEY CLOUD_SIGNING_PUBLIC_KEY CLOUD_BACKUP_PUBLIC_KEY CLOUD_CONTENT_ENCRYPTION_KEYRING CLOUD_EXECUTION_WORKER_PUBLIC_KEYRING; do
   [[ -n "${!required_name:-}" ]] || fail
 done

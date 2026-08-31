@@ -62,6 +62,7 @@ services:
       PLATFORM_PUBLIC_BASE_URL: https://agent.orbbec.com.cn
       PLATFORM_ROUTE_PREFIX: /
       PLATFORM_COOKIE_NAME: __Host-platform_session
+      PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED: "0"
       PLATFORM_CONTROL_DATABASE_URL_FILE: /run/secrets/control-database-url
       PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE: /run/secrets/control-audit-database-url
       PLATFORM_DINGTALK_APP_SECRET_FILE: /run/secrets/dingtalk-app-secret
