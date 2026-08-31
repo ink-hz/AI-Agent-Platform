@@ -83,6 +83,7 @@ _GATE_REASONS = EXPECTED_DISABLED_REASONS | frozenset(
         "partner_release_config_invalid",
         "partner_environment_invalid",
         "partner_provider_kind_required",
+        "partner_provider_release_required",
         "partner_reference_provider_forbidden",
         "partner_provider_release_digest_invalid",
         "partner_provider_release_digest_mismatch",
@@ -132,6 +133,22 @@ def _read_config(config: object) -> dict[str, object]:
     return values
 
 
+def _release_metadata_is_secure(metadata: os.stat_result) -> bool:
+    """Accept a private service-owned file or a root-owned service-group copy."""
+    mode = stat.S_IMODE(metadata.st_mode)
+    effective_uid = os.getuid()
+    if metadata.st_uid == effective_uid:
+        return mode & 0o177 == 0
+    if metadata.st_uid != 0 or effective_uid == 0:
+        return False
+    service_groups = {os.getgid(), *os.getgroups()}
+    return (
+        metadata.st_gid in service_groups
+        and bool(mode & 0o040)
+        and mode & 0o137 == 0
+    )
+
+
 def _require_secure_release_file(path_value: str) -> tuple[Path, bytes]:
     candidate = path_value.strip()
     if not candidate:
@@ -142,20 +159,19 @@ def _require_secure_release_file(path_value: str) -> tuple[Path, bytes]:
     no_follow = getattr(os, "O_NOFOLLOW", 0)
     if no_follow == 0:  # pragma: no cover - production is Linux
         raise ValueError("partner_provider_release_insecure")
+    non_blocking = getattr(os, "O_NONBLOCK", 0)
+    if non_blocking == 0:  # pragma: no cover - production is Linux
+        raise ValueError("partner_provider_release_insecure")
     descriptor = -1
     try:
         descriptor = os.open(
             path,
-            os.O_RDONLY | no_follow | getattr(os, "O_CLOEXEC", 0),
+            os.O_RDONLY | no_follow | non_blocking | getattr(os, "O_CLOEXEC", 0),
         )
         metadata = _release_stat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
             raise ValueError("partner_provider_release_insecure")
-        if stat.S_IMODE(metadata.st_mode) & 0o177:
-            raise ValueError("partner_provider_release_insecure")
-        # The evidence is written root-owned on the host and read by the
-        # service user inside the container; nothing else may own it.
-        if metadata.st_uid not in {0, os.getuid()}:
+        if not _release_metadata_is_secure(metadata):
             raise ValueError("partner_provider_release_insecure")
         if metadata.st_size > MAX_RELEASE_BYTES:
             raise ValueError("partner_provider_release_insecure")
@@ -183,7 +199,7 @@ def _require_secure_release_file(path_value: str) -> tuple[Path, bytes]:
 def _parse_release_document(body: bytes) -> dict[str, object]:
     try:
         document = json.loads(body)
-    except (UnicodeDecodeError, ValueError) as error:
+    except (RecursionError, UnicodeDecodeError, ValueError) as error:
         raise ValueError("partner_provider_release_malformed") from error
     if not isinstance(document, dict):
         raise ValueError("partner_provider_release_malformed")  # noqa: TRY004

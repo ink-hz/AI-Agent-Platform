@@ -11,6 +11,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+
 from app.config import load_config
 
 ROOT = Path(__file__).parents[2]
@@ -367,6 +368,7 @@ def test_release_is_read_from_one_no_follow_file_descriptor(
     assert validate_partner_release(config_factory(release=release))
     assert observed_flags
     assert observed_flags[0] & os.O_NOFOLLOW
+    assert observed_flags[0] & os.O_NONBLOCK
 
 
 @pytest.mark.parametrize("mode", [0o640, 0o604, 0o660, 0o606, 0o700, 0o777])
@@ -389,7 +391,7 @@ def test_release_owned_by_another_user_fails_closed(
         validate_partner_release(config_factory(release=release))
 
 
-def test_release_owned_by_root_is_accepted(
+def test_root_owned_0600_release_is_not_assumed_readable_by_service_user(
     config_factory, signed_release, monkeypatch
 ) -> None:
     release = signed_release()
@@ -400,11 +402,60 @@ def test_release_owned_by_root_is_accepted(
         _release_module(),
         "_release_stat",
         lambda path: SimpleNamespace(
-            st_mode=metadata.st_mode, st_uid=0, st_size=metadata.st_size
+            st_mode=metadata.st_mode,
+            st_uid=0,
+            st_gid=metadata.st_gid,
+            st_size=metadata.st_size,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="partner_provider_release_insecure"):
+        validate_partner_release(config_factory(release=release))
+
+
+def test_root_owned_service_group_release_is_accepted(
+    config_factory, signed_release, monkeypatch
+) -> None:
+    release = signed_release()
+    metadata = release.path.lstat()
+    monkeypatch.setattr(_release_module().os, "getuid", lambda: metadata.st_uid + 4242)
+    monkeypatch.setattr(_release_module().os, "getgid", lambda: metadata.st_gid)
+    monkeypatch.setattr(_release_module().os, "getgroups", lambda: [metadata.st_gid])
+    monkeypatch.setattr(
+        _release_module(),
+        "_release_stat",
+        lambda descriptor: SimpleNamespace(
+            st_mode=stat.S_IFREG | 0o640,
+            st_uid=0,
+            st_gid=metadata.st_gid,
+            st_size=metadata.st_size,
         ),
     )
 
     assert validate_partner_release(config_factory(release=release))
+
+
+def test_root_owned_release_with_unrelated_group_fails_closed(
+    config_factory, signed_release, monkeypatch
+) -> None:
+    release = signed_release()
+    metadata = release.path.lstat()
+    monkeypatch.setattr(_release_module().os, "getuid", lambda: metadata.st_uid + 4242)
+    monkeypatch.setattr(_release_module().os, "getgid", lambda: metadata.st_gid + 1)
+    monkeypatch.setattr(_release_module().os, "getgroups", list)
+    monkeypatch.setattr(
+        _release_module(),
+        "_release_stat",
+        lambda descriptor: SimpleNamespace(
+            st_mode=stat.S_IFREG | 0o640,
+            st_uid=0,
+            st_gid=metadata.st_gid,
+            st_size=metadata.st_size,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="partner_provider_release_insecure"):
+        validate_partner_release(config_factory(release=release))
 
 
 def test_non_regular_release_fails_closed(config_factory, signed_release) -> None:
@@ -449,6 +500,13 @@ def test_oversized_release_fails_closed(config_factory, signed_release) -> None:
     release = signed_release(raw=json.dumps({"padding": padding}).encode())
 
     with pytest.raises(ValueError, match="partner_provider_release_insecure"):
+        validate_partner_release(config_factory(release=release))
+
+
+def test_recursive_json_release_fails_closed(config_factory, signed_release) -> None:
+    release = signed_release(raw=b"[" * 1000 + b"]" * 1000)
+
+    with pytest.raises(ValueError, match="partner_provider_release_malformed"):
         validate_partner_release(config_factory(release=release))
 
 
@@ -631,6 +689,13 @@ def test_evaluate_never_raises_and_reports_every_rejection(
     )
 
 
+def test_evaluate_preserves_missing_release_reason(config_factory) -> None:
+    status = evaluate_partner_release(config_factory(partner_provider_release=None))
+
+    assert status.reason == "partner_provider_release_required"
+    assert status.config_valid is False
+
+
 def test_incomplete_config_object_fails_closed() -> None:
     with pytest.raises(ValueError, match="partner_release_config_invalid"):
         validate_partner_release(SimpleNamespace(environment="production"))
@@ -801,7 +866,8 @@ def test_probe_runbook_keeps_release_disabled_and_defines_revocation_rollback() 
         "two distinct",
         "stable subject",
         "reference provider",
-        "0600",
+        "0640",
+        "10001",
         "sha-256",
         "partner_login_expected=false",
         "public_fae_chat_unchanged=true",
@@ -828,10 +894,11 @@ def test_release_file_mode_helper_matches_the_private_file_convention() -> None:
 
 def _production_app(tmp_path, monkeypatch, provider):
     """Build the Platform app the way existing production wiring tests do."""
-    from app.control_plane.auth import AuthSecrets
-    from app.control_plane.models import ControlPlaneConfig, IdentityMode
     from test_dingtalk_auth_api import FakeAuth, _app
     from test_partner_provider import FakePartnerService
+
+    from app.control_plane.auth import AuthSecrets
+    from app.control_plane.models import ControlPlaneConfig, IdentityMode
 
     config_module = importlib.import_module("app.config")
     monkeypatch.setattr(

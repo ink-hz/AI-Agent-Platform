@@ -33,9 +33,13 @@ provider selection and to the later provider-specific plan.
 
 ## Create the evidence release
 
-Create a root-owned regular file outside the release tree, for example
-`/opt/orbbec-agent-platform/private/fae-partner-provider.release.json`. It must not be a symlink and must have
-mode `0600`. Its exact closed shape is defined by
+Keep the archived source as a root-owned `0600` regular file outside the release tree. For the non-root Platform
+API container, install a separate read-only service copy such as
+`/opt/orbbec-agent-platform/private/platform-api/fae-partner-provider.release.json`, owned by
+`root:10001` with mode `0640`, and bind-mount it read-only at the absolute path configured inside the container.
+The service copy must not be a symlink and must be byte-for-byte identical to the archived source. This avoids
+granting the API process write access while still making the evidence readable by its configured UID/GID
+`10001:10001`. Its exact closed shape is defined by
 `deploy/cloud/fae-partner-provider.release.schema.json`; all five verification flags must be `true`, the Provider
 kind must be a registered non-Reference Provider, and `dev_real_account_tested_at` must be RFC3339 and no older
 than 180 days.
@@ -51,11 +55,16 @@ Only a later provider-specific release may set these production variables:
 ```text
 PLATFORM_PARTNER_IDENTITY_ENABLED=1
 PLATFORM_PARTNER_PROVIDER_KIND=<registered-non-reference-kind>
-PLATFORM_PARTNER_PROVIDER_RELEASE_FILE=<absolute-root-owned-0600-file>
+PLATFORM_PARTNER_PROVIDER_RELEASE_FILE=<absolute-read-only-service-copy>
 PLATFORM_PARTNER_PROVIDER_RELEASE_SHA256=<lowercase-release-file-sha-256>
 ```
 
 This foundation release keeps all four values disabled/empty in `deploy/cloud/compose.yaml`.
+
+The provider-specific release must give FAE the same `PLATFORM_PARTNER_PROVIDER_KIND`, the same release-file
+digest, and a byte-identical read-only service copy at FAE's explicit container path. FAE rejects a release whose
+Provider kind differs from its configured kind; Platform remains the authority that verifies the kind is actually
+registered for production. Never enable the FAE login control independently of the Platform gate.
 
 ## Read-only validation
 
