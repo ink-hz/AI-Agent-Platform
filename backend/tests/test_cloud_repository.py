@@ -7,6 +7,7 @@ import pytest
 
 from app.cloud_replica.crypto import FieldCipher
 from app.cloud_replica.repository import ReplicaObservabilityRepository
+from app.fae_workbench.repository import FaeWorkbenchReadError, ReplicaFaeWorkbenchRepository
 from app.observability.models import SessionFilters
 from app.observability.repository import ObservabilityReadError
 
@@ -33,6 +34,14 @@ class _Cursor:
             rows = self.connection.rows
             if "where session_key = %s" in normalized:
                 rows = [row for row in rows if row["session_key"] == params[0]]
+            elif "where agent_id = %s and source_kind = %s" in normalized:
+                agent_id, source_kind, period_start, period_end = params
+                rows = [
+                    row for row in rows
+                    if row["agent_id"] == agent_id
+                    and row["source_kind"] == source_kind
+                    and period_start <= row["last_active_at"] < period_end
+                ]
             self.rows = rows
         else:
             self.rows = []
@@ -124,6 +133,7 @@ def _row(cipher, record, committed_sequence=1):
     decode = lambda value: base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
     return {
         "session_key": record["key"],
+        "user_id": record["user_id"],
         "agent_id": record["agent_id"],
         "source_kind": record["source_kind"],
         "channel": record["channel"],
@@ -332,3 +342,42 @@ def test_usage_leaders_count_answered_turns_not_sessions():
     assert [(item.agent_id, item.agent_name, item.conversations) for item in leaders] == [
         ("ai-fae-agent", "AI FAE Agent", 44),
     ]
+
+
+def test_fae_operational_aggregate_uses_only_bounded_sanitized_records():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    fae = _record(now, key="f" * 52, agent_id="ai-fae-agent", turn_key="1" * 52)
+    fae["user_id"] = "u" * 52
+    fae["source_kind"] = "fae"
+    fae["turns"][0]["fallback_used"] = True
+    fae["turns"][0]["duration_ms"] = 900
+    unrelated = _record(now, key="a" * 52, agent_id="hr-bot", turn_key="2" * 52)
+    outside_period = _record(
+        now - timedelta(days=8), key="b" * 52, agent_id="ai-fae-agent", turn_key="3" * 52
+    )
+    outside_period["source_kind"] = "fae"
+    repository, connection = _repository(now, (fae, unrelated, outside_period))
+
+    aggregate = repository.fae_operational_aggregate(now - timedelta(days=1), now + timedelta(seconds=1))
+
+    assert aggregate["session_count"] == 1
+    assert aggregate["active_subject_count"] == 1
+    assert aggregate["abnormal_session_count"] == 1
+    assert aggregate["p50_duration_ms"] == 900
+    assert aggregate["trend"][0]["sessions"] == 1
+    assert aggregate["attention"][0]["session_key"] == "f" * 52
+    statement, params = connection.statements[-2]
+    assert "agent_id = %s" in statement
+    assert "source_kind = %s" in statement
+    assert params == ("ai-fae-agent", "fae", now - timedelta(days=1), now + timedelta(seconds=1))
+    assert "u" * 52 not in repr(aggregate)
+
+
+def test_fae_cloud_wrapper_does_not_replace_missing_feedback_with_zero():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    record = _record(now, agent_id="ai-fae-agent")
+    record["source_kind"] = "fae"
+    repository, _ = _repository(now, (record,))
+
+    with pytest.raises(FaeWorkbenchReadError, match="^fae_workbench_query_failed$"):
+        ReplicaFaeWorkbenchRepository(repository).snapshot(now - timedelta(days=1), now + timedelta(seconds=1))

@@ -35,7 +35,7 @@ from .crypto import FieldCipher, ReplicaCryptoError
 
 
 _SESSION_COLUMNS = """
-session_key, agent_id, source_kind, channel, created_at, last_active_at,
+session_key, user_id, agent_id, source_kind, channel, created_at, last_active_at,
 generation_sequence, display_payload, payload_nonce, payload_sha256
 """.strip()
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -155,6 +155,22 @@ class ReplicaObservabilityRepository:
         with self._connection() as connection, connection.cursor() as cursor:
             return list(cursor.execute(sql, params).fetchall())
 
+    def _fae_rows_in_period(
+        self, period_start: datetime, period_end: datetime
+    ) -> list[dict[str, Any]]:
+        sql = f"""
+        select {_SESSION_COLUMNS} from platform_replica.sessions
+        where agent_id = %s and source_kind = %s
+          and last_active_at >= %s and last_active_at < %s
+        order by last_active_at desc, session_key
+        """
+        with self._connection() as connection, connection.cursor() as cursor:
+            return list(
+                cursor.execute(
+                    sql, ("ai-fae-agent", "fae", period_start, period_end)
+                ).fetchall()
+            )
+
     def _decrypt(self, row: dict[str, Any]) -> dict[str, Any]:
         encrypted = {
             "nonce": _b64(row["payload_nonce"]),
@@ -198,6 +214,100 @@ class ReplicaObservabilityRepository:
             raise ObservabilityReadError("replica read failed") from None
         except Exception:
             raise ObservabilityReadError("replica read failed") from None
+
+    def _fae_records_in_period(
+        self, period_start: datetime, period_end: datetime
+    ) -> list[tuple[dict[str, Any], str]]:
+        try:
+            return [
+                (self._decrypt(row), row["user_id"])
+                for row in self._fae_rows_in_period(period_start, period_end)
+            ]
+        except (ReplicaCryptoError, OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+            raise ObservabilityReadError("replica read failed") from None
+        except Exception:
+            raise ObservabilityReadError("replica read failed") from None
+
+    @staticmethod
+    def _percentile(values: list[int], fraction: float) -> int | None:
+        if not values:
+            return None
+        ordered = sorted(values)
+        position = (len(ordered) - 1) * fraction
+        lower = int(position)
+        upper = min(lower + 1, len(ordered) - 1)
+        value = ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+        return int(round(value))
+
+    @staticmethod
+    def _abnormal_reason(turns: list[dict[str, Any]]) -> str | None:
+        if any(turn.get("fallback_used") is True for turn in turns):
+            return "fallback"
+        if any(
+            turn.get("outcome") is not None
+            and str(turn["outcome"]).casefold()
+            not in {"resolved", "completed", "succeeded"}
+            for turn in turns
+        ):
+            return "failed_outcome"
+        if any(not str((turn.get("answer") or {}).get("text") or "").strip() for turn in turns):
+            return "empty_answer"
+        return None
+
+    def fae_operational_aggregate(
+        self, period_start: datetime, period_end: datetime
+    ) -> dict[str, Any]:
+        records = self._fae_records_in_period(period_start, period_end)
+        subject_ids = {user_id for _record, user_id in records if user_id}
+        durations: list[int] = []
+        trends: dict[date, dict[str, int]] = {}
+        attention: list[dict[str, Any]] = []
+        abnormal_session_count = 0
+        for record, _user_id in records:
+            turns = list(record.get("turns") or [])
+            for turn in turns:
+                duration = turn.get("duration_ms")
+                if isinstance(duration, int) and not isinstance(duration, bool) and duration >= 0:
+                    durations.append(duration)
+            reason = self._abnormal_reason(turns)
+            if reason is not None:
+                abnormal_session_count += 1
+                attention.append(
+                    {
+                        "session_key": record["key"],
+                        "title": (record.get("title") or {}).get("text"),
+                        "last_active_at": _time(record["last_active_at"]),
+                        "reason": reason,
+                    }
+                )
+            day = _time(record["last_active_at"]).astimezone(_SHANGHAI).date()
+            bucket = trends.setdefault(day, {"sessions": 0, "negative_turns": 0})
+            bucket["sessions"] += 1
+        attention.sort(key=lambda item: (-item["last_active_at"].timestamp(), item["session_key"]))
+        return {
+            "data_as_of": self._latest_success(),
+            "session_count": len(records),
+            "active_subject_count": len(subject_ids),
+            "abnormal_session_count": abnormal_session_count,
+            "p50_duration_ms": self._percentile(durations, 0.5),
+            "p95_duration_ms": self._percentile(durations, 0.95),
+            "trend": [
+                {"day": day, **bucket}
+                for day, bucket in sorted(trends.items())
+            ],
+            "attention": attention[:10],
+        }
+
+    def fae_turn_exists(self, turn_key: str) -> bool:
+        try:
+            for record, _user_id in self._fae_records_in_period(
+                datetime.min.replace(tzinfo=UTC), datetime.max.replace(tzinfo=UTC)
+            ):
+                if any(turn.get("key") == turn_key for turn in record.get("turns", [])):
+                    return True
+            return False
+        except ObservabilityReadError:
+            raise
 
     def _status_freshness(self) -> str:
         return "stale" if self.deployment_status()["freshness"] == "stale" else "fresh"
