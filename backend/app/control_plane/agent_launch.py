@@ -24,6 +24,26 @@ _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 _FAE_AGENT_ID = "ai-fae-agent"
 _FAE_LAUNCH_BASE = "https://fae.orbbec.com.cn/app/"
 _LAUNCH_CODE = re.compile(r"[A-Za-z0-9_-]{32,256}\Z")
+# The frozen private back-channel contract, checked in under
+# contracts/fae_identity_v1. Adding the marker is rolling-deploy safe: an older
+# Agent ignores the extra field, and a newer Agent refuses anything without it.
+_IDENTITY_CONTRACT_VERSION = "orbbec-fae-identity/v1"
+_DISPLAY_NAME_LIMIT = 64
+_CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _safe_display_name(value: object) -> str | None:
+    """Project a stored name into the narrow shape the contract allows.
+
+    Names come from provider directories and from partner records, so their
+    length and their bytes are not ours to trust. The contract admits a bounded
+    single-line string or nothing at all, and dropping a name is always
+    preferable to shipping control characters into an Agent's rendering path.
+    """
+    if not isinstance(value, str):
+        return None
+    cleaned = _CONTROL_CHARACTERS.sub("", value).strip()
+    return cleaned[:_DISPLAY_NAME_LIMIT].strip() or None
 
 
 class AgentLaunchError(RuntimeError):
@@ -436,6 +456,27 @@ def _raise(error: AgentLaunchError) -> None:
     raise HTTPException(error.status_code, error.code, headers=_NO_STORE) from None
 
 
+def _identity_body(result) -> dict[str, object]:
+    """The one shape both back-channel responses are allowed to have.
+
+    Exchange and validate answer the same question about the same subject, so
+    they share one projection; validate only adds `active`. Anything not listed
+    here -- department, role, provider ids, tokens -- stays inside the Platform.
+    """
+    return {
+        "contract_version": _IDENTITY_CONTRACT_VERSION,
+        "subject_id": str(result.subject_id),
+        "subject_type": result.subject_type,
+        "internal_user_id": (
+            None if result.internal_user_id is None else str(result.internal_user_id)
+        ),
+        "identity_binding_id": str(result.identity_binding_id),
+        "agent_id": result.agent_id,
+        "display_name": _safe_display_name(result.display_name),
+        "partner_display_name": _safe_display_name(result.partner_display_name),
+    }
+
+
 def build_agent_launch_router(service: AgentLaunchService) -> APIRouter:
     router = APIRouter(tags=["agent-launch"])
 
@@ -460,19 +501,7 @@ def build_agent_launch_router(service: AgentLaunchService) -> APIRouter:
         except AgentLaunchError as exc:
             _raise(exc)
         response.headers.update(_NO_STORE)
-        return {
-            "subject_id": str(result.subject_id),
-            "subject_type": result.subject_type,
-            "identity_binding_id": str(result.identity_binding_id),
-            "agent_id": result.agent_id,
-            "internal_user_id": (
-                None
-                if result.internal_user_id is None
-                else str(result.internal_user_id)
-            ),
-            "display_name": result.display_name,
-            "partner_display_name": result.partner_display_name,
-        }
+        return _identity_body(result)
 
     @router.post("/api/v1/internal/agent-bindings/{binding_id}/validate")
     async def validate(
@@ -490,19 +519,6 @@ def build_agent_launch_router(service: AgentLaunchService) -> APIRouter:
         if not result.active or result.subject_id is None or result.subject_type is None:
             raise HTTPException(401, "binding_inactive", headers=_NO_STORE)
         response.headers.update(_NO_STORE)
-        return {
-            "subject_id": str(result.subject_id),
-            "subject_type": result.subject_type,
-            "identity_binding_id": str(result.identity_binding_id),
-            "agent_id": result.agent_id,
-            "internal_user_id": (
-                None
-                if result.internal_user_id is None
-                else str(result.internal_user_id)
-            ),
-            "display_name": result.display_name,
-            "partner_display_name": result.partner_display_name,
-            "active": True,
-        }
+        return {**_identity_body(result), "active": True}
 
     return router

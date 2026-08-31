@@ -30,3 +30,34 @@ def test_jcs_dependency_has_one_stable_pin_in_each_runtime() -> None:
             line for line in requirements if line.strip().lower().startswith("jcs")
         ]
         assert jcs_dependencies == ["jcs==0.2.1"]
+
+
+def test_contract_schema_validator_is_pinned_for_tests_only() -> None:
+    """The FAE identity contract needs a real draft 2020-12 validator.
+
+    It must arrive through requirements.txt -- never as a package that only
+    happens to be installed on a developer machine -- and it must not be
+    dragged into the cloud runtime, which serves the contract without
+    validating it. The pin has to match the contract package's own pin, or the
+    two repositories could disagree about what the schema means.
+    """
+    backend = Path(__file__).resolve().parents[1]
+    pin = "jsonschema==4.26.0"
+
+    requirements = (backend / "requirements.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    cloud = (backend / "requirements.cloud.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    contract = (
+        backend.parent / "contracts" / "fae_identity_v1" / "pyproject.toml"
+    ).read_text(encoding="utf-8")
+
+    assert [
+        line for line in requirements if line.strip().lower().startswith("jsonschema")
+    ] == [pin]
+    assert [
+        line for line in cloud if line.strip().lower().startswith("jsonschema")
+    ] == []
+    assert f'"{pin}"' in contract

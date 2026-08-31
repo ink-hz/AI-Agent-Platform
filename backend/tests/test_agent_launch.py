@@ -398,6 +398,7 @@ def test_launch_routes_return_only_minimal_exchange_identity() -> None:
     assert set(issue.json()) == {"launch_url", "expires_at"}
     assert exchange.status_code == 200
     assert exchange.json() == {
+        "contract_version": "orbbec-fae-identity/v1",
         "subject_id": str(USER_ID),
         "subject_type": "enterprise_member",
         "internal_user_id": str(USER_ID),
@@ -407,6 +408,7 @@ def test_launch_routes_return_only_minimal_exchange_identity() -> None:
         "partner_display_name": None,
     }
     assert validation.json() == {
+        "contract_version": "orbbec-fae-identity/v1",
         "subject_id": str(USER_ID),
         "subject_type": "enterprise_member",
         "internal_user_id": str(USER_ID),
