@@ -61,7 +61,9 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   const [initialTurn, setInitialTurn] = useState<ReviewInboxItem | null>(null);
   const [loadingTurn, setLoadingTurn] = useState(hasTurnDeepLink);
   const [turnError, setTurnError] = useState<"missing" | "forbidden" | "unavailable" | null>(null);
-  const [issueStatus, setIssueStatus] = useState(() => issueFilterFromSearch(window.location.search, cloudReplica).value);
+  const [filterRevision, setFilterRevision] = useState(0);
+  const parsedIssueFilter = issueFilterFromSearch(window.location.search, cloudReplica);
+  const issueStatus = parsedIssueFilter.value;
   const reviewApi = useMemo(() => faeWorkbenchApi.review(account.csrf_token), [account.csrf_token]);
   const issueFilters = useMemo(() => !issueStatus
     ? undefined
@@ -70,26 +72,23 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
       : { status: issueStatus }, [cloudReplica, issueStatus]);
 
   useEffect(() => {
-    if (!deploymentResolved) return;
-    const restore = () => {
-      const parsed = issueFilterFromSearch(window.location.search, cloudReplica);
-      if (!parsed.valid) {
-        const query = new URLSearchParams(window.location.search);
-        query.delete("status");
-        query.delete("disposition");
-        const search = query.toString();
-        navigate(`${localPathname()}${search ? `?${search}` : ""}`, { replace: true });
-      }
-      setIssueStatus(parsed.value);
-    };
-    restore();
+    const restore = () => setFilterRevision((value) => value + 1);
     window.addEventListener("popstate", restore);
     window.addEventListener("platform:navigate", restore);
     return () => {
       window.removeEventListener("popstate", restore);
       window.removeEventListener("platform:navigate", restore);
     };
-  }, [cloudReplica, deploymentResolved]);
+  }, []);
+
+  useEffect(() => {
+    if (!deploymentResolved || parsedIssueFilter.valid) return;
+    const query = new URLSearchParams(window.location.search);
+    query.delete("status");
+    query.delete("disposition");
+    const search = query.toString();
+    navigate(`${localPathname()}${search ? `?${search}` : ""}`, { replace: true });
+  }, [cloudReplica, deploymentResolved, filterRevision, parsedIssueFilter.valid]);
 
   const changeIssueStatus = (status: string) => {
     const query = new URLSearchParams(window.location.search);
@@ -137,7 +136,7 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   }, [sessionKey, turnKey]);
 
   let content;
-  if (!deploymentResolved) content = <LoadingState label="正在确认部署模式" />;
+  if (!deploymentResolved || !parsedIssueFilter.valid) content = <LoadingState label="正在确认部署模式" />;
   else if (loadingTurn) content = <LoadingState label="正在加载原始回答" />;
   else if (turnError) content = <section className="permission-state" role="alert">{turnError === "missing"
     ? <><h1>找不到原始回答</h1><p>该 Session 中不存在指定 Turn，无法创建治理事项。</p></>

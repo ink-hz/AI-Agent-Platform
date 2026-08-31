@@ -439,6 +439,99 @@ describe("FaeIssuesPage", () => {
     expect(requests).toContain("/api/admin/fae/issues?limit=200&status=open");
   });
 
+  it("waits for delayed cloud mode and canonicalizes locally-valid status before the first Issue request", async () => {
+    const identityMeta = document.createElement("meta");
+    identityMeta.name = "platform-identity-mode";
+    identityMeta.content = "enabled";
+    document.head.append(identityMeta);
+    window.history.replaceState({}, "", "/admin/fae/issues?status=fixing");
+    let resolveDeployment!: (value: Response) => void;
+    const deployment = new Promise<Response>((resolve) => { resolveDeployment = resolve; });
+    const issueRequests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path.endsWith("/api/v1/account")) return Promise.resolve(response(owner));
+      if (path.endsWith("/api/deployment")) return deployment;
+      if (path.endsWith("/api/admin/fae/issue-overview")) return Promise.resolve(response({
+        feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null,
+        feedback_totals_status: "unavailable", issue_total: 0,
+        statuses: {}, dispositions: {}, write_available: false,
+      }));
+      if (path.includes("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.includes("/api/admin/fae/issues?")) {
+        issueRequests.push(path);
+        return Promise.resolve(response([]));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(issueRequests).toEqual([]);
+
+    await act(async () => {
+      resolveDeployment(response({
+        mode: "cloud-replica", read_only: true, auth: "ssh-tunnel", freshness: "current", last_success_at: null,
+      }));
+      await deployment;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=200");
+    expect(issueRequests).toHaveLength(1);
+    expect(issueRequests.every((path) => !path.includes("fixing"))).toBe(true);
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/issues");
+  });
+
+  it.each([
+    ["cloud disposition", "cloud-replica", "?disposition=actionable", "/api/admin/fae/issues?limit=200&disposition=actionable"],
+    ["cloud open", "cloud-replica", "?status=open", "/api/admin/fae/issues?limit=200&status=open"],
+    ["local lifecycle", "local", "?status=fixing", "/api/admin/fae/issues?limit=200&status=fixing"],
+  ])("issues exactly one initial request for valid %s after mode resolves", async (_label, mode, search, expected) => {
+    const identityMeta = document.createElement("meta");
+    identityMeta.name = "platform-identity-mode";
+    identityMeta.content = "enabled";
+    document.head.append(identityMeta);
+    window.history.replaceState({}, "", `/admin/fae/issues${search}`);
+    let resolveDeployment!: (value: Response) => void;
+    const deployment = new Promise<Response>((resolve) => { resolveDeployment = resolve; });
+    const issueRequests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path.endsWith("/api/v1/account")) return Promise.resolve(response(owner));
+      if (path.endsWith("/api/deployment")) return deployment;
+      if (path.endsWith("/api/admin/fae/issue-overview")) return Promise.resolve(response(
+        mode === "cloud-replica"
+          ? { feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null, feedback_totals_status: "unavailable", issue_total: 0, statuses: {}, dispositions: {}, write_available: false }
+          : overview(true),
+      ));
+      if (path.includes("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.includes("/api/admin/fae/issues?")) {
+        issueRequests.push(path);
+        return Promise.resolve(response([]));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(issueRequests).toEqual([]);
+
+    await act(async () => {
+      resolveDeployment(response({
+        mode, read_only: mode === "cloud-replica", auth: mode === "cloud-replica" ? "ssh-tunnel" : "dingtalk",
+        freshness: "current", last_success_at: null,
+      }));
+      await deployment;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(issueRequests).toEqual([expected]);
+    expect(window.location.search).toBe(search);
+  });
+
   it("preserves the preview prefix while changing an overview-backed Issue status", async () => {
     const prefix = "/_preview/dingtalk-r1";
     window.history.replaceState({}, "", `${prefix}/admin/fae/issues?status=open`);
