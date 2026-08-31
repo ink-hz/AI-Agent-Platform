@@ -121,4 +121,6 @@ class SetDisposition(StrictModel):
     def duplicate_requires_target(self):
         if self.disposition == "duplicate" and self.canonical_issue_id is None:
             raise ValueError("duplicate requires canonical_issue_id")
+        if self.disposition != "duplicate" and self.canonical_issue_id is not None:
+            raise ValueError("canonical_issue_id is only valid for duplicate")
         return self

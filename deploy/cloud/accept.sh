@@ -838,7 +838,32 @@ PY
   for path in "${fae_owner_apis[@]}"; do
     status_code="$("${curl_owner[@]}" -o "$temporary/fae-owner-api.json" -w '%{http_code}' "$base$path")" || fail
     [[ "$status_code" == "200" ]] || fail
-    "$python" -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$temporary/fae-owner-api.json" || fail
+    if [[ "$path" == "/api/admin/fae/issues" ]]; then
+      "$python" - "$temporary/fae-owner-api.json" <<'PY' || fail
+import json
+import sys
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+items = value.get("items") if isinstance(value, dict) else None
+total = value.get("total") if isinstance(value, dict) else None
+limit = value.get("limit") if isinstance(value, dict) else None
+offset = value.get("offset") if isinstance(value, dict) else None
+has_more = value.get("has_more") if isinstance(value, dict) else None
+if (
+    not isinstance(items, list)
+    or not isinstance(total, int) or isinstance(total, bool) or total < 0
+    or not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 200
+    or not isinstance(offset, int) or isinstance(offset, bool) or offset < 0
+    or not isinstance(has_more, bool)
+    or len(items) > limit
+    or total < offset + len(items)
+    or has_more != (offset + len(items) < total)
+):
+    raise SystemExit(1)
+PY
+    else
+      "$python" -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$temporary/fae-owner-api.json" || fail
+    fi
   done
 
   status_code="$("${curl_owner[@]}" -o "$temporary/fae-reports.html" -w '%{http_code}' "$base/admin/fae/reports")" || fail

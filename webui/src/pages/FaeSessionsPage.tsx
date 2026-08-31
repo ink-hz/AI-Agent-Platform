@@ -25,6 +25,10 @@ export function FaeSessionsPage() {
         date_from: query.date_from,
         date_to: query.date_to,
         date_before: query.date_before,
+        subject_key: query.subject_key,
+        has_subject: query.has_subject,
+        abnormal: query.abnormal,
+        has_latency: query.has_latency,
         limit: query.limit,
         offset: query.offset,
       }, signal)}

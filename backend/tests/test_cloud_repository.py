@@ -107,6 +107,8 @@ def _record(
                 "outcome": "success",
                 "fallback_used": False,
                 "duration_ms": 1200,
+                "feedback_sentiments": [],
+                "review_statuses": [],
                 "attachments": [
                     {
                         "display_label": "附件 1",
@@ -446,7 +448,7 @@ def test_fae_operational_aggregate_uses_only_bounded_sanitized_records():
     assert aggregate["abnormal_session_count"] == 1
     assert aggregate["p50_duration_ms"] == 900
     assert aggregate["trend"][0]["sessions"] == 1
-    assert "negative_turns" not in aggregate["trend"][0]
+    assert aggregate["trend"][0]["negative_turns"] == 0
     assert aggregate["attention"][0]["session_key"] == "f" * 52
     statement, params = connection.statements[-2]
     assert "agent_id = %s" in statement
@@ -504,6 +506,78 @@ def test_fae_cloud_wrapper_uses_complete_bounded_feedback_projection_for_totals_
         (date(2026, 8, 31), 2),
     ]
     assert reader.requests == [(period_start, period_end)]
+
+
+def test_cloud_negative_feedback_filter_is_exact_and_applied_before_pagination():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    negative = _record(now, key="f" * 52, agent_id="ai-fae-agent")
+    negative["source_kind"] = "fae"
+    negative["turns"][0]["feedback_sentiments"] = ["negative"]
+    ordinary = _record(now - timedelta(minutes=1), key="e" * 52, agent_id="ai-fae-agent")
+    ordinary["source_kind"] = "fae"
+    repository, _ = _repository(now, (ordinary, negative))
+
+    page = repository.list_sessions(
+        SessionFilters(
+            agent_id="ai-fae-agent", source_kind="fae", sentiment="negative"
+        ),
+        limit=1,
+        offset=0,
+    )
+
+    assert page.total == 1
+    assert [item.session_key for item in page.items] == ["f" * 52]
+    assert page.items[0].feedback_count == 1
+
+
+def test_cloud_missing_feedback_projection_is_unavailable_not_a_fake_empty_result():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    legacy = _record(now, key="f" * 52, agent_id="ai-fae-agent")
+    legacy["source_kind"] = "fae"
+    legacy["turns"][0].pop("feedback_sentiments")
+    repository, _ = _repository(now, (legacy,))
+
+    summary = repository.list_sessions(
+        SessionFilters(agent_id="ai-fae-agent", source_kind="fae"), 10, 0
+    ).items[0]
+    assert summary.feedback_count is None
+    assert summary.feedback_availability == "unavailable"
+
+    with pytest.raises(ObservabilityReadError, match="filter unavailable"):
+        repository.list_sessions(
+            SessionFilters(
+                agent_id="ai-fae-agent", source_kind="fae", sentiment="negative"
+            ),
+            10,
+            0,
+        )
+
+
+def test_cloud_exact_operational_drilldown_filters_precede_pagination():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    abnormal = _record(now, key="f" * 52, agent_id="ai-fae-agent")
+    abnormal["source_kind"] = "fae"
+    abnormal["turns"][0]["fallback_used"] = True
+    normal = _record(now - timedelta(minutes=1), key="e" * 52, agent_id="ai-fae-agent")
+    normal["source_kind"] = "fae"
+    normal["turns"][0]["duration_ms"] = None
+    repository, _ = _repository(now, (normal, abnormal))
+
+    abnormal_page = repository.list_sessions(
+        SessionFilters(agent_id="ai-fae-agent", source_kind="fae", abnormal=True),
+        1,
+        0,
+    )
+    latency_page = repository.list_sessions(
+        SessionFilters(agent_id="ai-fae-agent", source_kind="fae", has_latency=True),
+        1,
+        0,
+    )
+
+    assert abnormal_page.total == 1
+    assert latency_page.total == 1
+    assert abnormal_page.items[0].session_key == "f" * 52
+    assert latency_page.items[0].session_key == "f" * 52
 
 
 def test_synthetic_local_and_cloud_snapshots_match_for_sanitized_metrics():

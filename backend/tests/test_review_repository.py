@@ -1,5 +1,6 @@
 from uuid import UUID
 import inspect
+import threading
 
 import pytest
 
@@ -204,7 +205,7 @@ def test_release_handoff_import_uses_one_writer_transaction():
 def test_optional_agent_filters_are_typed_for_postgres_parameters():
     for method in (
         PsycopgReviewRepository.list_inbox,
-        PsycopgReviewRepository.list_issues,
+        PsycopgReviewRepository.list_issue_page,
         PsycopgReviewRepository.overview,
     ):
         source = inspect.getsource(method)
@@ -217,6 +218,7 @@ def test_issue_filters_are_applied_to_canonical_lifecycle_before_limit() -> None
 
     class Result:
         def fetchall(self): return []
+        def fetchone(self): return {"items": [], "total_count": 0}
 
     class Cursor:
         def __enter__(self): return self
@@ -366,6 +368,14 @@ def test_actual_link_relocation_replay_postcondition(operation, has_replay):
 
         def execute(self, statement, parameters):
             sql = " ".join(statement.lower().split())
+            if sql.startswith("select agent_id from platform_review.feedback_issues"):
+                return Result({"agent_id": "ai-fae-agent"})
+            if "pg_advisory_xact_lock" in sql:
+                return Result({"pg_advisory_xact_lock": None})
+            if sql.startswith("with recursive canonical_walk"):
+                return Result({"cycle": False})
+            if sql.startswith("select * from platform_review.feedback_issues") and "id=any" in sql:
+                return Result(many=[source, target])
             if sql.startswith("select * from platform_review.feedback_issues"):
                 return Result(source if parameters[0] == source_id else target)
             if sql.startswith("select * from platform_review.feedback_issue_links"):
@@ -400,7 +410,7 @@ def test_actual_link_relocation_replay_postcondition(operation, has_replay):
     def relocate():
         if operation == "move":
             return repository.move_link(
-                link_id, target_id, actor="corp:owner", reason="relocate"
+                source_id, link_id, target_id, actor="corp:owner", reason="relocate"
             )
         return repository.merge_issue(
             source_id, target_id, expected_row_version=1,
@@ -445,6 +455,14 @@ def test_actual_duplicate_merge_keeps_replay_on_deactivated_source_link():
         def __exit__(self, *_args): return None
         def execute(self, statement, parameters):
             sql = " ".join(statement.lower().split())
+            if sql.startswith("select agent_id from platform_review.feedback_issues"):
+                return Result({"agent_id": "ai-fae-agent"})
+            if "pg_advisory_xact_lock" in sql:
+                return Result({"pg_advisory_xact_lock": None})
+            if sql.startswith("with recursive canonical_walk"):
+                return Result({"cycle": False})
+            if sql.startswith("select * from platform_review.feedback_issues") and "id=any" in sql:
+                return Result(many=[source, target])
             if sql.startswith("select * from platform_review.feedback_issues"):
                 return Result(source if parameters[0] == source_id else target)
             if sql.startswith("select * from platform_review.feedback_issue_links"):
@@ -499,6 +517,352 @@ def test_every_repository_link_issue_relocation_uses_replay_conflict_guard():
     ])
 
     assert sources.count("_assert_link_relocation_replay_free") == 3
+
+
+def test_canonical_mutations_guard_cycles_inside_the_writer_transaction():
+    guard = inspect.getsource(PsycopgReviewRepository._assert_canonical_edge_acyclic)
+    merge = inspect.getsource(PsycopgReviewRepository.merge_issue)
+    disposition = inspect.getsource(PsycopgReviewRepository.set_disposition)
+
+    normalized = " ".join(guard.lower().split())
+    assert "pg_advisory_xact_lock" in normalized
+    assert "with recursive canonical_walk" in normalized
+    assert "for update" in normalized
+    assert "current_id=%s" in normalized
+    assert "canonical cycle" in normalized
+    assert "_assert_canonical_edge_acyclic" in merge
+    assert "_assert_canonical_edge_acyclic" in disposition
+    assert merge.index("_assert_canonical_edge_acyclic") < merge.index("set disposition='duplicate'")
+    assert disposition.index("_assert_canonical_edge_acyclic") < disposition.index("set disposition=%s")
+
+
+@pytest.mark.parametrize("operation", ["merge", "duplicate"])
+def test_canonical_cycle_rejection_precedes_every_state_or_audit_write(operation):
+    source_id, target_id = UUID(int=901), UUID(int=902)
+    source = {"id": source_id, "agent_id": "agent", "row_version": 1}
+    target = {"id": target_id, "agent_id": "agent", "row_version": 1}
+
+    class Result:
+        def __init__(self, row=None, many=None):
+            self.row = row
+            self.many = many
+        def fetchone(self): return self.row
+        def fetchall(self): return self.many or []
+
+    class Cursor:
+        mutations = []
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, _parameters):
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("select agent_id from platform_review.feedback_issues"):
+                return Result({"agent_id": "agent"})
+            if "pg_advisory_xact_lock" in normalized:
+                return Result({"pg_advisory_xact_lock": None})
+            if normalized.startswith("with recursive canonical_walk"):
+                return Result({"cycle": True})
+            if normalized.startswith("select * from platform_review.feedback_issues") and "id=any" in normalized:
+                return Result(many=[source, target])
+            if normalized.startswith(("update ", "insert ", "delete ")):
+                self.mutations.append(normalized)
+            raise AssertionError(normalized)
+
+    cursor = Cursor()
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return cursor
+
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    )
+
+    with pytest.raises(InvalidReviewMutation, match="cycle"):
+        if operation == "merge":
+            repository.merge_issue(
+                source_id, target_id, expected_row_version=1,
+                actor="corp:owner", reason="inverse merge",
+            )
+        else:
+            repository.set_disposition(
+                source_id, disposition="duplicate", canonical_issue_id=target_id,
+                owner=None, expected_row_version=1, actor="corp:owner",
+                disposition_reason="inverse duplicate",
+            )
+
+    assert cursor.mutations == []
+
+
+def test_canonical_guard_rejects_a_longer_reachable_path_and_keeps_valid_edge():
+    source_id, target_id, middle_id, leaf_id = (
+        UUID(int=911), UUID(int=912), UUID(int=913), UUID(int=914)
+    )
+    graph = {source_id: None, target_id: middle_id, middle_id: source_id, leaf_id: None}
+    rows = {
+        issue_id: {"id": issue_id, "agent_id": "agent", "row_version": 1}
+        for issue_id in graph
+    }
+
+    class Result:
+        def __init__(self, row=None, many=None):
+            self.row = row
+            self.many = many
+        def fetchone(self): return self.row
+        def fetchall(self): return self.many or []
+
+    class Cursor:
+        def execute(self, statement, parameters):
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("select agent_id from platform_review.feedback_issues"):
+                return Result({"agent_id": "agent"})
+            if "pg_advisory_xact_lock" in normalized:
+                return Result({"pg_advisory_xact_lock": None})
+            if normalized.startswith("with recursive canonical_walk"):
+                current, wanted = parameters
+                visited = set()
+                cycle = False
+                while current is not None:
+                    if current == wanted or current in visited:
+                        cycle = True
+                        break
+                    visited.add(current)
+                    current = graph[current]
+                return Result({"cycle": cycle})
+            if normalized.startswith("select * from platform_review.feedback_issues") and "id=any" in normalized:
+                return Result(many=[rows[issue_id] for issue_id in parameters[0]])
+            raise AssertionError(normalized)
+
+    with pytest.raises(InvalidReviewMutation, match="cycle"):
+        PsycopgReviewRepository._assert_canonical_edge_acyclic(
+            Cursor(), source_id, target_id
+        )
+    valid_source, valid_target = PsycopgReviewRepository._assert_canonical_edge_acyclic(
+        Cursor(), source_id, leaf_id
+    )
+    assert (valid_source["id"], valid_target["id"]) == (source_id, leaf_id)
+
+
+def test_concurrent_inverse_canonical_edges_are_serialized_and_only_one_commits():
+    left_id, right_id = UUID(int=921), UUID(int=922)
+    graph = {left_id: None, right_id: None}
+    agent_lock = threading.Lock()
+    start = threading.Barrier(2)
+    results = []
+
+    class Result:
+        def __init__(self, row=None, many=None):
+            self.row = row
+            self.many = many
+        def fetchone(self): return self.row
+        def fetchall(self): return self.many or []
+
+    class Cursor:
+        def __init__(self): self.locked = False
+        def execute(self, statement, parameters):
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("select agent_id from platform_review.feedback_issues"):
+                return Result({"agent_id": "agent"})
+            if "pg_advisory_xact_lock" in normalized:
+                agent_lock.acquire()
+                self.locked = True
+                return Result({"pg_advisory_xact_lock": None})
+            if normalized.startswith("with recursive canonical_walk"):
+                current, wanted = parameters
+                seen = set()
+                cycle = False
+                while current is not None:
+                    if current == wanted or current in seen:
+                        cycle = True
+                        break
+                    seen.add(current)
+                    current = graph[current]
+                return Result({"cycle": cycle})
+            if normalized.startswith("select * from platform_review.feedback_issues") and "id=any" in normalized:
+                return Result(many=[
+                    {"id": issue_id, "agent_id": "agent", "row_version": 1}
+                    for issue_id in parameters[0]
+                ])
+            raise AssertionError(normalized)
+
+    def add_edge(source_id, target_id):
+        cursor = Cursor()
+        start.wait()
+        try:
+            PsycopgReviewRepository._assert_canonical_edge_acyclic(
+                cursor, source_id, target_id
+            )
+            graph[source_id] = target_id
+            results.append("committed")
+        except InvalidReviewMutation:
+            results.append("rejected")
+        finally:
+            if cursor.locked:
+                agent_lock.release()
+
+    threads = [
+        threading.Thread(target=add_edge, args=(left_id, right_id)),
+        threading.Thread(target=add_edge, args=(right_id, left_id)),
+    ]
+    for thread in threads: thread.start()
+    for thread in threads: thread.join(timeout=2)
+
+    assert not any(thread.is_alive() for thread in threads)
+    assert sorted(results) == ["committed", "rejected"]
+    assert sum(target is not None for target in graph.values()) == 1
+
+
+def test_move_writer_rejects_a_link_that_no_longer_belongs_to_expected_source():
+    source_id, other_id, target_id, link_id = (
+        UUID(int=801), UUID(int=802), UUID(int=803), UUID(int=804)
+    )
+    link = {
+        "id": link_id,
+        "issue_id": other_id,
+        "agent_id": "ai-fae-agent",
+        "source_turn_key": "fae:turn",
+        "source_feedback_keys": [],
+        "active": True,
+    }
+
+    class Result:
+        def fetchone(self):
+            return link
+
+    class Cursor:
+        mutated = False
+
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, _parameters):
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("select * from platform_review.feedback_issue_links"):
+                assert "for update" in normalized
+                return Result()
+            if normalized.startswith(("update ", "insert ")):
+                self.mutated = True
+            raise AssertionError(normalized)
+
+    cursor = Cursor()
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return cursor
+
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    )
+
+    with pytest.raises(InvalidReviewMutation, match="source issue"):
+        repository.move_link(
+            source_id,
+            link_id,
+            target_id,
+            actor="corp:owner",
+            reason="stale move",
+        )
+
+    assert cursor.mutated is False
+
+
+def test_replay_insert_rechecks_the_locked_link_ownership_token():
+    source = inspect.getsource(PsycopgReviewRepository.create_or_get_replay)
+    normalized = " ".join(source.lower().split())
+
+    assert "expected_ownership" in source
+    assert "where id=%s and active for update" in normalized
+    assert "replay link ownership changed" in normalized
+    assert source.index("expected_ownership") < source.index("insert into platform_review.feedback_replay_runs")
+
+
+def test_feedback_metadata_lookup_is_one_bounded_authoritative_query():
+    statements = []
+
+    class Result:
+        def fetchone(self):
+            return {"turn_key": "fae:turn", "feedback_keys": ["fb:1", "fb:2"]}
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters):
+            statements.append((" ".join(statement.lower().split()), parameters))
+            return Result()
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return Cursor()
+
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    )
+
+    result = repository.feedback_keys_for_turn("ai-fae-agent", "fae:turn")
+
+    assert result == {"turn_key": "fae:turn", "feedback_keys": ["fb:1", "fb:2"]}
+    assert len(statements) == 1
+    assert "platform_read.turns" in statements[0][0]
+    assert "platform_read.feedback" in statements[0][0]
+    assert "feedback.agent_id=turn.agent_id" in statements[0][0]
+    assert "feedback.turn_key=turn.turn_key" in statements[0][0]
+    assert statements[0][1] == ("ai-fae-agent", "fae:turn")
+
+
+def test_issue_collections_use_batched_progress_and_constant_query_count():
+    list_source = inspect.getsource(PsycopgReviewRepository.list_issue_page)
+    overview_source = inspect.getsource(PsycopgReviewRepository.overview)
+
+    assert "_load_issue_detail" not in list_source
+    assert "_load_issue_detail" not in overview_source
+    assert "count(*) over()" in " ".join(list_source.lower().split())
+    assert "latest_progress" in list_source
+    assert "latest_progress" in overview_source
+    assert list_source.count("cursor.execute(") == 1
+    assert overview_source.count("cursor.execute(") <= 2
+
+
+@pytest.mark.parametrize("population", [0, 1, 200, 501])
+def test_issue_page_query_budget_is_constant_for_empty_one_page_and_many(population):
+    calls = []
+    page_size = min(population, 200)
+    rows = [
+        {
+            "id": UUID(int=10_000 + index),
+            "updated_at": "2026-09-01T00:00:00Z",
+            "progress_status": "pending_triage",
+            "progress_missing_gates": [],
+        }
+        for index in range(page_size)
+    ]
+
+    class Result:
+        def fetchone(self):
+            return {"items": rows, "total_count": population}
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters):
+            calls.append((" ".join(statement.lower().split()), parameters))
+            return Result()
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return Cursor()
+
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    )
+    page = repository.list_issue_page(limit=200, offset=0)
+
+    assert len(calls) == 1
+    assert len(page["items"]) == page_size
+    assert page["total"] == population
+    assert page["has_more"] is (population > 200)
+    assert "limit %s offset %s" in calls[0][0]
 
 
 def test_relocation_replay_preflights_are_metadata_only_and_server_derived():

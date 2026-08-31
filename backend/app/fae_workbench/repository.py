@@ -18,7 +18,7 @@ from .models import (
 )
 
 
-_RESOLVED_OUTCOMES = "'resolved', 'completed', 'succeeded'"
+_RESOLVED_OUTCOMES = "'resolved', 'completed', 'succeeded', 'success'"
 
 SUMMARY_SQL = f"""
 with scoped_sessions as (
@@ -68,7 +68,10 @@ select
      from scoped_turns where duration_ms is not null and duration_ms >= 0) as p50_duration_ms,
   (select round(percentile_cont(0.95) within group (order by duration_ms))::bigint
      from scoped_turns where duration_ms is not null and duration_ms >= 0) as p95_duration_ms,
-  (select max(source_synced_at) from scoped_sessions) as data_as_of
+  (select max(sync.last_success_at)
+   from platform_read.sync_status sync
+   where sync.source_kind = '{FAE_SOURCE_KIND}'
+     and sync.last_success_at is not null) as data_as_of
 """.strip()
 
 TREND_SQL = f"""
@@ -88,7 +91,7 @@ with scoped_sessions as (
     and f.sentiment = 'negative'
 )
 select (s.last_active_at at time zone 'Asia/Shanghai')::date as day,
-  count(*)::bigint as sessions,
+  count(distinct s.session_key)::bigint as sessions,
   count(distinct negative_feedback.turn_key)::bigint as negative_turns
 from scoped_sessions s
 left join negative_feedback on negative_feedback.session_key = s.session_key
@@ -137,6 +140,8 @@ class FaeWorkbenchRepository(Protocol):
     ) -> FaeOperationalSnapshot: ...
 
     def fae_turn_keys(self, turn_keys: list[str]) -> set[str]: ...
+
+    def fae_turn_feedback(self, turn_key: str) -> dict | None: ...
 
     def fae_turn_exists(self, turn_key: str) -> bool: ...
 
@@ -206,6 +211,31 @@ class PsycopgFaeWorkbenchRepository:
     def fae_turn_exists(self, turn_key: str) -> bool:
         return turn_key in self.fae_turn_keys([turn_key])
 
+    def fae_turn_feedback(self, turn_key: str) -> dict | None:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    f"""
+                    select turn.turn_key,
+                      coalesce(array_agg(feedback.feedback_key order by feedback.created_at,
+                                         feedback.feedback_key)
+                        filter (where feedback.feedback_key is not null), '{{}}')
+                        as feedback_keys
+                    from platform_read.turns turn
+                    left join platform_read.feedback feedback
+                      on feedback.agent_id=turn.agent_id
+                     and feedback.turn_key=turn.turn_key
+                    where turn.agent_id='{FAE_AGENT_ID}'
+                      and turn.source_kind='{FAE_SOURCE_KIND}'
+                      and turn.turn_key=%s
+                    group by turn.turn_key
+                    """,
+                    (turn_key,),
+                ).fetchone()
+            return dict(row) if row is not None else None
+        except Exception:
+            raise FaeWorkbenchReadError("fae_workbench_query_failed") from None
+
 
 class ReplicaFaeWorkbenchRepository:
     """FAE aggregate facade over the sanitized cloud-replica read boundary."""
@@ -214,7 +244,7 @@ class ReplicaFaeWorkbenchRepository:
         self,
         repository: Any,
         *,
-        feedback_reader: FaeFeedbackProjectionReader,
+        feedback_reader: FaeFeedbackProjectionReader | None = None,
         source_environment: str = FAE_SOURCE_ENVIRONMENT,
     ) -> None:
         if source_environment != FAE_SOURCE_ENVIRONMENT:
@@ -229,9 +259,18 @@ class ReplicaFaeWorkbenchRepository:
             aggregate = self._repository.fae_operational_aggregate(
                 period_start, period_end
             )
-            feedback = self._feedback_reader.read_fae_feedback(
-                period_start, period_end
+            feedback = (
+                self._feedback_reader.read_fae_feedback(period_start, period_end)
+                if self._feedback_reader is not None else None
             )
+            if feedback is None and self._feedback_reader is None:
+                return FaeOperationalSnapshot(
+                    period_start=period_start,
+                    period_end=period_end,
+                    **aggregate,
+                )
+            aggregate.pop("negative_feedback_events", None)
+            aggregate.pop("negative_turn_count", None)
             if (
                 feedback is None
                 or feedback.period_start != period_start
@@ -264,5 +303,11 @@ class ReplicaFaeWorkbenchRepository:
     def fae_turn_keys(self, turn_keys: list[str]) -> set[str]:
         try:
             return set(self._repository.fae_turn_keys(turn_keys))
+        except Exception:
+            raise FaeWorkbenchReadError("fae_workbench_query_failed") from None
+
+    def fae_turn_feedback(self, turn_key: str) -> dict | None:
+        try:
+            return self._repository.fae_turn_feedback(turn_key)
         except Exception:
             raise FaeWorkbenchReadError("fae_workbench_query_failed") from None

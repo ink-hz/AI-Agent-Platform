@@ -89,8 +89,9 @@ _SAFE_RECORD_KEY = re.compile(
 _SAFE_AGENT = re.compile(r"[A-Za-z0-9._-]{1,80}\Z")
 _MANAGEMENT_KEYS = {
     "review_issue_projection": {
-        "kind", "key", "agent_id", "updated_at", "title", "status",
+        "kind", "key", "agent_id", "created_at", "updated_at", "title", "status",
         "priority", "failure_layer", "owner_display", "linked_turn_count",
+        "linked_turn_keys",
         "scope_valid", "sanitizer_policy_version",
     },
     "review_inbox_projection": {

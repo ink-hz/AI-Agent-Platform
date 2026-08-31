@@ -144,6 +144,10 @@ async def sessions(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     date_before: datetime | None = None,
+    subject_key: str | None = None,
+    has_subject: bool | None = None,
+    abnormal: bool | None = None,
+    has_latency: bool | None = None,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
@@ -156,6 +160,10 @@ async def sessions(
         date_from=date_from,
         date_to=date_to,
         date_before=date_before,
+        subject_key=subject_key,
+        has_subject=has_subject,
+        abnormal=abnormal,
+        has_latency=has_latency,
     )
     return await request.app.state.fae_workbench_service.list_sessions(
         filters, limit, offset
@@ -249,6 +257,11 @@ async def issues(
     request: Request,
     status: IssueLifecycleFilter | None = None,
     disposition: IssueDispositionFilter | None = None,
+    priority: Literal["P0", "P1", "P2", "P3"] | None = None,
+    failure_layer: str | None = None,
+    owner: str | None = None,
+    q: str | None = None,
+    created_after: datetime | None = None,
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -258,6 +271,11 @@ async def issues(
             offset=offset,
             status=status,
             disposition=disposition,
+            priority=priority,
+            failure_layer=failure_layer,
+            owner=owner,
+            query=q,
+            created_after=created_after,
         )
     )
 

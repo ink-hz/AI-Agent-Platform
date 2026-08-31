@@ -128,6 +128,9 @@ class ReviewService:
             **filters,
         )
 
+    async def list_issue_page(self, **filters) -> dict:
+        return await self._run(self.read_repository.list_issue_page, **filters)
+
     async def turn_summaries(self, *, turn_keys: list[str]) -> list[dict]:
         return await self._run(
             self.read_repository.get_turn_summaries,
@@ -218,12 +221,25 @@ class ReviewService:
 
     async def link_turn(self, issue_id: UUID, payload, *, actor: str) -> dict:
         writer = self._writer()
+        metadata = await self._run(
+            self.read_repository.feedback_keys_for_turn,
+            payload.agent_id,
+            payload.source_turn_key,
+        )
+        if metadata is None:
+            raise InvalidReviewMutation("feedback source turn was not found")
+        exact_keys = sorted(set(metadata.get("feedback_keys") or []))
+        provided_keys = set(payload.source_feedback_keys or [])
+        if not provided_keys.issubset(exact_keys):
+            raise InvalidReviewMutation(
+                "feedback keys do not belong to the exact source turn"
+            )
         await self._run(
             writer.link_turn,
             issue_id,
             agent_id=payload.agent_id,
             source_turn_key=payload.source_turn_key,
-            source_feedback_keys=payload.source_feedback_keys,
+            source_feedback_keys=exact_keys,
             link_role=payload.link_role,
             actor=actor,
             reason=payload.reason,
@@ -258,6 +274,7 @@ class ReviewService:
         await self._detail(payload.target_issue_id)
         await self._run(
             writer.move_link,
+            issue_id,
             link_id,
             payload.target_issue_id,
             actor=actor,

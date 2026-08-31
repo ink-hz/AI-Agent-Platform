@@ -93,9 +93,10 @@ class _Review:
         self.calls.append(("inbox", agent_id, limit, offset))
         return []
 
-    async def list_issues(self, *, agent_id, limit, offset, status=None, disposition=None):
-        self.calls.append(("issues", agent_id, limit, offset, status, disposition))
-        return []
+    async def list_issue_page(self, **filters):
+        self.calls.append(("list_issue_page", filters))
+        return {"items": [], "total": 0, "limit": filters["limit"],
+                "offset": filters["offset"], "has_more": False}
 
     async def turn_summaries(self, *, turn_keys):
         self.calls.append(("turn_summaries", turn_keys))
@@ -161,6 +162,10 @@ class _Repository:
 
     def fae_turn_keys(self, turn_keys):
         return {key for key in turn_keys if self.fae_turn_exists(key)}
+
+    def fae_turn_feedback(self, turn_key):
+        return ({"turn_key": turn_key, "feedback_keys": []}
+                if self.fae_turn_exists(turn_key) else None)
 
 
 class _Grants:
@@ -455,7 +460,8 @@ def test_fae_issue_reads_are_scoped_and_cross_agent_detail_is_hidden() -> None:
     assert response.json() == [{"turn_key": "fae:turn-1"}]
     assert review.calls == [
         ("inbox", "ai-fae-agent", 100, 0),
-        ("issues", "ai-fae-agent", 100, 0, "open", None),
+            ("list_issue_page", {"agent_id": "ai-fae-agent", "limit": 100,
+                                 "offset": 0, "status": "open"}),
         ("turn_summaries", ["fae:turn-1"]),
     ]
 
@@ -474,7 +480,8 @@ def test_fae_issue_filters_are_bounded_and_invalid_values_never_reach_review() -
         "/api/admin/fae/issues?disposition=actionable&limit=17&offset=3"
     ).status_code == 200
     assert review.calls[-1] == (
-        "issues", "ai-fae-agent", 17, 3, None, "actionable"
+        "list_issue_page", {"agent_id": "ai-fae-agent", "limit": 17,
+                            "offset": 3, "disposition": "actionable"}
     )
 
     before = list(review.calls)

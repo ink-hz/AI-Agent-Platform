@@ -25,6 +25,7 @@ function availabilityLabel(value: TurnDetail["evidence_availability"]): string {
 
 
 const CLOSURE_STATUS_LABELS: Record<string, string> = {
+  unknown: "治理状态暂不可用",
   pending_triage: "待归因",
   fixing: "修复中",
   awaiting_merge: "等待合并",
@@ -75,6 +76,8 @@ export function TurnCard({ turn, closureSummary, governanceHref }: {
     <AttachmentList attachments={turn.output_attachments} label="Agent 输出附件" />
     {turn.evidence.length > 0 && <section className="turn-evidence"><h3>证据</h3><div>{turn.evidence.map((item, index) => <article key={`${item.title}-${index}`}><span>{item.kind}</span><strong>{item.title}</strong>{item.reference && <p>{item.reference}</p>}</article>)}</div></section>}
     {turn.evidence.length === 0 && turn.evidence_availability !== "available" && <p className="availability-note">证据详情：{availabilityLabel(turn.evidence_availability)}</p>}
+    {turn.feedback_availability && turn.feedback_availability !== "available" && <p className="availability-note">反馈详情：{availabilityLabel(turn.feedback_availability)}</p>}
+    {turn.review_availability && turn.review_availability !== "available" && <p className="availability-note">复审详情：{availabilityLabel(turn.review_availability)}</p>}
     {(turn.feedback.length > 0 || turn.reviews.length > 0 || turn.improvements.length > 0) && <section className="turn-signals">
       {turn.feedback.map((item) => <div className={`signal signal-${item.sentiment}`} key={item.feedback_key}><span>反馈 · {item.sentiment}</span><p>{item.comment || item.reason_code || item.raw_rating}</p></div>)}
       {turn.reviews.map((item) => <div className="signal signal-review" key={item.review_key}><span>复审 · {item.normalized_priority}</span><p>{item.notes || item.corrected_answer || item.status}</p></div>)}

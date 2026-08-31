@@ -211,3 +211,87 @@ async def test_relocation_preflights_preserve_cloud_read_only_denial(operation):
 
     with pytest.raises(ReviewUnavailable, match="read-only"):
         await getattr(service, operation)(*arguments)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "provided",
+    [["missing"], ["fb:other-turn"], ["fb:other-agent"]],
+)
+async def test_link_rejects_unowned_feedback_before_writer(provided):
+    class ReadRepository:
+        def feedback_keys_for_turn(self, agent_id, turn_key):
+            assert (agent_id, turn_key) == ("ai-fae-agent", "fae:turn")
+            return {"turn_key": turn_key, "feedback_keys": ["fb:real"]}
+
+    class Writer:
+        def link_turn(self, *_args, **_kwargs):
+            raise AssertionError("invalid feedback must not reach writer")
+
+    payload = SimpleNamespace(
+        agent_id="ai-fae-agent",
+        source_turn_key="fae:turn",
+        source_feedback_keys=provided,
+        link_role="primary",
+        reason="link",
+    )
+
+    with pytest.raises(InvalidReviewMutation, match="feedback"):
+        await ReviewService(ReadRepository(), write_repository=Writer()).link_turn(
+            ISSUE_ID, payload, actor="corp:owner"
+        )
+
+
+@pytest.mark.asyncio
+async def test_link_derives_exact_feedback_lineage_and_deduplicates_caller_keys():
+    class Repository:
+        written = None
+
+        def feedback_keys_for_turn(self, _agent_id, turn_key):
+            return {"turn_key": turn_key, "feedback_keys": ["fb:2", "fb:1"]}
+
+        def link_turn(self, _issue_id, **kwargs):
+            self.written = kwargs["source_feedback_keys"]
+
+        def recalculate_and_record_transition(self, *_args, **_kwargs): return None
+        def get_issue_detail(self, _issue_id): return {"issue": {"id": ISSUE_ID}}
+
+    repository = Repository()
+    payload = SimpleNamespace(
+        agent_id="ai-fae-agent",
+        source_turn_key="fae:turn",
+        source_feedback_keys=["fb:2", "fb:2"],
+        link_role="primary",
+        reason="link",
+    )
+
+    await ReviewService(repository, write_repository=repository).link_turn(
+        ISSUE_ID, payload, actor="corp:owner"
+    )
+
+    assert repository.written == ["fb:1", "fb:2"]
+
+
+@pytest.mark.asyncio
+async def test_empty_feedback_lineage_remains_valid_for_an_ordinary_turn():
+    class Repository:
+        written = None
+
+        def feedback_keys_for_turn(self, _agent_id, turn_key):
+            return {"turn_key": turn_key, "feedback_keys": []}
+
+        def link_turn(self, _issue_id, **kwargs): self.written = kwargs["source_feedback_keys"]
+        def recalculate_and_record_transition(self, *_args, **_kwargs): return None
+        def get_issue_detail(self, _issue_id): return {"issue": {"id": ISSUE_ID}}
+
+    repository = Repository()
+    payload = SimpleNamespace(
+        agent_id="ai-fae-agent", source_turn_key="fae:ordinary",
+        source_feedback_keys=[], link_role="primary", reason="link",
+    )
+
+    await ReviewService(repository, write_repository=repository).link_turn(
+        ISSUE_ID, payload, actor="corp:owner"
+    )
+
+    assert repository.written == []

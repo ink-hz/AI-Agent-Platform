@@ -33,6 +33,8 @@ class RawTurn:
     outcome: str | None = None
     fallback_used: bool | None = None
     duration_ms: int | None = None
+    feedback_sentiments: tuple[str, ...] = ()
+    review_statuses: tuple[str, ...] = ()
     trace: RawTraceAggregate | None = None
     attachments: tuple[RawAttachment, ...] = ()
     sources: tuple[dict[str, Any], ...] = ()
@@ -109,6 +111,8 @@ class SanitizedTurnRecord:
     answer_at: datetime | None = None
     question_time_status: str = "unavailable"
     answer_time_status: str = "unavailable"
+    feedback_sentiments: tuple[str, ...] = ()
+    review_statuses: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +153,8 @@ class ReviewIssueProjection:
     failure_layer: str | None
     owner_display: str | None
     linked_turn_count: int
+    linked_turn_keys: tuple[str, ...]
+    created_at: datetime
     updated_at: datetime
     scope_valid: bool = False
 

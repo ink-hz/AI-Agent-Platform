@@ -12,6 +12,10 @@ export type SessionFilters = {
   date_from: string;
   date_to: string;
   date_before: string;
+  subject_key: string;
+  has_subject: string;
+  abnormal: string;
+  has_latency: string;
   page: number;
 };
 
@@ -27,6 +31,10 @@ export const EMPTY_SESSION_FILTERS: SessionFilters = {
   date_from: "",
   date_to: "",
   date_before: "",
+  subject_key: "",
+  has_subject: "",
+  abnormal: "",
+  has_latency: "",
   page: 1,
 };
 
@@ -70,6 +78,10 @@ function cleanPage(params: URLSearchParams): number {
   return Number.isSafeInteger(page) ? page : 1;
 }
 
+function cleanBoolean(value: string | null): string {
+  return value === "true" || value === "false" ? value : "";
+}
+
 
 export function sessionFiltersFromSearch(search: string): SessionFilters {
   const params = new URLSearchParams(search);
@@ -86,6 +98,10 @@ export function sessionFiltersFromSearch(search: string): SessionFilters {
     date_from: normalizeFaeSessionDate(params.get("date_from")),
     date_to: normalizeFaeSessionDate(params.get("date_to")),
     date_before: normalizeFaeSessionDate(params.get("date_before")),
+    subject_key: clean(params.get("subject_key")),
+    has_subject: cleanBoolean(params.get("has_subject")),
+    abnormal: cleanBoolean(params.get("abnormal")),
+    has_latency: cleanBoolean(params.get("has_latency")),
     page: cleanPage(params),
   };
 }
@@ -104,6 +120,10 @@ export function sessionsPath(filters: SessionFilters, basePath = "/admin/session
     if (filters.date_from) params.set("date_from", filters.date_from);
     if (filters.date_to) params.set("date_to", filters.date_to);
     if (filters.date_before) params.set("date_before", filters.date_before);
+    if (filters.subject_key) params.set("subject_key", filters.subject_key);
+    if (filters.has_subject) params.set("has_subject", filters.has_subject);
+    if (filters.abnormal) params.set("abnormal", filters.abnormal);
+    if (filters.has_latency) params.set("has_latency", filters.has_latency);
   }
   if (filters.page > 1) params.set("page", String(filters.page));
   const search = params.toString();

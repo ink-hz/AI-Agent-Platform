@@ -6,6 +6,7 @@ import { useSessionDetail } from "../components/session/useSessionDetail";
 import { sourceFreshnessLabel } from "../copy";
 import { faeWorkbenchApi } from "../faeWorkbenchApi";
 import type { SessionDetail } from "../types";
+import { sessionReturnTarget } from "../navigationContext";
 
 
 const loadFaeSession = (sessionKey: string, signal: AbortSignal) => faeWorkbenchApi.session(sessionKey, signal);
@@ -32,8 +33,8 @@ function GovernancePanel({ session }: { session: SessionDetail }) {
       <div><dt>渠道</dt><dd>{session.channel}</dd></div>
       <div><dt>Outcome</dt><dd>{session.latest_outcome || "暂不可用"}</dd></div>
       <div><dt>Turn 数</dt><dd>{session.turn_count}</dd></div>
-      <div><dt>反馈数</dt><dd>{session.feedback_count}</dd></div>
-      <div><dt>复审数</dt><dd>{session.review_count}</dd></div>
+      <div><dt>反馈数</dt><dd>{session.feedback_count ?? "暂不可用"}</dd></div>
+      <div><dt>复审数</dt><dd>{session.review_count ?? "暂不可用"}</dd></div>
       <div><dt>身份</dt><dd>{identityLabel(session)}</dd></div>
       <div><dt>数据截止时间</dt><dd>{session.source_synced_at
         ? <time dateTime={session.source_synced_at}>{session.source_synced_at}</time>
@@ -49,8 +50,14 @@ export function FaeSessionDetailPage({ sessionKey }: { sessionKey: string }) {
   let content;
   if (error) content = <ErrorState />;
   else if (!session) content = <LoadingState label="正在加载 Session" />;
-  else content = <>
-    <PlatformLink className="back-link" href="/admin/fae/sessions">← 返回 FAE Sessions</PlatformLink>
+  else {
+    const returnTarget = sessionReturnTarget(window.history.state);
+    content = <>
+    <PlatformLink className="back-link" href={returnTarget ?? "/admin/fae/sessions"} onClick={(event) => {
+      if (!returnTarget || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      window.history.back();
+    }}>{returnTarget ? "← 返回" : "← 返回 FAE Sessions"}</PlatformLink>
     <div className="fae-session-detail-layout">
       <div><SessionReplay
         session={session}
@@ -60,5 +67,6 @@ export function FaeSessionDetailPage({ sessionKey }: { sessionKey: string }) {
       /></div>
     </div>
   </>;
+  }
   return <FaeWorkbenchShell currentSection="sessions">{content}</FaeWorkbenchShell>;
 }

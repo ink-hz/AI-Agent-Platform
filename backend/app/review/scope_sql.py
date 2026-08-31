@@ -26,6 +26,28 @@ exists (
           and (issue.agent_id<>'ai-fae-agent'
             or event_after_turn.source_kind='fae')
       )
+      or exists (
+        select 1
+        from jsonb_array_elements_text(
+          coalesce(event.after->'source_feedback_keys', '[]'::jsonb)
+        ) as event_feedback_key(feedback_key)
+        left join platform_read.feedback event_feedback
+          on event_feedback.feedback_key=event_feedback_key.feedback_key
+         and event_feedback.agent_id=issue.agent_id
+         and event_feedback.turn_key=event.after->>'source_turn_key'
+        where event_feedback.feedback_key is null
+      )
+      or exists (
+        select 1 from platform_read.feedback event_feedback
+        where event_feedback.agent_id=issue.agent_id
+          and event_feedback.turn_key=event.after->>'source_turn_key'
+          and not exists (
+            select 1 from jsonb_array_elements_text(
+              coalesce(event.after->'source_feedback_keys', '[]'::jsonb)
+            ) as event_feedback_key(feedback_key)
+            where event_feedback_key.feedback_key=event_feedback.feedback_key
+          )
+      )
       or historical_link.id is null
       or historical_link.agent_id is distinct from issue.agent_id
       or historical_link.source_turn_key

@@ -79,10 +79,11 @@ describe("FaeSessionDetailPage", () => {
   async function renderFaeSession(value: SessionDetail, summaries: TurnClosureSummary[] = []) {
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      if (path === `/api/admin/fae/sessions/${encodeURIComponent(value.session_key)}`) {
+      const local = path.replace(/^\/_preview\/dingtalk-r1/, "");
+      if (local === `/api/admin/fae/sessions/${encodeURIComponent(value.session_key)}`) {
         return Promise.resolve(response(value));
       }
-      if (path.startsWith("/api/review/turn-summaries?")) return Promise.resolve(response(summaries));
+      if (local.startsWith("/api/review/turn-summaries?")) return Promise.resolve(response(summaries));
       return Promise.reject(new Error(`Unexpected request: ${path}`));
     }));
     await act(async () => root.render(<FaeSessionDetailPage sessionKey={value.session_key} />));
@@ -131,6 +132,37 @@ describe("FaeSessionDetailPage", () => {
     const turns = container.querySelector(".turn-stack")!;
     expect(header.compareDocumentPosition(governancePanel) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(governancePanel.compareDocumentPosition(turns) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+
+  it("restores a filtered FAE page-two origin through the visible back link", async () => {
+    const origin = "/admin/fae/sessions?sentiment=negative&page=2&q=335";
+    window.history.replaceState(
+      { sessionOrigin: { path: origin, scrollY: 640 } },
+      "",
+      "/admin/fae/sessions/fae%3Asession-1",
+    );
+    const back = vi.spyOn(window.history, "back").mockImplementation(() => undefined);
+
+    await renderFaeSession({ ...session, turns: [] });
+
+    const link = container.querySelector<HTMLAnchorElement>(".back-link")!;
+    expect(link.getAttribute("href")).toBe(origin);
+    await act(async () => link.click());
+    expect(back).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the preview prefix on a restored FAE collection back link", async () => {
+    const origin = "/admin/fae/sessions?abnormal=true&page=2";
+    window.history.replaceState(
+      { sessionOrigin: { path: origin, scrollY: 320 } },
+      "",
+      "/_preview/dingtalk-r1/admin/fae/sessions/fae%3Asession-1",
+    );
+
+    await renderFaeSession({ ...session, turns: [] });
+
+    expect(container.querySelector<HTMLAnchorElement>(".back-link")?.getAttribute("href"))
+      .toBe(`/_preview/dingtalk-r1${origin}`);
   });
 
   it("loads closure summaries for all FAE Turns in batches of at most 200", async () => {

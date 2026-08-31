@@ -18,7 +18,7 @@ import { IssueList, STATUS_LABELS, type IssueFilterOption } from "./IssueList";
 export interface ReviewApi {
   overview(signal?: AbortSignal): Promise<ReviewOverview>;
   inbox(signal?: AbortSignal): Promise<ReviewInboxItem[]>;
-  issues(signal?: AbortSignal, filters?: ReviewIssueFilters): Promise<FeedbackIssueSummary[]>;
+  issues(signal?: AbortSignal, filters?: ReviewIssueFilters): Promise<FeedbackIssueSummary[] | ReviewIssuePage>;
   turnSummaries(turnKeys: string[], signal?: AbortSignal): Promise<TurnClosureSummary[]>;
   issue(id: string, signal?: AbortSignal): Promise<FeedbackIssueDetail>;
   create(payload: Record<string, unknown>, actor: string): Promise<FeedbackIssueDetail>;
@@ -37,6 +37,21 @@ export interface ReviewApi {
 export interface ReviewIssueFilters {
   status?: string;
   disposition?: string;
+  priority?: string;
+  failure_layer?: string;
+  owner?: string;
+  query?: string;
+  created_after?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ReviewIssuePage {
+  items: FeedbackIssueSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
 }
 
 export interface ReviewWorkspaceProps {
@@ -54,6 +69,8 @@ export interface ReviewWorkspaceProps {
   issueFilters?: ReviewIssueFilters;
   statusOptions?: IssueFilterOption[];
   statusPresentation?: "lifecycle" | "disposition";
+  onIssueFiltersChange?: (filters: ReviewIssueFilters) => void;
+  onIssuePageChange?: (page: number) => void;
 }
 
 type SelectionToken = {
@@ -97,10 +114,13 @@ export function ReviewWorkspace({
   issueFilters,
   statusOptions,
   statusPresentation,
+  onIssueFiltersChange,
+  onIssuePageChange,
 }: ReviewWorkspaceProps) {
   const requestedTurnKey = initialTurn?.turn_key ?? new URLSearchParams(window.location.search).get("turn_key");
   const [overview, setOverview] = useState<ReviewOverview | null>(null);
   const [issues, setIssues] = useState<FeedbackIssueSummary[]>([]);
+  const [issuePage, setIssuePage] = useState<ReviewIssuePage | null>(null);
   const [inbox, setInbox] = useState<ReviewInboxItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialIssueId);
   const [selectedTurnKey, setSelectedTurnKey] = useState<string | null>(requestedTurnKey);
@@ -157,7 +177,11 @@ export function ReviewWorkspace({
     if (signal?.aborted || (expectedSelection && !selectionIsCurrent(expectedSelection))) return;
     setOverview(nextOverview);
     setInbox(nextInbox);
-    setIssues(nextIssues);
+    const normalized = Array.isArray(nextIssues)
+      ? { items: nextIssues, total: nextIssues.length, limit: nextIssues.length || 1, offset: 0, has_more: false }
+      : nextIssues;
+    setIssues(normalized.items);
+    setIssuePage(normalized);
   };
 
   const loadDetail = async (id: string, signal?: AbortSignal, generation = selectionRef.current.generation) => {
@@ -174,7 +198,9 @@ export function ReviewWorkspace({
       if (!controller.signal.aborted) setFailed(true);
     });
     return () => controller.abort();
-  }, [api, agentId, issueFilters?.status, issueFilters?.disposition]);
+  }, [api, agentId, issueFilters?.status, issueFilters?.disposition, issueFilters?.priority,
+    issueFilters?.failure_layer, issueFilters?.owner, issueFilters?.query,
+    issueFilters?.created_after, issueFilters?.limit, issueFilters?.offset]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -348,7 +374,7 @@ export function ReviewWorkspace({
     <section className="review-overview"><article><span>反馈总行数</span><strong>{overview.feedback_rows ?? "暂不可用"}</strong></article><article><span>负反馈回答</span><strong>{overview.negative_turns ?? "暂不可用"}</strong><small>{overview.negative_rows === null ? "负反馈记录暂不可用" : `${overview.negative_rows} 条负反馈记录`}</small></article>{overview.lifecycle_status_available === false
       ? <>{Object.entries(overview.dispositions).map(([disposition, count]) => <article key={disposition}><span>{disposition === "actionable" ? "可处理事项" : STATUS_LABELS[disposition as keyof typeof STATUS_LABELS] || disposition}</span><strong>{count}</strong></article>)}<article><span>生命周期状态</span><strong>暂不可用</strong></article></>
       : STATUS_ORDER.map((status) => <article key={status}><span>{STATUS_LABELS[status]}</span><strong>{overview.statuses[status] ?? 0}</strong></article>)}</section>
-    <section className="review-workspace"><IssueList issues={issues} inbox={workspaceInbox} selectedId={selectedId} selectedTurnKey={selectedTurnKey} onSelect={chooseIssue} onSelectInbox={chooseInbox} showAgentFilter={showAgentFilter} statusFilter={statusFilter} onStatusFilterChange={onStatusFilterChange} statusOptions={statusOptions} statusPresentation={statusPresentation} /><section className="review-main-panel" aria-label="事项详情">
+    <section className="review-workspace"><div><IssueList issues={issues} inbox={workspaceInbox} selectedId={selectedId} selectedTurnKey={selectedTurnKey} onSelect={chooseIssue} onSelectInbox={chooseInbox} showAgentFilter={showAgentFilter} statusFilter={statusFilter} onStatusFilterChange={onStatusFilterChange} statusOptions={statusOptions} statusPresentation={statusPresentation} serverFilters={onIssueFiltersChange ? issueFilters : undefined} onServerFiltersChange={onIssueFiltersChange} />{issuePage && onIssuePageChange && <nav className="review-pagination" aria-label="Issue 分页"><button type="button" disabled={issuePage.offset === 0} onClick={() => onIssuePageChange(Math.max(1, Math.floor(issuePage.offset / issuePage.limit)))}>上一页</button><span>第 {Math.floor(issuePage.offset / issuePage.limit) + 1} 页 · 共 {issuePage.total} 项</span><button type="button" disabled={!issuePage.has_more} onClick={() => onIssuePageChange(Math.floor(issuePage.offset / issuePage.limit) + 2)}>下一页</button></nav>}</div><section className="review-main-panel" aria-label="事项详情">
       {detail && <IssueDetail detail={detail} busy={busy || (readOnly && !hideMutations)} readOnly={hideMutations}
         issues={issues}
         onSave={(owner, failureLayer, priority, rootCause, impactScope) => perform((identity) => api.update(detail.issue.id, { row_version: detail.issue.row_version, owner: owner || null, failure_layer: failureLayer || null, priority, root_cause: rootCause, impact_scope: impactScope, reason: "update triage" }, identity), "归因已保存，状态已重新计算。")}

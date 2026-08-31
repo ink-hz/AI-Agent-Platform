@@ -57,6 +57,10 @@ export interface FaeSessionQuery {
   date_from?: string;
   date_to?: string;
   date_before?: string;
+  subject_key?: string;
+  has_subject?: string;
+  abnormal?: string;
+  has_latency?: string;
   limit?: number;
   offset?: number;
 }

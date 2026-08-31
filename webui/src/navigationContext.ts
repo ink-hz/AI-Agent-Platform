@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 
 import { currentLocationPath } from "./router";
+import { platformPath } from "./auth";
 
 
 export type SessionOrigin = {
@@ -27,6 +28,7 @@ function supportedPlatformPath(path: string): boolean {
     if (url.origin !== window.location.origin || `${url.pathname}${url.search}` !== path) return false;
     return /^\/admin\/agents(?:\/[^/]+)?$/.test(url.pathname)
       || /^\/admin\/sessions(?:\/[^/]+)?$/.test(url.pathname)
+      || url.pathname === "/admin/fae/sessions"
       || url.pathname === "/admin/activity";
   } catch {
     return false;
@@ -55,7 +57,7 @@ export function captureSessionOrigin(scrollY: number): SessionOriginState {
     scrollY: Number.isFinite(scrollY) && scrollY >= 0 ? scrollY : 0,
   };
   const state = { ...record(window.history.state), sessionOrigin: origin } as SessionOriginState;
-  window.history.replaceState(state, "", origin.path);
+  window.history.replaceState(state, "", platformPath(origin.path));
   return state;
 }
 

@@ -681,4 +681,30 @@ describe("FaeIssuesPage", () => {
     expect(buttons).not.toContain("添加证据");
     expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
   });
+
+  it("restores server-side Issue filters and page two with accessible pagination", async () => {
+    window.history.replaceState({}, "", "/admin/fae/issues?priority=P1&failure_layer=model&owner=corp%3Aone&q=timeout&page=2");
+    const issueRequests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/admin/fae/issues?")) {
+        issueRequests.push(path);
+        return Promise.resolve(response({
+          items: [{ ...detail.issue, priority: "P1", owner: "corp:one", failure_layer: "model", progress: detail.progress }],
+          total: 205, limit: 200, offset: 200, has_more: false,
+        }));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<FaeIssuesPage account={owner} />));
+
+    expect(issueRequests).toContain(
+      "/api/admin/fae/issues?limit=200&offset=200&priority=P1&failure_layer=model&owner=corp%3Aone&q=timeout",
+    );
+    expect(container.querySelector('nav[aria-label="Issue 分页"]')?.textContent).toContain("第 2 页 · 共 205 项");
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="事项搜索"]')?.value).toBe("timeout");
+  });
 });

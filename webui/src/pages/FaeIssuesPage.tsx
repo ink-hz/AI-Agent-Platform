@@ -4,7 +4,7 @@ import type { Account } from "../auth";
 import { localPathname } from "../auth";
 import { LoadingState } from "../components/DataState";
 import { FaeWorkbenchShell } from "../components/fae-workbench/FaeWorkbenchShell";
-import { ReviewWorkspace } from "../components/review/ReviewWorkspace";
+import { ReviewWorkspace, type ReviewIssueFilters } from "../components/review/ReviewWorkspace";
 import { useDeploymentContext } from "../deploymentContext";
 import { FaeWorkbenchApiError, faeWorkbenchApi } from "../faeWorkbenchApi";
 import { navigate } from "../router";
@@ -64,12 +64,22 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   const [filterRevision, setFilterRevision] = useState(0);
   const parsedIssueFilter = issueFilterFromSearch(window.location.search, cloudReplica);
   const issueStatus = parsedIssueFilter.value;
+  const issuePage = /^\d+$/.test(query.get("page") ?? "") ? Math.max(1, Number(query.get("page"))) : 1;
+  const collectionFilters: ReviewIssueFilters = {
+    ...(query.get("priority") ? { priority: query.get("priority")! } : {}),
+    ...(query.get("failure_layer") ? { failure_layer: query.get("failure_layer")! } : {}),
+    ...(query.get("owner") ? { owner: query.get("owner")! } : {}),
+    ...(query.get("q") ? { query: query.get("q")! } : {}),
+    ...(query.get("created_after") ? { created_after: query.get("created_after")! } : {}),
+  };
   const reviewApi = useMemo(() => faeWorkbenchApi.review(account.csrf_token), [account.csrf_token]);
-  const issueFilters = useMemo(() => !issueStatus
-    ? undefined
-    : cloudReplica && issueStatus !== "open"
-      ? { disposition: issueStatus }
-      : { status: issueStatus }, [cloudReplica, issueStatus]);
+  const issueFilters = useMemo(() => ({
+    ...collectionFilters,
+    ...(!issueStatus ? {} : cloudReplica && issueStatus !== "open"
+      ? { disposition: issueStatus } : { status: issueStatus }),
+    limit: 200,
+    offset: (issuePage - 1) * 200,
+  }), [cloudReplica, filterRevision, issuePage, issueStatus]);
 
   useEffect(() => {
     const restore = () => setFilterRevision((value) => value + 1);
@@ -86,6 +96,7 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
     const query = new URLSearchParams(window.location.search);
     query.delete("status");
     query.delete("disposition");
+    query.delete("page");
     const search = query.toString();
     navigate(`${localPathname()}${search ? `?${search}` : ""}`, { replace: true });
   }, [cloudReplica, deploymentResolved, filterRevision, parsedIssueFilter.valid]);
@@ -98,6 +109,24 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
     else if (status) query.set("disposition", status);
     const search = query.toString();
     navigate(`${localPathname()}${search ? `?${search}` : ""}`);
+  };
+
+  const changeCollectionFilters = (filters: ReviewIssueFilters) => {
+    const next = new URLSearchParams(window.location.search);
+    for (const [key, value] of Object.entries({
+      priority: filters.priority, failure_layer: filters.failure_layer,
+      owner: filters.owner, q: filters.query, created_after: filters.created_after,
+    })) {
+      if (value) next.set(key, String(value)); else next.delete(key);
+    }
+    next.delete("page");
+    navigate(`${localPathname()}${next.size ? `?${next}` : ""}`);
+  };
+
+  const changeIssuePage = (page: number) => {
+    const next = new URLSearchParams(window.location.search);
+    if (page > 1) next.set("page", String(page)); else next.delete("page");
+    navigate(`${localPathname()}${next.size ? `?${next}` : ""}`);
   };
 
   useEffect(() => {
@@ -156,6 +185,8 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
     statusFilter={issueStatus}
     onStatusFilterChange={changeIssueStatus}
     issueFilters={issueFilters}
+    onIssueFiltersChange={changeCollectionFilters}
+    onIssuePageChange={changeIssuePage}
     statusOptions={cloudReplica ? CLOUD_STATUS_OPTIONS : LOCAL_STATUS_OPTIONS}
     statusPresentation={cloudReplica ? "disposition" : "lifecycle"}
     readOnlyReason={account.hard_stale_read_only ? "hard-stale" : undefined}

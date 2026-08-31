@@ -90,6 +90,10 @@ class StaticRepository:
         self.batch_calls.append(list(turn_keys))
         return {key for key in turn_keys if self.fae_turn_exists(key)}
 
+    def fae_turn_feedback(self, turn_key: str):
+        return ({"turn_key": turn_key, "feedback_keys": []}
+                if self.fae_turn_exists(turn_key) else None)
+
 
 class RecordingObservability:
     def __init__(self, session: SessionDetail | None = None) -> None:
@@ -163,11 +167,13 @@ class RecordingIssueReview:
         self.calls.append(("inbox", agent_id, limit, offset))
         return []
 
-    async def list_issues(
-        self, *, agent_id=None, limit, offset, status=None, disposition=None
-    ):
-        self.calls.append(("issues", agent_id, limit, offset, status, disposition))
-        return self.issue_rows
+    async def list_issue_page(self, **filters):
+        self.calls.append(("list_issue_page", filters))
+        return {
+            "items": self.issue_rows, "total": len(self.issue_rows),
+            "limit": filters["limit"], "offset": filters["offset"],
+            "has_more": False,
+        }
 
     async def turn_summaries(self, *, turn_keys):
         self.calls.append(("turn_summaries", turn_keys))
@@ -244,6 +250,14 @@ class _MergeCursor:
 
     def execute(self, statement, parameters):
         sql = " ".join(statement.lower().split())
+        if sql.startswith("select agent_id from platform_review.feedback_issues"):
+            return _Rows({"agent_id": self.issues[parameters[0]]["agent_id"]})
+        if "pg_advisory_xact_lock" in sql:
+            return _Rows({"pg_advisory_xact_lock": None})
+        if sql.startswith("with recursive canonical_walk"):
+            return _Rows({"cycle": False})
+        if sql.startswith("select * from platform_review.feedback_issues") and "id=any" in sql:
+            return _Rows([dict(self.issues[issue_id]) for issue_id in parameters[0]])
         if sql.startswith("select * from platform_review.feedback_issues"):
             return _Rows(dict(self.issues[parameters[0]]))
         if (
@@ -402,7 +416,10 @@ async def test_issue_reads_always_inject_fae_agent_scope():
         ("overview", FAE_AGENT_ID),
         ("inbox", FAE_AGENT_ID, 20, 3),
         ("scope_valid", FAE_AGENT_ID),
-        ("issues", FAE_AGENT_ID, 10, 4, "awaiting_review", "actionable"),
+        ("list_issue_page", {
+            "agent_id": FAE_AGENT_ID, "limit": 10, "offset": 4,
+            "status": "awaiting_review", "disposition": "actionable",
+        }),
         ("turn_summaries", ["fae:turn-ordinary"]),
     ]
     assert summaries == [{"turn_key": "fae:turn-ordinary"}]
@@ -839,7 +856,7 @@ async def test_actual_review_merge_detail_list_and_writer_preserve_fae_scope(
     )
 
     assert detail["issue"]["canonical_issue_id"] == TARGET_ID
-    assert listed == [review.details[ISSUE_ID]["issue"]]
+    assert listed["items"] == [review.details[ISSUE_ID]["issue"]]
     assert any(call[0] == "update_issue" for call in review.calls)
 
 

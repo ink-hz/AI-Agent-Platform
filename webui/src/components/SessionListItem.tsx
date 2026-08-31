@@ -34,7 +34,7 @@ export function SessionListItem({
         <span>{session.agent_id}</span>
         {sender && <small className="session-sender"><b>{sender}</b>{additionalParticipants && <em>{additionalParticipants}</em>}</small>}
       </div>
-      <div className="session-counts"><span>{session.turn_count} 轮</span>{showSignals && session.feedback_count > 0 && <span>{session.feedback_count} 条反馈</span>}{showSignals && session.review_count > 0 && <span>{session.review_count} 条复审</span>}</div>
+      <div className="session-counts"><span>{session.turn_count} 轮</span>{showSignals && session.feedback_count === null && <span>反馈暂不可用</span>}{showSignals && session.feedback_count !== null && session.feedback_count > 0 && <span>{session.feedback_count} 条反馈</span>}{showSignals && session.review_count === null && <span>复审暂不可用</span>}{showSignals && session.review_count !== null && session.review_count > 0 && <span>{session.review_count} 条复审</span>}</div>
       <time dateTime={session.last_active_at}>{dateTime(session.last_active_at)}</time>
       <span className={`freshness freshness-${session.freshness}`}>{sourceFreshnessLabel(session.freshness)}</span>
     </PlatformLink>

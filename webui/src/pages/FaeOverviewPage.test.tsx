@@ -126,11 +126,9 @@ describe("FaeOverviewPage", () => {
 
     expect(container.querySelector('[data-metric="sessions"] a')?.getAttribute("href")).toBe(periodSessionsHref);
     expect(container.querySelector('[data-metric="negative-turns"] a')?.getAttribute("href")).toBe(negativeSessionsHref);
-    expect(container.querySelector('[data-metric="p95-latency"] a')?.getAttribute("href")).toBe(periodSessionsHref);
-    expect(container.querySelector('[data-metric="active-subjects"] a')).toBeNull();
-    expect(container.querySelector('[data-metric="active-subjects"]')?.textContent).toContain("暂无主体维度下钻");
-    expect(container.querySelector('[data-metric="abnormal-sessions"] a')).toBeNull();
-    expect(container.querySelector('[data-metric="abnormal-sessions"]')?.textContent).toContain("请从下方异常 Session 打开详情");
+    expect(container.querySelector('[data-metric="p95-latency"] a')?.getAttribute("href")).toContain("has_latency=true");
+    expect(container.querySelector('[data-metric="active-subjects"] a')?.getAttribute("href")).toContain("has_subject=true");
+    expect(container.querySelector('[data-metric="abnormal-sessions"] a')?.getAttribute("href")).toContain("abnormal=true");
     expect(container.querySelector('a[href*="outcome=failed"]')).toBeNull();
     expect(container.querySelector('[data-metric="open-issues"] a[href="/admin/fae/issues?status=open"]')).not.toBeNull();
     expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=pending_triage"]')).not.toBeNull();
@@ -303,8 +301,8 @@ describe("FAE overview routing and authorization", () => {
 
     const metric = container.querySelector('[data-metric="negative-turns"]');
     expect(metric?.textContent).toContain("2 个负向 Turn");
-    expect(metric?.textContent).toContain("云端聚合可用，暂不支持按 Session 下钻");
-    expect(metric?.querySelector("a")).toBeNull();
+    expect(metric?.textContent).toContain("3 条负向反馈");
+    expect(metric?.querySelector("a")?.getAttribute("href")).toContain("sentiment=negative");
     expect(container.querySelector('a[href="/admin/fae/issues?disposition=actionable"]')).not.toBeNull();
     expect(container.querySelector('a[href*="status=actionable"]')).toBeNull();
   });

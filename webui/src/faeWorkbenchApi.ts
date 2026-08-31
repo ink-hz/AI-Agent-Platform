@@ -74,7 +74,7 @@ function sessionDetail(value: unknown): SessionDetail {
   return value as SessionDetail;
 }
 
-const QUERY_KEYS = ["q", "channel", "sentiment", "review_status", "outcome", "date_from", "date_to", "date_before", "limit", "offset"] as const;
+const QUERY_KEYS = ["q", "channel", "sentiment", "review_status", "outcome", "date_from", "date_to", "date_before", "subject_key", "has_subject", "abnormal", "has_latency", "limit", "offset"] as const;
 
 const ISSUE_STATUSES = new Set([
   "pending_triage", "fixing", "awaiting_merge", "awaiting_deploy", "awaiting_replay",
@@ -157,9 +157,19 @@ function normalizeIssue(value: unknown): FeedbackIssueSummary {
   };
 }
 
-function normalizeIssues(value: unknown): FeedbackIssueSummary[] {
-  if (!Array.isArray(value)) throw new Error("FAE issues response contract invalid");
-  return value.map(normalizeIssue);
+function normalizeIssues(value: unknown): { items: FeedbackIssueSummary[]; total: number; limit: number; offset: number; has_more: boolean } {
+  if (Array.isArray(value)) {
+    return { items: value.map(normalizeIssue), total: value.length,
+      limit: value.length || 200, offset: 0, has_more: false };
+  }
+  const raw = objectValue(value, "FAE issues response contract invalid");
+  if (!Array.isArray(raw.items) || countOrNull(raw.total) === null || countOrNull(raw.limit) === null || countOrNull(raw.offset) === null) {
+    throw new Error("FAE issues response contract invalid");
+  }
+  return {
+    items: raw.items.map(normalizeIssue), total: Number(raw.total), limit: Number(raw.limit),
+    offset: Number(raw.offset), has_more: raw.has_more === true,
+  };
 }
 
 function normalizeInbox(value: unknown): ReviewInboxItem[] {
@@ -191,14 +201,15 @@ function normalizeDetail(value: unknown): FeedbackIssueDetail {
     replica_read_only: raw.replica_read_only === true || rawIssue.replica_read_only === true,
   });
   const arrays = ["links", "evidence", "replays", "events"] as const;
-  if (arrays.some((key) => !Array.isArray(raw[key]))) throw new Error("FAE issue detail response contract invalid");
+  if (arrays.some((key) => raw[key] !== null && !Array.isArray(raw[key]))) throw new Error("FAE issue detail response contract invalid");
   const projected = raw.replica_read_only === true || rawIssue.replica_read_only === true;
   return {
     issue: (({ progress: _progress, ...summary }) => summary)(issue),
-    links: raw.links as FeedbackIssueDetail["links"],
-    evidence: raw.evidence as FeedbackIssueDetail["evidence"],
-    replays: raw.replays as FeedbackIssueDetail["replays"],
-    events: raw.events as FeedbackIssueDetail["events"],
+    links: (raw.links ?? []) as FeedbackIssueDetail["links"],
+    evidence: (raw.evidence ?? []) as FeedbackIssueDetail["evidence"],
+    replays: (raw.replays ?? []) as FeedbackIssueDetail["replays"],
+    events: (raw.events ?? []) as FeedbackIssueDetail["events"],
+    section_availability: objectValue(raw.availability ?? raw.section_availability ?? {}, "FAE issue detail response contract invalid") as FeedbackIssueDetail["section_availability"],
     progress: normalizeProgress(raw.progress, issue.id, projected),
   };
 }
@@ -208,9 +219,15 @@ function reviewApi(csrfToken: string): ReviewApi {
     overview: async (signal) => normalizeOverview(await getJson<unknown>("/api/admin/fae/issue-overview", signal)),
     inbox: async (signal) => normalizeInbox(await getJson<unknown>("/api/admin/fae/issue-inbox?limit=200", signal)),
     issues: async (signal, filters) => {
-      const params = new URLSearchParams({ limit: "200" });
+      const params = new URLSearchParams({ limit: String(filters?.limit ?? 200) });
+      if ((filters?.offset ?? 0) > 0) params.set("offset", String(filters?.offset));
       if (filters?.status) params.set("status", filters.status);
       if (filters?.disposition) params.set("disposition", filters.disposition);
+      if (filters?.priority) params.set("priority", filters.priority);
+      if (filters?.failure_layer) params.set("failure_layer", filters.failure_layer);
+      if (filters?.owner) params.set("owner", filters.owner);
+      if (filters?.query) params.set("q", filters.query);
+      if (filters?.created_after) params.set("created_after", filters.created_after);
       return normalizeIssues(await getJson<unknown>(`/api/admin/fae/issues?${params}`, signal));
     },
     turnSummaries(turnKeys, signal) {

@@ -458,6 +458,17 @@ FAE_LIVE_REQUESTS = (
 )
 
 
+def test_fae_cloud_acceptance_requires_the_bounded_issue_page_contract():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+
+    assert 'if [[ "$path" == "/api/admin/fae/issues" ]]' in script
+    assert 'value.get("items")' in script
+    assert 'value.get("total")' in script
+    assert 'value.get("limit")' in script
+    assert 'value.get("offset")' in script
+    assert 'value.get("has_more")' in script
+
+
 def _write_fae_curl_stub(path: Path) -> None:
     path.write_text(
         textwrap.dedent(
@@ -547,6 +558,11 @@ def _write_fae_curl_stub(path: Path) -> None:
             elif role in {"member", "viewer"}:
                 status = 403
                 body = '{"detail":"management_role_required"}'
+            elif method == "GET" and url.endswith("/api/admin/fae/issues"):
+                body = json.dumps({
+                    "items": [], "total": 0, "limit": 100,
+                    "offset": 0, "has_more": False,
+                }, separators=(",", ":"))
             elif method == "POST" and url.endswith("/api/admin/fae/issues"):
                 if "Content-Type: application/json" not in headers:
                     raise SystemExit(84)

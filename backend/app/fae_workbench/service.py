@@ -351,13 +351,23 @@ class FaeWorkbenchService:
         offset: int,
         status: str | None = None,
         disposition: str | None = None,
+        priority: str | None = None,
+        failure_layer: str | None = None,
+        owner: str | None = None,
+        query: str | None = None,
+        created_after: datetime | None = None,
     ):
         await self._assert_fae_issue_scope()
         filters = {
             **({"status": status} if status is not None else {}),
             **({"disposition": disposition} if disposition is not None else {}),
+            **({"priority": priority} if priority is not None else {}),
+            **({"failure_layer": failure_layer} if failure_layer is not None else {}),
+            **({"owner": owner} if owner is not None else {}),
+            **({"query": query} if query is not None else {}),
+            **({"created_after": created_after} if created_after is not None else {}),
         }
-        return await self._review.list_issues(
+        return await self._review.list_issue_page(
             agent_id=FAE_AGENT_ID, limit=limit, offset=offset, **filters
         )
 
@@ -407,10 +417,19 @@ class FaeWorkbenchService:
 
     async def link_turn(self, issue_id: UUID, payload, *, actor: str):
         await self._fae_issue(issue_id)
-        if not await self._fae_turn_exists(payload.source_turn_key):
+        metadata = await asyncio.to_thread(
+            self._repository.fae_turn_feedback, payload.source_turn_key
+        )
+        if metadata is None:
             raise ReviewNotFound("turn not found")
+        exact_keys = sorted(set(metadata.get("feedback_keys") or []))
+        if not set(payload.source_feedback_keys or []).issubset(exact_keys):
+            raise InvalidReviewMutation(
+                "feedback keys do not belong to the exact FAE source turn"
+            )
         data = payload.model_dump()
         data["agent_id"] = FAE_AGENT_ID
+        data["source_feedback_keys"] = exact_keys
         scoped = LinkTurn.model_validate(data)
         return await self._review.link_turn(issue_id, scoped, actor=actor)
 

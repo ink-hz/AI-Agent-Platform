@@ -118,6 +118,16 @@ describe("FaeSessionsPage", () => {
     expect(requests[requests.length - 1]).toBe("/api/admin/fae/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00&limit=50");
   });
 
+  it("round-trips exact overview population filters before pagination", async () => {
+    window.history.replaceState({}, "", "/admin/fae/sessions?has_subject=true&abnormal=true&has_latency=true&page=2");
+
+    await act(async () => root.render(<FaeSessionsPage />));
+
+    expect(requests[requests.length - 1]).toBe(
+      "/api/admin/fae/sessions?has_subject=true&abnormal=true&has_latency=true&limit=50&offset=50",
+    );
+  });
+
   it.each([
     "not-a-date",
     "2026-08-01T00:00:00",

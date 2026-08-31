@@ -20,6 +20,7 @@ class ReplayInput:
     issue_id: UUID
     issue_link_id: UUID
     agent_id: str
+    source_turn_key: str
     question: str
     prior_turns: list[dict]
     attachment_manifest: list[dict]
@@ -447,8 +448,14 @@ class ReplayRunner:
             "context_snapshot": replay_input.prior_turns,
             "attachment_manifest": replay_input.attachment_manifest,
         }
+        expected_ownership = {
+            "issue_id": replay_input.issue_id,
+            "agent_id": replay_input.agent_id,
+            "source_turn_key": replay_input.source_turn_key,
+        }
         self.repository.expire_stale_replays(
             issue_link_id,
+            expected_ownership=expected_ownership,
             timeout_seconds=self.request_timeout,
             actor=actor,
         )
@@ -456,6 +463,7 @@ class ReplayRunner:
             issue_link_id,
             idempotency_key=idempotency_key,
             expected=expected,
+            expected_ownership=expected_ownership,
             actor=actor,
         )
         if not created:

@@ -805,7 +805,6 @@ def create_app(
         if cloud_mode and replica_repository is not None:
             fae_repository = ReplicaFaeWorkbenchRepository(
                 replica_repository,
-                feedback_reader=_UnavailableFaeFeedbackProjectionReader(),
             )
         elif database_url:
             fae_repository = PsycopgFaeWorkbenchRepository(database_url)

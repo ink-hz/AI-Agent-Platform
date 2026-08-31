@@ -246,7 +246,7 @@ class ReplicaObservabilityRepository:
         if any(
             turn.get("outcome") is not None
             and str(turn["outcome"]).casefold()
-            not in {"resolved", "completed", "succeeded"}
+            not in {"resolved", "completed", "succeeded", "success"}
             for turn in turns
         ):
             return "failed_outcome"
@@ -263,9 +263,17 @@ class ReplicaObservabilityRepository:
         trends: dict[date, dict[str, int]] = {}
         attention: list[dict[str, Any]] = []
         abnormal_session_count = 0
+        negative_feedback_events = 0
+        negative_turn_count = 0
         for record, _user_id in records:
             turns = list(record.get("turns") or [])
+            if any("feedback_sentiments" not in turn for turn in turns):
+                raise ObservabilityReadError("replica feedback projection unavailable")
             for turn in turns:
+                sentiments = list(turn.get("feedback_sentiments") or [])
+                negative_feedback_events += sentiments.count("negative")
+                if "negative" in sentiments:
+                    negative_turn_count += 1
                 duration = turn.get("duration_ms")
                 if isinstance(duration, int) and not isinstance(duration, bool) and duration >= 0:
                     durations.append(duration)
@@ -281,14 +289,20 @@ class ReplicaObservabilityRepository:
                     }
                 )
             day = _time(record["last_active_at"]).astimezone(_SHANGHAI).date()
-            bucket = trends.setdefault(day, {"sessions": 0})
+            bucket = trends.setdefault(day, {"sessions": 0, "negative_turns": 0})
             bucket["sessions"] += 1
+            bucket["negative_turns"] += sum(
+                1 for turn in turns
+                if "negative" in (turn.get("feedback_sentiments") or [])
+            )
         attention.sort(key=lambda item: (-item["last_active_at"].timestamp(), item["session_key"]))
         return {
             "data_as_of": self._latest_success(),
             "session_count": len(records),
             "active_subject_count": len(subject_ids),
             "abnormal_session_count": abnormal_session_count,
+            "negative_feedback_events": negative_feedback_events,
+            "negative_turn_count": negative_turn_count,
             "p50_duration_ms": self._percentile(durations, 0.5),
             "p95_duration_ms": self._percentile(durations, 0.95),
             "trend": [
@@ -318,6 +332,26 @@ class ReplicaObservabilityRepository:
         except ObservabilityReadError:
             raise
 
+    def fae_turn_feedback(self, turn_key: str) -> dict[str, Any] | None:
+        try:
+            for record, _user_id in self._fae_records_in_period(
+                datetime.min.replace(tzinfo=UTC), datetime.max.replace(tzinfo=UTC)
+            ):
+                for turn in record.get("turns", []):
+                    if turn.get("key") != turn_key:
+                        continue
+                    if "feedback_sentiments" not in turn:
+                        raise ObservabilityReadError(
+                            "replica feedback projection unavailable"
+                        )
+                    # Cloud projections intentionally omit raw feedback keys.  The
+                    # empty lineage is authoritative for read-only cloud mutations,
+                    # which are denied before this method can be called.
+                    return {"turn_key": turn_key, "feedback_keys": []}
+            return None
+        except ObservabilityReadError:
+            raise
+
     def _status_freshness(self) -> str:
         return "stale" if self.deployment_status()["freshness"] == "stale" else "fresh"
 
@@ -333,6 +367,9 @@ class ReplicaObservabilityRepository:
     ) -> SessionSummary:
         deployment = deployment or self.deployment_status()
         title = record.get("title") or {}
+        turns = list(record.get("turns") or [])
+        feedback_available = all("feedback_sentiments" in turn for turn in turns)
+        review_available = all("review_statuses" in turn for turn in turns)
         return SessionSummary(
             session_key=record["key"],
             agent_id=record["agent_id"],
@@ -341,9 +378,21 @@ class ReplicaObservabilityRepository:
             title=title.get("text"),
             created_at=_time(record["created_at"]),
             last_active_at=_time(record["last_active_at"]),
-            turn_count=len(record.get("turns", [])),
-            feedback_count=0,
-            review_count=0,
+            turn_count=len(turns),
+            feedback_count=(
+                sum(len(turn.get("feedback_sentiments") or []) for turn in turns)
+                if feedback_available else None
+            ),
+            review_count=(
+                sum(len(turn.get("review_statuses") or []) for turn in turns)
+                if review_available else None
+            ),
+            feedback_availability=(
+                "available" if feedback_available else "unavailable"
+            ),
+            review_availability=(
+                "available" if review_available else "unavailable"
+            ),
             latest_outcome=self._latest_outcome(record),
             source_synced_at=deployment["last_success_at"],
             participant_count=1,
@@ -364,8 +413,16 @@ class ReplicaObservabilityRepository:
         if not filters.agent_id:
             business_ids = set(self._catalog.ids_for_visibility("business"))
             records = [record for record in records if record["agent_id"] in business_ids]
-        if filters.sentiment or filters.review_status:
-            records = []
+        if filters.sentiment and any(
+            any("feedback_sentiments" not in turn for turn in record.get("turns", []))
+            for record in records
+        ):
+            raise ObservabilityReadError("replica sentiment filter unavailable")
+        if filters.review_status and any(
+            any("review_statuses" not in turn for turn in record.get("turns", []))
+            for record in records
+        ):
+            raise ObservabilityReadError("replica review filter unavailable")
         filtered = []
         query = filters.query.casefold() if filters.query else None
         for record in records:
@@ -376,6 +433,34 @@ class ReplicaObservabilityRepository:
             if filters.channel and record.get("channel") != filters.channel:
                 continue
             if filters.outcome and self._latest_outcome(record) != filters.outcome:
+                continue
+            if filters.subject_key and record.get("user_id") != filters.subject_key:
+                continue
+            if filters.has_subject is True and not record.get("user_id"):
+                continue
+            if filters.has_subject is False and record.get("user_id"):
+                continue
+            turns = list(record.get("turns") or [])
+            if filters.sentiment and not any(
+                filters.sentiment in (turn.get("feedback_sentiments") or [])
+                for turn in turns
+            ):
+                continue
+            if filters.review_status and not any(
+                filters.review_status in (turn.get("review_statuses") or [])
+                for turn in turns
+            ):
+                continue
+            abnormal = self._abnormal_reason(turns) is not None
+            if filters.abnormal is not None and abnormal is not filters.abnormal:
+                continue
+            has_latency = any(
+                isinstance(turn.get("duration_ms"), int)
+                and not isinstance(turn.get("duration_ms"), bool)
+                and turn["duration_ms"] >= 0
+                for turn in turns
+            )
+            if filters.has_latency is not None and has_latency is not filters.has_latency:
                 continue
             active_at = _time(record["last_active_at"])
             if filters.date_from and active_at < filters.date_from:
@@ -483,6 +568,8 @@ class ReplicaObservabilityRepository:
             for index, value in enumerate(turn.get("attachments", []), start=1)
         ]
         trace = turn.get("trace")
+        feedback_available = "feedback_sentiments" in turn
+        review_available = "review_statuses" in turn
         return TurnDetail(
             turn_key=turn["key"],
             session_key=record["key"],
@@ -504,6 +591,12 @@ class ReplicaObservabilityRepository:
             sources=[],
             evidence=[],
             evidence_availability="restricted",
+            feedback_availability=(
+                "available" if feedback_available else "unavailable"
+            ),
+            review_availability=(
+                "available" if review_available else "unavailable"
+            ),
             input_attachments=[item for item in attachments if item.direction == "user_input"],
             output_attachments=[item for item in attachments if item.direction == "agent_output"],
             sender_name=record.get("primary_sender_name"),
@@ -623,12 +716,12 @@ class ReplicaObservabilityRepository:
 
     def get_flywheel_overview(self) -> FlywheelOverview:
         return FlywheelOverview(
-            feedback_total=0,
-            negative_feedback=0,
-            pending_reviews=0,
-            evaluation_candidates=0,
-            knowledge_tasks=0,
-            qa_candidates=0,
+            feedback_total=None,
+            negative_feedback=None,
+            pending_reviews=None,
+            evaluation_candidates=None,
+            knowledge_tasks=None,
+            qa_candidates=None,
         )
 
     def list_improvement_items(

@@ -166,6 +166,66 @@ def test_snapshot_preserves_unavailable_freshness_and_null_duration_percentiles(
     assert "t.turn_key is not null" in connection.executed[0][0]
 
 
+def test_trend_counts_distinct_sessions_when_one_session_has_multiple_negative_turns():
+    repository, connection = repository_with_rows(
+        summary={
+            "session_count": 1, "active_subject_count": 1,
+            "negative_feedback_events": 2, "negative_turn_count": 2,
+            "abnormal_session_count": 0, "p50_duration_ms": 10,
+            "p95_duration_ms": 10, "data_as_of": NOW,
+        },
+        trend=[{"day": date(2026, 8, 31), "sessions": 1, "negative_turns": 2}],
+        attention=[],
+    )
+
+    repository.snapshot(PERIOD_START, PERIOD_END)
+
+    trend_sql = " ".join(connection.executed[1][0].lower().split())
+    assert "count(distinct s.session_key)::bigint as sessions" in trend_sql
+
+
+def test_freshness_comes_from_latest_successful_sync_outside_the_period():
+    repository, connection = repository_with_rows(
+        summary={
+            "session_count": 0, "active_subject_count": 0,
+            "negative_feedback_events": 0, "negative_turn_count": 0,
+            "abnormal_session_count": 0, "p50_duration_ms": None,
+            "p95_duration_ms": None, "data_as_of": NOW,
+        },
+        trend=[], attention=[],
+    )
+
+    result = repository.snapshot(PERIOD_START, PERIOD_END)
+
+    assert result.data_as_of == NOW
+    summary_sql = " ".join(connection.executed[0][0].lower().split())
+    assert "platform_read.sync_status" in summary_sql
+    assert "source_kind = 'fae'" in summary_sql
+    assert "last_success_at" in summary_sql
+
+
+def test_fae_feedback_metadata_is_exact_turn_agent_and_source_scoped():
+    connection = _Connection(([{
+        "turn_key": "fae:turn-1", "feedback_keys": ["fb:1", "fb:2"]
+    }],))
+    repository = PsycopgFaeWorkbenchRepository(
+        "postgresql://platform", connect=lambda *_args, **_kwargs: connection
+    )
+
+    result = repository.fae_turn_feedback("fae:turn-1")
+
+    assert result == {"turn_key": "fae:turn-1", "feedback_keys": ["fb:1", "fb:2"]}
+    sql, params = connection.executed[0]
+    normalized = " ".join(sql.lower().split())
+    assert "platform_read.turns" in normalized
+    assert "platform_read.feedback" in normalized
+    assert "turn.agent_id='ai-fae-agent'" in normalized
+    assert "turn.source_kind='fae'" in normalized
+    assert "feedback.agent_id=turn.agent_id" in normalized
+    assert "feedback.turn_key=turn.turn_key" in normalized
+    assert params == ("fae:turn-1",)
+
+
 def test_query_failures_are_private_and_stable():
     raw_user_id = "person-very-private-12345"
     connection = _Connection([], error=True, raw_user_id=raw_user_id)

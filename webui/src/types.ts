@@ -207,8 +207,10 @@ export interface SessionSummary {
   created_at: string;
   last_active_at: string;
   turn_count: number;
-  feedback_count: number;
-  review_count: number;
+  feedback_count: number | null;
+  review_count: number | null;
+  feedback_availability?: Availability;
+  review_availability?: Availability;
   latest_outcome: string | null;
   source_synced_at: string | null;
   freshness: Freshness;
@@ -310,7 +312,9 @@ export interface TurnDetail {
   evidence: EvidenceSummary[];
   evidence_availability: Availability;
   feedback: FeedbackItem[];
+  feedback_availability?: Availability;
   reviews: ReviewItem[];
+  review_availability?: Availability;
   improvements: ImprovementItem[];
   input_attachments: AttachmentSummary[];
   output_attachments: AttachmentSummary[];
@@ -364,12 +368,12 @@ export interface TraceDetail {
 }
 
 export interface FlywheelOverview {
-  feedback_total: number;
-  negative_feedback: number;
-  pending_reviews: number;
-  evaluation_candidates: number;
-  knowledge_tasks: number;
-  qa_candidates: number;
+  feedback_total: number | null;
+  negative_feedback: number | null;
+  pending_reviews: number | null;
+  evaluation_candidates: number | null;
+  knowledge_tasks: number | null;
+  qa_candidates: number | null;
 }
 
 export interface SyncStatus {
@@ -422,7 +426,7 @@ export interface TurnClosureSummary {
   turn_key: string;
   issue_id: string | null;
   status: IssueStatus;
-  missing_gates: string[];
+  missing_gates: string[] | null;
   latest_valid_replay_id: string | null;
 }
 
@@ -534,6 +538,7 @@ export interface FeedbackIssueDetail {
   replays: ReplayRun[];
   events: IssueEvent[];
   progress: IssueProgress;
+  section_availability?: Partial<Record<"links" | "evidence" | "replays" | "events", Availability>>;
 }
 
 export interface ReplayMatrixRow {

@@ -128,7 +128,9 @@ describe("FAE workbench API", () => {
         statuses: { actionable: 1 }, dispositions: { actionable: 1 }, write_available: false,
       };
       else if (!init?.method && path.includes("issue-inbox")) body = [projectedInbox];
-      else if (!init?.method && path.includes("issues?limit")) body = [projectedIssue];
+      else if (!init?.method && path.includes("issues?limit")) body = {
+        items: [projectedIssue], total: 1, limit: 50, offset: 0, has_more: false,
+      };
       else if (!init?.method && path.includes("turn-summaries")) body = [];
       else if (!init?.method && path.includes("/issues/")) body = {
         issue: projectedIssue, progress: projectedIssue.progress,
@@ -172,7 +174,7 @@ describe("FAE workbench API", () => {
       statuses: {}, dispositions: { actionable: 1 },
     });
     expect(normalizedInbox[0]).toMatchObject({ feedback_count: 3, question: "", answer: "" });
-    expect(normalizedIssues[0]).toMatchObject({
+    expect(Array.isArray(normalizedIssues) ? normalizedIssues[0] : normalizedIssues.items[0]).toMatchObject({
       disposition: "actionable", root_cause: null,
       progress: { status: "unknown", missing_gates: null, replay_passed_turns: null },
     });

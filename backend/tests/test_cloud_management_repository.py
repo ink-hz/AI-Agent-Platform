@@ -120,7 +120,67 @@ def test_review_projection_is_agent_scoped_and_read_only():
 
     assert [item["agent_id"] for item in issues] == ["hr-bot"]
     assert detail is not None and detail["replica_read_only"] is True
+    assert detail["links"] is None
+    assert detail["evidence"] is None
+    assert detail["replays"] is None
+    assert detail["events"] is None
+    assert detail["availability"] == {
+        "links": "unavailable",
+        "evidence": "unavailable",
+        "replays": "unavailable",
+        "events": "unavailable",
+    }
     assert not hasattr(repository, "create_issue")
+
+
+def test_projected_issue_page_reports_total_and_has_more_after_filters():
+    cipher = FieldCipher(b"m" * 32)
+    records = [{
+        "kind": "review_issue_projection", "key": str(uuid4()),
+        "agent_id": "ai-fae-agent", "status": "actionable", "priority": "P1",
+        "title": {"text": f"issue-{index}"}, "failure_layer": "model",
+        "owner_display": None, "linked_turn_count": 1, "scope_valid": True,
+        "updated_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v2",
+    } for index in range(205)]
+    repository = ReplicaReviewRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record) for record in records]), now=lambda: NOW,
+    )
+
+    page = repository.list_issue_page(
+        agent_id="ai-fae-agent", disposition="actionable", limit=50, offset=200
+    )
+
+    assert len(page["items"]) == 5
+    assert page["total"] == 205
+    assert page["has_more"] is False
+    assert page["limit"] == 50
+    assert page["offset"] == 200
+
+
+def test_projected_turn_governance_distinguishes_active_issue_from_unmanaged():
+    cipher = FieldCipher(b"m" * 32)
+    issue_id = uuid4()
+    record = {
+        "kind": "review_issue_projection", "key": str(issue_id),
+        "agent_id": "ai-fae-agent", "status": "actionable", "priority": "P1",
+        "title": {"text": "active issue"}, "failure_layer": "model",
+        "owner_display": None, "linked_turn_count": 1,
+        "linked_turn_keys": ["f" * 52], "scope_valid": True,
+        "created_at": "2026-08-14T07:00:00.000000Z",
+        "updated_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v2",
+    }
+    repository = ReplicaReviewRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record)]), now=lambda: NOW,
+    )
+
+    assert repository.get_turn_summaries(["f" * 52, "e" * 52]) == [{
+        "turn_key": "f" * 52, "issue_id": str(issue_id), "status": "unknown",
+        "missing_gates": None, "latest_valid_replay_id": None,
+    }]
 
 
 def test_projected_issue_disposition_and_open_filters_precede_limit() -> None:

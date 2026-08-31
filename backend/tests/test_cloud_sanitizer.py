@@ -289,6 +289,8 @@ def test_management_projection_keeps_text_and_hashes_identifiers(policy):
             failure_layer="model",
             owner_display="张候选人",
             linked_turn_count=1,
+            linked_turn_keys=("fae:turn-1",),
+            created_at=now,
             updated_at=now,
             scope_valid=True,
         ),

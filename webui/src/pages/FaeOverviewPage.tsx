@@ -99,11 +99,11 @@ function Summary({ overview, summary, cloudReplica }: { overview: FaeOverview; s
   const periodHref = sessionsHref(overview);
   return <section className="fae-overview__summary" aria-label="运营摘要">
     <MetricCard metric="sessions" label="Session" value={`${summary.session_count} 个 Session`} detail="本统计周期内" href={periodHref} />
-    <MetricCard metric="active-subjects" label="活跃主体" value={`${summary.active_subject_count} 个活跃主体`} detail="暂无主体维度下钻" />
-    <MetricCard metric="negative-turns" label="负向 Turn" value={`${summary.negative_turn_count} 个负向 Turn`} detail={cloudReplica ? "云端聚合可用，暂不支持按 Session 下钻" : `${summary.negative_feedback_events} 条负向反馈`} href={cloudReplica ? undefined : sessionsHref(overview, [["sentiment", "negative"]])} />
-    <MetricCard metric="abnormal-sessions" label="异常 Session" value={`${summary.abnormal_session_count} 个异常 Session`} detail="请从下方异常 Session 打开详情" />
+    <MetricCard metric="active-subjects" label="活跃主体" value={`${summary.active_subject_count} 个活跃主体`} detail="有可识别主体的 Session" href={sessionsHref(overview, [["has_subject", "true"]])} />
+    <MetricCard metric="negative-turns" label="负向 Turn" value={`${summary.negative_turn_count} 个负向 Turn`} detail={`${summary.negative_feedback_events} 条负向反馈`} href={sessionsHref(overview, [["sentiment", "negative"]])} />
+    <MetricCard metric="abnormal-sessions" label="异常 Session" value={`${summary.abnormal_session_count} 个异常 Session`} detail="空回答、fallback 或失败结果" href={sessionsHref(overview, [["abnormal", "true"]])} />
     <MetricCard metric="open-issues" label="开放 Issue" value={summary.open_issue_count === null ? null : `${summary.open_issue_count} 个开放 Issue`} detail="尚未完成闭环" href="/admin/fae/issues?status=open" />
-    <MetricCard metric="p95-latency" label="响应耗时" value={summary.p95_duration_ms === null ? null : `p95 ${summary.p95_duration_ms} ms`} detail="本统计周期的 Session Turn" href={periodHref} />
+    <MetricCard metric="p95-latency" label="响应耗时" value={summary.p95_duration_ms === null ? null : `p95 ${summary.p95_duration_ms} ms`} detail="有耗时样本的 Session Turn" href={sessionsHref(overview, [["has_latency", "true"]])} />
   </section>;
 }
 

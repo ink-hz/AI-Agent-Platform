@@ -58,6 +58,22 @@ describe("Session navigation context", () => {
     expect(sessionReturnTarget({ sessionOrigin: { path: "/sessions", scrollY: 10 } })).toBeNull();
   });
 
+  it("accepts exact FAE Session collection origins including preview-local URLs", () => {
+    const path = "/admin/fae/sessions?sentiment=negative&page=2&q=335";
+    expect(sessionReturnTarget({ sessionOrigin: { path, scrollY: 512 } })).toBe(path);
+
+    window.history.replaceState({}, "", `/_preview/dingtalk-r1${path}`);
+    expect(captureSessionOrigin(512)).toEqual({
+      sessionOrigin: { path, scrollY: 512 },
+    });
+  });
+
+  it("rejects malformed FAE detail and external-looking collection origins", () => {
+    expect(sessionReturnTarget({ sessionOrigin: { path: "/admin/fae/sessions/one", scrollY: 1 } })).toBeNull();
+    expect(sessionReturnTarget({ sessionOrigin: { path: "/admin/fae/sessions#bad", scrollY: 1 } })).toBeNull();
+    expect(sessionReturnTarget({ sessionOrigin: { path: "//admin/fae/sessions", scrollY: 1 } })).toBeNull();
+  });
+
   it("waits for content readiness before restoring a matching source entry", async () => {
     window.history.replaceState({
       sessionOrigin: { path: "/admin/sessions?agent_id=ai-fae-agent", scrollY: 640 },
