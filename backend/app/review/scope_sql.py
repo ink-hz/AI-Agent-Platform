@@ -1,5 +1,58 @@
 """Shared read-only SQL predicate for historical Review link ownership."""
 
+CANONICAL_EVENT_PAIR_INVALID_SQL = """
+exists (
+  select 1
+  from platform_review.feedback_issue_events canonical_event
+  where canonical_event.issue_id=issue.id
+    and (
+      (canonical_event.event_type='issue_merged' and (
+        canonical_event.before->>'id' is distinct from issue.id::text
+        or canonical_event.after->>'id' is distinct from issue.id::text
+        or canonical_event.before->>'agent_id' is distinct from issue.agent_id
+        or canonical_event.after->>'agent_id' is distinct from issue.agent_id
+        or canonical_event.after->>'canonical_issue_id' is null
+        or not exists (
+          select 1
+          from platform_review.feedback_issues canonical_issue
+          join platform_review.feedback_issue_events canonical_target
+            on canonical_target.issue_id=canonical_issue.id
+           and canonical_target.event_type='issue_absorbed'
+           and canonical_target.before->>'source_issue_id'=issue.id::text
+           and canonical_target.after->>'target_issue_id'=canonical_issue.id::text
+           and canonical_target.actor is not distinct from canonical_event.actor
+           and canonical_target.reason is not distinct from canonical_event.reason
+          where canonical_issue.id::text=
+              canonical_event.after->>'canonical_issue_id'
+            and canonical_issue.agent_id=issue.agent_id
+        )
+      ))
+      or (canonical_event.event_type='issue_absorbed' and (
+        canonical_event.before->>'source_issue_id' is null
+        or canonical_event.after->>'target_issue_id'
+          is distinct from issue.id::text
+        or not exists (
+          select 1
+          from platform_review.feedback_issues canonical_issue
+          join platform_review.feedback_issue_events canonical_source
+            on canonical_source.issue_id=canonical_issue.id
+           and canonical_source.event_type='issue_merged'
+           and canonical_source.before->>'id'=canonical_issue.id::text
+           and canonical_source.after->>'id'=canonical_issue.id::text
+           and canonical_source.before->>'agent_id'=canonical_issue.agent_id
+           and canonical_source.after->>'agent_id'=canonical_issue.agent_id
+           and canonical_source.after->>'canonical_issue_id'=issue.id::text
+           and canonical_source.actor is not distinct from canonical_event.actor
+           and canonical_source.reason is not distinct from canonical_event.reason
+          where canonical_issue.id::text=
+              canonical_event.before->>'source_issue_id'
+            and canonical_issue.agent_id=issue.agent_id
+        )
+      ))
+    )
+)
+""".strip()
+
 HISTORICAL_LINK_EVENT_INVALID_SQL = """
 exists (
   select 1

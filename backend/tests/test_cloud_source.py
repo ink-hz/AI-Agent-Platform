@@ -10,7 +10,10 @@ from app.cloud_replica.source import (
     REVIEW_ISSUE_SQL,
     ReplicaSource,
 )
-from app.review.scope_sql import HISTORICAL_LINK_EVENT_INVALID_SQL
+from app.review.scope_sql import (
+    CANONICAL_EVENT_PAIR_INVALID_SQL,
+    HISTORICAL_LINK_EVENT_INVALID_SQL,
+)
 from app.observability.models import Page
 from app.operations.models import EventFilters, OperationalEvent
 
@@ -86,6 +89,15 @@ def test_cloud_issue_scope_binds_move_direction_link_identity_and_referenced_iss
     assert "historical_after_issue.agent_id is distinct from issue.agent_id" in source
     assert "historical_link.id is null" in source
     assert "merge_walk.current_id=historical_link.issue_id" in source
+
+
+def test_cloud_issue_scope_uses_shared_canonical_event_pair_audit():
+    source = " ".join(REVIEW_ISSUE_SQL.lower().split())
+    predicate = " ".join(CANONICAL_EVENT_PAIR_INVALID_SQL.lower().split())
+
+    assert predicate in source
+    assert "canonical_source.event_type='issue_merged'" in source
+    assert "canonical_target.event_type='issue_absorbed'" in source
 
 
 class _Context:

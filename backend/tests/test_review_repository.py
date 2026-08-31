@@ -12,7 +12,10 @@ from app.review.repository import (
     PsycopgReviewRepository,
     require_row_version,
 )
-from app.review.scope_sql import HISTORICAL_LINK_EVENT_INVALID_SQL
+from app.review.scope_sql import (
+    CANONICAL_EVENT_PAIR_INVALID_SQL,
+    HISTORICAL_LINK_EVENT_INVALID_SQL,
+)
 
 
 def test_row_version_is_mandatory_for_issue_updates():
@@ -319,6 +322,37 @@ def test_issue_scope_sql_validates_all_links_replays_and_historical_link_events(
     ):
         assert event_type in historical_scope
     assert "is distinct from" in historical_scope
+
+
+def test_issue_scope_sql_rejects_unpaired_or_malformed_canonical_events():
+    method_source = " ".join(
+        inspect.getsource(PsycopgReviewRepository.agent_issue_scope_valid)
+        .lower()
+        .split()
+    )
+    predicate = " ".join(CANONICAL_EVENT_PAIR_INVALID_SQL.lower().split())
+
+    assert "canonical_event_pair_invalid_sql" in method_source
+    assert "canonical_source.event_type='issue_merged'" in predicate
+    assert "canonical_target.event_type='issue_absorbed'" in predicate
+    assert "canonical_source.before->>'source_issue_id'" not in predicate
+    assert "canonical_target.before->>'source_issue_id'" in predicate
+    assert "canonical_source.after->>'canonical_issue_id'" in predicate
+    assert "canonical_target.after->>'target_issue_id'" in predicate
+    assert "canonical_target.actor is not distinct from canonical_event.actor" in predicate
+    assert "canonical_source.actor is not distinct from canonical_event.actor" in predicate
+    assert "canonical_target.reason is not distinct from canonical_event.reason" in predicate
+    assert "canonical_source.reason is not distinct from canonical_event.reason" in predicate
+
+
+def test_all_canonical_merge_events_are_emitted_by_one_paired_helper():
+    repository_source = inspect.getsource(PsycopgReviewRepository)
+    helper = inspect.getsource(PsycopgReviewRepository._event_canonical_merge)
+
+    assert repository_source.count('event_type="issue_merged"') == 1
+    assert repository_source.count('event_type="issue_absorbed"') == 1
+    assert 'event_type="issue_merged"' in helper
+    assert 'event_type="issue_absorbed"' in helper
 
 
 def test_issue_scope_sql_binds_move_direction_link_identity_and_referenced_issues():
@@ -1115,6 +1149,8 @@ def test_actual_release_handoff_cycle_rolls_back_link_issue_and_audit_state(path
                 return Result(link)
             if normalized.startswith("select 1 from platform_review.feedback_issue_links"):
                 return Result(None)
+            if "as target_issue_id" in normalized and "event_type='link_moved_out'" in normalized:
+                return Result(many=[])
             if normalized.startswith("select agent_id from platform_review.feedback_issues"):
                 return Result({"agent_id": "ai-fae-agent"})
             if normalized.startswith("select * from platform_review.feedback_issues") and "id=any" in normalized:
@@ -1202,6 +1238,7 @@ def test_actual_valid_release_handoff_moves_link_and_canonicalizes_with_all_feed
         "active": True,
     }
     issue_events = []
+    canonical_events = []
     evidence_sequence = iter([UUID(int=1254), UUID(int=1255)])
     handoff_row = {
         "idempotency_key": "sha256:" + "a" * 64,
@@ -1247,10 +1284,30 @@ def test_actual_valid_release_handoff_moves_link_and_canonicalizes_with_all_feed
                 return Result(link)
             if normalized.startswith("select 1 from platform_review.feedback_issue_links"):
                 return Result(None)
+            if "as target_issue_id" in normalized and "event_type='link_moved_out'" in normalized:
+                return Result(many=[])
             if normalized.startswith("select agent_id from platform_review.feedback_issues"):
                 return Result({"agent_id": "ai-fae-agent"})
             if normalized.startswith("select * from platform_review.feedback_issues") and "id=any" in normalized:
                 return Result(many=[source_issue, target_issue])
+            if normalized.startswith("with recursive canonical_walk") and "as valid" in normalized:
+                merged = next(
+                    (event for event in canonical_events if event[1] == "issue_merged"),
+                    None,
+                )
+                absorbed = next(
+                    (event for event in canonical_events if event[1] == "issue_absorbed"),
+                    None,
+                )
+                return Result({
+                    "valid": bool(
+                        merged
+                        and absorbed
+                        and merged[3]["canonical_issue_id"] == str(target_id)
+                        and absorbed[2]["source_issue_id"] == str(source_id)
+                        and absorbed[3]["target_issue_id"] == str(target_id)
+                    )
+                })
             if normalized.startswith("with recursive canonical_walk"):
                 return Result({"cycle": False})
             if normalized.startswith("select 1 from platform_review.feedback_replay_runs"):
@@ -1272,6 +1329,10 @@ def test_actual_valid_release_handoff_moves_link_and_canonicalizes_with_all_feed
                 return Result(dict(source_issue))
             if normalized.startswith("insert into platform_review.feedback_issue_events"):
                 issue_events.append((parameters[0], parameters[1]))
+                if parameters[1] in ("issue_merged", "issue_absorbed"):
+                    canonical_events.append(
+                        (parameters[0], parameters[1], parameters[4].obj, parameters[5].obj)
+                    )
                 return Result()
             if normalized.startswith("select * from platform_review.feedback_issues"):
                 return Result(target_issue)
@@ -1321,8 +1382,245 @@ def test_actual_valid_release_handoff_moves_link_and_canonicalizes_with_all_feed
     assert link["source_feedback_keys"] == ["fae:negative", "fae:positive"]
     assert source_issue["canonical_issue_id"] == target_id
     assert (source_id, "issue_merged") in issue_events
+    assert (target_id, "issue_absorbed") in issue_events
     assert (source_id, "link_moved_out") in issue_events
     assert (target_id, "link_moved_in") in issue_events
+    assert repository.agent_issue_scope_valid("ai-fae-agent") is True
+
+
+@pytest.mark.parametrize("reverse_items", [False, True])
+def test_actual_split_release_handoff_preserves_moves_without_false_canonical_edge(
+    reverse_items,
+):
+    source_id, target_b_id, target_c_id = UUID(int=1271), UUID(int=1272), UUID(int=1273)
+    link_b_id, link_c_id = UUID(int=1274), UUID(int=1275)
+    source_issue = {
+        "id": source_id,
+        "agent_id": "ai-fae-agent",
+        "row_version": 1,
+        "disposition": "actionable",
+        "canonical_issue_id": None,
+    }
+    targets = {
+        "target-b": {
+            "id": target_b_id,
+            "agent_id": "ai-fae-agent",
+            "row_version": 1,
+            "disposition": "actionable",
+            "root_cause": "known",
+            "owner": "corp:owner",
+            "fix_ready_at": "2026-09-01T00:00:00Z",
+        },
+        "target-c": {
+            "id": target_c_id,
+            "agent_id": "ai-fae-agent",
+            "row_version": 1,
+            "disposition": "actionable",
+            "root_cause": "known",
+            "owner": "corp:owner",
+            "fix_ready_at": "2026-09-01T00:00:00Z",
+        },
+    }
+    links = {
+        "fae:turn-b": {
+            "id": link_b_id,
+            "issue_id": source_id,
+            "agent_id": "ai-fae-agent",
+            "source_turn_key": "fae:turn-b",
+            "source_feedback_keys": ["fae:feedback-b"],
+            "active": True,
+        },
+        "fae:turn-c": {
+            "id": link_c_id,
+            "issue_id": source_id,
+            "agent_id": "ai-fae-agent",
+            "source_turn_key": "fae:turn-c",
+            "source_feedback_keys": ["fae:feedback-c"],
+            "active": True,
+        },
+    }
+    issue_events = []
+    handoff_events = []
+    evidence_sequence = iter(UUID(int=value) for value in range(1276, 1280))
+    handoff_row = {
+        "idempotency_key": "sha256:" + "e" * 64,
+        "batch_id": "batch-split",
+        "agent_id": "ai-fae-agent",
+        "payload_sha256": "f" * 64,
+        "release_name": "release-split",
+        "deployment_sha": "1" * 40,
+        "import_status": None,
+        "result": None,
+    }
+
+    class Result:
+        def __init__(self, row=None, many=None): self.row, self.many = row, many
+        def fetchone(self): return self.row
+        def fetchall(self): return self.many or []
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters=()):
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("select * from platform_review.feedback_release_handoffs"):
+                if " or batch_id=%s" in normalized:
+                    if handoff_row["import_status"]:
+                        return Result(dict(handoff_row))
+                    return Result(None)
+                return Result(dict(handoff_row))
+            if normalized.startswith("insert into platform_review.feedback_release_handoffs"):
+                handoff_row["import_status"] = "processing"
+                return Result()
+            if normalized.startswith("insert into platform_review.feedback_release_handoff_events"):
+                handoff_events.append(parameters[1])
+                return Result()
+            if "pg_advisory_xact_lock" in normalized:
+                return Result({"pg_advisory_xact_lock": None})
+            if normalized.startswith("select turn.agent_id, turn.turn_key"):
+                return Result(many=[
+                    {
+                        "agent_id": "ai-fae-agent",
+                        "turn_key": turn_key,
+                        "feedback_keys": [feedback_key],
+                        "has_negative_feedback": True,
+                    }
+                    for turn_key, feedback_key in (
+                        ("fae:turn-b", "fae:feedback-b"),
+                        ("fae:turn-c", "fae:feedback-c"),
+                    )
+                ])
+            if "where agent_id=%s and canonical_key=%s" in normalized:
+                return Result(targets[parameters[1]])
+            if normalized.startswith("select * from platform_review.feedback_issue_links"):
+                return Result(dict(links[parameters[1]]))
+            if normalized.startswith("select 1 from platform_review.feedback_issue_links"):
+                source, excluded = parameters
+                remaining = next(
+                    (
+                        link for link in links.values()
+                        if link["active"] and link["issue_id"] == source and link["id"] != excluded
+                    ),
+                    None,
+                )
+                return Result({"exists": 1} if remaining else None)
+            if "as target_issue_id" in normalized and "event_type='link_moved_out'" in normalized:
+                moved_targets = {
+                    str(after["issue_id"])
+                    for issue_id, event_type, _before, after in issue_events
+                    if issue_id == source_id and event_type == "link_moved_out"
+                }
+                return Result(many=[{"target_issue_id": value} for value in moved_targets])
+            if normalized.startswith("select agent_id from platform_review.feedback_issues"):
+                return Result({"agent_id": "ai-fae-agent"})
+            if normalized.startswith("select * from platform_review.feedback_issues") and "id=any" in normalized:
+                by_id = {
+                    source_id: source_issue,
+                    target_b_id: targets["target-b"],
+                    target_c_id: targets["target-c"],
+                }
+                return Result(many=[by_id[value] for value in parameters[0]])
+            if normalized.startswith("with recursive canonical_walk"):
+                exact_moves = all(
+                    any(
+                        event_type == "link_moved_out"
+                        and before["id"] == str(link["id"])
+                        for _issue_id, event_type, before, _after in issue_events
+                    ) and any(
+                        event_type == "link_moved_in"
+                        and after["id"] == str(link["id"])
+                        for _issue_id, event_type, _before, after in issue_events
+                    )
+                    for link in links.values()
+                )
+                paired_canonical = not any(
+                    event_type in ("issue_merged", "issue_absorbed")
+                    for _issue_id, event_type, _before, _after in issue_events
+                )
+                return Result({"valid": exact_moves and paired_canonical})
+            if normalized.startswith("select 1 from platform_review.feedback_replay_runs"):
+                return Result(None)
+            if normalized.startswith("update platform_review.feedback_issue_links"):
+                target_id, keys, _actor, _reason, selected_link_id = parameters
+                selected = next(link for link in links.values() if link["id"] == selected_link_id)
+                selected.update({"issue_id": target_id, "source_feedback_keys": keys})
+                return Result(dict(selected))
+            if normalized.startswith("update platform_review.feedback_issues set disposition='duplicate'"):
+                raise AssertionError("split handoff must not create a canonical edge")
+            if normalized.startswith("insert into platform_review.feedback_issue_events"):
+                issue_events.append(
+                    (parameters[0], parameters[1], parameters[4].obj, parameters[5].obj)
+                )
+                return Result()
+            if normalized.startswith("select * from platform_review.feedback_issues"):
+                by_id = {target_b_id: targets["target-b"], target_c_id: targets["target-c"]}
+                return Result(by_id[parameters[0]])
+            if normalized.startswith("insert into platform_review.feedback_fix_evidence"):
+                return Result({"id": next(evidence_sequence), "issue_id": parameters[0]})
+            if normalized.startswith("update platform_review.feedback_release_handoffs"):
+                if "set import_status='imported'" in normalized:
+                    handoff_row.update(import_status="imported", result=parameters[0].obj)
+                return Result()
+            raise AssertionError(normalized)
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return Cursor()
+
+    items = [
+        SimpleNamespace(turn_key="fae:turn-b", issue_key="target-b"),
+        SimpleNamespace(turn_key="fae:turn-c", issue_key="target-c"),
+    ]
+    if reverse_items:
+        items.reverse()
+    validated = SimpleNamespace(
+        idempotency_key=handoff_row["idempotency_key"],
+        batch_id=handoff_row["batch_id"],
+        agent_id="ai-fae-agent",
+        payload_sha256=handoff_row["payload_sha256"],
+        release_name=handoff_row["release_name"],
+        deployment_sha=handoff_row["deployment_sha"],
+        remediation_commit="2" * 40,
+        release_manifest_ref="release.json",
+        repository_path="/repo",
+        merge_verification={},
+        deployment_verification={},
+        issues=tuple(
+            SimpleNamespace(
+                issue_key=key,
+                title=key,
+                failure_layer="synthesis",
+                secondary_layers=(),
+                expected_repair="repair",
+            )
+            for key in ("target-b", "target-c")
+        ),
+        items=tuple(items),
+    )
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    )
+    repository._recalculate_with_cursor = lambda *_args, **_kwargs: None
+
+    first = repository.import_release_handoff(validated)
+    event_count = len(issue_events)
+    second = repository.import_release_handoff(validated)
+
+    assert first == second
+    assert len(issue_events) == event_count
+    assert links["fae:turn-b"]["issue_id"] == target_b_id
+    assert links["fae:turn-c"]["issue_id"] == target_c_id
+    assert source_issue["canonical_issue_id"] is None
+    assert source_issue["disposition"] == "actionable"
+    assert not any(
+        event_type in ("issue_merged", "issue_absorbed")
+        for _issue_id, event_type, _before, _after in issue_events
+    )
+    assert sum(event_type == "link_moved_out" for _, event_type, _, _ in issue_events) == 2
+    assert sum(event_type == "link_moved_in" for _, event_type, _, _ in issue_events) == 2
+    assert repository.agent_issue_scope_valid("ai-fae-agent") is True
+    assert handoff_events.count("handoff_imported") == 1
 
 
 def test_release_handoff_with_remaining_link_rejects_foreign_source_issue_before_write():

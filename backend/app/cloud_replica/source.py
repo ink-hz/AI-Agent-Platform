@@ -6,7 +6,10 @@ from typing import Any, Callable
 import psycopg
 from psycopg.rows import dict_row
 
-from app.review.scope_sql import HISTORICAL_LINK_EVENT_INVALID_SQL
+from app.review.scope_sql import (
+    CANONICAL_EVENT_PAIR_INVALID_SQL,
+    HISTORICAL_LINK_EVENT_INVALID_SQL,
+)
 
 from .models import (
     OperationEventProjection,
@@ -165,6 +168,7 @@ select issue.id,issue.agent_id,issue.disposition as status,issue.priority,
       )
     )
     or {HISTORICAL_LINK_EVENT_INVALID_SQL}
+    or {CANONICAL_EVENT_PAIR_INVALID_SQL}
     or exists (select 1 from canonical_walk walk
       where walk.root_id=issue.id and walk.cycle)
   ) as scope_valid

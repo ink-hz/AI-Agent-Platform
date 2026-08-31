@@ -11,7 +11,10 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .models import IssueProgress, IssueRecord, LinkGate, NegativeFeedbackGroup
-from .scope_sql import HISTORICAL_LINK_EVENT_INVALID_SQL
+from .scope_sql import (
+    CANONICAL_EVENT_PAIR_INVALID_SQL,
+    HISTORICAL_LINK_EVENT_INVALID_SQL,
+)
 from .state import calculate_progress
 
 
@@ -110,6 +113,37 @@ class PsycopgReviewRepository:
                 Jsonb(_jsonable(dict(before or {}))),
                 Jsonb(_jsonable(dict(after or {}))),
             ),
+        )
+
+    @classmethod
+    def _event_canonical_merge(
+        cls,
+        cursor,
+        *,
+        source: Mapping[str, Any],
+        target: Mapping[str, Any],
+        after: Mapping[str, Any],
+        actor: str,
+        reason: str,
+    ) -> None:
+        """Write the inseparable two-sided audit contract for one canonical edge."""
+        cls._event(
+            cursor,
+            issue_id=source["id"],
+            event_type="issue_merged",
+            actor=actor,
+            reason=reason,
+            before=source,
+            after=after,
+        )
+        cls._event(
+            cursor,
+            issue_id=target["id"],
+            event_type="issue_absorbed",
+            actor=actor,
+            reason=reason,
+            before={"source_issue_id": source["id"]},
+            after={"target_issue_id": target["id"]},
         )
 
     @staticmethod
@@ -736,6 +770,7 @@ class PsycopgReviewRepository:
                           )
                         )
                         or {HISTORICAL_LINK_EVENT_INVALID_SQL}
+                        or {CANONICAL_EVENT_PAIR_INVALID_SQL}
                         or exists (
                           select 1 from canonical_walk walk
                           where walk.root_id=issue.id and walk.cycle
@@ -1321,23 +1356,13 @@ class PsycopgReviewRepository:
                     expected_row_version=expected_row_version,
                     before_write=relocate_links,
                 )
-                self._event(
+                self._event_canonical_merge(
                     cursor,
-                    issue_id=source_issue_id,
-                    event_type="issue_merged",
-                    actor=actor,
-                    reason=reason,
-                    before=source,
+                    source=source,
+                    target=target,
                     after=after,
-                )
-                self._event(
-                    cursor,
-                    issue_id=target_issue_id,
-                    event_type="issue_absorbed",
                     actor=actor,
                     reason=reason,
-                    before={"source_issue_id": source_issue_id},
-                    after={"target_issue_id": target_issue_id},
                 )
             return dict(after)
         except (ReviewNotFound, ConcurrentUpdate, InvalidReviewMutation):
@@ -1772,6 +1797,7 @@ class PsycopgReviewRepository:
                 issue_by_key = {}
                 issue_ids: list[str] = []
                 evidence_ids: list[str] = []
+                handoff_targets_by_source: dict[UUID, set[str]] = {}
                 for item in validated.issues:
                     issue = cursor.execute(
                         """
@@ -1872,6 +1898,10 @@ class PsycopgReviewRepository:
                         )
                     elif link["issue_id"] != target["id"]:
                         before = dict(link)
+                        source_targets = handoff_targets_by_source.setdefault(
+                            before["issue_id"], set()
+                        )
+                        source_targets.add(str(target["id"]))
                         self._lock_canonical_endpoints(
                             cursor,
                             before["issue_id"],
@@ -1924,6 +1954,25 @@ class PsycopgReviewRepository:
                             )
 
                         if remaining is None:
+                            # Exact move history is authoritative for an emptied
+                            # source. A split history has no truthful single
+                            # canonical target, so it remains non-canonical.
+                            prior_targets = cursor.execute(
+                                """
+                                select distinct event.after->>'issue_id'
+                                  as target_issue_id
+                                from platform_review.feedback_issue_events event
+                                where event.issue_id=%s
+                                  and event.event_type='link_moved_out'
+                                  and event.before->>'issue_id'=%s
+                                  and event.after->>'issue_id' is not null
+                                """,
+                                (before["issue_id"], str(before["issue_id"])),
+                            ).fetchall()
+                            source_targets.update(
+                                row["target_issue_id"] for row in prior_targets
+                            )
+                        if remaining is None and source_targets == {str(target["id"])}:
                             edge = self._create_canonical_edge(
                                 cursor,
                                 before["issue_id"],
@@ -1935,15 +1984,14 @@ class PsycopgReviewRepository:
                                 required_source_disposition="actionable",
                             )
                             if edge is not None:
-                                source_issue, _target_issue, duplicate = edge
-                                self._event(
+                                source_issue, target_issue, duplicate = edge
+                                self._event_canonical_merge(
                                     cursor,
-                                    issue_id=source_issue["id"],
-                                    event_type="issue_merged",
+                                    source=source_issue,
+                                    target=target_issue,
+                                    after=duplicate,
                                     actor=actor,
                                     reason=validated.batch_id,
-                                    before=source_issue,
-                                    after=duplicate,
                                 )
                             else:
                                 relocate_link()
