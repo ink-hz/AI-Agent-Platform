@@ -12,6 +12,7 @@ from app.cloud_replica.models import (
     RawSession,
     RawTurn,
     ReviewIssueProjection,
+    ReviewInboxProjection,
 )
 from app.cloud_replica.sanitize import (
     SanitizationPolicy,
@@ -329,3 +330,24 @@ def test_management_projection_keeps_text_and_hashes_identifiers(policy):
     assert "on_27882925f0e4f159846581dd8144ad63" not in json.dumps(
         operation, ensure_ascii=False, default=str
     )
+
+
+def test_inbox_projection_carries_only_scope_valid_marker(policy):
+    now = datetime(2026, 8, 11, tzinfo=UTC)
+    record = sanitize_management_projection(
+        ReviewInboxProjection(
+            agent_id="ai-fae-agent",
+            turn_key="fae:turn-1",
+            feedback_count=1,
+            first_feedback_at=now,
+            scope_valid=True,
+        ),
+        policy,
+        b"i" * 32,
+    )
+
+    assert record["scope_valid"] is True
+    assert set(record) == {
+        "kind", "key", "agent_id", "turn_key", "feedback_count",
+        "first_feedback_at", "scope_valid", "sanitizer_policy_version",
+    }

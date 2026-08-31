@@ -95,7 +95,7 @@ _MANAGEMENT_KEYS = {
     },
     "review_inbox_projection": {
         "kind", "key", "agent_id", "first_feedback_at", "turn_key",
-        "feedback_count", "sanitizer_policy_version",
+        "feedback_count", "scope_valid", "sanitizer_policy_version",
     },
     "operation_event_projection": {
         "kind", "key", "agent_id", "occurred_at", "event_type", "severity",
@@ -247,6 +247,10 @@ class ReplicaStore:
             or not _SAFE_AGENT.fullmatch(indexed_agent_id)
             or not isinstance(record.get("sanitizer_policy_version"), str)
             or not record["sanitizer_policy_version"]
+            or (
+                kind in {"review_issue_projection", "review_inbox_projection"}
+                and not isinstance(record.get("scope_valid"), bool)
+            )
         ):
             raise ReplicaStoreError("record_invalid")
         occurred_at = _parse_time(record[time_field])

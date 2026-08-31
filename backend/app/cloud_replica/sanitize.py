@@ -193,6 +193,7 @@ def sanitize_management_projection(
             "turn_key": stable_id("turn", raw.turn_key, identity_key),
             "feedback_count": max(raw.feedback_count, 0),
             "first_feedback_at": raw.first_feedback_at,
+            "scope_valid": raw.scope_valid is True,
             "sanitizer_policy_version": policy.version,
         }
     if isinstance(raw, ReviewFeedbackTotalsProjection):

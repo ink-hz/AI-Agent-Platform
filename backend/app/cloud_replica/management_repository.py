@@ -167,6 +167,8 @@ class ReplicaReviewRepository(_ProjectionReader):
         self, *, agent_id: str | None = None, limit: int = 100, offset: int = 0
     ) -> list[dict]:
         records = self._records("review_inbox_projection", agent_id)
+        if any(item.get("scope_valid") is not True for item in records):
+            raise ReviewRepositoryError("replica inbox scope unavailable")
         return [
             {
                 "agent_id": item["agent_id"],

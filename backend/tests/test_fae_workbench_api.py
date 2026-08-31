@@ -377,7 +377,13 @@ def test_fae_issue_facade_exposes_exact_route_templates() -> None:
         and route.path.startswith("/api/admin/fae/")
     }
 
-    assert {
+    issue_routes = routes - {
+        ("GET", "/api/admin/fae/overview"),
+        ("GET", "/api/admin/fae/sessions"),
+        ("GET", "/api/admin/fae/sessions/{session_key}"),
+    }
+
+    assert issue_routes == {
         ("GET", "/api/admin/fae/issue-overview"),
         ("GET", "/api/admin/fae/issue-inbox"),
         ("GET", "/api/admin/fae/issues"),
@@ -394,7 +400,7 @@ def test_fae_issue_facade_exposes_exact_route_templates() -> None:
         ("POST", "/api/admin/fae/issues/{issue_id}/replays"),
         ("POST", "/api/admin/fae/replays/{replay_id}/semantic-review"),
         ("POST", "/api/admin/fae/issues/{issue_id}/disposition"),
-    } <= routes
+    }
 
 
 def test_fae_issue_reads_are_scoped_and_cross_agent_detail_is_hidden() -> None:

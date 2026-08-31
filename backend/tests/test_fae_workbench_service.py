@@ -16,7 +16,7 @@ from app.fae_workbench.models import (
 )
 from app.fae_workbench.service import FaeWorkbenchService
 from app.observability.models import Page, SessionDetail, SessionFilters, SessionSummary
-from app.review.repository import ReviewNotFound
+from app.review.repository import ReviewNotFound, ReviewRepositoryError
 
 
 NOW = datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
@@ -435,6 +435,109 @@ async def test_real_foreign_turn_ownership_fails_before_issue_write(detail):
         )
 
     assert all(call[0] != "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_inactive_foreign_link_fails_detail_closed():
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "links": [{
+            "id": LINK_ID,
+            "agent_id": "ai-admin-agent",
+            "source_turn_key": "admin:turn-1",
+            "active": False,
+        }],
+    }
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).issue_detail(ISSUE_ID)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("read_name", ["issue_overview", "list_issues"])
+async def test_inactive_foreign_link_scope_fails_aggregate_reads_closed(read_name):
+    review = RecordingIssueReview()
+    review.scope_valid = False
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "links": [{
+            "id": LINK_ID,
+            "agent_id": "ai-admin-agent",
+            "source_turn_key": "admin:turn-1",
+            "active": False,
+        }],
+    }
+    service = service_for(review=review)
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        if read_name == "issue_overview":
+            await service.issue_overview()
+        else:
+            await service.list_issues(limit=100, offset=0)
+
+    assert not any(call[0] in {"overview", "issues"} for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_foreign_historical_link_event_fails_before_issue_write():
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "events": [{
+            "event_type": "link_moved_out",
+            "before": {
+                "agent_id": "ai-admin-agent",
+                "source_turn_key": "admin:turn-1",
+            },
+            "after": {
+                "agent_id": "ai-admin-agent",
+                "source_turn_key": "admin:turn-1",
+            },
+        }],
+    }
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).update_issue(
+            ISSUE_ID, Payload(row_version=1, reason="edit"), actor="corp:owner"
+        )
+
+    assert all(call[0] != "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_replay_whose_link_moved_away_blocks_semantic_review_writer():
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "links": [],
+        "replays": [{"id": REPLAY_ID, "issue_link_id": LINK_ID}],
+    }
+    payload = Payload(
+        verdict="passed",
+        method="human_fae",
+        reviewer="corp:owner",
+        reason="review",
+    )
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).semantic_review(
+            REPLAY_ID, payload, actor="corp:owner"
+        )
+
+    assert all(call[0] != "semantic_review" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_issue_inbox_propagates_projection_unavailable():
+    class UnavailableInboxReview(RecordingIssueReview):
+        async def inbox(self, *, agent_id, limit, offset):
+            raise ReviewRepositoryError("replica inbox scope unavailable")
+
+    with pytest.raises(ReviewRepositoryError, match="scope unavailable"):
+        await service_for(review=UnavailableInboxReview()).issue_inbox(
+            limit=100, offset=0
+        )
 
 
 @pytest.mark.asyncio

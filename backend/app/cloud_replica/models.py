@@ -159,6 +159,7 @@ class ReviewInboxProjection:
     turn_key: str
     feedback_count: int
     first_feedback_at: datetime
+    scope_valid: bool = False
 
 
 @dataclass(frozen=True, slots=True)

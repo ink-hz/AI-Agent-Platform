@@ -500,13 +500,52 @@ class PsycopgReviewRepository:
                           from platform_review.feedback_issue_links link
                           left join platform_read.turns linked_turn
                             on linked_turn.turn_key=link.source_turn_key
-                          where link.issue_id=issue.id and link.active and (
+                          where link.issue_id=issue.id and (
                             link.agent_id is distinct from issue.agent_id
                             or linked_turn.turn_key is null
                             or linked_turn.agent_id is distinct from issue.agent_id
                             or (issue.agent_id='ai-fae-agent'
                                 and linked_turn.source_kind is distinct from 'fae')
                           )
+                        )
+                        or exists (
+                          select 1
+                          from platform_review.feedback_replay_runs replay
+                          left join platform_review.feedback_issue_links replay_link
+                            on replay_link.id=replay.issue_link_id
+                          where replay.issue_id=issue.id and (
+                            replay_link.id is null
+                            or replay_link.issue_id is distinct from issue.id
+                          )
+                        )
+                        or exists (
+                          select 1
+                          from platform_review.feedback_issue_events event
+                          where event.issue_id=issue.id
+                            and event.event_type in (
+                              'turn_linked', 'turn_linked_from_release_handoff',
+                              'link_moved_in', 'link_moved_out'
+                            )
+                            and (
+                              event.after->>'agent_id' is distinct from issue.agent_id
+                              or not exists (
+                                select 1 from platform_read.turns event_after_turn
+                                where event_after_turn.turn_key=event.after->>'source_turn_key'
+                                  and event_after_turn.agent_id=issue.agent_id
+                                  and (issue.agent_id<>'ai-fae-agent'
+                                    or event_after_turn.source_kind='fae')
+                              )
+                              or (event.event_type in ('link_moved_in', 'link_moved_out') and (
+                                event.before->>'agent_id' is distinct from issue.agent_id
+                                or not exists (
+                                  select 1 from platform_read.turns event_before_turn
+                                  where event_before_turn.turn_key=event.before->>'source_turn_key'
+                                    and event_before_turn.agent_id=issue.agent_id
+                                    and (issue.agent_id<>'ai-fae-agent'
+                                      or event_before_turn.source_kind='fae')
+                                )
+                              ))
+                            )
                         )
                         or exists (
                           select 1 from canonical_walk walk

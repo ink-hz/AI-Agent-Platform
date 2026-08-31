@@ -134,7 +134,9 @@ def test_exporter_signs_management_projection_manifest_counts(tmp_path):
         def fetch_management_projections(self, *, through):
             assert through == now
             return (
-                ReviewInboxProjection("hr-bot", "raw-turn", 2, now),
+                ReviewInboxProjection(
+                    "hr-bot", "raw-turn", 2, now, scope_valid=True
+                ),
                 OperationEventProjection(
                     event_id="raw-event",
                     agent_id="hr-bot",

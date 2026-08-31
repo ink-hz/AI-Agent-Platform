@@ -89,23 +89,53 @@ class FaeWorkbenchService:
             not isinstance(link, dict) for link in links
         ):
             raise ReviewNotFound("issue not found")
-        active_links = [
-            link for link in links
-            if isinstance(link, dict) and link.get("active", True)
-        ]
-        if len(active_links) != sum(
-            1 for link in links
-            if isinstance(link, dict) and link.get("active", True)
-        ) or any(link.get("agent_id") != FAE_AGENT_ID for link in active_links):
+        if any(link.get("agent_id") != FAE_AGENT_ID for link in links):
+            raise ReviewNotFound("issue not found")
+        replays = detail.get("replays") or ()
+        if not isinstance(replays, (list, tuple)) or any(
+            not isinstance(replay, dict) for replay in replays
+        ):
+            raise ReviewNotFound("issue not found")
+        link_ids = {str(link.get("id")) for link in links if link.get("id") is not None}
+        if any(str(replay.get("issue_link_id")) not in link_ids for replay in replays):
+            raise ReviewNotFound("issue not found")
+        events = detail.get("events") or ()
+        if not isinstance(events, (list, tuple)) or any(
+            not isinstance(event, dict) for event in events
+        ):
+            raise ReviewNotFound("issue not found")
+        historical_links: list[dict] = []
+        for event in events:
+            event_type = event.get("event_type")
+            if event_type in {"turn_linked", "turn_linked_from_release_handoff"}:
+                snapshots = (event.get("after"),)
+            elif event_type in {"link_moved_in", "link_moved_out"}:
+                snapshots = (event.get("before"), event.get("after"))
+            else:
+                continue
+            if any(not isinstance(snapshot, dict) for snapshot in snapshots):
+                raise ReviewNotFound("issue not found")
+            historical_links.extend(snapshots)
+        if any(
+            snapshot.get("agent_id") != FAE_AGENT_ID
+            for snapshot in historical_links
+        ):
             raise ReviewNotFound("issue not found")
         turn_keys = [
             key
             for key in [
                 issue.get("origin_turn_key"),
-                *(link.get("source_turn_key") for link in active_links),
+                *(link.get("source_turn_key") for link in links),
+                *(snapshot.get("source_turn_key") for snapshot in historical_links),
             ]
             if key is not None
         ]
+        if len(turn_keys) != (
+            int(issue.get("origin_turn_key") is not None)
+            + len(links)
+            + len(historical_links)
+        ):
+            raise ReviewNotFound("issue not found")
         if len(await self._fae_turn_keys(turn_keys)) != len(set(turn_keys)):
             raise ReviewNotFound("issue not found")
         canonical = issue.get("canonical_issue_id")

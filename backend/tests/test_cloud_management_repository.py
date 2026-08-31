@@ -6,6 +6,8 @@ import hashlib
 import json
 from uuid import uuid4
 
+import pytest
+
 from app.cloud_replica.crypto import FieldCipher
 from app.cloud_replica.management_repository import (
     ReplicaOperationsRepository,
@@ -13,6 +15,7 @@ from app.cloud_replica.management_repository import (
 )
 from app.fleet.catalog import AgentCatalog
 from app.operations.models import EventFilters, UsageLeader
+from app.review.repository import ReviewRepositoryError
 
 
 NOW = datetime(2026, 8, 14, 8, 0, tzinfo=UTC)
@@ -142,6 +145,30 @@ def test_fae_issue_scope_projection_fails_closed_on_false_or_missing_metadata():
     assert repository_for(True).agent_issue_scope_valid("ai-fae-agent") is True
     assert repository_for(False).agent_issue_scope_valid("ai-fae-agent") is False
     assert repository_for(None).agent_issue_scope_valid("ai-fae-agent") is False
+
+
+def test_inbox_projection_fails_closed_on_false_or_missing_scope_marker():
+    cipher = FieldCipher(b"m" * 32)
+
+    def repository_for(scope_marker):
+        record = {
+            "kind": "review_inbox_projection", "key": "a" * 52,
+            "agent_id": "ai-fae-agent", "turn_key": "b" * 52,
+            "feedback_count": 1,
+            "first_feedback_at": "2026-08-14T08:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        }
+        if scope_marker is not None:
+            record["scope_valid"] = scope_marker
+        return ReplicaReviewRepository(
+            "postgresql://replica", cipher=cipher,
+            connect=_connect([_row(cipher, record)]), now=lambda: NOW,
+        )
+
+    assert len(repository_for(True).list_inbox(agent_id="ai-fae-agent")) == 1
+    for marker in (False, None):
+        with pytest.raises(ReviewRepositoryError, match="scope"):
+            repository_for(marker).list_inbox(agent_id="ai-fae-agent")
 
 
 def test_operation_projection_filters_before_pagination():

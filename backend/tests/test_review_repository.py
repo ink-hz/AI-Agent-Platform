@@ -245,3 +245,21 @@ def test_inbox_link_requires_owning_issue_to_match_feedback_agent():
 
     assert "join platform_review.feedback_issues linked_issue" in normalized
     assert "linked_issue.agent_id=f.agent_id" in normalized
+
+
+def test_issue_scope_sql_validates_all_links_replays_and_historical_link_events():
+    source = inspect.getsource(PsycopgReviewRepository.agent_issue_scope_valid)
+    normalized = " ".join(source.lower().split())
+
+    assert "where link.issue_id=issue.id and link.active" not in normalized
+    assert "where link.issue_id=issue.id and (" in normalized
+    assert "feedback_replay_runs replay" in normalized
+    assert "replay.issue_link_id" in normalized
+    for event_type in (
+        "turn_linked",
+        "turn_linked_from_release_handoff",
+        "link_moved_in",
+        "link_moved_out",
+    ):
+        assert event_type in normalized
+    assert "is distinct from" in normalized
