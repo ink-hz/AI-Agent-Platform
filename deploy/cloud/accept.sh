@@ -619,6 +619,164 @@ finally:
 PY
 }
 
+verify_fae_reports_placeholder() {
+  local browser_cookie_file="$1" workspace="$2"
+  local chrome=/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome
+  local node=/opt/homebrew/bin/node
+  local profile="$workspace/fae-reports-chrome-profile" active_port="$profile/DevToolsActivePort"
+  [[ -x "$chrome" ]] || fail
+  [[ -x "$node" ]] || fail
+  /bin/mkdir -m 700 "$profile"
+  "$chrome" --headless=new --disable-gpu --no-first-run --no-default-browser-check \
+    --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 \
+    --user-data-dir="$profile" about:blank > /dev/null 2>&1 &
+  chrome_pid="$!"
+  for _attempt in $(/usr/bin/seq 1 6); do
+    [[ -s "$active_port" ]] && break
+    /bin/sleep 5
+  done
+  [[ -s "$active_port" ]] || fail
+  chrome_port="$(/usr/bin/sed -n '1p' "$active_port")"
+  [[ "$chrome_port" =~ ^[0-9]+$ ]] || fail
+  /usr/bin/curl --silent --show-error --fail --request PUT --max-time 5 \
+    "http://127.0.0.1:$chrome_port/json/new?about%3Ablank" > "$workspace/fae-reports-chrome-target.json" || fail
+  page_socket="$($python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["webSocketDebuggerUrl"])' "$workspace/fae-reports-chrome-target.json")" || fail
+  [[ "$page_socket" == ws://127.0.0.1:* || "$page_socket" == ws://localhost:* ]] || fail
+  "$node" - "$page_socket" "$browser_cookie_file" "https://agent.orbbec.com.cn/admin/fae/reports" <<'NODE' || fail
+const fs = require("fs");
+const [socketUrl, cookiePath, reportsUrl] = process.argv.slice(2);
+const cookies = JSON.parse(fs.readFileSync(cookiePath, "utf8"));
+if (Object.keys(cookies).sort().join(",") !== "__Host-platform_csrf,__Host-platform_session") process.exit(1);
+
+const socket = new WebSocket(socketUrl);
+const pending = new Map();
+let commandId = 0;
+socket.onmessage = ({ data }) => {
+  const message = JSON.parse(data);
+  if (!message.id || !pending.has(message.id)) return;
+  const { resolve, reject } = pending.get(message.id);
+  pending.delete(message.id);
+  if (message.error) reject(new Error("cdp command failed"));
+  else resolve(message.result);
+};
+const opened = new Promise((resolve, reject) => {
+  socket.onopen = resolve;
+  socket.onerror = () => reject(new Error("cdp connection failed"));
+});
+const command = (method, params = {}) => new Promise((resolve, reject) => {
+  const id = ++commandId;
+  pending.set(id, { resolve, reject });
+  socket.send(JSON.stringify({ id, method, params }));
+});
+const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+(async () => {
+  await opened;
+  await command("Network.enable");
+  for (const name of ["__Host-platform_session", "__Host-platform_csrf"]) {
+    const cookie = await command("Network.setCookie", {
+      name, value: cookies[name], url: "https://agent.orbbec.com.cn",
+      secure: true, httpOnly: name === "__Host-platform_session", sameSite: "Lax",
+    });
+    if (!cookie.success) throw new Error("cookie rejected");
+  }
+  await command("Page.enable");
+  await command("Runtime.enable");
+  await command("Page.navigate", { url: reportsUrl });
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await pause(5000);
+    const evaluation = await command("Runtime.evaluate", {
+      expression: `(() => {
+        const content = document.querySelector('.fae-workbench__content');
+        const placeholder = content?.querySelector('.fae-workbench__empty[role="status"]');
+        const heading = placeholder?.querySelector('h2');
+        const visibleText = document.body.innerText;
+        const lowered = visibleText.toLowerCase();
+        const forbidden = ['sample report', 'demo report', 'fixture report'];
+        return window.location.pathname === '/admin/fae/reports' &&
+          heading?.textContent.trim() === '分析报告尚未接入' &&
+          placeholder.textContent.includes('不会用演示数据代替 FAE 的真实分析结果') &&
+          !forbidden.some((value) => lowered.includes(value)) &&
+          content.querySelectorAll('article,table,[data-report-id]').length === 0;
+      })()`,
+      returnByValue: true,
+    });
+    if (evaluation.result && evaluation.result.value === true) {
+      process.stdout.write("FAE_REPORTS_PLACEHOLDER_OK\n");
+      socket.close();
+      return;
+    }
+  }
+  throw new Error("FAE reports placeholder did not render");
+})().catch(() => process.exit(1));
+NODE
+  /bin/kill "$chrome_pid" >/dev/null 2>&1 || true
+  wait "$chrome_pid" >/dev/null 2>&1 || true
+  chrome_pid=""
+}
+
+verify_fae_workbench_cloud_contract() {
+  local path status_code
+  local -a fae_owner_paths=(
+    '/admin/fae'
+    '/admin/fae/sessions'
+    '/admin/fae/issues'
+  )
+  local -a fae_owner_apis=(
+    '/api/admin/fae/overview'
+    '/api/admin/fae/sessions?limit=1'
+    '/api/admin/fae/issues'
+  )
+  local -a fae_member_denied_paths=(
+    '/admin/fae'
+    '/api/admin/fae/overview'
+    '/api/admin/fae/sessions?limit=1'
+    '/api/admin/fae/issues'
+  )
+
+  for path in "${fae_owner_paths[@]}"; do
+    status_code="$("${curl_owner[@]}" -o /dev/null -w '%{http_code}' "$base$path")" || fail
+    [[ "$status_code" == "200" ]] || fail
+  done
+  for path in "${fae_owner_apis[@]}"; do
+    status_code="$("${curl_owner[@]}" -o "$temporary/fae-owner-api.json" -w '%{http_code}' "$base$path")" || fail
+    [[ "$status_code" == "200" ]] || fail
+    "$python" -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$temporary/fae-owner-api.json" || fail
+  done
+
+  status_code="$("${curl_owner[@]}" -o "$temporary/fae-reports.html" -w '%{http_code}' "$base/admin/fae/reports")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  "$python" - "$temporary/fae-reports.html" <<'PY' || fail
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+lowered = text.casefold()
+if not text.strip() or "<html" not in lowered:
+    raise SystemExit(1)
+if any(term in lowered for term in ("sample report", "demo report", "fixture report")):
+    raise SystemExit(1)
+PY
+  verify_fae_reports_placeholder "$temporary/owner.browser.json" "$temporary"
+
+  for path in "${fae_member_denied_paths[@]}"; do
+    status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' "$base$path")" || fail
+    [[ "$status_code" == "403" ]] || fail
+  done
+
+  status_code="$("${curl_owner[@]}" -o "$temporary/fae-mutation-denied.json" -w '%{http_code}' \
+    -X POST -H 'Content-Type: application/json' --data-binary '{}' \
+    "$base/api/admin/fae/issues")" || fail
+  [[ "$status_code" == "403" ]] || fail
+  "$python" - "$temporary/fae-mutation-denied.json" <<'PY' || fail
+import json
+import sys
+
+if json.load(open(sys.argv[1], encoding="utf-8")) != {"detail": "cloud_review_read_only"}:
+    raise SystemExit(1)
+PY
+}
+
 verify_markdown_rendering() {
   local conversation_id="$1" browser_cookie_file="$2" workspace="$3"
   local chrome=/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome
@@ -876,6 +1034,7 @@ print(value["role"])
 PY
   )" || fail
   [[ "$member_role" == "member" && ( "$owner_role" == "platform_owner" || "$owner_role" == "platform_admin" ) ]] || fail
+  verify_fae_workbench_cloud_contract
   [[ "$("${curl_member[@]}" -o "$temporary/root.html" -w '%{http_code}' "$base/")" == "200" ]] || fail
   [[ "$("${curl_member[@]}" -o /dev/null -w '%{http_code}' "$base/admin")" == "403" ]] || fail
   [[ "$("${curl_owner[@]}" -o /dev/null -w '%{http_code}' "$base/admin")" == "200" ]] || fail
@@ -1163,6 +1322,7 @@ PY
 
 accept_v2_real() {
   require_private_file "$member_cookie_file" 8192
+  require_private_file "$owner_cookie_file" 8192
   require_private_file "$hr_prompt_file" 32768
   evidence_parent="$(/usr/bin/dirname "$evidence_file")"
   [[ -d "$evidence_parent" && ! -L "$evidence_parent" ]] || fail
@@ -1170,7 +1330,14 @@ accept_v2_real() {
   [[ ! -L "$evidence_file" ]] || fail
   reviewer_id="$(validate_v2_quality_review)" || fail
   temporary="$(/usr/bin/mktemp -d)"
-  cleanup_v2_accept() { /bin/rm -rf -- "$temporary"; }
+  chrome_pid=""
+  cleanup_v2_accept() {
+    if [[ "$chrome_pid" =~ ^[0-9]+$ ]]; then
+      /bin/kill "$chrome_pid" >/dev/null 2>&1 || true
+      wait "$chrome_pid" >/dev/null 2>&1 || true
+    fi
+    /bin/rm -rf -- "$temporary"
+  }
   v2_accept_failure() {
     status="$?"
     trap - ERR EXIT
@@ -1181,8 +1348,11 @@ accept_v2_real() {
   }
   trap v2_accept_failure ERR EXIT
   cookie_config "$member_cookie_file" "$temporary/member.curl" "$temporary/member.browser.json"
+  cookie_config "$owner_cookie_file" "$temporary/owner.curl" "$temporary/owner.browser.json"
   base=https://agent.orbbec.com.cn
   curl_member=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/member.curl" --max-time 15)
+  curl_owner=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" --max-time 15)
+  verify_fae_workbench_cloud_contract
   fae_before="$(remote_fae_snapshot)" || fail
   make_body "$hr_prompt_file" "$temporary/v2-request.json"
   request_key="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"

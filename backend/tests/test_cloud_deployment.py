@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 import yaml
 
@@ -7,8 +8,21 @@ CLOUD = ROOT / "deploy" / "cloud"
 
 
 def _bash_array(script: str, name: str) -> tuple[str, ...]:
-    body = script.split(f"{name}=(\n", 1)[1].split("\n)", 1)[0]
-    return tuple(line.strip() for line in body.splitlines() if line.strip())
+    lines = script.split(f"{name}=(\n", 1)[1].splitlines()
+    body = []
+    for line in lines:
+        if line.strip() == ")":
+            break
+        if line.strip():
+            body.append(line.strip())
+    return tuple(body)
+
+
+def _bash_function(script: str, name: str, next_name: str) -> str:
+    return (
+        f"{name}() {{"
+        + script.split(f"{name}() {{", 1)[1].split(f"\n{next_name}() {{", 1)[0]
+    )
 
 
 def test_compose_is_isolated_loopback_only_and_hardened():
@@ -407,3 +421,127 @@ def test_remote_stage_calls_control_bootstrap_without_replacing_replica():
         "agent_platform\\n"
     ) in stage
     assert "publish-agent-domain.sh" not in stage
+
+
+def test_acceptance_exercises_the_fae_cloud_read_only_contract():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    active_acceptance = script.split("accept_v2_real() {", 1)[1].split(
+        "\nenable_with_rollback()", 1
+    )[0]
+
+    assert _bash_array(script, "fae_owner_paths") == (
+        "'/admin/fae'",
+        "'/admin/fae/sessions'",
+        "'/admin/fae/issues'",
+    )
+    assert _bash_array(script, "fae_owner_apis") == (
+        "'/api/admin/fae/overview'",
+        "'/api/admin/fae/sessions?limit=1'",
+        "'/api/admin/fae/issues'",
+    )
+    assert _bash_array(script, "fae_member_denied_paths") == (
+        "'/admin/fae'",
+        "'/api/admin/fae/overview'",
+        "'/api/admin/fae/sessions?limit=1'",
+        "'/api/admin/fae/issues'",
+    )
+    assert '"$base/admin/fae/reports"' in script
+    assert "sample report" in script
+    assert "demo report" in script
+    assert "fixture report" in script
+    assert '"$base/api/admin/fae/issues"' in script
+    assert '"cloud_review_read_only"' in script
+    assert 'require_private_file "$owner_cookie_file" 8192' in active_acceptance
+    assert (
+        'cookie_config "$owner_cookie_file" "$temporary/owner.curl" '
+        '"$temporary/owner.browser.json"'
+    ) in active_acceptance
+    assert "curl_owner=(" in active_acceptance
+    assert "verify_fae_workbench_cloud_contract" in active_acceptance
+
+
+def test_fae_acceptance_fails_closed_when_curl_prints_200_then_errors(tmp_path):
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    contract = _bash_function(
+        script,
+        "verify_fae_workbench_cloud_contract",
+        "verify_markdown_rendering",
+    )
+    stub = tmp_path / "curl-stub"
+    state = tmp_path / "curl-count"
+    stub.write_text(
+        """#!/bin/bash
+set -euo pipefail
+output=/dev/null
+method=GET
+url=
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) output="$2"; shift 2 ;;
+    -X) method="$2"; shift 2 ;;
+    http*) url="$1"; shift ;;
+    *) shift ;;
+  esac
+done
+count=0
+[[ ! -f "$STUB_STATE" ]] || count="$(<"$STUB_STATE")"
+count=$((count + 1))
+printf '%s' "$count" > "$STUB_STATE"
+status=200
+body='<html><body></body></html>'
+if [[ "$STUB_ROLE" == member ]]; then
+  status=403
+  body='{"detail":"management_role_required"}'
+elif [[ "$method" == POST && "$url" == */api/admin/fae/issues ]]; then
+  status=403
+  body='{"detail":"cloud_review_read_only"}'
+elif [[ "$url" == */api/* ]]; then
+  body='{}'
+fi
+if [[ "$output" != /dev/null ]]; then printf '%s' "$body" > "$output"; fi
+printf '%s' "$status"
+if [[ "$STUB_ROLE" == owner && "$count" == 1 ]]; then exit 7; fi
+""",
+        encoding="utf-8",
+    )
+    stub.chmod(0o700)
+    harness = tmp_path / "contract-test.sh"
+    harness.write_text(
+        f"""#!/bin/bash
+set -euo pipefail
+fail() {{ exit 91; }}
+base=https://agent.orbbec.com.cn
+temporary={tmp_path}
+python={ROOT / 'backend/.venv/bin/python'}
+curl_owner=(/usr/bin/env STUB_ROLE=owner STUB_STATE={state} {stub})
+curl_member=(/usr/bin/env STUB_ROLE=member STUB_STATE={state} {stub})
+verify_fae_reports_placeholder() {{ :; }}
+{contract}
+verify_fae_workbench_cloud_contract
+""",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["/bin/bash", str(harness)], text=True, capture_output=True, check=False
+    )
+
+    assert result.returncode == 91
+
+
+def test_fae_acceptance_checks_the_rendered_report_placeholder():
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    contract = _bash_function(
+        script,
+        "verify_fae_workbench_cloud_contract",
+        "verify_markdown_rendering",
+    )
+
+    assert "verify_fae_reports_placeholder()" in script
+    assert "local node=/opt/homebrew/bin/node" in script
+    assert '"$node" - "$page_socket" "$browser_cookie_file"' in script
+    assert "heading?.textContent.trim() === '分析报告尚未接入'" in script
+    assert "sample report" in script
+    assert "demo report" in script
+    assert "fixture report" in script
+    assert "verify_fae_reports_placeholder" in contract
