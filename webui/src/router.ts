@@ -29,6 +29,13 @@ export type Route =
   | { name: "admin-identity" }
   | { name: "admin-governance" }
   | { name: "admin-voc" }
+  | { name: "admin-fae-overview" }
+  | { name: "admin-fae-sessions" }
+  | { name: "admin-fae-session"; sessionKey: string }
+  | { name: "admin-fae-issues" }
+  | { name: "admin-fae-issue"; issueId: string }
+  | { name: "admin-fae-reports" }
+  | { name: "admin-fae-report"; reportId: string }
   | { name: "legacy-redirect"; to: string }
   | { name: "not-found" };
 
@@ -80,6 +87,32 @@ export function parseRoute(pathname: string): Route {
   if (clean === "/admin/identity") return { name: "admin-identity" };
   if (clean === "/admin/governance") return { name: "admin-governance" };
   if (clean === "/admin/voc") return { name: "admin-voc" };
+
+  const faeSession = /^\/admin\/fae\/sessions\/([^/]+)$/.exec(clean);
+  if (faeSession) {
+    const sessionKey = decode(faeSession[1]);
+    return sessionKey && /^[A-Za-z0-9:._-]+$/.test(sessionKey)
+      ? { name: "admin-fae-session", sessionKey }
+      : { name: "not-found" };
+  }
+  const faeIssue = /^\/admin\/fae\/issues\/([^/]+)$/.exec(clean);
+  if (faeIssue) {
+    const issueId = decode(faeIssue[1]);
+    return issueId && /^[0-9a-fA-F-]{36}$/.test(issueId)
+      ? { name: "admin-fae-issue", issueId }
+      : { name: "not-found" };
+  }
+  const faeReport = /^\/admin\/fae\/reports\/([^/]+)$/.exec(clean);
+  if (faeReport) {
+    const reportId = decode(faeReport[1]);
+    return reportId && /^[A-Za-z0-9._:-]+$/.test(reportId)
+      ? { name: "admin-fae-report", reportId }
+      : { name: "not-found" };
+  }
+  if (clean === "/admin/fae") return { name: "admin-fae-overview" };
+  if (clean === "/admin/fae/sessions") return { name: "admin-fae-sessions" };
+  if (clean === "/admin/fae/issues") return { name: "admin-fae-issues" };
+  if (clean === "/admin/fae/reports") return { name: "admin-fae-reports" };
 
   const adminAgentRuntime = /^\/admin\/agents\/([^/]+)\/runtime$/.exec(clean);
   if (adminAgentRuntime) {
@@ -163,6 +196,13 @@ export function routePath(route: Route): string {
     case "admin-identity": return "/admin/identity";
     case "admin-governance": return "/admin/governance";
     case "admin-voc": return "/admin/voc";
+    case "admin-fae-overview": return "/admin/fae";
+    case "admin-fae-sessions": return "/admin/fae/sessions";
+    case "admin-fae-session": return `/admin/fae/sessions/${encodeURIComponent(route.sessionKey)}`;
+    case "admin-fae-issues": return "/admin/fae/issues";
+    case "admin-fae-issue": return `/admin/fae/issues/${encodeURIComponent(route.issueId)}`;
+    case "admin-fae-reports": return "/admin/fae/reports";
+    case "admin-fae-report": return `/admin/fae/reports/${encodeURIComponent(route.reportId)}`;
     case "legacy-redirect": return route.to;
     default: return "/404";
   }

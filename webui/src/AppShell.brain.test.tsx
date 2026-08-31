@@ -54,6 +54,31 @@ describe("usage navigation", () => {
     expect(container.querySelector<HTMLAnchorElement>('a[href="/admin/voc"]')?.textContent).toBe("VOC 管理");
   });
 
+  it("adds one FAE workbench entry and keeps it selected on FAE detail routes", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("deployment unavailable"));
+    await act(async () => root.render(<AppShell
+      route={{ name: "admin-fae-overview" }} account={{ ...member, role: "platform_owner" }}
+    ><p>内容</p></AppShell>));
+    expect(container.querySelector<HTMLAnchorElement>('a[href="/admin/fae"]')?.textContent).toBe("FAE 工作台");
+    expect(container.querySelectorAll('.admin-nav a[href="/admin/fae"]')).toHaveLength(1);
+
+    window.history.replaceState({}, "", "/admin/fae/sessions/fae%3Asession-1");
+    await act(async () => root.render(<AppShell
+      route={{ name: "admin-fae-session", sessionKey: "fae:session-1" }} account={{ ...member, role: "platform_owner" }}
+    ><p>内容</p></AppShell>));
+    expect(container.querySelector<HTMLAnchorElement>('.admin-nav a[href="/admin/fae"]')?.className).toContain("is-current");
+    expect(container.querySelectorAll(".admin-nav a.is-current")).toHaveLength(1);
+
+    for (const [path, route] of [
+      ["/admin/fae/issues/00000000-0000-0000-0000-000000000001", { name: "admin-fae-issue", issueId: "00000000-0000-0000-0000-000000000001" }],
+      ["/admin/fae/reports/weekly:2026-08-31", { name: "admin-fae-report", reportId: "weekly:2026-08-31" }],
+    ] as const) {
+      window.history.replaceState({}, "", path);
+      await act(async () => root.render(<AppShell route={route} account={{ ...member, role: "platform_owner" }}><p>内容</p></AppShell>));
+      expect(container.querySelector<HTMLAnchorElement>('.admin-nav a[href="/admin/fae"]')?.className).toContain("is-current");
+    }
+  });
+
   it("gives management viewers a direct VOC management entry only", async () => {
     await act(async () => root.render(<AppShell
       route={{ name: "admin-voc" }} account={{ ...member, role: "management_viewer" }}

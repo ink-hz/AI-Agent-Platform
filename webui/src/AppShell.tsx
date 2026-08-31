@@ -16,6 +16,7 @@ const ADMIN_NAVIGATION = [
   { label: "总览", path: "/admin", section: "admin" },
   { label: "Agent", path: "/admin/agents", section: "admin" },
   { label: "Session", path: "/admin/sessions", section: "admin" },
+  { label: "FAE 工作台", path: "/admin/fae", section: "admin" },
   { label: "复审闭环", path: "/admin/review", section: "admin" },
   { label: "运行记录", path: "/admin/activity", section: "admin" },
   { label: "数据飞轮", path: "/admin/operations", section: "admin" },
@@ -121,7 +122,8 @@ export function AppShell({ route, children, account }: { route: Route; children:
       </aside>}
       {current === "admin" && managementNavigation.length > 0 && <nav className="admin-nav" aria-label="管理中心">
         <div>{managementNavigation.map((item) => <a
-          className={window.location.pathname === platformPath(item.path) ? "is-current" : undefined}
+          className={current === item.section && (window.location.pathname === platformPath(item.path)
+            || (item.path !== "/admin" && window.location.pathname.startsWith(`${platformPath(item.path)}/`))) ? "is-current" : undefined}
           href={platformPath(item.path)} key={item.path} onClick={(event) => follow(event, item.path)}
         >{item.label}</a>)}</div>
       </nav>}

@@ -59,6 +59,7 @@ describe("Platform router", () => {
     expect(routePath({ name: "admin-voc" })).toBe("/admin/voc");
     expect(routePath({ name: "account" })).toBe("/account");
     expect(routePath({ name: "voc-workspace" })).toBe("/agents/voc/workspace");
+    expect(routePath({ name: "admin-fae-reports" })).toBe("/admin/fae/reports");
   });
 
   it("keeps detail pages in their parent navigation section", () => {
@@ -67,6 +68,21 @@ describe("Platform router", () => {
     expect(routeSection({ name: "voc-workspace" })).toBe("agents");
     expect(routeSection({ name: "admin-session", sessionKey: "fae:abc" })).toBe("admin");
     expect(routeSection({ name: "admin-voc" })).toBe("admin");
+    expect(routeSection({ name: "admin-fae-overview" })).toBe("admin");
+  });
+
+  it("parses FAE workbench collection and detail routes", () => {
+    expect(parseRoute("/admin/fae")).toEqual({ name: "admin-fae-overview" });
+    expect(parseRoute("/admin/fae/sessions/fae%3Asession-1")).toEqual({
+      name: "admin-fae-session", sessionKey: "fae:session-1",
+    });
+    expect(parseRoute("/admin/fae/issues/00000000-0000-0000-0000-000000000001")).toEqual({
+      name: "admin-fae-issue", issueId: "00000000-0000-0000-0000-000000000001",
+    });
+    expect(parseRoute("/admin/fae/reports/weekly:2026-08-31")).toEqual({
+      name: "admin-fae-report", reportId: "weekly:2026-08-31",
+    });
+    expect(parseRoute("/admin/fae/sessions/%E0%A4%A")).toEqual({ name: "not-found" });
   });
 
   it("treats search changes as navigation", () => {

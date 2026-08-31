@@ -42,6 +42,10 @@ describe("Agent Brain route boundary", () => {
     expect(parseRoute("/admin/identity")).toEqual({ name: "admin-identity" });
     expect(parseRoute("/admin/governance")).toEqual({ name: "admin-governance" });
     expect(parseRoute("/admin/voc")).toEqual({ name: "admin-voc" });
+    expect(parseRoute("/admin/fae")).toEqual({ name: "admin-fae-overview" });
+    expect(parseRoute("/admin/fae/sessions")).toEqual({ name: "admin-fae-sessions" });
+    expect(parseRoute("/admin/fae/issues")).toEqual({ name: "admin-fae-issues" });
+    expect(parseRoute("/admin/fae/reports")).toEqual({ name: "admin-fae-reports" });
   });
 
   it.each([
@@ -68,5 +72,6 @@ describe("Agent Brain route boundary", () => {
     expect(routePath({ name: "admin-review" })).toBe("/admin/review");
     expect(routePath({ name: "admin-voc" })).toBe("/admin/voc");
     expect(routePath({ name: "admin-agent-runtime", agentId: "fae/a" })).toBe("/admin/agents/fae%2Fa/runtime");
+    expect(routePath({ name: "admin-fae-reports" })).toBe("/admin/fae/reports");
   });
 });
