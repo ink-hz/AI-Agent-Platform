@@ -112,6 +112,18 @@ class PsycopgReviewRepository:
             ),
         )
 
+    @staticmethod
+    def _assert_link_relocation_replay_free(cursor, link: Mapping[str, Any]) -> None:
+        conflict = cursor.execute(
+            """
+            select 1 from platform_review.feedback_replay_runs
+            where issue_id=%s and issue_link_id=%s limit 1
+            """,
+            (link["issue_id"], link["id"]),
+        ).fetchone()
+        if conflict is not None:
+            raise InvalidReviewMutation("link relocation conflicts with replay")
+
     def create_issue(self, data: Mapping[str, Any], *, actor: str, reason: str) -> dict:
         payload = {
             "agent_id": data["agent_id"],
@@ -269,6 +281,7 @@ class PsycopgReviewRepository:
                 ).fetchone()
                 if before is None:
                     raise ReviewNotFound("link not found")
+                self._assert_link_relocation_replay_free(cursor, before)
                 after = cursor.execute(
                     """
                     update platform_review.feedback_issue_links
@@ -296,7 +309,7 @@ class PsycopgReviewRepository:
                     after=after,
                 )
             return dict(after)
-        except ReviewNotFound:
+        except (ReviewNotFound, InvalidReviewMutation):
             raise
         except Exception as error:
             raise ReviewRepositoryError("move link failed") from error
@@ -546,6 +559,58 @@ class PsycopgReviewRepository:
             return dict(row) if row is not None else None
         except Exception as error:
             raise ReviewRepositoryError("get replay failed") from error
+
+    def move_link_has_replay(self, issue_id: UUID, link_id: UUID) -> bool:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    """
+                    select exists (
+                      select 1
+                      from platform_review.feedback_issue_links link
+                      join platform_review.feedback_replay_runs replay
+                        on replay.issue_link_id=link.id
+                       and replay.issue_id=link.issue_id
+                      where link.id=%s and link.issue_id=%s and link.active
+                    ) as conflict
+                    """,
+                    (link_id, issue_id),
+                ).fetchone()
+            return bool(row and row["conflict"])
+        except Exception as error:
+            raise ReviewRepositoryError("check move replay conflict failed") from error
+
+    def merge_relocation_has_replay(
+        self,
+        source_issue_id: UUID,
+        target_issue_id: UUID,
+    ) -> bool:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    """
+                    select exists (
+                      select 1
+                      from platform_review.feedback_issue_links source
+                      join platform_review.feedback_replay_runs replay
+                        on replay.issue_link_id=source.id
+                       and replay.issue_id=source.issue_id
+                      where source.issue_id=%s and source.active
+                        and not exists (
+                          select 1
+                          from platform_review.feedback_issue_links target
+                          where target.issue_id=%s
+                            and target.agent_id=source.agent_id
+                            and target.source_turn_key=source.source_turn_key
+                            and target.active
+                        )
+                    ) as conflict
+                    """,
+                    (source_issue_id, target_issue_id),
+                ).fetchone()
+            return bool(row and row["conflict"])
+        except Exception as error:
+            raise ReviewRepositoryError("check merge replay conflict failed") from error
 
     def load_replay_input(self, issue_link_id: UUID):
         from .replay import ReplayInput
@@ -1009,6 +1074,7 @@ class PsycopgReviewRepository:
                             (link["id"],),
                         )
                     else:
+                        self._assert_link_relocation_replay_free(cursor, link)
                         cursor.execute(
                             "update platform_review.feedback_issue_links set issue_id=%s where id=%s",
                             (target_issue_id, link["id"]),
@@ -1567,6 +1633,7 @@ class PsycopgReviewRepository:
                         )
                     elif link["issue_id"] != target["id"]:
                         before = dict(link)
+                        self._assert_link_relocation_replay_free(cursor, before)
                         link = cursor.execute(
                             """
                             update platform_review.feedback_issue_links
@@ -1765,7 +1832,7 @@ class PsycopgReviewRepository:
                 )
             return result
         except Exception as error:
-            if isinstance(error, ReviewRepositoryError):
+            if isinstance(error, (InvalidReviewMutation, ReviewRepositoryError)):
                 raise
             raise ReviewRepositoryError("release handoff import failed") from error
 

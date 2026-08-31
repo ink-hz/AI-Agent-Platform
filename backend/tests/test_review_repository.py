@@ -6,6 +6,7 @@ import pytest
 from app.review.repository import (
     ISSUE_UPDATE_FIELDS,
     ConcurrentUpdate,
+    InvalidReviewMutation,
     PsycopgReviewRepository,
     require_row_version,
 )
@@ -46,6 +47,8 @@ def test_repository_exposes_transactional_closure_inputs():
         "create_or_get_replay",
         "finish_replay",
         "get_replay",
+        "move_link_has_replay",
+        "merge_relocation_has_replay",
         "review_replay",
         "set_disposition",
         "get_issue_detail",
@@ -295,3 +298,205 @@ def test_issue_scope_sql_accepts_only_canonical_merge_relocated_turn_links():
     assert "merge_walk.current_id=historical_link.issue_id" in source
     assert "merge_move.before->>'id'=event.after->>'id'" in source
     assert "merge_move.after->>'id'=event.after->>'id'" in source
+
+
+@pytest.mark.parametrize("operation", ["move", "merge"])
+@pytest.mark.parametrize("has_replay", [True, False])
+def test_actual_link_relocation_replay_postcondition(operation, has_replay):
+    source_id, target_id, link_id = UUID(int=60), UUID(int=61), UUID(int=62)
+    source = {"id": source_id, "row_version": 1, "agent_id": "ai-fae-agent"}
+    target = {"id": target_id, "row_version": 1, "agent_id": "ai-fae-agent"}
+    link = {
+        "id": link_id, "issue_id": source_id, "agent_id": "ai-fae-agent",
+        "source_turn_key": "fae:turn", "source_feedback_keys": [], "active": True,
+    }
+
+    class Result:
+        def __init__(self, one=None, many=None):
+            self.one, self.many = one, many
+
+        def fetchone(self):
+            return self.one
+
+        def fetchall(self):
+            return self.many or []
+
+    class Cursor:
+        mutated = False
+        audit_written = False
+
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+
+        def execute(self, statement, parameters):
+            sql = " ".join(statement.lower().split())
+            if sql.startswith("select * from platform_review.feedback_issues"):
+                return Result(source if parameters[0] == source_id else target)
+            if sql.startswith("select * from platform_review.feedback_issue_links"):
+                if "where id=%s" in sql:
+                    return Result(link)
+                if "source_turn_key=%s" in sql:
+                    return Result(None)
+                return Result(many=[link])
+            if sql.startswith("select 1 from platform_review.feedback_replay_runs"):
+                return Result({"?column?": 1} if has_replay else None)
+            if sql.startswith("insert into platform_review.feedback_issue_events"):
+                self.audit_written = True
+                return Result()
+            if sql.startswith("update "):
+                self.mutated = True
+                if "returning *" in sql:
+                    return Result({**link, "issue_id": target_id})
+                return Result()
+            raise AssertionError(sql)
+
+    cursor = Cursor()
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return cursor
+
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    )
+
+    def relocate():
+        if operation == "move":
+            return repository.move_link(
+                link_id, target_id, actor="corp:owner", reason="relocate"
+            )
+        return repository.merge_issue(
+            source_id, target_id, expected_row_version=1,
+            actor="corp:owner", reason="relocate",
+        )
+
+    if has_replay:
+        with pytest.raises(InvalidReviewMutation, match="replay"):
+            relocate()
+        assert cursor.mutated is False
+        assert cursor.audit_written is False
+    else:
+        relocate()
+        assert cursor.mutated is True
+        assert cursor.audit_written is True
+
+
+def test_actual_duplicate_merge_keeps_replay_on_deactivated_source_link():
+    source_id, target_id = UUID(int=63), UUID(int=64)
+    source_link_id, target_link_id, replay_id = UUID(int=65), UUID(int=66), UUID(int=67)
+    source = {"id": source_id, "row_version": 1, "agent_id": "ai-fae-agent"}
+    target = {"id": target_id, "row_version": 1, "agent_id": "ai-fae-agent"}
+    source_link = {
+        "id": source_link_id, "issue_id": source_id, "agent_id": "ai-fae-agent",
+        "source_turn_key": "fae:turn", "source_feedback_keys": ["one"],
+        "active": True,
+    }
+    target_link = {
+        **source_link, "id": target_link_id, "issue_id": target_id,
+        "source_feedback_keys": ["two"],
+    }
+    replay = {"id": replay_id, "issue_id": source_id, "issue_link_id": source_link_id}
+
+    class Result:
+        def __init__(self, one=None, many=None): self.one, self.many = one, many
+        def fetchone(self): return self.one
+        def fetchall(self): return self.many or []
+
+    class Cursor:
+        audit_count = 0
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters):
+            sql = " ".join(statement.lower().split())
+            if sql.startswith("select * from platform_review.feedback_issues"):
+                return Result(source if parameters[0] == source_id else target)
+            if sql.startswith("select * from platform_review.feedback_issue_links"):
+                if "source_turn_key=%s" in sql:
+                    return Result(target_link)
+                return Result(many=[source_link])
+            if sql.startswith("select 1 from platform_review.feedback_replay_runs"):
+                raise AssertionError("duplicate merge must not relocate replay link")
+            if sql.startswith("update platform_review.feedback_issue_links set source_feedback_keys"):
+                target_link["source_feedback_keys"] = parameters[0]
+                return Result()
+            if sql.startswith("update platform_review.feedback_issue_links set active=false"):
+                source_link["active"] = False
+                return Result()
+            if sql.startswith("update platform_review.feedback_issues set disposition='duplicate'"):
+                return Result({
+                    **source, "disposition": "duplicate",
+                    "canonical_issue_id": target_id, "row_version": 2,
+                })
+            if sql.startswith("insert into platform_review.feedback_issue_events"):
+                self.audit_count += 1
+                return Result()
+            raise AssertionError(sql)
+
+    cursor = Cursor()
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return cursor
+
+    result = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    ).merge_issue(
+        source_id, target_id, expected_row_version=1,
+        actor="corp:owner", reason="duplicate",
+    )
+
+    assert result["canonical_issue_id"] == target_id
+    assert source_link["active"] is False
+    assert replay == {
+        "id": replay_id, "issue_id": source_id, "issue_link_id": source_link_id,
+    }
+    assert cursor.audit_count == 2
+
+
+def test_every_repository_link_issue_relocation_uses_replay_conflict_guard():
+    sources = "\n".join([
+        inspect.getsource(PsycopgReviewRepository.move_link),
+        inspect.getsource(PsycopgReviewRepository.merge_issue),
+        inspect.getsource(PsycopgReviewRepository.import_release_handoff),
+    ])
+
+    assert sources.count("_assert_link_relocation_replay_free") == 3
+
+
+def test_relocation_replay_preflights_are_metadata_only_and_server_derived():
+    statements = []
+    results = iter([{"conflict": True}, {"conflict": False}])
+
+    class Result:
+        def __init__(self, row): self.row = row
+        def fetchone(self): return self.row
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters):
+            statements.append((" ".join(statement.lower().split()), parameters))
+            return Result(next(results))
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return Cursor()
+
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    )
+    source_id, target_id, link_id = UUID(int=70), UUID(int=71), UUID(int=72)
+
+    assert repository.move_link_has_replay(source_id, link_id) is True
+    assert repository.merge_relocation_has_replay(source_id, target_id) is False
+    assert all("select exists" in statement for statement, _ in statements)
+    assert all("feedback_replay_runs" in statement for statement, _ in statements)
+    assert "not exists" in statements[1][0]
+    assert all(
+        keyword not in statement
+        for statement, _ in statements
+        for keyword in ("insert ", "update ", "delete ")
+    )

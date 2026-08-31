@@ -78,6 +78,8 @@ class _Review:
         self.calls = []
         self.evidence_owner = ISSUE_ID
         self.replay_owner = ISSUE_ID
+        self.move_replay_conflict = False
+        self.merge_replay_conflict = False
 
     async def agent_issue_scope_valid(self, agent_id):
         assert agent_id == "ai-fae-agent"
@@ -118,6 +120,14 @@ class _Review:
         if self.replay_owner is None:
             raise ReviewNotFound("replay not found")
         return self.replay_owner
+
+    async def move_link_has_replay(self, issue_id, link_id):
+        self.calls.append(("move_replay_conflict", issue_id, link_id))
+        return self.move_replay_conflict
+
+    async def merge_relocation_has_replay(self, source_issue_id, target_issue_id):
+        self.calls.append(("merge_replay_conflict", source_issue_id, target_issue_id))
+        return self.merge_replay_conflict
 
     def __getattr__(self, name):
         async def record(*args, **kwargs):
@@ -521,6 +531,38 @@ def test_fae_link_rejects_unknown_turn_before_review_write() -> None:
 
     assert response.status_code == 404
     assert all(call[0] != "link_turn" for call in review.calls)
+
+
+@pytest.mark.parametrize(
+    ("operation", "path"),
+    [
+        ("move_link", f"/api/admin/fae/issues/{ISSUE_ID}/links/{LINK_ID}/move"),
+        ("merge_issue", f"/api/admin/fae/issues/{ISSUE_ID}/merge"),
+    ],
+)
+def test_fae_replay_conflict_is_409_before_relocation_writer(operation, path):
+    context = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+    app, _observability = _direct_app(context)
+    review = app.state.fae_workbench_service._review
+    setattr(
+        review,
+        "move_replay_conflict" if operation == "move_link" else "merge_replay_conflict",
+        True,
+    )
+
+    response = TestClient(app).post(
+        path,
+        json={
+            "target_issue_id": str(TARGET_ID),
+            **({"row_version": 1} if operation == "merge_issue" else {}),
+            "reason": "relocate",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "link relocation conflicts with replay"}
+    assert all(call[0] != operation for call in review.calls)
+    assert all(call[0] not in {"semantic_review", "start_replay"} for call in review.calls)
 
 
 def test_fae_semantic_review_uses_authenticated_actor_not_header() -> None:

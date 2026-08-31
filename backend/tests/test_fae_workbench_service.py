@@ -17,6 +17,7 @@ from app.fae_workbench.models import (
 from app.fae_workbench.service import FaeWorkbenchService
 from app.observability.models import Page, SessionDetail, SessionFilters, SessionSummary
 from app.review.repository import (
+    InvalidReviewMutation,
     PsycopgReviewRepository,
     ReviewNotFound,
     ReviewRepositoryError,
@@ -140,6 +141,8 @@ class RecordingIssueReview:
         self.scope_valid = True
         self.detail_loads: list[UUID] = []
         self.issue_rows: list[dict] = []
+        self.move_replay_conflict = False
+        self.merge_replay_conflict = False
 
     async def agent_issue_scope_valid(self, agent_id):
         self.calls.append(("scope_valid", agent_id))
@@ -189,6 +192,14 @@ class RecordingIssueReview:
         if self.replay_owner is None:
             raise ReviewNotFound("replay not found")
         return self.replay_owner
+
+    async def move_link_has_replay(self, issue_id, link_id):
+        self.calls.append(("move_replay_conflict", issue_id, link_id))
+        return self.move_replay_conflict
+
+    async def merge_relocation_has_replay(self, source_issue_id, target_issue_id):
+        self.calls.append(("merge_replay_conflict", source_issue_id, target_issue_id))
+        return self.merge_replay_conflict
 
     def __getattr__(self, name):
         async def record(*args, **kwargs):
@@ -254,6 +265,8 @@ class _MergeCursor:
                 and link["source_turn_key"] == turn_key
                 and link["active"]
             ), None))
+        if sql.startswith("select 1 from platform_review.feedback_replay_runs"):
+            return _Rows(None)
         if sql.startswith("update platform_review.feedback_issue_links set source_feedback_keys"):
             keys, link_id = parameters
             self.links[link_id]["source_feedback_keys"] = keys
@@ -808,6 +821,10 @@ async def test_actual_review_merge_detail_list_and_writer_preserve_fae_scope(
 ):
     review = RecordingIssueReview()
     review.details = merged_issue_details(duplicate_link=duplicate_link)
+    if duplicate_link:
+        review.details[ISSUE_ID]["replays"] = [
+            {"id": REPLAY_ID, "issue_link_id": LINK_ID}
+        ]
     review.issue_rows = [review.details[ISSUE_ID]["issue"]]
     service = service_for(review=review)
 
@@ -1099,6 +1116,52 @@ async def test_cross_agent_target_issue_is_hidden_before_move_or_merge_write(
             await service.merge_issue(ISSUE_ID, payload, actor="fae:owner")
 
     assert all(call[0] != operation for call in review.calls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["move_link", "merge_issue"])
+async def test_replay_conflict_rejects_link_relocation_before_review_writer(operation):
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "links": [{
+            **move_snapshot(issue_id=ISSUE_ID), "active": True,
+        }],
+    }
+    setattr(review, f"{'move' if operation == 'move_link' else 'merge'}_replay_conflict", True)
+    payload = Payload(target_issue_id=TARGET_ID, row_version=1, reason="relocate")
+    service = service_for(review=review)
+
+    with pytest.raises(InvalidReviewMutation, match="replay"):
+        if operation == "move_link":
+            await service.move_link(
+                ISSUE_ID, LINK_ID, payload, actor="corp:owner"
+            )
+        else:
+            await service.merge_issue(ISSUE_ID, payload, actor="corp:owner")
+
+    assert all(call[0] != operation for call in review.calls)
+    assert all(call[0] not in {"semantic_review", "start_replay"} for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_merge_with_replay_remains_valid_when_link_stays_on_source():
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "links": [{**move_snapshot(issue_id=ISSUE_ID), "active": True}],
+        "replays": [{"id": REPLAY_ID, "issue_link_id": LINK_ID}],
+    }
+    review.merge_replay_conflict = False
+
+    await service_for(review=review).merge_issue(
+        ISSUE_ID,
+        Payload(target_issue_id=TARGET_ID, row_version=1, reason="dedupe"),
+        actor="corp:owner",
+    )
+
+    assert any(call[0] == "merge_issue" for call in review.calls)
+    assert all(call[0] not in {"semantic_review", "start_replay"} for call in review.calls)
 
 
 @pytest.mark.asyncio

@@ -175,3 +175,39 @@ async def test_owner_lookups_preserve_not_found_semantics(
 
     with pytest.raises(ReviewNotFound, match=message):
         await getattr(service, operation)(entity_id)
+
+
+@pytest.mark.asyncio
+async def test_relocation_replay_preflights_use_read_repository():
+    class ReadRepository:
+        def move_link_has_replay(self, issue_id, link_id):
+            assert (issue_id, link_id) == (ISSUE_ID, EVIDENCE_ID)
+            return True
+
+        def merge_relocation_has_replay(self, source_id, target_id):
+            assert (source_id, target_id) == (ISSUE_ID, REPLAY_ID)
+            return False
+
+    repository = ReadRepository()
+    service = ReviewService(repository, write_repository=repository)
+
+    assert await service.move_link_has_replay(ISSUE_ID, EVIDENCE_ID) is True
+    assert await service.merge_relocation_has_replay(ISSUE_ID, REPLAY_ID) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["move_link_has_replay", "merge_relocation_has_replay"])
+async def test_relocation_preflights_preserve_cloud_read_only_denial(operation):
+    class ReadRepository:
+        def __getattr__(self, _name):
+            raise AssertionError("read-only mutation must fail before preflight read")
+
+    service = ReviewService(ReadRepository(), write_repository=None)
+    arguments = (
+        (ISSUE_ID, EVIDENCE_ID)
+        if operation == "move_link_has_replay"
+        else (ISSUE_ID, REPLAY_ID)
+    )
+
+    with pytest.raises(ReviewUnavailable, match="read-only"):
+        await getattr(service, operation)(*arguments)

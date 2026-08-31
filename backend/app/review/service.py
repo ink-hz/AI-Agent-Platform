@@ -148,6 +148,26 @@ class ReviewService:
             raise ReviewNotFound("replay not found")
         return replay["issue_id"]
 
+    async def move_link_has_replay(self, issue_id: UUID, link_id: UUID) -> bool:
+        self._writer()
+        return bool(await self._run(
+            self.read_repository.move_link_has_replay,
+            issue_id,
+            link_id,
+        ))
+
+    async def merge_relocation_has_replay(
+        self,
+        source_issue_id: UUID,
+        target_issue_id: UUID,
+    ) -> bool:
+        self._writer()
+        return bool(await self._run(
+            self.read_repository.merge_relocation_has_replay,
+            source_issue_id,
+            target_issue_id,
+        ))
+
     async def agent_issue_scope_valid(self, agent_id: str) -> bool:
         return bool(await self._run(
             self.read_repository.agent_issue_scope_valid, agent_id

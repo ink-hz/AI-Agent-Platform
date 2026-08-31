@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from app.observability.models import SessionFilters
 from app.review.http_models import CreateIssue, LinkTurn
-from app.review.repository import ReviewNotFound
+from app.review.repository import InvalidReviewMutation, ReviewNotFound
 
 from .models import (
     FAE_AGENT_ID,
@@ -418,6 +418,8 @@ class FaeWorkbenchService:
         await self._fae_issue(
             payload.target_issue_id, validate_agent=False, traversal=traversal
         )
+        if await self._review.move_link_has_replay(issue_id, link_id):
+            raise InvalidReviewMutation("link relocation conflicts with replay")
         return await self._review.move_link(
             issue_id,
             link_id,
@@ -431,6 +433,10 @@ class FaeWorkbenchService:
         await self._fae_issue(
             payload.target_issue_id, validate_agent=False, traversal=traversal
         )
+        if await self._review.merge_relocation_has_replay(
+            issue_id, payload.target_issue_id
+        ):
+            raise InvalidReviewMutation("link relocation conflicts with replay")
         return await self._review.merge_issue(issue_id, payload, actor=actor)
 
     async def mark_fix_ready(self, issue_id: UUID, payload, *, actor: str):
