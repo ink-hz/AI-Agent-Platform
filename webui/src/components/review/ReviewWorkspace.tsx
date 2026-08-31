@@ -46,6 +46,12 @@ export interface ReviewWorkspaceProps {
   readOnlyReason?: "hard-stale";
 }
 
+type SelectionToken = {
+  issueId: string | null;
+  turnKey: string | null;
+  generation: number;
+};
+
 const STATUS_ORDER = [
   "pending_triage", "fixing", "awaiting_merge", "awaiting_deploy",
   "awaiting_replay", "awaiting_review", "closed", "duplicate",
@@ -85,11 +91,20 @@ export function ReviewWorkspace({
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
   const [existingIssueId, setExistingIssueId] = useState("");
-  const selectionRef = useRef({ id: initialIssueId, generation: 0 });
+  const selectionRef = useRef<SelectionToken>({
+    issueId: initialIssueId,
+    turnKey: initialIssueId ? null : requestedTurnKey,
+    generation: 0,
+  });
+  const skippedDetailSelectionRef = useRef<SelectionToken | null>(null);
 
   const selectIssueState = (id: string | null, turnKey: string | null) => {
-    if (selectionRef.current.id !== id) {
-      selectionRef.current = { id, generation: selectionRef.current.generation + 1 };
+    if (selectionRef.current.issueId !== id || selectionRef.current.turnKey !== turnKey) {
+      selectionRef.current = { issueId: id, turnKey, generation: selectionRef.current.generation + 1 };
+    }
+    const skipped = skippedDetailSelectionRef.current;
+    if (skipped && (skipped.issueId !== id || skipped.turnKey !== turnKey || skipped.generation !== selectionRef.current.generation)) {
+      skippedDetailSelectionRef.current = null;
     }
     setSelectedId(id);
     setSelectedTurnKey(turnKey);
@@ -104,12 +119,13 @@ export function ReviewWorkspace({
     selectIssueState(initialIssueId, initialIssueId ? null : initialTurn?.turn_key ?? null);
   }, [basePath, initialIssueId, initialTurn]);
 
-  const loadLists = async (signal?: AbortSignal, expectedSelection?: { id: string | null; generation: number }) => {
+  const loadLists = async (signal?: AbortSignal, expectedSelection?: SelectionToken) => {
     const [nextOverview, nextInbox, nextIssues] = await Promise.all([
       api.overview(signal), api.inbox(signal), api.issues(signal),
     ]);
     if (signal?.aborted || (expectedSelection && (
-      selectionRef.current.id !== expectedSelection.id
+      selectionRef.current.issueId !== expectedSelection.issueId
+      || selectionRef.current.turnKey !== expectedSelection.turnKey
       || selectionRef.current.generation !== expectedSelection.generation
     ))) return;
     setOverview(nextOverview);
@@ -119,7 +135,7 @@ export function ReviewWorkspace({
 
   const loadDetail = async (id: string, signal?: AbortSignal, generation = selectionRef.current.generation) => {
     const value = await api.issue(id, signal);
-    if (!signal?.aborted && selectionRef.current.id === id && selectionRef.current.generation === generation) setDetail(value);
+    if (!signal?.aborted && selectionRef.current.issueId === id && selectionRef.current.generation === generation) setDetail(value);
     return value;
   };
 
@@ -134,10 +150,18 @@ export function ReviewWorkspace({
   }, [api, agentId]);
 
   useEffect(() => {
-    setDetail(null);
-    if (!selectedId) return;
-    const controller = new AbortController();
+    if (!selectedId) {
+      setDetail(null);
+      return;
+    }
     const generation = selectionRef.current.generation;
+    const skipped = skippedDetailSelectionRef.current;
+    if (skipped?.issueId === selectedId && skipped.generation === generation) {
+      skippedDetailSelectionRef.current = null;
+      return;
+    }
+    setDetail(null);
+    const controller = new AbortController();
     void loadDetail(selectedId, controller.signal, generation).catch(() => {
       if (!controller.signal.aborted) setFailed(true);
     });
@@ -151,10 +175,13 @@ export function ReviewWorkspace({
     return `${basePath}?${query}`;
   };
 
-  const chooseIssue = (id: string) => {
+  const chooseIssue = (id: string, refreshDetailInMutation = false): SelectionToken => {
     selectIssueState(id, null);
+    const selection = { ...selectionRef.current };
+    if (refreshDetailInMutation) skippedDetailSelectionRef.current = selection;
     if (basePath === "/admin/review") navigate(genericPath({ issue: id }), { replace: true });
     else navigate(`${basePath}/${encodeURIComponent(id)}`);
+    return selection;
   };
 
   const chooseInbox = (turnKey: string) => {
@@ -178,35 +205,64 @@ export function ReviewWorkspace({
     return actor.trim();
   };
 
-  const selectionIsCurrent = (id: string | null, generation: number) => (
-    selectionRef.current.id === id && selectionRef.current.generation === generation
+  const currentSelection = (): SelectionToken => ({ ...selectionRef.current });
+
+  const selectionIsCurrent = (selection: SelectionToken) => (
+    selectionRef.current.issueId === selection.issueId
+    && selectionRef.current.turnKey === selection.turnKey
+    && selectionRef.current.generation === selection.generation
   );
 
-  const handleError = async (error: unknown, targetId: string | null, generation: number) => {
-    if (!selectionIsCurrent(targetId, generation)) return;
+  const handleError = async (error: unknown, selection: SelectionToken) => {
+    if (!selectionIsCurrent(selection)) return;
     if (apiStatus(error) === 409) {
+      try {
+        if (selection.issueId) await loadDetail(selection.issueId, undefined, selection.generation);
+      } catch (refreshError) {
+        if (selectionIsCurrent(selection)) {
+          setMessage(refreshError instanceof Error ? refreshError.message : "冲突状态刷新失败，请稍后重试。");
+        }
+        return;
+      }
+      if (!selectionIsCurrent(selection)) return;
       setMessage("记录已被其他复审者更新；已刷新最新状态，未提交文本仍保留在表单中。");
-      if (targetId) await loadDetail(targetId, undefined, generation);
       return;
     }
     setMessage(error instanceof Error ? error.message : "操作失败，请查看服务状态。");
   };
 
-  const perform = async (operation: (identity: string) => Promise<unknown>, success: string) => {
-    const targetId = selectionRef.current.id;
-    const generation = selectionRef.current.generation;
+  const perform = async <T,>(
+    operation: (identity: string) => Promise<T>,
+    success: string,
+    successIssueId?: (result: T) => string,
+  ) => {
+    const selection = currentSelection();
+    let errorSelection = selection;
     setBusy(true);
     setMessage("");
     try {
-      await operation(requireActor());
-      if (!selectionIsCurrent(targetId, generation)) return;
-      if (targetId) await loadDetail(targetId, undefined, generation);
-      if (!selectionIsCurrent(targetId, generation)) return;
-      await loadLists(undefined, { id: targetId, generation });
-      if (!selectionIsCurrent(targetId, generation)) return;
+      const result = await operation(requireActor());
+      if (!selectionIsCurrent(selection)) return;
+      if (successIssueId) {
+        const intendedIssueId = successIssueId(result);
+        const intendedSelection = chooseIssue(intendedIssueId, true);
+        errorSelection = intendedSelection;
+        const controller = new AbortController();
+        await Promise.all([
+          loadDetail(intendedIssueId, controller.signal, intendedSelection.generation),
+          loadLists(controller.signal, intendedSelection),
+        ]);
+        if (!selectionIsCurrent(intendedSelection)) return;
+        setMessage(success);
+        return;
+      }
+      if (selection.issueId) await loadDetail(selection.issueId, undefined, selection.generation);
+      if (!selectionIsCurrent(selection)) return;
+      await loadLists(undefined, selection);
+      if (!selectionIsCurrent(selection)) return;
       setMessage(success);
     } catch (error) {
-      await handleError(error, targetId, generation);
+      await handleError(error, errorSelection);
     } finally {
       setBusy(false);
     }
@@ -257,12 +313,12 @@ export function ReviewWorkspace({
       />}
       {!detail && selectedInbox && <section className="review-empty-detail"><p>待纳管回答</p><h2>{selectedInbox.question || "未记录问题"}</h2><div><strong>原回答</strong><p>{selectedInbox.answer || "未记录原回答"}</p></div>{!hideMutations && <><div className="review-inbox-actions"><label>关联到已有事项<select aria-label="已有事项" value={existingIssueId} onChange={(event) => setExistingIssueId(event.target.value)}><option value="">选择 canonical issue</option>{issues.filter((item) => item.disposition === "actionable").map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><button disabled={busy || readOnly || !existingIssueId} onClick={() => perform(async (identity) => {
         await api.link(existingIssueId, { agent_id: selectedInbox.agent_id, source_turn_key: selectedInbox.turn_key, source_feedback_keys: selectedInbox.feedback_keys, link_role: "primary", reason: "link negative feedback turn to existing canonical issue" }, identity);
-        chooseIssue(existingIssueId);
-      }, "负反馈回答已关联到已有事项。")} >关联到已有事项</button><span>或</span></div><button disabled={busy || readOnly} onClick={() => perform(async (identity) => {
+        return existingIssueId;
+      }, "负反馈回答已关联到已有事项。", (issueId) => issueId)} >关联到已有事项</button><span>或</span></div><button disabled={busy || readOnly} onClick={() => perform(async (identity) => {
         const created = await api.create({ agent_id: selectedInbox.agent_id, origin_turn_key: selectedInbox.turn_key, title: (selectedInbox.question || selectedInbox.turn_key).slice(0, 80), priority: "P2", reason: "create from negative feedback inbox" }, identity);
         await api.link(created.issue.id, { agent_id: selectedInbox.agent_id, source_turn_key: selectedInbox.turn_key, source_feedback_keys: selectedInbox.feedback_keys, link_role: "primary", reason: "link negative feedback turn" }, identity);
-        chooseIssue(created.issue.id);
-      }, "负反馈回答已纳入闭环。")} >创建事项并纳管</button></>}</section>}
+        return created.issue.id;
+      }, "负反馈回答已纳入闭环。", (issueId) => issueId)} >创建事项并纳管</button></>}</section>}
       {!detail && !selectedInbox && <section className="review-empty-detail"><p>选择左侧事项</p><h2>查看根因、证据、复跑答案与审计历史</h2><span>系统不提供手工“关闭”动作；只有全部硬门满足才会自动闭环。</span></section>}
     </main></section>
   </>;
