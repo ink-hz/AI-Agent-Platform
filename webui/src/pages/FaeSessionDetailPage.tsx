@@ -56,8 +56,8 @@ export function FaeSessionDetailPage({ sessionKey }: { sessionKey: string }) {
         session={session}
         closureSummaries={closureSummaries}
         governanceHref={(turn) => governanceHref(session.session_key, turn.turn_key)}
+        betweenHeaderAndTurns={<GovernancePanel session={session} />}
       /></div>
-      <GovernancePanel session={session} />
     </div>
   </>;
   return <FaeWorkbenchShell currentSection="sessions">{content}</FaeWorkbenchShell>;

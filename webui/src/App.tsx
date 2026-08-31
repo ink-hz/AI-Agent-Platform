@@ -40,6 +40,7 @@ import { VocWorkspacePage } from "./pages/VocWorkspacePage";
 import { AiNotesPage } from "./pages/AiNotesPage";
 import { VocManagementPage } from "./pages/VocManagementPage";
 import { FaeReportsPlaceholderPage } from "./pages/FaeReportsPlaceholderPage";
+import { FaeOverviewPage } from "./pages/FaeOverviewPage";
 import { FaeWorkbenchShell, type FaeSection } from "./components/fae-workbench/FaeWorkbenchShell";
 
 
@@ -126,7 +127,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
     case "admin-governance": return <GovernancePage />;
     case "admin-voc": return <VocManagementPage />;
-    case "admin-fae-overview": return <FaeWorkbenchPendingPage section="overview" />;
+    case "admin-fae-overview": return <FaeOverviewPage />;
     case "admin-fae-sessions": return <FaeSessionsPage />;
     case "admin-fae-session": return <FaeSessionDetailPage sessionKey={route.sessionKey} />;
     case "admin-fae-issues": return account

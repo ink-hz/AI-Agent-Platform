@@ -125,6 +125,12 @@ describe("FaeSessionDetailPage", () => {
     expect(governance).toContain("resolved");
     expect(governance).toContain("身份信息暂不可用");
     expect(governance).not.toContain("ai-fae-agent");
+
+    const header = container.querySelector(".session-detail-head")!;
+    const governancePanel = container.querySelector(".fae-session-governance")!;
+    const turns = container.querySelector(".turn-stack")!;
+    expect(header.compareDocumentPosition(governancePanel) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(governancePanel.compareDocumentPosition(turns) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
 
   it("loads closure summaries for all FAE Turns in batches of at most 200", async () => {
