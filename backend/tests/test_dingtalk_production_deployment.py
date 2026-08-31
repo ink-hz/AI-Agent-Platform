@@ -672,6 +672,8 @@ def test_office_recipient_resolver_release_is_scoped_and_secret_safe():
     assert "053_office_recipient_directory.sql" in runbook
     assert "platform-api platform-loopback" in runbook
     assert "mode 0600" in runbook
+    assert "UID 10001" in runbook
+    assert "install -o 10001 -g 10001 -m 600" in runbook
     assert "不得打印" in runbook
     resolver_section = runbook.split("office_recipient_resolver_release", 1)[1]
     assert "nginx" not in resolver_section.lower()

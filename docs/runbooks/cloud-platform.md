@@ -837,12 +837,14 @@ must pass before real Session data is considered available or current.
 
    ```bash
    umask 077
-   install -m 600 /dev/null /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+   install -o 10001 -g 10001 -m 600 /dev/null /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
    openssl rand -hex 32 > /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+   chown 10001:10001 /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
    chmod 600 /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
    ```
 
-   文件必须是 root 所有的普通非符号链接、mode 0600、至少 32 字节。不得打印、复制到工单、
+   文件必须是容器服务账号 UID 10001、GID 10001 所有的普通非符号链接、mode 0600、至少
+   32 字节；root 所有的 mode 0600 文件无法被容器读取，必须阻断发布。不得打印、复制到工单、
    放入 argv 或提交仓库。AI ADMIN 通过独立的受保护部署步骤读取同一份秘密。
 
 2. 记录当前两个目标容器的 Container ID、Image ID、StartedAt、RestartCount、配置摘要和
