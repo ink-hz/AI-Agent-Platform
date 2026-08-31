@@ -56,6 +56,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
   const brainWorkspace = route.name === "brain" || route.name === "conversation"
     || route.name === "agent" || route.name === "agent-conversation";
   const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";
+  const faeWorkspace = route.name.startsWith("admin-fae-");
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   useEffect(() => {
     if (current !== "admin") return;
@@ -127,7 +128,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
           href={platformPath(item.path)} key={item.path} onClick={(event) => follow(event, item.path)}
         >{item.label}</a>)}</div>
       </nav>}
-      <main className={`page${brainWorkspace ? " is-brain-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}`}>{children}</main>
+      <main className={`page${brainWorkspace ? " is-brain-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}`}>{children}</main>
       {!brainWorkspace && !aiNotesWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
     </div>
   );

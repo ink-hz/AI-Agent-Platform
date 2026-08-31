@@ -234,6 +234,89 @@ describe("FaeIssuesPage", () => {
     expect(container.textContent).toContain("回答缺少约束");
   });
 
+  it("restores FAE Issue status filters from URL history and keeps filtered rows actionable", async () => {
+    const triageId = "00000000-0000-0000-0000-000000000010";
+    const triage = {
+      ...detail.issue,
+      id: triageId,
+      title: "待归因事项",
+      progress: { ...detail.progress, issue_id: triageId, status: "pending_triage" },
+    };
+    const fixing = { ...detail.issue, progress: detail.progress };
+    window.history.replaceState({}, "", "/admin/fae/issues?status=pending_triage");
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response([triage, fixing]));
+      if (path === `/api/admin/fae/issues/${triageId}`) return Promise.resolve(response({
+        ...detail, issue: { ...detail.issue, id: triageId, title: triage.title }, progress: triage.progress,
+      }));
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<RouteHarness />));
+    const status = container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')!;
+    expect(status.value).toBe("pending_triage");
+    expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
+    expect(container.textContent).toContain("待归因事项");
+    expect(container.textContent).not.toContain("普通回答治理事项");
+
+    await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
+    expect(window.location.pathname).toBe(`/admin/fae/issues/${triageId}`);
+    expect(window.location.search).toBe("");
+    await act(async () => {
+      window.history.back();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(window.location.pathname).toBe("/admin/fae/issues");
+    expect(window.location.search).toBe("?status=pending_triage");
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')?.value).toBe("pending_triage");
+
+    const restored = container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(restored, "fixing");
+      restored.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(window.location.search).toBe("?status=fixing");
+    expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
+    expect(container.textContent).toContain("普通回答治理事项");
+    expect(container.textContent).not.toContain("待归因事项");
+
+    await act(async () => {
+      window.history.back();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')?.value).toBe("pending_triage");
+    await act(async () => {
+      window.history.forward();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')?.value).toBe("fixing");
+    expect(container.textContent).toContain("普通回答治理事项");
+  });
+
+  it("preserves the preview prefix while changing an overview-backed Issue status", async () => {
+    const prefix = "/_preview/dingtalk-r1";
+    window.history.replaceState({}, "", `${prefix}/admin/fae/issues?status=open`);
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === `${prefix}/api/admin/fae/issue-overview`) return Promise.resolve(response(overview(true)));
+      if (path.startsWith(`${prefix}/api/admin/fae/issue-inbox`)) return Promise.resolve(response([]));
+      if (path.startsWith(`${prefix}/api/admin/fae/issues?`)) return Promise.resolve(response([{ ...detail.issue, progress: detail.progress }]));
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<RouteHarness />));
+    const status = container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')!;
+    expect(status.value).toBe("open");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(status, "fixing");
+      status.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(`${window.location.pathname}${window.location.search}`).toBe(`${prefix}/admin/fae/issues?status=fixing`);
+  });
+
   it("rejects a deep link whose Turn is absent from the scoped Session", async () => {
     window.history.replaceState({}, "", "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Amissing");
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {

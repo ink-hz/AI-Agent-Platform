@@ -296,6 +296,7 @@ body {
   .review-detail-head { align-items: flex-start; flex-direction: column; }
 }
 .page { flex: 1; padding: 46px 0 68px; }
+.page.is-fae-workbench { width: min(1440px, calc(100% - 48px)); }
 .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 34px; }
 .hero h1 { margin: 0; font-size: clamp(34px, 4vw, 44px); line-height: 1.12; letter-spacing: -.04em; }
 .hero-sub { max-width: 690px; margin: 13px 0 0; color: var(--ink-soft); font-size: 16px; line-height: 1.65; }
@@ -1050,6 +1051,7 @@ body {
 .fae-overview__summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
 .fae-summary-card { min-width: 0; min-height: 156px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 9px 24px rgba(20,51,89,.07); }
 .fae-summary-card__link, .fae-summary-card.is-unavailable { display: flex; height: 100%; min-height: 156px; flex-direction: column; align-items: flex-start; padding: 19px; color: inherit; text-decoration: none; }
+.fae-summary-card.is-static { display: flex; height: 100%; min-height: 156px; flex-direction: column; align-items: flex-start; padding: 19px; background: var(--surface); color: inherit; box-shadow: 0 9px 24px rgba(20,51,89,.07); }
 .fae-summary-card__link:hover { background: #f8fbff; }
 .fae-summary-card__link:focus-visible { outline: 3px solid rgba(36,104,197,.24); outline-offset: -3px; }
 .fae-summary-card span:first-child { color: var(--ink-faint); font-size: 12px; font-weight: 780; }
@@ -1558,6 +1560,7 @@ body {
   .fae-overview__freshness b { margin-left: 0; }
   .fae-overview-panel > header, .fae-trends > header, .fae-report-preview { align-items: flex-start; flex-direction: column; }
   .fae-report-preview > a { width: 100%; text-align: center; }
+  .page.is-fae-workbench { width: min(100% - 28px, 1440px); }
 }
 
 .conversation-sidebar-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 9px; }

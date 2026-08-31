@@ -76,6 +76,9 @@ const freshOverview: FaeOverview = {
   reports: { state: unavailableState("reports_not_integrated") },
 };
 
+const periodSessionsHref = "/admin/fae/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_to=2026-08-31T00%3A00%3A00%2B08%3A00";
+const negativeSessionsHref = "/admin/fae/sessions?sentiment=negative&date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_to=2026-08-31T00%3A00%3A00%2B08%3A00";
+
 
 describe("FaeOverviewPage", () => {
   let container: HTMLDivElement;
@@ -121,10 +124,18 @@ describe("FaeOverviewPage", () => {
     expect(text.indexOf("7 日趋势")).toBeLessThan(text.indexOf("分析报告"));
     expect(text).not.toContain("实时");
 
-    expect(container.querySelector('a[href="/admin/fae/sessions"]')).not.toBeNull();
-    expect(container.querySelector('a[href="/admin/fae/sessions?sentiment=negative"]')).not.toBeNull();
-    expect(container.querySelector('a[href="/admin/fae/sessions?outcome=failed"]')).not.toBeNull();
-    expect(container.querySelector('a[href="/admin/fae/issues"]')).not.toBeNull();
+    expect(container.querySelector('[data-metric="sessions"] a')?.getAttribute("href")).toBe(periodSessionsHref);
+    expect(container.querySelector('[data-metric="negative-turns"] a')?.getAttribute("href")).toBe(negativeSessionsHref);
+    expect(container.querySelector('[data-metric="p95-latency"] a')?.getAttribute("href")).toBe(periodSessionsHref);
+    expect(container.querySelector('[data-metric="active-subjects"] a')).toBeNull();
+    expect(container.querySelector('[data-metric="active-subjects"]')?.textContent).toContain("暂无主体维度下钻");
+    expect(container.querySelector('[data-metric="abnormal-sessions"] a')).toBeNull();
+    expect(container.querySelector('[data-metric="abnormal-sessions"]')?.textContent).toContain("请从下方异常 Session 打开详情");
+    expect(container.querySelector('a[href*="outcome=failed"]')).toBeNull();
+    expect(container.querySelector('[data-metric="open-issues"] a[href="/admin/fae/issues?status=open"]')).not.toBeNull();
+    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=pending_triage"]')).not.toBeNull();
+    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=fixing"]')).not.toBeNull();
+    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=awaiting_review"]')).not.toBeNull();
     expect(container.querySelector('a[href="/admin/fae/sessions/fae%3Asession-1"]')).not.toBeNull();
     expect(container.querySelector('.fae-report-preview > a[href="/admin/fae/reports"]')?.textContent).toContain("查看接入状态");
 
@@ -195,6 +206,8 @@ describe("FaeOverviewPage", () => {
     const links = [...container.querySelectorAll<HTMLAnchorElement>(".fae-overview a")];
     expect(links.length).toBeGreaterThan(0);
     expect(links.every((link) => link.getAttribute("href")?.startsWith("/_preview/dingtalk-r1/admin/fae"))).toBe(true);
+    expect(container.querySelector('[data-metric="negative-turns"] a')?.getAttribute("href")).toBe(`/_preview/dingtalk-r1${negativeSessionsHref}`);
+    expect(container.querySelector('.fae-overview-list a[href="/_preview/dingtalk-r1/admin/fae/issues?status=pending_triage"]')).not.toBeNull();
   });
 });
 

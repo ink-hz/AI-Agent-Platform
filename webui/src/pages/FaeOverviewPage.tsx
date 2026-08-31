@@ -68,28 +68,39 @@ function MetricCard({
   label: string;
   value: string | null;
   detail: string;
-  href: string;
+  href?: string;
 }) {
   const body = <>
     <span>{label}</span>
     <strong>{value ?? "暂不可用"}</strong>
     <small>{detail}</small>
-    {value !== null && <span className="fae-summary-card__action">查看详情 →</span>}
+    {value !== null && href && <span className="fae-summary-card__action">查看详情 →</span>}
   </>;
-  return <article className={`fae-summary-card${value === null ? " is-unavailable" : ""}`} data-metric={metric}>
-    {value === null ? body : <PlatformLink className="fae-summary-card__link" href={href}>{body}</PlatformLink>}
+  return <article className={`fae-summary-card${value === null ? " is-unavailable" : href ? "" : " is-static"}`} data-metric={metric}>
+    {value === null || !href ? body : <PlatformLink className="fae-summary-card__link" href={href}>{body}</PlatformLink>}
   </article>;
 }
 
 
-function Summary({ summary }: { summary: FaeSummary }) {
+function sessionsHref(overview: FaeOverview, filters: Array<[string, string]> = []): string {
+  const query = new URLSearchParams([
+    ...filters,
+    ["date_from", overview.period_start],
+    ["date_to", overview.period_end],
+  ]);
+  return `/admin/fae/sessions?${query}`;
+}
+
+
+function Summary({ overview, summary }: { overview: FaeOverview; summary: FaeSummary }) {
+  const periodHref = sessionsHref(overview);
   return <section className="fae-overview__summary" aria-label="运营摘要">
-    <MetricCard metric="sessions" label="Session" value={`${summary.session_count} 个 Session`} detail="本统计周期内" href="/admin/fae/sessions" />
-    <MetricCard metric="active-subjects" label="活跃主体" value={`${summary.active_subject_count} 个活跃主体`} detail="本统计周期内" href="/admin/fae/sessions" />
-    <MetricCard metric="negative-turns" label="负向 Turn" value={`${summary.negative_turn_count} 个负向 Turn`} detail={`${summary.negative_feedback_events} 条负向反馈`} href="/admin/fae/sessions?sentiment=negative" />
-    <MetricCard metric="abnormal-sessions" label="异常 Session" value={`${summary.abnormal_session_count} 个异常 Session`} detail="结果异常、回退或空回答" href="/admin/fae/sessions?outcome=failed" />
-    <MetricCard metric="open-issues" label="开放 Issue" value={summary.open_issue_count === null ? null : `${summary.open_issue_count} 个开放 Issue`} detail="尚未完成闭环" href="/admin/fae/issues" />
-    <MetricCard metric="p95-latency" label="响应耗时" value={summary.p95_duration_ms === null ? null : `p95 ${summary.p95_duration_ms} ms`} detail="Session Turn 响应耗时" href="/admin/fae/sessions" />
+    <MetricCard metric="sessions" label="Session" value={`${summary.session_count} 个 Session`} detail="本统计周期内" href={periodHref} />
+    <MetricCard metric="active-subjects" label="活跃主体" value={`${summary.active_subject_count} 个活跃主体`} detail="暂无主体维度下钻" />
+    <MetricCard metric="negative-turns" label="负向 Turn" value={`${summary.negative_turn_count} 个负向 Turn`} detail={`${summary.negative_feedback_events} 条负向反馈`} href={sessionsHref(overview, [["sentiment", "negative"]])} />
+    <MetricCard metric="abnormal-sessions" label="异常 Session" value={`${summary.abnormal_session_count} 个异常 Session`} detail="请从下方异常 Session 打开详情" />
+    <MetricCard metric="open-issues" label="开放 Issue" value={summary.open_issue_count === null ? null : `${summary.open_issue_count} 个开放 Issue`} detail="尚未完成闭环" href="/admin/fae/issues?status=open" />
+    <MetricCard metric="p95-latency" label="响应耗时" value={summary.p95_duration_ms === null ? null : `p95 ${summary.p95_duration_ms} ms`} detail="本统计周期的 Session Turn" href={periodHref} />
   </section>;
 }
 
@@ -110,7 +121,7 @@ function IssueQueue({ overview }: { overview: FaeOverview }) {
     {actionable.length === 0
       ? <p className="fae-overview-panel__empty">当前没有开放 Issue。</p>
       : <ul className="fae-overview-list">{actionable.map(([status, count]) => <li key={status}>
-        <PlatformLink href="/admin/fae/issues"><span>{ISSUE_STATUS_LABELS[status] ?? status} </span><strong>{count}</strong></PlatformLink>
+        <PlatformLink href={`/admin/fae/issues?status=${encodeURIComponent(status)}`}><span>{ISSUE_STATUS_LABELS[status] ?? status} </span><strong>{count}</strong></PlatformLink>
       </li>)}</ul>}
   </section>;
 }
@@ -124,7 +135,7 @@ function AttentionQueue({ overview }: { overview: FaeOverview }) {
     </section>;
   }
   return <section className="fae-overview-panel" aria-labelledby="fae-attention-heading">
-    <header><div><p>SESSION ATTENTION</p><h2 id="fae-attention-heading">异常 Sessions</h2></div><PlatformLink href="/admin/fae/sessions?outcome=failed">查看筛选结果</PlatformLink></header>
+    <header><div><p>SESSION ATTENTION</p><h2 id="fae-attention-heading">异常 Sessions</h2></div></header>
     {overview.attention.items.length === 0
       ? <p className="fae-overview-panel__empty">当前没有需要关注的异常 Session。</p>
       : <ul className="fae-overview-list fae-attention-list">{overview.attention.items.map((item) => <li key={item.session_key}>
@@ -181,7 +192,7 @@ function OverviewContent({ overview }: { overview: FaeOverview }) {
       <b>{stale ? "数据已过期" : overview.freshness.status === "fresh" ? "数据已同步" : "等待首次同步"}</b>
     </aside>
     {overview.summary.state.status === "available" && overview.summary.data
-      ? <Summary summary={overview.summary.data} />
+      ? <Summary overview={overview} summary={overview.summary.data} />
       : <section className="fae-overview__summary-unavailable" role="status"><h2>运营摘要暂不可用</h2><p>Session 聚合当前不可用，其他独立分区仍可继续查看。</p></section>}
     <div className="fae-overview__queues"><IssueQueue overview={overview} /><AttentionQueue overview={overview} /></div>
     <Trends overview={overview} />

@@ -25,6 +25,6 @@ export function FaeWorkbenchShell({ currentSection, children }: Props) {
         <PlatformLink aria-current={currentSection === section ? "page" : undefined} href={href} key={href}>{label}</PlatformLink>,
       )}</nav>
     </aside>
-    <main className="fae-workbench__content">{children}</main>
+    <div className="fae-workbench__content">{children}</div>
   </section>;
 }

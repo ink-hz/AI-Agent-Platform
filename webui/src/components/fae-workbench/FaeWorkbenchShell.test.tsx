@@ -20,7 +20,7 @@ describe("FAE workbench shell", () => {
 
   it("renders the rail before content with all workbench views and the selected detail section", async () => {
     await act(async () => root.render(
-      <FaeWorkbenchShell currentSection="sessions"><p>Session detail</p></FaeWorkbenchShell>,
+      <main><FaeWorkbenchShell currentSection="sessions"><p>Session detail</p></FaeWorkbenchShell></main>,
     ));
 
     const shell = container.querySelector(".fae-workbench");
@@ -34,5 +34,7 @@ describe("FAE workbench shell", () => {
     ]);
     expect(container.querySelector<HTMLAnchorElement>('a[href="/admin/fae/sessions"]')?.getAttribute("aria-current")).toBe("page");
     expect(container.querySelector(".fae-workbench__content")?.textContent).toContain("Session detail");
+    expect(container.querySelector(".fae-workbench__content")?.tagName).toBe("DIV");
+    expect(container.querySelectorAll("main")).toHaveLength(1);
   });
 });

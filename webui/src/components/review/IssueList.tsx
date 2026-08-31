@@ -44,6 +44,8 @@ export function IssueList({
   onSelect,
   onSelectInbox,
   showAgentFilter = true,
+  statusFilter,
+  onStatusFilterChange,
 }: {
   issues: FeedbackIssueSummary[];
   inbox: ReviewInboxItem[];
@@ -52,19 +54,24 @@ export function IssueList({
   onSelect: (id: string) => void;
   onSelectInbox: (turnKey: string) => void;
   showAgentFilter?: boolean;
+  statusFilter?: string;
+  onStatusFilterChange?: (status: string) => void;
 }) {
   const [agent, setAgent] = useState("");
   const [layer, setLayer] = useState("");
   const [priority, setPriority] = useState("");
   const [owner, setOwner] = useState("");
-  const [status, setStatus] = useState("");
+  const [localStatus, setLocalStatus] = useState("");
+  const status = statusFilter ?? localStatus;
   const [createdAfter, setCreatedAfter] = useState("");
   const filtered = useMemo(() => issues.filter((item) => (
     (!agent || item.agent_id === agent)
     && (!layer || item.failure_layer === layer)
     && (!priority || item.priority === priority)
     && (!owner || (item.owner || "").includes(owner))
-    && (!status || item.progress.status === status)
+    && (!status || (status === "open"
+      ? !["closed", "duplicate", "not_actionable", "wont_fix"].includes(item.progress.status)
+      : item.progress.status === status))
     && (!createdAfter || !item.created_at || item.created_at >= `${createdAfter}T00:00:00`)
   )), [agent, createdAfter, issues, layer, owner, priority, status]);
   const agents = [...new Set(issues.map((item) => item.agent_id))];
@@ -76,7 +83,7 @@ export function IssueList({
       {showAgentFilter && <select aria-label="Agent" value={agent} onChange={(event) => setAgent(event.target.value)}><option value="">全部 Agent</option>{agents.map((value) => <option key={value}>{value}</option>)}</select>}
       <select aria-label="失败层" value={layer} onChange={(event) => setLayer(event.target.value)}><option value="">全部失败层</option>{layers.map((value) => <option key={value}>{value}</option>)}</select>
       <select aria-label="优先级" value={priority} onChange={(event) => setPriority(event.target.value)}><option value="">全部优先级</option>{["P0", "P1", "P2", "P3"].map((value) => <option key={value}>{value}</option>)}</select>
-      <select aria-label="状态" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">全部状态</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
+      <select aria-label="状态" value={status} onChange={(event) => onStatusFilterChange ? onStatusFilterChange(event.target.value) : setLocalStatus(event.target.value)}><option value="">全部状态</option>{onStatusFilterChange && <option value="open">开放事项</option>}{Object.entries(STATUS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
       <input aria-label="负责人" placeholder="负责人" value={owner} onChange={(event) => setOwner(event.target.value)} />
       <input aria-label="创建日期起" type="date" value={createdAfter} onChange={(event) => setCreatedAfter(event.target.value)} />
     </div>

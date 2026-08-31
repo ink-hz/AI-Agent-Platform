@@ -89,10 +89,17 @@ describe("Executive Operations visual contract", () => {
   });
 
   it("bounds the FAE workspace and keeps its reading column legible", () => {
+    expect(styles).toContain(".topbar-inner,\n.page,\n.site-foot { width: min(1240px, calc(100% - 48px));");
+    expect(rule(".page.is-fae-workbench")).toContain("width: min(1440px, calc(100% - 48px))");
     expect(rule(".fae-workbench")).toContain("max-width: 1440px");
     expect(rule(".fae-workbench")).toContain("grid-template-columns: 216px minmax(0, 1fr)");
     expect(rule(".fae-workbench__content")).toContain("max-width: 1180px");
     expect(rule(".fae-overview")).toContain("font-size: 15px");
+  });
+
+  it("keeps available non-drillable metrics visually distinct from unavailable metrics", () => {
+    expect(rule(".fae-summary-card.is-static")).toContain("background: var(--surface)");
+    expect(rule(".fae-summary-card.is-static")).toContain("box-shadow: 0 9px 24px rgba(20,51,89,.07)");
   });
 
   it("stacks Session governance after the header and before Turns at 1040px", () => {

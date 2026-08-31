@@ -44,6 +44,8 @@ export interface ReviewWorkspaceProps {
   showActorField: boolean;
   showAgentFilter: boolean;
   readOnlyReason?: "hard-stale";
+  statusFilter?: string;
+  onStatusFilterChange?: (status: string) => void;
 }
 
 type SelectionToken = {
@@ -82,6 +84,8 @@ export function ReviewWorkspace({
   showActorField,
   showAgentFilter,
   readOnlyReason,
+  statusFilter,
+  onStatusFilterChange,
 }: ReviewWorkspaceProps) {
   const requestedTurnKey = initialTurn?.turn_key ?? new URLSearchParams(window.location.search).get("turn_key");
   const [overview, setOverview] = useState<ReviewOverview | null>(null);
@@ -333,7 +337,7 @@ export function ReviewWorkspace({
     <section className="review-overview"><article><span>反馈总行数</span><strong>{overview.feedback_rows ?? "暂不可用"}</strong></article><article><span>负反馈回答</span><strong>{overview.negative_turns ?? "暂不可用"}</strong><small>{overview.negative_rows === null ? "负反馈记录暂不可用" : `${overview.negative_rows} 条负反馈记录`}</small></article>{overview.lifecycle_status_available === false
       ? <>{Object.entries(overview.dispositions).map(([disposition, count]) => <article key={disposition}><span>{disposition === "actionable" ? "可处理事项" : STATUS_LABELS[disposition as keyof typeof STATUS_LABELS] || disposition}</span><strong>{count}</strong></article>)}<article><span>生命周期状态</span><strong>暂不可用</strong></article></>
       : STATUS_ORDER.map((status) => <article key={status}><span>{STATUS_LABELS[status]}</span><strong>{overview.statuses[status] ?? 0}</strong></article>)}</section>
-    <section className="review-workspace"><IssueList issues={issues} inbox={workspaceInbox} selectedId={selectedId} selectedTurnKey={selectedTurnKey} onSelect={chooseIssue} onSelectInbox={chooseInbox} showAgentFilter={showAgentFilter} /><main className="review-main-panel">
+    <section className="review-workspace"><IssueList issues={issues} inbox={workspaceInbox} selectedId={selectedId} selectedTurnKey={selectedTurnKey} onSelect={chooseIssue} onSelectInbox={chooseInbox} showAgentFilter={showAgentFilter} statusFilter={statusFilter} onStatusFilterChange={onStatusFilterChange} /><section className="review-main-panel" aria-label="事项详情">
       {detail && <IssueDetail detail={detail} busy={busy || (readOnly && !hideMutations)} readOnly={hideMutations}
         issues={issues}
         onSave={(owner, failureLayer, priority, rootCause, impactScope) => perform((identity) => api.update(detail.issue.id, { row_version: detail.issue.row_version, owner: owner || null, failure_layer: failureLayer || null, priority, root_cause: rootCause, impact_scope: impactScope, reason: "update triage" }, identity), "归因已保存，状态已重新计算。")}
@@ -359,6 +363,6 @@ export function ReviewWorkspace({
         return created.issue.id;
       }, "负反馈回答已纳入闭环。", (issueId) => issueId)} >创建事项并纳管</button></>}</section>}
       {!detail && !selectedInbox && <section className="review-empty-detail"><p>选择左侧事项</p><h2>查看根因、证据、复跑答案与审计历史</h2><span>系统不提供手工“关闭”动作；只有全部硬门满足才会自动闭环。</span></section>}
-    </main></section>
+    </section></section>
   </>;
 }
