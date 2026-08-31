@@ -5,7 +5,9 @@
 **复审范围：** `19703dfbc9b5a60c6f5d4302bcffa1fe5bc9efe8..796433a26589a531ee945d7453242d917c53055e`（28 个 Tasks 1–9 实施提交）
 **Task 10 基线：** `796433a26589a531ee945d7453242d917c53055e`
 **原 Task 10 head：** `ab66cc0c6f4f931479eff25e3ba4d96093ec1189`
-**Task 10 follow-up 范围：** `ab66cc0c6f4f931479eff25e3ba4d96093ec1189..HEAD`（本复审提交；精确提交 SHA 同步记录在 Task 10 execution report）
+**Task 10 reviewed implementation 范围：** `ab66cc0c6f4f931479eff25e3ba4d96093ec1189..416edd2bf4a6a0e8e3241282f8aeda2c4ee800f8`
+**最终 reviewed implementation head：** `416edd2bf4a6a0e8e3241282f8aeda2c4ee800f8`
+**证据提交说明：** 本文件的后续 evidence-only 提交只固化上述不可变范围，没有修改生产代码或测试；下列测试结果绑定到 `416edd2bf4a6a0e8e3241282f8aeda2c4ee800f8`，不绑定到 evidence-only 文档提交。
 **结论：** Foundation 的代码、自动化回归和静态上线契约满足进入部署流程的条件；本次复审没有部署、没有调用生产环境，也不构成生产验收。
 
 ## 自动化结果
