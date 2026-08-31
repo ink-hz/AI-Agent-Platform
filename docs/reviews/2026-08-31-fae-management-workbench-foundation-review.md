@@ -10,6 +10,8 @@
 **证据提交说明：** 本文件的后续 evidence-only 提交只固化上述不可变范围，没有修改生产代码或测试；下列测试结果绑定到 `416edd2bf4a6a0e8e3241282f8aeda2c4ee800f8`，不绑定到 evidence-only 文档提交。
 **最终 Important 修复范围：** `011b584ca1e0a4ee83916a968c5d19fdc33bd1c2..7521efdb01527956a5253ba288dddb55191921e5`
 **最终 Important 修复 implementation head：** `7521efdb01527956a5253ba288dddb55191921e5`
+**whole-branch follow-up 修复范围：** `0f2723c008729d47f8ea90d32e5a74084a33daea..fb7f95c635cd9ab5f0378de6193914d018d2a4d0`
+**最终 cumulative implementation head：** `fb7f95c635cd9ab5f0378de6193914d018d2a4d0`
 **结论：** Foundation 的代码、自动化回归和静态上线契约满足进入部署流程的条件；本次复审没有部署、没有调用生产环境，也不构成生产验收。
 
 ## 2026-09-01 whole-branch Important 修复补充
@@ -29,6 +31,25 @@ sanitized projection 或显式 unavailable 表达，不再把未知状态写成�
 production build、Python compileall、cloud acceptance `59 passed`、shell/Node syntax、diff whitespace、
 新增行 credential scan 全部 PASS。`deploy/cloud/accept.sh` 已同步校验新的 Issue page contract。
 完整 RED/GREEN、逐 finding 结果和限制记录于 `.superpowers/sdd/fae-final-fixes-report.md`。
+
+## 2026-09-01 whole-branch follow-up 五项 Important 修复
+
+后续 whole-branch 复审的五项 Important 已在 cumulative implementation head 关闭：release handoff
+的 canonical 写入统一进入同一 transaction helper，并与普通 merge/disposition 共享 Agent lock、稳定
+端点锁、Agent ownership 与递归可达性；generic Review create/link 在 service 与 writer 两层拒绝
+跨 Agent 的 Issue/Turn/Feedback；Feedback 历史 lineage 允许后续同步新增 Feedback，但仍对已存 key
+的缺失、跨 scope 和重复 fail closed，handoff/backfill 使用 Turn 的全部当前 sentiment；cloud Turn
+仅有 sentiment/status summary 时明确返回 `restricted` 并展示已知信号，而不伪造详情；FAE Issue
+detail 保留经过白名单校验的 collection query，筛选先清页码，population 缩小时自动 clamp。
+
+follow-up RED 为 backend `6 failed, 1 passed, 73 deselected`、frontend `3 failed, 40 passed`；全仓
+ownership audit 又以实际 handoff 捕获并修复一个保留其他 link 时的 foreign source Issue 分支。最终
+focused backend `256 passed`、focused frontend `71 passed`。绑定
+`fb7f95c635cd9ab5f0378de6193914d018d2a4d0` 的 fresh canonical backend 为
+`3579 passed, 2 skipped, 180 warnings`（310.51 秒），cloud backend `238 passed`，full frontend
+`69 files / 598 tests`；production build（3511 modules）、compileall、shell/Node syntax、commit-range
+diff、credential scan 与 progress-ledger diff 全部 PASS。本 follow-up 未修改 cloud acceptance 脚本，
+未部署、未调用生产、未使用凭据、未合并、未修改 progress ledger。
 
 ## 自动化结果
 
