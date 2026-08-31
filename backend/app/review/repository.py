@@ -1992,15 +1992,39 @@ class PsycopgReviewRepository:
         agent_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        status: str | None = None,
+        disposition: str | None = None,
     ) -> list[dict]:
+        conditions = ["(%s::text is null or issue.agent_id=%s)"]
+        params: list = [agent_id, agent_id]
+        if disposition is not None:
+            conditions.append("issue.disposition=%s")
+            params.append(disposition)
+        lifecycle = "coalesce(progress.status, 'pending_triage')"
+        if status == "open":
+            conditions.append(
+                f"{lifecycle} not in "
+                "('closed', 'duplicate', 'not_actionable', 'wont_fix')"
+            )
+        elif status is not None:
+            conditions.append(f"{lifecycle}=%s")
+            params.append(status)
+        where = " and ".join(conditions)
         with self._connection() as connection, connection.cursor() as cursor:
             rows = cursor.execute(
-                """
-                select * from platform_review.feedback_issues
-                where (%s::text is null or agent_id=%s)
-                order by updated_at desc, id limit %s offset %s
+                f"""
+                select issue.* from platform_review.feedback_issues issue
+                left join lateral (
+                  select event.after->>'status' as status
+                  from platform_review.feedback_issue_events event
+                  where event.issue_id=issue.id and event.after ? 'status'
+                  order by event.created_at desc, event.id desc
+                  limit 1
+                ) progress on true
+                where {where}
+                order by issue.updated_at desc, issue.id limit %s offset %s
                 """,
-                (agent_id, agent_id, limit, offset),
+                tuple(params) + (limit, offset),
             ).fetchall()
             results = []
             for row in rows:

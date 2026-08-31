@@ -70,7 +70,8 @@ describe("FAE workbench API", () => {
 
     await faeWorkbenchApi.listSessions({
       q: "fallback", channel: "dingtalk", sentiment: "negative", review_status: "pending",
-      outcome: "failed", date_from: "2026-08-24T00:00:00+08:00", date_to: "2026-08-31T00:00:00+08:00",
+      outcome: "failed", date_from: "2026-08-24T00:00:00+08:00", date_to: "2026-08-30T23:59:59+08:00",
+      date_before: "2026-08-31T00:00:00+08:00",
       limit: 20, offset: 0, agent_id: "other-agent", source_kind: "admin",
     } as never);
 
@@ -78,6 +79,8 @@ describe("FAE workbench API", () => {
     expect(requestPath).toContain("/api/admin/fae/sessions?");
     expect(requestPath).toContain("q=fallback");
     expect(requestPath).toContain("channel=dingtalk");
+    expect(requestPath).toContain("date_to=2026-08-30T23%3A59%3A59%2B08%3A00");
+    expect(requestPath).toContain("date_before=2026-08-31T00%3A00%3A00%2B08%3A00");
     expect(requestPath).not.toContain("agent_id");
     expect(requestPath).not.toContain("source_kind");
     expect(requestPath).not.toContain("environment");
@@ -145,7 +148,7 @@ describe("FAE workbench API", () => {
 
     const normalizedOverview = await review.overview();
     const normalizedInbox = await review.inbox();
-    const normalizedIssues = await review.issues();
+    const normalizedIssues = await review.issues(undefined, { disposition: "actionable" });
     await review.turnSummaries(["fae:turn-1"]);
     const normalizedDetail = await review.issue("00000000-0000-0000-0000-000000000001");
     await review.create(payload, actor);
@@ -178,7 +181,7 @@ describe("FAE workbench API", () => {
     expect(paths).toEqual([
       "/api/admin/fae/issue-overview",
       "/api/admin/fae/issue-inbox?limit=200",
-      "/api/admin/fae/issues?limit=200",
+      "/api/admin/fae/issues?limit=200&disposition=actionable",
       "/api/admin/fae/turn-summaries?turn_key=fae%3Aturn-1",
       "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001",
       "/api/admin/fae/issues",
@@ -199,6 +202,7 @@ describe("FAE workbench API", () => {
     expect(linkBody).toEqual({ reason: "test" });
     expect(fetchMock.mock.calls.slice(5).every(([, init]) => new Headers(init?.headers).get("X-Review-Actor") === actor)).toBe(true);
     expect(fetchMock.mock.calls.slice(0, 5).every(([, init]) => !new Headers(init?.headers).has("X-CSRF-Token"))).toBe(true);
+    expect(paths[2]).not.toContain("agent_id");
     expect(fetchMock.mock.calls.slice(5).every(([, init]) => new Headers(init?.headers).get("X-CSRF-Token") === "csrf-current-account")).toBe(true);
 
     const changedAccountReview = reviewFactory("csrf-changed-account");

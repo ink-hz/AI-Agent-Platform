@@ -181,13 +181,33 @@ class ReplicaReviewRepository(_ProjectionReader):
         ]
 
     def list_issues(
-        self, *, agent_id: str | None = None, limit: int = 100, offset: int = 0
+        self,
+        *,
+        agent_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        status: str | None = None,
+        disposition: str | None = None,
     ) -> list[dict]:
+        records = self._records("review_issue_projection", agent_id)
+        if disposition is not None:
+            records = [
+                item for item in records
+                if str(item.get("status") or "unknown") == disposition
+            ]
+        if status == "open":
+            records = [
+                item for item in records
+                if str(item.get("status") or "unknown")
+                not in {"closed", "duplicate", "not_actionable", "wont_fix"}
+            ]
+        elif status is not None:
+            # Cloud projections contain disposition, not lifecycle. A lifecycle
+            # filter therefore has no representable matches on the replica.
+            records = []
         return [
             self._issue(item)
-            for item in self._records("review_issue_projection", agent_id)[
-                offset : offset + limit
-            ]
+            for item in records[offset : offset + limit]
         ]
 
     @staticmethod

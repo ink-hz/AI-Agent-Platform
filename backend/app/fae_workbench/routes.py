@@ -35,6 +35,24 @@ from app.review.service import ReviewUnavailable
 from .repository import FaeWorkbenchReadError
 
 
+IssueLifecycleFilter = Literal[
+    "open",
+    "pending_triage",
+    "fixing",
+    "awaiting_merge",
+    "awaiting_deploy",
+    "awaiting_replay",
+    "awaiting_review",
+    "closed",
+    "duplicate",
+    "not_actionable",
+    "wont_fix",
+]
+IssueDispositionFilter = Literal[
+    "actionable", "duplicate", "not_actionable", "wont_fix"
+]
+
+
 def _management_context(request: Request) -> AuthContext:
     context = getattr(request.state, "auth_context", None)
     if context is None:
@@ -125,6 +143,7 @@ async def sessions(
     outcome: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    date_before: datetime | None = None,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
@@ -136,6 +155,7 @@ async def sessions(
         outcome=outcome,
         date_from=date_from,
         date_to=date_to,
+        date_before=date_before,
     )
     return await request.app.state.fae_workbench_service.list_sessions(
         filters, limit, offset
@@ -227,6 +247,8 @@ async def issue_inbox(
 @router.get("/issues")
 async def issues(
     request: Request,
+    status: IssueLifecycleFilter | None = None,
+    disposition: IssueDispositionFilter | None = None,
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -234,6 +256,8 @@ async def issues(
         request.app.state.fae_workbench_service.list_issues(
             limit=limit,
             offset=offset,
+            status=status,
+            disposition=disposition,
         )
     )
 

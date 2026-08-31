@@ -93,8 +93,8 @@ class _Review:
         self.calls.append(("inbox", agent_id, limit, offset))
         return []
 
-    async def list_issues(self, *, agent_id, limit, offset):
-        self.calls.append(("issues", agent_id, limit, offset))
+    async def list_issues(self, *, agent_id, limit, offset, status=None, disposition=None):
+        self.calls.append(("issues", agent_id, limit, offset, status, disposition))
         return []
 
     async def turn_summaries(self, *, turn_keys):
@@ -279,6 +279,28 @@ def test_fae_session_api_ignores_conflicting_scope() -> None:
     assert observability.filters.query == "335"
 
 
+def test_fae_session_api_exposes_an_exclusive_period_end_without_changing_date_to() -> None:
+    app, observability = _direct_app(
+        AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+    )
+
+    response = TestClient(app).get(
+        "/api/admin/fae/sessions",
+        params={
+            "date_to": "2026-08-30T23:59:59+08:00",
+            "date_before": "2026-08-31T00:00:00+08:00",
+        },
+    )
+
+    assert response.status_code == 200
+    assert observability.filters.date_to == datetime.fromisoformat(
+        "2026-08-30T23:59:59+08:00"
+    )
+    assert observability.filters.date_before == datetime.fromisoformat(
+        "2026-08-31T00:00:00+08:00"
+    )
+
+
 @pytest.mark.parametrize(
     ("role", "expected_status"),
     [(None, 401), (Role.MEMBER, 403), (Role.MANAGEMENT_VIEWER, 403)],
@@ -422,7 +444,9 @@ def test_fae_issue_reads_are_scoped_and_cross_agent_detail_is_hidden() -> None:
 
     assert client.get("/api/admin/fae/issue-overview").status_code == 200
     assert client.get("/api/admin/fae/issue-inbox").status_code == 200
-    assert client.get("/api/admin/fae/issues").status_code == 200
+    assert client.get(
+        "/api/admin/fae/issues?status=open&agent_id=ai-admin-agent"
+    ).status_code == 200
     response = client.get(
         "/api/admin/fae/turn-summaries",
         params=[("turn_key", "fae:turn-1"), ("turn_key", "admin:turn-1")],
@@ -431,12 +455,34 @@ def test_fae_issue_reads_are_scoped_and_cross_agent_detail_is_hidden() -> None:
     assert response.json() == [{"turn_key": "fae:turn-1"}]
     assert review.calls == [
         ("inbox", "ai-fae-agent", 100, 0),
-        ("issues", "ai-fae-agent", 100, 0),
+        ("issues", "ai-fae-agent", 100, 0, "open", None),
         ("turn_summaries", ["fae:turn-1"]),
     ]
 
     review.issue_agent_id = "ai-admin-agent"
     assert client.get(f"/api/admin/fae/issues/{ISSUE_ID}").status_code == 404
+
+
+def test_fae_issue_filters_are_bounded_and_invalid_values_never_reach_review() -> None:
+    app, _observability = _direct_app(
+        AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+    )
+    client = TestClient(app)
+    review = app.state.fae_workbench_service._review
+
+    assert client.get(
+        "/api/admin/fae/issues?disposition=actionable&limit=17&offset=3"
+    ).status_code == 200
+    assert review.calls[-1] == (
+        "issues", "ai-fae-agent", 17, 3, None, "actionable"
+    )
+
+    before = list(review.calls)
+    invalid_status = client.get("/api/admin/fae/issues?status=everything")
+    invalid_disposition = client.get("/api/admin/fae/issues?disposition=secret")
+    assert invalid_status.status_code == 422
+    assert invalid_disposition.status_code == 422
+    assert review.calls == before
 
 
 def test_fae_create_and_link_reject_browser_agent_scope() -> None:

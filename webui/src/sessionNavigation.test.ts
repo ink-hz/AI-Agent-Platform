@@ -57,9 +57,15 @@ describe("Session URL state", () => {
   });
 
   it("keeps FAE-only filters out of generic Session URLs", () => {
-    const filters = { ...EMPTY_SESSION_FILTERS, channel: "fae", sentiment: "negative" as const };
+    const filters = {
+      ...EMPTY_SESSION_FILTERS,
+      channel: "fae",
+      sentiment: "negative" as const,
+      date_before: "2026-08-31T00:00:00+08:00",
+    };
 
     expect(sessionsPath(filters)).toBe("/admin/sessions");
-    expect(sessionsPath(filters, "/admin/fae/sessions")).toBe("/admin/fae/sessions?channel=fae&sentiment=negative");
+    expect(sessionsPath(filters, "/admin/fae/sessions")).toBe("/admin/fae/sessions?channel=fae&sentiment=negative&date_before=2026-08-31T00%3A00%3A00%2B08%3A00");
+    expect(sessionFiltersFromSearch("?date_before=2026-08-31T00%3A00%3A00%2B08%3A00").date_before).toBe("2026-08-31T00:00:00+08:00");
   });
 });

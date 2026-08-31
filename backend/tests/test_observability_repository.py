@@ -549,6 +549,24 @@ def test_list_sessions_uses_canonical_view_filters_and_pagination() -> None:
     assert page.items[0].sender_identity_status == "unavailable"
 
 
+def test_session_period_end_is_exclusive_while_date_to_remains_inclusive() -> None:
+    end = datetime(2026, 8, 31, 0, 0, tzinfo=timezone.utc)
+    inclusive = end - timedelta(seconds=1)
+    fake = FakeConnect([[{"count": 0}], []])
+    repository = PsycopgObservabilityRepository(
+        "postgresql://unused", connect=fake, now=lambda: NOW
+    )
+
+    repository.list_sessions(
+        SessionFilters(date_to=inclusive, date_before=end), limit=25, offset=0
+    )
+
+    normalized = " ".join(fake.executed[0][0].lower().split())
+    assert "s.last_active_at <= %s" in normalized
+    assert "s.last_active_at < %s" in normalized
+    assert fake.executed[0][1][-2:] == (inclusive, end)
+
+
 def test_metabot_session_and_turn_map_safe_sender_presentation_fields() -> None:
     repository = PsycopgObservabilityRepository(
         "postgresql://unused", connect=FakeConnect([]), now=lambda: NOW,

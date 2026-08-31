@@ -382,6 +382,8 @@ class ReplicaObservabilityRepository:
                 continue
             if filters.date_to and active_at > filters.date_to:
                 continue
+            if filters.date_before and active_at >= filters.date_before:
+                continue
             if query:
                 searchable = [str((record.get("title") or {}).get("text") or "")]
                 for turn in record.get("turns", []):

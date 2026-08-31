@@ -123,6 +123,45 @@ def test_review_projection_is_agent_scoped_and_read_only():
     assert not hasattr(repository, "create_issue")
 
 
+def test_projected_issue_disposition_and_open_filters_precede_limit() -> None:
+    cipher = FieldCipher(b"m" * 32)
+    records = []
+    for index in range(205):
+        records.append({
+            "kind": "review_issue_projection", "key": str(uuid4()),
+            "agent_id": "ai-fae-agent", "status": "duplicate", "priority": "P2",
+            "title": {"text": f"duplicate-{index}"}, "failure_layer": None,
+            "owner_display": None, "linked_turn_count": 0, "scope_valid": True,
+            "updated_at": "2026-08-14T08:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        })
+    for index in range(3):
+        records.append({
+            "kind": "review_issue_projection", "key": str(uuid4()),
+            "agent_id": "ai-fae-agent", "status": "actionable", "priority": "P1",
+            "title": {"text": f"actionable-{index}"}, "failure_layer": "model",
+            "owner_display": None, "linked_turn_count": 1, "scope_valid": True,
+            "updated_at": "2026-08-14T08:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        })
+    repository = ReplicaReviewRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record) for record in records]), now=lambda: NOW,
+    )
+
+    actionable = repository.list_issues(
+        agent_id="ai-fae-agent", disposition="actionable", limit=2, offset=1
+    )
+    open_issues = repository.list_issues(
+        agent_id="ai-fae-agent", status="open", limit=200, offset=0
+    )
+
+    assert len(actionable) == 2
+    assert {item["disposition"] for item in actionable} == {"actionable"}
+    assert len(open_issues) == 3
+    assert {item["disposition"] for item in open_issues} == {"actionable"}
+
+
 def test_fae_issue_scope_projection_fails_closed_on_false_or_missing_metadata():
     cipher = FieldCipher(b"m" * 32)
 

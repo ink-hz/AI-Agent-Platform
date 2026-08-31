@@ -344,12 +344,21 @@ class FaeWorkbenchService:
             offset=offset,
         )
 
-    async def list_issues(self, *, limit: int, offset: int):
+    async def list_issues(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        status: str | None = None,
+        disposition: str | None = None,
+    ):
         await self._assert_fae_issue_scope()
+        filters = {
+            **({"status": status} if status is not None else {}),
+            **({"disposition": disposition} if disposition is not None else {}),
+        }
         return await self._review.list_issues(
-            agent_id=FAE_AGENT_ID,
-            limit=limit,
-            offset=offset,
+            agent_id=FAE_AGENT_ID, limit=limit, offset=offset, **filters
         )
 
     async def issue_detail(self, issue_id: UUID):

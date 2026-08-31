@@ -25,7 +25,7 @@ export interface SessionsViewProps {
   description: string;
   fixedScope?: Pick<SessionQuery, "agent_id" | "source_kind">;
   showScopeFilters: boolean;
-  load: (query: SessionQuery, signal: AbortSignal) => Promise<Page<SessionSummary>>;
+  load: (query: SessionQuery & { date_before?: string }, signal: AbortSignal) => Promise<Page<SessionSummary>>;
   detailHref: (session: SessionSummary) => string;
 }
 
@@ -42,7 +42,7 @@ export function SessionsView({
   const filtersFromSearch = () => {
     const filters = sessionFiltersFromSearch(window.location.search);
     return showScopeFilters
-      ? { ...filters, channel: "", sentiment: "" as SessionFilters["sentiment"], review_status: "", outcome: "", date_from: "", date_to: "" }
+      ? { ...filters, channel: "", sentiment: "" as SessionFilters["sentiment"], review_status: "", outcome: "", date_from: "", date_to: "", date_before: "" }
       : { ...filters, agent_id: "", source_kind: "" as SessionSource };
   };
   const [agents, setAgents] = useState<AgentSummary[]>([]);
@@ -134,6 +134,7 @@ export function SessionsView({
       outcome: draft.outcome.trim(),
       date_from: normalizeFaeSessionDate(draft.date_from),
       date_to: normalizeFaeSessionDate(draft.date_to),
+      date_before: normalizeFaeSessionDate(draft.date_before),
       page: 1,
     });
   };
@@ -153,6 +154,7 @@ export function SessionsView({
         <label><span>结果</span><input name="outcome" value={draft.outcome} onChange={(event) => setDraft((current) => ({ ...current, outcome: event.target.value }))} /></label>
         <label><span>开始时间</span><input name="date_from" value={draft.date_from} onChange={(event) => setDraft((current) => ({ ...current, date_from: event.target.value }))} placeholder="2026-08-01T00:00:00+08:00" /></label>
         <label><span>结束时间</span><input name="date_to" value={draft.date_to} onChange={(event) => setDraft((current) => ({ ...current, date_to: event.target.value }))} placeholder="2026-08-31T23:59:59+08:00" /></label>
+        <label><span>截止前（不含）</span><input name="date_before" value={draft.date_before} onChange={(event) => setDraft((current) => ({ ...current, date_before: event.target.value }))} placeholder="2026-09-01T00:00:00+08:00" /></label>
       </>}
       <button type="submit">搜索</button>
     </form>

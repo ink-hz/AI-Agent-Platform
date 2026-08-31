@@ -86,7 +86,7 @@ function sessionsHref(overview: FaeOverview, filters: Array<[string, string]> = 
   const query = new URLSearchParams([
     ...filters,
     ["date_from", overview.period_start],
-    ["date_to", overview.period_end],
+    ["date_before", overview.period_end],
   ]);
   return `/admin/fae/sessions?${query}`;
 }

@@ -11,6 +11,7 @@ export type SessionFilters = {
   outcome: string;
   date_from: string;
   date_to: string;
+  date_before: string;
   page: number;
 };
 
@@ -25,6 +26,7 @@ export const EMPTY_SESSION_FILTERS: SessionFilters = {
   outcome: "",
   date_from: "",
   date_to: "",
+  date_before: "",
   page: 1,
 };
 
@@ -83,6 +85,7 @@ export function sessionFiltersFromSearch(search: string): SessionFilters {
     outcome: clean(params.get("outcome")),
     date_from: normalizeFaeSessionDate(params.get("date_from")),
     date_to: normalizeFaeSessionDate(params.get("date_to")),
+    date_before: normalizeFaeSessionDate(params.get("date_before")),
     page: cleanPage(params),
   };
 }
@@ -100,6 +103,7 @@ export function sessionsPath(filters: SessionFilters, basePath = "/admin/session
     if (filters.outcome) params.set("outcome", filters.outcome);
     if (filters.date_from) params.set("date_from", filters.date_from);
     if (filters.date_to) params.set("date_to", filters.date_to);
+    if (filters.date_before) params.set("date_before", filters.date_before);
   }
   if (filters.page > 1) params.set("page", String(filters.page));
   const search = params.toString();

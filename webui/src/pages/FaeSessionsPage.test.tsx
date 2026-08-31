@@ -109,6 +109,15 @@ describe("FaeSessionsPage", () => {
     expect(requests[requests.length - 1]).toBe("/api/admin/fae/sessions?date_from=2026-08-01T00%3A00%3A00%2B08%3A00&date_to=2026-08-31T23%3A59%3A59%2B08%3A00&limit=50");
   });
 
+  it("round-trips the overview exclusive period end without converting it to inclusive", async () => {
+    window.history.replaceState({}, "", "/admin/fae/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00");
+
+    await act(async () => root.render(<FaeSessionsPage />));
+
+    expect(`${window.location.pathname}${window.location.search}`).toContain("date_before=2026-08-31T00%3A00%3A00%2B08%3A00");
+    expect(requests[requests.length - 1]).toBe("/api/admin/fae/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00&limit=50");
+  });
+
   it.each([
     "not-a-date",
     "2026-08-01T00:00:00",

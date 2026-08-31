@@ -247,6 +247,26 @@ def test_repository_lists_searches_paginates_and_returns_existing_shapes():
     assert detail.turns[0].evidence_availability == "restricted"
 
 
+def test_replica_session_period_end_excludes_exact_boundary_and_includes_before() -> None:
+    end = datetime(2026, 8, 31, 0, 0, tzinfo=UTC)
+    exact = _record(end, "e" * 52, agent_id="ai-fae-agent", turn_key="f" * 52)
+    before = _record(end - timedelta(microseconds=1), "b" * 52, agent_id="ai-fae-agent", turn_key="c" * 52)
+    for record in (exact, before):
+        record["source_kind"] = "fae"
+    repository, _ = _repository(end, (exact, before))
+
+    page = repository.list_sessions(
+        SessionFilters(
+            agent_id="ai-fae-agent", source_kind="fae", date_before=end
+        ),
+        limit=50,
+        offset=0,
+    )
+
+    assert page.total == 1
+    assert [item.session_key for item in page.items] == ["b" * 52]
+
+
 def test_repository_returns_aggregate_trace_without_raw_steps():
     now = datetime(2026, 8, 11, 8, 0, tzinfo=UTC)
     repository, _ = _repository(now, (_record(now),))

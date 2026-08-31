@@ -163,8 +163,10 @@ class RecordingIssueReview:
         self.calls.append(("inbox", agent_id, limit, offset))
         return []
 
-    async def list_issues(self, *, agent_id=None, limit, offset):
-        self.calls.append(("issues", agent_id, limit, offset))
+    async def list_issues(
+        self, *, agent_id=None, limit, offset, status=None, disposition=None
+    ):
+        self.calls.append(("issues", agent_id, limit, offset, status, disposition))
         return self.issue_rows
 
     async def turn_summaries(self, *, turn_keys):
@@ -388,7 +390,9 @@ async def test_issue_reads_always_inject_fae_agent_scope():
 
     await service.issue_overview()
     await service.issue_inbox(limit=20, offset=3)
-    await service.list_issues(limit=10, offset=4)
+    await service.list_issues(
+        limit=10, offset=4, status="awaiting_review", disposition="actionable"
+    )
     summaries = await service.turn_summaries(
         ["fae:turn-ordinary", "admin:turn-1", "fae:missing"]
     )
@@ -398,7 +402,7 @@ async def test_issue_reads_always_inject_fae_agent_scope():
         ("overview", FAE_AGENT_ID),
         ("inbox", FAE_AGENT_ID, 20, 3),
         ("scope_valid", FAE_AGENT_ID),
-        ("issues", FAE_AGENT_ID, 10, 4),
+        ("issues", FAE_AGENT_ID, 10, 4, "awaiting_review", "actionable"),
         ("turn_summaries", ["fae:turn-ordinary"]),
     ]
     assert summaries == [{"turn_key": "fae:turn-ordinary"}]

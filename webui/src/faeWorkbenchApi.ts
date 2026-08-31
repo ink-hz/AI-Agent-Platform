@@ -73,7 +73,7 @@ function sessionDetail(value: unknown): SessionDetail {
   return value as SessionDetail;
 }
 
-const QUERY_KEYS = ["q", "channel", "sentiment", "review_status", "outcome", "date_from", "date_to", "limit", "offset"] as const;
+const QUERY_KEYS = ["q", "channel", "sentiment", "review_status", "outcome", "date_from", "date_to", "date_before", "limit", "offset"] as const;
 
 const ISSUE_STATUSES = new Set([
   "pending_triage", "fixing", "awaiting_merge", "awaiting_deploy", "awaiting_replay",
@@ -206,7 +206,12 @@ function reviewApi(csrfToken: string): ReviewApi {
   return {
     overview: async (signal) => normalizeOverview(await getJson<unknown>("/api/admin/fae/issue-overview", signal)),
     inbox: async (signal) => normalizeInbox(await getJson<unknown>("/api/admin/fae/issue-inbox?limit=200", signal)),
-    issues: async (signal) => normalizeIssues(await getJson<unknown>("/api/admin/fae/issues?limit=200", signal)),
+    issues: async (signal, filters) => {
+      const params = new URLSearchParams({ limit: "200" });
+      if (filters?.status) params.set("status", filters.status);
+      if (filters?.disposition) params.set("disposition", filters.disposition);
+      return normalizeIssues(await getJson<unknown>(`/api/admin/fae/issues?${params}`, signal));
+    },
     turnSummaries(turnKeys, signal) {
       const params = new URLSearchParams();
       turnKeys.forEach((turnKey) => params.append("turn_key", turnKey));

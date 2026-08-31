@@ -25,6 +25,7 @@ class SessionFilters(BaseModel):
     outcome: str | None = None
     date_from: datetime | None = None
     date_to: datetime | None = None
+    date_before: datetime | None = None
 
 
 class FlywheelFilters(BaseModel):

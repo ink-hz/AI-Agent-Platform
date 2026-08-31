@@ -212,6 +212,42 @@ def test_optional_agent_filters_are_typed_for_postgres_parameters():
         assert "%s::text is null" in source
 
 
+def test_issue_filters_are_applied_to_canonical_lifecycle_before_limit() -> None:
+    statements = []
+
+    class Result:
+        def fetchall(self): return []
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters):
+            statements.append((" ".join(statement.lower().split()), parameters))
+            return Result()
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return Cursor()
+
+    repository = PsycopgReviewRepository(
+        "postgresql://analyst@db/flywheel",
+        connect=lambda *_args, **_kwargs: Connection(),
+    )
+
+    repository.list_issues(
+        agent_id="ai-fae-agent", status="open", disposition="actionable",
+        limit=2, offset=200,
+    )
+
+    sql, params = statements[0]
+    assert "after->>'status'" in sql
+    assert "not in ('closed', 'duplicate', 'not_actionable', 'wont_fix')" in sql
+    assert "issue.disposition=%s" in sql
+    assert sql.index("not in") < sql.index("limit %s offset %s")
+    assert params == ("ai-fae-agent", "ai-fae-agent", "actionable", 2, 200)
+
+
 def test_evidence_owner_lookup_is_metadata_only_and_read_only():
     statements = []
 

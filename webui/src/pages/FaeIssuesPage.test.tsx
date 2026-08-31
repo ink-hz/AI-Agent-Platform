@@ -244,11 +244,15 @@ describe("FaeIssuesPage", () => {
     };
     const fixing = { ...detail.issue, progress: detail.progress };
     window.history.replaceState({}, "", "/admin/fae/issues?status=pending_triage");
+    const issueRequests: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
       const path = String(input);
       if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
       if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
-      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response([triage, fixing]));
+      if (path.startsWith("/api/admin/fae/issues?")) {
+        issueRequests.push(path);
+        return Promise.resolve(response(path.includes("status=fixing") ? [fixing] : [triage]));
+      }
       if (path === `/api/admin/fae/issues/${triageId}`) return Promise.resolve(response({
         ...detail, issue: { ...detail.issue, id: triageId, title: triage.title }, progress: triage.progress,
       }));
@@ -261,6 +265,7 @@ describe("FaeIssuesPage", () => {
     expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
     expect(container.textContent).toContain("待归因事项");
     expect(container.textContent).not.toContain("普通回答治理事项");
+    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=200&status=pending_triage");
 
     await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
     expect(window.location.pathname).toBe(`/admin/fae/issues/${triageId}`);
@@ -282,6 +287,7 @@ describe("FaeIssuesPage", () => {
     expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
     expect(container.textContent).toContain("普通回答治理事项");
     expect(container.textContent).not.toContain("待归因事项");
+    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=200&status=fixing");
 
     await act(async () => {
       window.history.back();
@@ -294,6 +300,26 @@ describe("FaeIssuesPage", () => {
     });
     expect(container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')?.value).toBe("fixing");
     expect(container.textContent).toContain("普通回答治理事项");
+  });
+
+  it("maps projected actionable URL state to a server disposition without agent scope", async () => {
+    window.history.replaceState({}, "", "/admin/fae/issues?status=actionable");
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      requests.push(path);
+      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(false)));
+      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response([{ ...detail.issue, replica_read_only: true, progress: { status: "actionable", missing_gates: [] } }]));
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<FaeIssuesPage account={owner} />));
+
+    expect(requests).toContain("/api/admin/fae/issues?limit=200&disposition=actionable");
+    expect(requests.every((path) => !path.includes("agent_id"))).toBe(true);
+    expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')?.value).toBe("actionable");
   });
 
   it("preserves the preview prefix while changing an overview-backed Issue status", async () => {

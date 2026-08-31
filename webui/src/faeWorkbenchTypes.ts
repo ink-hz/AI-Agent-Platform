@@ -56,6 +56,7 @@ export interface FaeSessionQuery {
   outcome?: string;
   date_from?: string;
   date_to?: string;
+  date_before?: string;
   limit?: number;
   offset?: number;
 }

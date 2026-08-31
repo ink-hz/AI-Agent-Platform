@@ -18,7 +18,7 @@ import { IssueList, STATUS_LABELS } from "./IssueList";
 export interface ReviewApi {
   overview(signal?: AbortSignal): Promise<ReviewOverview>;
   inbox(signal?: AbortSignal): Promise<ReviewInboxItem[]>;
-  issues(signal?: AbortSignal): Promise<FeedbackIssueSummary[]>;
+  issues(signal?: AbortSignal, filters?: ReviewIssueFilters): Promise<FeedbackIssueSummary[]>;
   turnSummaries(turnKeys: string[], signal?: AbortSignal): Promise<TurnClosureSummary[]>;
   issue(id: string, signal?: AbortSignal): Promise<FeedbackIssueDetail>;
   create(payload: Record<string, unknown>, actor: string): Promise<FeedbackIssueDetail>;
@@ -34,6 +34,11 @@ export interface ReviewApi {
   disposition(issueId: string, payload: Record<string, unknown>, actor: string): Promise<FeedbackIssueDetail>;
 }
 
+export interface ReviewIssueFilters {
+  status?: string;
+  disposition?: string;
+}
+
 export interface ReviewWorkspaceProps {
   api: ReviewApi;
   agentId: string;
@@ -46,6 +51,7 @@ export interface ReviewWorkspaceProps {
   readOnlyReason?: "hard-stale";
   statusFilter?: string;
   onStatusFilterChange?: (status: string) => void;
+  issueFilters?: ReviewIssueFilters;
 }
 
 type SelectionToken = {
@@ -86,6 +92,7 @@ export function ReviewWorkspace({
   readOnlyReason,
   statusFilter,
   onStatusFilterChange,
+  issueFilters,
 }: ReviewWorkspaceProps) {
   const requestedTurnKey = initialTurn?.turn_key ?? new URLSearchParams(window.location.search).get("turn_key");
   const [overview, setOverview] = useState<ReviewOverview | null>(null);
@@ -141,7 +148,7 @@ export function ReviewWorkspace({
 
   const loadLists = async (signal?: AbortSignal, expectedSelection?: MutationToken) => {
     const [nextOverview, nextInbox, nextIssues] = await Promise.all([
-      api.overview(signal), api.inbox(signal), api.issues(signal),
+      api.overview(signal), api.inbox(signal), api.issues(signal, issueFilters),
     ]);
     if (signal?.aborted || (expectedSelection && !selectionIsCurrent(expectedSelection))) return;
     setOverview(nextOverview);
@@ -163,7 +170,7 @@ export function ReviewWorkspace({
       if (!controller.signal.aborted) setFailed(true);
     });
     return () => controller.abort();
-  }, [api, agentId]);
+  }, [api, agentId, issueFilters?.status, issueFilters?.disposition]);
 
   useEffect(() => {
     if (!selectedId) {

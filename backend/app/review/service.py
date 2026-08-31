@@ -113,12 +113,19 @@ class ReviewService:
         agent_id: str | None = None,
         limit: int,
         offset: int,
+        status: str | None = None,
+        disposition: str | None = None,
     ) -> list[dict]:
+        filters = {
+            **({"status": status} if status is not None else {}),
+            **({"disposition": disposition} if disposition is not None else {}),
+        }
         return await self._run(
             self.read_repository.list_issues,
             agent_id=agent_id,
             limit=limit,
             offset=offset,
+            **filters,
         )
 
     async def turn_summaries(self, *, turn_keys: list[str]) -> list[dict]:

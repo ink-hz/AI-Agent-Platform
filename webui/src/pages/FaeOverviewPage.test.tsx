@@ -76,8 +76,8 @@ const freshOverview: FaeOverview = {
   reports: { state: unavailableState("reports_not_integrated") },
 };
 
-const periodSessionsHref = "/admin/fae/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_to=2026-08-31T00%3A00%3A00%2B08%3A00";
-const negativeSessionsHref = "/admin/fae/sessions?sentiment=negative&date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_to=2026-08-31T00%3A00%3A00%2B08%3A00";
+const periodSessionsHref = "/admin/fae/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00";
+const negativeSessionsHref = "/admin/fae/sessions?sentiment=negative&date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00";
 
 
 describe("FaeOverviewPage", () => {
@@ -145,6 +145,16 @@ describe("FaeOverviewPage", () => {
     expect(container.querySelectorAll(".fae-trend-bar__value")).toHaveLength(14);
     expect(container.textContent).toContain("分析报告尚未接入");
     expect(container.textContent).not.toContain("示例报告");
+  });
+
+  it("uses disposition drill-downs for projected actionable Issue counts", async () => {
+    await renderOverview({
+      ...freshOverview,
+      issues: { ...freshOverview.issues, statuses: { actionable: 5, duplicate: 2, not_actionable: 1, wont_fix: 1 } },
+    });
+
+    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=actionable"]')).not.toBeNull();
+    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?disposition=actionable"]')).toBeNull();
   });
 
   it("renders nullable metrics as unavailable instead of zero", async () => {

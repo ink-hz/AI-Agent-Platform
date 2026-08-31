@@ -16,7 +16,7 @@ function pathIssueId(): string | null {
   return match?.[1] ?? null;
 }
 
-const FAE_ISSUE_STATUSES = new Set(["open", ...Object.keys(STATUS_LABELS)]);
+const FAE_ISSUE_STATUSES = new Set(["open", "actionable", ...Object.keys(STATUS_LABELS)]);
 
 function issueStatusFromSearch(search = window.location.search): string {
   const values = new URLSearchParams(search).getAll("status");
@@ -33,6 +33,9 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   const [turnError, setTurnError] = useState<"missing" | "forbidden" | "unavailable" | null>(null);
   const [issueStatus, setIssueStatus] = useState(issueStatusFromSearch);
   const reviewApi = useMemo(() => faeWorkbenchApi.review(account.csrf_token), [account.csrf_token]);
+  const issueFilters = useMemo(() => issueStatus === "actionable"
+    ? { disposition: "actionable" }
+    : issueStatus ? { status: issueStatus } : undefined, [issueStatus]);
 
   useEffect(() => {
     const restore = () => setIssueStatus(issueStatusFromSearch());
@@ -107,6 +110,7 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
     showAgentFilter={false}
     statusFilter={issueStatus}
     onStatusFilterChange={changeIssueStatus}
+    issueFilters={issueFilters}
     readOnlyReason={account.hard_stale_read_only ? "hard-stale" : undefined}
   />;
 

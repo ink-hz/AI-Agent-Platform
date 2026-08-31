@@ -207,6 +207,9 @@ class PsycopgObservabilityRepository:
         if filters.date_to:
             conditions.append("s.last_active_at <= %s")
             params.append(filters.date_to)
+        if filters.date_before:
+            conditions.append("s.last_active_at < %s")
+            params.append(filters.date_before)
         return " and ".join(conditions), params
 
     def _session_summary(self, row: dict) -> SessionSummary:
