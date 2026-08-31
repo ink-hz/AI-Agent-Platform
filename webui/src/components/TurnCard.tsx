@@ -66,6 +66,7 @@ export function TurnCard({ turn, closureSummary, governanceHref }: {
   const questionTime = formatMessageTime(turn.question_at, turn.question_time_status);
   const answerTime = formatMessageTime(turn.answer_at, turn.answer_time_status);
   const hasNegativeFeedback = turn.feedback.some((item) => item.sentiment === "negative");
+  const governedClosureSummary = closureSummary && closureSummary.issue_id !== null ? closureSummary : undefined;
   return <article className="turn-card">
     <header className="turn-head"><span>第 {String(turn.turn_index).padStart(2, "0")} 轮</span><div>{turn.outcome && <b>{turn.outcome}</b>}{turn.fallback_used && <b className="turn-fallback">fallback</b>}{duration(turn.duration_ms) && <time>{duration(turn.duration_ms)}</time>}</div></header>
     <section className="message-block question-block"><div className="message-label"><span>用户提问</span><time className="message-time" {...(questionTime.dateTime ? { dateTime: questionTime.dateTime } : {})}>{questionTime.label}</time></div><div>{turn.source_kind === "metabot" && <small className="question-sender">{formatSenderIdentity(turn.sender_name, turn.sender_department)}</small>}{turn.question ? <MessageMarkdown content={turn.question} /> : <p>未记录用户提问</p>}</div></section>
@@ -80,7 +81,7 @@ export function TurnCard({ turn, closureSummary, governanceHref }: {
       {turn.improvements.map((item) => <div className="signal signal-improvement" key={item.item_key}><span>{item.item_type} · {item.status}</span><p>{item.title || item.summary}</p></div>)}
     </section>}
     {governanceHref
-      ? <div className="review-entry"><div><strong>{closureSummary ? CLOSURE_STATUS_LABELS[closureSummary.status] || closureSummary.status : "尚未纳管"}</strong>{closureSummary?.missing_gates[0] && <span>缺少：{MISSING_GATE_LABELS[closureSummary.missing_gates[0]] || closureSummary.missing_gates[0]}</span>}</div><PlatformLink href={governanceHref}>创建或查看问题</PlatformLink></div>
+      ? <div className="review-entry"><div><strong>{governedClosureSummary ? CLOSURE_STATUS_LABELS[governedClosureSummary.status] || governedClosureSummary.status : "尚未纳管"}</strong>{governedClosureSummary?.missing_gates[0] && <span>缺少：{MISSING_GATE_LABELS[governedClosureSummary.missing_gates[0]] || governedClosureSummary.missing_gates[0]}</span>}</div><PlatformLink href={governanceHref}>创建或查看问题</PlatformLink></div>
       : hasNegativeFeedback && <div className="review-entry"><div><strong>{CLOSURE_STATUS_LABELS[closureSummary?.status || "pending_triage"]}</strong>{closureSummary?.missing_gates[0] && <span>缺少：{MISSING_GATE_LABELS[closureSummary.missing_gates[0]] || closureSummary.missing_gates[0]}</span>}</div><PlatformLink href={`/admin/review?agent_id=${encodeURIComponent(turn.agent_id)}&turn_key=${encodeURIComponent(turn.turn_key)}`}>查看修复闭环</PlatformLink></div>}
     {turn.trace_key && <div className="trace-action"><button aria-expanded={open} onClick={toggleTrace}>{open ? "收起 Trace" : "查看 Trace"}</button><span>{turn.trace_key}</span></div>}
     {open && (trace ? <TraceTimeline trace={trace} /> : <div className="trace-loading">{traceState === "loading" ? "正在加载 Trace…" : "该轮暂无 Trace 详情。"}</div>)}

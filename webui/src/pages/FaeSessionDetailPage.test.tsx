@@ -89,13 +89,22 @@ describe("FaeSessionDetailPage", () => {
   }
 
   it("links every real FAE Turn to Issue governance and presents evidence-backed Session governance", async () => {
-    await renderFaeSession({ ...session, turns: [turnWithoutFeedback, negativeTurn] }, [{
-      turn_key: negativeTurn.turn_key,
-      issue_id: "issue-1",
-      status: "awaiting_review",
-      missing_gates: ["semantic_review"],
-      latest_valid_replay_id: "replay-1",
-    }]);
+    await renderFaeSession({ ...session, turns: [turnWithoutFeedback, negativeTurn] }, [
+      {
+        turn_key: turnWithoutFeedback.turn_key,
+        issue_id: null,
+        status: "pending_triage",
+        missing_gates: ["issue"],
+        latest_valid_replay_id: null,
+      },
+      {
+        turn_key: negativeTurn.turn_key,
+        issue_id: "issue-1",
+        status: "awaiting_review",
+        missing_gates: ["semantic_review"],
+        latest_valid_replay_id: "replay-1",
+      },
+    ]);
 
     const actions = [...container.querySelectorAll<HTMLAnchorElement>(".review-entry a")];
     expect(actions).toHaveLength(2);
@@ -103,7 +112,10 @@ describe("FaeSessionDetailPage", () => {
       "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1",
     );
     expect(actions[1].textContent).toBe("创建或查看问题");
-    expect(container.textContent).toContain("尚未纳管");
+    const unmanagedEntry = actions[0].closest(".review-entry")!;
+    expect(unmanagedEntry.textContent).toContain("尚未纳管");
+    expect(unmanagedEntry.textContent).not.toContain("待归因");
+    expect(unmanagedEntry.textContent).not.toContain("缺少：纳管事项");
     expect(container.textContent).toContain("等待语义复审");
 
     const governance = container.querySelector(".fae-session-governance")?.textContent;
