@@ -102,6 +102,29 @@ _VOC_MANAGEMENT_ROUTES = frozenset({
     ("GET", "/api/v1/extensions/voc/admin/submitters"),
 })
 
+_PARTNER_OWNER_ROUTES = frozenset({
+    ("GET", "/api/v1/manage/partners/organizations"),
+    ("POST", "/api/v1/manage/partners/organizations"),
+    (
+        "PATCH",
+        "/api/v1/manage/partners/organizations/{organization_id}/status",
+    ),
+    ("GET", "/api/v1/manage/partners/operators"),
+    ("POST", "/api/v1/manage/partners/operators"),
+    ("PATCH", "/api/v1/manage/partners/operators/{operator_id}/status"),
+    ("PUT", "/api/v1/manage/partners/operators/{operator_id}/fae-grant"),
+    ("DELETE", "/api/v1/manage/partners/operators/{operator_id}/fae-grant"),
+    ("GET", "/api/v1/manage/partners/binding-requests"),
+    (
+        "POST",
+        "/api/v1/manage/partners/binding-requests/{request_id}/link",
+    ),
+    (
+        "POST",
+        "/api/v1/manage/partners/binding-requests/{request_id}/reject",
+    ),
+})
+
 _OWNER_ROUTES = frozenset({
     *(route for route in VIEWER_R1_ROUTES),
     ("GET", "/api/deployment"),
@@ -146,7 +169,7 @@ _OWNER_ROUTES = frozenset({
     ("DELETE", "/api/v1/manage/admins/{internal_user_id}"),
     ("PUT", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
     ("DELETE", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
-}) | _MANAGEMENT_SHELL_ROUTES | _AUTHENTICATED_SELF_ROUTES | _VOC_MANAGEMENT_ROUTES
+}) | _MANAGEMENT_SHELL_ROUTES | _AUTHENTICATED_SELF_ROUTES | _VOC_MANAGEMENT_ROUTES | _PARTNER_OWNER_ROUTES
 
 
 @dataclass(frozen=True)
@@ -191,6 +214,8 @@ class AuthorizationService:
             return AuthorizationDecision(True, 200, "self_service", None)
         if key not in _OWNER_ROUTES:
             return self._deny(403, "route_not_authorized")
+        if key in _PARTNER_OWNER_ROUTES and auth.role is not Role.PLATFORM_OWNER:
+            return self._deny(403, "platform_owner_required")
         if auth.role is Role.MEMBER:
             return self._deny(403, "member_management_denied")
         if auth.hard_stale_read_only and selected_method not in {

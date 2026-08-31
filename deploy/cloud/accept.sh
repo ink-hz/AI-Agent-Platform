@@ -253,8 +253,21 @@ REMOTE
   echo "AGENT_BRAIN_V2_REFERENCE_OK"
 }
 
+remote_partner_gate() {
+  remote /bin/bash -s <<'REMOTE'
+set -euo pipefail
+root=/opt/orbbec-agent-platform
+release="$(readlink -f "$root/current")"
+environment="$root/private/platform.env"
+compose="$release/deploy/cloud/compose.yaml"
+api="$(docker compose --env-file "$environment" -f "$compose" ps -q platform-api)"
+[[ -n "$api" ]] || exit 1
+docker exec "$api" python -m app.control_plane.partner_release gate
+REMOTE
+}
+
 v2_cutover_gates() {
-  local fae_gate_before fae_gate_after remote_gates
+  local fae_gate_before fae_gate_after partner_gate remote_gates
   fae_gate_before="$(remote_fae_snapshot)" || fail
   remote_gates="$(remote /bin/bash -s <<'REMOTE'
 set -euo pipefail
@@ -353,6 +366,8 @@ printf '%s\n' \
 REMOTE
 )" || fail
   [[ "$remote_gates" == $'PROVIDER_PROBE=passed\nREFERENCE_RECOVERY=passed\nMIGRATIONS_049_050_051=applied\nWAIT_CURSOR_COLUMNS=0\nBRAIN_CURSOR_WATERLINE=passed\nPENDING_ACTION_FORCED_RECOVERY=passed\nTASK_PROTOCOL_ISOLATION=passed\nVOC_ACTION_EXACTLY_ONCE=passed\nV1_NONTERMINAL_MISSIONS=0\nV2_MISSION_RUN_WRITES=0' ]] || fail
+  partner_gate="$(remote_partner_gate)" || fail
+  [[ "$partner_gate" == $'PARTNER_PROVIDER_CONFIG_VALID=true\nPARTNER_LOGIN_EXPECTED=false\nPARTNER_PROVIDER_KIND=none\nPARTNER_RELEASE_REASON=partner_identity_disabled' ]] || fail
   fae_gate_after="$(remote_fae_snapshot)" || fail
   [[ "$fae_gate_after" == "$fae_gate_before" ]] || fail
   FAE_MANAGED_FILES_UNCHANGED=true
@@ -1163,6 +1178,7 @@ PY
 
 accept_v2_real() {
   require_private_file "$member_cookie_file" 8192
+  require_private_file "$owner_cookie_file" 8192
   require_private_file "$hr_prompt_file" 32768
   evidence_parent="$(/usr/bin/dirname "$evidence_file")"
   [[ -d "$evidence_parent" && ! -L "$evidence_parent" ]] || fail
@@ -1181,9 +1197,44 @@ accept_v2_real() {
   }
   trap v2_accept_failure ERR EXIT
   cookie_config "$member_cookie_file" "$temporary/member.curl" "$temporary/member.browser.json"
+  cookie_config "$owner_cookie_file" "$temporary/owner.curl" "$temporary/owner.browser.json"
   base=https://agent.orbbec.com.cn
   curl_member=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/member.curl" --max-time 15)
+  curl_owner=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" --max-time 15)
   fae_before="$(remote_fae_snapshot)" || fail
+  partner_gate="$(remote_partner_gate)" || fail
+  [[ "$partner_gate" == $'PARTNER_PROVIDER_CONFIG_VALID=true\nPARTNER_LOGIN_EXPECTED=false\nPARTNER_PROVIDER_KIND=none\nPARTNER_RELEASE_REASON=partner_identity_disabled' ]] || fail
+  PARTNER_PROVIDER_CONFIG_VALID=true
+  PARTNER_LOGIN_EXPECTED=false
+
+  office_url="$base/office/?view=services"
+  [[ "$("${curl_member[@]}" -o "$temporary/office-services.html" -w '%{http_code}' "$office_url")" == "200" ]] || fail
+  /usr/bin/grep -Fq '<html' "$temporary/office-services.html" || fail
+  OFFICE_ROUTE_UNCHANGED=true
+  [[ "$("${curl_member[@]}" -o /dev/null -w '%{http_code}' "$base/admin")" == "403" ]] || fail
+  [[ "$("${curl_owner[@]}" -o /dev/null -w '%{http_code}' "$base/admin")" == "200" ]] || fail
+  PLATFORM_ADMIN_ROUTE_UNCHANGED=true
+
+  # cookie_config writes the CSRF header into the private curl config, keeping
+  # the token out of the process list and command arguments.
+  [[ "$("${curl_member[@]}" -o "$temporary/fae-launch.json" -w '%{http_code}' -X POST "$base/api/v1/agents/ai-fae-agent/launch")" == "200" ]] || fail
+  "$python" - "$temporary/fae-launch.json" <<'PY' || fail
+import json,sys,urllib.parse
+value=json.load(open(sys.argv[1],encoding='utf-8'))
+url=value.get('launch_url')
+if not isinstance(url,str): raise SystemExit(1)
+parsed=urllib.parse.urlsplit(url)
+if (parsed.scheme,parsed.netloc,parsed.path) != ('https','fae.orbbec.com.cn','/enterprise/launch'): raise SystemExit(1)
+query=urllib.parse.parse_qs(parsed.query,strict_parsing=True)
+if set(query) != {'code'} or len(query['code']) != 1 or len(query['code'][0]) < 32: raise SystemExit(1)
+PY
+  ENTERPRISE_FAE_LAUNCH_UNCHANGED=true
+
+  [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o "$temporary/fae-identity-capabilities.json" -w '%{http_code}' --max-time 15 https://fae.orbbec.com.cn/identity/capabilities)" == "200" ]] || fail
+  "$python" - "$temporary/fae-identity-capabilities.json" <<'PY' || fail
+import json,sys
+if json.load(open(sys.argv[1],encoding='utf-8')) != {'partner_login_available':False}: raise SystemExit(1)
+PY
   make_body "$hr_prompt_file" "$temporary/v2-request.json"
   request_key="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
   status_code="$("${curl_member[@]}" -o "$temporary/v2-create.json" -w '%{http_code}' -X POST \
@@ -1240,6 +1291,7 @@ REMOTE
   )" || fail
   [[ "$db_summary" =~ ^loop_status=completed,task_count=[0-8],mission_count=0,mission_run_count=0$ ]] || fail
   [[ "$(remote_fae_snapshot)" == "$fae_before" ]] || fail
+  PUBLIC_FAE_CHAT_UNCHANGED=true
   remote_evidence="$(remote /bin/bash -s <<'REMOTE'
 set -euo pipefail
 root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; evidence="$root/private/agent-brain-v2/provider-evidence.json"
@@ -1256,7 +1308,7 @@ REMOTE
   evidence_generation="$evidence_file.generation.$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
   {
     /usr/bin/printf '%s\n' "$remote_evidence"
-    /usr/bin/printf 'brain_v2=true\nscenario_count=20\ncore_gate_count=3\nMIGRATIONS_049_050_051=applied\nWAIT_CURSOR_COLUMNS=0\nBRAIN_CURSOR_WATERLINE=passed\nPENDING_ACTION_FORCED_RECOVERY=passed\nTASK_PROTOCOL_ISOLATION=passed\nVOC_ACTION_EXACTLY_ONCE=passed\nconversation_id=%s\nturn_id=%s\nevents=%s\n%s\nreviewer_id=%s\nquality_review=approved\nV2_MISSION_RUN_WRITES=0\nFAE_MANAGED_FILES_UNCHANGED=true\nacceptance_status=complete\n' \
+    /usr/bin/printf 'brain_v2=true\nscenario_count=20\ncore_gate_count=3\nMIGRATIONS_049_050_051=applied\nWAIT_CURSOR_COLUMNS=0\nBRAIN_CURSOR_WATERLINE=passed\nPENDING_ACTION_FORCED_RECOVERY=passed\nTASK_PROTOCOL_ISOLATION=passed\nVOC_ACTION_EXACTLY_ONCE=passed\nPARTNER_PROVIDER_CONFIG_VALID=true\nPARTNER_LOGIN_EXPECTED=false\nPUBLIC_FAE_CHAT_UNCHANGED=true\nENTERPRISE_FAE_LAUNCH_UNCHANGED=true\nOFFICE_ROUTE_UNCHANGED=true\nPLATFORM_ADMIN_ROUTE_UNCHANGED=true\nconversation_id=%s\nturn_id=%s\nevents=%s\n%s\nreviewer_id=%s\nquality_review=approved\nV2_MISSION_RUN_WRITES=0\nFAE_MANAGED_FILES_UNCHANGED=true\nacceptance_status=complete\n' \
       "$conversation_id" "$turn_id" "$event_summary" "$db_summary" "$reviewer_id"
   } > "$evidence_generation"
   /bin/chmod 600 "$evidence_generation"

@@ -2,7 +2,7 @@
 
 **日期：** 2026-08-29
 
-**状态：** 已完成产品设计，等待用户书面评审
+**状态：** Foundation implemented and verified; production Provider selection required
 
 **涉及仓库：** `AI-Agent-Platform`、`AI-FAE-Agent`
 **不涉及仓库：** `Orbbec-Agent-Team` 的淘宝/天猫消息渠道接入不属于本项目

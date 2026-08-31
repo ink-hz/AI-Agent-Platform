@@ -23,6 +23,7 @@ import {
   storePendingAdministratorReplay,
   type PendingAdministratorState,
 } from "../pendingAdministrator";
+import { PartnerAccessPanel } from "./PartnerAccessPanel";
 
 
 function failureMessage(error: unknown): string {
@@ -324,7 +325,7 @@ export function IdentityManagementPage({ account }: { account: Account }) {
       setMessage(failureMessage(error));
     } finally { setBusy(false); }
   };
-  return (
+  return (<>
     <section className="identity-page">
       <header><p>PLATFORM GOVERNANCE</p><h1>身份与观察范围</h1><span>角色和 Agent 范围均由后端执行；页面隐藏不是权限控制。</span></header>
       <label className="identity-reason">变更原因
@@ -361,5 +362,6 @@ export function IdentityManagementPage({ account }: { account: Account }) {
         </article>)}
       </div>
     </section>
-  );
+    {account.role === "platform_owner" && <PartnerAccessPanel account={account} />}
+  </>);
 }

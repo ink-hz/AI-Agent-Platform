@@ -11,4 +11,9 @@ dingtalk-stream==0.24.3
 pytest>=8.0
 pytest-asyncio>=0.24
 respx>=0.21
+# Validates the checked-in `orbbec-fae-identity/v1` contract examples and the
+# live back-channel responses against the frozen JSON Schema. Test-only, so it
+# stays out of requirements.cloud.txt, and pinned so both repositories agree on
+# what "draft 2020-12" means.
+jsonschema==4.26.0
 jcs==0.2.1

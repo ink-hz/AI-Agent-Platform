@@ -152,6 +152,9 @@ def is_public_request(
     path: str,
     route_prefix: str,
     public_assets: frozenset[str] | None = None,
+    *,
+    partner_callback_method: str | None = None,
+    partner_callback_path: str | None = None,
 ) -> bool:
     local = _unprefixed(path, route_prefix)
     if local is None:
@@ -168,6 +171,16 @@ def is_public_request(
         ("POST", "/api/v1/auth/dingtalk/in-client/exchange"),
     }
     if (method, local) in exact:
+        return True
+    if (
+        partner_callback_method is not None
+        and partner_callback_path is not None
+        and (method, local)
+        in {
+            ("GET", "/partner-auth/start"),
+            (partner_callback_method, partner_callback_path),
+        }
+    ):
         return True
     if method == "GET" and local.startswith("/assets/"):
         name = local.removeprefix("/assets/")
@@ -209,12 +222,16 @@ class IdentitySecurityMiddleware:
         public_assets: frozenset[str],
         authorization=None,
         routes=(),
+        partner_callback_method: str | None = None,
+        partner_callback_path: str | None = None,
     ) -> None:
         self.app = app
         self.auth = auth
         self.public_assets = public_assets
         self.authorization = authorization
         self.routes = self._expand_included_routes(routes)
+        self.partner_callback_method = partner_callback_method
+        self.partner_callback_path = partner_callback_path
 
     @staticmethod
     def _expand_included_routes(routes) -> tuple:
@@ -248,8 +265,21 @@ class IdentitySecurityMiddleware:
         method = scope["method"].upper()
         path = scope.get("path", "")
         local_path = _unprefixed(path, self.auth.route_prefix)
+        partner_namespace = isinstance(local_path, str) and (
+            local_path == "/partner-auth"
+            or local_path.startswith("/partner-auth/")
+        )
+        partner_public = is_public_request(
+            method,
+            path,
+            self.auth.route_prefix,
+            self.public_assets,
+            partner_callback_method=self.partner_callback_method,
+            partner_callback_path=self.partner_callback_path,
+        ) and partner_namespace and _has_canonical_ascii_raw_path(scope, path)
         identity_response = (
             local_path in _IDENTITY_RESPONSE_PATHS
+            or partner_namespace
             or (
                 isinstance(local_path, str)
                 and is_agent_identity_backchannel_request(method, local_path)
@@ -276,7 +306,12 @@ class IdentitySecurityMiddleware:
             await protected_send(message)
 
         public = is_public_request(
-            method,path,self.auth.route_prefix,self.public_assets
+            method,
+            path,
+            self.auth.route_prefix,
+            self.public_assets,
+            partner_callback_method=self.partner_callback_method,
+            partner_callback_path=self.partner_callback_path,
         )
         headers = Headers(scope=scope)
         edge_source = None
@@ -312,6 +347,14 @@ class IdentitySecurityMiddleware:
             await self.app(scope, receive, protected_send)
             return
 
+        if partner_namespace and not partner_public:
+            await JSONResponse(
+                {"detail": "not found"},
+                status_code=404,
+                headers=_NO_STORE,
+            )(scope, receive, protected_send)
+            return
+
         if self.auth.route_prefix == "/" and _is_execution_worker_namespace(path):
             if not _has_canonical_ascii_raw_path(
                 scope, path
@@ -325,7 +368,7 @@ class IdentitySecurityMiddleware:
             await self.app(scope, receive, worker_send)
             return
 
-        if public and method not in _SAFE_METHODS and not _origin_matches(
+        if public and not partner_public and method not in _SAFE_METHODS and not _origin_matches(
             headers.get("origin"), self.auth.public_base_url,
             effective_scheme=edge_source.scheme if edge_source else None,
         ):
@@ -337,7 +380,7 @@ class IdentitySecurityMiddleware:
 
         session = None
         csrf_cookie = None
-        if not public or method not in _SAFE_METHODS:
+        if not partner_public and (not public or method not in _SAFE_METHODS):
             # Starlette does not preparse Cookies at middleware time.
             from http.cookies import SimpleCookie
 

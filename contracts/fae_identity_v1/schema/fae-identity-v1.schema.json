@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orbbec.com.cn/contracts/fae-identity-v1.schema.json",
+  "title": "orbbec-fae-identity/v1",
+  "description": "The private Platform back-channel identity messages the AI FAE Agent consumes, plus the public capability response it serves. Every message is closed: an unknown field is a contract violation, not an extension point.",
+  "$ref": "#/$defs/contract_document",
+  "$defs": {
+    "contract_version": {
+      "description": "Frozen version marker; a new shape needs a new version string.",
+      "const": "orbbec-fae-identity/v1"
+    },
+    "agent_id": {
+      "description": "This contract describes exactly one agent.",
+      "const": "ai-fae-agent"
+    },
+    "subject_type": {
+      "description": "The two generic authenticated subjects. No other value is a subject of this contract.",
+      "enum": ["enterprise_member", "partner_operator"]
+    },
+    "uuid": {
+      "description": "Canonical lowercase UUID string.",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![\\s\\S])"
+    },
+    "display_name": {
+      "description": "A safe Platform name projection, or nothing at all: no control characters, no leading or trailing whitespace, at most 64 characters.",
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[^\\u0000-\\u0020\\u007f](?:[^\\u0000-\\u001f\\u007f]*[^\\u0000-\\u0020\\u007f])?(?![\\s\\S])"
+    },
+    "enterprise_exchange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "subject_id",
+        "subject_type",
+        "internal_user_id",
+        "identity_binding_id",
+        "agent_id",
+        "display_name",
+        "partner_display_name"
+      ],
+      "properties": {
+        "contract_version": { "$ref": "#/$defs/contract_version" },
+        "subject_id": { "$ref": "#/$defs/uuid" },
+        "subject_type": { "$ref": "#/$defs/subject_type", "const": "enterprise_member" },
+        "internal_user_id": { "$ref": "#/$defs/uuid" },
+        "identity_binding_id": { "$ref": "#/$defs/uuid" },
+        "agent_id": { "$ref": "#/$defs/agent_id" },
+        "display_name": { "$ref": "#/$defs/display_name" },
+        "partner_display_name": {
+          "description": "An enterprise member has no partner organization.",
+          "type": "null"
+        }
+      }
+    },
+    "partner_exchange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "subject_id",
+        "subject_type",
+        "internal_user_id",
+        "identity_binding_id",
+        "agent_id",
+        "display_name",
+        "partner_display_name"
+      ],
+      "properties": {
+        "contract_version": { "$ref": "#/$defs/contract_version" },
+        "subject_id": { "$ref": "#/$defs/uuid" },
+        "subject_type": { "$ref": "#/$defs/subject_type", "const": "partner_operator" },
+        "internal_user_id": {
+          "description": "A partner operator is never an internal user.",
+          "type": "null"
+        },
+        "identity_binding_id": { "$ref": "#/$defs/uuid" },
+        "agent_id": { "$ref": "#/$defs/agent_id" },
+        "display_name": { "$ref": "#/$defs/display_name" },
+        "partner_display_name": { "$ref": "#/$defs/display_name" }
+      }
+    },
+    "enterprise_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "subject_id",
+        "subject_type",
+        "internal_user_id",
+        "identity_binding_id",
+        "agent_id",
+        "display_name",
+        "partner_display_name",
+        "active"
+      ],
+      "properties": {
+        "contract_version": { "$ref": "#/$defs/contract_version" },
+        "subject_id": { "$ref": "#/$defs/uuid" },
+        "subject_type": { "$ref": "#/$defs/subject_type", "const": "enterprise_member" },
+        "internal_user_id": { "$ref": "#/$defs/uuid" },
+        "identity_binding_id": { "$ref": "#/$defs/uuid" },
+        "agent_id": { "$ref": "#/$defs/agent_id" },
+        "display_name": { "$ref": "#/$defs/display_name" },
+        "partner_display_name": { "type": "null" },
+        "active": {
+          "description": "Only a live binding is usable; an inactive binding is an error, not a response.",
+          "const": true
+        }
+      }
+    },
+    "partner_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "subject_id",
+        "subject_type",
+        "internal_user_id",
+        "identity_binding_id",
+        "agent_id",
+        "display_name",
+        "partner_display_name",
+        "active"
+      ],
+      "properties": {
+        "contract_version": { "$ref": "#/$defs/contract_version" },
+        "subject_id": { "$ref": "#/$defs/uuid" },
+        "subject_type": { "$ref": "#/$defs/subject_type", "const": "partner_operator" },
+        "internal_user_id": { "type": "null" },
+        "identity_binding_id": { "$ref": "#/$defs/uuid" },
+        "agent_id": { "$ref": "#/$defs/agent_id" },
+        "display_name": { "$ref": "#/$defs/display_name" },
+        "partner_display_name": { "$ref": "#/$defs/display_name" },
+        "active": {
+          "description": "Only a live binding is usable; an inactive binding is an error, not a response.",
+          "const": true
+        }
+      }
+    },
+    "exchange_response": {
+      "description": "POST /api/v1/internal/agent-launch/exchange, loopback only.",
+      "oneOf": [
+        { "$ref": "#/$defs/enterprise_exchange" },
+        { "$ref": "#/$defs/partner_exchange" }
+      ]
+    },
+    "validate_response": {
+      "description": "POST /api/v1/internal/agent-bindings/{identity_binding_id}/validate, loopback only.",
+      "oneOf": [
+        { "$ref": "#/$defs/enterprise_validation" },
+        { "$ref": "#/$defs/partner_validation" }
+      ]
+    },
+    "capabilities_response": {
+      "description": "The Agent's public GET /identity/capabilities response: one boolean, no identity, no version.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["partner_login_available"],
+      "properties": {
+        "partner_login_available": { "type": "boolean" }
+      }
+    },
+    "contract_document": {
+      "description": "A checked-in example document: one exchange, one validation, one capability response.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exchange", "validate", "capabilities"],
+      "properties": {
+        "exchange": { "$ref": "#/$defs/exchange_response" },
+        "validate": { "$ref": "#/$defs/validate_response" },
+        "capabilities": { "$ref": "#/$defs/capabilities_response" }
+      }
+    }
+  }
+}

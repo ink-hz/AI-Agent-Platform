@@ -238,6 +238,8 @@ def _app(
     brain_enabled: bool = False,
     ai_notes_reader=None,
     agent_launch_service=None,
+    partner_service=None,
+    partner_provider=None,
 ):
     static = tmp_path / "static"
     assets = static / "assets"
@@ -269,6 +271,8 @@ def _app(
         identity_auth=auth,
         ai_notes_reader=ai_notes_reader,
         agent_launch_service=agent_launch_service,
+        partner_service=partner_service,
+        partner_provider=partner_provider,
     )
 
 

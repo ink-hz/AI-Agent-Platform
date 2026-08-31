@@ -1,0 +1,26 @@
+{
+  "exchange": {
+    "contract_version": "orbbec-fae-identity/v1",
+    "subject_id": "3f0d5c62-9b1e-4a7d-8c15-2ad4e6f70b11",
+    "subject_type": "enterprise_member",
+    "internal_user_id": "3f0d5c62-9b1e-4a7d-8c15-2ad4e6f70b11",
+    "identity_binding_id": "7c4e1b90-52a8-4d6f-9e03-1b8d5a24c7f6",
+    "agent_id": "ai-fae-agent",
+    "display_name": "Contract Example Member",
+    "partner_display_name": null
+  },
+  "validate": {
+    "contract_version": "orbbec-fae-identity/v1",
+    "subject_id": "3f0d5c62-9b1e-4a7d-8c15-2ad4e6f70b11",
+    "subject_type": "enterprise_member",
+    "internal_user_id": "3f0d5c62-9b1e-4a7d-8c15-2ad4e6f70b11",
+    "identity_binding_id": "7c4e1b90-52a8-4d6f-9e03-1b8d5a24c7f6",
+    "agent_id": "ai-fae-agent",
+    "display_name": "Contract Example Member",
+    "partner_display_name": null,
+    "active": true
+  },
+  "capabilities": {
+    "partner_login_available": false
+  }
+}

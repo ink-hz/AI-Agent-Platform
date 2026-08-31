@@ -58,6 +58,54 @@ function indeterminateResponse(requestId: string): Response {
 }
 
 
+function withPartnerReads(fetchMock: ReturnType<typeof vi.fn>): ReturnType<typeof vi.fn> {
+  return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (!init?.method || init.method === "GET") {
+      if (path.endsWith("/api/v1/manage/partners/organizations")) {
+        return Promise.resolve(new Response(JSON.stringify({ organizations: [] }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        }));
+      }
+      if (path.endsWith("/api/v1/manage/partners/operators")) {
+        return Promise.resolve(new Response(JSON.stringify({ operators: [] }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        }));
+      }
+      if (path.endsWith("/api/v1/manage/partners/binding-requests")) {
+        return Promise.resolve(new Response(JSON.stringify({ binding_requests: [] }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        }));
+      }
+    }
+    return fetchMock(input, init);
+  });
+}
+
+
+function isolatedAdministratorStorage(
+  readAdministrator: () => string | null,
+  writeAdministrator: (value: string) => void,
+  removeAdministrator: () => void,
+) {
+  const other = new Map<string, string>();
+  return {
+    getItem: vi.fn((key: string) => key === pendingAdministratorStorageKey
+      ? readAdministrator()
+      : other.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      if (key === pendingAdministratorStorageKey) writeAdministrator(value);
+      else other.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      if (key === pendingAdministratorStorageKey) removeAdministrator();
+      else other.delete(key);
+    }),
+    clear: vi.fn(() => other.clear()),
+  };
+}
+
+
 describe("IdentityManagementPage", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
@@ -76,13 +124,13 @@ describe("IdentityManagementPage", () => {
   });
 
   it("is owner-only and requires a reason before changing viewer access", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: [{
+    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: [{
       internal_user_id: "9e378763-287e-4dda-88a8-0b338f629af3", display_name: "测试成员",
       role: "member", status: "active", scopes: [],
     }, {
       internal_user_id: "7319a8c6-ee88-447e-bdce-dc9ee9e0a561", display_name: "观察者",
       role: "management_viewer", status: "active", scopes: ["ai-fae-agent"],
-    }] }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    }] }), { status: 200, headers: { "Content-Type": "application/json" } }))));
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     expect(container.textContent).toContain("身份与观察范围");
     const action = [...container.querySelectorAll("button")].find((item) => item.textContent === "设为只读观察者");
@@ -99,16 +147,16 @@ describe("IdentityManagementPage", () => {
   });
 
   it("renders backend permission and audit failures without optimistic success", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "required audit unavailable" }), { status: 503, headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "required audit unavailable" }), { status: 503, headers: { "Content-Type": "application/json" } }))));
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     expect(container.textContent).toContain("审计或目录服务暂不可用");
     expect(container.textContent).not.toContain("变更成功");
   });
 
   it("gives the owner exact administrator controls only for member and administrator targets", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: managedUsers }), {
+    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: managedUsers }), {
       status: 200, headers: { "Content-Type": "application/json" },
-    })));
+    }))));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
 
@@ -139,7 +187,7 @@ describe("IdentityManagementPage", () => {
         scopes: [],
       },
     ];
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(usersResponse(inactiveUsers)));
+    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(usersResponse(inactiveUsers))));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
 
@@ -150,9 +198,9 @@ describe("IdentityManagementPage", () => {
   });
 
   it("lets an administrator manage viewers and scopes but never administrator roles", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: managedUsers }), {
+    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: managedUsers }), {
       status: 200, headers: { "Content-Type": "application/json" },
-    })));
+    }))));
 
     await act(async () => root.render(<IdentityManagementPage account={administrator} />));
 
@@ -185,7 +233,7 @@ describe("IdentityManagementPage", () => {
       .mockResolvedValueOnce(usersResponse(managedUsers.map((user) => user.internal_user_id === memberId
         ? { ...user, role: "platform_admin" }
         : user)));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -221,7 +269,7 @@ describe("IdentityManagementPage", () => {
         status: 200, headers: { "Content-Type": "application/json" },
       }))
       .mockResolvedValueOnce(usersResponse(refreshedUsers));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, targetName).querySelectorAll("button")]
@@ -257,7 +305,7 @@ describe("IdentityManagementPage", () => {
         status: 200, headers: { "Content-Type": "application/json" },
       }))
       .mockResolvedValueOnce(usersResponse(assignedUsers));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -305,7 +353,7 @@ describe("IdentityManagementPage", () => {
         status: 200, headers: { "Content-Type": "application/json" },
       }))
       .mockResolvedValueOnce(usersResponse(assignedUsers));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
 
@@ -346,7 +394,7 @@ describe("IdentityManagementPage", () => {
     })],
   ])("fails closed when persisted administrator state has %s", async (_scenario, value) => {
     sessionStorage.setItem(pendingAdministratorStorageKey, value);
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(usersResponse()));
+    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(usersResponse())));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
 
@@ -372,7 +420,7 @@ describe("IdentityManagementPage", () => {
       .mockResolvedValueOnce(unavailable())
       .mockResolvedValueOnce(indeterminateResponse(requestId))
       .mockResolvedValueOnce(unavailable());
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -394,7 +442,7 @@ describe("IdentityManagementPage", () => {
       .mockResolvedValueOnce(usersResponse())
       .mockResolvedValueOnce(indeterminateResponse(echoedRequestId))
       .mockResolvedValueOnce(usersResponse(assignedUsers));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -417,18 +465,17 @@ describe("IdentityManagementPage", () => {
     const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
     let persisted: string | null = null;
-    vi.stubGlobal("sessionStorage", {
-      getItem: vi.fn(() => persisted),
-      setItem: vi.fn((_key: string, value: string) => {
+    vi.stubGlobal("sessionStorage", isolatedAdministratorStorage(
+      () => persisted,
+      (value: string) => {
         if (persisted === null) {
           persisted = value;
           return;
         }
         throw new DOMException("storage unavailable");
-      }),
-      removeItem: vi.fn(() => { throw new DOMException("storage unavailable"); }),
-      clear: vi.fn(),
-    });
+      },
+      () => { throw new DOMException("storage unavailable"); },
+    ));
     const assignedUsers = managedUsers.map((user) => user.internal_user_id === memberId
       ? { ...user, role: "platform_admin" }
       : user);
@@ -438,7 +485,7 @@ describe("IdentityManagementPage", () => {
         status: 200, headers: { "Content-Type": "application/json" },
       }))
       .mockResolvedValue(usersResponse(assignedUsers));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -465,12 +512,11 @@ describe("IdentityManagementPage", () => {
     const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
     let persisted: string | null = null;
-    vi.stubGlobal("sessionStorage", {
-      getItem: vi.fn(() => persisted),
-      setItem: vi.fn((_key: string, value: string) => { persisted = value; }),
-      removeItem: vi.fn(() => { throw new DOMException("storage unavailable"); }),
-      clear: vi.fn(),
-    });
+    vi.stubGlobal("sessionStorage", isolatedAdministratorStorage(
+      () => persisted,
+      (value: string) => { persisted = value; },
+      () => { throw new DOMException("storage unavailable"); },
+    ));
     const assignedUsers = managedUsers.map((user) => user.internal_user_id === memberId
       ? { ...user, role: "platform_admin" }
       : user);
@@ -480,7 +526,7 @@ describe("IdentityManagementPage", () => {
         status: 200, headers: { "Content-Type": "application/json" },
       }))
       .mockResolvedValue(usersResponse(assignedUsers));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -508,23 +554,22 @@ describe("IdentityManagementPage", () => {
     const echoedRequestId = "cbabef76-43c2-49a5-ae88-ed225caca69c";
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
     let persisted: string | null = null;
-    vi.stubGlobal("sessionStorage", {
-      getItem: vi.fn(() => persisted),
-      setItem: vi.fn((_key: string, value: string) => {
+    vi.stubGlobal("sessionStorage", isolatedAdministratorStorage(
+      () => persisted,
+      (value: string) => {
         if (persisted === null) {
           persisted = value;
           return;
         }
         throw new DOMException("storage unavailable");
-      }),
-      removeItem: vi.fn(() => { throw new DOMException("storage unavailable"); }),
-      clear: vi.fn(),
-    });
+      },
+      () => { throw new DOMException("storage unavailable"); },
+    ));
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(usersResponse())
       .mockResolvedValueOnce(indeterminateResponse(echoedRequestId))
       .mockResolvedValue(usersResponse());
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -551,23 +596,22 @@ describe("IdentityManagementPage", () => {
     const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
     let persisted: string | null = null;
-    vi.stubGlobal("sessionStorage", {
-      getItem: vi.fn(() => persisted),
-      setItem: vi.fn((_key: string, value: string) => {
+    vi.stubGlobal("sessionStorage", isolatedAdministratorStorage(
+      () => persisted,
+      (value: string) => {
         if (persisted === null) {
           persisted = value;
           return;
         }
         throw new DOMException("storage unavailable");
-      }),
-      removeItem: vi.fn(),
-      clear: vi.fn(),
-    });
+      },
+      () => { persisted = null; },
+    ));
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(usersResponse())
       .mockRejectedValueOnce(new TypeError("network connection lost"))
       .mockResolvedValueOnce(usersResponse());
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -599,7 +643,7 @@ describe("IdentityManagementPage", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(usersResponse(assignedUsers))
       .mockResolvedValueOnce(usersResponse(assignedUsers));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
 
@@ -635,7 +679,7 @@ describe("IdentityManagementPage", () => {
       ? { ...user, role: "member" }
       : user);
     const fetchMock = vi.fn().mockResolvedValue(usersResponse(memberUsers));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
 
@@ -657,7 +701,7 @@ describe("IdentityManagementPage", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(usersResponse())
       .mockRejectedValueOnce(new Error("unexpected client failure"));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -674,19 +718,18 @@ describe("IdentityManagementPage", () => {
     const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
     let persisted: string | null = null;
-    vi.stubGlobal("sessionStorage", {
-      getItem: vi.fn(() => persisted),
-      setItem: vi.fn((_key: string, value: string) => { persisted = value; }),
-      removeItem: vi.fn(() => { throw new DOMException("storage unavailable"); }),
-      clear: vi.fn(),
-    });
+    vi.stubGlobal("sessionStorage", isolatedAdministratorStorage(
+      () => persisted,
+      (value: string) => { persisted = value; },
+      () => { throw new DOMException("storage unavailable"); },
+    ));
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(usersResponse())
       .mockResolvedValueOnce(new Response(JSON.stringify({ detail: "forbidden" }), {
         status: 403, headers: { "Content-Type": "application/json" },
       }))
       .mockResolvedValue(usersResponse());
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -720,7 +763,7 @@ describe("IdentityManagementPage", () => {
       .mockResolvedValueOnce(usersResponse())
       .mockResolvedValueOnce(indeterminateResponse(echoedRequestId))
       .mockResolvedValueOnce(usersResponse());
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const retry = [...container.querySelectorAll("button")]
@@ -745,19 +788,18 @@ describe("IdentityManagementPage", () => {
       action: "assign",
       request_id: requestId,
     });
-    vi.stubGlobal("sessionStorage", {
-      getItem: vi.fn().mockReturnValue(persisted),
-      setItem: vi.fn(() => { throw new DOMException("storage unavailable"); }),
-      removeItem: vi.fn(),
-      clear: vi.fn(),
-    });
+    vi.stubGlobal("sessionStorage", isolatedAdministratorStorage(
+      () => persisted,
+      () => { throw new DOMException("storage unavailable"); },
+      () => {},
+    ));
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(usersResponse())
       .mockResolvedValueOnce(new Response(JSON.stringify({
         detail: "identity management unavailable",
       }), { status: 503, headers: { "Content-Type": "application/json" } }))
       .mockResolvedValueOnce(usersResponse());
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const retry = [...container.querySelectorAll("button")]
@@ -795,7 +837,7 @@ describe("IdentityManagementPage", () => {
         status: 200, headers: { "Content-Type": "application/json" },
       }))
       .mockResolvedValueOnce(usersResponse(assignedUsers));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -837,7 +879,7 @@ describe("IdentityManagementPage", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         detail: "required audit unavailable",
       }), { status: 503, headers: { "Content-Type": "application/json" } }));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
@@ -872,7 +914,7 @@ describe("IdentityManagementPage", () => {
       }))
       .mockResolvedValueOnce(unavailable())
       .mockResolvedValueOnce(usersResponse(refreshedUsers));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, targetName).querySelectorAll("button")]
@@ -920,7 +962,7 @@ describe("IdentityManagementPage", () => {
       .mockResolvedValueOnce(usersResponse())
       .mockResolvedValueOnce(usersResponse())
       .mockResolvedValueOnce(usersResponse(assignedUsers));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]

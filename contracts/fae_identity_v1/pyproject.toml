@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orbbec-fae-identity-contract"
+version = "1.0.0"
+description = "The frozen orbbec-fae-identity/v1 identity contract shared by the Platform and the AI FAE Agent"
+requires-python = ">=3.11"
+dependencies = ["jsonschema==4.26.0"]
+
+[tool.setuptools]
+packages = ["orbbec_fae_identity_contract"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
