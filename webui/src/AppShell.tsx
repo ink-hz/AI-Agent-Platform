@@ -5,6 +5,7 @@ import { UI_COPY } from "./copy";
 import { navigate, routeSection, type Route } from "./router";
 import type { DeploymentInfo } from "./types";
 import { platformPath, type Account } from "./auth";
+import { DeploymentProvider } from "./deploymentContext";
 
 
 const USE_NAVIGATION = [
@@ -58,11 +59,22 @@ export function AppShell({ route, children, account }: { route: Route; children:
   const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";
   const faeWorkspace = route.name.startsWith("admin-fae-");
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
+  const [deploymentResolved, setDeploymentResolved] = useState(current !== "admin");
   useEffect(() => {
-    if (current !== "admin") return;
-    if (account && account.role !== "platform_owner" && account.role !== "platform_admin") return;
+    if (current !== "admin" || (account && account.role !== "platform_owner" && account.role !== "platform_admin")) {
+      setDeployment(null);
+      setDeploymentResolved(true);
+      return;
+    }
     const controller = new AbortController();
-    void fetchDeployment(controller.signal).then(setDeployment).catch(() => undefined);
+    setDeploymentResolved(false);
+    void fetchDeployment(controller.signal).then((value) => {
+      if (!controller.signal.aborted) setDeployment(value);
+    }).catch(() => {
+      if (!controller.signal.aborted) setDeployment(null);
+    }).finally(() => {
+      if (!controller.signal.aborted) setDeploymentResolved(true);
+    });
     return () => controller.abort();
   }, [account, current]);
   const cloudReplica = deployment?.mode === "cloud-replica" && deployment.read_only;
@@ -78,7 +90,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
     : deployment?.freshness === "stale"
       ? "数据已过期"
       : "等待首次同步";
-  return (
+  return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
     <div className={`app${brainWorkspace ? " is-brain-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}`}>
       <header className="topbar">
         <div className="topbar-inner">
@@ -131,5 +143,5 @@ export function AppShell({ route, children, account }: { route: Route; children:
       <main className={`page${brainWorkspace ? " is-brain-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}`}>{children}</main>
       {!brainWorkspace && !aiNotesWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
     </div>
-  );
+  </DeploymentProvider>;
 }

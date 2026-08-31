@@ -17,6 +17,18 @@ export const STATUS_LABELS: Record<IssueStatus, string> = {
   wont_fix: "暂不修复",
 };
 
+export interface IssueFilterOption {
+  value: string;
+  label: string;
+}
+
+const DISPOSITION_LABELS: Record<FeedbackIssueSummary["disposition"], string> = {
+  actionable: "需处理",
+  duplicate: "重复事项",
+  not_actionable: "无需处理",
+  wont_fix: "暂不修复",
+};
+
 export const GATE_LABELS: Record<string, string> = {
   failure_layer: "失败层归因",
   root_cause: "根因",
@@ -46,6 +58,8 @@ export function IssueList({
   showAgentFilter = true,
   statusFilter,
   onStatusFilterChange,
+  statusOptions,
+  statusPresentation = "lifecycle",
 }: {
   issues: FeedbackIssueSummary[];
   inbox: ReviewInboxItem[];
@@ -56,6 +70,8 @@ export function IssueList({
   showAgentFilter?: boolean;
   statusFilter?: string;
   onStatusFilterChange?: (status: string) => void;
+  statusOptions?: IssueFilterOption[];
+  statusPresentation?: "lifecycle" | "disposition";
 }) {
   const [agent, setAgent] = useState("");
   const [layer, setLayer] = useState("");
@@ -83,11 +99,11 @@ export function IssueList({
       {showAgentFilter && <select aria-label="Agent" value={agent} onChange={(event) => setAgent(event.target.value)}><option value="">全部 Agent</option>{agents.map((value) => <option key={value}>{value}</option>)}</select>}
       <select aria-label="失败层" value={layer} onChange={(event) => setLayer(event.target.value)}><option value="">全部失败层</option>{layers.map((value) => <option key={value}>{value}</option>)}</select>
       <select aria-label="优先级" value={priority} onChange={(event) => setPriority(event.target.value)}><option value="">全部优先级</option>{["P0", "P1", "P2", "P3"].map((value) => <option key={value}>{value}</option>)}</select>
-      <select aria-label="状态" value={status} onChange={(event) => onStatusFilterChange ? onStatusFilterChange(event.target.value) : setLocalStatus(event.target.value)}><option value="">全部状态</option>{onStatusFilterChange && <><option value="open">开放事项</option><option value="actionable">需处理</option></>}{Object.entries(STATUS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
+      <select aria-label="状态" value={status} onChange={(event) => onStatusFilterChange ? onStatusFilterChange(event.target.value) : setLocalStatus(event.target.value)}><option value="">全部状态</option>{(statusOptions ?? Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))).map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select>
       <input aria-label="负责人" placeholder="负责人" value={owner} onChange={(event) => setOwner(event.target.value)} />
       <input aria-label="创建日期起" type="date" value={createdAfter} onChange={(event) => setCreatedAfter(event.target.value)} />
     </div>
     {inbox.length > 0 && <section className="review-inbox"><h3>待纳管回答 <span>{inbox.length}</span></h3>{inbox.map((item) => <button className={selectedTurnKey === item.turn_key ? "is-selected" : ""} key={item.turn_key} onClick={() => onSelectInbox(item.turn_key)}><strong>{item.question || "未记录问题"}</strong><small>{item.agent_id} · {item.feedback_count ?? item.feedback_keys.length} 条负反馈</small></button>)}</section>}
-    <div className="review-issue-list">{filtered.map((item) => <button className={selectedId === item.id ? "is-selected" : ""} key={item.id} onClick={() => onSelect(item.id)}><span><b>{item.priority}</b>{STATUS_LABELS[item.progress.status]}</span><strong>{item.title}</strong><small>{item.agent_id} · {item.failure_layer || "待归因"} · {item.owner || "未分配"}</small>{item.progress.missing_gates === null ? <em>闭环门暂不可用</em> : item.progress.missing_gates.length > 0 && <em>缺：{item.progress.missing_gates.map((gate) => GATE_LABELS[gate] || gate).join("、")}</em>}</button>)}</div>
+    <div className="review-issue-list">{filtered.map((item) => <button className={selectedId === item.id ? "is-selected" : ""} key={item.id} onClick={() => onSelect(item.id)}><span><b>{item.priority}</b>{statusPresentation === "disposition" ? DISPOSITION_LABELS[item.disposition] : STATUS_LABELS[item.progress.status]}</span><strong>{item.title}</strong><small>{item.agent_id} · {item.failure_layer || "待归因"} · {item.owner || "未分配"}</small>{item.progress.missing_gates === null ? <em>闭环门暂不可用</em> : item.progress.missing_gates.length > 0 && <em>缺：{item.progress.missing_gates.map((gate) => GATE_LABELS[gate] || gate).join("、")}</em>}</button>)}</div>
   </aside>;
 }

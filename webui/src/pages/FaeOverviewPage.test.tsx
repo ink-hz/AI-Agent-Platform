@@ -147,13 +147,13 @@ describe("FaeOverviewPage", () => {
     expect(container.textContent).not.toContain("示例报告");
   });
 
-  it("uses disposition drill-downs for projected actionable Issue counts", async () => {
+  it("does not expose cloud-only disposition links without an explicit cloud mode", async () => {
     await renderOverview({
       ...freshOverview,
       issues: { ...freshOverview.issues, statuses: { actionable: 5, duplicate: 2, not_actionable: 1, wont_fix: 1 } },
     });
 
-    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=actionable"]')).not.toBeNull();
+    expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=actionable"]')).toBeNull();
     expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?disposition=actionable"]')).toBeNull();
   });
 
@@ -265,7 +265,10 @@ describe("FAE overview routing and authorization", () => {
       if (path.endsWith("/api/v1/account")) return new Response(JSON.stringify(account("platform_owner")), {
         headers: { "Content-Type": "application/json" },
       });
-      if (path.endsWith("/api/admin/fae/overview")) return new Response(JSON.stringify(freshOverview));
+      if (path.endsWith("/api/admin/fae/overview")) return new Response(JSON.stringify({
+        ...freshOverview,
+        issues: { ...freshOverview.issues, statuses: { actionable: 5, duplicate: 2 } },
+      }));
       if (path.endsWith("/api/deployment")) return new Response(JSON.stringify({
         mode: "local", read_only: false, auth: "dingtalk", freshness: "current", last_success_at: null,
       }));
@@ -277,6 +280,33 @@ describe("FAE overview routing and authorization", () => {
 
     expect(container.textContent).toContain("12 个 Session");
     expect(container.textContent).not.toContain("该工作区正在接入真实 FAE 运营数据");
+  });
+
+  it("keeps a cloud projected negative count visible without a false Session drill-down", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const path = String(input);
+      if (path.endsWith("/api/v1/account")) return new Response(JSON.stringify(account("platform_owner")), {
+        headers: { "Content-Type": "application/json" },
+      });
+      if (path.endsWith("/api/admin/fae/overview")) return new Response(JSON.stringify({
+        ...freshOverview,
+        issues: { ...freshOverview.issues, statuses: { actionable: 5, duplicate: 2 } },
+      }));
+      if (path.endsWith("/api/deployment")) return new Response(JSON.stringify({
+        mode: "cloud-replica", read_only: true, auth: "ssh-tunnel", freshness: "current", last_success_at: "2026-08-31T09:00:00Z",
+      }));
+      return new Response("{}", { status: 404 });
+    }));
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    const metric = container.querySelector('[data-metric="negative-turns"]');
+    expect(metric?.textContent).toContain("2 个负向 Turn");
+    expect(metric?.textContent).toContain("云端聚合可用，暂不支持按 Session 下钻");
+    expect(metric?.querySelector("a")).toBeNull();
+    expect(container.querySelector('a[href="/admin/fae/issues?disposition=actionable"]')).not.toBeNull();
+    expect(container.querySelector('a[href*="status=actionable"]')).toBeNull();
   });
 
   it("does not grant a management viewer any FAE route through frontend route admission", async () => {

@@ -5,6 +5,7 @@ import { localPathname } from "../auth";
 import { LoadingState } from "../components/DataState";
 import { FaeWorkbenchShell } from "../components/fae-workbench/FaeWorkbenchShell";
 import { ReviewWorkspace } from "../components/review/ReviewWorkspace";
+import { useDeploymentContext } from "../deploymentContext";
 import { FaeWorkbenchApiError, faeWorkbenchApi } from "../faeWorkbenchApi";
 import { navigate } from "../router";
 import type { ReviewInboxItem } from "../types";
@@ -16,14 +17,43 @@ function pathIssueId(): string | null {
   return match?.[1] ?? null;
 }
 
-const FAE_ISSUE_STATUSES = new Set(["open", "actionable", ...Object.keys(STATUS_LABELS)]);
+const LOCAL_LIFECYCLE_STATUSES = Object.keys(STATUS_LABELS).filter((status) => status !== "unknown");
+const LOCAL_FILTERS = new Set(["open", ...LOCAL_LIFECYCLE_STATUSES]);
+const CLOUD_DISPOSITIONS = ["actionable", "duplicate", "not_actionable", "wont_fix"] as const;
+const CLOUD_FILTERS = new Set<string>(CLOUD_DISPOSITIONS);
+const LOCAL_STATUS_OPTIONS = [
+  { value: "open", label: "开放事项" },
+  ...LOCAL_LIFECYCLE_STATUSES.map((value) => ({ value, label: STATUS_LABELS[value as keyof typeof STATUS_LABELS] })),
+];
+const CLOUD_STATUS_OPTIONS = [
+  { value: "open", label: "开放事项" },
+  { value: "actionable", label: "需处理" },
+  { value: "duplicate", label: "重复事项" },
+  { value: "not_actionable", label: "无需处理" },
+  { value: "wont_fix", label: "暂不修复" },
+];
 
-function issueStatusFromSearch(search = window.location.search): string {
-  const values = new URLSearchParams(search).getAll("status");
-  return values.length === 1 && FAE_ISSUE_STATUSES.has(values[0]) ? values[0] : "";
+function issueFilterFromSearch(search: string, cloudReplica: boolean): { value: string; valid: boolean } {
+  const query = new URLSearchParams(search);
+  const statuses = query.getAll("status");
+  const dispositions = query.getAll("disposition");
+  if (statuses.length === 0 && dispositions.length === 0) return { value: "", valid: true };
+  if (cloudReplica) {
+    if (statuses.length === 1 && statuses[0] === "open" && dispositions.length === 0) {
+      return { value: "open", valid: true };
+    }
+    if (statuses.length === 0 && dispositions.length === 1 && CLOUD_FILTERS.has(dispositions[0])) {
+      return { value: dispositions[0], valid: true };
+    }
+  } else if (statuses.length === 1 && dispositions.length === 0 && LOCAL_FILTERS.has(statuses[0])) {
+    return { value: statuses[0], valid: true };
+  }
+  return { value: "", valid: false };
 }
 
 export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?: string }) {
+  const { deployment, resolved: deploymentResolved } = useDeploymentContext();
+  const cloudReplica = deployment?.mode === "cloud-replica" && deployment.read_only;
   const query = new URLSearchParams(window.location.search);
   const sessionKey = query.get("session_key");
   const turnKey = query.get("turn_key");
@@ -31,14 +61,27 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   const [initialTurn, setInitialTurn] = useState<ReviewInboxItem | null>(null);
   const [loadingTurn, setLoadingTurn] = useState(hasTurnDeepLink);
   const [turnError, setTurnError] = useState<"missing" | "forbidden" | "unavailable" | null>(null);
-  const [issueStatus, setIssueStatus] = useState(issueStatusFromSearch);
+  const [issueStatus, setIssueStatus] = useState(() => issueFilterFromSearch(window.location.search, cloudReplica).value);
   const reviewApi = useMemo(() => faeWorkbenchApi.review(account.csrf_token), [account.csrf_token]);
-  const issueFilters = useMemo(() => issueStatus === "actionable"
-    ? { disposition: "actionable" }
-    : issueStatus ? { status: issueStatus } : undefined, [issueStatus]);
+  const issueFilters = useMemo(() => !issueStatus
+    ? undefined
+    : cloudReplica && issueStatus !== "open"
+      ? { disposition: issueStatus }
+      : { status: issueStatus }, [cloudReplica, issueStatus]);
 
   useEffect(() => {
-    const restore = () => setIssueStatus(issueStatusFromSearch());
+    if (!deploymentResolved) return;
+    const restore = () => {
+      const parsed = issueFilterFromSearch(window.location.search, cloudReplica);
+      if (!parsed.valid) {
+        const query = new URLSearchParams(window.location.search);
+        query.delete("status");
+        query.delete("disposition");
+        const search = query.toString();
+        navigate(`${localPathname()}${search ? `?${search}` : ""}`, { replace: true });
+      }
+      setIssueStatus(parsed.value);
+    };
     restore();
     window.addEventListener("popstate", restore);
     window.addEventListener("platform:navigate", restore);
@@ -46,12 +89,14 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
       window.removeEventListener("popstate", restore);
       window.removeEventListener("platform:navigate", restore);
     };
-  }, []);
+  }, [cloudReplica, deploymentResolved]);
 
   const changeIssueStatus = (status: string) => {
     const query = new URLSearchParams(window.location.search);
-    if (status) query.set("status", status);
-    else query.delete("status");
+    query.delete("status");
+    query.delete("disposition");
+    if (status === "open" || (status && !cloudReplica)) query.set("status", status);
+    else if (status) query.set("disposition", status);
     const search = query.toString();
     navigate(`${localPathname()}${search ? `?${search}` : ""}`);
   };
@@ -92,7 +137,8 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   }, [sessionKey, turnKey]);
 
   let content;
-  if (loadingTurn) content = <LoadingState label="正在加载原始回答" />;
+  if (!deploymentResolved) content = <LoadingState label="正在确认部署模式" />;
+  else if (loadingTurn) content = <LoadingState label="正在加载原始回答" />;
   else if (turnError) content = <section className="permission-state" role="alert">{turnError === "missing"
     ? <><h1>找不到原始回答</h1><p>该 Session 中不存在指定 Turn，无法创建治理事项。</p></>
     : turnError === "forbidden"
@@ -111,6 +157,8 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
     statusFilter={issueStatus}
     onStatusFilterChange={changeIssueStatus}
     issueFilters={issueFilters}
+    statusOptions={cloudReplica ? CLOUD_STATUS_OPTIONS : LOCAL_STATUS_OPTIONS}
+    statusPresentation={cloudReplica ? "disposition" : "lifecycle"}
     readOnlyReason={account.hard_stale_read_only ? "hard-stale" : undefined}
   />;
 

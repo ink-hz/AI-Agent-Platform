@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Account } from "../auth";
+import App from "../App";
 import { useRoute } from "../router";
 import type { FeedbackIssueDetail, ReviewOverview, SessionDetail, TurnDetail } from "../types";
 import { FaeIssuesPage } from "./FaeIssuesPage";
@@ -67,7 +68,12 @@ function RouteHarness({ account = owner }: { account?: Account }) {
 }
 
 function response(body: unknown, ok = true): Response {
-  return { ok, status: ok ? 200 : 404, json: vi.fn().mockResolvedValue(body) } as unknown as Response;
+  return {
+    ok,
+    status: ok ? 200 : 404,
+    headers: new Headers({ "Content-Type": "application/json" }),
+    json: vi.fn().mockResolvedValue(body),
+  } as unknown as Response;
 }
 
 function errorResponse(status: number, detail = "unavailable"): Response {
@@ -88,6 +94,8 @@ describe("FaeIssuesPage", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    document.querySelectorAll('meta[name="platform-identity-mode"]').forEach((meta) => meta.remove());
+    window.history.replaceState({}, "", "/");
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -302,7 +310,7 @@ describe("FaeIssuesPage", () => {
     expect(container.textContent).toContain("普通回答治理事项");
   });
 
-  it("maps projected actionable URL state to a server disposition without agent scope", async () => {
+  it("normalizes a cloud-only status bookmark in local mode without sending it to the API", async () => {
     window.history.replaceState({}, "", "/admin/fae/issues?status=actionable");
     const requests: string[] = [];
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
@@ -316,10 +324,119 @@ describe("FaeIssuesPage", () => {
 
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
-    expect(requests).toContain("/api/admin/fae/issues?limit=200&disposition=actionable");
+    expect(requests).toContain("/api/admin/fae/issues?limit=200");
+    expect(requests.every((path) => !path.includes("actionable"))).toBe(true);
     expect(requests.every((path) => !path.includes("agent_id"))).toBe(true);
     expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
-    expect(container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')?.value).toBe("actionable");
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')?.value).toBe("");
+    expect(window.location.search).toBe("");
+  });
+
+  it.each([
+    "pending_triage", "fixing", "awaiting_merge", "awaiting_deploy", "awaiting_replay",
+    "awaiting_review", "closed", "duplicate", "not_actionable", "wont_fix",
+  ])("sends local lifecycle filter %s as status and never offers unknown", async (lifecycle) => {
+    window.history.replaceState({}, "", `/admin/fae/issues?status=${lifecycle}`);
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      requests.push(path);
+      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response([{ ...detail.issue, progress: { ...detail.progress, status: lifecycle } }]));
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<FaeIssuesPage account={owner} />));
+
+    expect(requests).toContain(`/api/admin/fae/issues?limit=200&status=${lifecycle}`);
+    const options = [...container.querySelectorAll<HTMLOptionElement>('select[aria-label="状态"] option')].map((option) => option.value);
+    expect(options).not.toContain("actionable");
+    expect(options).not.toContain("unknown");
+    expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
+  });
+
+  it.each([
+    ["actionable", "需处理"],
+    ["duplicate", "重复事项"],
+    ["not_actionable", "无需处理"],
+    ["wont_fix", "暂不修复"],
+  ])("sends cloud projected filter %s as disposition and labels returned rows", async (disposition, label) => {
+    const identityMeta = document.createElement("meta");
+    identityMeta.name = "platform-identity-mode";
+    identityMeta.content = "enabled";
+    document.head.append(identityMeta);
+    window.history.replaceState({}, "", `/admin/fae/issues?disposition=${disposition}`);
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const path = String(input);
+      requests.push(path);
+      if (path.endsWith("/api/v1/account")) return response(owner);
+      if (path.endsWith("/api/deployment")) return response({
+        mode: "cloud-replica", read_only: true, auth: "ssh-tunnel", freshness: "current", last_success_at: null,
+      });
+      if (path.endsWith("/api/admin/fae/issue-overview")) return response({
+        feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null,
+        feedback_totals_status: "unavailable", issue_total: 1,
+        statuses: { [disposition]: 1 }, dispositions: { [disposition]: 1 }, write_available: false,
+      });
+      if (path.includes("/api/admin/fae/issue-inbox")) return response([]);
+      if (path.includes("/api/admin/fae/issues?")) return response([{
+        ...detail.issue, disposition, replica_read_only: true,
+        progress: { status: disposition, missing_gates: [] },
+      }]);
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(requests).toContain(`/api/admin/fae/issues?limit=200&disposition=${disposition}`);
+    const options = [...container.querySelectorAll<HTMLOptionElement>('select[aria-label="状态"] option')].map((option) => option.value);
+    expect(options).toEqual(["", "open", "actionable", "duplicate", "not_actionable", "wont_fix"]);
+    expect(options).not.toContain("unknown");
+    expect(container.querySelector(".review-issue-list")?.textContent).toContain(label);
+    expect(window.location.search).toBe(`?disposition=${disposition}`);
+  });
+
+  it("keeps cloud open canonical and normalizes an unknown bookmark without issuing a 422", async () => {
+    const identityMeta = document.createElement("meta");
+    identityMeta.name = "platform-identity-mode";
+    identityMeta.content = "enabled";
+    document.head.append(identityMeta);
+    window.history.replaceState({}, "", "/admin/fae/issues?status=unknown");
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const path = String(input);
+      requests.push(path);
+      if (path.endsWith("/api/v1/account")) return response(owner);
+      if (path.endsWith("/api/deployment")) return response({
+        mode: "cloud-replica", read_only: true, auth: "ssh-tunnel", freshness: "current", last_success_at: null,
+      });
+      if (path.endsWith("/api/admin/fae/issue-overview")) return response({
+        feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null,
+        feedback_totals_status: "unavailable", issue_total: 0,
+        statuses: {}, dispositions: {}, write_available: false,
+      });
+      if (path.includes("/api/admin/fae/issue-inbox")) return response([]);
+      if (path.includes("/api/admin/fae/issues?")) return response([]);
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/issues");
+    expect(requests).toContain("/api/admin/fae/issues?limit=200");
+    expect(requests.every((path) => !path.includes("status=unknown"))).toBe(true);
+    expect(container.textContent).toContain("反馈修复闭环");
+
+    const status = container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(status, "open");
+      status.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(requests).toContain("/api/admin/fae/issues?limit=200&status=open");
   });
 
   it("preserves the preview prefix while changing an overview-backed Issue status", async () => {

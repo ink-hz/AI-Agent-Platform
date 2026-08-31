@@ -3,6 +3,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { ErrorState, LoadingState } from "../components/DataState";
 import { FaeWorkbenchShell } from "../components/fae-workbench/FaeWorkbenchShell";
 import { PlatformLink } from "../components/PlatformLink";
+import { useDeploymentContext } from "../deploymentContext";
 import { faeWorkbenchApi } from "../faeWorkbenchApi";
 import type { FaeOverview, FaeSessionAttention, FaeSummary, FaeTrendPoint } from "../faeWorkbenchTypes";
 
@@ -32,6 +33,8 @@ const ISSUE_STATUS_LABELS: Record<string, string> = {
 };
 
 const CLOSED_ISSUE_STATUSES = new Set(["closed", "duplicate", "not_actionable", "wont_fix"]);
+const LOCAL_ISSUE_STATUSES = new Set(Object.keys(ISSUE_STATUS_LABELS));
+const CLOUD_ISSUE_DISPOSITIONS = new Set(["actionable", "duplicate", "not_actionable", "wont_fix"]);
 
 const ATTENTION_REASON_LABELS: Record<FaeSessionAttention["reason"], string> = {
   fallback: "触发回退",
@@ -92,12 +95,12 @@ function sessionsHref(overview: FaeOverview, filters: Array<[string, string]> = 
 }
 
 
-function Summary({ overview, summary }: { overview: FaeOverview; summary: FaeSummary }) {
+function Summary({ overview, summary, cloudReplica }: { overview: FaeOverview; summary: FaeSummary; cloudReplica: boolean }) {
   const periodHref = sessionsHref(overview);
   return <section className="fae-overview__summary" aria-label="运营摘要">
     <MetricCard metric="sessions" label="Session" value={`${summary.session_count} 个 Session`} detail="本统计周期内" href={periodHref} />
     <MetricCard metric="active-subjects" label="活跃主体" value={`${summary.active_subject_count} 个活跃主体`} detail="暂无主体维度下钻" />
-    <MetricCard metric="negative-turns" label="负向 Turn" value={`${summary.negative_turn_count} 个负向 Turn`} detail={`${summary.negative_feedback_events} 条负向反馈`} href={sessionsHref(overview, [["sentiment", "negative"]])} />
+    <MetricCard metric="negative-turns" label="负向 Turn" value={`${summary.negative_turn_count} 个负向 Turn`} detail={cloudReplica ? "云端聚合可用，暂不支持按 Session 下钻" : `${summary.negative_feedback_events} 条负向反馈`} href={cloudReplica ? undefined : sessionsHref(overview, [["sentiment", "negative"]])} />
     <MetricCard metric="abnormal-sessions" label="异常 Session" value={`${summary.abnormal_session_count} 个异常 Session`} detail="请从下方异常 Session 打开详情" />
     <MetricCard metric="open-issues" label="开放 Issue" value={summary.open_issue_count === null ? null : `${summary.open_issue_count} 个开放 Issue`} detail="尚未完成闭环" href="/admin/fae/issues?status=open" />
     <MetricCard metric="p95-latency" label="响应耗时" value={summary.p95_duration_ms === null ? null : `p95 ${summary.p95_duration_ms} ms`} detail="本统计周期的 Session Turn" href={periodHref} />
@@ -105,7 +108,7 @@ function Summary({ overview, summary }: { overview: FaeOverview; summary: FaeSum
 }
 
 
-function IssueQueue({ overview }: { overview: FaeOverview }) {
+function IssueQueue({ overview, cloudReplica }: { overview: FaeOverview; cloudReplica: boolean }) {
   if (overview.issues.state.status === "unavailable") {
     return <section className="fae-overview-panel fae-overview-panel--unavailable" aria-labelledby="fae-issues-heading">
       <h2 id="fae-issues-heading">问题治理暂不可用</h2>
@@ -114,14 +117,16 @@ function IssueQueue({ overview }: { overview: FaeOverview }) {
     </section>;
   }
   const actionable = Object.entries(overview.issues.statuses)
-    .filter(([status, count]) => !CLOSED_ISSUE_STATUSES.has(status) && count > 0)
+    .filter(([status, count]) => count > 0 && (cloudReplica
+      ? CLOUD_ISSUE_DISPOSITIONS.has(status) && !CLOSED_ISSUE_STATUSES.has(status)
+      : LOCAL_ISSUE_STATUSES.has(status) && !CLOSED_ISSUE_STATUSES.has(status)))
     .sort(([left], [right]) => Object.keys(ISSUE_STATUS_LABELS).indexOf(left) - Object.keys(ISSUE_STATUS_LABELS).indexOf(right));
   return <section className="fae-overview-panel" aria-labelledby="fae-issues-heading">
     <header><div><p>ISSUE QUEUE</p><h2 id="fae-issues-heading">问题治理</h2></div><PlatformLink href="/admin/fae/issues">查看全部</PlatformLink></header>
     {actionable.length === 0
       ? <p className="fae-overview-panel__empty">当前没有开放 Issue。</p>
       : <ul className="fae-overview-list">{actionable.map(([status, count]) => <li key={status}>
-        <PlatformLink href={`/admin/fae/issues?status=${encodeURIComponent(status)}`}><span>{ISSUE_STATUS_LABELS[status] ?? status} </span><strong>{count}</strong></PlatformLink>
+        <PlatformLink href={`/admin/fae/issues?${cloudReplica ? "disposition" : "status"}=${encodeURIComponent(status)}`}><span>{ISSUE_STATUS_LABELS[status] ?? (status === "actionable" ? "需处理" : status)} </span><strong>{count}</strong></PlatformLink>
       </li>)}</ul>}
   </section>;
 }
@@ -180,7 +185,7 @@ function Trends({ overview }: { overview: FaeOverview }) {
 }
 
 
-function OverviewContent({ overview }: { overview: FaeOverview }) {
+function OverviewContent({ overview, cloudReplica }: { overview: FaeOverview; cloudReplica: boolean }) {
   const stale = overview.freshness.status === "stale";
   return <section className="fae-overview" aria-labelledby="fae-overview-heading">
     <header className="fae-overview__header"><div><p>OPERATIONAL OVERVIEW</p><h2 id="fae-overview-heading">FAE 运营概览</h2></div><p>围绕真实 Session、负向反馈与治理闭环查看最近七天运营状态。</p></header>
@@ -192,9 +197,9 @@ function OverviewContent({ overview }: { overview: FaeOverview }) {
       <b>{stale ? "数据已过期" : overview.freshness.status === "fresh" ? "数据已同步" : "等待首次同步"}</b>
     </aside>
     {overview.summary.state.status === "available" && overview.summary.data
-      ? <Summary overview={overview} summary={overview.summary.data} />
+      ? <Summary overview={overview} summary={overview.summary.data} cloudReplica={cloudReplica} />
       : <section className="fae-overview__summary-unavailable" role="status"><h2>运营摘要暂不可用</h2><p>Session 聚合当前不可用，其他独立分区仍可继续查看。</p></section>}
-    <div className="fae-overview__queues"><IssueQueue overview={overview} /><AttentionQueue overview={overview} /></div>
+    <div className="fae-overview__queues"><IssueQueue overview={overview} cloudReplica={cloudReplica} /><AttentionQueue overview={overview} /></div>
     <Trends overview={overview} />
     <section className="fae-report-preview" aria-labelledby="fae-reports-heading">
       <div><p>ANALYSIS REPORTS</p><h2 id="fae-reports-heading">分析报告尚未接入</h2><span>这里不会用样例数据代替 FAE 发布的真实分析结果。</span></div>
@@ -205,6 +210,7 @@ function OverviewContent({ overview }: { overview: FaeOverview }) {
 
 
 export function FaeOverviewPage() {
+  const { deployment, resolved: deploymentResolved } = useDeploymentContext();
   const [overview, setOverview] = useState<FaeOverview | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -223,8 +229,8 @@ export function FaeOverviewPage() {
 
   let content;
   if (failed) content = <ErrorState onRetry={() => setAttempt((value) => value + 1)} />;
-  else if (!overview) content = <LoadingState label="正在加载 FAE 运营概览" />;
-  else content = <OverviewContent overview={overview} />;
+  else if (!overview || !deploymentResolved) content = <LoadingState label="正在加载 FAE 运营概览" />;
+  else content = <OverviewContent overview={overview} cloudReplica={deployment?.mode === "cloud-replica" && deployment.read_only} />;
 
   return <FaeWorkbenchShell currentSection="overview">{content}</FaeWorkbenchShell>;
 }
