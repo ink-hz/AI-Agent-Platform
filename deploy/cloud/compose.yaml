@@ -62,6 +62,8 @@ services:
       PLATFORM_PUBLIC_BASE_URL: https://agent.orbbec.com.cn
       PLATFORM_ROUTE_PREFIX: /
       PLATFORM_COOKIE_NAME: __Host-platform_session
+      PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED: "1"
+      PLATFORM_OFFICE_RECIPIENT_BEARER_FILE: /run/secrets/platform-office-recipient-bearer
       PLATFORM_CONTROL_DATABASE_URL_FILE: /run/secrets/control-database-url
       PLATFORM_CONTROL_AUDIT_DATABASE_URL_FILE: /run/secrets/control-audit-database-url
       PLATFORM_DINGTALK_APP_SECRET_FILE: /run/secrets/dingtalk-app-secret
@@ -88,6 +90,7 @@ services:
       PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS: "10"
     volumes:
       - platform-api-secrets:/run/secrets:ro
+      - ${PLATFORM_OFFICE_RECIPIENT_BEARER_FILE}:/run/secrets/platform-office-recipient-bearer:ro
     networks:
       platform-internal:
         ipv4_address: 172.30.0.4
@@ -243,7 +246,8 @@ services:
       PLATFORM_LOOPBACK_TARGET_BASE_URL: http://172.30.0.4:8080
       PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS: 127.0.0.1/32,172.31.0.1/32,172.31.0.8/32
       PLATFORM_LOOPBACK_SOURCE_ADDRESS: 172.30.0.3
-    volumes: []
+    volumes:
+      - ${PLATFORM_OFFICE_RECIPIENT_BEARER_FILE}:/run/secrets/platform-office-recipient-bearer:ro
     ports:
       - "127.0.0.1:8080:8080"
     networks:

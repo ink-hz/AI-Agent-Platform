@@ -71,6 +71,8 @@ class Config:
     brain_provider_base_url: str
     brain_provider_api_key_file: str
     brain_model_manifest_path: str
+    office_recipient_directory_enabled: bool
+    office_recipient_bearer_file: str
     voc_extension_enabled: bool
     voc_extension_base_url: str
     voc_extension_signing_key_file: str
@@ -613,6 +615,30 @@ def _validate_voc_extension_config(config: Config) -> None:
         raise RuntimeError("VOC extension signing key is unavailable") from error
 
 
+def _validate_office_recipient_directory_config(config: Config) -> None:
+    if os.getenv("PLATFORM_OFFICE_RECIPIENT_BEARER"):
+        raise ValueError("Office recipient bearer must use a secret file")
+    if not config.office_recipient_directory_enabled:
+        return
+    if not config.office_recipient_bearer_file:
+        raise ValueError(
+            "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE is required when the "
+            "Office recipient directory is enabled"
+        )
+    _validate_private_file(
+        config.office_recipient_bearer_file,
+        "Office recipient bearer",
+    )
+    try:
+        bearer = read_secret_file(config.office_recipient_bearer_file)
+        if len(bearer.encode("utf-8")) < 32:
+            raise RuntimeError(
+                "Office recipient bearer must contain at least 32 bytes"
+            )
+    except (OSError, SecretFileUnavailable) as error:
+        raise RuntimeError("Office recipient bearer is unavailable") from error
+
+
 def is_cloud_mode(config: Config) -> bool:
     return config.deployment_mode == "cloud-replica"
 
@@ -756,6 +782,12 @@ def load_config() -> Config:
         brain_model_manifest_path=os.getenv(
             "PLATFORM_BRAIN_MODEL_MANIFEST_PATH", ""
         ).strip(),
+        office_recipient_directory_enabled=_enabled(
+            "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED"
+        ),
+        office_recipient_bearer_file=os.getenv(
+            "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE", ""
+        ).strip(),
         voc_extension_enabled=_enabled("PLATFORM_VOC_EXTENSION_ENABLED"),
         voc_extension_base_url=os.getenv(
             "PLATFORM_VOC_EXTENSION_BASE_URL", "http://127.0.0.1:18130"
@@ -777,5 +809,6 @@ def load_config() -> Config:
     _validate_execution_relay_config(config)
     _validate_agent_brain_config(config)
     _validate_brain_model_config(config)
+    _validate_office_recipient_directory_config(config)
     _validate_voc_extension_config(config)
     return config

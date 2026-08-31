@@ -12,12 +12,75 @@ from app.config import load_config
 from app.main import (
     agent_brain_loop,
     build_operations,
+    build_office_recipient_directory,
     build_review_service,
     cancel_tasks,
     create_app,
 )
 from app.control_plane.models import ControlPlaneConfig, IdentityMode
 from app.operations.repository import OperationsRepository
+
+
+def test_build_office_recipient_directory_uses_control_reader_and_identity_codec(
+    monkeypatch,
+) -> None:
+    from app import main as app_main
+
+    captured = {}
+
+    class Keyring:
+        @classmethod
+        def from_file(cls, path, **kwargs):
+            captured.setdefault("keyrings", []).append((path, kwargs))
+            return object()
+
+    class Repository:
+        def __init__(self, database_url, *, identity_codec, corp_id):
+            captured["repository"] = (database_url, identity_codec, corp_id)
+
+    monkeypatch.setattr(
+        app_main,
+        "read_secret_file",
+        lambda path: "postgresql://platform_control_app@db/agent_platform_control"
+        if "database" in path
+        else "s" * 32,
+    )
+    monkeypatch.setattr(app_main, "IdentityKeyring", Keyring)
+    codec = object()
+    monkeypatch.setattr(app_main, "ProviderIdentityCodec", lambda *_args: codec)
+    monkeypatch.setattr(app_main, "OfficeRecipientDirectoryRepository", Repository)
+
+    config = SimpleNamespace(
+        office_recipient_bearer_file="/private/office-bearer",
+        control_plane=SimpleNamespace(
+            control_database_url_file="/private/control-database-url",
+            encryption_keyring_file="/private/encryption-keyring",
+            hmac_keyring_file="/private/hmac-keyring",
+            dingtalk_corp_id="corp-id",
+        ),
+    )
+    service, bearer = build_office_recipient_directory(config)
+
+    assert service._repository is not None
+    assert bearer == "s" * 32
+    assert captured["repository"] == (
+        "postgresql://platform_control_app@db/agent_platform_control",
+        codec,
+        "corp-id",
+    )
+    assert captured["keyrings"] == [
+        (
+            "/private/encryption-keyring",
+            {"expected_purpose": "provider-encryption", "expected_key_length": 32},
+        ),
+        (
+            "/private/hmac-keyring",
+            {
+                "expected_purpose": "provider-lookup-hmac",
+                "expected_key_length": 32,
+            },
+        ),
+    ]
 
 
 def test_build_identity_auth_builds_registered_in_client_profile(

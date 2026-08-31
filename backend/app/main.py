@@ -54,6 +54,11 @@ from .control_plane.audit import AuditWriter
 from .control_plane.routes_manage import ManagementRepository, ManagementService
 from .control_plane.models import DirectoryFreshness, IdentityMode
 from .control_plane.routes_auth import build_auth_router
+from .control_plane.office_recipients import (
+    OfficeRecipientDirectoryRepository,
+    OfficeRecipientDirectoryService,
+    build_office_recipient_router,
+)
 from .control_plane.auth import (
     AuthSecrets,
     DingTalkWebAuth,
@@ -383,6 +388,32 @@ def build_review_service(
     )
 
 
+def build_office_recipient_directory(
+    config: Config,
+) -> tuple[OfficeRecipientDirectoryService, str]:
+    control = config.control_plane
+    database_url = read_secret_file(control.control_database_url_file)
+    encryption = IdentityKeyring.from_file(
+        control.encryption_keyring_file,
+        expected_purpose="provider-encryption",
+        expected_key_length=32,
+    )
+    lookup = IdentityKeyring.from_file(
+        control.hmac_keyring_file,
+        expected_purpose="provider-lookup-hmac",
+        expected_key_length=32,
+    )
+    repository = OfficeRecipientDirectoryRepository(
+        database_url,
+        identity_codec=ProviderIdentityCodec(encryption, lookup),
+        corp_id=control.dingtalk_corp_id,
+    )
+    return (
+        OfficeRecipientDirectoryService(repository),
+        read_secret_file(config.office_recipient_bearer_file),
+    )
+
+
 def build_identity_auth(config: Config) -> DingTalkWebAuth:
     control = config.control_plane
     database_url = read_secret_file(control.control_database_url_file)
@@ -578,9 +609,18 @@ def create_app(
     conversation_command_service = None
     action_command_service = None
     agent_use_authorization = None
+    office_recipient_router = None
     control_database_url = None
     content_codec = None
     v1_mission_modes: list[str] = []
+    if config.office_recipient_directory_enabled:
+        office_recipient_service, office_recipient_bearer = (
+            build_office_recipient_directory(config)
+        )
+        office_recipient_router = build_office_recipient_router(
+            office_recipient_service,
+            bearer_secret=office_recipient_bearer,
+        )
     if config.execution_relay_enabled:
         control_database_url = read_secret_file(
             config.control_plane.control_database_url_file
@@ -927,6 +967,8 @@ def create_app(
     app.include_router(registry_routes.router)
     app.include_router(review_routes.router)
     app.include_router(build_voc_extension_router())
+    if office_recipient_router is not None:
+        app.include_router(office_recipient_router)
     if agent_launch_service is not None:
         app.include_router(build_agent_launch_router(agent_launch_service))
     if identity_enabled and ai_notes_reader is not None:

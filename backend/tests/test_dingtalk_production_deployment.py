@@ -560,6 +560,10 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     assert api["environment"]["PLATFORM_PUBLIC_BASE_URL"] == "https://agent.orbbec.com.cn"
     assert api["environment"]["PLATFORM_ROUTE_PREFIX"] == "/"
     assert api["environment"]["PLATFORM_COOKIE_NAME"] == "__Host-platform_session"
+    assert api["environment"]["PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED"] == "1"
+    assert api["environment"]["PLATFORM_OFFICE_RECIPIENT_BEARER_FILE"] == (
+        "/run/secrets/platform-office-recipient-bearer"
+    )
     assert api["environment"]["PLATFORM_TRUSTED_PROXY_CIDRS"] == "172.30.0.3/32"
     assert set(api["networks"]) == {
         "platform-internal",
@@ -608,6 +612,12 @@ def test_production_compose_runs_identity_and_least_privilege_workers():
     for forbidden in ("clientSecret:", "dingtalk-app-secret:", "corp-id:"):
         assert forbidden not in serialized
     assert services["platform-loopback"]["ports"] == ["127.0.0.1:8080:8080"]
+    office_bearer_mount = (
+        "${PLATFORM_OFFICE_RECIPIENT_BEARER_FILE}:"
+        "/run/secrets/platform-office-recipient-bearer:ro"
+    )
+    assert office_bearer_mount in api["volumes"]
+    assert office_bearer_mount in services["platform-loopback"]["volumes"]
     assert services["platform-loopback"]["environment"] == {
         "PLATFORM_LOOPBACK_TARGET_BASE_URL": "http://172.30.0.4:8080",
         "PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS": (

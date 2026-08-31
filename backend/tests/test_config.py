@@ -29,6 +29,87 @@ CONTROL_PLANE_ENV = (
 )
 
 
+OFFICE_RECIPIENT_ENV = (
+    "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED",
+    "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE",
+    "PLATFORM_OFFICE_RECIPIENT_BEARER",
+)
+
+
+def test_office_recipient_directory_defaults_disabled(monkeypatch) -> None:
+    for name in OFFICE_RECIPIENT_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+    config = load_config()
+
+    assert config.office_recipient_directory_enabled is False
+    assert config.office_recipient_bearer_file == ""
+
+
+def test_office_recipient_directory_rejects_inline_bearer(monkeypatch) -> None:
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_BEARER", "s" * 32)
+
+    with pytest.raises(ValueError, match="secret file"):
+        load_config()
+
+
+def test_enabled_office_recipient_directory_requires_private_bearer_file(
+    monkeypatch, tmp_path
+) -> None:
+    bearer = tmp_path / "office-recipient-bearer"
+    bearer.write_bytes(b"s" * 32)
+    bearer.chmod(0o600)
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_BEARER_FILE", str(bearer))
+    monkeypatch.delenv("PLATFORM_OFFICE_RECIPIENT_BEARER", raising=False)
+
+    config = load_config()
+
+    assert config.office_recipient_directory_enabled is True
+    assert config.office_recipient_bearer_file == str(bearer)
+    assert "s" * 32 not in repr(config)
+
+
+@pytest.mark.parametrize("size", [0, 31])
+def test_office_recipient_bearer_is_at_least_32_bytes(
+    monkeypatch, tmp_path, size
+) -> None:
+    bearer = tmp_path / "office-recipient-bearer"
+    bearer.write_bytes(b"s" * size)
+    bearer.chmod(0o600)
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_BEARER_FILE", str(bearer))
+
+    with pytest.raises(RuntimeError):
+        load_config()
+
+
+def test_office_recipient_bearer_length_excludes_file_whitespace(
+    monkeypatch, tmp_path
+) -> None:
+    bearer = tmp_path / "office-recipient-bearer"
+    bearer.write_bytes(b"s" * 31 + b"\n")
+    bearer.chmod(0o600)
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_BEARER_FILE", str(bearer))
+
+    with pytest.raises(RuntimeError, match="at least 32 bytes"):
+        load_config()
+
+
+def test_office_recipient_bearer_rejects_symlink(monkeypatch, tmp_path) -> None:
+    target = tmp_path / "target"
+    target.write_bytes(b"s" * 32)
+    target.chmod(0o600)
+    bearer = tmp_path / "office-recipient-bearer"
+    bearer.symlink_to(target)
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_BEARER_FILE", str(bearer))
+
+    with pytest.raises(RuntimeError, match="regular mode 0600 file"):
+        load_config()
+
+
 def test_identity_defaults_are_disabled_and_need_no_secret_files(monkeypatch) -> None:
     for name in CONTROL_PLANE_ENV:
         monkeypatch.delenv(name, raising=False)
