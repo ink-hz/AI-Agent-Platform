@@ -6,6 +6,8 @@ from app.cloud_replica.source import (
     TRACE_SQL,
     TRACE_STEP_SQL,
     TURN_SQL,
+    REVIEW_INBOX_SQL,
+    REVIEW_ISSUE_SQL,
     ReplicaSource,
 )
 from app.observability.models import Page
@@ -42,6 +44,23 @@ def test_source_queries_are_explicit_bounded_and_never_touch_restricted_fields()
     assert "join platform_read.turns" in ATTACHMENT_SQL.lower()
     assert "a.turn_key = t.native_id" in ATTACHMENT_SQL.lower()
     assert "t.turn_key as turn_key" in ATTACHMENT_SQL.lower()
+
+
+def test_review_projection_proves_nested_scope_and_inbox_issue_ownership():
+    issue_sql = " ".join(REVIEW_ISSUE_SQL.lower().split())
+    inbox_sql = " ".join(REVIEW_INBOX_SQL.lower().split())
+
+    for proof in (
+        "issue.origin_turn_key",
+        "linked_turn.agent_id is distinct from issue.agent_id",
+        "canonical.agent_id is distinct from issue.agent_id",
+        "walk.cycle",
+        "linked_turn.source_kind is distinct from 'fae'",
+        "as scope_valid",
+    ):
+        assert proof in issue_sql
+    assert "join platform_review.feedback_issues linked_issue" in inbox_sql
+    assert "linked_issue.agent_id=feedback.agent_id" in inbox_sql
 
 
 class _Context:

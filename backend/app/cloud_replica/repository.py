@@ -299,13 +299,22 @@ class ReplicaObservabilityRepository:
         }
 
     def fae_turn_exists(self, turn_key: str) -> bool:
+        return turn_key in self.fae_turn_keys([turn_key])
+
+    def fae_turn_keys(self, turn_keys: list[str]) -> set[str]:
+        requested = set(turn_keys)
+        if not requested:
+            return set()
         try:
+            found: set[str] = set()
             for record, _user_id in self._fae_records_in_period(
                 datetime.min.replace(tzinfo=UTC), datetime.max.replace(tzinfo=UTC)
             ):
-                if any(turn.get("key") == turn_key for turn in record.get("turns", [])):
-                    return True
-            return False
+                found.update(
+                    key for turn in record.get("turns", [])
+                    if (key := turn.get("key")) in requested
+                )
+            return found
         except ObservabilityReadError:
             raise
 

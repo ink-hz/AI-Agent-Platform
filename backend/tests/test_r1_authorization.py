@@ -28,6 +28,7 @@ MEMBER = AuthContext(uuid4(), Role.MEMBER, uuid4(), False)
 STALE_OWNER = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), True)
 STALE_ADMIN = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), True)
 STALE_MEMBER = AuthContext(uuid4(), Role.MEMBER, uuid4(), True)
+STALE_VIEWER = AuthContext(uuid4(), Role.MANAGEMENT_VIEWER, uuid4(), True)
 
 FAE_ISSUE_READ_ROUTES = (
     ("GET", "/api/admin/fae/issue-overview"),
@@ -129,6 +130,16 @@ def test_fae_issue_mutations_deny_hard_stale_before_cloud_read_only(method, rout
 
     assert (stale.status_code, stale.reason) == (503, "hard_stale_read_only")
     assert (fresh.status_code, fresh.reason) == (403, "cloud_review_read_only")
+
+
+@pytest.mark.parametrize("method,route", FAE_ISSUE_READ_ROUTES + FAE_ISSUE_MUTATION_ROUTES)
+@pytest.mark.parametrize("cloud_mode", [False, True])
+def test_fae_role_denial_precedes_stale_and_cloud_details(method, route, cloud_mode):
+    decision = AuthorizationService(Grants(), cloud_mode=cloud_mode).decide(
+        STALE_VIEWER, method, route, ()
+    )
+
+    assert (decision.status_code, decision.reason) == (403, "management_role_required")
 
 
 @pytest.mark.parametrize("role", list(Role))

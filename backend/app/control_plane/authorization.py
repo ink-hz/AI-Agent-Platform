@@ -222,6 +222,11 @@ class AuthorizationService:
             return AuthorizationDecision(True, 200, "self_service", None)
         if key not in _OWNER_ROUTES:
             return self._deny(403, "route_not_authorized")
+        if (
+            key in (_FAE_WORKBENCH_READ_ROUTES | _FAE_WORKBENCH_MUTATION_ROUTES)
+            and auth.role not in {Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN}
+        ):
+            return self._deny(403, "management_role_required")
         if auth.role is Role.MEMBER:
             return self._deny(403, "member_management_denied")
         if auth.hard_stale_read_only and selected_method not in {

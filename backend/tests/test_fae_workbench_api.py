@@ -79,6 +79,10 @@ class _Review:
         self.evidence_owner = ISSUE_ID
         self.replay_owner = ISSUE_ID
 
+    async def agent_issue_scope_valid(self, agent_id):
+        assert agent_id == "ai-fae-agent"
+        return True
+
     async def overview(self, *, agent_id):
         assert agent_id == "ai-fae-agent"
         return {"statuses": {"open": 1}}
@@ -144,6 +148,9 @@ class _Repository:
 
     def fae_turn_exists(self, turn_key):
         return turn_key.startswith("fae:") and turn_key not in self.missing_turns
+
+    def fae_turn_keys(self, turn_keys):
+        return {key for key in turn_keys if self.fae_turn_exists(key)}
 
 
 class _Grants:
@@ -339,6 +346,29 @@ def test_fae_issue_mutation_denials_report_hard_stale_before_cloud_read_only():
     )
 
 
+@pytest.mark.parametrize("cloud_mode", [False, True])
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("get", "/api/admin/fae/issues"), ("post", "/api/admin/fae/issues")],
+)
+def test_stale_viewer_role_denial_precedes_freshness_and_cloud(method, path, cloud_mode):
+    client, *_ = _protected_app(
+        Role.MANAGEMENT_VIEWER, hard_stale=True, cloud_mode=cloud_mode
+    )
+    client.cookies.set("session", "valid")
+
+    response = (
+        client.post(path, json={"title": "issue"})
+        if method == "post"
+        else client.get(path)
+    )
+
+    assert (response.status_code, response.json()["detail"]) == (
+        403,
+        "management_role_required",
+    )
+
+
 def test_fae_issue_facade_exposes_exact_route_templates() -> None:
     routes = {
         (next(iter(route.methods)), route.path)
@@ -435,7 +465,7 @@ def test_fae_create_uses_authenticated_actor_and_fixed_agent_scope() -> None:
     name, payload, kwargs = review.calls[-1]
     assert name == "create_issue"
     assert payload.agent_id == "ai-fae-agent"
-    assert kwargs["actor"] == f"fae:{context.internal_user_id}"
+    assert kwargs["actor"] == f"corp:{context.internal_user_id}"
 
 
 def test_fae_link_accepts_real_turn_without_feedback() -> None:
@@ -463,7 +493,7 @@ def test_fae_link_accepts_real_turn_without_feedback() -> None:
         "ai-fae-agent",
     )
     assert payload.source_feedback_keys == []
-    assert kwargs["actor"] == f"fae:{context.internal_user_id}"
+    assert kwargs["actor"] == f"corp:{context.internal_user_id}"
 
 
 def test_fae_link_rejects_unknown_turn_before_review_write() -> None:
@@ -492,7 +522,7 @@ def test_fae_semantic_review_uses_authenticated_actor_not_header() -> None:
     app, _observability = _direct_app(context)
     client = TestClient(app)
     review = app.state.fae_workbench_service._review
-    actor = f"fae:{context.internal_user_id}"
+    actor = f"corp:{context.internal_user_id}"
 
     response = client.post(
         f"/api/admin/fae/replays/{REPLAY_ID}/semantic-review",
@@ -549,6 +579,7 @@ def test_cross_agent_evidence_and_replay_return_404_without_review_write(
     response = client.post(path, json=payload)
 
     assert response.status_code == 404, entity
+    assert response.json() == {"detail": "fae resource not found"}
     assert all(call[0] != write_name for call in review.calls)
 
 
@@ -586,6 +617,7 @@ def test_unknown_evidence_and_replay_return_404_without_review_write(
     response = client.post(path, json=payload)
 
     assert response.status_code == 404
+    assert response.json() == {"detail": "fae resource not found"}
     assert all(call[0] != write_name for call in review.calls)
 
 

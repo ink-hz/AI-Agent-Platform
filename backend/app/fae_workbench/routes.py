@@ -55,7 +55,7 @@ def _fae_actor(request: Request) -> str:
     context = getattr(request.state, "auth_context", None)
     if context is None:
         raise HTTPException(status_code=401, detail="authentication required")
-    return f"fae:{context.internal_user_id}"
+    return f"corp:{context.internal_user_id}"
 
 
 FaeActor = Annotated[str, Depends(_fae_actor)]
@@ -70,7 +70,7 @@ async def _invoke_review(awaitable):
             detail={"message": str(error), "current": error.current},
         ) from error
     except ReviewNotFound as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
+        raise HTTPException(status_code=404, detail="fae resource not found") from error
     except InvalidReviewMutation as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     except (ReviewUnavailable, ReviewRepositoryError) as error:

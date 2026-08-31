@@ -131,7 +131,9 @@ class ReviewService:
         return await self._detail(issue_id)
 
     async def evidence_issue_id(self, evidence_id: UUID) -> UUID:
-        evidence = await self._run(self.read_repository.get_evidence, evidence_id)
+        evidence = await self._run(
+            self.read_repository.get_evidence_owner, evidence_id
+        )
         if evidence is None:
             from .repository import ReviewNotFound
 
@@ -145,6 +147,11 @@ class ReviewService:
 
             raise ReviewNotFound("replay not found")
         return replay["issue_id"]
+
+    async def agent_issue_scope_valid(self, agent_id: str) -> bool:
+        return bool(await self._run(
+            self.read_repository.agent_issue_scope_valid, agent_id
+        ))
 
     async def create_issue(self, payload, *, actor: str) -> dict:
         writer = self._writer()
@@ -394,8 +401,8 @@ class ReviewService:
             and payload.reviewer == actor
         ) or (
             payload.method == "human_fae"
-            and actor.startswith("fae:")
-            and bool(actor.removeprefix("fae:").strip())
+            and actor.startswith(("fae:", "corp:"))
+            and bool(actor.split(":", 1)[1].strip())
             and payload.reviewer == actor
         )
         if not valid_identity:

@@ -46,13 +46,40 @@ async def test_semantic_review_passes_review_method_to_repository():
 
 
 @pytest.mark.asyncio
+async def test_corporate_human_semantic_review_uses_authenticated_identity():
+    class Repository:
+        def review_replay(self, replay_id, **kwargs):
+            assert replay_id == REPLAY_ID
+            assert kwargs["reviewer"] == "corp:alice"
+            assert kwargs["actor"] == "corp:alice"
+            return {"issue_id": ISSUE_ID}
+
+        def recalculate_and_record_transition(self, *_args, **_kwargs):
+            return None
+
+        def get_issue_detail(self, _issue_id):
+            return {"issue": {"id": ISSUE_ID}}
+
+    repository = Repository()
+    payload = SimpleNamespace(
+        verdict="passed", method="human_fae", reviewer="corp:alice", reason="review"
+    )
+
+    result = await ReviewService(repository, write_repository=repository).semantic_review(
+        REPLAY_ID, payload, actor="corp:alice"
+    )
+
+    assert result["issue"]["id"] == ISSUE_ID
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("actor", "method", "reviewer"),
     [
         ("fae:alice", "codex", "codex"),
         ("codex", "human_fae", "fae:alice"),
         ("fae:alice", "human_fae", "fae:bob"),
-        ("corp:alice", "human_fae", "corp:alice"),
+        ("corp:alice", "human_fae", "corp:bob"),
     ],
 )
 async def test_semantic_review_identity_cannot_be_spoofed(
@@ -112,9 +139,9 @@ async def test_mutation_fails_explicitly_when_writer_is_missing():
 @pytest.mark.asyncio
 async def test_read_only_owner_lookups_return_only_owning_issue_id():
     class ReadRepository:
-        def get_evidence(self, evidence_id):
+        def get_evidence_owner(self, evidence_id):
             assert evidence_id == EVIDENCE_ID
-            return {"id": EVIDENCE_ID, "issue_id": ISSUE_ID, "reference": "secret"}
+            return {"issue_id": ISSUE_ID}
 
         def get_replay(self, replay_id):
             assert replay_id == REPLAY_ID
@@ -138,7 +165,7 @@ async def test_owner_lookups_preserve_not_found_semantics(
     operation, entity_id, message
 ):
     class ReadRepository:
-        def get_evidence(self, _evidence_id):
+        def get_evidence_owner(self, _evidence_id):
             return None
 
         def get_replay(self, _replay_id):

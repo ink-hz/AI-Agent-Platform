@@ -92,6 +92,7 @@ def test_review_projection_is_agent_scoped_and_read_only():
             "agent_id": "hr-bot", "status": "open", "priority": "P1",
             "title": {"text": "脱敏问题"}, "failure_layer": "model",
             "owner_display": None, "linked_turn_count": 2,
+            "scope_valid": True,
             "updated_at": "2026-08-14T08:00:00.000000Z",
             "sanitizer_policy_version": "v2",
         },
@@ -100,6 +101,7 @@ def test_review_projection_is_agent_scoped_and_read_only():
             "agent_id": "marketing-bot", "status": "closed", "priority": "P2",
             "title": {"text": "其他 Agent"}, "failure_layer": None,
             "owner_display": None, "linked_turn_count": 0,
+            "scope_valid": True,
             "updated_at": "2026-08-14T07:00:00.000000Z",
             "sanitizer_policy_version": "v2",
         },
@@ -116,6 +118,30 @@ def test_review_projection_is_agent_scoped_and_read_only():
     assert [item["agent_id"] for item in issues] == ["hr-bot"]
     assert detail is not None and detail["replica_read_only"] is True
     assert not hasattr(repository, "create_issue")
+
+
+def test_fae_issue_scope_projection_fails_closed_on_false_or_missing_metadata():
+    cipher = FieldCipher(b"m" * 32)
+
+    def repository_for(scope_marker):
+        record = {
+            "kind": "review_issue_projection", "key": str(uuid4()),
+            "agent_id": "ai-fae-agent", "status": "open", "priority": "P1",
+            "title": {"text": "FAE issue"}, "failure_layer": "model",
+            "owner_display": None, "linked_turn_count": 1,
+            "updated_at": "2026-08-14T08:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        }
+        if scope_marker is not None:
+            record["scope_valid"] = scope_marker
+        return ReplicaReviewRepository(
+            "postgresql://replica", cipher=cipher,
+            connect=_connect([_row(cipher, record)]), now=lambda: NOW,
+        )
+
+    assert repository_for(True).agent_issue_scope_valid("ai-fae-agent") is True
+    assert repository_for(False).agent_issue_scope_valid("ai-fae-agent") is False
+    assert repository_for(None).agent_issue_scope_valid("ai-fae-agent") is False
 
 
 def test_operation_projection_filters_before_pagination():
@@ -283,6 +309,7 @@ def test_excluded_agents_are_absent_from_review_projections():
             "agent_id": "hr-bot", "status": "open", "priority": "P1",
             "title": {"text": "Visible"}, "failure_layer": "model",
             "owner_display": None, "linked_turn_count": 1,
+            "scope_valid": True,
             "updated_at": "2026-08-14T08:00:00.000000Z",
             "sanitizer_policy_version": "v2",
         },
@@ -291,6 +318,7 @@ def test_excluded_agents_are_absent_from_review_projections():
             "agent_id": "fae-bot", "status": "open", "priority": "P1",
             "title": {"text": "Hidden"}, "failure_layer": "model",
             "owner_display": None, "linked_turn_count": 1,
+            "scope_valid": True,
             "updated_at": "2026-08-14T07:00:00.000000Z",
             "sanitizer_policy_version": "v2",
         },

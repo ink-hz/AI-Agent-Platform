@@ -58,26 +58,82 @@ class FaeWorkbenchService:
             return None
         return value
 
-    async def _fae_issue(self, issue_id: UUID) -> dict:
+    async def _assert_fae_issue_scope(self) -> None:
+        if not await self._review.agent_issue_scope_valid(FAE_AGENT_ID):
+            raise ReviewNotFound("issue not found")
+
+    async def _fae_issue(
+        self,
+        issue_id: UUID,
+        *,
+        validate_agent: bool = True,
+        path: frozenset[UUID] = frozenset(),
+        validated: dict[UUID, dict] | None = None,
+    ) -> dict:
+        if validate_agent:
+            await self._assert_fae_issue_scope()
+        if issue_id in path:
+            raise ReviewNotFound("issue not found")
+        if validated is not None and issue_id in validated:
+            return validated[issue_id]
         detail = await self._review.issue_detail(issue_id)
         try:
-            agent_id = detail["issue"]["agent_id"]
+            issue = detail["issue"]
+            agent_id = issue["agent_id"]
         except (KeyError, TypeError):
             raise ReviewNotFound("issue not found") from None
         if agent_id != FAE_AGENT_ID:
             raise ReviewNotFound("issue not found")
         links = detail.get("links") or ()
         if not isinstance(links, (list, tuple)) or any(
-            not isinstance(link, dict) or link.get("agent_id") != FAE_AGENT_ID
-            for link in links
+            not isinstance(link, dict) for link in links
         ):
             raise ReviewNotFound("issue not found")
+        active_links = [
+            link for link in links
+            if isinstance(link, dict) and link.get("active", True)
+        ]
+        if len(active_links) != sum(
+            1 for link in links
+            if isinstance(link, dict) and link.get("active", True)
+        ) or any(link.get("agent_id") != FAE_AGENT_ID for link in active_links):
+            raise ReviewNotFound("issue not found")
+        turn_keys = [
+            key
+            for key in [
+                issue.get("origin_turn_key"),
+                *(link.get("source_turn_key") for link in active_links),
+            ]
+            if key is not None
+        ]
+        if len(await self._fae_turn_keys(turn_keys)) != len(set(turn_keys)):
+            raise ReviewNotFound("issue not found")
+        canonical = issue.get("canonical_issue_id")
+        if canonical is not None:
+            try:
+                canonical_id = UUID(str(canonical))
+            except (TypeError, ValueError):
+                raise ReviewNotFound("issue not found") from None
+            await self._fae_issue(
+                canonical_id,
+                validate_agent=False,
+                path=path | {issue_id},
+                validated=validated,
+            )
+        if validated is not None:
+            validated[issue_id] = detail
         return detail
 
+    async def _fae_turn_keys(self, turn_keys: list[str]) -> set[str]:
+        if not turn_keys:
+            return set()
+        return await asyncio.to_thread(self._repository.fae_turn_keys, turn_keys)
+
     async def _fae_turn_exists(self, turn_key: str) -> bool:
-        return await asyncio.to_thread(self._repository.fae_turn_exists, turn_key)
+        return turn_key in await self._fae_turn_keys([turn_key])
 
     async def issue_overview(self):
+        await self._assert_fae_issue_scope()
         return await self._review.overview(agent_id=FAE_AGENT_ID)
 
     async def issue_inbox(self, *, limit: int, offset: int):
@@ -88,6 +144,7 @@ class FaeWorkbenchService:
         )
 
     async def list_issues(self, *, limit: int, offset: int):
+        await self._assert_fae_issue_scope()
         return await self._review.list_issues(
             agent_id=FAE_AGENT_ID,
             limit=limit,
@@ -98,13 +155,13 @@ class FaeWorkbenchService:
         return await self._fae_issue(issue_id)
 
     async def turn_summaries(self, turn_keys: list[str]):
-        scoped_keys = []
-        for turn_key in dict.fromkeys(turn_keys):
-            if await self._fae_turn_exists(turn_key):
-                scoped_keys.append(turn_key)
+        unique_keys = list(dict.fromkeys(turn_keys))
+        found_keys = await self._fae_turn_keys(unique_keys)
+        scoped_keys = [key for key in unique_keys if key in found_keys]
         if not scoped_keys:
             return []
         summaries = await self._review.turn_summaries(turn_keys=scoped_keys)
+        issue_ids: list[UUID] = []
         for summary in summaries:
             issue_id = summary.get("issue_id")
             if issue_id is not None:
@@ -112,7 +169,16 @@ class FaeWorkbenchService:
                     scoped_issue_id = UUID(str(issue_id))
                 except (TypeError, ValueError):
                     raise ReviewNotFound("issue not found") from None
-                await self._fae_issue(scoped_issue_id)
+                issue_ids.append(scoped_issue_id)
+        if issue_ids:
+            await self._assert_fae_issue_scope()
+            validated: dict[UUID, dict] = {}
+            for scoped_issue_id in dict.fromkeys(issue_ids):
+                await self._fae_issue(
+                    scoped_issue_id,
+                    validate_agent=False,
+                    validated=validated,
+                )
         return summaries
 
     async def create_issue(self, payload, *, actor: str):
@@ -192,7 +258,7 @@ class FaeWorkbenchService:
         period_start, period_end = _default_period(now)
         snapshot, review_overview = await asyncio.gather(
             asyncio.to_thread(self._repository.snapshot, period_start, period_end),
-            self._review.overview(agent_id=FAE_AGENT_ID),
+            self.issue_overview(),
             return_exceptions=True,
         )
 

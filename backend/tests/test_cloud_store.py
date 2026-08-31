@@ -79,6 +79,7 @@ def test_prepared_session_exposes_only_safe_index_columns():
             "failure_layer": "model",
             "owner_display": None,
             "linked_turn_count": 2,
+            "scope_valid": True,
             "sanitizer_policy_version": "test-v1",
         },
         {

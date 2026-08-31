@@ -70,6 +70,7 @@ class StaticRepository:
     def __init__(self, snapshot: FaeOperationalSnapshot | Exception | None = None) -> None:
         self.value = snapshot or fae_snapshot()
         self.period: tuple[datetime, datetime] | None = None
+        self.batch_calls: list[list[str]] = []
 
     def snapshot(self, period_start: datetime, period_end: datetime) -> FaeOperationalSnapshot:
         self.period = (period_start, period_end)
@@ -79,6 +80,10 @@ class StaticRepository:
 
     def fae_turn_exists(self, turn_key: str) -> bool:
         return turn_key.startswith("fae:") and turn_key != "fae:missing"
+
+    def fae_turn_keys(self, turn_keys: list[str]) -> set[str]:
+        self.batch_calls.append(list(turn_keys))
+        return {key for key in turn_keys if self.fae_turn_exists(key)}
 
 
 class RecordingObservability:
@@ -109,6 +114,9 @@ class StaticReview:
         self.agent_id = agent_id
         return {"statuses": self.statuses}
 
+    async def agent_issue_scope_valid(self, agent_id: str) -> bool:
+        return agent_id == FAE_AGENT_ID
+
 
 class UnavailableReview:
     async def overview(self, *, agent_id: str | None = None) -> dict:
@@ -125,8 +133,15 @@ class RecordingIssueReview:
         self.evidence_owner = ISSUE_ID
         self.replay_owner = ISSUE_ID
         self.summary_issue_id = None
+        self.scope_valid = True
+        self.detail_loads: list[UUID] = []
+
+    async def agent_issue_scope_valid(self, agent_id):
+        self.calls.append(("scope_valid", agent_id))
+        return self.scope_valid
 
     async def issue_detail(self, issue_id):
+        self.detail_loads.append(issue_id)
         detail = self.details.get(issue_id)
         if detail is None:
             raise ReviewNotFound("issue not found")
@@ -210,8 +225,10 @@ async def test_issue_reads_always_inject_fae_agent_scope():
     )
 
     assert review.calls == [
+        ("scope_valid", FAE_AGENT_ID),
         ("overview", FAE_AGENT_ID),
         ("inbox", FAE_AGENT_ID, 20, 3),
+        ("scope_valid", FAE_AGENT_ID),
         ("issues", FAE_AGENT_ID, 10, 4),
         ("turn_summaries", ["fae:turn-ordinary"]),
     ]
@@ -364,7 +381,113 @@ async def test_fae_turn_summary_hides_link_to_cross_agent_issue():
 
     assert review.calls == [
         ("turn_summaries", ["fae:turn-ordinary"]),
+        ("scope_valid", FAE_AGENT_ID),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("read_name", ["issue_overview", "list_issues"])
+async def test_malformed_agent_issue_scope_fails_reads_closed(read_name):
+    review = RecordingIssueReview()
+    review.scope_valid = False
+    service = service_for(review=review)
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        if read_name == "issue_overview":
+            await service.issue_overview()
+        else:
+            await service.list_issues(limit=100, offset=0)
+
+    assert not any(call[0] in {"overview", "issues"} for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_malformed_agent_issue_scope_hides_composite_overview_issue_aggregate():
+    review = RecordingIssueReview()
+    review.scope_valid = False
+
+    overview = await service_for(review=review).overview(NOW)
+
+    assert overview.issues.state.status == "unavailable"
+    assert overview.summary.data is not None
+    assert overview.summary.data.open_issue_count is None
+    assert not any(call[0] == "overview" for call in review.calls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "detail",
+    [
+        {"issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID,
+                   "origin_turn_key": "admin:turn-1"}},
+        {"issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+         "links": [{"id": LINK_ID, "agent_id": FAE_AGENT_ID,
+                    "source_turn_key": "admin:turn-1", "active": True}]},
+    ],
+)
+async def test_real_foreign_turn_ownership_fails_before_issue_write(detail):
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = detail
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).update_issue(
+            ISSUE_ID, Payload(row_version=1, reason="edit"), actor="corp:owner"
+        )
+
+    assert all(call[0] != "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_foreign_canonical_target_fails_before_issue_write():
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID,
+                  "canonical_issue_id": TARGET_ID}
+    }
+    review.details[TARGET_ID] = {
+        "issue": {"id": TARGET_ID, "agent_id": "ai-admin-agent"}
+    }
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).update_issue(
+            ISSUE_ID, Payload(row_version=1, reason="edit"), actor="corp:owner"
+        )
+
+    assert all(call[0] != "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_canonical_cycle_fails_closed_before_issue_write():
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID,
+                  "canonical_issue_id": TARGET_ID}
+    }
+    review.details[TARGET_ID] = {
+        "issue": {"id": TARGET_ID, "agent_id": FAE_AGENT_ID,
+                  "canonical_issue_id": ISSUE_ID}
+    }
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).update_issue(
+            ISSUE_ID, Payload(row_version=1, reason="edit"), actor="corp:owner"
+        )
+
+    assert all(call[0] != "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_two_hundred_turn_summaries_use_one_batch_and_one_detail_per_issue():
+    keys = [f"fae:turn-{index}" for index in range(200)]
+    repository = StaticRepository()
+    review = RecordingIssueReview()
+    review.summary_issue_id = ISSUE_ID
+
+    summaries = await service_for(repository=repository, review=review).turn_summaries(keys)
+
+    assert len(summaries) == 200
+    assert repository.batch_calls == [keys]
+    assert review.detail_loads == [ISSUE_ID]
 
 
 @pytest.mark.asyncio

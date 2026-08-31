@@ -136,6 +136,8 @@ class FaeWorkbenchRepository(Protocol):
         self, period_start: datetime, period_end: datetime
     ) -> FaeOperationalSnapshot: ...
 
+    def fae_turn_keys(self, turn_keys: list[str]) -> set[str]: ...
+
     def fae_turn_exists(self, turn_key: str) -> bool: ...
 
 
@@ -186,18 +188,23 @@ class PsycopgFaeWorkbenchRepository:
         except Exception:
             raise FaeWorkbenchReadError("fae_workbench_query_failed") from None
 
-    def fae_turn_exists(self, turn_key: str) -> bool:
+    def fae_turn_keys(self, turn_keys: list[str]) -> set[str]:
+        if not turn_keys:
+            return set()
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                row = cursor.execute(
-                    f"""select exists(select 1 from platform_read.turns
-                    where turn_key=%s and agent_id='{FAE_AGENT_ID}'
-                      and source_kind='{FAE_SOURCE_KIND}') as found""",
-                    (turn_key,),
-                ).fetchone()
-            return bool(row and row["found"])
+                rows = cursor.execute(
+                    f"""select turn_key from platform_read.turns
+                    where turn_key=any(%s) and agent_id='{FAE_AGENT_ID}'
+                      and source_kind='{FAE_SOURCE_KIND}'""",
+                    (list(dict.fromkeys(turn_keys)),),
+                ).fetchall()
+            return {str(row["turn_key"]) for row in rows}
         except Exception:
             raise FaeWorkbenchReadError("fae_workbench_query_failed") from None
+
+    def fae_turn_exists(self, turn_key: str) -> bool:
+        return turn_key in self.fae_turn_keys([turn_key])
 
 
 class ReplicaFaeWorkbenchRepository:
@@ -252,7 +259,10 @@ class ReplicaFaeWorkbenchRepository:
             raise FaeWorkbenchReadError("fae_workbench_query_failed") from None
 
     def fae_turn_exists(self, turn_key: str) -> bool:
+        return turn_key in self.fae_turn_keys([turn_key])
+
+    def fae_turn_keys(self, turn_keys: list[str]) -> set[str]:
         try:
-            return bool(self._repository.fae_turn_exists(turn_key))
+            return set(self._repository.fae_turn_keys(turn_keys))
         except Exception:
             raise FaeWorkbenchReadError("fae_workbench_query_failed") from None

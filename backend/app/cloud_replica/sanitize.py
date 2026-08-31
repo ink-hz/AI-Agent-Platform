@@ -179,6 +179,7 @@ def sanitize_management_projection(
             "failure_layer": _safe_identifier(raw.failure_layer),
             "owner_display": owner.text if owner and owner.safe else None,
             "linked_turn_count": max(raw.linked_turn_count, 0),
+            "scope_valid": raw.scope_valid is True,
             "updated_at": raw.updated_at,
             "sanitizer_policy_version": policy.version,
         }

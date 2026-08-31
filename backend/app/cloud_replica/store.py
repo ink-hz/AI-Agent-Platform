@@ -91,7 +91,7 @@ _MANAGEMENT_KEYS = {
     "review_issue_projection": {
         "kind", "key", "agent_id", "updated_at", "title", "status",
         "priority", "failure_layer", "owner_display", "linked_turn_count",
-        "sanitizer_policy_version",
+        "scope_valid", "sanitizer_policy_version",
     },
     "review_inbox_projection": {
         "kind", "key", "agent_id", "first_feedback_at", "turn_key",

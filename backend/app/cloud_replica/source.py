@@ -81,13 +81,55 @@ order by trace_key, seq, step_key
 """.strip()
 
 REVIEW_ISSUE_SQL = """
+with recursive canonical_walk as (
+  select issue.id as root_id,issue.id as current_id,
+    issue.canonical_issue_id as next_id,array[issue.id] as path,false as cycle
+  from platform_review.feedback_issues issue
+  union all
+  select walk.root_id,target.id,target.canonical_issue_id,
+    walk.path || target.id,target.id=any(walk.path)
+  from canonical_walk walk
+  join platform_review.feedback_issues target on target.id=walk.next_id
+  where walk.next_id is not null and not walk.cycle
+)
 select issue.id,issue.agent_id,issue.disposition as status,issue.priority,
   issue.title,issue.failure_layer,issue.owner,issue.updated_at,
-  count(link.id) filter (where link.active) as linked_turn_count
+  (select count(*) from platform_review.feedback_issue_links link
+    where link.issue_id=issue.id and link.active) as linked_turn_count,
+  not (
+    (issue.origin_turn_key is not null and (
+      not exists (select 1 from platform_read.turns origin
+        where origin.turn_key=issue.origin_turn_key)
+      or exists (select 1 from platform_read.turns origin
+        where origin.turn_key=issue.origin_turn_key and (
+          origin.agent_id is distinct from issue.agent_id
+          or (issue.agent_id='ai-fae-agent'
+              and origin.source_kind is distinct from 'fae')
+        ))
+    ))
+    or (issue.canonical_issue_id is not null and (
+      canonical.id is null
+      or canonical.agent_id is distinct from issue.agent_id
+    ))
+    or exists (
+      select 1 from platform_review.feedback_issue_links link
+      left join platform_read.turns linked_turn
+        on linked_turn.turn_key=link.source_turn_key
+      where link.issue_id=issue.id and link.active and (
+        link.agent_id is distinct from issue.agent_id
+        or linked_turn.turn_key is null
+        or linked_turn.agent_id is distinct from issue.agent_id
+        or (issue.agent_id='ai-fae-agent'
+            and linked_turn.source_kind is distinct from 'fae')
+      )
+    )
+    or exists (select 1 from canonical_walk walk
+      where walk.root_id=issue.id and walk.cycle)
+  ) as scope_valid
 from platform_review.feedback_issues issue
-left join platform_review.feedback_issue_links link on link.issue_id=issue.id
+left join platform_review.feedback_issues canonical
+  on canonical.id=issue.canonical_issue_id
 where issue.updated_at <= %(through)s
-group by issue.id
 order by issue.updated_at,issue.id
 """.strip()
 
@@ -98,7 +140,10 @@ from platform_read.feedback feedback
 where feedback.sentiment='negative' and feedback.created_at <= %(through)s
   and not exists (
     select 1 from platform_review.feedback_issue_links link
+    join platform_review.feedback_issues linked_issue
+      on linked_issue.id=link.issue_id
     where link.agent_id=feedback.agent_id
+      and linked_issue.agent_id=feedback.agent_id
       and link.source_turn_key=feedback.turn_key and link.active
   )
 group by feedback.agent_id,feedback.turn_key
@@ -159,6 +204,7 @@ class ReplicaSource:
                 owner_display=row["owner"],
                 linked_turn_count=int(row["linked_turn_count"]),
                 updated_at=row["updated_at"],
+                scope_valid=row["scope_valid"] is True,
             )
             for row in issues
         ]

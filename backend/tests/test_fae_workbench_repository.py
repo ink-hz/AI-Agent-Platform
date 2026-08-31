@@ -65,7 +65,7 @@ def repository_with_rows(*, summary, trend, attention):
 
 
 def repository_with_turn_exists(found):
-    connection = _Connection(([{"found": found}],))
+    connection = _Connection(([{"turn_key": "fae:turn-1"}] if found else [],))
     repository = PsycopgFaeWorkbenchRepository(
         "postgresql://platform", connect=lambda *_args, **_kwargs: connection
     )
@@ -115,7 +115,20 @@ def test_turn_scope_requires_both_fae_agent_and_source():
     statement, params = connection.executed[-1]
     assert "agent_id='ai-fae-agent'" in "".join(statement.split())
     assert "source_kind='fae'" in "".join(statement.split())
-    assert params == ("fae:turn-1",)
+    assert params == (["fae:turn-1"],)
+
+
+def test_two_hundred_turn_keys_use_one_bounded_query():
+    keys = [f"fae:turn-{index}" for index in range(200)]
+    connection = _Connection(([{"turn_key": key} for key in keys],))
+    repository = PsycopgFaeWorkbenchRepository(
+        "postgresql://platform", connect=lambda *_args, **_kwargs: connection
+    )
+
+    assert repository.fae_turn_keys(keys) == set(keys)
+    assert len(connection.executed) == 1
+    assert "turn_key=any(%s)" in "".join(connection.executed[0][0].split())
+    assert connection.executed[0][1] == (keys,)
 
 
 def test_local_repository_rejects_nonproduction_environment():

@@ -289,6 +289,7 @@ def test_management_projection_keeps_text_and_hashes_identifiers(policy):
             owner_display="张候选人",
             linked_turn_count=1,
             updated_at=now,
+            scope_valid=True,
         ),
         policy,
         b"i" * 32,
@@ -312,6 +313,7 @@ def test_management_projection_keeps_text_and_hashes_identifiers(policy):
 
     assert issue["title"]["text"] == "联系 alice@example.com 处理项目鹰 /Users/neo/a.md"
     assert issue["owner_display"] == "张候选人"
+    assert issue["scope_valid"] is True
     assert operation["summary"]["text"] == "客户甲集团 https://example.com/private"
     assert operation["title"]["text"] == "flywheel data access recovered"
     assert operation["agent_id"] is None

@@ -443,6 +443,84 @@ class PsycopgReviewRepository:
         except Exception as error:
             raise ReviewRepositoryError("get evidence failed") from error
 
+    def get_evidence_owner(self, evidence_id: UUID) -> dict | None:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    """
+                    select issue_id from platform_review.feedback_fix_evidence
+                    where id=%s
+                    """,
+                    (evidence_id,),
+                ).fetchone()
+            return dict(row) if row is not None else None
+        except Exception as error:
+            raise ReviewRepositoryError("get evidence owner failed") from error
+
+    def agent_issue_scope_valid(self, agent_id: str) -> bool:
+        """Validate all nested ownership metadata for one Agent in one read."""
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    """
+                    with recursive canonical_walk as (
+                      select issue.id as root_id, issue.id as current_id,
+                        issue.canonical_issue_id as next_id,
+                        array[issue.id] as path, false as cycle
+                      from platform_review.feedback_issues issue
+                      where issue.agent_id=%s
+                      union all
+                      select walk.root_id, target.id, target.canonical_issue_id,
+                        walk.path || target.id, target.id=any(walk.path)
+                      from canonical_walk walk
+                      join platform_review.feedback_issues target
+                        on target.id=walk.next_id
+                      where walk.next_id is not null and not walk.cycle
+                    )
+                    select not exists (
+                      select 1
+                      from platform_review.feedback_issues issue
+                      left join platform_read.turns origin
+                        on origin.turn_key=issue.origin_turn_key
+                      left join platform_review.feedback_issues canonical
+                        on canonical.id=issue.canonical_issue_id
+                      where issue.agent_id=%s and (
+                        (issue.origin_turn_key is not null and (
+                          origin.turn_key is null
+                          or origin.agent_id is distinct from issue.agent_id
+                          or (issue.agent_id='ai-fae-agent'
+                              and origin.source_kind is distinct from 'fae')
+                        ))
+                        or (issue.canonical_issue_id is not null and (
+                          canonical.id is null
+                          or canonical.agent_id is distinct from issue.agent_id
+                        ))
+                        or exists (
+                          select 1
+                          from platform_review.feedback_issue_links link
+                          left join platform_read.turns linked_turn
+                            on linked_turn.turn_key=link.source_turn_key
+                          where link.issue_id=issue.id and link.active and (
+                            link.agent_id is distinct from issue.agent_id
+                            or linked_turn.turn_key is null
+                            or linked_turn.agent_id is distinct from issue.agent_id
+                            or (issue.agent_id='ai-fae-agent'
+                                and linked_turn.source_kind is distinct from 'fae')
+                          )
+                        )
+                        or exists (
+                          select 1 from canonical_walk walk
+                          where walk.root_id=issue.id and walk.cycle
+                        )
+                      )
+                    ) as valid
+                    """,
+                    (agent_id, agent_id),
+                ).fetchone()
+            return bool(row and row["valid"])
+        except Exception as error:
+            raise ReviewRepositoryError("validate issue scope failed") from error
+
     def get_replay(self, replay_id: UUID) -> dict | None:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
@@ -1815,8 +1893,11 @@ class PsycopgReviewRepository:
                   and (%s::text is null or f.agent_id=%s)
                   and not exists (
                     select 1 from platform_review.feedback_issue_links link
-                    where link.agent_id=f.agent_id and link.source_turn_key=f.turn_key
-                      and link.active
+                    join platform_review.feedback_issues linked_issue
+                      on linked_issue.id=link.issue_id
+                    where link.agent_id=f.agent_id
+                      and linked_issue.agent_id=f.agent_id
+                      and link.source_turn_key=f.turn_key and link.active
                   )
                 group by f.agent_id, f.turn_key
                 order by min(f.created_at), f.agent_id, f.turn_key

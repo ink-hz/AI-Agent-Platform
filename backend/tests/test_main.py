@@ -545,6 +545,10 @@ async def test_create_app_cloud_fae_overview_keeps_issues_when_feedback_projecti
             }
 
     class Review:
+        async def agent_issue_scope_valid(self, agent_id):
+            assert agent_id == "ai-fae-agent"
+            return True
+
         async def overview(self, *, agent_id):
             assert agent_id == "ai-fae-agent"
             return {"statuses": {"open": 2}}
@@ -579,6 +583,10 @@ async def test_create_app_uses_unavailable_fae_repository_without_read_boundary(
     registry, contract = _fae_app_paths(tmp_path)
 
     class Review:
+        async def agent_issue_scope_valid(self, agent_id):
+            assert agent_id == "ai-fae-agent"
+            return True
+
         async def overview(self, *, agent_id):
             assert agent_id == "ai-fae-agent"
             return {"statuses": {"open": 1}}

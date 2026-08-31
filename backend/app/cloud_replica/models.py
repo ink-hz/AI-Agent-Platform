@@ -150,6 +150,7 @@ class ReviewIssueProjection:
     owner_display: str | None
     linked_turn_count: int
     updated_at: datetime
+    scope_valid: bool = False
 
 
 @dataclass(frozen=True, slots=True)

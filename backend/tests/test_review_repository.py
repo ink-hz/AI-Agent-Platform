@@ -38,6 +38,7 @@ def test_repository_exposes_transactional_closure_inputs():
         "add_evidence",
         "record_evidence_verification",
         "get_evidence",
+        "get_evidence_owner",
         "load_replay_input",
         "get_verified_deployment",
         "expire_stale_replays",
@@ -205,3 +206,42 @@ def test_optional_agent_filters_are_typed_for_postgres_parameters():
         source = inspect.getsource(method)
         assert "%s is null" not in source
         assert "%s::text is null" in source
+
+
+def test_evidence_owner_lookup_is_metadata_only_and_read_only():
+    statements = []
+
+    class Result:
+        def fetchone(self):
+            return {"issue_id": UUID(int=1)}
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters):
+            statements.append((statement, parameters))
+            return Result()
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return Cursor()
+
+    repository = PsycopgReviewRepository(
+        "postgresql://analyst@db/flywheel",
+        connect=lambda *_args, **_kwargs: Connection(),
+    )
+
+    assert repository.get_evidence_owner(UUID(int=2)) == {"issue_id": UUID(int=1)}
+    normalized = " ".join(statements[0][0].lower().split())
+    assert normalized.startswith("select issue_id from")
+    assert "select *" not in normalized
+    assert all(word not in normalized for word in ("insert ", "update ", "delete "))
+
+
+def test_inbox_link_requires_owning_issue_to_match_feedback_agent():
+    source = inspect.getsource(PsycopgReviewRepository.list_inbox)
+    normalized = " ".join(source.split())
+
+    assert "join platform_review.feedback_issues linked_issue" in normalized
+    assert "linked_issue.agent_id=f.agent_id" in normalized

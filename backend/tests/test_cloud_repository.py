@@ -435,6 +435,26 @@ def test_fae_operational_aggregate_uses_only_bounded_sanitized_records():
     assert "u" * 52 not in repr(aggregate)
 
 
+def test_two_hundred_fae_turn_keys_scan_cloud_records_once(monkeypatch):
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    repository, _connection = _repository(now, ())
+    keys = [f"{index + 1:052x}" for index in range(200)]
+    record = _record(now, key="f" * 52, agent_id="ai-fae-agent")
+    record["source_kind"] = "fae"
+    prototype = record["turns"][0]
+    record["turns"] = [{**prototype, "key": key} for key in keys]
+    scans = []
+
+    def records_in_period(period_start, period_end):
+        scans.append((period_start, period_end))
+        return [(record, record["user_id"])]
+
+    monkeypatch.setattr(repository, "_fae_records_in_period", records_in_period)
+
+    assert repository.fae_turn_keys(keys) == set(keys)
+    assert len(scans) == 1
+
+
 def test_fae_cloud_wrapper_uses_complete_bounded_feedback_projection_for_totals_and_days():
     now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
     first = _record(now, key="f" * 52, agent_id="ai-fae-agent")

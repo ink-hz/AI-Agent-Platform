@@ -126,6 +126,10 @@ class _ProjectionReader:
 
 
 class ReplicaReviewRepository(_ProjectionReader):
+    def agent_issue_scope_valid(self, agent_id: str) -> bool:
+        issues = self._records("review_issue_projection", agent_id)
+        return all(issue.get("scope_valid") is True for issue in issues)
+
     def overview(self, *, agent_id: str | None = None) -> dict:
         issues = self._records("review_issue_projection", agent_id)
         totals = self._records("review_feedback_totals_projection", agent_id)

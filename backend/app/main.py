@@ -147,6 +147,9 @@ class _UnavailableFaeWorkbenchRepository:
     def fae_turn_exists(self, _turn_key: str) -> bool:
         raise FaeWorkbenchReadError("fae_workbench_query_failed")
 
+    def fae_turn_keys(self, _turn_keys: list[str]) -> set[str]:
+        raise FaeWorkbenchReadError("fae_workbench_query_failed")
+
 
 class _UnavailableFaeFeedbackProjectionReader:
     def read_fae_feedback(self, _period_start, _period_end):
