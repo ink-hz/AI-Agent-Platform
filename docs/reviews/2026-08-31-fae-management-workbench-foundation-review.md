@@ -11,7 +11,8 @@
 **最终 Important 修复范围：** `011b584ca1e0a4ee83916a968c5d19fdc33bd1c2..7521efdb01527956a5253ba288dddb55191921e5`
 **最终 Important 修复 implementation head：** `7521efdb01527956a5253ba288dddb55191921e5`
 **whole-branch follow-up 修复范围：** `0f2723c008729d47f8ea90d32e5a74084a33daea..fb7f95c635cd9ab5f0378de6193914d018d2a4d0`
-**最终 cumulative implementation head：** `fb7f95c635cd9ab5f0378de6193914d018d2a4d0`
+**release-handoff canonical truth implementation head：** `58591892305a6cf97729a8d3488ee4da8a80fe70`
+**最终 cumulative implementation head：** `58591892305a6cf97729a8d3488ee4da8a80fe70`
 **结论：** Foundation 的代码、自动化回归和静态上线契约满足进入部署流程的条件；本次复审没有部署、没有调用生产环境，也不构成生产验收。
 
 ## 2026-09-01 whole-branch Important 修复补充
@@ -50,6 +51,27 @@ focused backend `256 passed`、focused frontend `71 passed`。绑定
 `69 files / 598 tests`；production build（3511 modules）、compileall、shell/Node syntax、commit-range
 diff、credential scan 与 progress-ledger diff 全部 PASS。本 follow-up 未修改 cloud acceptance 脚本，
 未部署、未调用生产、未使用凭据、未合并、未修改 progress ledger。
+
+## 2026-09-01 release-handoff canonical truth 修复
+
+最后一项 handoff cross-contract 缺陷已在上述 cumulative implementation head 关闭。generic merge
+与 release handoff 现在通过同一 paired-event helper，在 canonical edge 成功的同一 transaction
+内同时写 source `issue_merged` 与 target `issue_absorbed`；本地和 cloud projection 共用双向
+event-pair scope predicate，对任一侧缺失、身份错误或 actor/reason 不匹配 fail closed。
+
+当一个空 source 的历史 link 被拆分到多个 target 时，handoff 不再创建误导性的单一 canonical
+edge，也不写 merge/absorbed pair；source 保持 actionable 且 canonical 为空，每条 link 的精确
+`link_moved_out` / `link_moved_in` 历史继续证明 scope。只有当前 transaction 与既有精确 move
+历史的 target 集合唯一时才 canonicalize。Agent advisory lock、稳定端点锁、递归 cycle guard 与
+rollback 顺序保持不变，重复 import 直接返回存储结果，不重复事件或改变 canonical 含义。
+
+TDD RED 首先证明 shared pair predicate/target event 合同缺失；最终 actual importer 覆盖单 target、
+两 link 拆到两 target 的正反顺序、idempotent rerun、direct/long cycle rollback 以及 scope valid。
+绑定 `58591892305a6cf97729a8d3488ee4da8a80fe70` 的 focused consolidated backend 为
+`261 passed`，fresh canonical backend 为 `3584 passed, 2 skipped, 180 warnings`（311.13 秒），
+cloud backend 为 `239 passed`。Python compileall、commit-range/staged diff、canonical writer/event
+全仓搜索、shared local/cloud predicate 搜索、新增行 credential scan 与 progress-ledger diff 均
+PASS。本次没有 frontend 变更，按复审要求未重复 frontend/build；未部署、未调用生产、未合并。
 
 ## 自动化结果
 
