@@ -632,12 +632,17 @@ def test_office_recipient_directory_compose_override_is_explicit_and_private():
     services = override["services"]
     target = "/run/secrets/platform-office-recipient-bearer"
 
+    assert services["platform-api"]["environment"] == {
+        "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED": "1",
+        "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE": target,
+    }
+    assert services["platform-loopback"]["environment"] == {
+        "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED": "1",
+        "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE": target,
+        "PLATFORM_OFFICE_RECIPIENT_LOCAL_PEER_CIDRS": "172.31.0.1/32",
+    }
     for name in ("platform-api", "platform-loopback"):
         service = services[name]
-        assert service["environment"] == {
-            "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED": "1",
-            "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE": target,
-        }
         assert service["volumes"] == [
             {
                 "type": "bind",

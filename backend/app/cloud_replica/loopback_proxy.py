@@ -29,13 +29,18 @@ _HOP_BY_HOP = frozenset(
         b"upgrade",
     }
 )
-_REPLACED = frozenset(
+_FORWARDING_IDENTITY = frozenset(
     {
-        b"authorization",
         b"forwarded",
         b"x-forwarded-for",
         b"x-forwarded-proto",
         b"x-real-ip",
+    }
+)
+_REPLACED = frozenset(
+    {
+        b"authorization",
+        *_FORWARDING_IDENTITY,
     }
 )
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
@@ -87,6 +92,7 @@ class LoopbackProxy:
         trusted_peer_cidrs: str,
         source_address: str | None = None,
         office_recipient_bearer: str | None = None,
+        office_recipient_local_peer_cidrs: str | None = None,
     ) -> None:
         self.target_base_url = _target(target_base_url)
         self.trusted_peers = _exact_networks(trusted_peer_cidrs)
@@ -105,6 +111,15 @@ class LoopbackProxy:
             f"Bearer {office_recipient_bearer}".encode()
             if office_recipient_bearer is not None
             else None
+        )
+        if (office_recipient_bearer is None) != (
+            office_recipient_local_peer_cidrs is None
+        ):
+            raise RuntimeError("loopback Office recipient configuration incomplete")
+        self._office_local_peers = (
+            _exact_networks(office_recipient_local_peer_cidrs)
+            if office_recipient_local_peer_cidrs is not None
+            else ()
         )
 
     async def _lifespan(self, receive, send) -> None:
@@ -140,37 +155,6 @@ class LoopbackProxy:
             )
             return
         request = Request(scope, receive)
-        try:
-            peer = ip_address(request.client.host if request.client else "")
-            if not any(
-                peer.version == network.version and peer in network
-                for network in self.trusted_peers
-            ):
-                raise UntrustedForwardingHeaders("proxy peer rejected")
-            forwarding_names = {
-                name.lower()
-                for name, _ in scope.get("headers", ())
-                if name.lower()
-                in {
-                    b"forwarded",
-                    b"x-forwarded-for",
-                    b"x-forwarded-proto",
-                    b"x-real-ip",
-                }
-            }
-            if not forwarding_names:
-                scheme = request.url.scheme
-                if scheme not in {"http", "https"}:
-                    raise UntrustedForwardingHeaders("request scheme invalid")
-                edge = EdgeSource(ip=peer, scheme=scheme)
-            else:
-                edge = resolve_edge_source(request, self.trusted_peers)
-        except (ValueError, UntrustedForwardingHeaders):
-            await JSONResponse(
-                {"detail": "request forwarding rejected"}, status_code=400
-            )(scope, receive, send)
-            return
-
         method = scope["method"].upper()
         path = scope.get("path", "")
         try:
@@ -181,19 +165,75 @@ class LoopbackProxy:
             (method, path) in _OFFICE_RECIPIENT_ROUTES
             and scope.get("raw_path") == canonical_raw_path
         )
+        forwarding_names = {
+            name.lower()
+            for name, _ in scope.get("headers", ())
+            if name.lower() in _FORWARDING_IDENTITY
+        }
+        try:
+            peer = ip_address(request.client.host if request.client else "")
+        except ValueError:
+            status_code = (
+                404
+                if office_request and self._office_authorization is not None
+                else 400
+            )
+            headers = _NO_STORE if status_code == 404 else None
+            await JSONResponse(
+                {
+                    "detail": (
+                        "not found"
+                        if status_code == 404
+                        else "request forwarding rejected"
+                    )
+                },
+                status_code=status_code,
+                headers=headers,
+            )(scope, receive, send)
+            return
+
         if office_request and self._office_authorization is not None:
+            trusted_office_peer = any(
+                peer.version == network.version and peer in network
+                for network in self._office_local_peers
+            )
             supplied_authorization = [
                 value
                 for name, value in scope.get("headers", ())
                 if name.lower() == b"authorization"
             ]
-            if len(supplied_authorization) != 1 or not hmac.compare_digest(
-                supplied_authorization[0], self._office_authorization
+            if (
+                not trusted_office_peer
+                or forwarding_names
+                or len(supplied_authorization) != 1
+                or not hmac.compare_digest(
+                    supplied_authorization[0], self._office_authorization
+                )
             ):
                 await JSONResponse(
                     {"detail": "not found"},
                     status_code=404,
                     headers=_NO_STORE,
+                )(scope, receive, send)
+                return
+            edge = EdgeSource(ip=ip_address("127.0.0.1"), scheme="http")
+        else:
+            try:
+                if not any(
+                    peer.version == network.version and peer in network
+                    for network in self.trusted_peers
+                ):
+                    raise UntrustedForwardingHeaders("proxy peer rejected")
+                if not forwarding_names:
+                    scheme = request.url.scheme
+                    if scheme not in {"http", "https"}:
+                        raise UntrustedForwardingHeaders("request scheme invalid")
+                    edge = EdgeSource(ip=peer, scheme=scheme)
+                else:
+                    edge = resolve_edge_source(request, self.trusted_peers)
+            except UntrustedForwardingHeaders:
+                await JSONResponse(
+                    {"detail": "request forwarding rejected"}, status_code=400
                 )(scope, receive, send)
                 return
 
@@ -262,6 +302,7 @@ def create_app() -> LoopbackProxy:
         "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED", "0"
     ) not in {"0", "false", "False"}
     office_bearer = None
+    office_local_peer_cidrs = None
     if office_enabled:
         bearer_file = os.getenv("PLATFORM_OFFICE_RECIPIENT_BEARER_FILE", "").strip()
         if not bearer_file:
@@ -270,6 +311,11 @@ def create_app() -> LoopbackProxy:
             office_bearer = read_secret_file(bearer_file)
         except SecretFileUnavailable:
             raise RuntimeError("loopback Office recipient bearer unavailable") from None
+        office_local_peer_cidrs = os.getenv(
+            "PLATFORM_OFFICE_RECIPIENT_LOCAL_PEER_CIDRS", ""
+        ).strip()
+        if not office_local_peer_cidrs:
+            raise RuntimeError("loopback Office recipient local peers required")
     return LoopbackProxy(
         target_base_url=os.getenv(
             "PLATFORM_LOOPBACK_TARGET_BASE_URL", "http://platform-api:8080"
@@ -279,4 +325,5 @@ def create_app() -> LoopbackProxy:
         ),
         source_address=os.getenv("PLATFORM_LOOPBACK_SOURCE_ADDRESS") or None,
         office_recipient_bearer=office_bearer,
+        office_recipient_local_peer_cidrs=office_local_peer_cidrs,
     )

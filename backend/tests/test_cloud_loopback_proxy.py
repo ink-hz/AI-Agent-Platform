@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 
 import httpx
+import pytest
+from fastapi.testclient import TestClient
 
 
 def _free_port() -> int:
@@ -87,6 +89,7 @@ def test_real_uvicorn_proxy_boundary_preserves_peer_and_overwrites_headers(tmp_p
         {
             "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED": "1",
             "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE": str(office_bearer),
+            "PLATFORM_OFFICE_RECIPIENT_LOCAL_PEER_CIDRS": "127.0.0.1/32",
         }
     )
     proxy = subprocess.Popen(
@@ -182,3 +185,110 @@ def test_real_uvicorn_proxy_boundary_preserves_peer_and_overwrites_headers(tmp_p
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+
+
+@pytest.fixture
+def office_topology_proxy(tmp_path, monkeypatch):
+    probe = tmp_path / "office_proxy_probe.py"
+    probe.write_text(
+        "from starlette.requests import Request\n"
+        "from starlette.responses import JSONResponse\n"
+        "async def app(scope, receive, send):\n"
+        "    request = Request(scope, receive)\n"
+        "    await JSONResponse({\n"
+        "        'authorization': request.headers.get('authorization'),\n"
+        "        'x_real_ip': request.headers.get('x-real-ip'),\n"
+        "        'x_forwarded_for': request.headers.get('x-forwarded-for'),\n"
+        "        'x_forwarded_proto': request.headers.get('x-forwarded-proto'),\n"
+        "    })(scope, receive, send)\n",
+        encoding="utf-8",
+    )
+    upstream_port = _free_port()
+    python_path = os.pathsep.join(
+        [str(tmp_path), str(Path(__file__).parents[1]), os.environ.get("PYTHONPATH", "")]
+    )
+    upstream = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "office_proxy_probe:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(upstream_port),
+            "--no-proxy-headers",
+            "--no-access-log",
+        ],
+        env={**os.environ, "PYTHONPATH": python_path},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    office_bearer = tmp_path / "office-recipient-bearer"
+    office_bearer.write_text("s" * 32, encoding="utf-8")
+    office_bearer.chmod(0o600)
+    monkeypatch.setenv(
+        "PLATFORM_LOOPBACK_TARGET_BASE_URL",
+        f"http://127.0.0.1:{upstream_port}",
+    )
+    monkeypatch.setenv("PLATFORM_LOOPBACK_TRUSTED_PROXY_CIDRS", "127.0.0.1/32")
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_OFFICE_RECIPIENT_BEARER_FILE", str(office_bearer))
+    monkeypatch.setenv(
+        "PLATFORM_OFFICE_RECIPIENT_LOCAL_PEER_CIDRS",
+        "172.31.0.1/32",
+    )
+    try:
+        _wait_ready(f"http://127.0.0.1:{upstream_port}/")
+        from app.cloud_replica.loopback_proxy import create_app
+
+        yield create_app()
+    finally:
+        upstream.terminate()
+        try:
+            upstream.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            upstream.kill()
+            upstream.wait(timeout=5)
+
+
+def test_office_proxy_canonicalizes_only_configured_bridge_peer(
+    office_topology_proxy,
+):
+    path = "/api/v1/internal/office/recipient-directory/search"
+    authorization = {"Authorization": f"Bearer {'s' * 32}"}
+    with TestClient(
+        office_topology_proxy,
+        client=("172.31.0.1", 51000),
+    ) as allowed_client:
+        allowed = allowed_client.post(path, headers=authorization, json={"query": ""})
+        spoofed = allowed_client.post(
+            path,
+            headers={
+                **authorization,
+                "X-Real-IP": "127.0.0.1",
+                "X-Forwarded-For": "127.0.0.1",
+                "X-Forwarded-Proto": "http",
+            },
+            json={"query": ""},
+        )
+    with TestClient(
+        office_topology_proxy,
+        client=("172.31.0.9", 51000),
+    ) as untrusted_client:
+        untrusted = untrusted_client.post(
+            path,
+            headers=authorization,
+            json={"query": ""},
+        )
+
+    assert allowed.status_code == 200
+    assert allowed.json() == {
+        "authorization": f"Bearer {'s' * 32}",
+        "x_real_ip": "127.0.0.1",
+        "x_forwarded_for": "127.0.0.1",
+        "x_forwarded_proto": "http",
+    }
+    assert spoofed.status_code == 404
+    assert untrusted.status_code == 404
