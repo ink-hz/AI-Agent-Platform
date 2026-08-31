@@ -358,4 +358,123 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     expect(container.textContent).toContain("冲突状态刷新失败");
     expect(container.textContent).not.toContain("记录已被其他复审者更新");
   });
+
+  it("does not navigate or refresh when deferred FAE create completes after unmount", async () => {
+    const pendingCreate = deferred<FeedbackIssueDetail>();
+    const api = apiWith(vi.fn());
+    api.inbox = vi.fn().mockResolvedValue([inboxA]);
+    api.create = vi.fn().mockReturnValue(pendingCreate.promise);
+    api.link = vi.fn().mockResolvedValue(issueNew);
+    await renderInboxWorkspace(api, "/admin/fae/issues");
+    await clickMutation("创建事项并纳管");
+    window.history.replaceState({}, "", "/admin/fae/reports");
+    await act(async () => root.render(<main>分析报告页</main>));
+    const pushState = vi.spyOn(window.history, "pushState");
+    const readCounts = [api.overview, api.inbox, api.issues, api.issue].map((method) => vi.mocked(method).mock.calls.length);
+
+    await act(async () => pendingCreate.resolve(issueNew));
+
+    expect(api.link).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe("/admin/fae/reports");
+    expect(pushState).not.toHaveBeenCalled();
+    expect([api.overview, api.inbox, api.issues, api.issue].map((method) => vi.mocked(method).mock.calls.length)).toEqual(readCounts);
+    expect(container.textContent).toBe("分析报告页");
+  });
+
+  it("does not navigate or refresh when deferred generic link completes after unmount", async () => {
+    const pendingLink = deferred<FeedbackIssueDetail>();
+    const api = apiWith(vi.fn());
+    api.inbox = vi.fn().mockResolvedValue([inboxA]);
+    api.link = vi.fn().mockReturnValue(pendingLink.promise);
+    await renderInboxWorkspace(api, "/admin/review");
+    await chooseExistingIssue();
+    await clickMutation("关联到已有事项");
+    window.history.replaceState({}, "", "/admin/sessions");
+    await act(async () => root.render(<main>Sessions 页面</main>));
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    const readCounts = [api.overview, api.inbox, api.issues, api.issue].map((method) => vi.mocked(method).mock.calls.length);
+
+    await act(async () => pendingLink.resolve(issueA));
+
+    expect(window.location.pathname).toBe("/admin/sessions");
+    expect(replaceState).not.toHaveBeenCalled();
+    expect([api.overview, api.inbox, api.issues, api.issue].map((method) => vi.mocked(method).mock.calls.length)).toEqual(readCounts);
+    expect(container.textContent).toBe("Sessions 页面");
+  });
+
+  it("aborts a post-create refresh when the workspace unmounts", async () => {
+    let refreshSignal: AbortSignal | undefined;
+    const api = apiWith(vi.fn());
+    api.inbox = vi.fn().mockResolvedValue([inboxA]);
+    api.create = vi.fn().mockResolvedValue(issueNew);
+    api.link = vi.fn().mockResolvedValue(issueNew);
+    api.issue = vi.fn((_id: string, signal?: AbortSignal) => {
+      refreshSignal = signal;
+      return new Promise<FeedbackIssueDetail>((_resolve, reject) => signal?.addEventListener("abort", () => {
+        const error = new Error("aborted");
+        error.name = "AbortError";
+        reject(error);
+      }, { once: true }));
+    });
+    await renderInboxWorkspace(api, "/admin/review");
+
+    await clickMutation("创建事项并纳管");
+    expect(window.location.search).toBe("?agent_id=ai-fae-agent&issue=issue-new");
+    expect(refreshSignal?.aborted).toBe(false);
+    window.history.replaceState({}, "", "/admin/sessions");
+    await act(async () => root.render(<main>Sessions 页面</main>));
+
+    expect(refreshSignal?.aborted).toBe(true);
+    expect(container.textContent).toBe("Sessions 页面");
+  });
+
+  it("aborts conflict recovery refresh when the workspace unmounts", async () => {
+    let refreshSignal: AbortSignal | undefined;
+    const update = vi.fn().mockRejectedValue({ status: 409 });
+    const api = apiWith(update);
+    api.issue = vi.fn()
+      .mockResolvedValueOnce(issueA)
+      .mockImplementationOnce((_id: string, signal?: AbortSignal) => {
+        refreshSignal = signal;
+        return new Promise<FeedbackIssueDetail>((_resolve, reject) => signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        }, { once: true }));
+      });
+    await renderWorkspace(api);
+
+    await clickMutation("保存归因");
+    expect(refreshSignal?.aborted).toBe(false);
+    window.history.replaceState({}, "", "/admin/sessions");
+    await act(async () => root.render(<main>Sessions 页面</main>));
+
+    expect(refreshSignal?.aborted).toBe(true);
+    expect(container.textContent).toBe("Sessions 页面");
+  });
+
+  it("aborts an ordinary post-mutation refresh when the workspace unmounts", async () => {
+    let refreshSignal: AbortSignal | undefined;
+    const update = vi.fn().mockResolvedValue(issueA);
+    const api = apiWith(update);
+    api.issue = vi.fn()
+      .mockResolvedValueOnce(issueA)
+      .mockImplementationOnce((_id: string, signal?: AbortSignal) => {
+        refreshSignal = signal;
+        return new Promise<FeedbackIssueDetail>((_resolve, reject) => signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        }, { once: true }));
+      });
+    await renderWorkspace(api);
+
+    await clickMutation("保存归因");
+    expect(refreshSignal?.aborted).toBe(false);
+    window.history.replaceState({}, "", "/admin/sessions");
+    await act(async () => root.render(<main>Sessions 页面</main>));
+
+    expect(refreshSignal?.aborted).toBe(true);
+    expect(container.textContent).toBe("Sessions 页面");
+  });
 });

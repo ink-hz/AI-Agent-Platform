@@ -52,6 +52,10 @@ type SelectionToken = {
   generation: number;
 };
 
+type MutationToken = SelectionToken & {
+  lifecycleEpoch: number;
+};
+
 const STATUS_ORDER = [
   "pending_triage", "fixing", "awaiting_merge", "awaiting_deploy",
   "awaiting_replay", "awaiting_review", "closed", "duplicate",
@@ -97,6 +101,18 @@ export function ReviewWorkspace({
     generation: 0,
   });
   const skippedDetailSelectionRef = useRef<SelectionToken | null>(null);
+  const lifecycleRef = useRef({ mounted: true, epoch: 0 });
+  const refreshControllersRef = useRef(new Set<AbortController>());
+
+  useEffect(() => {
+    lifecycleRef.current.mounted = true;
+    return () => {
+      lifecycleRef.current.mounted = false;
+      lifecycleRef.current.epoch += 1;
+      refreshControllersRef.current.forEach((controller) => controller.abort());
+      refreshControllersRef.current.clear();
+    };
+  }, []);
 
   const selectIssueState = (id: string | null, turnKey: string | null) => {
     if (selectionRef.current.issueId !== id || selectionRef.current.turnKey !== turnKey) {
@@ -119,15 +135,11 @@ export function ReviewWorkspace({
     selectIssueState(initialIssueId, initialIssueId ? null : initialTurn?.turn_key ?? null);
   }, [basePath, initialIssueId, initialTurn]);
 
-  const loadLists = async (signal?: AbortSignal, expectedSelection?: SelectionToken) => {
+  const loadLists = async (signal?: AbortSignal, expectedSelection?: MutationToken) => {
     const [nextOverview, nextInbox, nextIssues] = await Promise.all([
       api.overview(signal), api.inbox(signal), api.issues(signal),
     ]);
-    if (signal?.aborted || (expectedSelection && (
-      selectionRef.current.issueId !== expectedSelection.issueId
-      || selectionRef.current.turnKey !== expectedSelection.turnKey
-      || selectionRef.current.generation !== expectedSelection.generation
-    ))) return;
+    if (signal?.aborted || (expectedSelection && !selectionIsCurrent(expectedSelection))) return;
     setOverview(nextOverview);
     setInbox(nextInbox);
     setIssues(nextIssues);
@@ -205,24 +217,41 @@ export function ReviewWorkspace({
     return actor.trim();
   };
 
-  const currentSelection = (): SelectionToken => ({ ...selectionRef.current });
+  const currentSelection = (): MutationToken => ({
+    ...selectionRef.current,
+    lifecycleEpoch: lifecycleRef.current.epoch,
+  });
 
-  const selectionIsCurrent = (selection: SelectionToken) => (
-    selectionRef.current.issueId === selection.issueId
+  const lifecycleIsCurrent = (selection: MutationToken) => (
+    lifecycleRef.current.mounted && lifecycleRef.current.epoch === selection.lifecycleEpoch
+  );
+
+  const selectionIsCurrent = (selection: MutationToken) => (
+    lifecycleIsCurrent(selection)
+    && selectionRef.current.issueId === selection.issueId
     && selectionRef.current.turnKey === selection.turnKey
     && selectionRef.current.generation === selection.generation
   );
 
-  const handleError = async (error: unknown, selection: SelectionToken) => {
+  const trackedRefreshController = () => {
+    const controller = new AbortController();
+    refreshControllersRef.current.add(controller);
+    return controller;
+  };
+
+  const handleError = async (error: unknown, selection: MutationToken) => {
     if (!selectionIsCurrent(selection)) return;
     if (apiStatus(error) === 409) {
+      const controller = trackedRefreshController();
       try {
-        if (selection.issueId) await loadDetail(selection.issueId, undefined, selection.generation);
+        if (selection.issueId) await loadDetail(selection.issueId, controller.signal, selection.generation);
       } catch (refreshError) {
         if (selectionIsCurrent(selection)) {
           setMessage(refreshError instanceof Error ? refreshError.message : "冲突状态刷新失败，请稍后重试。");
         }
         return;
+      } finally {
+        refreshControllersRef.current.delete(controller);
       }
       if (!selectionIsCurrent(selection)) return;
       setMessage("记录已被其他复审者更新；已刷新最新状态，未提交文本仍保留在表单中。");
@@ -245,26 +274,36 @@ export function ReviewWorkspace({
       if (!selectionIsCurrent(selection)) return;
       if (successIssueId) {
         const intendedIssueId = successIssueId(result);
-        const intendedSelection = chooseIssue(intendedIssueId, true);
+        chooseIssue(intendedIssueId, true);
+        const intendedSelection = currentSelection();
         errorSelection = intendedSelection;
-        const controller = new AbortController();
-        await Promise.all([
-          loadDetail(intendedIssueId, controller.signal, intendedSelection.generation),
-          loadLists(controller.signal, intendedSelection),
-        ]);
+        const controller = trackedRefreshController();
+        try {
+          await Promise.all([
+            loadDetail(intendedIssueId, controller.signal, intendedSelection.generation),
+            loadLists(controller.signal, intendedSelection),
+          ]);
+        } finally {
+          refreshControllersRef.current.delete(controller);
+        }
         if (!selectionIsCurrent(intendedSelection)) return;
         setMessage(success);
         return;
       }
-      if (selection.issueId) await loadDetail(selection.issueId, undefined, selection.generation);
-      if (!selectionIsCurrent(selection)) return;
-      await loadLists(undefined, selection);
+      const controller = trackedRefreshController();
+      try {
+        if (selection.issueId) await loadDetail(selection.issueId, controller.signal, selection.generation);
+        if (!selectionIsCurrent(selection)) return;
+        await loadLists(controller.signal, selection);
+      } finally {
+        refreshControllersRef.current.delete(controller);
+      }
       if (!selectionIsCurrent(selection)) return;
       setMessage(success);
     } catch (error) {
       await handleError(error, errorSelection);
     } finally {
-      setBusy(false);
+      if (lifecycleIsCurrent(selection)) setBusy(false);
     }
   };
 
