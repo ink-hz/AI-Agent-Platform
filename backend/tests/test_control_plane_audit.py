@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import threading
 from uuid import UUID, uuid4
@@ -76,6 +77,65 @@ def _admin_command(
             "result": "requested",
         },
     )
+
+
+def _fae_detail_command(**overrides) -> AuditCommand:
+    request_id = uuid4()
+    values = {
+        "event_type": "fae_session_detail_read_requested",
+        "actor_internal_user_id": uuid4(),
+        "target_type": "fae_session",
+        "target_id": hashlib.sha256(b"fae:session-1").hexdigest(),
+        "request_id": request_id,
+        "reason": "privileged_read",
+        "metadata": {
+            "operation_id": str(request_id),
+            "result": "requested",
+        },
+    }
+    values.update(overrides)
+    return AuditCommand(**values)
+
+
+def test_fae_session_detail_audit_accepts_only_content_free_metadata() -> None:
+    appended = []
+
+    class Repository:
+        def append(self, event_id, command, sanitized):
+            appended.append((command, sanitized))
+            return event_id
+
+    writer = AuditWriter(Repository())
+    requested = _fae_detail_command()
+    requested_id = writer.append(requested)
+    writer.append_outcome(
+        requested,
+        requested_id,
+        actual={"operation_id": str(requested.request_id)},
+    )
+
+    assert [command.event_type for command, _metadata in appended] == [
+        "fae_session_detail_read_requested",
+        "fae_session_detail_read_completed",
+    ]
+    assert [set(metadata) for _command, metadata in appended] == [
+        {"operation_id", "result"},
+        {"operation_id", "linked_audit_event_id", "result"},
+    ]
+    assert "fae:session-1" not in repr(appended)
+
+    for invalid in (
+        _fae_detail_command(target_id="fae:session-1"),
+        _fae_detail_command(
+            metadata={
+                "operation_id": str(uuid4()),
+                "question": "must-not-enter-audit",
+                "result": "requested",
+            }
+        ),
+    ):
+        with pytest.raises(ValueError, match="audit (command|metadata) invalid"):
+            writer.append(invalid)
 
 
 def test_governance_metadata_rejects_unknown_keys_instead_of_silently_dropping() -> None:
@@ -518,6 +578,102 @@ def test_real_audit_role_appends_immutable_idempotent_correlated_rows(
                     "where audit_event_id = %s",
                     (first,),
                 )
+
+
+@pytest.mark.postgres
+def test_real_audit_role_accepts_strict_fae_session_detail_read_vocabulary(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    actor_id = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id, display_name, status) values (%s, %s, 'active')",
+            (actor_id, "FAE Detail Audit Actor"),
+        )
+
+    writer = AuditWriter.from_database_url(
+        environment["urls"]["platform_audit_append"]
+    )
+    requested = _fae_detail_command(actor_internal_user_id=actor_id)
+    requested_id = writer.append(requested)
+    completed_id = writer.append_outcome(
+        requested,
+        requested_id,
+        actual={"operation_id": str(requested.request_id)},
+    )
+    failed_request = _fae_detail_command(actor_internal_user_id=actor_id)
+    failed_request_id = writer.append(failed_request)
+    failed_id = writer.append_outcome(
+        failed_request,
+        failed_request_id,
+        error_code="business_rejected",
+    )
+
+    with psycopg.connect(environment["admin"]) as connection:
+        rows = connection.execute(
+            "select event_type, target_type, target_internal_id, reason_code, "
+            "sanitized_before_after from platform_control.audit_events "
+            "where audit_event_id = any(%s) order by event_type",
+            ([requested_id, completed_id, failed_request_id, failed_id],),
+        ).fetchall()
+    assert [row[0] for row in rows] == [
+        "fae_session_detail_read_completed",
+        "fae_session_detail_read_failed",
+        "fae_session_detail_read_requested",
+        "fae_session_detail_read_requested",
+    ]
+    assert all(row[1] == "fae_session" for row in rows)
+    assert all(row[2] == hashlib.sha256(b"fae:session-1").hexdigest() for row in rows)
+    assert all(row[3] == "privileged_read" for row in rows)
+    assert all("question" not in row[4] for row in rows)
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("target_id", "reason", "metadata_update"),
+    [
+        ("fae:session-1", "privileged_read", {}),
+        ("A" * 64, "privileged_read", {}),
+        ("a" * 64, "free_form_reason", {}),
+        ("a" * 64, "privileged_read", {"question": "must-not-enter-audit"}),
+    ],
+)
+def test_database_fae_session_detail_audit_rejects_noncanonical_or_contentful_events(
+    control_database, target_id, reason, metadata_update
+) -> None:
+    environment = control_database["environments"]["production"]
+    actor_id, operation_id = uuid4(), uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id, display_name, status) values (%s, %s, 'active')",
+            (actor_id, "Invalid FAE Audit Actor"),
+        )
+    metadata = {
+        "operation_id": str(operation_id),
+        "result": "requested",
+        **metadata_update,
+    }
+
+    with psycopg.connect(
+        environment["urls"]["platform_audit_append"]
+    ) as connection:
+        with pytest.raises(psycopg.errors.CheckViolation):
+            connection.execute(
+                "select platform_control.append_audit_event("
+                "%s,%s,'fae_session_detail_read_requested','fae_session',"
+                "%s,%s,'requested',%s,%s::jsonb)",
+                (
+                    uuid4(),
+                    actor_id,
+                    target_id,
+                    operation_id,
+                    reason,
+                    json.dumps(metadata),
+                ),
+            )
 
 
 @pytest.mark.postgres

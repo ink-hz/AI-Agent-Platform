@@ -40,6 +40,41 @@ class Grants:
         return agent_id in self.allowed
 
 
+@pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN])
+@pytest.mark.parametrize(
+    "route",
+    [
+        "/api/admin/fae/overview",
+        "/api/admin/fae/sessions",
+        "/api/admin/fae/sessions/{session_key}",
+    ],
+)
+def test_exact_management_roles_can_read_fae_workbench(role, route):
+    decision = AuthorizationService(Grants()).decide(
+        AuthContext(uuid4(), role, uuid4(), False), "GET", route, ()
+    )
+
+    assert decision.allowed is True
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        "/api/admin/fae/overview",
+        "/api/admin/fae/sessions",
+        "/api/admin/fae/sessions/{session_key}",
+    ],
+)
+def test_fae_workbench_reads_deny_non_management_roles_and_allow_hard_stale(route):
+    service = AuthorizationService(Grants())
+
+    assert service.decide(None, "GET", route, ()).status_code == 401
+    assert service.decide(MEMBER, "GET", route, ()).status_code == 403
+    assert service.decide(VIEWER, "GET", route, ()).status_code == 403
+    assert service.decide(STALE_OWNER, "GET", route, ()).allowed is True
+    assert service.decide(STALE_ADMIN, "GET", route, ()).allowed is True
+
+
 @pytest.mark.parametrize("role", list(Role))
 @pytest.mark.parametrize(
     "route",

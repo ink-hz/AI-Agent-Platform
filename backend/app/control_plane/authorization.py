@@ -102,6 +102,12 @@ _VOC_MANAGEMENT_ROUTES = frozenset({
     ("GET", "/api/v1/extensions/voc/admin/submitters"),
 })
 
+_FAE_WORKBENCH_READ_ROUTES = frozenset({
+    ("GET", "/api/admin/fae/overview"),
+    ("GET", "/api/admin/fae/sessions"),
+    ("GET", "/api/admin/fae/sessions/{session_key}"),
+})
+
 _OWNER_ROUTES = frozenset({
     *(route for route in VIEWER_R1_ROUTES),
     ("GET", "/api/deployment"),
@@ -146,7 +152,12 @@ _OWNER_ROUTES = frozenset({
     ("DELETE", "/api/v1/manage/admins/{internal_user_id}"),
     ("PUT", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
     ("DELETE", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
-}) | _MANAGEMENT_SHELL_ROUTES | _AUTHENTICATED_SELF_ROUTES | _VOC_MANAGEMENT_ROUTES
+}) | (
+    _MANAGEMENT_SHELL_ROUTES
+    | _AUTHENTICATED_SELF_ROUTES
+    | _VOC_MANAGEMENT_ROUTES
+    | _FAE_WORKBENCH_READ_ROUTES
+)
 
 
 @dataclass(frozen=True)
