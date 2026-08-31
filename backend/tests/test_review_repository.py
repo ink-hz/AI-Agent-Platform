@@ -284,3 +284,14 @@ def test_issue_scope_sql_binds_move_direction_link_identity_and_referenced_issue
     assert "historical_after_issue.agent_id is distinct from issue.agent_id" in source
     assert "historical_link.id is null" in source
     assert "historical_link.agent_id is distinct from issue.agent_id" in source
+
+
+def test_issue_scope_sql_accepts_only_canonical_merge_relocated_turn_links():
+    source = " ".join(HISTORICAL_LINK_EVENT_INVALID_SQL.lower().split())
+
+    assert "historical_link.issue_id is distinct from issue.id" in source
+    assert "from canonical_walk merge_walk" in source
+    assert "merge_walk.root_id=issue.id" in source
+    assert "merge_walk.current_id=historical_link.issue_id" in source
+    assert "merge_move.before->>'id'=event.after->>'id'" in source
+    assert "merge_move.after->>'id'=event.after->>'id'" in source

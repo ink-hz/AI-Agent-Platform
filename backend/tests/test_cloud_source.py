@@ -85,6 +85,7 @@ def test_cloud_issue_scope_binds_move_direction_link_identity_and_referenced_iss
     assert "historical_before_issue.agent_id is distinct from issue.agent_id" in source
     assert "historical_after_issue.agent_id is distinct from issue.agent_id" in source
     assert "historical_link.id is null" in source
+    assert "merge_walk.current_id=historical_link.issue_id" in source
 
 
 class _Context:

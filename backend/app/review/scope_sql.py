@@ -35,6 +35,43 @@ exists (
       or (event.event_type in (
         'turn_linked', 'turn_linked_from_release_handoff'
       ) and event.after->>'issue_id' is distinct from issue.id::text)
+      or (event.event_type in (
+        'turn_linked', 'turn_linked_from_release_handoff'
+      ) and historical_link.issue_id is distinct from issue.id
+      and not exists (
+        select 1 from platform_review.feedback_issue_events merge_move
+        where merge_move.issue_id=issue.id
+          and merge_move.event_type in ('link_moved_in', 'link_moved_out')
+          and merge_move.before->>'id'=event.after->>'id'
+          and merge_move.after->>'id'=event.after->>'id'
+      ) and (
+        issue.canonical_issue_id is null
+        or not exists (
+          select 1 from canonical_walk merge_walk
+          where merge_walk.root_id=issue.id
+            and merge_walk.current_id=historical_link.issue_id
+            and not merge_walk.cycle
+        )
+        or not exists (
+          select 1 from platform_review.feedback_issue_events merge_source
+          where merge_source.issue_id=issue.id
+            and merge_source.event_type='issue_merged'
+            and merge_source.before->>'id'=issue.id::text
+            and merge_source.after->>'id'=issue.id::text
+            and merge_source.before->>'agent_id'=issue.agent_id
+            and merge_source.after->>'agent_id'=issue.agent_id
+            and merge_source.after->>'canonical_issue_id'
+              =issue.canonical_issue_id::text
+        )
+        or not exists (
+          select 1 from platform_review.feedback_issue_events merge_target
+          where merge_target.issue_id=issue.canonical_issue_id
+            and merge_target.event_type='issue_absorbed'
+            and merge_target.before->>'source_issue_id'=issue.id::text
+            and merge_target.after->>'target_issue_id'
+              =issue.canonical_issue_id::text
+        )
+      ))
       or (event.event_type in ('link_moved_in', 'link_moved_out') and (
         event.before->>'id' is distinct from event.after->>'id'
         or event.before->>'agent_id' is distinct from event.after->>'agent_id'

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -27,6 +28,13 @@ from .repository import FaeWorkbenchRepository
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _CLOSED_ISSUE_STATUSES = frozenset({"closed", "duplicate", "not_actionable", "wont_fix"})
+
+
+@dataclass
+class _IssueScopeTraversal:
+    loaded: dict[UUID, dict] = field(default_factory=dict)
+    visiting: set[UUID] = field(default_factory=set)
+    validated: dict[UUID, dict] = field(default_factory=dict)
 
 
 def _fae_filters(filters: SessionFilters) -> SessionFilters:
@@ -67,22 +75,19 @@ class FaeWorkbenchService:
         issue_id: UUID,
         *,
         validate_agent: bool = True,
-        path: frozenset[UUID] = frozenset(),
-        validated: dict[UUID, dict] | None = None,
-        historical_path: frozenset[UUID] = frozenset(),
-        loaded: dict[UUID, dict] | None = None,
+        traversal: _IssueScopeTraversal | None = None,
+        allow_visiting: bool = False,
     ) -> dict:
         if validate_agent:
             await self._assert_fae_issue_scope()
-        if issue_id in path:
+        traversal = traversal or _IssueScopeTraversal()
+        if issue_id in traversal.validated:
+            return traversal.validated[issue_id]
+        if issue_id in traversal.visiting:
+            if allow_visiting and issue_id in traversal.loaded:
+                return traversal.loaded[issue_id]
             raise ReviewNotFound("issue not found")
-        loaded = loaded if loaded is not None else {}
-        if issue_id in historical_path:
-            if issue_id not in loaded:
-                raise ReviewNotFound("issue not found")
-            return loaded[issue_id]
-        if validated is not None and issue_id in validated:
-            return validated[issue_id]
+        traversal.visiting.add(issue_id)
         detail = await self._review.issue_detail(issue_id)
         try:
             issue = detail["issue"]
@@ -91,7 +96,7 @@ class FaeWorkbenchService:
             raise ReviewNotFound("issue not found") from None
         if agent_id != FAE_AGENT_ID:
             raise ReviewNotFound("issue not found")
-        loaded[issue_id] = detail
+        traversal.loaded[issue_id] = detail
         links = detail.get("links") or ()
         if not isinstance(links, (list, tuple)) or any(
             not isinstance(link, dict) for link in links
@@ -183,8 +188,6 @@ class FaeWorkbenchService:
                     referenced_issue_ids.add(snapshot_issue_ids[0])
                 historical_move_link_ids.add(snapshot_ids[0])
             historical_links.extend(snapshots)
-        if not linked_event_ids.issubset(link_ids | historical_move_link_ids):
-            raise ReviewNotFound("issue not found")
         if any(
             snapshot.get("agent_id") != FAE_AGENT_ID
             for snapshot in historical_links
@@ -211,12 +214,11 @@ class FaeWorkbenchService:
             await self._fae_issue(
                 referenced_issue_id,
                 validate_agent=False,
-                path=path,
-                validated=validated,
-                historical_path=historical_path | {issue_id},
-                loaded=loaded,
+                traversal=traversal,
+                allow_visiting=True,
             )
         canonical = issue.get("canonical_issue_id")
+        canonical_id: UUID | None = None
         if canonical is not None:
             try:
                 canonical_id = UUID(str(canonical))
@@ -225,14 +227,103 @@ class FaeWorkbenchService:
             await self._fae_issue(
                 canonical_id,
                 validate_agent=False,
-                path=path | {issue_id},
-                validated=validated,
-                historical_path=historical_path,
-                loaded=loaded,
+                traversal=traversal,
             )
-        if validated is not None:
-            validated[issue_id] = detail
+        missing_link_ids = linked_event_ids - link_ids - historical_move_link_ids
+        if missing_link_ids and (
+            canonical_id is None
+            or not self._valid_merge_pair(issue_id, canonical_id, detail, traversal)
+        ):
+            raise ReviewNotFound("issue not found")
+        for missing_link_id in missing_link_ids:
+            identity = self._canonical_link_identity(
+                canonical_id, missing_link_id, traversal
+            )
+            if identity is None or identity != link_identities[missing_link_id]:
+                raise ReviewNotFound("issue not found")
+        traversal.visiting.remove(issue_id)
+        traversal.validated[issue_id] = detail
         return detail
+
+    @staticmethod
+    def _valid_merge_pair(
+        source_id: UUID,
+        target_id: UUID,
+        source_detail: dict,
+        traversal: _IssueScopeTraversal,
+    ) -> bool:
+        def source_event_valid(event: dict) -> bool:
+            before, after = event.get("before"), event.get("after")
+            if not isinstance(before, dict) or not isinstance(after, dict):
+                return False
+            try:
+                return (
+                    UUID(str(before["id"])) == source_id
+                    and UUID(str(after["id"])) == source_id
+                    and UUID(str(after["canonical_issue_id"])) == target_id
+                    and before.get("agent_id") == FAE_AGENT_ID
+                    and after.get("agent_id") == FAE_AGENT_ID
+                )
+            except (KeyError, TypeError, ValueError):
+                return False
+
+        target_detail = traversal.validated.get(target_id)
+        if target_detail is None:
+            return False
+
+        def target_event_valid(event: dict) -> bool:
+            before, after = event.get("before"), event.get("after")
+            if not isinstance(before, dict) or not isinstance(after, dict):
+                return False
+            try:
+                return (
+                    UUID(str(before["source_issue_id"])) == source_id
+                    and UUID(str(after["target_issue_id"])) == target_id
+                )
+            except (KeyError, TypeError, ValueError):
+                return False
+
+        return any(
+            event.get("event_type") == "issue_merged" and source_event_valid(event)
+            for event in source_detail.get("events") or ()
+        ) and any(
+            event.get("event_type") == "issue_absorbed" and target_event_valid(event)
+            for event in target_detail.get("events") or ()
+        )
+
+    @staticmethod
+    def _canonical_link_identity(
+        root_id: UUID,
+        link_id: str,
+        traversal: _IssueScopeTraversal,
+    ) -> tuple[object, object] | None:
+        pending = [root_id]
+        seen: set[UUID] = set()
+        while pending:
+            issue_id = pending.pop()
+            if issue_id in seen:
+                continue
+            seen.add(issue_id)
+            detail = traversal.validated.get(issue_id)
+            if detail is None:
+                return None
+            for link in detail.get("links") or ():
+                try:
+                    current_link_id = str(UUID(str(link["id"])))
+                except (KeyError, TypeError, ValueError):
+                    return None
+                if current_link_id == link_id:
+                    return link.get("agent_id"), link.get("source_turn_key")
+            issue = detail.get("issue") or {}
+            neighbors = [issue.get("canonical_issue_id")]
+            for neighbor in neighbors:
+                if neighbor is None:
+                    continue
+                try:
+                    pending.append(UUID(str(neighbor)))
+                except (TypeError, ValueError):
+                    return None
+        return None
 
     async def _fae_turn_keys(self, turn_keys: list[str]) -> set[str]:
         if not turn_keys:
@@ -282,12 +373,12 @@ class FaeWorkbenchService:
                 issue_ids.append(scoped_issue_id)
         if issue_ids:
             await self._assert_fae_issue_scope()
-            validated: dict[UUID, dict] = {}
+            traversal = _IssueScopeTraversal()
             for scoped_issue_id in dict.fromkeys(issue_ids):
                 await self._fae_issue(
                     scoped_issue_id,
                     validate_agent=False,
-                    validated=validated,
+                    traversal=traversal,
                 )
         return summaries
 
@@ -322,8 +413,11 @@ class FaeWorkbenchService:
         *,
         actor: str,
     ):
-        await self._fae_issue(issue_id)
-        await self._fae_issue(payload.target_issue_id)
+        traversal = _IssueScopeTraversal()
+        await self._fae_issue(issue_id, traversal=traversal)
+        await self._fae_issue(
+            payload.target_issue_id, validate_agent=False, traversal=traversal
+        )
         return await self._review.move_link(
             issue_id,
             link_id,
@@ -332,8 +426,11 @@ class FaeWorkbenchService:
         )
 
     async def merge_issue(self, issue_id: UUID, payload, *, actor: str):
-        await self._fae_issue(issue_id)
-        await self._fae_issue(payload.target_issue_id)
+        traversal = _IssueScopeTraversal()
+        await self._fae_issue(issue_id, traversal=traversal)
+        await self._fae_issue(
+            payload.target_issue_id, validate_agent=False, traversal=traversal
+        )
         return await self._review.merge_issue(issue_id, payload, actor=actor)
 
     async def mark_fix_ready(self, issue_id: UUID, payload, *, actor: str):
@@ -359,9 +456,14 @@ class FaeWorkbenchService:
         return await self._review.semantic_review(replay_id, payload, actor=actor)
 
     async def set_disposition(self, issue_id: UUID, payload, *, actor: str):
-        await self._fae_issue(issue_id)
+        traversal = _IssueScopeTraversal()
+        await self._fae_issue(issue_id, traversal=traversal)
         if payload.canonical_issue_id is not None:
-            await self._fae_issue(payload.canonical_issue_id)
+            await self._fae_issue(
+                payload.canonical_issue_id,
+                validate_agent=False,
+                traversal=traversal,
+            )
         return await self._review.set_disposition(issue_id, payload, actor=actor)
 
     async def overview(self, now: datetime) -> FaeOverview:

@@ -16,7 +16,11 @@ from app.fae_workbench.models import (
 )
 from app.fae_workbench.service import FaeWorkbenchService
 from app.observability.models import Page, SessionDetail, SessionFilters, SessionSummary
-from app.review.repository import ReviewNotFound, ReviewRepositoryError
+from app.review.repository import (
+    PsycopgReviewRepository,
+    ReviewNotFound,
+    ReviewRepositoryError,
+)
 
 
 NOW = datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
@@ -135,6 +139,7 @@ class RecordingIssueReview:
         self.summary_issue_id = None
         self.scope_valid = True
         self.detail_loads: list[UUID] = []
+        self.issue_rows: list[dict] = []
 
     async def agent_issue_scope_valid(self, agent_id):
         self.calls.append(("scope_valid", agent_id))
@@ -157,7 +162,7 @@ class RecordingIssueReview:
 
     async def list_issues(self, *, agent_id=None, limit, offset):
         self.calls.append(("issues", agent_id, limit, offset))
-        return []
+        return self.issue_rows
 
     async def turn_summaries(self, *, turn_keys):
         self.calls.append(("turn_summaries", turn_keys))
@@ -197,6 +202,157 @@ class RecordingIssueReview:
 class Payload(SimpleNamespace):
     def model_dump(self, **_kwargs):
         return dict(vars(self))
+
+
+class _Rows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def fetchone(self):
+        if isinstance(self.rows, dict) or self.rows is None:
+            return self.rows
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return self.rows
+
+
+class _MergeCursor:
+    def __init__(self, issues, links, events):
+        self.issues = issues
+        self.links = links
+        self.events = events
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def execute(self, statement, parameters):
+        sql = " ".join(statement.lower().split())
+        if sql.startswith("select * from platform_review.feedback_issues"):
+            return _Rows(dict(self.issues[parameters[0]]))
+        if (
+            sql.startswith("select * from platform_review.feedback_issue_links")
+            and "where issue_id=%s and active" in sql
+        ):
+            issue_id = parameters[0]
+            return _Rows([
+                dict(link) for link in self.links.values()
+                if link["issue_id"] == issue_id and link["active"]
+            ])
+        if (
+            sql.startswith("select * from platform_review.feedback_issue_links")
+            and "source_turn_key=%s and active" in sql
+        ):
+            issue_id, agent_id, turn_key = parameters
+            return _Rows(next((
+                dict(link) for link in self.links.values()
+                if link["issue_id"] == issue_id
+                and link["agent_id"] == agent_id
+                and link["source_turn_key"] == turn_key
+                and link["active"]
+            ), None))
+        if sql.startswith("update platform_review.feedback_issue_links set source_feedback_keys"):
+            keys, link_id = parameters
+            self.links[link_id]["source_feedback_keys"] = keys
+            return _Rows(None)
+        if sql.startswith("update platform_review.feedback_issue_links set active=false"):
+            self.links[parameters[0]]["active"] = False
+            return _Rows(None)
+        if sql.startswith("update platform_review.feedback_issue_links set issue_id"):
+            target_id, link_id = parameters
+            self.links[link_id]["issue_id"] = target_id
+            return _Rows(None)
+        if sql.startswith("update platform_review.feedback_issues set disposition='duplicate'"):
+            target_id, reason, source_id = parameters
+            issue = self.issues[source_id]
+            issue.update({
+                "disposition": "duplicate",
+                "canonical_issue_id": target_id,
+                "disposition_reason": reason,
+                "row_version": issue["row_version"] + 1,
+            })
+            return _Rows(dict(issue))
+        if sql.startswith("insert into platform_review.feedback_issue_events"):
+            issue_id, event_type, actor, reason, before, after = parameters
+            self.events[issue_id].append({
+                "event_type": event_type,
+                "actor": actor,
+                "reason": reason,
+                "before": before.obj,
+                "after": after.obj,
+            })
+            return _Rows(None)
+        raise AssertionError(f"unexpected merge SQL: {sql}")
+
+
+class _MergeConnection:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def cursor(self):
+        return self._cursor
+
+
+def merged_issue_details(*, duplicate_link: bool) -> dict[UUID, dict]:
+    issues = {
+        ISSUE_ID: {
+            "id": ISSUE_ID, "agent_id": FAE_AGENT_ID, "row_version": 1,
+            "canonical_issue_id": None,
+        },
+        TARGET_ID: {
+            "id": TARGET_ID, "agent_id": FAE_AGENT_ID, "row_version": 1,
+            "canonical_issue_id": None,
+        },
+    }
+    source_link = move_snapshot(issue_id=ISSUE_ID)
+    source_link.update({"active": True, "source_feedback_keys": ["feedback:1"]})
+    links = {LINK_ID: source_link}
+    if duplicate_link:
+        links[EVIDENCE_ID] = {
+            **move_snapshot(link_id=EVIDENCE_ID, issue_id=TARGET_ID),
+            "active": True,
+            "source_feedback_keys": ["feedback:2"],
+        }
+    events = {
+        ISSUE_ID: [{"event_type": "turn_linked", "after": dict(source_link)}],
+        TARGET_ID: [],
+    }
+    cursor = _MergeCursor(issues, links, events)
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: _MergeConnection(cursor)
+    )
+
+    repository.merge_issue(
+        ISSUE_ID,
+        TARGET_ID,
+        expected_row_version=1,
+        actor="corp:owner",
+        reason="same root cause",
+    )
+
+    assert [event["event_type"] for event in events[ISSUE_ID]] == [
+        "turn_linked", "issue_merged"
+    ]
+    assert [event["event_type"] for event in events[TARGET_ID]] == ["issue_absorbed"]
+    return {
+        issue_id: {
+            "issue": dict(issue),
+            "links": [
+                dict(link) for link in links.values() if link["issue_id"] == issue_id
+            ],
+            "events": list(events[issue_id]),
+        }
+        for issue_id, issue in issues.items()
+    }
 
 
 def service_for(
@@ -643,6 +799,134 @@ async def test_valid_fae_move_history_preserves_issue_write():
     )
 
     assert any(call[0] == "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("duplicate_link", [False, True])
+async def test_actual_review_merge_detail_list_and_writer_preserve_fae_scope(
+    duplicate_link,
+):
+    review = RecordingIssueReview()
+    review.details = merged_issue_details(duplicate_link=duplicate_link)
+    review.issue_rows = [review.details[ISSUE_ID]["issue"]]
+    service = service_for(review=review)
+
+    detail = await service.issue_detail(ISSUE_ID)
+    listed = await service.list_issues(limit=100, offset=0)
+    await service.update_issue(
+        ISSUE_ID, Payload(row_version=2, reason="post-merge edit"), actor="corp:owner"
+    )
+
+    assert detail["issue"]["canonical_issue_id"] == TARGET_ID
+    assert listed == [review.details[ISSUE_ID]["issue"]]
+    assert any(call[0] == "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing_event", ["issue_merged", "issue_absorbed"])
+async def test_merge_relocated_link_requires_exact_audit_pair_before_writer(
+    missing_event,
+):
+    review = RecordingIssueReview()
+    review.details = merged_issue_details(duplicate_link=False)
+    for detail in review.details.values():
+        detail["events"] = [
+            event for event in detail["events"]
+            if event["event_type"] != missing_event
+        ]
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).update_issue(
+            ISSUE_ID, Payload(row_version=2, reason="post-merge edit"),
+            actor="corp:owner",
+        )
+
+    assert all(call[0] != "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_merge_relocated_link_identity_mismatch_fails_before_writer():
+    review = RecordingIssueReview()
+    review.details = merged_issue_details(duplicate_link=False)
+    review.details[TARGET_ID]["links"][0]["source_turn_key"] = "fae:other-real-turn"
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).update_issue(
+            ISSUE_ID, Payload(row_version=2, reason="post-merge edit"),
+            actor="corp:owner",
+        )
+
+    assert all(call[0] != "update_issue" for call in review.calls)
+
+
+def _graph_move(link_id, source_id, target_id):
+    before = move_snapshot(link_id=link_id, issue_id=source_id)
+    after = move_snapshot(link_id=link_id, issue_id=target_id)
+    return (
+        {"event_type": "link_moved_out", "before": before, "after": after},
+        {"event_type": "link_moved_in", "before": before, "after": after},
+    )
+
+
+@pytest.mark.asyncio
+async def test_dense_historical_issue_closure_validates_each_unique_issue_once():
+    issue_ids = [UUID(int=value) for value in range(20, 24)]
+    details = {
+        issue_id: {"issue": {"id": issue_id, "agent_id": FAE_AGENT_ID}, "events": []}
+        for issue_id in issue_ids
+    }
+    edges = [
+        (issue_ids[0], issue_ids[1]),
+        (issue_ids[0], issue_ids[2]),
+        (issue_ids[1], issue_ids[3]),
+        (issue_ids[2], issue_ids[3]),
+        (issue_ids[3], issue_ids[0]),
+    ]
+    for index, (source_id, target_id) in enumerate(edges, start=30):
+        moved_out, moved_in = _graph_move(UUID(int=index), source_id, target_id)
+        details[source_id]["events"].append(moved_out)
+        details[target_id]["events"].append(moved_in)
+    repository = StaticRepository()
+    review = RecordingIssueReview()
+    review.details = details
+
+    await service_for(repository=repository, review=review).update_issue(
+        issue_ids[0], Payload(row_version=1, reason="bounded"), actor="corp:owner"
+    )
+
+    assert len(review.detail_loads) == len(issue_ids)
+    assert set(review.detail_loads) == set(issue_ids)
+    assert len(repository.batch_calls) == len(issue_ids)
+    assert any(call[0] == "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_dense_closure_rejects_foreign_shared_descendant_once_before_writer():
+    issue_ids = [UUID(int=value) for value in range(40, 44)]
+    details = {
+        issue_id: {"issue": {"id": issue_id, "agent_id": FAE_AGENT_ID}, "events": []}
+        for issue_id in issue_ids
+    }
+    for index, (source_id, target_id) in enumerate([
+        (issue_ids[0], issue_ids[1]),
+        (issue_ids[0], issue_ids[2]),
+        (issue_ids[1], issue_ids[3]),
+        (issue_ids[2], issue_ids[3]),
+    ], start=50):
+        moved_out, moved_in = _graph_move(UUID(int=index), source_id, target_id)
+        details[source_id]["events"].append(moved_out)
+        details[target_id]["events"].append(moved_in)
+    details[issue_ids[3]]["issue"]["agent_id"] = "ai-admin-agent"
+    review = RecordingIssueReview()
+    review.details = details
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).update_issue(
+            issue_ids[0], Payload(row_version=1, reason="bounded"), actor="corp:owner"
+        )
+
+    assert review.detail_loads.count(issue_ids[3]) == 1
+    assert all(call[0] != "update_issue" for call in review.calls)
 
 
 @pytest.mark.asyncio
