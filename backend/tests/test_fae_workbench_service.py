@@ -505,6 +505,172 @@ async def test_foreign_historical_link_event_fails_before_issue_write():
     assert all(call[0] != "update_issue" for call in review.calls)
 
 
+def move_snapshot(
+    *, link_id=LINK_ID, issue_id=ISSUE_ID, source_turn_key="fae:turn-ordinary"
+):
+    return {
+        "id": link_id,
+        "issue_id": issue_id,
+        "agent_id": FAE_AGENT_ID,
+        "source_turn_key": source_turn_key,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("event_type", "before_issue_id", "after_issue_id"),
+    [
+        ("link_moved_out", ISSUE_ID, TARGET_ID),
+        ("link_moved_in", TARGET_ID, ISSUE_ID),
+    ],
+)
+async def test_move_event_foreign_referenced_issue_fails_before_write(
+    event_type, before_issue_id, after_issue_id
+):
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "events": [{
+            "event_type": event_type,
+            "before": move_snapshot(issue_id=before_issue_id),
+            "after": move_snapshot(issue_id=after_issue_id),
+        }],
+    }
+    review.details[TARGET_ID] = {
+        "issue": {"id": TARGET_ID, "agent_id": "ai-admin-agent"}
+    }
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).update_issue(
+            ISSUE_ID, Payload(row_version=1, reason="edit"), actor="corp:owner"
+        )
+
+    assert all(call[0] != "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_move_event_mismatched_link_identity_fails_before_write():
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "events": [{
+            "event_type": "link_moved_out",
+            "before": move_snapshot(link_id=LINK_ID, issue_id=ISSUE_ID),
+            "after": move_snapshot(link_id=EVIDENCE_ID, issue_id=TARGET_ID),
+        }],
+    }
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).update_issue(
+            ISSUE_ID, Payload(row_version=1, reason="edit"), actor="corp:owner"
+        )
+
+    assert all(call[0] != "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_turn_linked_event_identity_must_bind_to_current_or_moved_link():
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "links": [],
+        "events": [{
+            "event_type": "turn_linked",
+            "after": move_snapshot(link_id=LINK_ID, issue_id=ISSUE_ID),
+        }],
+    }
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).update_issue(
+            ISSUE_ID, Payload(row_version=1, reason="edit"), actor="corp:owner"
+        )
+
+    assert all(call[0] != "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_turn_linked_identity_must_match_later_move_of_same_link():
+    review = RecordingIssueReview()
+    before = move_snapshot(issue_id=ISSUE_ID)
+    after = move_snapshot(issue_id=TARGET_ID)
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "events": [
+            {
+                "event_type": "turn_linked",
+                "after": move_snapshot(
+                    issue_id=ISSUE_ID, source_turn_key="fae:other-real-turn"
+                ),
+            },
+            {"event_type": "link_moved_out", "before": before, "after": after},
+        ],
+    }
+    review.details[TARGET_ID] = {
+        "issue": {"id": TARGET_ID, "agent_id": FAE_AGENT_ID},
+        "links": [{**after, "active": True}],
+    }
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).update_issue(
+            ISSUE_ID, Payload(row_version=1, reason="edit"), actor="corp:owner"
+        )
+
+    assert all(call[0] != "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_valid_fae_move_history_preserves_issue_write():
+    review = RecordingIssueReview()
+    before = move_snapshot(issue_id=ISSUE_ID)
+    after = move_snapshot(issue_id=TARGET_ID)
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "links": [],
+        "events": [{
+            "event_type": "link_moved_out", "before": before, "after": after
+        }],
+    }
+    review.details[TARGET_ID] = {
+        "issue": {"id": TARGET_ID, "agent_id": FAE_AGENT_ID},
+        "links": [{**after, "active": True}],
+        "events": [{
+            "event_type": "link_moved_in", "before": before, "after": after
+        }],
+    }
+
+    await service_for(review=review).update_issue(
+        ISSUE_ID, Payload(row_version=1, reason="edit"), actor="corp:owner"
+    )
+
+    assert any(call[0] == "update_issue" for call in review.calls)
+
+
+@pytest.mark.asyncio
+async def test_move_event_foreign_target_blocks_semantic_review_writer():
+    review = RecordingIssueReview()
+    review.details[ISSUE_ID] = {
+        "issue": {"id": ISSUE_ID, "agent_id": FAE_AGENT_ID},
+        "events": [{
+            "event_type": "link_moved_out",
+            "before": move_snapshot(issue_id=ISSUE_ID),
+            "after": move_snapshot(issue_id=TARGET_ID),
+        }],
+    }
+    review.details[TARGET_ID] = {
+        "issue": {"id": TARGET_ID, "agent_id": "ai-admin-agent"}
+    }
+    payload = Payload(
+        verdict="passed", method="human_fae", reviewer="corp:owner", reason="review"
+    )
+
+    with pytest.raises(ReviewNotFound, match="issue not found"):
+        await service_for(review=review).semantic_review(
+            REPLAY_ID, payload, actor="corp:owner"
+        )
+
+    assert all(call[0] != "semantic_review" for call in review.calls)
+
+
 @pytest.mark.asyncio
 async def test_replay_whose_link_moved_away_blocks_semantic_review_writer():
     review = RecordingIssueReview()

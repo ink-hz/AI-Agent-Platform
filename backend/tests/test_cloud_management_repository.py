@@ -147,6 +147,25 @@ def test_fae_issue_scope_projection_fails_closed_on_false_or_missing_metadata():
     assert repository_for(None).agent_issue_scope_valid("ai-fae-agent") is False
 
 
+def test_historical_foreign_issue_marker_fails_fae_management_reads_closed():
+    cipher = FieldCipher(b"m" * 32)
+    record = {
+        "kind": "review_issue_projection", "key": str(uuid4()),
+        "agent_id": "ai-fae-agent", "status": "open", "priority": "P1",
+        "title": {"text": "historical foreign move"}, "failure_layer": "model",
+        "owner_display": None, "linked_turn_count": 0,
+        "scope_valid": False,
+        "updated_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v2",
+    }
+    repository = ReplicaReviewRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record)]), now=lambda: NOW,
+    )
+
+    assert repository.agent_issue_scope_valid("ai-fae-agent") is False
+
+
 def test_inbox_projection_fails_closed_on_false_or_missing_scope_marker():
     cipher = FieldCipher(b"m" * 32)
 

@@ -10,6 +10,7 @@ from app.cloud_replica.source import (
     REVIEW_ISSUE_SQL,
     ReplicaSource,
 )
+from app.review.scope_sql import HISTORICAL_LINK_EVENT_INVALID_SQL
 from app.observability.models import Page
 from app.operations.models import EventFilters, OperationalEvent
 
@@ -71,6 +72,19 @@ def test_review_projection_proves_nested_scope_and_inbox_issue_ownership():
     ):
         assert event_type in issue_sql
     assert "true as scope_valid" in inbox_sql
+
+
+def test_cloud_issue_scope_binds_move_direction_link_identity_and_referenced_issues():
+    source = " ".join(REVIEW_ISSUE_SQL.lower().split())
+    predicate = " ".join(HISTORICAL_LINK_EVENT_INVALID_SQL.lower().split())
+
+    assert predicate in source
+    assert "event.before->>'id' is distinct from event.after->>'id'" in source
+    assert "event.before->>'issue_id' is distinct from issue.id::text" in source
+    assert "event.after->>'issue_id' is distinct from issue.id::text" in source
+    assert "historical_before_issue.agent_id is distinct from issue.agent_id" in source
+    assert "historical_after_issue.agent_id is distinct from issue.agent_id" in source
+    assert "historical_link.id is null" in source
 
 
 class _Context:

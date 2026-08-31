@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .models import IssueProgress, IssueRecord, LinkGate, NegativeFeedbackGroup
+from .scope_sql import HISTORICAL_LINK_EVENT_INVALID_SQL
 from .state import calculate_progress
 
 
@@ -462,7 +463,7 @@ class PsycopgReviewRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 row = cursor.execute(
-                    """
+                    f"""
                     with recursive canonical_walk as (
                       select issue.id as root_id, issue.id as current_id,
                         issue.canonical_issue_id as next_id,
@@ -518,35 +519,7 @@ class PsycopgReviewRepository:
                             or replay_link.issue_id is distinct from issue.id
                           )
                         )
-                        or exists (
-                          select 1
-                          from platform_review.feedback_issue_events event
-                          where event.issue_id=issue.id
-                            and event.event_type in (
-                              'turn_linked', 'turn_linked_from_release_handoff',
-                              'link_moved_in', 'link_moved_out'
-                            )
-                            and (
-                              event.after->>'agent_id' is distinct from issue.agent_id
-                              or not exists (
-                                select 1 from platform_read.turns event_after_turn
-                                where event_after_turn.turn_key=event.after->>'source_turn_key'
-                                  and event_after_turn.agent_id=issue.agent_id
-                                  and (issue.agent_id<>'ai-fae-agent'
-                                    or event_after_turn.source_kind='fae')
-                              )
-                              or (event.event_type in ('link_moved_in', 'link_moved_out') and (
-                                event.before->>'agent_id' is distinct from issue.agent_id
-                                or not exists (
-                                  select 1 from platform_read.turns event_before_turn
-                                  where event_before_turn.turn_key=event.before->>'source_turn_key'
-                                    and event_before_turn.agent_id=issue.agent_id
-                                    and (issue.agent_id<>'ai-fae-agent'
-                                      or event_before_turn.source_kind='fae')
-                                )
-                              ))
-                            )
-                        )
+                        or {HISTORICAL_LINK_EVENT_INVALID_SQL}
                         or exists (
                           select 1 from canonical_walk walk
                           where walk.root_id=issue.id and walk.cycle

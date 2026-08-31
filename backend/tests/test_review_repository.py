@@ -9,6 +9,7 @@ from app.review.repository import (
     PsycopgReviewRepository,
     require_row_version,
 )
+from app.review.scope_sql import HISTORICAL_LINK_EVENT_INVALID_SQL
 
 
 def test_row_version_is_mandatory_for_issue_updates():
@@ -250,16 +251,36 @@ def test_inbox_link_requires_owning_issue_to_match_feedback_agent():
 def test_issue_scope_sql_validates_all_links_replays_and_historical_link_events():
     source = inspect.getsource(PsycopgReviewRepository.agent_issue_scope_valid)
     normalized = " ".join(source.lower().split())
+    historical_scope = " ".join(HISTORICAL_LINK_EVENT_INVALID_SQL.lower().split())
 
     assert "where link.issue_id=issue.id and link.active" not in normalized
     assert "where link.issue_id=issue.id and (" in normalized
     assert "feedback_replay_runs replay" in normalized
     assert "replay.issue_link_id" in normalized
+    assert "historical_link_event_invalid_sql" in normalized
     for event_type in (
         "turn_linked",
         "turn_linked_from_release_handoff",
         "link_moved_in",
         "link_moved_out",
     ):
-        assert event_type in normalized
-    assert "is distinct from" in normalized
+        assert event_type in historical_scope
+    assert "is distinct from" in historical_scope
+
+
+def test_issue_scope_sql_binds_move_direction_link_identity_and_referenced_issues():
+    method_source = " ".join(
+        inspect.getsource(PsycopgReviewRepository.agent_issue_scope_valid)
+        .lower()
+        .split()
+    )
+    source = " ".join(HISTORICAL_LINK_EVENT_INVALID_SQL.lower().split())
+
+    assert "historical_link_event_invalid_sql" in method_source
+    assert "event.before->>'id' is distinct from event.after->>'id'" in source
+    assert "event.before->>'issue_id' is distinct from issue.id::text" in source
+    assert "event.after->>'issue_id' is distinct from issue.id::text" in source
+    assert "historical_before_issue.agent_id is distinct from issue.agent_id" in source
+    assert "historical_after_issue.agent_id is distinct from issue.agent_id" in source
+    assert "historical_link.id is null" in source
+    assert "historical_link.agent_id is distinct from issue.agent_id" in source
