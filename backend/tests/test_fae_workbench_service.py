@@ -2,10 +2,12 @@ from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
+from pydantic import ValidationError
 
 from app.fae_workbench.models import (
     FAE_AGENT_ID,
     FAE_SOURCE_KIND,
+    FaeOverview,
     FaeOperationalSnapshot,
     FaeSessionAttention,
     FaeTrendPoint,
@@ -165,6 +167,7 @@ async def test_review_failure_does_not_remove_operational_summary():
     overview = await service_for(review=UnavailableReview()).overview(NOW)
 
     assert overview.summary.state.status == "available"
+    assert overview.summary.data.open_issue_count is None
     assert overview.issues.state.status == "unavailable"
     assert overview.reports.state.error_code == "reports_not_integrated"
 
@@ -188,3 +191,42 @@ async def test_overview_marks_old_operational_data_stale():
 
     assert overview.freshness.status == "stale"
     assert overview.freshness.data_as_of == NOW - timedelta(hours=37)
+
+
+@pytest.mark.asyncio
+async def test_overview_marks_missing_operational_data_as_unavailable():
+    overview = await service_for(
+        repository=StaticRepository(fae_snapshot(data_as_of=None))
+    ).overview(NOW)
+
+    assert overview.freshness.status == "unavailable"
+    assert overview.freshness.data_as_of is None
+
+
+@pytest.mark.asyncio
+async def test_overview_treats_exactly_36_hour_old_data_as_fresh():
+    overview = await service_for(
+        repository=StaticRepository(fae_snapshot(data_as_of=NOW - timedelta(hours=36)))
+    ).overview(NOW)
+
+    assert overview.freshness.status == "fresh"
+
+
+@pytest.mark.asyncio
+async def test_overview_api_rejects_naive_period_start():
+    overview = await service_for().overview(NOW)
+    payload = overview.model_dump()
+    payload["period_start"] = overview.period_start.replace(tzinfo=None)
+
+    with pytest.raises(ValidationError):
+        FaeOverview.model_validate(payload)
+
+
+@pytest.mark.asyncio
+async def test_overview_api_rejects_naive_freshness_timestamp():
+    overview = await service_for().overview(NOW)
+    payload = overview.model_dump()
+    payload["freshness"]["data_as_of"] = NOW.replace(tzinfo=None)
+
+    with pytest.raises(ValidationError):
+        FaeOverview.model_validate(payload)

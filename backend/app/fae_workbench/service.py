@@ -69,7 +69,7 @@ class FaeWorkbenchService:
                     status="unavailable", error_code="issues_unavailable"
                 )
             )
-            open_issue_count = 0
+            open_issue_count = None
         else:
             statuses = dict(review_overview.get("statuses") or {})
             open_issue_count = sum(

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 
 FAE_AGENT_ID = "ai-fae-agent"
@@ -53,13 +53,13 @@ FaeFreshnessStatus = Literal["fresh", "stale", "unavailable"]
 
 class FaeSectionState(BaseModel):
     status: SectionStatus
-    as_of: datetime | None = None
+    as_of: AwareDatetime | None = None
     error_code: str | None = None
 
 
 class FaeFreshness(BaseModel):
     status: FaeFreshnessStatus
-    data_as_of: datetime | None = None
+    data_as_of: AwareDatetime | None = None
 
 
 class FaeSummary(BaseModel):
@@ -68,7 +68,7 @@ class FaeSummary(BaseModel):
     negative_feedback_events: int = Field(ge=0)
     negative_turn_count: int = Field(ge=0)
     abnormal_session_count: int = Field(ge=0)
-    open_issue_count: int = Field(ge=0)
+    open_issue_count: int | None = Field(default=None, ge=0)
     p50_duration_ms: int | None = None
     p95_duration_ms: int | None = None
 
@@ -98,8 +98,8 @@ class FaeReportPreviewSection(BaseModel):
 
 
 class FaeOverview(BaseModel):
-    period_start: datetime
-    period_end: datetime
+    period_start: AwareDatetime
+    period_end: AwareDatetime
     timezone: Literal["Asia/Shanghai"] = "Asia/Shanghai"
     freshness: FaeFreshness
     summary: FaeSummarySection
