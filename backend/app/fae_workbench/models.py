@@ -45,3 +45,65 @@ class FaeFeedbackProjection(BaseModel):
     negative_feedback_events: int = Field(ge=0)
     negative_turn_count: int = Field(ge=0)
     daily_negative_turns: dict[date, int] = Field(default_factory=dict)
+
+
+SectionStatus = Literal["available", "unavailable"]
+FaeFreshnessStatus = Literal["fresh", "stale", "unavailable"]
+
+
+class FaeSectionState(BaseModel):
+    status: SectionStatus
+    as_of: datetime | None = None
+    error_code: str | None = None
+
+
+class FaeFreshness(BaseModel):
+    status: FaeFreshnessStatus
+    data_as_of: datetime | None = None
+
+
+class FaeSummary(BaseModel):
+    session_count: int = Field(ge=0)
+    active_subject_count: int = Field(ge=0)
+    negative_feedback_events: int = Field(ge=0)
+    negative_turn_count: int = Field(ge=0)
+    abnormal_session_count: int = Field(ge=0)
+    open_issue_count: int = Field(ge=0)
+    p50_duration_ms: int | None = None
+    p95_duration_ms: int | None = None
+
+
+class FaeSummarySection(BaseModel):
+    state: FaeSectionState
+    data: FaeSummary | None = None
+
+
+class FaeAttentionSection(BaseModel):
+    state: FaeSectionState
+    items: list[FaeSessionAttention] = Field(default_factory=list)
+
+
+class FaeTrendSection(BaseModel):
+    state: FaeSectionState
+    points: list[FaeTrendPoint] = Field(default_factory=list)
+
+
+class FaeIssueSection(BaseModel):
+    state: FaeSectionState
+    statuses: dict[str, int] = Field(default_factory=dict)
+
+
+class FaeReportPreviewSection(BaseModel):
+    state: FaeSectionState
+
+
+class FaeOverview(BaseModel):
+    period_start: datetime
+    period_end: datetime
+    timezone: Literal["Asia/Shanghai"] = "Asia/Shanghai"
+    freshness: FaeFreshness
+    summary: FaeSummarySection
+    attention: FaeAttentionSection
+    trends: FaeTrendSection
+    issues: FaeIssueSection
+    reports: FaeReportPreviewSection
