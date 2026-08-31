@@ -11,6 +11,7 @@ from app.fae_workbench.repository import (
     FAE_SOURCE_ENVIRONMENT,
     FaeFeedbackProjection,
     FaeWorkbenchReadError,
+    PsycopgFaeWorkbenchRepository,
     ReplicaFaeWorkbenchRepository,
 )
 from app.observability.models import SessionFilters
@@ -171,6 +172,51 @@ class _FeedbackProjectionReader:
     def read_fae_feedback(self, period_start, period_end):
         self.requests.append((period_start, period_end))
         return self.projection
+
+
+class _LocalAggregateCursor:
+    def __init__(self, responses):
+        self.responses = responses
+        self.rows = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, _statement, _params=None):
+        self.rows = self.responses.pop(0)
+        return self
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return self.rows
+
+
+class _LocalAggregateConnection:
+    def __init__(self, responses):
+        self.responses = list(responses)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def cursor(self):
+        return _LocalAggregateCursor(self.responses)
+
+
+def _local_snapshot_from_expected(expected, period_start, period_end):
+    connection = _LocalAggregateConnection(
+        ([expected["summary"]], expected["trend"], expected["attention"])
+    )
+    return PsycopgFaeWorkbenchRepository(
+        "postgresql://platform", connect=lambda *_args, **_kwargs: connection
+    ).snapshot(period_start, period_end)
 
 
 def test_repository_lists_searches_paginates_and_returns_existing_shapes():
@@ -418,6 +464,88 @@ def test_fae_cloud_wrapper_uses_complete_bounded_feedback_projection_for_totals_
         (date(2026, 8, 31), 2),
     ]
     assert reader.requests == [(period_start, period_end)]
+
+
+def test_synthetic_local_and_cloud_snapshots_match_for_sanitized_metrics():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    period_start = now - timedelta(days=2)
+    period_end = now + timedelta(seconds=1)
+    expected = {
+        "summary": {
+            "session_count": 2,
+            "active_subject_count": 2,
+            "negative_feedback_events": 5,
+            "negative_turn_count": 3,
+            "abnormal_session_count": 2,
+            "p50_duration_ms": 2000,
+            "p95_duration_ms": 2900,
+            "data_as_of": now,
+        },
+        "trend": [
+            {"day": date(2026, 8, 30), "sessions": 1, "negative_turns": 1},
+            {"day": date(2026, 8, 31), "sessions": 1, "negative_turns": 2},
+        ],
+        "attention": [
+            {
+                "session_key": "fae:latest",
+                "title": "设备掉线",
+                "last_active_at": now,
+                "reason": "fallback",
+            },
+            {
+                "session_key": "fae:earlier",
+                "title": "回答为空",
+                "last_active_at": now - timedelta(days=1),
+                "reason": "empty_answer",
+            },
+        ],
+    }
+    local = _local_snapshot_from_expected(expected, period_start, period_end)
+
+    latest = _record(now, key="f" * 52, title="设备掉线", agent_id="ai-fae-agent")
+    latest.update({"source_kind": "fae", "user_id": "u" * 52})
+    latest["turns"][0].update({"outcome": "completed", "fallback_used": True, "duration_ms": 1000})
+    earlier = _record(
+        now - timedelta(days=1), key="e" * 52, title="回答为空", agent_id="ai-fae-agent"
+    )
+    earlier.update({"source_kind": "fae", "user_id": "v" * 52})
+    earlier["turns"][0].update({"outcome": "completed", "duration_ms": 3000})
+    earlier["turns"][0]["answer"]["text"] = ""
+    cloud_repository, _ = _repository(now, (latest, earlier))
+    cloud = ReplicaFaeWorkbenchRepository(
+        cloud_repository,
+        feedback_reader=_FeedbackProjectionReader(
+            FaeFeedbackProjection(
+                period_start=period_start,
+                period_end=period_end,
+                negative_feedback_events=expected["summary"]["negative_feedback_events"],
+                negative_turn_count=expected["summary"]["negative_turn_count"],
+                daily_negative_turns={item["day"]: item["negative_turns"] for item in expected["trend"]},
+            )
+        ),
+    ).snapshot(period_start, period_end)
+
+    for snapshot in (local, cloud):
+        assert {
+            key: getattr(snapshot, key)
+            for key in (
+                "session_count",
+                "active_subject_count",
+                "negative_feedback_events",
+                "negative_turn_count",
+                "abnormal_session_count",
+                "p50_duration_ms",
+                "p95_duration_ms",
+            )
+        } == {key: value for key, value in expected["summary"].items() if key != "data_as_of"}
+        assert [(item.day, item.sessions, item.negative_turns) for item in snapshot.trend] == [
+            (item["day"], item["sessions"], item["negative_turns"])
+            for item in expected["trend"]
+        ]
+        assert [(item.title, item.last_active_at, item.reason) for item in snapshot.attention] == [
+            (item["title"], item["last_active_at"], item["reason"])
+            for item in expected["attention"]
+        ]
 
 
 @pytest.mark.parametrize(
