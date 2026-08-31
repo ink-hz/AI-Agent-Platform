@@ -8,7 +8,27 @@
 **Task 10 reviewed implementation 范围：** `ab66cc0c6f4f931479eff25e3ba4d96093ec1189..416edd2bf4a6a0e8e3241282f8aeda2c4ee800f8`
 **最终 reviewed implementation head：** `416edd2bf4a6a0e8e3241282f8aeda2c4ee800f8`
 **证据提交说明：** 本文件的后续 evidence-only 提交只固化上述不可变范围，没有修改生产代码或测试；下列测试结果绑定到 `416edd2bf4a6a0e8e3241282f8aeda2c4ee800f8`，不绑定到 evidence-only 文档提交。
+**最终 Important 修复范围：** `011b584ca1e0a4ee83916a968c5d19fdc33bd1c2..7521efdb01527956a5253ba288dddb55191921e5`
+**最终 Important 修复 implementation head：** `7521efdb01527956a5253ba288dddb55191921e5`
 **结论：** Foundation 的代码、自动化回归和静态上线契约满足进入部署流程的条件；本次复审没有部署、没有调用生产环境，也不构成生产验收。
+
+## 2026-09-01 whole-branch Important 修复补充
+
+whole-branch 终审提出的八项 Important 已在上述最终修复 implementation head 关闭：canonical
+合并/重复处置在 writer transaction 内以 Agent advisory lock、端点行锁和递归可达性拒绝环；move
+与 replay 以锁定 link 的不可变 Issue/Agent/Turn ownership 阻断 TOCTOU；Feedback lineage 由服务端
+精确读取并在 writer 内再次核验；cloud 的 Feedback、Review、Issue detail 与 Turn governance 以真实
+sanitized projection 或显式 unavailable 表达，不再把未知状态写成零或空；趋势 Session 去重且 freshness
+独立取最新成功同步；全部可用概览卡具有分页前 exact Session/Issue filters；FAE Issue API 改为有界
+`{items,total,limit,offset,has_more}`，本地列表/概览消除逐 Issue detail 查询；FAE Session detail 的
+可见返回链接和浏览器 Back 均恢复精确 URL、scroll 与 preview prefix。generic Sessions/Review 的既有
+路由与交互仍通过完整回归。
+
+最终修复验证绑定到 `7521efdb01527956a5253ba288dddb55191921e5`：canonical backend
+`3558 passed, 2 skipped, 180 warnings`；cloud backend `237 passed`；frontend `69 files / 594 tests`；
+production build、Python compileall、cloud acceptance `59 passed`、shell/Node syntax、diff whitespace、
+新增行 credential scan 全部 PASS。`deploy/cloud/accept.sh` 已同步校验新的 Issue page contract。
+完整 RED/GREEN、逐 finding 结果和限制记录于 `.superpowers/sdd/fae-final-fixes-report.md`。
 
 ## 自动化结果
 
