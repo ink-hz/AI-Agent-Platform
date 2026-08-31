@@ -1018,6 +1018,16 @@ body {
 .fae-workbench__sidebar a { padding: 9px 10px; border-radius: 8px; color: var(--ink-soft); font-size: 13px; font-weight: 720; text-decoration: none; }
 .fae-workbench__sidebar a:hover, .fae-workbench__sidebar a[aria-current="page"] { background: var(--brand-wash); color: var(--brand); }
 .fae-workbench__content { min-width: 0; }
+.fae-session-detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) 240px; align-items: start; gap: 22px; }
+.fae-session-detail-layout > div { min-width: 0; }
+.fae-session-governance { position: sticky; top: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 10px 26px rgba(20,51,89,.07); }
+.fae-session-governance p { margin: 0; color: var(--brand-bright); font-size: 11.5px; font-weight: 850; letter-spacing: .12em; }
+.fae-session-governance h2 { margin: 5px 0 0; font-size: 20px; }
+.fae-session-governance dl { display: grid; gap: 0; margin: 16px 0 0; }
+.fae-session-governance dl div { min-width: 0; padding: 12px 0; border-top: 1px solid var(--line-soft); }
+.fae-session-governance dt { color: var(--ink-faint); font-size: 11.5px; font-weight: 750; }
+.fae-session-governance dd { overflow-wrap: anywhere; margin: 6px 0 0; color: var(--ink); font-size: 12.5px; font-weight: 720; line-height: 1.5; }
+.fae-session-governance time { font-family: "SFMono-Regular", Consolas, monospace; font-size: 11.5px; }
 .fae-workbench__empty { display: grid; min-height: 360px; place-items: center; align-content: center; padding: 48px; border: 1px dashed var(--line); border-radius: 16px; background: rgba(255,255,255,.7); text-align: center; }
 .fae-workbench__empty h2 { margin: 0; font-size: 25px; }
 .fae-workbench__empty p { max-width: 480px; margin: 12px 0 0; color: var(--ink-soft); line-height: 1.7; }
@@ -1026,6 +1036,8 @@ body {
   .fae-workbench { grid-template-columns: 1fr; gap: 16px; padding-top: 20px; }
   .fae-workbench__sidebar { gap: 16px; }
   .fae-workbench__sidebar nav { display: flex; flex-wrap: nowrap; overflow-x: auto; }
+  .fae-session-detail-layout { grid-template-columns: 1fr; }
+  .fae-session-governance { position: static; grid-row: 1; }
 }
 
 .app.is-brain-workspace-shell { height: 100dvh; overflow: hidden; }

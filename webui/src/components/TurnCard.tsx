@@ -47,9 +47,10 @@ const MISSING_GATE_LABELS: Record<string, string> = {
 };
 
 
-export function TurnCard({ turn, closureSummary }: {
+export function TurnCard({ turn, closureSummary, governanceHref }: {
   turn: TurnDetail;
   closureSummary?: TurnClosureSummary;
+  governanceHref?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [trace, setTrace] = useState<TraceDetail | null>(null);
@@ -78,7 +79,9 @@ export function TurnCard({ turn, closureSummary }: {
       {turn.reviews.map((item) => <div className="signal signal-review" key={item.review_key}><span>复审 · {item.normalized_priority}</span><p>{item.notes || item.corrected_answer || item.status}</p></div>)}
       {turn.improvements.map((item) => <div className="signal signal-improvement" key={item.item_key}><span>{item.item_type} · {item.status}</span><p>{item.title || item.summary}</p></div>)}
     </section>}
-    {hasNegativeFeedback && <div className="review-entry"><div><strong>{CLOSURE_STATUS_LABELS[closureSummary?.status || "pending_triage"]}</strong>{closureSummary?.missing_gates[0] && <span>缺少：{MISSING_GATE_LABELS[closureSummary.missing_gates[0]] || closureSummary.missing_gates[0]}</span>}</div><PlatformLink href={`/admin/review?agent_id=${encodeURIComponent(turn.agent_id)}&turn_key=${encodeURIComponent(turn.turn_key)}`}>查看修复闭环</PlatformLink></div>}
+    {governanceHref
+      ? <div className="review-entry"><div><strong>{closureSummary ? CLOSURE_STATUS_LABELS[closureSummary.status] || closureSummary.status : "尚未纳管"}</strong>{closureSummary?.missing_gates[0] && <span>缺少：{MISSING_GATE_LABELS[closureSummary.missing_gates[0]] || closureSummary.missing_gates[0]}</span>}</div><PlatformLink href={governanceHref}>创建或查看问题</PlatformLink></div>
+      : hasNegativeFeedback && <div className="review-entry"><div><strong>{CLOSURE_STATUS_LABELS[closureSummary?.status || "pending_triage"]}</strong>{closureSummary?.missing_gates[0] && <span>缺少：{MISSING_GATE_LABELS[closureSummary.missing_gates[0]] || closureSummary.missing_gates[0]}</span>}</div><PlatformLink href={`/admin/review?agent_id=${encodeURIComponent(turn.agent_id)}&turn_key=${encodeURIComponent(turn.turn_key)}`}>查看修复闭环</PlatformLink></div>}
     {turn.trace_key && <div className="trace-action"><button aria-expanded={open} onClick={toggleTrace}>{open ? "收起 Trace" : "查看 Trace"}</button><span>{turn.trace_key}</span></div>}
     {open && (trace ? <TraceTimeline trace={trace} /> : <div className="trace-loading">{traceState === "loading" ? "正在加载 Trace…" : "该轮暂无 Trace 详情。"}</div>)}
   </article>;

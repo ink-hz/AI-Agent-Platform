@@ -55,6 +55,21 @@ it("negative feedback turn links to review inbox", async () => {
 });
 
 
+it("uses an explicit governance link for an ordinary real Turn", async () => {
+  await act(async () => root.render(<TurnCard
+    turn={{ ...turn, feedback: [] }}
+    governanceHref="/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1"
+  />));
+
+  const link = container.querySelector<HTMLAnchorElement>(".review-entry a");
+  expect(link?.textContent).toBe("创建或查看问题");
+  expect(link?.getAttribute("href")).toBe(
+    "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1",
+  );
+  expect(container.textContent).toContain("尚未纳管");
+});
+
+
 it("places input and output attachments immediately after their messages", async () => {
   const summary = {
     attachment_id: "attachment-1", display_name: "附件.pdf", mime_type: "application/pdf",
