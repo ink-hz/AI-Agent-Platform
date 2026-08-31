@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { Account } from "../auth";
 import { localPathname } from "../auth";
 import { LoadingState } from "../components/DataState";
 import { FaeWorkbenchShell } from "../components/fae-workbench/FaeWorkbenchShell";
 import { ReviewWorkspace } from "../components/review/ReviewWorkspace";
-import { faeWorkbenchApi } from "../faeWorkbenchApi";
+import { FaeWorkbenchApiError, faeWorkbenchApi } from "../faeWorkbenchApi";
 import type { ReviewInboxItem } from "../types";
 
 
@@ -21,12 +21,13 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   const hasTurnDeepLink = Boolean(sessionKey && turnKey);
   const [initialTurn, setInitialTurn] = useState<ReviewInboxItem | null>(null);
   const [loadingTurn, setLoadingTurn] = useState(hasTurnDeepLink);
-  const [turnMissing, setTurnMissing] = useState(false);
+  const [turnError, setTurnError] = useState<"missing" | "forbidden" | "unavailable" | null>(null);
+  const reviewApi = useMemo(() => faeWorkbenchApi.review(account.csrf_token), [account.csrf_token]);
 
   useEffect(() => {
     const controller = new AbortController();
     setInitialTurn(null);
-    setTurnMissing(false);
+    setTurnError(null);
     if (!sessionKey || !turnKey) {
       setLoadingTurn(false);
       return () => controller.abort();
@@ -36,7 +37,7 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
       if (controller.signal.aborted) return;
       const turn = session.turns.find((item) => item.turn_key === turnKey);
       if (!turn) {
-        setTurnMissing(true);
+        setTurnError("missing");
         return;
       }
       setInitialTurn({
@@ -47,8 +48,11 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
         feedback_keys: turn.feedback.map((item) => item.feedback_key),
         first_feedback_at: turn.feedback[0]?.created_at ?? turn.created_at,
       });
-    }).catch(() => {
-      if (!controller.signal.aborted) setTurnMissing(true);
+    }).catch((error: unknown) => {
+      if (controller.signal.aborted) return;
+      if (error instanceof FaeWorkbenchApiError && error.status === 404) setTurnError("missing");
+      else if (error instanceof FaeWorkbenchApiError && (error.status === 401 || error.status === 403)) setTurnError("forbidden");
+      else setTurnError("unavailable");
     }).finally(() => {
       if (!controller.signal.aborted) setLoadingTurn(false);
     });
@@ -57,9 +61,14 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
 
   let content;
   if (loadingTurn) content = <LoadingState label="正在加载原始回答" />;
-  else if (turnMissing) content = <section className="permission-state" role="alert"><h1>找不到原始回答</h1><p>该 Session 中不存在指定 Turn，无法创建治理事项。</p></section>;
+  else if (turnError) content = <section className="permission-state" role="alert">{turnError === "missing"
+    ? <><h1>找不到原始回答</h1><p>该 Session 中不存在指定 Turn，无法创建治理事项。</p></>
+    : turnError === "forbidden"
+      ? <><h1>无权读取原始回答</h1><p>当前账号无法读取该 FAE Session，无法创建治理事项。</p></>
+      : <><h1>原始回答暂不可用</h1><p>读取 FAE Session 时遇到服务或数据异常，请稍后重试。</p></>}
+  </section>;
   else content = <ReviewWorkspace
-    api={faeWorkbenchApi.review}
+    api={reviewApi}
     agentId="ai-fae-agent"
     basePath="/admin/fae/issues"
     initialIssueId={issueId ?? pathIssueId()}
@@ -67,6 +76,7 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
     actor={`corp:${account.internal_user_id}`}
     showActorField={false}
     showAgentFilter={false}
+    readOnlyReason={account.hard_stale_read_only ? "hard-stale" : undefined}
   />;
 
   return <FaeWorkbenchShell currentSection="issues">{content}</FaeWorkbenchShell>;

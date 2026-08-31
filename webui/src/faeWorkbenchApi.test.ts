@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { faeWorkbenchApi } from "./faeWorkbenchApi";
+import type { ReviewApi } from "./components/review/ReviewWorkspace";
 
 
 const overview = {
@@ -105,29 +106,73 @@ describe("FAE workbench API", () => {
   });
 
   it("implements the complete scoped Review API and never sends browser agent scope", async () => {
-    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({}), {
-      status: 200, headers: { "Content-Type": "application/json" },
-    })));
+    const projectedIssue = {
+      id: "00000000-0000-0000-0000-000000000001", agent_id: "ai-fae-agent", title: "脱敏事项",
+      priority: "P2", failure_layer: null, owner: null, disposition: "actionable",
+      updated_at: "2026-08-31T00:00:00Z", linked_turn_count: 1, replica_read_only: true,
+      progress: { status: "actionable", missing_gates: [] },
+    };
+    const projectedInbox = {
+      agent_id: "ai-fae-agent", turn_key: "fae:turn-projected", feedback_count: 3,
+      feedback_keys: [], first_feedback_at: "2026-08-31T00:00:00Z",
+    };
+    const fetchMock = vi.fn().mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const path = String(input);
+      let body: unknown = {};
+      if (!init?.method && path.endsWith("/issue-overview")) body = {
+        feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null,
+        feedback_totals_status: "unavailable", issue_total: 1,
+        statuses: { actionable: 1 }, dispositions: { actionable: 1 }, write_available: false,
+      };
+      else if (!init?.method && path.includes("issue-inbox")) body = [projectedInbox];
+      else if (!init?.method && path.includes("issues?limit")) body = [projectedIssue];
+      else if (!init?.method && path.includes("turn-summaries")) body = [];
+      else if (!init?.method && path.includes("/issues/")) body = {
+        issue: projectedIssue, progress: projectedIssue.progress,
+        links: [], evidence: [], replays: [], events: [], replica_read_only: true,
+      };
+      return Promise.resolve(new Response(JSON.stringify(body), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }));
+    });
     vi.stubGlobal("fetch", fetchMock);
     const actor = "corp:00000000-0000-0000-0000-000000000099";
     const payload = { agent_id: "browser-controlled", reason: "test" };
+    const reviewFactory = faeWorkbenchApi.review as unknown as (csrfToken: string) => ReviewApi;
 
-    await faeWorkbenchApi.review.overview();
-    await faeWorkbenchApi.review.inbox();
-    await faeWorkbenchApi.review.issues();
-    await faeWorkbenchApi.review.turnSummaries(["fae:turn-1"]);
-    await faeWorkbenchApi.review.issue("00000000-0000-0000-0000-000000000001");
-    await faeWorkbenchApi.review.create(payload, actor);
-    await faeWorkbenchApi.review.link("00000000-0000-0000-0000-000000000001", payload, actor);
-    await faeWorkbenchApi.review.update("00000000-0000-0000-0000-000000000001", payload, actor);
-    await faeWorkbenchApi.review.move("00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002", payload, actor);
-    await faeWorkbenchApi.review.fixReady("00000000-0000-0000-0000-000000000001", payload, actor);
-    await faeWorkbenchApi.review.merge("00000000-0000-0000-0000-000000000001", payload, actor);
-    await faeWorkbenchApi.review.addEvidence("00000000-0000-0000-0000-000000000001", payload, actor);
-    await faeWorkbenchApi.review.verifyEvidence("00000000-0000-0000-0000-000000000003", actor);
-    await faeWorkbenchApi.review.replay("00000000-0000-0000-0000-000000000001", payload, actor);
-    await faeWorkbenchApi.review.semanticReview("00000000-0000-0000-0000-000000000004", payload, actor);
-    await faeWorkbenchApi.review.disposition("00000000-0000-0000-0000-000000000001", payload, actor);
+    expect(typeof reviewFactory).toBe("function");
+    const review = reviewFactory("csrf-current-account");
+
+    const normalizedOverview = await review.overview();
+    const normalizedInbox = await review.inbox();
+    const normalizedIssues = await review.issues();
+    await review.turnSummaries(["fae:turn-1"]);
+    const normalizedDetail = await review.issue("00000000-0000-0000-0000-000000000001");
+    await review.create(payload, actor);
+    await review.link("00000000-0000-0000-0000-000000000001", payload, actor);
+    await review.update("00000000-0000-0000-0000-000000000001", payload, actor);
+    await review.move("00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002", payload, actor);
+    await review.fixReady("00000000-0000-0000-0000-000000000001", payload, actor);
+    await review.merge("00000000-0000-0000-0000-000000000001", payload, actor);
+    await review.addEvidence("00000000-0000-0000-0000-000000000001", payload, actor);
+    await review.verifyEvidence("00000000-0000-0000-0000-000000000003", actor);
+    await review.replay("00000000-0000-0000-0000-000000000001", payload, actor);
+    await review.semanticReview("00000000-0000-0000-0000-000000000004", payload, actor);
+    await review.disposition("00000000-0000-0000-0000-000000000001", payload, actor);
+
+    expect(normalizedOverview).toMatchObject({
+      feedback_rows: null, negative_rows: null, lifecycle_status_available: false,
+      statuses: {}, dispositions: { actionable: 1 },
+    });
+    expect(normalizedInbox[0]).toMatchObject({ feedback_count: 3, question: "", answer: "" });
+    expect(normalizedIssues[0]).toMatchObject({
+      disposition: "actionable", root_cause: null,
+      progress: { status: "unknown", missing_gates: null, replay_passed_turns: null },
+    });
+    expect(normalizedDetail).toMatchObject({
+      issue: { disposition: "actionable", impact_scope: null },
+      progress: { status: "unknown", replay_required_turns: null },
+    });
 
     const paths = fetchMock.mock.calls.map(([path]) => String(path));
     expect(paths).toEqual([
@@ -153,5 +198,11 @@ describe("FAE workbench API", () => {
     expect(createBody).toEqual({ reason: "test" });
     expect(linkBody).toEqual({ reason: "test" });
     expect(fetchMock.mock.calls.slice(5).every(([, init]) => new Headers(init?.headers).get("X-Review-Actor") === actor)).toBe(true);
+    expect(fetchMock.mock.calls.slice(0, 5).every(([, init]) => !new Headers(init?.headers).has("X-CSRF-Token"))).toBe(true);
+    expect(fetchMock.mock.calls.slice(5).every(([, init]) => new Headers(init?.headers).get("X-CSRF-Token") === "csrf-current-account")).toBe(true);
+
+    const changedAccountReview = reviewFactory("csrf-changed-account");
+    await changedAccountReview.disposition("00000000-0000-0000-0000-000000000001", payload, actor);
+    expect(new Headers(fetchMock.mock.calls[fetchMock.mock.calls.length - 1]?.[1]?.headers).get("X-CSRF-Token")).toBe("csrf-changed-account");
   });
 });

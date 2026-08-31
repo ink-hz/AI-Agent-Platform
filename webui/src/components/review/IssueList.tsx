@@ -4,6 +4,7 @@ import type { FeedbackIssueSummary, IssueStatus, ReviewInboxItem } from "../../t
 
 
 export const STATUS_LABELS: Record<IssueStatus, string> = {
+  unknown: "生命周期状态暂不可用",
   pending_triage: "待归因",
   fixing: "修复中",
   awaiting_merge: "待合并",
@@ -79,7 +80,7 @@ export function IssueList({
       <input aria-label="负责人" placeholder="负责人" value={owner} onChange={(event) => setOwner(event.target.value)} />
       <input aria-label="创建日期起" type="date" value={createdAfter} onChange={(event) => setCreatedAfter(event.target.value)} />
     </div>
-    {inbox.length > 0 && <section className="review-inbox"><h3>待纳管回答 <span>{inbox.length}</span></h3>{inbox.map((item) => <button className={selectedTurnKey === item.turn_key ? "is-selected" : ""} key={item.turn_key} onClick={() => onSelectInbox(item.turn_key)}><strong>{item.question || "未记录问题"}</strong><small>{item.agent_id} · {item.feedback_keys.length} 条负反馈</small></button>)}</section>}
-    <div className="review-issue-list">{filtered.map((item) => <button className={selectedId === item.id ? "is-selected" : ""} key={item.id} onClick={() => onSelect(item.id)}><span><b>{item.priority}</b>{STATUS_LABELS[item.progress.status]}</span><strong>{item.title}</strong><small>{item.agent_id} · {item.failure_layer || "待归因"} · {item.owner || "未分配"}</small>{item.progress.missing_gates.length > 0 && <em>缺：{item.progress.missing_gates.map((gate) => GATE_LABELS[gate] || gate).join("、")}</em>}</button>)}</div>
+    {inbox.length > 0 && <section className="review-inbox"><h3>待纳管回答 <span>{inbox.length}</span></h3>{inbox.map((item) => <button className={selectedTurnKey === item.turn_key ? "is-selected" : ""} key={item.turn_key} onClick={() => onSelectInbox(item.turn_key)}><strong>{item.question || "未记录问题"}</strong><small>{item.agent_id} · {item.feedback_count ?? item.feedback_keys.length} 条负反馈</small></button>)}</section>}
+    <div className="review-issue-list">{filtered.map((item) => <button className={selectedId === item.id ? "is-selected" : ""} key={item.id} onClick={() => onSelect(item.id)}><span><b>{item.priority}</b>{STATUS_LABELS[item.progress.status]}</span><strong>{item.title}</strong><small>{item.agent_id} · {item.failure_layer || "待归因"} · {item.owner || "未分配"}</small>{item.progress.missing_gates === null ? <em>闭环门暂不可用</em> : item.progress.missing_gates.length > 0 && <em>缺：{item.progress.missing_gates.map((gate) => GATE_LABELS[gate] || gate).join("、")}</em>}</button>)}</div>
   </aside>;
 }

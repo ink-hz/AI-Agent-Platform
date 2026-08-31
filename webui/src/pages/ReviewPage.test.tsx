@@ -83,6 +83,17 @@ it("preserves the legacy actor field, issue query state, and generic Review API 
 });
 
 
+it("keeps generic Review selection in the stable agent-scoped query URL", async () => {
+  window.history.replaceState({}, "", "/admin/review?agent_id=ai-fae-agent&turn_key=fae%3Aturn-2");
+  await act(async () => root.render(<ReviewPage />));
+  await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
+
+  expect(window.location.pathname).toBe("/admin/review");
+  expect(window.location.search).toBe("?agent_id=ai-fae-agent&issue=issue-1");
+  expect(container.textContent).toContain("旧的错误答案");
+});
+
+
 it("can attach an inbox answer to an existing canonical issue", async () => {
   window.history.replaceState({}, "", "/admin/review?turn_key=fae%3Aturn-2");
 

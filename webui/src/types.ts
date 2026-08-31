@@ -385,6 +385,7 @@ export interface SyncStatus {
 }
 
 export type IssueStatus =
+  | "unknown"
   | "pending_triage"
   | "fixing"
   | "awaiting_merge"
@@ -399,21 +400,22 @@ export type IssueStatus =
 export interface IssueProgress {
   issue_id: string;
   status: IssueStatus;
-  missing_gates: string[];
-  replay_passed_turns: number;
-  replay_required_turns: number;
-  reopened: boolean;
+  missing_gates: string[] | null;
+  replay_passed_turns: number | null;
+  replay_required_turns: number | null;
+  reopened: boolean | null;
 }
 
 export interface ReviewOverview {
-  feedback_rows: number;
-  negative_rows: number;
-  negative_turns: number;
-  positive_rows: number;
-  issue_total: number;
+  feedback_rows: number | null;
+  negative_rows: number | null;
+  negative_turns: number | null;
+  positive_rows: number | null;
+  issue_total: number | null;
   statuses: Partial<Record<IssueStatus, number>>;
   dispositions: Record<string, number>;
   write_available: boolean;
+  lifecycle_status_available?: boolean;
 }
 
 export interface TurnClosureSummary {
@@ -430,6 +432,7 @@ export interface ReviewInboxItem {
   question: string;
   answer: string;
   feedback_keys: string[];
+  feedback_count?: number;
   first_feedback_at: string;
 }
 
@@ -441,11 +444,11 @@ export interface FeedbackIssueSummary {
   priority: "P0" | "P1" | "P2" | "P3";
   failure_layer: string | null;
   secondary_layers: string[];
-  root_cause: string;
-  impact_scope: string;
+  root_cause: string | null;
+  impact_scope: string | null;
   owner: string | null;
   disposition: "actionable" | "duplicate" | "not_actionable" | "wont_fix";
-  row_version: number;
+  row_version: number | null;
   created_at?: string;
   updated_at?: string;
   progress: IssueProgress;
