@@ -44,6 +44,23 @@ function cleanAgentId(value: string | null): string {
 }
 
 
+export function normalizeFaeSessionDate(value: string | null): string {
+  const candidate = clean(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(candidate);
+  if (!match) return "";
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+  const offsetHour = match[7] === undefined ? null : Number(match[7]);
+  const offsetMinute = match[8] === undefined ? null : Number(match[8]);
+  if (year < 1 || month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59
+    || (offsetHour !== null && (offsetHour > 23 || offsetMinute === null || offsetMinute > 59))) return "";
+  const calendar = new Date(0);
+  calendar.setUTCFullYear(year, month - 1, day);
+  calendar.setUTCHours(0, 0, 0, 0);
+  if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day
+    || !Number.isFinite(Date.parse(candidate))) return "";
+  return candidate;
+}
+
 function cleanPage(params: URLSearchParams): number {
   const values = params.getAll("page");
   if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0])) return 1;
@@ -64,8 +81,8 @@ export function sessionFiltersFromSearch(search: string): SessionFilters {
     sentiment: SENTIMENTS.has(sentiment as SessionSentiment) ? sentiment as SessionSentiment : "",
     review_status: clean(params.get("review_status")),
     outcome: clean(params.get("outcome")),
-    date_from: clean(params.get("date_from")),
-    date_to: clean(params.get("date_to")),
+    date_from: normalizeFaeSessionDate(params.get("date_from")),
+    date_to: normalizeFaeSessionDate(params.get("date_to")),
     page: cleanPage(params),
   };
 }

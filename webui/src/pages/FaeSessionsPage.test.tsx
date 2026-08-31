@@ -13,6 +13,12 @@ function response<T>(body: T): Response {
 }
 
 
+function setInput(input: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+
 const session: SessionSummary = {
   session_key: "fae:session-1",
   agent_id: "ai-fae-agent",
@@ -101,5 +107,33 @@ describe("FaeSessionsPage", () => {
     expect(container.querySelector<HTMLInputElement>('input[name="date_from"]')?.value).toBe("2026-08-01T00:00:00+08:00");
     expect(container.querySelector<HTMLInputElement>('input[name="date_to"]')?.value).toBe("2026-08-31T23:59:59+08:00");
     expect(requests[requests.length - 1]).toBe("/api/admin/fae/sessions?date_from=2026-08-01T00%3A00%3A00%2B08%3A00&date_to=2026-08-31T23%3A59%3A59%2B08%3A00&limit=50");
+  });
+
+  it.each([
+    "not-a-date",
+    "2026-08-01T00:00:00",
+    "2026-02-30T00:00:00+08:00",
+  ])("canonicalizes invalid FAE date_from %s before loading", async (dateFrom) => {
+    window.history.replaceState({}, "", `/admin/fae/sessions?date_from=${encodeURIComponent(dateFrom)}`);
+
+    await act(async () => root.render(<FaeSessionsPage />));
+
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/sessions");
+    expect(requests[requests.length - 1]).toBe("/api/admin/fae/sessions?limit=50");
+  });
+
+  it("does not serialize an invalid FAE date entered in the filter form", async () => {
+    window.history.replaceState({}, "", "/admin/fae/sessions");
+    await act(async () => root.render(<FaeSessionsPage />));
+
+    await act(async () => {
+      setInput(container.querySelector<HTMLInputElement>('input[name="date_from"]')!, "not-a-date");
+    });
+    await act(async () => {
+      container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/sessions");
+    expect(requests[requests.length - 1]).toBe("/api/admin/fae/sessions?limit=50");
   });
 });

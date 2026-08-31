@@ -8,6 +8,7 @@ import { useHistoryScrollRestoration } from "../navigationContext";
 import { currentLocationPath, navigate } from "../router";
 import {
   sessionFiltersFromSearch,
+  normalizeFaeSessionDate,
   sessionsPath,
   type SessionFilters,
   type SessionSource,
@@ -131,8 +132,8 @@ export function SessionsView({
       channel: draft.channel.trim(),
       review_status: draft.review_status.trim(),
       outcome: draft.outcome.trim(),
-      date_from: draft.date_from.trim(),
-      date_to: draft.date_to.trim(),
+      date_from: normalizeFaeSessionDate(draft.date_from),
+      date_to: normalizeFaeSessionDate(draft.date_to),
       page: 1,
     });
   };
