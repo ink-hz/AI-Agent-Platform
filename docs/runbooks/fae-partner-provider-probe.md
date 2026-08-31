@@ -64,7 +64,9 @@ This foundation release keeps all four values disabled/empty in `deploy/cloud/co
 The provider-specific release must give FAE the same `PLATFORM_PARTNER_PROVIDER_KIND`, the same release-file
 digest, and a byte-identical read-only service copy at FAE's explicit container path. FAE rejects a release whose
 Provider kind differs from its configured kind; Platform remains the authority that verifies the kind is actually
-registered for production. Never enable the FAE login control independently of the Platform gate.
+registered for production. FAE must also have `PLATFORM_IDENTITY_ENABLED=true`; valid evidence without the
+authenticated identity/session bottom remains unavailable with reason `partner_identity_required`. Never enable
+the FAE login control independently of the Platform gate.
 
 ## Read-only validation
 
