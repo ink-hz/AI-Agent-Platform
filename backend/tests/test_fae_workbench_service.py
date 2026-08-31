@@ -230,3 +230,13 @@ async def test_overview_api_rejects_naive_freshness_timestamp():
 
     with pytest.raises(ValidationError):
         FaeOverview.model_validate(payload)
+
+
+@pytest.mark.asyncio
+async def test_overview_api_rejects_naive_attention_timestamp():
+    overview = await service_for().overview(NOW)
+    payload = overview.model_dump()
+    payload["attention"]["items"][0]["last_active_at"] = NOW.replace(tzinfo=None)
+
+    with pytest.raises(ValidationError):
+        FaeOverview.model_validate(payload)

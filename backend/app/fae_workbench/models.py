@@ -18,7 +18,7 @@ class FaeTrendPoint(BaseModel):
 class FaeSessionAttention(BaseModel):
     session_key: str
     title: str | None = None
-    last_active_at: datetime
+    last_active_at: AwareDatetime
     reason: Literal["fallback", "failed_outcome", "empty_answer"]
 
 
