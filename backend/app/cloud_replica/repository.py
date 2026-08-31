@@ -388,10 +388,10 @@ class ReplicaObservabilityRepository:
                 if review_available else None
             ),
             feedback_availability=(
-                "available" if feedback_available else "unavailable"
+                "restricted" if feedback_available else "unavailable"
             ),
             review_availability=(
-                "available" if review_available else "unavailable"
+                "restricted" if review_available else "unavailable"
             ),
             latest_outcome=self._latest_outcome(record),
             source_synced_at=deployment["last_success_at"],
@@ -570,6 +570,14 @@ class ReplicaObservabilityRepository:
         trace = turn.get("trace")
         feedback_available = "feedback_sentiments" in turn
         review_available = "review_statuses" in turn
+        feedback_summary = {
+            sentiment: list(turn.get("feedback_sentiments") or []).count(sentiment)
+            for sentiment in sorted(set(turn.get("feedback_sentiments") or []))
+        }
+        review_status_summary = {
+            status: list(turn.get("review_statuses") or []).count(status)
+            for status in sorted(set(turn.get("review_statuses") or []))
+        }
         return TurnDetail(
             turn_key=turn["key"],
             session_key=record["key"],
@@ -592,11 +600,13 @@ class ReplicaObservabilityRepository:
             evidence=[],
             evidence_availability="restricted",
             feedback_availability=(
-                "available" if feedback_available else "unavailable"
+                "restricted" if feedback_available else "unavailable"
             ),
+            feedback_summary=feedback_summary,
             review_availability=(
-                "available" if review_available else "unavailable"
+                "restricted" if review_available else "unavailable"
             ),
+            review_status_summary=review_status_summary,
             input_attachments=[item for item in attachments if item.direction == "user_input"],
             output_attachments=[item for item in attachments if item.direction == "agent_output"],
             sender_name=record.get("primary_sender_name"),

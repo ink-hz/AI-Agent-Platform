@@ -313,8 +313,10 @@ export interface TurnDetail {
   evidence_availability: Availability;
   feedback: FeedbackItem[];
   feedback_availability?: Availability;
+  feedback_summary?: Record<string, number>;
   reviews: ReviewItem[];
   review_availability?: Availability;
+  review_status_summary?: Record<string, number>;
   improvements: ImprovementItem[];
   input_attachments: AttachmentSummary[];
   output_attachments: AttachmentSummary[];

@@ -48,6 +48,11 @@ export const GATE_LABELS: Record<string, string> = {
   actual_model_mismatch: "实际模型一致性",
 };
 
+const FAILURE_LAYER_OPTIONS = [
+  "channel", "context", "guardrail", "schema", "planner",
+  "capability_evidence", "coverage", "synthesis", "outcome", "trace_eval",
+];
+
 
 export function IssueList({
   issues,
@@ -104,13 +109,16 @@ export function IssueList({
   )), [agent, createdAfter, issues, layer, owner, priority, server, status]);
   const agents = [...new Set(issues.map((item) => item.agent_id))];
   const layers = [...new Set(issues.map((item) => item.failure_layer).filter(Boolean))] as string[];
+  const serverLayers = selectedLayer && !FAILURE_LAYER_OPTIONS.includes(selectedLayer)
+    ? [selectedLayer, ...FAILURE_LAYER_OPTIONS]
+    : FAILURE_LAYER_OPTIONS;
 
   return <aside className="review-list-panel">
     <div className="review-list-heading"><div><p>治理队列</p><h2>反馈事项</h2></div><span>{filtered.length}</span></div>
     <div className="review-filters" aria-label="事项筛选">
       {showAgentFilter && <select aria-label="Agent" value={agent} onChange={(event) => setAgent(event.target.value)}><option value="">全部 Agent</option>{agents.map((value) => <option key={value}>{value}</option>)}</select>}
       {server && <input aria-label="事项搜索" placeholder="搜索标题" value={selectedQuery} onChange={(event) => updateServer({ query: event.target.value || undefined })} />}
-      <select aria-label="失败层" value={selectedLayer} onChange={(event) => server ? updateServer({ failure_layer: event.target.value || undefined }) : setLayer(event.target.value)}><option value="">全部失败层</option>{(server ? ["channel", "context", "guardrail", "schema", "planner", "capability_evidence", "coverage", "synthesis", "outcome", "trace_eval"] : layers).map((value) => <option key={value}>{value}</option>)}</select>
+      <select aria-label="失败层" value={selectedLayer} onChange={(event) => server ? updateServer({ failure_layer: event.target.value || undefined }) : setLayer(event.target.value)}><option value="">全部失败层</option>{(server ? serverLayers : layers).map((value) => <option key={value}>{value}</option>)}</select>
       <select aria-label="优先级" value={selectedPriority} onChange={(event) => server ? updateServer({ priority: event.target.value || undefined }) : setPriority(event.target.value)}><option value="">全部优先级</option>{["P0", "P1", "P2", "P3"].map((value) => <option key={value}>{value}</option>)}</select>
       <select aria-label="状态" value={status} onChange={(event) => onStatusFilterChange ? onStatusFilterChange(event.target.value) : setLocalStatus(event.target.value)}><option value="">全部状态</option>{(statusOptions ?? Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))).map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select>
       <input aria-label="负责人" placeholder="负责人" value={selectedOwner} onChange={(event) => server ? updateServer({ owner: event.target.value || undefined }) : setOwner(event.target.value)} />

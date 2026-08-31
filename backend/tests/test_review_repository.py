@@ -1,6 +1,7 @@
 from uuid import UUID
 import inspect
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -202,6 +203,17 @@ def test_release_handoff_import_uses_one_writer_transaction():
     assert "similarity" not in source
 
 
+def test_every_canonical_edge_writer_uses_one_authoritative_helper():
+    repository_source = inspect.getsource(PsycopgReviewRepository)
+    handoff = inspect.getsource(PsycopgReviewRepository.import_release_handoff)
+    helper = inspect.getsource(PsycopgReviewRepository._create_canonical_edge)
+
+    assert hasattr(PsycopgReviewRepository, "_create_canonical_edge")
+    assert "before_write=relocate_link" in handoff
+    assert helper.index("_assert_canonical_edge_acyclic") < helper.index("before_write(source, target)")
+    assert repository_source.count("canonical_issue_id=%s") == 1
+
+
 def test_optional_agent_filters_are_typed_for_postgres_parameters():
     for method in (
         PsycopgReviewRepository.list_inbox,
@@ -336,6 +348,36 @@ def test_issue_scope_sql_accepts_only_canonical_merge_relocated_turn_links():
     assert "merge_walk.current_id=historical_link.issue_id" in source
     assert "merge_move.before->>'id'=event.after->>'id'" in source
     assert "merge_move.after->>'id'=event.after->>'id'" in source
+
+
+def test_feedback_scope_accepts_additive_evolution_but_rejects_missing_and_duplicate_keys():
+    current = " ".join(
+        inspect.getsource(PsycopgReviewRepository.agent_issue_scope_valid)
+        .lower().split()
+    )
+    historical = " ".join(HISTORICAL_LINK_EVENT_INVALID_SQL.lower().split())
+
+    assert "not (linked_feedback.feedback_key = any(link.source_feedback_keys))" not in current
+    assert "count(distinct feedback_key)" in current
+    assert "not exists" in current and "linked_feedback.feedback_key is null" in current
+    assert "not exists ( select 1 from platform_read.feedback event_feedback" not in historical
+    assert "count(distinct feedback_key)" in historical
+
+
+def test_handoff_and_backfill_collect_all_feedback_for_negative_turns():
+    handoff = " ".join(
+        inspect.getsource(PsycopgReviewRepository.import_release_handoff)
+        .lower().split()
+    )
+    backfill = " ".join(
+        inspect.getsource(PsycopgReviewRepository.list_negative_feedback_groups)
+        .lower().split()
+    )
+
+    assert "bool_or(feedback.sentiment='negative')" in handoff
+    assert "filter (where feedback.sentiment='negative')" not in handoff
+    assert "negative_turns" in backfill
+    assert "join platform_read.feedback all_feedback" in backfill
 
 
 @pytest.mark.parametrize("operation", ["move", "merge"])
@@ -520,20 +562,24 @@ def test_every_repository_link_issue_relocation_uses_replay_conflict_guard():
 
 
 def test_canonical_mutations_guard_cycles_inside_the_writer_transaction():
+    lock = inspect.getsource(PsycopgReviewRepository._lock_canonical_agent)
+    endpoints = inspect.getsource(PsycopgReviewRepository._lock_canonical_endpoints)
     guard = inspect.getsource(PsycopgReviewRepository._assert_canonical_edge_acyclic)
+    helper = inspect.getsource(PsycopgReviewRepository._create_canonical_edge)
     merge = inspect.getsource(PsycopgReviewRepository.merge_issue)
     disposition = inspect.getsource(PsycopgReviewRepository.set_disposition)
 
     normalized = " ".join(guard.lower().split())
-    assert "pg_advisory_xact_lock" in normalized
+    assert "pg_advisory_xact_lock" in lock
+    assert "_lock_canonical_agent" in endpoints
+    assert "_lock_canonical_endpoints" in guard
     assert "with recursive canonical_walk" in normalized
-    assert "for update" in normalized
+    assert "for update" in endpoints.lower()
     assert "current_id=%s" in normalized
     assert "canonical cycle" in normalized
-    assert "_assert_canonical_edge_acyclic" in merge
-    assert "_assert_canonical_edge_acyclic" in disposition
-    assert merge.index("_assert_canonical_edge_acyclic") < merge.index("set disposition='duplicate'")
-    assert disposition.index("_assert_canonical_edge_acyclic") < disposition.index("set disposition=%s")
+    assert "_create_canonical_edge" in merge
+    assert "_create_canonical_edge" in disposition
+    assert helper.index("_assert_canonical_edge_acyclic") < helper.index("set disposition='duplicate'")
 
 
 @pytest.mark.parametrize("operation", ["merge", "duplicate"])
@@ -712,6 +758,96 @@ def test_concurrent_inverse_canonical_edges_are_serialized_and_only_one_commits(
     assert sum(target is not None for target in graph.values()) == 1
 
 
+def test_concurrent_guarded_mutation_and_handoff_style_edge_share_serialization():
+    left_id, right_id = UUID(int=923), UUID(int=924)
+    graph = {left_id: None, right_id: None}
+    lock = threading.Lock()
+    start = threading.Barrier(2)
+    outcomes = []
+
+    class Result:
+        def __init__(self, row=None, many=None): self.row, self.many = row, many
+        def fetchone(self): return self.row
+        def fetchall(self): return self.many or []
+
+    class Cursor:
+        def __init__(self): self.locked = False
+        def execute(self, statement, parameters):
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("select agent_id from platform_review.feedback_issues"):
+                return Result({"agent_id": "ai-fae-agent"})
+            if "pg_advisory_xact_lock" in normalized:
+                lock.acquire()
+                self.locked = True
+                return Result({"pg_advisory_xact_lock": None})
+            if normalized.startswith("select * from platform_review.feedback_issues") and "id=any" in normalized:
+                return Result(many=[{
+                    "id": issue_id,
+                    "agent_id": "ai-fae-agent",
+                    "row_version": 1,
+                    "disposition": "actionable",
+                } for issue_id in parameters[0]])
+            if normalized.startswith("with recursive canonical_walk"):
+                current, wanted = parameters
+                seen = set()
+                while current is not None and current not in seen:
+                    if current == wanted:
+                        return Result({"cycle": True})
+                    seen.add(current)
+                    current = graph[current]
+                return Result({"cycle": current in seen})
+            if normalized.startswith("update platform_review.feedback_issues"):
+                target_id, _owner, _reason, source_id = parameters
+                graph[source_id] = target_id
+                return Result({
+                    "id": source_id,
+                    "agent_id": "ai-fae-agent",
+                    "row_version": 2,
+                    "disposition": "duplicate",
+                    "canonical_issue_id": target_id,
+                })
+            raise AssertionError(normalized)
+
+    def create_edge(label, source_id, target_id, *, handoff_style):
+        cursor = Cursor()
+        start.wait()
+        relocated = []
+        try:
+            PsycopgReviewRepository._create_canonical_edge(
+                cursor,
+                source_id,
+                target_id,
+                disposition_reason=label,
+                **({"before_write": lambda *_args: relocated.append(label)} if handoff_style else {}),
+            )
+            outcomes.append((label, "committed", bool(relocated)))
+        except InvalidReviewMutation:
+            outcomes.append((label, "rejected", bool(relocated)))
+        finally:
+            if cursor.locked:
+                lock.release()
+
+    threads = [
+        threading.Thread(
+            target=create_edge,
+            args=("ordinary", left_id, right_id),
+            kwargs={"handoff_style": False},
+        ),
+        threading.Thread(
+            target=create_edge,
+            args=("handoff", right_id, left_id),
+            kwargs={"handoff_style": True},
+        ),
+    ]
+    for thread in threads: thread.start()
+    for thread in threads: thread.join(timeout=2)
+
+    assert not any(thread.is_alive() for thread in threads)
+    assert sorted(state for _label, state, _relocated in outcomes) == ["committed", "rejected"]
+    assert all(not relocated for _label, state, relocated in outcomes if state == "rejected")
+    assert sum(target is not None for target in graph.values()) == 1
+
+
 def test_move_writer_rejects_a_link_that_no_longer_belongs_to_expected_source():
     source_id, other_id, target_id, link_id = (
         UUID(int=801), UUID(int=802), UUID(int=803), UUID(int=804)
@@ -808,6 +944,547 @@ def test_feedback_metadata_lookup_is_one_bounded_authoritative_query():
     assert "feedback.agent_id=turn.agent_id" in statements[0][0]
     assert "feedback.turn_key=turn.turn_key" in statements[0][0]
     assert statements[0][1] == ("ai-fae-agent", "fae:turn")
+
+
+def test_create_writer_rejects_foreign_origin_before_issue_or_audit_write():
+    statements = []
+
+    class Result:
+        def fetchone(self): return None
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters):
+            normalized = " ".join(statement.lower().split())
+            statements.append((normalized, parameters))
+            if normalized.startswith("select turn.turn_key"):
+                return Result()
+            raise AssertionError("foreign origin must be rejected before a write")
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return Cursor()
+
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    )
+
+    with pytest.raises(InvalidReviewMutation, match="origin turn"):
+        repository.create_issue(
+            {
+                "agent_id": "ai-fae-agent",
+                "origin_turn_key": "admin:turn",
+                "title": "foreign origin",
+            },
+            actor="codex",
+            reason="reject foreign source",
+        )
+
+    assert len(statements) == 1
+    assert statements[0][1] == ("ai-fae-agent", "admin:turn")
+
+
+@pytest.mark.parametrize(
+    ("issue_agent", "source_agent", "metadata", "provided", "message"),
+    [
+        ("ai-fae-agent", "admin-agent", None, [], "target issue"),
+        ("ai-fae-agent", "ai-fae-agent", None, [], "feedback lineage"),
+        (
+            "ai-fae-agent",
+            "ai-fae-agent",
+            {"turn_key": "fae:turn", "feedback_keys": ["fae:real"]},
+            ["fae:foreign"],
+            "feedback lineage",
+        ),
+    ],
+)
+def test_link_writer_locks_target_and_rejects_cross_scope_before_write(
+    issue_agent, source_agent, metadata, provided, message
+):
+    issue_id = UUID(int=1401)
+    statements = []
+
+    class Result:
+        def __init__(self, row): self.row = row
+        def fetchone(self): return self.row
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters):
+            normalized = " ".join(statement.lower().split())
+            statements.append((normalized, parameters))
+            if normalized.startswith("select * from platform_review.feedback_issues"):
+                assert "for update" in normalized
+                return Result({"id": issue_id, "agent_id": issue_agent})
+            if normalized.startswith("select turn.turn_key"):
+                return Result(metadata)
+            raise AssertionError("invalid link must be rejected before a write")
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return Cursor()
+
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    )
+
+    with pytest.raises(InvalidReviewMutation, match=message):
+        repository.link_turn(
+            issue_id,
+            agent_id=source_agent,
+            source_turn_key="fae:turn",
+            source_feedback_keys=provided,
+            link_role="primary",
+            actor="codex",
+            reason="scope check",
+        )
+
+    assert statements[0][1] == (issue_id,)
+    assert not any(sql.startswith(("insert ", "update ", "delete ")) for sql, _ in statements)
+
+
+@pytest.mark.parametrize("path_length", [1, 2])
+def test_actual_release_handoff_cycle_rolls_back_link_issue_and_audit_state(path_length):
+    source_id, target_id, middle_id, link_id = (
+        UUID(int=1201), UUID(int=1202), UUID(int=1203), UUID(int=1204)
+    )
+    source_issue = {
+        "id": source_id,
+        "agent_id": "ai-fae-agent",
+        "row_version": 1,
+        "disposition": "actionable",
+    }
+    target_issue = {
+        "id": target_id,
+        "agent_id": "ai-fae-agent",
+        "row_version": 1,
+        "disposition": "actionable",
+        "root_cause": "known",
+        "owner": "corp:owner",
+    }
+    link = {
+        "id": link_id,
+        "issue_id": source_id,
+        "agent_id": "ai-fae-agent",
+        "source_turn_key": "fae:turn",
+        "source_feedback_keys": ["fae:negative"],
+        "active": True,
+    }
+    graph = {
+        source_id: None,
+        target_id: source_id if path_length == 1 else middle_id,
+        middle_id: source_id,
+    }
+    attempts = []
+    committed = []
+
+    class Result:
+        def __init__(self, row=None, many=None): self.row, self.many = row, many
+        def fetchone(self): return self.row
+        def fetchall(self): return self.many or []
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters=()):
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("select * from platform_review.feedback_release_handoffs"):
+                return Result(None)
+            if normalized.startswith("insert into platform_review.feedback_release_handoffs"):
+                attempts.append("handoff")
+                return Result()
+            if normalized.startswith("insert into platform_review.feedback_release_handoff_events"):
+                attempts.append("handoff_audit")
+                return Result()
+            if "pg_advisory_xact_lock" in normalized:
+                return Result({"pg_advisory_xact_lock": None})
+            if normalized.startswith("select turn.agent_id, turn.turn_key"):
+                return Result(many=[{
+                    "agent_id": "ai-fae-agent",
+                    "turn_key": "fae:turn",
+                    "feedback_keys": ["fae:negative", "fae:positive"],
+                    "has_negative_feedback": True,
+                }])
+            if "where agent_id=%s and canonical_key=%s" in normalized:
+                return Result(target_issue)
+            if normalized.startswith("select * from platform_review.feedback_issue_links"):
+                return Result(link)
+            if normalized.startswith("select 1 from platform_review.feedback_issue_links"):
+                return Result(None)
+            if normalized.startswith("select agent_id from platform_review.feedback_issues"):
+                return Result({"agent_id": "ai-fae-agent"})
+            if normalized.startswith("select * from platform_review.feedback_issues") and "id=any" in normalized:
+                return Result(many=[source_issue, target_issue])
+            if normalized.startswith("with recursive canonical_walk"):
+                current, wanted = parameters
+                seen = set()
+                while current is not None and current not in seen:
+                    if current == wanted:
+                        return Result({"cycle": True})
+                    seen.add(current)
+                    current = graph[current]
+                return Result({"cycle": current in seen})
+            if normalized.startswith(("insert ", "update ", "delete ")):
+                attempts.append(normalized)
+            raise AssertionError(normalized)
+
+    cursor = Cursor()
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, exc_type, *_args):
+            if exc_type is None:
+                committed.extend(attempts)
+            else:
+                attempts.clear()
+            return None
+        def cursor(self): return cursor
+
+    validated = SimpleNamespace(
+        idempotency_key="sha256:" + "a" * 64,
+        batch_id="batch-cycle",
+        agent_id="ai-fae-agent",
+        payload_sha256="b" * 64,
+        release_name="release-1",
+        deployment_sha="c" * 40,
+        remediation_commit="d" * 40,
+        release_manifest_ref="release.json",
+        repository_path="/repo",
+        merge_verification={},
+        deployment_verification={},
+        issues=(SimpleNamespace(
+            issue_key="target",
+            title="target",
+            failure_layer="synthesis",
+            secondary_layers=(),
+            expected_repair="repair",
+        ),),
+        items=(SimpleNamespace(turn_key="fae:turn", issue_key="target"),),
+    )
+
+    with pytest.raises(InvalidReviewMutation, match="cycle"):
+        PsycopgReviewRepository(
+            "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+        ).import_release_handoff(validated)
+
+    assert committed == []
+    assert attempts == []
+    assert link["issue_id"] == source_id
+
+
+def test_actual_valid_release_handoff_moves_link_and_canonicalizes_with_all_feedback():
+    source_id, target_id, link_id = UUID(int=1251), UUID(int=1252), UUID(int=1253)
+    source_issue = {
+        "id": source_id,
+        "agent_id": "ai-fae-agent",
+        "row_version": 1,
+        "disposition": "actionable",
+    }
+    target_issue = {
+        "id": target_id,
+        "agent_id": "ai-fae-agent",
+        "row_version": 1,
+        "disposition": "actionable",
+        "root_cause": "known",
+        "owner": "corp:owner",
+        "fix_ready_at": "2026-09-01T00:00:00Z",
+    }
+    link = {
+        "id": link_id,
+        "issue_id": source_id,
+        "agent_id": "ai-fae-agent",
+        "source_turn_key": "fae:turn",
+        "source_feedback_keys": ["fae:negative"],
+        "active": True,
+    }
+    issue_events = []
+    evidence_sequence = iter([UUID(int=1254), UUID(int=1255)])
+    handoff_row = {
+        "idempotency_key": "sha256:" + "a" * 64,
+        "batch_id": "batch-valid",
+        "agent_id": "ai-fae-agent",
+        "payload_sha256": "b" * 64,
+        "release_name": "release-1",
+        "deployment_sha": "c" * 40,
+        "import_status": "processing",
+        "result": None,
+    }
+
+    class Result:
+        def __init__(self, row=None, many=None): self.row, self.many = row, many
+        def fetchone(self): return self.row
+        def fetchall(self): return self.many or []
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters=()):
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("select * from platform_review.feedback_release_handoffs"):
+                if " or batch_id=%s" in normalized:
+                    return Result(None)
+                return Result(handoff_row)
+            if normalized.startswith("insert into platform_review.feedback_release_handoffs"):
+                return Result()
+            if normalized.startswith("insert into platform_review.feedback_release_handoff_events"):
+                return Result()
+            if "pg_advisory_xact_lock" in normalized:
+                return Result({"pg_advisory_xact_lock": None})
+            if normalized.startswith("select turn.agent_id, turn.turn_key"):
+                return Result(many=[{
+                    "agent_id": "ai-fae-agent",
+                    "turn_key": "fae:turn",
+                    "feedback_keys": ["fae:negative", "fae:positive"],
+                    "has_negative_feedback": True,
+                }])
+            if "where agent_id=%s and canonical_key=%s" in normalized:
+                return Result(target_issue)
+            if normalized.startswith("select * from platform_review.feedback_issue_links"):
+                return Result(link)
+            if normalized.startswith("select 1 from platform_review.feedback_issue_links"):
+                return Result(None)
+            if normalized.startswith("select agent_id from platform_review.feedback_issues"):
+                return Result({"agent_id": "ai-fae-agent"})
+            if normalized.startswith("select * from platform_review.feedback_issues") and "id=any" in normalized:
+                return Result(many=[source_issue, target_issue])
+            if normalized.startswith("with recursive canonical_walk"):
+                return Result({"cycle": False})
+            if normalized.startswith("select 1 from platform_review.feedback_replay_runs"):
+                return Result(None)
+            if normalized.startswith("update platform_review.feedback_issue_links"):
+                target, keys, _actor, _reason, selected_link_id = parameters
+                assert selected_link_id == link_id
+                link.update({"issue_id": target, "source_feedback_keys": keys})
+                return Result(dict(link))
+            if normalized.startswith("update platform_review.feedback_issues set disposition='duplicate'"):
+                canonical_id, _owner, reason, selected_source_id = parameters
+                assert selected_source_id == source_id
+                source_issue.update({
+                    "canonical_issue_id": canonical_id,
+                    "disposition": "duplicate",
+                    "disposition_reason": reason,
+                    "row_version": 2,
+                })
+                return Result(dict(source_issue))
+            if normalized.startswith("insert into platform_review.feedback_issue_events"):
+                issue_events.append((parameters[0], parameters[1]))
+                return Result()
+            if normalized.startswith("select * from platform_review.feedback_issues"):
+                return Result(target_issue)
+            if normalized.startswith("insert into platform_review.feedback_fix_evidence"):
+                return Result({"id": next(evidence_sequence), "issue_id": target_id})
+            if normalized.startswith("update platform_review.feedback_release_handoffs"):
+                return Result()
+            raise AssertionError(normalized)
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return Cursor()
+
+    validated = SimpleNamespace(
+        idempotency_key=handoff_row["idempotency_key"],
+        batch_id=handoff_row["batch_id"],
+        agent_id="ai-fae-agent",
+        payload_sha256=handoff_row["payload_sha256"],
+        release_name=handoff_row["release_name"],
+        deployment_sha=handoff_row["deployment_sha"],
+        remediation_commit="d" * 40,
+        release_manifest_ref="release.json",
+        repository_path="/repo",
+        merge_verification={},
+        deployment_verification={},
+        issues=(SimpleNamespace(
+            issue_key="target",
+            title="target",
+            failure_layer="synthesis",
+            secondary_layers=(),
+            expected_repair="repair",
+        ),),
+        items=(SimpleNamespace(turn_key="fae:turn", issue_key="target"),),
+    )
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    )
+    repository._recalculate_with_cursor = lambda *_args, **_kwargs: None
+
+    result = repository.import_release_handoff(validated)
+
+    assert result["state"] == "imported"
+    assert result["issue_ids"] == [str(target_id)]
+    assert len(result["evidence_ids"]) == 2
+    assert link["issue_id"] == target_id
+    assert link["source_feedback_keys"] == ["fae:negative", "fae:positive"]
+    assert source_issue["canonical_issue_id"] == target_id
+    assert (source_id, "issue_merged") in issue_events
+    assert (source_id, "link_moved_out") in issue_events
+    assert (target_id, "link_moved_in") in issue_events
+
+
+def test_release_handoff_with_remaining_link_rejects_foreign_source_issue_before_write():
+    source_id, target_id, link_id = UUID(int=1261), UUID(int=1262), UUID(int=1263)
+    link = {
+        "id": link_id,
+        "issue_id": source_id,
+        "agent_id": "ai-fae-agent",
+        "source_turn_key": "fae:turn",
+        "source_feedback_keys": ["fae:negative"],
+        "active": True,
+    }
+    source_issue = {
+        "id": source_id,
+        "agent_id": "admin-agent",
+        "row_version": 1,
+        "disposition": "actionable",
+    }
+    target_issue = {
+        "id": target_id,
+        "agent_id": "ai-fae-agent",
+        "row_version": 1,
+        "disposition": "actionable",
+        "root_cause": "known",
+        "owner": "corp:owner",
+    }
+    writes = []
+
+    class Result:
+        def __init__(self, row=None, many=None): self.row, self.many = row, many
+        def fetchone(self): return self.row
+        def fetchall(self): return self.many or []
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters=()):
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("select * from platform_review.feedback_release_handoffs"):
+                return Result(None)
+            if normalized.startswith("insert into platform_review.feedback_release_handoffs"):
+                writes.append("staged handoff")
+                return Result()
+            if normalized.startswith("insert into platform_review.feedback_release_handoff_events"):
+                writes.append("staged handoff audit")
+                return Result()
+            if "pg_advisory_xact_lock" in normalized:
+                return Result({"pg_advisory_xact_lock": None})
+            if normalized.startswith("select turn.agent_id, turn.turn_key"):
+                return Result(many=[{
+                    "agent_id": "ai-fae-agent",
+                    "turn_key": "fae:turn",
+                    "feedback_keys": ["fae:negative"],
+                    "has_negative_feedback": True,
+                }])
+            if "where agent_id=%s and canonical_key=%s" in normalized:
+                return Result(target_issue)
+            if normalized.startswith("select * from platform_review.feedback_issue_links"):
+                return Result(link)
+            if normalized.startswith("select 1 from platform_review.feedback_issue_links"):
+                return Result({"?column?": 1})
+            if normalized.startswith("select agent_id from platform_review.feedback_issues"):
+                return Result({"agent_id": "admin-agent"})
+            if normalized.startswith("select * from platform_review.feedback_issues") and "id=any" in normalized:
+                return Result(many=[source_issue, target_issue])
+            if normalized.startswith(("update ", "insert ", "delete ")):
+                writes.append(normalized)
+            raise AssertionError("foreign source must be rejected before link mutation")
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args):
+            writes.clear()
+            return None
+        def cursor(self): return Cursor()
+
+    validated = SimpleNamespace(
+        idempotency_key="sha256:" + "e" * 64,
+        batch_id="batch-foreign-source",
+        agent_id="ai-fae-agent",
+        payload_sha256="f" * 64,
+        release_name="release-1",
+        deployment_sha="a" * 40,
+        remediation_commit="b" * 40,
+        release_manifest_ref="release.json",
+        repository_path="/repo",
+        merge_verification={},
+        deployment_verification={},
+        issues=(SimpleNamespace(
+            issue_key="target",
+            title="target",
+            failure_layer="synthesis",
+            secondary_layers=(),
+            expected_repair="repair",
+        ),),
+        items=(SimpleNamespace(turn_key="fae:turn", issue_key="target"),),
+    )
+
+    with pytest.raises(InvalidReviewMutation, match="same agent"):
+        PsycopgReviewRepository(
+            "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+        ).import_release_handoff(validated)
+
+    assert writes == []
+    assert link["issue_id"] == source_id
+
+
+@pytest.mark.parametrize(
+    ("existing_keys", "current_keys"),
+    [([], ("fae:later-negative",)),
+     (["fae:negative"], ("fae:negative", "fae:later-positive"))],
+)
+def test_backfill_updates_current_link_with_additive_feedback_evolution(
+    existing_keys, current_keys
+):
+    issue_id, link_id = UUID(int=1301), UUID(int=1302)
+    writes = []
+
+    class Result:
+        def __init__(self, row=None): self.row = row
+        def fetchone(self): return self.row
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters):
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("insert into platform_review.feedback_issues"):
+                return Result(None)
+            if normalized.startswith("select * from platform_review.feedback_issues"):
+                return Result({
+                    "id": issue_id,
+                    "disposition": "actionable",
+                    "canonical_issue_id": None,
+                })
+            if normalized.startswith("select * from platform_review.feedback_issue_links"):
+                return Result({
+                    "id": link_id,
+                    "source_feedback_keys": list(existing_keys),
+                })
+            if normalized.startswith("update platform_review.feedback_issue_links"):
+                writes.append(parameters)
+                return Result(None)
+            raise AssertionError(normalized)
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return Cursor()
+
+    group = SimpleNamespace(
+        agent_id="ai-fae-agent",
+        turn_key="fae:turn",
+        question="question",
+        feedback_keys=current_keys,
+    )
+    result = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    ).backfill_negative_group(group, actor="codex")
+
+    assert result == (False, False, False)
+    assert writes == [(sorted(set(current_keys)), link_id)]
 
 
 def test_issue_collections_use_batched_progress_and_constant_query_count():

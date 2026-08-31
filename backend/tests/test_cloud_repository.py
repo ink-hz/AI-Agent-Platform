@@ -238,6 +238,27 @@ def test_repository_lists_searches_paginates_and_returns_existing_shapes():
 
     assert page.total == 1
     assert page.items[0].title == "人才定位"
+
+
+def test_projected_turn_exposes_safe_signal_summaries_as_restricted_not_empty_detail():
+    now = datetime(2026, 8, 11, 8, 0, tzinfo=UTC)
+    record = _record(now)
+    record["turns"][0]["feedback_sentiments"] = ["negative", "negative", "positive"]
+    record["turns"][0]["review_statuses"] = ["pending", "approved"]
+    repository, _ = _repository(now, (record,))
+
+    detail = repository.get_session(record["key"])
+    turn = detail.turns[0]
+
+    assert detail.feedback_count == 3
+    assert detail.review_count == 2
+    assert detail.feedback_availability == "restricted"
+    assert detail.review_availability == "restricted"
+    assert turn.feedback == [] and turn.reviews == []
+    assert turn.feedback_availability == "restricted"
+    assert turn.review_availability == "restricted"
+    assert turn.feedback_summary == {"negative": 2, "positive": 1}
+    assert turn.review_status_summary == {"approved": 1, "pending": 1}
     assert detail is not None
     assert detail.primary_sender_name == "磐德"
     assert detail.turns[0].question == "寻找视觉算法人才"

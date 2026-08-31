@@ -220,6 +220,10 @@ async def test_relocation_preflights_preserve_cloud_read_only_denial(operation):
 )
 async def test_link_rejects_unowned_feedback_before_writer(provided):
     class ReadRepository:
+        def get_issue_detail(self, issue_id):
+            assert issue_id == ISSUE_ID
+            return {"issue": {"id": ISSUE_ID, "agent_id": "ai-fae-agent"}}
+
         def feedback_keys_for_turn(self, agent_id, turn_key):
             assert (agent_id, turn_key) == ("ai-fae-agent", "fae:turn")
             return {"turn_key": turn_key, "feedback_keys": ["fb:real"]}
@@ -254,7 +258,8 @@ async def test_link_derives_exact_feedback_lineage_and_deduplicates_caller_keys(
             self.written = kwargs["source_feedback_keys"]
 
         def recalculate_and_record_transition(self, *_args, **_kwargs): return None
-        def get_issue_detail(self, _issue_id): return {"issue": {"id": ISSUE_ID}}
+        def get_issue_detail(self, _issue_id):
+            return {"issue": {"id": ISSUE_ID, "agent_id": "ai-fae-agent"}}
 
     repository = Repository()
     payload = SimpleNamespace(
@@ -282,7 +287,8 @@ async def test_empty_feedback_lineage_remains_valid_for_an_ordinary_turn():
 
         def link_turn(self, _issue_id, **kwargs): self.written = kwargs["source_feedback_keys"]
         def recalculate_and_record_transition(self, *_args, **_kwargs): return None
-        def get_issue_detail(self, _issue_id): return {"issue": {"id": ISSUE_ID}}
+        def get_issue_detail(self, _issue_id):
+            return {"issue": {"id": ISSUE_ID, "agent_id": "ai-fae-agent"}}
 
     repository = Repository()
     payload = SimpleNamespace(
@@ -295,3 +301,80 @@ async def test_empty_feedback_lineage_remains_valid_for_an_ordinary_turn():
     )
 
     assert repository.written == []
+
+
+@pytest.mark.asyncio
+async def test_create_with_origin_rejects_turn_owned_by_another_agent_before_writer():
+    class ReadRepository:
+        def feedback_keys_for_turn(self, agent_id, turn_key):
+            assert (agent_id, turn_key) == ("ai-fae-agent", "admin:turn")
+            return None
+
+    class Writer:
+        def create_issue(self, *_args, **_kwargs):
+            raise AssertionError("foreign origin must not reach writer")
+
+    payload = SimpleNamespace(
+        reason="create",
+        origin_turn_key="admin:turn",
+        model_dump=lambda **_kwargs: {
+            "agent_id": "ai-fae-agent",
+            "origin_turn_key": "admin:turn",
+            "title": "foreign origin",
+        },
+    )
+
+    with pytest.raises(InvalidReviewMutation, match="origin"):
+        await ReviewService(ReadRepository(), write_repository=Writer()).create_issue(
+            payload, actor="codex"
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_without_origin_preserves_generic_semantics_without_turn_read():
+    class Repository:
+        written = None
+        def feedback_keys_for_turn(self, *_args):
+            raise AssertionError("origin-free create must not read a Turn")
+        def create_issue(self, data, **_kwargs):
+            self.written = data
+            return {"id": ISSUE_ID}
+        def recalculate_and_record_transition(self, *_args, **_kwargs): return None
+        def get_issue_detail(self, _issue_id): return {"issue": {"id": ISSUE_ID}}
+
+    repository = Repository()
+    payload = SimpleNamespace(
+        reason="create",
+        origin_turn_key=None,
+        model_dump=lambda **_kwargs: {"agent_id": "admin-agent", "title": "manual"},
+    )
+
+    await ReviewService(repository, write_repository=repository).create_issue(
+        payload, actor="codex"
+    )
+
+    assert repository.written == {"agent_id": "admin-agent", "title": "manual"}
+
+
+@pytest.mark.asyncio
+async def test_link_rejects_payload_agent_that_does_not_own_target_issue_before_writer():
+    class ReadRepository:
+        def get_issue_detail(self, issue_id):
+            assert issue_id == ISSUE_ID
+            return {"issue": {"id": issue_id, "agent_id": "admin-agent"}}
+        def feedback_keys_for_turn(self, *_args):
+            raise AssertionError("target ownership must fail before Turn metadata")
+
+    class Writer:
+        def link_turn(self, *_args, **_kwargs):
+            raise AssertionError("cross-Agent link must not reach writer")
+
+    payload = SimpleNamespace(
+        agent_id="ai-fae-agent", source_turn_key="fae:turn",
+        source_feedback_keys=[], link_role="primary", reason="link",
+    )
+
+    with pytest.raises(InvalidReviewMutation, match="target issue"):
+        await ReviewService(ReadRepository(), write_repository=Writer()).link_turn(
+            ISSUE_ID, payload, actor="codex"
+        )

@@ -182,8 +182,10 @@ class TurnDetail(BaseModel):
     evidence_availability: Availability = "available"
     feedback: list[FeedbackItem] = Field(default_factory=list)
     feedback_availability: Availability = "available"
+    feedback_summary: dict[str, int] = Field(default_factory=dict)
     reviews: list[ReviewItem] = Field(default_factory=list)
     review_availability: Availability = "available"
+    review_status_summary: dict[str, int] = Field(default_factory=dict)
     improvements: list[ImprovementItem] = Field(default_factory=list)
     input_attachments: list[AttachmentSummary] = Field(default_factory=list)
     output_attachments: list[AttachmentSummary] = Field(default_factory=list)

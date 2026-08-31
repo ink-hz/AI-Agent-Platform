@@ -95,3 +95,23 @@ it("adds no attachment wrapper when the turn has no attachments", async () => {
   await act(async () => root.render(<TurnCard turn={turn} />));
   expect(container.querySelector(".attachment-list")).toBeNull();
 });
+
+
+it("renders projected signal summaries with explicit restricted-detail notices", async () => {
+  await act(async () => root.render(<TurnCard turn={{
+    ...turn,
+    feedback: [],
+    reviews: [],
+    feedback_availability: "restricted",
+    review_availability: "restricted",
+    feedback_summary: { negative: 2, positive: 1 },
+    review_status_summary: { pending: 1 },
+  }} />));
+
+  expect(container.textContent).toContain("负向反馈 × 2");
+  expect(container.textContent).toContain("正向反馈 × 1");
+  expect(container.textContent).toContain("复审状态 · pending × 1");
+  expect(container.textContent).toContain("反馈详情：受限");
+  expect(container.textContent).toContain("复审详情：受限");
+  expect(container.textContent).not.toContain("尚未纳管");
+});

@@ -186,6 +186,17 @@ class ReviewService:
     async def create_issue(self, payload, *, actor: str) -> dict:
         writer = self._writer()
         data = payload.model_dump(exclude={"reason"}, exclude_none=True)
+        origin_turn_key = data.get("origin_turn_key")
+        if origin_turn_key is not None:
+            metadata = await self._run(
+                self.read_repository.feedback_keys_for_turn,
+                data["agent_id"],
+                origin_turn_key,
+            )
+            if metadata is None:
+                raise InvalidReviewMutation(
+                    "origin turn does not belong to requested agent"
+                )
         row = await self._run(
             writer.create_issue,
             data,
@@ -221,6 +232,11 @@ class ReviewService:
 
     async def link_turn(self, issue_id: UUID, payload, *, actor: str) -> dict:
         writer = self._writer()
+        detail = await self._detail(issue_id)
+        if (detail.get("issue") or {}).get("agent_id") != payload.agent_id:
+            raise InvalidReviewMutation(
+                "target issue does not belong to requested agent"
+            )
         metadata = await self._run(
             self.read_repository.feedback_keys_for_turn,
             payload.agent_id,

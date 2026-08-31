@@ -359,6 +359,31 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     expect(container.textContent).not.toContain("记录已被其他复审者更新");
   });
 
+  it("clamps a page that becomes empty after a mutation refresh", async () => {
+    const update = vi.fn().mockResolvedValue(issueA);
+    const api = apiWith(update);
+    api.issues = vi.fn()
+      .mockResolvedValueOnce({
+        items: [summaries[0]], total: 201, limit: 200, offset: 200, has_more: false,
+      })
+      .mockResolvedValueOnce({
+        items: [], total: 200, limit: 200, offset: 200, has_more: false,
+      });
+    const changePage = vi.fn();
+    window.history.replaceState({}, "", "/admin/fae/issues/issue-a?page=2");
+    await act(async () => root.render(<ReviewWorkspace
+      api={api} agentId="ai-fae-agent" basePath="/admin/fae/issues" initialIssueId="issue-a"
+      initialTurn={null} actor="codex" showActorField={false} showAgentFilter={false}
+      issueFilters={{ limit: 200, offset: 200 }} onIssuePageChange={changePage}
+      collectionSearch="page=2"
+    />));
+
+    await clickMutation("保存归因");
+
+    expect(changePage).toHaveBeenCalledWith(1, true);
+    expect(api.issues).toHaveBeenCalledTimes(2);
+  });
+
   it("does not navigate or refresh when deferred FAE create completes after unmount", async () => {
     const pendingCreate = deferred<FeedbackIssueDetail>();
     const api = apiWith(vi.fn());

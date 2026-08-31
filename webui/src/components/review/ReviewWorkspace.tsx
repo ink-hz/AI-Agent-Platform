@@ -70,7 +70,8 @@ export interface ReviewWorkspaceProps {
   statusOptions?: IssueFilterOption[];
   statusPresentation?: "lifecycle" | "disposition";
   onIssueFiltersChange?: (filters: ReviewIssueFilters) => void;
-  onIssuePageChange?: (page: number) => void;
+  onIssuePageChange?: (page: number, replace?: boolean) => void;
+  collectionSearch?: string;
 }
 
 type SelectionToken = {
@@ -116,6 +117,7 @@ export function ReviewWorkspace({
   statusPresentation,
   onIssueFiltersChange,
   onIssuePageChange,
+  collectionSearch = "",
 }: ReviewWorkspaceProps) {
   const requestedTurnKey = initialTurn?.turn_key ?? new URLSearchParams(window.location.search).get("turn_key");
   const [overview, setOverview] = useState<ReviewOverview | null>(null);
@@ -180,6 +182,16 @@ export function ReviewWorkspace({
     const normalized = Array.isArray(nextIssues)
       ? { items: nextIssues, total: nextIssues.length, limit: nextIssues.length || 1, offset: 0, has_more: false }
       : nextIssues;
+    if (
+      !Array.isArray(nextIssues)
+      && normalized.offset > 0
+      && normalized.items.length === 0
+      && onIssuePageChange
+    ) {
+      const lastPage = Math.max(1, Math.ceil(normalized.total / normalized.limit));
+      onIssuePageChange(lastPage, true);
+      return;
+    }
     setIssues(normalized.items);
     setIssuePage(normalized);
   };
@@ -233,7 +245,7 @@ export function ReviewWorkspace({
     const selection = { ...selectionRef.current };
     if (refreshDetailInMutation) skippedDetailSelectionRef.current = selection;
     if (basePath === "/admin/review") navigate(genericPath({ issue: id }), { replace: true });
-    else navigate(`${basePath}/${encodeURIComponent(id)}`);
+    else navigate(`${basePath}/${encodeURIComponent(id)}${collectionSearch ? `?${collectionSearch}` : ""}`);
     return selection;
   };
 

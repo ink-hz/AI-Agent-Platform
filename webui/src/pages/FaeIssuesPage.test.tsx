@@ -277,7 +277,7 @@ describe("FaeIssuesPage", () => {
 
     await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
     expect(window.location.pathname).toBe(`/admin/fae/issues/${triageId}`);
-    expect(window.location.search).toBe("");
+    expect(window.location.search).toBe("?status=pending_triage");
     await act(async () => {
       window.history.back();
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -385,6 +385,19 @@ describe("FaeIssuesPage", () => {
         ...detail.issue, disposition, replica_read_only: true,
         progress: { status: disposition, missing_gates: [] },
       }]);
+      if (path.endsWith(`/api/admin/fae/issues/${ISSUE_ID}`)) return response({
+        ...detail,
+        issue: { ...detail.issue, disposition, replica_read_only: true },
+        progress: { ...detail.progress, status: disposition, missing_gates: null },
+        links: null,
+        evidence: null,
+        replays: null,
+        events: null,
+        section_availability: {
+          links: "unavailable", evidence: "unavailable",
+          replays: "unavailable", events: "unavailable",
+        },
+      });
       throw new Error(`Unexpected request: ${path}`);
     }));
 
@@ -396,6 +409,9 @@ describe("FaeIssuesPage", () => {
     expect(options).toEqual(["", "open", "actionable", "duplicate", "not_actionable", "wont_fix"]);
     expect(options).not.toContain("unknown");
     expect(container.querySelector(".review-issue-list")?.textContent).toContain(label);
+    expect(window.location.search).toBe(`?disposition=${disposition}`);
+    await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
+    expect(window.location.pathname).toBe(`/admin/fae/issues/${ISSUE_ID}`);
     expect(window.location.search).toBe(`?disposition=${disposition}`);
   });
 
@@ -706,5 +722,80 @@ describe("FaeIssuesPage", () => {
     );
     expect(container.querySelector('nav[aria-label="Issue 分页"]')?.textContent).toContain("第 2 页 · 共 205 项");
     expect(container.querySelector<HTMLInputElement>('input[aria-label="事项搜索"]')?.value).toBe("timeout");
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="失败层"]')?.value).toBe("model");
+  });
+
+  it("keeps exact safe page and filters on Issue detail URLs and history", async () => {
+    window.history.replaceState({}, "", "/admin/fae/issues?status=fixing&q=timeout&page=2&unknown=drop");
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response({
+        items: [{ ...detail.issue, progress: detail.progress }],
+        total: 205, limit: 200, offset: 200, has_more: false,
+      }));
+      if (path === `/api/admin/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(detail));
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<RouteHarness />));
+    await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
+
+    expect(window.location.pathname).toBe(`/admin/fae/issues/${ISSUE_ID}`);
+    expect(window.location.search).toBe("?status=fixing&q=timeout&page=2");
+    expect(window.location.search).not.toContain("session_key");
+    expect(window.location.search).not.toContain("turn_key");
+    expect(window.location.search).not.toContain("unknown");
+    expect(container.textContent).toContain("回答缺少约束");
+
+    await act(async () => {
+      window.history.back();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(window.location.pathname).toBe("/admin/fae/issues");
+    expect(window.location.search).toBe("?status=fixing&q=timeout&page=2&unknown=drop");
+    await act(async () => {
+      window.history.forward();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(window.location.pathname).toBe(`/admin/fae/issues/${ISSUE_ID}`);
+    expect(window.location.search).toBe("?status=fixing&q=timeout&page=2");
+  });
+
+  it("resets page before a status request and clamps an empty out-of-range page", async () => {
+    window.history.replaceState({}, "", "/admin/fae/issues?status=pending_triage&page=3");
+    const issueRequests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/admin/fae/issues?")) {
+        issueRequests.push(path);
+        if (path.includes("offset=400")) return Promise.resolve(response({
+          items: [], total: 205, limit: 200, offset: 400, has_more: false,
+        }));
+        return Promise.resolve(response({
+          items: [{ ...detail.issue, progress: detail.progress }],
+          total: 205, limit: 200, offset: path.includes("offset=200") ? 200 : 0,
+          has_more: !path.includes("offset=200"),
+        }));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<FaeIssuesPage account={owner} />));
+    expect(window.location.search).toBe("?status=pending_triage&page=2");
+    expect(issueRequests[issueRequests.length - 1]).toBe(
+      "/api/admin/fae/issues?limit=200&offset=200&status=pending_triage",
+    );
+
+    const status = container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(status, "fixing");
+      status.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(window.location.search).toBe("?status=fixing");
+    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=200&status=fixing");
   });
 });

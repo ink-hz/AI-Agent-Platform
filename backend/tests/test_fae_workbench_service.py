@@ -295,7 +295,8 @@ class _MergeCursor:
             self.links[link_id]["issue_id"] = target_id
             return _Rows(None)
         if sql.startswith("update platform_review.feedback_issues set disposition='duplicate'"):
-            target_id, reason, source_id = parameters
+            target_id, owner, reason, source_id = parameters
+            assert owner is None
             issue = self.issues[source_id]
             issue.update({
                 "disposition": "duplicate",

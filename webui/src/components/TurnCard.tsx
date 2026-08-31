@@ -66,7 +66,11 @@ export function TurnCard({ turn, closureSummary, governanceHref }: {
   };
   const questionTime = formatMessageTime(turn.question_at, turn.question_time_status);
   const answerTime = formatMessageTime(turn.answer_at, turn.answer_time_status);
-  const hasNegativeFeedback = turn.feedback.some((item) => item.sentiment === "negative");
+  const hasNegativeFeedback = turn.feedback.some((item) => item.sentiment === "negative")
+    || (turn.feedback_summary?.negative ?? 0) > 0;
+  const feedbackSummaryLabels: Record<string, string> = {
+    negative: "负向反馈", positive: "正向反馈", other: "其他反馈",
+  };
   const governedClosureSummary = closureSummary && closureSummary.issue_id !== null ? closureSummary : undefined;
   return <article className="turn-card">
     <header className="turn-head"><span>第 {String(turn.turn_index).padStart(2, "0")} 轮</span><div>{turn.outcome && <b>{turn.outcome}</b>}{turn.fallback_used && <b className="turn-fallback">fallback</b>}{duration(turn.duration_ms) && <time>{duration(turn.duration_ms)}</time>}</div></header>
@@ -78,6 +82,10 @@ export function TurnCard({ turn, closureSummary, governanceHref }: {
     {turn.evidence.length === 0 && turn.evidence_availability !== "available" && <p className="availability-note">证据详情：{availabilityLabel(turn.evidence_availability)}</p>}
     {turn.feedback_availability && turn.feedback_availability !== "available" && <p className="availability-note">反馈详情：{availabilityLabel(turn.feedback_availability)}</p>}
     {turn.review_availability && turn.review_availability !== "available" && <p className="availability-note">复审详情：{availabilityLabel(turn.review_availability)}</p>}
+    {(Object.keys(turn.feedback_summary ?? {}).length > 0 || Object.keys(turn.review_status_summary ?? {}).length > 0) && <section className="turn-signals" aria-label="投影信号摘要">
+      {Object.entries(turn.feedback_summary ?? {}).map(([sentiment, count]) => <div className={`signal signal-${sentiment}`} key={`feedback-summary-${sentiment}`}><span>{feedbackSummaryLabels[sentiment] ?? `反馈 · ${sentiment}`} × {count}</span></div>)}
+      {Object.entries(turn.review_status_summary ?? {}).map(([status, count]) => <div className="signal signal-review" key={`review-summary-${status}`}><span>复审状态 · {status} × {count}</span></div>)}
+    </section>}
     {(turn.feedback.length > 0 || turn.reviews.length > 0 || turn.improvements.length > 0) && <section className="turn-signals">
       {turn.feedback.map((item) => <div className={`signal signal-${item.sentiment}`} key={item.feedback_key}><span>反馈 · {item.sentiment}</span><p>{item.comment || item.reason_code || item.raw_rating}</p></div>)}
       {turn.reviews.map((item) => <div className="signal signal-review" key={item.review_key}><span>复审 · {item.normalized_priority}</span><p>{item.notes || item.corrected_answer || item.status}</p></div>)}

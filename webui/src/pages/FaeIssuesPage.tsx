@@ -21,6 +21,7 @@ const LOCAL_LIFECYCLE_STATUSES = Object.keys(STATUS_LABELS).filter((status) => s
 const LOCAL_FILTERS = new Set(["open", ...LOCAL_LIFECYCLE_STATUSES]);
 const CLOUD_DISPOSITIONS = ["actionable", "duplicate", "not_actionable", "wont_fix"] as const;
 const CLOUD_FILTERS = new Set<string>(CLOUD_DISPOSITIONS);
+const PRIORITY_FILTERS = new Set(["P0", "P1", "P2", "P3"]);
 const LOCAL_STATUS_OPTIONS = [
   { value: "open", label: "开放事项" },
   ...LOCAL_LIFECYCLE_STATUSES.map((value) => ({ value, label: STATUS_LABELS[value as keyof typeof STATUS_LABELS] })),
@@ -51,6 +52,44 @@ function issueFilterFromSearch(search: string, cloudReplica: boolean): { value: 
   return { value: "", valid: false };
 }
 
+function singleSafeValue(
+  query: URLSearchParams,
+  key: string,
+  valid: (value: string) => boolean = (value) => value.length > 0,
+): string | null {
+  const values = query.getAll(key);
+  return values.length === 1 && valid(values[0]) ? values[0] : null;
+}
+
+function safeIssueCollectionParams(search: string, cloudReplica: boolean): URLSearchParams {
+  const raw = new URLSearchParams(search);
+  const safe = new URLSearchParams();
+  const status = issueFilterFromSearch(search, cloudReplica);
+  if (status.valid && status.value) {
+    safe.set(cloudReplica && status.value !== "open" ? "disposition" : "status", status.value);
+  }
+  const priority = singleSafeValue(raw, "priority", (value) => PRIORITY_FILTERS.has(value));
+  const failureLayer = singleSafeValue(
+    raw,
+    "failure_layer",
+    (value) => /^[a-z][a-z0-9_]{0,63}$/.test(value),
+  );
+  const owner = singleSafeValue(raw, "owner", (value) => value.length <= 160 && value.trim() === value && value.length > 0);
+  const text = singleSafeValue(raw, "q", (value) => value.length <= 240 && value.trim() === value && value.length > 0);
+  const createdAfter = singleSafeValue(raw, "created_after", (value) => /^\d{4}-\d{2}-\d{2}T00:00:00\+08:00$/.test(value));
+  if (priority) safe.set("priority", priority);
+  if (failureLayer) safe.set("failure_layer", failureLayer);
+  if (owner) safe.set("owner", owner);
+  if (text) safe.set("q", text);
+  if (createdAfter) safe.set("created_after", createdAfter);
+  const page = singleSafeValue(raw, "page", (value) => /^\d+$/.test(value));
+  if (page) {
+    const parsed = Number(page);
+    if (Number.isSafeInteger(parsed) && parsed > 1) safe.set("page", String(parsed));
+  }
+  return safe;
+}
+
 export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?: string }) {
   const { deployment, resolved: deploymentResolved } = useDeploymentContext();
   const cloudReplica = deployment?.mode === "cloud-replica" && deployment.read_only;
@@ -64,13 +103,15 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   const [filterRevision, setFilterRevision] = useState(0);
   const parsedIssueFilter = issueFilterFromSearch(window.location.search, cloudReplica);
   const issueStatus = parsedIssueFilter.value;
-  const issuePage = /^\d+$/.test(query.get("page") ?? "") ? Math.max(1, Number(query.get("page"))) : 1;
+  const collectionParams = safeIssueCollectionParams(window.location.search, cloudReplica);
+  const collectionSearch = collectionParams.toString();
+  const issuePage = Number(collectionParams.get("page") ?? "1");
   const collectionFilters: ReviewIssueFilters = {
-    ...(query.get("priority") ? { priority: query.get("priority")! } : {}),
-    ...(query.get("failure_layer") ? { failure_layer: query.get("failure_layer")! } : {}),
-    ...(query.get("owner") ? { owner: query.get("owner")! } : {}),
-    ...(query.get("q") ? { query: query.get("q")! } : {}),
-    ...(query.get("created_after") ? { created_after: query.get("created_after")! } : {}),
+    ...(collectionParams.get("priority") ? { priority: collectionParams.get("priority")! } : {}),
+    ...(collectionParams.get("failure_layer") ? { failure_layer: collectionParams.get("failure_layer")! } : {}),
+    ...(collectionParams.get("owner") ? { owner: collectionParams.get("owner")! } : {}),
+    ...(collectionParams.get("q") ? { query: collectionParams.get("q")! } : {}),
+    ...(collectionParams.get("created_after") ? { created_after: collectionParams.get("created_after")! } : {}),
   };
   const reviewApi = useMemo(() => faeWorkbenchApi.review(account.csrf_token), [account.csrf_token]);
   const issueFilters = useMemo(() => ({
@@ -79,7 +120,7 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
       ? { disposition: issueStatus } : { status: issueStatus }),
     limit: 200,
     offset: (issuePage - 1) * 200,
-  }), [cloudReplica, filterRevision, issuePage, issueStatus]);
+  }), [cloudReplica, collectionSearch, filterRevision, issuePage, issueStatus]);
 
   useEffect(() => {
     const restore = () => setFilterRevision((value) => value + 1);
@@ -102,9 +143,10 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   }, [cloudReplica, deploymentResolved, filterRevision, parsedIssueFilter.valid]);
 
   const changeIssueStatus = (status: string) => {
-    const query = new URLSearchParams(window.location.search);
+    const query = safeIssueCollectionParams(window.location.search, cloudReplica);
     query.delete("status");
     query.delete("disposition");
+    query.delete("page");
     if (status === "open" || (status && !cloudReplica)) query.set("status", status);
     else if (status) query.set("disposition", status);
     const search = query.toString();
@@ -112,7 +154,7 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   };
 
   const changeCollectionFilters = (filters: ReviewIssueFilters) => {
-    const next = new URLSearchParams(window.location.search);
+    const next = safeIssueCollectionParams(window.location.search, cloudReplica);
     for (const [key, value] of Object.entries({
       priority: filters.priority, failure_layer: filters.failure_layer,
       owner: filters.owner, q: filters.query, created_after: filters.created_after,
@@ -123,10 +165,10 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
     navigate(`${localPathname()}${next.size ? `?${next}` : ""}`);
   };
 
-  const changeIssuePage = (page: number) => {
-    const next = new URLSearchParams(window.location.search);
+  const changeIssuePage = (page: number, replace = false) => {
+    const next = safeIssueCollectionParams(window.location.search, cloudReplica);
     if (page > 1) next.set("page", String(page)); else next.delete("page");
-    navigate(`${localPathname()}${next.size ? `?${next}` : ""}`);
+    navigate(`${localPathname()}${next.size ? `?${next}` : ""}`, { replace });
   };
 
   useEffect(() => {
@@ -187,6 +229,7 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
     issueFilters={issueFilters}
     onIssueFiltersChange={changeCollectionFilters}
     onIssuePageChange={changeIssuePage}
+    collectionSearch={collectionSearch}
     statusOptions={cloudReplica ? CLOUD_STATUS_OPTIONS : LOCAL_STATUS_OPTIONS}
     statusPresentation={cloudReplica ? "disposition" : "lifecycle"}
     readOnlyReason={account.hard_stale_read_only ? "hard-stale" : undefined}

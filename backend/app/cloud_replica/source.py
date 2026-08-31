@@ -148,11 +148,10 @@ select issue.id,issue.agent_id,issue.disposition as status,issue.priority,
            and linked_feedback.turn_key=link.source_turn_key
           where linked_feedback.feedback_key is null
         )
-        or exists (
-          select 1 from platform_read.feedback linked_feedback
-          where linked_feedback.agent_id=link.agent_id
-            and linked_feedback.turn_key=link.source_turn_key
-            and not (linked_feedback.feedback_key=any(link.source_feedback_keys))
+        or cardinality(link.source_feedback_keys) <> (
+          select count(distinct feedback_key)
+          from unnest(link.source_feedback_keys)
+            as stored_feedback_key(feedback_key)
         )
       )
     )
