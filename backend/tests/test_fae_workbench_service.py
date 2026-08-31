@@ -22,6 +22,7 @@ from app.review.repository import (
     ReviewNotFound,
     ReviewRepositoryError,
 )
+from app.review.service import ReviewService
 
 
 NOW = datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
@@ -332,7 +333,9 @@ class _MergeConnection:
         return self._cursor
 
 
-def merged_issue_details(*, duplicate_link: bool) -> dict[UUID, dict]:
+def merged_issue_details(
+    *, duplicate_link: bool, repeat_merge: bool = False
+) -> dict[UUID, dict]:
     issues = {
         ISSUE_ID: {
             "id": ISSUE_ID, "agent_id": FAE_AGENT_ID, "row_version": 1,
@@ -368,6 +371,14 @@ def merged_issue_details(*, duplicate_link: bool) -> dict[UUID, dict]:
         actor="corp:owner",
         reason="same root cause",
     )
+    if repeat_merge:
+        repository.merge_issue(
+            ISSUE_ID,
+            TARGET_ID,
+            expected_row_version=2,
+            actor="corp:owner",
+            reason="same root cause",
+        )
 
     assert [event["event_type"] for event in events[ISSUE_ID]] == [
         "turn_linked", "issue_merged"
@@ -383,6 +394,83 @@ def merged_issue_details(*, duplicate_link: bool) -> dict[UUID, dict]:
         }
         for issue_id, issue in issues.items()
     }
+
+
+def test_actual_merge_idempotent_repeat_does_not_duplicate_pair_events():
+    details = merged_issue_details(duplicate_link=False, repeat_merge=True)
+
+    assert [
+        event["event_type"] for event in details[ISSUE_ID]["events"]
+    ].count("issue_merged") == 1
+    assert [
+        event["event_type"] for event in details[TARGET_ID]["events"]
+    ].count("issue_absorbed") == 1
+
+
+@pytest.mark.asyncio
+async def test_fae_duplicate_disposition_uses_actual_paired_canonical_writer():
+    issues = {
+        ISSUE_ID: {
+            "id": ISSUE_ID,
+            "agent_id": FAE_AGENT_ID,
+            "row_version": 1,
+            "disposition": "actionable",
+            "canonical_issue_id": None,
+        },
+        TARGET_ID: {
+            "id": TARGET_ID,
+            "agent_id": FAE_AGENT_ID,
+            "row_version": 1,
+            "disposition": "actionable",
+            "canonical_issue_id": None,
+        },
+    }
+    events = {ISSUE_ID: [], TARGET_ID: []}
+    cursor = _MergeCursor(issues, {}, events)
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: _MergeConnection(cursor)
+    )
+    repository.agent_issue_scope_valid = lambda agent_id: agent_id == FAE_AGENT_ID
+    repository.get_issue_detail = lambda issue_id: {
+        "issue": dict(issues[issue_id]),
+        "links": [],
+        "replays": [],
+        "events": list(events[issue_id]),
+    }
+    repository.recalculate_and_record_transition = lambda *_args, **_kwargs: None
+    review = ReviewService(repository, write_repository=repository)
+    service = service_for(review=review)
+    payload = Payload(
+        disposition="duplicate",
+        canonical_issue_id=TARGET_ID,
+        owner=None,
+        row_version=1,
+        reason="same FAE root cause",
+    )
+
+    result = await service.set_disposition(ISSUE_ID, payload, actor="fae:owner")
+    repeated = await service.set_disposition(
+        ISSUE_ID,
+        Payload(
+            disposition="duplicate",
+            canonical_issue_id=TARGET_ID,
+            owner=None,
+            row_version=2,
+            reason="same FAE root cause",
+        ),
+        actor="fae:owner",
+    )
+
+    assert result["issue"]["canonical_issue_id"] == TARGET_ID
+    assert repeated["issue"]["canonical_issue_id"] == TARGET_ID
+    assert [event["event_type"] for event in events[ISSUE_ID]] == [
+        "issue_merged", "issue_disposition_set"
+    ]
+    assert [event["event_type"] for event in events[TARGET_ID]] == [
+        "issue_absorbed"
+    ]
+    assert events[ISSUE_ID][0]["actor"] == "fae:owner"
+    assert events[TARGET_ID][0]["reason"] == "same FAE root cause"
 
 
 def service_for(

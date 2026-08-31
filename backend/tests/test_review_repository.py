@@ -1,6 +1,8 @@
 from uuid import UUID
+import ast
 import inspect
 import threading
+import textwrap
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +18,7 @@ from app.review.scope_sql import (
     CANONICAL_EVENT_PAIR_INVALID_SQL,
     HISTORICAL_LINK_EVENT_INVALID_SQL,
 )
+from app.review.service import ReviewService
 
 
 def test_row_version_is_mandatory_for_issue_updates():
@@ -208,13 +211,36 @@ def test_release_handoff_import_uses_one_writer_transaction():
 
 def test_every_canonical_edge_writer_uses_one_authoritative_helper():
     repository_source = inspect.getsource(PsycopgReviewRepository)
-    handoff = inspect.getsource(PsycopgReviewRepository.import_release_handoff)
-    helper = inspect.getsource(PsycopgReviewRepository._create_canonical_edge)
+    helper_method = getattr(PsycopgReviewRepository, "_mutate_canonical_edge", None)
 
-    assert hasattr(PsycopgReviewRepository, "_create_canonical_edge")
-    assert "before_write=relocate_link" in handoff
-    assert helper.index("_assert_canonical_edge_acyclic") < helper.index("before_write(source, target)")
+    assert helper_method is not None
+    assert not hasattr(PsycopgReviewRepository, "_create_canonical_edge")
+    helper = inspect.getsource(helper_method)
+    assert helper.index("_assert_canonical_edge_acyclic") < helper.index(
+        "before_write(source, target)"
+    )
     assert repository_source.count("canonical_issue_id=%s") == 1
+    assert helper.count('event_type="issue_merged"') == 1
+    assert helper.count('event_type="issue_absorbed"') == 1
+
+    tree = ast.parse(textwrap.dedent(repository_source))
+    call_sites = {}
+    for method in tree.body[0].body:
+        if not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        calls = [
+            node for node in ast.walk(method)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "_mutate_canonical_edge"
+        ]
+        if calls:
+            call_sites[method.name] = len(calls)
+    assert call_sites == {
+        "set_disposition": 1,
+        "merge_issue": 1,
+        "import_release_handoff": 1,
+    }
 
 
 def test_optional_agent_filters_are_typed_for_postgres_parameters():
@@ -345,10 +371,31 @@ def test_issue_scope_sql_rejects_unpaired_or_malformed_canonical_events():
     assert "canonical_source.reason is not distinct from canonical_event.reason" in predicate
 
 
-def test_all_canonical_merge_events_are_emitted_by_one_paired_helper():
-    repository_source = inspect.getsource(PsycopgReviewRepository)
-    helper = inspect.getsource(PsycopgReviewRepository._event_canonical_merge)
+def test_issue_scope_requires_current_canonical_row_to_have_exact_matching_pair():
+    predicate = " ".join(CANONICAL_EVENT_PAIR_INVALID_SQL.lower().split())
 
+    assert "issue.canonical_issue_id is not null and not exists" in predicate
+    assert "canonical_source.issue_id=issue.id" in predicate
+    assert (
+        "canonical_source.after->>'canonical_issue_id'="
+        "issue.canonical_issue_id::text"
+    ) in predicate
+    assert "canonical_target.issue_id=issue.canonical_issue_id" in predicate
+    assert "canonical_target.before->>'source_issue_id'=issue.id::text" in predicate
+    assert (
+        "canonical_target.after->>'target_issue_id'="
+        "issue.canonical_issue_id::text"
+    ) in predicate
+    assert "canonical_target.actor is not distinct from canonical_source.actor" in predicate
+    assert "canonical_target.reason is not distinct from canonical_source.reason" in predicate
+
+
+def test_all_canonical_merge_events_are_inside_the_only_edge_mutation_helper():
+    repository_source = inspect.getsource(PsycopgReviewRepository)
+    helper_method = getattr(PsycopgReviewRepository, "_mutate_canonical_edge", None)
+
+    assert helper_method is not None
+    helper = inspect.getsource(helper_method)
     assert repository_source.count('event_type="issue_merged"') == 1
     assert repository_source.count('event_type="issue_absorbed"') == 1
     assert 'event_type="issue_merged"' in helper
@@ -599,7 +646,7 @@ def test_canonical_mutations_guard_cycles_inside_the_writer_transaction():
     lock = inspect.getsource(PsycopgReviewRepository._lock_canonical_agent)
     endpoints = inspect.getsource(PsycopgReviewRepository._lock_canonical_endpoints)
     guard = inspect.getsource(PsycopgReviewRepository._assert_canonical_edge_acyclic)
-    helper = inspect.getsource(PsycopgReviewRepository._create_canonical_edge)
+    helper = inspect.getsource(PsycopgReviewRepository._mutate_canonical_edge)
     merge = inspect.getsource(PsycopgReviewRepository.merge_issue)
     disposition = inspect.getsource(PsycopgReviewRepository.set_disposition)
 
@@ -611,9 +658,141 @@ def test_canonical_mutations_guard_cycles_inside_the_writer_transaction():
     assert "for update" in endpoints.lower()
     assert "current_id=%s" in normalized
     assert "canonical cycle" in normalized
-    assert "_create_canonical_edge" in merge
-    assert "_create_canonical_edge" in disposition
+    assert "_mutate_canonical_edge" in merge
+    assert "_mutate_canonical_edge" in disposition
     assert helper.index("_assert_canonical_edge_acyclic") < helper.index("set disposition='duplicate'")
+
+
+@pytest.mark.asyncio
+async def test_actual_generic_duplicate_disposition_emits_pair_once_and_is_idempotent():
+    source_id, target_id = UUID(int=881), UUID(int=882)
+    issues = {
+        source_id: {
+            "id": source_id,
+            "agent_id": "generic-agent",
+            "row_version": 1,
+            "disposition": "actionable",
+            "canonical_issue_id": None,
+        },
+        target_id: {
+            "id": target_id,
+            "agent_id": "generic-agent",
+            "row_version": 1,
+            "disposition": "actionable",
+            "canonical_issue_id": None,
+        },
+    }
+    events = {source_id: [], target_id: []}
+    update_count = 0
+
+    def canonical_scope_valid() -> bool:
+        sources = [
+            event for event in events[source_id]
+            if event["event_type"] == "issue_merged"
+            and event["after"].get("canonical_issue_id") == str(target_id)
+        ]
+        targets = [
+            event for event in events[target_id]
+            if event["event_type"] == "issue_absorbed"
+            and event["before"].get("source_issue_id") == str(source_id)
+            and event["after"].get("target_issue_id") == str(target_id)
+        ]
+        return any(
+            target["actor"] == source["actor"]
+            and target["reason"] == source["reason"]
+            for source in sources for target in targets
+        )
+
+    class Result:
+        def __init__(self, row=None, many=None): self.row, self.many = row, many
+        def fetchone(self): return self.row
+        def fetchall(self): return self.many or []
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def execute(self, statement, parameters=()):
+            nonlocal update_count
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("select agent_id from platform_review.feedback_issues"):
+                return Result({"agent_id": issues[parameters[0]]["agent_id"]})
+            if "pg_advisory_xact_lock" in normalized:
+                return Result({"pg_advisory_xact_lock": None})
+            if normalized.startswith("select * from platform_review.feedback_issues") and "id=any" in normalized:
+                return Result(many=[dict(issues[issue_id]) for issue_id in parameters[0]])
+            if normalized.startswith("with recursive canonical_walk") and "as valid" in normalized:
+                assert "issue.canonical_issue_id is not null and not exists" in normalized
+                return Result({"valid": canonical_scope_valid()})
+            if normalized.startswith("with recursive canonical_walk"):
+                return Result({"cycle": False})
+            if normalized.startswith("update platform_review.feedback_issues set disposition='duplicate'"):
+                canonical_id, owner, reason, selected_source_id = parameters
+                assert owner == "corp:owner"
+                update_count += 1
+                issues[selected_source_id].update({
+                    "disposition": "duplicate",
+                    "canonical_issue_id": canonical_id,
+                    "disposition_reason": reason,
+                    "row_version": issues[selected_source_id]["row_version"] + 1,
+                })
+                return Result(dict(issues[selected_source_id]))
+            if normalized.startswith("insert into platform_review.feedback_issue_events"):
+                issue_id, event_type, actor, reason, before, after = parameters
+                events[issue_id].append({
+                    "event_type": event_type,
+                    "actor": actor,
+                    "reason": reason,
+                    "before": before.obj,
+                    "after": after.obj,
+                })
+                return Result()
+            raise AssertionError(normalized)
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def cursor(self): return Cursor()
+
+    repository = PsycopgReviewRepository(
+        "postgresql://review", connect=lambda *_args, **_kwargs: Connection()
+    )
+    repository.recalculate_and_record_transition = lambda *_args, **_kwargs: None
+    repository.get_issue_detail = lambda issue_id: {"issue": dict(issues[issue_id])}
+    service = ReviewService(repository, write_repository=repository)
+    payload = SimpleNamespace(
+        disposition="duplicate",
+        canonical_issue_id=target_id,
+        owner="corp:owner",
+        row_version=1,
+        reason="same root cause",
+    )
+
+    await service.set_disposition(source_id, payload, actor="corp:owner")
+    payload.row_version = 2
+    await service.set_disposition(source_id, payload, actor="corp:owner")
+
+    assert update_count == 1
+    assert [event["event_type"] for event in events[source_id]] == [
+        "issue_merged", "issue_disposition_set"
+    ]
+    assert [event["event_type"] for event in events[target_id]] == ["issue_absorbed"]
+    merged, disposition = events[source_id]
+    absorbed = events[target_id][0]
+    assert merged["after"]["canonical_issue_id"] == str(target_id)
+    assert absorbed["before"] == {"source_issue_id": str(source_id)}
+    assert absorbed["after"] == {"target_issue_id": str(target_id)}
+    assert {merged["actor"], absorbed["actor"], disposition["actor"]} == {"corp:owner"}
+    assert {merged["reason"], absorbed["reason"], disposition["reason"]} == {
+        "same root cause"
+    }
+    assert repository.agent_issue_scope_valid("generic-agent") is True
+
+    events[target_id].clear()
+    assert repository.agent_issue_scope_valid("generic-agent") is False
+    mismatched = dict(absorbed)
+    mismatched["actor"] = "corp:different"
+    events[target_id].append(mismatched)
+    assert repository.agent_issue_scope_valid("generic-agent") is False
 
 
 @pytest.mark.parametrize("operation", ["merge", "duplicate"])
@@ -840,6 +1019,8 @@ def test_concurrent_guarded_mutation_and_handoff_style_edge_share_serialization(
                     "disposition": "duplicate",
                     "canonical_issue_id": target_id,
                 })
+            if normalized.startswith("insert into platform_review.feedback_issue_events"):
+                return Result()
             raise AssertionError(normalized)
 
     def create_edge(label, source_id, target_id, *, handoff_style):
@@ -847,11 +1028,13 @@ def test_concurrent_guarded_mutation_and_handoff_style_edge_share_serialization(
         start.wait()
         relocated = []
         try:
-            PsycopgReviewRepository._create_canonical_edge(
+            PsycopgReviewRepository._mutate_canonical_edge(
                 cursor,
                 source_id,
                 target_id,
                 disposition_reason=label,
+                actor=label,
+                reason=label,
                 **({"before_write": lambda *_args: relocated.append(label)} if handoff_style else {}),
             )
             outcomes.append((label, "committed", bool(relocated)))

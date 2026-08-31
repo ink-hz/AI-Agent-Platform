@@ -96,6 +96,9 @@ def test_cloud_issue_scope_uses_shared_canonical_event_pair_audit():
     predicate = " ".join(CANONICAL_EVENT_PAIR_INVALID_SQL.lower().split())
 
     assert predicate in source
+    assert "issue.canonical_issue_id is not null and not exists" in source
+    assert "canonical_source.issue_id=issue.id" in source
+    assert "canonical_target.issue_id=issue.canonical_issue_id" in source
     assert "canonical_source.event_type='issue_merged'" in source
     assert "canonical_target.event_type='issue_absorbed'" in source
 

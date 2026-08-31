@@ -115,37 +115,6 @@ class PsycopgReviewRepository:
             ),
         )
 
-    @classmethod
-    def _event_canonical_merge(
-        cls,
-        cursor,
-        *,
-        source: Mapping[str, Any],
-        target: Mapping[str, Any],
-        after: Mapping[str, Any],
-        actor: str,
-        reason: str,
-    ) -> None:
-        """Write the inseparable two-sided audit contract for one canonical edge."""
-        cls._event(
-            cursor,
-            issue_id=source["id"],
-            event_type="issue_merged",
-            actor=actor,
-            reason=reason,
-            before=source,
-            after=after,
-        )
-        cls._event(
-            cursor,
-            issue_id=target["id"],
-            event_type="issue_absorbed",
-            actor=actor,
-            reason=reason,
-            before={"source_issue_id": source["id"]},
-            after={"target_issue_id": target["id"]},
-        )
-
     @staticmethod
     def _assert_link_relocation_replay_free(cursor, link: Mapping[str, Any]) -> None:
         conflict = cursor.execute(
@@ -239,19 +208,21 @@ class PsycopgReviewRepository:
         return source, target
 
     @classmethod
-    def _create_canonical_edge(
+    def _mutate_canonical_edge(
         cls,
         cursor,
         source_issue_id: UUID,
         target_issue_id: UUID,
         *,
         disposition_reason: str,
+        actor: str,
+        reason: str,
         expected_row_version: int | None = None,
         owner: str | None = None,
         before_write: Callable[[dict, dict], None] | None = None,
         required_source_disposition: str | None = None,
-    ) -> tuple[dict, dict, dict] | None:
-        """Create the sole supported canonical edge after serialized validation.
+    ) -> tuple[dict, dict, dict, bool] | None:
+        """Mutate the sole supported canonical edge and its paired audit events.
 
         Optional link relocation runs only after the advisory/reachability guard and
         remains in the same transaction, so a rejected edge rolls it back as well.
@@ -266,6 +237,11 @@ class PsycopgReviewRepository:
             and source["disposition"] != required_source_disposition
         ):
             return None
+        if (
+            source.get("disposition") == "duplicate"
+            and source.get("canonical_issue_id") == target_issue_id
+        ):
+            return source, target, source, False
         if before_write is not None:
             before_write(source, target)
         after = cursor.execute(
@@ -278,7 +254,26 @@ class PsycopgReviewRepository:
             """,
             (target_issue_id, owner, disposition_reason, source_issue_id),
         ).fetchone()
-        return source, target, dict(after)
+        after = dict(after)
+        cls._event(
+            cursor,
+            issue_id=source["id"],
+            event_type="issue_merged",
+            actor=actor,
+            reason=reason,
+            before=source,
+            after=after,
+        )
+        cls._event(
+            cursor,
+            issue_id=target["id"],
+            event_type="issue_absorbed",
+            actor=actor,
+            reason=reason,
+            before={"source_issue_id": source["id"]},
+            after={"target_issue_id": target["id"]},
+        )
+        return source, target, after, True
 
     def create_issue(self, data: Mapping[str, Any], *, actor: str, reason: str) -> dict:
         payload = {
@@ -1252,14 +1247,19 @@ class PsycopgReviewRepository:
                         raise InvalidReviewMutation(
                             "canonical issue is only valid for duplicate disposition"
                         )
-                    before, _canonical, after = self._create_canonical_edge(
+                    edge = self._mutate_canonical_edge(
                         cursor,
                         issue_id,
                         canonical_issue_id,
                         disposition_reason=disposition_reason,
+                        actor=actor,
+                        reason=disposition_reason,
                         expected_row_version=expected_row_version,
                         owner=owner,
                     )
+                    if edge is None:  # pragma: no cover - no disposition guard here
+                        raise InvalidReviewMutation("canonical edge was not created")
+                    before, _canonical, after, changed = edge
                 else:
                     before = cursor.execute(
                         "select * from platform_review.feedback_issues where id=%s for update",
@@ -1278,15 +1278,17 @@ class PsycopgReviewRepository:
                         """,
                         (disposition, owner, disposition_reason, issue_id),
                     ).fetchone()
-                self._event(
-                    cursor,
-                    issue_id=issue_id,
-                    event_type="issue_disposition_set",
-                    actor=actor,
-                    reason=disposition_reason,
-                    before=before,
-                    after=after,
-                )
+                    changed = True
+                if changed:
+                    self._event(
+                        cursor,
+                        issue_id=issue_id,
+                        event_type="issue_disposition_set",
+                        actor=actor,
+                        reason=disposition_reason,
+                        before=before,
+                        after=after,
+                    )
             return dict(after)
         except (ReviewNotFound, ConcurrentUpdate, InvalidReviewMutation):
             raise
@@ -1348,22 +1350,19 @@ class PsycopgReviewRepository:
                                 (target_issue_id, link["id"]),
                             )
 
-                source, target, after = self._create_canonical_edge(
+                edge = self._mutate_canonical_edge(
                     cursor,
                     source_issue_id,
                     target_issue_id,
                     disposition_reason=reason,
+                    actor=actor,
+                    reason=reason,
                     expected_row_version=expected_row_version,
                     before_write=relocate_links,
                 )
-                self._event_canonical_merge(
-                    cursor,
-                    source=source,
-                    target=target,
-                    after=after,
-                    actor=actor,
-                    reason=reason,
-                )
+                if edge is None:  # pragma: no cover - no disposition guard here
+                    raise InvalidReviewMutation("canonical edge was not created")
+                _source, _target, after, _changed = edge
             return dict(after)
         except (ReviewNotFound, ConcurrentUpdate, InvalidReviewMutation):
             raise
@@ -1973,27 +1972,19 @@ class PsycopgReviewRepository:
                                 row["target_issue_id"] for row in prior_targets
                             )
                         if remaining is None and source_targets == {str(target["id"])}:
-                            edge = self._create_canonical_edge(
+                            edge = self._mutate_canonical_edge(
                                 cursor,
                                 before["issue_id"],
                                 target["id"],
                                 disposition_reason=(
                                     f"explicit batch mapping: {validated.batch_id}"
                                 ),
+                                actor=actor,
+                                reason=validated.batch_id,
                                 before_write=relocate_link,
                                 required_source_disposition="actionable",
                             )
-                            if edge is not None:
-                                source_issue, target_issue, duplicate = edge
-                                self._event_canonical_merge(
-                                    cursor,
-                                    source=source_issue,
-                                    target=target_issue,
-                                    after=duplicate,
-                                    actor=actor,
-                                    reason=validated.batch_id,
-                                )
-                            else:
+                            if edge is None:
                                 relocate_link()
                         else:
                             relocate_link()

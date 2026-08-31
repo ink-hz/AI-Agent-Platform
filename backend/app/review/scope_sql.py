@@ -1,7 +1,36 @@
-"""Shared read-only SQL predicate for historical Review link ownership."""
+"""Shared read-only SQL predicates for Review ownership and audit integrity.
+
+Legacy canonical rows without a valid two-sided event pair intentionally fail
+closed. They require an explicit, independently verified operational repair;
+read paths must not synthesize immutable historical audit events.
+"""
 
 CANONICAL_EVENT_PAIR_INVALID_SQL = """
-exists (
+(
+  issue.canonical_issue_id is not null
+  and not exists (
+    select 1
+    from platform_review.feedback_issue_events canonical_source
+    join platform_review.feedback_issues canonical_issue
+      on canonical_issue.id=issue.canonical_issue_id
+     and canonical_issue.agent_id=issue.agent_id
+    join platform_review.feedback_issue_events canonical_target
+      on canonical_target.issue_id=issue.canonical_issue_id
+     and canonical_target.event_type='issue_absorbed'
+     and canonical_target.before->>'source_issue_id'=issue.id::text
+     and canonical_target.after->>'target_issue_id'=issue.canonical_issue_id::text
+     and canonical_target.actor is not distinct from canonical_source.actor
+     and canonical_target.reason is not distinct from canonical_source.reason
+    where canonical_source.issue_id=issue.id
+      and canonical_source.event_type='issue_merged'
+      and canonical_source.before->>'id'=issue.id::text
+      and canonical_source.after->>'id'=issue.id::text
+      and canonical_source.before->>'agent_id'=issue.agent_id
+      and canonical_source.after->>'agent_id'=issue.agent_id
+      and canonical_source.after->>'canonical_issue_id'=issue.canonical_issue_id::text
+  )
+)
+or exists (
   select 1
   from platform_review.feedback_issue_events canonical_event
   where canonical_event.issue_id=issue.id
