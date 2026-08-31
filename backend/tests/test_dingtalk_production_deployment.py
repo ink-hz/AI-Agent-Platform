@@ -630,7 +630,7 @@ def test_office_recipient_directory_compose_override_is_explicit_and_private():
     serialized = override_path.read_text(encoding="utf-8")
     override = yaml.safe_load(serialized)
     services = override["services"]
-    target = "/run/secrets/platform-office-recipient-bearer"
+    target = "/run/office-recipient/platform-office-recipient-bearer"
 
     assert services["platform-api"]["environment"] == {
         "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED": "1",
@@ -656,6 +656,16 @@ def test_office_recipient_directory_compose_override_is_explicit_and_private():
     assert "UID 10001" in serialized
     assert "mode 0600" in serialized
     assert "Bearer " not in serialized
+
+
+def test_office_recipient_bearer_mountpoint_exists_in_read_only_runtime_image():
+    dockerfile = (CLOUD / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "install -d -o 10001 -g 10001 -m 700 /run/office-recipient" in dockerfile
+    assert (
+        "install -o 10001 -g 10001 -m 600 /dev/null "
+        "/run/office-recipient/platform-office-recipient-bearer"
+    ) in dockerfile
 
 
 def test_office_recipient_resolver_release_is_scoped_and_secret_safe():

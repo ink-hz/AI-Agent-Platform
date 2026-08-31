@@ -5,20 +5,20 @@ services:
   platform-api:
     environment:
       PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED: "1"
-      PLATFORM_OFFICE_RECIPIENT_BEARER_FILE: /run/secrets/platform-office-recipient-bearer
+      PLATFORM_OFFICE_RECIPIENT_BEARER_FILE: /run/office-recipient/platform-office-recipient-bearer
     volumes:
       - type: bind
         source: ${PLATFORM_OFFICE_RECIPIENT_BEARER_SOURCE_FILE:?required}
-        target: /run/secrets/platform-office-recipient-bearer
+        target: /run/office-recipient/platform-office-recipient-bearer
         read_only: true
 
   platform-loopback:
     environment:
       PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED: "1"
-      PLATFORM_OFFICE_RECIPIENT_BEARER_FILE: /run/secrets/platform-office-recipient-bearer
+      PLATFORM_OFFICE_RECIPIENT_BEARER_FILE: /run/office-recipient/platform-office-recipient-bearer
       PLATFORM_OFFICE_RECIPIENT_LOCAL_PEER_CIDRS: 172.31.0.1/32
     volumes:
       - type: bind
         source: ${PLATFORM_OFFICE_RECIPIENT_BEARER_SOURCE_FILE:?required}
-        target: /run/secrets/platform-office-recipient-bearer
+        target: /run/office-recipient/platform-office-recipient-bearer
         read_only: true
