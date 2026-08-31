@@ -19,6 +19,7 @@ TARGET_ID = UUID("00000000-0000-0000-0000-000000000003")
 class FakeService:
     def __init__(self):
         self.move = None
+        self.link = None
         self.read_filters = []
 
     async def create_issue(self, payload, *, actor):
@@ -48,6 +49,10 @@ class FakeService:
     async def move_link(self, issue_id, link_id, payload, *, actor):
         self.move = (issue_id, link_id, payload.target_issue_id, actor)
         return {"issue": {"id": str(payload.target_issue_id)}}
+
+    async def link_turn(self, issue_id, payload, *, actor):
+        self.link = (issue_id, payload.model_dump(), actor)
+        return {"issue": {"id": str(issue_id)}}
 
 
 @pytest.fixture
@@ -190,6 +195,33 @@ def test_link_can_be_moved_to_correct_canonical_issue(client, app):
         ISSUE_ID,
         LINK_ID,
         TARGET_ID,
+        "codex",
+    )
+
+
+def test_generic_link_keeps_agent_id_and_accepts_turn_without_feedback(client, app):
+    response = client.post(
+        f"/api/review/issues/{ISSUE_ID}/links",
+        json={
+            "agent_id": "ai-fae-agent",
+            "source_turn_key": "fae:turn-ordinary",
+            "source_feedback_keys": [],
+            "link_role": "primary",
+            "reason": "create from inspected answer",
+        },
+        headers={"X-Review-Actor": "codex"},
+    )
+
+    assert response.status_code == 201
+    assert app.state.review_service.link == (
+        ISSUE_ID,
+        {
+            "agent_id": "ai-fae-agent",
+            "source_turn_key": "fae:turn-ordinary",
+            "source_feedback_keys": [],
+            "link_role": "primary",
+            "reason": "create from inspected answer",
+        },
         "codex",
     )
 

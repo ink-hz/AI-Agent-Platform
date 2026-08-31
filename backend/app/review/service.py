@@ -130,6 +130,22 @@ class ReviewService:
     async def issue_detail(self, issue_id: UUID) -> dict:
         return await self._detail(issue_id)
 
+    async def evidence_issue_id(self, evidence_id: UUID) -> UUID:
+        evidence = await self._run(self.read_repository.get_evidence, evidence_id)
+        if evidence is None:
+            from .repository import ReviewNotFound
+
+            raise ReviewNotFound("evidence not found")
+        return evidence["issue_id"]
+
+    async def replay_issue_id(self, replay_id: UUID) -> UUID:
+        replay = await self._run(self.read_repository.get_replay, replay_id)
+        if replay is None:
+            from .repository import ReviewNotFound
+
+            raise ReviewNotFound("replay not found")
+        return replay["issue_id"]
+
     async def create_issue(self, payload, *, actor: str) -> dict:
         writer = self._writer()
         data = payload.model_dump(exclude={"reason"}, exclude_none=True)

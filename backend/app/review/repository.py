@@ -443,6 +443,20 @@ class PsycopgReviewRepository:
         except Exception as error:
             raise ReviewRepositoryError("get evidence failed") from error
 
+    def get_replay(self, replay_id: UUID) -> dict | None:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    """
+                    select issue_id from platform_review.feedback_replay_runs
+                    where id=%s
+                    """,
+                    (replay_id,),
+                ).fetchone()
+            return dict(row) if row is not None else None
+        except Exception as error:
+            raise ReviewRepositoryError("get replay failed") from error
+
     def load_replay_input(self, issue_link_id: UUID):
         from .replay import ReplayInput
 

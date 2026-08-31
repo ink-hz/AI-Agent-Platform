@@ -43,6 +43,7 @@ def test_repository_exposes_transactional_closure_inputs():
         "expire_stale_replays",
         "create_or_get_replay",
         "finish_replay",
+        "get_replay",
         "review_replay",
         "set_disposition",
         "get_issue_detail",
@@ -138,6 +139,48 @@ def test_turn_summaries_use_one_read_query_and_omit_missing_source_turns():
         "latest_valid_replay_id": None,
     }
     assert all(row["turn_key"] != "fae:missing" for row in summaries)
+
+
+def test_replay_owner_lookup_is_one_metadata_only_read_query():
+    statements = []
+
+    class Result:
+        def fetchone(self):
+            return {"issue_id": UUID(int=1)}
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, statement, parameters):
+            statements.append((statement, parameters))
+            return Result()
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def cursor(self):
+            return Cursor()
+
+    repository = PsycopgReviewRepository(
+        "postgresql://analyst@db/flywheel",
+        connect=lambda *_args, **_kwargs: Connection(),
+    )
+
+    replay = repository.get_replay(UUID(int=2))
+
+    assert replay == {"issue_id": UUID(int=1)}
+    assert len(statements) == 1
+    normalized = " ".join(statements[0][0].split()).lower()
+    assert normalized.startswith("select issue_id from")
+    assert all(keyword not in normalized for keyword in ("insert ", "update ", "delete "))
 
 
 def test_release_handoff_import_uses_one_writer_transaction():

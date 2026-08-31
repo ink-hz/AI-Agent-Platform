@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import hashlib
-from typing import Literal
-from uuid import uuid4
+from typing import Annotated, Literal
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -11,6 +11,28 @@ from app.control_plane.audit import AuditCommand, AuditUnavailableError
 from app.control_plane.models import AuthContext, Role
 from app.observability.models import SessionFilters
 from app.observability.repository import ObservabilityReadError
+from app.review.http_models import (
+    AddEvidence,
+    FaeCreateIssue,
+    FaeLinkTurn,
+    FixReady,
+    MergeIssue,
+    MoveLink,
+    SemanticReview,
+    SetDisposition,
+    StartReplay,
+    UpdateIssue,
+    VerifyEvidence,
+)
+from app.review.repository import (
+    ConcurrentUpdate,
+    InvalidReviewMutation,
+    ReviewNotFound,
+    ReviewRepositoryError,
+)
+from app.review.service import ReviewUnavailable
+
+from .repository import FaeWorkbenchReadError
 
 
 def _management_context(request: Request) -> AuthContext:
@@ -27,6 +49,38 @@ router = APIRouter(
     tags=["fae-workbench"],
     dependencies=[Depends(_management_context)],
 )
+
+
+def _fae_actor(request: Request) -> str:
+    context = getattr(request.state, "auth_context", None)
+    if context is None:
+        raise HTTPException(status_code=401, detail="authentication required")
+    return f"fae:{context.internal_user_id}"
+
+
+FaeActor = Annotated[str, Depends(_fae_actor)]
+
+
+async def _invoke_review(awaitable):
+    try:
+        return await awaitable
+    except ConcurrentUpdate as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": str(error), "current": error.current},
+        ) from error
+    except ReviewNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except InvalidReviewMutation as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except (ReviewUnavailable, ReviewRepositoryError) as error:
+        raise HTTPException(
+            status_code=503, detail="feedback review unavailable"
+        ) from error
+    except FaeWorkbenchReadError as error:
+        raise HTTPException(
+            status_code=503, detail="fae workbench unavailable"
+        ) from error
 
 
 def _required_audit(request: Request):
@@ -147,3 +201,213 @@ async def session_detail(session_key: str, request: Request):
         actual={"operation_id": str(operation_id)},
     )
     return result
+
+
+@router.get("/issue-overview")
+async def issue_overview(request: Request):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.issue_overview()
+    )
+
+
+@router.get("/issue-inbox")
+async def issue_inbox(
+    request: Request,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.issue_inbox(
+            limit=limit,
+            offset=offset,
+        )
+    )
+
+
+@router.get("/issues")
+async def issues(
+    request: Request,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.list_issues(
+            limit=limit,
+            offset=offset,
+        )
+    )
+
+
+@router.get("/issues/{issue_id}")
+async def issue_detail(issue_id: UUID, request: Request):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.issue_detail(issue_id)
+    )
+
+
+@router.get("/turn-summaries")
+async def turn_summaries(
+    request: Request,
+    turn_key: list[str] = Query(...),
+):
+    unique_keys = list(dict.fromkeys(turn_key))
+    if len(unique_keys) > 200:
+        raise HTTPException(status_code=422, detail="at most 200 turn keys")
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.turn_summaries(unique_keys)
+    )
+
+
+@router.post("/issues", status_code=201)
+async def create_issue(
+    payload: FaeCreateIssue,
+    request: Request,
+    actor: FaeActor,
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.create_issue(payload, actor=actor)
+    )
+
+
+@router.patch("/issues/{issue_id}")
+async def update_issue(
+    issue_id: UUID,
+    payload: UpdateIssue,
+    request: Request,
+    actor: FaeActor,
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.update_issue(
+            issue_id, payload, actor=actor
+        )
+    )
+
+
+@router.post("/issues/{issue_id}/links", status_code=201)
+async def link_turn(
+    issue_id: UUID,
+    payload: FaeLinkTurn,
+    request: Request,
+    actor: FaeActor,
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.link_turn(
+            issue_id, payload, actor=actor
+        )
+    )
+
+
+@router.post("/issues/{issue_id}/links/{link_id}/move")
+async def move_link(
+    issue_id: UUID,
+    link_id: UUID,
+    payload: MoveLink,
+    request: Request,
+    actor: FaeActor,
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.move_link(
+            issue_id,
+            link_id,
+            payload,
+            actor=actor,
+        )
+    )
+
+
+@router.post("/issues/{issue_id}/merge")
+async def merge_issue(
+    issue_id: UUID,
+    payload: MergeIssue,
+    request: Request,
+    actor: FaeActor,
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.merge_issue(
+            issue_id, payload, actor=actor
+        )
+    )
+
+
+@router.post("/issues/{issue_id}/fix-ready")
+async def fix_ready(
+    issue_id: UUID,
+    payload: FixReady,
+    request: Request,
+    actor: FaeActor,
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.mark_fix_ready(
+            issue_id, payload, actor=actor
+        )
+    )
+
+
+@router.post("/issues/{issue_id}/evidence", status_code=201)
+async def add_evidence(
+    issue_id: UUID,
+    payload: AddEvidence,
+    request: Request,
+    actor: FaeActor,
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.add_evidence(
+            issue_id, payload, actor=actor
+        )
+    )
+
+
+@router.post("/evidence/{evidence_id}/verify")
+async def verify_evidence(
+    evidence_id: UUID,
+    payload: VerifyEvidence,
+    request: Request,
+    actor: FaeActor,
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.verify_evidence(
+            evidence_id, payload, actor=actor
+        )
+    )
+
+
+@router.post("/issues/{issue_id}/replays", status_code=201)
+async def start_replay(
+    issue_id: UUID,
+    payload: StartReplay,
+    request: Request,
+    actor: FaeActor,
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.start_replay(
+            issue_id, payload, actor=actor
+        )
+    )
+
+
+@router.post("/replays/{replay_id}/semantic-review")
+async def semantic_review(
+    replay_id: UUID,
+    payload: SemanticReview,
+    request: Request,
+    actor: FaeActor,
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.semantic_review(
+            replay_id, payload, actor=actor
+        )
+    )
+
+
+@router.post("/issues/{issue_id}/disposition")
+async def set_disposition(
+    issue_id: UUID,
+    payload: SetDisposition,
+    request: Request,
+    actor: FaeActor,
+):
+    return await _invoke_review(
+        request.app.state.fae_workbench_service.set_disposition(
+            issue_id, payload, actor=actor
+        )
+    )

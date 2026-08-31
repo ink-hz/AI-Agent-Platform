@@ -106,6 +106,25 @@ _FAE_WORKBENCH_READ_ROUTES = frozenset({
     ("GET", "/api/admin/fae/overview"),
     ("GET", "/api/admin/fae/sessions"),
     ("GET", "/api/admin/fae/sessions/{session_key}"),
+    ("GET", "/api/admin/fae/issue-overview"),
+    ("GET", "/api/admin/fae/issue-inbox"),
+    ("GET", "/api/admin/fae/issues"),
+    ("GET", "/api/admin/fae/issues/{issue_id}"),
+    ("GET", "/api/admin/fae/turn-summaries"),
+})
+
+_FAE_WORKBENCH_MUTATION_ROUTES = frozenset({
+    ("POST", "/api/admin/fae/issues"),
+    ("PATCH", "/api/admin/fae/issues/{issue_id}"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/links"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/links/{link_id}/move"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/merge"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/fix-ready"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/evidence"),
+    ("POST", "/api/admin/fae/evidence/{evidence_id}/verify"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/replays"),
+    ("POST", "/api/admin/fae/replays/{replay_id}/semantic-review"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/disposition"),
 })
 
 _OWNER_ROUTES = frozenset({
@@ -157,6 +176,7 @@ _OWNER_ROUTES = frozenset({
     | _AUTHENTICATED_SELF_ROUTES
     | _VOC_MANAGEMENT_ROUTES
     | _FAE_WORKBENCH_READ_ROUTES
+    | _FAE_WORKBENCH_MUTATION_ROUTES
 )
 
 
@@ -210,7 +230,10 @@ class AuthorizationService:
             return self._deny(503, "hard_stale_read_only")
         if (
             self.cloud_mode
-            and route_template.startswith("/api/review/")
+            and (
+                route_template.startswith("/api/review/")
+                or key in _FAE_WORKBENCH_MUTATION_ROUTES
+            )
             and selected_method not in {"GET", "HEAD", "OPTIONS"}
         ):
             return self._deny(403, "cloud_review_read_only")

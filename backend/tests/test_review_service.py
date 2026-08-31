@@ -3,12 +3,13 @@ from uuid import UUID
 
 import pytest
 
-from app.review.repository import InvalidReviewMutation
+from app.review.repository import InvalidReviewMutation, ReviewNotFound
 from app.review.service import ReviewService, ReviewUnavailable
 
 
 ISSUE_ID = UUID("00000000-0000-0000-0000-000000000001")
 REPLAY_ID = UUID("00000000-0000-0000-0000-000000000002")
+EVIDENCE_ID = UUID("00000000-0000-0000-0000-000000000003")
 
 
 @pytest.mark.asyncio
@@ -106,3 +107,44 @@ async def test_mutation_fails_explicitly_when_writer_is_missing():
 
     with pytest.raises(ReviewUnavailable, match="read-only"):
         await service.create_issue(Payload(), actor="codex")
+
+
+@pytest.mark.asyncio
+async def test_read_only_owner_lookups_return_only_owning_issue_id():
+    class ReadRepository:
+        def get_evidence(self, evidence_id):
+            assert evidence_id == EVIDENCE_ID
+            return {"id": EVIDENCE_ID, "issue_id": ISSUE_ID, "reference": "secret"}
+
+        def get_replay(self, replay_id):
+            assert replay_id == REPLAY_ID
+            return {"id": REPLAY_ID, "issue_id": ISSUE_ID, "answer": "secret"}
+
+    service = ReviewService(ReadRepository(), write_repository=None)
+
+    assert await service.evidence_issue_id(EVIDENCE_ID) == ISSUE_ID
+    assert await service.replay_issue_id(REPLAY_ID) == ISSUE_ID
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "entity_id", "message"),
+    [
+        ("evidence_issue_id", EVIDENCE_ID, "evidence not found"),
+        ("replay_issue_id", REPLAY_ID, "replay not found"),
+    ],
+)
+async def test_owner_lookups_preserve_not_found_semantics(
+    operation, entity_id, message
+):
+    class ReadRepository:
+        def get_evidence(self, _evidence_id):
+            return None
+
+        def get_replay(self, _replay_id):
+            return None
+
+    service = ReviewService(ReadRepository(), write_repository=None)
+
+    with pytest.raises(ReviewNotFound, match=message):
+        await getattr(service, operation)(entity_id)
