@@ -103,4 +103,55 @@ describe("FAE workbench API", () => {
 
     await expect(faeWorkbenchApi.overview()).rejects.toThrow("FAE workbench response contract invalid");
   });
+
+  it("implements the complete scoped Review API and never sends browser agent scope", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({}), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+    const actor = "corp:00000000-0000-0000-0000-000000000099";
+    const payload = { agent_id: "browser-controlled", reason: "test" };
+
+    await faeWorkbenchApi.review.overview();
+    await faeWorkbenchApi.review.inbox();
+    await faeWorkbenchApi.review.issues();
+    await faeWorkbenchApi.review.turnSummaries(["fae:turn-1"]);
+    await faeWorkbenchApi.review.issue("00000000-0000-0000-0000-000000000001");
+    await faeWorkbenchApi.review.create(payload, actor);
+    await faeWorkbenchApi.review.link("00000000-0000-0000-0000-000000000001", payload, actor);
+    await faeWorkbenchApi.review.update("00000000-0000-0000-0000-000000000001", payload, actor);
+    await faeWorkbenchApi.review.move("00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002", payload, actor);
+    await faeWorkbenchApi.review.fixReady("00000000-0000-0000-0000-000000000001", payload, actor);
+    await faeWorkbenchApi.review.merge("00000000-0000-0000-0000-000000000001", payload, actor);
+    await faeWorkbenchApi.review.addEvidence("00000000-0000-0000-0000-000000000001", payload, actor);
+    await faeWorkbenchApi.review.verifyEvidence("00000000-0000-0000-0000-000000000003", actor);
+    await faeWorkbenchApi.review.replay("00000000-0000-0000-0000-000000000001", payload, actor);
+    await faeWorkbenchApi.review.semanticReview("00000000-0000-0000-0000-000000000004", payload, actor);
+    await faeWorkbenchApi.review.disposition("00000000-0000-0000-0000-000000000001", payload, actor);
+
+    const paths = fetchMock.mock.calls.map(([path]) => String(path));
+    expect(paths).toEqual([
+      "/api/admin/fae/issue-overview",
+      "/api/admin/fae/issue-inbox?limit=200",
+      "/api/admin/fae/issues?limit=200",
+      "/api/admin/fae/turn-summaries?turn_key=fae%3Aturn-1",
+      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001",
+      "/api/admin/fae/issues",
+      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/links",
+      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001",
+      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/links/00000000-0000-0000-0000-000000000002/move",
+      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/fix-ready",
+      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/merge",
+      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/evidence",
+      "/api/admin/fae/evidence/00000000-0000-0000-0000-000000000003/verify",
+      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/replays",
+      "/api/admin/fae/replays/00000000-0000-0000-0000-000000000004/semantic-review",
+      "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001/disposition",
+    ]);
+    const createBody = JSON.parse(String(fetchMock.mock.calls[5][1]?.body));
+    const linkBody = JSON.parse(String(fetchMock.mock.calls[6][1]?.body));
+    expect(createBody).toEqual({ reason: "test" });
+    expect(linkBody).toEqual({ reason: "test" });
+    expect(fetchMock.mock.calls.slice(5).every(([, init]) => new Headers(init?.headers).get("X-Review-Actor") === actor)).toBe(true);
+  });
 });

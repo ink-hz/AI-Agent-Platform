@@ -10,6 +10,7 @@ import { AgentRuntimePage } from "./pages/AgentRuntimePage";
 import { SessionsPage } from "./pages/SessionsPage";
 import { FaeSessionsPage } from "./pages/FaeSessionsPage";
 import { FaeSessionDetailPage } from "./pages/FaeSessionDetailPage";
+import { FaeIssuesPage } from "./pages/FaeIssuesPage";
 import { SessionDetailPage } from "./pages/SessionDetailPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { ReviewPage } from "./pages/ReviewPage";
@@ -128,8 +129,12 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-fae-overview": return <FaeWorkbenchPendingPage section="overview" />;
     case "admin-fae-sessions": return <FaeSessionsPage />;
     case "admin-fae-session": return <FaeSessionDetailPage sessionKey={route.sessionKey} />;
-    case "admin-fae-issues":
-    case "admin-fae-issue": return <FaeWorkbenchPendingPage section="issues" />;
+    case "admin-fae-issues": return account
+      ? <FaeIssuesPage account={account} />
+      : <FaeWorkbenchPendingPage section="issues" />;
+    case "admin-fae-issue": return account
+      ? <FaeIssuesPage account={account} issueId={route.issueId} />
+      : <FaeWorkbenchPendingPage section="issues" />;
     case "admin-fae-reports":
     case "admin-fae-report": return <FaeReportsPlaceholderPage />;
     case "legacy-redirect": return <LegacyRedirect to={route.to} />;

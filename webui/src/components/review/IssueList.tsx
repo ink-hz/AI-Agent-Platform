@@ -42,6 +42,7 @@ export function IssueList({
   selectedTurnKey,
   onSelect,
   onSelectInbox,
+  showAgentFilter = true,
 }: {
   issues: FeedbackIssueSummary[];
   inbox: ReviewInboxItem[];
@@ -49,6 +50,7 @@ export function IssueList({
   selectedTurnKey: string | null;
   onSelect: (id: string) => void;
   onSelectInbox: (turnKey: string) => void;
+  showAgentFilter?: boolean;
 }) {
   const [agent, setAgent] = useState("");
   const [layer, setLayer] = useState("");
@@ -70,7 +72,7 @@ export function IssueList({
   return <aside className="review-list-panel">
     <div className="review-list-heading"><div><p>治理队列</p><h2>反馈事项</h2></div><span>{filtered.length}/{issues.length}</span></div>
     <div className="review-filters" aria-label="事项筛选">
-      <select aria-label="Agent" value={agent} onChange={(event) => setAgent(event.target.value)}><option value="">全部 Agent</option>{agents.map((value) => <option key={value}>{value}</option>)}</select>
+      {showAgentFilter && <select aria-label="Agent" value={agent} onChange={(event) => setAgent(event.target.value)}><option value="">全部 Agent</option>{agents.map((value) => <option key={value}>{value}</option>)}</select>}
       <select aria-label="失败层" value={layer} onChange={(event) => setLayer(event.target.value)}><option value="">全部失败层</option>{layers.map((value) => <option key={value}>{value}</option>)}</select>
       <select aria-label="优先级" value={priority} onChange={(event) => setPriority(event.target.value)}><option value="">全部优先级</option>{["P0", "P1", "P2", "P3"].map((value) => <option key={value}>{value}</option>)}</select>
       <select aria-label="状态" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">全部状态</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
