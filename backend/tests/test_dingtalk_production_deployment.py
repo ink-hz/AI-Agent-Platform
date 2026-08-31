@@ -658,6 +658,27 @@ def test_office_recipient_directory_compose_override_is_explicit_and_private():
     assert "Bearer " not in serialized
 
 
+def test_office_recipient_resolver_release_is_scoped_and_secret_safe():
+    deploy = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
+    runbook = (ROOT / "docs/runbooks/cloud-platform.md").read_text(encoding="utf-8")
+
+    for forbidden_environment in (
+        "PLATFORM_OFFICE_RECIPIENT_BEARER",
+        "PLATFORM_OFFICE_RECIPIENT_BEARER_FILE",
+        "PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED",
+    ):
+        assert f"${{{forbidden_environment}+x}}" in deploy
+    assert "compose.office-recipient-directory.yaml" in runbook
+    assert "053_office_recipient_directory.sql" in runbook
+    assert "platform-api platform-loopback" in runbook
+    assert "mode 0600" in runbook
+    assert "不得打印" in runbook
+    resolver_section = runbook.split("office_recipient_resolver_release", 1)[1]
+    assert "nginx" not in resolver_section.lower()
+    assert "platform-brain" not in resolver_section
+    assert "fae" not in resolver_section.lower()
+
+
 def test_runtime_image_contains_control_migrations():
     dockerfile = (CLOUD / "Dockerfile").read_text(encoding="utf-8")
     assert "backend/control_migrations" in dockerfile

@@ -826,3 +826,53 @@ The temporary public entry does not approve the one-year backfill or
 five-minute synchronization. Those remain separate gates: the private sanitizer dictionary,
 canary scan, reconciliation, stale-state test, restore drill, and local scheduler
 must pass before real Session data is considered available or current.
+
+## Office recipient resolver scoped release (`office_recipient_resolver_release`)
+
+此能力只能在已完成常规不可变 release 后单独启用。通用 `deploy.sh` 明确拒绝
+`PLATFORM_OFFICE_RECIPIENT_BEARER`、`PLATFORM_OFFICE_RECIPIENT_BEARER_FILE` 和
+`PLATFORM_OFFICE_RECIPIENT_DIRECTORY_ENABLED`，防止私有解析能力随普通发布被隐式开启。
+
+1. 在 owner-only 终端创建共享秘密文件，不经过标准输出：
+
+   ```bash
+   umask 077
+   install -m 600 /dev/null /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+   openssl rand -hex 32 > /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+   chmod 600 /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+   ```
+
+   文件必须是 root 所有的普通非符号链接、mode 0600、至少 32 字节。不得打印、复制到工单、
+   放入 argv 或提交仓库。AI ADMIN 通过独立的受保护部署步骤读取同一份秘密。
+
+2. 记录当前两个目标容器的 Container ID、Image ID、StartedAt、RestartCount、配置摘要和
+   mounts 摘要。确认当前 release 包含
+   `backend/control_migrations/053_office_recipient_directory.sql`，随后用既有 owner migration
+   runner 应用并验证 053；不得手工粘贴或改写 SQL。
+
+3. 在目标机的 protected environment 中只设置：
+
+   ```dotenv
+   PLATFORM_OFFICE_RECIPIENT_BEARER_SOURCE_FILE=/opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+   ```
+
+   使用 base Compose 与显式 override，仅重建两个目标服务：
+
+   ```bash
+   docker compose --env-file /opt/orbbec-agent-platform/private/platform.env \
+     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.yaml \
+     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.office-recipient-directory.yaml \
+     config --services
+   docker compose --env-file /opt/orbbec-agent-platform/private/platform.env \
+     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.yaml \
+     -f /opt/orbbec-agent-platform/current/deploy/cloud/compose.office-recipient-directory.yaml \
+     up -d --no-deps platform-api platform-loopback
+   ```
+
+4. 从目标机验证回环请求加正确 bearer 成功；缺失 bearer、错误 bearer 和非本地 peer 均返回
+   404。响应必须为 `Cache-Control: no-store`，搜索响应不得包含解密后的收件人 ID，resolve
+   响应只在这个服务间边界返回最小字段。
+
+5. 回退时先停止 AI ADMIN 新通知准备，确认没有依赖解析器的可认领发送，再用 base Compose
+   配置重建这两个服务，使 feature flag 恢复为 0。保留 migration 053 和目录数据，不删除表；
+   重新核对两个目标容器与公开页面状态。
