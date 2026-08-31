@@ -40,9 +40,10 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
 
 const getJson = <T>(path: string, signal?: AbortSignal) => requestJson<T>(path, { signal });
 
-function withoutAgentId(payload: Record<string, unknown>): Record<string, unknown> {
-  const { agent_id: _agentId, ...scoped } = payload;
+function withoutFaeScope(payload: Record<string, unknown>): Record<string, unknown> {
+  const { agent_id: _agentId, source_kind: _sourceKind, ...scoped } = payload;
   void _agentId;
+  void _sourceKind;
   return scoped;
 }
 
@@ -52,7 +53,7 @@ function writeJson<T>(path: string, payload: Record<string, unknown>, actor: str
   return requestJson<T>(path, {
     method,
     headers: { "Content-Type": "application/json", "X-Review-Actor": identity, "X-CSRF-Token": csrfToken },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(withoutFaeScope(payload)),
   });
 }
 
@@ -218,8 +219,8 @@ function reviewApi(csrfToken: string): ReviewApi {
       return getJson<TurnClosureSummary[]>(`/api/admin/fae/turn-summaries?${params}`, signal);
     },
     issue: async (id, signal) => normalizeDetail(await getJson<unknown>(`/api/admin/fae/issues/${encodeURIComponent(id)}`, signal)),
-    create: (payload, actor) => writeJson<FeedbackIssueDetail>("/api/admin/fae/issues", withoutAgentId(payload), actor, csrfToken),
-    link: (id, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(id)}/links`, withoutAgentId(payload), actor, csrfToken),
+    create: (payload, actor) => writeJson<FeedbackIssueDetail>("/api/admin/fae/issues", payload, actor, csrfToken),
+    link: (id, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(id)}/links`, payload, actor, csrfToken),
     update: (id, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(id)}`, payload, actor, csrfToken, "PATCH"),
     move: (issueId, linkId, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(issueId)}/links/${encodeURIComponent(linkId)}/move`, payload, actor, csrfToken),
     fixReady: (id, payload, actor) => writeJson<FeedbackIssueDetail>(`/api/admin/fae/issues/${encodeURIComponent(id)}/fix-ready`, payload, actor, csrfToken),

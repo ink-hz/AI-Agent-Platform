@@ -1,8 +1,11 @@
 # FAE 管理工作台 Foundation Release Review
 
 **日期：** 2026-08-31
+**复审日期：** 2026-09-01
 **复审范围：** `19703dfbc9b5a60c6f5d4302bcffa1fe5bc9efe8..796433a26589a531ee945d7453242d917c53055e`（28 个 Tasks 1–9 实施提交）
 **Task 10 基线：** `796433a26589a531ee945d7453242d917c53055e`
+**原 Task 10 head：** `ab66cc0c6f4f931479eff25e3ba4d96093ec1189`
+**Task 10 follow-up 范围：** `ab66cc0c6f4f931479eff25e3ba4d96093ec1189..HEAD`（本复审提交；精确提交 SHA 同步记录在 Task 10 execution report）
 **结论：** Foundation 的代码、自动化回归和静态上线契约满足进入部署流程的条件；本次复审没有部署、没有调用生产环境，也不构成生产验收。
 
 ## 自动化结果
@@ -10,15 +13,16 @@
 | Gate | 最终结果 |
 |---|---|
 | Task 10 focused backend | `456 passed` |
-| Canonical full backend | `3485 passed, 2 skipped, 180 warnings`，284.38 秒 |
-| Cloud focused backend | `32 passed, 1 warning` |
+| Canonical full backend | `3530 passed, 2 skipped, 180 warnings`，305.27 秒 |
+| Cloud focused backend | `77 passed, 1 warning` |
 | 权限、审计、新鲜度、路由证据矩阵 | `20 passed, 1 warning` |
 | Full frontend | `69 files passed; 587 tests passed` |
 | Frontend 路由/工作流矩阵 | `8 files passed; 89 tests passed` |
 | Production frontend build | PASS；TypeScript 与 Vite 完成，3511 modules transformed |
 | Python compile | `.venv/bin/python -m compileall -q app tests` PASS |
 | Shell syntax | `bash -n deploy/cloud/accept.sh` PASS |
-| Embedded report-check JavaScript syntax | `/opt/homebrew/bin/node --check -` PASS |
+| External rendered-state probe JavaScript syntax | `/opt/homebrew/bin/node --check deploy/cloud/fae-reports-placeholder-probe.js` PASS |
+| Executable CDP/DOM/cleanup matrix | `7 passed`（owner/viewer happy path、open/command hang、两组 DOM predicate、acceptance trap） |
 | Diff whitespace | `git diff --check` PASS |
 
 两个 backend skip 均为显式 opt-in 的本机依赖，而不是产品测试失败：
@@ -26,7 +30,7 @@
 - `test_full_migration_chain_preserves_least_privilege`：未配置隔离数据库和 Flywheel migrations；
 - `test_opt_in_source_provenance_matches_manifest`：未设置 `AI_NOTES_SOURCE_ROOT`。
 
-第一次 canonical backend 运行得到 `3482 passed, 2 skipped, 1 failed`。唯一失败是既有
+原 Task 10 的第一次 canonical backend 运行得到 `3482 passed, 2 skipped, 1 failed`。唯一失败是既有
 OAuth rate-limit 测试跨越日历分钟边界：诊断探针记录到第一条请求发生于
 `23:14:59.855+08:00`，其余 3000 条发生在下一分钟，数据库正确形成 `[1, 3000]` 两个
 minute bucket。最终 acceptance test 状态的第一次 canonical run 又在同一既有测试文件的
@@ -35,8 +39,12 @@ LATERAL correlation 没有被 optimizer 消除。临时探针将原查询精确�
 `23:44:59.990+08:00..23:45:00.136+08:00`，复现相同 `[(True, 1201)]`，并记录两个
 version-43 bucket 的计数为 `26` 和 `1175`（合计 1201，两个 bucket 均未超过 1200）。
 相关 FAE commit range 和 Task 10 diff 均没有修改 rate-limit 实现、migration、fixture 或测试；
-临时探针已删除，未作越界产品修改。随后在完全相同的最终代码/测试状态运行 canonical full
-backend，得到上表的零失败结果。
+临时探针已删除，未作越界产品修改。随后在当时代码/测试状态运行 canonical full backend
+得到零失败。2026-09-01 follow-up 的第一次 full run 得到
+`3526 passed, 2 skipped, 2 failed`；两项均由 follow-up diff 直接造成并可稳定复现：旧部署
+合同禁止新增 `/bin/sleep 1`，且 runbook 的既有精确短语被换行拆开。单进程 Python watchdog
+同时消除了 sleep child orphan，runbook 恢复精确短语；两项 focused test 随后 `2 passed`，
+再在不变的最终生产/测试状态运行 canonical suite 得到上表结果。
 
 ## 权限与云只读边界
 
@@ -51,16 +59,19 @@ backend，得到上表的零失败结果。
 - `test_fae_issue_facade_exposes_exact_route_templates` 固定了全部 FAE Issue read/mutation
   route matrix。服务和 API scope 测试证明 Agent/Source 由服务端固定为
   `ai-fae-agent`/`fae`，浏览器值不会进入写入边界。
-- `deploy/cloud/accept.sh` 的 active v2 acceptance path 复用既有 mode-0600 Cookie、Origin、
-  CSRF config helper，检查 Owner 页面 `/admin/fae`、`/admin/fae/sessions`、
-  `/admin/fae/issues`，以及 Owner API overview、bounded Sessions、Issues 均为 200/合法 JSON；
-  同时检查 member 直接页面/API 为 403，并用 Owner CSRF 请求证明 FAE mutation 返回精确
-  403/`cloud_review_read_only`。每次 curl 都先保留 transport exit status，再比较 HTTP status；
-  即使 curl 已打印预期 status，非零 transport exit 也会 fail-closed。脚本不输出 Cookie、
-  CSRF 或 token。
-- Config schema v2 只有 member 与 Owner 凭据，没有 management-viewer 凭据。因此本次只在
-  concrete backend authorization/API tests 中验证 viewer 403；没有配置或执行 production
-  live viewer probe，也不声称做过该项生产验证。
+- `deploy/cloud/accept.sh` 的 release/accept/restore path 要求 config schema v3，复用既有
+  mode-0600 Cookie、Origin、CSRF helper，并先对三个不同 session 调用 `/api/v1/account`，
+  精确要求 `platform_owner`、`member`、`management_viewer`；Admin 不能替代 Owner。
+  Owner 页面 `/admin/fae`、`/admin/fae/sessions`、`/admin/fae/issues` 及 overview、bounded
+  Sessions、Issues API 均为 200/合法 JSON；member 直接页面/API 均为 403。既有管理 SPA
+  shell 合同对 management-viewer 返回 200，因此 viewer `/admin/fae` 精确要求 200 后，
+  再用该 viewer Cookie 经 CDP 验证唯一“无权访问” DOM，且三个 FAE API 分别为 403。
+  Owner CSRF mutation 精确返回 403/`cloud_review_read_only`。
+- Executable curl harness 固定 19 次请求的顺序、URL、Cookie/Origin/CSRF、角色和 body/status
+  predicate；每个 transport 位置均单独注入非零退出并证明立即 fail-closed。schema v2 仍兼容
+  preflight/reference/rollback，但 release/accept/restore 在取锁或远程操作前拒绝 v2。
+  脚本不输出 Cookie、CSRF 或 token。本复审未使用真实凭据或执行任何 live/production probe；
+  上述均为本地 stub、fake CDP 和代码合同证据。
 
 ## Privileged Session read audit
 
@@ -105,17 +116,26 @@ Session、Feedback 或 Issue truth source。
 ## 报告状态与内容扫描
 
 Foundation 仍只展示“分析报告尚未接入”。`FaeReportsPlaceholderPage.test.tsx` 覆盖 collection
-和 detail placeholder；cloud acceptance 先要求 `/admin/fae/reports` 为 200/有效 SPA HTML，
-再使用 Owner browser Cookie 通过本机 Chrome/CDP 渲染该路由，要求精确 placeholder 文案，
-且 workbench content 不含 `article`、`table`、`data-report-id` 或 `sample report`、
-`demo report`、`fixture report`。该检查使用本机既有 `/opt/homebrew/bin/node` 绝对路径，先验证
-executable，并对内嵌 JavaScript 做了独立 syntax check。精确内容扫描还证明：
+和 detail placeholder，并固定真实组件的唯一
+`data-fae-reports-state="integration-pending"` marker。cloud acceptance 先要求
+`/admin/fae/reports` 为 200/有效 SPA HTML，再用 Owner browser Cookie 通过本机 Chrome/CDP
+渲染精确 origin/href/path。外部 probe 要求全页唯一 workbench/marker、content 只有该精确
+H2/P subtree，且全页没有 report card/article/table/metric 结构；placeholder 加中文周报列表、
+指标、额外 text sibling、重复 workbench、错误 origin/path/nav href 均由 executable DOM fixture
+证明失败。SPA shell 的 `sample report`、`demo report`、`fixture report` 也在渲染前 fail-closed。
+
+该检查固定当前 controller 的 Chrome 与 `/opt/homebrew/bin/node` target dependency，并对外部
+JavaScript 做独立 syntax check。fake Chrome/CDP server 验证 Owner/viewer Cookie 注入与精确
+Page.navigate；TCP 接受但不完成 WebSocket 和 CDP command 永不响应两种模式均在期限内失败。
+Node probe 有全局/per-command/open deadline，单进程 watchdog 与 cleanup 使用 bounded TERM/KILL；
+测试证明没有 Node/Chrome orphan、profile/target/cookie 残留，acceptance trap 会恢复 feature、
+释放 action lock。精确内容扫描还证明：
 
 - FAE production 页面/组件没有“实时”、fake/sample report 或强制关闭控制；命中的“实时”
   仅为 tests 中的 negative assertions；
-- `faeWorkbenchApi.ts` 的 `agent_id` 命中仅来自 response normalization，以及共享 generic
-  Review payload 的 defensive strip；API tests 证明该字段不会序列化。`source_kind` 不会由
-  FAE client 序列化；
+- `faeWorkbenchApi.ts` 的 `agent_id`/`source_kind` 写路径命中是 centralized defensive strip；
+  executable API test 向每种 FAE mutation 注入两字段并逐个检查所有 serialized body 均不含
+  scope。其余 `agent_id` 命中只用于 response normalization；
 - backend 命中是 immutable scope constant、查询约束、response validation 与 server-side
   override，不是 caller-supplied scope。
 
@@ -125,7 +145,7 @@ executable，并对内嵌 JavaScript 做了独立 syntax check。精确内容扫
 ## 未执行事项与已知非阻塞告警
 
 - 没有部署、远程 SSH、生产 curl、生产 mutation、真实 Cookie 使用或合并；cloud acceptance
-  仅做了代码 contract test 和 shell syntax verification。
+  仅执行本地 stub/fake-CDP behavioral tests、代码合同检查和 syntax verification。
 - Vitest/jsdom 输出既有 `Window.scrollTo()` 未实现提示；全部 tests 仍通过。
 - Vite 输出既有大 chunk warning；production build 成功。
 - FastAPI/Starlette 输出既有 deprecation warnings；最终 backend 为零失败。

@@ -15,6 +15,19 @@ Provider 探测、恢复演练、独立答案评审、FAE 不干扰检查和生�
 - 原始 Provider 响应、Prompt、用户内容、附件内容、思维链和 Adapter payload
   不进入验收证据。
 
+生产 `release`、`accept`、`restore` 使用 acceptance config schema v3。除既有
+schema-v2 字段外，v3 必须提供独立的 `viewer_cookie_file`；三份 mode-`0600`
+Cookie 文件必须分别对应 `/api/v1/account` 返回的精确角色 `platform_owner`、
+`member`、`management_viewer`，且三个 `internal_user_id` 不同。Admin 不能替代
+Owner。schema v2 仅保留给 `preflight`、`reference`、`rollback`，不能通过 FAE
+发布验收。
+
+运行控制器还必须具备固定目标依赖 `/Applications/Google Chrome.app/Contents/
+MacOS/Google Chrome`、`/opt/homebrew/bin/node`，且 Node 提供全局 `WebSocket`。
+这些是当前控制器合同的固定路径，不是跨主机可移植性承诺。FAE reports 门禁只
+接受精确生产 origin/path 的唯一 pending placeholder DOM；CDP 打开、命令和总探测
+均有期限，失败由 trap 清理浏览器/Node/临时 Cookie、释放锁并关闭 feature。
+
 ## 20 个确定性场景
 
 `backend/app/agent_brain/acceptance_contract.py` 是场景清单的唯一机器可读来源：

@@ -140,7 +140,11 @@ describe("FAE workbench API", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const actor = "corp:00000000-0000-0000-0000-000000000099";
-    const payload = { agent_id: "browser-controlled", reason: "test" };
+    const payload = {
+      agent_id: "browser-controlled",
+      source_kind: "browser-controlled",
+      reason: "test",
+    };
     const reviewFactory = faeWorkbenchApi.review as unknown as (csrfToken: string) => ReviewApi;
 
     expect(typeof reviewFactory).toBe("function");
@@ -200,6 +204,8 @@ describe("FAE workbench API", () => {
     const linkBody = JSON.parse(String(fetchMock.mock.calls[6][1]?.body));
     expect(createBody).toEqual({ reason: "test" });
     expect(linkBody).toEqual({ reason: "test" });
+    const mutationBodies = fetchMock.mock.calls.slice(5).map(([, init]) => JSON.parse(String(init?.body)));
+    expect(mutationBodies.every((body) => !("agent_id" in body) && !("source_kind" in body))).toBe(true);
     expect(fetchMock.mock.calls.slice(5).every(([, init]) => new Headers(init?.headers).get("X-Review-Actor") === actor)).toBe(true);
     expect(fetchMock.mock.calls.slice(0, 5).every(([, init]) => !new Headers(init?.headers).has("X-CSRF-Token"))).toBe(true);
     expect(paths[2]).not.toContain("agent_id");

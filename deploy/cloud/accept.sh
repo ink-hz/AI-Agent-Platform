@@ -29,13 +29,20 @@ import sys
 path = pathlib.Path(sys.argv[1])
 field = sys.argv[2]
 value = json.loads(path.read_bytes())
-keys = {
+common_keys = {
     "schema_version",
     "member_cookie_file", "owner_cookie_file", "hr_prompt_file",
     "interruption_prompt_file", "relay_acceptance_config", "evidence_file",
 }
-if not isinstance(value, dict) or set(value) != keys or value["schema_version"] != 2:
+if not isinstance(value, dict) or type(value.get("schema_version")) is not int:
     raise SystemExit(1)
+schema_version = value["schema_version"]
+expected_keys = common_keys | ({"viewer_cookie_file"} if schema_version == 3 else set())
+if schema_version not in {2, 3} or set(value) != expected_keys:
+    raise SystemExit(1)
+if field == "schema_version":
+    print(schema_version)
+    raise SystemExit(0)
 selected = value.get(field)
 if not isinstance(selected, str) or not selected or "\n" in selected or "\r" in selected or "\0" in selected:
     raise SystemExit(1)
@@ -47,12 +54,25 @@ PY
 
 cloud_admin_host=root@47.106.112.69
 cloud_admin_key=/Users/neo/.ssh/orbbec_aliyun_ed25519
+config_schema_version="$(config_value schema_version)" || fail
 member_cookie_file="$(config_value member_cookie_file)" || fail
 owner_cookie_file="$(config_value owner_cookie_file)" || fail
+viewer_cookie_file=""
+if [[ "$config_schema_version" == "3" ]]; then
+  viewer_cookie_file="$(config_value viewer_cookie_file)" || fail
+fi
 hr_prompt_file="$(config_value hr_prompt_file)" || fail
 interruption_prompt_file="$(config_value interruption_prompt_file)" || fail
 relay_acceptance_config="$(config_value relay_acceptance_config)" || fail
 evidence_file="$(config_value evidence_file)" || fail
+
+require_action_identity_schema() {
+  case "$action" in
+    release|accept|restore)
+      [[ "$config_schema_version" == "3" && -n "$viewer_cookie_file" ]] || fail
+      ;;
+  esac
+}
 
 require_private_file() {
   local path="$1" maximum="$2"
@@ -619,100 +639,153 @@ finally:
 PY
 }
 
-verify_fae_reports_placeholder() {
-  local browser_cookie_file="$1" workspace="$2"
+verify_fae_account_role() {
+  local expected_role="$1" account_file="$2" browser_cookie_file="$3" status_code
+  shift 3
+  status_code="$("$@" -o "$account_file" -w '%{http_code}' "$base/api/v1/account")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  "$python" - "$account_file" "$browser_cookie_file" "$expected_role" <<'PY' || fail
+import json
+import sys
+import uuid
+
+account = json.load(open(sys.argv[1], encoding="utf-8"))
+cookies = json.load(open(sys.argv[2], encoding="utf-8"))
+expected_role = sys.argv[3]
+if account.get("role") != expected_role:
+    raise SystemExit(1)
+try:
+    uuid.UUID(account.get("internal_user_id", ""))
+except (AttributeError, TypeError, ValueError):
+    raise SystemExit(1)
+csrf = cookies.get("__Host-platform_csrf")
+if not isinstance(csrf, str) or not csrf or account.get("csrf_token") != csrf:
+    raise SystemExit(1)
+PY
+}
+
+terminate_acceptance_process() {
+  local selected_pid="${1:-}" _attempt
+  [[ "$selected_pid" =~ ^[0-9]+$ ]] || return 0
+  if /bin/kill -0 "$selected_pid" >/dev/null 2>&1; then
+    /bin/kill -TERM "$selected_pid" >/dev/null 2>&1 || true
+    for _attempt in $(/usr/bin/seq 1 10); do
+      /bin/kill -0 "$selected_pid" >/dev/null 2>&1 || break
+      /bin/sleep 0.1
+    done
+    if /bin/kill -0 "$selected_pid" >/dev/null 2>&1; then
+      /bin/kill -KILL "$selected_pid" >/dev/null 2>&1 || true
+    fi
+  fi
+  wait "$selected_pid" >/dev/null 2>&1 || true
+}
+
+cleanup_fae_report_processes() {
+  terminate_acceptance_process "${probe_watchdog_pid:-}"
+  probe_watchdog_pid=""
+  terminate_acceptance_process "${node_pid:-}"
+  node_pid=""
+  terminate_acceptance_process "${chrome_pid:-}"
+  chrome_pid=""
+}
+
+verify_fae_rendered_state() {
+  local browser_cookie_file="$1" workspace="$2" requested_url="$3" probe_mode="$4" artifact_name="$5"
+  local status=0 cleanup_allowed=0 chrome_port page_socket
   local chrome=/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome
   local node=/opt/homebrew/bin/node
-  local profile="$workspace/fae-reports-chrome-profile" active_port="$profile/DevToolsActivePort"
-  [[ -x "$chrome" ]] || fail
-  [[ -x "$node" ]] || fail
-  /bin/mkdir -m 700 "$profile"
-  "$chrome" --headless=new --disable-gpu --no-first-run --no-default-browser-check \
-    --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 \
-    --user-data-dir="$profile" about:blank > /dev/null 2>&1 &
-  chrome_pid="$!"
-  for _attempt in $(/usr/bin/seq 1 6); do
-    [[ -s "$active_port" ]] && break
-    /bin/sleep 5
-  done
-  [[ -s "$active_port" ]] || fail
-  chrome_port="$(/usr/bin/sed -n '1p' "$active_port")"
-  [[ "$chrome_port" =~ ^[0-9]+$ ]] || fail
-  /usr/bin/curl --silent --show-error --fail --request PUT --max-time 5 \
-    "http://127.0.0.1:$chrome_port/json/new?about%3Ablank" > "$workspace/fae-reports-chrome-target.json" || fail
-  page_socket="$($python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["webSocketDebuggerUrl"])' "$workspace/fae-reports-chrome-target.json")" || fail
-  [[ "$page_socket" == ws://127.0.0.1:* || "$page_socket" == ws://localhost:* ]] || fail
-  "$node" - "$page_socket" "$browser_cookie_file" "https://agent.orbbec.com.cn/admin/fae/reports" <<'NODE' || fail
-const fs = require("fs");
-const [socketUrl, cookiePath, reportsUrl] = process.argv.slice(2);
-const cookies = JSON.parse(fs.readFileSync(cookiePath, "utf8"));
-if (Object.keys(cookies).sort().join(",") !== "__Host-platform_csrf,__Host-platform_session") process.exit(1);
+  local probe="$repository_root/deploy/cloud/fae-reports-placeholder-probe.js"
+  local probe_deadline_ms=12000
+  local command_timeout_ms=2000
+  local watchdog_seconds=15
+  local profile="$workspace/$artifact_name-chrome-profile"
+  local active_port="$profile/DevToolsActivePort"
+  local target_json="$workspace/$artifact_name-chrome-target.json"
 
-const socket = new WebSocket(socketUrl);
-const pending = new Map();
-let commandId = 0;
-socket.onmessage = ({ data }) => {
-  const message = JSON.parse(data);
-  if (!message.id || !pending.has(message.id)) return;
-  const { resolve, reject } = pending.get(message.id);
-  pending.delete(message.id);
-  if (message.error) reject(new Error("cdp command failed"));
-  else resolve(message.result);
-};
-const opened = new Promise((resolve, reject) => {
-  socket.onopen = resolve;
-  socket.onerror = () => reject(new Error("cdp connection failed"));
-});
-const command = (method, params = {}) => new Promise((resolve, reject) => {
-  const id = ++commandId;
-  pending.set(id, { resolve, reject });
-  socket.send(JSON.stringify({ id, method, params }));
-});
-const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+  run_fae_reports_placeholder_probe() {
+    local _attempt watched_pid
+    [[ "$workspace" == /* && -d "$workspace" && ! -L "$workspace" ]] || return 1
+    if [[ "$probe_mode" == "placeholder" ]]; then
+      [[ "$requested_url" == "https://agent.orbbec.com.cn/admin/fae/reports" && "$artifact_name" == "fae-reports" ]] || return 1
+    else
+      [[ "$probe_mode" == "viewer-denied" && "$requested_url" == "https://agent.orbbec.com.cn/admin/fae" && "$artifact_name" == "fae-viewer" ]] || return 1
+    fi
+    [[ "$browser_cookie_file" == "$workspace/"* && -f "$browser_cookie_file" && ! -L "$browser_cookie_file" ]] || return 1
+    [[ -x "$chrome" && -x "$node" && -f "$probe" && ! -L "$probe" ]] || return 1
+    [[ ! -e "$profile" && ! -L "$profile" && ! -e "$target_json" && ! -L "$target_json" ]] || return 1
+    cleanup_allowed=1
+    /bin/mkdir -m 700 "$profile" || return 1
+    "$chrome" --headless=new --disable-gpu --no-first-run --no-default-browser-check \
+      --remote-debugging-address=127.0.0.1 --remote-debugging-port=0 \
+      --user-data-dir="$profile" about:blank > /dev/null 2>&1 &
+    chrome_pid="$!"
+    [[ "$chrome_pid" =~ ^[0-9]+$ ]] || return 1
+    for _attempt in $(/usr/bin/seq 1 50); do
+      [[ -s "$active_port" ]] && break
+      /bin/kill -0 "$chrome_pid" >/dev/null 2>&1 || return 1
+      /bin/sleep 0.1
+    done
+    [[ -s "$active_port" ]] || return 1
+    chrome_port="$(/usr/bin/sed -n '1p' "$active_port")" || return 1
+    [[ "$chrome_port" =~ ^[0-9]+$ ]] || return 1
+    /usr/bin/curl --silent --show-error --fail --request PUT --max-time 2 \
+      "http://127.0.0.1:$chrome_port/json/new?about%3Ablank" > "$target_json" || return 1
+    page_socket="$($python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["webSocketDebuggerUrl"])' "$target_json")" || return 1
+    [[ "$page_socket" == ws://127.0.0.1:* || "$page_socket" == ws://localhost:* ]] || return 1
+    "$node" "$probe" "$page_socket" "$browser_cookie_file" "$requested_url" \
+      "$probe_mode" "$probe_deadline_ms" "$command_timeout_ms" &
+    node_pid="$!"
+    [[ "$node_pid" =~ ^[0-9]+$ ]] || return 1
+    watched_pid="$node_pid"
+    "$python" - "$watched_pid" "$watchdog_seconds" <<'PY' &
+import os
+import signal
+import sys
+import time
 
-(async () => {
-  await opened;
-  await command("Network.enable");
-  for (const name of ["__Host-platform_session", "__Host-platform_csrf"]) {
-    const cookie = await command("Network.setCookie", {
-      name, value: cookies[name], url: "https://agent.orbbec.com.cn",
-      secure: true, httpOnly: name === "__Host-platform_session", sameSite: "Lax",
-    });
-    if (!cookie.success) throw new Error("cookie rejected");
+pid = int(sys.argv[1])
+time.sleep(int(sys.argv[2]))
+try:
+    os.kill(pid, signal.SIGTERM)
+except ProcessLookupError:
+    raise SystemExit(0)
+time.sleep(1)
+try:
+    os.kill(pid, signal.SIGKILL)
+except ProcessLookupError:
+    pass
+PY
+    probe_watchdog_pid="$!"
+    if wait "$node_pid"; then
+      node_pid=""
+    else
+      status="$?"
+      node_pid=""
+      return "$status"
+    fi
   }
-  await command("Page.enable");
-  await command("Runtime.enable");
-  await command("Page.navigate", { url: reportsUrl });
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    await pause(5000);
-    const evaluation = await command("Runtime.evaluate", {
-      expression: `(() => {
-        const content = document.querySelector('.fae-workbench__content');
-        const placeholder = content?.querySelector('.fae-workbench__empty[role="status"]');
-        const heading = placeholder?.querySelector('h2');
-        const visibleText = document.body.innerText;
-        const lowered = visibleText.toLowerCase();
-        const forbidden = ['sample report', 'demo report', 'fixture report'];
-        return window.location.pathname === '/admin/fae/reports' &&
-          heading?.textContent.trim() === '分析报告尚未接入' &&
-          placeholder.textContent.includes('不会用演示数据代替 FAE 的真实分析结果') &&
-          !forbidden.some((value) => lowered.includes(value)) &&
-          content.querySelectorAll('article,table,[data-report-id]').length === 0;
-      })()`,
-      returnByValue: true,
-    });
-    if (evaluation.result && evaluation.result.value === true) {
-      process.stdout.write("FAE_REPORTS_PLACEHOLDER_OK\n");
-      socket.close();
-      return;
-    }
-  }
-  throw new Error("FAE reports placeholder did not render");
-})().catch(() => process.exit(1));
-NODE
-  /bin/kill "$chrome_pid" >/dev/null 2>&1 || true
-  wait "$chrome_pid" >/dev/null 2>&1 || true
-  chrome_pid=""
+
+  if run_fae_reports_placeholder_probe; then
+    status=0
+  else
+    status="$?"
+  fi
+  cleanup_fae_report_processes
+  if [[ "$cleanup_allowed" == "1" ]]; then
+    /bin/rm -rf -- "$profile" || status=1
+    /bin/rm -f -- "$target_json" "$browser_cookie_file" || status=1
+  fi
+  return "$status"
+}
+
+verify_fae_reports_placeholder() {
+  verify_fae_rendered_state "$1" "$2" \
+    https://agent.orbbec.com.cn/admin/fae/reports placeholder fae-reports
+}
+
+verify_fae_viewer_denied() {
+  verify_fae_rendered_state "$1" "$2" \
+    https://agent.orbbec.com.cn/admin/fae viewer-denied fae-viewer
 }
 
 verify_fae_workbench_cloud_contract() {
@@ -733,6 +806,30 @@ verify_fae_workbench_cloud_contract() {
     '/api/admin/fae/sessions?limit=1'
     '/api/admin/fae/issues'
   )
+  local -a fae_viewer_denied_apis=(
+    '/api/admin/fae/overview'
+    '/api/admin/fae/sessions?limit=1'
+    '/api/admin/fae/issues'
+  )
+
+  verify_fae_account_role platform_owner "$temporary/fae-owner-account.json" \
+    "$temporary/owner.browser.json" "${curl_owner[@]}"
+  verify_fae_account_role member "$temporary/fae-member-account.json" \
+    "$temporary/member.browser.json" "${curl_member[@]}"
+  verify_fae_account_role management_viewer "$temporary/fae-viewer-account.json" \
+    "$temporary/viewer.browser.json" "${curl_viewer[@]}"
+  "$python" - "$temporary/fae-owner-account.json" "$temporary/fae-member-account.json" \
+    "$temporary/fae-viewer-account.json" <<'PY' || fail
+import json
+import sys
+
+identities = [
+    json.load(open(path, encoding="utf-8")).get("internal_user_id")
+    for path in sys.argv[1:]
+]
+if len(set(identities)) != 3:
+    raise SystemExit(1)
+PY
 
   for path in "${fae_owner_paths[@]}"; do
     status_code="$("${curl_owner[@]}" -o /dev/null -w '%{http_code}' "$base$path")" || fail
@@ -761,6 +858,13 @@ PY
 
   for path in "${fae_member_denied_paths[@]}"; do
     status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' "$base$path")" || fail
+    [[ "$status_code" == "403" ]] || fail
+  done
+  status_code="$("${curl_viewer[@]}" -o "$temporary/fae-viewer-shell.html" -w '%{http_code}' "$base/admin/fae")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  verify_fae_viewer_denied "$temporary/viewer.browser.json" "$temporary"
+  for path in "${fae_viewer_denied_apis[@]}"; do
+    status_code="$("${curl_viewer[@]}" -o /dev/null -w '%{http_code}' "$base$path")" || fail
     [[ "$status_code" == "403" ]] || fail
   done
 
@@ -886,6 +990,7 @@ NODE
 accept_real() {
   require_private_file "$member_cookie_file" 8192
   require_private_file "$owner_cookie_file" 8192
+  require_private_file "$viewer_cookie_file" 8192
   require_private_file "$hr_prompt_file" 32768
   require_private_file "$interruption_prompt_file" 32768
   evidence_parent="$(/usr/bin/dirname "$evidence_file")"
@@ -895,6 +1000,8 @@ accept_real() {
   if [[ -e "$evidence_file" ]]; then require_private_file "$evidence_file" 65536; fi
   temporary="$(/usr/bin/mktemp -d)"
   chrome_pid=""
+  node_pid=""
+  probe_watchdog_pid=""
   worker_stopped=0
   restore_worker() {
     [[ "$worker_stopped" == "1" ]] || return 0
@@ -908,10 +1015,7 @@ accept_real() {
   cleanup_accept_resources() {
     cleanup_status=0
     restore_worker || cleanup_status=1
-    if [[ "$chrome_pid" =~ ^[0-9]+$ ]]; then
-      /bin/kill "$chrome_pid" >/dev/null 2>&1 || true
-      wait "$chrome_pid" >/dev/null 2>&1 || true
-    fi
+    cleanup_fae_report_processes
     /bin/rm -rf -- "$temporary"
     return "$cleanup_status"
   }
@@ -928,9 +1032,11 @@ accept_real() {
   trap accept_failure_rollback ERR EXIT
   cookie_config "$member_cookie_file" "$temporary/member.curl" "$temporary/member.browser.json"
   cookie_config "$owner_cookie_file" "$temporary/owner.curl" "$temporary/owner.browser.json"
+  cookie_config "$viewer_cookie_file" "$temporary/viewer.curl" "$temporary/viewer.browser.json"
   base=https://agent.orbbec.com.cn
   curl_member=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/member.curl" --max-time 15)
   curl_owner=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" --max-time 15)
+  curl_viewer=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/viewer.curl" --max-time 15)
   office_url="https://agent.orbbec.com.cn/office/?view=services"
   [[ "$("${curl_member[@]}" -o "$temporary/office-services.html" -w '%{http_code}' "$office_url")" == "200" ]] || fail
   /usr/bin/grep -Fq '<html' "$temporary/office-services.html" || fail
@@ -1323,6 +1429,7 @@ PY
 accept_v2_real() {
   require_private_file "$member_cookie_file" 8192
   require_private_file "$owner_cookie_file" 8192
+  require_private_file "$viewer_cookie_file" 8192
   require_private_file "$hr_prompt_file" 32768
   evidence_parent="$(/usr/bin/dirname "$evidence_file")"
   [[ -d "$evidence_parent" && ! -L "$evidence_parent" ]] || fail
@@ -1331,11 +1438,10 @@ accept_v2_real() {
   reviewer_id="$(validate_v2_quality_review)" || fail
   temporary="$(/usr/bin/mktemp -d)"
   chrome_pid=""
+  node_pid=""
+  probe_watchdog_pid=""
   cleanup_v2_accept() {
-    if [[ "$chrome_pid" =~ ^[0-9]+$ ]]; then
-      /bin/kill "$chrome_pid" >/dev/null 2>&1 || true
-      wait "$chrome_pid" >/dev/null 2>&1 || true
-    fi
+    cleanup_fae_report_processes
     /bin/rm -rf -- "$temporary"
   }
   v2_accept_failure() {
@@ -1349,9 +1455,11 @@ accept_v2_real() {
   trap v2_accept_failure ERR EXIT
   cookie_config "$member_cookie_file" "$temporary/member.curl" "$temporary/member.browser.json"
   cookie_config "$owner_cookie_file" "$temporary/owner.curl" "$temporary/owner.browser.json"
+  cookie_config "$viewer_cookie_file" "$temporary/viewer.curl" "$temporary/viewer.browser.json"
   base=https://agent.orbbec.com.cn
   curl_member=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/member.curl" --max-time 15)
   curl_owner=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" --max-time 15)
+  curl_viewer=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/viewer.curl" --max-time 15)
   verify_fae_workbench_cloud_contract
   fae_before="$(remote_fae_snapshot)" || fail
   make_body "$hr_prompt_file" "$temporary/v2-request.json"
@@ -1471,6 +1579,7 @@ case "$action" in
     trap - EXIT
     ;;
   release)
+    require_action_identity_schema
     acquire_action_lock
     enable_with_rollback
     accept_v2_real
@@ -1478,6 +1587,7 @@ case "$action" in
     trap - EXIT
     ;;
   accept)
+    require_action_identity_schema
     acquire_action_lock
     v2_cutover_gates
     accept_v2_real
@@ -1541,6 +1651,7 @@ REMOTE
     echo "AGENT_BRAIN_V2_ROLLBACK_OK"
     ;;
   restore)
+    require_action_identity_schema
     acquire_action_lock
     enable_with_rollback
     accept_v2_real
