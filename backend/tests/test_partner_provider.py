@@ -266,6 +266,28 @@ async def test_reference_provider_implements_protocol_without_identity_repr() ->
 
 
 @pytest.mark.asyncio
+async def test_reference_provider_dev_probe_has_two_stable_distinct_subjects() -> None:
+    module = _provider_module()
+    provider = module.ReferencePartnerIdentityProvider(
+        {
+            "operator-a-code": ("partner-fixture-operator-a", "坐席 A"),
+            "operator-b-code": ("partner-fixture-operator-b", "坐席 B"),
+        }
+    )
+
+    operator_a = await provider.finish_auth({"code": "operator-a-code"})
+    operator_a_again = await provider.finish_auth({"code": "operator-a-code"})
+    operator_b = await provider.finish_auth({"code": "operator-b-code"})
+
+    assert operator_a.provider_subject == "partner-fixture-operator-a"
+    assert operator_a_again.provider_subject == operator_a.provider_subject
+    assert operator_b.provider_subject == "partner-fixture-operator-b"
+    assert operator_b.provider_subject != operator_a.provider_subject
+    assert await provider.check_subject(operator_a.provider_subject) == "active"
+    assert await provider.check_subject(operator_b.provider_subject) == "active"
+
+
+@pytest.mark.asyncio
 async def test_reference_provider_rejects_unknown_code_with_stable_error() -> None:
     module = _provider_module()
     provider = module.ReferencePartnerIdentityProvider({})
