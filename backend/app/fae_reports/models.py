@@ -12,10 +12,11 @@ from pydantic import (
     model_validator,
 )
 
-
 Identifier = Annotated[
     str,
-    StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$", min_length=1, max_length=80),
+    StringConstraints(
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$", min_length=1, max_length=80
+    ),
 ]
 Dimension = Literal[
     "usage", "business_value", "answer_effectiveness", "insights_improvement"
@@ -71,8 +72,13 @@ class ReportMetric(StrictModel):
     label: str = Field(min_length=1, max_length=160)
     value: int | float | dict[str, int | float | Literal["少于 5"]]
     unit: Literal[
-        "count", "ratio", "percent", "milliseconds", "seconds",
-        "distribution", "milliseconds_distribution",
+        "count",
+        "ratio",
+        "percent",
+        "milliseconds",
+        "seconds",
+        "distribution",
+        "milliseconds_distribution",
     ]
     numerator: int | float | None = Field(default=None, ge=0)
     denominator: int | float | None = Field(default=None, gt=0)
@@ -86,23 +92,37 @@ class ReportMetric(StrictModel):
             if type(self.value) is not int or self.numerator is not None:
                 raise ValueError("invalid_metric_value")
         elif self.unit in {"ratio", "percent"}:
-            if isinstance(self.value, dict) or self.numerator is None or self.denominator is None:
+            if (
+                isinstance(self.value, dict)
+                or self.numerator is None
+                or self.denominator is None
+            ):
                 raise ValueError("invalid_metric_fraction")
         elif self.unit in {"distribution", "milliseconds_distribution"}:
-            if not isinstance(self.value, dict) or not self.value or len(self.value) > 50:
+            if (
+                not isinstance(self.value, dict)
+                or not self.value
+                or len(self.value) > 50
+            ):
                 raise ValueError("invalid_metric_distribution")
             if self.numerator is not None or self.denominator is None:
                 raise ValueError("invalid_metric_distribution")
             for key, count in self.value.items():
-                if not key or len(key) > 80 or (
-                    isinstance(count, (int, float))
-                    and not isinstance(count, bool)
-                    and count < 0
+                if (
+                    not key
+                    or len(key) > 80
+                    or (
+                        isinstance(count, (int, float))
+                        and not isinstance(count, bool)
+                        and count < 0
+                    )
                 ):
                     raise ValueError("invalid_metric_distribution")
                 if self.unit == "distribution" and type(count) is float:
                     raise ValueError("invalid_metric_distribution")
-                if self.unit == "milliseconds_distribution" and not isinstance(count, (int, float)):
+                if self.unit == "milliseconds_distribution" and not isinstance(
+                    count, (int, float)
+                ):
                     raise ValueError("invalid_metric_distribution")
         elif isinstance(self.value, dict):
             raise ValueError("invalid_metric_value")
@@ -165,7 +185,15 @@ class ReportCase(StrictModel):
 
 
 class ReportFailure(StrictModel):
-    stage: Literal["snapshot", "population", "classification", "annotation", "review", "reporting", "publication"]
+    stage: Literal[
+        "snapshot",
+        "population",
+        "classification",
+        "annotation",
+        "review",
+        "reporting",
+        "publication",
+    ]
     code: Literal[
         "snapshot_failed",
         "population_blocked",
@@ -183,7 +211,9 @@ class ReportFailure(StrictModel):
 class FaeAnalysisReport(StrictModel):
     schema_name: Literal["fae.analysis-report"]
     schema_version: Literal["1.0.0"]
-    report_id: Annotated[str, StringConstraints(pattern=r"^fae-(weekly|topic)-[a-z0-9][a-z0-9-]{2,63}$")]
+    report_id: Annotated[
+        str, StringConstraints(pattern=r"^fae-(weekly|topic)-[a-z0-9][a-z0-9-]{2,63}$")
+    ]
     report_version: int = Field(ge=1)
     report_type: Literal["weekly", "topic"]
     status: Literal["ready", "failed"]
@@ -206,21 +236,40 @@ class FaeAnalysisReport(StrictModel):
         for value in (self.data_cutoff_at, self.generated_at):
             if value.tzinfo is None:
                 raise ValueError("naive_timestamp")
-        if self.data_cutoff_at < self.period.end_at or self.generated_at < self.data_cutoff_at:
+        if (
+            self.data_cutoff_at < self.period.end_at
+            or self.generated_at < self.data_cutoff_at
+        ):
             raise ValueError("invalid_report_timestamps")
         if self.status == "failed":
-            if self.failure is None or self.summary is not None or self.metrics or self.findings or self.recommendations or self.cases or self.artifact_digests:
+            if (
+                self.failure is None
+                or self.summary is not None
+                or self.metrics
+                or self.findings
+                or self.recommendations
+                or self.cases
+                or self.artifact_digests
+            ):
                 raise ValueError("invalid_failed_report")
             return self
         if self.summary is None or self.failure is not None or not self.metrics:
             raise ValueError("invalid_ready_report")
         if {metric.dimension for metric in self.metrics} != {
-            "usage", "business_value", "answer_effectiveness", "insights_improvement"
+            "usage",
+            "business_value",
+            "answer_effectiveness",
+            "insights_improvement",
         }:
             raise ValueError("incomplete_report_dimensions")
         required_artifacts = {
-            "metrics.json", "claim_ledger.jsonl", "action_backlog.jsonl",
-            "executive_summary.md", "full_report.md", "audit_appendix.md", "report.html",
+            "metrics.json",
+            "claim_ledger.jsonl",
+            "action_backlog.jsonl",
+            "executive_summary.md",
+            "full_report.md",
+            "audit_appendix.md",
+            "report.html",
         }
         if set(self.artifact_digests) != required_artifacts or any(
             len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value)
@@ -241,10 +290,16 @@ class FaeAnalysisReport(StrictModel):
         if not set(self.summary.top_recommendation_ids) <= recommendation_ids:
             raise ValueError("unresolved_report_reference")
         for finding in self.findings:
-            if not set(finding.metric_ids) <= metric_ids or not set(finding.recommendation_ids) <= recommendation_ids:
+            if (
+                not set(finding.metric_ids) <= metric_ids
+                or not set(finding.recommendation_ids) <= recommendation_ids
+            ):
                 raise ValueError("unresolved_report_reference")
         for recommendation in self.recommendations:
-            if not set(recommendation.finding_ids) <= finding_ids or not set(recommendation.success_metric_ids) <= metric_ids:
+            if (
+                not set(recommendation.finding_ids) <= finding_ids
+                or not set(recommendation.success_metric_ids) <= metric_ids
+            ):
                 raise ValueError("unresolved_report_reference")
 
 

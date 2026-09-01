@@ -9,16 +9,32 @@ from pydantic import ValidationError
 
 from .models import FaeAnalysisReport
 
-
 SCHEMA_NAME = "fae.analysis-report"
 SCHEMA_VERSION = "1.0.0"
 MAX_REPORT_BYTES = 5 * 1024 * 1024
-SCHEMA_PATH = Path(__file__).resolve().parents[3] / "contracts" / "fae-analysis-report" / "v1" / "schema.json"
+SCHEMA_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "contracts"
+    / "fae-analysis-report"
+    / "v1"
+    / "schema.json"
+)
 CONTRACT_SHA256 = "78977bbd207f258951bc020fac79f46f5dc574e7d9a840952359b24dfffae1f8"
-_FORBIDDEN_FIELDS = frozenset({
-    "question", "answer", "comment", "raw_text", "source_id", "trace_id",
-    "attachment_name", "employee_id", "email", "phone", "metadata",
-})
+_FORBIDDEN_FIELDS = frozenset(
+    {
+        "question",
+        "answer",
+        "comment",
+        "raw_text",
+        "source_id",
+        "trace_id",
+        "attachment_name",
+        "employee_id",
+        "email",
+        "phone",
+        "metadata",
+    }
+)
 
 
 class ReportContractError(ValueError):
@@ -69,7 +85,10 @@ def load_report_document(payload: bytes) -> FaeAnalysisReport:
         raise ReportContractError("invalid_report_json") from exc
     if not isinstance(raw, dict):
         raise ReportContractError("invalid_report_shape")
-    if raw.get("schema_name") != SCHEMA_NAME or raw.get("schema_version") != SCHEMA_VERSION:
+    if (
+        raw.get("schema_name") != SCHEMA_NAME
+        or raw.get("schema_version") != SCHEMA_VERSION
+    ):
         raise ReportContractError("unsupported_report_schema")
     _scan_fields(raw)
     try:
@@ -84,8 +103,12 @@ def load_report_document(payload: bytes) -> FaeAnalysisReport:
             raise ReportContractError("report_limit_exceeded") from None
         messages = " ".join(str(error.get("msg", "")) for error in exc.errors())
         for code in (
-            "invalid_failed_report", "unresolved_report_reference", "report_limit_exceeded",
-            "incomplete_report_dimensions", "invalid_evidence_scope", "invalid_artifact_digests",
+            "invalid_failed_report",
+            "unresolved_report_reference",
+            "report_limit_exceeded",
+            "incomplete_report_dimensions",
+            "invalid_evidence_scope",
+            "invalid_artifact_digests",
         ):
             if code in messages:
                 raise ReportContractError(code) from None
