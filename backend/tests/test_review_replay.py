@@ -14,6 +14,7 @@ from app.review.replay import (
     evaluate_runtime_gate,
     parse_sse,
 )
+from app.review.repository import InvalidReviewMutation
 
 
 LINK_ID = UUID("00000000-0000-0000-0000-000000000011")
@@ -112,6 +113,7 @@ class FakeRepository:
             issue_id=ISSUE_ID,
             issue_link_id=LINK_ID,
             agent_id="ai-fae-agent",
+            source_turn_key="fae:turn-1",
             question="问题",
             prior_turns=[],
             attachment_manifest=attachment_manifest or [],
@@ -129,6 +131,11 @@ class FakeRepository:
         }
 
     def create_or_get_replay(self, issue_link_id, **kwargs):
+        assert kwargs["expected_ownership"] == {
+            "issue_id": ISSUE_ID,
+            "agent_id": "ai-fae-agent",
+            "source_turn_key": "fae:turn-1",
+        }
         return (
             {
                 "id": UUID("00000000-0000-0000-0000-000000000013"),
@@ -140,7 +147,11 @@ class FakeRepository:
             True,
         )
 
-    def expire_stale_replays(self, issue_link_id, *, timeout_seconds, actor):
+    def expire_stale_replays(self, issue_link_id, *, expected_ownership, timeout_seconds, actor):
+        assert expected_ownership == {
+            "issue_id": ISSUE_ID, "agent_id": "ai-fae-agent",
+            "source_turn_key": "fae:turn-1",
+        }
         self.expired.append((issue_link_id, timeout_seconds, actor))
         return 0
 
@@ -148,6 +159,23 @@ class FakeRepository:
         row = {"id": replay_id, "issue_id": ISSUE_ID, **result}
         self.finished.append((row, actor))
         return row
+
+
+def test_move_between_replay_load_and_insert_is_rejected_before_network(monkeypatch):
+    monkeypatch.setenv("FAE_DEV_KEY", "secret")
+    repository = FakeRepository()
+    repository.create_or_get_replay = Mock(
+        side_effect=InvalidReviewMutation("replay link ownership changed")
+    )
+    client = Mock()
+
+    with pytest.raises(InvalidReviewMutation, match="ownership changed"):
+        ReplayRunner(repository, _registry("http://dev.example"), http_client=client).run(
+            LINK_ID, idempotency_key="raced", actor="corp:owner"
+        )
+
+    client.get.assert_not_called()
+    client.post.assert_not_called()
 
 
 def _registry(dev_url, prod_url="http://prod.example"):

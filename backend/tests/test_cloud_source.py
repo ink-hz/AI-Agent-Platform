@@ -6,7 +6,13 @@ from app.cloud_replica.source import (
     TRACE_SQL,
     TRACE_STEP_SQL,
     TURN_SQL,
+    REVIEW_INBOX_SQL,
+    REVIEW_ISSUE_SQL,
     ReplicaSource,
+)
+from app.review.scope_sql import (
+    CANONICAL_EVENT_PAIR_INVALID_SQL,
+    HISTORICAL_LINK_EVENT_INVALID_SQL,
 )
 from app.observability.models import Page
 from app.operations.models import EventFilters, OperationalEvent
@@ -42,6 +48,59 @@ def test_source_queries_are_explicit_bounded_and_never_touch_restricted_fields()
     assert "join platform_read.turns" in ATTACHMENT_SQL.lower()
     assert "a.turn_key = t.native_id" in ATTACHMENT_SQL.lower()
     assert "t.turn_key as turn_key" in ATTACHMENT_SQL.lower()
+
+
+def test_review_projection_proves_nested_scope_and_inbox_issue_ownership():
+    issue_sql = " ".join(REVIEW_ISSUE_SQL.lower().split())
+    inbox_sql = " ".join(REVIEW_INBOX_SQL.lower().split())
+
+    for proof in (
+        "issue.origin_turn_key",
+        "linked_turn.agent_id is distinct from issue.agent_id",
+        "canonical.agent_id is distinct from issue.agent_id",
+        "walk.cycle",
+        "linked_turn.source_kind is distinct from 'fae'",
+        "as scope_valid",
+    ):
+        assert proof in issue_sql
+    assert "join platform_review.feedback_issues linked_issue" in inbox_sql
+    assert "linked_issue.agent_id=feedback.agent_id" in inbox_sql
+    assert "where link.issue_id=issue.id and link.active and (" not in issue_sql
+    assert "feedback_replay_runs replay" in issue_sql
+    for event_type in (
+        "turn_linked",
+        "turn_linked_from_release_handoff",
+        "link_moved_in",
+        "link_moved_out",
+    ):
+        assert event_type in issue_sql
+    assert "true as scope_valid" in inbox_sql
+
+
+def test_cloud_issue_scope_binds_move_direction_link_identity_and_referenced_issues():
+    source = " ".join(REVIEW_ISSUE_SQL.lower().split())
+    predicate = " ".join(HISTORICAL_LINK_EVENT_INVALID_SQL.lower().split())
+
+    assert predicate in source
+    assert "event.before->>'id' is distinct from event.after->>'id'" in source
+    assert "event.before->>'issue_id' is distinct from issue.id::text" in source
+    assert "event.after->>'issue_id' is distinct from issue.id::text" in source
+    assert "historical_before_issue.agent_id is distinct from issue.agent_id" in source
+    assert "historical_after_issue.agent_id is distinct from issue.agent_id" in source
+    assert "historical_link.id is null" in source
+    assert "merge_walk.current_id=historical_link.issue_id" in source
+
+
+def test_cloud_issue_scope_uses_shared_canonical_event_pair_audit():
+    source = " ".join(REVIEW_ISSUE_SQL.lower().split())
+    predicate = " ".join(CANONICAL_EVENT_PAIR_INVALID_SQL.lower().split())
+
+    assert predicate in source
+    assert "issue.canonical_issue_id is not null and not exists" in source
+    assert "canonical_source.issue_id=issue.id" in source
+    assert "canonical_target.issue_id=issue.canonical_issue_id" in source
+    assert "canonical_source.event_type='issue_merged'" in source
+    assert "canonical_target.event_type='issue_absorbed'" in source
 
 
 class _Context:
@@ -222,3 +281,31 @@ def test_management_source_includes_platform_level_operation_events():
     assert operation.status == "historical"
     assert operation.title == "flywheel data access recovered"
     assert operation.source_kind == "flywheel"
+
+
+def test_management_source_marks_refreshed_inbox_scope_valid():
+    now = datetime(2026, 8, 11, tzinfo=UTC)
+    calls = []
+    rows = {
+        "with recursive canonical_walk": [],
+        "select feedback.agent_id": [{
+            "agent_id": "ai-fae-agent",
+            "turn_key": "fae:turn-1",
+            "feedback_count": 1,
+            "first_feedback_at": now,
+            "scope_valid": True,
+        }],
+        "select agent_id,": [],
+    }
+    source = ReplicaSource(
+        "postgresql://safe",
+        connection_factory=lambda *_args, **_kwargs: _Connection(rows, calls),
+    )
+
+    projections = source.fetch_management_projections(through=now)
+    inbox = next(
+        item for item in projections
+        if item.__class__.__name__ == "ReviewInboxProjection"
+    )
+
+    assert inbox.scope_valid is True

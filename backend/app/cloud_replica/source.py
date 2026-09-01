@@ -6,6 +6,11 @@ from typing import Any, Callable
 import psycopg
 from psycopg.rows import dict_row
 
+from app.review.scope_sql import (
+    CANONICAL_EVENT_PAIR_INVALID_SQL,
+    HISTORICAL_LINK_EVENT_INVALID_SQL,
+)
+
 from .models import (
     OperationEventProjection,
     RawAttachment,
@@ -43,8 +48,22 @@ TURN_SQL = """
 select
     turn_key, session_key, turn_index, question, answer, created_at,
     question_at, answer_at, question_time_status, answer_time_status,
-    outcome, fallback_used, duration_ms, trace_key
-from platform_read.turns
+    outcome, fallback_used, duration_ms, trace_key,
+    coalesce((
+      select array_agg(feedback.sentiment order by feedback.created_at,
+                       feedback.feedback_key)
+      from platform_read.feedback feedback
+      where feedback.agent_id=turn.agent_id
+        and feedback.turn_key=turn.turn_key
+        and feedback.created_at <= %(through)s
+    ), '{}') as feedback_sentiments,
+    coalesce((
+      select array_agg(review.status order by review.updated_at, review.review_key)
+      from platform_read.reviews review
+      where review.turn_key=turn.turn_key
+        and review.updated_at <= %(through)s
+    ), '{}') as review_statuses
+from platform_read.turns turn
 where session_key = any(%(session_keys)s)
   and created_at <= %(through)s
 order by session_key, turn_index, turn_key
@@ -80,25 +99,97 @@ where trace_key = any(%(trace_keys)s)
 order by trace_key, seq, step_key
 """.strip()
 
-REVIEW_ISSUE_SQL = """
+REVIEW_ISSUE_SQL = f"""
+with recursive canonical_walk as (
+  select issue.id as root_id,issue.id as current_id,
+    issue.canonical_issue_id as next_id,array[issue.id] as path,false as cycle
+  from platform_review.feedback_issues issue
+  union all
+  select walk.root_id,target.id,target.canonical_issue_id,
+    walk.path || target.id,target.id=any(walk.path)
+  from canonical_walk walk
+  join platform_review.feedback_issues target on target.id=walk.next_id
+  where walk.next_id is not null and not walk.cycle
+)
 select issue.id,issue.agent_id,issue.disposition as status,issue.priority,
-  issue.title,issue.failure_layer,issue.owner,issue.updated_at,
-  count(link.id) filter (where link.active) as linked_turn_count
+  issue.title,issue.failure_layer,issue.owner,issue.created_at,issue.updated_at,
+  (select count(*) from platform_review.feedback_issue_links link
+    where link.issue_id=issue.id and link.active) as linked_turn_count,
+  coalesce((select array_agg(link.source_turn_key order by link.source_turn_key)
+    from platform_review.feedback_issue_links link
+    where link.issue_id=issue.id and link.active), '{{}}') as linked_turn_keys,
+  not (
+    (issue.origin_turn_key is not null and (
+      not exists (select 1 from platform_read.turns origin
+        where origin.turn_key=issue.origin_turn_key)
+      or exists (select 1 from platform_read.turns origin
+        where origin.turn_key=issue.origin_turn_key and (
+          origin.agent_id is distinct from issue.agent_id
+          or (issue.agent_id='ai-fae-agent'
+              and origin.source_kind is distinct from 'fae')
+        ))
+    ))
+    or (issue.canonical_issue_id is not null and (
+      canonical.id is null
+      or canonical.agent_id is distinct from issue.agent_id
+    ))
+    or exists (
+      select 1 from platform_review.feedback_issue_links link
+      left join platform_read.turns linked_turn
+        on linked_turn.turn_key=link.source_turn_key
+      where link.issue_id=issue.id and (
+        link.agent_id is distinct from issue.agent_id
+        or linked_turn.turn_key is null
+        or linked_turn.agent_id is distinct from issue.agent_id
+        or (issue.agent_id='ai-fae-agent'
+            and linked_turn.source_kind is distinct from 'fae')
+        or exists (
+          select 1 from unnest(link.source_feedback_keys) feedback_key
+          left join platform_read.feedback linked_feedback
+            on linked_feedback.feedback_key=feedback_key
+           and linked_feedback.agent_id=link.agent_id
+           and linked_feedback.turn_key=link.source_turn_key
+          where linked_feedback.feedback_key is null
+        )
+        or cardinality(link.source_feedback_keys) <> (
+          select count(distinct feedback_key)
+          from unnest(link.source_feedback_keys)
+            as stored_feedback_key(feedback_key)
+        )
+      )
+    )
+    or exists (
+      select 1 from platform_review.feedback_replay_runs replay
+      left join platform_review.feedback_issue_links replay_link
+        on replay_link.id=replay.issue_link_id
+      where replay.issue_id=issue.id and (
+        replay_link.id is null
+        or replay_link.issue_id is distinct from issue.id
+      )
+    )
+    or {HISTORICAL_LINK_EVENT_INVALID_SQL}
+    or {CANONICAL_EVENT_PAIR_INVALID_SQL}
+    or exists (select 1 from canonical_walk walk
+      where walk.root_id=issue.id and walk.cycle)
+  ) as scope_valid
 from platform_review.feedback_issues issue
-left join platform_review.feedback_issue_links link on link.issue_id=issue.id
+left join platform_review.feedback_issues canonical
+  on canonical.id=issue.canonical_issue_id
 where issue.updated_at <= %(through)s
-group by issue.id
 order by issue.updated_at,issue.id
 """.strip()
 
 REVIEW_INBOX_SQL = """
 select feedback.agent_id,feedback.turn_key,count(*) as feedback_count,
-  min(feedback.created_at) as first_feedback_at
+  min(feedback.created_at) as first_feedback_at,true as scope_valid
 from platform_read.feedback feedback
 where feedback.sentiment='negative' and feedback.created_at <= %(through)s
   and not exists (
     select 1 from platform_review.feedback_issue_links link
+    join platform_review.feedback_issues linked_issue
+      on linked_issue.id=link.issue_id
     where link.agent_id=feedback.agent_id
+      and linked_issue.agent_id=feedback.agent_id
       and link.source_turn_key=feedback.turn_key and link.active
   )
 group by feedback.agent_id,feedback.turn_key
@@ -158,7 +249,10 @@ class ReplicaSource:
                 title=row["title"], failure_layer=row["failure_layer"],
                 owner_display=row["owner"],
                 linked_turn_count=int(row["linked_turn_count"]),
+                linked_turn_keys=tuple(row.get("linked_turn_keys") or ()),
+                created_at=row["created_at"],
                 updated_at=row["updated_at"],
+                scope_valid=row["scope_valid"] is True,
             )
             for row in issues
         ]
@@ -167,6 +261,7 @@ class ReplicaSource:
                 agent_id=row["agent_id"], turn_key=row["turn_key"],
                 feedback_count=int(row["feedback_count"]),
                 first_feedback_at=row["first_feedback_at"],
+                scope_valid=row["scope_valid"] is True,
             )
             for row in inbox
         )
@@ -347,6 +442,8 @@ class ReplicaSource:
                     outcome=row["outcome"],
                     fallback_used=row["fallback_used"],
                     duration_ms=row["duration_ms"],
+                    feedback_sentiments=tuple(row.get("feedback_sentiments") or ()),
+                    review_statuses=tuple(row.get("review_statuses") or ()),
                     trace=traces_by_turn.get(row["turn_key"]),
                     attachments=tuple(attachments_by_turn.get(row["turn_key"], ())),
                 )

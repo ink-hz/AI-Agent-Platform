@@ -366,23 +366,43 @@ identity mapping and a separate fixed 60-second `launching`-to-`online` wait;
 failed PM2 states or expiration fail the rollback instead of claiming that the
 prior state was restored.
 
-Create a private JSON acceptance config and four private browser-input files.
-The config, the member and owner Cookie header files, the HR acceptance prompt,
-the interruption prompt and the evidence destination must be owner-only regular
-files with mode `0600`. The acceptance identities must include a
-real DingTalk test member and a different owner or platform administrator. Before enablement,
-require a pre-created `hr-bot` grant for the member and deliberately do not grant
+Create a private JSON acceptance config and five private browser-input files.
+The config, the member, Owner and management-viewer Cookie header files, the HR
+acceptance prompt, the interruption prompt and the evidence destination must be
+owner-only regular files with mode `0600`. The three acceptance identities must
+include a real DingTalk test member and be different real accounts.
+`/api/v1/account` must identify them exactly as
+`member`, `platform_owner`, and `management_viewer`; a `platform_admin` session
+does not satisfy the Owner check. Before enablement, require a
+pre-created `hr-bot` grant for the member and deliberately do not grant
 `marketing-gtm-bot`.
 
 Each Cookie file contains exactly the two browser cookies
 `__Host-platform_session` and `__Host-platform_csrf` on one line. The script
 derives mode-`0600` curl/CDP inputs, supplies the required production Origin,
-and never places either value in command-line arguments or evidence. The JSON
-config uses schema version `2` and has exactly these absolute-path fields:
-`member_cookie_file`, `owner_cookie_file`, `hr_prompt_file`,
-`interruption_prompt_file`, the agentops-owned mode-`0600`
-`relay_acceptance_config`, and `evidence_file`. Cloud root access is fixed inside the Neo-owned release coordinator
-to `/Users/neo/.ssh/orbbec_aliyun_ed25519`. That key is never copied to or made
+and never places either value in command-line arguments or evidence. FAE
+`release`, `accept`, and `restore` use schema version `3`, with exactly these
+absolute-path fields: `member_cookie_file`, `owner_cookie_file`,
+`viewer_cookie_file`, `hr_prompt_file`, `interruption_prompt_file`, the
+agentops-owned mode-`0600` `relay_acceptance_config`, and `evidence_file`.
+Schema version `2` remains readable for the non-FAE-mutating `preflight`,
+`reference`, and `rollback` actions, but the script fails before taking the
+action lock or doing remote work if schema v2 is used for `release`, `accept`,
+or `restore`. Do not describe a schema-v2 run as FAE release acceptance.
+
+The controller running this fixed production-target contract must provide the
+executable `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`, the
+executable `/opt/homebrew/bin/node`, and a Node runtime
+whose global `WebSocket` API is available. These fixed paths are target-host
+dependencies, not a claim that the script is portable to arbitrary macOS or
+Linux controllers. The report probe applies bounded Chrome startup, local CDP
+HTTP, WebSocket-open, per-command and global render deadlines. Failure closes
+the socket, terminates Node and Chrome with bounded TERM/KILL cleanup, removes
+the temporary profile/cookie artifacts, releases the action lock, and restores
+the disabled feature state through the acceptance trap.
+
+Cloud root access is fixed inside the Neo-owned release coordinator to
+`/Users/neo/.ssh/orbbec_aliyun_ed25519`. That key is never copied to or made
 readable by `agentops`.
 
 Before release, persist predeclared `grant_id` and `request_id` UUIDs with the

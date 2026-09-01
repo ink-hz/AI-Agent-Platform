@@ -90,6 +90,13 @@ from .fleet.repository import (
     UnavailableFlywheelRepository,
 )
 from .fleet.service import FleetReadService
+from .fae_workbench import routes as fae_workbench_routes
+from .fae_workbench.repository import (
+    FaeWorkbenchReadError,
+    PsycopgFaeWorkbenchRepository,
+    ReplicaFaeWorkbenchRepository,
+)
+from .fae_workbench.service import FaeWorkbenchService
 from .health import routes as health_routes
 from .health.platform import (
     build_deployment_status,
@@ -144,6 +151,22 @@ from .voc_extension.routes import build_voc_extension_router
 
 
 logger = logging.getLogger(__name__)
+
+
+class _UnavailableFaeWorkbenchRepository:
+    def snapshot(self, _period_start, _period_end):
+        raise FaeWorkbenchReadError("fae_workbench_query_failed")
+
+    def fae_turn_exists(self, _turn_key: str) -> bool:
+        raise FaeWorkbenchReadError("fae_workbench_query_failed")
+
+    def fae_turn_keys(self, _turn_keys: list[str]) -> set[str]:
+        raise FaeWorkbenchReadError("fae_workbench_query_failed")
+
+
+class _UnavailableFaeFeedbackProjectionReader:
+    def read_fae_feedback(self, _period_start, _period_end):
+        return None
 
 
 async def cancel_tasks(tasks: list[asyncio.Task]) -> None:
@@ -600,6 +623,7 @@ def create_app(
     agent_launch_service: AgentLaunchService | None = None,
     partner_service: PartnerService | None = None,
     partner_provider: PartnerIdentityProvider | None = None,
+    fae_workbench_service=None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
@@ -865,6 +889,20 @@ def create_app(
             repo,
             database_url if runtime_pollers_enabled else None,
         )
+    if fae_workbench_service is None:
+        if cloud_mode and replica_repository is not None:
+            fae_repository = ReplicaFaeWorkbenchRepository(
+                replica_repository,
+            )
+        elif database_url:
+            fae_repository = PsycopgFaeWorkbenchRepository(database_url)
+        else:
+            fae_repository = _UnavailableFaeWorkbenchRepository()
+        fae_workbench_service = FaeWorkbenchService(
+            fae_repository,
+            observability_service,
+            review_service,
+        )
     if attachment_service is None and config.attachment_enabled and not cloud_mode:
         attachment_service = build_attachment_service(config)
     if attachment_service is not None:
@@ -964,6 +1002,8 @@ def create_app(
     app.state.partner_service = partner_service
     app.state.partner_provider = selected_partner_provider
     app.state.partner_auth_broker = partner_auth_broker
+    app.state.fae_workbench_service = fae_workbench_service
+    app.state.fae_session_read_audit = None
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
         control_database_url = read_secret_file(
@@ -973,9 +1013,11 @@ def create_app(
             config.control_plane.audit_database_url_file
         )
         app.state.system_health_audit = SystemHealthAuditWriter(audit_database_url)
+        audit_writer = AuditWriter.from_database_url(audit_database_url)
+        app.state.fae_session_read_audit = audit_writer
         app.state.identity_management_service = ManagementService(
             ManagementRepository(control_database_url),
-            AuditWriter.from_database_url(audit_database_url),
+            audit_writer,
             hard_stale_audit=identity_auth.hard_stale_audit,
         )
         authorization_service = AuthorizationService(
@@ -1017,6 +1059,7 @@ def create_app(
     app.include_router(operations_routes.router)
     app.include_router(registry_routes.router)
     app.include_router(review_routes.router)
+    app.include_router(fae_workbench_routes.router)
     app.include_router(build_voc_extension_router())
     if office_recipient_router is not None:
         app.include_router(office_recipient_router)

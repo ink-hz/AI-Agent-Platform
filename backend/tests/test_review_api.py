@@ -19,6 +19,7 @@ TARGET_ID = UUID("00000000-0000-0000-0000-000000000003")
 class FakeService:
     def __init__(self):
         self.move = None
+        self.link = None
         self.read_filters = []
 
     async def create_issue(self, payload, *, actor):
@@ -48,6 +49,10 @@ class FakeService:
     async def move_link(self, issue_id, link_id, payload, *, actor):
         self.move = (issue_id, link_id, payload.target_issue_id, actor)
         return {"issue": {"id": str(payload.target_issue_id)}}
+
+    async def link_turn(self, issue_id, payload, *, actor):
+        self.link = (issue_id, payload.model_dump(), actor)
+        return {"issue": {"id": str(issue_id)}}
 
 
 @pytest.fixture
@@ -192,6 +197,96 @@ def test_link_can_be_moved_to_correct_canonical_issue(client, app):
         TARGET_ID,
         "codex",
     )
+
+
+def test_generic_link_keeps_agent_id_and_accepts_turn_without_feedback(client, app):
+    response = client.post(
+        f"/api/review/issues/{ISSUE_ID}/links",
+        json={
+            "agent_id": "ai-fae-agent",
+            "source_turn_key": "fae:turn-ordinary",
+            "source_feedback_keys": [],
+            "link_role": "primary",
+            "reason": "create from inspected answer",
+        },
+        headers={"X-Review-Actor": "codex"},
+    )
+
+    assert response.status_code == 201
+    assert app.state.review_service.link == (
+        ISSUE_ID,
+        {
+            "agent_id": "ai-fae-agent",
+            "source_turn_key": "fae:turn-ordinary",
+            "source_feedback_keys": [],
+            "link_role": "primary",
+            "reason": "create from inspected answer",
+        },
+        "codex",
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        (
+            "/api/review/issues",
+            {
+                "agent_id": "ai-fae-agent",
+                "origin_turn_key": "admin:turn",
+                "title": "foreign origin",
+            },
+        ),
+        (
+            f"/api/review/issues/{ISSUE_ID}/links",
+            {
+                "agent_id": "ai-fae-agent",
+                "source_turn_key": "admin:turn",
+                "source_feedback_keys": [],
+            },
+        ),
+        (
+            f"/api/review/issues/{TARGET_ID}/links",
+            {
+                "agent_id": "ai-fae-agent",
+                "source_turn_key": "fae:turn",
+                "source_feedback_keys": ["fae:feedback"],
+            },
+        ),
+    ],
+)
+def test_generic_api_rejects_cross_agent_create_and_link_before_writer(path, payload):
+    class ReadRepository:
+        def get_issue_detail(self, issue_id):
+            agent_id = "ai-fae-agent" if issue_id == ISSUE_ID else "admin-agent"
+            return {"issue": {"id": issue_id, "agent_id": agent_id}}
+
+        def feedback_keys_for_turn(self, agent_id, turn_key):
+            if (agent_id, turn_key) == ("ai-fae-agent", "fae:turn"):
+                return {"turn_key": turn_key, "feedback_keys": ["fae:feedback"]}
+            return None
+
+    class Writer:
+        def __getattr__(self, name):
+            if name in {"create_issue", "link_turn"}:
+                raise AssertionError("cross-Agent mutation must not reach writer")
+            raise AttributeError(name)
+
+    application = FastAPI()
+    application.state.review_service = ReviewService(
+        ReadRepository(), write_repository=Writer()
+    )
+    application.include_router(router)
+
+    with TestClient(application) as scoped_client:
+        response = scoped_client.post(
+            path,
+            json=payload,
+            headers={"X-Review-Actor": "codex"},
+        )
+
+    assert response.status_code == 409
+    assert "agent" in response.json()["detail"] or "turn" in response.json()["detail"]
 
 
 def test_read_only_service_keeps_get_available_and_rejects_writes():

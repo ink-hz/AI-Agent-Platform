@@ -83,6 +83,40 @@ describe("Executive Operations visual contract", () => {
     }
   });
 
+  it("keeps compact FAE workbench navigation in one keyboard-scrollable row", () => {
+    const compact = block("@media (max-width: 900px)");
+    expect(compact).toContain(".fae-workbench__sidebar nav { display: flex; flex-wrap: nowrap; overflow-x: auto; }");
+  });
+
+  it("bounds the FAE workspace and keeps its reading column legible", () => {
+    expect(styles).toContain(".topbar-inner,\n.page,\n.site-foot { width: min(1240px, calc(100% - 48px));");
+    expect(rule(".page.is-fae-workbench")).toContain("width: min(1440px, calc(100% - 48px))");
+    expect(rule(".fae-workbench")).toContain("max-width: 1440px");
+    expect(rule(".fae-workbench")).toContain("grid-template-columns: 216px minmax(0, 1fr)");
+    expect(rule(".fae-workbench__content")).toContain("max-width: 1180px");
+    expect(rule(".fae-overview")).toContain("font-size: 15px");
+  });
+
+  it("keeps available non-drillable metrics visually distinct from unavailable metrics", () => {
+    expect(rule(".fae-summary-card.is-static")).toContain("background: var(--surface)");
+    expect(rule(".fae-summary-card.is-static")).toContain("box-shadow: 0 9px 24px rgba(20,51,89,.07)");
+  });
+
+  it("stacks Session governance after the header and before Turns at 1040px", () => {
+    expect(rule(".fae-session-detail-layout > div")).toContain("display: contents");
+    const compact = lastBlock("@media (max-width: 1040px)");
+    expect(compact).toContain(".fae-session-detail-layout { grid-template-columns: 1fr; }");
+    expect(compact).toContain(".fae-session-detail-layout .session-detail-head { grid-column: 1; grid-row: 1; }");
+    expect(compact).toContain(".fae-session-governance { position: static; grid-column: 1; grid-row: 2; }");
+    expect(compact).toContain(".fae-session-detail-layout .turn-stack { grid-column: 1; grid-row: 3; }");
+  });
+
+  it("keeps overview cards single-column and actions visible without hover below 720px", () => {
+    expect(rule(".fae-summary-card__action")).toContain("opacity: 1");
+    const mobile = lastBlock("@media (max-width: 720px)");
+    expect(mobile).toContain(".fae-overview__summary { grid-template-columns: 1fr; }");
+  });
+
   it("gives summary and insight cards visible resting weight", () => {
     expect(rule(".fleet-summary-card")).toContain("min-height: 150px");
     expect(rule(".fleet-summary-card")).toContain("padding: 24px");

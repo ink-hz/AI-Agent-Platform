@@ -89,13 +89,14 @@ _SAFE_RECORD_KEY = re.compile(
 _SAFE_AGENT = re.compile(r"[A-Za-z0-9._-]{1,80}\Z")
 _MANAGEMENT_KEYS = {
     "review_issue_projection": {
-        "kind", "key", "agent_id", "updated_at", "title", "status",
+        "kind", "key", "agent_id", "created_at", "updated_at", "title", "status",
         "priority", "failure_layer", "owner_display", "linked_turn_count",
-        "sanitizer_policy_version",
+        "linked_turn_keys",
+        "scope_valid", "sanitizer_policy_version",
     },
     "review_inbox_projection": {
         "kind", "key", "agent_id", "first_feedback_at", "turn_key",
-        "feedback_count", "sanitizer_policy_version",
+        "feedback_count", "scope_valid", "sanitizer_policy_version",
     },
     "operation_event_projection": {
         "kind", "key", "agent_id", "occurred_at", "event_type", "severity",
@@ -247,6 +248,10 @@ class ReplicaStore:
             or not _SAFE_AGENT.fullmatch(indexed_agent_id)
             or not isinstance(record.get("sanitizer_policy_version"), str)
             or not record["sanitizer_policy_version"]
+            or (
+                kind in {"review_issue_projection", "review_inbox_projection"}
+                and not isinstance(record.get("scope_valid"), bool)
+            )
         ):
             raise ReplicaStoreError("record_invalid")
         occurred_at = _parse_time(record[time_field])

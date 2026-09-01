@@ -207,8 +207,10 @@ export interface SessionSummary {
   created_at: string;
   last_active_at: string;
   turn_count: number;
-  feedback_count: number;
-  review_count: number;
+  feedback_count: number | null;
+  review_count: number | null;
+  feedback_availability?: Availability;
+  review_availability?: Availability;
   latest_outcome: string | null;
   source_synced_at: string | null;
   freshness: Freshness;
@@ -310,7 +312,11 @@ export interface TurnDetail {
   evidence: EvidenceSummary[];
   evidence_availability: Availability;
   feedback: FeedbackItem[];
+  feedback_availability?: Availability;
+  feedback_summary?: Record<string, number>;
   reviews: ReviewItem[];
+  review_availability?: Availability;
+  review_status_summary?: Record<string, number>;
   improvements: ImprovementItem[];
   input_attachments: AttachmentSummary[];
   output_attachments: AttachmentSummary[];
@@ -364,12 +370,12 @@ export interface TraceDetail {
 }
 
 export interface FlywheelOverview {
-  feedback_total: number;
-  negative_feedback: number;
-  pending_reviews: number;
-  evaluation_candidates: number;
-  knowledge_tasks: number;
-  qa_candidates: number;
+  feedback_total: number | null;
+  negative_feedback: number | null;
+  pending_reviews: number | null;
+  evaluation_candidates: number | null;
+  knowledge_tasks: number | null;
+  qa_candidates: number | null;
 }
 
 export interface SyncStatus {
@@ -385,6 +391,7 @@ export interface SyncStatus {
 }
 
 export type IssueStatus =
+  | "unknown"
   | "pending_triage"
   | "fixing"
   | "awaiting_merge"
@@ -399,28 +406,29 @@ export type IssueStatus =
 export interface IssueProgress {
   issue_id: string;
   status: IssueStatus;
-  missing_gates: string[];
-  replay_passed_turns: number;
-  replay_required_turns: number;
-  reopened: boolean;
+  missing_gates: string[] | null;
+  replay_passed_turns: number | null;
+  replay_required_turns: number | null;
+  reopened: boolean | null;
 }
 
 export interface ReviewOverview {
-  feedback_rows: number;
-  negative_rows: number;
-  negative_turns: number;
-  positive_rows: number;
-  issue_total: number;
+  feedback_rows: number | null;
+  negative_rows: number | null;
+  negative_turns: number | null;
+  positive_rows: number | null;
+  issue_total: number | null;
   statuses: Partial<Record<IssueStatus, number>>;
   dispositions: Record<string, number>;
   write_available: boolean;
+  lifecycle_status_available?: boolean;
 }
 
 export interface TurnClosureSummary {
   turn_key: string;
   issue_id: string | null;
   status: IssueStatus;
-  missing_gates: string[];
+  missing_gates: string[] | null;
   latest_valid_replay_id: string | null;
 }
 
@@ -430,6 +438,7 @@ export interface ReviewInboxItem {
   question: string;
   answer: string;
   feedback_keys: string[];
+  feedback_count?: number;
   first_feedback_at: string;
 }
 
@@ -441,11 +450,11 @@ export interface FeedbackIssueSummary {
   priority: "P0" | "P1" | "P2" | "P3";
   failure_layer: string | null;
   secondary_layers: string[];
-  root_cause: string;
-  impact_scope: string;
+  root_cause: string | null;
+  impact_scope: string | null;
   owner: string | null;
   disposition: "actionable" | "duplicate" | "not_actionable" | "wont_fix";
-  row_version: number;
+  row_version: number | null;
   created_at?: string;
   updated_at?: string;
   progress: IssueProgress;
@@ -531,6 +540,7 @@ export interface FeedbackIssueDetail {
   replays: ReplayRun[];
   events: IssueEvent[];
   progress: IssueProgress;
+  section_availability?: Partial<Record<"links" | "evidence" | "replays" | "events", Availability>>;
 }
 
 export interface ReplayMatrixRow {

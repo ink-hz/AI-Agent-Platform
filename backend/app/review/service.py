@@ -113,13 +113,23 @@ class ReviewService:
         agent_id: str | None = None,
         limit: int,
         offset: int,
+        status: str | None = None,
+        disposition: str | None = None,
     ) -> list[dict]:
+        filters = {
+            **({"status": status} if status is not None else {}),
+            **({"disposition": disposition} if disposition is not None else {}),
+        }
         return await self._run(
             self.read_repository.list_issues,
             agent_id=agent_id,
             limit=limit,
             offset=offset,
+            **filters,
         )
+
+    async def list_issue_page(self, **filters) -> dict:
+        return await self._run(self.read_repository.list_issue_page, **filters)
 
     async def turn_summaries(self, *, turn_keys: list[str]) -> list[dict]:
         return await self._run(
@@ -130,9 +140,63 @@ class ReviewService:
     async def issue_detail(self, issue_id: UUID) -> dict:
         return await self._detail(issue_id)
 
+    async def evidence_issue_id(self, evidence_id: UUID) -> UUID:
+        evidence = await self._run(
+            self.read_repository.get_evidence_owner, evidence_id
+        )
+        if evidence is None:
+            from .repository import ReviewNotFound
+
+            raise ReviewNotFound("evidence not found")
+        return evidence["issue_id"]
+
+    async def replay_issue_id(self, replay_id: UUID) -> UUID:
+        replay = await self._run(self.read_repository.get_replay, replay_id)
+        if replay is None:
+            from .repository import ReviewNotFound
+
+            raise ReviewNotFound("replay not found")
+        return replay["issue_id"]
+
+    async def move_link_has_replay(self, issue_id: UUID, link_id: UUID) -> bool:
+        self._writer()
+        return bool(await self._run(
+            self.read_repository.move_link_has_replay,
+            issue_id,
+            link_id,
+        ))
+
+    async def merge_relocation_has_replay(
+        self,
+        source_issue_id: UUID,
+        target_issue_id: UUID,
+    ) -> bool:
+        self._writer()
+        return bool(await self._run(
+            self.read_repository.merge_relocation_has_replay,
+            source_issue_id,
+            target_issue_id,
+        ))
+
+    async def agent_issue_scope_valid(self, agent_id: str) -> bool:
+        return bool(await self._run(
+            self.read_repository.agent_issue_scope_valid, agent_id
+        ))
+
     async def create_issue(self, payload, *, actor: str) -> dict:
         writer = self._writer()
         data = payload.model_dump(exclude={"reason"}, exclude_none=True)
+        origin_turn_key = data.get("origin_turn_key")
+        if origin_turn_key is not None:
+            metadata = await self._run(
+                self.read_repository.feedback_keys_for_turn,
+                data["agent_id"],
+                origin_turn_key,
+            )
+            if metadata is None:
+                raise InvalidReviewMutation(
+                    "origin turn does not belong to requested agent"
+                )
         row = await self._run(
             writer.create_issue,
             data,
@@ -168,12 +232,30 @@ class ReviewService:
 
     async def link_turn(self, issue_id: UUID, payload, *, actor: str) -> dict:
         writer = self._writer()
+        detail = await self._detail(issue_id)
+        if (detail.get("issue") or {}).get("agent_id") != payload.agent_id:
+            raise InvalidReviewMutation(
+                "target issue does not belong to requested agent"
+            )
+        metadata = await self._run(
+            self.read_repository.feedback_keys_for_turn,
+            payload.agent_id,
+            payload.source_turn_key,
+        )
+        if metadata is None:
+            raise InvalidReviewMutation("feedback source turn was not found")
+        exact_keys = sorted(set(metadata.get("feedback_keys") or []))
+        provided_keys = set(payload.source_feedback_keys or [])
+        if not provided_keys.issubset(exact_keys):
+            raise InvalidReviewMutation(
+                "feedback keys do not belong to the exact source turn"
+            )
         await self._run(
             writer.link_turn,
             issue_id,
             agent_id=payload.agent_id,
             source_turn_key=payload.source_turn_key,
-            source_feedback_keys=payload.source_feedback_keys,
+            source_feedback_keys=exact_keys,
             link_role=payload.link_role,
             actor=actor,
             reason=payload.reason,
@@ -208,6 +290,7 @@ class ReviewService:
         await self._detail(payload.target_issue_id)
         await self._run(
             writer.move_link,
+            issue_id,
             link_id,
             payload.target_issue_id,
             actor=actor,
@@ -378,8 +461,8 @@ class ReviewService:
             and payload.reviewer == actor
         ) or (
             payload.method == "human_fae"
-            and actor.startswith("fae:")
-            and bool(actor.removeprefix("fae:").strip())
+            and actor.startswith(("fae:", "corp:"))
+            and bool(actor.split(":", 1)[1].strip())
             and payload.reviewer == actor
         )
         if not valid_identity:

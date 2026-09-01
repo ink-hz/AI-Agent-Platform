@@ -55,6 +55,21 @@ it("negative feedback turn links to review inbox", async () => {
 });
 
 
+it("uses an explicit governance link for an ordinary real Turn", async () => {
+  await act(async () => root.render(<TurnCard
+    turn={{ ...turn, feedback: [] }}
+    governanceHref="/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1"
+  />));
+
+  const link = container.querySelector<HTMLAnchorElement>(".review-entry a");
+  expect(link?.textContent).toBe("创建或查看问题");
+  expect(link?.getAttribute("href")).toBe(
+    "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1",
+  );
+  expect(container.textContent).toContain("尚未纳管");
+});
+
+
 it("places input and output attachments immediately after their messages", async () => {
   const summary = {
     attachment_id: "attachment-1", display_name: "附件.pdf", mime_type: "application/pdf",
@@ -79,4 +94,24 @@ it("places input and output attachments immediately after their messages", async
 it("adds no attachment wrapper when the turn has no attachments", async () => {
   await act(async () => root.render(<TurnCard turn={turn} />));
   expect(container.querySelector(".attachment-list")).toBeNull();
+});
+
+
+it("renders projected signal summaries with explicit restricted-detail notices", async () => {
+  await act(async () => root.render(<TurnCard turn={{
+    ...turn,
+    feedback: [],
+    reviews: [],
+    feedback_availability: "restricted",
+    review_availability: "restricted",
+    feedback_summary: { negative: 2, positive: 1 },
+    review_status_summary: { pending: 1 },
+  }} />));
+
+  expect(container.textContent).toContain("负向反馈 × 2");
+  expect(container.textContent).toContain("正向反馈 × 1");
+  expect(container.textContent).toContain("复审状态 · pending × 1");
+  expect(container.textContent).toContain("反馈详情：受限");
+  expect(container.textContent).toContain("复审详情：受限");
+  expect(container.textContent).not.toContain("尚未纳管");
 });

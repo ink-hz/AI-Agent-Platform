@@ -5,6 +5,7 @@ import { UI_COPY } from "./copy";
 import { navigate, routeSection, type Route } from "./router";
 import type { DeploymentInfo } from "./types";
 import { platformPath, type Account } from "./auth";
+import { DeploymentProvider } from "./deploymentContext";
 
 
 const USE_NAVIGATION = [
@@ -16,6 +17,7 @@ const ADMIN_NAVIGATION = [
   { label: "总览", path: "/admin", section: "admin" },
   { label: "Agent", path: "/admin/agents", section: "admin" },
   { label: "Session", path: "/admin/sessions", section: "admin" },
+  { label: "FAE 工作台", path: "/admin/fae", section: "admin" },
   { label: "复审闭环", path: "/admin/review", section: "admin" },
   { label: "运行记录", path: "/admin/activity", section: "admin" },
   { label: "数据飞轮", path: "/admin/operations", section: "admin" },
@@ -55,12 +57,24 @@ export function AppShell({ route, children, account }: { route: Route; children:
   const brainWorkspace = route.name === "brain" || route.name === "conversation"
     || route.name === "agent" || route.name === "agent-conversation";
   const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";
+  const faeWorkspace = route.name.startsWith("admin-fae-");
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
+  const [deploymentResolved, setDeploymentResolved] = useState(current !== "admin");
   useEffect(() => {
-    if (current !== "admin") return;
-    if (account && account.role !== "platform_owner" && account.role !== "platform_admin") return;
+    if (current !== "admin" || (account && account.role !== "platform_owner" && account.role !== "platform_admin")) {
+      setDeployment(null);
+      setDeploymentResolved(true);
+      return;
+    }
     const controller = new AbortController();
-    void fetchDeployment(controller.signal).then(setDeployment).catch(() => undefined);
+    setDeploymentResolved(false);
+    void fetchDeployment(controller.signal).then((value) => {
+      if (!controller.signal.aborted) setDeployment(value);
+    }).catch(() => {
+      if (!controller.signal.aborted) setDeployment(null);
+    }).finally(() => {
+      if (!controller.signal.aborted) setDeploymentResolved(true);
+    });
     return () => controller.abort();
   }, [account, current]);
   const cloudReplica = deployment?.mode === "cloud-replica" && deployment.read_only;
@@ -76,7 +90,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
     : deployment?.freshness === "stale"
       ? "数据已过期"
       : "等待首次同步";
-  return (
+  return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
     <div className={`app${brainWorkspace ? " is-brain-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}`}>
       <header className="topbar">
         <div className="topbar-inner">
@@ -121,12 +135,13 @@ export function AppShell({ route, children, account }: { route: Route; children:
       </aside>}
       {current === "admin" && managementNavigation.length > 0 && <nav className="admin-nav" aria-label="管理中心">
         <div>{managementNavigation.map((item) => <a
-          className={window.location.pathname === platformPath(item.path) ? "is-current" : undefined}
+          className={current === item.section && (window.location.pathname === platformPath(item.path)
+            || (item.path !== "/admin" && window.location.pathname.startsWith(`${platformPath(item.path)}/`))) ? "is-current" : undefined}
           href={platformPath(item.path)} key={item.path} onClick={(event) => follow(event, item.path)}
         >{item.label}</a>)}</div>
       </nav>}
-      <main className={`page${brainWorkspace ? " is-brain-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}`}>{children}</main>
+      <main className={`page${brainWorkspace ? " is-brain-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}`}>{children}</main>
       {!brainWorkspace && !aiNotesWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
     </div>
-  );
+  </DeploymentProvider>;
 }

@@ -179,6 +179,12 @@ def sanitize_management_projection(
             "failure_layer": _safe_identifier(raw.failure_layer),
             "owner_display": owner.text if owner and owner.safe else None,
             "linked_turn_count": max(raw.linked_turn_count, 0),
+            "linked_turn_keys": [
+                stable_id("turn", turn_key, identity_key)
+                for turn_key in raw.linked_turn_keys
+            ],
+            "scope_valid": raw.scope_valid is True,
+            "created_at": raw.created_at,
             "updated_at": raw.updated_at,
             "sanitizer_policy_version": policy.version,
         }
@@ -192,6 +198,7 @@ def sanitize_management_projection(
             "turn_key": stable_id("turn", raw.turn_key, identity_key),
             "feedback_count": max(raw.feedback_count, 0),
             "first_feedback_at": raw.first_feedback_at,
+            "scope_valid": raw.scope_valid is True,
             "sanitizer_policy_version": policy.version,
         }
     if isinstance(raw, ReviewFeedbackTotalsProjection):
@@ -384,6 +391,14 @@ def sanitize_session(
                 else None,
                 attachments=attachments,
                 trace=_sanitize_trace(turn.trace),
+                feedback_sentiments=tuple(
+                    sentiment for sentiment in turn.feedback_sentiments
+                    if sentiment in {"positive", "negative", "other"}
+                ),
+                review_statuses=tuple(
+                    status for status in turn.review_statuses
+                    if _safe_identifier(status)
+                ),
             )
         )
     return SanitizedSessionRecord(

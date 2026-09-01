@@ -11,6 +11,10 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .models import IssueProgress, IssueRecord, LinkGate, NegativeFeedbackGroup
+from .scope_sql import (
+    CANONICAL_EVENT_PAIR_INVALID_SQL,
+    HISTORICAL_LINK_EVENT_INVALID_SQL,
+)
 from .state import calculate_progress
 
 
@@ -111,6 +115,166 @@ class PsycopgReviewRepository:
             ),
         )
 
+    @staticmethod
+    def _assert_link_relocation_replay_free(cursor, link: Mapping[str, Any]) -> None:
+        conflict = cursor.execute(
+            """
+            select 1 from platform_review.feedback_replay_runs
+            where issue_id=%s and issue_link_id=%s limit 1
+            """,
+            (link["issue_id"], link["id"]),
+        ).fetchone()
+        if conflict is not None:
+            raise InvalidReviewMutation("link relocation conflicts with replay")
+
+    @staticmethod
+    def _lock_canonical_agent(cursor, agent_id: str) -> None:
+        cursor.execute(
+            "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (agent_id,),
+        )
+
+    @classmethod
+    def _lock_canonical_endpoints(
+        cls,
+        cursor,
+        source_issue_id: UUID,
+        target_issue_id: UUID,
+        *,
+        expected_agent_id: str | None = None,
+    ) -> tuple[dict, dict]:
+        seed = cursor.execute(
+            "select agent_id from platform_review.feedback_issues where id=%s",
+            (source_issue_id,),
+        ).fetchone()
+        if seed is None:
+            raise ReviewNotFound("issue not found")
+        cls._lock_canonical_agent(cursor, seed["agent_id"])
+        rows = cursor.execute(
+            """
+            select * from platform_review.feedback_issues
+            where id=any(%s) order by id for update
+            """,
+            ([source_issue_id, target_issue_id],),
+        ).fetchall()
+        by_id = {str(row["id"]): dict(row) for row in rows}
+        source = by_id.get(str(source_issue_id))
+        target = by_id.get(str(target_issue_id))
+        if source is None or target is None:
+            raise ReviewNotFound("canonical issue not found")
+        if source["agent_id"] != target["agent_id"]:
+            raise InvalidReviewMutation("canonical issue must belong to the same agent")
+        if expected_agent_id is not None and source["agent_id"] != expected_agent_id:
+            raise InvalidReviewMutation(
+                "canonical issue must belong to the same expected agent"
+            )
+        return source, target
+
+    @classmethod
+    def _assert_canonical_edge_acyclic(
+        cls, cursor, source_issue_id: UUID, target_issue_id: UUID
+    ) -> tuple[dict, dict]:
+        """Serialize canonical writes per Agent, lock endpoints, and reject reachability.
+
+        Agent identifiers are immutable, so it is safe to discover the advisory-lock key
+        before acquiring the row locks.  The advisory lock prevents two inverse edges
+        from both passing their reachability check in concurrent transactions.
+        """
+        source, target = cls._lock_canonical_endpoints(
+            cursor, source_issue_id, target_issue_id
+        )
+        reached = cursor.execute(
+            """
+            with recursive canonical_walk as (
+              select issue.id as current_id, issue.canonical_issue_id as next_id,
+                     array[issue.id] as path, false as cycle
+              from platform_review.feedback_issues issue where issue.id=%s
+              union all
+              select issue.id, issue.canonical_issue_id,
+                     walk.path || issue.id, issue.id=any(walk.path)
+              from canonical_walk walk
+              join platform_review.feedback_issues issue on issue.id=walk.next_id
+              where walk.next_id is not null and not walk.cycle
+            )
+            select exists(
+              select 1 from canonical_walk
+              where current_id=%s or cycle
+            ) as cycle
+            """,
+            (target_issue_id, source_issue_id),
+        ).fetchone()
+        if reached and reached["cycle"]:
+            raise InvalidReviewMutation("canonical cycle is not allowed")
+        return source, target
+
+    @classmethod
+    def _mutate_canonical_edge(
+        cls,
+        cursor,
+        source_issue_id: UUID,
+        target_issue_id: UUID,
+        *,
+        disposition_reason: str,
+        actor: str,
+        reason: str,
+        expected_row_version: int | None = None,
+        owner: str | None = None,
+        before_write: Callable[[dict, dict], None] | None = None,
+        required_source_disposition: str | None = None,
+    ) -> tuple[dict, dict, dict, bool] | None:
+        """Mutate the sole supported canonical edge and its paired audit events.
+
+        Optional link relocation runs only after the advisory/reachability guard and
+        remains in the same transaction, so a rejected edge rolls it back as well.
+        """
+        source, target = cls._assert_canonical_edge_acyclic(
+            cursor, source_issue_id, target_issue_id
+        )
+        if expected_row_version is not None:
+            require_row_version(source, expected_row_version)
+        if (
+            required_source_disposition is not None
+            and source["disposition"] != required_source_disposition
+        ):
+            return None
+        if (
+            source.get("disposition") == "duplicate"
+            and source.get("canonical_issue_id") == target_issue_id
+        ):
+            return source, target, source, False
+        if before_write is not None:
+            before_write(source, target)
+        after = cursor.execute(
+            """
+            update platform_review.feedback_issues
+            set disposition='duplicate', canonical_issue_id=%s,
+                owner=coalesce(%s, owner), disposition_reason=%s,
+                updated_at=now(), row_version=row_version+1
+            where id=%s returning *
+            """,
+            (target_issue_id, owner, disposition_reason, source_issue_id),
+        ).fetchone()
+        after = dict(after)
+        cls._event(
+            cursor,
+            issue_id=source["id"],
+            event_type="issue_merged",
+            actor=actor,
+            reason=reason,
+            before=source,
+            after=after,
+        )
+        cls._event(
+            cursor,
+            issue_id=target["id"],
+            event_type="issue_absorbed",
+            actor=actor,
+            reason=reason,
+            before={"source_issue_id": source["id"]},
+            after={"target_issue_id": target["id"]},
+        )
+        return source, target, after, True
+
     def create_issue(self, data: Mapping[str, Any], *, actor: str, reason: str) -> dict:
         payload = {
             "agent_id": data["agent_id"],
@@ -125,6 +289,14 @@ class PsycopgReviewRepository:
         }
         try:
             with self._connection() as connection, connection.cursor() as cursor:
+                if payload["origin_turn_key"] is not None:
+                    metadata = self._feedback_keys_for_turn(
+                        cursor, payload["agent_id"], payload["origin_turn_key"]
+                    )
+                    if metadata is None:
+                        raise InvalidReviewMutation(
+                            "origin turn does not belong to requested agent"
+                        )
                 row = cursor.execute(
                     """
                     insert into platform_review.feedback_issues
@@ -206,6 +378,33 @@ class PsycopgReviewRepository:
         except Exception as error:
             raise ReviewRepositoryError("update issue failed") from error
 
+    @staticmethod
+    def _feedback_keys_for_turn(cursor, agent_id: str, turn_key: str) -> dict | None:
+        row = cursor.execute(
+            """
+            select turn.turn_key,
+                   coalesce(array_agg(feedback.feedback_key order by feedback.created_at,
+                                      feedback.feedback_key)
+                            filter (where feedback.feedback_key is not null), '{}')
+                     as feedback_keys
+            from platform_read.turns turn
+            left join platform_read.feedback feedback
+              on feedback.agent_id=turn.agent_id
+             and feedback.turn_key=turn.turn_key
+            where turn.agent_id=%s and turn.turn_key=%s
+            group by turn.turn_key
+            """,
+            (agent_id, turn_key),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def feedback_keys_for_turn(self, agent_id: str, turn_key: str) -> dict | None:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                return self._feedback_keys_for_turn(cursor, agent_id, turn_key)
+        except Exception as error:
+            raise ReviewRepositoryError("load turn feedback metadata failed") from error
+
     def link_turn(
         self,
         issue_id: UUID,
@@ -219,6 +418,23 @@ class PsycopgReviewRepository:
     ) -> dict:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
+                issue = cursor.execute(
+                    """select * from platform_review.feedback_issues
+                    where id=%s for update""",
+                    (issue_id,),
+                ).fetchone()
+                if issue is None:
+                    raise ReviewNotFound("issue not found")
+                if issue["agent_id"] != agent_id:
+                    raise InvalidReviewMutation(
+                        "target issue does not belong to source agent"
+                    )
+                metadata = self._feedback_keys_for_turn(
+                    cursor, agent_id, source_turn_key
+                )
+                exact_keys = sorted(set((metadata or {}).get("feedback_keys") or []))
+                if metadata is None or sorted(set(source_feedback_keys)) != exact_keys:
+                    raise InvalidReviewMutation("feedback lineage does not match source turn")
                 row = cursor.execute(
                     """
                     insert into platform_review.feedback_issue_links
@@ -231,7 +447,7 @@ class PsycopgReviewRepository:
                         issue_id,
                         agent_id,
                         source_turn_key,
-                        sorted(set(source_feedback_keys)),
+                        exact_keys,
                         link_role,
                         actor,
                         reason,
@@ -246,11 +462,14 @@ class PsycopgReviewRepository:
                     after=row,
                 )
             return dict(row)
+        except (InvalidReviewMutation, ReviewNotFound):
+            raise
         except Exception as error:
             raise ReviewRepositoryError("link turn failed") from error
 
     def move_link(
         self,
+        expected_source_issue_id: UUID,
         link_id: UUID,
         target_issue_id: UUID,
         *,
@@ -268,6 +487,19 @@ class PsycopgReviewRepository:
                 ).fetchone()
                 if before is None:
                     raise ReviewNotFound("link not found")
+                if before["issue_id"] != expected_source_issue_id:
+                    raise InvalidReviewMutation(
+                        "active link does not belong to expected source issue"
+                    )
+                self._assert_link_relocation_replay_free(cursor, before)
+                target = cursor.execute(
+                    "select * from platform_review.feedback_issues where id=%s for update",
+                    (target_issue_id,),
+                ).fetchone()
+                if target is None:
+                    raise ReviewNotFound("target issue not found")
+                if target["agent_id"] != before["agent_id"]:
+                    raise InvalidReviewMutation("target issue must belong to the same agent")
                 after = cursor.execute(
                     """
                     update platform_review.feedback_issue_links
@@ -295,7 +527,7 @@ class PsycopgReviewRepository:
                     after=after,
                 )
             return dict(after)
-        except ReviewNotFound:
+        except (ReviewNotFound, InvalidReviewMutation):
             raise
         except Exception as error:
             raise ReviewRepositoryError("move link failed") from error
@@ -443,6 +675,176 @@ class PsycopgReviewRepository:
         except Exception as error:
             raise ReviewRepositoryError("get evidence failed") from error
 
+    def get_evidence_owner(self, evidence_id: UUID) -> dict | None:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    """
+                    select issue_id from platform_review.feedback_fix_evidence
+                    where id=%s
+                    """,
+                    (evidence_id,),
+                ).fetchone()
+            return dict(row) if row is not None else None
+        except Exception as error:
+            raise ReviewRepositoryError("get evidence owner failed") from error
+
+    def agent_issue_scope_valid(self, agent_id: str) -> bool:
+        """Validate all nested ownership metadata for one Agent in one read."""
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    f"""
+                    with recursive canonical_walk as (
+                      select issue.id as root_id, issue.id as current_id,
+                        issue.canonical_issue_id as next_id,
+                        array[issue.id] as path, false as cycle
+                      from platform_review.feedback_issues issue
+                      where issue.agent_id=%s
+                      union all
+                      select walk.root_id, target.id, target.canonical_issue_id,
+                        walk.path || target.id, target.id=any(walk.path)
+                      from canonical_walk walk
+                      join platform_review.feedback_issues target
+                        on target.id=walk.next_id
+                      where walk.next_id is not null and not walk.cycle
+                    )
+                    select not exists (
+                      select 1
+                      from platform_review.feedback_issues issue
+                      left join platform_read.turns origin
+                        on origin.turn_key=issue.origin_turn_key
+                      left join platform_review.feedback_issues canonical
+                        on canonical.id=issue.canonical_issue_id
+                      where issue.agent_id=%s and (
+                        (issue.origin_turn_key is not null and (
+                          origin.turn_key is null
+                          or origin.agent_id is distinct from issue.agent_id
+                          or (issue.agent_id='ai-fae-agent'
+                              and origin.source_kind is distinct from 'fae')
+                        ))
+                        or (issue.canonical_issue_id is not null and (
+                          canonical.id is null
+                          or canonical.agent_id is distinct from issue.agent_id
+                        ))
+                        or exists (
+                          select 1
+                          from platform_review.feedback_issue_links link
+                          left join platform_read.turns linked_turn
+                            on linked_turn.turn_key=link.source_turn_key
+                          where link.issue_id=issue.id and (
+                            link.agent_id is distinct from issue.agent_id
+                            or linked_turn.turn_key is null
+                            or linked_turn.agent_id is distinct from issue.agent_id
+                            or (issue.agent_id='ai-fae-agent'
+                                and linked_turn.source_kind is distinct from 'fae')
+                            or exists (
+                              select 1
+                              from unnest(link.source_feedback_keys) feedback_key
+                              left join platform_read.feedback linked_feedback
+                                on linked_feedback.feedback_key=feedback_key
+                               and linked_feedback.agent_id=link.agent_id
+                               and linked_feedback.turn_key=link.source_turn_key
+                              where linked_feedback.feedback_key is null
+                            )
+                            or cardinality(link.source_feedback_keys) <> (
+                              select count(distinct feedback_key)
+                              from unnest(link.source_feedback_keys)
+                                as stored_feedback_key(feedback_key)
+                            )
+                          )
+                        )
+                        or exists (
+                          select 1
+                          from platform_review.feedback_replay_runs replay
+                          left join platform_review.feedback_issue_links replay_link
+                            on replay_link.id=replay.issue_link_id
+                          where replay.issue_id=issue.id and (
+                            replay_link.id is null
+                            or replay_link.issue_id is distinct from issue.id
+                          )
+                        )
+                        or {HISTORICAL_LINK_EVENT_INVALID_SQL}
+                        or {CANONICAL_EVENT_PAIR_INVALID_SQL}
+                        or exists (
+                          select 1 from canonical_walk walk
+                          where walk.root_id=issue.id and walk.cycle
+                        )
+                      )
+                    ) as valid
+                    """,
+                    (agent_id, agent_id),
+                ).fetchone()
+            return bool(row and row["valid"])
+        except Exception as error:
+            raise ReviewRepositoryError("validate issue scope failed") from error
+
+    def get_replay(self, replay_id: UUID) -> dict | None:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    """
+                    select issue_id from platform_review.feedback_replay_runs
+                    where id=%s
+                    """,
+                    (replay_id,),
+                ).fetchone()
+            return dict(row) if row is not None else None
+        except Exception as error:
+            raise ReviewRepositoryError("get replay failed") from error
+
+    def move_link_has_replay(self, issue_id: UUID, link_id: UUID) -> bool:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    """
+                    select exists (
+                      select 1
+                      from platform_review.feedback_issue_links link
+                      join platform_review.feedback_replay_runs replay
+                        on replay.issue_link_id=link.id
+                       and replay.issue_id=link.issue_id
+                      where link.id=%s and link.issue_id=%s and link.active
+                    ) as conflict
+                    """,
+                    (link_id, issue_id),
+                ).fetchone()
+            return bool(row and row["conflict"])
+        except Exception as error:
+            raise ReviewRepositoryError("check move replay conflict failed") from error
+
+    def merge_relocation_has_replay(
+        self,
+        source_issue_id: UUID,
+        target_issue_id: UUID,
+    ) -> bool:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
+                    """
+                    select exists (
+                      select 1
+                      from platform_review.feedback_issue_links source
+                      join platform_review.feedback_replay_runs replay
+                        on replay.issue_link_id=source.id
+                       and replay.issue_id=source.issue_id
+                      where source.issue_id=%s and source.active
+                        and not exists (
+                          select 1
+                          from platform_review.feedback_issue_links target
+                          where target.issue_id=%s
+                            and target.agent_id=source.agent_id
+                            and target.source_turn_key=source.source_turn_key
+                            and target.active
+                        )
+                    ) as conflict
+                    """,
+                    (source_issue_id, target_issue_id),
+                ).fetchone()
+            return bool(row and row["conflict"])
+        except Exception as error:
+            raise ReviewRepositoryError("check merge replay conflict failed") from error
+
     def load_replay_input(self, issue_link_id: UUID):
         from .replay import ReplayInput
 
@@ -451,6 +853,7 @@ class PsycopgReviewRepository:
                 target = cursor.execute(
                     """
                     select link.issue_id, link.id as issue_link_id, link.agent_id,
+                           link.source_turn_key,
                            turn.session_key, turn.turn_index, turn.question,
                            turn.details
                     from platform_review.feedback_issue_links link
@@ -532,6 +935,7 @@ class PsycopgReviewRepository:
             issue_id=target["issue_id"],
             issue_link_id=target["issue_link_id"],
             agent_id=target["agent_id"],
+            source_turn_key=target["source_turn_key"],
             question=target["question"],
             prior_turns=prior_turns,
             attachment_manifest=[dict(item) for item in manifest if isinstance(item, dict)],
@@ -565,12 +969,23 @@ class PsycopgReviewRepository:
         self,
         issue_link_id: UUID,
         *,
+        expected_ownership: Mapping[str, Any],
         timeout_seconds: float,
         actor: str,
     ) -> int:
         cutoff = self._now() - timedelta(seconds=max(float(timeout_seconds), 1.0))
         try:
             with self._connection() as connection, connection.cursor() as cursor:
+                link = cursor.execute(
+                    """select * from platform_review.feedback_issue_links
+                    where id=%s and active for update""",
+                    (issue_link_id,),
+                ).fetchone()
+                if link is None or any(
+                    str(link[key]) != str(expected_ownership.get(key))
+                    for key in ("issue_id", "agent_id", "source_turn_key")
+                ):
+                    raise InvalidReviewMutation("replay link ownership changed")
                 rows = cursor.execute(
                     """
                     select * from platform_review.feedback_replay_runs
@@ -608,6 +1023,8 @@ class PsycopgReviewRepository:
                         },
                     )
             return len(rows)
+        except InvalidReviewMutation:
+            raise
         except Exception as error:
             raise ReviewRepositoryError("expire stale replay failed") from error
 
@@ -617,19 +1034,11 @@ class PsycopgReviewRepository:
         *,
         idempotency_key: str,
         expected: Mapping[str, Any],
+        expected_ownership: Mapping[str, Any],
         actor: str,
     ) -> tuple[dict, bool]:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                existing = cursor.execute(
-                    """
-                    select * from platform_review.feedback_replay_runs
-                    where issue_link_id=%s and idempotency_key=%s
-                    """,
-                    (issue_link_id, idempotency_key),
-                ).fetchone()
-                if existing is not None:
-                    return dict(existing), False
                 link = cursor.execute(
                     """
                     select * from platform_review.feedback_issue_links
@@ -639,6 +1048,25 @@ class PsycopgReviewRepository:
                 ).fetchone()
                 if link is None:
                     raise ReviewNotFound("active issue link not found")
+                ownership = {
+                    "issue_id": link["issue_id"],
+                    "agent_id": link["agent_id"],
+                    "source_turn_key": link["source_turn_key"],
+                }
+                if any(
+                    str(ownership[key]) != str(expected_ownership.get(key))
+                    for key in ownership
+                ):
+                    raise InvalidReviewMutation("replay link ownership changed")
+                existing = cursor.execute(
+                    """
+                    select * from platform_review.feedback_replay_runs
+                    where issue_link_id=%s and idempotency_key=%s
+                    """,
+                    (issue_link_id, idempotency_key),
+                ).fetchone()
+                if existing is not None:
+                    return dict(existing), False
                 attempt = cursor.execute(
                     """
                     select coalesce(max(attempt_no), 0) + 1 as attempt
@@ -678,7 +1106,7 @@ class PsycopgReviewRepository:
                     after={"replay_id": row["id"], "attempt_no": attempt},
                 )
             return dict(row), True
-        except ReviewNotFound:
+        except (ReviewNotFound, InvalidReviewMutation):
             raise
         except Exception as error:
             raise ReviewRepositoryError("create replay failed") from error
@@ -814,39 +1242,55 @@ class PsycopgReviewRepository:
     ) -> dict:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                before = cursor.execute(
-                    "select * from platform_review.feedback_issues where id=%s for update",
-                    (issue_id,),
-                ).fetchone()
-                if before is None:
-                    raise ReviewNotFound("issue not found")
-                require_row_version(before, expected_row_version)
-                after = cursor.execute(
-                    """
-                    update platform_review.feedback_issues
-                    set disposition=%s, canonical_issue_id=%s, owner=coalesce(%s, owner),
-                        disposition_reason=%s, updated_at=now(), row_version=row_version+1
-                    where id=%s returning *
-                    """,
-                    (
-                        disposition,
-                        canonical_issue_id,
-                        owner,
-                        disposition_reason,
+                if canonical_issue_id is not None:
+                    if disposition != "duplicate":
+                        raise InvalidReviewMutation(
+                            "canonical issue is only valid for duplicate disposition"
+                        )
+                    edge = self._mutate_canonical_edge(
+                        cursor,
                         issue_id,
-                    ),
-                ).fetchone()
-                self._event(
-                    cursor,
-                    issue_id=issue_id,
-                    event_type="issue_disposition_set",
-                    actor=actor,
-                    reason=disposition_reason,
-                    before=before,
-                    after=after,
-                )
+                        canonical_issue_id,
+                        disposition_reason=disposition_reason,
+                        actor=actor,
+                        reason=disposition_reason,
+                        expected_row_version=expected_row_version,
+                        owner=owner,
+                    )
+                    if edge is None:  # pragma: no cover - no disposition guard here
+                        raise InvalidReviewMutation("canonical edge was not created")
+                    before, _canonical, after, changed = edge
+                else:
+                    before = cursor.execute(
+                        "select * from platform_review.feedback_issues where id=%s for update",
+                        (issue_id,),
+                    ).fetchone()
+                    if before is None:
+                        raise ReviewNotFound("issue not found")
+                    require_row_version(before, expected_row_version)
+                    after = cursor.execute(
+                        """
+                        update platform_review.feedback_issues
+                        set disposition=%s, canonical_issue_id=null,
+                            owner=coalesce(%s, owner), disposition_reason=%s,
+                            updated_at=now(), row_version=row_version+1
+                        where id=%s returning *
+                        """,
+                        (disposition, owner, disposition_reason, issue_id),
+                    ).fetchone()
+                    changed = True
+                if changed:
+                    self._event(
+                        cursor,
+                        issue_id=issue_id,
+                        event_type="issue_disposition_set",
+                        actor=actor,
+                        reason=disposition_reason,
+                        before=before,
+                        after=after,
+                    )
             return dict(after)
-        except (ReviewNotFound, ConcurrentUpdate):
+        except (ReviewNotFound, ConcurrentUpdate, InvalidReviewMutation):
             raise
         except Exception as error:
             raise ReviewRepositoryError("set disposition failed") from error
@@ -864,78 +1308,61 @@ class PsycopgReviewRepository:
             raise InvalidReviewMutation("issue cannot merge into itself")
         try:
             with self._connection() as connection, connection.cursor() as cursor:
-                source = cursor.execute(
-                    "select * from platform_review.feedback_issues where id=%s for update",
-                    (source_issue_id,),
-                ).fetchone()
-                target = cursor.execute(
-                    "select * from platform_review.feedback_issues where id=%s for update",
-                    (target_issue_id,),
-                ).fetchone()
-                if source is None or target is None:
-                    raise ReviewNotFound("merge issue not found")
-                require_row_version(source, expected_row_version)
-                links = cursor.execute(
-                    """
-                    select * from platform_review.feedback_issue_links
-                    where issue_id=%s and active for update
-                    """,
-                    (source_issue_id,),
-                ).fetchall()
-                for link in links:
-                    existing = cursor.execute(
+                def relocate_links(_source: dict, _target: dict) -> None:
+                    links = cursor.execute(
                         """
                         select * from platform_review.feedback_issue_links
-                        where issue_id=%s and agent_id=%s and source_turn_key=%s and active
-                        for update
+                        where issue_id=%s and active for update
                         """,
-                        (target_issue_id, link["agent_id"], link["source_turn_key"]),
-                    ).fetchone()
-                    if existing:
-                        keys = sorted(set(existing["source_feedback_keys"]) | set(link["source_feedback_keys"]))
-                        cursor.execute(
+                        (source_issue_id,),
+                    ).fetchall()
+                    for link in links:
+                        existing = cursor.execute(
                             """
-                            update platform_review.feedback_issue_links
-                            set source_feedback_keys=%s where id=%s
+                            select * from platform_review.feedback_issue_links
+                            where issue_id=%s and agent_id=%s
+                              and source_turn_key=%s and active for update
                             """,
-                            (keys, existing["id"]),
-                        )
-                        cursor.execute(
-                            "update platform_review.feedback_issue_links set active=false where id=%s",
-                            (link["id"],),
-                        )
-                    else:
-                        cursor.execute(
-                            "update platform_review.feedback_issue_links set issue_id=%s where id=%s",
-                            (target_issue_id, link["id"]),
-                        )
-                after = cursor.execute(
-                    """
-                    update platform_review.feedback_issues
-                    set disposition='duplicate', canonical_issue_id=%s,
-                        disposition_reason=%s, updated_at=now(), row_version=row_version+1
-                    where id=%s returning *
-                    """,
-                    (target_issue_id, reason, source_issue_id),
-                ).fetchone()
-                self._event(
+                            (target_issue_id, link["agent_id"], link["source_turn_key"]),
+                        ).fetchone()
+                        if existing:
+                            keys = sorted(
+                                set(existing["source_feedback_keys"])
+                                | set(link["source_feedback_keys"])
+                            )
+                            cursor.execute(
+                                """
+                                update platform_review.feedback_issue_links
+                                set source_feedback_keys=%s where id=%s
+                                """,
+                                (keys, existing["id"]),
+                            )
+                            cursor.execute(
+                                """update platform_review.feedback_issue_links
+                                set active=false where id=%s""",
+                                (link["id"],),
+                            )
+                        else:
+                            self._assert_link_relocation_replay_free(cursor, link)
+                            cursor.execute(
+                                """update platform_review.feedback_issue_links
+                                set issue_id=%s where id=%s""",
+                                (target_issue_id, link["id"]),
+                            )
+
+                edge = self._mutate_canonical_edge(
                     cursor,
-                    issue_id=source_issue_id,
-                    event_type="issue_merged",
+                    source_issue_id,
+                    target_issue_id,
+                    disposition_reason=reason,
                     actor=actor,
                     reason=reason,
-                    before=source,
-                    after=after,
+                    expected_row_version=expected_row_version,
+                    before_write=relocate_links,
                 )
-                self._event(
-                    cursor,
-                    issue_id=target_issue_id,
-                    event_type="issue_absorbed",
-                    actor=actor,
-                    reason=reason,
-                    before={"source_issue_id": source_issue_id},
-                    after={"target_issue_id": target_issue_id},
-                )
+                if edge is None:  # pragma: no cover - no disposition guard here
+                    raise InvalidReviewMutation("canonical edge was not created")
+                _source, _target, after, _changed = edge
             return dict(after)
         except (ReviewNotFound, ConcurrentUpdate, InvalidReviewMutation):
             raise
@@ -1299,15 +1726,21 @@ class PsycopgReviewRepository:
                         after=identity,
                     )
 
+                # Canonical writers for one Agent share this transaction lock. It
+                # must precede any Issue/link row lock taken by the handoff.
+                self._lock_canonical_agent(cursor, validated.agent_id)
                 turn_keys = [item.turn_key for item in validated.items]
                 source_rows = cursor.execute(
                     """
                     select turn.agent_id, turn.turn_key,
                       coalesce(
-                        array_agg(feedback.feedback_key order by feedback.created_at)
-                          filter (where feedback.sentiment='negative'),
+                        array_agg(feedback.feedback_key order by feedback.created_at,
+                                  feedback.feedback_key)
+                          filter (where feedback.feedback_key is not null),
                         '{}'::text[]
-                      ) as feedback_keys
+                      ) as feedback_keys,
+                      coalesce(bool_or(feedback.sentiment='negative'), false)
+                        as has_negative_feedback
                     from platform_read.turns turn
                     left join platform_read.feedback feedback
                       on feedback.agent_id=turn.agent_id
@@ -1327,7 +1760,7 @@ class PsycopgReviewRepository:
                     if source["agent_id"] != validated.agent_id:
                         source_failure = "agent_mismatch"
                         break
-                    if not source["feedback_keys"]:
+                    if not source["has_negative_feedback"]:
                         source_failure = "negative_feedback_missing"
                         break
                 if source_failure:
@@ -1363,6 +1796,7 @@ class PsycopgReviewRepository:
                 issue_by_key = {}
                 issue_ids: list[str] = []
                 evidence_ids: list[str] = []
+                handoff_targets_by_source: dict[UUID, set[str]] = {}
                 for item in validated.issues:
                     issue = cursor.execute(
                         """
@@ -1463,78 +1897,97 @@ class PsycopgReviewRepository:
                         )
                     elif link["issue_id"] != target["id"]:
                         before = dict(link)
-                        link = cursor.execute(
-                            """
-                            update platform_review.feedback_issue_links
-                            set issue_id=%s, source_feedback_keys=%s,
-                                linked_by=%s, linked_at=now(), link_reason=%s
-                            where id=%s returning *
-                            """,
-                            (
-                                target["id"],
-                                feedback_keys,
-                                actor,
-                                validated.batch_id,
-                                link["id"],
-                            ),
-                        ).fetchone()
-                        self._event(
-                            cursor,
-                            issue_id=before["issue_id"],
-                            event_type="link_moved_out",
-                            actor=actor,
-                            reason=validated.batch_id,
-                            before=before,
-                            after=link,
+                        source_targets = handoff_targets_by_source.setdefault(
+                            before["issue_id"], set()
                         )
-                        self._event(
+                        source_targets.add(str(target["id"]))
+                        self._lock_canonical_endpoints(
                             cursor,
-                            issue_id=target["id"],
-                            event_type="link_moved_in",
-                            actor=actor,
-                            reason=validated.batch_id,
-                            before=before,
-                            after=link,
+                            before["issue_id"],
+                            target["id"],
+                            expected_agent_id=validated.agent_id,
                         )
                         remaining = cursor.execute(
                             """
                             select 1 from platform_review.feedback_issue_links
-                            where issue_id=%s and active limit 1
+                            where issue_id=%s and id<>%s and active limit 1
                             """,
-                            (before["issue_id"],),
+                            (before["issue_id"], before["id"]),
                         ).fetchone()
-                        if remaining is None:
-                            source_issue = cursor.execute(
+
+                        def relocate_link(_source=None, _target=None) -> None:
+                            nonlocal link
+                            self._assert_link_relocation_replay_free(cursor, before)
+                            link = cursor.execute(
                                 """
-                                select * from platform_review.feedback_issues
-                                where id=%s for update
+                                update platform_review.feedback_issue_links
+                                set issue_id=%s, source_feedback_keys=%s,
+                                    linked_by=%s, linked_at=now(), link_reason=%s
+                                where id=%s returning *
                                 """,
-                                (before["issue_id"],),
+                                (
+                                    target["id"],
+                                    feedback_keys,
+                                    actor,
+                                    validated.batch_id,
+                                    link["id"],
+                                ),
                             ).fetchone()
-                            if source_issue and source_issue["disposition"] == "actionable":
-                                duplicate = cursor.execute(
-                                    """
-                                    update platform_review.feedback_issues
-                                    set disposition='duplicate', canonical_issue_id=%s,
-                                        disposition_reason=%s, updated_at=now(),
-                                        row_version=row_version+1
-                                    where id=%s returning *
-                                    """,
-                                    (
-                                        target["id"],
-                                        f"explicit batch mapping: {validated.batch_id}",
-                                        source_issue["id"],
-                                    ),
-                                ).fetchone()
-                                self._event(
-                                    cursor,
-                                    issue_id=source_issue["id"],
-                                    event_type="issue_merged",
-                                    actor=actor,
-                                    reason=validated.batch_id,
-                                    before=source_issue,
-                                    after=duplicate,
-                                )
+                            self._event(
+                                cursor,
+                                issue_id=before["issue_id"],
+                                event_type="link_moved_out",
+                                actor=actor,
+                                reason=validated.batch_id,
+                                before=before,
+                                after=link,
+                            )
+                            self._event(
+                                cursor,
+                                issue_id=target["id"],
+                                event_type="link_moved_in",
+                                actor=actor,
+                                reason=validated.batch_id,
+                                before=before,
+                                after=link,
+                            )
+
+                        if remaining is None:
+                            # Exact move history is authoritative for an emptied
+                            # source. A split history has no truthful single
+                            # canonical target, so it remains non-canonical.
+                            prior_targets = cursor.execute(
+                                """
+                                select distinct event.after->>'issue_id'
+                                  as target_issue_id
+                                from platform_review.feedback_issue_events event
+                                where event.issue_id=%s
+                                  and event.event_type='link_moved_out'
+                                  and event.before->>'issue_id'=%s
+                                  and event.after->>'issue_id' is not null
+                                """,
+                                (before["issue_id"], str(before["issue_id"])),
+                            ).fetchall()
+                            source_targets.update(
+                                row["target_issue_id"] for row in prior_targets
+                            )
+                        if remaining is None and source_targets == {str(target["id"])}:
+                            edge = self._mutate_canonical_edge(
+                                cursor,
+                                before["issue_id"],
+                                target["id"],
+                                disposition_reason=(
+                                    f"explicit batch mapping: {validated.batch_id}"
+                                ),
+                                actor=actor,
+                                reason=validated.batch_id,
+                                before_write=relocate_link,
+                                required_source_disposition="actionable",
+                            )
+                            if edge is None:
+                                relocate_link()
+                        else:
+                            relocate_link()
                     else:
                         cursor.execute(
                             """
@@ -1661,7 +2114,7 @@ class PsycopgReviewRepository:
                 )
             return result
         except Exception as error:
-            if isinstance(error, ReviewRepositoryError):
+            if isinstance(error, (InvalidReviewMutation, ReviewRepositoryError)):
                 raise
             raise ReviewRepositoryError("release handoff import failed") from error
 
@@ -1669,14 +2122,26 @@ class PsycopgReviewRepository:
         with self._connection() as connection, connection.cursor() as cursor:
             rows = cursor.execute(
                 """
-                select f.agent_id, f.turn_key,
+                with negative_turns as (
+                  select agent_id, turn_key, min(created_at) as first_negative_at
+                  from platform_read.feedback
+                  where sentiment='negative'
+                  group by agent_id, turn_key
+                )
+                select negative.agent_id, negative.turn_key,
                   coalesce(max(t.question), '') as question,
-                  array_agg(f.feedback_key order by f.created_at, f.feedback_key) as feedback_keys
-                from platform_read.feedback f
-                left join platform_read.turns t on t.turn_key=f.turn_key
-                where f.sentiment='negative'
-                group by f.agent_id, f.turn_key
-                order by min(f.created_at), f.agent_id, f.turn_key
+                  array_agg(all_feedback.feedback_key order by all_feedback.created_at,
+                            all_feedback.feedback_key) as feedback_keys
+                from negative_turns negative
+                join platform_read.feedback all_feedback
+                  on all_feedback.agent_id=negative.agent_id
+                 and all_feedback.turn_key=negative.turn_key
+                left join platform_read.turns t
+                  on t.agent_id=negative.agent_id and t.turn_key=negative.turn_key
+                group by negative.agent_id, negative.turn_key,
+                         negative.first_negative_at
+                order by negative.first_negative_at, negative.agent_id,
+                         negative.turn_key
                 """
             ).fetchall()
         return [
@@ -1801,8 +2266,11 @@ class PsycopgReviewRepository:
                   and (%s::text is null or f.agent_id=%s)
                   and not exists (
                     select 1 from platform_review.feedback_issue_links link
-                    where link.agent_id=f.agent_id and link.source_turn_key=f.turn_key
-                      and link.active
+                    join platform_review.feedback_issues linked_issue
+                      on linked_issue.id=link.issue_id
+                    where link.agent_id=f.agent_id
+                      and linked_issue.agent_id=f.agent_id
+                      and link.source_turn_key=f.turn_key and link.active
                   )
                 group by f.agent_id, f.turn_key
                 order by min(f.created_at), f.agent_id, f.turn_key
@@ -1818,23 +2286,105 @@ class PsycopgReviewRepository:
         agent_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        status: str | None = None,
+        disposition: str | None = None,
     ) -> list[dict]:
+        return self.list_issue_page(
+            agent_id=agent_id, limit=limit, offset=offset,
+            status=status, disposition=disposition,
+        )["items"]
+
+    def list_issue_page(
+        self,
+        *,
+        agent_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        status: str | None = None,
+        disposition: str | None = None,
+        priority: str | None = None,
+        failure_layer: str | None = None,
+        owner: str | None = None,
+        query: str | None = None,
+        created_after: datetime | None = None,
+    ) -> dict:
+        conditions = ["(%s::text is null or issue.agent_id=%s)"]
+        params: list[Any] = [agent_id, agent_id]
+        for column, value in (
+            ("issue.disposition", disposition),
+            ("issue.priority", priority),
+            ("issue.failure_layer", failure_layer),
+            ("issue.owner", owner),
+        ):
+            if value is not None:
+                conditions.append(f"{column}=%s")
+                params.append(value)
+        if query:
+            conditions.append("issue.title ilike %s")
+            params.append(f"%{query}%")
+        if created_after:
+            conditions.append("issue.created_at >= %s")
+            params.append(created_after)
+        lifecycle = "coalesce(latest_progress.status, 'pending_triage')"
+        if status == "open":
+            conditions.append(
+                f"{lifecycle} not in "
+                "('closed', 'duplicate', 'not_actionable', 'wont_fix')"
+            )
+        elif status is not None:
+            conditions.append(f"{lifecycle}=%s")
+            params.append(status)
         with self._connection() as connection, connection.cursor() as cursor:
-            rows = cursor.execute(
-                """
-                select * from platform_review.feedback_issues
-                where (%s::text is null or agent_id=%s)
-                order by updated_at desc, id limit %s offset %s
+            page_row = cursor.execute(
+                f"""
+                with latest_progress as (
+                  select distinct on (event.issue_id) event.issue_id,
+                    event.after->>'status' as status,
+                    coalesce(event.after->'missing_gates', '[]'::jsonb) as missing_gates
+                  from platform_review.feedback_issue_events event
+                  where event.after ? 'status'
+                  order by event.issue_id, event.created_at desc, event.id desc
+                ), filtered as (
+                  select issue.*, latest_progress.status as progress_status,
+                    latest_progress.missing_gates as progress_missing_gates
+                  from platform_review.feedback_issues issue
+                  left join latest_progress on latest_progress.issue_id=issue.id
+                  where {' and '.join(conditions)}
+                ), paged as (
+                  select filtered.*, count(*) over() as total_window
+                  from filtered order by updated_at desc, id
+                  limit %s offset %s
+                )
+                select coalesce(
+                    jsonb_agg(to_jsonb(paged) - 'total_window'
+                              order by paged.updated_at desc, paged.id),
+                    '[]'::jsonb
+                  ) as items,
+                  (select count(*) from filtered) as total_count
+                from paged
                 """,
-                (agent_id, agent_id, limit, offset),
-            ).fetchall()
-            results = []
-            for row in rows:
-                detail = self._load_issue_detail(cursor, row["id"])
-                item = dict(row)
-                item["progress"] = detail["progress"]
-                results.append(item)
-        return results
+                tuple(params) + (limit, offset),
+            ).fetchone()
+        rows = list((page_row or {}).get("items") or [])
+        items = []
+        for row in rows:
+            item = dict(row)
+            item["progress"] = IssueProgress(
+                issue_id=row["id"],
+                status=row.get("progress_status") or "pending_triage",
+                missing_gates=list(row.get("progress_missing_gates") or []),
+            )
+            item.pop("progress_status", None)
+            item.pop("progress_missing_gates", None)
+            items.append(item)
+        total = int((page_row or {}).get("total_count") or 0)
+        return {
+            "items": items,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + len(items) < total,
+        }
 
     def get_turn_summaries(self, turn_keys: list[str]) -> list[dict]:
         requested = list(dict.fromkeys(turn_keys))
@@ -1908,30 +2458,37 @@ class PsycopgReviewRepository:
                 """,
                 (agent_id, agent_id),
             ).fetchone()
-            issues = cursor.execute(
+            issue_rows = cursor.execute(
                 """
-                select disposition, count(*) as count
-                from platform_review.feedback_issues
-                where (%s::text is null or agent_id=%s)
-                group by disposition
-                """,
-                (agent_id, agent_id),
-            ).fetchall()
-            issue_ids = cursor.execute(
-                """
-                select id from platform_review.feedback_issues
-                where (%s::text is null or agent_id=%s)
+                with latest_progress as (
+                  select distinct on (event.issue_id) event.issue_id,
+                    event.after->>'status' as status
+                  from platform_review.feedback_issue_events event
+                  where event.after ? 'status'
+                  order by event.issue_id, event.created_at desc, event.id desc
+                )
+                select issue.disposition,
+                  coalesce(latest_progress.status, 'pending_triage') as status,
+                  count(*) as count
+                from platform_review.feedback_issues issue
+                left join latest_progress on latest_progress.issue_id=issue.id
+                where (%s::text is null or issue.agent_id=%s)
+                group by issue.disposition,
+                  coalesce(latest_progress.status, 'pending_triage')
                 """,
                 (agent_id, agent_id),
             ).fetchall()
             statuses: dict[str, int] = {}
-            for row in issue_ids:
-                detail = self._load_issue_detail(cursor, row["id"])
-                status = detail["progress"].status
-                statuses[status] = statuses.get(status, 0) + 1
+            dispositions: dict[str, int] = {}
+            for row in issue_rows:
+                count = int(row["count"])
+                statuses[row["status"]] = statuses.get(row["status"], 0) + count
+                dispositions[row["disposition"]] = (
+                    dispositions.get(row["disposition"], 0) + count
+                )
         return {
             **dict(source),
-            "dispositions": {row["disposition"]: int(row["count"]) for row in issues},
+            "dispositions": dispositions,
             "statuses": statuses,
-            "issue_total": len(issue_ids),
+            "issue_total": sum(dispositions.values()),
         }

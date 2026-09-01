@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import replace
+from datetime import UTC, datetime
 import json
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -19,6 +20,10 @@ from app.main import (
 )
 from app.control_plane.models import ControlPlaneConfig, IdentityMode
 from app.operations.repository import OperationsRepository
+from app.fae_workbench.repository import (
+    PsycopgFaeWorkbenchRepository,
+    ReplicaFaeWorkbenchRepository,
+)
 
 
 def test_build_office_recipient_directory_uses_control_reader_and_identity_codec(
@@ -517,6 +522,150 @@ def test_injected_review_service_lifecycle_remains_owned_by_caller(tmp_path):
         assert client.get("/api/health").json() == {"status": "ok"}
 
     assert review_service.closed is False
+
+
+def _fae_app_paths(tmp_path):
+    registry = tmp_path / "fae-registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "fae-contract.json"
+    contract.write_text('{"bots": []}', encoding="utf-8")
+    return registry, contract
+
+
+def test_create_app_registers_injected_fae_workbench_service(tmp_path):
+    registry, contract = _fae_app_paths(tmp_path)
+    service = object()
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        fae_workbench_service=service,
+    )
+
+    assert app.state.fae_workbench_service is service
+    routes = [
+        context
+        for route in app.router.routes
+        for context in (
+            route.effective_route_contexts()
+            if callable(getattr(route, "effective_route_contexts", None))
+            else (route,)
+        )
+    ]
+    assert any(
+        getattr(route, "path", None) == "/api/admin/fae/sessions/{session_key}"
+        for route in routes
+    )
+
+
+def test_create_app_builds_local_fae_workbench_from_analyst_boundary(
+    tmp_path, monkeypatch
+):
+    registry, contract = _fae_app_paths(tmp_path)
+    database_url = "postgresql://flywheel_analyst@db/flywheel"
+    monkeypatch.setattr("app.main.resolve_flywheel_database_url", lambda _config: database_url)
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=True,
+        fleet_service=object(),
+        observability_service=object(),
+        operations_service=object(),
+        operations_scheduler=object(),
+        control_room_service=object(),
+        review_service=object(),
+    )
+
+    repository = app.state.fae_workbench_service._repository
+    assert isinstance(repository, PsycopgFaeWorkbenchRepository)
+    assert repository._database_url == database_url
+
+
+@pytest.mark.asyncio
+async def test_create_app_cloud_fae_overview_keeps_issues_when_feedback_projection_is_unavailable(
+    tmp_path, monkeypatch
+):
+    registry, contract = _fae_app_paths(tmp_path)
+    config = replace(load_config(), deployment_mode="cloud-replica")
+    monkeypatch.setattr("app.main.load_config", lambda: config)
+
+    class Replica:
+        review_repository = None
+        operations_repository = None
+
+        def fae_operational_aggregate(self, _period_start, _period_end):
+            return {
+                "data_as_of": datetime(2026, 8, 31, 8, 0, tzinfo=UTC),
+                "session_count": 0,
+                "active_subject_count": 0,
+                "abnormal_session_count": 0,
+                "p50_duration_ms": None,
+                "p95_duration_ms": None,
+                "trend": [],
+                "attention": [],
+            }
+
+    class Review:
+        async def agent_issue_scope_valid(self, agent_id):
+            assert agent_id == "ai-fae-agent"
+            return True
+
+        async def overview(self, *, agent_id):
+            assert agent_id == "ai-fae-agent"
+            return {"statuses": {"open": 2}}
+
+    replica = Replica()
+    monkeypatch.setattr(
+        "app.main.build_cloud_replica_services",
+        lambda *_args: (object(), object(), replica),
+    )
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=True,
+        control_room_service=object(),
+        review_service=Review(),
+    )
+
+    repository = app.state.fae_workbench_service._repository
+    assert isinstance(repository, ReplicaFaeWorkbenchRepository)
+    overview = await app.state.fae_workbench_service.overview(
+        datetime(2026, 8, 31, 9, 0, tzinfo=UTC)
+    )
+    assert overview.summary.state.status == "unavailable"
+    assert overview.issues.state.status == "available"
+    assert overview.issues.statuses == {"open": 2}
+
+
+@pytest.mark.asyncio
+async def test_create_app_uses_unavailable_fae_repository_without_read_boundary(
+    tmp_path,
+):
+    registry, contract = _fae_app_paths(tmp_path)
+
+    class Review:
+        async def agent_issue_scope_valid(self, agent_id):
+            assert agent_id == "ai-fae-agent"
+            return True
+
+        async def overview(self, *, agent_id):
+            assert agent_id == "ai-fae-agent"
+            return {"statuses": {"open": 1}}
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        review_service=Review(),
+    )
+
+    overview = await app.state.fae_workbench_service.overview(
+        datetime(2026, 8, 31, 9, 0, tzinfo=UTC)
+    )
+    assert overview.summary.state.status == "unavailable"
+    assert overview.issues.state.status == "available"
 
 
 def test_injected_voc_extension_client_is_registered_and_caller_owned(tmp_path):

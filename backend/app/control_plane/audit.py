@@ -199,6 +199,9 @@ _READ_REQUEST = frozenset({"operation_id", "result"})
 _READ_COMPLETED = frozenset(
     {"operation_id", "linked_audit_event_id", "item_count", "result"}
 )
+_DETAIL_READ_COMPLETED = frozenset(
+    {"operation_id", "linked_audit_event_id", "result"}
+)
 _FAILED = frozenset(
     {"operation_id", "linked_audit_event_id", "error_code", "result"}
 )
@@ -338,6 +341,13 @@ _register_events(
     target="governance_audit",
     requested=_READ_REQUEST,
     completed=_READ_COMPLETED,
+)
+_register_events(
+    ("fae_session_detail_read",),
+    reason="privileged_read",
+    target="fae_session",
+    requested=_READ_REQUEST,
+    completed=_DETAIL_READ_COMPLETED,
 )
 
 AuditScalar = str | int | bool
@@ -625,6 +635,8 @@ def _validate_target(command: AuditCommand) -> bool:
         return command.target_id == "sanitized"
     if command.target_type == "brain_model_configuration":
         return command.target_id == "active"
+    if command.target_type == "fae_session":
+        return _HEX_64.fullmatch(command.target_id) is not None
     return False
 
 

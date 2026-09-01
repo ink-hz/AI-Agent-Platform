@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from copy import deepcopy
 import hashlib
 import json
@@ -7,6 +7,13 @@ import pytest
 
 from app.cloud_replica.crypto import FieldCipher
 from app.cloud_replica.repository import ReplicaObservabilityRepository
+from app.fae_workbench.repository import (
+    FAE_SOURCE_ENVIRONMENT,
+    FaeFeedbackProjection,
+    FaeWorkbenchReadError,
+    PsycopgFaeWorkbenchRepository,
+    ReplicaFaeWorkbenchRepository,
+)
 from app.observability.models import SessionFilters
 from app.observability.repository import ObservabilityReadError
 
@@ -33,6 +40,14 @@ class _Cursor:
             rows = self.connection.rows
             if "where session_key = %s" in normalized:
                 rows = [row for row in rows if row["session_key"] == params[0]]
+            elif "where agent_id = %s and source_kind = %s" in normalized:
+                agent_id, source_kind, period_start, period_end = params
+                rows = [
+                    row for row in rows
+                    if row["agent_id"] == agent_id
+                    and row["source_kind"] == source_kind
+                    and period_start <= row["last_active_at"] < period_end
+                ]
             self.rows = rows
         else:
             self.rows = []
@@ -92,6 +107,8 @@ def _record(
                 "outcome": "success",
                 "fallback_used": False,
                 "duration_ms": 1200,
+                "feedback_sentiments": [],
+                "review_statuses": [],
                 "attachments": [
                     {
                         "display_label": "附件 1",
@@ -124,6 +141,7 @@ def _row(cipher, record, committed_sequence=1):
     decode = lambda value: base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
     return {
         "session_key": record["key"],
+        "user_id": record["user_id"],
         "agent_id": record["agent_id"],
         "source_kind": record["source_kind"],
         "channel": record["channel"],
@@ -148,6 +166,61 @@ def _repository(now, records):
     ), connection
 
 
+class _FeedbackProjectionReader:
+    def __init__(self, projection):
+        self.projection = projection
+        self.requests = []
+
+    def read_fae_feedback(self, period_start, period_end):
+        self.requests.append((period_start, period_end))
+        return self.projection
+
+
+class _LocalAggregateCursor:
+    def __init__(self, responses):
+        self.responses = responses
+        self.rows = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, _statement, _params=None):
+        self.rows = self.responses.pop(0)
+        return self
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return self.rows
+
+
+class _LocalAggregateConnection:
+    def __init__(self, responses):
+        self.responses = list(responses)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def cursor(self):
+        return _LocalAggregateCursor(self.responses)
+
+
+def _local_snapshot_from_expected(expected, period_start, period_end):
+    connection = _LocalAggregateConnection(
+        ([expected["summary"]], expected["trend"], expected["attention"])
+    )
+    return PsycopgFaeWorkbenchRepository(
+        "postgresql://platform", connect=lambda *_args, **_kwargs: connection
+    ).snapshot(period_start, period_end)
+
+
 def test_repository_lists_searches_paginates_and_returns_existing_shapes():
     now = datetime(2026, 8, 11, 8, 0, tzinfo=UTC)
     repository, _ = _repository(
@@ -165,6 +238,27 @@ def test_repository_lists_searches_paginates_and_returns_existing_shapes():
 
     assert page.total == 1
     assert page.items[0].title == "人才定位"
+
+
+def test_projected_turn_exposes_safe_signal_summaries_as_restricted_not_empty_detail():
+    now = datetime(2026, 8, 11, 8, 0, tzinfo=UTC)
+    record = _record(now)
+    record["turns"][0]["feedback_sentiments"] = ["negative", "negative", "positive"]
+    record["turns"][0]["review_statuses"] = ["pending", "approved"]
+    repository, _ = _repository(now, (record,))
+
+    detail = repository.get_session(record["key"])
+    turn = detail.turns[0]
+
+    assert detail.feedback_count == 3
+    assert detail.review_count == 2
+    assert detail.feedback_availability == "restricted"
+    assert detail.review_availability == "restricted"
+    assert turn.feedback == [] and turn.reviews == []
+    assert turn.feedback_availability == "restricted"
+    assert turn.review_availability == "restricted"
+    assert turn.feedback_summary == {"negative": 2, "positive": 1}
+    assert turn.review_status_summary == {"approved": 1, "pending": 1}
     assert detail is not None
     assert detail.primary_sender_name == "磐德"
     assert detail.turns[0].question == "寻找视觉算法人才"
@@ -174,6 +268,26 @@ def test_repository_lists_searches_paginates_and_returns_existing_shapes():
     assert attachment.size_bucket == "100 KiB–1 MiB"
     assert attachment.content_available is False
     assert detail.turns[0].evidence_availability == "restricted"
+
+
+def test_replica_session_period_end_excludes_exact_boundary_and_includes_before() -> None:
+    end = datetime(2026, 8, 31, 0, 0, tzinfo=UTC)
+    exact = _record(end, "e" * 52, agent_id="ai-fae-agent", turn_key="f" * 52)
+    before = _record(end - timedelta(microseconds=1), "b" * 52, agent_id="ai-fae-agent", turn_key="c" * 52)
+    for record in (exact, before):
+        record["source_kind"] = "fae"
+    repository, _ = _repository(end, (exact, before))
+
+    page = repository.list_sessions(
+        SessionFilters(
+            agent_id="ai-fae-agent", source_kind="fae", date_before=end
+        ),
+        limit=50,
+        offset=0,
+    )
+
+    assert page.total == 1
+    assert [item.session_key for item in page.items] == ["b" * 52]
 
 
 def test_repository_returns_aggregate_trace_without_raw_steps():
@@ -332,3 +446,278 @@ def test_usage_leaders_count_answered_turns_not_sessions():
     assert [(item.agent_id, item.agent_name, item.conversations) for item in leaders] == [
         ("ai-fae-agent", "AI FAE Agent", 44),
     ]
+
+
+def test_fae_operational_aggregate_uses_only_bounded_sanitized_records():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    fae = _record(now, key="f" * 52, agent_id="ai-fae-agent", turn_key="1" * 52)
+    fae["user_id"] = "u" * 52
+    fae["source_kind"] = "fae"
+    fae["turns"][0]["fallback_used"] = True
+    fae["turns"][0]["duration_ms"] = 900
+    unrelated = _record(now, key="a" * 52, agent_id="hr-bot", turn_key="2" * 52)
+    outside_period = _record(
+        now - timedelta(days=8), key="b" * 52, agent_id="ai-fae-agent", turn_key="3" * 52
+    )
+    outside_period["source_kind"] = "fae"
+    repository, connection = _repository(now, (fae, unrelated, outside_period))
+
+    aggregate = repository.fae_operational_aggregate(now - timedelta(days=1), now + timedelta(seconds=1))
+
+    assert aggregate["session_count"] == 1
+    assert aggregate["active_subject_count"] == 1
+    assert aggregate["abnormal_session_count"] == 1
+    assert aggregate["p50_duration_ms"] == 900
+    assert aggregate["trend"][0]["sessions"] == 1
+    assert aggregate["trend"][0]["negative_turns"] == 0
+    assert aggregate["attention"][0]["session_key"] == "f" * 52
+    statement, params = connection.statements[-2]
+    assert "agent_id = %s" in statement
+    assert "source_kind = %s" in statement
+    assert params == ("ai-fae-agent", "fae", now - timedelta(days=1), now + timedelta(seconds=1))
+    assert "u" * 52 not in repr(aggregate)
+
+
+def test_two_hundred_fae_turn_keys_scan_cloud_records_once(monkeypatch):
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    repository, _connection = _repository(now, ())
+    keys = [f"{index + 1:052x}" for index in range(200)]
+    record = _record(now, key="f" * 52, agent_id="ai-fae-agent")
+    record["source_kind"] = "fae"
+    prototype = record["turns"][0]
+    record["turns"] = [{**prototype, "key": key} for key in keys]
+    scans = []
+
+    def records_in_period(period_start, period_end):
+        scans.append((period_start, period_end))
+        return [(record, record["user_id"])]
+
+    monkeypatch.setattr(repository, "_fae_records_in_period", records_in_period)
+
+    assert repository.fae_turn_keys(keys) == set(keys)
+    assert len(scans) == 1
+
+
+def test_fae_cloud_wrapper_uses_complete_bounded_feedback_projection_for_totals_and_days():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    first = _record(now, key="f" * 52, agent_id="ai-fae-agent")
+    first["source_kind"] = "fae"
+    second = _record(now - timedelta(days=1), key="e" * 52, agent_id="ai-fae-agent")
+    second["source_kind"] = "fae"
+    repository, _ = _repository(now, (first, second))
+    period_start = now - timedelta(days=2)
+    period_end = now + timedelta(seconds=1)
+    projection = FaeFeedbackProjection(
+        period_start=period_start,
+        period_end=period_end,
+        negative_feedback_events=5,
+        negative_turn_count=3,
+        daily_negative_turns={date(2026, 8, 30): 1, date(2026, 8, 31): 2},
+    )
+    reader = _FeedbackProjectionReader(projection)
+
+    snapshot = ReplicaFaeWorkbenchRepository(
+        repository, feedback_reader=reader
+    ).snapshot(period_start, period_end)
+
+    assert snapshot.negative_feedback_events == 5
+    assert snapshot.negative_turn_count == 3
+    assert [(item.day, item.negative_turns) for item in snapshot.trend] == [
+        (date(2026, 8, 30), 1),
+        (date(2026, 8, 31), 2),
+    ]
+    assert reader.requests == [(period_start, period_end)]
+
+
+def test_cloud_negative_feedback_filter_is_exact_and_applied_before_pagination():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    negative = _record(now, key="f" * 52, agent_id="ai-fae-agent")
+    negative["source_kind"] = "fae"
+    negative["turns"][0]["feedback_sentiments"] = ["negative"]
+    ordinary = _record(now - timedelta(minutes=1), key="e" * 52, agent_id="ai-fae-agent")
+    ordinary["source_kind"] = "fae"
+    repository, _ = _repository(now, (ordinary, negative))
+
+    page = repository.list_sessions(
+        SessionFilters(
+            agent_id="ai-fae-agent", source_kind="fae", sentiment="negative"
+        ),
+        limit=1,
+        offset=0,
+    )
+
+    assert page.total == 1
+    assert [item.session_key for item in page.items] == ["f" * 52]
+    assert page.items[0].feedback_count == 1
+
+
+def test_cloud_missing_feedback_projection_is_unavailable_not_a_fake_empty_result():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    legacy = _record(now, key="f" * 52, agent_id="ai-fae-agent")
+    legacy["source_kind"] = "fae"
+    legacy["turns"][0].pop("feedback_sentiments")
+    repository, _ = _repository(now, (legacy,))
+
+    summary = repository.list_sessions(
+        SessionFilters(agent_id="ai-fae-agent", source_kind="fae"), 10, 0
+    ).items[0]
+    assert summary.feedback_count is None
+    assert summary.feedback_availability == "unavailable"
+
+    with pytest.raises(ObservabilityReadError, match="filter unavailable"):
+        repository.list_sessions(
+            SessionFilters(
+                agent_id="ai-fae-agent", source_kind="fae", sentiment="negative"
+            ),
+            10,
+            0,
+        )
+
+
+def test_cloud_exact_operational_drilldown_filters_precede_pagination():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    abnormal = _record(now, key="f" * 52, agent_id="ai-fae-agent")
+    abnormal["source_kind"] = "fae"
+    abnormal["turns"][0]["fallback_used"] = True
+    normal = _record(now - timedelta(minutes=1), key="e" * 52, agent_id="ai-fae-agent")
+    normal["source_kind"] = "fae"
+    normal["turns"][0]["duration_ms"] = None
+    repository, _ = _repository(now, (normal, abnormal))
+
+    abnormal_page = repository.list_sessions(
+        SessionFilters(agent_id="ai-fae-agent", source_kind="fae", abnormal=True),
+        1,
+        0,
+    )
+    latency_page = repository.list_sessions(
+        SessionFilters(agent_id="ai-fae-agent", source_kind="fae", has_latency=True),
+        1,
+        0,
+    )
+
+    assert abnormal_page.total == 1
+    assert latency_page.total == 1
+    assert abnormal_page.items[0].session_key == "f" * 52
+    assert latency_page.items[0].session_key == "f" * 52
+
+
+def test_synthetic_local_and_cloud_snapshots_match_for_sanitized_metrics():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    period_start = now - timedelta(days=2)
+    period_end = now + timedelta(seconds=1)
+    expected = {
+        "summary": {
+            "session_count": 2,
+            "active_subject_count": 2,
+            "negative_feedback_events": 5,
+            "negative_turn_count": 3,
+            "abnormal_session_count": 2,
+            "p50_duration_ms": 2000,
+            "p95_duration_ms": 2900,
+            "data_as_of": now,
+        },
+        "trend": [
+            {"day": date(2026, 8, 30), "sessions": 1, "negative_turns": 1},
+            {"day": date(2026, 8, 31), "sessions": 1, "negative_turns": 2},
+        ],
+        "attention": [
+            {
+                "session_key": "fae:latest",
+                "title": "设备掉线",
+                "last_active_at": now,
+                "reason": "fallback",
+            },
+            {
+                "session_key": "fae:earlier",
+                "title": "回答为空",
+                "last_active_at": now - timedelta(days=1),
+                "reason": "empty_answer",
+            },
+        ],
+    }
+    local = _local_snapshot_from_expected(expected, period_start, period_end)
+
+    latest = _record(now, key="f" * 52, title="设备掉线", agent_id="ai-fae-agent")
+    latest.update({"source_kind": "fae", "user_id": "u" * 52})
+    latest["turns"][0].update({"outcome": "completed", "fallback_used": True, "duration_ms": 1000})
+    earlier = _record(
+        now - timedelta(days=1), key="e" * 52, title="回答为空", agent_id="ai-fae-agent"
+    )
+    earlier.update({"source_kind": "fae", "user_id": "v" * 52})
+    earlier["turns"][0].update({"outcome": "completed", "duration_ms": 3000})
+    earlier["turns"][0]["answer"]["text"] = ""
+    cloud_repository, _ = _repository(now, (latest, earlier))
+    cloud = ReplicaFaeWorkbenchRepository(
+        cloud_repository,
+        feedback_reader=_FeedbackProjectionReader(
+            FaeFeedbackProjection(
+                period_start=period_start,
+                period_end=period_end,
+                negative_feedback_events=expected["summary"]["negative_feedback_events"],
+                negative_turn_count=expected["summary"]["negative_turn_count"],
+                daily_negative_turns={item["day"]: item["negative_turns"] for item in expected["trend"]},
+            )
+        ),
+    ).snapshot(period_start, period_end)
+
+    for snapshot in (local, cloud):
+        assert {
+            key: getattr(snapshot, key)
+            for key in (
+                "session_count",
+                "active_subject_count",
+                "negative_feedback_events",
+                "negative_turn_count",
+                "abnormal_session_count",
+                "p50_duration_ms",
+                "p95_duration_ms",
+            )
+        } == {key: value for key, value in expected["summary"].items() if key != "data_as_of"}
+        assert [(item.day, item.sessions, item.negative_turns) for item in snapshot.trend] == [
+            (item["day"], item["sessions"], item["negative_turns"])
+            for item in expected["trend"]
+        ]
+        assert [(item.title, item.last_active_at, item.reason) for item in snapshot.attention] == [
+            (item["title"], item["last_active_at"], item["reason"])
+            for item in expected["attention"]
+        ]
+
+
+@pytest.mark.parametrize(
+    "projection",
+    [
+        None,
+        FaeFeedbackProjection(
+            period_start=datetime(2026, 8, 30, 8, 0, tzinfo=UTC),
+            period_end=datetime(2026, 8, 31, 8, 0, 1, tzinfo=UTC),
+            negative_feedback_events=0,
+            negative_turn_count=0,
+            daily_negative_turns={},
+        ),
+    ],
+)
+def test_fae_cloud_wrapper_fails_closed_for_unavailable_or_incomplete_feedback_projection(projection):
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    record = _record(now, agent_id="ai-fae-agent")
+    record["source_kind"] = "fae"
+    repository, _ = _repository(now, (record,))
+    reader = _FeedbackProjectionReader(projection)
+
+    with pytest.raises(FaeWorkbenchReadError, match="^fae_workbench_query_failed$"):
+        ReplicaFaeWorkbenchRepository(repository, feedback_reader=reader).snapshot(
+            now - timedelta(days=1), now + timedelta(seconds=1)
+        )
+
+
+def test_cloud_repository_rejects_nonproduction_environment():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    repository, _ = _repository(now, ())
+
+    with pytest.raises(ValueError, match="^fae_workbench_production_required$"):
+        ReplicaFaeWorkbenchRepository(
+            repository,
+            feedback_reader=_FeedbackProjectionReader(None),
+            source_environment="staging",
+        )
+
+    assert FAE_SOURCE_ENVIRONMENT == "production"

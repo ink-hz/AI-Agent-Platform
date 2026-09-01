@@ -125,6 +125,31 @@ _PARTNER_OWNER_ROUTES = frozenset({
     ),
 })
 
+_FAE_WORKBENCH_READ_ROUTES = frozenset({
+    ("GET", "/api/admin/fae/overview"),
+    ("GET", "/api/admin/fae/sessions"),
+    ("GET", "/api/admin/fae/sessions/{session_key}"),
+    ("GET", "/api/admin/fae/issue-overview"),
+    ("GET", "/api/admin/fae/issue-inbox"),
+    ("GET", "/api/admin/fae/issues"),
+    ("GET", "/api/admin/fae/issues/{issue_id}"),
+    ("GET", "/api/admin/fae/turn-summaries"),
+})
+
+_FAE_WORKBENCH_MUTATION_ROUTES = frozenset({
+    ("POST", "/api/admin/fae/issues"),
+    ("PATCH", "/api/admin/fae/issues/{issue_id}"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/links"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/links/{link_id}/move"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/merge"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/fix-ready"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/evidence"),
+    ("POST", "/api/admin/fae/evidence/{evidence_id}/verify"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/replays"),
+    ("POST", "/api/admin/fae/replays/{replay_id}/semantic-review"),
+    ("POST", "/api/admin/fae/issues/{issue_id}/disposition"),
+})
+
 _OWNER_ROUTES = frozenset({
     *(route for route in VIEWER_R1_ROUTES),
     ("GET", "/api/deployment"),
@@ -169,7 +194,14 @@ _OWNER_ROUTES = frozenset({
     ("DELETE", "/api/v1/manage/admins/{internal_user_id}"),
     ("PUT", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
     ("DELETE", "/api/v1/manage/viewers/{internal_user_id}/observations/{agent_id}"),
-}) | _MANAGEMENT_SHELL_ROUTES | _AUTHENTICATED_SELF_ROUTES | _VOC_MANAGEMENT_ROUTES | _PARTNER_OWNER_ROUTES
+}) | (
+    _MANAGEMENT_SHELL_ROUTES
+    | _AUTHENTICATED_SELF_ROUTES
+    | _VOC_MANAGEMENT_ROUTES
+    | _PARTNER_OWNER_ROUTES
+    | _FAE_WORKBENCH_READ_ROUTES
+    | _FAE_WORKBENCH_MUTATION_ROUTES
+)
 
 
 @dataclass(frozen=True)
@@ -216,6 +248,11 @@ class AuthorizationService:
             return self._deny(403, "route_not_authorized")
         if key in _PARTNER_OWNER_ROUTES and auth.role is not Role.PLATFORM_OWNER:
             return self._deny(403, "platform_owner_required")
+        if (
+            key in (_FAE_WORKBENCH_READ_ROUTES | _FAE_WORKBENCH_MUTATION_ROUTES)
+            and auth.role not in {Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN}
+        ):
+            return self._deny(403, "management_role_required")
         if auth.role is Role.MEMBER:
             return self._deny(403, "member_management_denied")
         if auth.hard_stale_read_only and selected_method not in {
@@ -224,7 +261,10 @@ class AuthorizationService:
             return self._deny(503, "hard_stale_read_only")
         if (
             self.cloud_mode
-            and route_template.startswith("/api/review/")
+            and (
+                route_template.startswith("/api/review/")
+                or key in _FAE_WORKBENCH_MUTATION_ROUTES
+            )
             and selected_method not in {"GET", "HEAD", "OPTIONS"}
         ):
             return self._deny(403, "cloud_review_read_only")

@@ -80,6 +80,11 @@ export interface OperationsEventQuery {
   severity?: EventSeverity;
   date_from?: string;
   date_to?: string;
+  date_before?: string;
+  subject_key?: string;
+  has_subject?: string;
+  abnormal?: string;
+  has_latency?: string;
   limit?: number;
   offset?: number;
 }
@@ -106,8 +111,17 @@ export interface SessionQuery {
   agent_id?: string;
   source_kind?: string;
   q?: string;
+  channel?: string;
   sentiment?: string;
   review_status?: string;
+  outcome?: string;
+  date_from?: string;
+  date_to?: string;
+  date_before?: string;
+  subject_key?: string;
+  has_subject?: string;
+  abnormal?: string;
+  has_latency?: string;
   limit?: number;
   offset?: number;
 }
@@ -162,8 +176,28 @@ export const fetchReviewTurnSummaries = (turnKeys: string[], signal?: AbortSigna
   turnKeys.forEach((turnKey) => params.append("turn_key", turnKey));
   return read<TurnClosureSummary[]>(`/api/review/turn-summaries?${params}`, signal);
 };
-export const fetchReviewIssue = (id: string, signal?: AbortSignal) =>
-  read<FeedbackIssueDetail>(`/api/review/issues/${encodeURIComponent(id)}`, signal);
+type ReviewIssueDetailWire = Omit<FeedbackIssueDetail, "links" | "evidence" | "replays" | "events"> & {
+  links: FeedbackIssueDetail["links"] | null;
+  evidence: FeedbackIssueDetail["evidence"] | null;
+  replays: FeedbackIssueDetail["replays"] | null;
+  events: FeedbackIssueDetail["events"] | null;
+  availability?: FeedbackIssueDetail["section_availability"];
+};
+
+export const fetchReviewIssue = async (id: string, signal?: AbortSignal) => {
+  const value = await read<ReviewIssueDetailWire>(
+    `/api/review/issues/${encodeURIComponent(id)}`,
+    signal,
+  );
+  return {
+    ...value,
+    links: value.links ?? [],
+    evidence: value.evidence ?? [],
+    replays: value.replays ?? [],
+    events: value.events ?? [],
+    section_availability: value.availability ?? value.section_availability,
+  } satisfies FeedbackIssueDetail;
+};
 
 export const createReviewIssue = (
   payload: Record<string, unknown>, actor: string,

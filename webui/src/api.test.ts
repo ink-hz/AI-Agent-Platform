@@ -5,6 +5,7 @@ import {
   fetchFleetOverview,
   fetchOperationalEvents,
   fetchOperationsBrief,
+  fetchReviewIssue,
   updateReviewIssue,
 } from "./api";
 
@@ -148,5 +149,39 @@ describe("Review writes", () => {
       method: "PATCH",
       headers: expect.objectContaining({ "X-Review-Actor": "fae:alice" }),
     }));
+  });
+});
+
+
+describe("Review projected detail availability", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("keeps unavailable projected sections explicit without breaking generic Review", async () => {
+    const projected = {
+      issue: { id: "issue-1" },
+      progress: { issue_id: "issue-1", status: "unknown", missing_gates: null },
+      links: null,
+      evidence: null,
+      replays: null,
+      events: null,
+      availability: {
+        links: "unavailable",
+        evidence: "unavailable",
+        replays: "unavailable",
+        events: "unavailable",
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue(projected),
+    }));
+
+    await expect(fetchReviewIssue("issue-1")).resolves.toMatchObject({
+      links: [],
+      evidence: [],
+      replays: [],
+      events: [],
+      section_availability: projected.availability,
+    });
   });
 });

@@ -72,6 +72,28 @@ it("shows the original and latest replay answer without force close", async () =
 });
 
 
+it("preserves the legacy actor field, issue query state, and generic Review API paths", async () => {
+  await act(async () => root.render(<ReviewPage />));
+  await act(async () => await Promise.resolve());
+
+  expect(container.querySelector('input[placeholder="codex / fae:zhangsan"]')).not.toBeNull();
+  expect(container.textContent).toContain("型号事实错误");
+  expect(new URLSearchParams(window.location.search).get("issue")).toBe("issue-1");
+  expect(vi.mocked(fetch).mock.calls.map(([path]) => String(path)).every((path) => path.startsWith("/api/review/"))).toBe(true);
+});
+
+
+it("keeps generic Review selection in the stable agent-scoped query URL", async () => {
+  window.history.replaceState({}, "", "/admin/review?agent_id=ai-fae-agent&turn_key=fae%3Aturn-2");
+  await act(async () => root.render(<ReviewPage />));
+  await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
+
+  expect(window.location.pathname).toBe("/admin/review");
+  expect(window.location.search).toBe("?agent_id=ai-fae-agent&issue=issue-1");
+  expect(container.textContent).toContain("旧的错误答案");
+});
+
+
 it("can attach an inbox answer to an existing canonical issue", async () => {
   window.history.replaceState({}, "", "/admin/review?turn_key=fae%3Aturn-2");
 
@@ -82,6 +104,25 @@ it("can attach an inbox answer to an existing canonical issue", async () => {
   const select = container.querySelector('select[aria-label="已有事项"]');
   expect(select).not.toBeNull();
   expect(select?.textContent).toContain("型号事实错误");
+});
+
+
+it("keeps the chosen generic issue selected after linking from a turn query", async () => {
+  window.history.replaceState({}, "", "/admin/review?turn_key=fae%3Aturn-2");
+  sessionStorage.setItem("reviewActor", "codex");
+
+  await act(async () => root.render(<ReviewPage />));
+  const select = container.querySelector<HTMLSelectElement>('select[aria-label="已有事项"]')!;
+  await act(async () => {
+    select.value = "issue-1";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const link = [...container.querySelectorAll("button")].find((button) => button.textContent === "关联到已有事项")!;
+  await act(async () => link.click());
+
+  expect(new URLSearchParams(window.location.search).get("issue")).toBe("issue-1");
+  expect(container.textContent).toContain("旧的错误答案");
+  expect(container.textContent).not.toContain("选择左侧事项");
 });
 
 

@@ -30,6 +30,7 @@ import {
   type Account,
   type ManagedUser,
 } from "./auth";
+import { routePath } from "./router";
 
 
 afterEach(() => {
@@ -59,6 +60,14 @@ function accountResponse(): Response {
 
 describe("login return path", () => {
   it.each([
+    routePath({ name: "admin-fae-session", sessionKey: "fae:session-1" }),
+    routePath({ name: "admin-fae-report", reportId: "weekly:2026-08-31" }),
+  ])("round-trips a canonical encoded FAE detail path through the login query: %s", (path) => {
+    const search = `?${new URLSearchParams({ return_path: path })}`;
+    expect(loginReturnPath(search)).toBe(path);
+  });
+
+  it.each([
     ["?return_path=/admin/", "/admin/"],
     ["?return_path=%2Fadmin%2F", "/admin/"],
     ["?return_path=%2Foffice%2F", "/office/"],
@@ -76,6 +85,10 @@ describe("login return path", () => {
     ["?return_path=%2Fai-notes", "/ai-notes"],
     ["?return_path=%2Fai-notes%2Fagent-architecture%2Fsystem-handbook", "/ai-notes/agent-architecture/system-handbook"],
     ["?return_path=%2Fadmin%2Fvoc", "/admin/voc"],
+    ["?return_path=%2Fadmin%2Ffae", "/admin/fae"],
+    ["?return_path=%2Fadmin%2Ffae%2Fsessions%2Ffae%3Asession-1", "/admin/fae/sessions/fae:session-1"],
+    ["?return_path=%2Fadmin%2Ffae%2Fissues%2F00000000-0000-0000-0000-000000000001", "/admin/fae/issues/00000000-0000-0000-0000-000000000001"],
+    ["?return_path=%2Fadmin%2Ffae%2Freports%2Fweekly%3A2026-08-31", "/admin/fae/reports/weekly:2026-08-31"],
     ["?return_path=%2Fai-notes%2Fa%2F..%2Fadmin", "/"],
     ["?return_path=%2Fai-notes%2FUPPER%2Fhandbook", "/"],
     ["", "/"],

@@ -201,12 +201,40 @@ class PsycopgObservabilityRepository:
                 where t.session_key=s.session_key and r.status=%s)
             """)
             params.append(filters.review_status)
+        if filters.subject_key:
+            conditions.append("s.user_identity=%s")
+            params.append(filters.subject_key)
+        if filters.has_subject is not None:
+            conditions.append(
+                "s.user_identity is not null"
+                if filters.has_subject else "s.user_identity is null"
+            )
+        if filters.abnormal is not None:
+            abnormal = """
+              exists (select 1 from platform_read.turns t
+                where t.session_key=s.session_key and (
+                  nullif(btrim(t.answer), '') is null
+                  or t.fallback_used is true
+                  or (t.outcome is not null and lower(t.outcome)
+                      not in ('resolved', 'completed', 'succeeded', 'success'))
+                ))
+            """
+            conditions.append(abnormal if filters.abnormal else f"not ({abnormal})")
+        if filters.has_latency is not None:
+            latency = """
+              exists (select 1 from platform_read.turns t
+                where t.session_key=s.session_key and t.duration_ms >= 0)
+            """
+            conditions.append(latency if filters.has_latency else f"not ({latency})")
         if filters.date_from:
             conditions.append("s.last_active_at >= %s")
             params.append(filters.date_from)
         if filters.date_to:
             conditions.append("s.last_active_at <= %s")
             params.append(filters.date_to)
+        if filters.date_before:
+            conditions.append("s.last_active_at < %s")
+            params.append(filters.date_before)
         return " and ".join(conditions), params
 
     def _session_summary(self, row: dict) -> SessionSummary:

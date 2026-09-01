@@ -67,7 +67,7 @@ describe("sender identity presentation", () => {
   });
 
   it("shows the primary sender and group participation on MetaBot Sessions", () => {
-    const html = renderToStaticMarkup(<SessionListItem session={session} />);
+    const html = renderToStaticMarkup(<SessionListItem session={session} detailHref={`/admin/sessions/${encodeURIComponent(session.session_key)}`} />);
 
     expect(html).toContain("Lina · Marketing");
     expect(html).toContain("另有 2 人");
@@ -89,7 +89,7 @@ describe("sender identity presentation", () => {
       primary_sender_name: null,
       primary_sender_department: null,
       sender_identity_status: "unavailable",
-    }} />);
+    }} detailHref="/admin/sessions/fae%3Asession-1" />);
 
     expect(html).not.toContain("Feishu 用户");
     expect(html).not.toContain("部门未记录");

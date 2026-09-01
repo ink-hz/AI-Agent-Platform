@@ -126,6 +126,10 @@ class _ProjectionReader:
 
 
 class ReplicaReviewRepository(_ProjectionReader):
+    def agent_issue_scope_valid(self, agent_id: str) -> bool:
+        issues = self._records("review_issue_projection", agent_id)
+        return all(issue.get("scope_valid") is True for issue in issues)
+
     def overview(self, *, agent_id: str | None = None) -> dict:
         issues = self._records("review_issue_projection", agent_id)
         totals = self._records("review_feedback_totals_projection", agent_id)
@@ -163,6 +167,8 @@ class ReplicaReviewRepository(_ProjectionReader):
         self, *, agent_id: str | None = None, limit: int = 100, offset: int = 0
     ) -> list[dict]:
         records = self._records("review_inbox_projection", agent_id)
+        if any(item.get("scope_valid") is not True for item in records):
+            raise ReviewRepositoryError("replica inbox scope unavailable")
         return [
             {
                 "agent_id": item["agent_id"],
@@ -175,14 +181,80 @@ class ReplicaReviewRepository(_ProjectionReader):
         ]
 
     def list_issues(
-        self, *, agent_id: str | None = None, limit: int = 100, offset: int = 0
+        self,
+        *,
+        agent_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        status: str | None = None,
+        disposition: str | None = None,
     ) -> list[dict]:
-        return [
-            self._issue(item)
-            for item in self._records("review_issue_projection", agent_id)[
-                offset : offset + limit
+        return self.list_issue_page(
+            agent_id=agent_id, limit=limit, offset=offset,
+            status=status, disposition=disposition,
+        )["items"]
+
+    def list_issue_page(
+        self,
+        *,
+        agent_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        status: str | None = None,
+        disposition: str | None = None,
+        priority: str | None = None,
+        failure_layer: str | None = None,
+        owner: str | None = None,
+        query: str | None = None,
+        created_after: datetime | None = None,
+    ) -> dict:
+        records = self._records("review_issue_projection", agent_id)
+        if disposition is not None:
+            records = [
+                item for item in records
+                if str(item.get("status") or "unknown") == disposition
             ]
-        ]
+        if status == "open":
+            records = [
+                item for item in records
+                if str(item.get("status") or "unknown")
+                not in {"closed", "duplicate", "not_actionable", "wont_fix"}
+            ]
+        elif status is not None:
+            # Cloud projections contain disposition, not lifecycle. A lifecycle
+            # filter therefore has no representable matches on the replica.
+            records = []
+        if priority is not None:
+            records = [item for item in records if item.get("priority") == priority]
+        if failure_layer is not None:
+            records = [
+                item for item in records if item.get("failure_layer") == failure_layer
+            ]
+        if owner is not None:
+            records = [item for item in records if item.get("owner_display") == owner]
+        if query:
+            needle = query.casefold()
+            records = [
+                item for item in records
+                if needle in str((item.get("title") or {}).get("text") or "").casefold()
+            ]
+        if created_after is not None:
+            if any(item.get("created_at") is None for item in records):
+                raise ReviewRepositoryError("replica issue created filter unavailable")
+            records = [
+                item for item in records
+                if datetime.fromisoformat(item["created_at"].replace("Z", "+00:00"))
+                >= created_after
+            ]
+        total = len(records)
+        items = [self._issue(item) for item in records[offset : offset + limit]]
+        return {
+            "items": items,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + len(items) < total,
+        }
 
     @staticmethod
     def _issue(item: dict) -> dict:
@@ -195,6 +267,7 @@ class ReplicaReviewRepository(_ProjectionReader):
             "failure_layer": item.get("failure_layer"),
             "owner": item.get("owner_display"),
             "disposition": status,
+            "created_at": item.get("created_at"),
             "updated_at": item["updated_at"],
             "progress": {"status": status, "missing_gates": []},
             "linked_turn_count": item.get("linked_turn_count", 0),
@@ -207,17 +280,44 @@ class ReplicaReviewRepository(_ProjectionReader):
                 issue = self._issue(item)
                 return {
                     "issue": issue,
-                    "links": [],
-                    "evidence": [],
-                    "replays": [],
-                    "events": [],
+                    "links": None,
+                    "evidence": None,
+                    "replays": None,
+                    "events": None,
+                    "availability": {
+                        "links": "unavailable",
+                        "evidence": "unavailable",
+                        "replays": "unavailable",
+                        "events": "unavailable",
+                    },
                     "progress": issue["progress"],
                     "replica_read_only": True,
                 }
         return None
 
-    def get_turn_summaries(self, _turn_keys: list[str]) -> list[dict]:
-        return []
+    def get_turn_summaries(self, turn_keys: list[str]) -> list[dict]:
+        requested = list(dict.fromkeys(turn_keys))
+        if not requested:
+            return []
+        issues = self._records("review_issue_projection")
+        if any("linked_turn_keys" not in issue for issue in issues):
+            raise ReviewRepositoryError("replica turn governance unavailable")
+        by_turn = {
+            turn_key: issue
+            for issue in issues
+            for turn_key in issue.get("linked_turn_keys", [])
+            if turn_key in requested
+        }
+        return [
+            {
+                "turn_key": turn_key,
+                "issue_id": by_turn[turn_key]["key"],
+                "status": "unknown",
+                "missing_gates": None,
+                "latest_valid_replay_id": None,
+            }
+            for turn_key in requested if turn_key in by_turn
+        ]
 
 
 class ReplicaOperationsRepository(_ProjectionReader):

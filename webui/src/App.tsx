@@ -8,6 +8,9 @@ import { AgentsPage } from "./pages/AgentsPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
 import { AgentRuntimePage } from "./pages/AgentRuntimePage";
 import { SessionsPage } from "./pages/SessionsPage";
+import { FaeSessionsPage } from "./pages/FaeSessionsPage";
+import { FaeSessionDetailPage } from "./pages/FaeSessionDetailPage";
+import { FaeIssuesPage } from "./pages/FaeIssuesPage";
 import { SessionDetailPage } from "./pages/SessionDetailPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { ReviewPage } from "./pages/ReviewPage";
@@ -36,6 +39,9 @@ import { AgentUsePage } from "./pages/AgentUsePage";
 import { VocWorkspacePage } from "./pages/VocWorkspacePage";
 import { AiNotesPage } from "./pages/AiNotesPage";
 import { VocManagementPage } from "./pages/VocManagementPage";
+import { FaeReportsPlaceholderPage } from "./pages/FaeReportsPlaceholderPage";
+import { FaeOverviewPage } from "./pages/FaeOverviewPage";
+import { FaeWorkbenchShell, type FaeSection } from "./components/fae-workbench/FaeWorkbenchShell";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -46,6 +52,13 @@ function PendingPage({ title, description }: { title: string; description: strin
       <p>{description}</p>
     </section>
   );
+}
+
+
+function FaeWorkbenchPendingPage({ section }: { section: FaeSection }) {
+  return <FaeWorkbenchShell currentSection={section}>
+    <PendingPage title="FAE 工作台" description="该工作区正在接入真实 FAE 运营数据。" />
+  </FaeWorkbenchShell>;
 }
 
 
@@ -114,6 +127,17 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
     case "admin-governance": return <GovernancePage />;
     case "admin-voc": return <VocManagementPage />;
+    case "admin-fae-overview": return <FaeOverviewPage />;
+    case "admin-fae-sessions": return <FaeSessionsPage />;
+    case "admin-fae-session": return <FaeSessionDetailPage sessionKey={route.sessionKey} />;
+    case "admin-fae-issues": return account
+      ? <FaeIssuesPage account={account} />
+      : <FaeWorkbenchPendingPage section="issues" />;
+    case "admin-fae-issue": return account
+      ? <FaeIssuesPage account={account} issueId={route.issueId} />
+      : <FaeWorkbenchPendingPage section="issues" />;
+    case "admin-fae-reports":
+    case "admin-fae-report": return <FaeReportsPlaceholderPage />;
     case "legacy-redirect": return <LegacyRedirect to={route.to} />;
     default: return <PendingPage title="页面不存在" description="请返回 Agent 大脑。" />;
   }

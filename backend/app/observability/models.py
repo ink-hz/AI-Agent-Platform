@@ -25,6 +25,11 @@ class SessionFilters(BaseModel):
     outcome: str | None = None
     date_from: datetime | None = None
     date_to: datetime | None = None
+    date_before: datetime | None = None
+    subject_key: str | None = None
+    has_subject: bool | None = None
+    abnormal: bool | None = None
+    has_latency: bool | None = None
 
 
 class FlywheelFilters(BaseModel):
@@ -68,8 +73,10 @@ class SessionSummary(BaseModel):
     created_at: datetime
     last_active_at: datetime
     turn_count: int
-    feedback_count: int
-    review_count: int
+    feedback_count: int | None
+    review_count: int | None
+    feedback_availability: Availability = "available"
+    review_availability: Availability = "available"
     latest_outcome: str | None = None
     source_synced_at: datetime | None = None
     participant_count: int | None = None
@@ -174,7 +181,11 @@ class TurnDetail(BaseModel):
     evidence: list[EvidenceSummary] = Field(default_factory=list)
     evidence_availability: Availability = "available"
     feedback: list[FeedbackItem] = Field(default_factory=list)
+    feedback_availability: Availability = "available"
+    feedback_summary: dict[str, int] = Field(default_factory=dict)
     reviews: list[ReviewItem] = Field(default_factory=list)
+    review_availability: Availability = "available"
+    review_status_summary: dict[str, int] = Field(default_factory=dict)
     improvements: list[ImprovementItem] = Field(default_factory=list)
     input_attachments: list[AttachmentSummary] = Field(default_factory=list)
     output_attachments: list[AttachmentSummary] = Field(default_factory=list)
@@ -228,12 +239,12 @@ class TraceDetail(BaseModel):
 
 
 class FlywheelOverview(BaseModel):
-    feedback_total: int
-    negative_feedback: int
-    pending_reviews: int
-    evaluation_candidates: int
-    knowledge_tasks: int
-    qa_candidates: int
+    feedback_total: int | None
+    negative_feedback: int | None
+    pending_reviews: int | None
+    evaluation_candidates: int | None
+    knowledge_tasks: int | None
+    qa_candidates: int | None
 
 
 class SyncStatus(BaseModel):

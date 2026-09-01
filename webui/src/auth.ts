@@ -127,14 +127,28 @@ export type LoginReturnPath =
   | `/admin/${string}`;
 
 
+function canonicalEncodedFaeDetailPath(value: string): boolean {
+  const matched = /^\/admin\/fae\/(sessions|reports)\/([^/]+)$/.exec(value);
+  if (!matched) return false;
+  let detailId: string;
+  try { detailId = decodeURIComponent(matched[2]); } catch { return false; }
+  const pattern = matched[1] === "sessions" ? /^[A-Za-z0-9:._-]+$/ : /^[A-Za-z0-9._:-]+$/;
+  return pattern.test(detailId) && encodeURIComponent(detailId) === matched[2];
+}
+
+
 function safeLoginReturnPath(value: string): boolean {
-  if (!value.startsWith("/") || value.startsWith("//") || /[?#\\%\u0000-\u001f\u007f]/.test(value)) return false;
+  if (!value.startsWith("/") || value.startsWith("//") || /[?#\\\u0000-\u001f\u007f]/.test(value)) return false;
+  const canonicalFaeDetail = canonicalEncodedFaeDetailPath(value);
+  if (value.includes("%") && !canonicalFaeDetail) return false;
+  if (canonicalFaeDetail) return true;
   if (value === "/" || value === "/account" || value === "/missions" || value === "/conversations" || value === "/agents" || value === "/agents/voc/workspace" || value === "/ai-notes") return true;
   if (/^\/missions\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/conversations\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;
   if (/^\/ai-notes\/[a-z0-9][a-z0-9-]{0,63}\/[a-z0-9][a-z0-9-]{0,127}$/.test(value)) return true;
   return value === "/office/" || value === "/admin/" || value === "/admin"
+    || /^\/admin\/fae(?:\/(?:sessions(?:\/[A-Za-z0-9:._-]+)?|issues(?:\/[0-9a-fA-F-]{36})?|reports(?:\/[A-Za-z0-9._:-]+)?))?$/.test(value)
     || /^\/admin\/(?:overview|review|activity|operations|identity|governance|voc|agents(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:\/runtime)?)?|sessions(?:\/[A-Za-z0-9:._-]+)?)$/.test(value);
 }
 

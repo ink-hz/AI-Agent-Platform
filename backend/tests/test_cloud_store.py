@@ -72,6 +72,7 @@ def test_prepared_session_exposes_only_safe_index_columns():
             "kind": "review_issue_projection",
             "key": "5e18847c-91c0-4a35-bc3c-ddc39dac6ff3",
             "agent_id": "hr-bot",
+            "created_at": "2026-08-11T08:00:00.000000Z",
             "updated_at": "2026-08-11T08:01:00.000000Z",
             "title": {"text": "已脱敏标题"},
             "status": "open",
@@ -79,6 +80,8 @@ def test_prepared_session_exposes_only_safe_index_columns():
             "failure_layer": "model",
             "owner_display": None,
             "linked_turn_count": 2,
+            "linked_turn_keys": ["c" * 52],
+            "scope_valid": True,
             "sanitizer_policy_version": "test-v1",
         },
         {
@@ -88,6 +91,7 @@ def test_prepared_session_exposes_only_safe_index_columns():
             "first_feedback_at": "2026-08-11T08:01:00.000000Z",
             "turn_key": "c" * 52,
             "feedback_count": 2,
+            "scope_valid": True,
             "sanitizer_policy_version": "test-v1",
         },
         {
@@ -153,6 +157,23 @@ def test_unknown_or_sensitive_management_projection_is_rejected():
                 "sanitizer_policy_version": "test-v1",
             }
         )
+
+
+def test_inbox_scope_marker_must_be_exact_boolean():
+    store = ReplicaStore("postgresql://replica", cipher=FieldCipher(b"e" * 32))
+    record = {
+        "kind": "review_inbox_projection",
+        "key": "a" * 52,
+        "agent_id": "ai-fae-agent",
+        "first_feedback_at": "2026-08-11T08:01:00.000000Z",
+        "turn_key": "c" * 52,
+        "feedback_count": 2,
+        "scope_valid": "true",
+        "sanitizer_policy_version": "test-v1",
+    }
+
+    with pytest.raises(ReplicaStoreError, match="record_invalid"):
+        store.prepare_management(record)
 
 
 class _RetentionTransaction:

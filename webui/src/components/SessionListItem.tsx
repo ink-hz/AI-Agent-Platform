@@ -15,9 +15,11 @@ function dateTime(value: string) {
 
 export function SessionListItem({
   session,
+  detailHref,
   showSignals = true,
 }: {
   session: SessionSummary;
+  detailHref: string;
   showSignals?: boolean;
 }) {
   const sender = session.source_kind === "metabot"
@@ -25,14 +27,14 @@ export function SessionListItem({
     : null;
   const additionalParticipants = additionalParticipantLabel(session.participant_count);
   return (
-    <PlatformLink className="session-row" href={`/admin/sessions/${encodeURIComponent(session.session_key)}`} preserveSessionContext>
+    <PlatformLink className="session-row" href={detailHref} preserveSessionContext>
       <div className="session-source"><span>{session.source_kind.toUpperCase()}</span><b>{session.channel}</b></div>
       <div className="session-title">
         <strong>{session.title || "未命名 Session"}</strong>
         <span>{session.agent_id}</span>
         {sender && <small className="session-sender"><b>{sender}</b>{additionalParticipants && <em>{additionalParticipants}</em>}</small>}
       </div>
-      <div className="session-counts"><span>{session.turn_count} 轮</span>{showSignals && session.feedback_count > 0 && <span>{session.feedback_count} 条反馈</span>}{showSignals && session.review_count > 0 && <span>{session.review_count} 条复审</span>}</div>
+      <div className="session-counts"><span>{session.turn_count} 轮</span>{showSignals && session.feedback_count === null && <span>反馈暂不可用</span>}{showSignals && session.feedback_count !== null && session.feedback_count > 0 && <span>{session.feedback_count} 条反馈</span>}{showSignals && session.review_count === null && <span>复审暂不可用</span>}{showSignals && session.review_count !== null && session.review_count > 0 && <span>{session.review_count} 条复审</span>}</div>
       <time dateTime={session.last_active_at}>{dateTime(session.last_active_at)}</time>
       <span className={`freshness freshness-${session.freshness}`}>{sourceFreshnessLabel(session.freshness)}</span>
     </PlatformLink>

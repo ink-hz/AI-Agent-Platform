@@ -6,6 +6,8 @@ import hashlib
 import json
 from uuid import uuid4
 
+import pytest
+
 from app.cloud_replica.crypto import FieldCipher
 from app.cloud_replica.management_repository import (
     ReplicaOperationsRepository,
@@ -13,6 +15,7 @@ from app.cloud_replica.management_repository import (
 )
 from app.fleet.catalog import AgentCatalog
 from app.operations.models import EventFilters, UsageLeader
+from app.review.repository import ReviewRepositoryError
 
 
 NOW = datetime(2026, 8, 14, 8, 0, tzinfo=UTC)
@@ -92,6 +95,7 @@ def test_review_projection_is_agent_scoped_and_read_only():
             "agent_id": "hr-bot", "status": "open", "priority": "P1",
             "title": {"text": "脱敏问题"}, "failure_layer": "model",
             "owner_display": None, "linked_turn_count": 2,
+            "scope_valid": True,
             "updated_at": "2026-08-14T08:00:00.000000Z",
             "sanitizer_policy_version": "v2",
         },
@@ -100,6 +104,7 @@ def test_review_projection_is_agent_scoped_and_read_only():
             "agent_id": "marketing-bot", "status": "closed", "priority": "P2",
             "title": {"text": "其他 Agent"}, "failure_layer": None,
             "owner_display": None, "linked_turn_count": 0,
+            "scope_valid": True,
             "updated_at": "2026-08-14T07:00:00.000000Z",
             "sanitizer_policy_version": "v2",
         },
@@ -115,7 +120,173 @@ def test_review_projection_is_agent_scoped_and_read_only():
 
     assert [item["agent_id"] for item in issues] == ["hr-bot"]
     assert detail is not None and detail["replica_read_only"] is True
+    assert detail["links"] is None
+    assert detail["evidence"] is None
+    assert detail["replays"] is None
+    assert detail["events"] is None
+    assert detail["availability"] == {
+        "links": "unavailable",
+        "evidence": "unavailable",
+        "replays": "unavailable",
+        "events": "unavailable",
+    }
     assert not hasattr(repository, "create_issue")
+
+
+def test_projected_issue_page_reports_total_and_has_more_after_filters():
+    cipher = FieldCipher(b"m" * 32)
+    records = [{
+        "kind": "review_issue_projection", "key": str(uuid4()),
+        "agent_id": "ai-fae-agent", "status": "actionable", "priority": "P1",
+        "title": {"text": f"issue-{index}"}, "failure_layer": "model",
+        "owner_display": None, "linked_turn_count": 1, "scope_valid": True,
+        "updated_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v2",
+    } for index in range(205)]
+    repository = ReplicaReviewRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record) for record in records]), now=lambda: NOW,
+    )
+
+    page = repository.list_issue_page(
+        agent_id="ai-fae-agent", disposition="actionable", limit=50, offset=200
+    )
+
+    assert len(page["items"]) == 5
+    assert page["total"] == 205
+    assert page["has_more"] is False
+    assert page["limit"] == 50
+    assert page["offset"] == 200
+
+
+def test_projected_turn_governance_distinguishes_active_issue_from_unmanaged():
+    cipher = FieldCipher(b"m" * 32)
+    issue_id = uuid4()
+    record = {
+        "kind": "review_issue_projection", "key": str(issue_id),
+        "agent_id": "ai-fae-agent", "status": "actionable", "priority": "P1",
+        "title": {"text": "active issue"}, "failure_layer": "model",
+        "owner_display": None, "linked_turn_count": 1,
+        "linked_turn_keys": ["f" * 52], "scope_valid": True,
+        "created_at": "2026-08-14T07:00:00.000000Z",
+        "updated_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v2",
+    }
+    repository = ReplicaReviewRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record)]), now=lambda: NOW,
+    )
+
+    assert repository.get_turn_summaries(["f" * 52, "e" * 52]) == [{
+        "turn_key": "f" * 52, "issue_id": str(issue_id), "status": "unknown",
+        "missing_gates": None, "latest_valid_replay_id": None,
+    }]
+
+
+def test_projected_issue_disposition_and_open_filters_precede_limit() -> None:
+    cipher = FieldCipher(b"m" * 32)
+    records = []
+    for index in range(205):
+        records.append({
+            "kind": "review_issue_projection", "key": str(uuid4()),
+            "agent_id": "ai-fae-agent", "status": "duplicate", "priority": "P2",
+            "title": {"text": f"duplicate-{index}"}, "failure_layer": None,
+            "owner_display": None, "linked_turn_count": 0, "scope_valid": True,
+            "updated_at": "2026-08-14T08:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        })
+    for index in range(3):
+        records.append({
+            "kind": "review_issue_projection", "key": str(uuid4()),
+            "agent_id": "ai-fae-agent", "status": "actionable", "priority": "P1",
+            "title": {"text": f"actionable-{index}"}, "failure_layer": "model",
+            "owner_display": None, "linked_turn_count": 1, "scope_valid": True,
+            "updated_at": "2026-08-14T08:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        })
+    repository = ReplicaReviewRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record) for record in records]), now=lambda: NOW,
+    )
+
+    actionable = repository.list_issues(
+        agent_id="ai-fae-agent", disposition="actionable", limit=2, offset=1
+    )
+    open_issues = repository.list_issues(
+        agent_id="ai-fae-agent", status="open", limit=200, offset=0
+    )
+
+    assert len(actionable) == 2
+    assert {item["disposition"] for item in actionable} == {"actionable"}
+    assert len(open_issues) == 3
+    assert {item["disposition"] for item in open_issues} == {"actionable"}
+
+
+def test_fae_issue_scope_projection_fails_closed_on_false_or_missing_metadata():
+    cipher = FieldCipher(b"m" * 32)
+
+    def repository_for(scope_marker):
+        record = {
+            "kind": "review_issue_projection", "key": str(uuid4()),
+            "agent_id": "ai-fae-agent", "status": "open", "priority": "P1",
+            "title": {"text": "FAE issue"}, "failure_layer": "model",
+            "owner_display": None, "linked_turn_count": 1,
+            "updated_at": "2026-08-14T08:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        }
+        if scope_marker is not None:
+            record["scope_valid"] = scope_marker
+        return ReplicaReviewRepository(
+            "postgresql://replica", cipher=cipher,
+            connect=_connect([_row(cipher, record)]), now=lambda: NOW,
+        )
+
+    assert repository_for(True).agent_issue_scope_valid("ai-fae-agent") is True
+    assert repository_for(False).agent_issue_scope_valid("ai-fae-agent") is False
+    assert repository_for(None).agent_issue_scope_valid("ai-fae-agent") is False
+
+
+def test_historical_foreign_issue_marker_fails_fae_management_reads_closed():
+    cipher = FieldCipher(b"m" * 32)
+    record = {
+        "kind": "review_issue_projection", "key": str(uuid4()),
+        "agent_id": "ai-fae-agent", "status": "open", "priority": "P1",
+        "title": {"text": "historical foreign move"}, "failure_layer": "model",
+        "owner_display": None, "linked_turn_count": 0,
+        "scope_valid": False,
+        "updated_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v2",
+    }
+    repository = ReplicaReviewRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record)]), now=lambda: NOW,
+    )
+
+    assert repository.agent_issue_scope_valid("ai-fae-agent") is False
+
+
+def test_inbox_projection_fails_closed_on_false_or_missing_scope_marker():
+    cipher = FieldCipher(b"m" * 32)
+
+    def repository_for(scope_marker):
+        record = {
+            "kind": "review_inbox_projection", "key": "a" * 52,
+            "agent_id": "ai-fae-agent", "turn_key": "b" * 52,
+            "feedback_count": 1,
+            "first_feedback_at": "2026-08-14T08:00:00.000000Z",
+            "sanitizer_policy_version": "v2",
+        }
+        if scope_marker is not None:
+            record["scope_valid"] = scope_marker
+        return ReplicaReviewRepository(
+            "postgresql://replica", cipher=cipher,
+            connect=_connect([_row(cipher, record)]), now=lambda: NOW,
+        )
+
+    assert len(repository_for(True).list_inbox(agent_id="ai-fae-agent")) == 1
+    for marker in (False, None):
+        with pytest.raises(ReviewRepositoryError, match="scope"):
+            repository_for(marker).list_inbox(agent_id="ai-fae-agent")
 
 
 def test_operation_projection_filters_before_pagination():
@@ -283,6 +454,7 @@ def test_excluded_agents_are_absent_from_review_projections():
             "agent_id": "hr-bot", "status": "open", "priority": "P1",
             "title": {"text": "Visible"}, "failure_layer": "model",
             "owner_display": None, "linked_turn_count": 1,
+            "scope_valid": True,
             "updated_at": "2026-08-14T08:00:00.000000Z",
             "sanitizer_policy_version": "v2",
         },
@@ -291,6 +463,7 @@ def test_excluded_agents_are_absent_from_review_projections():
             "agent_id": "fae-bot", "status": "open", "priority": "P1",
             "title": {"text": "Hidden"}, "failure_layer": "model",
             "owner_display": None, "linked_turn_count": 1,
+            "scope_valid": True,
             "updated_at": "2026-08-14T07:00:00.000000Z",
             "sanitizer_policy_version": "v2",
         },

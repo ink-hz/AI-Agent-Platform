@@ -42,6 +42,13 @@ const negativeTurn: TurnDetail = {
   sender_identity_status: "unavailable",
 };
 
+const ordinaryTurn: TurnDetail = {
+  ...negativeTurn,
+  turn_key: "fae:turn-2",
+  turn_index: 2,
+  feedback: [],
+};
+
 
 function response<T>(body: T): Response {
   return { ok: true, json: vi.fn().mockResolvedValue(body) } as unknown as Response;
@@ -121,5 +128,33 @@ describe("SessionDetailPage return navigation", () => {
     expect(fetchMock.mock.calls.filter(([path]) => String(path).startsWith("/api/review/turn-summaries?")).length).toBe(1);
     expect(container.textContent).toContain("等待语义复审");
     expect(container.textContent).toContain("缺少：独立语义复审");
+  });
+
+  it("keeps generic replay negative-only with generic review links", async () => {
+    let summaryPath = "";
+    vi.stubGlobal("fetch", vi.fn((path: string) => {
+      if (path.startsWith("/api/sessions/")) {
+        return Promise.resolve(response({
+          ...session,
+          turn_count: 2,
+          turns: [ordinaryTurn, { ...negativeTurn, turn_key: "fae:turn-3" }],
+        }));
+      }
+      if (path.startsWith("/api/review/turn-summaries?")) {
+        summaryPath = path;
+        return Promise.resolve(response([]));
+      }
+      throw new Error(`unexpected path ${path}`);
+    }));
+
+    await renderPage();
+
+    const actions = [...container.querySelectorAll<HTMLAnchorElement>(".review-entry a")];
+    expect(actions).toHaveLength(1);
+    expect(actions[0].getAttribute("href")).toBe(
+      "/admin/review?agent_id=ai-fae-agent&turn_key=fae%3Aturn-3",
+    );
+    expect(new URL(summaryPath, "https://platform.test").searchParams.getAll("turn_key")).toEqual(["fae:turn-3"]);
+    expect(container.textContent).not.toContain("创建或查看问题");
   });
 });
