@@ -111,6 +111,11 @@ begin
       actor_id, event_name, target_name, target_id, correlation_id,
       event_result, reason, details
     );
+  elsif event_name like 'partner_%' then
+    perform platform_control.validate_partner_audit_event_v54(
+      actor_id, event_name, target_name, target_id, correlation_id,
+      event_result, reason, details
+    );
   elsif event_name like 'admin_role_%' then
     perform platform_control.validate_admin_audit_event_v25(
       actor_id, event_name, target_name, target_id, correlation_id,
