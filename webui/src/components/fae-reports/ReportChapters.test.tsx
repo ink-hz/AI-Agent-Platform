@@ -100,6 +100,33 @@ describe("FAE outcome report chapters", () => {
     expect(html).not.toContain("根因判断");
   });
 
+  it("reports every published feedback theme while limiting the initial reading list", () => {
+    const findings = Array.from({ length: 9 }, (_, index) => ({
+      ...reportFixture.findings[0],
+      finding_id: `finding-${index + 1}`,
+      title: `业务主题 ${index + 1}`,
+      recommendation_ids: [],
+    }));
+    const html = renderToStaticMarkup(<InsightAndImprovementChapter report={{
+      ...reportFixture,
+      findings,
+      recommendations: [],
+    }} />);
+
+    expect(html).toContain("本期报告发布 9 个需要跟进的主题");
+    expect(html.match(/<article/g)).toHaveLength(8);
+  });
+
+  it("states when a feedback theme has no published action or owner", () => {
+    const html = renderToStaticMarkup(<InsightAndImprovementChapter report={{
+      ...reportFixture,
+      findings: [{ ...reportFixture.findings[0], recommendation_ids: [] }],
+      recommendations: [],
+    }} />);
+
+    expect(html).toContain("改进动作与责任角色待发布");
+  });
+
   it("renders the four chapters without visible metric groups", () => {
     const html = renderToStaticMarkup(<>
       <UsageChapter report={reportFixture} />
