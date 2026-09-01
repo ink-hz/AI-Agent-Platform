@@ -35,6 +35,17 @@ const report = {
   latest_source_sync_at: "2026-09-01T00:00:00Z", currentness: "source_updated",
 } as const;
 
+const outcomeReport = {
+  ...report,
+  metrics: [
+    ...report.metrics,
+    { metric_id: "value.observed_multiturn_sessions", dimension: "usage", label: "多轮会话", value: 286, unit: "count", numerator: null, denominator: null, filters: [], assumptions: [], evidence_artifact_refs: ["metrics.json"] },
+    { metric_id: "value.observed_attachment_sessions", dimension: "usage", label: "图片或附件会话", value: 122, unit: "count", numerator: null, denominator: null, filters: [], assumptions: [], evidence_artifact_refs: ["metrics.json"] },
+    { metric_id: "value.observed_non_work_hour_sessions", dimension: "usage", label: "非工作时段会话", value: 156, unit: "count", numerator: null, denominator: null, filters: [], assumptions: [], evidence_artifact_refs: ["metrics.json"] },
+    { metric_id: "value.scenario_potential_conversion_sessions", dimension: "business_value", label: "潜在可转化会话", value: 216, unit: "count", numerator: null, denominator: null, filters: [], assumptions: [], evidence_artifact_refs: ["metrics.json"] },
+  ],
+} as const;
+
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -43,6 +54,26 @@ afterEach(() => {
 
 
 describe("FAE reports", () => {
+  it("leads with production scale and separates realized value from potential", async () => {
+    vi.spyOn(faeReportApi, "latest").mockResolvedValue(outcomeReport as never);
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(<FaeReportsPage />));
+    await act(async () => undefined);
+
+    const cover = container.querySelector("[data-report-cover]");
+    expect(cover?.textContent).toContain("FAE Agent 已经在真实生产中形成规模");
+    expect(cover?.textContent).toContain("692");
+    expect(cover?.textContent).toContain("1,492");
+    expect(cover?.textContent).toContain("654 / 692");
+    expect(cover?.querySelector("[data-outcome=realized]")?.textContent).toContain("已实现价值");
+    expect(cover?.querySelector("[data-outcome=potential]")?.textContent).toContain("不计入已实现成绩");
+    expect(cover?.textContent).not.toContain("AI FAE PRODUCTION OUTCOME");
+    await act(async () => root.unmount()); container.remove();
+  });
+
   it("renders the real four-dimension result and truthful case state", async () => {
     vi.spyOn(faeReportApi, "latest").mockResolvedValue(report as never);
     const container = document.createElement("div"); document.body.append(container);

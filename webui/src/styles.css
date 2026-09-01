@@ -1127,6 +1127,49 @@ body {
 .fae-report-preview > a:focus-visible { outline: 3px solid rgba(36,104,197,.26); outline-offset: 3px; }
 
 .fae-report { display: grid; gap: 24px; color: var(--ink); }
+.fae-outcome-cover { overflow: hidden; border: 1px solid #d6e1ed; border-radius: 20px; background: #fff; box-shadow: 0 16px 42px rgba(20,51,89,.08); }
+.fae-outcome-version { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 16px 28px; border-bottom: 1px solid #e5ebf2; background: #f8fafc; }
+.fae-outcome-version > div { display: flex; align-items: center; gap: 10px; }
+.fae-outcome-version span, .fae-outcome-version dt { color: var(--ink-soft); font-size: 11.5px; }
+.fae-outcome-version strong { font-size: 12px; }
+.fae-outcome-version b { padding: 4px 8px; border-radius: 999px; background: #e8f1fb; color: #174f9b; font-size: 11px; }
+.fae-outcome-version b.is-frozen { background: #e8f5ee; color: #17623d; }
+.fae-outcome-version dl { display: flex; gap: 22px; margin: 0; }
+.fae-outcome-version dl div { display: grid; gap: 2px; }
+.fae-outcome-version dd { margin: 0; font-size: 12px; font-weight: 750; }
+.fae-outcome-cover__lead { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(220px,.6fr); gap: 42px; align-items: end; padding: 42px 42px 34px; }
+.fae-outcome-kicker { margin: 0; color: var(--brand); font-size: 12px; font-weight: 850; letter-spacing: .08em; }
+.fae-outcome-cover__lead h1 { max-width: 760px; margin: 10px 0 14px; font-size: clamp(29px,3.3vw,46px); line-height: 1.17; letter-spacing: -.045em; }
+.fae-outcome-cover__lead > div:first-child > span { color: var(--ink-soft); line-height: 1.7; }
+.fae-outcome-scale { display: grid; align-content: end; justify-items: end; }
+.fae-outcome-scale > strong { font-size: clamp(62px,7vw,96px); line-height: .9; letter-spacing: -.07em; color: #123b6d; }
+.fae-outcome-scale > span { margin-top: 12px; font-size: 15px; font-weight: 800; }
+.fae-outcome-scale > small { margin-top: 7px; color: var(--ink-soft); text-align: right; }
+.fae-outcome-trust { display: grid; grid-template-columns: auto auto minmax(0,1fr); align-items: center; gap: 18px; padding: 18px 42px; border-top: 1px solid #e5ebf2; border-bottom: 1px solid #e5ebf2; background: #f7fafc; }
+.fae-outcome-trust > div { display: grid; gap: 2px; }
+.fae-outcome-trust span { color: var(--ink-soft); font-size: 11.5px; }
+.fae-outcome-trust b { color: #17623d; font-size: 26px; }
+.fae-outcome-trust p { margin: 0; color: var(--ink-soft); font-size: 12px; }
+.fae-outcome-evidence { display: grid; grid-template-columns: 1.25fr 1fr 1fr; }
+.fae-outcome-evidence > section { min-width: 0; padding: 25px 28px; border-right: 1px solid #e5ebf2; }
+.fae-outcome-evidence > section:last-child { border-right: 0; }
+.fae-outcome-evidence p { margin: 0 0 12px; color: var(--ink-soft); font-size: 12px; font-weight: 800; }
+.fae-outcome-complexity dl { display: grid; gap: 7px; margin: 0; }
+.fae-outcome-complexity dl div { display: flex; justify-content: space-between; gap: 15px; }
+.fae-outcome-complexity dt { color: var(--ink-soft); }
+.fae-outcome-complexity dd { margin: 0; font-weight: 850; }
+.fae-outcome-value { display: grid; align-content: start; gap: 7px; }
+.fae-outcome-value strong { font-size: 34px; letter-spacing: -.035em; }
+.fae-outcome-value span { color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+.fae-outcome-value.is-realized { box-shadow: inset 0 4px #25845b; }
+.fae-outcome-value.is-realized strong { color: #17623d; }
+.fae-outcome-value.is-potential { box-shadow: inset 0 4px #2468c5; }
+.fae-outcome-value.is-potential strong { color: #174f9b; }
+.fae-outcome-chapters { position: sticky; top: 10px; z-index: 2; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--line); }
+.fae-outcome-chapters a { display: flex; gap: 9px; padding: 12px 14px; background: #fff; color: var(--ink); font-size: 12px; font-weight: 760; text-decoration: none; }
+.fae-outcome-chapters a span { color: var(--brand); }
+.fae-outcome-chapters a:focus-visible { outline: 3px solid rgba(36,104,197,.28); outline-offset: -3px; }
+.fae-report-dimension { scroll-margin-top: 76px; }
 .fae-report-hero { display: flex; justify-content: space-between; gap: 28px; padding: 30px; border: 1px solid #d8e4f2; border-radius: 20px; background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 56%, #f5fbfa 100%); box-shadow: 0 16px 42px rgba(20,51,89,.09); }
 .fae-report-hero > div { max-width: 760px; }
 .fae-report-hero p, .fae-report-dimension > header p, .fae-report-cases > p { margin: 0; color: var(--brand-bright); font-size: 11.5px; font-weight: 850; letter-spacing: .15em; }
