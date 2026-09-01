@@ -8,6 +8,22 @@ from .repository import StoredReport
 
 
 class FaeReportService:
+    _SUMMARY_FIELDS = (
+        "report_id",
+        "report_version",
+        "report_type",
+        "status",
+        "title",
+        "period",
+        "data_cutoff_at",
+        "generated_at",
+        "analysis_version",
+        "failure",
+        "publication",
+        "latest_source_sync_at",
+        "currentness",
+    )
+
     def __init__(
         self,
         repository,
@@ -49,6 +65,15 @@ class FaeReportService:
 
     def list(self, status: str | None = None) -> list[dict[str, Any]]:
         return [self._decorate(value) for value in self._repository.list_reports(status=status)]
+
+    def list_summaries(self, status: str | None = None) -> list[dict[str, Any]]:
+        return [
+            {key: document[key] for key in self._SUMMARY_FIELDS}
+            for document in (
+                self._decorate(value)
+                for value in self._repository.list_reports(status=status)
+            )
+        ]
 
     def latest(self) -> dict[str, Any] | None:
         values = self._repository.list_reports(status="ready")

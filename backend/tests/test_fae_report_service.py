@@ -6,6 +6,7 @@ from app.fae_reports.repository import StoredReport
 from app.fae_reports.service import FaeReportService
 
 FIXTURE = Path(__file__).parents[2] / "contracts/fae-analysis-report/v1/fixtures/valid-ready.json"
+FAILED_FIXTURE = Path(__file__).parents[2] / "contracts/fae-analysis-report/v1/fixtures/valid-failed.json"
 
 
 class Repository:
@@ -42,3 +43,32 @@ def test_latest_returns_none_without_fabricating_data():
     repository.list_reports = lambda status=None: []
     assert FaeReportService(repository).latest() is None
 
+
+def test_list_summaries_excludes_report_body():
+    [summary] = FaeReportService(Repository()).list_summaries()
+
+    assert summary["report_id"] == "fae-weekly-2026-w35"
+    assert set(summary).isdisjoint(
+        {"metrics", "findings", "recommendations", "cases", "artifact_digests"}
+    )
+
+
+def test_latest_keeps_newest_ready_when_newer_attempt_failed():
+    repository = Repository()
+    failed = StoredReport(
+        report_pk="failed-pk",
+        report=load_report_document(FAILED_FIXTURE.read_bytes()),
+        payload_digest="b" * 64,
+        imported_at=datetime(2026, 8, 31, 10, tzinfo=UTC),
+        active_issue_links={},
+    )
+    values = [failed, repository.value]
+    repository.list_reports = lambda status=None: [
+        value for value in values if status is None or value.report.status == status
+    ]
+
+    result = FaeReportService(repository).latest()
+
+    assert result is not None
+    assert result["status"] == "ready"
+    assert result["report_version"] == 1

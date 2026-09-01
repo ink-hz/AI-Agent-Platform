@@ -23,7 +23,7 @@ router = APIRouter(
 
 @router.get("")
 def reports(request: Request, status: str | None = None):
-    return request.app.state.fae_report_service.list(status=status)
+    return request.app.state.fae_report_service.list_summaries(status=status)
 
 
 @router.get("/latest")

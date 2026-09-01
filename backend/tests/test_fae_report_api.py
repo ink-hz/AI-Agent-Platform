@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 
 class Service:
-    def list(self, status=None):
+    def list_summaries(self, status=None):
         return [{"report_id": "fae-topic-production-through-20260831", "status": "ready"}]
 
     def latest(self):
@@ -39,7 +39,9 @@ def app(role):
 
 def test_owner_can_list_read_latest_and_versioned_report():
     client = TestClient(app(Role.PLATFORM_OWNER))
-    assert client.get("/api/admin/fae/reports").status_code == 200
+    index = client.get("/api/admin/fae/reports")
+    assert index.status_code == 200
+    assert "metrics" not in index.json()[0]
     assert client.get("/api/admin/fae/reports/latest").json()["status"] == "ready"
     detail = client.get(
         "/api/admin/fae/reports/fae-topic-production-through-20260831?version=1"
@@ -49,6 +51,9 @@ def test_owner_can_list_read_latest_and_versioned_report():
 
 def test_member_is_denied_and_unknown_report_is_404():
     assert TestClient(app(Role.MEMBER)).get("/api/admin/fae/reports").status_code == 403
+    assert TestClient(app(Role.MANAGEMENT_VIEWER)).get(
+        "/api/admin/fae/reports"
+    ).status_code == 403
     assert TestClient(app(Role.PLATFORM_OWNER)).get(
         "/api/admin/fae/reports/fae-topic-missing"
     ).status_code == 404
