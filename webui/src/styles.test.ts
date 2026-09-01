@@ -90,11 +90,11 @@ describe("Executive Operations visual contract", () => {
 
   it("turns the FAE outcome report into a responsive and printable reader", () => {
     const compactReport = block("@media (max-width: 1100px)");
-    expect(compactReport).toContain(".fae-outcome-metric-group > div { grid-template-columns: repeat(2,minmax(0,1fr)); }");
+    expect(compactReport).toContain(".fae-outcome-cover__facts, .fae-outcome-chapter__facts { grid-template-columns: repeat(2,minmax(0,1fr)); }");
     expect(compactReport).toContain(".fae-outcome-chapters { position: static;");
     const mobileReport = block("@media (max-width: 560px)");
-    expect(mobileReport).toContain(".fae-outcome-value-pair { grid-template-columns: 1fr; }");
-    expect(mobileReport).toContain(".fae-outcome-metric-group > div { grid-template-columns: 1fr; }");
+    expect(mobileReport).toContain(".fae-outcome-cover__facts, .fae-outcome-chapter__facts, .fae-outcome-value-comparison { grid-template-columns: 1fr; }");
+    expect(mobileReport).not.toContain(".fae-outcome-metric-group");
     const printReport = block("@media print");
     expect(printReport).toContain(".topbar, .admin-nav, .fae-workbench__sidebar");
     expect(printReport).toContain(".fae-outcome-chapters");
