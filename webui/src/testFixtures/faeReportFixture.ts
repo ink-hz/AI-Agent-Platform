@@ -135,6 +135,7 @@ export const reportFixture: FaeAnalysisReport = {
     },
   ],
   cases: [],
+  artifact_digests: {},
   failure: null,
   publication: {
     payload_digest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

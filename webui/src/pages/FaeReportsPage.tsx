@@ -81,19 +81,31 @@ function Report({ report }: { report: FaeAnalysisReport }) {
   </article>;
 }
 
+function selectedReportVersion(search: string): number | undefined | null {
+  const values = new URLSearchParams(search).getAll("version");
+  if (values.length === 0) return undefined;
+  if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0])) return null;
+  const version = Number(values[0]);
+  return Number.isSafeInteger(version) ? version : null;
+}
+
 export function FaeReportsPage({ reportId }: { reportId?: string }) {
   const [report, setReport] = useState<FaeAnalysisReport | null>(null);
   const [failureStatus, setFailureStatus] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const version = reportId ? selectedReportVersion(window.location.search) : undefined;
   useEffect(() => {
     const controller = new AbortController(); setReport(null); setFailureStatus(null);
-    const request = reportId ? faeReportApi.detail(reportId, controller.signal) : faeReportApi.latest(controller.signal);
+    if (version === null) return () => controller.abort();
+    const request = reportId ? faeReportApi.detail(reportId, version, controller.signal) : faeReportApi.latest(controller.signal);
     void request.then((value) => { if (!controller.signal.aborted) setReport(value); }).catch((error: unknown) => {
       if (!controller.signal.aborted) setFailureStatus(error instanceof FaeReportApiError ? error.status : 0);
     });
     return () => controller.abort();
-  }, [reportId, attempt]);
-  return <FaeWorkbenchShell currentSection="reports">{failureStatus === 404
+  }, [reportId, version, attempt]);
+  return <FaeWorkbenchShell currentSection="reports">{version === null
+    ? <section className="fae-workbench__empty" role="alert"><h2>报告版本无效</h2><p>版本必须是一个正整数，请返回分析报告重新选择。</p></section>
+    : failureStatus === 404
     ? <section className="fae-workbench__empty" role="status"><h2>{reportId ? "找不到该分析报告" : "尚无已发布的分析报告"}</h2><p>{reportId ? "该报告不存在、已撤回或当前账号无权读取。" : "完成真实数据分析、复审和发布后，成果会显示在这里。"}</p></section>
     : failureStatus === 401
       ? <section className="fae-workbench__empty" role="alert"><h2>需要登录后查看分析报告</h2><p>请重新登录企业账号后再访问已发布的 FAE 成果。</p></section>

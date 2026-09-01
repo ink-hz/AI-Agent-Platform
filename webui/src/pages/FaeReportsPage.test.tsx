@@ -36,7 +36,10 @@ const report = {
 } as const;
 
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  history.replaceState({}, "", "/");
+});
 
 
 describe("FAE reports", () => {
@@ -103,6 +106,38 @@ describe("FAE reports", () => {
     expect(container.textContent).toContain(message);
     expect(container.textContent).not.toContain("报告数据暂时无法读取");
     expect(container.textContent).not.toContain("重新尝试");
+    await act(async () => root.unmount()); container.remove();
+  });
+
+  it("loads the selected immutable version from the query string", async () => {
+    history.replaceState({}, "", `/admin/fae/reports/${report.report_id}?version=2`);
+    const detail = vi.spyOn(faeReportApi, "detail").mockResolvedValue({
+      ...report,
+      report_version: 2,
+    } as never);
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(<FaeReportsPage reportId={report.report_id} />));
+    await act(async () => undefined);
+
+    expect(detail).toHaveBeenCalledWith(report.report_id, 2, expect.any(AbortSignal));
+    await act(async () => root.unmount()); container.remove();
+  });
+
+  it("rejects an invalid report version without issuing a detail request", async () => {
+    history.replaceState({}, "", `/admin/fae/reports/${report.report_id}?version=0`);
+    const detail = vi.spyOn(faeReportApi, "detail");
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(<FaeReportsPage reportId={report.report_id} />));
+    await act(async () => undefined);
+
+    expect(detail).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("报告版本无效");
     await act(async () => root.unmount()); container.remove();
   });
 });

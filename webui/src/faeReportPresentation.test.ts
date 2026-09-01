@@ -29,7 +29,7 @@ describe("FAE report presentation", () => {
           dimension: "usage" as const,
           label: "新增信号",
           value: 3,
-          unit: "count",
+          unit: "count" as const,
           numerator: null,
           denominator: null,
           filters: [],
@@ -39,7 +39,8 @@ describe("FAE report presentation", () => {
       ],
     };
 
-    expect(metricsForChapter(report, "usage").at(-1)?.presentation.kind).toBe("generic");
+    const presented = metricsForChapter(report, "usage");
+    expect(presented[presented.length - 1]?.presentation.kind).toBe("generic");
   });
 
   it("preserves privacy-suppressed distribution values", () => {
