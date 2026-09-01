@@ -422,6 +422,7 @@ export interface ReviewOverview {
   dispositions: Record<string, number>;
   write_available: boolean;
   lifecycle_status_available?: boolean;
+  quarantined_issue_count?: number | null;
 }
 
 export interface TurnClosureSummary {

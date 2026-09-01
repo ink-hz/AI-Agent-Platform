@@ -188,7 +188,7 @@ describe("FAE workbench API", () => {
     expect(paths).toEqual([
       "/api/admin/fae/issue-overview",
       "/api/admin/fae/issue-inbox?limit=200",
-      "/api/admin/fae/issues?limit=200&disposition=actionable",
+      "/api/admin/fae/issues?limit=20&disposition=actionable",
       "/api/admin/fae/turn-summaries?turn_key=fae%3Aturn-1",
       "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001",
       "/api/admin/fae/issues",
@@ -217,5 +217,52 @@ describe("FAE workbench API", () => {
     const changedAccountReview = reviewFactory("csrf-changed-account");
     await changedAccountReview.disposition("00000000-0000-0000-0000-000000000001", payload, actor);
     expect(new Headers(fetchMock.mock.calls[fetchMock.mock.calls.length - 1]?.[1]?.headers).get("X-CSRF-Token")).toBe("csrf-changed-account");
+  });
+
+  it("preserves authoritative schema-v1 lifecycle and quarantine totals", async () => {
+    const issue = {
+      id: "00000000-0000-0000-0000-000000000010",
+      agent_id: "ai-fae-agent",
+      title: "待复跑事项",
+      priority: "P1",
+      failure_layer: "coverage",
+      owner: "codex",
+      disposition: "actionable",
+      detail_schema_version: 1,
+      replica_read_only: true,
+      progress: {
+        status: "awaiting_replay",
+        missing_gates: ["semantic_review"],
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      const body = path.endsWith("/issue-overview")
+        ? {
+            feedback_rows: 126,
+            negative_rows: 90,
+            issue_total: 87,
+            statuses: { pending_triage: 78, awaiting_replay: 1, closed: 6 },
+            dispositions: { actionable: 85, duplicate: 2 },
+            lifecycle_status_available: true,
+            quarantined_issue_count: 7,
+            write_available: false,
+          }
+        : { items: [issue], total: 1, limit: 20, offset: 0, has_more: false };
+      return Promise.resolve(new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+    }));
+    const review = faeWorkbenchApi.review("csrf");
+
+    await expect(review.overview()).resolves.toMatchObject({
+      lifecycle_status_available: true,
+      statuses: { pending_triage: 78, awaiting_replay: 1, closed: 6 },
+      quarantined_issue_count: 7,
+    });
+    await expect(review.issues(undefined, { limit: 20, status: "open" })).resolves.toMatchObject({
+      items: [{ progress: { status: "awaiting_replay", missing_gates: ["semantic_review"] } }],
+    });
   });
 });

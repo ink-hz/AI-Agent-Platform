@@ -38,7 +38,7 @@ function issueFilterFromSearch(search: string, cloudReplica: boolean): { value: 
   const query = new URLSearchParams(search);
   const statuses = query.getAll("status");
   const dispositions = query.getAll("disposition");
-  if (statuses.length === 0 && dispositions.length === 0) return { value: "", valid: true };
+  if (statuses.length === 0 && dispositions.length === 0) return { value: "open", valid: true };
   if (cloudReplica) {
     if (statuses.length === 1 && statuses[0] === "open" && dispositions.length === 0) {
       return { value: "open", valid: true };
@@ -118,8 +118,8 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
     ...collectionFilters,
     ...(!issueStatus ? {} : cloudReplica && issueStatus !== "open"
       ? { disposition: issueStatus } : { status: issueStatus }),
-    limit: 200,
-    offset: (issuePage - 1) * 200,
+    limit: 20,
+    offset: (issuePage - 1) * 20,
   }), [cloudReplica, collectionSearch, filterRevision, issuePage, issueStatus]);
 
   useEffect(() => {
