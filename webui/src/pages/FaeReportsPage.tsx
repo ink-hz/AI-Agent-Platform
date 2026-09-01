@@ -1,64 +1,25 @@
 import { useEffect, useState } from "react";
 
 import { LoadingState } from "../components/DataState";
+import { AnswerEffectivenessChapter } from "../components/fae-reports/AnswerEffectivenessChapter";
+import { BusinessValueChapter } from "../components/fae-reports/BusinessValueChapter";
 import { ExecutiveOutcomeCover } from "../components/fae-reports/ExecutiveOutcomeCover";
+import { InsightAndImprovementChapter } from "../components/fae-reports/InsightAndImprovementChapter";
 import { ReportChapterNav } from "../components/fae-reports/ReportChapterNav";
+import { UsageChapter } from "../components/fae-reports/UsageChapter";
 import { FaeWorkbenchShell } from "../components/fae-workbench/FaeWorkbenchShell";
-import { PlatformLink } from "../components/PlatformLink";
 import { FaeReportApiError, faeReportApi } from "../faeReportApi";
-import type { FaeAnalysisReport, FaeReportDimension, FaeReportMetric } from "../faeReportTypes";
-
-
-const DIMENSIONS: Array<{ key: FaeReportDimension; eyebrow: string; title: string }> = [
-  { key: "usage", eyebrow: "USAGE", title: "使用情况" },
-  { key: "business_value", eyebrow: "BUSINESS VALUE", title: "业务价值" },
-  { key: "answer_effectiveness", eyebrow: "ANSWER EFFECTIVENESS", title: "回答效果" },
-  { key: "insights_improvement", eyebrow: "INSIGHTS & IMPROVEMENT", title: "业务洞察与改进" },
-];
-
-function metricValue(metric: FaeReportMetric): string {
-  if (typeof metric.value === "object") return Object.entries(metric.value).map(([key, value]) => `${key} ${value}`).join(" · ");
-  if (metric.unit === "ratio") return `${(metric.value * 100).toFixed(1)}%`;
-  if (metric.unit === "percent") return `${metric.value.toFixed(1)}%`;
-  if (metric.unit === "milliseconds") return `${Math.round(metric.value)} ms`;
-  return new Intl.NumberFormat("zh-CN").format(metric.value);
-}
-
-function denominator(metric: FaeReportMetric): string {
-  if (metric.denominator !== null) return `分母 ${metric.denominator}${metric.numerator !== null ? ` · 分子 ${metric.numerator}` : ""}`;
-  return metric.filters.length ? metric.filters.join(" · ") : "按已发布统计口径";
-}
-
-function DimensionSection({ report, dimension, eyebrow, title }: { report: FaeAnalysisReport; dimension: FaeReportDimension; eyebrow: string; title: string }) {
-  const metrics = report.metrics.filter((metric) => metric.dimension === dimension);
-  const findings = report.findings.filter((finding) => finding.dimension === dimension);
-  const recommendations = report.recommendations.filter((item) => item.dimension === dimension);
-  const sectionId = dimension === "usage" ? "report-usage"
-    : dimension === "business_value" ? "report-value"
-      : dimension === "answer_effectiveness" ? "report-effectiveness" : "report-improvement";
-  return <section className="fae-report-dimension" data-dimension={dimension} id={sectionId}>
-    <header><p>{eyebrow}</p><h2>{title}</h2></header>
-    <div className="fae-report-metrics">{metrics.map((metric) => <article data-metric={metric.metric_id} key={metric.metric_id}>
-      <span>{metric.label}</span><strong>{metricValue(metric)}</strong><small>{denominator(metric)}</small>
-    </article>)}</div>
-    {findings.length > 0 && <div className="fae-report-findings">{findings.map((finding) => <article key={finding.finding_id}>
-      <div><span className={`is-${finding.severity}`}>{finding.severity}</span><h3>{finding.title}</h3></div>
-      <p>{finding.description}</p><dl><dt>影响范围</dt><dd>{finding.impact_scope}</dd><dt>根因判断</dt><dd>{finding.root_cause_hypothesis}</dd></dl>
-      {finding.linked_issue_ids.length > 0 && <div className="fae-report-links">{finding.linked_issue_ids.map((issueId) => <PlatformLink key={issueId} href={`/admin/fae/issues/${encodeURIComponent(issueId)}`}>查看修复闭环 →</PlatformLink>)}</div>}
-    </article>)}</div>}
-    {recommendations.length > 0 && <div className="fae-report-recommendations"><h3>下一步建议</h3>{recommendations.map((item) => <article key={item.recommendation_id}><b>{item.priority.toUpperCase()}</b><div><strong>{item.title}</strong><p>{item.proposed_action}</p><small>责任角色：{item.owner_role}</small></div></article>)}</div>}
-  </section>;
-}
+import type { FaeAnalysisReport } from "../faeReportTypes";
 
 function Report({ report }: { report: FaeAnalysisReport }) {
   if (report.status === "failed") return <section className="fae-workbench__empty" role="alert"><h2>报告发布失败</h2><p>{report.failure?.message ?? "本次分析未通过发布门禁。"}</p></section>;
   return <article className="fae-report" data-report-id={report.report_id}>
     <ExecutiveOutcomeCover report={report} />
     <ReportChapterNav />
-    {DIMENSIONS.map((item) => <DimensionSection key={item.key} report={report} dimension={item.key} eyebrow={item.eyebrow} title={item.title} />)}
-    <section className="fae-report-cases"><p>BUSINESS CASES</p><h2>典型案例</h2>{report.cases.length === 0
-      ? <div className="fae-report-cases__pending">典型案例待业务批准</div>
-      : report.cases.map((item) => <article key={item.case_id}><h3>{item.title}</h3><p>{item.scenario}</p><strong>{item.outcome}</strong></article>)}</section>
+    <UsageChapter report={report} />
+    <BusinessValueChapter report={report} />
+    <AnswerEffectivenessChapter report={report} />
+    <InsightAndImprovementChapter report={report} />
   </article>;
 }
 
