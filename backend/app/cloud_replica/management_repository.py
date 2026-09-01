@@ -20,6 +20,22 @@ from .crypto import FieldCipher
 
 
 _PLATFORM_EVENT_AGENT_ID = "platform"
+_ISSUE_LIFECYCLE_ORDER = {
+    "awaiting_replay": 0,
+    "awaiting_review": 1,
+    "awaiting_deploy": 2,
+    "awaiting_merge": 3,
+    "fixing": 4,
+    "pending_triage": 5,
+    "closed": 6,
+    "duplicate": 7,
+    "not_actionable": 8,
+    "wont_fix": 9,
+}
+_ISSUE_TERMINAL_LIFECYCLES = frozenset({
+    "closed", "duplicate", "not_actionable", "wont_fix",
+})
+_ISSUE_PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 
 
 def _b64(value: bytes | memoryview) -> str:
@@ -126,6 +142,36 @@ class _ProjectionReader:
 
 
 class ReplicaReviewRepository(_ProjectionReader):
+    @staticmethod
+    def _lifecycle(issue: dict) -> str:
+        progress = issue.get("progress")
+        if not isinstance(progress, dict):
+            return "unknown"
+        return str(progress.get("status") or "unknown")
+
+    @classmethod
+    def _has_detailed_lifecycle(cls, issue: dict) -> bool:
+        return (
+            issue.get("detail_schema_version") == 1
+            and cls._lifecycle(issue) in _ISSUE_LIFECYCLE_ORDER
+        )
+
+    @classmethod
+    def _action_order(cls, issue: dict) -> tuple:
+        updated_at = str(issue.get("updated_at") or "")
+        try:
+            updated_rank = -datetime.fromisoformat(
+                updated_at.replace("Z", "+00:00")
+            ).timestamp()
+        except ValueError:
+            updated_rank = 0.0
+        return (
+            _ISSUE_PRIORITY_ORDER.get(str(issue.get("priority")), 99),
+            _ISSUE_LIFECYCLE_ORDER.get(cls._lifecycle(issue), 99),
+            updated_rank,
+            str(issue.get("key") or ""),
+        )
+
     def agent_issue_scope_valid(self, agent_id: str) -> bool:
         issues = self._records("review_issue_projection", agent_id)
         return not issues or any(issue.get("scope_valid") is True for issue in issues)
@@ -145,9 +191,18 @@ class ReplicaReviewRepository(_ProjectionReader):
         for issue in issues:
             status = str(issue.get("status") or "unknown")
             dispositions[status] = dispositions.get(status, 0) + 1
+        lifecycle_status_available = all(
+            self._has_detailed_lifecycle(issue) for issue in issues
+        )
+        statuses: dict[str, int] = {}
+        if lifecycle_status_available:
+            for issue in issues:
+                lifecycle = self._lifecycle(issue)
+                statuses[lifecycle] = statuses.get(lifecycle, 0) + 1
         overview = {
             "dispositions": dispositions,
-            "statuses": dispositions,
+            "statuses": statuses,
+            "lifecycle_status_available": lifecycle_status_available,
             "issue_total": len(issues),
             "quarantined_issue_count": len(all_issues) - len(issues),
         }
@@ -227,13 +282,15 @@ class ReplicaReviewRepository(_ProjectionReader):
         if status == "open":
             records = [
                 item for item in records
-                if str(item.get("status") or "unknown")
-                not in {"closed", "duplicate", "not_actionable", "wont_fix"}
+                if str(item.get("status") or "unknown") == "actionable"
+                and self._lifecycle(item) not in _ISSUE_TERMINAL_LIFECYCLES
             ]
         elif status is not None:
-            # Cloud projections contain disposition, not lifecycle. A lifecycle
-            # filter therefore has no representable matches on the replica.
-            records = []
+            records = [
+                item for item in records
+                if self._has_detailed_lifecycle(item)
+                and self._lifecycle(item) == status
+            ]
         if priority is not None:
             records = [item for item in records if item.get("priority") == priority]
         if failure_layer is not None:
@@ -256,6 +313,7 @@ class ReplicaReviewRepository(_ProjectionReader):
                 if datetime.fromisoformat(item["created_at"].replace("Z", "+00:00"))
                 >= created_after
             ]
+        records.sort(key=self._action_order)
         total = len(records)
         items = [self._issue(item) for item in records[offset : offset + limit]]
         return {
