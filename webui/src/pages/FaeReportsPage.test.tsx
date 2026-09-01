@@ -175,6 +175,20 @@ describe("FAE reports", () => {
     await act(async () => root.unmount()); container.remove();
   });
 
+  it("describes the current owner and admin report boundary without promising broader access", async () => {
+    vi.spyOn(faeReportApi, "latest").mockRejectedValue(new FaeReportApiError(403));
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(<FaeReportsPage />));
+    await act(async () => undefined);
+
+    expect(container.textContent).toContain("Platform Owner / Admin");
+    expect(container.textContent).not.toContain("FAE 团队");
+    await act(async () => root.unmount()); container.remove();
+  });
+
   it("loads the selected immutable version from the query string", async () => {
     history.replaceState({}, "", `/admin/fae/reports/${report.report_id}?version=2`);
     const detail = vi.spyOn(faeReportApi, "detail").mockResolvedValue({

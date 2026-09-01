@@ -55,7 +55,7 @@ export function FaeReportsPage({ reportId }: { reportId?: string }) {
     : failureStatus === 401
       ? <section className="fae-workbench__empty" role="alert"><h2>需要登录后查看分析报告</h2><p>请重新登录企业账号后再访问已发布的 FAE 成果。</p></section>
     : failureStatus === 403
-      ? <section className="fae-workbench__empty" role="alert"><h2>当前账号无权查看分析报告</h2><p>分析报告仅向已授权的管理层、FAE 团队和平台所有者开放。</p></section>
+      ? <section className="fae-workbench__empty" role="alert"><h2>当前账号无权查看分析报告</h2><p>分析报告当前仅向 Platform Owner / Admin 开放。</p></section>
     : failureStatus === -1
       ? <section className="fae-workbench__empty" role="alert"><h2>报告内容未通过读取校验</h2><p>该版本不符合已发布报告契约，Platform 已停止展示，未使用不完整数据代替。</p></section>
     : failureStatus !== null
