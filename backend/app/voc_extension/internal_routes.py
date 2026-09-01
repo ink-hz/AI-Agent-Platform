@@ -96,11 +96,11 @@ def build_voc_internal_router(
         return _session_subject(auth, request).as_json()
 
     @router.post(f"{_PATH}/bot-subject")
-    def bot_subject(body: _BotSubjectBody):
+    async def bot_subject(body: _BotSubjectBody):
         if bot_subject_resolver is None:
             raise HTTPException(503, "directory unavailable", headers=_NO_STORE)
         try:
-            result = bot_subject_resolver.resolve(body.staff_id)
+            result = await bot_subject_resolver.resolve(body.staff_id)
         except Exception:  # noqa: BLE001 - injected directory failures are opaque
             raise HTTPException(503, "directory unavailable", headers=_NO_STORE) from None
         if not isinstance(result, VocBotSubject):

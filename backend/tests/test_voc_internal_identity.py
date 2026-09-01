@@ -4,9 +4,13 @@ from uuid import UUID, uuid4
 
 import pytest
 from app.control_plane.middleware import IdentitySecurityMiddleware
-from app.control_plane.models import AuthContext, Role
+from app.control_plane.models import AuthContext, DirectoryFreshness, Role
 from app.voc_extension.directory import SubmitterOption
-from app.voc_extension.internal_identity import VocBotSubject, VocServiceAuthorizer
+from app.voc_extension.internal_identity import (
+    PlatformVocBotSubjectResolver,
+    VocBotSubject,
+    VocServiceAuthorizer,
+)
 from app.voc_extension.internal_routes import build_voc_internal_router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -51,14 +55,32 @@ class Directory:
 
 
 class BotSubjects:
-    def resolve(self, staff_id: str):
+    async def resolve(self, staff_id: str):
         if staff_id == "staff-1":
             return VocBotSubject(USER_ID, True)
         if staff_id == "inactive-staff":
             return VocBotSubject(OTHER_ID, False)
         if staff_id == "unavailable":
-            raise RuntimeError("directory unavailable")
+            raise RuntimeError("provider-user-sensitive")
         return None
+
+
+@pytest.mark.asyncio
+async def test_platform_bot_subject_resolver_uses_fresh_identity_resolution() -> None:
+    calls = []
+
+    class Resolver:
+        async def resolve_active_staff_member(self, staff_id, freshness):
+            calls.append((staff_id, freshness))
+            return USER_ID
+
+    resolver = PlatformVocBotSubjectResolver(
+        identity_resolver=Resolver(),
+        directory_freshness=lambda: DirectoryFreshness.FRESH,
+    )
+
+    assert await resolver.resolve("dingtalk-userid") == VocBotSubject(USER_ID, True)
+    assert calls == [("dingtalk-userid", DirectoryFreshness.FRESH)]
 
 
 @pytest.fixture
@@ -180,11 +202,14 @@ def test_bot_subject_is_strict_and_uses_directory_identity(client, voc_bearer):
         "active": False,
         "capabilities": ["voc.read_self", "voc.submit"],
     }
-    assert client.post(
+    unavailable = client.post(
         "/api/v1/internal/voc/bot-subject",
         headers={"Authorization": f"Bearer {voc_bearer}"},
         json={"staff_id": "unavailable"},
-    ).status_code == 503
+    )
+    assert unavailable.status_code == 503
+    assert unavailable.json() == {"detail": "directory unavailable"}
+    assert "provider-user-sensitive" not in unavailable.text
 
 
 def test_submitter_directory_exposes_only_canonical_public_projection(

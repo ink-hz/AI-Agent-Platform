@@ -147,7 +147,10 @@ from .spa import SpaStaticFiles, load_public_asset_manifest
 from .voc_extension.client import VocExtensionClient
 from .voc_extension.directory import VocSubmitterDirectory
 from .voc_extension.identity import PlatformVocTokenSigner
-from .voc_extension.internal_identity import VocServiceAuthorizer
+from .voc_extension.internal_identity import (
+    PlatformVocBotSubjectResolver,
+    VocServiceAuthorizer,
+)
 from .voc_extension.internal_routes import build_voc_internal_router
 from .voc_extension.routes import build_voc_extension_router
 
@@ -603,6 +606,13 @@ def build_identity_auth(config: Config) -> DingTalkWebAuth:
         ),
         warning_after_seconds=control.warning_after_seconds,
         hard_stale_after_seconds=control.hard_stale_after_seconds,
+        voc_bot_subject_resolver=PlatformVocBotSubjectResolver(
+            identity_resolver=in_client_resolver,
+            directory_freshness=lambda: repository.directory_freshness(
+                warning_after_seconds=control.warning_after_seconds,
+                hard_stale_after_seconds=control.hard_stale_after_seconds,
+            ),
+        ),
     )
 
 
@@ -930,7 +940,14 @@ def create_app(
             )
         voc_submitter_directory = VocSubmitterDirectory(control_database_url)
     if config.voc_extension_enabled and identity_enabled:
-        if identity_auth is None or voc_submitter_directory is None:
+        bot_subject_resolver = getattr(
+            identity_auth, "voc_bot_subject_resolver", None
+        )
+        if (
+            identity_auth is None
+            or voc_submitter_directory is None
+            or bot_subject_resolver is None
+        ):
             raise RuntimeError("VOC internal identity unavailable")
         voc_service_authorizer = VocServiceAuthorizer(
             read_secret_file(
@@ -941,6 +958,7 @@ def create_app(
             auth=identity_auth,
             directory=voc_submitter_directory,
             bearer=voc_service_authorizer,
+            bot_subject_resolver=bot_subject_resolver,
         )
 
     @asynccontextmanager

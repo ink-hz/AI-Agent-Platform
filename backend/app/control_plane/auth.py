@@ -340,6 +340,7 @@ class DingTalkWebAuth:
         hard_stale_audit: Callable[[UUID, str, str], None] | None = None,
         warning_after_seconds: int = 28_800,
         hard_stale_after_seconds: int = 86_400,
+        voc_bot_subject_resolver=None,
     ) -> None:
         if environment not in {"production", "preview"}:
             raise ValueError("authentication environment invalid")
@@ -423,6 +424,7 @@ class DingTalkWebAuth:
         self.hard_stale_audit = hard_stale_audit
         self.warning_after_seconds = warning_after_seconds
         self.hard_stale_after_seconds = hard_stale_after_seconds
+        self.voc_bot_subject_resolver = voc_bot_subject_resolver
 
     async def aclose(self) -> None:
         for callback in self._close_callbacks:

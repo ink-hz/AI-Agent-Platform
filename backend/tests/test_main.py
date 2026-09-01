@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from fastapi import APIRouter
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
@@ -210,6 +211,64 @@ def test_build_identity_auth_builds_registered_in_client_profile(
         ("/office/",),
     )
     assert len(captured["close_callbacks"]) == 3
+    assert captured["voc_bot_subject_resolver"].identity_resolver is resolvers[1]
+
+
+def test_create_app_injects_identity_owned_voc_bot_subject_resolver(
+    tmp_path, monkeypatch
+) -> None:
+    from app import main as app_main
+
+    registry = tmp_path / "registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "contract.json"
+    contract.write_text('{"bots": []}', encoding="utf-8")
+    bearer = tmp_path / "voc-service-bearer"
+    bearer.write_text("v" * 32, encoding="utf-8")
+    bearer.chmod(0o600)
+    config = replace(
+        load_config(),
+        voc_extension_enabled=True,
+        control_plane=replace(
+            load_config().control_plane, voc_service_bearer_file=str(bearer)
+        ),
+    )
+    monkeypatch.setattr(app_main, "load_config", lambda: config)
+    captured = {}
+    router = APIRouter()
+
+    def build_router(**kwargs):
+        captured.update(kwargs)
+        return router
+
+    monkeypatch.setattr(app_main, "build_voc_internal_router", build_router)
+    monkeypatch.setattr(
+        app_main, "build_auth_router", lambda *_args, **_kwargs: APIRouter()
+    )
+    resolver = object()
+    identity_auth = SimpleNamespace(
+        voc_bot_subject_resolver=resolver,
+        repository=SimpleNamespace(directory_freshness=lambda **_kwargs: "fresh"),
+        hard_stale_audit=None,
+        route_prefix="/",
+        public_base_url="https://agent.example.test",
+        trusted_proxy_networks=(),
+        rate_limiter=None,
+        cookie_name="__Host-platform_session",
+        csrf_cookie_name="__Host-platform_csrf",
+    )
+
+    app_main.create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        identity_auth=identity_auth,
+        voc_extension_client=object(),
+        voc_submitter_directory=object(),
+        ai_notes_reader=object(),
+    )
+
+    assert captured["bot_subject_resolver"] is resolver
 
 
 @pytest.mark.asyncio

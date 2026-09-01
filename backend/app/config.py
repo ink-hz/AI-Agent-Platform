@@ -395,6 +395,10 @@ def _load_control_plane_config() -> ControlPlaneConfig:
             dingtalk_app_secret_file="",
             encryption_keyring_file="",
             hmac_keyring_file="",
+            voc_service_bearer_file=os.getenv(
+                "PLATFORM_VOC_SERVICE_BEARER_FILE",
+                "/run/secrets/voc-service-bearer",
+            ).strip(),
         )
 
     control_database_url_file = _required_environment(
@@ -691,6 +695,10 @@ def _validate_voc_extension_config(config: Config) -> None:
         config.control_plane.voc_service_bearer_file,
         "VOC service bearer",
     )
+    try:
+        read_secret_file(config.control_plane.voc_service_bearer_file)
+    except SecretFileUnavailable as error:
+        raise RuntimeError("VOC service bearer unavailable") from error
     try:
         if len(Path(config.voc_extension_signing_key_file).read_bytes()) < 32:
             raise RuntimeError(

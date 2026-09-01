@@ -1,11 +1,10 @@
+import os
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
-import os
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-
 from app.config import load_config
 from app.control_plane.models import (
     AuthContext,
@@ -15,7 +14,6 @@ from app.control_plane.models import (
     IssuedWebSession,
     Role,
 )
-
 
 SECRET_FILE_ENV = {
     "PLATFORM_CONTROL_DATABASE_URL_FILE": "control-database-url",
@@ -77,6 +75,14 @@ def install_required_identity_environment(
         monkeypatch.setenv("PLATFORM_ROUTE_PREFIX", "/")
         monkeypatch.setenv("PLATFORM_COOKIE_NAME", "__Host-platform_session")
     return paths
+
+
+def install_voc_service_bearer(tmp_path: Path, monkeypatch, value: str = "v" * 32) -> Path:
+    bearer = tmp_path / "voc-service-bearer"
+    bearer.write_text(value + "\n", encoding="utf-8")
+    bearer.chmod(0o600)
+    monkeypatch.setenv("PLATFORM_VOC_SERVICE_BEARER_FILE", str(bearer))
+    return bearer
 
 
 def test_control_plane_models_are_explicit_and_immutable() -> None:
@@ -144,6 +150,7 @@ def test_enabled_voc_extension_requires_private_key_and_loopback(
     monkeypatch.setenv("PLATFORM_VOC_EXTENSION_BASE_URL", "http://[::1]:18130")
     monkeypatch.setenv("PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE", str(key))
     monkeypatch.setenv("PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS", "12.5")
+    bearer = install_voc_service_bearer(tmp_path, monkeypatch)
 
     config = load_config()
 
@@ -151,6 +158,7 @@ def test_enabled_voc_extension_requires_private_key_and_loopback(
     assert config.voc_extension_base_url == "http://[::1]:18130"
     assert config.voc_extension_signing_key_file == str(key)
     assert config.voc_extension_timeout_seconds == 12.5
+    assert config.control_plane.voc_service_bearer_file == str(bearer)
 
     key.chmod(0o644)
     with pytest.raises(RuntimeError, match="VOC extension signing key.*0600"):
@@ -168,6 +176,7 @@ def test_enabled_voc_extension_accepts_fixed_platform_private_service(
         "PLATFORM_VOC_EXTENSION_BASE_URL", "http://172.29.0.3:18130"
     )
     monkeypatch.setenv("PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE", str(key))
+    install_voc_service_bearer(tmp_path, monkeypatch)
 
     assert load_config().voc_extension_base_url == "http://172.29.0.3:18130"
 
@@ -189,11 +198,62 @@ def test_enabled_voc_extension_rejects_unsafe_configuration(
     key = tmp_path / "voc-extension-signing-key"
     key.write_bytes(b"k" * 32)
     key.chmod(0o600)
+    install_voc_service_bearer(tmp_path, monkeypatch)
     monkeypatch.setenv("PLATFORM_VOC_EXTENSION_ENABLED", "1")
     monkeypatch.setenv("PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE", str(key))
     monkeypatch.setenv(name, value)
 
     with pytest.raises((ValueError, RuntimeError), match=message):
+        load_config()
+
+
+@pytest.mark.parametrize(
+    ("path_name", "payload", "mode", "message"),
+    [
+        ("relative-bearer", "v" * 32, 0o600, "absolute path"),
+        ("missing-bearer", None, None, "regular mode 0600"),
+        ("insecure-bearer", "v" * 32, 0o644, "mode 0600"),
+        ("empty-bearer", "", 0o600, "unavailable"),
+    ],
+)
+def test_enabled_voc_extension_rejects_invalid_service_bearer_file(
+    tmp_path: Path,
+    monkeypatch,
+    path_name: str,
+    payload: str | None,
+    mode: int | None,
+    message: str,
+) -> None:
+    key = tmp_path / "voc-extension-signing-key"
+    key.write_bytes(b"k" * 32)
+    key.chmod(0o600)
+    path = tmp_path / path_name
+    if payload is not None:
+        path.write_text(payload, encoding="utf-8")
+        path.chmod(mode)
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE", str(key))
+    monkeypatch.setenv(
+        "PLATFORM_VOC_SERVICE_BEARER_FILE",
+        path_name if path_name == "relative-bearer" else str(path),
+    )
+
+    with pytest.raises(RuntimeError, match=message):
+        load_config()
+
+
+def test_voc_service_bearer_rejects_inline_secret(tmp_path: Path, monkeypatch) -> None:
+    key = tmp_path / "voc-extension-signing-key"
+    key.write_bytes(b"k" * 32)
+    key.chmod(0o600)
+    install_voc_service_bearer(tmp_path, monkeypatch)
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE", str(key))
+    monkeypatch.setenv("PLATFORM_VOC_SERVICE_BEARER", "must-not-be-inline")
+
+    with pytest.raises(
+        ValueError, match="identity credentials must use secret files"
+    ):
         load_config()
 
 

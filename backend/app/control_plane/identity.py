@@ -384,6 +384,35 @@ class IdentityResolver:
             raise
         except DingTalkProviderError:
             raise IdentityResolutionError("provider identity unavailable") from None
+        return await self._persist_active_member(member)
+
+    async def resolve_active_staff_member(
+        self,
+        userid: str,
+        freshness: DirectoryFreshness,
+    ) -> UUID:
+        """Resolve an active DingTalk userid without inspecting encrypted IDs."""
+        if freshness not in {DirectoryFreshness.FRESH, DirectoryFreshness.WARNING}:
+            raise IdentityResolutionError("directory unavailable")
+        if not isinstance(userid, str) or not userid or "\0" in userid:
+            raise IdentityResolutionError("provider identity invalid")
+        try:
+            member = await self.client.get_member(userid)
+            if member.userid != userid:
+                raise IdentityResolutionError("provider identity mismatch")
+            if not member.unionid:
+                raise IdentityResolutionError("stable identity required")
+            if not member.active:
+                raise IdentityResolutionError("member inactive")
+            if not member.display_name.strip():
+                raise IdentityResolutionError("member data invalid")
+        except IdentityResolutionError:
+            raise
+        except DingTalkProviderError:
+            raise IdentityResolutionError("provider identity unavailable") from None
+        return await self._persist_active_member(member)
+
+    async def _persist_active_member(self, member: DingTalkMember) -> UUID:
         mutation = asyncio.create_task(
             asyncio.to_thread(self._resolve_transaction, member)
         )

@@ -8,7 +8,11 @@ import app.control_plane.identity as identity_module
 import psycopg
 import pytest
 from app.control_plane.crypto import ProtectedProviderId
-from app.control_plane.dingtalk import DingTalkAuthResult, DingTalkMember
+from app.control_plane.dingtalk import (
+    DingTalkAuthResult,
+    DingTalkMember,
+    DingTalkProviderError,
+)
 from app.control_plane.directory import (
     DIRECTORY_SOURCE_SCHEMA_VERSION,
     StagedDepartment,
@@ -477,6 +481,44 @@ async def test_normal_login_requires_current_usable_directory_generation(
         assert connection.execute(
             "select count(*) from platform_control.internal_users"
         ).fetchone() == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+async def test_staff_id_resolution_uses_verified_active_member_and_fails_closed(
+    production_environment, tmp_path: Path
+) -> None:
+    member = DingTalkMember("bot-user", "bot-union", "VOC Bot", True, (1,))
+    resolver = _resolver(production_environment, tmp_path, member)
+
+    internal_user_id = await resolver.resolve_active_staff_member(
+        "bot-user", DirectoryFreshness.FRESH
+    )
+
+    assert internal_user_id
+    with pytest.raises(IdentityResolutionError, match="directory unavailable"):
+        await resolver.resolve_active_staff_member(
+            "bot-user", DirectoryFreshness.HARD_STALE
+        )
+    resolver.client.member = DingTalkMember(
+        "bot-user", "bot-union", "VOC Bot", False, (1,)
+    )
+    with pytest.raises(IdentityResolutionError, match="member inactive"):
+        await resolver.resolve_active_staff_member(
+            "bot-user", DirectoryFreshness.FRESH
+        )
+
+    class ProviderUnavailable:
+        async def get_member(self, _userid):
+            raise DingTalkProviderError(
+                "provider unavailable", request_id="request-1", error_code="unavailable"
+            )
+
+    resolver.client = ProviderUnavailable()
+    with pytest.raises(IdentityResolutionError, match="provider identity unavailable"):
+        await resolver.resolve_active_staff_member(
+            "bot-user", DirectoryFreshness.FRESH
+        )
 
 
 @pytest.mark.asyncio
