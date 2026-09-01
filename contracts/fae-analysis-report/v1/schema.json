@@ -359,7 +359,8 @@
             "percent",
             "milliseconds",
             "seconds",
-            "distribution"
+            "distribution",
+            "milliseconds_distribution"
           ],
           "title": "Unit",
           "type": "string"
@@ -377,6 +378,9 @@
                 "anyOf": [
                   {
                     "type": "integer"
+                  },
+                  {
+                    "type": "number"
                   },
                   {
                     "const": "少于 5",

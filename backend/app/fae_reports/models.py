@@ -69,8 +69,11 @@ class ReportMetric(StrictModel):
     metric_id: Identifier
     dimension: Dimension
     label: str = Field(min_length=1, max_length=160)
-    value: int | float | dict[str, int | Literal["少于 5"]]
-    unit: Literal["count", "ratio", "percent", "milliseconds", "seconds", "distribution"]
+    value: int | float | dict[str, int | float | Literal["少于 5"]]
+    unit: Literal[
+        "count", "ratio", "percent", "milliseconds", "seconds",
+        "distribution", "milliseconds_distribution",
+    ]
     numerator: int | float | None = Field(default=None, ge=0)
     denominator: int | float | None = Field(default=None, gt=0)
     filters: list[str] = Field(max_length=20)
@@ -85,13 +88,21 @@ class ReportMetric(StrictModel):
         elif self.unit in {"ratio", "percent"}:
             if isinstance(self.value, dict) or self.numerator is None or self.denominator is None:
                 raise ValueError("invalid_metric_fraction")
-        elif self.unit == "distribution":
+        elif self.unit in {"distribution", "milliseconds_distribution"}:
             if not isinstance(self.value, dict) or not self.value or len(self.value) > 50:
                 raise ValueError("invalid_metric_distribution")
             if self.numerator is not None or self.denominator is None:
                 raise ValueError("invalid_metric_distribution")
             for key, count in self.value.items():
-                if not key or len(key) > 80 or (type(count) is int and count < 0):
+                if not key or len(key) > 80 or (
+                    isinstance(count, (int, float))
+                    and not isinstance(count, bool)
+                    and count < 0
+                ):
+                    raise ValueError("invalid_metric_distribution")
+                if self.unit == "distribution" and type(count) is float:
+                    raise ValueError("invalid_metric_distribution")
+                if self.unit == "milliseconds_distribution" and not isinstance(count, (int, float)):
                     raise ValueError("invalid_metric_distribution")
         elif isinstance(self.value, dict):
             raise ValueError("invalid_metric_value")
