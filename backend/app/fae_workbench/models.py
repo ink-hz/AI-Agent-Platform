@@ -95,6 +95,10 @@ class FaeIssueSection(BaseModel):
 
 class FaeReportPreviewSection(BaseModel):
     state: FaeSectionState
+    report_id: str | None = None
+    title: str | None = None
+    data_cutoff_at: AwareDatetime | None = None
+    currentness: Literal["current", "source_updated"] | None = None
 
 
 class FaeOverview(BaseModel):

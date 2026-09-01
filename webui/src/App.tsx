@@ -39,7 +39,7 @@ import { AgentUsePage } from "./pages/AgentUsePage";
 import { VocWorkspacePage } from "./pages/VocWorkspacePage";
 import { AiNotesPage } from "./pages/AiNotesPage";
 import { VocManagementPage } from "./pages/VocManagementPage";
-import { FaeReportsPlaceholderPage } from "./pages/FaeReportsPlaceholderPage";
+import { FaeReportsPage } from "./pages/FaeReportsPage";
 import { FaeOverviewPage } from "./pages/FaeOverviewPage";
 import { FaeWorkbenchShell, type FaeSection } from "./components/fae-workbench/FaeWorkbenchShell";
 
@@ -135,8 +135,8 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-fae-issue": return account
       ? <FaeIssuesPage account={account} issueId={route.issueId} />
       : <FaeWorkbenchPendingPage section="issues" />;
-    case "admin-fae-reports":
-    case "admin-fae-report": return <FaeReportsPlaceholderPage />;
+    case "admin-fae-reports": return <FaeReportsPage />;
+    case "admin-fae-report": return <FaeReportsPage reportId={route.reportId} />;
     case "legacy-redirect": return <LegacyRedirect to={route.to} />;
     default: return <PendingPage title="页面不存在" description="请返回 Agent 大脑。" />;
   }

@@ -108,6 +108,27 @@ _MANAGEMENT_KEYS = {
         "negative_rows", "negative_turns", "positive_rows",
         "sanitizer_policy_version",
     },
+    **{
+        kind: {
+            "kind", "key", "agent_id", "report_id", "report_version",
+            "item_id", "payload", "occurred_at", "sanitizer_policy_version",
+        }
+        for kind in (
+            "fae_report_header_projection",
+            "fae_report_metric_projection",
+            "fae_report_finding_projection",
+            "fae_report_recommendation_projection",
+        )
+    },
+}
+_LEGACY_REVIEW_ISSUE_KEYS = {
+    "kind", "key", "agent_id", "created_at", "updated_at", "title", "status",
+    "priority", "failure_layer", "owner_display", "linked_turn_count",
+    "linked_turn_keys", "scope_valid", "sanitizer_policy_version",
+}
+_DETAILED_REVIEW_ISSUE_KEYS = _LEGACY_REVIEW_ISSUE_KEYS | {
+    "detail_schema_version", "origin_turn_key", "root_cause", "impact_scope",
+    "secondary_layers", "links", "evidence", "replays", "events", "progress",
 }
 _LEGACY_OPERATION_EVENT_KEYS = {
     "kind", "key", "agent_id", "occurred_at", "event_type", "severity",
@@ -226,6 +247,13 @@ class ReplicaStore:
                 kind == "operation_event_projection"
                 and actual_keys == _LEGACY_OPERATION_EVENT_KEYS
             )
+            and not (
+                kind == "review_issue_projection"
+                and actual_keys in (
+                    _LEGACY_REVIEW_ISSUE_KEYS,
+                    _DETAILED_REVIEW_ISSUE_KEYS,
+                )
+            )
         ):
             raise ReplicaStoreError("record_invalid")
         record_key = record.get("key")
@@ -240,6 +268,10 @@ class ReplicaStore:
             "review_inbox_projection": "first_feedback_at",
             "operation_event_projection": "occurred_at",
             "review_feedback_totals_projection": "observed_at",
+            "fae_report_header_projection": "occurred_at",
+            "fae_report_metric_projection": "occurred_at",
+            "fae_report_finding_projection": "occurred_at",
+            "fae_report_recommendation_projection": "occurred_at",
         }[kind]
         if (
             not isinstance(record_key, str)

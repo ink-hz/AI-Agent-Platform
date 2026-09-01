@@ -135,6 +135,7 @@ function normalizeIssue(value: unknown): FeedbackIssueSummary {
   const title = stringOrNull(raw.title);
   if (!id || !agentId || title === null) throw new Error("FAE issue response contract invalid");
   const projected = raw.replica_read_only === true;
+  const detailedProjection = projected && raw.detail_schema_version === 1;
   const disposition = raw.disposition === "duplicate" || raw.disposition === "not_actionable" || raw.disposition === "wont_fix"
     ? raw.disposition : "actionable";
   const priority = raw.priority === "P0" || raw.priority === "P1" || raw.priority === "P2" || raw.priority === "P3" ? raw.priority : "P2";
@@ -146,14 +147,14 @@ function normalizeIssue(value: unknown): FeedbackIssueSummary {
     priority,
     failure_layer: stringOrNull(raw.failure_layer),
     secondary_layers: Array.isArray(raw.secondary_layers) ? raw.secondary_layers.filter((layer): layer is string => typeof layer === "string") : [],
-    root_cause: projected ? null : stringOrNull(raw.root_cause) ?? "",
-    impact_scope: projected ? null : stringOrNull(raw.impact_scope) ?? "",
+    root_cause: projected && !detailedProjection ? null : stringOrNull(raw.root_cause) ?? "",
+    impact_scope: projected && !detailedProjection ? null : stringOrNull(raw.impact_scope) ?? "",
     owner: stringOrNull(raw.owner),
     disposition,
     row_version: projected ? null : countOrNull(raw.row_version),
     ...(typeof raw.created_at === "string" ? { created_at: raw.created_at } : {}),
     ...(typeof raw.updated_at === "string" ? { updated_at: raw.updated_at } : {}),
-    progress: normalizeProgress(raw.progress, id, projected),
+    progress: normalizeProgress(raw.progress, id, projected && !detailedProjection),
   };
 }
 
@@ -203,6 +204,7 @@ function normalizeDetail(value: unknown): FeedbackIssueDetail {
   const arrays = ["links", "evidence", "replays", "events"] as const;
   if (arrays.some((key) => raw[key] !== null && !Array.isArray(raw[key]))) throw new Error("FAE issue detail response contract invalid");
   const projected = raw.replica_read_only === true || rawIssue.replica_read_only === true;
+  const detailedProjection = projected && rawIssue.detail_schema_version === 1;
   return {
     issue: (({ progress: _progress, ...summary }) => summary)(issue),
     links: (raw.links ?? []) as FeedbackIssueDetail["links"],
@@ -210,7 +212,7 @@ function normalizeDetail(value: unknown): FeedbackIssueDetail {
     replays: (raw.replays ?? []) as FeedbackIssueDetail["replays"],
     events: (raw.events ?? []) as FeedbackIssueDetail["events"],
     section_availability: objectValue(raw.availability ?? raw.section_availability ?? {}, "FAE issue detail response contract invalid") as FeedbackIssueDetail["section_availability"],
-    progress: normalizeProgress(raw.progress, issue.id, projected),
+    progress: normalizeProgress(raw.progress, issue.id, projected && !detailedProjection),
   };
 }
 

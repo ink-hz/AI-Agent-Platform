@@ -2,20 +2,24 @@ from datetime import UTC, datetime, timedelta
 
 from app.cloud_replica.source import (
     ATTACHMENT_SQL,
+    REVIEW_EVENT_SQL,
+    REVIEW_EVIDENCE_SQL,
+    REVIEW_INBOX_SQL,
+    REVIEW_ISSUE_SQL,
+    REVIEW_LINK_SQL,
+    REVIEW_REPLAY_SQL,
     SESSION_SQL,
     TRACE_SQL,
     TRACE_STEP_SQL,
     TURN_SQL,
-    REVIEW_INBOX_SQL,
-    REVIEW_ISSUE_SQL,
     ReplicaSource,
 )
+from app.observability.models import Page
+from app.operations.models import EventFilters, OperationalEvent
 from app.review.scope_sql import (
     CANONICAL_EVENT_PAIR_INVALID_SQL,
     HISTORICAL_LINK_EVENT_INVALID_SQL,
 )
-from app.observability.models import Page
-from app.operations.models import EventFilters, OperationalEvent
 
 
 def test_source_queries_are_explicit_bounded_and_never_touch_restricted_fields():
@@ -326,3 +330,83 @@ def test_management_source_marks_refreshed_inbox_scope_valid():
 
     assert inbox.scope_valid is True
     assert "statement_timeout=30000" in connect_arguments["options"]
+
+
+def test_management_source_projects_complete_feedback_repair_chain():
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
+    issue_id = "2c387d17-f386-4df7-86fd-64c4676ec40a"
+    link_id = "d0239736-85ab-429d-81cb-3566737a7b16"
+    rows = {
+        "with recursive canonical_walk": [{
+            "id": issue_id, "agent_id": "ai-fae-agent",
+            "status": "actionable", "priority": "P1", "title": "资料缺口",
+            "failure_layer": "coverage", "owner": "FAE", "created_at": now,
+            "updated_at": now, "linked_turn_count": 1,
+            "linked_turn_keys": ["fae:turn-1"], "scope_valid": True,
+            "origin_turn_key": "fae:turn-1", "secondary_layers": [],
+            "root_cause": "资料没有覆盖", "impact_scope": "现场排障",
+            "fix_ready_at": None, "disposition": "actionable",
+            "canonical_issue_id": None, "disposition_reason": "", "row_version": 1,
+        }],
+        "from platform_review.feedback_issue_links detail_link": [{
+            "id": link_id, "issue_id": issue_id, "agent_id": "ai-fae-agent",
+            "source_turn_key": "fae:turn-1", "source_feedback_keys": [],
+            "link_role": "primary", "linked_by": "owner", "linked_at": now,
+            "active": True, "link_reason": "negative feedback",
+            "source_question": "怎么处理", "source_answer": "旧回答",
+            "source_turn_index": 1, "source_session_key": "fae:session-1",
+            "source_created_at": now, "source_details": {}, "source_sources": [],
+            "source_trace_key": "fae:trace-1", "source_outcome": "answered",
+            "source_fallback_used": False, "source_context": [],
+        }],
+        "from platform_review.feedback_fix_evidence detail_evidence": [{
+            "id": "f8cd7728-1acc-4b48-af95-ea02cd0e8b56", "issue_id": issue_id,
+            "evidence_type": "merge", "repository": "AI-FAE-Agent",
+            "reference": "修复提交", "url": "", "version": "",
+            "commit_sha": "a" * 40, "release_manifest_ref": "", "environment": "",
+            "observed_at": now, "observed_by": "owner",
+            "verification_status": "pending", "verification_details": {},
+        }],
+        "from platform_review.feedback_replay_runs detail_replay": [{
+            "id": "0c63d565-8c5a-4e80-936c-3db37829c218", "issue_id": issue_id,
+            "issue_link_id": link_id, "attempt_no": 1, "expected_version": "v1",
+            "actual_version": "v1", "expected_git_sha": "a" * 40,
+            "actual_git_sha": "a" * 40, "configured_model": "claude-opus",
+            "actual_model": "claude-opus", "answer": "修复后回答", "sources": [],
+            "done": {}, "trace_id": "trace", "duration_ms": 100,
+            "execution_status": "succeeded", "runtime_gate": "passed",
+            "runtime_failure_reason": "", "semantic_verdict": "passed",
+            "review_method": "human_fae", "reviewer": "owner",
+            "review_reason": "通过", "started_at": now, "completed_at": now,
+        }],
+        "from platform_review.feedback_issue_events detail_event": [{
+            "id": "79de04d1-4444-4382-ac58-b6c3533ece56", "issue_id": issue_id,
+            "event_type": "issue_created", "actor": "owner", "reason": "反馈建项",
+            "before": {}, "after": {"status": "pending_triage"}, "created_at": now,
+        }],
+        "select feedback.agent_id": [],
+        "select agent_id,": [],
+    }
+    calls = []
+    source = ReplicaSource(
+        "postgresql://safe",
+        connection_factory=lambda *_args, **_kwargs: _Connection(rows, calls),
+    )
+
+    projection = next(
+        value for value in source.fetch_management_projections(through=now)
+        if value.__class__.__name__ == "ReviewIssueProjection"
+    )
+
+    assert projection.detail_schema_version == 1
+    assert projection.origin_turn_key == "fae:turn-1"
+    assert projection.links[0]["source_session_key"] == "fae:session-1"
+    assert projection.evidence[0]["reference"] == "修复提交"
+    assert projection.replays[0]["answer"] == "修复后回答"
+    assert projection.events[0]["reason"] == "反馈建项"
+    assert projection.progress["status"] == "fixing"
+    statements = "\n".join(sql for sql, _params in calls)
+    for statement in (
+        REVIEW_LINK_SQL, REVIEW_EVIDENCE_SQL, REVIEW_REPLAY_SQL, REVIEW_EVENT_SQL
+    ):
+        assert statement in statements

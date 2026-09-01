@@ -631,7 +631,7 @@ describe("FaeIssuesPage", () => {
     expect(container.textContent).not.toContain("普通回答");
   });
 
-  it("renders projected Issue state without any mutation controls in a cloud replica", async () => {
+  it("renders the complete projected repair chain without mutation controls in a cloud replica", async () => {
     window.history.replaceState({}, "", `/admin/fae/issues/${ISSUE_ID}`);
     const projectedOverview = {
       feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null,
@@ -641,12 +641,32 @@ describe("FaeIssuesPage", () => {
     const projectedIssue = {
       id: ISSUE_ID, agent_id: "ai-fae-agent", title: "脱敏治理事项", priority: "P2",
       failure_layer: "synthesis", owner: null, disposition: "actionable",
+      detail_schema_version: 1, root_cause: "回答缺少约束", impact_scope: "现场排障",
       updated_at: "2026-08-31T00:00:00Z", linked_turn_count: 2, replica_read_only: true,
-      progress: { status: "actionable", missing_gates: [] },
+      progress: { issue_id: ISSUE_ID, status: "closed", missing_gates: [], replay_passed_turns: 1, replay_required_turns: 1, reopened: false },
     };
     const projectedDetail = {
-      issue: projectedIssue, links: [], evidence: [], replays: [], events: [],
+      issue: projectedIssue,
+      links: [{ ...detail.links[0], source_session_key: "s".repeat(52) }],
+      evidence: [{
+        id: "00000000-0000-0000-0000-000000000003", evidence_type: "merge",
+        repository: "AI-FAE-Agent", reference: "修复提交", url: "", version: "",
+        commit_sha: "a".repeat(40), release_manifest_ref: "", environment: "",
+        verification_status: "verified", verification_details: {},
+        observed_at: "2026-08-31T00:00:00Z", observed_by: "owner",
+      }],
+      replays: [{
+        id: "00000000-0000-0000-0000-000000000004", issue_link_id: detail.links[0].id,
+        attempt_no: 1, actual_version: "v1", actual_git_sha: "a".repeat(40),
+        configured_model: "opus", actual_model: "opus", answer: "修复后回答", sources: [],
+        trace_id: "", execution_status: "succeeded", runtime_gate: "passed",
+        runtime_failure_reason: "", semantic_verdict: "passed", review_method: "human_fae",
+        reviewer: "owner", review_reason: "通过", started_at: "2026-08-31T00:00:00Z",
+        completed_at: "2026-08-31T00:01:00Z",
+      }],
+      events: [{ event_type: "issue_closed", actor: "owner", reason: "复审通过", before: {}, after: {}, created_at: "2026-08-31T00:01:00Z" }],
       progress: projectedIssue.progress, replica_read_only: true,
+      section_availability: { links: "available", evidence: "available", replays: "available", events: "available" },
     };
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const path = String(input);
@@ -664,11 +684,14 @@ describe("FaeIssuesPage", () => {
     expect(container.textContent).toContain("脱敏治理事项");
     expect(container.textContent).toContain("当前为只读副本");
     expect(container.textContent).toContain("可处理事项");
-    expect(container.textContent).toContain("生命周期状态暂不可用");
-    expect(container.textContent).toContain("闭环门：暂不可用");
+    expect(container.textContent).toContain("回答缺少约束");
+    expect(container.textContent).toContain("闭环门：1/1 条回答通过真实复跑");
+    expect(container.textContent).toContain("修复提交");
+    expect(container.textContent).toContain("修复后回答");
+    expect(container.textContent).toContain("复审通过");
+    expect(container.querySelector('a[href="/admin/fae/sessions/' + "s".repeat(52) + '"]')).not.toBeNull();
     expect(container.textContent).not.toContain("undefined");
     expect(container.textContent).not.toContain("0/0");
-    expect(container.textContent).not.toContain("所有硬门均已满足");
     const buttonLabels = [...container.querySelectorAll("button")].map((button) => button.textContent);
     ["创建事项并纳管", "保存归因", "关联到已有事项", "添加证据", "复跑 fae:turn-1", "无需处理"]
       .forEach((label) => expect(buttonLabels).not.toContain(label));

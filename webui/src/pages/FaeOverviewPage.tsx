@@ -111,9 +111,9 @@ function Summary({ overview, summary, cloudReplica }: { overview: FaeOverview; s
 function IssueQueue({ overview, cloudReplica }: { overview: FaeOverview; cloudReplica: boolean }) {
   if (overview.issues.state.status === "unavailable") {
     return <section className="fae-overview-panel fae-overview-panel--unavailable" aria-labelledby="fae-issues-heading">
-      <h2 id="fae-issues-heading">问题治理暂不可用</h2>
+      <h2 id="fae-issues-heading">反馈与修复暂不可用</h2>
       <p>Issue 数据源当前不可用，Session 运营数据仍可继续查看。</p>
-      <PlatformLink href="/admin/fae/issues">打开问题治理</PlatformLink>
+      <PlatformLink href="/admin/fae/issues">打开反馈与修复</PlatformLink>
     </section>;
   }
   const actionable = Object.entries(overview.issues.statuses)
@@ -122,7 +122,7 @@ function IssueQueue({ overview, cloudReplica }: { overview: FaeOverview; cloudRe
       : LOCAL_ISSUE_STATUSES.has(status) && !CLOSED_ISSUE_STATUSES.has(status)))
     .sort(([left], [right]) => Object.keys(ISSUE_STATUS_LABELS).indexOf(left) - Object.keys(ISSUE_STATUS_LABELS).indexOf(right));
   return <section className="fae-overview-panel" aria-labelledby="fae-issues-heading">
-    <header><div><p>ISSUE QUEUE</p><h2 id="fae-issues-heading">问题治理</h2></div><PlatformLink href="/admin/fae/issues">查看全部</PlatformLink></header>
+    <header><div><p>FEEDBACK TO FIX</p><h2 id="fae-issues-heading">反馈与修复</h2></div><PlatformLink href="/admin/fae/issues">查看全部</PlatformLink></header>
     {actionable.length === 0
       ? <p className="fae-overview-panel__empty">当前没有开放 Issue。</p>
       : <ul className="fae-overview-list">{actionable.map(([status, count]) => <li key={status}>
@@ -202,8 +202,13 @@ function OverviewContent({ overview, cloudReplica }: { overview: FaeOverview; cl
     <div className="fae-overview__queues"><IssueQueue overview={overview} cloudReplica={cloudReplica} /><AttentionQueue overview={overview} /></div>
     <Trends overview={overview} />
     <section className="fae-report-preview" aria-labelledby="fae-reports-heading">
-      <div><p>ANALYSIS REPORTS</p><h2 id="fae-reports-heading">分析报告尚未接入</h2><span>这里不会用样例数据代替 FAE 发布的真实分析结果。</span></div>
-      <PlatformLink href="/admin/fae/reports">查看接入状态 →</PlatformLink>
+      {overview.reports.state.status === "available" ? <>
+        <div><p>ANALYSIS REPORTS</p><h2 id="fae-reports-heading">{overview.reports.title}</h2><span>{overview.reports.currentness === "source_updated" ? "数据已有更新 · " : "冻结成果报告 · "}截止 {overview.reports.data_cutoff_at ? formatTime(overview.reports.data_cutoff_at) : "待确认"}</span></div>
+        <PlatformLink href={`/admin/fae/reports/${encodeURIComponent(overview.reports.report_id!)}`}>查看完整成果 →</PlatformLink>
+      </> : <>
+        <div><p>ANALYSIS REPORTS</p><h2 id="fae-reports-heading">分析报告暂不可用</h2><span>未使用演示数据，等待真实 FAE 报告同步。</span></div>
+        <PlatformLink href="/admin/fae/reports">查看报告 →</PlatformLink>
+      </>}
     </section>
   </section>;
 }

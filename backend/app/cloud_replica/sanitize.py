@@ -1,31 +1,33 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import os
-from pathlib import Path
 import re
 import stat
 import unicodedata
-from typing import Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC
+from pathlib import Path
+from uuid import UUID
 
 import yaml
 
+from .crypto import stable_id
 from .models import (
+    FaeReportProjection,
     OperationEventProjection,
     RawAttachment,
     RawSession,
+    ReviewFeedbackTotalsProjection,
+    ReviewInboxProjection,
+    ReviewIssueProjection,
     SanitizedAttachment,
     SanitizedSessionRecord,
     SanitizedText,
     SanitizedTraceAggregate,
     SanitizedTurnRecord,
-    ReviewInboxProjection,
-    ReviewIssueProjection,
-    ReviewFeedbackTotalsProjection,
 )
-from .crypto import stable_id
-
 
 _DICTIONARY_GROUPS = (
     "customers",
@@ -162,6 +164,34 @@ def sanitize_management_projection(
     agent_id = getattr(raw, "agent_id", None)
     if _safe_identifier(agent_id) != agent_id:
         raise ValueError("unsafe management projection")
+    if isinstance(raw, FaeReportProjection):
+        if raw.projection_kind not in {
+            "fae_report_header_projection",
+            "fae_report_metric_projection",
+            "fae_report_finding_projection",
+            "fae_report_recommendation_projection",
+        }:
+            raise ValueError("unsupported management projection")
+        if _safe_identifier(raw.report_id) != raw.report_id or not raw.item_id:
+            raise ValueError("unsafe management projection")
+        payload = _sanitize_report_payload(raw.payload, policy, identity_key)
+        return {
+            "kind": raw.projection_kind,
+            "key": stable_id(
+                "fae-report",
+                f"{raw.report_id}:{raw.report_version}:{raw.projection_kind}:{raw.item_id}",
+                identity_key,
+            ),
+            "agent_id": raw.agent_id,
+            "report_id": raw.report_id,
+            "report_version": raw.report_version,
+            "item_id": raw.item_id,
+            "payload": payload,
+            "occurred_at": raw.occurred_at.astimezone(UTC)
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z"),
+            "sanitizer_policy_version": policy.version,
+        }
     if isinstance(raw, ReviewIssueProjection):
         title = sanitize_text(raw.title, policy, "review-issue-title")
         owner = (
@@ -169,7 +199,7 @@ def sanitize_management_projection(
             if raw.owner_display
             else None
         )
-        return {
+        result = {
             "kind": "review_issue_projection",
             "key": str(raw.issue_id),
             "agent_id": raw.agent_id,
@@ -188,6 +218,108 @@ def sanitize_management_projection(
             "updated_at": raw.updated_at,
             "sanitizer_policy_version": policy.version,
         }
+        if raw.detail_schema_version == 1:
+            def safe_text(value: object, scope: str) -> str:
+                return sanitize_text(str(value or ""), policy, scope).text
+
+            links = []
+            for item in raw.links:
+                link = dict(item)
+                for identifier in ("id", "issue_id"):
+                    if link.get(identifier) is not None:
+                        link[identifier] = str(link[identifier])
+                link["source_turn_key"] = stable_id(
+                    "turn", str(link["source_turn_key"]), identity_key
+                )
+                if link.get("source_session_key"):
+                    link["source_session_key"] = stable_id(
+                        "session", str(link["source_session_key"]), identity_key
+                    )
+                link["source_feedback_keys"] = [
+                    stable_id("feedback", str(key), identity_key)
+                    for key in link.get("source_feedback_keys", ())
+                ]
+                link["source_question"] = safe_text(
+                    link.get("source_question"), "review-source-question"
+                )
+                link["source_answer"] = safe_text(
+                    link.get("source_answer"), "review-source-answer"
+                )
+                link["source_context"] = [
+                    {
+                        "turn_index": int(turn.get("turn_index") or 0),
+                        "question": safe_text(
+                            turn.get("question"), "review-context-question"
+                        ),
+                        "answer": safe_text(
+                            turn.get("answer"), "review-context-answer"
+                        ),
+                    }
+                    for turn in (link.get("source_context") or ())
+                    if isinstance(turn, dict)
+                ]
+                link.pop("source_trace_key", None)
+                links.append(link)
+            evidence = []
+            for item in raw.evidence:
+                value = dict(item)
+                for identifier in ("id", "issue_id"):
+                    if value.get(identifier) is not None:
+                        value[identifier] = str(value[identifier])
+                value["reference"] = safe_text(
+                    value.get("reference"), "review-evidence-reference"
+                )
+                value.pop("verification_details", None)
+                evidence.append(value)
+            replays = []
+            for item in raw.replays:
+                value = dict(item)
+                for identifier in ("id", "issue_id", "issue_link_id"):
+                    if value.get(identifier) is not None:
+                        value[identifier] = str(value[identifier])
+                value["answer"] = safe_text(
+                    value.get("answer"), "review-replay-answer"
+                )
+                value.pop("trace_id", None)
+                value.pop("sources", None)
+                value.pop("done", None)
+                replays.append(value)
+            events = []
+            for item in raw.events:
+                value = dict(item)
+                for identifier in ("id", "issue_id"):
+                    if value.get(identifier) is not None:
+                        value[identifier] = str(value[identifier])
+                value["reason"] = safe_text(
+                    value.get("reason"), "review-event-reason"
+                )
+                value.pop("before", None)
+                value.pop("after", None)
+                events.append(value)
+            result.update(
+                detail_schema_version=1,
+                origin_turn_key=(
+                    stable_id("turn", raw.origin_turn_key, identity_key)
+                    if raw.origin_turn_key
+                    else None
+                ),
+                root_cause=safe_text(raw.root_cause, "review-root-cause"),
+                impact_scope=safe_text(raw.impact_scope, "review-impact-scope"),
+                secondary_layers=[
+                    value
+                    for value in raw.secondary_layers
+                    if _safe_identifier(value) == value
+                ],
+                links=links,
+                evidence=evidence,
+                replays=replays,
+                events=events,
+                progress={
+                    key: str(value) if isinstance(value, UUID) else value
+                    for key, value in dict(raw.progress or {}).items()
+                },
+            )
+        return result
     if isinstance(raw, ReviewInboxProjection):
         return {
             "kind": "review_inbox_projection",
@@ -231,6 +363,35 @@ def sanitize_management_projection(
             "sanitizer_policy_version": policy.version,
         }
     raise ValueError("unsupported management projection")
+
+
+def _sanitize_report_payload(
+    value: object, policy: SanitizationPolicy, identity_key: bytes
+) -> object:
+    if isinstance(value, list):
+        return [_sanitize_report_payload(item, policy, identity_key) for item in value]
+    if not isinstance(value, dict):
+        return _strip_credentials(_normalize(value)) if isinstance(value, str) else value
+    if set(value) == {"kind", "canonical_key", "label"}:
+        evidence_kind = value.get("kind")
+        canonical_key = value.get("canonical_key")
+        if evidence_kind not in {"session", "turn", "feedback", "issue"} or not isinstance(canonical_key, str):
+            raise ValueError("unsafe report evidence")
+        replica_key = (
+            canonical_key
+            if evidence_kind == "issue"
+            else stable_id(evidence_kind, canonical_key, identity_key)
+        )
+        return {
+            "kind": evidence_kind,
+            "replica_key": replica_key,
+            "label": _strip_credentials(_normalize(str(value.get("label") or ""))),
+        }
+    return {
+        str(key): _sanitize_report_payload(item, policy, identity_key)
+        for key, item in value.items()
+        if key != "canonical_key"
+    }
 
 
 def _size_bucket(size_bytes: int | None) -> str:

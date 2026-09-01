@@ -50,10 +50,16 @@ def _default_period(now: datetime) -> tuple[datetime, datetime]:
 
 
 class FaeWorkbenchService:
-    def __init__(self, repository: FaeWorkbenchRepository, observability, review) -> None:
+    def __init__(
+        self, repository: FaeWorkbenchRepository, observability, review, reports=None
+    ) -> None:
         self._repository = repository
         self._observability = observability
         self._review = review
+        self._reports = reports
+
+    def attach_report_service(self, reports) -> None:
+        self._reports = reports
 
     async def list_sessions(self, filters: SessionFilters, limit: int, offset: int):
         return await self._observability.list_sessions(_fae_filters(filters), limit, offset)
@@ -126,6 +132,22 @@ class FaeWorkbenchService:
             raise ReviewNotFound("issue not found")
         if any(str(replay.get("issue_link_id")) not in link_ids for replay in replays):
             raise ReviewNotFound("issue not found")
+        if detail.get("replica_read_only") is True:
+            if detail.get("projection_scope_valid") is not True:
+                raise ReviewNotFound("issue not found")
+            turn_keys = [
+                key
+                for key in [
+                    issue.get("origin_turn_key"),
+                    *(link.get("source_turn_key") for link in links),
+                ]
+                if key is not None
+            ]
+            if len(await self._fae_turn_keys(turn_keys)) != len(set(turn_keys)):
+                raise ReviewNotFound("issue not found")
+            traversal.visiting.remove(issue_id)
+            traversal.validated[issue_id] = detail
+            return detail
         events = detail.get("events") or ()
         if not isinstance(events, (list, tuple)) or any(
             not isinstance(event, dict) for event in events
@@ -502,9 +524,15 @@ class FaeWorkbenchService:
 
     async def overview(self, now: datetime) -> FaeOverview:
         period_start, period_end = _default_period(now)
-        snapshot, review_overview = await asyncio.gather(
+        report_latest = (
+            asyncio.to_thread(self._reports.latest)
+            if self._reports is not None
+            else asyncio.sleep(0, result=None)
+        )
+        snapshot, review_overview, latest_report = await asyncio.gather(
             asyncio.to_thread(self._repository.snapshot, period_start, period_end),
             self.issue_overview(),
+            report_latest,
             return_exceptions=True,
         )
 
@@ -553,6 +581,28 @@ class FaeWorkbenchService:
             trends = FaeTrendSection(state=state, points=snapshot.trend)
             freshness = self._freshness(snapshot.data_as_of, now)
 
+        reports = (
+            FaeReportPreviewSection(
+                state=FaeSectionState(
+                    status="unavailable", error_code="reports_not_integrated"
+                )
+            )
+            if isinstance(latest_report, BaseException) or latest_report is None
+            else FaeReportPreviewSection(
+                state=FaeSectionState(
+                    status="available",
+                    as_of=datetime.fromisoformat(
+                        str(latest_report["data_cutoff_at"]).replace("Z", "+00:00")
+                    ),
+                ),
+                report_id=str(latest_report["report_id"]),
+                title=str(latest_report["title"]),
+                data_cutoff_at=datetime.fromisoformat(
+                    str(latest_report["data_cutoff_at"]).replace("Z", "+00:00")
+                ),
+                currentness=latest_report["currentness"],
+            )
+        )
         return FaeOverview(
             period_start=period_start,
             period_end=period_end,
@@ -561,11 +611,7 @@ class FaeWorkbenchService:
             attention=attention,
             trends=trends,
             issues=issues,
-            reports=FaeReportPreviewSection(
-                state=FaeSectionState(
-                    status="unavailable", error_code="reports_not_integrated"
-                )
-            ),
+            reports=reports,
         )
 
     @staticmethod

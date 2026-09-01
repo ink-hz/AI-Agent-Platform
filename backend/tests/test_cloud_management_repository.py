@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import base64
-from datetime import UTC, datetime
 import hashlib
 import json
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-
 from app.cloud_replica.crypto import FieldCipher
 from app.cloud_replica.management_repository import (
     ReplicaOperationsRepository,
@@ -16,7 +15,6 @@ from app.cloud_replica.management_repository import (
 from app.fleet.catalog import AgentCatalog
 from app.operations.models import EventFilters, UsageLeader
 from app.review.repository import ReviewRepositoryError
-
 
 NOW = datetime(2026, 8, 14, 8, 0, tzinfo=UTC)
 
@@ -131,6 +129,100 @@ def test_review_projection_is_agent_scoped_and_read_only():
         "events": "unavailable",
     }
     assert not hasattr(repository, "create_issue")
+
+
+def test_detailed_review_projection_serves_full_read_only_repair_chain():
+    cipher = FieldCipher(b"m" * 32)
+    issue_id = uuid4()
+    link_id = uuid4()
+    progress = {
+        "issue_id": str(issue_id), "status": "closed", "missing_gates": [],
+        "replay_passed_turns": 1, "replay_required_turns": 1, "reopened": False,
+    }
+    record = {
+        "kind": "review_issue_projection", "key": str(issue_id),
+        "agent_id": "ai-fae-agent", "status": "actionable", "priority": "P1",
+        "title": {"text": "资料缺口"}, "failure_layer": "coverage",
+        "owner_display": "FAE", "linked_turn_count": 1,
+        "linked_turn_keys": ["f" * 52], "scope_valid": True,
+        "created_at": "2026-08-14T07:00:00.000000Z",
+        "updated_at": "2026-08-14T08:00:00.000000Z",
+        "detail_schema_version": 1, "origin_turn_key": "f" * 52,
+        "root_cause": "资料没有覆盖", "impact_scope": "现场排障",
+        "secondary_layers": [],
+        "links": [{
+            "id": str(link_id), "issue_id": str(issue_id),
+            "agent_id": "ai-fae-agent", "source_turn_key": "f" * 52,
+            "source_session_key": "s" * 52, "source_feedback_keys": [],
+            "source_question": "怎么处理", "source_answer": "旧回答",
+            "active": True, "link_role": "primary",
+        }],
+        "evidence": [{
+            "id": str(uuid4()), "evidence_type": "merge", "repository": "FAE",
+            "reference": "修复提交", "url": "", "version": "",
+            "commit_sha": "a" * 40, "release_manifest_ref": "", "environment": "",
+            "verification_status": "verified", "observed_at": "2026-08-14T07:30:00Z",
+            "observed_by": "owner",
+        }],
+        "replays": [{
+            "id": str(uuid4()), "issue_link_id": str(link_id), "attempt_no": 1,
+            "actual_version": "v1", "actual_git_sha": "a" * 40,
+            "configured_model": "opus", "actual_model": "opus",
+            "answer": "修复后回答", "execution_status": "succeeded",
+            "runtime_gate": "passed", "runtime_failure_reason": "",
+            "semantic_verdict": "passed", "review_method": "human_fae",
+            "reviewer": "owner", "review_reason": "通过",
+            "started_at": "2026-08-14T07:40:00Z", "completed_at": "2026-08-14T07:41:00Z",
+        }],
+        "events": [{
+            "id": str(uuid4()), "event_type": "issue_closed", "actor": "owner",
+            "reason": "复审通过", "created_at": "2026-08-14T08:00:00Z",
+        }],
+        "progress": progress, "sanitizer_policy_version": "v3",
+    }
+    repository = ReplicaReviewRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record)]), now=lambda: NOW,
+    )
+
+    detail = repository.get_issue_detail(issue_id)
+
+    assert detail is not None
+    assert detail["links"][0]["source_session_key"] == "s" * 52
+    assert detail["evidence"][0]["reference"] == "修复提交"
+    assert detail["replays"][0]["answer"] == "修复后回答"
+    assert detail["events"][0]["reason"] == "复审通过"
+    assert detail["progress"] == progress
+    assert detail["availability"] == {
+        "links": "available", "evidence": "available",
+        "replays": "available", "events": "available",
+    }
+
+
+def test_review_scope_quarantines_invalid_issue_without_hiding_valid_issues():
+    cipher = FieldCipher(b"m" * 32)
+    valid_id, invalid_id = uuid4(), uuid4()
+    common = {
+        "kind": "review_issue_projection", "agent_id": "ai-fae-agent",
+        "status": "actionable", "priority": "P1", "title": {"text": "Issue"},
+        "failure_layer": "model", "owner_display": None, "linked_turn_count": 1,
+        "updated_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v3",
+    }
+    records = [
+        {**common, "key": str(valid_id), "scope_valid": True},
+        {**common, "key": str(invalid_id), "scope_valid": False},
+    ]
+    repository = ReplicaReviewRepository(
+        "postgresql://replica", cipher=cipher,
+        connect=_connect([_row(cipher, record) for record in records]), now=lambda: NOW,
+    )
+
+    assert repository.agent_issue_scope_valid("ai-fae-agent") is True
+    assert [item["id"] for item in repository.list_issues(
+        agent_id="ai-fae-agent", limit=100, offset=0
+    )] == [str(valid_id)]
+    assert repository.get_issue_detail(invalid_id) is None
 
 
 def test_projected_issue_page_reports_total_and_has_more_after_filters():

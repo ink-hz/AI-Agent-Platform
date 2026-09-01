@@ -1,6 +1,9 @@
 from pathlib import Path
 
 MIGRATION = Path(__file__).parents[1] / "migrations" / "012_fae_analysis_reports.sql"
+CLOUD_GRANT_MIGRATION = (
+    Path(__file__).parents[1] / "migrations" / "013_fae_report_cloud_projection.sql"
+)
 
 
 def normalized(value: str) -> str:
@@ -34,3 +37,15 @@ def test_report_migration_keeps_import_writer_non_destructive_and_analyst_read_o
         "grant select on all tables in schema platform_fae_reports to flywheel_analyst"
         in sql
     )
+
+
+def test_cloud_projection_grant_is_explicit_and_read_only():
+    sql = normalized(CLOUD_GRANT_MIGRATION.read_text(encoding="utf-8"))
+
+    assert "grant usage on schema platform_fae_reports to flywheel_analyst" in sql
+    assert "grant select on platform_fae_reports.reports" in sql
+    assert "platform_fae_reports.report_evidence" in sql
+    assert "platform_fae_reports.finding_issue_links" in sql
+    assert "insert" not in sql
+    assert "update" not in sql
+    assert "delete" not in sql

@@ -478,11 +478,13 @@ def service_for(
     repository: StaticRepository | None = None,
     observability: RecordingObservability | None = None,
     review: StaticReview | UnavailableReview | RecordingIssueReview | None = None,
+    reports=None,
 ) -> FaeWorkbenchService:
     return FaeWorkbenchService(
         repository or StaticRepository(),
         observability or RecordingObservability(),
         review or StaticReview(),
+        reports,
     )
 
 
@@ -1394,7 +1396,13 @@ async def test_overview_composes_available_operational_and_review_sections():
     repository = StaticRepository()
     review = StaticReview()
 
-    overview = await service_for(repository=repository, review=review).overview(NOW)
+    reports = type("Reports", (), {"latest": lambda self: {
+        "report_id": "fae-topic-production-through-20260831",
+        "title": "FAE 生产成果",
+        "data_cutoff_at": "2026-08-31T00:00:00+00:00",
+        "currentness": "source_updated",
+    }})()
+    overview = await service_for(repository=repository, review=review, reports=reports).overview(NOW)
 
     assert repository.period == (LOCAL_PERIOD_START, LOCAL_PERIOD_END)
     assert review.agent_id == FAE_AGENT_ID
@@ -1405,7 +1413,8 @@ async def test_overview_composes_available_operational_and_review_sections():
     assert overview.trends.points[0].negative_turns == 2
     assert overview.issues.statuses == {"pending_triage": 2, "closed": 1, "duplicate": 1, "not_actionable": 1, "wont_fix": 1}
     assert overview.freshness.status == "fresh"
-    assert overview.reports.state.error_code == "reports_not_integrated"
+    assert overview.reports.state.status == "available"
+    assert overview.reports.report_id == "fae-topic-production-through-20260831"
 
 
 @pytest.mark.asyncio

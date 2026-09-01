@@ -15,7 +15,7 @@ from .crypto import BatchSigner, BatchVerifier, ReplicaCryptoError
 
 
 PROTOCOL_VERSION = 1
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class ReplicaProtocolError(RuntimeError):
@@ -137,7 +137,7 @@ def _header_from_dict(value: dict[str, Any]) -> BatchHeader:
         type(header.protocol_version) is not int
         or header.protocol_version != PROTOCOL_VERSION
         or type(header.schema_version) is not int
-        or header.schema_version not in {1, SCHEMA_VERSION}
+        or header.schema_version not in {1, 2, SCHEMA_VERSION}
         or not isinstance(header.sanitizer_policy_version, str)
         or not 1 <= len(header.sanitizer_policy_version) <= 64
         or not isinstance(header.source_instance_id, str)
