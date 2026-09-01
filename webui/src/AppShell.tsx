@@ -57,6 +57,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
     || route.name === "agent" || route.name === "agent-conversation";
   const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";
   const faeWorkspace = route.name.startsWith("admin-fae-");
+  const faeGovernanceWorkspace = route.name === "admin-fae-issues" || route.name === "admin-fae-issue";
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   const [deploymentResolved, setDeploymentResolved] = useState(current !== "admin");
   useEffect(() => {
@@ -120,7 +121,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
       {account?.hard_stale_read_only && <aside className="hard-stale-banner" role="status">
         <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
       </aside>}
-      {current === "admin" && cloudReplica && <aside
+      {current === "admin" && cloudReplica && !faeGovernanceWorkspace && <aside
         className={`cloud-replica-banner is-${deployment.freshness}`}
         aria-label="云端副本状态"
       >

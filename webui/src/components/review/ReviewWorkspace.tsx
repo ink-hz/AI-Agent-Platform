@@ -72,6 +72,11 @@ export interface ReviewWorkspaceProps {
   onIssueFiltersChange?: (filters: ReviewIssueFilters) => void;
   onIssuePageChange?: (page: number, replace?: boolean) => void;
   collectionSearch?: string;
+  presentation?: "default" | "fae-governance";
+  replicaStatus?: {
+    freshness: "current" | "stale" | "unavailable";
+    lastSuccessAt: string | null;
+  };
 }
 
 type SelectionToken = {
@@ -118,6 +123,8 @@ export function ReviewWorkspace({
   onIssueFiltersChange,
   onIssuePageChange,
   collectionSearch = "",
+  presentation = "default",
+  replicaStatus,
 }: ReviewWorkspaceProps) {
   const requestedTurnKey = initialTurn?.turn_key ?? new URLSearchParams(window.location.search).get("turn_key");
   const [overview, setOverview] = useState<ReviewOverview | null>(null);
@@ -374,19 +381,32 @@ export function ReviewWorkspace({
   const replicaReadOnly = !overview.write_available && basePath === "/admin/fae/issues";
   const readOnly = !overview.write_available || hardStaleReadOnly;
   const hideMutations = replicaReadOnly || hardStaleReadOnly;
+  const faeGovernance = presentation === "fae-governance";
+  const processingCount = ["fixing", "awaiting_merge", "awaiting_deploy", "awaiting_review"]
+    .reduce((total, status) => total + (overview.statuses[status as keyof typeof overview.statuses] ?? 0), 0);
+  const replicaFreshnessLabel = replicaStatus?.freshness === "current"
+    ? "数据已同步"
+    : replicaStatus?.freshness === "stale"
+      ? "数据已过期"
+      : "数据暂不可用";
 
   return <>
-    <section className="review-hero"><div><p>Feedback Repair Ledger</p><h1>反馈修复闭环</h1><span>状态由合并、部署、逐题真实复跑和独立语义复审证据自动计算。</span></div>{showActorField && <label>复审身份<input value={actor} onChange={(event) => saveActor(event.target.value)} placeholder="codex / fae:zhangsan" aria-invalid={actor.length > 0 && !accountableActor(actor)} /><small>仅保存在当前浏览器 session，不使用 web-reviewer。</small></label>}</section>
-    {readOnly && <div className="review-message" role="status">{hardStaleReadOnly
+    <section className={`review-hero${faeGovernance ? " fae-governance-hero" : ""}`}><div>{faeGovernance
+      ? <><p>FAE GOVERNANCE</p><h1>反馈与修复</h1><span>从用户反馈到根因、修复、真实复跑和闭环结论</span></>
+      : <><p>Feedback Repair Ledger</p><h1>反馈修复闭环</h1><span>状态由合并、部署、逐题真实复跑和独立语义复审证据自动计算。</span></>}
+      </div>{showActorField && <label>复审身份<input value={actor} onChange={(event) => saveActor(event.target.value)} placeholder="codex / fae:zhangsan" aria-invalid={actor.length > 0 && !accountableActor(actor)} /><small>仅保存在当前浏览器 session，不使用 web-reviewer。</small></label>}{faeGovernance && hardStaleReadOnly
+        ? <div className="fae-governance-readonly is-unavailable" role="status"><strong>只读保护</strong><span>通讯录超过安全时限，治理变更已暂停</span></div>
+        : faeGovernance && replicaReadOnly && <div className={`fae-governance-readonly is-${replicaStatus?.freshness ?? "current"}`} role="status"><strong>只读副本</strong><span>{replicaStatus ? replicaFreshnessLabel : "当前数据仅供查看"}</span>{replicaStatus?.lastSuccessAt && <time dateTime={replicaStatus.lastSuccessAt}>同步于 {new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(replicaStatus.lastSuccessAt))}</time>}</div>}</section>
+    {readOnly && !faeGovernance && <div className="review-message" role="status">{hardStaleReadOnly
       ? "通讯录状态已超过安全时限，治理变更已暂停。"
       : replicaReadOnly
         ? "当前为只读副本"
         : "只读模式：Writer 当前不可用，原始反馈、事项和最新复测答案仍可查看，所有写操作已禁用。"}</div>}
     {message && <div className="review-message" role="status">{message}</div>}
-    <section className="review-overview"><article><span>反馈总行数</span><strong>{overview.feedback_rows ?? "暂不可用"}</strong></article><article><span>负反馈回答</span><strong>{overview.negative_turns ?? "暂不可用"}</strong><small>{overview.negative_rows === null ? "负反馈记录暂不可用" : `${overview.negative_rows} 条负反馈记录`}</small></article>{overview.lifecycle_status_available === false
+    {faeGovernance ? <><section className="fae-governance-summary"><article><span>待分诊</span><strong>{overview.statuses.pending_triage ?? 0}</strong><small>需要补齐归因与负责人</small></article><article><span>处理中</span><strong>{processingCount}</strong><small>修复、合并、部署或复审中</small></article><article><span>待复跑</span><strong>{overview.statuses.awaiting_replay ?? 0}</strong><small>等待真实环境验证</small></article><article><span>已闭环</span><strong>{overview.statuses.closed ?? 0}</strong><small>全部硬门已经通过</small></article></section><div className="fae-governance-scope"><span>治理范围</span><strong>{overview.feedback_rows ?? "—"} 条反馈</strong><strong>{overview.negative_turns ?? "—"} 个负反馈回答</strong><strong>{overview.issue_total ?? "—"} 个事项</strong>{overview.quarantined_issue_count !== null && overview.quarantined_issue_count !== undefined && <strong>{overview.quarantined_issue_count} 条隔离记录</strong>}</div></> : <section className="review-overview"><article><span>反馈总行数</span><strong>{overview.feedback_rows ?? "暂不可用"}</strong></article><article><span>负反馈回答</span><strong>{overview.negative_turns ?? "暂不可用"}</strong><small>{overview.negative_rows === null ? "负反馈记录暂不可用" : `${overview.negative_rows} 条负反馈记录`}</small></article>{overview.lifecycle_status_available === false
       ? <>{Object.entries(overview.dispositions).map(([disposition, count]) => <article key={disposition}><span>{disposition === "actionable" ? "可处理事项" : STATUS_LABELS[disposition as keyof typeof STATUS_LABELS] || disposition}</span><strong>{count}</strong></article>)}<article><span>生命周期状态</span><strong>暂不可用</strong></article></>
-      : STATUS_ORDER.map((status) => <article key={status}><span>{STATUS_LABELS[status]}</span><strong>{overview.statuses[status] ?? 0}</strong></article>)}</section>
-    <section className="review-workspace"><div><IssueList issues={issues} inbox={workspaceInbox} selectedId={selectedId} selectedTurnKey={selectedTurnKey} onSelect={chooseIssue} onSelectInbox={chooseInbox} showAgentFilter={showAgentFilter} statusFilter={statusFilter} onStatusFilterChange={onStatusFilterChange} statusOptions={statusOptions} statusPresentation={statusPresentation} serverFilters={onIssueFiltersChange ? issueFilters : undefined} onServerFiltersChange={onIssueFiltersChange} />{issuePage && onIssuePageChange && <nav className="review-pagination" aria-label="Issue 分页"><button type="button" disabled={issuePage.offset === 0} onClick={() => onIssuePageChange(Math.max(1, Math.floor(issuePage.offset / issuePage.limit)))}>上一页</button><span>第 {Math.floor(issuePage.offset / issuePage.limit) + 1} 页 · 共 {issuePage.total} 项</span><button type="button" disabled={!issuePage.has_more} onClick={() => onIssuePageChange(Math.floor(issuePage.offset / issuePage.limit) + 2)}>下一页</button></nav>}</div><section className="review-main-panel" aria-label="事项详情">
+      : STATUS_ORDER.map((status) => <article key={status}><span>{STATUS_LABELS[status]}</span><strong>{overview.statuses[status] ?? 0}</strong></article>)}</section>}
+    <section className={`review-workspace${faeGovernance ? " is-fae-governance" : ""}`}><div><IssueList issues={issues} inbox={workspaceInbox} selectedId={selectedId} selectedTurnKey={selectedTurnKey} onSelect={chooseIssue} onSelectInbox={chooseInbox} showAgentFilter={showAgentFilter} showAgentIdentity={!faeGovernance} statusFilter={statusFilter} onStatusFilterChange={onStatusFilterChange} statusOptions={statusOptions} statusPresentation={statusPresentation} serverFilters={onIssueFiltersChange ? issueFilters : undefined} onServerFiltersChange={onIssueFiltersChange} presentation={presentation} totalCount={issuePage?.total ?? issues.length} />{issuePage && onIssuePageChange && <nav className="review-pagination" aria-label="Issue 分页"><button type="button" disabled={issuePage.offset === 0} onClick={() => onIssuePageChange(Math.max(1, Math.floor(issuePage.offset / issuePage.limit)))}>上一页</button><span>第 {Math.floor(issuePage.offset / issuePage.limit) + 1} 页 · 共 {issuePage.total} 项</span><button type="button" disabled={!issuePage.has_more} onClick={() => onIssuePageChange(Math.floor(issuePage.offset / issuePage.limit) + 2)}>下一页</button></nav>}</div><section className="review-main-panel" aria-label="事项详情">
       {detail && <IssueDetail detail={detail} busy={busy || (readOnly && !hideMutations)} readOnly={hideMutations}
         issues={issues}
         onSave={(owner, failureLayer, priority, rootCause, impactScope) => perform((identity) => api.update(detail.issue.id, { row_version: detail.issue.row_version, owner: owner || null, failure_layer: failureLayer || null, priority, root_cause: rootCause, impact_scope: impactScope, reason: "update triage" }, identity), "归因已保存，状态已重新计算。")}
@@ -411,7 +431,7 @@ export function ReviewWorkspace({
         await api.link(created.issue.id, { agent_id: selectedInbox.agent_id, source_turn_key: selectedInbox.turn_key, source_feedback_keys: selectedInbox.feedback_keys, link_role: "primary", reason: "link negative feedback turn" }, identity);
         return created.issue.id;
       }, "负反馈回答已纳入闭环。", (issueId) => issueId)} >创建事项并纳管</button></>}</section>}
-      {!detail && !selectedInbox && <section className="review-empty-detail"><p>选择左侧事项</p><h2>查看根因、证据、复跑答案与审计历史</h2><span>系统不提供手工“关闭”动作；只有全部硬门满足才会自动闭环。</span></section>}
+      {!detail && !selectedInbox && <section className="review-empty-detail"><p>{faeGovernance ? "行动队列" : "选择左侧事项"}</p><h2>{faeGovernance ? "先处理高优先级和最接近闭环的事项" : "查看根因、证据、复跑答案与审计历史"}</h2><span>{faeGovernance ? "选择事项后可查看原始反馈、根因、修复证据、真实复跑与独立复审结论。" : "系统不提供手工“关闭”动作；只有全部硬门满足才会自动闭环。"}</span></section>}
     </section></section>
   </>;
 }

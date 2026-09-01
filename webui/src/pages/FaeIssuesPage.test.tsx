@@ -376,11 +376,12 @@ describe("FaeIssuesPage", () => {
   });
 
   it.each([
-    ["actionable", "需处理"],
+    ["actionable", "待归因"],
     ["duplicate", "重复事项"],
     ["not_actionable", "无需处理"],
     ["wont_fix", "暂不修复"],
   ])("sends cloud projected filter %s as disposition and labels returned rows", async (disposition, label) => {
+    const lifecycle = disposition === "actionable" ? "pending_triage" : disposition;
     const identityMeta = document.createElement("meta");
     identityMeta.name = "platform-identity-mode";
     identityMeta.content = "enabled";
@@ -397,17 +398,18 @@ describe("FaeIssuesPage", () => {
       if (path.endsWith("/api/admin/fae/issue-overview")) return response({
         feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null,
         feedback_totals_status: "unavailable", issue_total: 1,
-        statuses: { [disposition]: 1 }, dispositions: { [disposition]: 1 }, write_available: false,
+        statuses: { [lifecycle]: 1 }, dispositions: { [disposition]: 1 },
+        lifecycle_status_available: true, write_available: false,
       });
       if (path.includes("/api/admin/fae/issue-inbox")) return response([]);
       if (path.includes("/api/admin/fae/issues?")) return response([{
-        ...detail.issue, disposition, replica_read_only: true,
-        progress: { status: disposition, missing_gates: [] },
+        ...detail.issue, disposition, detail_schema_version: 1, replica_read_only: true,
+        progress: { status: lifecycle, missing_gates: [] },
       }]);
       if (path.endsWith(`/api/admin/fae/issues/${ISSUE_ID}`)) return response({
         ...detail,
-        issue: { ...detail.issue, disposition, replica_read_only: true },
-        progress: { ...detail.progress, status: disposition, missing_gates: null },
+        issue: { ...detail.issue, disposition, detail_schema_version: 1, replica_read_only: true },
+        progress: { ...detail.progress, status: lifecycle, missing_gates: [] },
         links: null,
         evidence: null,
         replays: null,
@@ -425,7 +427,10 @@ describe("FaeIssuesPage", () => {
 
     expect(requests).toContain(`/api/admin/fae/issues?limit=20&disposition=${disposition}`);
     const options = [...container.querySelectorAll<HTMLOptionElement>('select[aria-label="状态"] option')].map((option) => option.value);
-    expect(options).toEqual(["", "open", "actionable", "duplicate", "not_actionable", "wont_fix"]);
+    expect(options).toEqual([
+      "", "open", "pending_triage", "fixing", "awaiting_merge", "awaiting_deploy",
+      "awaiting_replay", "awaiting_review", "closed", "duplicate", "not_actionable", "wont_fix",
+    ]);
     expect(options).not.toContain("unknown");
     expect(container.querySelector(".review-issue-list")?.textContent).toContain(label);
     expect(window.location.search).toBe(`?disposition=${disposition}`);
@@ -464,7 +469,7 @@ describe("FaeIssuesPage", () => {
     expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/issues");
     expect(requests).toContain("/api/admin/fae/issues?limit=20&status=open");
     expect(requests.every((path) => !path.includes("status=unknown"))).toBe(true);
-    expect(container.textContent).toContain("反馈修复闭环");
+    expect(container.textContent).toContain("反馈与修复");
 
     const status = container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')!;
     await act(async () => {
@@ -513,10 +518,9 @@ describe("FaeIssuesPage", () => {
       await Promise.resolve();
     });
 
-    expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=20&status=open");
+    expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=20&status=fixing");
     expect(issueRequests).toHaveLength(1);
-    expect(issueRequests.every((path) => !path.includes("fixing"))).toBe(true);
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/issues");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/issues?status=fixing");
   });
 
   it.each([
@@ -701,8 +705,8 @@ describe("FaeIssuesPage", () => {
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
     expect(container.textContent).toContain("脱敏治理事项");
-    expect(container.textContent).toContain("当前为只读副本");
-    expect(container.textContent).toContain("可处理事项");
+    expect(container.textContent).toContain("只读副本");
+    expect(container.textContent).toContain("已闭环");
     expect(container.textContent).toContain("回答缺少约束");
     expect(container.textContent).toContain("闭环门：1/1 条回答通过真实复跑");
     expect(container.textContent).toContain("修复提交");
@@ -733,7 +737,7 @@ describe("FaeIssuesPage", () => {
     await act(async () => root.render(<FaeIssuesPage account={{ ...owner, hard_stale_read_only: true }} />));
 
     expect(container.textContent).toContain("治理变更已暂停");
-    expect(container.textContent).not.toContain("当前为只读副本");
+    expect(container.textContent).not.toContain("当前数据仅供查看");
     const buttons = [...container.querySelectorAll("button")].map((button) => button.textContent);
     expect(buttons).not.toContain("保存归因");
     expect(buttons).not.toContain("添加证据");
