@@ -615,6 +615,42 @@ async def test_inactive_staff_resolution_requires_existing_paired_current_mappin
 
 @pytest.mark.asyncio
 @pytest.mark.postgres
+async def test_inactive_staff_resolution_rejects_conflicting_current_user_mapping(
+    production_environment, tmp_path: Path
+) -> None:
+    member = DingTalkMember("mapped-bot", "mapped-union", "VOC Bot", True, (1,))
+    resolver = _resolver(production_environment, tmp_path, member)
+    await resolver.resolve_staff_member("mapped-bot", DirectoryFreshness.FRESH)
+    generation_id = _stage_and_promote_generation(
+        production_environment,
+        resolver.identity_codec,
+        (DingTalkMember("mapped-bot", "mapped-union", "VOC Bot", False, (1,)),),
+    )
+    with psycopg.connect(production_environment["admin"]) as connection:
+        conflicting_user = uuid4()
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) "
+            "values (%s,'Conflicting','active')",
+            (conflicting_user,),
+        )
+        connection.execute(
+            "update platform_control.directory_members set internal_user_id=%s "
+            "where generation_id=%s",
+            (conflicting_user, generation_id),
+        )
+    resolver.client.member = DingTalkMember(
+        "mapped-bot", "mapped-union", "VOC Bot", False, (1,)
+    )
+
+    with pytest.raises(IdentityResolutionError, match="directory unavailable"):
+        await resolver.resolve_staff_member(
+            "mapped-bot", DirectoryFreshness.FRESH
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
 @pytest.mark.parametrize("directory_status", ("inactive", "disabled"))
 async def test_inactive_staff_resolution_is_read_only_and_requires_paired_identity(
     production_environment, tmp_path: Path, monkeypatch, directory_status: str

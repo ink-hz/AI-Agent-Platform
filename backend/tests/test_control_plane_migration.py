@@ -79,6 +79,9 @@ AGENT_BRAIN_TASK_WAIT_MIGRATION = (
 VOC_INACTIVE_STAFF_PROJECTION_MIGRATION = (
     MIGRATIONS / "061_voc_inactive_staff_projection.sql"
 )
+VOC_INACTIVE_STAFF_MAPPING_BINDING_MIGRATION = (
+    MIGRATIONS / "062_voc_inactive_staff_mapping_binding.sql"
+)
 DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION = (
     MIGRATIONS / "039_directory_member_employee_profile.sql"
 )
@@ -329,6 +332,10 @@ def test_first_control_migration_exists() -> None:
         "missing VOC inactive staff projection migration: "
         f"{VOC_INACTIVE_STAFF_PROJECTION_MIGRATION}"
     )
+    assert VOC_INACTIVE_STAFF_MAPPING_BINDING_MIGRATION.is_file(), (
+        "missing VOC inactive staff mapping binding migration: "
+        f"{VOC_INACTIVE_STAFF_MAPPING_BINDING_MIGRATION}"
+    )
 
 
 @pytest.mark.postgres
@@ -337,7 +344,7 @@ def test_voc_inactive_staff_projection_is_app_only_and_directory_read_only(
 ) -> None:
     production = control_database["environments"]["production"]
     function = (
-        "platform_control.read_current_inactive_staff_member_v61"
+        "platform_control.read_current_inactive_staff_member_v62"
         "(integer,bytea,integer,bytea)"
     )
     with psycopg.connect(production["admin"]) as connection:
@@ -353,7 +360,7 @@ def test_voc_inactive_staff_projection_is_app_only_and_directory_read_only(
     with psycopg.connect(production["urls"]["platform_control_app"]) as connection:
         assert connection.execute(
             "select * from "
-            "platform_control.read_current_inactive_staff_member_v61("
+            "platform_control.read_current_inactive_staff_member_v62("
             "%s,%s,%s,%s)",
             (1, b"c" * 32, 1, b"u" * 32),
         ).fetchall() == []

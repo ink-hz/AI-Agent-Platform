@@ -408,7 +408,7 @@ class IdentityResolver:
                 cursor.execute(f"select {self.DIRECTORY_LOCK_FUNCTION}")
                 directory_rows = cursor.execute(
                     "select * from platform_control."
-                    "read_current_inactive_staff_member_v61(%s,%s,%s,%s)",
+                    "read_current_inactive_staff_member_v62(%s,%s,%s,%s)",
                     (
                         corporate.lookup_key_version,
                         corporate.lookup_hmac,
@@ -432,6 +432,7 @@ class IdentityResolver:
                     corporate_user is None
                     or union_user is None
                     or corporate_user != union_user
+                    or directory_rows[0]["internal_user_id"] != corporate_user
                 ):
                     raise IdentityResolutionError("directory unavailable")
                 user = cursor.execute(
