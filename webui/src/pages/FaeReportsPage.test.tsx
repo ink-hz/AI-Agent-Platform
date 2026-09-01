@@ -2,7 +2,7 @@
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FaeReportApiError, faeReportApi } from "../faeReportApi";
 import { FaeReportsPage } from "./FaeReportsPage";
@@ -54,6 +54,27 @@ afterEach(() => {
 
 
 describe("FAE reports", () => {
+  beforeEach(() => {
+    vi.spyOn(faeReportApi, "list").mockResolvedValue([report] as never);
+  });
+
+  it("loads the immutable report index and links newer source data to operations", async () => {
+    const index = vi.mocked(faeReportApi.list);
+    vi.spyOn(faeReportApi, "latest").mockResolvedValue(report as never);
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(<FaeReportsPage />));
+    await act(async () => undefined);
+
+    expect(index).toHaveBeenCalledWith(expect.any(AbortSignal));
+    expect(container.querySelector('a.fae-outcome-currentness-link[href="/admin/fae"]')?.textContent).toContain("查看最新运营数据");
+    expect(container.querySelector(`a[href="/admin/fae/reports/${report.report_id}?version=1"]`)).not.toBeNull();
+    expect(container.textContent).toContain("数据截止");
+    await act(async () => root.unmount()); container.remove();
+  });
+
   it("leads with production scale and separates realized value from potential", async () => {
     vi.spyOn(faeReportApi, "latest").mockResolvedValue(outcomeReport as never);
     const container = document.createElement("div"); document.body.append(container);
@@ -119,6 +140,20 @@ describe("FAE reports", () => {
 
     expect(container.textContent).toContain("分析报告读取失败");
     expect(container.textContent).toContain("重新尝试");
+    await act(async () => root.unmount()); container.remove();
+  });
+
+  it("refuses to render a report that fails the published contract", async () => {
+    vi.spyOn(faeReportApi, "latest").mockRejectedValue(new Error("FAE report response contract invalid"));
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(<FaeReportsPage />));
+    await act(async () => undefined);
+
+    expect(container.textContent).toContain("报告内容未通过读取校验");
+    expect(container.textContent).not.toContain("分析报告读取失败");
     await act(async () => root.unmount()); container.remove();
   });
 

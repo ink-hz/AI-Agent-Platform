@@ -42,8 +42,8 @@ describe("document titles", () => {
     expect(routeDocumentTitle({ name: "admin-fae-session", sessionKey: "fae:one" })).toBe("FAE Session · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "admin-fae-issues" })).toBe("FAE 反馈与修复 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "admin-fae-issue", issueId: "00000000-0000-0000-0000-000000000001" })).toBe("FAE 问题 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-reports" })).toBe("FAE 分析报告 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-fae-report", reportId: "weekly:one" })).toBe("FAE 分析报告 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "admin-fae-reports" })).toBe("FAE Agent 生产成果 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "admin-fae-report", reportId: "weekly:one" })).toBe("FAE Agent 生产成果 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "legacy-redirect", to: "/admin" })).toBe(PLATFORM_TITLE);
     expect(routeDocumentTitle({ name: "not-found" })).toBe(PLATFORM_TITLE);
   });

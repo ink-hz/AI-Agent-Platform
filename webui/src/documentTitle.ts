@@ -36,8 +36,8 @@ export function routeDocumentTitle(route: Route): string {
     case "admin-fae-session": return `FAE Session · ${PLATFORM_TITLE}`;
     case "admin-fae-issues": return `FAE 反馈与修复 · ${PLATFORM_TITLE}`;
     case "admin-fae-issue": return `FAE 问题 · ${PLATFORM_TITLE}`;
-    case "admin-fae-reports": return `FAE 分析报告 · ${PLATFORM_TITLE}`;
-    case "admin-fae-report": return `FAE 分析报告 · ${PLATFORM_TITLE}`;
+    case "admin-fae-reports": return `FAE Agent 生产成果 · ${PLATFORM_TITLE}`;
+    case "admin-fae-report": return `FAE Agent 生产成果 · ${PLATFORM_TITLE}`;
     default: return PLATFORM_TITLE;
   }
 }

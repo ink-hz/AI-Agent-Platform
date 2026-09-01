@@ -1,5 +1,5 @@
 import { formatPublishedMetric, reviewCoverage } from "../../faeReportPresentation";
-import type { FaeAnalysisReport, FaeReportMetric } from "../../faeReportTypes";
+import type { FaeAnalysisReport, FaeReportMetric, FaeReportSummary } from "../../faeReportTypes";
 import { ReportVersionHeader } from "./ReportVersionHeader";
 
 
@@ -15,7 +15,7 @@ function PublishedValue({ report, metricId }: { report: FaeAnalysisReport; metri
 }
 
 
-export function ExecutiveOutcomeCover({ report }: { report: FaeAnalysisReport }) {
+export function ExecutiveOutcomeCover({ report, summaries }: { report: FaeAnalysisReport; summaries?: FaeReportSummary[] }) {
   const coverage = reviewCoverage(report);
   const complexity = [
     ["value.observed_multiturn_sessions", "多轮会话"],
@@ -24,7 +24,7 @@ export function ExecutiveOutcomeCover({ report }: { report: FaeAnalysisReport })
   ] as const;
   const hasComplexity = complexity.some(([id]) => metric(report, id));
   return <header className="fae-outcome-cover" data-report-cover id="report-cover">
-    <ReportVersionHeader report={report} />
+    <ReportVersionHeader report={report} summaries={summaries} />
     <div className="fae-outcome-cover__lead">
       <div>
         <p className="fae-outcome-kicker">FAE Agent 生产成果</p>
