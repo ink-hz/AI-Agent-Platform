@@ -103,6 +103,20 @@ def test_cloud_issue_scope_uses_shared_canonical_event_pair_audit():
     assert "canonical_target.event_type='issue_absorbed'" in source
 
 
+def test_cloud_issue_scope_qualifies_unnested_feedback_key():
+    source = " ".join(REVIEW_ISSUE_SQL.lower().split())
+
+    assert (
+        "from unnest(link.source_feedback_keys) as stored_feedback(feedback_key)"
+        in source
+    )
+    assert (
+        "linked_feedback.feedback_key=stored_feedback.feedback_key"
+        in source
+    )
+    assert "linked_feedback.feedback_key=feedback_key" not in source
+
+
 class _Context:
     def __enter__(self):
         return self
@@ -286,6 +300,7 @@ def test_management_source_includes_platform_level_operation_events():
 def test_management_source_marks_refreshed_inbox_scope_valid():
     now = datetime(2026, 8, 11, tzinfo=UTC)
     calls = []
+    connect_arguments = {}
     rows = {
         "with recursive canonical_walk": [],
         "select feedback.agent_id": [{
@@ -297,10 +312,11 @@ def test_management_source_marks_refreshed_inbox_scope_valid():
         }],
         "select agent_id,": [],
     }
-    source = ReplicaSource(
-        "postgresql://safe",
-        connection_factory=lambda *_args, **_kwargs: _Connection(rows, calls),
-    )
+    def connect(dsn, **kwargs):
+        connect_arguments.update(dsn=dsn, **kwargs)
+        return _Connection(rows, calls)
+
+    source = ReplicaSource("postgresql://safe", connection_factory=connect)
 
     projections = source.fetch_management_projections(through=now)
     inbox = next(
@@ -309,3 +325,4 @@ def test_management_source_marks_refreshed_inbox_scope_valid():
     )
 
     assert inbox.scope_valid is True
+    assert "statement_timeout=30000" in connect_arguments["options"]

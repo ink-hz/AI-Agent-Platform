@@ -144,9 +144,10 @@ select issue.id,issue.agent_id,issue.disposition as status,issue.priority,
         or (issue.agent_id='ai-fae-agent'
             and linked_turn.source_kind is distinct from 'fae')
         or exists (
-          select 1 from unnest(link.source_feedback_keys) feedback_key
+          select 1 from unnest(link.source_feedback_keys)
+            as stored_feedback(feedback_key)
           left join platform_read.feedback linked_feedback
-            on linked_feedback.feedback_key=feedback_key
+            on linked_feedback.feedback_key=stored_feedback.feedback_key
            and linked_feedback.agent_id=link.agent_id
            and linked_feedback.turn_key=link.source_turn_key
           where linked_feedback.feedback_key is null
@@ -227,7 +228,7 @@ class ReplicaSource:
     ) -> tuple[object, ...]:
         if through.tzinfo is None:
             raise ValueError("invalid replica source window")
-        options = "-c default_transaction_read_only=on -c statement_timeout=10000"
+        options = "-c default_transaction_read_only=on -c statement_timeout=30000"
         with self._connection_factory(
             self._database_url, options=options, row_factory=dict_row
         ) as connection, connection.transaction():
