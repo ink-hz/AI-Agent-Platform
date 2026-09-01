@@ -40,6 +40,27 @@ def test_loads_one_trusted_office_application(tmp_path) -> None:
     )
 
 
+def test_loads_voc_application_for_the_exact_workspace_root(tmp_path) -> None:
+    path = _write_registry(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "apps": [
+                {
+                    "id": "voc",
+                    "app_key": "voc-public-key",
+                    "app_secret": "voc-secret",
+                    "return_paths": ["/voc/"],
+                }
+            ],
+        },
+    )
+
+    assert load_trusted_in_client_apps(str(path), route_prefix="/") == (
+        TrustedInClientApp("voc", "voc-public-key", "voc-secret", ("/voc/",)),
+    )
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -98,6 +119,28 @@ def test_loads_one_trusted_office_application(tmp_path) -> None:
                     "app_key": "key",
                     "app_secret": "secret",
                     "return_paths": [],
+                }
+            ],
+        },
+        {
+            "schema_version": 1,
+            "apps": [
+                {
+                    "id": "voc",
+                    "app_key": "key",
+                    "app_secret": "secret",
+                    "return_paths": ["/voc"],
+                }
+            ],
+        },
+        {
+            "schema_version": 1,
+            "apps": [
+                {
+                    "id": "voc",
+                    "app_key": "key",
+                    "app_secret": "secret",
+                    "return_paths": ["/voc/workspace"],
                 }
             ],
         },

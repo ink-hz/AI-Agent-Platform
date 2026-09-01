@@ -36,9 +36,7 @@ import { MissionPage } from "./pages/MissionPage";
 import { MissionsPage } from "./pages/MissionsPage";
 import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
 import { AgentUsePage } from "./pages/AgentUsePage";
-import { VocWorkspacePage } from "./pages/VocWorkspacePage";
 import { AiNotesPage } from "./pages/AiNotesPage";
-import { VocManagementPage } from "./pages/VocManagementPage";
 import { FaeReportsPage } from "./pages/FaeReportsPage";
 import { FaeOverviewPage } from "./pages/FaeOverviewPage";
 import { FaeWorkbenchShell, type FaeSection } from "./components/fae-workbench/FaeWorkbenchShell";
@@ -63,7 +61,7 @@ function FaeWorkbenchPendingPage({ section }: { section: FaeSection }) {
 
 
 function LegacyRedirect({ to }: { to: string }) {
-  useEffect(() => navigate(`${to}${window.location.search}`, { replace: true }), [to]);
+  useEffect(() => navigate(`${to}${to.includes("?") ? "" : window.location.search}`, { replace: true }), [to]);
   return <LoadingState label="正在打开新的页面地址" />;
 }
 
@@ -110,7 +108,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "agents": return <AgentUseDirectoryPage />;
     case "agent": return account ? <AgentUsePage account={account} agentId={route.agentId} key={route.agentId} /> : <PendingPage title="专业 Agent" description="请启用企业身份后使用。" />;
     case "agent-conversation": return account ? <AgentUsePage account={account} agentId={route.agentId} conversationId={route.conversationId} key={route.agentId} /> : <PendingPage title="专业 Agent" description="请启用企业身份后使用。" />;
-    case "voc-workspace": return account ? <VocWorkspacePage csrfToken={account.csrf_token} /> : <PendingPage title="VOC 洞察助手" description="请启用企业身份后使用。" />;
+    case "voc-workspace": return <LegacyRedirect to="/voc/" />;
     case "ai-notes": return account ? <AiNotesPage /> : <PendingPage title="AI 工程笔记" description="请启用企业身份后阅读。" />;
     case "ai-note": return account
       ? <AiNotesPage categorySlug={route.categorySlug} articleSlug={route.articleSlug} />
@@ -125,7 +123,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-activity": return <ActivityPage />;
     case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
     case "admin-governance": return <GovernancePage />;
-    case "admin-voc": return <VocManagementPage />;
+    case "admin-voc": return <LegacyRedirect to="/voc/?view=management" />;
     case "admin-fae-overview": return <FaeOverviewPage />;
     case "admin-fae-sessions": return <FaeSessionsPage />;
     case "admin-fae-session": return <FaeSessionDetailPage sessionKey={route.sessionKey} />;

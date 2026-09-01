@@ -60,10 +60,15 @@ def test_catalog_expresses_direct_delegated_and_external_modes_explicitly() -> N
     assert fae.workspace_url == "https://fae.orbbec.com.cn/"
     assert fae.adapter_kind is None
     assert fae.dispatchable is False
-    assert voc.interaction_modes == ("external_workspace", "brain_delegation")
-    assert voc.workspace_url == "/agents/voc/workspace"
-    assert voc.adapter_kind == "voc_action"
-    assert voc.dispatchable is True
+    assert voc.interaction_modes == ("external_workspace",)
+    assert voc.workspace_url == "/voc/"
+    assert voc.capabilities == (
+        "整理客户反馈为结构化草稿",
+        "提交本人 VOC",
+        "查看和补充本人记录",
+    )
+    assert voc.adapter_kind is None
+    assert voc.dispatchable is False
 
 
 def test_catalog_exposes_public_persona_subtitles() -> None:
@@ -90,7 +95,7 @@ def test_catalog_exposes_public_persona_subtitles() -> None:
         lambda agents: agents[-1].update(adapter_kind="fae_http"),
         lambda agents: agents[0].update(pool_concurrency=2),
         lambda agents: agents[0].update(execution_pool=None),
-        lambda agents: agents[1].update(execution_pool=None),
+        lambda agents: agents[2].update(execution_pool=None),
     ],
     ids=(
         "duplicate",
@@ -120,15 +125,10 @@ def test_delegated_agents_declare_the_executor_they_contend_for() -> None:
     # All six MetaBot Agents run on one host that executes strictly one task at a
     # time, so the Brain must not treat them as six parallel slots.
     pooled = [card for card in cards.values() if card.execution_pool is not None]
-    assert {card.execution_pool for card in pooled} == {
-        "metabot_local",
-        "voc_extension",
-    }
+    assert {card.execution_pool for card in pooled} == {"metabot_local"}
     assert {card.pool_concurrency for card in pooled} == {1}
-    assert len(pooled) == 7
+    assert len(pooled) == 6
 
-    for agent_id in ("ai-admin-agent", "ai-fae-agent"):
+    for agent_id in ("ai-admin-agent", "ai-fae-agent", "voc"):
         assert cards[agent_id].execution_pool is None
         assert cards[agent_id].pool_concurrency is None
-    assert cards["voc"].execution_pool == "voc_extension"
-    assert cards["voc"].pool_concurrency == 1

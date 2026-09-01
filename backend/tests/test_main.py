@@ -105,7 +105,13 @@ def test_build_identity_auth_builds_registered_in_client_profile(
                         "app_key": "office-key",
                         "app_secret": "office-secret",
                         "return_paths": ["/office/"],
-                    }
+                    },
+                    {
+                        "id": "voc",
+                        "app_key": "voc-public-key",
+                        "app_secret": "voc-secret",
+                        "return_paths": ["/voc/"],
+                    },
                 ],
             }
         ),
@@ -194,23 +200,31 @@ def test_build_identity_auth_builds_registered_in_client_profile(
         "platform-key",
         "platform-key",
         "office-key",
+        "voc-public-key",
     ]
     assert [client.kwargs["login_flow"] for client in clients] == [
         "qr",
         "in_client",
         "in_client",
+        "in_client",
     ]
     assert all(client.kwargs["corp_id"] == "corp-id" for client in clients)
-    assert len(resolvers) == 3
+    assert len(resolvers) == 4
     assert all(resolver.database_url == "postgresql://platform" for resolver in resolvers)
-    assert len(captured["in_client_profiles"]) == 1
+    assert len(captured["in_client_profiles"]) == 2
     office = captured["in_client_profiles"][0]
     assert (office.app_id, office.app_key, office.return_paths) == (
         "office",
         "office-key",
         ("/office/",),
     )
-    assert len(captured["close_callbacks"]) == 3
+    voc = captured["in_client_profiles"][1]
+    assert (voc.app_id, voc.app_key, voc.return_paths) == (
+        "voc",
+        "voc-public-key",
+        ("/voc/",),
+    )
+    assert len(captured["close_callbacks"]) == 4
     assert captured["voc_bot_subject_resolver"].identity_resolver is resolvers[1]
 
 

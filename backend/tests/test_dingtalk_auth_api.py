@@ -156,6 +156,8 @@ class FakeAuth:
     def in_client_configuration(self, return_path):
         if return_path == "/office/":
             return "office", "office-public-client-id"
+        if return_path == "/voc/":
+            return "voc", "voc-public-key"
         return "platform", self.app_key
 
     async def complete_in_client(self, code, *, app_id="platform"):
@@ -468,6 +470,16 @@ def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
         "app_id": "office",
     }
     assert office_config.headers["cache-control"] == "no-store"
+
+    voc_config = client.get(
+        "/api/v1/auth/dingtalk/config?return_path=%2Fvoc%2F"
+    )
+    assert voc_config.json() == {
+        "client_id": "voc-public-key",
+        "corp_id": "public-corp-id",
+        "app_id": "voc",
+    }
+    assert "voc-secret" not in voc_config.text
 
     for path in (
         "/api/deployment",

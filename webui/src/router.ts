@@ -71,7 +71,7 @@ export function parseRoute(pathname: string): Route {
   if (clean === "/conversations") return { name: "conversations" };
   if (clean === "/missions") return { name: "missions" };
   if (clean === "/agents") return { name: "agents" };
-  if (clean === "/agents/voc/workspace") return { name: "voc-workspace" };
+  if (clean === "/agents/voc/workspace") return { name: "legacy-redirect", to: "/voc/" };
   if (clean === "/ai-notes") return { name: "ai-notes" };
 
   const aiNote = /^\/ai-notes\/([a-z0-9][a-z0-9-]{0,63})\/([a-z0-9][a-z0-9-]{0,127})$/.exec(clean);
@@ -85,7 +85,7 @@ export function parseRoute(pathname: string): Route {
   if (clean === "/admin/operations") return { name: "legacy-redirect", to: "/admin" };
   if (clean === "/admin/identity") return { name: "admin-identity" };
   if (clean === "/admin/governance") return { name: "admin-governance" };
-  if (clean === "/admin/voc") return { name: "admin-voc" };
+  if (clean === "/admin/voc") return { name: "legacy-redirect", to: "/voc/?view=management" };
 
   const faeSession = /^\/admin\/fae\/sessions\/([^/]+)$/.exec(clean);
   if (faeSession) {

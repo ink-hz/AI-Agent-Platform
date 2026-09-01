@@ -122,6 +122,7 @@ export type LoginReturnPath =
   | "/ai-notes"
   | `/ai-notes/${string}/${string}`
   | "/office/"
+  | "/voc/"
   | "/admin"
   | "/admin/"
   | `/admin/${string}`;
@@ -142,7 +143,7 @@ function safeLoginReturnPath(value: string): boolean {
   const canonicalFaeDetail = canonicalEncodedFaeDetailPath(value);
   if (value.includes("%") && !canonicalFaeDetail) return false;
   if (canonicalFaeDetail) return true;
-  if (value === "/" || value === "/account" || value === "/missions" || value === "/conversations" || value === "/agents" || value === "/agents/voc/workspace" || value === "/ai-notes") return true;
+  if (value === "/" || value === "/account" || value === "/missions" || value === "/conversations" || value === "/agents" || value === "/agents/voc/workspace" || value === "/ai-notes" || value === "/voc/") return true;
   if (/^\/missions\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/conversations\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;

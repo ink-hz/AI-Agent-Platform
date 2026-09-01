@@ -44,7 +44,7 @@ const faeCard: AgentCapabilityCard = {
 };
 const vocCard: AgentCapabilityCard = {
   ...adminCard, agent_id: "voc", display_name: "VOC 洞察助手", domain_group: "客户洞察",
-  workspace_url: "/agents/voc/workspace",
+  workspace_url: "/voc/",
 };
 const result: ConversationSubmissionResult = {
   conversation: {
@@ -92,7 +92,7 @@ describe("professional Agent use pages", () => {
     expect(cards.map((node) => node.getAttribute("href"))).toEqual([
       "/agents/ai-fae-agent",
       "/agents/hr-bot",
-      "/agents/voc/workspace",
+      "/voc/",
       "/agents/marketing-gtm-bot",
       "/office/?view=services",
     ]);
@@ -100,7 +100,7 @@ describe("professional Agent use pages", () => {
     expect(container.querySelector("a[href='/agents/ai-fae-agent']")?.textContent).toContain("AI FAE Agent");
     expect(container.querySelector("a[href='/agents/ai-fae-agent']")?.getAttribute("data-agent-kind")).toBe("fae");
     expect(container.querySelector("a[href='/agents/hr-bot']")?.getAttribute("data-agent-kind")).toBe("hr");
-    expect(container.querySelector("a[href='/agents/voc/workspace']")?.getAttribute("data-agent-kind")).toBe("voc");
+    expect(container.querySelector("a[href='/voc/']")?.getAttribute("data-agent-kind")).toBe("voc");
     expect(container.querySelector("a[href='/agents/marketing-gtm-bot']")?.getAttribute("data-agent-kind")).toBe("marketing");
     expect(container.querySelector("a[href='/office/?view=services']")?.getAttribute("data-agent-kind")).toBe("admin");
     expect(container.querySelectorAll(".agent-use-card-action")).toHaveLength(5);

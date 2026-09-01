@@ -40,7 +40,9 @@ describe("Agent Brain route boundary", () => {
     expect(parseRoute("/admin/activity")).toEqual({ name: "admin-activity" });
     expect(parseRoute("/admin/identity")).toEqual({ name: "admin-identity" });
     expect(parseRoute("/admin/governance")).toEqual({ name: "admin-governance" });
-    expect(parseRoute("/admin/voc")).toEqual({ name: "admin-voc" });
+    expect(parseRoute("/admin/voc")).toEqual({
+      name: "legacy-redirect", to: "/voc/?view=management",
+    });
     expect(parseRoute("/admin/fae")).toEqual({ name: "admin-fae-overview" });
     expect(parseRoute("/admin/fae/sessions")).toEqual({ name: "admin-fae-sessions" });
     expect(parseRoute("/admin/fae/issues")).toEqual({ name: "admin-fae-issues" });

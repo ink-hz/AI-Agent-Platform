@@ -8,7 +8,7 @@ import { PlatformLink } from "../components/PlatformLink";
 const WORKSPACE_URLS: Readonly<Record<string, string>> = Object.freeze({
   "ai-admin-agent": "/office/?view=services",
   "ai-fae-agent": "https://fae.orbbec.com.cn/",
-  "voc": "/agents/voc/workspace",
+  "voc": "/voc/",
 });
 const AGENT_ORDER = Object.freeze([
   "ai-fae-agent",

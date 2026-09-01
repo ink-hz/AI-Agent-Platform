@@ -16,7 +16,12 @@ describe("Platform router", () => {
     expect(parseRoute("/")).toEqual({ name: "brain" });
     expect(parseRoute("/agents")).toEqual({ name: "agents" });
     expect(parseRoute("/agents/ai-fae-agent")).toEqual({ name: "agent", agentId: "ai-fae-agent" });
-    expect(parseRoute("/agents/voc/workspace")).toEqual({ name: "voc-workspace" });
+    expect(parseRoute("/agents/voc/workspace")).toEqual({
+      name: "legacy-redirect", to: "/voc/",
+    });
+    expect(parseRoute("/admin/voc")).toEqual({
+      name: "legacy-redirect", to: "/voc/?view=management",
+    });
     expect(parseRoute("/missions/one")).toEqual({ name: "mission", missionId: "one" });
     expect(parseRoute("/unknown")).toEqual({ name: "not-found" });
     expect(parseRoute("/login")).toEqual({ name: "login" });

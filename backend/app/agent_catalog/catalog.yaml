@@ -30,17 +30,13 @@ agents:
     exclusions: [不代替用户确认并提交草稿, 不读取无权访问的他人 VOC]
     required_inputs: [客户反馈原文, 企业登录身份]
     example_tasks: [把客户反馈整理成 VOC 草稿, 查看并补充我提交的 VOC]
-    interaction_modes: [external_workspace, brain_delegation]
-    workspace_url: /agents/voc/workspace
-    adapter_id: voc-platform-action-v1
-    adapter_kind: voc_action
-    execution_pool: voc_extension
-    pool_concurrency: 1
+    interaction_modes: [external_workspace]
+    workspace_url: /voc/
     supports_streaming: false
     supports_cancellation: false
-    supports_persistent_session: true
+    supports_persistent_session: false
     supports_followup_message: false
-    supports_progress_events: true
+    supports_progress_events: false
     supports_thinking_summary: false
     supports_cancel: false
     supports_attachments: false

@@ -30,7 +30,7 @@ CANONICAL_AGENT_IDS = (
 _WORKSPACE_URLS = {
     "ai-admin-agent": "/office/?view=services",
     "ai-fae-agent": "https://fae.orbbec.com.cn/",
-    "voc": "/agents/voc/workspace",
+    "voc": "/voc/",
 }
 
 
