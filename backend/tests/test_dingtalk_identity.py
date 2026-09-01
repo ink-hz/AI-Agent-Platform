@@ -22,6 +22,7 @@ from app.control_plane.directory import (
 from app.control_plane.identity import (
     IdentityResolutionError,
     IdentityResolver,
+    StaffIdentity,
 )
 from app.control_plane.models import DirectoryFreshness
 from psycopg.rows import dict_row
@@ -486,27 +487,45 @@ async def test_normal_login_requires_current_usable_directory_generation(
 @pytest.mark.asyncio
 @pytest.mark.postgres
 async def test_staff_id_resolution_uses_verified_active_member_and_fails_closed(
-    production_environment, tmp_path: Path
+    production_environment, tmp_path: Path, monkeypatch
 ) -> None:
     member = DingTalkMember("bot-user", "bot-union", "VOC Bot", True, (1,))
     resolver = _resolver(production_environment, tmp_path, member)
 
-    internal_user_id = await resolver.resolve_active_staff_member(
+    resolver.client.member = DingTalkMember(
+        "wrong-bot-user", "bot-union", "VOC Bot", True, (1,)
+    )
+    with pytest.raises(IdentityResolutionError, match="provider identity mismatch"):
+        await resolver.resolve_staff_member("bot-user", DirectoryFreshness.FRESH)
+    resolver.client.member = member
+
+    resolved = await resolver.resolve_staff_member(
         "bot-user", DirectoryFreshness.FRESH
     )
 
-    assert internal_user_id
+    assert resolved == StaffIdentity(resolved.internal_user_id, True)
     with pytest.raises(IdentityResolutionError, match="directory unavailable"):
-        await resolver.resolve_active_staff_member(
+        await resolver.resolve_staff_member(
             "bot-user", DirectoryFreshness.HARD_STALE
         )
+    _stage_and_promote_generation(
+        production_environment,
+        resolver.identity_codec,
+        (DingTalkMember("bot-user", "bot-union", "VOC Bot", False, (1,)),),
+    )
     resolver.client.member = DingTalkMember(
         "bot-user", "bot-union", "VOC Bot", False, (1,)
     )
-    with pytest.raises(IdentityResolutionError, match="member inactive"):
-        await resolver.resolve_active_staff_member(
-            "bot-user", DirectoryFreshness.FRESH
-        )
+    assert await resolver.resolve_staff_member(
+        "bot-user", DirectoryFreshness.FRESH
+    ) == StaffIdentity(resolved.internal_user_id, False)
+
+    def database_unavailable():
+        raise psycopg.OperationalError("database unavailable")
+
+    monkeypatch.setattr(resolver, "_connection", database_unavailable)
+    with pytest.raises(IdentityResolutionError, match="directory unavailable"):
+        await resolver.resolve_staff_member("bot-user", DirectoryFreshness.FRESH)
 
     class ProviderUnavailable:
         async def get_member(self, _userid):
@@ -516,9 +535,145 @@ async def test_staff_id_resolution_uses_verified_active_member_and_fails_closed(
 
     resolver.client = ProviderUnavailable()
     with pytest.raises(IdentityResolutionError, match="provider identity unavailable"):
-        await resolver.resolve_active_staff_member(
+        await resolver.resolve_staff_member(
             "bot-user", DirectoryFreshness.FRESH
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+async def test_inactive_staff_resolution_requires_existing_paired_current_mapping(
+    production_environment, tmp_path: Path
+) -> None:
+    absent = DingTalkMember("absent-bot", "absent-union", "VOC Bot", False, (1,))
+    absent_resolver = _resolver(production_environment, tmp_path, absent)
+    with pytest.raises(IdentityResolutionError, match="directory unavailable"):
+        await absent_resolver.resolve_staff_member(
+            "absent-bot", DirectoryFreshness.FRESH
+        )
+
+    member = DingTalkMember("paired-bot", "paired-union", "VOC Bot", True, (1,))
+    resolver = _resolver(production_environment, tmp_path, member)
+    await resolver.resolve_staff_member("paired-bot", DirectoryFreshness.FRESH)
+    _stage_and_promote_generation(
+        production_environment,
+        resolver.identity_codec,
+        (DingTalkMember("paired-bot", "different-union", "VOC Bot", False, (1,)),),
+    )
+    resolver.client.member = DingTalkMember(
+        "paired-bot", "paired-union", "VOC Bot", False, (1,)
+    )
+    with pytest.raises(IdentityResolutionError, match="directory unavailable"):
+        await resolver.resolve_staff_member(
+            "paired-bot", DirectoryFreshness.FRESH
+        )
+
+    conflict = DingTalkMember(
+        "conflict-bot", "conflict-union", "VOC Bot", True, (1,)
+    )
+    conflict_resolver = _resolver(production_environment, tmp_path, conflict)
+    await conflict_resolver.resolve_staff_member(
+        "conflict-bot", DirectoryFreshness.FRESH
+    )
+    _stage_and_promote_generation(
+        production_environment,
+        conflict_resolver.identity_codec,
+        (
+            DingTalkMember(
+                "conflict-bot", "conflict-union", "VOC Bot", False, (1,)
+            ),
+        ),
+    )
+    union = conflict_resolver.identity_codec.seal(
+        IdentityResolver.UNION_SUBJECT_KIND, "conflict-union"
+    )
+    with psycopg.connect(production_environment["admin"]) as connection:
+        other_user = uuid4()
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values (%s,'Other','active')",
+            (other_user,),
+        )
+        connection.execute(
+            "update platform_control.provider_identities set internal_user_id=%s "
+            "where subject_kind=%s and lookup_key_version=%s and lookup_hmac=%s",
+            (
+                other_user,
+                union.subject_kind,
+                union.lookup_key_version,
+                union.lookup_hmac,
+            ),
+        )
+    conflict_resolver.client.member = DingTalkMember(
+        "conflict-bot", "conflict-union", "VOC Bot", False, (1,)
+    )
+    with pytest.raises(IdentityResolutionError, match="directory unavailable"):
+        await conflict_resolver.resolve_staff_member(
+            "conflict-bot", DirectoryFreshness.FRESH
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+@pytest.mark.parametrize("directory_status", ("inactive", "disabled"))
+async def test_inactive_staff_resolution_is_read_only_and_requires_paired_identity(
+    production_environment, tmp_path: Path, monkeypatch, directory_status: str
+) -> None:
+    member = DingTalkMember("inactive-bot", "inactive-union", "VOC Bot", True, (1,))
+    resolver = _resolver(production_environment, tmp_path, member)
+    active = await resolver.resolve_staff_member(
+        "inactive-bot", DirectoryFreshness.FRESH
+    )
+    generation_id = _stage_and_promote_generation(
+        production_environment,
+        resolver.identity_codec,
+        (DingTalkMember("inactive-bot", "inactive-union", "VOC Bot", False, (1,)),),
+    )
+    if directory_status == "disabled":
+        with psycopg.connect(production_environment["admin"]) as connection:
+            connection.execute(
+                "update platform_control.directory_members set status='disabled' "
+                "where generation_id=%s",
+                (generation_id,),
+            )
+    resolver.client.member = DingTalkMember(
+        "inactive-bot", "inactive-union", "VOC Bot", False, (1,)
+    )
+    with psycopg.connect(production_environment["admin"]) as connection:
+        before = connection.execute(
+            "select internal_user_id,display_name,status,last_confirmed_generation_id,"
+            "updated_at from platform_control.internal_users order by internal_user_id"
+        ).fetchall(), connection.execute(
+            "select internal_user_id,subject_kind,lookup_hmac,lookup_key_version,"
+            "verified_at from platform_control.provider_identities "
+            "order by subject_kind,lookup_key_version,lookup_hmac"
+        ).fetchall(), connection.execute(
+            "select generation_id,member_key,internal_user_id,status "
+            "from platform_control.directory_members order by generation_id,member_key"
+        ).fetchall()
+
+    async def persistence_must_not_run(_member):
+        raise AssertionError("inactive resolution must not persist an identity")
+
+    monkeypatch.setattr(resolver, "_persist_active_member", persistence_must_not_run)
+    resolved = await resolver.resolve_staff_member(
+        "inactive-bot", DirectoryFreshness.FRESH
+    )
+
+    assert resolved == StaffIdentity(active.internal_user_id, False)
+    with psycopg.connect(production_environment["admin"]) as connection:
+        after = connection.execute(
+            "select internal_user_id,display_name,status,last_confirmed_generation_id,"
+            "updated_at from platform_control.internal_users order by internal_user_id"
+        ).fetchall(), connection.execute(
+            "select internal_user_id,subject_kind,lookup_hmac,lookup_key_version,"
+            "verified_at from platform_control.provider_identities "
+            "order by subject_kind,lookup_key_version,lookup_hmac"
+        ).fetchall(), connection.execute(
+            "select generation_id,member_key,internal_user_id,status "
+            "from platform_control.directory_members order by generation_id,member_key"
+        ).fetchall()
+    assert after == before
 
 
 @pytest.mark.asyncio

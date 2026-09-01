@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 import pytest
+from app.control_plane.identity import StaffIdentity
 from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.control_plane.models import AuthContext, DirectoryFreshness, Role
 from app.voc_extension.directory import SubmitterOption
@@ -66,21 +67,60 @@ class BotSubjects:
 
 
 @pytest.mark.asyncio
-async def test_platform_bot_subject_resolver_uses_fresh_identity_resolution() -> None:
+async def test_platform_bot_subject_resolver_projects_inactive_identity() -> None:
     calls = []
 
     class Resolver:
-        async def resolve_active_staff_member(self, staff_id, freshness):
+        async def resolve_staff_member(self, staff_id, freshness):
             calls.append((staff_id, freshness))
-            return USER_ID
+            return StaffIdentity(USER_ID, False)
 
     resolver = PlatformVocBotSubjectResolver(
         identity_resolver=Resolver(),
         directory_freshness=lambda: DirectoryFreshness.FRESH,
     )
 
-    assert await resolver.resolve("dingtalk-userid") == VocBotSubject(USER_ID, True)
+    assert await resolver.resolve("dingtalk-userid") == VocBotSubject(USER_ID, False)
     assert calls == [("dingtalk-userid", DirectoryFreshness.FRESH)]
+
+
+def test_platform_bot_subject_resolver_preserves_inactive_route_contract(
+    voc_bearer,
+):
+    calls = []
+
+    class StaffResolver:
+        async def resolve_staff_member(self, staff_id, freshness):
+            calls.append((staff_id, freshness))
+            return StaffIdentity(OTHER_ID, False)
+
+    app = FastAPI()
+    app.include_router(
+        build_voc_internal_router(
+            auth=Auth(),
+            directory=Directory(),
+            bearer=voc_bearer.encode("utf-8"),
+            bot_subject_resolver=PlatformVocBotSubjectResolver(
+                identity_resolver=StaffResolver(),
+                directory_freshness=lambda: DirectoryFreshness.WARNING,
+            ),
+        )
+    )
+
+    with TestClient(app, client=("172.29.0.3", 50000)) as service:
+        response = service.post(
+            "/api/v1/internal/voc/bot-subject",
+            headers={"Authorization": f"Bearer {voc_bearer}"},
+            json={"staff_id": "inactive-dingtalk-userid"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "internal_user_id": str(OTHER_ID),
+        "active": False,
+        "capabilities": ["voc.read_self", "voc.submit"],
+    }
+    assert calls == [("inactive-dingtalk-userid", DirectoryFreshness.WARNING)]
 
 
 @pytest.fixture

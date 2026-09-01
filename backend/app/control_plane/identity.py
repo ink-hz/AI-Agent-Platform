@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -66,6 +67,14 @@ def decide_stale_access(
 
 class IdentityResolutionError(RuntimeError):
     """Stable identity resolution failure without provider identifiers."""
+
+
+@dataclass(frozen=True, slots=True)
+class StaffIdentity:
+    """Canonical staff identity verified by the configured DingTalk client."""
+
+    internal_user_id: UUID
+    active: bool
 
 
 class IdentityResolver:
@@ -386,12 +395,69 @@ class IdentityResolver:
             raise IdentityResolutionError("provider identity unavailable") from None
         return await self._persist_active_member(member)
 
-    async def resolve_active_staff_member(
+    def _resolve_inactive_staff_transaction(self, member: DingTalkMember) -> UUID:
+        """Read an established inactive identity without changing its state."""
+        corporate = self.identity_codec.seal(
+            self.CORPORATE_SUBJECT_KIND,
+            self.corporate_provider_id(self._corp_id, member.userid),
+        )
+        union = self.identity_codec.seal(self.UNION_SUBJECT_KIND, member.unionid)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                self._check_key_policy(cursor)
+                cursor.execute(f"select {self.DIRECTORY_LOCK_FUNCTION}")
+                directory_rows = cursor.execute(
+                    "select * from platform_control."
+                    "read_current_inactive_staff_member_v61(%s,%s,%s,%s)",
+                    (
+                        corporate.lookup_key_version,
+                        corporate.lookup_hmac,
+                        union.lookup_key_version,
+                        union.lookup_hmac,
+                    ),
+                ).fetchall()
+                if (
+                    len(directory_rows) != 1
+                    or directory_rows[0]["member_status"]
+                    not in {"inactive", "disabled"}
+                ):
+                    raise IdentityResolutionError("directory unavailable")
+                corporate_user = self._matching_user(
+                    self._lookup_rows(cursor, corporate), corporate
+                )
+                union_user = self._matching_user(
+                    self._lookup_rows(cursor, union), union
+                )
+                if (
+                    corporate_user is None
+                    or union_user is None
+                    or corporate_user != union_user
+                ):
+                    raise IdentityResolutionError("directory unavailable")
+                user = cursor.execute(
+                    "select status,locally_invalidated_at "
+                    "from platform_control.internal_users "
+                    "where internal_user_id=%s",
+                    (corporate_user,),
+                ).fetchone()
+                if (
+                    user is None
+                    or user["status"] != "active"
+                    or user["locally_invalidated_at"] is not None
+                ):
+                    raise IdentityResolutionError("directory unavailable")
+                return corporate_user
+        except IdentityResolutionError:
+            raise
+        except (IdentityCryptoError, KeyError, psycopg.Error):
+            raise IdentityResolutionError("directory unavailable") from None
+
+    async def resolve_staff_member(
         self,
         userid: str,
         freshness: DirectoryFreshness,
-    ) -> UUID:
-        """Resolve an active DingTalk userid without inspecting encrypted IDs."""
+    ) -> StaffIdentity:
+        """Resolve a verified staff member, persisting only active identities."""
         if freshness not in {DirectoryFreshness.FRESH, DirectoryFreshness.WARNING}:
             raise IdentityResolutionError("directory unavailable")
         if not isinstance(userid, str) or not userid or "\0" in userid:
@@ -402,15 +468,18 @@ class IdentityResolver:
                 raise IdentityResolutionError("provider identity mismatch")
             if not member.unionid:
                 raise IdentityResolutionError("stable identity required")
-            if not member.active:
-                raise IdentityResolutionError("member inactive")
-            if not member.display_name.strip():
+            if member.active and not member.display_name.strip():
                 raise IdentityResolutionError("member data invalid")
         except IdentityResolutionError:
             raise
         except DingTalkProviderError:
             raise IdentityResolutionError("provider identity unavailable") from None
-        return await self._persist_active_member(member)
+        if member.active:
+            return StaffIdentity(await self._persist_active_member(member), True)
+        return StaffIdentity(
+            await asyncio.to_thread(self._resolve_inactive_staff_transaction, member),
+            False,
+        )
 
     async def _persist_active_member(self, member: DingTalkMember) -> UUID:
         mutation = asyncio.create_task(

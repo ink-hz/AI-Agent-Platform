@@ -10,6 +10,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, Request
 
+from app.control_plane.identity import StaffIdentity
 from app.control_plane.models import AuthContext, DirectoryFreshness, Role
 
 
@@ -41,28 +42,28 @@ class VocBotSubjectResolver(Protocol):
     async def resolve(self, staff_id: str) -> VocBotSubject | None: ...
 
 
-class ActiveStaffIdentityResolver(Protocol):
-    async def resolve_active_staff_member(
+class StaffIdentityResolver(Protocol):
+    async def resolve_staff_member(
         self,
         userid: str,
         freshness: DirectoryFreshness,
-    ) -> UUID: ...
+    ) -> StaffIdentity: ...
 
 
 @dataclass(frozen=True, slots=True)
 class PlatformVocBotSubjectResolver:
     """Resolve a DingTalk userid through the startup-owned identity boundary."""
 
-    identity_resolver: ActiveStaffIdentityResolver = field(repr=False)
+    identity_resolver: StaffIdentityResolver = field(repr=False)
     directory_freshness: Callable[[], DirectoryFreshness] = field(repr=False)
 
     async def resolve(self, staff_id: str) -> VocBotSubject:
         freshness = self.directory_freshness()
-        internal_user_id = await self.identity_resolver.resolve_active_staff_member(
+        resolved = await self.identity_resolver.resolve_staff_member(
             staff_id,
             freshness,
         )
-        return VocBotSubject(internal_user_id, True)
+        return VocBotSubject(resolved.internal_user_id, resolved.active)
 
 
 def capabilities_for(context: AuthContext) -> tuple[str, ...]:

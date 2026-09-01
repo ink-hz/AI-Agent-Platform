@@ -76,6 +76,9 @@ AGENT_BRAIN_DURABLE_LOOP_MIGRATION = (
 AGENT_BRAIN_TASK_WAIT_MIGRATION = (
     MIGRATIONS / "050_agent_brain_task_wait_state.sql"
 )
+VOC_INACTIVE_STAFF_PROJECTION_MIGRATION = (
+    MIGRATIONS / "061_voc_inactive_staff_projection.sql"
+)
 DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION = (
     MIGRATIONS / "039_directory_member_employee_profile.sql"
 )
@@ -322,6 +325,38 @@ def test_first_control_migration_exists() -> None:
         "missing Agent Brain task/wait migration: "
         f"{AGENT_BRAIN_TASK_WAIT_MIGRATION}"
     )
+    assert VOC_INACTIVE_STAFF_PROJECTION_MIGRATION.is_file(), (
+        "missing VOC inactive staff projection migration: "
+        f"{VOC_INACTIVE_STAFF_PROJECTION_MIGRATION}"
+    )
+
+
+@pytest.mark.postgres
+def test_voc_inactive_staff_projection_is_app_only_and_directory_read_only(
+    control_database,
+) -> None:
+    production = control_database["environments"]["production"]
+    function = (
+        "platform_control.read_current_inactive_staff_member_v61"
+        "(integer,bytea,integer,bytea)"
+    )
+    with psycopg.connect(production["admin"]) as connection:
+        privileges = connection.execute(
+            "select has_function_privilege('platform_control_app', %s, 'execute'), "
+            "has_function_privilege('platform_directory_worker', %s, 'execute'), "
+            "has_table_privilege('platform_control_app', "
+            "'platform_control.directory_members', 'select')",
+            (function, function),
+        ).fetchone()
+    assert privileges == (True, False, False)
+
+    with psycopg.connect(production["urls"]["platform_control_app"]) as connection:
+        assert connection.execute(
+            "select * from "
+            "platform_control.read_current_inactive_staff_member_v61("
+            "%s,%s,%s,%s)",
+            (1, b"c" * 32, 1, b"u" * 32),
+        ).fetchall() == []
 
 
 def test_control_migrations_001_through_019_are_byte_immutable() -> None:
