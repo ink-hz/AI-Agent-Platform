@@ -147,6 +147,8 @@ from .spa import SpaStaticFiles, load_public_asset_manifest
 from .voc_extension.client import VocExtensionClient
 from .voc_extension.directory import VocSubmitterDirectory
 from .voc_extension.identity import PlatformVocTokenSigner
+from .voc_extension.internal_identity import VocServiceAuthorizer
+from .voc_extension.internal_routes import build_voc_internal_router
 from .voc_extension.routes import build_voc_extension_router
 
 
@@ -666,6 +668,8 @@ def create_app(
     action_command_service = None
     agent_use_authorization = None
     office_recipient_router = None
+    voc_internal_router = None
+    voc_service_authorizer = None
     control_database_url = None
     content_codec = None
     v1_mission_modes: list[str] = []
@@ -925,6 +929,19 @@ def create_app(
                 config.control_plane.control_database_url_file
             )
         voc_submitter_directory = VocSubmitterDirectory(control_database_url)
+    if config.voc_extension_enabled and identity_enabled:
+        if identity_auth is None or voc_submitter_directory is None:
+            raise RuntimeError("VOC internal identity unavailable")
+        voc_service_authorizer = VocServiceAuthorizer(
+            read_secret_file(
+                config.control_plane.voc_service_bearer_file, max_bytes=16_384
+            ).encode("utf-8")
+        )
+        voc_internal_router = build_voc_internal_router(
+            auth=identity_auth,
+            directory=voc_submitter_directory,
+            bearer=voc_service_authorizer,
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -997,6 +1014,7 @@ def create_app(
     app.state.agent_use_authorization = agent_use_authorization
     app.state.voc_extension_client = voc_extension_client
     app.state.voc_submitter_directory = voc_submitter_directory
+    app.state.voc_service_authorizer = voc_service_authorizer
     app.state.ai_notes_reader = ai_notes_reader
     app.state.agent_launch_service = agent_launch_service
     app.state.partner_service = partner_service
@@ -1061,6 +1079,8 @@ def create_app(
     app.include_router(review_routes.router)
     app.include_router(fae_workbench_routes.router)
     app.include_router(build_voc_extension_router())
+    if voc_internal_router is not None:
+        app.include_router(voc_internal_router)
     if office_recipient_router is not None:
         app.include_router(office_recipient_router)
     if agent_launch_service is not None:
@@ -1152,6 +1172,7 @@ def create_app(
             public_assets=public_assets,
             authorization=authorization_service,
             routes=tuple(app.router.routes),
+            voc_service_authorizer=voc_service_authorizer,
             partner_callback_method=(
                 config.partner_callback_method
                 if partner_auth_broker is not None

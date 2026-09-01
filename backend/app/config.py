@@ -193,6 +193,7 @@ _INLINE_CONTROL_SECRET_ENV = (
     "PLATFORM_IDENTITY_ENCRYPTION_KEYRING",
     "PLATFORM_IDENTITY_HMAC_KEYRING",
     "PLATFORM_RATE_LIMIT_HMAC_KEYRING",
+    "PLATFORM_VOC_SERVICE_BEARER",
 )
 
 
@@ -457,6 +458,9 @@ def _load_control_plane_config() -> ControlPlaneConfig:
         raise ValueError(
             "rate limit HMAC keyring must be distinct from identity HMAC keyring"
         )
+    voc_service_bearer_file = os.getenv(
+        "PLATFORM_VOC_SERVICE_BEARER_FILE", "/run/secrets/voc-service-bearer"
+    ).strip()
 
     reconcile_interval_seconds = _positive_environment_int(
         "PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS", 21_600
@@ -529,6 +533,7 @@ def _load_control_plane_config() -> ControlPlaneConfig:
             "PLATFORM_AUTHENTICATED_MUTATIONS_PER_MINUTE", 60
         ),
         dingtalk_in_client_apps_file=dingtalk_in_client_apps_file,
+        voc_service_bearer_file=voc_service_bearer_file,
     )
 
 
@@ -649,6 +654,8 @@ def _validate_brain_model_config(config: Config) -> None:
 def _validate_voc_extension_config(config: Config) -> None:
     if os.getenv("PLATFORM_VOC_EXTENSION_SIGNING_KEY"):
         raise ValueError("VOC extension signing key must use a secret file")
+    if os.getenv("PLATFORM_VOC_SERVICE_BEARER"):
+        raise ValueError("VOC service bearer must use a secret file")
     if not config.voc_extension_enabled:
         return
     try:
@@ -679,6 +686,10 @@ def _validate_voc_extension_config(config: Config) -> None:
     _validate_private_file(
         config.voc_extension_signing_key_file,
         "VOC extension signing key",
+    )
+    _validate_private_file(
+        config.control_plane.voc_service_bearer_file,
+        "VOC service bearer",
     )
     try:
         if len(Path(config.voc_extension_signing_key_file).read_bytes()) < 32:

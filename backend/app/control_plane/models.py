@@ -109,3 +109,4 @@ class ControlPlaneConfig:
     authenticated_reads_per_minute: int = 300
     authenticated_mutations_per_minute: int = 60
     dingtalk_in_client_apps_file: str = ""
+    voc_service_bearer_file: str = "/run/secrets/voc-service-bearer"

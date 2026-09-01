@@ -5,9 +5,10 @@ import re
 from ipaddress import ip_address
 from urllib.parse import urlsplit
 
+from fastapi import HTTPException
 from starlette.datastructures import Headers, MutableHeaders, QueryParams
-from starlette.responses import JSONResponse
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 from starlette.routing import Match
 
 from app.spa import is_public_build_asset
@@ -64,6 +65,21 @@ def is_office_recipient_directory_request(method: str, path: str) -> bool:
         ("POST", f"{base}/resolve"),
         ("GET", f"{base}/departments"),
     }
+
+
+def is_voc_internal_request(method: str, path: str) -> bool:
+    base = "/api/v1/internal/voc"
+    return (method, path) in {
+        ("GET", f"{base}/browser-subject"),
+        ("POST", f"{base}/bot-subject"),
+        ("POST", f"{base}/submitter-directory/resolve"),
+        ("GET", f"{base}/submitter-directory/options"),
+    }
+
+
+def _source_is_voc_service(scope) -> bool:
+    client = scope.get("client")
+    return bool(client and client[0] in {"172.29.0.3", "172.29.0.5"})
 
 
 def _source_is_loopback(scope, edge_source) -> bool:
@@ -231,6 +247,7 @@ class IdentitySecurityMiddleware:
         public_assets: frozenset[str],
         authorization=None,
         routes=(),
+        voc_service_authorizer=None,
         partner_callback_method: str | None = None,
         partner_callback_path: str | None = None,
     ) -> None:
@@ -239,6 +256,7 @@ class IdentitySecurityMiddleware:
         self.public_assets = public_assets
         self.authorization = authorization
         self.routes = self._expand_included_routes(routes)
+        self.voc_service_authorizer = voc_service_authorizer
         self.partner_callback_method = partner_callback_method
         self.partner_callback_path = partner_callback_path
 
@@ -299,6 +317,10 @@ class IdentitySecurityMiddleware:
                 isinstance(local_path, str)
                 and is_office_recipient_directory_request(method, local_path)
             )
+            or (
+                isinstance(local_path, str)
+                and is_voc_internal_request(method, local_path)
+            )
         )
 
         async def protected_send(message):
@@ -347,12 +369,20 @@ class IdentitySecurityMiddleware:
             and (
                 is_agent_identity_backchannel_request(method, local_path)
                 or is_office_recipient_directory_request(method, local_path)
+                or is_voc_internal_request(method, local_path)
             )
         )
         if internal_backchannel:
             if (
                 not _has_canonical_ascii_raw_path(scope, path)
-                or not _source_is_loopback(scope, edge_source)
+                or (
+                    is_voc_internal_request(method, local_path)
+                    and not _source_is_voc_service(scope)
+                )
+                or (
+                    not is_voc_internal_request(method, local_path)
+                    and not _source_is_loopback(scope, edge_source)
+                )
             ):
                 await JSONResponse(
                     {"detail": "not found"},
@@ -360,8 +390,25 @@ class IdentitySecurityMiddleware:
                     headers=_NO_STORE,
                 )(scope, receive, protected_send)
                 return
-            await self.app(scope, receive, protected_send)
-            return
+            if is_voc_internal_request(method, local_path):
+                if self.voc_service_authorizer is None:
+                    await JSONResponse(
+                        {"detail": "not found"}, status_code=404, headers=_NO_STORE
+                    )(scope, receive, protected_send)
+                    return
+                try:
+                    self.voc_service_authorizer.require(Request(scope))
+                except HTTPException:
+                    await JSONResponse(
+                        {"detail": "not found"}, status_code=404, headers=_NO_STORE
+                    )(scope, receive, protected_send)
+                    return
+                if local_path != "/api/v1/internal/voc/browser-subject":
+                    await self.app(scope, receive, protected_send)
+                    return
+            else:
+                await self.app(scope, receive, protected_send)
+                return
 
         if partner_namespace and not partner_public:
             await JSONResponse(
