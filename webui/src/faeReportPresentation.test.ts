@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildImprovementThemes,
   formatPublishedMetric,
+  metricById,
+  metricPresentation,
   metricsForChapter,
+  metricsByIds,
   reviewCoverage,
 } from "./faeReportPresentation";
 import type { FaeReportMetric } from "./faeReportTypes";
@@ -41,6 +44,25 @@ describe("FAE report presentation", () => {
 
     const presented = metricsForChapter(report, "usage");
     expect(presented[presented.length - 1]?.presentation.kind).toBe("generic");
+  });
+
+  it("selects published metrics in the caller's narrative order", () => {
+    expect(metricsByIds(reportFixture, [
+      "product.family_counts_public",
+      "value.observed_included_sessions",
+    ]).map((metric) => metric.metric_id)).toEqual([
+      "product.family_counts_public",
+      "value.observed_included_sessions",
+    ]);
+  });
+
+  it("omits a missing optional metric instead of inventing a value", () => {
+    expect(metricById(reportFixture, "usage.not_published")).toBeUndefined();
+    expect(metricsByIds(reportFixture, ["usage.not_published"])).toEqual([]);
+  });
+
+  it("does not expose a presentation group", () => {
+    expect(metricPresentation(reportFixture.metrics[0])).not.toHaveProperty("group");
   });
 
   it("preserves privacy-suppressed distribution values", () => {

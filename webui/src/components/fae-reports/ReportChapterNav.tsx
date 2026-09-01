@@ -2,7 +2,7 @@ const CHAPTERS = [
   ["report-usage", "01", "使用情况"],
   ["report-value", "02", "业务价值"],
   ["report-effectiveness", "03", "回答效果"],
-  ["report-improvement", "04", "业务洞察与改进"],
+  ["report-improvement", "04", "业务反哺"],
 ] as const;
 
 

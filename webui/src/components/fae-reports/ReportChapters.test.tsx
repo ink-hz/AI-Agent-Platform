@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest";
 import type { FaeReportMetric } from "../../faeReportTypes";
 import { metricPresentation } from "../../faeReportPresentation";
 import { reportFixture } from "../../testFixtures/faeReportFixture";
+import { AnswerEffectivenessChapter } from "./AnswerEffectivenessChapter";
 import { BusinessValueChapter } from "./BusinessValueChapter";
 import { InsightAndImprovementChapter } from "./InsightAndImprovementChapter";
 import { ReportMetricVisual } from "./ReportMetricVisual";
+import { UsageChapter } from "./UsageChapter";
 
 
 function renderMetric(metric: FaeReportMetric): string {
@@ -75,20 +77,36 @@ describe("FAE outcome report chapters", () => {
     expect(html).toMatch(/P95[^<]*<[^>]+>134\.4 秒/);
   });
 
-  it("keeps realized value and conversion potential in separate sections", () => {
+  it("compares realized value and potential without nested sub-sections", () => {
     const html = renderToStaticMarkup(<BusinessValueChapter report={reportFixture} />);
 
-    expect(html).toContain('data-value-kind="realized"');
-    expect(html).toContain('data-value-kind="potential"');
-    expect(html).toContain("不等于已经实现的业务价值");
+    expect(html).toContain("fae-outcome-value-comparison");
+    expect(html).not.toContain("fae-outcome-value-group");
+    expect(html).toContain("潜在机会不计入已实现成果");
     expect(html).toContain("典型案例待业务批准");
   });
 
-  it("renders one linked improvement theme and exposes missing governance linkage", () => {
+  it("renders one compact business-feedback theme and exposes missing governance linkage", () => {
     const html = renderToStaticMarkup(<InsightAndImprovementChapter report={reportFixture} />);
 
+    expect(html).toContain("业务反哺");
     expect(html.match(/资料缺口/g)).toHaveLength(1);
     expect(html).toContain("建设统一资料入口");
     expect(html).toContain("待建立治理关联");
+    expect(html).not.toContain("根因判断");
+  });
+
+  it("renders the four chapters without visible metric groups", () => {
+    const html = renderToStaticMarkup(<>
+      <UsageChapter report={reportFixture} />
+      <BusinessValueChapter report={reportFixture} />
+      <AnswerEffectivenessChapter report={reportFixture} />
+      <InsightAndImprovementChapter report={reportFixture} />
+    </>);
+
+    expect(html.match(/data-dimension=/g)).toHaveLength(4);
+    expect(html).not.toContain("fae-outcome-metric-group");
+    expect(html).not.toContain("服务规模与深度");
+    expect(html).not.toContain("独立复审结果");
   });
 });

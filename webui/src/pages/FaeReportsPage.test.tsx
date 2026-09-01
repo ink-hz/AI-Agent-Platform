@@ -75,7 +75,7 @@ describe("FAE reports", () => {
     await act(async () => root.unmount()); container.remove();
   });
 
-  it("leads with production scale and separates realized value from potential", async () => {
+  it("leads with one conclusion and exactly four published facts", async () => {
     vi.spyOn(faeReportApi, "latest").mockResolvedValue(outcomeReport as never);
     const container = document.createElement("div"); document.body.append(container);
     const root = createRoot(container);
@@ -85,17 +85,23 @@ describe("FAE reports", () => {
     await act(async () => undefined);
 
     const cover = container.querySelector("[data-report-cover]");
-    expect(cover?.textContent).toContain("FAE Agent 已经在真实生产中形成规模");
+    expect(cover?.textContent).toContain(outcomeReport.summary.headline);
+    expect(cover?.querySelectorAll(".fae-outcome-cover__facts > article")).toHaveLength(4);
+    expect(cover?.textContent).toContain("生产会话");
+    expect(cover?.textContent).toContain("独立复审");
+    expect(cover?.textContent).toContain("已确认价值");
+    expect(cover?.textContent).toContain("潜在机会");
     expect(cover?.textContent).toContain("692");
     expect(cover?.textContent).toContain("1,492");
     expect(cover?.textContent).toContain("654 / 692");
-    expect(cover?.querySelector("[data-outcome=realized]")?.textContent).toContain("已实现价值");
-    expect(cover?.querySelector("[data-outcome=potential]")?.textContent).toContain("不计入已实现成绩");
+    expect(cover?.querySelector("[data-outcome=realized]")?.textContent).toContain("已确认价值");
+    expect(cover?.querySelector("[data-outcome=potential]")?.textContent).toContain("不计入已实现成果");
+    expect(cover?.textContent).not.toContain("复杂业务承接");
     expect(cover?.textContent).not.toContain("AI FAE PRODUCTION OUTCOME");
     await act(async () => root.unmount()); container.remove();
   });
 
-  it("renders the real four-dimension result and truthful case state", async () => {
+  it("renders exactly four flat dimensions and no visible sub-dimension groups", async () => {
     vi.spyOn(faeReportApi, "latest").mockResolvedValue(report as never);
     const container = document.createElement("div"); document.body.append(container);
     const root = createRoot(container);
@@ -105,11 +111,17 @@ describe("FAE reports", () => {
     await act(async () => undefined);
 
     expect(container.querySelector("[data-report-id]")?.getAttribute("data-report-id")).toBe(report.report_id);
+    expect(container.querySelectorAll("[data-dimension]")).toHaveLength(4);
+    expect(container.querySelectorAll(".fae-outcome-metric-group")).toHaveLength(0);
     expect(container.textContent).toContain("692");
     expect(container.textContent).toContain("使用情况");
     expect(container.textContent).toContain("业务价值");
     expect(container.textContent).toContain("回答效果");
-    expect(container.textContent).toContain("业务洞察与改进");
+    expect(container.textContent).toContain("业务反哺");
+    expect(container.textContent).not.toContain("服务规模与深度");
+    expect(container.textContent).not.toContain("复杂业务承接");
+    expect(container.textContent).not.toContain("独立复审结果");
+    expect(container.textContent).not.toContain("可靠性与响应");
     expect(container.textContent).toContain("典型案例待业务批准");
     expect(container.textContent).toContain("数据已有更新");
     await act(async () => root.unmount()); container.remove();
