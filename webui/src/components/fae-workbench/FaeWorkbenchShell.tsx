@@ -6,7 +6,7 @@ import { PlatformLink } from "../PlatformLink";
 const ITEMS = [
   ["概览", "/admin/fae", "overview"],
   ["Sessions", "/admin/fae/sessions", "sessions"],
-  ["问题治理", "/admin/fae/issues", "issues"],
+  ["反馈与修复", "/admin/fae/issues", "issues"],
   ["分析报告", "/admin/fae/reports", "reports"],
 ] as const;
 

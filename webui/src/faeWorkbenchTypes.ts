@@ -45,7 +45,7 @@ export interface FaeOverview {
   attention: { state: FaeSectionState; items: FaeSessionAttention[] };
   trends: { state: FaeSectionState; points: FaeTrendPoint[] };
   issues: { state: FaeSectionState; statuses: Record<string, number> };
-  reports: { state: FaeSectionState };
+  reports: { state: FaeSectionState; report_id: string | null; title: string | null; data_cutoff_at: string | null; currentness: "current" | "source_updated" | null };
 }
 
 export interface FaeSessionQuery {
@@ -171,7 +171,8 @@ export function parseFaeOverview(value: unknown): FaeOverview {
   const issuesSection = record(selected.issues);
   exactKeys(issuesSection, ["state", "statuses"]);
   const reportsSection = record(selected.reports);
-  exactKeys(reportsSection, ["state"]);
+  exactKeys(reportsSection, ["state", "report_id", "title", "data_cutoff_at", "currentness"]);
+  if (reportsSection.currentness !== null && reportsSection.currentness !== "current" && reportsSection.currentness !== "source_updated") throw new FaeWorkbenchContractError();
   if (!Array.isArray(attentionSection.items) || !Array.isArray(trendsSection.points)) throw new FaeWorkbenchContractError();
   const statuses = record(issuesSection.statuses);
 
@@ -207,6 +208,12 @@ export function parseFaeOverview(value: unknown): FaeOverview {
       state: state(issuesSection.state),
       statuses: Object.fromEntries(Object.entries(statuses).map(([key, count]) => [nonEmptyString(key), integer(count) as number])),
     },
-    reports: { state: state(reportsSection.state) },
+    reports: {
+      state: state(reportsSection.state),
+      report_id: nullableString(reportsSection.report_id),
+      title: nullableString(reportsSection.title),
+      data_cutoff_at: timestamp(reportsSection.data_cutoff_at, true),
+      currentness: reportsSection.currentness,
+    },
   };
 }

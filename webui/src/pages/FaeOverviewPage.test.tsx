@@ -73,7 +73,7 @@ const freshOverview: FaeOverview = {
     state: availableState,
     statuses: { pending_triage: 2, fixing: 2, awaiting_review: 1, closed: 7, duplicate: 1 },
   },
-  reports: { state: unavailableState("reports_not_integrated") },
+  reports: { state: unavailableState("reports_not_integrated"), report_id: null, title: null, data_cutoff_at: null, currentness: null },
 };
 
 const periodSessionsHref = "/admin/fae/sessions?date_from=2026-08-24T00%3A00%3A00%2B08%3A00&date_before=2026-08-31T00%3A00%3A00%2B08%3A00";
@@ -119,8 +119,8 @@ describe("FaeOverviewPage", () => {
     expect(text).toContain("5 个开放 Issue");
     expect(text).toContain("p95 640 ms");
     expect(text.indexOf("数据截止")).toBeLessThan(text.indexOf("12 个 Session"));
-    expect(text.indexOf("12 个 Session")).toBeLessThan(text.indexOf("问题治理"));
-    expect(text.indexOf("问题治理")).toBeLessThan(text.indexOf("7 日趋势"));
+    expect(text.indexOf("12 个 Session")).toBeLessThan(text.indexOf("反馈与修复"));
+    expect(text.indexOf("反馈与修复")).toBeLessThan(text.indexOf("7 日趋势"));
     expect(text.indexOf("7 日趋势")).toBeLessThan(text.indexOf("分析报告"));
     expect(text).not.toContain("实时");
 
@@ -135,13 +135,13 @@ describe("FaeOverviewPage", () => {
     expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=fixing"]')).not.toBeNull();
     expect(container.querySelector('.fae-overview-list a[href="/admin/fae/issues?status=awaiting_review"]')).not.toBeNull();
     expect(container.querySelector('a[href="/admin/fae/sessions/fae%3Asession-1"]')).not.toBeNull();
-    expect(container.querySelector('.fae-report-preview > a[href="/admin/fae/reports"]')?.textContent).toContain("查看接入状态");
+    expect(container.querySelector('.fae-report-preview > a[href="/admin/fae/reports"]')?.textContent).toContain("查看报告");
 
     const bars = [...container.querySelectorAll<HTMLElement>(".fae-trend-bar")];
     expect(bars).toHaveLength(14);
     expect(bars.every((bar) => Boolean(bar.getAttribute("aria-label")))).toBe(true);
     expect(container.querySelectorAll(".fae-trend-bar__value")).toHaveLength(14);
-    expect(container.textContent).toContain("分析报告尚未接入");
+    expect(container.textContent).toContain("分析报告暂不可用");
     expect(container.textContent).not.toContain("示例报告");
   });
 
@@ -183,11 +183,11 @@ describe("FaeOverviewPage", () => {
 
     expect(container.textContent).toContain("数据截止 暂不可用");
     expect(container.textContent).toContain("运营摘要暂不可用");
-    expect(container.textContent).toContain("问题治理");
+    expect(container.textContent).toContain("反馈与修复");
     expect(container.textContent).toContain("待归因 2");
     expect(container.textContent).toContain("异常 Session 暂不可用");
     expect(container.textContent).toContain("7 日趋势暂不可用");
-    expect(container.textContent).toContain("分析报告尚未接入");
+    expect(container.textContent).toContain("分析报告暂不可用");
     expect(container.textContent).not.toContain("实时");
   });
 
@@ -201,7 +201,7 @@ describe("FaeOverviewPage", () => {
     expect(container.querySelector(".fae-overview__freshness")?.textContent).toContain("数据已过期");
     expect(container.textContent).toContain("数据截止 08月29日 11:15");
     expect(container.textContent).toContain("12 个 Session");
-    expect(container.textContent).toContain("问题治理暂不可用");
+    expect(container.textContent).toContain("反馈与修复暂不可用");
     expect(container.textContent).toContain("安装失败排查");
     expect(container.textContent).toContain("7 日趋势");
     expect(container.textContent).not.toContain("实时");

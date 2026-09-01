@@ -2,40 +2,32 @@
 
 const fs = require("fs");
 
-const PLACEHOLDER_HEADING = "分析报告尚未接入";
-const PLACEHOLDER_DESCRIPTION =
-  "Sessions 与问题治理可以正常使用；这里不会用演示数据代替 FAE 的真实分析结果。";
-
-function placeholderExpression(expectedUrl) {
+function reportExpression(expectedUrl) {
   const serializedUrl = JSON.stringify(expectedUrl);
-  const serializedHeading = JSON.stringify(PLACEHOLDER_HEADING);
-  const serializedDescription = JSON.stringify(PLACEHOLDER_DESCRIPTION);
   return `(() => {
     const expected = new URL(${serializedUrl});
     const current = new URL(window.location.href);
     if (current.href !== expected.href || current.origin !== expected.origin ||
         current.pathname !== expected.pathname || current.search !== "" || current.hash !== "") return false;
     const workbenches = document.querySelectorAll(".fae-workbench");
-    const pendingMarkers = document.querySelectorAll('[data-fae-reports-state]');
-    if (workbenches.length !== 1 || pendingMarkers.length !== 1 ||
-        document.querySelector("article,table,[data-report-id],[data-metric],.report-card") !== null) return false;
+    const reports = document.querySelectorAll('.fae-report[data-report-id]');
+    if (workbenches.length !== 1 || reports.length !== 1 ||
+        document.querySelector('[data-fae-reports-state="integration-pending"]') !== null) return false;
     const workbench = workbenches[0];
     const content = workbench?.querySelector(":scope > .fae-workbench__content");
     const selected = workbench?.querySelector(':scope > .fae-workbench__sidebar a[aria-current="page"]');
-    if (!content || content.children.length !== 1 || content.childNodes.length !== 1 ||
+    if (!content || content.children.length !== 1 ||
         selected?.href !== expected.href) return false;
-    const placeholder = content.querySelector(':scope > [data-fae-reports-state="integration-pending"]');
-    if (!placeholder || placeholder !== content.firstElementChild ||
-        placeholder.getAttribute("class") !== "fae-workbench__empty" ||
-        placeholder.getAttribute("role") !== "status") return false;
-    const attributeNames = Array.from(placeholder.attributes, (attribute) => attribute.name).sort();
-    if (attributeNames.join(",") !== "class,data-fae-reports-state,role") return false;
-    const children = Array.from(placeholder.children);
-    if (children.length !== 2 || children[0].tagName !== "H2" || children[1].tagName !== "P") return false;
-    if (children[0].textContent?.trim() !== ${serializedHeading} ||
-        children[1].textContent?.trim() !== ${serializedDescription}) return false;
-    if (placeholder.textContent !== ${serializedHeading} + ${serializedDescription}) return false;
-    return content.querySelector("ul,ol") === null;
+    const report = reports[0];
+    if (report !== content.firstElementChild || !report.getAttribute("data-report-id")) return false;
+    const dimensions = Array.from(report.querySelectorAll('[data-dimension]'),
+      (node) => node.getAttribute('data-dimension'));
+    if (dimensions.join(',') !== 'usage,business_value,answer_effectiveness,insights_improvement') return false;
+    if (report.querySelectorAll('[data-metric]').length < 4 ||
+        report.querySelector('.fae-report-hero') === null ||
+        report.querySelector('.fae-report-cases') === null) return false;
+    const text = report.textContent?.toLowerCase() || '';
+    return !['sample report', 'demo report', 'fixture report', '分析报告尚未接入'].some((term) => text.includes(term));
   })()`;
 }
 
@@ -58,7 +50,7 @@ function viewerDeniedExpression(expectedUrl) {
   })()`;
 }
 
-module.exports = { placeholderExpression, viewerDeniedExpression };
+module.exports = { reportExpression, viewerDeniedExpression };
 
 function bounded(promise, milliseconds, label) {
   let timer;
@@ -73,7 +65,7 @@ function bounded(promise, milliseconds, label) {
 async function runProbe(socketUrl, cookiePath, requestedUrl, mode, deadlineMs, commandTimeoutMs) {
   const expected = new URL(requestedUrl);
   const socketAddress = new URL(socketUrl);
-  const expectedHref = mode === "placeholder"
+  const expectedHref = mode === "report"
     ? "https://agent.orbbec.com.cn/admin/fae/reports"
     : mode === "viewer-denied" ? "https://agent.orbbec.com.cn/admin/fae" : "";
   if (expected.href !== expectedHref ||
@@ -171,14 +163,14 @@ async function runProbe(socketUrl, cookiePath, requestedUrl, mode, deadlineMs, c
     await command("Page.navigate", { url: expected.href });
     while (remaining() > 0) {
       const evaluation = await command("Runtime.evaluate", {
-        expression: mode === "placeholder"
-          ? placeholderExpression(expected.href)
+        expression: mode === "report"
+          ? reportExpression(expected.href)
           : viewerDeniedExpression(expected.href),
         returnByValue: true,
       });
       if (evaluation.result?.value === true) {
         process.stdout.write(
-          mode === "placeholder" ? "FAE_REPORTS_PLACEHOLDER_OK\n" : "FAE_VIEWER_DENIED_OK\n",
+          mode === "report" ? "FAE_REPORTS_READY_OK\n" : "FAE_VIEWER_DENIED_OK\n",
         );
         return;
       }

@@ -29,7 +29,7 @@ describe("FAE workbench shell", () => {
     expect([...container.querySelectorAll<HTMLAnchorElement>(".fae-workbench__sidebar a")].map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
       ["概览", "/admin/fae"],
       ["Sessions", "/admin/fae/sessions"],
-      ["问题治理", "/admin/fae/issues"],
+      ["反馈与修复", "/admin/fae/issues"],
       ["分析报告", "/admin/fae/reports"],
     ]);
     expect(container.querySelector<HTMLAnchorElement>('a[href="/admin/fae/sessions"]')?.getAttribute("aria-current")).toBe("page");

@@ -30,6 +30,7 @@ from .cloud_replica.repository import (
     ReplicaObservabilityRepository,
 )
 from .cloud_replica.management_repository import (
+    ReplicaFaeReportRepository,
     ReplicaOperationsRepository,
     ReplicaReviewRepository,
 )
@@ -97,6 +98,9 @@ from .fae_workbench.repository import (
     ReplicaFaeWorkbenchRepository,
 )
 from .fae_workbench.service import FaeWorkbenchService
+from .fae_reports import routes as fae_report_routes
+from .fae_reports.repository import PsycopgFaeReportRepository
+from .fae_reports.service import FaeReportService
 from .health import routes as health_routes
 from .health.platform import (
     build_deployment_status,
@@ -319,6 +323,12 @@ def build_cloud_replica_services(
         stale_seconds=config.replica_stale_seconds,
         catalog=catalog,
         usage_reader=repository.usage_leaders,
+    )
+    repository.fae_report_repository = ReplicaFaeReportRepository(
+        database_url,
+        cipher=FieldCipher(encryption_key),
+        stale_seconds=config.replica_stale_seconds,
+        catalog=catalog,
     )
     observability_service = ObservabilityService(repository)
     fleet_service = FleetReadService(
@@ -636,6 +646,7 @@ def create_app(
     partner_service: PartnerService | None = None,
     partner_provider: PartnerIdentityProvider | None = None,
     fae_workbench_service=None,
+    fae_report_service=None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
@@ -917,6 +928,27 @@ def create_app(
             observability_service,
             review_service,
         )
+    if fae_report_service is None:
+        if cloud_mode and replica_repository is not None:
+            report_repository = getattr(
+                replica_repository, "fae_report_repository", None
+            )
+        else:
+            report_repository = (
+                PsycopgFaeReportRepository(database_url) if database_url else None
+            )
+        fae_report_service = (
+            FaeReportService(
+                report_repository,
+                latest_source_sync=getattr(
+                    report_repository, "latest_source_sync", None
+                ),
+            )
+            if report_repository is not None
+            else None
+        )
+    if fae_report_service is not None:
+        fae_workbench_service.attach_report_service(fae_report_service)
     if attachment_service is None and config.attachment_enabled and not cloud_mode:
         attachment_service = build_attachment_service(config)
     if attachment_service is not None:
@@ -1039,6 +1071,7 @@ def create_app(
     app.state.partner_provider = selected_partner_provider
     app.state.partner_auth_broker = partner_auth_broker
     app.state.fae_workbench_service = fae_workbench_service
+    app.state.fae_report_service = fae_report_service
     app.state.fae_session_read_audit = None
     authorization_service = None
     if identity_enabled and config.control_plane.audit_database_url_file:
@@ -1096,6 +1129,8 @@ def create_app(
     app.include_router(registry_routes.router)
     app.include_router(review_routes.router)
     app.include_router(fae_workbench_routes.router)
+    if fae_report_service is not None:
+        app.include_router(fae_report_routes.router)
     app.include_router(build_voc_extension_router())
     if voc_internal_router is not None:
         app.include_router(voc_internal_router)

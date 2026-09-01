@@ -157,6 +157,16 @@ class ReviewIssueProjection:
     created_at: datetime
     updated_at: datetime
     scope_valid: bool = False
+    detail_schema_version: int | None = None
+    origin_turn_key: str | None = None
+    root_cause: str | None = None
+    impact_scope: str | None = None
+    secondary_layers: tuple[str, ...] = ()
+    links: tuple[dict[str, Any], ...] = ()
+    evidence: tuple[dict[str, Any], ...] = ()
+    replays: tuple[dict[str, Any], ...] = ()
+    events: tuple[dict[str, Any], ...] = ()
+    progress: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,3 +208,14 @@ class OperationEventProjection:
     summary: str
     source_kind: str
     occurred_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class FaeReportProjection:
+    projection_kind: str
+    report_id: str
+    report_version: int
+    item_id: str
+    occurred_at: datetime
+    payload: dict[str, Any]
+    agent_id: str = "ai-fae-agent"

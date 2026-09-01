@@ -128,10 +128,18 @@ class _ProjectionReader:
 class ReplicaReviewRepository(_ProjectionReader):
     def agent_issue_scope_valid(self, agent_id: str) -> bool:
         issues = self._records("review_issue_projection", agent_id)
-        return all(issue.get("scope_valid") is True for issue in issues)
+        return not issues or any(issue.get("scope_valid") is True for issue in issues)
+
+    def _valid_issues(self, agent_id: str | None = None) -> list[dict]:
+        return [
+            issue
+            for issue in self._records("review_issue_projection", agent_id)
+            if issue.get("scope_valid") is True
+        ]
 
     def overview(self, *, agent_id: str | None = None) -> dict:
-        issues = self._records("review_issue_projection", agent_id)
+        all_issues = self._records("review_issue_projection", agent_id)
+        issues = [issue for issue in all_issues if issue.get("scope_valid") is True]
         totals = self._records("review_feedback_totals_projection", agent_id)
         dispositions: dict[str, int] = {}
         for issue in issues:
@@ -141,6 +149,7 @@ class ReplicaReviewRepository(_ProjectionReader):
             "dispositions": dispositions,
             "statuses": dispositions,
             "issue_total": len(issues),
+            "quarantined_issue_count": len(all_issues) - len(issues),
         }
         if not totals:
             # The inbox only holds untriaged negative feedback, so it must never
@@ -194,6 +203,7 @@ class ReplicaReviewRepository(_ProjectionReader):
             status=status, disposition=disposition,
         )["items"]
 
+
     def list_issue_page(
         self,
         *,
@@ -208,7 +218,7 @@ class ReplicaReviewRepository(_ProjectionReader):
         query: str | None = None,
         created_after: datetime | None = None,
     ) -> dict:
-        records = self._records("review_issue_projection", agent_id)
+        records = self._valid_issues(agent_id)
         if disposition is not None:
             records = [
                 item for item in records
@@ -259,6 +269,9 @@ class ReplicaReviewRepository(_ProjectionReader):
     @staticmethod
     def _issue(item: dict) -> dict:
         status = item.get("status") or "unknown"
+        progress = item.get("progress")
+        if not isinstance(progress, dict):
+            progress = {"status": status, "missing_gates": []}
         return {
             "id": item["key"],
             "agent_id": item["agent_id"],
@@ -267,31 +280,36 @@ class ReplicaReviewRepository(_ProjectionReader):
             "failure_layer": item.get("failure_layer"),
             "owner": item.get("owner_display"),
             "disposition": status,
+            "detail_schema_version": item.get("detail_schema_version"),
+            "origin_turn_key": item.get("origin_turn_key"),
+            "root_cause": item.get("root_cause") or "",
+            "impact_scope": item.get("impact_scope") or "",
+            "secondary_layers": item.get("secondary_layers") or [],
             "created_at": item.get("created_at"),
             "updated_at": item["updated_at"],
-            "progress": {"status": status, "missing_gates": []},
+            "progress": progress,
             "linked_turn_count": item.get("linked_turn_count", 0),
             "replica_read_only": True,
         }
 
     def get_issue_detail(self, issue_id: UUID) -> dict | None:
-        for item in self._records("review_issue_projection"):
+        for item in self._valid_issues():
             if item["key"] == str(issue_id):
                 issue = self._issue(item)
+                detailed = item.get("detail_schema_version") == 1
                 return {
                     "issue": issue,
-                    "links": None,
-                    "evidence": None,
-                    "replays": None,
-                    "events": None,
+                    "links": item.get("links", []) if detailed else None,
+                    "evidence": item.get("evidence", []) if detailed else None,
+                    "replays": item.get("replays", []) if detailed else None,
+                    "events": item.get("events", []) if detailed else None,
                     "availability": {
-                        "links": "unavailable",
-                        "evidence": "unavailable",
-                        "replays": "unavailable",
-                        "events": "unavailable",
+                        section: "available" if detailed else "unavailable"
+                        for section in ("links", "evidence", "replays", "events")
                     },
                     "progress": issue["progress"],
                     "replica_read_only": True,
+                    "projection_scope_valid": True,
                 }
         return None
 
@@ -299,7 +317,7 @@ class ReplicaReviewRepository(_ProjectionReader):
         requested = list(dict.fromkeys(turn_keys))
         if not requested:
             return []
-        issues = self._records("review_issue_projection")
+        issues = self._valid_issues()
         if any("linked_turn_keys" not in issue for issue in issues):
             raise ReviewRepositoryError("replica turn governance unavailable")
         by_turn = {
@@ -318,6 +336,92 @@ class ReplicaReviewRepository(_ProjectionReader):
             }
             for turn_key in requested if turn_key in by_turn
         ]
+
+
+class ReplicaFaeReportRepository(_ProjectionReader):
+    _KINDS = (
+        "fae_report_header_projection",
+        "fae_report_metric_projection",
+        "fae_report_finding_projection",
+        "fae_report_recommendation_projection",
+    )
+
+    def latest_source_sync(self) -> datetime | None:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select max(upper_watermark) as upper_watermark "
+                    "from platform_replica.generations"
+                ).fetchone()
+            return row["upper_watermark"] if row else None
+        except Exception as error:
+            raise ReviewRepositoryError(
+                "replica report freshness unavailable"
+            ) from error
+
+    def _groups(self) -> dict[tuple[str, int], dict[str, list[dict]]]:
+        groups: dict[tuple[str, int], dict[str, list[dict]]] = {}
+        for kind in self._KINDS:
+            for record in self._records(kind, "ai-fae-agent"):
+                key = (str(record["report_id"]), int(record["report_version"]))
+                groups.setdefault(key, {}).setdefault(kind, []).append(record)
+        return groups
+
+    @staticmethod
+    def _assemble(key: tuple[str, int], group: dict[str, list[dict]]) -> dict:
+        headers = group.get("fae_report_header_projection", [])
+        if len(headers) != 1:
+            raise ReviewRepositoryError("report_projection_incomplete")
+        document = dict(headers[0]["payload"])
+        counts = document.pop("counts")
+        mappings = (
+            ("metrics", "fae_report_metric_projection", "metric_id"),
+            ("findings", "fae_report_finding_projection", "finding_id"),
+            (
+                "recommendations",
+                "fae_report_recommendation_projection",
+                "recommendation_id",
+            ),
+        )
+        for field, kind, identity in mappings:
+            items = [dict(item["payload"]) for item in group.get(kind, [])]
+            if len(items) != int(counts[field]) or len(
+                {item[identity] for item in items}
+            ) != len(items):
+                raise ReviewRepositoryError("report_projection_incomplete")
+            document[field] = sorted(items, key=lambda item: str(item[identity]))
+        if (document.get("report_id"), int(document.get("report_version", 0))) != key:
+            raise ReviewRepositoryError("report_projection_incomplete")
+        return document
+
+    def list_reports(self, *, status: str | None = None) -> list[dict]:
+        values = []
+        for key, group in self._groups().items():
+            try:
+                report = self._assemble(key, group)
+            except ReviewRepositoryError:
+                continue
+            if status is None or report.get("status") == status:
+                values.append(report)
+        return sorted(
+            values,
+            key=lambda item: (
+                str(item.get("data_cutoff_at")),
+                int(item["report_version"]),
+            ),
+            reverse=True,
+        )
+
+    def get_report(self, report_id: str, version: int | None = None) -> dict | None:
+        candidates = [
+            (key, group)
+            for key, group in self._groups().items()
+            if key[0] == report_id and (version is None or key[1] == version)
+        ]
+        if not candidates:
+            return None
+        key, group = max(candidates, key=lambda item: item[0][1])
+        return self._assemble(key, group)
 
 
 class ReplicaOperationsRepository(_ProjectionReader):

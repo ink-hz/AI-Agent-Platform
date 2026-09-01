@@ -717,10 +717,10 @@ verify_fae_rendered_state() {
   local active_port="$profile/DevToolsActivePort"
   local target_json="$workspace/$artifact_name-chrome-target.json"
 
-  run_fae_reports_placeholder_probe() {
+  run_fae_reports_probe() {
     local _attempt watched_pid
     [[ "$workspace" == /* && -d "$workspace" && ! -L "$workspace" ]] || return 1
-    if [[ "$probe_mode" == "placeholder" ]]; then
+    if [[ "$probe_mode" == "report" ]]; then
       [[ "$requested_url" == "https://agent.orbbec.com.cn/admin/fae/reports" && "$artifact_name" == "fae-reports" ]] || return 1
     else
       [[ "$probe_mode" == "viewer-denied" && "$requested_url" == "https://agent.orbbec.com.cn/admin/fae" && "$artifact_name" == "fae-viewer" ]] || return 1
@@ -780,7 +780,7 @@ PY
     fi
   }
 
-  if run_fae_reports_placeholder_probe; then
+  if run_fae_reports_probe; then
     status=0
   else
     status="$?"
@@ -793,9 +793,9 @@ PY
   return "$status"
 }
 
-verify_fae_reports_placeholder() {
+verify_fae_reports_ready() {
   verify_fae_rendered_state "$1" "$2" \
-    https://agent.orbbec.com.cn/admin/fae/reports placeholder fae-reports
+    https://agent.orbbec.com.cn/admin/fae/reports report fae-reports
 }
 
 verify_fae_viewer_denied() {
@@ -814,6 +814,7 @@ verify_fae_workbench_cloud_contract() {
     '/api/admin/fae/overview'
     '/api/admin/fae/sessions?limit=1'
     '/api/admin/fae/issues'
+    '/api/admin/fae/reports/latest'
   )
   local -a fae_member_denied_paths=(
     '/admin/fae'
@@ -876,6 +877,32 @@ if (
 ):
     raise SystemExit(1)
 PY
+    elif [[ "$path" == "/api/admin/fae/reports/latest" ]]; then
+      "$python" - "$temporary/fae-owner-api.json" <<'PY' || fail
+import json
+import sys
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+metrics = value.get("metrics") if isinstance(value, dict) else None
+source = value.get("source") if isinstance(value, dict) else None
+dimensions = {
+    item.get("dimension") for item in metrics or () if isinstance(item, dict)
+}
+if (
+    value.get("schema_name") != "fae.analysis-report"
+    or value.get("status") != "ready"
+    or value.get("source", {}).get("agent_id") != "ai-fae-agent"
+    or not isinstance(source, dict)
+    or not all(isinstance(source.get(field), int) for field in (
+        "session_count", "turn_count", "reviewed_session_count"
+    ))
+    or dimensions != {
+        "usage", "business_value", "answer_effectiveness", "insights_improvement"
+    }
+    or "canonical_key" in json.dumps(value, ensure_ascii=False)
+):
+    raise SystemExit(1)
+PY
     else
       "$python" -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$temporary/fae-owner-api.json" || fail
     fi
@@ -894,7 +921,7 @@ if not text.strip() or "<html" not in lowered:
 if any(term in lowered for term in ("sample report", "demo report", "fixture report")):
     raise SystemExit(1)
 PY
-  verify_fae_reports_placeholder "$temporary/owner.browser.json" "$temporary"
+  verify_fae_reports_ready "$temporary/owner.browser.json" "$temporary"
 
   for path in "${fae_member_denied_paths[@]}"; do
     status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' "$base$path")" || fail

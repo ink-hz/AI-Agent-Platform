@@ -73,7 +73,11 @@ create table if not exists platform_replica.management_projections (
         'review_issue_projection',
         'review_inbox_projection',
         'operation_event_projection',
-        'review_feedback_totals_projection'
+        'review_feedback_totals_projection',
+        'fae_report_header_projection',
+        'fae_report_metric_projection',
+        'fae_report_finding_projection',
+        'fae_report_recommendation_projection'
     )),
     record_key text not null,
     agent_id text not null,
@@ -103,7 +107,11 @@ alter table platform_replica.management_projections
         'review_issue_projection',
         'review_inbox_projection',
         'operation_event_projection',
-        'review_feedback_totals_projection'
+        'review_feedback_totals_projection',
+        'fae_report_header_projection',
+        'fae_report_metric_projection',
+        'fae_report_finding_projection',
+        'fae_report_recommendation_projection'
     ));
 
 create index if not exists replica_management_expiry_idx

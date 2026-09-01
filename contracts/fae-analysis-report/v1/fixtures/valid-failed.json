@@ -1,0 +1,38 @@
+{
+  "schema_name": "fae.analysis-report",
+  "schema_version": "1.0.0",
+  "report_id": "fae-weekly-2026-w35",
+  "report_version": 2,
+  "report_type": "weekly",
+  "status": "failed",
+  "title": "FAE 生产会话成果报告",
+  "period": {
+    "start_at": "2026-07-01T00:00:00+08:00",
+    "end_at": "2026-08-31T00:00:00+08:00"
+  },
+  "data_cutoff_at": "2026-08-31T03:20:00+08:00",
+  "generated_at": "2026-08-31T12:00:00+08:00",
+  "analysis_version": "production-v5",
+  "source": {
+    "agent_id": "ai-fae-agent",
+    "source_kind": "fae",
+    "environment": "production",
+    "source_snapshot_at": "2026-08-31T03:20:00+08:00",
+    "session_count": 692,
+    "turn_count": 1492,
+    "feedback_event_count": 89,
+    "reviewed_session_count": 0
+  },
+  "summary": null,
+  "metrics": [],
+  "findings": [],
+  "recommendations": [],
+  "cases": [],
+  "artifact_digests": {},
+  "failure": {
+    "stage": "publication",
+    "code": "publication_failed",
+    "message": "结构化报告发布失败，请检查审核运行状态。",
+    "retryable": true
+  }
+}

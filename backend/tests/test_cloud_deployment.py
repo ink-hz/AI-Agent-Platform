@@ -445,6 +445,7 @@ FAE_LIVE_REQUESTS = (
     "owner|GET|https://agent.orbbec.com.cn/api/admin/fae/overview",
     "owner|GET|https://agent.orbbec.com.cn/api/admin/fae/sessions?limit=1",
     "owner|GET|https://agent.orbbec.com.cn/api/admin/fae/issues",
+    "owner|GET|https://agent.orbbec.com.cn/api/admin/fae/reports/latest",
     "owner|GET|https://agent.orbbec.com.cn/admin/fae/reports",
     "member|GET|https://agent.orbbec.com.cn/admin/fae",
     "member|GET|https://agent.orbbec.com.cn/api/admin/fae/overview",
@@ -568,6 +569,17 @@ def _write_fae_curl_stub(path: Path) -> None:
                     raise SystemExit(84)
                 status = 403
                 body = '{"detail":"cloud_review_read_only"}'
+            elif url.endswith("/api/admin/fae/reports/latest"):
+                body = json.dumps({
+                    "schema_name": "fae.analysis-report", "status": "ready",
+                    "source": {"agent_id": "ai-fae-agent", "session_count": 692,
+                               "turn_count": 1492, "reviewed_session_count": 654},
+                    "metrics": [
+                        {"dimension": "usage"}, {"dimension": "business_value"},
+                        {"dimension": "answer_effectiveness"},
+                        {"dimension": "insights_improvement"},
+                    ],
+                }, separators=(",", ":"))
             elif url.endswith("/admin/fae/reports"):
                 body = "<html><body><div id=app></div></body></html>"
 
@@ -596,7 +608,7 @@ def _run_fae_live_contract(
     stub_environment: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], tuple[str, ...], bool]:
     script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
-    cookie = _bash_function(script, "cookie_config", "verify_fae_reports_placeholder")
+    cookie = _bash_function(script, "cookie_config", "verify_fae_reports_ready")
     contract = _bash_function(
         script,
         "verify_fae_workbench_cloud_contract",
@@ -634,7 +646,7 @@ cookie_config {tmp_path / 'viewer.cookie'} {tmp_path / 'viewer.curl'} {tmp_path 
 curl_owner=({stub} --config {tmp_path / 'owner.curl'})
 curl_member=({stub} --config {tmp_path / 'member.curl'})
 curl_viewer=({stub} --config {tmp_path / 'viewer.curl'})
-verify_fae_reports_placeholder() {{ :; }}
+verify_fae_reports_ready() {{ :; }}
 verify_fae_viewer_denied() {{ printf rendered > {viewer_rendered}; }}
 {contract}
 verify_fae_workbench_cloud_contract
@@ -703,11 +715,11 @@ def test_fae_live_contract_fails_closed_at_every_curl_position(
     (
         {"STUB_STATUS_AT": "4", "STUB_STATUS": "403"},
         {"STUB_BODY_AT": "7", "STUB_BODY": "not-json"},
-        {"STUB_BODY_AT": "10", "STUB_BODY": "not-html"},
-        {"STUB_STATUS_AT": "11", "STUB_STATUS": "200"},
-        {"STUB_STATUS_AT": "15", "STUB_STATUS": "403"},
-        {"STUB_STATUS_AT": "19", "STUB_STATUS": "200"},
-        {"STUB_BODY_AT": "19", "STUB_BODY": '{"detail":"wrong"}'},
+        {"STUB_BODY_AT": "10", "STUB_BODY": "{}"},
+        {"STUB_BODY_AT": "11", "STUB_BODY": "not-html"},
+        {"STUB_STATUS_AT": "12", "STUB_STATUS": "200"},
+        {"STUB_STATUS_AT": "16", "STUB_STATUS": "403"},
+        {"STUB_STATUS_AT": "17", "STUB_STATUS": "200"},
     ),
 )
 def test_fae_live_contract_rejects_wrong_status_or_body(tmp_path, stub_environment):
@@ -823,61 +835,57 @@ require_action_identity_schema
         )
 
 
-def test_fae_report_dom_predicate_requires_exact_url_and_placeholder_only_shape():
+def test_fae_report_dom_predicate_requires_exact_url_and_complete_report_shape():
     probe = CLOUD / "fae-reports-placeholder-probe.js"
     assert probe.is_file()
     expected_url = "https://agent.orbbec.com.cn/admin/fae/reports"
-    placeholder = (
+    report = (
         '<section class="fae-workbench"><aside class="fae-workbench__sidebar">'
         '<a aria-current="page" href="/admin/fae/reports">分析报告</a></aside>'
         '<div class="fae-workbench__content">'
-        '<section class="fae-workbench__empty" '
-        'data-fae-reports-state="integration-pending" role="status">'
-        '<h2>分析报告尚未接入</h2>'
-        '<p>Sessions 与问题治理可以正常使用；这里不会用演示数据代替 FAE 的真实分析结果。</p>'
-        "</section></div></section>"
+        '<article class="fae-report" data-report-id="production-20260831">'
+        '<header class="fae-report-hero"><h1>FAE 生产成果</h1></header>'
+        '<section data-dimension="usage"><article data-metric="m1">1</article></section>'
+        '<section data-dimension="business_value"><article data-metric="m2">2</article></section>'
+        '<section data-dimension="answer_effectiveness"><article data-metric="m3">3</article></section>'
+        '<section data-dimension="insights_improvement"><article data-metric="m4">4</article></section>'
+        '<section class="fae-report-cases">典型案例待业务批准</section>'
+        "</article></div></section>"
     )
     fixtures = (
-        (expected_url, placeholder),
+        (expected_url, report),
         (
             expected_url,
-            placeholder.replace(
-                "</div>",
-                "<ul><li>本周分析报告</li><li>响应指标 99%</li></ul></div>",
-            ),
+            report.replace('data-dimension="insights_improvement"', 'data-dimension="usage"'),
         ),
         (
             expected_url,
-            placeholder.replace(
-                "</section>",
-                '<article class="report-card" data-report-id="weekly">周报</article>'
-                '<table><tr><td data-metric="sessions">12</td></tr></table></section>',
-            ),
+            report.replace('<article data-metric="m4">4</article>', ''),
         ),
-        ("https://example.com/admin/fae/reports", placeholder),
-        ("https://agent.orbbec.com.cn/admin/fae/reports/weekly", placeholder),
+        ("https://example.com/admin/fae/reports", report),
+        ("https://agent.orbbec.com.cn/admin/fae/reports/weekly", report),
         (
             expected_url,
-            placeholder.replace('href="/admin/fae/reports"', 'href="/admin/fae"'),
+            report.replace('href="/admin/fae/reports"', 'href="/admin/fae"'),
         ),
         (
             expected_url,
-            placeholder.replace("</div>", "本周报告：响应率 99%</div>"),
+            report.replace("FAE 生产成果", "demo report"),
         ),
-        (expected_url, placeholder + placeholder),
+        (expected_url, report + report),
         (
             expected_url,
-            placeholder + '<article class="report-card" data-report-id="outside">周报</article>',
+            report.replace('class="fae-report"', 'class="fae-report" data-fae-reports-state="integration-pending"'),
         ),
     )
     program = f"""
 const {{ JSDOM }} = require({json.dumps(str(ROOT / 'webui/node_modules/jsdom'))});
-const {{ placeholderExpression }} = require({json.dumps(str(probe))});
+const {{ reportExpression }} = require({json.dumps(str(probe))});
 const expected = {json.dumps(expected_url, ensure_ascii=False)};
 const fixtures = {json.dumps(fixtures, ensure_ascii=False)};
 const results = fixtures.map(([url, html]) => {{
   const dom = new JSDOM(html, {{ url, runScripts: "outside-only" }});
-  return dom.window.eval(placeholderExpression(expected));
+  return dom.window.eval(reportExpression(expected));
 }});
 process.stdout.write(JSON.stringify(results));
 """
@@ -1055,7 +1063,7 @@ def _process_alive(pid_file: Path) -> bool:
     return True
 
 
-def _run_fae_report_probe(tmp_path: Path, mode: str, render_mode: str = "placeholder"):
+def _run_fae_report_probe(tmp_path: Path, mode: str, render_mode: str = "report"):
     script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
     function = _bash_function(
         script, "terminate_acceptance_process", "verify_fae_workbench_cloud_contract"
@@ -1081,8 +1089,8 @@ def _run_fae_report_probe(tmp_path: Path, mode: str, render_mode: str = "placeho
     function = function.replace("local watchdog_seconds=15", "local watchdog_seconds=3")
     workspace = tmp_path / "workspace"
     workspace.mkdir(mode=0o700)
-    identity = "owner" if render_mode == "placeholder" else "viewer"
-    artifact = "fae-reports" if render_mode == "placeholder" else "fae-viewer"
+    identity = "owner" if render_mode == "report" else "viewer"
+    artifact = "fae-reports" if render_mode == "report" else "fae-viewer"
     browser_cookie = workspace / f"{identity}.browser.json"
     browser_cookie.write_text(
         f'{{"__Host-platform_session":"{identity}-session",'
@@ -1101,7 +1109,7 @@ chrome_pid=""
 node_pid=""
 probe_watchdog_pid=""
 {function}
-verify_fae_{'reports_placeholder' if render_mode == 'placeholder' else 'viewer_denied'} {browser_cookie} {workspace} || fail
+verify_fae_{'reports_ready' if render_mode == 'report' else 'viewer_denied'} {browser_cookie} {workspace} || fail
 """,
         encoding="utf-8",
     )
@@ -1168,7 +1176,7 @@ def test_fae_report_probe_injects_exact_cookies_and_navigates_exact_url(tmp_path
     result = _run_fae_report_probe(tmp_path, "happy")
 
     assert result["returncode"] == 0, result["stderr"]
-    assert result["stdout"] == "FAE_REPORTS_PLACEHOLDER_OK\n"
+    assert result["stdout"] == "FAE_REPORTS_READY_OK\n"
     assert result["timed_out"] is False
     assert result["alive"] is False
     assert result["node_alive"] is False

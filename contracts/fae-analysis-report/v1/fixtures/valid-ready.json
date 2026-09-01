@@ -1,0 +1,128 @@
+{
+  "schema_name": "fae.analysis-report",
+  "schema_version": "1.0.0",
+  "report_id": "fae-weekly-2026-w35",
+  "report_version": 1,
+  "report_type": "weekly",
+  "status": "ready",
+  "title": "FAE 生产会话成果报告",
+  "period": {
+    "start_at": "2026-07-01T00:00:00+08:00",
+    "end_at": "2026-08-31T00:00:00+08:00"
+  },
+  "data_cutoff_at": "2026-08-31T03:20:00+08:00",
+  "generated_at": "2026-08-31T12:00:00+08:00",
+  "analysis_version": "production-v5",
+  "source": {
+    "agent_id": "ai-fae-agent",
+    "source_kind": "fae",
+    "environment": "production",
+    "source_snapshot_at": "2026-08-31T03:20:00+08:00",
+    "session_count": 692,
+    "turn_count": 1492,
+    "feedback_event_count": 89,
+    "reviewed_session_count": 654
+  },
+  "summary": {
+    "headline": "FAE Agent 已形成可复审的规模化技术服务能力",
+    "overview": "报告区分已经实现的业务价值与仍需转化的增长潜力。",
+    "top_finding_ids": ["finding-service-scale"],
+    "top_recommendation_ids": ["recommendation-close-gaps"]
+  },
+  "metrics": [
+    {
+      "metric_id": "value.observed_included_sessions",
+      "dimension": "usage",
+      "label": "累计服务会话",
+      "value": 692,
+      "unit": "count",
+      "numerator": null,
+      "denominator": 692,
+      "filters": ["population=included"],
+      "assumptions": [],
+      "evidence_artifact_refs": ["metrics.json"]
+    },
+    {
+      "metric_id": "value.assisted_reviewed_sessions",
+      "dimension": "business_value",
+      "label": "已形成辅助价值的已复审会话",
+      "value": 179,
+      "unit": "count",
+      "numerator": null,
+      "denominator": 654,
+      "filters": ["review=independent"],
+      "assumptions": [],
+      "evidence_artifact_refs": ["metrics.json", "claim_ledger.jsonl"]
+    },
+    {
+      "metric_id": "quality.reviewed_fully_resolved_rate",
+      "dimension": "answer_effectiveness",
+      "label": "完全解决率",
+      "value": 0.361,
+      "unit": "ratio",
+      "numerator": 236,
+      "denominator": 654,
+      "filters": ["review=independent"],
+      "assumptions": [],
+      "evidence_artifact_refs": ["metrics.json", "audit_appendix.md"]
+    },
+    {
+      "metric_id": "product.signal_counts_public",
+      "dimension": "insights_improvement",
+      "label": "业务信号分布",
+      "value": {
+        "compatibility_gap": 126,
+        "documentation_missing": 129,
+        "feature_request": 26,
+        "unknown": "少于 5"
+      },
+      "unit": "distribution",
+      "numerator": null,
+      "denominator": 692,
+      "filters": ["small_cells=suppressed"],
+      "assumptions": [],
+      "evidence_artifact_refs": ["metrics.json", "audit_appendix.md"]
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "finding-service-scale",
+      "dimension": "usage",
+      "severity": "opportunity",
+      "title": "技术服务已形成真实使用规模",
+      "description": "纳入治理范围的生产会话达到 692 个。",
+      "root_cause_hypothesis": "持续开放的技术问答入口承接了分散咨询。",
+      "impact_scope": "FAE 技术支持和现场应用咨询。",
+      "metric_ids": ["value.observed_included_sessions"],
+      "evidence_refs": [
+        {"kind": "session", "canonical_key": "fae:session-1", "label": "Session 01"}
+      ],
+      "recommendation_ids": ["recommendation-close-gaps"],
+      "linked_issue_ids": []
+    }
+  ],
+  "recommendations": [
+    {
+      "recommendation_id": "recommendation-close-gaps",
+      "dimension": "insights_improvement",
+      "priority": "p1",
+      "title": "优先闭环高频资料与兼容性缺口",
+      "rationale": "公开信号分布显示资料和兼容性问题具备集中治理价值。",
+      "proposed_action": "将高频根因关联到现有问题治理闭环并验证修复。",
+      "owner_role": "FAE 业务团队",
+      "finding_ids": ["finding-service-scale"],
+      "success_metric_ids": ["product.signal_counts_public"]
+    }
+  ],
+  "cases": [],
+  "artifact_digests": {
+    "metrics.json": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "claim_ledger.jsonl": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "action_backlog.jsonl": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "executive_summary.md": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "full_report.md": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "audit_appendix.md": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "report.html": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "failure": null
+}

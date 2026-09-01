@@ -31,6 +31,7 @@ const overview = {
   },
   reports: {
     state: { status: "unavailable", as_of: null, error_code: "reports_not_integrated" },
+    report_id: null, title: null, data_cutoff_at: null, currentness: null,
   },
 };
 
@@ -58,7 +59,7 @@ describe("FAE workbench API", () => {
       summary: { data: { open_issue_count: null, p50_duration_ms: null, p95_duration_ms: null } },
       attention: { state: { status: "unavailable", as_of: null, error_code: "operational_summary_unavailable" }, items: [] },
       issues: { state: { status: "unavailable", as_of: null, error_code: "issues_unavailable" } },
-      reports: { state: { status: "unavailable", as_of: null, error_code: "reports_not_integrated" } },
+      reports: { state: { status: "unavailable", as_of: null, error_code: "reports_not_integrated" }, report_id: null, title: null, data_cutoff_at: null, currentness: null },
     });
   });
 
