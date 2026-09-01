@@ -200,6 +200,14 @@ def test_authorization_route_resolution_expands_included_fastapi_routers() -> No
     async def agent_runtime(agent_id: str):
         return agent_id
 
+    @router.get("/api/admin/fae/reports/latest")
+    async def latest_fae_report():
+        return None
+
+    @router.get("/api/admin/fae/reports/{report_id}")
+    async def fae_report(report_id: str):
+        return report_id
+
     app = FastAPI()
     app.include_router(router)
     middleware = IdentitySecurityMiddleware(
@@ -226,6 +234,14 @@ def test_authorization_route_resolution_expands_included_fastapi_routers() -> No
     assert middleware._resolved_route(scope("/api/agents/hr/runtime")) == (
         "/api/agents/{agent_id}/runtime",
         {"agent_id": "hr"},
+    )
+    assert middleware._resolved_route(scope("/api/admin/fae/reports/latest")) == (
+        "/api/admin/fae/reports/latest",
+        {},
+    )
+    assert middleware._resolved_route(scope("/api/admin/fae/reports/report-2026-08")) == (
+        "/api/admin/fae/reports/{report_id}",
+        {"report_id": "report-2026-08"},
     )
 
 

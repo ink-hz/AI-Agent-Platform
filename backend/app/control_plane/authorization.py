@@ -134,6 +134,9 @@ _FAE_WORKBENCH_READ_ROUTES = frozenset({
     ("GET", "/api/admin/fae/issues"),
     ("GET", "/api/admin/fae/issues/{issue_id}"),
     ("GET", "/api/admin/fae/turn-summaries"),
+    ("GET", "/api/admin/fae/reports"),
+    ("GET", "/api/admin/fae/reports/latest"),
+    ("GET", "/api/admin/fae/reports/{report_id}"),
 })
 
 _FAE_WORKBENCH_MUTATION_ROUTES = frozenset({
