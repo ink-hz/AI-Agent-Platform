@@ -870,6 +870,17 @@ body {
   .activity-group { padding: 18px; }
   .agent-activity-section { padding: 18px; }
   .agent-activity-section .operational-event-list { grid-template-columns: 1fr; }
+  .fae-outcome-version { grid-template-columns: 1fr; padding: 14px 17px; }
+  .fae-outcome-version dl { display: grid; gap: 8px; }
+  .fae-outcome-version__identity { align-items: flex-start; flex-direction: column; }
+  .fae-outcome-cover__lead { padding: 28px 22px; }
+  .fae-outcome-cover__facts, .fae-outcome-chapter__facts, .fae-outcome-value-comparison { grid-template-columns: 1fr; }
+  .fae-outcome-cover__facts article { border-right: 0; border-bottom: 1px solid #e5ebf2; }
+  .fae-outcome-cover__facts article:last-child { border-bottom: 0; }
+  .fae-outcome-chapter { padding: 21px 17px; }
+  .fae-report-latency { grid-template-columns: 1fr; }
+  .fae-report-distribution li > div span { overflow: visible; white-space: normal; }
+  .fae-outcome-cases > div { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
@@ -1218,20 +1229,6 @@ body {
   .fae-outcome-chapter__header > span { margin-top: 8px; }
   .fae-outcome-cover__facts, .fae-outcome-chapter__facts { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .fae-outcome-chapters { position: static; overflow-x: auto; grid-template-columns: repeat(4,minmax(175px,1fr)); }
-}
-
-@media (max-width: 560px) {
-  .fae-outcome-version { grid-template-columns: 1fr; padding: 14px 17px; }
-  .fae-outcome-version dl { display: grid; gap: 8px; }
-  .fae-outcome-version__identity { align-items: flex-start; flex-direction: column; }
-  .fae-outcome-cover__lead { padding: 28px 22px; }
-  .fae-outcome-cover__facts, .fae-outcome-chapter__facts, .fae-outcome-value-comparison { grid-template-columns: 1fr; }
-  .fae-outcome-cover__facts article { border-right: 0; border-bottom: 1px solid #e5ebf2; }
-  .fae-outcome-cover__facts article:last-child { border-bottom: 0; }
-  .fae-outcome-chapter { padding: 21px 17px; }
-  .fae-report-latency { grid-template-columns: 1fr; }
-  .fae-report-distribution li > div span { overflow: visible; white-space: normal; }
-  .fae-outcome-cases > div { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {
