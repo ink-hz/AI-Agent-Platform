@@ -26,30 +26,25 @@ const LOCAL_STATUS_OPTIONS = [
   { value: "open", label: "开放事项" },
   ...LOCAL_LIFECYCLE_STATUSES.map((value) => ({ value, label: STATUS_LABELS[value as keyof typeof STATUS_LABELS] })),
 ];
-const CLOUD_STATUS_OPTIONS = [
-  { value: "open", label: "开放事项" },
-  { value: "actionable", label: "需处理" },
-  { value: "duplicate", label: "重复事项" },
-  { value: "not_actionable", label: "无需处理" },
-  { value: "wont_fix", label: "暂不修复" },
-];
-
-function issueFilterFromSearch(search: string, cloudReplica: boolean): { value: string; valid: boolean } {
+function issueFilterFromSearch(search: string, cloudReplica: boolean): { value: string; valid: boolean; kind: "status" | "disposition" | "all" } {
   const query = new URLSearchParams(search);
   const statuses = query.getAll("status");
   const dispositions = query.getAll("disposition");
-  if (statuses.length === 0 && dispositions.length === 0) return { value: "", valid: true };
+  if (statuses.length === 0 && dispositions.length === 0) return { value: "open", valid: true, kind: "status" };
+  if (statuses.length === 1 && statuses[0] === "all" && dispositions.length === 0) {
+    return { value: "all", valid: true, kind: "all" };
+  }
   if (cloudReplica) {
-    if (statuses.length === 1 && statuses[0] === "open" && dispositions.length === 0) {
-      return { value: "open", valid: true };
+    if (statuses.length === 1 && LOCAL_FILTERS.has(statuses[0]) && dispositions.length === 0) {
+      return { value: statuses[0], valid: true, kind: "status" };
     }
     if (statuses.length === 0 && dispositions.length === 1 && CLOUD_FILTERS.has(dispositions[0])) {
-      return { value: dispositions[0], valid: true };
+      return { value: dispositions[0], valid: true, kind: "disposition" };
     }
   } else if (statuses.length === 1 && dispositions.length === 0 && LOCAL_FILTERS.has(statuses[0])) {
-    return { value: statuses[0], valid: true };
+    return { value: statuses[0], valid: true, kind: "status" };
   }
-  return { value: "", valid: false };
+  return { value: "open", valid: false, kind: "status" };
 }
 
 function singleSafeValue(
@@ -65,8 +60,10 @@ function safeIssueCollectionParams(search: string, cloudReplica: boolean): URLSe
   const raw = new URLSearchParams(search);
   const safe = new URLSearchParams();
   const status = issueFilterFromSearch(search, cloudReplica);
-  if (status.valid && status.value) {
-    safe.set(cloudReplica && status.value !== "open" ? "disposition" : "status", status.value);
+  if (status.valid && status.kind === "all") {
+    safe.set("status", "all");
+  } else if (status.valid && status.value) {
+    safe.set(status.kind, status.value);
   }
   const priority = singleSafeValue(raw, "priority", (value) => PRIORITY_FILTERS.has(value));
   const failureLayer = singleSafeValue(
@@ -116,11 +113,11 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
   const reviewApi = useMemo(() => faeWorkbenchApi.review(account.csrf_token), [account.csrf_token]);
   const issueFilters = useMemo(() => ({
     ...collectionFilters,
-    ...(!issueStatus ? {} : cloudReplica && issueStatus !== "open"
+    ...(!issueStatus || parsedIssueFilter.kind === "all" ? {} : parsedIssueFilter.kind === "disposition"
       ? { disposition: issueStatus } : { status: issueStatus }),
-    limit: 200,
-    offset: (issuePage - 1) * 200,
-  }), [cloudReplica, collectionSearch, filterRevision, issuePage, issueStatus]);
+    limit: 20,
+    offset: (issuePage - 1) * 20,
+  }), [collectionSearch, filterRevision, issuePage, issueStatus, parsedIssueFilter.kind]);
 
   useEffect(() => {
     const restore = () => setFilterRevision((value) => value + 1);
@@ -142,13 +139,15 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
     navigate(`${localPathname()}${search ? `?${search}` : ""}`, { replace: true });
   }, [cloudReplica, deploymentResolved, filterRevision, parsedIssueFilter.valid]);
 
-  const changeIssueStatus = (status: string) => {
+  const changeIssueStatus = (selection: string) => {
     const query = safeIssueCollectionParams(window.location.search, cloudReplica);
     query.delete("status");
     query.delete("disposition");
     query.delete("page");
-    if (status === "open" || (status && !cloudReplica)) query.set("status", status);
-    else if (status) query.set("disposition", status);
+    if (selection === "all") query.set("status", "all");
+    else if (selection.startsWith("disposition:")) query.set("disposition", selection.slice("disposition:".length));
+    else if (selection.startsWith("status:")) query.set("status", selection.slice("status:".length));
+    else if (selection) query.set("status", selection);
     const search = query.toString();
     navigate(`${localPathname()}${search ? `?${search}` : ""}`);
   };
@@ -225,13 +224,19 @@ export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?
     showActorField={false}
     showAgentFilter={false}
     statusFilter={issueStatus}
+    statusFilterKind={parsedIssueFilter.kind}
     onStatusFilterChange={changeIssueStatus}
     issueFilters={issueFilters}
     onIssueFiltersChange={changeCollectionFilters}
     onIssuePageChange={changeIssuePage}
     collectionSearch={collectionSearch}
-    statusOptions={cloudReplica ? CLOUD_STATUS_OPTIONS : LOCAL_STATUS_OPTIONS}
-    statusPresentation={cloudReplica ? "disposition" : "lifecycle"}
+    statusOptions={LOCAL_STATUS_OPTIONS}
+    statusPresentation="lifecycle"
+    presentation="fae-governance"
+    replicaStatus={cloudReplica ? {
+      freshness: deployment?.freshness ?? "unavailable",
+      lastSuccessAt: deployment?.last_success_at ?? null,
+    } : undefined}
     readOnlyReason={account.hard_stale_read_only ? "hard-stale" : undefined}
   />;
 

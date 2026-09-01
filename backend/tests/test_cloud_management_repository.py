@@ -314,6 +314,133 @@ def test_projected_issue_disposition_and_open_filters_precede_limit() -> None:
     assert {item["disposition"] for item in open_issues} == {"actionable"}
 
 
+def test_detailed_projected_lifecycle_drives_overview_filters_and_action_order() -> None:
+    cipher = FieldCipher(b"m" * 32)
+
+    def issue(
+        *,
+        lifecycle: str,
+        priority: str,
+        updated_at: str,
+        scope_valid: bool = True,
+    ) -> dict:
+        issue_id = uuid4()
+        return {
+            "kind": "review_issue_projection",
+            "key": str(issue_id),
+            "agent_id": "ai-fae-agent",
+            "status": "actionable",
+            "priority": priority,
+            "title": {"text": f"{priority}-{lifecycle}"},
+            "failure_layer": "coverage",
+            "owner_display": None,
+            "linked_turn_count": 1,
+            "scope_valid": scope_valid,
+            "created_at": "2026-08-14T06:00:00.000000Z",
+            "updated_at": updated_at,
+            "detail_schema_version": 1,
+            "progress": {
+                "issue_id": str(issue_id),
+                "status": lifecycle,
+                "missing_gates": [],
+            },
+            "sanitizer_policy_version": "v3",
+        }
+
+    records = [
+        issue(
+            lifecycle="pending_triage",
+            priority="P2",
+            updated_at="2026-08-14T08:00:00.000000Z",
+        ),
+        issue(
+            lifecycle="fixing",
+            priority="P1",
+            updated_at="2026-08-14T07:00:00.000000Z",
+        ),
+        issue(
+            lifecycle="awaiting_replay",
+            priority="P1",
+            updated_at="2026-08-14T06:00:00.000000Z",
+        ),
+        issue(
+            lifecycle="closed",
+            priority="P2",
+            updated_at="2026-08-14T09:00:00.000000Z",
+        ),
+        issue(
+            lifecycle="pending_triage",
+            priority="P0",
+            updated_at="2026-08-14T09:30:00.000000Z",
+            scope_valid=False,
+        ),
+    ]
+    repository = ReplicaReviewRepository(
+        "postgresql://replica",
+        cipher=cipher,
+        connect=_connect([_row(cipher, record) for record in records]),
+        now=lambda: NOW,
+    )
+
+    overview = repository.overview(agent_id="ai-fae-agent")
+    replay_page = repository.list_issue_page(
+        agent_id="ai-fae-agent",
+        status="awaiting_replay",
+        limit=20,
+        offset=0,
+    )
+    all_page = repository.list_issue_page(
+        agent_id="ai-fae-agent", limit=20, offset=0
+    )
+
+    assert overview["statuses"] == {
+        "pending_triage": 1,
+        "fixing": 1,
+        "awaiting_replay": 1,
+        "closed": 1,
+    }
+    assert overview["lifecycle_status_available"] is True
+    assert overview["quarantined_issue_count"] == 1
+    assert [item["progress"]["status"] for item in replay_page["items"]] == [
+        "awaiting_replay"
+    ]
+    assert [item["progress"]["status"] for item in all_page["items"]] == [
+        "awaiting_replay",
+        "fixing",
+        "pending_triage",
+        "closed",
+    ]
+
+
+def test_legacy_projected_lifecycle_remains_explicitly_unavailable() -> None:
+    cipher = FieldCipher(b"m" * 32)
+    record = {
+        "kind": "review_issue_projection",
+        "key": str(uuid4()),
+        "agent_id": "ai-fae-agent",
+        "status": "actionable",
+        "priority": "P1",
+        "title": {"text": "legacy"},
+        "failure_layer": "coverage",
+        "owner_display": None,
+        "linked_turn_count": 1,
+        "scope_valid": True,
+        "updated_at": "2026-08-14T08:00:00.000000Z",
+        "sanitizer_policy_version": "v2",
+    }
+    repository = ReplicaReviewRepository(
+        "postgresql://replica",
+        cipher=cipher,
+        connect=_connect([_row(cipher, record)]),
+        now=lambda: NOW,
+    )
+
+    overview = repository.overview(agent_id="ai-fae-agent")
+
+    assert overview["statuses"] == {}
+    assert overview["lifecycle_status_available"] is False
+
+
 def test_fae_issue_scope_projection_fails_closed_on_false_or_missing_metadata():
     cipher = FieldCipher(b"m" * 32)
 

@@ -37,6 +37,11 @@ FAE_ISSUE_READ_ROUTES = (
     ("GET", "/api/admin/fae/issues/{issue_id}"),
     ("GET", "/api/admin/fae/turn-summaries"),
 )
+FAE_REPORT_READ_ROUTES = (
+    ("GET", "/api/admin/fae/reports"),
+    ("GET", "/api/admin/fae/reports/latest"),
+    ("GET", "/api/admin/fae/reports/{report_id}"),
+)
 FAE_ISSUE_MUTATION_ROUTES = (
     ("POST", "/api/admin/fae/issues"),
     ("PATCH", "/api/admin/fae/issues/{issue_id}"),
@@ -99,6 +104,19 @@ def test_fae_workbench_reads_deny_non_management_roles_and_allow_hard_stale(rout
 
 @pytest.mark.parametrize("method,route", FAE_ISSUE_READ_ROUTES)
 def test_fae_issue_reads_allow_only_owner_admin_and_remain_hard_stale_available(
+    method, route
+):
+    service = AuthorizationService(Grants(), cloud_mode=True)
+
+    assert service.decide(None, method, route, ()).status_code == 401
+    assert service.decide(MEMBER, method, route, ()).status_code == 403
+    assert service.decide(VIEWER, method, route, ()).status_code == 403
+    for context in (OWNER, ADMIN, STALE_OWNER, STALE_ADMIN):
+        assert service.decide(context, method, route, ()).allowed is True
+
+
+@pytest.mark.parametrize("method,route", FAE_REPORT_READ_ROUTES)
+def test_fae_report_reads_allow_only_owner_admin_and_remain_hard_stale_available(
     method, route
 ):
     service = AuthorizationService(Grants(), cloud_mode=True)

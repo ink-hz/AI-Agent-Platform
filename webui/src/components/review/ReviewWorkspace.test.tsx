@@ -117,6 +117,87 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     expect(container.textContent).toContain("B 的根因");
   };
 
+  it("renders the FAE action-first cockpit without changing the generic ledger", async () => {
+    const api = apiWith(vi.fn());
+    api.overview = vi.fn().mockResolvedValue({
+      ...overview,
+      feedback_rows: 126,
+      negative_rows: 90,
+      negative_turns: 89,
+      issue_total: 87,
+      quarantined_issue_count: 7,
+      lifecycle_status_available: true,
+      statuses: {
+        pending_triage: 78,
+        fixing: 1,
+        awaiting_deploy: 1,
+        awaiting_replay: 1,
+        closed: 6,
+      },
+      write_available: false,
+    });
+    await act(async () => root.render(<ReviewWorkspace
+      api={api}
+      agentId="ai-fae-agent"
+      basePath="/admin/fae/issues"
+      initialIssueId={null}
+      initialTurn={null}
+      actor="corp:owner"
+      showActorField={false}
+      showAgentFilter={false}
+      presentation="fae-governance"
+      statusFilter="open"
+      onStatusFilterChange={vi.fn()}
+      replicaStatus={{ freshness: "current", lastSuccessAt: "2026-09-01T06:00:00Z" }}
+    />));
+
+    expect(container.textContent).toContain("反馈与修复");
+    expect(container.textContent).toContain("从用户反馈到根因、修复、真实复跑和闭环结论");
+    expect(container.textContent).toContain("待分诊78");
+    expect(container.textContent).toContain("处理中2");
+    expect(container.textContent).toContain("待复跑1");
+    expect(container.textContent).toContain("已闭环6");
+    expect(container.textContent).toContain("需要行动");
+    expect(container.textContent).not.toContain("Feedback Repair Ledger");
+    expect(container.textContent).not.toContain("生命周期状态暂不可用");
+    expect(container.querySelector(".fae-governance-readonly")?.textContent).toContain("只读副本");
+  });
+
+  it("does not present unavailable lifecycle totals as zero", async () => {
+    const api = apiWith(vi.fn());
+    api.overview = vi.fn().mockResolvedValue({
+      ...overview,
+      lifecycle_status_available: false,
+      statuses: {},
+      write_available: false,
+    });
+    await act(async () => root.render(<ReviewWorkspace
+      api={api}
+      agentId="ai-fae-agent"
+      basePath="/admin/fae/issues"
+      initialIssueId={null}
+      initialTurn={null}
+      actor="corp:owner"
+      showActorField={false}
+      showAgentFilter={false}
+      presentation="fae-governance"
+      statusFilter="open"
+      statusFilterKind="status"
+      onStatusFilterChange={vi.fn()}
+    />));
+
+    expect(container.textContent).toContain("生命周期状态暂不可用");
+    expect(container.querySelector(".fae-governance-summary")).toBeNull();
+  });
+
+  it("keeps the generic review ledger copy and filters by default", async () => {
+    await renderWorkspace(apiWith(vi.fn()));
+
+    expect(container.textContent).toContain("Feedback Repair Ledger");
+    expect(container.textContent).toContain("反馈修复闭环");
+    expect(container.querySelector('select[aria-label="状态"]')).not.toBeNull();
+  });
+
   it("ignores a stale successful mutation refresh after selecting another issue", async () => {
     const pending = deferred<FeedbackIssueDetail>();
     const update = vi.fn((id: string) => id === "issue-a" ? pending.promise : Promise.resolve(issueB));

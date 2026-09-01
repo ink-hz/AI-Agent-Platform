@@ -98,7 +98,13 @@ function normalizeOverview(value: unknown): ReviewOverview {
   const raw = objectValue(value, "FAE issue overview response contract invalid");
   const rawStatuses = objectValue(raw.statuses ?? {}, "FAE issue overview response contract invalid");
   const rawDispositions = objectValue(raw.dispositions ?? {}, "FAE issue overview response contract invalid");
-  const projected = "feedback_totals_status" in raw || Object.keys(rawStatuses).some((status) => !ISSUE_STATUSES.has(status));
+  const inferredLifecycleAvailable = !(
+    "feedback_totals_status" in raw
+    || Object.keys(rawStatuses).some((status) => !ISSUE_STATUSES.has(status))
+  );
+  const lifecycleStatusAvailable = typeof raw.lifecycle_status_available === "boolean"
+    ? raw.lifecycle_status_available
+    : inferredLifecycleAvailable;
   const counts = (source: Record<string, unknown>) => Object.fromEntries(
     Object.entries(source).flatMap(([key, count]) => countOrNull(count) === null ? [] : [[key, Number(count)]]),
   );
@@ -108,10 +114,11 @@ function normalizeOverview(value: unknown): ReviewOverview {
     negative_turns: countOrNull(raw.negative_turns),
     positive_rows: countOrNull(raw.positive_rows),
     issue_total: countOrNull(raw.issue_total),
-    statuses: projected ? {} : counts(rawStatuses),
+    statuses: lifecycleStatusAvailable ? counts(rawStatuses) : {},
     dispositions: counts(rawDispositions),
     write_available: raw.write_available === true,
-    lifecycle_status_available: !projected,
+    lifecycle_status_available: lifecycleStatusAvailable,
+    quarantined_issue_count: countOrNull(raw.quarantined_issue_count),
   };
 }
 
@@ -161,7 +168,7 @@ function normalizeIssue(value: unknown): FeedbackIssueSummary {
 function normalizeIssues(value: unknown): { items: FeedbackIssueSummary[]; total: number; limit: number; offset: number; has_more: boolean } {
   if (Array.isArray(value)) {
     return { items: value.map(normalizeIssue), total: value.length,
-      limit: value.length || 200, offset: 0, has_more: false };
+      limit: value.length || 20, offset: 0, has_more: false };
   }
   const raw = objectValue(value, "FAE issues response contract invalid");
   if (!Array.isArray(raw.items) || countOrNull(raw.total) === null || countOrNull(raw.limit) === null || countOrNull(raw.offset) === null) {
@@ -219,9 +226,9 @@ function normalizeDetail(value: unknown): FeedbackIssueDetail {
 function reviewApi(csrfToken: string): ReviewApi {
   return {
     overview: async (signal) => normalizeOverview(await getJson<unknown>("/api/admin/fae/issue-overview", signal)),
-    inbox: async (signal) => normalizeInbox(await getJson<unknown>("/api/admin/fae/issue-inbox?limit=200", signal)),
+    inbox: async (signal) => normalizeInbox(await getJson<unknown>("/api/admin/fae/issue-inbox?limit=20", signal)),
     issues: async (signal, filters) => {
-      const params = new URLSearchParams({ limit: String(filters?.limit ?? 200) });
+      const params = new URLSearchParams({ limit: String(filters?.limit ?? 20) });
       if ((filters?.offset ?? 0) > 0) params.set("offset", String(filters?.offset));
       if (filters?.status) params.set("status", filters.status);
       if (filters?.disposition) params.set("disposition", filters.disposition);

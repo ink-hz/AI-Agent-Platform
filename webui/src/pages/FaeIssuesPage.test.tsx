@@ -100,6 +100,45 @@ describe("FaeIssuesPage", () => {
     vi.restoreAllMocks();
   });
 
+  it("opens the action queue with exactly 20 rows per server page", async () => {
+    window.history.replaceState({}, "", "/admin/fae/issues?page=2");
+    const issueRequests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
+      if (path.startsWith("/api/admin/fae/issues?")) {
+        issueRequests.push(path);
+        return Promise.resolve(response({ items: [], total: 21, limit: 20, offset: 20, has_more: false }));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<FaeIssuesPage account={owner} />));
+
+    expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=20&offset=20&status=open");
+  });
+
+  it("persists the all queue explicitly and requests an unfiltered bounded page", async () => {
+    window.history.replaceState({}, "", "/admin/fae/issues?status=all");
+    const issueRequests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path === "/api/admin/fae/issue-inbox?limit=20") return Promise.resolve(response([]));
+      if (path.startsWith("/api/admin/fae/issues?")) {
+        issueRequests.push(path);
+        return Promise.resolve(response({ items: [], total: 87, limit: 20, offset: 0, has_more: true }));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<FaeIssuesPage account={owner} />));
+
+    expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=20");
+    expect(container.querySelector<HTMLButtonElement>('.fae-governance-queues button[aria-pressed="true"]')?.textContent).toBe("全部");
+  });
+
   it("creates governance from the exact deep-linked real Turn and opens its stable Issue URL", async () => {
     window.history.replaceState({}, "", "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
     const writes: { path: string; body: Record<string, unknown>; headers: Headers }[] = [];
@@ -273,7 +312,7 @@ describe("FaeIssuesPage", () => {
     expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
     expect(container.textContent).toContain("待归因事项");
     expect(container.textContent).not.toContain("普通回答治理事项");
-    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=200&status=pending_triage");
+    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=20&status=pending_triage");
 
     await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
     expect(window.location.pathname).toBe(`/admin/fae/issues/${triageId}`);
@@ -295,7 +334,7 @@ describe("FaeIssuesPage", () => {
     expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
     expect(container.textContent).toContain("普通回答治理事项");
     expect(container.textContent).not.toContain("待归因事项");
-    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=200&status=fixing");
+    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=20&status=fixing");
 
     await act(async () => {
       window.history.back();
@@ -324,11 +363,11 @@ describe("FaeIssuesPage", () => {
 
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
-    expect(requests).toContain("/api/admin/fae/issues?limit=200");
+    expect(requests).toContain("/api/admin/fae/issues?limit=20&status=open");
     expect(requests.every((path) => !path.includes("actionable"))).toBe(true);
     expect(requests.every((path) => !path.includes("agent_id"))).toBe(true);
     expect(container.querySelectorAll(".review-issue-list button")).toHaveLength(1);
-    expect(container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')?.value).toBe("");
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')?.value).toBe("open");
     expect(window.location.search).toBe("");
   });
 
@@ -349,7 +388,7 @@ describe("FaeIssuesPage", () => {
 
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
-    expect(requests).toContain(`/api/admin/fae/issues?limit=200&status=${lifecycle}`);
+    expect(requests).toContain(`/api/admin/fae/issues?limit=20&status=${lifecycle}`);
     const options = [...container.querySelectorAll<HTMLOptionElement>('select[aria-label="状态"] option')].map((option) => option.value);
     expect(options).not.toContain("actionable");
     expect(options).not.toContain("unknown");
@@ -357,11 +396,12 @@ describe("FaeIssuesPage", () => {
   });
 
   it.each([
-    ["actionable", "需处理"],
+    ["actionable", "待归因"],
     ["duplicate", "重复事项"],
     ["not_actionable", "无需处理"],
     ["wont_fix", "暂不修复"],
   ])("sends cloud projected filter %s as disposition and labels returned rows", async (disposition, label) => {
+    const lifecycle = disposition === "actionable" ? "pending_triage" : disposition;
     const identityMeta = document.createElement("meta");
     identityMeta.name = "platform-identity-mode";
     identityMeta.content = "enabled";
@@ -378,17 +418,18 @@ describe("FaeIssuesPage", () => {
       if (path.endsWith("/api/admin/fae/issue-overview")) return response({
         feedback_rows: null, negative_rows: null, negative_turns: null, positive_rows: null,
         feedback_totals_status: "unavailable", issue_total: 1,
-        statuses: { [disposition]: 1 }, dispositions: { [disposition]: 1 }, write_available: false,
+        statuses: { [lifecycle]: 1 }, dispositions: { [disposition]: 1 },
+        lifecycle_status_available: true, write_available: false,
       });
       if (path.includes("/api/admin/fae/issue-inbox")) return response([]);
       if (path.includes("/api/admin/fae/issues?")) return response([{
-        ...detail.issue, disposition, replica_read_only: true,
-        progress: { status: disposition, missing_gates: [] },
+        ...detail.issue, disposition, detail_schema_version: 1, replica_read_only: true,
+        progress: { status: lifecycle, missing_gates: [] },
       }]);
       if (path.endsWith(`/api/admin/fae/issues/${ISSUE_ID}`)) return response({
         ...detail,
-        issue: { ...detail.issue, disposition, replica_read_only: true },
-        progress: { ...detail.progress, status: disposition, missing_gates: null },
+        issue: { ...detail.issue, disposition, detail_schema_version: 1, replica_read_only: true },
+        progress: { ...detail.progress, status: lifecycle, missing_gates: [] },
         links: null,
         evidence: null,
         replays: null,
@@ -404,9 +445,12 @@ describe("FaeIssuesPage", () => {
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(requests).toContain(`/api/admin/fae/issues?limit=200&disposition=${disposition}`);
+    expect(requests).toContain(`/api/admin/fae/issues?limit=20&disposition=${disposition}`);
     const options = [...container.querySelectorAll<HTMLOptionElement>('select[aria-label="状态"] option')].map((option) => option.value);
-    expect(options).toEqual(["", "open", "actionable", "duplicate", "not_actionable", "wont_fix"]);
+    expect(options).toEqual([
+      "", "open", "pending_triage", "fixing", "awaiting_merge", "awaiting_deploy",
+      "awaiting_replay", "awaiting_review", "closed", "duplicate", "not_actionable", "wont_fix",
+    ]);
     expect(options).not.toContain("unknown");
     expect(container.querySelector(".review-issue-list")?.textContent).toContain(label);
     expect(window.location.search).toBe(`?disposition=${disposition}`);
@@ -443,16 +487,16 @@ describe("FaeIssuesPage", () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
     expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/issues");
-    expect(requests).toContain("/api/admin/fae/issues?limit=200");
+    expect(requests).toContain("/api/admin/fae/issues?limit=20&status=open");
     expect(requests.every((path) => !path.includes("status=unknown"))).toBe(true);
-    expect(container.textContent).toContain("反馈修复闭环");
+    expect(container.textContent).toContain("反馈与修复");
 
     const status = container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(status, "open");
       status.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(requests).toContain("/api/admin/fae/issues?limit=200&status=open");
+    expect(requests).toContain("/api/admin/fae/issues?limit=20&status=open");
   });
 
   it("waits for delayed cloud mode and canonicalizes locally-valid status before the first Issue request", async () => {
@@ -494,16 +538,15 @@ describe("FaeIssuesPage", () => {
       await Promise.resolve();
     });
 
-    expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=200");
+    expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=20&status=fixing");
     expect(issueRequests).toHaveLength(1);
-    expect(issueRequests.every((path) => !path.includes("fixing"))).toBe(true);
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/issues");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/issues?status=fixing");
   });
 
   it.each([
-    ["cloud disposition", "cloud-replica", "?disposition=actionable", "/api/admin/fae/issues?limit=200&disposition=actionable"],
-    ["cloud open", "cloud-replica", "?status=open", "/api/admin/fae/issues?limit=200&status=open"],
-    ["local lifecycle", "local", "?status=fixing", "/api/admin/fae/issues?limit=200&status=fixing"],
+    ["cloud disposition", "cloud-replica", "?disposition=actionable", "/api/admin/fae/issues?limit=20&disposition=actionable"],
+    ["cloud open", "cloud-replica", "?status=open", "/api/admin/fae/issues?limit=20&status=open"],
+    ["local lifecycle", "local", "?status=fixing", "/api/admin/fae/issues?limit=20&status=fixing"],
   ])("issues exactly one initial request for valid %s after mode resolves", async (_label, mode, search, expected) => {
     const identityMeta = document.createElement("meta");
     identityMeta.name = "platform-identity-mode";
@@ -682,8 +725,8 @@ describe("FaeIssuesPage", () => {
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
     expect(container.textContent).toContain("脱敏治理事项");
-    expect(container.textContent).toContain("当前为只读副本");
-    expect(container.textContent).toContain("可处理事项");
+    expect(container.textContent).toContain("只读副本");
+    expect(container.textContent).toContain("已闭环");
     expect(container.textContent).toContain("回答缺少约束");
     expect(container.textContent).toContain("闭环门：1/1 条回答通过真实复跑");
     expect(container.textContent).toContain("修复提交");
@@ -714,7 +757,7 @@ describe("FaeIssuesPage", () => {
     await act(async () => root.render(<FaeIssuesPage account={{ ...owner, hard_stale_read_only: true }} />));
 
     expect(container.textContent).toContain("治理变更已暂停");
-    expect(container.textContent).not.toContain("当前为只读副本");
+    expect(container.textContent).not.toContain("当前数据仅供查看");
     const buttons = [...container.querySelectorAll("button")].map((button) => button.textContent);
     expect(buttons).not.toContain("保存归因");
     expect(buttons).not.toContain("添加证据");
@@ -732,7 +775,7 @@ describe("FaeIssuesPage", () => {
         issueRequests.push(path);
         return Promise.resolve(response({
           items: [{ ...detail.issue, priority: "P1", owner: "corp:one", failure_layer: "model", progress: detail.progress }],
-          total: 205, limit: 200, offset: 200, has_more: false,
+          total: 205, limit: 20, offset: 20, has_more: false,
         }));
       }
       throw new Error(`Unexpected request: ${path}`);
@@ -741,7 +784,7 @@ describe("FaeIssuesPage", () => {
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
 
     expect(issueRequests).toContain(
-      "/api/admin/fae/issues?limit=200&offset=200&priority=P1&failure_layer=model&owner=corp%3Aone&q=timeout",
+      "/api/admin/fae/issues?limit=20&offset=20&status=open&priority=P1&failure_layer=model&owner=corp%3Aone&q=timeout",
     );
     expect(container.querySelector('nav[aria-label="Issue 分页"]')?.textContent).toContain("第 2 页 · 共 205 项");
     expect(container.querySelector<HTMLInputElement>('input[aria-label="事项搜索"]')?.value).toBe("timeout");
@@ -756,7 +799,7 @@ describe("FaeIssuesPage", () => {
       if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
       if (path.startsWith("/api/admin/fae/issues?")) return Promise.resolve(response({
         items: [{ ...detail.issue, progress: detail.progress }],
-        total: 205, limit: 200, offset: 200, has_more: false,
+        total: 205, limit: 20, offset: 20, has_more: false,
       }));
       if (path === `/api/admin/fae/issues/${ISSUE_ID}`) return Promise.resolve(response(detail));
       throw new Error(`Unexpected request: ${path}`);
@@ -795,13 +838,13 @@ describe("FaeIssuesPage", () => {
       if (path.startsWith("/api/admin/fae/issue-inbox")) return Promise.resolve(response([]));
       if (path.startsWith("/api/admin/fae/issues?")) {
         issueRequests.push(path);
-        if (path.includes("offset=400")) return Promise.resolve(response({
-          items: [], total: 205, limit: 200, offset: 400, has_more: false,
+        if (path.includes("offset=40")) return Promise.resolve(response({
+          items: [], total: 25, limit: 20, offset: 40, has_more: false,
         }));
         return Promise.resolve(response({
           items: [{ ...detail.issue, progress: detail.progress }],
-          total: 205, limit: 200, offset: path.includes("offset=200") ? 200 : 0,
-          has_more: !path.includes("offset=200"),
+          total: 25, limit: 20, offset: path.includes("offset=20") ? 20 : 0,
+          has_more: !path.includes("offset=20"),
         }));
       }
       throw new Error(`Unexpected request: ${path}`);
@@ -810,7 +853,7 @@ describe("FaeIssuesPage", () => {
     await act(async () => root.render(<FaeIssuesPage account={owner} />));
     expect(window.location.search).toBe("?status=pending_triage&page=2");
     expect(issueRequests[issueRequests.length - 1]).toBe(
-      "/api/admin/fae/issues?limit=200&offset=200&status=pending_triage",
+      "/api/admin/fae/issues?limit=20&offset=20&status=pending_triage",
     );
 
     const status = container.querySelector<HTMLSelectElement>('select[aria-label="状态"]')!;
@@ -819,6 +862,6 @@ describe("FaeIssuesPage", () => {
       status.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(window.location.search).toBe("?status=fixing");
-    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=200&status=fixing");
+    expect(issueRequests[issueRequests.length - 1]).toBe("/api/admin/fae/issues?limit=20&status=fixing");
   });
 });

@@ -230,6 +230,21 @@ describe("cloud replica mode", () => {
     expect(container.querySelector(".cloud-replica-banner")?.className).toContain("is-current");
   });
 
+  it("lets the FAE governance cockpit own replica status without hiding it elsewhere", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      mode: "cloud-replica", read_only: true, auth: "ssh-tunnel",
+      freshness: "current", last_success_at: "2026-09-01T06:00:00Z",
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await act(async () => root.render(
+      <AppShell route={{ name: "admin-fae-issues" }}><p>驾驶舱内部状态</p></AppShell>,
+    ));
+    await act(async () => await Promise.resolve());
+
+    expect(container.querySelector(".cloud-replica-banner")).toBeNull();
+    expect(container.textContent).toContain("驾驶舱内部状态");
+  });
+
   it("keeps cloud replica status out of the Agent Brain workspace", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       mode: "cloud-replica", read_only: true, auth: "ssh-tunnel",

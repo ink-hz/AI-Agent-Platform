@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { faeReportApi } from "../faeReportApi";
+import { FaeReportApiError, faeReportApi } from "../faeReportApi";
 import { FaeReportsPage } from "./FaeReportsPage";
 
 
@@ -57,6 +57,52 @@ describe("FAE reports", () => {
     expect(container.textContent).toContain("业务洞察与改进");
     expect(container.textContent).toContain("典型案例待业务批准");
     expect(container.textContent).toContain("数据已有更新");
+    await act(async () => root.unmount()); container.remove();
+  });
+
+  it("explains when no report has been published yet", async () => {
+    vi.spyOn(faeReportApi, "latest").mockRejectedValue(new FaeReportApiError(404));
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(<FaeReportsPage />));
+    await act(async () => undefined);
+
+    expect(container.textContent).toContain("尚无已发布的分析报告");
+    expect(container.textContent).not.toContain("Platform 暂时无法读取当前页面");
+    await act(async () => root.unmount()); container.remove();
+  });
+
+  it("renders a report-specific retry state for operational failures", async () => {
+    vi.spyOn(faeReportApi, "latest").mockRejectedValue(new FaeReportApiError(503));
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(<FaeReportsPage />));
+    await act(async () => undefined);
+
+    expect(container.textContent).toContain("分析报告读取失败");
+    expect(container.textContent).toContain("重新尝试");
+    await act(async () => root.unmount()); container.remove();
+  });
+
+  it.each([
+    [401, "需要登录后查看分析报告"],
+    [403, "当前账号无权查看分析报告"],
+  ])("distinguishes report access status %i from an operational failure", async (status, message) => {
+    vi.spyOn(faeReportApi, "latest").mockRejectedValue(new FaeReportApiError(status));
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(<FaeReportsPage />));
+    await act(async () => undefined);
+
+    expect(container.textContent).toContain(message);
+    expect(container.textContent).not.toContain("报告数据暂时无法读取");
+    expect(container.textContent).not.toContain("重新尝试");
     await act(async () => root.unmount()); container.remove();
   });
 });
