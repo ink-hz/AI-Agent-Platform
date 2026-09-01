@@ -98,6 +98,9 @@ grant select, insert on platform_fae_reports.reports,
   platform_fae_reports.report_audit_events to platform_review_writer;
 grant select, insert, update on platform_fae_reports.finding_issue_links
   to platform_review_writer;
+grant select on platform_read.sessions, platform_read.turns,
+  platform_read.feedback to platform_review_writer;
+grant select on platform_review.feedback_issues to platform_review_writer;
 revoke update, delete on platform_fae_reports.reports,
   platform_fae_reports.report_evidence,
   platform_fae_reports.report_audit_events from platform_review_writer;

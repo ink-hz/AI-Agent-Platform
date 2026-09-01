@@ -34,6 +34,14 @@ def test_report_migration_keeps_import_writer_non_destructive_and_analyst_read_o
     assert "grant select, insert on platform_fae_reports.reports" in sql
     assert "revoke update, delete on platform_fae_reports.reports" in sql
     assert (
+        "grant select on platform_read.sessions, platform_read.turns, "
+        "platform_read.feedback to platform_review_writer"
+    ) in sql
+    assert (
+        "grant select on platform_review.feedback_issues to platform_review_writer"
+        in sql
+    )
+    assert (
         "grant select on all tables in schema platform_fae_reports to flywheel_analyst"
         in sql
     )
