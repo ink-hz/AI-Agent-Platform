@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -9,6 +10,9 @@ import { BusinessValueChapter } from "./BusinessValueChapter";
 import { InsightAndImprovementChapter } from "./InsightAndImprovementChapter";
 import { ReportMetricVisual } from "./ReportMetricVisual";
 import { UsageChapter } from "./UsageChapter";
+
+
+const css = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
 
 
 function renderMetric(metric: FaeReportMetric): string {
@@ -108,5 +112,12 @@ describe("FAE outcome report chapters", () => {
     expect(html).not.toContain("fae-outcome-metric-group");
     expect(html).not.toContain("服务规模与深度");
     expect(html).not.toContain("独立复审结果");
+  });
+
+  it("removes nested group chrome from the report stylesheet", () => {
+    expect(css).not.toContain(".fae-outcome-metric-group");
+    expect(css).not.toContain(".fae-outcome-value-group");
+    expect(css).toContain(".fae-outcome-chapter__facts");
+    expect(css).toContain(".fae-outcome-value-comparison");
   });
 });
