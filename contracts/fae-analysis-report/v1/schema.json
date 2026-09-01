@@ -1,0 +1,775 @@
+{
+  "$defs": {
+    "ReportCase": {
+      "additionalProperties": false,
+      "properties": {
+        "business_case_approved": {
+          "const": true,
+          "title": "Business Case Approved",
+          "type": "boolean"
+        },
+        "case_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "dimension": {
+          "enum": [
+            "usage",
+            "business_value",
+            "answer_effectiveness",
+            "insights_improvement"
+          ],
+          "title": "Dimension",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "$ref": "#/$defs/ReportEvidence"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "outcome": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Outcome",
+          "type": "string"
+        },
+        "scenario": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Scenario",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "case_id",
+        "dimension",
+        "title",
+        "scenario",
+        "outcome",
+        "evidence_refs",
+        "business_case_approved"
+      ],
+      "title": "ReportCase",
+      "type": "object"
+    },
+    "ReportEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_key": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Canonical Key",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "session",
+            "turn",
+            "feedback",
+            "issue"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "canonical_key",
+        "label"
+      ],
+      "title": "ReportEvidence",
+      "type": "object"
+    },
+    "ReportFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "snapshot_failed",
+            "population_blocked",
+            "classification_failed",
+            "annotation_incomplete",
+            "review_incomplete",
+            "report_blocked",
+            "publication_failed",
+            "sanitized_failure"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "stage": {
+          "enum": [
+            "snapshot",
+            "population",
+            "classification",
+            "annotation",
+            "review",
+            "reporting",
+            "publication"
+          ],
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "code",
+        "message",
+        "retryable"
+      ],
+      "title": "ReportFailure",
+      "type": "object"
+    },
+    "ReportFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "dimension": {
+          "enum": [
+            "usage",
+            "business_value",
+            "answer_effectiveness",
+            "insights_improvement"
+          ],
+          "title": "Dimension",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "$ref": "#/$defs/ReportEvidence"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "finding_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Finding Id",
+          "type": "string"
+        },
+        "impact_scope": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Impact Scope",
+          "type": "string"
+        },
+        "linked_issue_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Linked Issue Ids",
+          "type": "array"
+        },
+        "metric_ids": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Metric Ids",
+          "type": "array"
+        },
+        "recommendation_ids": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Recommendation Ids",
+          "type": "array"
+        },
+        "root_cause_hypothesis": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Root Cause Hypothesis",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low",
+            "opportunity"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "finding_id",
+        "dimension",
+        "severity",
+        "title",
+        "description",
+        "root_cause_hypothesis",
+        "impact_scope",
+        "metric_ids",
+        "evidence_refs",
+        "recommendation_ids",
+        "linked_issue_ids"
+      ],
+      "title": "ReportFinding",
+      "type": "object"
+    },
+    "ReportMetric": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "denominator": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "gt": 0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Denominator"
+        },
+        "dimension": {
+          "enum": [
+            "usage",
+            "business_value",
+            "answer_effectiveness",
+            "insights_improvement"
+          ],
+          "title": "Dimension",
+          "type": "string"
+        },
+        "evidence_artifact_refs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Evidence Artifact Refs",
+          "type": "array"
+        },
+        "filters": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Filters",
+          "type": "array"
+        },
+        "label": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "metric_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Metric Id",
+          "type": "string"
+        },
+        "numerator": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Numerator"
+        },
+        "unit": {
+          "enum": [
+            "count",
+            "ratio",
+            "percent",
+            "milliseconds",
+            "seconds",
+            "distribution"
+          ],
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "const": "少于 5",
+                    "type": "string"
+                  }
+                ]
+              },
+              "type": "object"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "metric_id",
+        "dimension",
+        "label",
+        "value",
+        "unit",
+        "filters",
+        "assumptions",
+        "evidence_artifact_refs"
+      ],
+      "title": "ReportMetric",
+      "type": "object"
+    },
+    "ReportPeriod": {
+      "additionalProperties": false,
+      "properties": {
+        "end_at": {
+          "format": "date-time",
+          "title": "End At",
+          "type": "string"
+        },
+        "start_at": {
+          "format": "date-time",
+          "title": "Start At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_at",
+        "end_at"
+      ],
+      "title": "ReportPeriod",
+      "type": "object"
+    },
+    "ReportRecommendation": {
+      "additionalProperties": false,
+      "properties": {
+        "dimension": {
+          "enum": [
+            "usage",
+            "business_value",
+            "answer_effectiveness",
+            "insights_improvement"
+          ],
+          "title": "Dimension",
+          "type": "string"
+        },
+        "finding_ids": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Finding Ids",
+          "type": "array"
+        },
+        "owner_role": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Owner Role",
+          "type": "string"
+        },
+        "priority": {
+          "enum": [
+            "p0",
+            "p1",
+            "p2",
+            "p3"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "proposed_action": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Proposed Action",
+          "type": "string"
+        },
+        "rationale": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "recommendation_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Recommendation Id",
+          "type": "string"
+        },
+        "success_metric_ids": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Success Metric Ids",
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "recommendation_id",
+        "dimension",
+        "priority",
+        "title",
+        "rationale",
+        "proposed_action",
+        "owner_role",
+        "finding_ids",
+        "success_metric_ids"
+      ],
+      "title": "ReportRecommendation",
+      "type": "object"
+    },
+    "ReportSource": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "const": "ai-fae-agent",
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "environment": {
+          "const": "production",
+          "title": "Environment",
+          "type": "string"
+        },
+        "feedback_event_count": {
+          "minimum": 0,
+          "title": "Feedback Event Count",
+          "type": "integer"
+        },
+        "reviewed_session_count": {
+          "minimum": 0,
+          "title": "Reviewed Session Count",
+          "type": "integer"
+        },
+        "session_count": {
+          "minimum": 0,
+          "title": "Session Count",
+          "type": "integer"
+        },
+        "source_kind": {
+          "const": "fae",
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "source_snapshot_at": {
+          "format": "date-time",
+          "title": "Source Snapshot At",
+          "type": "string"
+        },
+        "turn_count": {
+          "minimum": 0,
+          "title": "Turn Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agent_id",
+        "source_kind",
+        "environment",
+        "source_snapshot_at",
+        "session_count",
+        "turn_count",
+        "feedback_event_count",
+        "reviewed_session_count"
+      ],
+      "title": "ReportSource",
+      "type": "object"
+    },
+    "ReportSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "headline": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Headline",
+          "type": "string"
+        },
+        "overview": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Overview",
+          "type": "string"
+        },
+        "top_finding_ids": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Top Finding Ids",
+          "type": "array"
+        },
+        "top_recommendation_ids": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Top Recommendation Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "headline",
+        "overview",
+        "top_finding_ids",
+        "top_recommendation_ids"
+      ],
+      "title": "ReportSummary",
+      "type": "object"
+    }
+  },
+  "$id": "https://agent.orbbec.com.cn/contracts/fae-analysis-report/v1/schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "analysis_version": {
+      "maxLength": 80,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Analysis Version",
+      "type": "string"
+    },
+    "artifact_digests": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Artifact Digests",
+      "type": "object"
+    },
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/ReportCase"
+      },
+      "maxItems": 20,
+      "title": "Cases",
+      "type": "array"
+    },
+    "data_cutoff_at": {
+      "format": "date-time",
+      "title": "Data Cutoff At",
+      "type": "string"
+    },
+    "failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReportFailure"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/ReportFinding"
+      },
+      "maxItems": 100,
+      "title": "Findings",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "metrics": {
+      "items": {
+        "$ref": "#/$defs/ReportMetric"
+      },
+      "maxItems": 200,
+      "title": "Metrics",
+      "type": "array"
+    },
+    "period": {
+      "$ref": "#/$defs/ReportPeriod"
+    },
+    "recommendations": {
+      "items": {
+        "$ref": "#/$defs/ReportRecommendation"
+      },
+      "maxItems": 100,
+      "title": "Recommendations",
+      "type": "array"
+    },
+    "report_id": {
+      "pattern": "^fae-(weekly|topic)-[a-z0-9][a-z0-9-]{2,63}$",
+      "title": "Report Id",
+      "type": "string"
+    },
+    "report_type": {
+      "enum": [
+        "weekly",
+        "topic"
+      ],
+      "title": "Report Type",
+      "type": "string"
+    },
+    "report_version": {
+      "minimum": 1,
+      "title": "Report Version",
+      "type": "integer"
+    },
+    "schema_name": {
+      "const": "fae.analysis-report",
+      "title": "Schema Name",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/ReportSource"
+    },
+    "status": {
+      "enum": [
+        "ready",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReportSummary"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "title": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_name",
+    "schema_version",
+    "report_id",
+    "report_version",
+    "report_type",
+    "status",
+    "title",
+    "period",
+    "data_cutoff_at",
+    "generated_at",
+    "analysis_version",
+    "source",
+    "summary",
+    "metrics",
+    "findings",
+    "recommendations",
+    "cases",
+    "artifact_digests",
+    "failure"
+  ],
+  "title": "FaeAnalysisReport",
+  "type": "object"
+}

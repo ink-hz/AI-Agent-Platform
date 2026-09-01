@@ -62,6 +62,7 @@ All objects use `additionalProperties: false`. All timestamps are RFC 3339 strin
 | `metrics` | required array for `ready`, empty for `failed`; unique `metric_id` |
 | `findings` | required array for `ready`, empty for `failed`; unique `finding_id` |
 | `recommendations` | required array for `ready`, empty for `failed`; unique `recommendation_id` |
+| `cases` | business-approved sanitized cases; empty when no case has approval |
 | `artifact_digests` | seven sanitized producer artifact names and SHA-256 digests for `ready`, empty for `failed` |
 | `failure` | `null` for `ready`; required sanitized object for `failed` |
 
@@ -104,13 +105,15 @@ Every ready report must contain at least one metric in each dimension. Findings 
 recommendations carry the same `dimension` enum so the reader never guesses presentation
 semantics from ID prefixes or prose.
 
-`unit` is one of `count|ratio|percent|milliseconds|seconds`. Count metrics require integer `value`, and ratio/percent metrics require non-null non-negative numerator and positive denominator. All arrays contain unique strings and are capped at 20 entries.
+`unit` is one of `count|ratio|percent|milliseconds|seconds|distribution`. Count metrics require integer `value`, and ratio/percent metrics require non-null non-negative numerator and positive denominator. A distribution metric contains a bounded object of semantic category names to non-negative integer counts or the exact small-cell marker `少于 5`; it requires a positive denominator and no numerator. This preserves governed public distributions such as `product.signal_counts_public` without publishing private hashed cell IDs or inventing unreviewed metrics. All arrays contain unique strings and are capped at 20 entries.
 
 Each evidence reference contains exactly `kind`, `canonical_key` and `label`. `kind` is `session|turn|feedback|issue`; `canonical_key` must start with `fae:` for the first three kinds, while Issue keys are UUIDs. `label` is a short neutral locator such as `Session 03` or `Turn 2`; it is not a content excerpt.
 
 Each finding contains `finding_id`, `dimension`, `severity`, `title`, `description`, `root_cause_hypothesis`, `impact_scope`, `metric_ids`, `evidence_refs`, `recommendation_ids`, and `linked_issue_ids`. `severity` is `critical|high|medium|low|opportunity`. Descriptive fields are capped at 2,000 characters. Every referenced metric and recommendation must resolve within the bundle; a `ready` finding requires at least one metric and one evidence reference. `linked_issue_ids` contains only FAE Issue UUIDs known to the producer at publication time and is normally empty; later Platform-local associations are returned separately and never rewrite this array.
 
 Each recommendation contains `recommendation_id`, `dimension`, `priority`, `title`, `rationale`, `proposed_action`, `owner_role`, `finding_ids`, and `success_metric_ids`. `priority` is `p0|p1|p2|p3`; `owner_role` is a bounded label, not an employee identity. All references must resolve within the bundle.
+
+Each case contains `case_id`, `dimension`, `title`, `scenario`, `outcome`, `evidence_refs`, and the constant `business_case_approved: true`. Case prose is already business-approved and sanitized, remains bounded to 2,000 characters per field, and requires at least one evidence reference. The publisher never creates a case from raw conversation text. A report with no approved cases publishes `cases: []`.
 
 `artifact_digests` has exactly these names: `metrics.json`, `claim_ledger.jsonl`, `action_backlog.jsonl`, `executive_summary.md`, `full_report.md`, `audit_appendix.md`, `report.html`. Each value is a lowercase 64-character SHA-256 string. It proves provenance; the Platform importer does not ingest or render these files.
 
