@@ -110,6 +110,10 @@ def test_compose_is_isolated_loopback_only_and_hardened():
         == "/run/secrets/voc-extension-signing-key"
     )
     assert (
+        services["platform-api"]["environment"]["PLATFORM_VOC_SERVICE_BEARER_FILE"]
+        == "/run/secrets/voc-service-bearer"
+    )
+    assert (
         services["platform-api"]["environment"]["PLATFORM_AGENT_BRAIN_V2_ENABLED"]
         == "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
     )

@@ -569,12 +569,13 @@ for protected_secret in \
   control-audit-database-url \
   content-encryption-keyring \
   execution-worker-public-keyring.json \
-  voc-extension-signing-key; do
+  voc-extension-signing-key \
+  voc-service-bearer; do
   [[ "$(/usr/bin/stat -c '%a %U' "$private_path/$protected_secret")" == "600 root" ]] || fail
 done
 /usr/bin/docker run --rm --network none \
   -v orbbec-agent-platform-api-secrets:/target:ro alpine:3.22 \
-  sh -ceu 'for name in control-database-url control-audit-database-url content-encryption-keyring execution-worker-public-keyring.json voc-extension-signing-key; do test "$(stat -c "%a %u" "/target/$name")" = "600 10001"; done' || fail
+  sh -ceu 'for name in control-database-url control-audit-database-url content-encryption-keyring execution-worker-public-keyring.json voc-extension-signing-key voc-service-bearer; do test "$(stat -c "%a %u" "/target/$name")" = "600 10001"; done' || fail
 identity_policy_result="$(/usr/bin/docker run --rm --user 0:0 --read-only \
   --security-opt no-new-privileges:true \
   --network orbbec-agent-platform-internal \

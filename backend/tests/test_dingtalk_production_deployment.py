@@ -49,6 +49,28 @@ def test_secret_bootstrap_requires_and_copies_multi_app_registry_only_to_api() -
     assert "dingtalk-in-client-apps.json" not in worker_blocks
 
 
+def test_secret_bootstrap_generates_and_scopes_voc_service_bearer_to_api() -> None:
+    script = (CLOUD / "bootstrap-dingtalk-production-secrets.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'voc_service_bearer="$private_path/voc-service-bearer"' in script
+    assert "/usr/bin/openssl rand -base64 48" in script
+    assert re.search(
+        r"required_private=\(.*?^  voc-service-bearer$.*?^\)",
+        script,
+        re.MULTILINE | re.DOTALL,
+    )
+    api_start = script.index("-v orbbec-agent-platform-api-secrets:/target")
+    worker_start = script.index(
+        "-v orbbec-agent-platform-directory-secrets:/target", api_start
+    )
+    api_block = script[api_start:worker_start]
+    worker_blocks = script[worker_start:]
+    assert "cp /source/voc-service-bearer" in api_block
+    assert "voc-service-bearer" not in worker_blocks
+
+
 def _normalized_shell(script: str) -> str:
     without_line_continuations = re.sub(r"\\\s*\n", " ", script)
     return " ".join(without_line_continuations.split())

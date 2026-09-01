@@ -154,6 +154,7 @@ def test_remote_stage_requires_mode_0600_and_preserves_feature_state() -> None:
         "brain-worker-database-url",
         "brain-provider-api-key",
         "voc-extension-signing-key",
+        "voc-service-bearer",
     ):
         assert secret in stage
     assert "stat -c '%a %U'" in stage

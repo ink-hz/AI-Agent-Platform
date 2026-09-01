@@ -86,6 +86,7 @@ services:
       PLATFORM_VOC_EXTENSION_ENABLED: "1"
       PLATFORM_VOC_EXTENSION_BASE_URL: http://172.29.0.3:18130
       PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE: /run/secrets/voc-extension-signing-key
+      PLATFORM_VOC_SERVICE_BEARER_FILE: /run/secrets/voc-service-bearer
       PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS: "10"
       # FAE partner operator identity is production-disabled: no real Partner
       # Provider has been selected yet. These values are deliberately empty so

@@ -12,6 +12,18 @@ private_path="$1"
 [[ "$private_path" == /* && "$private_path" != / ]] || fail
 [[ -d "$private_path" && ! -L "$private_path" ]] || fail
 
+voc_service_bearer="$private_path/voc-service-bearer"
+if [[ ! -e "$voc_service_bearer" && ! -L "$voc_service_bearer" ]]; then
+  temporary_bearer="$(/usr/bin/mktemp "$private_path/.voc-service-bearer.XXXXXX")"
+  cleanup_bearer() { /bin/rm -f -- "$temporary_bearer"; }
+  trap cleanup_bearer EXIT
+  /usr/bin/openssl rand -base64 48 > "$temporary_bearer"
+  /bin/chown root:root "$temporary_bearer"
+  /bin/chmod 600 "$temporary_bearer"
+  /bin/mv -f "$temporary_bearer" "$voc_service_bearer"
+  trap - EXIT
+fi
+
 required_private=(
   dingtalk-app-key
   dingtalk-agent-id
@@ -29,6 +41,7 @@ required_private=(
   content-encryption-keyring
   execution-worker-public-keyring.json
   voc-extension-signing-key
+  voc-service-bearer
 )
 for name in "${required_private[@]}"; do
   path="$private_path/$name"
@@ -102,6 +115,7 @@ done
     cp /source/identity-encryption-keyring /source/identity-hmac-keyring /source/rate-limit-hmac-keyring /target/
     cp /source/content-encryption-keyring /source/execution-worker-public-keyring.json /target/
     cp /source/voc-extension-signing-key /target/
+    cp /source/voc-service-bearer /target/
     chown 10001:10001 /target/*
     chmod 600 /target/*
   '
