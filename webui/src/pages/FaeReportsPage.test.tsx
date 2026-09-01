@@ -87,4 +87,22 @@ describe("FAE reports", () => {
     expect(container.textContent).toContain("重新尝试");
     await act(async () => root.unmount()); container.remove();
   });
+
+  it.each([
+    [401, "需要登录后查看分析报告"],
+    [403, "当前账号无权查看分析报告"],
+  ])("distinguishes report access status %i from an operational failure", async (status, message) => {
+    vi.spyOn(faeReportApi, "latest").mockRejectedValue(new FaeReportApiError(status));
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(<FaeReportsPage />));
+    await act(async () => undefined);
+
+    expect(container.textContent).toContain(message);
+    expect(container.textContent).not.toContain("报告数据暂时无法读取");
+    expect(container.textContent).not.toContain("重新尝试");
+    await act(async () => root.unmount()); container.remove();
+  });
 });

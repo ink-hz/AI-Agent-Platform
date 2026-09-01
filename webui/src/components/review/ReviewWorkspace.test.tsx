@@ -163,6 +163,33 @@ describe("ReviewWorkspace mutation refresh isolation", () => {
     expect(container.querySelector(".fae-governance-readonly")?.textContent).toContain("只读副本");
   });
 
+  it("does not present unavailable lifecycle totals as zero", async () => {
+    const api = apiWith(vi.fn());
+    api.overview = vi.fn().mockResolvedValue({
+      ...overview,
+      lifecycle_status_available: false,
+      statuses: {},
+      write_available: false,
+    });
+    await act(async () => root.render(<ReviewWorkspace
+      api={api}
+      agentId="ai-fae-agent"
+      basePath="/admin/fae/issues"
+      initialIssueId={null}
+      initialTurn={null}
+      actor="corp:owner"
+      showActorField={false}
+      showAgentFilter={false}
+      presentation="fae-governance"
+      statusFilter="open"
+      statusFilterKind="status"
+      onStatusFilterChange={vi.fn()}
+    />));
+
+    expect(container.textContent).toContain("生命周期状态暂不可用");
+    expect(container.querySelector(".fae-governance-summary")).toBeNull();
+  });
+
   it("keeps the generic review ledger copy and filters by default", async () => {
     await renderWorkspace(apiWith(vi.fn()));
 

@@ -187,7 +187,7 @@ describe("FAE workbench API", () => {
     const paths = fetchMock.mock.calls.map(([path]) => String(path));
     expect(paths).toEqual([
       "/api/admin/fae/issue-overview",
-      "/api/admin/fae/issue-inbox?limit=200",
+      "/api/admin/fae/issue-inbox?limit=20",
       "/api/admin/fae/issues?limit=20&disposition=actionable",
       "/api/admin/fae/turn-summaries?turn_key=fae%3Aturn-1",
       "/api/admin/fae/issues/00000000-0000-0000-0000-000000000001",

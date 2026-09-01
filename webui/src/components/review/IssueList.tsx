@@ -63,6 +63,7 @@ export function IssueList({
   onSelectInbox,
   showAgentFilter = true,
   statusFilter,
+  statusFilterKind = "status",
   onStatusFilterChange,
   statusOptions,
   statusPresentation = "lifecycle",
@@ -80,6 +81,7 @@ export function IssueList({
   onSelectInbox: (turnKey: string) => void;
   showAgentFilter?: boolean;
   statusFilter?: string;
+  statusFilterKind?: "status" | "disposition" | "all";
   onStatusFilterChange?: (status: string) => void;
   statusOptions?: IssueFilterOption[];
   statusPresentation?: "lifecycle" | "disposition";
@@ -120,34 +122,36 @@ export function IssueList({
     : FAILURE_LAYER_OPTIONS;
   const faeGovernance = presentation === "fae-governance";
   const queueOptions = [
-    { value: "open", label: "需要行动" },
-    { value: "pending_triage", label: "待分诊" },
-    { value: "awaiting_replay", label: "待复跑" },
-    { value: "closed", label: "已闭环" },
-    { value: "", label: "全部" },
+    { value: "status:open", label: "需要行动" },
+    { value: "status:pending_triage", label: "待分诊" },
+    { value: "status:awaiting_replay", label: "待复跑" },
+    { value: "status:closed", label: "已闭环" },
+    { value: "all", label: "全部" },
   ];
   const updateStatus = (value: string) => onStatusFilterChange
     ? onStatusFilterChange(value)
     : setLocalStatus(value);
-  const queueLabel = queueOptions.find((option) => option.value === status)?.label ?? "反馈事项";
+  const selectedStatusKey = statusFilterKind === "all" ? "all" : `${statusFilterKind}:${status}`;
+  const queueLabel = queueOptions.find((option) => option.value === selectedStatusKey)?.label ?? "反馈事项";
   const effectiveStatusOptions = statusOptions ?? Object.entries(STATUS_LABELS)
     .filter(([value]) => !faeGovernance || value !== "unknown")
     .map(([value, label]) => ({ value, label }));
 
   return <aside className="review-list-panel">
     <div className="review-list-heading"><div><p>治理队列</p><h2>{faeGovernance ? queueLabel : "反馈事项"}</h2></div><span>{totalCount ?? filtered.length}</span></div>
-    {faeGovernance && <nav className="fae-governance-queues" aria-label="治理队列视图">{queueOptions.map((option) => <button type="button" aria-pressed={status === option.value} className={status === option.value ? "is-current" : undefined} key={option.value || "all"} onClick={() => updateStatus(option.value)}>{option.label}</button>)}</nav>}
-    {faeGovernance && <select className="fae-governance-status-select" aria-label="状态" value={status} onChange={(event) => updateStatus(event.target.value)}><option value="">全部状态</option>{effectiveStatusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select>}
+    {faeGovernance && <nav className="fae-governance-queues" aria-label="治理队列视图">{queueOptions.map((option) => <button type="button" aria-pressed={selectedStatusKey === option.value} className={selectedStatusKey === option.value ? "is-current" : undefined} key={option.value} onClick={() => updateStatus(option.value)}>{option.label}</button>)}</nav>}
     <div className="review-filters" aria-label="事项筛选">
       {showAgentFilter && <select aria-label="Agent" value={agent} onChange={(event) => setAgent(event.target.value)}><option value="">全部 Agent</option>{agents.map((value) => <option key={value}>{value}</option>)}</select>}
       {server && <input aria-label="事项搜索" placeholder="搜索标题" value={selectedQuery} onChange={(event) => updateServer({ query: event.target.value || undefined })} />}
       <select aria-label="失败层" value={selectedLayer} onChange={(event) => server ? updateServer({ failure_layer: event.target.value || undefined }) : setLayer(event.target.value)}><option value="">全部失败层</option>{(server ? serverLayers : layers).map((value) => <option key={value}>{value}</option>)}</select>
       <select aria-label="优先级" value={selectedPriority} onChange={(event) => server ? updateServer({ priority: event.target.value || undefined }) : setPriority(event.target.value)}><option value="">全部优先级</option>{["P0", "P1", "P2", "P3"].map((value) => <option key={value}>{value}</option>)}</select>
+      {faeGovernance && <select aria-label="状态" value={statusFilterKind === "status" ? status : ""} onChange={(event) => updateStatus(event.target.value ? `status:${event.target.value}` : "all")}><option value="">全部生命周期</option>{effectiveStatusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select>}
+      {faeGovernance && <select aria-label="处置" value={statusFilterKind === "disposition" ? `disposition:${status}` : ""} onChange={(event) => updateStatus(event.target.value || "all")}><option value="">全部处置</option>{Object.entries(DISPOSITION_LABELS).map(([value, label]) => <option value={`disposition:${value}`} key={value}>{label}</option>)}</select>}
       {!faeGovernance && <select aria-label="状态" value={status} onChange={(event) => updateStatus(event.target.value)}><option value="">全部状态</option>{effectiveStatusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select>}
       <input aria-label="负责人" placeholder="负责人" value={selectedOwner} onChange={(event) => server ? updateServer({ owner: event.target.value || undefined }) : setOwner(event.target.value)} />
       <input aria-label="创建日期起" type="date" value={selectedCreatedAfter} onChange={(event) => server ? updateServer({ created_after: event.target.value ? `${event.target.value}T00:00:00+08:00` : undefined }) : setCreatedAfter(event.target.value)} />
     </div>
     {inbox.length > 0 && <section className="review-inbox"><h3>待纳管回答 <span>{inbox.length}</span></h3>{inbox.map((item) => <button className={selectedTurnKey === item.turn_key ? "is-selected" : ""} key={item.turn_key} onClick={() => onSelectInbox(item.turn_key)}><strong>{item.question || "未记录问题"}</strong><small>{showAgentIdentity ? `${item.agent_id} · ` : ""}{item.feedback_count ?? item.feedback_keys.length} 条负反馈</small></button>)}</section>}
-    <div className="review-issue-list">{filtered.map((item) => <button className={selectedId === item.id ? "is-selected" : ""} key={item.id} onClick={() => onSelect(item.id)}><span><b>{item.priority}</b>{statusPresentation === "disposition" ? DISPOSITION_LABELS[item.disposition] : STATUS_LABELS[item.progress.status]}</span><strong className="review-issue-title">{item.title}</strong><small>{showAgentIdentity ? `${item.agent_id} · ` : ""}{item.failure_layer || "待归因"} · {item.owner || "未分配"}</small>{item.progress.missing_gates === null ? <em>下一步暂不可用</em> : item.progress.missing_gates.length > 0 && <em>{faeGovernance ? "下一步：" : "缺："}{faeGovernance ? (GATE_LABELS[item.progress.missing_gates[0]] || item.progress.missing_gates[0]) : item.progress.missing_gates.map((gate) => GATE_LABELS[gate] || gate).join("、")}</em>}</button>)}</div>
+    <div className="review-issue-list">{filtered.map((item) => <button className={selectedId === item.id ? "is-selected" : ""} key={item.id} onClick={() => onSelect(item.id)}><span><b>{item.priority}</b>{statusPresentation === "disposition" ? DISPOSITION_LABELS[item.disposition] : STATUS_LABELS[item.progress.status]}</span><strong className="review-issue-title">{item.title}</strong><small>{showAgentIdentity ? `${item.agent_id} · ` : ""}{item.failure_layer || "待归因"} · {item.owner || "未分配"}</small>{item.progress.missing_gates === null ? <em>{faeGovernance ? "下一步暂不可用" : "闭环门暂不可用"}</em> : item.progress.missing_gates.length > 0 && <em>{faeGovernance ? "下一步：" : "缺："}{faeGovernance ? (GATE_LABELS[item.progress.missing_gates[0]] || item.progress.missing_gates[0]) : item.progress.missing_gates.map((gate) => GATE_LABELS[gate] || gate).join("、")}</em>}</button>)}</div>
   </aside>;
 }

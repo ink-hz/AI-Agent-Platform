@@ -119,6 +119,26 @@ describe("FaeIssuesPage", () => {
     expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=20&offset=20&status=open");
   });
 
+  it("persists the all queue explicitly and requests an unfiltered bounded page", async () => {
+    window.history.replaceState({}, "", "/admin/fae/issues?status=all");
+    const issueRequests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path === "/api/admin/fae/issue-overview") return Promise.resolve(response(overview(true)));
+      if (path === "/api/admin/fae/issue-inbox?limit=20") return Promise.resolve(response([]));
+      if (path.startsWith("/api/admin/fae/issues?")) {
+        issueRequests.push(path);
+        return Promise.resolve(response({ items: [], total: 87, limit: 20, offset: 0, has_more: true }));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+
+    await act(async () => root.render(<FaeIssuesPage account={owner} />));
+
+    expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=20");
+    expect(container.querySelector<HTMLButtonElement>('.fae-governance-queues button[aria-pressed="true"]')?.textContent).toBe("全部");
+  });
+
   it("creates governance from the exact deep-linked real Turn and opens its stable Issue URL", async () => {
     window.history.replaceState({}, "", "/admin/fae/issues?session_key=fae%3Asession-1&turn_key=fae%3Aturn-1");
     const writes: { path: string; body: Record<string, unknown>; headers: Headers }[] = [];

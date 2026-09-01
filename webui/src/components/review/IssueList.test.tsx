@@ -70,4 +70,43 @@ describe("IssueList FAE governance presentation", () => {
     expect(container.querySelector(".review-issue-list")?.textContent).toContain("下一步：独立语义复审");
     expect(container.querySelector(".review-issue-list")?.textContent).not.toContain("复审人");
   });
+
+  it("keeps detailed lifecycle and disposition filters visible and unambiguous", async () => {
+    const change = vi.fn();
+    await act(async () => root.render(<IssueList
+      issues={[issue]}
+      inbox={[]}
+      selectedId={null}
+      selectedTurnKey={null}
+      onSelect={vi.fn()}
+      onSelectInbox={vi.fn()}
+      presentation="fae-governance"
+      statusFilter="duplicate"
+      statusFilterKind="disposition"
+      onStatusFilterChange={change}
+    />));
+
+    const disposition = container.querySelector<HTMLSelectElement>('select[aria-label="处置"]')!;
+    expect(disposition).not.toBeNull();
+    expect(container.querySelector('select[aria-label="状态"]')).not.toBeNull();
+    await act(async () => {
+      disposition.value = "disposition:not_actionable";
+      disposition.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(change).toHaveBeenCalledWith("disposition:not_actionable");
+  });
+
+  it("preserves generic unavailable-gate wording", async () => {
+    await act(async () => root.render(<IssueList
+      issues={[{ ...issue, progress: { ...issue.progress, missing_gates: null } }]}
+      inbox={[]}
+      selectedId={null}
+      selectedTurnKey={null}
+      onSelect={vi.fn()}
+      onSelectInbox={vi.fn()}
+    />));
+
+    expect(container.textContent).toContain("闭环门暂不可用");
+    expect(container.textContent).not.toContain("下一步暂不可用");
+  });
 });

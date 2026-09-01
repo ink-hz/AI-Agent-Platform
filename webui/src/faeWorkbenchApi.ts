@@ -226,7 +226,7 @@ function normalizeDetail(value: unknown): FeedbackIssueDetail {
 function reviewApi(csrfToken: string): ReviewApi {
   return {
     overview: async (signal) => normalizeOverview(await getJson<unknown>("/api/admin/fae/issue-overview", signal)),
-    inbox: async (signal) => normalizeInbox(await getJson<unknown>("/api/admin/fae/issue-inbox?limit=200", signal)),
+    inbox: async (signal) => normalizeInbox(await getJson<unknown>("/api/admin/fae/issue-inbox?limit=20", signal)),
     issues: async (signal, filters) => {
       const params = new URLSearchParams({ limit: String(filters?.limit ?? 20) });
       if ((filters?.offset ?? 0) > 0) params.set("offset", String(filters?.offset));

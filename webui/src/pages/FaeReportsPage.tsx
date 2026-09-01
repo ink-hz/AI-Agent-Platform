@@ -95,6 +95,10 @@ export function FaeReportsPage({ reportId }: { reportId?: string }) {
   }, [reportId, attempt]);
   return <FaeWorkbenchShell currentSection="reports">{failureStatus === 404
     ? <section className="fae-workbench__empty" role="status"><h2>{reportId ? "找不到该分析报告" : "尚无已发布的分析报告"}</h2><p>{reportId ? "该报告不存在、已撤回或当前账号无权读取。" : "完成真实数据分析、复审和发布后，成果会显示在这里。"}</p></section>
+    : failureStatus === 401
+      ? <section className="fae-workbench__empty" role="alert"><h2>需要登录后查看分析报告</h2><p>请重新登录企业账号后再访问已发布的 FAE 成果。</p></section>
+    : failureStatus === 403
+      ? <section className="fae-workbench__empty" role="alert"><h2>当前账号无权查看分析报告</h2><p>分析报告仅向已授权的管理层、FAE 团队和平台所有者开放。</p></section>
     : failureStatus !== null
       ? <section className="data-state data-error fae-report-error" role="alert"><strong>分析报告读取失败</strong><p>报告数据暂时无法读取，FAE Agent 服务不受影响。</p><button type="button" onClick={() => setAttempt((value) => value + 1)}>重新尝试</button></section>
     : report ? <Report report={report} /> : <LoadingState label="正在读取 FAE 分析报告" />}</FaeWorkbenchShell>;
