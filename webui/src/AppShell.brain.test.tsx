@@ -55,6 +55,8 @@ describe("usage navigation", () => {
     expect(navigation).toContain("管理中心");
     expect(container.querySelector<HTMLAnchorElement>('a[href="/admin"]')).not.toBeNull();
     expect(container.querySelector<HTMLAnchorElement>('a[href="/admin/voc"]')?.textContent).toBe("VOC 管理");
+    expect(container.querySelector('.admin-nav a[href="/admin/operations"]')).toBeNull();
+    expect(container.querySelector(".admin-nav")?.textContent).not.toContain("数据飞轮");
   });
 
   it("adds one FAE workbench entry and keeps it selected on FAE detail routes", async () => {

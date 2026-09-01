@@ -98,6 +98,6 @@ describe("Platform router", () => {
   });
 
   it("does not assign a legacy redirect to primary navigation", () => {
-    expect(routeSection({ name: "legacy-redirect", to: "/admin/operations" })).toBeNull();
+    expect(routeSection({ name: "legacy-redirect", to: "/admin" })).toBeNull();
   });
 });

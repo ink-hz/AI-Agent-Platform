@@ -25,7 +25,6 @@ export type Route =
   | { name: "admin-session"; sessionKey: string }
   | { name: "admin-review" }
   | { name: "admin-activity" }
-  | { name: "admin-operations" }
   | { name: "admin-identity" }
   | { name: "admin-governance" }
   | { name: "admin-voc" }
@@ -83,7 +82,7 @@ export function parseRoute(pathname: string): Route {
   if (clean === "/admin/sessions") return { name: "admin-sessions" };
   if (clean === "/admin/review") return { name: "admin-review" };
   if (clean === "/admin/activity") return { name: "admin-activity" };
-  if (clean === "/admin/operations") return { name: "admin-operations" };
+  if (clean === "/admin/operations") return { name: "legacy-redirect", to: "/admin" };
   if (clean === "/admin/identity") return { name: "admin-identity" };
   if (clean === "/admin/governance") return { name: "admin-governance" };
   if (clean === "/admin/voc") return { name: "admin-voc" };
@@ -156,7 +155,7 @@ export function parseRoute(pathname: string): Route {
 
   if (clean === "/review") return { name: "legacy-redirect", to: "/admin/review" };
   if (clean === "/activity") return { name: "legacy-redirect", to: "/admin/activity" };
-  if (clean === "/flywheel") return { name: "legacy-redirect", to: "/admin/operations" };
+  if (clean === "/flywheel") return { name: "legacy-redirect", to: "/admin" };
   if (clean === "/identity") return { name: "legacy-redirect", to: "/admin/identity" };
   if (clean === "/governance") return { name: "legacy-redirect", to: "/admin/governance" };
   if (clean === "/sessions") return { name: "legacy-redirect", to: "/admin/sessions" };
@@ -192,7 +191,6 @@ export function routePath(route: Route): string {
     case "admin-session": return `/admin/sessions/${encodeURIComponent(route.sessionKey)}`;
     case "admin-review": return "/admin/review";
     case "admin-activity": return "/admin/activity";
-    case "admin-operations": return "/admin/operations";
     case "admin-identity": return "/admin/identity";
     case "admin-governance": return "/admin/governance";
     case "admin-voc": return "/admin/voc";

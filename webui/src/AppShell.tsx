@@ -20,7 +20,6 @@ const ADMIN_NAVIGATION = [
   { label: "FAE 工作台", path: "/admin/fae", section: "admin" },
   { label: "复审闭环", path: "/admin/review", section: "admin" },
   { label: "运行记录", path: "/admin/activity", section: "admin" },
-  { label: "数据飞轮", path: "/admin/operations", section: "admin" },
   { label: "身份管理", path: "/admin/identity", section: "admin" },
   { label: "治理审计", path: "/admin/governance", section: "admin" },
   { label: "VOC 管理", path: "/admin/voc", section: "admin" },

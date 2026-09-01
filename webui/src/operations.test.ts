@@ -60,6 +60,8 @@ describe("Operations Brief presentation helpers", () => {
     expect(eventTargetPath(event)).toBe("/admin/agents/ai-fae-agent");
     expect(eventTargetPath({ ...event, target_path: "/sessions/fae%3Asession-2" })).toBe("/admin/sessions/fae%3Asession-2");
     expect(eventTargetPath({ ...event, target_path: "/admin/activity?agent_id=ai-fae-agent" })).toBe("/admin/activity?agent_id=ai-fae-agent");
+    expect(eventTargetPath({ ...event, target_path: "/flywheel" })).toBe("/admin");
+    expect(eventTargetPath({ ...event, target_path: "/admin/operations?period=7d" })).toBe("/admin?period=7d");
     expect(eventTargetPath({ ...event, target_path: "https://example.com/admin" })).toBeNull();
     expect(eventTargetPath({ ...event, target_path: "/api/cluster/status" })).toBeNull();
   });

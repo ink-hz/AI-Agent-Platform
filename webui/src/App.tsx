@@ -123,7 +123,6 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-session": return <SessionDetailPage sessionKey={route.sessionKey} />;
     case "admin-review": return <ReviewPage />;
     case "admin-activity": return <ActivityPage />;
-    case "admin-operations": return <PendingPage title="Operations 与数据飞轮" description="运行摘要、证据和改进闭环仍由管理中心统一维护。" />;
     case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
     case "admin-governance": return <GovernancePage />;
     case "admin-voc": return <VocManagementPage />;

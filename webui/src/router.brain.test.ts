@@ -38,7 +38,6 @@ describe("Agent Brain route boundary", () => {
     expect(parseRoute("/admin/sessions/fae%3Aone")).toEqual({ name: "admin-session", sessionKey: "fae:one" });
     expect(parseRoute("/admin/review")).toEqual({ name: "admin-review" });
     expect(parseRoute("/admin/activity")).toEqual({ name: "admin-activity" });
-    expect(parseRoute("/admin/operations")).toEqual({ name: "admin-operations" });
     expect(parseRoute("/admin/identity")).toEqual({ name: "admin-identity" });
     expect(parseRoute("/admin/governance")).toEqual({ name: "admin-governance" });
     expect(parseRoute("/admin/voc")).toEqual({ name: "admin-voc" });
@@ -51,7 +50,8 @@ describe("Agent Brain route boundary", () => {
   it.each([
     ["/review", "/admin/review"],
     ["/activity", "/admin/activity"],
-    ["/flywheel", "/admin/operations"],
+    ["/admin/operations", "/admin"],
+    ["/flywheel", "/admin"],
     ["/identity", "/admin/identity"],
     ["/governance", "/admin/governance"],
     ["/sessions", "/admin/sessions"],

@@ -26,7 +26,6 @@ export function routeDocumentTitle(route: Route): string {
     case "admin-session": return `Session 回放 · ${PLATFORM_TITLE}`;
     case "admin-review": return `复审闭环 · ${PLATFORM_TITLE}`;
     case "admin-activity": return `运行记录 · ${PLATFORM_TITLE}`;
-    case "admin-operations": return `Operations · ${PLATFORM_TITLE}`;
     case "login": return `登录 · ${PLATFORM_TITLE}`;
     case "account": return `企业账号 · ${PLATFORM_TITLE}`;
     case "admin-identity": return `身份管理 · ${PLATFORM_TITLE}`;

@@ -69,10 +69,13 @@ export function eventTargetPath(event: OperationalEvent): string | null {
   if (path === "/") return "/admin";
   if (path === "/agents") return "/admin/agents";
   if (path === "/sessions") return "/admin/sessions";
-  if (path === "/flywheel") return "/admin/operations";
+  if (path === "/flywheel") return "/admin";
+  if (/^\/admin\/operations(?:\?[^#]*)?$/.test(path)) {
+    return path.replace(/^\/admin\/operations/, "/admin");
+  }
   if (/^\/agents\/[^/?#]+(?:\?[^#]*)?$/.test(path)) return `/admin${path}`;
   if (/^\/sessions(?:\/[^/?#]+)?(?:\?[^#]*)?$/.test(path)) return `/admin${path}`;
   if (/^\/admin\/(?:agents|sessions)(?:\/[^/?#]+)?(?:\?[^#]*)?$/.test(path)) return path;
-  if (/^\/admin\/(?:activity|operations)(?:\?[^#]*)?$/.test(path)) return path;
+  if (/^\/admin\/activity(?:\?[^#]*)?$/.test(path)) return path;
   return null;
 }
