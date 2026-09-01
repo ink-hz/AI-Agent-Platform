@@ -157,7 +157,7 @@ body {
 .fae-governance-hero h1 { font-size: clamp(30px, 4vw, 42px); }
 .fae-governance-readonly { display: grid; flex: 0 0 auto; min-width: 142px; gap: 3px; padding: 10px 13px; border: 1px solid #b7cce7; border-radius: 12px; background: #f4f8fd; color: var(--brand); text-align: right; }
 .fae-governance-readonly strong { font-size: 12px; }
-.fae-governance-readonly span, .fae-governance-readonly time { color: var(--ink-soft); font-size: 11px; }
+.fae-governance-readonly span, .fae-governance-readonly time { color: var(--ink-soft); font-size: 11.5px; }
 .fae-governance-readonly.is-stale { border-color: #dfc58b; background: var(--warn-wash); color: var(--warn); }
 .fae-governance-readonly.is-unavailable { border-color: #dfb1b1; background: var(--down-wash); color: var(--down); }
 .fae-governance-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 24px; }
@@ -172,7 +172,7 @@ body {
 .review-workspace.is-fae-governance { grid-template-columns: minmax(340px, 38%) minmax(0, 62%); gap: 20px; }
 .review-workspace.is-fae-governance .review-list-panel { padding: 16px; }
 .fae-governance-queues { display: flex; gap: 5px; margin-top: 14px; overflow-x: auto; padding-bottom: 3px; }
-.fae-governance-queues button { flex: 0 0 auto; padding: 6px 9px; border: 1px solid var(--line-soft); border-radius: 999px; background: var(--surface); color: var(--ink-soft); font: inherit; font-size: 11px; font-weight: 720; cursor: pointer; }
+.fae-governance-queues button { flex: 0 0 auto; padding: 6px 9px; border: 1px solid var(--line-soft); border-radius: 999px; background: var(--surface); color: var(--ink-soft); font: inherit; font-size: 11.5px; font-weight: 720; cursor: pointer; }
 .fae-governance-queues button:hover { border-color: #adc7e8; color: var(--brand); }
 .fae-governance-queues button.is-current { border-color: var(--brand); background: var(--brand); color: white; }
 .fae-governance-status-select { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
