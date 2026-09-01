@@ -494,6 +494,28 @@ def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
         assert client.get(path).status_code == 401, path
 
 
+@pytest.mark.parametrize(
+    "query",
+    (
+        "return_path=%2Fvoc%2F&return_path=%2Foffice%2F",
+        "return_path=%2Foffice%2F&return_path=%2Fvoc%2F",
+    ),
+)
+def test_public_dingtalk_config_uses_platform_app_for_duplicate_return_paths(
+    tmp_path, monkeypatch, query: str
+) -> None:
+    client = TestClient(_app(tmp_path, monkeypatch, FakeAuth()))
+
+    response = client.get(f"/api/v1/auth/dingtalk/config?{query}")
+
+    assert response.json() == {
+        "client_id": "public-client-id",
+        "corp_id": "public-corp-id",
+        "app_id": "platform",
+    }
+    assert "voc-secret" not in response.text
+
+
 def test_authenticated_root_and_product_routes_serve_identity_shell(
     tmp_path, monkeypatch
 ) -> None:

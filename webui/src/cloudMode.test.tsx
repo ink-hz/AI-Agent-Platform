@@ -30,6 +30,33 @@ afterEach(async () => {
 
 
 describe("cloud replica mode", () => {
+  it("redirects legacy VOC routes without carrying their source query", async () => {
+    window.history.replaceState({}, "", "/agents/voc/workspace?view=spoofed");
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/voc/");
+  });
+
+  it("keeps existing query forwarding for non-VOC legacy routes", async () => {
+    window.history.replaceState({}, "", "/conversations?tab=recent");
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/?tab=recent");
+  });
+
+  it("redirects legacy VOC management exactly", async () => {
+    window.history.replaceState({}, "", "/admin/voc?view=spoofed");
+
+    await act(async () => root.render(<App />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/voc/?view=management");
+  });
+
   it("allows a member to open the AI notes product", async () => {
     const identityMeta = document.createElement("meta");
     identityMeta.name = "platform-identity-mode";

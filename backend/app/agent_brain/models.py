@@ -9,7 +9,6 @@ from app.agent_catalog import load_agent_catalog
 
 CALLABLE_AGENT_IDS = (
     "hr-bot",
-    "voc",
     "marketing-prospecting-bot",
     "marketing-inbound-bot",
     "marketing-voice-bot",

@@ -24,13 +24,12 @@ def _write_payload(tmp_path: Path, payload: dict[str, object]) -> Path:
     return path
 
 
-def test_brain_projection_contains_exactly_the_seven_delegated_agents() -> None:
+def test_brain_projection_contains_exactly_the_six_delegated_agents() -> None:
     cards = load_capability_cards()
 
     assert tuple(card.agent_id for card in cards) == CALLABLE_AGENT_IDS
     assert set(CALLABLE_AGENT_IDS) == {
         "hr-bot",
-        "voc",
         "marketing-prospecting-bot",
         "marketing-inbound-bot",
         "marketing-voice-bot",
@@ -44,10 +43,9 @@ def test_brain_projection_contains_exactly_the_seven_delegated_agents() -> None:
         "ai-fae-agent",
         "ai-admin-agent",
         "fae-bot",
+        "voc",
     } & {card.agent_id for card in cards}
-    voc = next(card for card in cards if card.agent_id == "voc")
-    assert voc.adapter_kind == "voc_action"
-    assert voc.capability_version == 2
+    assert len(cards) == 6
 
 
 def test_capability_cards_are_immutable_and_contain_only_public_call_contract() -> None:

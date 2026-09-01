@@ -93,18 +93,19 @@ def test_platform_core_release_freezes_migrations_049_through_051() -> None:
     ).read_text(encoding="utf-8")
 
 
-def test_first_release_delegates_to_voc_but_not_fae_or_admin() -> None:
+def test_first_release_uses_external_workspaces_for_voc_fae_and_admin() -> None:
     catalog = AgentCatalogRepository()
     voc = catalog.require("voc")
     admin = catalog.require("ai-admin-agent")
     fae = catalog.require("ai-fae-agent")
 
-    assert voc.interaction_modes == ("external_workspace", "brain_delegation")
-    assert voc.workspace_url == "/agents/voc/workspace"
-    assert voc.adapter_kind == "voc_action"
+    assert voc.interaction_modes == ("external_workspace",)
+    assert voc.workspace_url == "/voc/"
+    assert voc.adapter_kind is None
+    assert voc.execution_pool is None
     assert voc.capability_version == 2
-    assert voc.dispatchable is True
-    for card in (admin, fae):
+    assert voc.dispatchable is False
+    for card in (voc, admin, fae):
         assert card.interaction_modes == ("external_workspace",)
         assert card.adapter_kind is None
         assert card.execution_pool is None

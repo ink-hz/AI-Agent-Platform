@@ -61,7 +61,8 @@ function FaeWorkbenchPendingPage({ section }: { section: FaeSection }) {
 
 
 function LegacyRedirect({ to }: { to: string }) {
-  useEffect(() => navigate(`${to}${to.includes("?") ? "" : window.location.search}`, { replace: true }), [to]);
+  const sourceQuery = to === "/voc/" || to.includes("?") ? "" : window.location.search;
+  useEffect(() => navigate(`${to}${sourceQuery}`, { replace: true }), [to, sourceQuery]);
   return <LoadingState label="正在打开新的页面地址" />;
 }
 

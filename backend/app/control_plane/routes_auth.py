@@ -276,7 +276,9 @@ def build_auth_router(
         return build_public_platform_health()
 
     @router.get("/api/v1/auth/dingtalk/config")
-    async def public_dingtalk_config(return_path: str | None = None):
+    async def public_dingtalk_config(request: Request):
+        return_paths = request.query_params.getlist("return_path")
+        return_path = return_paths[0] if len(return_paths) == 1 else None
         try:
             app_id, app_key = auth.in_client_configuration(return_path)
         except (AuthenticationError, ValueError):
