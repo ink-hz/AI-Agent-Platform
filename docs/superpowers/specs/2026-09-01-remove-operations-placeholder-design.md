@@ -20,8 +20,9 @@
 1. 从管理中心导航删除 `/admin/operations`。
 2. 从路由类型、解析和路径生成逻辑删除 `admin-operations`。
 3. 将 `/admin/operations` 和 `/flywheel` 统一解析为指向 `/admin` 的兼容重定向。
-4. 从页面分发逻辑删除 Operations 占位页。
-5. 更新路由、导航和标题相关测试，锁定上述行为。
+4. 将 Operations 事件中的旧数据飞轮目标规范化为 `/admin`，不再生成过时链接。
+5. 从页面分发逻辑删除 Operations 占位页。
+6. 更新路由、导航、事件目标和标题相关测试，锁定上述行为。
 
 ## 明确保留
 
