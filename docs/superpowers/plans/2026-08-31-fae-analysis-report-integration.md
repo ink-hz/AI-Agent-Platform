@@ -87,6 +87,7 @@ Each metric contains exactly:
 ```json
 {
   "metric_id": "feedback.negative_turn_rate",
+  "dimension": "answer_effectiveness",
   "label": "负向反馈回答占比",
   "value": 0.04,
   "unit": "ratio",
@@ -98,13 +99,18 @@ Each metric contains exactly:
 }
 ```
 
+`dimension` is one of `usage|business_value|answer_effectiveness|insights_improvement`.
+Every ready report must contain at least one metric in each dimension. Findings and
+recommendations carry the same `dimension` enum so the reader never guesses presentation
+semantics from ID prefixes or prose.
+
 `unit` is one of `count|ratio|percent|milliseconds|seconds`. Count metrics require integer `value`, and ratio/percent metrics require non-null non-negative numerator and positive denominator. All arrays contain unique strings and are capped at 20 entries.
 
 Each evidence reference contains exactly `kind`, `canonical_key` and `label`. `kind` is `session|turn|feedback|issue`; `canonical_key` must start with `fae:` for the first three kinds, while Issue keys are UUIDs. `label` is a short neutral locator such as `Session 03` or `Turn 2`; it is not a content excerpt.
 
-Each finding contains `finding_id`, `severity`, `title`, `description`, `root_cause_hypothesis`, `impact_scope`, `metric_ids`, `evidence_refs`, `recommendation_ids`, and `linked_issue_ids`. `severity` is `critical|high|medium|low|opportunity`. Descriptive fields are capped at 2,000 characters. Every referenced metric and recommendation must resolve within the bundle; a `ready` finding requires at least one metric and one evidence reference. `linked_issue_ids` contains only FAE Issue UUIDs known to the producer at publication time and is normally empty; later Platform-local associations are returned separately and never rewrite this array.
+Each finding contains `finding_id`, `dimension`, `severity`, `title`, `description`, `root_cause_hypothesis`, `impact_scope`, `metric_ids`, `evidence_refs`, `recommendation_ids`, and `linked_issue_ids`. `severity` is `critical|high|medium|low|opportunity`. Descriptive fields are capped at 2,000 characters. Every referenced metric and recommendation must resolve within the bundle; a `ready` finding requires at least one metric and one evidence reference. `linked_issue_ids` contains only FAE Issue UUIDs known to the producer at publication time and is normally empty; later Platform-local associations are returned separately and never rewrite this array.
 
-Each recommendation contains `recommendation_id`, `priority`, `title`, `rationale`, `proposed_action`, `owner_role`, `finding_ids`, and `success_metric_ids`. `priority` is `p0|p1|p2|p3`; `owner_role` is a bounded label, not an employee identity. All references must resolve within the bundle.
+Each recommendation contains `recommendation_id`, `dimension`, `priority`, `title`, `rationale`, `proposed_action`, `owner_role`, `finding_ids`, and `success_metric_ids`. `priority` is `p0|p1|p2|p3`; `owner_role` is a bounded label, not an employee identity. All references must resolve within the bundle.
 
 `artifact_digests` has exactly these names: `metrics.json`, `claim_ledger.jsonl`, `action_backlog.jsonl`, `executive_summary.md`, `full_report.md`, `audit_appendix.md`, `report.html`. Each value is a lowercase 64-character SHA-256 string. It proves provenance; the Platform importer does not ingest or render these files.
 
@@ -178,6 +184,14 @@ def test_ready_fixture_matches_schema_and_cross_references():
     assert report.schema_version == "1.0.0"
     assert report.status == "ready"
     assert report.findings[0].metric_ids == [report.metrics[0].metric_id]
+    assert {metric.dimension for metric in report.metrics} == {
+        "usage", "business_value", "answer_effectiveness",
+        "insights_improvement",
+    }
+    assert all(finding.dimension in {
+        "usage", "business_value", "answer_effectiveness",
+        "insights_improvement",
+    } for finding in report.findings)
 
 
 @pytest.mark.parametrize(
@@ -214,6 +228,11 @@ def validate_status_shape(self) -> Self:
             raise ValueError("invalid_ready_report")
         if not self.metrics:
             raise ValueError("empty_ready_report")
+        if {metric.dimension for metric in self.metrics} != {
+            "usage", "business_value", "answer_effectiveness",
+            "insights_improvement",
+        }:
+            raise ValueError("incomplete_report_dimensions")
     else:
         if self.failure is None:
             raise ValueError("invalid_failed_report")
@@ -341,6 +360,47 @@ Never serialize the reverse index, original IDs, HMAC digest inputs or key mater
 - [ ] **Step 5: Build the structured report from accepted artifacts**
 
 Map reviewed claims to metrics, reviewed management/product cases to findings, and accepted backlog rows to recommendations. Preserve claims as observations; do not invent prose or priority. Use stable IDs from the source artifacts. `summary.top_*_ids` must reference the highest-priority reviewed items, with deterministic ordering `(severity/priority, id)`.
+
+Assign dimensions by an explicit, tested publication mapping rather than prefix inference in
+the Platform reader:
+
+```python
+DIMENSION_METRICS = {
+    "usage": {
+        "value.observed_included_sessions", "value.observed_included_turns",
+        "value.observed_multiturn_sessions", "value.observed_attachment_sessions",
+        "value.observed_non_work_hour_sessions", "product.family_counts_public",
+        "demand.intent_capability_counts_public",
+    },
+    "business_value": {
+        "value.assisted_reviewed_sessions",
+        "value.scenario_potential_conversion_sessions",
+    },
+    "answer_effectiveness": {
+        "quality.reviewed_count", "quality.reviewed_fully_resolved_rate",
+        "quality.reviewed_first_turn_resolution_rate",
+        "quality.reviewed_multiturn_convergence_rate", "feedback.bad_affected_sessions",
+        "feedback.bad_affected_turns", "reliability.fallback_turn_rate",
+        "latency.overall_ms",
+    },
+    "insights_improvement": {
+        "feedback.canonical_issues", "product.signal_counts_public",
+        "product.scenario_counts_public", "workflow.failure_layer_counts_public",
+    },
+}
+```
+
+Resolve the exact metric IDs against `metrics.json` during publication; an absent required
+metric blocks the ready bundle with `incomplete_report_dimensions`. Map accepted action backlog
+rows to `insights_improvement` unless their reviewed source explicitly assigns another legal
+dimension. Publish a typical case only when its source row has
+`business_case_approved is True`; the current v5 has no approved case and therefore publishes
+an empty case collection rather than conversation excerpts.
+
+The mapping above is frozen against the reviewed v5 artifact. Category-level product signals
+remain inside the governed `product.signal_counts_public` object because its cell IDs are
+privacy-stable hashes rather than semantic contract names; the publisher must not invent
+unreviewed `signals.*` metrics from those cells.
 
 `PublicationMetadata` is a strict frozen model containing `report_id`, positive `report_version`, `report_type`, and `title`. It validates the Platform contract patterns. Period, cutoff, source snapshot time and analysis version always come from the verified manifest/snapshot, never from CLI flags.
 
@@ -855,17 +915,25 @@ Keep `/admin/fae/reports` and `/admin/fae/reports/:report_id`. Use query `?versi
 
 Extend `FaeSessionDetailPage` to parse `?turn={canonical_turn_key}` after the Session loads. If the Turn exists, add a persistent selected style, set a programmatic focus target and call `scrollIntoView({ block: "center" })` once. If it does not exist, show `报告引用的回答当前不可用` without hiding the rest of the Session. This makes report evidence links land on the exact Answer instead of only the Session top.
 
-- [ ] **Step 5: Build a report reader, not a BI dashboard**
+- [ ] **Step 5: Build a layered management report, not a 7 KB summary or a BI dashboard**
 
 The list page contains one compact latest-attempt status block, preserves a separate `最近可读报告` link when that attempt failed, and follows it with a chronological table. The detail page order is:
 
 1. title, type, version and status;
 2. period/data-cutoff/generated/imported strip with currentness;
 3. executive headline and overview;
-4. a small metric grid;
-5. findings as readable sections with severity, evidence and recommendation links;
-6. recommendation list;
-7. provenance/artifact digests in a collapsed technical details element.
+4. a four-item management outcome strip: service scale, complex-work coverage, realized value, and conversion potential;
+5. `使用情况`: trend, multi-turn, image/attachment, non-work-hour, product and intent metrics;
+6. `业务价值`: work accepted, complex consultation, realized value, conversion potential, and only business-approved sanitized cases;
+7. `回答效果`: review coverage, quality distribution, full/first-turn resolution, multi-turn convergence, feedback, fallback and latency;
+8. `业务洞察与改进`: product/demand signals, canonical root-cause families, prioritized actions and next-stage recommendations;
+9. provenance/artifact digests in a collapsed technical details element.
+
+All four dimension headings must render for every ready report. A dimension with no legal
+published metric renders an explicit unavailable explanation rather than disappearing. Realized
+value and conversion potential are separate visual groups and retain their reviewed denominators.
+If the producer has no business-approved cases, render `典型案例待业务批准` and do
+not derive excerpts from private conversations.
 
 Use the existing content width and typography system. Do not render a wall of cards, charts without explanatory text, raw JSON, Markdown/HTML from the producer, fake avatar, decorative gradient or generation controls. Long evidence and finding lists wrap; the main reading column remains 760-900px with an optional 260px contents rail at wide viewports and one column below 1100px.
 
