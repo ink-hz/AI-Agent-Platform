@@ -36,7 +36,7 @@ from app.control_plane.partner_repository import (
 
 NOW = datetime(2026, 8, 29, 8, 0, tzinfo=UTC)
 SUBJECT_ID = UUID("40000000-0000-4000-8000-000000000001")
-MIGRATION = MIGRATIONS / "056_partner_authentication.sql"
+MIGRATION = MIGRATIONS / "058_partner_authentication.sql"
 RAW_SUBJECT = "raw-partner-seat-42@example.invalid"
 
 

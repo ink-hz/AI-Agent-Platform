@@ -31,11 +31,15 @@ from app.control_plane.partner_repository import PartnerRepository
 from app.control_plane.partner_service import PartnerService
 from app.execution_relay.content_crypto import ContentCodec
 
-MIGRATION = MIGRATIONS / "054_partner_operator_identity.sql"
-MANAGEMENT_REJECTION_MIGRATION = MIGRATIONS / "055_partner_management_rejection.sql"
-PARTNER_AUTHENTICATION_MIGRATION = MIGRATIONS / "056_partner_authentication.sql"
-GENERIC_AGENT_LAUNCH_MIGRATION = MIGRATIONS / "057_generic_agent_launch_bindings.sql"
+MIGRATION = MIGRATIONS / "056_partner_operator_identity.sql"
+MANAGEMENT_REJECTION_MIGRATION = MIGRATIONS / "057_partner_management_rejection.sql"
+PARTNER_AUTHENTICATION_MIGRATION = MIGRATIONS / "058_partner_authentication.sql"
+GENERIC_AGENT_LAUNCH_MIGRATION = MIGRATIONS / "059_generic_agent_launch_bindings.sql"
 TASK2_V54_SHA256 = "d1d89d5ca37d6c65c58e0362766173805d0262f9c9a5e02d790bf6ef03a421fc"
+PUBLISHED_OFFICE_MIGRATION_SHA256 = {
+    53: "b0beb171e033dfdb0edc9fd023a62c69c52d8bc2e9766a747eb303f4ebc9deaa",
+    54: "70fbd52845c54312b491f84955ad98f5a32f38e34533d367429290005fc90a1a",
+}
 PARTNER_TABLES = {
     "partner_organizations",
     "partner_operators",
@@ -61,7 +65,7 @@ def test_v54_bytes_remain_task2_immutable() -> None:
 
 
 @pytest.mark.postgres
-def test_already_applied_v54_upgrades_additively_to_v57_with_launch_history(
+def test_published_office_migrations_upgrade_additively_to_partner_launch(
     tmp_path,
 ) -> None:
     from app.control_plane.migrate import migrate_control_database
@@ -221,9 +225,10 @@ def test_already_applied_v54_upgrades_additively_to_v57_with_launch_history(
                 ),
             )
             before = connection.execute(
-                "select sha256 from platform_control.schema_migrations where version=54"
-            ).fetchone()
-            assert before == (TASK2_V54_SHA256,)
+                "select version,sha256 from platform_control.schema_migrations "
+                "where version in (53,54) order by version"
+            ).fetchall()
+            assert before == list(PUBLISHED_OFFICE_MIGRATION_SHA256.items())
             assert connection.execute(
                 "select has_function_privilege('platform_control_app',"
                 "'platform_control.issue_agent_launch_v52(uuid,bytea,integer,"
@@ -235,24 +240,30 @@ def test_already_applied_v54_upgrades_additively_to_v57_with_launch_history(
         with psycopg.connect(database_admin_url) as connection:
             rows = connection.execute(
                 "select version,sha256 from platform_control.schema_migrations "
-                "where version in (54,55,56,57) order by version"
+                "where version in (55,56,57,58,59) order by version"
             ).fetchall()
             assert rows == [
-                (54, TASK2_V54_SHA256),
                 (
                     55,
+                    hashlib.sha256(
+                        (MIGRATIONS / "055_agent_access_subjects.sql").read_bytes()
+                    ).hexdigest(),
+                ),
+                (56, TASK2_V54_SHA256),
+                (
+                    57,
                     hashlib.sha256(
                         MANAGEMENT_REJECTION_MIGRATION.read_bytes()
                     ).hexdigest(),
                 ),
                 (
-                    56,
+                    58,
                     hashlib.sha256(
                         PARTNER_AUTHENTICATION_MIGRATION.read_bytes()
                     ).hexdigest(),
                 ),
                 (
-                    57,
+                    59,
                     hashlib.sha256(
                         GENERIC_AGENT_LAUNCH_MIGRATION.read_bytes()
                     ).hexdigest(),

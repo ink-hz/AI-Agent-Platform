@@ -201,6 +201,15 @@ IMMUTABLE_MIGRATION_SHA256 = {
     "019_atomic_directory_reconciliation.sql": "af554cf70e678706f976abec808292c781258ce3646244b22b4912fe202a934c",
 }
 
+PUBLISHED_MIGRATION_SHA256 = {
+    "053_office_recipient_directory.sql": (
+        "b0beb171e033dfdb0edc9fd023a62c69c52d8bc2e9766a747eb303f4ebc9deaa"
+    ),
+    "054_office_recipient_directory_department_order.sql": (
+        "70fbd52845c54312b491f84955ad98f5a32f38e34533d367429290005fc90a1a"
+    ),
+}
+
 
 def test_control_migration_versions_are_unique_and_contiguous() -> None:
     versions = [int(path.name.split("_", 1)[0]) for path in MIGRATIONS.glob("*.sql")]
@@ -327,6 +336,16 @@ def test_control_migrations_001_through_019_are_byte_immutable() -> None:
             )
         )
     } == IMMUTABLE_MIGRATION_SHA256
+
+
+def test_published_control_migrations_are_byte_immutable() -> None:
+    import hashlib
+
+    assert {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(MIGRATIONS.glob("*.sql"))
+        if path.name in PUBLISHED_MIGRATION_SHA256
+    } == PUBLISHED_MIGRATION_SHA256
 
 
 def test_employee_profile_migration_uses_nullable_encrypted_columns_only() -> None:

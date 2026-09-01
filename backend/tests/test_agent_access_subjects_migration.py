@@ -12,7 +12,7 @@ from test_control_plane_migration import (
     control_database,
 )
 
-MIGRATION = MIGRATIONS / "053_agent_access_subjects.sql"
+MIGRATION = MIGRATIONS / "055_agent_access_subjects.sql"
 
 
 def test_generic_subject_schema_and_enterprise_backfill_are_explicit() -> None:
@@ -171,7 +171,7 @@ def test_v53_subject_tables_deny_runtime_mutations(control_database) -> None:
 
 
 @pytest.mark.postgres
-def test_v53_upgrade_backfills_enterprise_subjects_without_plaintext(
+def test_v55_upgrade_backfills_enterprise_subjects_without_plaintext(
     control_database,
 ) -> None:
     from app.control_plane.migrate import migrate_control_database
@@ -213,7 +213,7 @@ def test_v53_upgrade_backfills_enterprise_subjects_without_plaintext(
                 "drop type if exists platform_control.agent_subject_type cascade"
             )
             connection.execute(
-                "delete from platform_control.schema_migrations where version=53"
+                "delete from platform_control.schema_migrations where version=55"
             )
             connection.execute(
                 "insert into platform_control.internal_users "

@@ -12,21 +12,27 @@ from test_control_plane_migration import (  # noqa: F401 - fixture registration
 )
 from test_partner_operator_migration import _seed_owner
 
-MIGRATION = MIGRATIONS / "057_generic_agent_launch_bindings.sql"
+MIGRATION = MIGRATIONS / "059_generic_agent_launch_bindings.sql"
 HISTORICAL_MIGRATION_HASHES = {
     "052_agent_launch_identity_binding.sql": (
         "1631e5ac1dbf359c5ed1fc977ede17cd0a241d7d5551a593a24e995b23ea29ed"
     ),
-    "053_agent_access_subjects.sql": (
+    "053_office_recipient_directory.sql": (
+        "b0beb171e033dfdb0edc9fd023a62c69c52d8bc2e9766a747eb303f4ebc9deaa"
+    ),
+    "054_office_recipient_directory_department_order.sql": (
+        "70fbd52845c54312b491f84955ad98f5a32f38e34533d367429290005fc90a1a"
+    ),
+    "055_agent_access_subjects.sql": (
         "84cead09785df7f44f651c443a4196055871e899a90739c01849fb674293bd88"
     ),
-    "054_partner_operator_identity.sql": (
+    "056_partner_operator_identity.sql": (
         "d1d89d5ca37d6c65c58e0362766173805d0262f9c9a5e02d790bf6ef03a421fc"
     ),
-    "055_partner_management_rejection.sql": (
+    "057_partner_management_rejection.sql": (
         "f076263e166129dae89ea95a25632124549d3a525795a499d78acdd2d48f7f62"
     ),
-    "056_partner_authentication.sql": (
+    "058_partner_authentication.sql": (
         "29fb354918c3627597cc5ae29a856e416a614dd60d166214c96e4b4d68999455"
     ),
 }
@@ -37,7 +43,7 @@ def _normalized_sql() -> str:
     return " ".join(MIGRATION.read_text(encoding="utf-8").lower().split())
 
 
-def test_v52_through_v56_remain_byte_immutable() -> None:
+def test_v52_through_v58_remain_byte_immutable() -> None:
     assert {
         name: hashlib.sha256((MIGRATIONS / name).read_bytes()).hexdigest()
         for name in HISTORICAL_MIGRATION_HASHES

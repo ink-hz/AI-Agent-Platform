@@ -679,8 +679,8 @@ def test_office_recipient_resolver_release_is_scoped_and_secret_safe():
     ):
         assert f"${{{forbidden_environment}+x}}" in deploy
     assert "compose.office-recipient-directory.yaml" in runbook
-    assert "058_office_recipient_directory.sql" in runbook
-    assert "059_office_recipient_directory_department_order.sql" in runbook
+    assert "053_office_recipient_directory.sql" in runbook
+    assert "054_office_recipient_directory_department_order.sql" in runbook
     assert "platform-api platform-loopback" in runbook
     assert "mode 0600" in runbook
     assert "UID 10001" in runbook

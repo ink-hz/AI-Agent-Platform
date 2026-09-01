@@ -869,14 +869,13 @@ must pass before real Session data is considered available or current.
 
 2. 记录当前两个目标容器的 Container ID、Image ID、StartedAt、RestartCount、配置摘要和
    mounts 摘要。确认当前 release 包含
-   `backend/control_migrations/058_office_recipient_directory.sql` 与
-   `backend/control_migrations/059_office_recipient_directory_department_order.sql`，随后用既有
-   owner migration runner 依次应用并验证 058、059；不得手工粘贴或改写 SQL。
+   `backend/control_migrations/053_office_recipient_directory.sql` 与
+   `backend/control_migrations/054_office_recipient_directory_department_order.sql`，随后用既有
+   owner migration runner 依次应用或验证 053、054；不得手工粘贴或改写 SQL。
 
-   早期 scoped feature release 曾以 053、054 发布同一组 Office 函数；主线随后已占用 053–057，
-   因此合并后的正式编号固定为 058、059。若目标库的 migration ledger 已记录早期 Office
-   053、054，必须先停止通用 migrator，核对旧 SQL checksum 与函数定义，再在受控维护窗口迁移
-   ledger 到 058、059，之后才能应用主线 053–057；不得让 checksum guard 失败后继续部署。
+   Office scoped release 已将这两份迁移以 053、054 发布，因此它们的文件名和字节内容都是
+   不可变的生产事实。后续 Agent subject 与 partner 身份迁移固定使用 055–059。禁止改写
+   migration ledger、复用 053/054，或在 checksum guard 失败后继续部署。
 
 3. 在目标机的 protected environment 中只设置：
 

@@ -10,12 +10,12 @@ pytest_plugins = ("test_control_plane_migration",)
 MIGRATION = (
     Path(__file__).parents[1]
     / "control_migrations"
-    / "058_office_recipient_directory.sql"
+    / "053_office_recipient_directory.sql"
 )
 MIGRATION_FIX = (
     Path(__file__).parents[1]
     / "control_migrations"
-    / "059_office_recipient_directory_department_order.sql"
+    / "054_office_recipient_directory_department_order.sql"
 )
 
 
