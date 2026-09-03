@@ -18,6 +18,8 @@ recovery_public="$private_path/backup-recovery-x25519.pub"
 [[ "$(/usr/bin/stat -c '%a %U %s' "$recovery_public")" == "600 root 32" ]] || fail
 
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$compose_path")
+platform_image="$(/usr/bin/sed -n 's/^PLATFORM_IMAGE=//p' "$environment_path")"
+[[ "$platform_image" =~ ^orbbec-agent-platform:[0-9a-f]{40}$ ]] || fail
 /usr/bin/docker volume create orbbec-agent-platform-backup-secrets >/dev/null
 [[ -d "$backup_data" && ! -L "$backup_data" ]] || fail
 [[ "$(/usr/bin/docker volume inspect --format '{{index .Options "device"}}' orbbec-agent-platform-backups 2>/dev/null || true)" == "$backup_data" ]] || fail
@@ -34,23 +36,28 @@ backup_name="replica-$timestamp.orb"
 if ! result="$(
   "${compose[@]}" exec -T platform-postgres \
     pg_dump -U platform_owner -d agent_platform --format=custom --no-password \
-  | "${compose[@]}" run --rm --no-deps -T \
+  | /usr/bin/docker run --rm -i --user 10001:10001 --read-only \
+      --security-opt no-new-privileges:true --network none \
+      --tmpfs /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700 \
       -v orbbec-agent-platform-backup-secrets:/run/backup-secrets:ro \
       -v orbbec-agent-platform-backups:/backups \
       -e PLATFORM_REPLICA_BACKUP_PUBLIC_KEY_FILE=/run/backup-secrets/recovery-public-key \
       -e "PLATFORM_REPLICA_BACKUP_PATH=/backups/$backup_name" \
-      platform-api python -m app.cloud_replica.cli backup
+      "$platform_image" python -m app.cloud_replica.cli backup
 )"; then
   fail
 fi
 /usr/bin/python3 -c 'import json,sys; value=json.load(sys.stdin); assert value.get("status")=="backed_up" and value.get("encrypted_size",-1)>=0 and value.get("plaintext_size",-1)>=0' <<< "$result" || fail
 
 if ! retention_result="$(
-  "${compose[@]}" run --rm --no-deps -T \
+  /usr/bin/docker run --rm --user 10001:10001 --read-only \
+    --security-opt no-new-privileges:true \
+    --network orbbec-agent-platform-internal \
+    --tmpfs /tmp:rw,noexec,nosuid,size=8m,uid=10001,gid=10001,mode=0700 \
     -v orbbec-agent-platform-import-secrets:/run/import-secrets:ro \
     -e PLATFORM_REPLICA_DATABASE_URL_FILE=/run/import-secrets/replica-database-url \
     -e PLATFORM_REPLICA_ENCRYPTION_KEY_FILE=/run/import-secrets/replica-encryption-key \
-    platform-api python -m app.cloud_replica.cli retention
+    "$platform_image" python -m app.cloud_replica.cli retention
 )"; then
   fail
 fi
