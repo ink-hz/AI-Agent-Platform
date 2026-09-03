@@ -57,5 +57,17 @@ export function FaeManagementWorkspace({
     case "fae-manage-report": page = <FaeReportsPage reportId={route.reportId} />; break;
   }
 
-  return <WorkspaceErrorBoundary title="FAE 工作台">{page}</WorkspaceErrorBoundary>;
+  const governanceOwnsReadOnlyNotice = route.name === "fae-manage-issues"
+    || route.name === "fae-manage-issue";
+  const readOnlyNotice = account.hard_stale_read_only && !governanceOwnsReadOnlyNotice
+    ? <aside className="hard-stale-banner fae-management-readonly" role="status">
+      <strong>通讯录已超过安全时限</strong>
+      <span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
+    </aside>
+    : null;
+
+  return <WorkspaceErrorBoundary title="FAE 工作台">
+    {readOnlyNotice}
+    {page}
+  </WorkspaceErrorBoundary>;
 }

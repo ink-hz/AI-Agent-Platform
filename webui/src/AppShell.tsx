@@ -128,7 +128,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
           >{account.display_name}</a>}
         </div>
       </header>
-      {account?.hard_stale_read_only && <aside className="hard-stale-banner" role="status">
+      {account?.hard_stale_read_only && !faeWorkspace && <aside className="hard-stale-banner" role="status">
         <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
       </aside>}
       {current === "admin" && cloudReplica && !faeGovernanceWorkspace && <aside

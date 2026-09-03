@@ -89,6 +89,24 @@ describe("usage navigation", () => {
     }
   });
 
+  it("keeps the generic hard-stale notice outside the FAE workspace", async () => {
+    const hardStale = {
+      ...member,
+      role: "platform_owner" as const,
+      directory_freshness: "hard_stale" as const,
+      hard_stale_read_only: true,
+    };
+    await act(async () => root.render(
+      <AppShell route={{ name: "fae-manage-overview" }} account={hardStale}><p>FAE 内容</p></AppShell>,
+    ));
+    expect(container.querySelector(".hard-stale-banner")).toBeNull();
+
+    await act(async () => root.render(
+      <AppShell route={{ name: "admin-overview" }} account={hardStale}><p>管理内容</p></AppShell>,
+    ));
+    expect(container.querySelector(".hard-stale-banner")?.textContent).toContain("只读访问");
+  });
+
   it("shows FAE management navigation only to an owner or scoped account", async () => {
     const scoped: Account = { ...member, workspace_scopes: ["fae_workbench"] };
     await act(async () => root.render(<AppShell
