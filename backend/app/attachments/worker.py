@@ -28,6 +28,8 @@ class ProcessingJob:
     size_bytes: int
     sha256: bytes = field(repr=False)
     detected_mime: str | None
+    immutable_locator: str | None = field(default=None, repr=False)
+    attempt_token: UUID | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -83,7 +85,9 @@ class ProcessingRepository(Protocol):
 
 
 class ProcessingObjectStore(Protocol):
-    def open(self, object_ref: str) -> OpenedObject: ...
+    def open(
+        self, object_ref: str, immutable_locator: str | None = None
+    ) -> OpenedObject: ...
 
     def put_derivative(self, data: bytes, *, object_key: str) -> StoredDerivative: ...
 
@@ -173,7 +177,11 @@ class AttachmentProcessor:
             raise ProcessingTransitionError() from None
 
     def _open(self, job: ProcessingJob) -> OpenedObject:
-        source = self._object_store.open(job.object_ref)
+        source = (
+            self._object_store.open(job.object_ref, job.immutable_locator)
+            if job.immutable_locator is not None
+            else self._object_store.open(job.object_ref)
+        )
         if not isinstance(source, OpenedObject):
             raise TypeError("attachment storage unavailable")
         return source
@@ -210,15 +218,16 @@ class AttachmentProcessor:
             digest = hashlib.sha256()
             streamed = 0
 
-            def verified_chunks():
-                nonlocal streamed
-                for chunk in source.iter_chunks():
-                    streamed += len(chunk)
-                    digest.update(chunk)
-                    yield chunk
+            class VerifiedChunks:
+                def iter_chunks_until(_self, deadline, monotonic):
+                    nonlocal streamed
+                    for chunk in source.iter_chunks_until(deadline, monotonic):
+                        streamed += len(chunk)
+                        digest.update(chunk)
+                        yield chunk
 
             result = self._scanner.scan_stream(
-                verified_chunks(), size=job.size_bytes
+                VerifiedChunks(), size=job.size_bytes
             )
             if (
                 streamed != source.size

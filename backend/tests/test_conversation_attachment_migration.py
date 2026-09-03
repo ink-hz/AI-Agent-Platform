@@ -270,6 +270,14 @@ def _checks(connection: psycopg.Connection, schema: str, table: str) -> str:
     )
 
 
+def _processing_attempt(connection: psycopg.Connection, job_id):
+    return connection.execute(
+        "select attempt_token from platform_attachments.processing_jobs "
+        "where processing_job_id=%s",
+        (job_id,),
+    ).fetchone()[0]
+
+
 def test_v64_migration_exists_and_declares_encrypted_object_metadata() -> None:
     assert MIGRATION.is_file(), f"missing migration: {MIGRATION}"
     sql = " ".join(MIGRATION.read_text(encoding="utf-8").lower().split())
@@ -1006,10 +1014,10 @@ def test_v64_processing_pipeline_advances_retries_and_persists_derivative(
 
     brain_url = environment["urls"]["platform_brain_worker"]
     with psycopg.connect(brain_url) as brain:
-        validate_job_id = brain.execute(
-            "select (platform_attachments."
-            "claim_attachment_processing_job_v64('worker-1')).processing_job_id"
-        ).fetchone()[0]
+        validate_job_id, validate_attempt = brain.execute(
+            "select processing_job_id,attempt_token from platform_attachments."
+            "claim_attachment_processing_job_v64('worker-1')"
+        ).fetchone()
         assert validate_job_id is not None
         with (
             pytest.raises(
@@ -1020,9 +1028,10 @@ def test_v64_processing_pipeline_advances_retries_and_persists_derivative(
             brain.execute(
                 "select platform_attachments."
                 "record_attachment_processing_result_v64("
-                "%s,'scanning',null,%s,%s::jsonb)",
+                "%s,%s,'scanning',null,%s,%s::jsonb,'version:v1')",
                 (
                     validate_job_id,
+                    validate_attempt,
                     "application/pdf",
                     (
                         '{"coverage":"metadata_only","download":true,'
@@ -1033,45 +1042,47 @@ def test_v64_processing_pipeline_advances_retries_and_persists_derivative(
         brain.execute(
             "select platform_attachments."
             "record_attachment_processing_result_v64("
-            "%s,'scanning',null,%s,%s::jsonb)",
+            "%s,%s,'scanning',null,%s,%s::jsonb,'version:v1')",
             (
                 validate_job_id,
+                validate_attempt,
                 "application/pdf",
                 ('{"coverage":"first_page","download":true,"inline_preview":true}'),
             ),
         )
-        scan_job_id = brain.execute(
-            "select (platform_attachments."
-            "claim_attachment_processing_job_v64('worker-1')).processing_job_id"
-        ).fetchone()[0]
+        scan_job_id, scan_attempt = brain.execute(
+            "select processing_job_id,attempt_token from platform_attachments."
+            "claim_attachment_processing_job_v64('worker-1')"
+        ).fetchone()
         assert scan_job_id is not None
         brain.execute(
             "select platform_attachments."
-            "record_attachment_processing_result_v64(%s,'ready',null)",
-            (scan_job_id,),
+            "record_attachment_processing_result_v64(%s,%s,'ready',null)",
+            (scan_job_id, scan_attempt),
         )
-        derivative_job_id = brain.execute(
-            "select (platform_attachments."
-            "claim_attachment_processing_job_v64('worker-1')).processing_job_id"
-        ).fetchone()[0]
+        derivative_job_id, derivative_attempt = brain.execute(
+            "select processing_job_id,attempt_token from platform_attachments."
+            "claim_attachment_processing_job_v64('worker-1')"
+        ).fetchone()
         assert derivative_job_id is not None
         derivative_id = uuid4()
         assert brain.execute(
             "select platform_attachments.record_attachment_derivative_v64("
-            "%s,%s,'preview',%s,1,'image/png',64,%s,null)",
-            (derivative_job_id, derivative_id, b"d" * 29, b"p" * 32),
+            "%s,%s,%s,'preview',%s,1,'image/png',64,%s,null)",
+            (derivative_job_id, derivative_attempt, derivative_id, b"d" * 29, b"p" * 32),
         ).fetchone() == (derivative_id,)
         brain.commit()
 
     with psycopg.connect(environment["admin"]) as admin:
         assert admin.execute(
-            "select state,detected_mime,coverage_metadata "
+            "select state,detected_mime,coverage_metadata,immutable_locator "
             "from platform_attachments.attachments where attachment_id=%s",
             (attachment_id,),
         ).fetchone() == (
             "ready",
             "application/pdf",
             {"coverage": "first_page", "download": True, "inline_preview": True},
+            "version:v1",
         )
         assert admin.execute(
             "select state from platform_attachments.derivatives where derivative_id=%s",
@@ -1119,34 +1130,37 @@ def test_v64_processing_requires_exact_predecessor_and_safe_derivative_shape(
 
     with psycopg.connect(environment["urls"]["platform_brain_worker"]) as brain:
         for job_id in (validate_job, scan_job):
+            attempt = _processing_attempt(brain, job_id)
             with (
                 pytest.raises(psycopg.errors.CheckViolation, match="predecessor"),
                 brain.transaction(),
             ):
                 brain.execute(
                     "select platform_attachments.record_attachment_processing_result_v64("
-                    "%s,'retry','temporary')",
-                    (job_id,),
+                    "%s,%s,'retry','temporary')",
+                    (job_id, attempt),
                 )
         for mime, size in (
             ("application/pdf", 64),
             ("image/png", 0),
             ("image/png", 10 * 1024 * 1024 + 1),
         ):
+            derivative_attempt = _processing_attempt(brain, derivative_job)
             with (
                 pytest.raises(psycopg.errors.CheckViolation, match="derivative invalid"),
                 brain.transaction(),
             ):
                 brain.execute(
                     "select platform_attachments.record_attachment_derivative_v64("
-                    "%s,%s,'preview',%s,1,%s,%s,%s,null)",
-                    (derivative_job, uuid4(), b"d" * 29, mime, size, b"p" * 32),
+                    "%s,%s,%s,'preview',%s,1,%s,%s,%s,null)",
+                    (derivative_job, derivative_attempt, uuid4(), b"d" * 29, mime, size, b"p" * 32),
                 )
         metadata_id = uuid4()
+        metadata_attempt = _processing_attempt(brain, metadata_job)
         assert brain.execute(
             "select platform_attachments.record_attachment_derivative_v64("
-            "%s,%s,'metadata',%s,1,'application/json',128,%s,null)",
-            (metadata_job, metadata_id, b"d" * 29, b"p" * 32),
+            "%s,%s,%s,'metadata',%s,1,'application/json',128,%s,null)",
+            (metadata_job, metadata_attempt, metadata_id, b"d" * 29, b"p" * 32),
         ).fetchone() == (metadata_id,)
 
 
@@ -1183,15 +1197,14 @@ def test_v64_processing_retry_is_bounded_without_worker_table_dml(
     brain_url = environment["urls"]["platform_brain_worker"]
     for expected_state in ("queued", "queued", "failed"):
         with psycopg.connect(brain_url) as brain:
-            job_id = brain.execute(
-                "select (platform_attachments."
-                "claim_attachment_processing_job_v64('retry-worker'))."
-                "processing_job_id"
-            ).fetchone()[0]
+            job_id, attempt = brain.execute(
+                "select processing_job_id,attempt_token from platform_attachments."
+                "claim_attachment_processing_job_v64('retry-worker')"
+            ).fetchone()
             brain.execute(
                 "select platform_attachments."
-                "record_attachment_processing_result_v64(%s,'retry','temporary')",
-                (job_id,),
+                "record_attachment_processing_result_v64(%s,%s,'retry','temporary')",
+                (job_id, attempt),
             )
             brain.commit()
         with psycopg.connect(environment["admin"]) as admin:
@@ -1654,6 +1667,7 @@ def test_v64_processing_rejection_determines_bound_artifact_version(
     with psycopg.connect(
         environment["urls"]["platform_brain_worker"]
     ) as brain:
+        attempt = _processing_attempt(brain, job_id)
         brain.execute(
             "select platform_attachments.bind_artifact_version_v64("
             "%s,%s,%s,1,'rejected-producer')",
@@ -1661,8 +1675,8 @@ def test_v64_processing_rejection_determines_bound_artifact_version(
         )
         brain.execute(
             "select platform_attachments.record_attachment_processing_result_v64("
-            "%s,'rejected','malware_detected')",
-            (job_id,),
+            "%s,%s,'rejected','malware_detected')",
+            (job_id, attempt),
         )
         brain.commit()
 
@@ -1683,12 +1697,13 @@ def test_v64_deleted_attachment_is_terminal_for_stale_processing_results(
         context = _seed_task(admin)
         attachment_id = _insert_attachment(admin, context, state="scanning")
         processing_job_id = uuid4()
+        processing_attempt = uuid4()
         erasure_job_id = uuid4()
         admin.execute(
             "insert into platform_attachments.processing_jobs "
-            "(processing_job_id,attachment_id,job_kind,state,attempt_count) "
-            "values (%s,%s,'scan','running',1)",
-            (processing_job_id, attachment_id),
+            "(processing_job_id,attachment_id,job_kind,state,attempt_count,attempt_token) "
+            "values (%s,%s,'scan','running',1,%s)",
+            (processing_job_id, attachment_id, processing_attempt),
         )
         admin.execute(
             "insert into platform_attachments.erasure_jobs "
@@ -1729,8 +1744,8 @@ def test_v64_deleted_attachment_is_terminal_for_stale_processing_results(
     ):
         brain.execute(
             "select platform_attachments.record_attachment_processing_result_v64("
-            "%s,'ready',null)",
-            (processing_job_id,),
+            "%s,%s,'ready',null)",
+            (processing_job_id, processing_attempt),
         )
 
     with psycopg.connect(environment["admin"]) as admin:
@@ -1755,12 +1770,13 @@ def test_v64_erasure_serializes_against_inflight_derivative_persistence(
         context = _seed_task(admin)
         attachment_id = _insert_attachment(admin, context)
         processing_job_id = uuid4()
+        processing_attempt = uuid4()
         erasure_job_id = uuid4()
         admin.execute(
             "insert into platform_attachments.processing_jobs "
             "(processing_job_id,attachment_id,job_kind,derivative_kind,state,"
-            "attempt_count) values (%s,%s,'derive','preview','running',1)",
-            (processing_job_id, attachment_id),
+            "attempt_count,attempt_token) values (%s,%s,'derive','preview','running',1,%s)",
+            (processing_job_id, attachment_id, processing_attempt),
         )
         admin.execute(
             "insert into platform_attachments.erasure_jobs "
@@ -1810,8 +1826,8 @@ def test_v64_erasure_serializes_against_inflight_derivative_persistence(
         ):
             brain.execute(
                 "select platform_attachments.record_attachment_derivative_v64("
-                "%s,%s,'preview',%s,1,'application/pdf',64,%s,null)",
-                (processing_job_id, uuid4(), b"d" * 29, b"p" * 32),
+                    "%s,%s,%s,'preview',%s,1,'application/pdf',64,%s,null)",
+                    (processing_job_id, processing_attempt, uuid4(), b"d" * 29, b"p" * 32),
             )
         brain.rollback()
 
@@ -1874,11 +1890,11 @@ def test_v64_claim_result_and_erasure_use_deadlock_free_lock_order(
 
     brain_url = environment["urls"]["platform_brain_worker"]
     with psycopg.connect(brain_url) as brain:
-        assert brain.execute(
-            "select (platform_attachments."
-            "claim_attachment_processing_job_v64('lock-order-worker'))."
-            "processing_job_id"
-        ).fetchone() == (processing_job_id,)
+        claimed_job_id, processing_attempt = brain.execute(
+            "select processing_job_id,attempt_token from platform_attachments."
+            "claim_attachment_processing_job_v64('lock-order-worker')"
+        ).fetchone()
+        assert claimed_job_id == processing_job_id
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             erasure_future = executor.submit(erase_attachment)
@@ -1898,8 +1914,8 @@ def test_v64_claim_result_and_erasure_use_deadlock_free_lock_order(
 
             brain.execute(
                 "select platform_attachments.record_attachment_processing_result_v64("
-                "%s,'ready',null)",
-                (processing_job_id,),
+                "%s,%s,'ready',null)",
+                (processing_job_id, processing_attempt),
             )
             brain.commit()
             erasure_future.result(timeout=3)
@@ -1915,6 +1931,112 @@ def test_v64_claim_result_and_erasure_use_deadlock_free_lock_order(
             "where attachment_id=%s and state='ready'",
             (attachment_id,),
         ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_v64_processing_attempt_token_prevents_aba_stale_result(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        attachment_id = _insert_attachment(admin, context, state="validating")
+        processing_job_id = uuid4()
+        admin.execute(
+            "insert into platform_attachments.processing_jobs "
+            "(processing_job_id,attachment_id,job_kind) values (%s,%s,'validate')",
+            (processing_job_id, attachment_id),
+        )
+        admin.commit()
+
+    brain_url = environment["urls"]["platform_brain_worker"]
+    with psycopg.connect(brain_url) as brain:
+        first = brain.execute(
+            "select processing_job_id,attempt_token from platform_attachments."
+            "claim_attachment_processing_job_v64('aba-worker-1')"
+        ).fetchone()
+        assert first[0] == processing_job_id
+        assert first[1] is not None
+        brain.execute(
+            "select platform_attachments.record_attachment_processing_result_v64("
+            "%s,%s,'retry','temporary')",
+            first,
+        )
+        brain.commit()
+
+    with psycopg.connect(environment["admin"]) as admin:
+        admin.execute(
+            "update platform_attachments.processing_jobs set available_at=now() "
+            "where processing_job_id=%s",
+            (processing_job_id,),
+        )
+        admin.commit()
+
+    with psycopg.connect(brain_url) as brain:
+        second = brain.execute(
+            "select processing_job_id,attempt_token from platform_attachments."
+            "claim_attachment_processing_job_v64('aba-worker-2')"
+        ).fetchone()
+        assert second[0] == processing_job_id
+        assert second[1] != first[1]
+        with pytest.raises(psycopg.errors.NoDataFound), brain.transaction():
+            brain.execute(
+                "select platform_attachments.record_attachment_processing_result_v64("
+                "%s,%s,'rejected','stale')",
+                first,
+            )
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select state,attempt_token,claimed_by from "
+            "platform_attachments.processing_jobs where processing_job_id=%s",
+            (processing_job_id,),
+        ).fetchone() == ("running", second[1], "aba-worker-2")
+        assert admin.execute(
+            "select state from platform_attachments.attachments where attachment_id=%s",
+            (attachment_id,),
+        ).fetchone() == ("validating",)
+
+
+@pytest.mark.postgres
+def test_v64_persists_immutable_locator_on_attachment_upload_and_artifact(control_database) -> None:
+    for environment in control_database["environments"].values():
+        with psycopg.connect(environment["admin"]) as connection:
+            for table in ("attachments", "uploads", "artifact_versions"):
+                assert "immutable_locator" in _columns(connection, table)
+                checks = _checks(connection, "platform_attachments", table)
+                assert "immutable_locator" in checks
+                assert "version|etag" in checks
+
+
+@pytest.mark.postgres
+def test_v64_artifact_version_copies_downloadable_immutable_locator(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        artifact_id = _insert_artifact(admin, context, "immutable-output")
+        attachment_id = _insert_attachment(admin, context, source_kind="agent_output")
+        _insert_task_output_binding(admin, context, attachment_id)
+        admin.execute(
+            "update platform_attachments.attachments set immutable_locator='etag:\"v1\"' "
+            "where attachment_id=%s",
+            (attachment_id,),
+        )
+        admin.commit()
+
+    version_id = uuid4()
+    with psycopg.connect(environment["urls"]["platform_brain_worker"]) as brain:
+        assert brain.execute(
+            "select platform_attachments.bind_artifact_version_v64("
+            "%s,%s,%s,1,'immutable-producer')",
+            (version_id, artifact_id, attachment_id),
+        ).fetchone() == (version_id,)
+        brain.commit()
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select immutable_locator from platform_attachments.artifact_versions "
+            "where artifact_version_id=%s",
+            (version_id,),
+        ).fetchone() == ('etag:"v1"',)
 
 
 @pytest.mark.postgres

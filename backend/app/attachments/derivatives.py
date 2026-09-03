@@ -55,7 +55,7 @@ def _parser_limits() -> None:
     resource.setrlimit(resource.RLIMIT_FSIZE, (_MAX_PREVIEW_BYTES,) * 2)
     resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
     if hasattr(resource, "RLIMIT_NPROC"):
-        resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))
+        resource.setrlimit(resource.RLIMIT_NPROC, (16, 16))
 
 
 class PdfSandboxRunner(Protocol):
@@ -153,6 +153,7 @@ class BubblewrapPdfSandbox:
                 "/output/first-page",
             )
         )
+        render_failed = False
         try:
             subprocess.run(
                 argv,
@@ -168,7 +169,9 @@ class BubblewrapPdfSandbox:
                 preexec_fn=_parser_limits if os.name == "posix" else None,
             )
         except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
-            raise DerivativeError() from None
+            render_failed = True
+        if render_failed:
+            raise DerivativeError()
         if not output_path.is_file():
             raise DerivativeError()
 
@@ -191,6 +194,7 @@ class DerivativeBuilder:
     def build(self, source: OpenedObject, detected_mime: str) -> tuple[Derivative, ...]:
         if not isinstance(source, OpenedObject):
             raise DerivativeError()
+        parser_failed = False
         try:
             if detected_mime in {"image/png", "image/jpeg"}:
                 return (self._image_thumbnail(source),)
@@ -208,11 +212,14 @@ class DerivativeBuilder:
         except DerivativeError:
             raise
         except Exception:  # noqa: BLE001 - parser failures must be sanitized
-            raise DerivativeError() from None
+            parser_failed = True
+        if parser_failed:
+            raise DerivativeError()
         raise DerivativeError()
 
     @staticmethod
     def _safe_png(stream) -> bytes:
+        parser_failed = False
         try:
             with Image.open(stream) as candidate:
                 candidate.verify()
@@ -245,7 +252,9 @@ class DerivativeBuilder:
             UnidentifiedImageError,
             ValueError,
         ):
-            raise DerivativeError() from None
+            parser_failed = True
+        if parser_failed:
+            raise DerivativeError()
 
     def _image_thumbnail(self, source: OpenedObject) -> Derivative:
         data = self._safe_png(source.stream)
@@ -258,6 +267,7 @@ class DerivativeBuilder:
             or self._sandbox_runner is None
         ):
             raise DerivativeError()
+        parser_failed = False
         try:
             with tempfile.TemporaryDirectory(prefix="attachment-preview-") as temporary:
                 directory = Path(temporary)
@@ -294,4 +304,6 @@ class DerivativeBuilder:
             subprocess.SubprocessError,
             subprocess.TimeoutExpired,
         ):
-            raise DerivativeError() from None
+            parser_failed = True
+        if parser_failed:
+            raise DerivativeError()

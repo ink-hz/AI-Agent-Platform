@@ -3,12 +3,10 @@ from __future__ import annotations
 import socket
 import struct
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from queue import Empty, Full, Queue
-from threading import Event, Thread
 from typing import Protocol
 
 from .conversation_models import MAX_FILE_BYTES
@@ -34,8 +32,14 @@ class ScanResult:
     signature: str | None = field(default=None, repr=False)
 
 
+class DeadlineChunkSource(Protocol):
+    def iter_chunks_until(
+        self, deadline: float, monotonic: Callable[[], float]
+    ) -> Iterator[bytes]: ...
+
+
 class MalwareScanner(Protocol):
-    def scan_stream(self, chunks: Iterable[bytes], *, size: int) -> ScanResult: ...
+    def scan_stream(self, chunks: DeadlineChunkSource, *, size: int) -> ScanResult: ...
 
 
 class ClamAVScanner:
@@ -85,13 +89,15 @@ class ClamAVScanner:
     def __repr__(self) -> str:
         return "ClamAVScanner(address=<redacted>)"
 
-    def scan_stream(self, chunks: Iterable[bytes], *, size: int) -> ScanResult:
+    def scan_stream(self, chunks: DeadlineChunkSource, *, size: int) -> ScanResult:
         if (
             isinstance(size, bool)
             or not isinstance(size, int)
             or size < 0
             or size > self._max_file_bytes
         ):
+            raise ScannerUnavailable()
+        if not callable(getattr(chunks, "iter_chunks_until", None)):
             raise ScannerUnavailable()
         deadline = self._monotonic() + self._timeout_seconds
         database_version = self._fresh_database_version(deadline)
@@ -101,7 +107,7 @@ class ClamAVScanner:
             ) as connection:
                 self._send(connection, b"zINSTREAM\0", deadline)
                 streamed = 0
-                for chunk in self._deadline_chunks(chunks, deadline):
+                for chunk in chunks.iter_chunks_until(deadline, self._monotonic):
                     self._remaining(deadline)
                     if not isinstance(chunk, bytes):
                         raise ScannerUnavailable()
@@ -137,47 +143,6 @@ class ClamAVScanner:
                 signature=signature,
             )
         raise ScannerUnavailable()
-
-    def _deadline_chunks(
-        self, chunks: Iterable[bytes], deadline: float
-    ) -> Iterable[bytes]:
-        messages: Queue[tuple[str, object]] = Queue(maxsize=1)
-        stopped = Event()
-
-        def publish(message: tuple[str, object]) -> None:
-            while not stopped.is_set():
-                try:
-                    messages.put(message, timeout=0.05)
-                    return
-                except Full:
-                    continue
-
-        def produce() -> None:
-            try:
-                for chunk in chunks:
-                    if stopped.is_set():
-                        return
-                    publish(("chunk", chunk))
-            except Exception as error:  # noqa: BLE001 - source errors are sanitized
-                publish(("error", error))
-            finally:
-                publish(("done", None))
-
-        Thread(target=produce, name="attachment-scan-source", daemon=True).start()
-        try:
-            while True:
-                try:
-                    kind, value = messages.get(timeout=self._remaining(deadline))
-                except Empty:
-                    raise ScannerUnavailable() from None
-                self._remaining(deadline)
-                if kind == "done":
-                    return
-                if kind != "chunk" or not isinstance(value, bytes):
-                    raise ScannerUnavailable()
-                yield value
-        finally:
-            stopped.set()
 
     def _fresh_database_version(self, deadline: float) -> int:
         try:

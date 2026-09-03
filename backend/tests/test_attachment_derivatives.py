@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import resource
 import subprocess
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from app.attachments import derivatives as derivative_module
 from app.attachments.derivatives import (
     BubblewrapPdfSandbox,
     DerivativeBuilder,
@@ -22,6 +24,7 @@ from app.attachments.worker import (
     ReconciliationStatus,
     StoredDerivative,
 )
+from app.attachments.worker_runtime import AttachmentProcessingRepository
 from PIL import Image, PngImagePlugin
 
 FIXTURES = Path(__file__).parent / "fixtures" / "conversation_attachments"
@@ -112,6 +115,20 @@ def test_linux_pdf_sandbox_uses_fixed_first_page_no_network_argv(monkeypatch) ->
     assert argv[argv.index("-l") + 1] == "1"
     assert captured["kwargs"]["shell"] is False
     assert captured["kwargs"]["timeout"] == 10.0
+    assert callable(captured["kwargs"]["preexec_fn"])
+
+
+def test_pdf_sandbox_preexec_limits_allow_the_renderer_to_start(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(resource, "setrlimit", lambda kind, value: calls.append((kind, value)))
+
+    derivative_module._parser_limits()
+
+    assert (resource.RLIMIT_CPU, (5, 5)) in calls
+    assert (resource.RLIMIT_NOFILE, (32, 32)) in calls
+    if hasattr(resource, "RLIMIT_NPROC"):
+        nproc = next(value for kind, value in calls if kind == resource.RLIMIT_NPROC)
+        assert nproc[0] > 0
 
 
 def test_linux_pdf_sandbox_timeout_fails_closed(monkeypatch, tmp_path: Path) -> None:
@@ -176,8 +193,10 @@ def test_pdf_sandbox_requires_fixed_absolute_executable_paths() -> None:
 
 
 def test_truncated_images_never_produce_a_derivative() -> None:
-    with pytest.raises(DerivativeError, match="derivative unavailable"):
+    with pytest.raises(DerivativeError, match="derivative unavailable") as captured:
         DerivativeBuilder().build(opened("truncated.png"), "image/png")
+    assert captured.value.__cause__ is None
+    assert captured.value.__context__ is None
 
 
 def test_image_thumbnail_drops_exif_icc_and_text_metadata_and_normalizes_orientation() -> None:
@@ -245,7 +264,9 @@ class DeriveStore:
         self.keys = []
         self.deleted = []
 
-    def open(self, _object_ref):
+    def open(self, _object_ref, immutable_locator=None):
+        if immutable_locator is not None:
+            assert immutable_locator == "version:v1"
         return OpenedObject(io.BytesIO(self.source), len(self.source))
 
     def put_derivative(self, data, *, object_key):
@@ -266,7 +287,7 @@ async def test_derive_rejects_same_size_replacement_before_rendering() -> None:
     expected = (FIXTURES / "valid.png").read_bytes()
     replacement = b"x" * len(expected)
     job = ProcessingJob(
-        uuid4(), uuid4(), "derive", "thumbnail", "opaque", len(expected), hashlib.sha256(expected).digest(), "image/png"
+        uuid4(), uuid4(), "derive", "thumbnail", "opaque", len(expected), hashlib.sha256(expected).digest(), "image/png", "version:v1"
     )
     repository = DeriveRepository([job])
     processor = AttachmentProcessor(
@@ -321,6 +342,55 @@ async def test_known_pre_db_derivative_failure_deletes_written_object() -> None:
             raise DerivativeFinalizeError(ambiguous=False)
 
     repository = Repository([job])
+    store = DeriveStore(source)
+    processor = AttachmentProcessor(
+        repository=repository,
+        object_store=store,
+        validator=None,
+        scanner=None,
+        derivatives=DerivativeBuilder(),
+        worker_id="attachment-worker.1",
+    )
+
+    assert await processor.process_next() is True
+    assert store.deleted == store.keys
+    assert repository.results == [("retry", "derivative_unavailable")]
+
+
+@pytest.mark.asyncio
+async def test_real_repository_pre_db_seal_failure_deletes_written_object() -> None:
+    source = (FIXTURES / "valid.png").read_bytes()
+    job = ProcessingJob(
+        uuid4(), uuid4(), "derive", "thumbnail", "opaque", len(source),
+        hashlib.sha256(source).digest(), "image/png", None, uuid4(),
+    )
+
+    class UnsealOnlyCodec:
+        def unseal_json(self, *_args):
+            return {"object_ref": "opaque"}
+
+    class Repository(AttachmentProcessingRepository):
+        def __init__(self):
+            super().__init__(
+                "postgresql://platform_brain_worker@localhost/agent_platform_control",
+                content_codec=UnsealOnlyCodec(),
+            )
+            self.jobs = [job]
+            self.results = []
+
+        def claim(self, _worker_id):
+            return self.jobs.pop()
+
+        def record_result(self, _job, state, reason, *, validation=None):
+            self.results.append((state, reason))
+
+        def reconcile_result(self, *_args):
+            return ReconciliationStatus.RUNNING
+
+        def reconcile_derivative(self, *_args):
+            return ReconciliationStatus.RUNNING
+
+    repository = Repository()
     store = DeriveStore(source)
     processor = AttachmentProcessor(
         repository=repository,

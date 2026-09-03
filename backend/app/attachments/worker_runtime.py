@@ -88,6 +88,7 @@ class AttachmentProcessingRepository:
                     "select attachment.object_ref_ciphertext,"
                     "attachment.object_ref_key_version,attachment.size_bytes,"
                     "attachment.sha256,attachment.detected_mime,"
+                    "attachment.immutable_locator,"
                     "upload.write_attempt_id "
                     "from platform_attachments.attachments attachment "
                     "left join platform_attachments.uploads upload "
@@ -96,6 +97,12 @@ class AttachmentProcessingRepository:
                     (row["attachment_id"],),
                 ).fetchone()
                 if attachment is None or attachment["sha256"] is None:
+                    raise AttachmentWorkerRuntimeError()
+                if not isinstance(row["attempt_token"], UUID):
+                    raise AttachmentWorkerRuntimeError()
+                if row["job_kind"] != "validate" and not isinstance(
+                    attachment["immutable_locator"], str
+                ):
                     raise AttachmentWorkerRuntimeError()
                 subject = attachment_object_subject(
                     row["attachment_id"], attachment["write_attempt_id"]
@@ -120,6 +127,8 @@ class AttachmentProcessingRepository:
                     int(attachment["size_bytes"]),
                     bytes(attachment["sha256"]),
                     attachment["detected_mime"],
+                    attachment["immutable_locator"],
+                    row["attempt_token"],
                 )
         except AttachmentWorkerRuntimeError:
             raise
@@ -134,6 +143,8 @@ class AttachmentProcessingRepository:
         *,
         validation: ValidationResult | None = None,
     ) -> None:
+        if not isinstance(job.attempt_token, UUID):
+            raise AttachmentWorkerRuntimeError()
         detected_mime = validation.detected_mime if validation else None
         coverage = (
             json.dumps(
@@ -149,13 +160,15 @@ class AttachmentProcessingRepository:
                 connection.execute(
                     "select platform_attachments."
                     "record_attachment_processing_result_v64("
-                    "%s,%s,%s,%s,%s::jsonb)",
+                    "%s,%s,%s,%s,%s,%s::jsonb,%s)",
                     (
                         job.processing_job_id,
+                        job.attempt_token,
                         state,
                         reason,
                         detected_mime,
                         coverage,
+                        validation.immutable_locator if validation else None,
                     ),
                 )
         except Exception:  # noqa: BLE001 - DB adapter errors are sanitized
@@ -164,6 +177,8 @@ class AttachmentProcessingRepository:
     def reconcile_result(
         self, job: ProcessingJob, state: str
     ) -> ReconciliationStatus:
+        if not isinstance(job.attempt_token, UUID):
+            return ReconciliationStatus.UNKNOWN
         expected_job = "queued" if state == "retry" else (
             "completed" if state in {"scanning", "ready"} else "failed"
         )
@@ -176,7 +191,8 @@ class AttachmentProcessingRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select job.state as job_state,attachment.state as attachment_state "
+                    "select job.state as job_state,attachment.state as attachment_state,"
+                    "job.attempt_token "
                     "from platform_attachments.processing_jobs job "
                     "join platform_attachments.attachments attachment "
                     "on attachment.attachment_id=job.attachment_id "
@@ -184,6 +200,8 @@ class AttachmentProcessingRepository:
                     (job.processing_job_id, job.attachment_id),
                 ).fetchone()
             if not row:
+                return ReconciliationStatus.UNKNOWN
+            if row.get("attempt_token") != job.attempt_token:
                 return ReconciliationStatus.UNKNOWN
             if state == "retry":
                 predecessor = {
@@ -221,6 +239,8 @@ class AttachmentProcessingRepository:
         derivative: Derivative,
         stored: StoredDerivative,
     ) -> None:
+        if not isinstance(job.attempt_token, UUID):
+            raise DerivativeFinalizeError(ambiguous=False)
         derivative_id = uuid5(
             NAMESPACE_URL,
             f"platform-attachment-derivative-v64:{job.processing_job_id}:{job.derivative_kind or derivative.kind}",
@@ -238,9 +258,10 @@ class AttachmentProcessingRepository:
                 row = connection.execute(
                     "select platform_attachments."
                     "record_attachment_derivative_v64("
-                    "%s,%s,%s,%s,%s,%s,%s,%s,null) as derivative_id",
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,null) as derivative_id",
                     (
                         job.processing_job_id,
+                        job.attempt_token,
                         derivative_id,
                         job.derivative_kind or derivative.kind,
                         sealed.ciphertext,
@@ -260,6 +281,8 @@ class AttachmentProcessingRepository:
     def reconcile_derivative(
         self, job: ProcessingJob, stored: StoredDerivative
     ) -> ReconciliationStatus:
+        if not isinstance(job.attempt_token, UUID):
+            return ReconciliationStatus.UNKNOWN
         derivative_id = uuid5(
             NAMESPACE_URL,
             f"platform-attachment-derivative-v64:{job.processing_job_id}:{job.derivative_kind}",
@@ -268,14 +291,16 @@ class AttachmentProcessingRepository:
             with self._connection() as connection:
                 row = connection.execute(
                     "select derivative.derivative_id,derivative.size_bytes,"
-                    "derivative.sha256,job.state as job_state "
-                    "from platform_attachments.derivatives derivative "
-                    "join platform_attachments.processing_jobs job "
-                    "on job.attachment_id=derivative.attachment_id "
-                    "where derivative.derivative_id=%s "
-                    "and job.processing_job_id=%s",
-                    (derivative_id, job.processing_job_id),
+                    "derivative.sha256,job.state as job_state,job.attempt_token "
+                    "from platform_attachments.processing_jobs job "
+                    "left join platform_attachments.derivatives derivative "
+                    "on derivative.attachment_id=job.attachment_id "
+                    "and derivative.derivative_id=%s "
+                    "where job.processing_job_id=%s and job.attachment_id=%s",
+                    (derivative_id, job.processing_job_id, job.attachment_id),
                 ).fetchone()
+            if not row or row["attempt_token"] != job.attempt_token:
+                return ReconciliationStatus.UNKNOWN
             if (
                 row
                 and row["job_state"] == "completed"
@@ -283,7 +308,7 @@ class AttachmentProcessingRepository:
                 and bytes(row["sha256"]) == stored.sha256
             ):
                 return ReconciliationStatus.COMMITTED
-            if row and row["job_state"] == "running":
+            if row["job_state"] == "running":
                 return ReconciliationStatus.RUNNING
             return ReconciliationStatus.UNKNOWN
         except Exception:  # noqa: BLE001 - uncertainty must not cause mutation
@@ -300,22 +325,45 @@ class S3ProcessingObjectStore:
     def __repr__(self) -> str:
         return "S3ProcessingObjectStore(client=<redacted>, bucket=<redacted>)"
 
-    def open(self, object_ref: str) -> OpenedObject:
+    def open(
+        self, object_ref: str, immutable_locator: str | None = None
+    ) -> OpenedObject:
         try:
-            head = self._client.head_object(Bucket=self._bucket, Key=object_ref)
-            size = int(head["ContentLength"])
             get_args = {"Bucket": self._bucket, "Key": object_ref}
-            version_id = head.get("VersionId")
-            etag = head.get("ETag")
-            if isinstance(version_id, str) and version_id and version_id != "null":
-                get_args["VersionId"] = version_id
-            elif isinstance(etag, str) and etag:
-                get_args["IfMatch"] = etag
+            if immutable_locator is None:
+                head = self._client.head_object(Bucket=self._bucket, Key=object_ref)
+                size = int(head["ContentLength"])
+                version_id = head.get("VersionId")
+                etag = head.get("ETag")
+                if isinstance(version_id, str) and version_id and version_id != "null":
+                    immutable_locator = f"version:{version_id}"
+                    get_args["VersionId"] = version_id
+                elif isinstance(etag, str) and etag:
+                    immutable_locator = f"etag:{etag}"
+                    get_args["IfMatch"] = etag
+                else:
+                    raise AttachmentWorkerRuntimeError()
+            elif immutable_locator.startswith("version:"):
+                get_args["VersionId"] = immutable_locator.removeprefix("version:")
+                size = None
+            elif immutable_locator.startswith("etag:"):
+                get_args["IfMatch"] = immutable_locator.removeprefix("etag:")
+                size = None
+            else:
+                raise AttachmentWorkerRuntimeError()
             response = self._client.get_object(**get_args)
-            if int(response["ContentLength"]) != size:
+            response_size = int(response["ContentLength"])
+            if size is not None and response_size != size:
                 response["Body"].close()
                 raise AttachmentWorkerRuntimeError()
-            return OpenedObject(response["Body"], size)
+            body = response["Body"]
+            timeout_setter = getattr(body, "set_socket_timeout", None)
+            return OpenedObject(
+                body,
+                response_size,
+                immutable_locator,
+                timeout_setter if callable(timeout_setter) else None,
+            )
         except AttachmentWorkerRuntimeError:
             raise
         except Exception:  # noqa: BLE001 - storage adapter errors are sanitized
@@ -384,7 +432,12 @@ def build_processor() -> AttachmentProcessor:
         region_name="us-east-1",
         aws_access_key_id=_credential(str(access_file)),
         aws_secret_access_key=_credential(str(secret_file)),
-        config=BotoConfig(s3={"addressing_style": "path"}, retries={"max_attempts": 2}),
+        config=BotoConfig(
+            connect_timeout=5,
+            read_timeout=5,
+            s3={"addressing_style": "path"},
+            retries={"max_attempts": 2},
+        ),
     )
     worker_id = os.getenv(
         "PLATFORM_ATTACHMENT_WORKER_ID",

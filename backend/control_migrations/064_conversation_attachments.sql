@@ -22,6 +22,12 @@ create table platform_attachments.attachments (
     check (object_ref_key_version > 0),
   declared_mime text,
   detected_mime text,
+  immutable_locator text check (
+    immutable_locator is null or (
+      char_length(immutable_locator) between 9 and 1008
+      and immutable_locator ~ '^(version|etag):[^[:space:][:cntrl:]]+$'
+    )
+  ),
   coverage_metadata jsonb check (
     coverage_metadata is null or (
       jsonb_typeof(coverage_metadata)='object'
@@ -63,6 +69,12 @@ create table platform_attachments.uploads (
   object_ref_key_version integer not null check (object_ref_key_version > 0),
   declared_mime text,
   detected_mime text,
+  immutable_locator text check (
+    immutable_locator is null or (
+      char_length(immutable_locator) between 9 and 1008
+      and immutable_locator ~ '^(version|etag):[^[:space:][:cntrl:]]+$'
+    )
+  ),
   coverage_metadata jsonb check (
     coverage_metadata is null or (
       jsonb_typeof(coverage_metadata)='object'
@@ -205,6 +217,12 @@ create table platform_attachments.artifact_versions (
     check (octet_length(object_ref_ciphertext) between 29 and 1048576),
   object_ref_key_version integer not null check (object_ref_key_version > 0),
   detected_mime text,
+  immutable_locator text check (
+    immutable_locator is null or (
+      char_length(immutable_locator) between 9 and 1008
+      and immutable_locator ~ '^(version|etag):[^[:space:][:cntrl:]]+$'
+    )
+  ),
   coverage_metadata jsonb check (
     coverage_metadata is null or (
       jsonb_typeof(coverage_metadata)='object'
@@ -331,6 +349,7 @@ create table platform_attachments.processing_jobs (
   available_at timestamptz not null default now(),
   claimed_by text,
   claimed_at timestamptz,
+  attempt_token uuid not null default gen_random_uuid(),
   created_at timestamptz not null default now(),
   completed_at timestamptz,
   check (
@@ -870,7 +889,7 @@ begin
   if not found then return null; end if;
   update platform_attachments.processing_jobs set
     state='running',claimed_by=selected_worker_id,claimed_at=now(),
-    attempt_count=attempt_count+1
+    attempt_count=attempt_count+1,attempt_token=gen_random_uuid()
   where processing_job_id=selected_job.processing_job_id returning * into selected_job;
   return selected_job;
 end
@@ -878,10 +897,12 @@ $function$;
 
 create function platform_attachments.record_attachment_processing_result_v64(
   selected_processing_job_id uuid,
+  selected_attempt_token uuid,
   selected_attachment_state text,
   selected_state_reason text,
   selected_detected_mime text default null,
-  selected_coverage_metadata jsonb default null
+  selected_coverage_metadata jsonb default null,
+  selected_immutable_locator text default null
 ) returns void
 language plpgsql security definer
 set search_path = pg_catalog, platform_attachments
@@ -899,6 +920,7 @@ begin
   then raise insufficient_privilege using message='Attachment processing caller invalid'; end if;
   select * into selected_job from platform_attachments.processing_jobs
   where processing_job_id=selected_processing_job_id and state='running'
+    and attempt_token=selected_attempt_token
   for update;
   if not found then raise no_data_found using message='Processing job unavailable'; end if;
   select state,detected_mime
@@ -924,6 +946,10 @@ begin
        or selected_coverage_metadata is null
        or jsonb_typeof(selected_coverage_metadata) <> 'object'
        or octet_length(selected_coverage_metadata::text) > 1024
+       or selected_immutable_locator is null
+       or char_length(selected_immutable_locator) not between 9 and 1008
+       or selected_immutable_locator !~
+         '^(version|etag):[^[:space:][:cntrl:]]+$'
     then raise check_violation using message='Attachment validation result invalid'; end if;
     if not selected_coverage_metadata ?&
          array['coverage','download','inline_preview']
@@ -953,13 +979,16 @@ begin
     then raise check_violation using message='Attachment validation result invalid'; end if;
     update platform_attachments.attachments set
       detected_mime=selected_detected_mime,
-      coverage_metadata=selected_coverage_metadata
+      coverage_metadata=selected_coverage_metadata,
+      immutable_locator=selected_immutable_locator
     where attachment_id=selected_job.attachment_id;
     update platform_attachments.uploads set
       detected_mime=selected_detected_mime,
-      coverage_metadata=selected_coverage_metadata
+      coverage_metadata=selected_coverage_metadata,
+      immutable_locator=selected_immutable_locator
     where attachment_id=selected_job.attachment_id;
-  elsif selected_detected_mime is not null or selected_coverage_metadata is not null then
+  elsif selected_detected_mime is not null or selected_coverage_metadata is not null
+     or selected_immutable_locator is not null then
     raise check_violation using message='Attachment processing metadata invalid';
   end if;
 
@@ -1032,6 +1061,7 @@ begin
       object_ref_key_version=attachment.object_ref_key_version,
       detected_mime=attachment.detected_mime,
       coverage_metadata=attachment.coverage_metadata,
+      immutable_locator=attachment.immutable_locator,
       size_bytes=attachment.size_bytes,
       sha256=attachment.sha256,
       retained_until=attachment.retained_until,
@@ -1057,6 +1087,7 @@ $function$;
 
 create function platform_attachments.record_attachment_derivative_v64(
   selected_processing_job_id uuid,
+  selected_attempt_token uuid,
   selected_derivative_id uuid,
   selected_kind text,
   selected_object_ref_ciphertext bytea,
@@ -1079,6 +1110,7 @@ begin
   then raise insufficient_privilege using message='Attachment derivative caller invalid'; end if;
   select * into selected_job from platform_attachments.processing_jobs
   where processing_job_id=selected_processing_job_id and state='running'
+    and attempt_token=selected_attempt_token
     and job_kind='derive' and derivative_kind=selected_kind
   for update;
   if not found then raise no_data_found using message='Derivative job unavailable'; end if;
@@ -1384,7 +1416,7 @@ begin
     artifact_version_id,artifact_id,attachment_id,version_no,
     producer_version_id,
     original_name_ciphertext,original_name_key_version,
-    object_ref_ciphertext,object_ref_key_version,detected_mime,
+    object_ref_ciphertext,object_ref_key_version,detected_mime,immutable_locator,
     coverage_metadata,size_bytes,sha256,retained_until,state,state_reason,
     result_status
   ) values (
@@ -1394,6 +1426,7 @@ begin
     selected_attachment.original_name_key_version,
     selected_attachment.object_ref_ciphertext,
     selected_attachment.object_ref_key_version,selected_attachment.detected_mime,
+    selected_attachment.immutable_locator,
     selected_attachment.coverage_metadata,selected_attachment.size_bytes,
     selected_attachment.sha256,
     selected_attachment.retained_until,selected_attachment.state,
@@ -1727,9 +1760,9 @@ begin
     'grant execute on function '
     'platform_attachments.claim_attachment_processing_job_v64(text), '
     'platform_attachments.record_attachment_processing_result_v64('
-    'uuid,text,text,text,jsonb),'
+    'uuid,uuid,text,text,text,jsonb,text),'
     'platform_attachments.record_attachment_derivative_v64('
-    'uuid,uuid,text,bytea,integer,text,bigint,bytea,text), '
+    'uuid,uuid,uuid,text,bytea,integer,text,bigint,bytea,text), '
     'platform_attachments.consume_task_grant_v64('
     'bytea,uuid,uuid,text,text,bigint), '
     'platform_attachments.consume_output_write_grant_v64('
