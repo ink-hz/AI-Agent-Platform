@@ -26,6 +26,17 @@
 - P0 不提供普通同事分享、Office 在线编辑、高保真 Office 预览、飞书完成通知、全文搜索或会话整体导出。
 - 任何跨仓库提交都保持单一目的；先提交 Platform 协议和测试，再提交 MetaBot v4 支持，最后启用 HR Catalog 能力。
 
+### Production disk and release discipline
+
+- 根盘 `/` 约 100 GB，只承载系统、当前应用 release 与最近两个可回滚 release；历史 release 只能归档到 `/data/archive/<application>/releases/`，并按“最多 10 个或 30 天，取更严格者”清理。
+- release 只包含代码和构建产物；禁止包含 `data/`、`uploads/`、`logs/`、`index/`、`answer_reviews/`、knowledge 数据副本、数据库文件、`.venv/`、`node_modules/`、模型缓存或其他持久/持续增长内容。
+- 所有持续增长的数据必须位于 `/data/<application>/`，包括 ClickHouse、PostgreSQL、Langfuse、附件、业务索引、分析结果、数据库备份和长期日志；release 目录不得承载持久数据。
+- 每次部署只可使用 `/data/staging/<application>/<deployment_id>/`；成功、失败和信号退出都必须由 `trap` 精确清理本次 deployment ID。不得长期使用 `/tmp`，不得留下 tarball、`.part` 或半成品，也不得以宽泛路径或 glob 清理。
+- 每个服务只保留当前镜像和最近两个回滚镜像；只删除已经过服务归属、保留集合和容器引用核验的更旧镜像。禁止无目标的 `docker system prune -a`，不得影响其他应用镜像。
+- 发布前必须执行 `df -B1 / /data`。根盘可用空间低于 25 GB、计算 staging 与镜像后预计低于 20 GB、或预计发布后根盘使用率超过 75% 时禁止发布；发布净增长超过 1 GB 必须逐项解释，异常增长必须先停止并报告。
+- 共享服务器严格按应用边界变更：AI ADMIN 不得覆盖 Platform Nginx Server Block；Platform 不得修改 `/office/`；FAE、VOC、HR、Marketing 不得改写其他应用目录；共享 Nginx 变更必须持有 Platform 发布锁并完成全量验收；不得重启无关服务。
+- 发布报告必须记录部署前后 `df`、新增文件/目录大小、当前版本、两个本地回滚版本、归档/删除历史版本、staging 清空证据、当前/回滚 Docker 镜像、业务页面 HTTP 验收，以及是否修改其他应用或共享 Nginx。
+
 ---
 
 ### Task 1: 固定主线前置条件与 Conversation Attachment 数据模型
@@ -1115,6 +1126,8 @@ Docker image 安装固定的 ClamAV client/libmagic/Poppler runtime；Compose �
 
 `acceptance.sh` 检查：bucket private、scanner fresh、worker healthy、未认证 upload/download 401/403、旧 attachment route 未意外开放、50 MB streaming、到期 Grant 拒绝。runbook 写明 key/secret provisioning、ClamAV 更新、容量、备份恢复、对象/DB 对账、紧急擦除、feature flag 回滚；回滚只停止新上传，不删除已存对象或迁移。
 
+`deploy.sh` 和 `test_cloud_deployment.py` 还必须把上述生产磁盘纪律变成可执行门禁：发布前后解析 `df -B1 / /data`；使用唯一且校验过的 deployment ID 创建 `/data/staging/<application>/<deployment_id>/`；以 `trap` 精确清理该目录；拒绝 release 禁止项；根盘只保留 current + 两个 rollback；更旧 release 移至数据盘归档后按 10 个/30 天收敛；Docker 只清理本服务、无容器引用且不在 current/rollback 集合中的镜像。任何阈值失败或异常净增长都必须在变更服务之前终止。
+
 - [ ] **Step 5: 运行 GREEN 并提交**
 
 ```bash
@@ -1194,7 +1207,7 @@ Expected: 全部 PASS，Feishu 附件和输出归档测试不回归。
 
 - [ ] **Step 6: 写发布证据并提交**
 
-release 文档记录两个仓库 SHA、migration 064、镜像 digest、测试命令和结果、十项场景证据、已知限制、监控指标、回滚命令与附件保留事实；不放真实候选人内容、文件名、URL token 或对象键。
+release 文档记录两个仓库 SHA、migration 064、镜像 digest、测试命令和结果、十项场景证据、已知限制、监控指标、回滚命令与附件保留事实；同时记录部署前后 `df`、新增文件和目录大小、当前及两个回滚版本、归档/删除版本、staging 清空证据、当前/回滚镜像、业务页面 HTTP 验收、其他应用/共享 Nginx 是否变更。不放真实候选人内容、文件名、URL token 或对象键。
 
 ```bash
 cd /Users/neo/Developer/work/AI-Agent-Platform
@@ -1207,4 +1220,4 @@ git commit -m "test(hr): accept the document workspace"
 
 - [ ] **Step 7: 按依赖顺序发布并观察**
 
-先部署 MetaBot v4（仍兼容 v3），再部署 Platform schema/services，最后启用 HR Catalog attachment capability。发布后观察上传成功率、扫描时延、声明输出/登记结果一致率、下载成功率、断线恢复率、搜索恢复率和 pending triage 时长；任何越权下载、假成功结果、重复 Turn 或对象提前删除立即关闭新 attachment feature flag 并保留数据调查。
+先取得 Platform 发布锁并通过磁盘门禁，再部署 MetaBot v4（仍兼容 v3），再部署 Platform schema/services，最后启用 HR Catalog attachment capability。发布后观察上传成功率、扫描时延、声明输出/登记结果一致率、下载成功率、断线恢复率、搜索恢复率和 pending triage 时长；任何越权下载、假成功结果、重复 Turn、对象提前删除、根盘异常增长或跨应用变更立即停止发布/关闭新 attachment feature flag，并保留数据调查。
