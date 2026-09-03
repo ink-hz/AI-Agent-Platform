@@ -61,6 +61,21 @@ describe("Session message Markdown presentation", () => {
     expect(empty).not.toContain("message-markdown");
   });
 
+  it("renders an explicit failed turn instead of a missing answer", () => {
+    const html = renderToStaticMarkup(<TurnCard turn={{
+      ...turn,
+      answer: "",
+      outcome: "failed",
+      trace_key: "trace-failed",
+      details: { error_class: "timeout", provider_payload: "must-not-render" },
+    }} />);
+
+    expect(html).toContain("本轮执行失败");
+    expect(html).toContain("执行超时");
+    expect(html).not.toContain("未记录 Agent 回答");
+    expect(html).not.toContain("must-not-render");
+  });
+
   it("formats exact and estimated timestamps in Asia/Shanghai to the second", () => {
     expect(formatMessageTime("2026-07-29T07:28:32Z", "exact")).toEqual({
       label: "7月29日 15:28:32",
