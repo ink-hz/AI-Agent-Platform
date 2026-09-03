@@ -14,6 +14,7 @@ from app.agent_brain.conversation_models import ConversationEventRecord
 from app.agent_brain.action_models import ActionProjection
 from app.agent_brain.action_service import ActionCommandDenied
 from app.agent_brain.conversation_routes import (
+    ConversationTextBody,
     ConversationCursorCodec,
     _event_payload,
     build_conversation_router,
@@ -126,6 +127,47 @@ def _post(client, auth, path: str, text: str, request_id: UUID | None = None):
     )
 
 
+def test_conversation_body_normalizes_text_and_attachment_sets() -> None:
+    first, second = uuid4(), uuid4()
+
+    body = ConversationTextBody.model_validate(
+        {
+            "text": "  e\u0301\r\nrequest  ",
+            "attachment_ids": [second, first],
+            "active_attachment_ids": [first, second],
+        }
+    )
+
+    assert body.text == "é\nrequest"
+    assert body.attachment_ids == tuple(sorted((first, second), key=str))
+    assert body.active_attachment_ids == tuple(sorted((first, second), key=str))
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"text": ""},
+        {
+            "text": "x",
+            "attachment_ids": [UUID(int=1), UUID(int=1)],
+            "active_attachment_ids": [UUID(int=1)],
+        },
+        {
+            "text": "x",
+            "attachment_ids": [UUID(int=1)],
+            "active_attachment_ids": [],
+        },
+        {
+            "text": "x",
+            "active_attachment_ids": [UUID(int=index + 1) for index in range(51)],
+        },
+    ],
+)
+def test_conversation_body_rejects_invalid_attachment_selection(payload) -> None:
+    with pytest.raises(ValueError):
+        ConversationTextBody.model_validate(payload)
+
+
 def _fail_and_project(conversations, owner: UUID, mission_id: UUID) -> None:
     conversations._missions.terminate_mission(
         owner,
@@ -188,6 +230,31 @@ def test_member_event_replaces_internal_agent_id_with_catalog_name() -> None:
         "agent_name": "HR Agent",
         "status": "completed",
     }
+
+
+def test_public_event_drops_untrusted_attachment_and_artifact_references() -> None:
+    record = ConversationEventRecord(
+        event_id=uuid4(),
+        conversation_id=uuid4(),
+        seq=1,
+        turn_id=uuid4(),
+        mission_id=uuid4(),
+        event_type="agent.task_completed",
+        payload={
+            "status": "completed",
+            "attachment_refs": [
+                {"attachment_id": str(uuid4()), "object_ref": "secret-key"}
+            ],
+            "artifact_refs": [
+                {"attachment_id": str(uuid4()), "immutable_locator": "etag:secret"}
+            ],
+        },
+        created_at=datetime.now(timezone.utc),
+    )
+
+    payload = _event_payload(record)
+
+    assert payload["payload"] == {"status": "completed"}
 
 
 @pytest.mark.postgres

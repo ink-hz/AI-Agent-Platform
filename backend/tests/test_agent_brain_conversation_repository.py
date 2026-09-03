@@ -33,6 +33,20 @@ def _codec() -> ContentCodec:
 def _clear_conversations(connection) -> None:
     connection.execute("set constraints all deferred")
     for table in (
+        "message_citations",
+        "task_grants",
+        "artifact_versions",
+        "artifacts",
+        "bindings",
+        "derivatives",
+        "processing_jobs",
+        "erasure_jobs",
+        "upload_write_attempts",
+        "uploads",
+        "attachments",
+    ):
+        connection.execute(f"delete from platform_attachments.{table}")
+    for table in (
         "agent_action_deliveries",
         "agent_task_actions",
         "brain_user_interventions",

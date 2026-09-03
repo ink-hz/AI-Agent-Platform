@@ -465,6 +465,8 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
     role_functions = {
         "control_app": {
             "create_upload_v64",
+            "claim_conversation_attachment_v64",
+            "bind_conversation_turn_v64",
             "claim_upload_write_v64",
             "abandon_upload_write_v64",
             "finalize_upload_v64",

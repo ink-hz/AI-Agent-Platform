@@ -1730,6 +1730,230 @@ begin
 end
 $function$;
 
+create function platform_attachments.claim_conversation_attachment_v64(
+  selected_attachment_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_conversation_id uuid
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app')
+  then
+    raise insufficient_privilege using
+      message='Conversation attachment claimant invalid';
+  end if;
+  if selected_attachment_id is null
+     or selected_owner_internal_user_id is null
+     or selected_conversation_id is null
+  then
+    raise check_violation using
+      message='Conversation attachment claim invalid';
+  end if;
+  perform 1 from platform_control.conversations
+  where conversation_id=selected_conversation_id
+    and owner_internal_user_id=selected_owner_internal_user_id
+    and status='active'
+  for update;
+  if not found then
+    raise no_data_found using message='Conversation attachment unavailable';
+  end if;
+  perform 1 from platform_attachments.attachments attachment
+  where attachment.attachment_id=selected_attachment_id
+    and attachment.owner_internal_user_id=selected_owner_internal_user_id
+    and attachment.source_kind='user_input'
+    and attachment.conversation_id is null
+    and attachment.state='ready'
+    and attachment.ready_at is not null
+    and attachment.retained_until>now()
+    and attachment.immutable_locator is not null
+    and not exists (
+      select 1 from platform_attachments.erasure_jobs erasure
+      where erasure.attachment_id=attachment.attachment_id
+    )
+  for update;
+  if found then
+    update platform_attachments.attachments
+    set conversation_id=selected_conversation_id
+    where attachment_id=selected_attachment_id and conversation_id is null;
+    update platform_attachments.uploads
+    set conversation_id=selected_conversation_id
+    where attachment_id=selected_attachment_id and conversation_id is null;
+    return selected_attachment_id;
+  end if;
+  perform 1 from platform_attachments.attachments attachment
+  where attachment.attachment_id=selected_attachment_id
+    and attachment.owner_internal_user_id=selected_owner_internal_user_id
+    and attachment.source_kind='user_input'
+    and attachment.conversation_id=selected_conversation_id
+    and attachment.state='ready'
+    and attachment.ready_at is not null
+    and attachment.retained_until>now()
+    and attachment.immutable_locator is not null
+    and not exists (
+      select 1 from platform_attachments.erasure_jobs erasure
+      where erasure.attachment_id=attachment.attachment_id
+    )
+  for update;
+  if not found then
+    raise no_data_found using message='Conversation attachment unavailable';
+  end if;
+  return selected_attachment_id;
+end
+$function$;
+
+create function platform_attachments.bind_conversation_turn_v64(
+  selected_owner_internal_user_id uuid,
+  selected_conversation_id uuid,
+  selected_message_id uuid,
+  selected_turn_id uuid,
+  selected_attachment_ids uuid[],
+  selected_active_attachment_ids uuid[],
+  selected_agent_id text,
+  selected_agent_supports_attachments boolean,
+  selected_max_message_files integer,
+  selected_max_message_bytes bigint,
+  selected_max_conversation_files integer,
+  selected_max_conversation_bytes bigint
+) returns void
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare
+  selected_attachment_id uuid;
+  selected_active_ids uuid[];
+  selected_message_total bigint;
+  selected_conversation_count bigint;
+  selected_conversation_total bigint;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app')
+  then
+    raise insufficient_privilege using
+      message='Conversation attachment binder invalid';
+  end if;
+  if selected_owner_internal_user_id is null
+     or selected_conversation_id is null
+     or selected_message_id is null
+     or selected_turn_id is null
+     or selected_attachment_ids is null
+     or selected_active_attachment_ids is null
+     or selected_agent_supports_attachments is null
+     or selected_max_message_files not between 1 and 5
+     or selected_max_message_bytes not between 1 and 52428800
+     or selected_max_conversation_files not between 1 and 50
+     or selected_max_conversation_bytes not between 1 and 524288000
+     or cardinality(selected_attachment_ids)>selected_max_message_files
+     or cardinality(selected_active_attachment_ids)>selected_max_conversation_files
+     or cardinality(selected_attachment_ids)<>(
+       select count(distinct value) from unnest(selected_attachment_ids) value
+     )
+     or cardinality(selected_active_attachment_ids)<>(
+       select count(distinct value) from unnest(selected_active_attachment_ids) value
+     )
+     or not selected_attachment_ids <@ selected_active_attachment_ids
+     or (selected_agent_id is not null and
+         selected_agent_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+     or (cardinality(selected_active_attachment_ids)>0
+         and selected_agent_id is not null
+         and not selected_agent_supports_attachments)
+  then
+    raise check_violation using message='Conversation attachment binding invalid';
+  end if;
+  perform 1 from platform_control.conversations
+  where conversation_id=selected_conversation_id
+    and owner_internal_user_id=selected_owner_internal_user_id
+    and status='active'
+  for update;
+  if not found then
+    raise no_data_found using message='Conversation attachment unavailable';
+  end if;
+  perform 1 from platform_control.conversation_messages
+  where conversation_id=selected_conversation_id
+    and message_id=selected_message_id and turn_id=selected_turn_id;
+  if not found then
+    raise no_data_found using message='Conversation attachment message unavailable';
+  end if;
+  foreach selected_attachment_id in array selected_attachment_ids loop
+    perform platform_attachments.claim_conversation_attachment_v64(
+      selected_attachment_id,
+      selected_owner_internal_user_id,
+      selected_conversation_id
+    );
+  end loop;
+  select coalesce(array_agg(locked.attachment_id order by locked.attachment_id),'{}'),
+         coalesce(sum(locked.size_bytes) filter (
+           where locked.attachment_id=any(selected_attachment_ids)
+         ),0)
+    into selected_active_ids,selected_message_total
+  from (
+    select attachment.attachment_id,attachment.size_bytes
+    from platform_attachments.attachments attachment
+    where attachment.attachment_id=any(selected_active_attachment_ids)
+      and attachment.owner_internal_user_id=selected_owner_internal_user_id
+      and attachment.conversation_id=selected_conversation_id
+      and attachment.state='ready' and attachment.ready_at is not null
+      and attachment.retained_until>now()
+      and attachment.immutable_locator is not null
+      and not exists (
+        select 1 from platform_attachments.erasure_jobs erasure
+        where erasure.attachment_id=attachment.attachment_id
+      )
+    for update
+  ) locked;
+  if selected_active_ids<>(
+       select coalesce(array_agg(value order by value),'{}')
+       from unnest(selected_active_attachment_ids) value
+     )
+  then
+    raise check_violation using message='Conversation attachment selection unavailable';
+  end if;
+  if selected_message_total>selected_max_message_bytes then
+    raise program_limit_exceeded using
+      message='Conversation message attachment quota exceeded';
+  end if;
+  select count(*),coalesce(sum(locked.size_bytes),0)
+    into selected_conversation_count,selected_conversation_total
+  from (
+    select attachment.size_bytes
+    from platform_attachments.attachments attachment
+    where attachment.owner_internal_user_id=selected_owner_internal_user_id
+      and attachment.conversation_id=selected_conversation_id
+      and attachment.source_kind='user_input'
+      and attachment.state<>'deleted'
+      and not exists (
+        select 1 from platform_attachments.erasure_jobs erasure
+        where erasure.attachment_id=attachment.attachment_id
+      )
+    for update
+  ) locked;
+  if selected_conversation_count>selected_max_conversation_files
+     or selected_conversation_total>selected_max_conversation_bytes
+  then
+    raise program_limit_exceeded using
+      message='Conversation attachment quota exceeded';
+  end if;
+  insert into platform_attachments.bindings(
+    binding_id,attachment_id,owner_internal_user_id,kind,
+    conversation_id,message_id,agent_id
+  ) select gen_random_uuid(),value,selected_owner_internal_user_id,
+    'message_input',selected_conversation_id,selected_message_id,selected_agent_id
+  from unnest(selected_attachment_ids) value;
+  insert into platform_attachments.bindings(
+    binding_id,attachment_id,owner_internal_user_id,kind,
+    conversation_id,turn_id,agent_id
+  ) select gen_random_uuid(),value,selected_owner_internal_user_id,
+    'turn_input',selected_conversation_id,selected_turn_id,selected_agent_id
+  from unnest(selected_active_attachment_ids) value;
+end
+$function$;
+
 revoke all on all tables in schema platform_attachments from public;
 revoke all on all functions in schema platform_attachments from public;
 
@@ -1821,6 +2045,9 @@ begin
     'grant execute on function platform_attachments.create_upload_v64('
     'uuid,uuid,uuid,uuid,bytea,integer,bytea,integer,text,bigint,timestamptz,'
     'bigint,integer,bigint), '
+    'platform_attachments.claim_conversation_attachment_v64(uuid,uuid,uuid), '
+    'platform_attachments.bind_conversation_turn_v64('
+    'uuid,uuid,uuid,uuid,uuid[],uuid[],text,boolean,integer,bigint,integer,bigint), '
     'platform_attachments.claim_upload_write_v64('
     'uuid,uuid,uuid,bytea,integer,timestamptz), '
     'platform_attachments.abandon_upload_write_v64(uuid,uuid,uuid), '

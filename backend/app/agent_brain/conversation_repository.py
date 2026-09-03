@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import datetime
 import hashlib
 import json
 import re
+from collections.abc import Callable
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -12,20 +12,31 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.agent_brain.conversation_models import (
+    ConversationAttachmentProjection,
     ConversationCreateResult,
     ConversationEventRecord,
     ConversationFeedbackRecord,
     ConversationFeedbackResult,
     ConversationInterventionResult,
-    ConversationMetrics,
     ConversationMessageRecord,
+    ConversationMetrics,
     ConversationRecord,
     ConversationTurnRecord,
+    ConversationTurnSubmission,
+    normalize_turn_submission,
 )
+from app.agent_brain.models import AgentCapabilityCard, load_capability_cards
 from app.agent_brain.repository import (
     MissionRecord,
     MissionRepository,
     MissionRepositoryError,
+)
+from app.attachments.conversation_repository import (
+    ConversationAttachmentConflict,
+    ConversationAttachmentQuotaExceeded,
+    ConversationAttachmentRepository,
+    ConversationAttachmentRepositoryError,
+    attachment_name_subject,
 )
 from app.control_plane.dsn import validate_control_dsn
 from app.execution_relay.content_crypto import (
@@ -33,7 +44,6 @@ from app.execution_relay.content_crypto import (
     ContentCryptoError,
     SealedContent,
 )
-
 
 _AGENT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _PROJECTED_MISSION_EVENT_TYPES = (
@@ -108,6 +118,18 @@ def _require_text(value: object) -> str:
     return value
 
 
+def _require_submission(
+    value: str | ConversationTurnSubmission,
+) -> ConversationTurnSubmission:
+    submission = normalize_turn_submission(value)
+    try:
+        if len(submission.text.encode("utf-8")) > 32 * 1024:
+            raise ValueError("Conversation text invalid")
+    except UnicodeError:
+        raise ValueError("Conversation text invalid") from None
+    return submission
+
+
 def _title_for(text: str) -> str:
     title = " ".join(part.strip() for part in text.strip().splitlines() if part.strip())
     return title[:160]
@@ -146,6 +168,8 @@ class ConversationRepository:
         *,
         content_codec: ContentCodec,
         mission_repository: MissionRepository | None = None,
+        attachment_repository: ConversationAttachmentRepository | None = None,
+        agent_capability_cards: tuple[AgentCapabilityCard, ...] | None = None,
         connect: Callable[..., Any] = psycopg.connect,
     ) -> None:
         parsed = validate_control_dsn(control_database_url, purpose="app")
@@ -167,6 +191,28 @@ class ConversationRepository:
         self._connect = connect
         self.content_codec = content_codec
         self._missions = selected_missions
+        selected_attachments = attachment_repository or ConversationAttachmentRepository(
+            control_database_url,
+            content_codec=content_codec,
+            connect=connect,
+        )
+        if (
+            not isinstance(selected_attachments, ConversationAttachmentRepository)
+            or selected_attachments.environment != parsed.environment
+            or selected_attachments.content_codec is not content_codec
+        ):
+            raise ValueError("Attachment repository boundary invalid")
+        cards = agent_capability_cards or load_capability_cards()
+        if (
+            not isinstance(cards, tuple)
+            or any(not isinstance(card, AgentCapabilityCard) for card in cards)
+            or len({card.agent_id for card in cards}) != len(cards)
+        ):
+            raise ValueError("Agent capability snapshot invalid")
+        self._attachments = selected_attachments
+        self._agent_attachment_support = {
+            card.agent_id: card.supports_attachments_in for card in cards
+        }
 
     def __repr__(self) -> str:
         return (
@@ -212,7 +258,90 @@ class ConversationRepository:
             summary_key_version=key_version,
         )
 
-    def _message_from_row(self, row: dict[str, Any]) -> ConversationMessageRecord:
+    def _attachment_projection_from_row(
+        self, row: dict[str, Any]
+    ) -> ConversationAttachmentProjection:
+        attachment_id = row["attachment_id"]
+        name = self.content_codec.unseal_json(
+            attachment_name_subject(attachment_id),
+            SealedContent(
+                bytes(row["original_name_ciphertext"]),
+                row["original_name_key_version"],
+            ),
+        )
+        if set(name) != {"original_name"} or not isinstance(
+            name["original_name"], str
+        ):
+            raise ConversationRepositoryError()
+        unavailable = None
+        if row["erasure_pending"]:
+            unavailable = "deletion_pending"
+        elif row["state"] != "ready":
+            unavailable = row["state"]
+        elif row["retained_until"] <= datetime.now().astimezone():
+            unavailable = "retention_expired"
+        coverage = row["coverage_metadata"]
+        if coverage is not None and not isinstance(coverage, dict):
+            raise ConversationRepositoryError()
+        digest = row["sha256"]
+        return ConversationAttachmentProjection(
+            attachment_id=attachment_id,
+            conversation_id=row["conversation_id"],
+            source="user" if row["source_kind"] == "user_input" else "agent",
+            display_name=name["original_name"],
+            detected_mime=row["detected_mime"],
+            size_bytes=int(row["size_bytes"]),
+            sha256=bytes(digest).hex() if digest is not None else None,
+            state=row["state"],
+            created_at=row["created_at"],
+            retained_until=row["retained_until"],
+            processing_coverage=dict(coverage) if coverage is not None else None,
+            availability_reason=unavailable,
+        )
+
+    def _message_attachment_records_locked(
+        self, cursor: Any, row: dict[str, Any]
+    ) -> tuple[
+        tuple[ConversationAttachmentProjection, ...],
+        tuple[ConversationAttachmentProjection, ...],
+        tuple[UUID, ...],
+    ]:
+        message_rows = cursor.execute(
+            "select attachment.*,binding.kind,exists(select 1 from "
+            "platform_attachments.erasure_jobs erasure where "
+            "erasure.attachment_id=attachment.attachment_id) as erasure_pending "
+            "from platform_attachments.bindings binding join "
+            "platform_attachments.attachments attachment using (attachment_id) "
+            "where binding.conversation_id=%s and binding.message_id=%s and "
+            "binding.kind in ('message_input','message_output') "
+            "order by attachment.attachment_id",
+            (row["conversation_id"], row["message_id"]),
+        ).fetchall()
+        active_rows = (
+            cursor.execute(
+                "select attachment_id from platform_attachments.bindings where "
+                "conversation_id=%s and turn_id=%s and kind='turn_input' "
+                "order by attachment_id",
+                (row["conversation_id"], row["turn_id"]),
+            ).fetchall()
+            if row["turn_id"] is not None
+            else ()
+        )
+        inputs, outputs = [], []
+        for attachment_row in message_rows:
+            projected = self._attachment_projection_from_row(attachment_row)
+            (inputs if attachment_row["kind"] == "message_input" else outputs).append(
+                projected
+            )
+        return (
+            tuple(inputs),
+            tuple(outputs),
+            tuple(item["attachment_id"] for item in active_rows),
+        )
+
+    def _message_from_row(
+        self, row: dict[str, Any], cursor: Any | None = None
+    ) -> ConversationMessageRecord:
         value = self.content_codec.unseal_json(
             message_subject(row["conversation_id"], row["message_id"]),
             SealedContent(
@@ -222,6 +351,11 @@ class ConversationRepository:
         )
         if set(value) != {"text"} or not isinstance(value["text"], str):
             raise ConversationRepositoryError()
+        inputs, outputs, active = (
+            self._message_attachment_records_locked(cursor, row)
+            if cursor is not None
+            else ((), (), ())
+        )
         return ConversationMessageRecord(
             message_id=row["message_id"],
             conversation_id=row["conversation_id"],
@@ -233,6 +367,9 @@ class ConversationRepository:
             created_at=row["created_at"],
             completed_at=row["completed_at"],
             content=value["text"],
+            input_attachments=inputs,
+            output_attachments=outputs,
+            active_attachment_ids=active,
         )
 
     def _event_from_row(self, row: dict[str, Any]) -> ConversationEventRecord:
@@ -276,7 +413,7 @@ class ConversationRepository:
         cursor: Any,
         conversation_row: dict[str, Any],
         client_request_id: UUID,
-        text: str,
+        submission: ConversationTurnSubmission,
         *,
         expected_mode: str | None = None,
         expected_direct_agent_id: str | None = None,
@@ -305,8 +442,14 @@ class ConversationRepository:
         ).fetchone()
         if message is None:
             raise ConversationRepositoryError()
-        message_record = self._message_from_row(message)
-        if message_record.content != text:
+        message_record = self._message_from_row(message, cursor)
+        if (
+            message_record.content != submission.text
+            or tuple(item.attachment_id for item in message_record.input_attachments)
+            != submission.attachment_ids
+            or message_record.active_attachment_ids
+            != submission.active_attachment_ids
+        ):
             raise ConversationRepositoryConflict()
         return (
             self._conversation_from_row(conversation_row),
@@ -320,12 +463,12 @@ class ConversationRepository:
         cursor: Any,
         conversation_row: dict[str, Any],
         client_request_id: UUID,
-        text: str,
+        submission: ConversationTurnSubmission,
         *,
         retry_of_turn_id: UUID | None = None,
     ) -> ConversationCreateResult:
         conversation, message, turn, mission_id = self._replay_locked(
-            cursor, conversation_row, client_request_id, text
+            cursor, conversation_row, client_request_id, submission
         )
         if (
             mission_id is not None
@@ -344,6 +487,38 @@ class ConversationRepository:
             mission=None,
             created=False,
         )
+
+    def _bind_submission_locked(
+        self,
+        cursor: Any,
+        conversation_row: dict[str, Any],
+        message_id: UUID,
+        turn_id: UUID,
+        submission: ConversationTurnSubmission,
+    ) -> None:
+        agent_id = conversation_row["direct_agent_id"]
+        try:
+            self._attachments.bind_turn_locked(
+                cursor,
+                owner_id=conversation_row["owner_internal_user_id"],
+                conversation_id=conversation_row["conversation_id"],
+                message_id=message_id,
+                turn_id=turn_id,
+                attachment_ids=submission.attachment_ids,
+                active_attachment_ids=submission.active_attachment_ids,
+                agent_id=agent_id,
+                agent_supports_attachments=(
+                    True
+                    if agent_id is None
+                    else self._agent_attachment_support.get(agent_id, False)
+                ),
+            )
+        except ConversationAttachmentQuotaExceeded as error:
+            raise ConversationRepositoryConflict(str(error)) from None
+        except ConversationAttachmentConflict as error:
+            raise ConversationRepositoryConflict(str(error)) from None
+        except ConversationAttachmentRepositoryError:
+            raise ConversationRepositoryError() from None
 
     def _insert_v2_loop_locked(
         self,
@@ -390,7 +565,7 @@ class ConversationRepository:
         cursor: Any,
         conversation_row: dict[str, Any],
         client_request_id: UUID,
-        text: str,
+        submission: ConversationTurnSubmission,
         *,
         message_seq: int,
         retry_of_turn_id: UUID | None,
@@ -400,6 +575,7 @@ class ConversationRepository:
         max_duration_seconds: int,
     ) -> ConversationCreateResult:
         conversation_id = conversation_row["conversation_id"]
+        text = submission.text
         message_id = uuid4()
         turn_id = uuid4()
         sealed = self.content_codec.seal_json(
@@ -441,6 +617,9 @@ class ConversationRepository:
             max_tasks=max_tasks,
             max_duration_seconds=max_duration_seconds,
         )
+        self._bind_submission_locked(
+            cursor, conversation_row, message_id, turn_id, submission
+        )
         common_payload = {
             "turn_id": str(turn_id),
             "mission_id": None,
@@ -473,7 +652,7 @@ class ConversationRepository:
         ).fetchone()
         return ConversationCreateResult(
             conversation=self._conversation_from_row(conversation_row),
-            message=self._message_from_row(message_row),
+            message=self._message_from_row(message_row, cursor),
             turn=self._turn_from_row(turn_row),
             mission=None,
             created=True,
@@ -484,7 +663,7 @@ class ConversationRepository:
         cursor: Any,
         conversation_row: dict[str, Any],
         client_request_id: UUID,
-        text: str,
+        submission: ConversationTurnSubmission,
         *,
         message_seq: int,
     ) -> tuple[
@@ -494,6 +673,7 @@ class ConversationRepository:
         MissionRecord,
     ]:
         conversation_id = conversation_row["conversation_id"]
+        text = submission.text
         message_id = uuid4()
         turn_id = uuid4()
         mission_id = uuid4()
@@ -538,9 +718,12 @@ class ConversationRepository:
             conversation_id=conversation_id,
             turn_id=turn_id,
             triggering_message_id=message_id,
-            prompt=text,
+            prompt=text or "请处理所选附件",
             mode=conversation_row["mode"],
             direct_agent_id=conversation_row["direct_agent_id"],
+        )
+        self._bind_submission_locked(
+            cursor, conversation_row, message_id, turn_id, submission
         )
         common_payload = {
             "turn_id": str(turn_id),
@@ -580,7 +763,7 @@ class ConversationRepository:
         ).fetchone()
         return (
             self._conversation_from_row(conversation_row),
-            self._message_from_row(message_row),
+            self._message_from_row(message_row, cursor),
             self._turn_from_row(turn_row),
             mission,
         )
@@ -629,14 +812,15 @@ class ConversationRepository:
         self,
         internal_user_id: UUID,
         client_request_id: UUID,
-        text: str,
+        submission: str | ConversationTurnSubmission,
         *,
         mode: Literal["brain", "direct_agent"] = "brain",
         direct_agent_id: str | None = None,
     ) -> ConversationCreateResult:
         _require_uuid(internal_user_id)
         _require_uuid(client_request_id)
-        text = _require_text(text)
+        submission = _require_submission(submission)
+        text = submission.text
         mode, direct_agent_id = _require_mode(mode, direct_agent_id)
         conversation_id = uuid4()
         try:
@@ -653,7 +837,7 @@ class ConversationRepository:
                         cursor,
                         existing,
                         client_request_id,
-                        text,
+                        submission,
                         expected_mode=mode,
                         expected_direct_agent_id=direct_agent_id,
                     )
@@ -671,14 +855,14 @@ class ConversationRepository:
                             client_request_id,
                             mode,
                             direct_agent_id,
-                            _title_for(text),
+                            _title_for(text) or "新对话",
                         ),
                     ).fetchone()
                     conversation, message, turn, mission = self._new_turn_locked(
                         cursor,
                         conversation_row,
                         client_request_id,
-                        text,
+                        submission,
                         message_seq=1,
                     )
                     mission_id = mission.mission_id
@@ -698,7 +882,7 @@ class ConversationRepository:
             return self._replay_start_after_race(
                 internal_user_id,
                 client_request_id,
-                text,
+                submission,
                 mode=mode,
                 direct_agent_id=direct_agent_id,
             )
@@ -721,7 +905,7 @@ class ConversationRepository:
         self,
         internal_user_id: UUID,
         client_request_id: UUID,
-        text: str,
+        submission: ConversationTurnSubmission,
         *,
         mode: Literal["brain", "direct_agent"],
         direct_agent_id: str | None,
@@ -742,7 +926,7 @@ class ConversationRepository:
                     cursor,
                     conversation_row,
                     client_request_id,
-                    text,
+                    submission,
                     expected_mode=mode,
                     expected_direct_agent_id=direct_agent_id,
                 )
@@ -776,12 +960,12 @@ class ConversationRepository:
         internal_user_id: UUID,
         conversation_id: UUID,
         client_request_id: UUID,
-        text: str,
+        submission: str | ConversationTurnSubmission,
     ) -> ConversationCreateResult:
         _require_uuid(internal_user_id)
         _require_uuid(conversation_id)
         _require_uuid(client_request_id)
-        text = _require_text(text)
+        submission = _require_submission(submission)
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 cursor.execute("set constraints all deferred")
@@ -800,7 +984,7 @@ class ConversationRepository:
                 ).fetchone()
                 if existing is not None:
                     conversation, message, turn, mission_id = self._replay_locked(
-                        cursor, conversation_row, client_request_id, text
+                        cursor, conversation_row, client_request_id, submission
                     )
                     mission = None
                     created = False
@@ -826,7 +1010,7 @@ class ConversationRepository:
                         cursor,
                         conversation_row,
                         client_request_id,
-                        text,
+                        submission,
                         message_seq=next_seq,
                     )
                     mission_id = mission.mission_id
@@ -880,7 +1064,7 @@ class ConversationRepository:
         self,
         internal_user_id: UUID,
         client_request_id: UUID,
-        text: str,
+        submission: str | ConversationTurnSubmission,
         *,
         model_config: dict[str, object],
         max_steps: int,
@@ -889,7 +1073,8 @@ class ConversationRepository:
     ) -> ConversationCreateResult:
         _require_uuid(internal_user_id)
         _require_uuid(client_request_id)
-        text = _require_text(text)
+        submission = _require_submission(submission)
+        text = submission.text
         config = self._require_v2_limits(
             model_config, max_steps, max_tasks, max_duration_seconds
         )
@@ -906,7 +1091,7 @@ class ConversationRepository:
                     if existing["mode"] != "brain":
                         raise ConversationRepositoryConflict()
                     return self._replay_v2_locked(
-                        cursor, existing, client_request_id, text
+                        cursor, existing, client_request_id, submission
                     )
                 conversation_id = uuid4()
                 conversation_row = cursor.execute(
@@ -918,14 +1103,14 @@ class ConversationRepository:
                         conversation_id,
                         internal_user_id,
                         client_request_id,
-                        _title_for(text),
+                        _title_for(text) or "新对话",
                     ),
                 ).fetchone()
                 return self._new_v2_turn_locked(
                     cursor,
                     conversation_row,
                     client_request_id,
-                    text,
+                    submission,
                     message_seq=1,
                     retry_of_turn_id=None,
                     model_config=config,
@@ -935,7 +1120,7 @@ class ConversationRepository:
                 )
         except psycopg.errors.UniqueViolation:
             return self._replay_v2_start_after_race(
-                internal_user_id, client_request_id, text
+                internal_user_id, client_request_id, submission
             )
         except ConversationRepositoryError:
             raise
@@ -954,7 +1139,7 @@ class ConversationRepository:
         self,
         internal_user_id: UUID,
         client_request_id: UUID,
-        text: str,
+        submission: ConversationTurnSubmission,
     ) -> ConversationCreateResult:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
@@ -967,7 +1152,7 @@ class ConversationRepository:
                 if row is None or row["mode"] != "brain":
                     raise ConversationRepositoryConflict()
                 return self._replay_v2_locked(
-                    cursor, row, client_request_id, text
+                    cursor, row, client_request_id, submission
                 )
         except ConversationRepositoryError:
             raise
@@ -985,7 +1170,7 @@ class ConversationRepository:
         internal_user_id: UUID,
         conversation_id: UUID,
         client_request_id: UUID,
-        text: str,
+        submission: str | ConversationTurnSubmission,
         *,
         model_config: dict[str, object],
         max_steps: int,
@@ -995,7 +1180,7 @@ class ConversationRepository:
         _require_uuid(internal_user_id)
         _require_uuid(conversation_id)
         _require_uuid(client_request_id)
-        text = _require_text(text)
+        submission = _require_submission(submission)
         config = self._require_v2_limits(
             model_config, max_steps, max_tasks, max_duration_seconds
         )
@@ -1019,7 +1204,7 @@ class ConversationRepository:
                 ).fetchone()
                 if existing is not None:
                     return self._replay_v2_locked(
-                        cursor, conversation_row, client_request_id, text
+                        cursor, conversation_row, client_request_id, submission
                     )
                 if conversation_row["status"] != "active":
                     raise ConversationRepositoryConflict()
@@ -1035,7 +1220,7 @@ class ConversationRepository:
                     cursor,
                     conversation_row,
                     client_request_id,
-                    text,
+                    submission,
                     message_seq=next_seq,
                     retry_of_turn_id=None,
                     model_config=config,
@@ -1120,13 +1305,21 @@ class ConversationRepository:
                 ).fetchone()
                 if source_message is None:
                     raise ConversationRepositoryError()
-                text = self._message_from_row(source_message).content
+                source_record = self._message_from_row(source_message, cursor)
+                retry_submission = ConversationTurnSubmission(
+                    source_record.content,
+                    tuple(
+                        item.attachment_id
+                        for item in source_record.input_attachments
+                    ),
+                    source_record.active_attachment_ids,
+                )
                 if existing is not None:
                     return self._replay_v2_locked(
                         cursor,
                         conversation_row,
                         client_request_id,
-                        text,
+                        retry_submission,
                         retry_of_turn_id=failed_turn_id,
                     )
                 if original["status"] not in (
@@ -1147,7 +1340,7 @@ class ConversationRepository:
                     cursor,
                     conversation_row,
                     client_request_id,
-                    text,
+                    retry_submission,
                     message_seq=next_seq,
                     retry_of_turn_id=failed_turn_id,
                     model_config=config,
@@ -1418,7 +1611,10 @@ class ConversationRepository:
                     (conversation_id, internal_user_id),
                 ).fetchone() is None:
                     raise ConversationRepositoryNotFound()
-            return tuple(self._message_from_row(row) for row in rows)
+                records = tuple(
+                    self._message_from_row(row, cursor) for row in rows
+                )
+            return records
         except ConversationRepositoryError:
             raise
         except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
@@ -1888,15 +2084,15 @@ class ConversationRepository:
         internal_user_id: UUID,
         conversation_id: UUID,
         client_request_id: UUID,
-        text: str,
+        submission: str | ConversationTurnSubmission,
     ) -> ConversationCreateResult | None:
         _require_uuid(internal_user_id)
         _require_uuid(conversation_id)
         _require_uuid(client_request_id)
-        text = _require_text(text)
+        submission = _require_submission(submission)
         try:
-            with self._connection() as connection:
-                row = connection.execute(
+            with self._connection() as connection, connection.cursor() as cursor:
+                row = cursor.execute(
                     "select message.* from platform_control.conversation_messages "
                     "message join platform_control.conversations conversation on "
                     "conversation.conversation_id=message.conversation_id where "
@@ -1906,14 +2102,23 @@ class ConversationRepository:
                 ).fetchone()
                 if row is None:
                     return None
-                message = self._message_from_row(row)
-                if message.content != text or message.turn_id is None:
+                message = self._message_from_row(row, cursor)
+                if (
+                    message.content != submission.text
+                    or tuple(
+                        item.attachment_id for item in message.input_attachments
+                    )
+                    != submission.attachment_ids
+                    or message.active_attachment_ids
+                    != submission.active_attachment_ids
+                    or message.turn_id is None
+                ):
                     raise ConversationRepositoryConflict()
-                turn = connection.execute(
+                turn = cursor.execute(
                     "select * from platform_control.conversation_turns where turn_id=%s",
                     (message.turn_id,),
                 ).fetchone()
-                conversation = connection.execute(
+                conversation = cursor.execute(
                     "select * from platform_control.conversations where conversation_id=%s",
                     (conversation_id,),
                 ).fetchone()

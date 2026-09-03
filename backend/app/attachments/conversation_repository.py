@@ -777,3 +777,75 @@ class ConversationAttachmentRepository:
             raise
         except Exception as error:
             raise ConversationAttachmentRepositoryError() from error
+
+    def bind_turn_locked(
+        self,
+        cursor: Any,
+        *,
+        owner_id: UUID,
+        conversation_id: UUID,
+        message_id: UUID,
+        turn_id: UUID,
+        attachment_ids: tuple[UUID, ...],
+        active_attachment_ids: tuple[UUID, ...],
+        agent_id: str | None,
+        agent_supports_attachments: bool,
+    ) -> None:
+        """Validate and bind one submission using the caller's transaction."""
+
+        owner_id = _require_uuid(owner_id)
+        conversation_id = _require_uuid(conversation_id)
+        message_id = _require_uuid(message_id)
+        turn_id = _require_uuid(turn_id)
+        invalid_selection = (
+            any(not isinstance(value, UUID) for value in attachment_ids)
+            or any(not isinstance(value, UUID) for value in active_attachment_ids)
+            or len(set(attachment_ids)) != len(attachment_ids)
+            or len(set(active_attachment_ids)) != len(active_attachment_ids)
+            or len(attachment_ids) > self._max_message_files
+            or len(active_attachment_ids) > self._max_conversation_files
+            or not set(attachment_ids).issubset(active_attachment_ids)
+        )
+        if invalid_selection:
+            raise ConversationAttachmentConflict("attachment selection invalid")
+        if (
+            active_attachment_ids
+            and agent_id is not None
+            and not agent_supports_attachments
+        ):
+            raise ConversationAttachmentConflict(
+                "agent does not support attachments"
+            )
+        try:
+            cursor.execute(
+                "select platform_attachments.bind_conversation_turn_v64("
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    owner_id,
+                    conversation_id,
+                    message_id,
+                    turn_id,
+                    list(attachment_ids),
+                    list(active_attachment_ids),
+                    agent_id,
+                    agent_supports_attachments,
+                    self._max_message_files,
+                    self._max_message_bytes,
+                    self._max_conversation_files,
+                    self._max_conversation_bytes,
+                ),
+            )
+        except ConversationAttachmentRepositoryError:
+            raise
+        except (
+            psycopg.errors.CheckViolation,
+            psycopg.errors.NoDataFound,
+            psycopg.errors.ProgramLimitExceeded,
+        ) as error:
+            if isinstance(error, psycopg.errors.ProgramLimitExceeded):
+                raise ConversationAttachmentQuotaExceeded(
+                    "conversation attachment quota exceeded"
+                ) from None
+            raise ConversationAttachmentConflict("attachment unavailable") from None
+        except psycopg.Error as error:
+            raise ConversationAttachmentRepositoryError() from error

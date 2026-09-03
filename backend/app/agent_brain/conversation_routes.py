@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
-from datetime import datetime
 import hmac
 import json
+from datetime import datetime
 from typing import Annotated, AsyncIterator, Callable, Literal
 from uuid import UUID
 
@@ -24,13 +24,15 @@ from app.control_plane.models import AuthContext
 
 from .authorization import AgentUseAuthorizationUnavailable
 from .conversation_models import (
+    ConversationAttachmentProjection,
     ConversationCreateResult,
     ConversationEventRecord,
     ConversationMessageRecord,
     ConversationRecord,
     ConversationTurnRecord,
+    ConversationTurnSubmission,
 )
-from .conversation_service import ConversationCommandService
+from .conversation_projection import ConversationProjection
 from .conversation_repository import (
     ConversationRepository,
     ConversationRepositoryConflict,
@@ -38,13 +40,12 @@ from .conversation_repository import (
     ConversationRepositoryNotFound,
     ConversationTurnInProgress,
 )
-from .conversation_projection import ConversationProjection
+from .conversation_service import ConversationCommandService
 from .routes import (
     MissionStreamBusy,
     MissionStreamLimiter,
     _ReservedStreamingResponse,
 )
-
 
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 _SSE_HEADERS = {
@@ -58,14 +59,34 @@ _MAX_INPUT_BYTES = 32 * 1024
 class ConversationTextBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    text: str
+    text: str = Field(default="", max_length=32768)
+    attachment_ids: tuple[UUID, ...] = Field(default=(), max_length=5)
+    active_attachment_ids: tuple[UUID, ...] = Field(default=(), max_length=50)
 
-    @field_validator("text")
+    @field_validator("attachment_ids", "active_attachment_ids", mode="before")
     @classmethod
-    def _visible_text(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("Conversation text required")
-        return value
+    def _tuple_ids(cls, value):
+        if not isinstance(value, (list, tuple)):
+            return value
+        try:
+            return tuple(UUID(item) if isinstance(item, str) else item for item in value)
+        except ValueError:
+            return value
+
+    @model_validator(mode="after")
+    def _normalized_submission(self) -> ConversationTextBody:
+        submission = ConversationTurnSubmission(
+            self.text, self.attachment_ids, self.active_attachment_ids
+        )
+        self.text = submission.text
+        self.attachment_ids = submission.attachment_ids
+        self.active_attachment_ids = submission.active_attachment_ids
+        return self
+
+    def submission(self) -> ConversationTurnSubmission:
+        return ConversationTurnSubmission(
+            self.text, self.attachment_ids, self.active_attachment_ids
+        )
 
 
 class ConversationFeedbackBody(BaseModel):
@@ -335,6 +356,34 @@ def _message_payload(record: ConversationMessageRecord) -> dict[str, object]:
         "delivery_status": record.delivery_status,
         "created_at": record.created_at.isoformat(),
         "completed_at": record.completed_at.isoformat() if record.completed_at else None,
+        "input_attachments": [
+            _attachment_payload(item) for item in record.input_attachments
+        ],
+        "output_attachments": [
+            _attachment_payload(item) for item in record.output_attachments
+        ],
+        "active_attachment_ids": [
+            str(attachment_id) for attachment_id in record.active_attachment_ids
+        ],
+    }
+
+
+def _attachment_payload(
+    record: ConversationAttachmentProjection,
+) -> dict[str, object]:
+    return {
+        "attachment_id": str(record.attachment_id),
+        "conversation_id": str(record.conversation_id),
+        "source": record.source,
+        "display_name": record.display_name,
+        "detected_mime": record.detected_mime,
+        "size_bytes": record.size_bytes,
+        "sha256": record.sha256,
+        "state": record.state,
+        "created_at": record.created_at.isoformat(),
+        "retained_until": record.retained_until.isoformat(),
+        "processing_coverage": record.processing_coverage,
+        "availability_reason": record.availability_reason,
     }
 
 
@@ -629,7 +678,7 @@ def build_conversation_router(
                 commands.start,
                 context.internal_user_id,
                 request_id,
-                body.text,
+                body.submission(),
                 mode=mode,
                 direct_agent_id=direct_agent_id,
             )
@@ -817,7 +866,7 @@ def build_conversation_router(
                     context.internal_user_id,
                     conversation_id,
                     request_id,
-                    body.text,
+                    body.submission(),
                 )
                 if replay is not None:
                     response.status_code = 200
@@ -828,6 +877,14 @@ def build_conversation_router(
                     context.internal_user_id,
                     conversation_id,
                 )
+                if active_turn is not None and (
+                    body.attachment_ids or body.active_attachment_ids
+                ):
+                    raise HTTPException(
+                        409,
+                        "Attachments require a new Conversation turn",
+                        headers=_NO_STORE,
+                    )
                 if active_turn is not None and active_turn.status != "waiting_user":
                     intervention = await asyncio.to_thread(
                         repository.append_brain_intervention,
@@ -851,7 +908,7 @@ def build_conversation_router(
                 context.internal_user_id,
                 conversation_id,
                 request_id,
-                body.text,
+                body.submission(),
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None

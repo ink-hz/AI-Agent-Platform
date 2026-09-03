@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -13,7 +14,6 @@ from app.agent_brain.conversation_repository import (
     ConversationRepositoryNotFound,
 )
 from app.execution_relay.content_crypto import ContentCryptoError
-
 
 MAX_CONTEXT_BYTES = 96 * 1024
 COMPACTION_TRIGGER_BYTES = 64 * 1024
@@ -45,6 +45,7 @@ class ConversationContext:
     summary: str | None
     messages: tuple[ContextMessage, ...]
     estimated_utf8_bytes: int
+    active_attachment_ids: tuple[UUID, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -137,6 +138,25 @@ class ConversationContextBuilder:
                     row["user_seq"],
                 ),
             ).fetchall()
+            active_rows = cursor.execute(
+                "select attachment.attachment_id,attachment.state,"
+                "attachment.retained_until,attachment.immutable_locator,"
+                "exists(select 1 from platform_attachments.erasure_jobs erasure "
+                "where erasure.attachment_id=attachment.attachment_id) "
+                "as erasure_pending from platform_attachments.bindings binding "
+                "join platform_attachments.attachments attachment using (attachment_id) "
+                "where binding.conversation_id=%s and binding.turn_id=%s "
+                "and binding.kind='turn_input' order by attachment.attachment_id",
+                (conversation_id, turn_id),
+            ).fetchall()
+            if any(
+                item["state"] != "ready"
+                or item["retained_until"] <= datetime.now().astimezone()
+                or item["immutable_locator"] is None
+                or item["erasure_pending"]
+                for item in active_rows
+            ):
+                raise ConversationContextError()
         records = tuple(
             self.repository._message_from_row(message_row)
             for message_row in message_rows
@@ -157,6 +177,9 @@ class ConversationContextBuilder:
                 summary=conversation.summary,
                 messages=messages,
                 estimated_utf8_bytes=_context_size(conversation.summary, messages),
+                active_attachment_ids=tuple(
+                    item["attachment_id"] for item in active_rows
+                ),
             ),
             row["user_seq"],
             sequenced,

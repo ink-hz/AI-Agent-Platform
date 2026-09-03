@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 from app.agent_brain.repository import MissionRecord
-
 
 ConversationMode = Literal["brain", "direct_agent"]
 ConversationStatus = Literal["active", "archived"]
@@ -25,6 +25,75 @@ TurnStatus = Literal[
 ]
 FeedbackRating = Literal["helpful", "unhelpful"]
 FeedbackReason = Literal["inaccurate", "incomplete", "unclear", "unresolved", "other"]
+
+
+def _normalized_text(value: object) -> str:
+    if not isinstance(value, str):
+        raise TypeError("Conversation text invalid")
+    selected = unicodedata.normalize("NFC", value.replace("\r\n", "\n").replace("\r", "\n")).strip()
+    try:
+        if len(selected) > 32768:
+            raise ValueError("Conversation text invalid")
+    except UnicodeError:
+        raise ValueError("Conversation text invalid") from None
+    return selected
+
+
+def _normalized_ids(value: object, *, maximum: int) -> tuple[UUID, ...]:
+    if not isinstance(value, tuple) or any(not isinstance(item, UUID) for item in value):
+        raise ValueError("Conversation attachment IDs invalid")
+    if len(value) > maximum or len(set(value)) != len(value):
+        raise ValueError("Conversation attachment IDs invalid")
+    return tuple(sorted(value, key=str))
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationTurnSubmission:
+    text: str
+    attachment_ids: tuple[UUID, ...] = ()
+    active_attachment_ids: tuple[UUID, ...] = ()
+
+    def __post_init__(self) -> None:
+        text = _normalized_text(self.text)
+        attachment_ids = _normalized_ids(self.attachment_ids, maximum=5)
+        active_attachment_ids = _normalized_ids(
+            self.active_attachment_ids, maximum=50
+        )
+        if not set(attachment_ids).issubset(active_attachment_ids):
+            raise ValueError("New attachments must be active")
+        if not text and not attachment_ids:
+            raise ValueError("Conversation text or attachment required")
+        object.__setattr__(self, "text", text)
+        object.__setattr__(self, "attachment_ids", attachment_ids)
+        object.__setattr__(self, "active_attachment_ids", active_attachment_ids)
+
+
+def normalize_turn_submission(
+    value: str | ConversationTurnSubmission,
+) -> ConversationTurnSubmission:
+    if isinstance(value, ConversationTurnSubmission):
+        return ConversationTurnSubmission(
+            value.text, value.attachment_ids, value.active_attachment_ids
+        )
+    if isinstance(value, str):
+        return ConversationTurnSubmission(value)
+    raise ValueError("Conversation submission invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationAttachmentProjection:
+    attachment_id: UUID
+    conversation_id: UUID
+    source: Literal["user", "agent"]
+    display_name: str = field(repr=False)
+    detected_mime: str | None
+    size_bytes: int
+    sha256: str | None = field(repr=False)
+    state: str
+    created_at: datetime
+    retained_until: datetime
+    processing_coverage: dict[str, object] | None
+    availability_reason: str | None
 
 
 @dataclass(frozen=True)
@@ -56,6 +125,9 @@ class ConversationMessageRecord:
     created_at: datetime
     completed_at: datetime | None
     content: str = field(repr=False)
+    input_attachments: tuple[ConversationAttachmentProjection, ...] = ()
+    output_attachments: tuple[ConversationAttachmentProjection, ...] = ()
+    active_attachment_ids: tuple[UUID, ...] = ()
 
 
 @dataclass(frozen=True)
