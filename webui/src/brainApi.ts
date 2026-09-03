@@ -37,10 +37,13 @@ function parseAgentLaunch(value: unknown): AgentLaunch {
   } catch {
     throw new Error("Agent launch response invalid");
   }
-  if (target.origin !== "https://fae.orbbec.com.cn"
-    || target.pathname !== "/app/"
+  if (target.origin !== "https://agent.orbbec.com.cn"
+    || target.username !== ""
+    || target.password !== ""
+    || target.pathname !== "/fae/"
     || target.search !== ""
-    || !/^#platform_launch=[A-Za-z0-9_-]{32,256}$/.test(target.hash)) {
+    || !/^#platform_launch=[A-Za-z0-9_-]{32,256}$/.test(target.hash)
+    || value.launch_url !== `https://agent.orbbec.com.cn/fae/${target.hash}`) {
     throw new Error("Agent launch response invalid");
   }
   return { launch_url: value.launch_url, expires_at: value.expires_at };

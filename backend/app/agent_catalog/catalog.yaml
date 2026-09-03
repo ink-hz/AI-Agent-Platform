@@ -187,7 +187,7 @@ agents:
     required_inputs: [产品或设备型号, 问题现象与已完成的排查]
     example_tasks: [为深度相机异常整理分步排查方案, 比较两个产品在给定场景下的适用性]
     interaction_modes: [external_workspace]
-    workspace_url: https://fae.orbbec.com.cn/
+    workspace_url: /fae/
     supports_persistent_session: false
     supports_followup_message: false
     supports_progress_events: false

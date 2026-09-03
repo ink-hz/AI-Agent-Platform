@@ -14,6 +14,12 @@ def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _location_block(value: str, selector: str) -> str:
+    start = value.index(selector)
+    next_location = value.find("\n    location ", start + len(selector))
+    return value[start:] if next_location < 0 else value[start:next_location]
+
+
 def test_nginx_entry_authenticates_every_https_path_and_keeps_loopback_upstream():
     value = _text(NGINX)
 
@@ -183,3 +189,94 @@ def test_formal_nginx_routes_voc_without_exposing_health_or_credentials():
         ):
             assert directive in block
         assert "$proxy_add_x_forwarded_for" not in block
+
+
+def test_formal_nginx_assigns_hardened_non_overlapping_fae_route_owners():
+    value = _text(FORMAL_NGINX)
+    selectors = (
+        "location = /fae {",
+        "location = /fae/manage {",
+        "location ^~ /fae/manage/ {",
+        "location = /fae/health {",
+        "location = /fae/api/chat {",
+        "location = /fae/api/attachments {",
+        "location ^~ /fae/api/ {",
+        "location ^~ /fae/assets/ {",
+        "location ^~ /fae/ {",
+    )
+    positions = [value.index(selector) for selector in selectors]
+
+    assert positions == sorted(positions)
+    assert value.index("location ^~ /fae/manage/ {") < value.index(
+        "location ^~ /fae/ {"
+    )
+    assert value.index("location ^~ /fae/ {") < value.index(
+        "location / {", positions[-1]
+    )
+    root_redirect = _location_block(value, "location = /fae {")
+    management_redirect = _location_block(value, "location = /fae/manage {")
+    health = _location_block(value, "location = /fae/health {")
+    assert "return 308 /fae/$is_args$args;" in root_redirect
+    assert "return 308 /fae/manage/$is_args$args;" in management_redirect
+    assert "return 404;" in health
+
+    management = _location_block(value, "location ^~ /fae/manage/ {")
+    chat = _location_block(value, "location = /fae/api/chat {")
+    attachments = _location_block(value, "location = /fae/api/attachments {")
+    api = _location_block(value, "location ^~ /fae/api/ {")
+    assets = _location_block(value, "location ^~ /fae/assets/ {")
+    application = _location_block(value, "location ^~ /fae/ {")
+
+    assert "proxy_pass http://127.0.0.1:8080;" in management
+    assert "rewrite " not in management
+    for block in (chat, attachments, api, assets, application):
+        assert "proxy_pass http://127.0.0.1:8000;" in block
+    assert "rewrite ^/fae/api/chat$ /chat break;" in chat
+    assert "rewrite ^/fae/api/attachments$ /attachments break;" in attachments
+    assert "rewrite ^/fae/api(/.*)$ $1 break;" in api
+    assert "rewrite " not in assets
+    assert "rewrite " not in application
+    assert "proxy_buffering off;" in chat
+    assert "proxy_request_buffering off;" in chat
+    assert "proxy_read_timeout 330s;" in chat
+    assert "proxy_send_timeout 330s;" in chat
+    assert "client_max_body_size 50m;" in attachments
+    assert (
+        'add_header Cache-Control "public, max-age=31536000, immutable" always;'
+        in assets
+    )
+
+    proxy_blocks = (management, chat, attachments, api, assets, application)
+    for block in proxy_blocks:
+        for directive in (
+            "proxy_set_header Host $host;",
+            "proxy_set_header X-Real-IP $remote_addr;",
+            "proxy_set_header X-Forwarded-For $remote_addr;",
+            "proxy_set_header X-Forwarded-Proto $scheme;",
+            'proxy_set_header Forwarded "";',
+            'proxy_set_header Authorization "";',
+            'proxy_set_header Connection "";',
+            'add_header Strict-Transport-Security "max-age=31536000" always;',
+            'add_header X-Content-Type-Options "nosniff" always;',
+            'add_header X-Frame-Options "DENY" always;',
+            'add_header Referrer-Policy "no-referrer" always;',
+            "add_header Content-Security-Policy",
+            'add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;',
+        ):
+            assert directive in block
+        assert "$proxy_add_x_forwarded_for" not in block
+
+    for block in (management, chat, attachments, api, application):
+        assert 'add_header Cache-Control "private, no-store" always;' in block
+
+    for block in (root_redirect, management_redirect, health):
+        for directive in (
+            'add_header Cache-Control "private, no-store" always;',
+            'add_header Strict-Transport-Security "max-age=31536000" always;',
+            'add_header X-Content-Type-Options "nosniff" always;',
+            'add_header X-Frame-Options "DENY" always;',
+            'add_header Referrer-Policy "no-referrer" always;',
+            "add_header Content-Security-Policy",
+            'add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;',
+        ):
+            assert directive in block

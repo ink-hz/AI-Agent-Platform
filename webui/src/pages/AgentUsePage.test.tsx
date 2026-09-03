@@ -41,7 +41,7 @@ const adminCard: AgentCapabilityCard = {
 };
 const faeCard: AgentCapabilityCard = {
   ...adminCard, agent_id: "ai-fae-agent", display_name: "AI FAE Agent", domain_group: "技术支持",
-  workspace_url: "https://fae.orbbec.com.cn/",
+  workspace_url: "/fae/",
 };
 const vocCard: AgentCapabilityCard = {
   ...adminCard, agent_id: "voc", display_name: "VOC 洞察助手", domain_group: "客户洞察",
@@ -113,7 +113,7 @@ describe("professional Agent use pages", () => {
   it("opens FAE through a one-time Platform enterprise launch", async () => {
     const launchCode = "l".repeat(43);
     const launchAgent = vi.fn().mockResolvedValue({
-      launch_url: `https://fae.orbbec.com.cn/app/#platform_launch=${launchCode}`,
+      launch_url: `https://agent.orbbec.com.cn/fae/#platform_launch=${launchCode}`,
       expires_at: "2026-08-28T12:01:00Z",
     });
     const onLaunchReady = vi.fn();
@@ -129,7 +129,7 @@ describe("professional Agent use pages", () => {
 
     expect(launchAgent).toHaveBeenCalledWith("ai-fae-agent", "csrf");
     expect(onLaunchReady).toHaveBeenCalledWith(
-      `https://fae.orbbec.com.cn/app/#platform_launch=${launchCode}`,
+      `https://agent.orbbec.com.cn/fae/#platform_launch=${launchCode}`,
     );
   });
 

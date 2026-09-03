@@ -206,6 +206,33 @@ def test_cloud_registry_and_contract_have_no_source_coordinates():
     assert "47.106.112.69" not in contract
 
 
+def test_formal_edge_routes_each_fae_family_to_exactly_one_owner():
+    value = (CLOUD / "agent-domain.nginx.conf").read_text(encoding="utf-8")
+    route_owners = {
+        "location ^~ /fae/manage/ {": "proxy_pass http://127.0.0.1:8080;",
+        "location = /fae/api/chat {": "proxy_pass http://127.0.0.1:8000;",
+        "location = /fae/api/attachments {": "proxy_pass http://127.0.0.1:8000;",
+        "location ^~ /fae/api/ {": "proxy_pass http://127.0.0.1:8000;",
+        "location ^~ /fae/assets/ {": "proxy_pass http://127.0.0.1:8000;",
+        "location ^~ /fae/ {": "proxy_pass http://127.0.0.1:8000;",
+    }
+
+    for selector, owner in route_owners.items():
+        assert value.count(selector) == 1
+        start = value.index(selector)
+        end = value.find("\n    location ", start + len(selector))
+        block = value[start:] if end < 0 else value[start:end]
+        assert block.count("proxy_pass ") == 1
+        assert owner in block
+
+    assert value.index("location ^~ /fae/manage/ {") < value.index(
+        "location ^~ /fae/ {"
+    )
+    assert value.index("location ^~ /fae/ {") < value.index(
+        "location / {", value.index("location ^~ /fae/ {")
+    )
+
+
 def test_local_deploy_preflight_is_clean_noninteractive_and_manifest_bound():
     script = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
 

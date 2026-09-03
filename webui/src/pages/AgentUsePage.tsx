@@ -15,6 +15,7 @@ import type { AgentCapabilityCard } from "../brainTypes";
 import type { ConversationPage } from "../conversationTypes";
 import { ErrorState, LoadingState } from "../components/DataState";
 import { PlatformLink } from "../components/PlatformLink";
+import { FAE_DIRECT_PATH } from "../platform/workspaces";
 import { navigate } from "../router";
 import { DirectAgentWorkspace } from "../workspaces/direct/DirectAgentWorkspace";
 import type { ConversationPageClient } from "./ConversationPage";
@@ -22,7 +23,7 @@ import type { ConversationPageClient } from "./ConversationPage";
 
 const WORKSPACE_URLS: Readonly<Record<string, string>> = Object.freeze({
   "ai-admin-agent": "/office/?view=services",
-  "ai-fae-agent": "https://fae.orbbec.com.cn/",
+  "ai-fae-agent": FAE_DIRECT_PATH,
 });
 
 export interface AgentHistoryClient {
