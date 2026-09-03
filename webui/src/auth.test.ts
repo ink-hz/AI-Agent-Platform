@@ -185,12 +185,19 @@ describe("authenticated account bootstrap", () => {
   });
 
   it("accepts and projects trusted DingTalk departments and gender", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(accountResponse()));
+    const fetch = vi.fn().mockResolvedValue(accountResponse());
+    vi.stubGlobal("fetch", fetch);
 
     await expect(loadAccount("")).resolves.toMatchObject({
       departments: ["项目管理部"],
       gender: "male",
     });
+    expect(fetch).toHaveBeenCalledWith("/api/v1/account", expect.objectContaining({
+      headers: {
+        Accept: "application/json",
+        "X-Platform-Account-Contract": "2",
+      },
+    }));
   });
 
   it("accepts a nullable trusted gender", async () => {

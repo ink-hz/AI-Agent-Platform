@@ -301,7 +301,10 @@ async function fetchAccount(prefix: string): Promise<Account> {
   try {
     const response = await fetch(platformPath("/api/v1/account", prefix), {
       credentials: "include",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "X-Platform-Account-Contract": "2",
+      },
       signal: controller.signal,
     });
     await checked(response);

@@ -33,7 +33,6 @@ AI_ADMIN_ACCOUNT_CONTRACT_FIELDS = {
     "mobile",
     "primary_department",
     "observation_agent_ids",
-    "workspace_scopes",
     "directory_freshness",
     "hard_stale_read_only",
     "csrf_token",
@@ -1050,7 +1049,6 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
         "role": "platform_owner",
         "departments": ["产品中心", "项目管理部"],
         "observation_agent_ids": [],
-        "workspace_scopes": ["fae_workbench"],
         "directory_freshness": "fresh",
         "hard_stale_read_only": False,
         "csrf_token": auth.csrf,
@@ -1124,17 +1122,20 @@ def test_account_projects_only_bounded_fae_workspace_scope(
     auth.context = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
     owner = client.get(
         "/api/v1/account",
+        headers={"X-Platform-Account-Contract": "2"},
         cookies={auth.cookie_name: "valid-cookie"},
     )
     auth.context = AuthContext(granted_user_id, Role.MEMBER, uuid4(), False)
     granted_member = client.get(
         "/api/v1/account",
+        headers={"X-Platform-Account-Contract": "2"},
         cookies={auth.cookie_name: "valid-cookie"},
     )
     for role in (Role.MEMBER, Role.MANAGEMENT_VIEWER, Role.PLATFORM_ADMIN):
         auth.context = AuthContext(uuid4(), role, uuid4(), False)
         denied = client.get(
             "/api/v1/account",
+            headers={"X-Platform-Account-Contract": "2"},
             cookies={auth.cookie_name: "valid-cookie"},
         )
         assert denied.status_code == 200
@@ -1237,7 +1238,7 @@ def test_revoked_fae_grant_denies_the_next_request_without_breaking_direct_use(
     assert launch.calls == [(auth.context.internal_user_id, "ai-fae-agent")]
 
 
-def test_account_fails_closed_when_fae_scope_repository_fails(
+def test_account_v1_remains_available_when_fae_scope_repository_fails(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -1246,6 +1247,23 @@ def test_account_fails_closed_when_fae_scope_repository_fails(
         _app(tmp_path, monkeypatch, auth, fae_access=_FailingFaeAccess())
     ).get(
         "/api/v1/account",
+        cookies={auth.cookie_name: "valid-cookie"},
+    )
+
+    assert response.status_code == 200
+    assert set(response.json()) == AI_ADMIN_ACCOUNT_CONTRACT_FIELDS
+
+
+def test_account_v2_fails_closed_when_fae_scope_repository_fails(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    auth = FakeAuth()
+    response = TestClient(
+        _app(tmp_path, monkeypatch, auth, fae_access=_FailingFaeAccess())
+    ).get(
+        "/api/v1/account",
+        headers={"X-Platform-Account-Contract": "2"},
         cookies={auth.cookie_name: "valid-cookie"},
     )
 

@@ -384,19 +384,23 @@ def build_auth_router(
     @router.get("/api/v1/account")
     async def account(request: Request):
         context: AuthContext = request.state.auth_context
+        account_contract_v2 = (
+            request.headers.get("X-Platform-Account-Contract") == "2"
+        )
         try:
             snapshot = auth.account_snapshot(context)
-            fae_access = getattr(request.app.state, "fae_access", None)
-            workspace_scopes = (
-                ["fae_workbench"]
-                if fae_access is not None and fae_access.allows(context)
-                else []
-            )
+            if account_contract_v2:
+                fae_access = getattr(request.app.state, "fae_access", None)
+                workspace_scopes = (
+                    ["fae_workbench"]
+                    if fae_access is not None and fae_access.allows(context)
+                    else []
+                )
         except AuthenticationError:
             raise HTTPException(503, "account unavailable") from None
         except FaeWorkbenchAccessUnavailable:
             raise HTTPException(503, "account unavailable") from None
-        return {
+        payload = {
             "internal_user_id": str(context.internal_user_id),
             "display_name": snapshot["display_name"],
             "role": context.role.value,
@@ -406,11 +410,13 @@ def build_auth_router(
             "mobile": snapshot["mobile"],
             "primary_department": snapshot["primary_department"],
             "observation_agent_ids": snapshot["observation_agent_ids"],
-            "workspace_scopes": workspace_scopes,
             "directory_freshness": snapshot["directory_freshness"],
             "hard_stale_read_only": context.hard_stale_read_only,
             "csrf_token": request.state.csrf_token,
         }
+        if account_contract_v2:
+            payload["workspace_scopes"] = workspace_scopes
+        return payload
 
     @router.get("/api/v1/internal/session/subject")
     async def internal_session_subject(request: Request):
