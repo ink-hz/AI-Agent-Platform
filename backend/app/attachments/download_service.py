@@ -121,6 +121,7 @@ class OpenedDownload:
 @dataclass(frozen=True, repr=False)
 class _TicketClaim:
     owner_id: UUID
+    resource_owner_id: UUID
     attachment_id: UUID
     purpose: str
     expires_at: datetime
@@ -302,6 +303,30 @@ class ConversationAttachmentAccessRepository:
         except DownloadError:
             raise
         except Exception:  # noqa: BLE001 - database boundary is intentionally opaque
+            raise DownloadNotFound() from None
+
+    def authorize_review(
+        self, actor_id: UUID, attachment_id: UUID, purpose: str
+    ) -> UUID:
+        if (
+            not isinstance(actor_id, UUID)
+            or not isinstance(attachment_id, UUID)
+            or purpose not in {"preview", "download"}
+        ):
+            raise DownloadNotFound()
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select platform_attachments.authorize_review_attachment_access_v64("
+                    "%s,%s,%s) as owner_internal_user_id",
+                    (actor_id, attachment_id, purpose),
+                ).fetchone()
+            if row is None or not isinstance(row["owner_internal_user_id"], UUID):
+                raise DownloadNotFound()
+            return row["owner_internal_user_id"]
+        except DownloadError:
+            raise
+        except Exception:  # noqa: BLE001 - authorization boundary is intentionally opaque
             raise DownloadNotFound() from None
 
     def attachment(self, owner_id: UUID, attachment_id: UUID) -> AttachmentRecord:
@@ -603,6 +628,26 @@ class ConversationAttachmentDownloadService:
         if purpose not in {"preview", "download"}:
             raise DownloadNotFound()
         self._repository.downloadable(owner_id, attachment_id, purpose)
+        return self._build_ticket(owner_id, owner_id, attachment_id, purpose)
+
+    def issue_review_ticket(
+        self, actor_id: UUID, attachment_id: UUID, purpose: str
+    ) -> BrowserTicket:
+        resource_owner_id = self._repository.authorize_review(
+            actor_id, attachment_id, purpose
+        )
+        self._repository.downloadable(resource_owner_id, attachment_id, purpose)
+        return self._build_ticket(
+            actor_id, resource_owner_id, attachment_id, purpose
+        )
+
+    def _build_ticket(
+        self,
+        owner_id: UUID,
+        resource_owner_id: UUID,
+        attachment_id: UUID,
+        purpose: str,
+    ) -> BrowserTicket:
         expires = self._clock() + timedelta(seconds=self._ticket_seconds)
         nonce, ticket_id = os.urandom(12), uuid4()
         payload = json.dumps(
@@ -629,7 +674,7 @@ class ConversationAttachmentDownloadService:
                 if claim.expires_at > now
             }
             self._tickets[digest] = _TicketClaim(
-                owner_id, attachment_id, purpose, expires
+                owner_id, resource_owner_id, attachment_id, purpose, expires
             )
         return BrowserTicket(token, expires, f"/api/v1/attachments/content/{token}")
 
@@ -695,7 +740,7 @@ class ConversationAttachmentDownloadService:
     ) -> OpenedDownload:
         claim = self._consume(owner_id, ticket)
         asset = self._repository.downloadable(
-            owner_id, claim.attachment_id, claim.purpose
+            claim.resource_owner_id, claim.attachment_id, claim.purpose
         )
         selected_range = _parse_range(range_header, asset.size_bytes)
         directory = Path(
@@ -736,7 +781,8 @@ class ConversationAttachmentDownloadService:
                 digest: claim
                 for digest, claim in self._tickets.items()
                 if not (
-                    claim.owner_id == owner_id and claim.attachment_id == attachment_id
+                    claim.resource_owner_id == owner_id
+                    and claim.attachment_id == attachment_id
                 )
             }
 

@@ -169,6 +169,40 @@ body {
 .fae-governance-scope span { color: var(--brand-bright); font-weight: 800; }
 .fae-governance-scope strong { color: var(--ink-soft); font-weight: 680; }
 .review-workspace { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 18px; margin-top: 20px; align-items: start; }
+.conversation-feedback-inbox { margin: 22px 0; padding: 22px; border: 1px solid #c7d7e8; border-radius: 18px; background: linear-gradient(145deg, #f7fbff, #fff); box-shadow: 0 12px 30px rgba(21,61,105,.08); }
+.conversation-feedback-inbox > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.conversation-feedback-inbox > header p { margin: 0 0 5px; color: var(--brand-bright); font-size: 10px; font-weight: 850; letter-spacing: .11em; }
+.conversation-feedback-inbox > header h2 { margin: 0; font-size: 21px; }
+.conversation-feedback-inbox > header span { display: block; margin-top: 6px; color: var(--ink-soft); font-size: 12px; }
+.conversation-feedback-inbox > header > b { display: grid; min-width: 42px; height: 42px; border-radius: 50%; background: var(--brand); color: #fff; place-items: center; }
+.conversation-feedback-state { margin: 18px 0 0; padding: 22px; border: 1px dashed var(--line); border-radius: 12px; color: var(--ink-faint); text-align: center; }
+.conversation-feedback-layout { display: grid; grid-template-columns: minmax(230px, .72fr) minmax(0, 1.7fr); gap: 16px; margin-top: 18px; }
+.conversation-feedback-layout > nav { display: grid; align-content: start; gap: 7px; }
+.conversation-feedback-layout > nav button { display: grid; gap: 5px; width: 100%; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: #fff; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.conversation-feedback-layout > nav button.is-selected { border-color: #88aaca; background: #edf5ff; box-shadow: 0 6px 16px rgba(21,61,105,.08); }
+.conversation-feedback-layout > nav strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-feedback-layout > nav span, .conversation-feedback-layout > nav time { color: var(--ink-faint); font-size: 10.5px; }
+.conversation-feedback-detail { overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: #fff; }
+.conversation-feedback-detail > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; padding: 16px 18px; border-bottom: 1px solid var(--line-soft); }
+.conversation-feedback-detail > header span { color: var(--brand-bright); font-size: 10.5px; font-weight: 800; }
+.conversation-feedback-detail > header h3 { margin: 4px 0 0; font-size: 17px; }
+.conversation-feedback-detail > header time { color: var(--ink-faint); font-size: 10.5px; }
+.conversation-feedback-detail > section { padding: 14px 18px; border-bottom: 1px solid var(--line-soft); }
+.conversation-feedback-detail > section > b { color: var(--ink-soft); font-size: 11px; }
+.conversation-feedback-detail > section > p { margin: 7px 0 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+.conversation-feedback-detail ol { margin: 8px 0 0; padding-left: 18px; }
+.conversation-feedback-detail li { margin-top: 5px; font-size: 12px; }
+.conversation-feedback-detail li small { display: block; margin-top: 2px; color: var(--ink-faint); }
+.conversation-review-attachments { display: grid; gap: 8px; margin-top: 9px; }
+.conversation-review-attachments > article { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--surface-soft); }
+.conversation-review-attachments strong, .conversation-review-attachments span, .conversation-review-attachments small { display: block; }
+.conversation-review-attachments strong { font-size: 12px; }
+.conversation-review-attachments span, .conversation-review-attachments small { margin-top: 3px; color: var(--ink-faint); font-size: 10px; }
+.conversation-review-attachments > article > div:last-child { display: flex; gap: 6px; }
+.conversation-review-attachments button, .conversation-feedback-detail > footer button { padding: 7px 10px; border: 1px solid #b8cce0; border-radius: 8px; background: #fff; color: var(--brand); font: inherit; font-size: 11px; font-weight: 750; cursor: pointer; }
+.conversation-review-attachments em { color: var(--down); font-size: 10.5px; font-style: normal; }
+.conversation-feedback-detail > footer { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 18px; }
+.conversation-feedback-detail > footer button:last-child { border-color: var(--brand); background: var(--brand); color: #fff; }
 .review-workspace.is-fae-governance { grid-template-columns: minmax(340px, 19fr) minmax(0, 31fr); gap: 20px; }
 .review-workspace.is-fae-governance .review-list-panel { padding: 16px; }
 .fae-governance-queues { display: flex; gap: 5px; margin-top: 14px; overflow-x: auto; padding-bottom: 3px; }
@@ -1797,6 +1831,11 @@ body {
 .conversation-messages { padding-bottom: 18px; }
 
 @media (max-width: 760px) {
+  .conversation-feedback-inbox { padding: 15px; }
+  .conversation-feedback-inbox > header { align-items: flex-start; }
+  .conversation-feedback-layout { grid-template-columns: 1fr; }
+  .conversation-feedback-layout > nav { max-height: 230px; overflow-y: auto; }
+  .conversation-feedback-detail > header, .conversation-review-attachments > article { align-items: flex-start; flex-direction: column; }
   .agent-task-starters { grid-template-columns: 1fr; }
   .conversation-feedback button { min-height: 44px; }
   .conversation-feedback-detail { grid-template-columns: 1fr; }

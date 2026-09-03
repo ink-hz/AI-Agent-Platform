@@ -3,13 +3,12 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
+from app.control_plane.models import AuthContext, Role
 from app.review.repository import ConcurrentUpdate
 from app.review.routes import router
 from app.review.service import ReviewService
-
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 ISSUE_ID = UUID("00000000-0000-0000-0000-000000000001")
 LINK_ID = UUID("00000000-0000-0000-0000-000000000002")
@@ -59,6 +58,19 @@ class FakeService:
 def app():
     application = FastAPI()
     application.state.review_service = FakeService()
+
+    @application.middleware("http")
+    async def conversation_review_identity(request, call_next):
+        if request.url.path.startswith("/api/review/conversation") or request.url.path.startswith("/api/review/attachments"):
+            role = Role(request.headers.get("X-Test-Role", Role.PLATFORM_OWNER.value))
+            request.state.auth_context = AuthContext(
+                internal_user_id=UUID("00000000-0000-0000-0000-000000000099"),
+                role=role,
+                session_id=UUID("00000000-0000-0000-0000-000000000098"),
+                hard_stale_read_only=False,
+            )
+        return await call_next(request)
+
     application.include_router(router)
     return application
 
@@ -322,36 +334,60 @@ def test_read_only_service_keeps_get_available_and_rejects_writes():
     assert write_response.json()["detail"] == "feedback review unavailable"
 
 
-def test_conversation_feedback_projection_exposes_links_without_message_content(
+def test_conversation_feedback_projection_exposes_context_and_triage_state(
     client,
     app,
 ):
     app.state.conversation_repository = SimpleNamespace(
-        list_feedback=lambda limit, offset: (
+        list_feedback_for_review=lambda **filters: (
             (
                 SimpleNamespace(
-                    feedback_id=UUID("00000000-0000-0000-0000-000000000010"),
-                    conversation_id=UUID("00000000-0000-0000-0000-000000000011"),
-                    message_id=UUID("00000000-0000-0000-0000-000000000012"),
-                    turn_id=UUID("00000000-0000-0000-0000-000000000013"),
-                    mission_id=UUID("00000000-0000-0000-0000-000000000014"),
-                    rating="unhelpful",
-                    reason="incomplete",
-                    comment="请补充证据来源。",
-                    created_at=datetime.fromisoformat(
-                        "2026-08-23T10:00:00+00:00"
+                    feedback=SimpleNamespace(
+                        feedback_id=UUID("00000000-0000-0000-0000-000000000010"),
+                        conversation_id=UUID("00000000-0000-0000-0000-000000000011"),
+                        message_id=UUID("00000000-0000-0000-0000-000000000012"),
+                        turn_id=UUID("00000000-0000-0000-0000-000000000013"),
+                        mission_id=UUID("00000000-0000-0000-0000-000000000014"),
+                        rating="unhelpful",
+                        reason="incomplete",
+                        comment="请补充证据来源。",
+                        triage_status="pending_triage",
+                        triaged_by_internal_user_id=None,
+                        triaged_at=None,
+                        created_at=datetime.fromisoformat("2026-08-23T10:00:00+00:00"),
                     ),
+                    agent_id="hr-bot",
+                    conversation_title="候选人搜索",
+                    question="搜索研发岗位",
+                    answer="以下是已核验岗位。",
+                    citations=(),
                 ),
             ),
             1,
         )
     )
 
-    response = client.get("/api/review/conversation-feedback?limit=20&offset=0")
+    response = client.get("/api/review/conversation-feedback?triage_status=pending_triage&limit=20&offset=0")
 
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["rating"] == "unhelpful"
     assert response.json()["items"][0]["reason"] == "incomplete"
     assert response.json()["items"][0]["comment"] == "请补充证据来源。"
-    assert "content" not in response.json()["items"][0]
+    assert response.json()["items"][0]["question"] == "搜索研发岗位"
+    assert response.json()["items"][0]["answer"] == "以下是已核验岗位。"
+    assert response.json()["items"][0]["agent_id"] == "hr-bot"
+    assert response.json()["items"][0]["triage_status"] == "pending_triage"
+
+
+def test_conversation_feedback_is_platform_owner_only(client, app):
+    app.state.conversation_repository = SimpleNamespace(
+        list_feedback_for_review=lambda **filters: ((), 0)
+    )
+
+    response = client.get(
+        "/api/review/conversation-feedback",
+        headers={"X-Test-Role": "member"},
+    )
+
+    assert response.status_code == 403

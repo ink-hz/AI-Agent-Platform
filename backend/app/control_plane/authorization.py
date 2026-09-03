@@ -140,6 +140,15 @@ _PARTNER_OWNER_ROUTES = frozenset({
         "POST",
         "/api/v1/manage/partners/binding-requests/{request_id}/reject",
     ),
+    ("GET", "/api/review/conversation-feedback"),
+    ("PATCH", "/api/review/conversation-feedback/{feedback_id}"),
+    ("GET", "/api/review/conversations/{conversation_id}/attachments"),
+    ("POST", "/api/review/attachments/{attachment_id}/ticket"),
+})
+
+_CONVERSATION_REVIEW_MUTATION_ROUTES = frozenset({
+    ("PATCH", "/api/review/conversation-feedback/{feedback_id}"),
+    ("POST", "/api/review/attachments/{attachment_id}/ticket"),
 })
 
 def _fae_routes(prefix: str) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
@@ -303,6 +312,7 @@ class AuthorizationService:
                 route_template.startswith("/api/review/")
                 or key in _FAE_WORKBENCH_MUTATION_ROUTES
             )
+            and key not in _CONVERSATION_REVIEW_MUTATION_ROUTES
             and selected_method not in {"GET", "HEAD", "OPTIONS"}
         ):
             return self._deny(403, "cloud_review_read_only")

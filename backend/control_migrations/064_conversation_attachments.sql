@@ -470,7 +470,10 @@ alter table platform_control.conversation_feedback
       'file_format','source_timeliness','other'
     )
   ),
-  add column triage_status text;
+  add column triage_status text,
+  add column triaged_by_internal_user_id uuid
+    references platform_control.internal_users(internal_user_id),
+  add column triaged_at timestamptz;
 
 update platform_control.conversation_feedback
 set triage_status='pending_triage'
@@ -482,6 +485,12 @@ alter table platform_control.conversation_feedback
     or (rating='unhelpful' and triage_status in (
       'pending_triage','triaged','dismissed'
     ))
+  ),
+  add constraint conversation_feedback_triage_audit_v64 check (
+    ((triage_status is null or triage_status='pending_triage')
+      and triaged_by_internal_user_id is null and triaged_at is null)
+    or (triage_status in ('triaged','dismissed')
+      and triaged_by_internal_user_id is not null and triaged_at is not null)
   );
 
 create function platform_control.default_conversation_feedback_triage_v64()
@@ -2230,6 +2239,95 @@ begin
 end
 $function$;
 
+create function platform_attachments.authorize_review_attachment_access_v64(
+  selected_actor_internal_user_id uuid,
+  selected_attachment_id uuid,
+  selected_operation text
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare selected_owner_internal_user_id uuid;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Review attachment caller invalid'; end if;
+  perform platform_control.require_platform_owner(selected_actor_internal_user_id);
+  if selected_operation not in ('preview','download') then
+    raise check_violation using message='Review attachment operation invalid';
+  end if;
+  select attachment.owner_internal_user_id into selected_owner_internal_user_id
+  from platform_attachments.attachments attachment
+  where attachment.attachment_id=selected_attachment_id
+    and attachment.state='ready'
+    and attachment.retained_until>now()
+    and attachment.immutable_locator is not null
+    and (
+      selected_operation='download'
+      or attachment.detected_mime not in (
+        'image/png','image/jpeg','application/pdf'
+      )
+      or exists (
+        select 1 from platform_attachments.derivatives derivative
+        where derivative.attachment_id=attachment.attachment_id
+          and derivative.state='ready'
+          and derivative.kind in ('thumbnail','preview')
+      )
+    )
+    and not exists (
+      select 1 from platform_attachments.erasure_jobs erasure
+      where erasure.attachment_id=attachment.attachment_id
+    );
+  if selected_owner_internal_user_id is null then
+    raise no_data_found using message='Review attachment unavailable';
+  end if;
+  insert into platform_attachments.access_events(
+    access_event_id,attachment_id,actor_internal_user_id,
+    operation,result,byte_count
+  ) values (
+    gen_random_uuid(),selected_attachment_id,selected_actor_internal_user_id,
+    selected_operation,'allowed',0
+  );
+  return selected_owner_internal_user_id;
+end
+$function$;
+
+create function platform_control.triage_conversation_feedback_v64(
+  selected_actor_internal_user_id uuid,
+  selected_feedback_id uuid,
+  selected_triage_status text
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_control
+as $function$
+declare selected_result uuid;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Conversation feedback triage caller invalid'; end if;
+  perform platform_control.require_platform_owner(selected_actor_internal_user_id);
+  if selected_triage_status not in ('triaged','dismissed') then
+    raise check_violation using message='Conversation feedback triage invalid';
+  end if;
+  update platform_control.conversation_feedback set
+    triage_status=selected_triage_status,
+    triaged_by_internal_user_id=selected_actor_internal_user_id,
+    triaged_at=now()
+  where feedback_id=selected_feedback_id and rating='unhelpful'
+  returning feedback_id into selected_result;
+  if selected_result is null then
+    raise no_data_found using message='Conversation feedback unavailable';
+  end if;
+  return selected_result;
+end
+$function$;
+
+revoke all on function platform_control.triage_conversation_feedback_v64(
+  uuid,uuid,text
+) from public;
+
 create function platform_attachments.upsert_conversation_read_state_v64(
   selected_owner_internal_user_id uuid,
   selected_conversation_id uuid,
@@ -2702,6 +2800,10 @@ begin
     execute format(
       'revoke all on all functions in schema platform_attachments from %I',role_name
     );
+    execute format(
+      'revoke all on function platform_control.triage_conversation_feedback_v64('
+      'uuid,uuid,text) from %I',role_name
+    );
   end loop;
 
   execute format(
@@ -2723,10 +2825,6 @@ begin
     'grant insert on platform_attachments.bindings, '
     'platform_attachments.artifacts, '
     'platform_attachments.message_citations to %I',selected_app
-  );
-  execute format(
-    'grant update (triage_status) on '
-    'platform_control.conversation_feedback to %I',selected_app
   );
   execute format(
     'grant select on platform_attachments.attachments, '
@@ -2771,8 +2869,12 @@ begin
     'platform_attachments.finalize_artifact_upload_v64('
     'bytea,uuid,uuid,text,bigint,bytea), '
     'platform_attachments.revoke_task_grant_v64(uuid), '
+    'platform_attachments.authorize_review_attachment_access_v64('
+    'uuid,uuid,text), '
     'platform_attachments.upsert_conversation_read_state_v64('
-    'uuid,uuid,integer) to %I',selected_app
+    'uuid,uuid,integer), '
+    'platform_control.triage_conversation_feedback_v64('
+    'uuid,uuid,text) to %I',selected_app
   );
   execute format(
     'grant execute on function '

@@ -19,13 +19,16 @@ from app.agent_brain.conversation_models import (
     ConversationEventRecord,
     ConversationFeedbackRecord,
     ConversationFeedbackResult,
+    ConversationFeedbackReviewRecord,
     ConversationInterventionResult,
     ConversationMessageRecord,
     ConversationMetrics,
     ConversationReadStateRecord,
     ConversationRecord,
+    ConversationReviewAttachmentRecord,
     ConversationTurnRecord,
     ConversationTurnSubmission,
+    FeedbackReason,
     normalize_turn_submission,
 )
 from app.agent_brain.models import AgentCapabilityCard, load_capability_cards
@@ -1893,7 +1896,7 @@ class ConversationRepository:
         internal_user_id: UUID,
         message_id: UUID,
         rating: Literal["helpful", "unhelpful"],
-        reason: Literal["inaccurate", "incomplete", "unclear", "unresolved", "other"] | None = None,
+        reason: FeedbackReason | None = None,
         comment: str | None = None,
     ) -> ConversationFeedbackResult:
         _require_uuid(internal_user_id)
@@ -1903,12 +1906,13 @@ class ConversationRepository:
         if rating == "helpful" and (reason is not None or comment is not None):
             raise ValueError("Helpful feedback cannot include detail")
         if rating == "unhelpful" and reason not in {
-            "inaccurate", "incomplete", "unclear", "unresolved", "other",
+            "inaccurate", "incomplete", "unclear", "unresolved",
+            "file_format", "source_timeliness", "other",
         }:
             raise ValueError("Improvement feedback reason invalid")
         if comment is not None:
             comment = comment.strip() or None
-            if comment is not None and len(comment.encode("utf-8")) > 1000:
+            if comment is not None and len(comment) > 1000:
                 raise ValueError("Feedback comment invalid")
         try:
             with self._connection() as connection, connection.cursor() as cursor:
@@ -2005,6 +2009,9 @@ class ConversationRepository:
             reason=row.get("reason"),
             created_at=row["created_at"],
             comment=comment,
+            triage_status=row.get("triage_status"),
+            triaged_by_internal_user_id=row.get("triaged_by_internal_user_id"),
+            triaged_at=row.get("triaged_at"),
         )
 
     def conversation_metrics(self) -> ConversationMetrics:
@@ -2170,6 +2177,167 @@ class ConversationRepository:
                 tuple(self._feedback_from_row(row) for row in rows),
                 int(total),
             )
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def list_feedback_for_review(
+        self,
+        *,
+        triage_status: Literal["pending_triage", "triaged", "dismissed"] | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[tuple[ConversationFeedbackReviewRecord, ...], int]:
+        if triage_status not in {None, "pending_triage", "triaged", "dismissed"}:
+            raise ValueError("Conversation feedback triage filter invalid")
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 200
+            or isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or offset < 0
+        ):
+            raise ValueError("Conversation feedback page invalid")
+        condition = ""
+        parameters: tuple[object, ...] = ()
+        if triage_status is not None:
+            condition = "where feedback.triage_status=%s "
+            parameters = (triage_status,)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                rows = cursor.execute(
+                    "select feedback.*,conversation.title as conversation_title,"
+                    "conversation.direct_agent_id,question.message_id as question_message_id,"
+                    "question.content_ciphertext as question_content_ciphertext,"
+                    "question.encryption_key_version as question_key_version,"
+                    "answer.content_ciphertext as answer_content_ciphertext,"
+                    "answer.encryption_key_version as answer_key_version from "
+                    "platform_control.conversation_feedback feedback join "
+                    "platform_control.conversations conversation using (conversation_id) join "
+                    "platform_control.conversation_turns turn on "
+                    "turn.conversation_id=feedback.conversation_id and "
+                    "turn.turn_id=feedback.turn_id join "
+                    "platform_control.conversation_messages question on "
+                    "question.conversation_id=turn.conversation_id and "
+                    "question.message_id=turn.user_message_id join "
+                    "platform_control.conversation_messages answer on "
+                    "answer.conversation_id=feedback.conversation_id and "
+                    "answer.message_id=feedback.message_id "
+                    + condition
+                    + "order by feedback.created_at desc,feedback.feedback_id limit %s offset %s",
+                    (*parameters, limit, offset),
+                ).fetchall()
+                total = cursor.execute(
+                    "select count(*)::bigint as total from "
+                    "platform_control.conversation_feedback feedback " + condition,
+                    parameters,
+                ).fetchone()["total"]
+                projected = []
+                for row in rows:
+                    question = self.content_codec.unseal_json(
+                        message_subject(row["conversation_id"], row["question_message_id"]),
+                        SealedContent(
+                            bytes(row["question_content_ciphertext"]),
+                            row["question_key_version"],
+                        ),
+                    )
+                    answer = self.content_codec.unseal_json(
+                        message_subject(row["conversation_id"], row["message_id"]),
+                        SealedContent(
+                            bytes(row["answer_content_ciphertext"]),
+                            row["answer_key_version"],
+                        ),
+                    )
+                    if (
+                        set(question) != {"text"}
+                        or not isinstance(question["text"], str)
+                        or set(answer) != {"text"}
+                        or not isinstance(answer["text"], str)
+                    ):
+                        raise ConversationRepositoryError()
+                    projected.append(
+                        ConversationFeedbackReviewRecord(
+                            feedback=self._feedback_from_row(row),
+                            agent_id=row["direct_agent_id"] or "agent-brain-bot",
+                            conversation_title=row["conversation_title"],
+                            question=question["text"],
+                            answer=answer["text"],
+                            citations=self._message_citations_locked(cursor, row),
+                        )
+                    )
+            return tuple(projected), int(total)
+        except ConversationRepositoryError:
+            raise
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def triage_feedback(
+        self,
+        actor_internal_user_id: UUID,
+        feedback_id: UUID,
+        triage_status: Literal["triaged", "dismissed"],
+    ) -> ConversationFeedbackRecord:
+        _require_uuid(actor_internal_user_id)
+        _require_uuid(feedback_id)
+        if triage_status not in {"triaged", "dismissed"}:
+            raise ValueError("Conversation feedback triage invalid")
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                selected = cursor.execute(
+                    "select platform_control.triage_conversation_feedback_v64(%s,%s,%s) "
+                    "as feedback_id",
+                    (actor_internal_user_id, feedback_id, triage_status),
+                ).fetchone()
+                if selected is None or selected["feedback_id"] != feedback_id:
+                    raise ConversationRepositoryNotFound()
+                row = cursor.execute(
+                    "select * from platform_control.conversation_feedback where feedback_id=%s",
+                    (feedback_id,),
+                ).fetchone()
+            if row is None:
+                raise ConversationRepositoryNotFound()
+            return self._feedback_from_row(row)
+        except ConversationRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise ConversationRepositoryNotFound() from None
+        except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
+            raise ConversationRepositoryError() from None
+
+    def review_conversation_attachments(
+        self, conversation_id: UUID
+    ) -> tuple[ConversationReviewAttachmentRecord, ...]:
+        _require_uuid(conversation_id)
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                if cursor.execute(
+                    "select 1 from platform_control.conversations where conversation_id=%s",
+                    (conversation_id,),
+                ).fetchone() is None:
+                    raise ConversationRepositoryNotFound()
+                rows = cursor.execute(
+                    "select attachment.*,artifact.artifact_key,version.version_no,"
+                    "exists(select 1 from platform_attachments.current_artifact_versions current "
+                    "where current.artifact_version_id=version.artifact_version_id) as is_current,"
+                    "exists(select 1 from platform_attachments.erasure_jobs erasure where "
+                    "erasure.attachment_id=attachment.attachment_id) as erasure_pending from "
+                    "platform_attachments.attachments attachment left join "
+                    "platform_attachments.artifact_versions version using (attachment_id) left join "
+                    "platform_attachments.artifacts artifact using (artifact_id) where "
+                    "attachment.conversation_id=%s order by attachment.created_at,attachment.attachment_id",
+                    (conversation_id,),
+                ).fetchall()
+            return tuple(
+                ConversationReviewAttachmentRecord(
+                    attachment=self._attachment_projection_from_row(row),
+                    artifact_key=row["artifact_key"],
+                    version_no=row["version_no"],
+                    current=bool(row["is_current"]),
+                )
+                for row in rows
+            )
+        except ConversationRepositoryError:
+            raise
         except (ContentCryptoError, KeyError, TypeError, ValueError, psycopg.Error):
             raise ConversationRepositoryError() from None
 

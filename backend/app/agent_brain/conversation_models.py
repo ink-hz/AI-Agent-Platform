@@ -225,6 +225,27 @@ class ConversationFeedbackRecord:
     reason: FeedbackReason | None
     created_at: datetime
     comment: str | None = field(default=None, repr=False)
+    triage_status: Literal["pending_triage", "triaged", "dismissed"] | None = None
+    triaged_by_internal_user_id: UUID | None = None
+    triaged_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class ConversationFeedbackReviewRecord:
+    feedback: ConversationFeedbackRecord
+    agent_id: str
+    conversation_title: str
+    question: str = field(repr=False)
+    answer: str = field(repr=False)
+    citations: tuple[ConversationCitationProjection, ...] = ()
+
+
+@dataclass(frozen=True)
+class ConversationReviewAttachmentRecord:
+    attachment: ConversationAttachmentProjection
+    artifact_key: str | None = None
+    version_no: int | None = None
+    current: bool = False
 
 
 @dataclass(frozen=True)

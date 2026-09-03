@@ -362,6 +362,7 @@ class AssetRepository:
         self.assets = {asset.attachment_id: asset for asset in assets}
         self.deleted = set()
         self.lock = threading.Lock()
+        self.review_authorizations = []
 
     def downloadable(self, owner_id, attachment_id, purpose):
         asset = self.assets.get(attachment_id)
@@ -373,6 +374,13 @@ class AssetRepository:
         ):
             raise DownloadNotFound()
         return asset
+
+    def authorize_review(self, actor_id, attachment_id, purpose):
+        asset = self.assets.get(attachment_id)
+        if asset is None or asset.state != "ready" or attachment_id in self.deleted:
+            raise DownloadNotFound()
+        self.review_authorizations.append((actor_id, attachment_id, purpose))
+        return asset.owner_id
 
     def list_current_artifacts(self, owner_id, conversation_id):
         return tuple(
@@ -478,6 +486,19 @@ def test_ticket_is_owner_scoped_ready_only_opaque_bounded_and_single_use() -> No
     )
     with pytest.raises(DownloadNotFound):
         service.open_content(OWNER_ID, ticket.ticket, None)
+
+
+def test_review_ticket_binds_owner_actor_to_the_resource_owner_and_audits_issue() -> None:
+    service, repository, _ = service_for(download_asset())
+
+    ticket = service.issue_review_ticket(OTHER_ID, ATTACHMENT_ID, "download")
+
+    assert repository.review_authorizations == [
+        (OTHER_ID, ATTACHMENT_ID, "download")
+    ]
+    with pytest.raises(DownloadNotFound):
+        service.open_content(OWNER_ID, ticket.ticket, None)
+    assert b"".join(service.open_content(OTHER_ID, ticket.ticket, None).stream) == b"payload"
 
 
 def test_ticket_concurrent_replay_allows_exactly_one_consumer() -> None:
@@ -720,13 +741,19 @@ def test_access_repository_rechecks_owner_ready_locator_and_erasure_atomically(
             _keys={7: b"7" * 32},
         )
     )
-    owner_id, other_id, conversation_id = uuid4(), uuid4(), uuid4()
+    owner_id, other_id, reviewer_id, conversation_id = uuid4(), uuid4(), uuid4(), uuid4()
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
             "insert into platform_control.internal_users "
             "(internal_user_id,display_name,status) values "
             "(%s,'Download Owner','active'),(%s,'Download Other','active')",
             (owner_id, other_id),
+        )
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,role,display_name,status) values "
+            "(%s,'platform_owner','Review Owner','active')",
+            (reviewer_id,),
         )
         connection.execute(
             "insert into platform_control.conversations "
@@ -772,11 +799,24 @@ def test_access_repository_rechecks_owner_ready_locator_and_erasure_atomically(
         access.downloadable(owner_id, created.attachment_id, "preview")
     with pytest.raises(DownloadNotFound):
         access.downloadable(other_id, created.attachment_id, "download")
+    assert access.authorize_review(
+        reviewer_id, created.attachment_id, "download"
+    ) == owner_id
+    with pytest.raises(DownloadNotFound):
+        access.authorize_review(other_id, created.attachment_id, "download")
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select actor_internal_user_id,operation,result from "
+            "platform_attachments.access_events where attachment_id=%s",
+            (created.attachment_id,),
+        ).fetchall() == [(reviewer_id, "download", "allowed")]
 
     access.request_erasure(owner_id, created.attachment_id)
     access.request_erasure(owner_id, created.attachment_id)
     with pytest.raises(DownloadNotFound):
         access.downloadable(owner_id, created.attachment_id, "download")
+    with pytest.raises(DownloadNotFound):
+        access.authorize_review(reviewer_id, created.attachment_id, "download")
     with psycopg.connect(environment["admin"]) as connection:
         assert connection.execute(
             "select count(*) from platform_attachments.erasure_jobs "

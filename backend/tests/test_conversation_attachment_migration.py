@@ -455,6 +455,8 @@ def test_v64_retention_versions_grants_feedback_and_read_state(
                 connection, "conversation_feedback", "platform_control"
             )
             assert feedback_columns["triage_status"] is None
+            assert feedback_columns["triaged_by_internal_user_id"] is None
+            assert feedback_columns["triaged_at"] is None
             feedback_checks = _checks(
                 connection, "platform_control", "conversation_feedback"
             )
@@ -487,6 +489,7 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
             "acknowledge_upload_write_cleanup_v64",
             "issue_task_grant_v64",
             "revoke_task_grant_v64",
+            "authorize_review_attachment_access_v64",
             "upsert_conversation_read_state_v64",
         },
         "brain_worker": {
@@ -554,10 +557,16 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
                 role for role in environment["roles"] if "control_app" in role
             )
             assert connection.execute(
+                "select has_function_privilege(%s,"
+                "'platform_control.triage_conversation_feedback_v64(uuid,uuid,text)',"
+                "'execute')",
+                (app_role,),
+            ).fetchone() == (True,)
+            assert connection.execute(
                 "select has_column_privilege(%s,"
                 "'platform_control.conversation_feedback','triage_status','update')",
                 (app_role,),
-            ).fetchone() == (True,)
+            ).fetchone() == (False,)
 
             assert connection.execute(
                 "select bool_and(not has_table_privilege(%s,"
@@ -2266,6 +2275,13 @@ def _seed_feedback_target(connection: psycopg.Connection) -> dict[str, object]:
 def test_v64_feedback_triage_only_defaults_for_unhelpful(control_database) -> None:
     environment = control_database["environments"]["production"]
     with psycopg.connect(environment["admin"]) as admin:
+        actor_id = uuid4()
+        admin.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,role,display_name,status) values "
+            "(%s,'platform_owner','Review Owner','active')",
+            (actor_id,),
+        )
         helpful = _seed_feedback_target(admin)
         unhelpful = _seed_feedback_target(admin)
         helpful_id = uuid4()
@@ -2303,6 +2319,23 @@ def test_v64_feedback_triage_only_defaults_for_unhelpful(control_database) -> No
             "where feedback_id=any(%s) order by feedback_id",
             ([helpful_id, unhelpful_id],),
         ).fetchall() == sorted([(helpful_id, None), (unhelpful_id, "pending_triage")])
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        assert app.execute(
+            "select platform_control.triage_conversation_feedback_v64(%s,%s,'triaged')",
+            (actor_id, unhelpful_id),
+        ).fetchone() == (unhelpful_id,)
+        row = app.execute(
+            "select triage_status,triaged_by_internal_user_id,triaged_at from "
+            "platform_control.conversation_feedback where feedback_id=%s",
+            (unhelpful_id,),
+        ).fetchone()
+        assert row[0:2] == ("triaged", actor_id)
+        assert row[2] is not None
+        with pytest.raises(psycopg.errors.CheckViolation):
+            app.execute(
+                "select platform_control.triage_conversation_feedback_v64(%s,%s,'pending_triage')",
+                (actor_id, unhelpful_id),
+            )
 
 
 @pytest.mark.postgres

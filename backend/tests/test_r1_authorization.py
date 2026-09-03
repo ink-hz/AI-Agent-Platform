@@ -249,6 +249,25 @@ def test_hard_stale_owner_is_read_only_and_cloud_review_mutations_are_disabled()
     ).status_code == 403
 
 
+@pytest.mark.parametrize(
+    ("method", "route"),
+    [
+        ("GET", "/api/review/conversation-feedback"),
+        ("PATCH", "/api/review/conversation-feedback/{feedback_id}"),
+        ("GET", "/api/review/conversations/{conversation_id}/attachments"),
+        ("POST", "/api/review/attachments/{attachment_id}/ticket"),
+    ],
+)
+def test_conversation_review_is_owner_only_and_available_in_cloud(method, route):
+    service = AuthorizationService(Grants(), cloud_mode=True)
+
+    assert service.decide(OWNER, method, route, ()).allowed is True
+    assert service.decide(ADMIN, method, route, ()).reason == "platform_owner_required"
+    assert service.decide(MEMBER, method, route, ()).reason == "platform_owner_required"
+    if method != "GET":
+        assert service.decide(STALE_OWNER, method, route, ()).status_code == 503
+
+
 def test_agent_launch_is_authenticated_self_service_but_hard_stale_is_denied():
     service = AuthorizationService(Grants())
     route = "/api/v1/agents/{agent_id}/launch"
