@@ -837,3 +837,94 @@ def test_cancel_upload_abandons_claimed_write_before_requesting_erasure(
             "where attachment_id=%s",
             (created.attachment_id,),
         ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_cancel_upload_linearizes_against_claim_with_an_older_snapshot(
+    control_database,  # noqa: F811
+) -> None:
+    environment = control_database["environments"]["production"]
+    codec = ContentCodec(
+        IdentityKeyring(
+            active_version=7,
+            purpose="platform-content-encryption",
+            _keys={7: b"7" * 32},
+        )
+    )
+    owner_id, conversation_id = uuid4(), uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,display_name,status) values (%s,'Race Owner','active')",
+            (owner_id,),
+        )
+        connection.execute(
+            "insert into platform_control.conversations "
+            "(conversation_id,owner_internal_user_id,started_by_client_request_id,"
+            "mode,title,status) values (%s,%s,%s,'brain','Race','active')",
+            (conversation_id, owner_id, uuid4()),
+        )
+
+    def named_connect(application_name):
+        def connect(database_url, **kwargs):
+            return psycopg.connect(
+                database_url, application_name=application_name, **kwargs
+            )
+
+        return connect
+
+    uploads = ConversationAttachmentRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=codec,
+        connect=named_connect("task4-claim-race"),
+    )
+    created = uploads.create_upload(
+        owner_id, conversation_id, "race.pdf", "application/pdf", 7
+    )
+    access = ConversationAttachmentAccessRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=codec,
+        connect=named_connect("task4-cancel-race"),
+    )
+
+    blocker = psycopg.connect(environment["admin"])
+    blocker.execute(
+        "insert into platform_attachments.erasure_jobs("
+        "erasure_job_id,attachment_id,requested_by_internal_user_id,"
+        "reason_ciphertext,reason_key_version,reason_sha256) "
+        "values (%s,%s,%s,%s,1,%s)",
+        (
+            uuid4(),
+            created.attachment_id,
+            owner_id,
+            b"x" * 29,
+            hashlib.sha256(b"owner_requested").digest(),
+        ),
+    )
+
+    def wait_for_lock(application_name):
+        deadline = time.monotonic() + 2
+        with psycopg.connect(environment["admin"], autocommit=True) as observer:
+            while time.monotonic() < deadline:
+                if observer.execute(
+                    "select 1 from pg_stat_activity where datname=current_database() "
+                    "and application_name=%s and wait_event_type='Lock'",
+                    (application_name,),
+                ).fetchone():
+                    return
+                time.sleep(0.01)
+        raise AssertionError(f"{application_name} did not wait for a lock")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        cancel = pool.submit(access.cancel_upload, owner_id, created.upload_id)
+        try:
+            wait_for_lock("task4-cancel-race")
+            claim = pool.submit(uploads.claim_write, owner_id, created.upload_id)
+            wait_for_lock("task4-claim-race")
+            blocker.commit()
+            cancel.result(timeout=2)
+            with pytest.raises(ConversationAttachmentConflict):
+                claim.result(timeout=2)
+        finally:
+            blocker.rollback()
+            blocker.close()

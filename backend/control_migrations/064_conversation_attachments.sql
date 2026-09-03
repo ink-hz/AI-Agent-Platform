@@ -803,6 +803,8 @@ begin
     and upload.owner_internal_user_id=selected_owner_internal_user_id
   for update of upload,attachment;
   if not found then raise no_data_found using message='Attachment upload unavailable'; end if;
+  update platform_attachments.uploads set expires_at=least(expires_at,now())
+  where upload_id=selected_upload.upload_id;
   if selected_upload.state='uploading'
      and selected_upload.write_attempt_id is not null then
     update platform_attachments.upload_write_attempts set state='abandoned'
@@ -829,7 +831,8 @@ begin
     selected_erasure_job_id,selected_upload.attachment_id,
     selected_owner_internal_user_id,selected_reason_ciphertext,
     selected_reason_key_version,selected_reason_sha256
-  );
+  ) on conflict (attachment_id) where state in ('queued','running')
+    do nothing;
   return selected_upload.attachment_id;
 end
 $function$;
