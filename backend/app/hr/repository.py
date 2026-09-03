@@ -22,6 +22,7 @@ from .models import (
     PositionDetail,
     PositionDraftRecord,
     PositionRecord,
+    ProjectOfficialPosition,
     ProposePositionDraft,
 )
 
@@ -176,6 +177,39 @@ class HrPositionRepository:
             raise
         except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
             raise HrConflict("position mutation conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def project_official(
+        self, command: ProjectOfficialPosition
+    ) -> PositionRecord:
+        if not isinstance(command, ProjectOfficialPosition):
+            raise ValueError("official position projection required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.project_official_position_v65("
+                    "%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)).*",
+                    (
+                        command.position_id,
+                        command.owner_id,
+                        command.client_request_id,
+                        command.official_job_id,
+                        command.title,
+                        command.department,
+                        json.dumps(command.locations, ensure_ascii=False),
+                        command.official_status,
+                        command.source_version,
+                        command.content_hash,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("official position projection unavailable")
+            return _record(row)
+        except HrRepositoryError:
+            raise
+        except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
+            raise HrConflict("official position projection conflict") from None
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise HrUnavailable("position repository unavailable") from None
 

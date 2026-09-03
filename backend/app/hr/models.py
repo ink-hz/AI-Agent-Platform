@@ -249,6 +249,46 @@ class CreateManualPosition:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectOfficialPosition:
+    owner_id: UUID
+    position_id: UUID
+    client_request_id: UUID
+    official_job_id: str
+    title: str
+    department: str | None
+    locations: tuple[str, ...]
+    official_status: OfficialStatus
+    source_version: str
+    content_hash: str
+
+    def __post_init__(self) -> None:
+        for value in (self.owner_id, self.position_id, self.client_request_id):
+            _uuid(value, "position identifiers invalid")
+        if not isinstance(self.official_job_id, str):
+            raise ValueError("official job id invalid")
+        job_id = self.official_job_id.strip().upper()
+        if _JOB_ID.fullmatch(job_id) is None:
+            raise ValueError("official job id invalid")
+        if self.official_status not in _OFFICIAL_STATUSES:
+            raise ValueError("position official status invalid")
+        if not isinstance(self.content_hash, str) or re.fullmatch(
+            r"[a-f0-9]{64}", self.content_hash
+        ) is None:
+            raise ValueError("position content hash invalid")
+        object.__setattr__(self, "official_job_id", job_id)
+        object.__setattr__(self, "title", _text(
+            self.title, maximum=500, message="position title invalid"
+        ))
+        object.__setattr__(self, "department", _optional_text(
+            self.department, maximum=500, message="position department invalid"
+        ))
+        object.__setattr__(self, "locations", _strings(self.locations))
+        object.__setattr__(self, "source_version", _text(
+            self.source_version, maximum=256, message="position source version invalid"
+        ))
+
+
+@dataclass(frozen=True, slots=True)
 class ProposePositionDraft:
     owner_id: UUID
     draft_id: UUID

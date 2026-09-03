@@ -29,6 +29,9 @@ create table platform_hr.positions (
   source_version text check (
     source_version is null or char_length(source_version) between 1 and 256
   ),
+  official_content_hash text check (
+    official_content_hash is null or official_content_hash ~ '^[a-f0-9]{64}$'
+  ),
   row_version bigint not null default 1 check (row_version > 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -235,6 +238,70 @@ begin
     selected_source_kind,selected_official_job_id,btrim(selected_title),
     nullif(btrim(selected_department),''),selected_locations,
     selected_official_status,selected_source_version
+  ) returning * into selected;
+  return selected;
+end
+$function$;
+
+create function platform_hr.project_official_position_v65(
+  selected_position_id uuid,
+  selected_owner_internal_user_id uuid,
+  client_request_id uuid,
+  selected_official_job_id text,
+  selected_title text,
+  selected_department text,
+  selected_locations jsonb,
+  selected_official_status text,
+  selected_source_version text,
+  selected_content_hash text
+) returns platform_hr.positions
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.positions%rowtype;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected from platform_hr.positions
+  where owner_internal_user_id=selected_owner_internal_user_id
+    and official_job_id=selected_official_job_id for update;
+  if found then
+    update platform_hr.positions set
+      title=btrim(selected_title),
+      department=nullif(btrim(selected_department),''),
+      locations=selected_locations,
+      official_status=selected_official_status,
+      source_version=selected_source_version,
+      official_content_hash=selected_content_hash,
+      row_version=case when
+        title is distinct from btrim(selected_title)
+        or department is distinct from nullif(btrim(selected_department),'')
+        or locations is distinct from selected_locations
+        or official_status is distinct from selected_official_status
+        or source_version is distinct from selected_source_version
+        or official_content_hash is distinct from selected_content_hash
+        then row_version+1 else row_version end,
+      updated_at=case when
+        title is distinct from btrim(selected_title)
+        or department is distinct from nullif(btrim(selected_department),'')
+        or locations is distinct from selected_locations
+        or official_status is distinct from selected_official_status
+        or source_version is distinct from selected_source_version
+        or official_content_hash is distinct from selected_content_hash
+        then now() else updated_at end
+    where position_id=selected.position_id returning * into selected;
+    return selected;
+  end if;
+  insert into platform_hr.positions(
+    position_id,owner_internal_user_id,client_request_id,source_kind,
+    official_job_id,title,department,locations,official_status,source_version,
+    official_content_hash
+  ) values (
+    selected_position_id,selected_owner_internal_user_id,client_request_id,
+    'official_site',selected_official_job_id,btrim(selected_title),
+    nullif(btrim(selected_department),''),selected_locations,
+    selected_official_status,selected_source_version,selected_content_hash
   ) returning * into selected;
   return selected;
 end
@@ -573,6 +640,9 @@ revoke all on all functions in schema platform_hr from public;
 revoke all on function platform_hr.create_position_v65(
   uuid,uuid,uuid,text,text,text,text,jsonb,text,text
 ) from public;
+revoke all on function platform_hr.project_official_position_v65(
+  uuid,uuid,uuid,text,text,text,jsonb,text,text,text
+) from public;
 revoke all on function platform_hr.confirm_position_draft_v65(
   uuid,uuid,uuid,uuid,bigint
 ) from public;
@@ -619,6 +689,10 @@ begin
   execute format(
     'grant execute on function platform_hr.create_position_v65('
     'uuid,uuid,uuid,text,text,text,text,jsonb,text,text) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.project_official_position_v65('
+    'uuid,uuid,uuid,text,text,text,jsonb,text,text,text) to %I',selected_app
   );
   execute format(
     'grant execute on function platform_hr.confirm_position_draft_v65('

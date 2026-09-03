@@ -12,6 +12,7 @@ from app.hr.models import (
     CreateManualPosition,
     DismissPositionDraft,
     MergePositionDraft,
+    ProjectOfficialPosition,
     ProposePositionDraft,
 )
 from app.hr.repository import HrNotFound, HrPositionRepository
@@ -63,6 +64,31 @@ def test_repository_creates_manual_position_idempotently_and_lists_for_owner(
     assert first.title == "3D 打印机高级结构工程师"
     assert page.items == (first,)
     assert page.next_cursor is None
+
+
+@pytest.mark.postgres
+def test_repository_projects_official_position_updates_without_duplication(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Official Projection Owner")
+    repository = HrPositionRepository(environment["urls"]["platform_control_app"])
+    position_id = uuid4()
+    first = repository.project_official(ProjectOfficialPosition(
+        owner_id, position_id, uuid4(), "J11014", "算法工程师", "机器人",
+        ("深圳",), "active", "sync-v1", "a" * 64,
+    ))
+    changed = repository.project_official(ProjectOfficialPosition(
+        owner_id, position_id, uuid4(), "J11014", "高级算法工程师", "机器人",
+        ("深圳", "中山"), "suspected_inactive", "sync-v2", "b" * 64,
+    ))
+
+    assert first.position_id == changed.position_id == position_id
+    assert changed.title == "高级算法工程师"
+    assert changed.official_status == "suspected_inactive"
+    assert changed.source_version == "sync-v2"
+    assert repository.list_positions(owner_id).items == (changed,)
 
 
 @pytest.mark.postgres
