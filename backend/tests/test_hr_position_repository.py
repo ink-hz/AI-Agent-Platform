@@ -6,8 +6,12 @@ import psycopg
 import pytest
 
 from app.hr.models import (
+    BindPositionConversation,
     ConfirmPositionDraft,
+    CorrectPositionConversationBinding,
     CreateManualPosition,
+    DismissPositionDraft,
+    MergePositionDraft,
     ProposePositionDraft,
 )
 from app.hr.repository import HrNotFound, HrPositionRepository
@@ -130,3 +134,78 @@ def test_repository_confirms_draft_and_binds_origin_conversation_atomically(
             (conversation_id,),
         ).fetchone()
     assert binding == (position.position_id, "draft_confirmed")
+
+
+@pytest.mark.postgres
+def test_repository_merges_and_dismisses_drafts_without_losing_evidence(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Draft Resolution Owner")
+    repository = HrPositionRepository(environment["urls"]["platform_control_app"])
+    target = repository.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "高级结构工程师")
+    )
+    merged = repository.propose_draft(ProposePositionDraft(
+        owner_id, uuid4(), uuid4(), "historical_conversation", "history:merge",
+        None, "结构工程师", {"title": "结构工程师"},
+        {"message_seq": 3, "excerpt": "结构岗位"}, "history-v1",
+    ))
+    dismissed = repository.propose_draft(ProposePositionDraft(
+        owner_id, uuid4(), uuid4(), "historical_conversation", "history:dismiss",
+        None, "无法确认的岗位", {}, {"message_seq": 7}, "history-v1",
+    ))
+
+    merged_result = repository.merge_draft(MergePositionDraft(
+        owner_id, merged.draft_id, target.position_id, uuid4(), merged.row_version,
+    ))
+    dismissed_result = repository.dismiss_draft(DismissPositionDraft(
+        owner_id, dismissed.draft_id, uuid4(), dismissed.row_version,
+    ))
+
+    assert merged_result.state == "merged"
+    assert merged_result.resolved_position_id == target.position_id
+    assert merged_result.evidence == {"excerpt": "结构岗位", "message_seq": 3}
+    assert dismissed_result.state == "dismissed"
+    assert dismissed_result.evidence == {"message_seq": 7}
+
+
+@pytest.mark.postgres
+def test_repository_corrects_binding_only_from_expected_position_and_audits(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        owner_id = _owner(admin, "Binding Correction Owner")
+        conversation_id = _hr_conversation(admin, owner_id)
+    repository = HrPositionRepository(environment["urls"]["platform_control_app"])
+    previous = repository.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "岗位甲")
+    )
+    corrected = repository.create_manual(
+        CreateManualPosition(owner_id, uuid4(), uuid4(), "岗位乙")
+    )
+    repository.bind_conversation(BindPositionConversation(
+        owner_id, previous.position_id, conversation_id, uuid4(), "historical_exact"
+    ))
+    command = CorrectPositionConversationBinding(
+        owner_id, conversation_id, previous.position_id, corrected.position_id,
+        uuid4(), "历史岗位识别有误",
+    )
+
+    binding = repository.correct_conversation_binding(command)
+    replay = repository.correct_conversation_binding(command)
+
+    assert binding.position_id == corrected.position_id
+    assert replay == binding
+    assert binding.binding_kind == "manual_correction"
+    with psycopg.connect(environment["admin"]) as admin:
+        event = admin.execute(
+            "select previous_position_id,new_position_id,reason from "
+            "platform_hr.position_binding_events where conversation_id=%s",
+            (conversation_id,),
+        ).fetchone()
+    assert event == (
+        previous.position_id, corrected.position_id, "历史岗位识别有误"
+    )

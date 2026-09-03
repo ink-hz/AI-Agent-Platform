@@ -93,7 +93,7 @@ create table platform_hr.position_conversations (
   position_id uuid not null,
   client_request_id uuid not null,
   binding_kind text not null check (
-    binding_kind in ('created_in_position','draft_confirmed','historical_exact','manual_correction')
+    binding_kind in ('created_in_position','draft_confirmed','draft_merged','historical_exact','manual_correction')
   ),
   previous_position_id uuid,
   created_at timestamptz not null default now(),
@@ -106,6 +106,27 @@ create table platform_hr.position_conversations (
       conversation_id,owner_internal_user_id
     ),
   unique (owner_internal_user_id,client_request_id)
+);
+
+create table platform_hr.position_binding_events (
+  event_id uuid primary key,
+  owner_internal_user_id uuid not null
+    references platform_control.internal_users(internal_user_id),
+  conversation_id uuid not null,
+  previous_position_id uuid not null,
+  new_position_id uuid not null,
+  reason text not null check (char_length(btrim(reason)) between 1 and 1000),
+  created_at timestamptz not null default now(),
+  foreign key (conversation_id,owner_internal_user_id)
+    references platform_control.conversations(
+      conversation_id,owner_internal_user_id
+    ),
+  foreign key (previous_position_id,owner_internal_user_id)
+    references platform_hr.positions(position_id,owner_internal_user_id),
+  foreign key (new_position_id,owner_internal_user_id)
+    references platform_hr.positions(position_id,owner_internal_user_id),
+  check (previous_position_id<>new_position_id),
+  unique (owner_internal_user_id,event_id)
 );
 
 create table platform_hr.position_materials (
@@ -308,6 +329,82 @@ begin
 end
 $function$;
 
+create function platform_hr.merge_position_draft_v65(
+  selected_draft_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_target_position_id uuid,
+  client_request_id uuid,
+  expected_row_version bigint
+) returns platform_hr.position_drafts
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.position_drafts%rowtype;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected from platform_hr.position_drafts
+  where draft_id=selected_draft_id
+    and owner_internal_user_id=selected_owner_internal_user_id for update;
+  if not found then raise no_data_found; end if;
+  if selected.state='merged'
+     and selected.resolved_position_id=selected_target_position_id then
+    return selected;
+  end if;
+  if selected.state<>'proposed' or selected.row_version<>expected_row_version then
+    raise serialization_failure;
+  end if;
+  perform 1 from platform_hr.positions
+  where position_id=selected_target_position_id
+    and owner_internal_user_id=selected_owner_internal_user_id;
+  if not found then raise no_data_found; end if;
+  if selected.source_conversation_id is not null then
+    insert into platform_hr.position_conversations(
+      conversation_id,owner_internal_user_id,position_id,
+      client_request_id,binding_kind
+    ) values (
+      selected.source_conversation_id,selected_owner_internal_user_id,
+      selected_target_position_id,client_request_id,'draft_merged'
+    );
+  end if;
+  update platform_hr.position_drafts set
+    state='merged',resolved_position_id=selected_target_position_id,
+    row_version=row_version+1,updated_at=now()
+  where draft_id=selected_draft_id returning * into selected;
+  return selected;
+end
+$function$;
+
+create function platform_hr.dismiss_position_draft_v65(
+  selected_draft_id uuid,
+  selected_owner_internal_user_id uuid,
+  client_request_id uuid,
+  expected_row_version bigint
+) returns platform_hr.position_drafts
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.position_drafts%rowtype;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected from platform_hr.position_drafts
+  where draft_id=selected_draft_id
+    and owner_internal_user_id=selected_owner_internal_user_id for update;
+  if not found then raise no_data_found; end if;
+  if selected.state='dismissed' then return selected; end if;
+  if selected.state<>'proposed' or selected.row_version<>expected_row_version then
+    raise serialization_failure;
+  end if;
+  update platform_hr.position_drafts set
+    state='dismissed',row_version=row_version+1,updated_at=now()
+  where draft_id=selected_draft_id returning * into selected;
+  return selected;
+end
+$function$;
+
 create function platform_hr.bind_conversation_v65(
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
@@ -344,6 +441,68 @@ begin
     selected_conversation_id,selected_owner_internal_user_id,
     selected_position_id,client_request_id,selected_binding_kind
   ) returning * into selected;
+  return selected;
+end
+$function$;
+
+create function platform_hr.correct_conversation_binding_v65(
+  selected_owner_internal_user_id uuid,
+  selected_conversation_id uuid,
+  selected_previous_position_id uuid,
+  selected_new_position_id uuid,
+  client_request_id uuid,
+  selected_reason text
+) returns platform_hr.position_conversations
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.position_conversations%rowtype;
+declare prior_event platform_hr.position_binding_events%rowtype;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview') then
+    raise insufficient_privilege;
+  end if;
+  select * into prior_event from platform_hr.position_binding_events
+  where event_id=client_request_id
+    and owner_internal_user_id=selected_owner_internal_user_id;
+  if found then
+    if prior_event.conversation_id<>selected_conversation_id
+       or prior_event.previous_position_id<>selected_previous_position_id
+       or prior_event.new_position_id<>selected_new_position_id then
+      raise unique_violation;
+    end if;
+    select * into selected from platform_hr.position_conversations
+    where conversation_id=selected_conversation_id;
+    if selected.position_id<>selected_new_position_id then
+      raise serialization_failure;
+    end if;
+    return selected;
+  end if;
+  select * into selected from platform_hr.position_conversations
+  where conversation_id=selected_conversation_id
+    and owner_internal_user_id=selected_owner_internal_user_id for update;
+  if not found then raise no_data_found; end if;
+  if selected.position_id<>selected_previous_position_id then
+    raise serialization_failure;
+  end if;
+  perform 1 from platform_hr.positions
+  where position_id=selected_new_position_id
+    and owner_internal_user_id=selected_owner_internal_user_id;
+  if not found then raise no_data_found; end if;
+  insert into platform_hr.position_binding_events(
+    event_id,owner_internal_user_id,conversation_id,
+    previous_position_id,new_position_id,reason
+  ) values (
+    client_request_id,selected_owner_internal_user_id,
+    selected_conversation_id,selected_previous_position_id,
+    selected_new_position_id,btrim(selected_reason)
+  );
+  update platform_hr.position_conversations set
+    position_id=selected_new_position_id,
+    client_request_id=correct_conversation_binding_v65.client_request_id,
+    binding_kind='manual_correction',
+    previous_position_id=selected_previous_position_id
+  where conversation_id=selected_conversation_id returning * into selected;
   return selected;
 end
 $function$;
@@ -420,8 +579,17 @@ revoke all on function platform_hr.confirm_position_draft_v65(
 revoke all on function platform_hr.propose_position_draft_v65(
   uuid,uuid,uuid,text,text,uuid,text,jsonb,jsonb,text
 ) from public;
+revoke all on function platform_hr.merge_position_draft_v65(
+  uuid,uuid,uuid,uuid,bigint
+) from public;
+revoke all on function platform_hr.dismiss_position_draft_v65(
+  uuid,uuid,uuid,bigint
+) from public;
 revoke all on function platform_hr.bind_conversation_v65(
   uuid,uuid,uuid,uuid,text
+) from public;
+revoke all on function platform_hr.correct_conversation_binding_v65(
+  uuid,uuid,uuid,uuid,uuid,text
 ) from public;
 revoke all on function platform_hr.promote_material_v65(
   uuid,uuid,uuid,uuid
@@ -461,8 +629,20 @@ begin
     'uuid,uuid,uuid,text,text,uuid,text,jsonb,jsonb,text) to %I',selected_app
   );
   execute format(
+    'grant execute on function platform_hr.merge_position_draft_v65('
+    'uuid,uuid,uuid,uuid,bigint) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.dismiss_position_draft_v65('
+    'uuid,uuid,uuid,bigint) to %I',selected_app
+  );
+  execute format(
     'grant execute on function platform_hr.bind_conversation_v65('
     'uuid,uuid,uuid,uuid,text) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.correct_conversation_binding_v65('
+    'uuid,uuid,uuid,uuid,uuid,text) to %I',selected_app
   );
   execute format(
     'grant execute on function platform_hr.promote_material_v65('

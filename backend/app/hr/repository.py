@@ -12,8 +12,13 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .models import (
+    BindPositionConversation,
     ConfirmPositionDraft,
+    CorrectPositionConversationBinding,
     CreateManualPosition,
+    DismissPositionDraft,
+    MergePositionDraft,
+    PositionConversationBinding,
     PositionDetail,
     PositionDraftRecord,
     PositionRecord,
@@ -82,6 +87,18 @@ def _draft(row: dict[str, Any]) -> PositionDraftRecord:
         row_version=row["row_version"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+    )
+
+
+def _binding(row: dict[str, Any]) -> PositionConversationBinding:
+    return PositionConversationBinding(
+        owner_id=row["owner_internal_user_id"],
+        position_id=row["position_id"],
+        conversation_id=row["conversation_id"],
+        client_request_id=row["client_request_id"],
+        binding_kind=row["binding_kind"],
+        previous_position_id=row["previous_position_id"],
+        created_at=row["created_at"],
     )
 
 
@@ -220,6 +237,124 @@ class HrPositionRepository:
             raise HrNotFound("position draft not found") from None
         except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
             raise HrConflict("position draft conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def merge_draft(self, command: MergePositionDraft) -> PositionDraftRecord:
+        if not isinstance(command, MergePositionDraft):
+            raise ValueError("position draft merge required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.merge_position_draft_v65("
+                    "%s,%s,%s,%s,%s)).*",
+                    (
+                        command.draft_id,
+                        command.owner_id,
+                        command.target_position_id,
+                        command.client_request_id,
+                        command.expected_row_version,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("position draft merge unavailable")
+            return _draft(row)
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position draft or target not found") from None
+        except psycopg.errors.SerializationFailure:
+            raise HrConflict("position draft conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def dismiss_draft(
+        self, command: DismissPositionDraft
+    ) -> PositionDraftRecord:
+        if not isinstance(command, DismissPositionDraft):
+            raise ValueError("position draft dismissal required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.dismiss_position_draft_v65("
+                    "%s,%s,%s,%s)).*",
+                    (
+                        command.draft_id,
+                        command.owner_id,
+                        command.client_request_id,
+                        command.expected_row_version,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("position draft dismissal unavailable")
+            return _draft(row)
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position draft not found") from None
+        except psycopg.errors.SerializationFailure:
+            raise HrConflict("position draft conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def bind_conversation(
+        self, command: BindPositionConversation
+    ) -> PositionConversationBinding:
+        if not isinstance(command, BindPositionConversation):
+            raise ValueError("position conversation binding required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.bind_conversation_v65("
+                    "%s,%s,%s,%s,%s)).*",
+                    (
+                        command.owner_id,
+                        command.position_id,
+                        command.conversation_id,
+                        command.client_request_id,
+                        command.binding_kind,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("position conversation binding unavailable")
+            return _binding(row)
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position or HR conversation not found") from None
+        except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
+            raise HrConflict("position conversation binding conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def correct_conversation_binding(
+        self, command: CorrectPositionConversationBinding
+    ) -> PositionConversationBinding:
+        if not isinstance(command, CorrectPositionConversationBinding):
+            raise ValueError("position conversation correction required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.correct_conversation_binding_v65("
+                    "%s,%s,%s,%s,%s,%s)).*",
+                    (
+                        command.owner_id,
+                        command.conversation_id,
+                        command.previous_position_id,
+                        command.new_position_id,
+                        command.client_request_id,
+                        command.reason,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("position conversation correction unavailable")
+            return _binding(row)
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position conversation binding not found") from None
+        except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
+            raise HrConflict("position conversation binding conflict") from None
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise HrUnavailable("position repository unavailable") from None
 

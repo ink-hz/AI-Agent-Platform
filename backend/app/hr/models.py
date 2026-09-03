@@ -16,6 +16,7 @@ DraftState = Literal["proposed", "confirmed", "merged", "dismissed"]
 BindingKind = Literal[
     "created_in_position",
     "draft_confirmed",
+    "draft_merged",
     "historical_exact",
     "manual_correction",
 ]
@@ -29,6 +30,7 @@ _DRAFT_STATES = {"proposed", "confirmed", "merged", "dismissed"}
 _BINDING_KINDS = {
     "created_in_position",
     "draft_confirmed",
+    "draft_merged",
     "historical_exact",
     "manual_correction",
 }
@@ -297,6 +299,66 @@ class ConfirmPositionDraft:
 
 
 @dataclass(frozen=True, slots=True)
+class MergePositionDraft:
+    owner_id: UUID
+    draft_id: UUID
+    target_position_id: UUID
+    client_request_id: UUID
+    expected_row_version: int
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.owner_id,
+            self.draft_id,
+            self.target_position_id,
+            self.client_request_id,
+        ):
+            _uuid(value, "draft identifiers invalid")
+        _row_version(self.expected_row_version)
+
+
+@dataclass(frozen=True, slots=True)
+class DismissPositionDraft:
+    owner_id: UUID
+    draft_id: UUID
+    client_request_id: UUID
+    expected_row_version: int
+
+    def __post_init__(self) -> None:
+        for value in (self.owner_id, self.draft_id, self.client_request_id):
+            _uuid(value, "draft identifiers invalid")
+        _row_version(self.expected_row_version)
+
+
+@dataclass(frozen=True, slots=True)
+class PositionConversationBinding:
+    owner_id: UUID
+    position_id: UUID
+    conversation_id: UUID
+    client_request_id: UUID
+    binding_kind: BindingKind
+    previous_position_id: UUID | None
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.owner_id,
+            self.position_id,
+            self.conversation_id,
+            self.client_request_id,
+        ):
+            _uuid(value, "conversation binding identifiers invalid")
+        if self.previous_position_id is not None:
+            _uuid(
+                self.previous_position_id,
+                "conversation binding identifiers invalid",
+            )
+        if self.binding_kind not in _BINDING_KINDS:
+            raise ValueError("binding kind invalid")
+        _aware(self.created_at)
+
+
+@dataclass(frozen=True, slots=True)
 class BindPositionConversation:
     owner_id: UUID
     position_id: UUID
@@ -314,6 +376,37 @@ class BindPositionConversation:
             _uuid(value, "conversation binding identifiers invalid")
         if self.binding_kind not in _BINDING_KINDS:
             raise ValueError("binding kind invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class CorrectPositionConversationBinding:
+    owner_id: UUID
+    conversation_id: UUID
+    previous_position_id: UUID
+    new_position_id: UUID
+    client_request_id: UUID
+    reason: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.owner_id,
+            self.conversation_id,
+            self.previous_position_id,
+            self.new_position_id,
+            self.client_request_id,
+        ):
+            _uuid(value, "conversation binding identifiers invalid")
+        if self.previous_position_id == self.new_position_id:
+            raise ValueError("binding correction positions invalid")
+        object.__setattr__(
+            self,
+            "reason",
+            _text(
+                self.reason,
+                maximum=1000,
+                message="binding correction reason invalid",
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)

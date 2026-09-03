@@ -8,7 +8,10 @@ import pytest
 from app.hr.models import (
     BindPositionConversation,
     ConfirmPositionDraft,
+    CorrectPositionConversationBinding,
     CreateManualPosition,
+    DismissPositionDraft,
+    MergePositionDraft,
     PositionDraftRecord,
     PositionRecord,
     PromotePositionMaterial,
@@ -100,6 +103,25 @@ def test_commands_reject_boolean_row_versions_and_invalid_binding_kind() -> None
     with pytest.raises(ValueError, match="binding kind invalid"):
         BindPositionConversation(
             uuid4(), uuid4(), uuid4(), uuid4(), "candidate_pipeline"
+        )
+
+
+def test_draft_resolution_commands_require_optimistic_versions() -> None:
+    with pytest.raises(ValueError, match="row version invalid"):
+        MergePositionDraft(uuid4(), uuid4(), uuid4(), uuid4(), 0)
+    with pytest.raises(ValueError, match="row version invalid"):
+        DismissPositionDraft(uuid4(), uuid4(), uuid4(), False)
+
+
+def test_binding_correction_requires_a_reason_and_different_positions() -> None:
+    shared_position = uuid4()
+    with pytest.raises(ValueError, match="binding correction positions invalid"):
+        CorrectPositionConversationBinding(
+            uuid4(), uuid4(), shared_position, shared_position, uuid4(), "误绑定"
+        )
+    with pytest.raises(ValueError, match="binding correction reason invalid"):
+        CorrectPositionConversationBinding(
+            uuid4(), uuid4(), uuid4(), uuid4(), uuid4(), "  "
         )
 
 
