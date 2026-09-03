@@ -88,7 +88,6 @@ class ConversationAttachmentProjection:
     display_name: str = field(repr=False)
     detected_mime: str | None
     size_bytes: int
-    sha256: str | None = field(repr=False)
     state: str
     created_at: datetime
     retained_until: datetime

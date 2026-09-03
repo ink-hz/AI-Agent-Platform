@@ -280,10 +280,11 @@ class ConversationRepository:
             unavailable = row["state"]
         elif row["retained_until"] <= datetime.now().astimezone():
             unavailable = "retention_expired"
+        elif row["immutable_locator"] is None:
+            unavailable = "unavailable"
         coverage = row["coverage_metadata"]
         if coverage is not None and not isinstance(coverage, dict):
             raise ConversationRepositoryError()
-        digest = row["sha256"]
         return ConversationAttachmentProjection(
             attachment_id=attachment_id,
             conversation_id=row["conversation_id"],
@@ -291,7 +292,6 @@ class ConversationRepository:
             display_name=name["original_name"],
             detected_mime=row["detected_mime"],
             size_bytes=int(row["size_bytes"]),
-            sha256=bytes(digest).hex() if digest is not None else None,
             state=row["state"],
             created_at=row["created_at"],
             retained_until=row["retained_until"],
@@ -2093,13 +2093,27 @@ class ConversationRepository:
         try:
             with self._connection() as connection, connection.cursor() as cursor:
                 row = cursor.execute(
-                    "select message.* from platform_control.conversation_messages "
-                    "message join platform_control.conversations conversation on "
-                    "conversation.conversation_id=message.conversation_id where "
-                    "message.message_id=%s and message.conversation_id=%s and "
+                    "select message.* from platform_control.conversation_turns turn "
+                    "join platform_control.conversation_messages message on "
+                    "message.conversation_id=turn.conversation_id and "
+                    "message.message_id=turn.user_message_id join "
+                    "platform_control.conversations conversation on "
+                    "conversation.conversation_id=turn.conversation_id where "
+                    "turn.client_request_id=%s and turn.conversation_id=%s and "
                     "conversation.owner_internal_user_id=%s",
                     (client_request_id, conversation_id, internal_user_id),
                 ).fetchone()
+                if row is None:
+                    row = cursor.execute(
+                        "select message.* from "
+                        "platform_control.conversation_messages message join "
+                        "platform_control.conversations conversation on "
+                        "conversation.conversation_id=message.conversation_id "
+                        "where message.message_id=%s and "
+                        "message.conversation_id=%s and "
+                        "conversation.owner_internal_user_id=%s",
+                        (client_request_id, conversation_id, internal_user_id),
+                    ).fetchone()
                 if row is None:
                     return None
                 message = self._message_from_row(row, cursor)

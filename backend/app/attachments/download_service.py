@@ -410,34 +410,28 @@ class ConversationAttachmentAccessRepository:
         digest = hashlib.sha256(b"owner_requested").digest()
         try:
             with self._connection() as connection:
-                inserted = connection.execute(
-                    "insert into platform_attachments.erasure_jobs("
-                    "erasure_job_id,attachment_id,requested_by_internal_user_id,"
-                    "reason_ciphertext,reason_key_version,reason_sha256) "
-                    "select %s,attachment.attachment_id,%s,%s,%s,%s from "
-                    "platform_attachments.attachments attachment where "
-                    "attachment.attachment_id=%s and attachment.owner_internal_user_id=%s "
-                    "and not exists (select 1 from platform_attachments.erasure_jobs erasure "
-                    "where erasure.attachment_id=attachment.attachment_id) "
-                    "on conflict do nothing returning erasure_job_id",
+                selected = connection.execute(
+                    "select conversation_id from platform_attachments.attachments "
+                    "where attachment_id=%s and owner_internal_user_id=%s",
+                    (attachment_id, owner_id),
+                ).fetchone()
+                if selected is None:
+                    raise DownloadNotFound()
+                requested = connection.execute(
+                    "select platform_attachments.request_attachment_erasure_v64("
+                    "%s,%s,%s,%s,%s,%s,%s) as attachment_id",
                     (
-                        job_id,
+                        attachment_id,
                         owner_id,
+                        selected["conversation_id"],
+                        job_id,
                         reason.ciphertext,
                         reason.key_version,
                         digest,
-                        attachment_id,
-                        owner_id,
                     ),
                 ).fetchone()
-                if inserted is None and connection.execute(
-                    "select 1 from platform_attachments.attachments attachment "
-                    "where attachment_id=%s and owner_internal_user_id=%s and exists "
-                    "(select 1 from platform_attachments.erasure_jobs erasure "
-                    "where erasure.attachment_id=attachment.attachment_id)",
-                    (attachment_id, owner_id),
-                ).fetchone() is None:
-                    raise DownloadNotFound()
+                if requested is None or requested["attachment_id"] is None:
+                    raise DownloadConflict()
         except DownloadError:
             raise
         except Exception:  # noqa: BLE001 - database boundary is intentionally opaque
@@ -448,7 +442,8 @@ class ConversationAttachmentAccessRepository:
         try:
             with self._connection() as connection:
                 selected = connection.execute(
-                    "select attachment_id from platform_attachments.uploads "
+                    "select attachment_id,conversation_id "
+                    "from platform_attachments.uploads "
                     "where upload_id=%s and owner_internal_user_id=%s",
                     (upload_id, owner_id),
                 ).fetchone()
@@ -464,10 +459,11 @@ class ConversationAttachmentAccessRepository:
             with self._connection() as connection:
                 row = connection.execute(
                     "select platform_attachments.cancel_upload_v64("
-                    "%s,%s,%s,%s,%s,%s) as attachment_id",
+                    "%s,%s,%s,%s,%s,%s,%s) as attachment_id",
                     (
                         upload_id,
                         owner_id,
+                        selected["conversation_id"],
                         job_id,
                         reason.ciphertext,
                         reason.key_version,

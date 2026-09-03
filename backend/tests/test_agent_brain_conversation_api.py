@@ -1,30 +1,29 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import datetime, timezone
-import json
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 import pytest
-
-from app.agent_brain.conversation_projection import ConversationProjection
-from app.agent_brain.conversation_models import ConversationEventRecord
 from app.agent_brain.action_models import ActionProjection
 from app.agent_brain.action_service import ActionCommandDenied
+from app.agent_brain.conversation_models import ConversationEventRecord
+from app.agent_brain.conversation_projection import ConversationProjection
 from app.agent_brain.conversation_routes import (
-    ConversationTextBody,
     ConversationCursorCodec,
+    ConversationTextBody,
     _event_payload,
     build_conversation_router,
     conversation_event_stream,
 )
 from app.agent_brain.routes import MissionStreamLimiter
-from app.control_plane.authorization import AuthorizationService
 from app.control_plane.auth import AuthSecrets
+from app.control_plane.authorization import AuthorizationService
 from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.control_plane.models import AuthContext, Role
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from test_agent_brain_api import (
     FakeAgentUse,
     FakeAuth,
@@ -166,6 +165,53 @@ def test_conversation_body_normalizes_text_and_attachment_sets() -> None:
 def test_conversation_body_rejects_invalid_attachment_selection(payload) -> None:
     with pytest.raises(ValueError):
         ConversationTextBody.model_validate(payload)
+
+
+def test_conversation_router_marks_and_sanitizes_validation_boundary() -> None:
+    owner = uuid4()
+    app, auth, _agent_use = _app(owner, object())
+    effective_routes = [
+        effective
+        for route in app.router.routes
+        for effective in (
+            route.effective_route_contexts()
+            if callable(getattr(route, "effective_route_contexts", None))
+            else (route,)
+        )
+    ]
+    conversation_routes = [
+        route
+        for route in effective_routes
+        if getattr(route, "path", "").startswith("/api/v1/conversations")
+        or getattr(route, "path", "").startswith("/api/v1/agents/")
+    ]
+
+    assert conversation_routes
+    assert {
+        type(getattr(route, "original_route", route)).__name__
+        for route in conversation_routes
+    } == {
+        "ConversationRoute"
+    }
+    response = TestClient(app).post(
+        "/api/v1/conversations",
+        cookies=_credentials(auth)["cookies"],
+        headers={
+            **_write_credentials(auth)["headers"],
+            "Idempotency-Key": str(uuid4()),
+        },
+        json={
+            "text": "candidate-private-text",
+            "attachment_ids": ["candidate-private-attachment-id"],
+            "active_attachment_ids": ["candidate-private-active-id"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "conversation request invalid"}
+    assert "candidate-private" not in response.text
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
 def _fail_and_project(conversations, owner: UUID, mission_id: UUID) -> None:

@@ -670,6 +670,7 @@ set search_path = pg_catalog, platform_attachments
 as $function$
 declare
   selected_attachment_id uuid;
+  selected_conversation_id uuid;
   previous_write_attempt_id uuid;
 begin
   if current_user not in ('platform_control_owner','platform_control_owner_preview')
@@ -682,15 +683,29 @@ begin
      or selected_write_lease_expires_at <= now()
      or selected_write_lease_expires_at > now() + interval '5 minutes'
   then raise check_violation using message='Attachment upload write lease invalid'; end if;
-  select upload.attachment_id,upload.write_attempt_id
-    into selected_attachment_id,previous_write_attempt_id
+  select upload.attachment_id,upload.conversation_id
+    into selected_attachment_id,selected_conversation_id
   from platform_attachments.uploads upload
-  join platform_attachments.attachments attachment
-    on attachment.attachment_id=upload.attachment_id
-   and attachment.owner_internal_user_id=upload.owner_internal_user_id
-   and attachment.conversation_id is not distinct from upload.conversation_id
   where upload.upload_id=selected_upload_id
+    and upload.owner_internal_user_id=selected_owner_internal_user_id;
+  if not found then raise no_data_found using message='Upload write lease unavailable'; end if;
+  perform 1 from platform_attachments.attachments attachment
+  where attachment.attachment_id=selected_attachment_id
+    and attachment.owner_internal_user_id=selected_owner_internal_user_id
+    and attachment.conversation_id is not distinct from selected_conversation_id
+    and attachment.state='uploading'
+    and not exists (
+      select 1 from platform_attachments.erasure_jobs erasure
+      where erasure.attachment_id=attachment.attachment_id
+    )
+  for update;
+  if not found then raise no_data_found using message='Upload write lease unavailable'; end if;
+  select upload.write_attempt_id into previous_write_attempt_id
+  from platform_attachments.uploads upload
+  where upload.upload_id=selected_upload_id
+    and upload.attachment_id=selected_attachment_id
     and upload.owner_internal_user_id=selected_owner_internal_user_id
+    and upload.conversation_id is not distinct from selected_conversation_id
     and upload.state='uploading' and upload.expires_at > now()
     and not exists (
       select 1 from platform_attachments.erasure_jobs erasure
@@ -698,7 +713,6 @@ begin
     )
     and selected_write_lease_expires_at <= upload.expires_at
     and (upload.write_attempt_id is null or upload.write_lease_expires_at <= now())
-    and attachment.state='uploading'
   for update;
   if not found then raise no_data_found using message='Upload write lease unavailable'; end if;
   update platform_attachments.upload_write_attempts set state='superseded'
@@ -771,6 +785,7 @@ $function$;
 create function platform_attachments.cancel_upload_v64(
   selected_upload_id uuid,
   selected_owner_internal_user_id uuid,
+  selected_expected_conversation_id uuid,
   selected_erasure_job_id uuid,
   selected_reason_ciphertext bytea,
   selected_reason_key_version integer,
@@ -779,7 +794,10 @@ create function platform_attachments.cancel_upload_v64(
 language plpgsql security definer
 set search_path = pg_catalog, platform_attachments
 as $function$
-declare selected_upload platform_attachments.uploads%rowtype;
+declare
+  selected_attachment_id uuid;
+  selected_conversation_id uuid;
+  selected_upload platform_attachments.uploads%rowtype;
 begin
   if current_user not in ('platform_control_owner','platform_control_owner_preview')
      or session_user not in ('platform_control_app','platform_control_app_preview')
@@ -793,15 +811,27 @@ begin
      or selected_reason_sha256 is null
      or octet_length(selected_reason_sha256) <> 32
   then raise check_violation using message='Attachment upload cancellation invalid'; end if;
+  select upload.attachment_id into selected_attachment_id
+  from platform_attachments.uploads upload
+  where upload.upload_id=selected_upload_id
+    and upload.owner_internal_user_id=selected_owner_internal_user_id;
+  if not found then raise no_data_found using message='Attachment upload unavailable'; end if;
+  select attachment.conversation_id into selected_conversation_id
+  from platform_attachments.attachments attachment
+  where attachment.attachment_id=selected_attachment_id
+    and attachment.owner_internal_user_id=selected_owner_internal_user_id
+  for update;
+  if not found then raise no_data_found using message='Attachment upload unavailable'; end if;
+  if selected_conversation_id is distinct from selected_expected_conversation_id then
+    raise serialization_failure using message='Attachment changed during cancellation';
+  end if;
   select upload.* into selected_upload
   from platform_attachments.uploads upload
-  join platform_attachments.attachments attachment
-    on attachment.attachment_id=upload.attachment_id
-   and attachment.owner_internal_user_id=upload.owner_internal_user_id
-   and attachment.conversation_id is not distinct from upload.conversation_id
   where upload.upload_id=selected_upload_id
+    and upload.attachment_id=selected_attachment_id
     and upload.owner_internal_user_id=selected_owner_internal_user_id
-  for update of upload,attachment;
+    and upload.conversation_id is not distinct from selected_conversation_id
+  for update;
   if not found then raise no_data_found using message='Attachment upload unavailable'; end if;
   update platform_attachments.uploads set expires_at=least(expires_at,now())
   where upload_id=selected_upload.upload_id;
@@ -834,6 +864,62 @@ begin
   ) on conflict (attachment_id) where state in ('queued','running')
     do nothing;
   return selected_upload.attachment_id;
+end
+$function$;
+
+create function platform_attachments.request_attachment_erasure_v64(
+  selected_attachment_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_expected_conversation_id uuid,
+  selected_erasure_job_id uuid,
+  selected_reason_ciphertext bytea,
+  selected_reason_key_version integer,
+  selected_reason_sha256 bytea
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare selected_conversation_id uuid;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <>
+        (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Attachment erasure requester invalid'; end if;
+  if selected_attachment_id is null
+     or selected_owner_internal_user_id is null
+     or selected_erasure_job_id is null
+     or selected_reason_ciphertext is null
+     or octet_length(selected_reason_ciphertext) not between 29 and 1048576
+     or selected_reason_key_version is null or selected_reason_key_version <= 0
+     or selected_reason_sha256 is null
+     or octet_length(selected_reason_sha256) <> 32
+  then raise check_violation using message='Attachment erasure request invalid'; end if;
+  select attachment.conversation_id into selected_conversation_id
+  from platform_attachments.attachments attachment
+  where attachment.attachment_id=selected_attachment_id
+    and attachment.owner_internal_user_id=selected_owner_internal_user_id
+  for update;
+  if not found then
+    raise no_data_found using message='Attachment unavailable';
+  end if;
+  if selected_conversation_id is distinct from selected_expected_conversation_id then
+    raise serialization_failure using message='Attachment changed during erasure request';
+  end if;
+  if exists (
+    select 1 from platform_attachments.erasure_jobs erasure
+    where erasure.attachment_id=selected_attachment_id
+  ) then return selected_attachment_id; end if;
+  insert into platform_attachments.erasure_jobs(
+    erasure_job_id,attachment_id,requested_by_internal_user_id,
+    reason_ciphertext,reason_key_version,reason_sha256
+  ) values (
+    selected_erasure_job_id,selected_attachment_id,
+    selected_owner_internal_user_id,selected_reason_ciphertext,
+    selected_reason_key_version,selected_reason_sha256
+  ) on conflict (attachment_id) where state in ('queued','running')
+    do nothing;
+  return selected_attachment_id;
 end
 $function$;
 
@@ -2019,7 +2105,7 @@ begin
   );
   execute format(
     'grant insert on platform_attachments.bindings, '
-    'platform_attachments.artifacts,platform_attachments.erasure_jobs, '
+    'platform_attachments.artifacts, '
     'platform_attachments.message_citations to %I',selected_app
   );
   execute format(
@@ -2045,14 +2131,15 @@ begin
     'grant execute on function platform_attachments.create_upload_v64('
     'uuid,uuid,uuid,uuid,bytea,integer,bytea,integer,text,bigint,timestamptz,'
     'bigint,integer,bigint), '
-    'platform_attachments.claim_conversation_attachment_v64(uuid,uuid,uuid), '
     'platform_attachments.bind_conversation_turn_v64('
     'uuid,uuid,uuid,uuid,uuid[],uuid[],text,boolean,integer,bigint,integer,bigint), '
     'platform_attachments.claim_upload_write_v64('
     'uuid,uuid,uuid,bytea,integer,timestamptz), '
     'platform_attachments.abandon_upload_write_v64(uuid,uuid,uuid), '
     'platform_attachments.cancel_upload_v64('
-    'uuid,uuid,uuid,bytea,integer,bytea), '
+    'uuid,uuid,uuid,uuid,bytea,integer,bytea), '
+    'platform_attachments.request_attachment_erasure_v64('
+    'uuid,uuid,uuid,uuid,bytea,integer,bytea), '
     'platform_attachments.finalize_upload_v64('
     'uuid,uuid,uuid,text,bigint,bytea), '
     'platform_attachments.acknowledge_upload_write_cleanup_v64(uuid), '

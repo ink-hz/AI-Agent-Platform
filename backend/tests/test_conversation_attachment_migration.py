@@ -465,8 +465,8 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
     role_functions = {
         "control_app": {
             "create_upload_v64",
-            "claim_conversation_attachment_v64",
             "bind_conversation_turn_v64",
+            "request_attachment_erasure_v64",
             "claim_upload_write_v64",
             "abandon_upload_write_v64",
             "finalize_upload_v64",
@@ -490,7 +490,8 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
             "record_attachment_erasure_result_v64",
         },
     }
-    all_functions = set().union(*role_functions.values())
+    owner_only_functions = {"claim_conversation_attachment_v64"}
+    all_functions = set().union(*role_functions.values(), owner_only_functions)
     for environment in control_database["environments"].values():
         with psycopg.connect(environment["admin"]) as connection:
             rows = connection.execute(
@@ -547,7 +548,15 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
                 "select bool_and(not has_table_privilege(%s,"
                 "'platform_attachments.' || table_name,'insert,update,delete')) "
                 "from unnest(%s::text[]) table_name",
-                (app_role, ["attachments", "uploads", "upload_write_attempts"]),
+                (
+                    app_role,
+                    [
+                        "attachments",
+                        "uploads",
+                        "upload_write_attempts",
+                        "erasure_jobs",
+                    ],
+                ),
             ).fetchone() == (True,)
 
             assert connection.execute(
@@ -576,6 +585,15 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
                 "from unnest(%s::text[]) table_name",
                 (brain_role, list(TABLES)),
             ).fetchone() == (True,)
+
+        with psycopg.connect(
+            environment["urls"][app_role]
+        ) as app_connection, pytest.raises(psycopg.errors.InsufficientPrivilege):
+            app_connection.execute(
+                "select platform_attachments.claim_conversation_attachment_v64("
+                "%s,%s,%s)",
+                (uuid4(), uuid4(), uuid4()),
+            )
 
 
 @pytest.mark.postgres

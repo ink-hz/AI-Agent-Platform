@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import psycopg
@@ -16,6 +17,7 @@ from app.agent_brain.conversation_repository import (
     ConversationRepository,
     ConversationRepositoryConflict,
 )
+from app.agent_brain.conversation_service import ConversationCommandService
 from app.agent_brain.models import load_capability_cards
 from app.agent_brain.repository import MissionRepository
 from app.attachments.conversation_models import (
@@ -24,10 +26,24 @@ from app.attachments.conversation_models import (
     MAX_MESSAGE_BYTES,
 )
 from app.attachments.conversation_repository import ConversationAttachmentRepository
+from app.attachments.conversation_routes import build_conversation_attachment_router
+from app.attachments.download_service import (
+    ConversationAttachmentAccessRepository,
+    ConversationAttachmentDownloadService,
+)
+from app.control_plane.authorization import AuthorizationService
 from app.control_plane.crypto import IdentityKeyring
+from app.control_plane.middleware import IdentitySecurityMiddleware
+from app.control_plane.models import AuthContext, Role
 from app.execution_relay.content_crypto import ContentCodec
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from test_agent_brain_api import _credentials, _write_credentials
+from test_agent_brain_api import (
+    FakeAuth,
+    NoManagementGrants,
+    _credentials,
+    _write_credentials,
+)
 from test_agent_brain_conversation_api import _app
 from test_agent_brain_conversation_repository import conversation_database
 from test_control_plane_migration import control_database
@@ -49,6 +65,7 @@ def _repositories(
     hr_supports_attachments: bool = True,
     max_conversation_files: int = MAX_CONVERSATION_FILES,
     max_conversation_bytes: int = MAX_CONVERSATION_BYTES,
+    connect=psycopg.connect,
 ) -> tuple[ConversationRepository, ConversationAttachmentRepository]:
     codec = _codec()
     attachment_repository = ConversationAttachmentRepository(
@@ -56,6 +73,7 @@ def _repositories(
         content_codec=codec,
         max_conversation_files=max_conversation_files,
         max_conversation_bytes=max_conversation_bytes,
+        connect=connect,
     )
     cards = tuple(
         card.model_copy(
@@ -68,7 +86,9 @@ def _repositories(
         for card in load_capability_cards()
     )
     missions = MissionRepository(
-        environment["urls"]["platform_control_app"], content_codec=codec
+        environment["urls"]["platform_control_app"],
+        content_codec=codec,
+        connect=connect,
     )
     conversations = ConversationRepository(
         environment["urls"]["platform_control_app"],
@@ -76,8 +96,37 @@ def _repositories(
         mission_repository=missions,
         attachment_repository=attachment_repository,
         agent_capability_cards=cards,
+        connect=connect,
     )
     return conversations, attachment_repository
+
+
+def _attachment_member_app(environment, owner_id: UUID, *, connect):
+    context = AuthContext(owner_id, Role.MEMBER, uuid4(), False)
+    auth = FakeAuth(context)
+    auth.hard_stale_audit = lambda *_args: None
+    access = ConversationAttachmentAccessRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=_codec(),
+        connect=connect,
+    )
+    service = ConversationAttachmentDownloadService(
+        access,
+        SimpleNamespace(),
+        ticket_secret=b"t" * 32,
+    )
+    app = FastAPI()
+    app.state.conversation_attachment_upload_service = SimpleNamespace()
+    app.state.conversation_attachment_download_service = service
+    app.include_router(build_conversation_attachment_router())
+    app.add_middleware(
+        IdentitySecurityMiddleware,
+        auth=auth,
+        public_assets=frozenset(),
+        authorization=AuthorizationService(NoManagementGrants()),
+        routes=tuple(app.router.routes),
+    )
+    return app, auth
 
 
 def _ready_attachment(
@@ -273,12 +322,41 @@ def test_member_api_serializes_safe_bound_attachment_projection(
     assert message["input_attachments"][0]["display_name"] == "candidate.pdf"
     encoded = response.text
     for forbidden in (
+        "sha256",
+        "hash",
         "object_ref",
         "immutable_locator",
         "original_name_ciphertext",
         "object_ref_ciphertext",
     ):
         assert forbidden not in encoded
+
+
+@pytest.mark.postgres
+def test_projection_marks_missing_immutable_locator_generically_unavailable(
+    conversation_database,
+) -> None:
+    environment, owner_id, _other_owner_id = conversation_database
+    conversations, attachments = _repositories(environment)
+    attachment_id = _ready_attachment(environment, attachments, owner_id, None)
+    result = conversations.start(
+        owner_id,
+        uuid4(),
+        ConversationTurnSubmission("inspect", (attachment_id,), (attachment_id,)),
+    )
+    with psycopg.connect(environment["admin"]) as admin:
+        admin.execute(
+            "update platform_attachments.attachments set immutable_locator=null "
+            "where attachment_id=%s",
+            (attachment_id,),
+        )
+
+    projected = conversations.messages_after(
+        owner_id, result.conversation.conversation_id
+    )[0].input_attachments[0]
+
+    assert projected.availability_reason == "unavailable"
+    assert "locator" not in projected.availability_reason
 
 
 @pytest.mark.postgres
@@ -338,6 +416,157 @@ def test_replay_fingerprint_uses_normalized_text_sets_and_agent_scope(
             mode="direct_agent",
             direct_agent_id="marketing-gtm-bot",
         )
+
+
+@pytest.mark.postgres
+def test_brain_append_api_replays_normalized_attachment_submission_before_active_check(
+    conversation_database,
+) -> None:
+    environment, owner_id, _other_owner_id = conversation_database
+    conversations, attachments = _repositories(environment)
+    started = conversations.start(owner_id, uuid4(), "seed")
+    _complete_turn(environment, started.turn.turn_id)
+    first = _ready_attachment(
+        environment,
+        attachments,
+        owner_id,
+        started.conversation.conversation_id,
+        name="first.pdf",
+    )
+    second = _ready_attachment(
+        environment,
+        attachments,
+        owner_id,
+        started.conversation.conversation_id,
+        name="second.pdf",
+    )
+    app, auth, _agent_use = _app(owner_id, conversations)
+    client = TestClient(app)
+    request_id = uuid4()
+    path = (
+        f"/api/v1/conversations/{started.conversation.conversation_id}/messages"
+    )
+
+    initial = client.post(
+        path,
+        headers={
+            **_write_credentials(auth)["headers"],
+            "Idempotency-Key": str(request_id),
+        },
+        cookies=_credentials(auth)["cookies"],
+        json={
+            "text": "  compare\r\nfiles  ",
+            "attachment_ids": [str(first), str(second)],
+            "active_attachment_ids": [str(first), str(second)],
+        },
+    )
+    replay = client.post(
+        path,
+        headers={
+            **_write_credentials(auth)["headers"],
+            "Idempotency-Key": str(request_id),
+        },
+        cookies=_credentials(auth)["cookies"],
+        json={
+            "text": "compare\nfiles",
+            "attachment_ids": [str(second), str(first)],
+            "active_attachment_ids": [str(second), str(first)],
+        },
+    )
+    conflict = client.post(
+        path,
+        headers={
+            **_write_credentials(auth)["headers"],
+            "Idempotency-Key": str(request_id),
+        },
+        cookies=_credentials(auth)["cookies"],
+        json={
+            "text": "different",
+            "attachment_ids": [str(first), str(second)],
+            "active_attachment_ids": [str(first), str(second)],
+        },
+    )
+
+    assert initial.status_code == 201
+    assert replay.status_code == 200
+    assert replay.json()["turn"]["turn_id"] == initial.json()["turn"]["turn_id"]
+    assert conflict.status_code == 409
+
+
+@pytest.mark.postgres
+def test_concurrent_brain_append_api_replay_creates_one_turn_and_binding_set(
+    conversation_database,
+) -> None:
+    environment, owner_id, _other_owner_id = conversation_database
+    conversations, attachments = _repositories(environment)
+    started = conversations.start(owner_id, uuid4(), "seed")
+    _complete_turn(environment, started.turn.turn_id)
+    attachment_id = _ready_attachment(
+        environment,
+        attachments,
+        owner_id,
+        started.conversation.conversation_id,
+    )
+    delegate = ConversationCommandService(conversations, v2_enabled=False)
+    committed, release = Event(), Event()
+
+    class BlockingCommands:
+        def append_turn(self, *args, **kwargs):
+            result = delegate.append_turn(*args, **kwargs)
+            committed.set()
+            assert release.wait(timeout=2)
+            return result
+
+    app, auth, _agent_use = _app(
+        owner_id, conversations, command_service=BlockingCommands()
+    )
+    request_id = uuid4()
+    path = (
+        f"/api/v1/conversations/{started.conversation.conversation_id}/messages"
+    )
+
+    def submit(_index: int):
+        with TestClient(app) as client:
+            return client.post(
+                path,
+                headers={
+                    **_write_credentials(auth)["headers"],
+                    "Idempotency-Key": str(request_id),
+                },
+                cookies=_credentials(auth)["cookies"],
+                json={
+                    "text": "concurrent",
+                    "attachment_ids": [str(attachment_id)],
+                    "active_attachment_ids": [str(attachment_id)],
+                },
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        initial = pool.submit(submit, 0)
+        assert committed.wait(timeout=2)
+        replay = pool.submit(submit, 1)
+        try:
+            replay_response = replay.result(timeout=2)
+        finally:
+            release.set()
+        responses = [initial.result(timeout=2), replay_response]
+
+    assert sorted(response.status_code for response in responses) == [200, 201]
+    assert len({response.json()["turn"]["turn_id"] for response in responses}) == 1
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select count(*) from platform_control.conversation_turns "
+            "where client_request_id=%s",
+            (request_id,),
+        ).fetchone() == (1,)
+        assert admin.execute(
+            "select count(*) from platform_attachments.bindings binding join "
+            "platform_control.conversation_turns turn on "
+            "binding.turn_id=turn.turn_id or "
+            "binding.message_id=turn.user_message_id where "
+            "turn.client_request_id=%s and binding.attachment_id=%s",
+            (request_id, attachment_id),
+        ).fetchone() == (2,)
 
 
 @pytest.mark.postgres
@@ -678,3 +907,165 @@ def test_state_flip_while_binding_waits_fails_closed_without_turn(
     assert len(outcome) == 1
     assert isinstance(outcome[0], ConversationRepositoryConflict)
     _assert_no_turn_state(environment, request_id)
+
+
+@pytest.mark.postgres
+def test_erasure_commit_while_binding_waits_rejects_without_half_state(
+    conversation_database,
+) -> None:
+    environment, owner_id, _other_owner_id = conversation_database
+    conversations, attachments = _repositories(environment)
+    attachment_id = _ready_attachment(environment, attachments, owner_id, None)
+    request_id = uuid4()
+    started, finished = Event(), Event()
+    outcome: list[BaseException | object] = []
+
+    def submit() -> None:
+        started.set()
+        try:
+            outcome.append(
+                conversations.start(
+                    owner_id,
+                    request_id,
+                    ConversationTurnSubmission(
+                        "analyze", (attachment_id,), (attachment_id,)
+                    ),
+                    mode="direct_agent",
+                    direct_agent_id="hr-bot",
+                )
+            )
+        except BaseException as error:  # noqa: BLE001 - captured for thread assertion
+            outcome.append(error)
+        finally:
+            finished.set()
+
+    with psycopg.connect(environment["admin"]) as admin:
+        admin.execute(
+            "insert into platform_attachments.erasure_jobs("
+            "erasure_job_id,attachment_id,requested_by_internal_user_id,"
+            "reason_ciphertext,reason_key_version,reason_sha256) "
+            "values (%s,%s,%s,%s,1,%s)",
+            (uuid4(), attachment_id, owner_id, b"x" * 29, b"r" * 32),
+        )
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(submit)
+            assert started.wait(2)
+            assert not finished.wait(0.2)
+            admin.commit()
+            future.result(timeout=5)
+
+    assert len(outcome) == 1
+    assert isinstance(outcome[0], ConversationRepositoryConflict)
+    _assert_no_turn_state(environment, request_id)
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("operation", ["cancel_upload", "delete_attachment"])
+def test_member_cancel_or_delete_racing_after_bind_start_cannot_both_commit(
+    conversation_database,
+    operation: str,
+) -> None:
+    environment, owner_id, _other_owner_id = conversation_database
+
+    def named_connect(application_name: str):
+        def connect(database_url, **kwargs):
+            return psycopg.connect(
+                database_url, application_name=application_name, **kwargs
+            )
+
+        return connect
+
+    conversations, attachments = _repositories(
+        environment, connect=named_connect("task5-bind-http")
+    )
+    attachment_id = _ready_attachment(environment, attachments, owner_id, None)
+    with psycopg.connect(environment["admin"]) as admin:
+        upload_id = admin.execute(
+            "select upload_id from platform_attachments.uploads "
+            "where attachment_id=%s",
+            (attachment_id,),
+        ).fetchone()[0]
+    conversation_app, conversation_auth, _agent_use = _app(
+        owner_id, conversations
+    )
+    attachment_app, attachment_auth = _attachment_member_app(
+        environment,
+        owner_id,
+        connect=named_connect("task5-delete-http"),
+    )
+    request_id = uuid4()
+
+    def wait_for_lock(application_name: str) -> None:
+        with psycopg.connect(environment["admin"], autocommit=True) as observer:
+            for _attempt in range(200):
+                if observer.execute(
+                    "select 1 from pg_stat_activity where datname=current_database() "
+                    "and application_name=%s and wait_event_type='Lock'",
+                    (application_name,),
+                ).fetchone():
+                    return
+                Event().wait(0.01)
+        raise AssertionError(f"{application_name} did not wait for attachment lock")
+
+    def bind_request():
+        with TestClient(conversation_app) as client:
+            return client.post(
+                "/api/v1/agents/hr-bot/conversations",
+                headers={
+                    **_write_credentials(conversation_auth)["headers"],
+                    "Idempotency-Key": str(request_id),
+                },
+                cookies=_credentials(conversation_auth)["cookies"],
+                json={
+                    "text": "bind",
+                    "attachment_ids": [str(attachment_id)],
+                    "active_attachment_ids": [str(attachment_id)],
+                },
+            )
+
+    def delete_request():
+        path = (
+            f"/api/v1/attachments/uploads/{upload_id}"
+            if operation == "cancel_upload"
+            else f"/api/v1/attachments/{attachment_id}"
+        )
+        with TestClient(attachment_app) as client:
+            return client.delete(
+                path,
+                headers=_write_credentials(attachment_auth)["headers"],
+                cookies=_credentials(attachment_auth)["cookies"],
+            )
+
+    with psycopg.connect(environment["admin"]) as blocker:
+        blocker.execute(
+            "select 1 from platform_attachments.attachments "
+            "where attachment_id=%s for update",
+            (attachment_id,),
+        )
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            bind = pool.submit(bind_request)
+            wait_for_lock("task5-bind-http")
+            delete = pool.submit(delete_request)
+            wait_for_lock("task5-delete-http")
+            blocker.commit()
+            bind_response = bind.result(timeout=5)
+            delete_response = delete.result(timeout=5)
+
+    assert bind_response.status_code == 201
+    assert delete_response.status_code == 409
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select count(*) from platform_control.conversation_turns "
+            "where client_request_id=%s",
+            (request_id,),
+        ).fetchone() == (1,)
+        assert admin.execute(
+            "select count(*) from platform_attachments.bindings "
+            "where attachment_id=%s",
+            (attachment_id,),
+        ).fetchone() == (2,)
+        assert admin.execute(
+            "select count(*) from platform_attachments.erasure_jobs "
+            "where attachment_id=%s",
+            (attachment_id,),
+        ).fetchone() == (0,)

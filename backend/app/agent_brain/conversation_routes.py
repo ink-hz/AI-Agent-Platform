@@ -10,6 +10,9 @@ from typing import Annotated, AsyncIterator, Callable, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agent_brain.action_models import ActionProjection
@@ -48,12 +51,37 @@ from .routes import (
 )
 
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
+_PRIVATE_HEADERS = {
+    "Cache-Control": "private, no-store",
+    "Pragma": "no-cache",
+    "X-Content-Type-Options": "nosniff",
+}
 _SSE_HEADERS = {
     **_NO_STORE,
     "X-Accel-Buffering": "no",
     "X-Content-Type-Options": "nosniff",
 }
 _MAX_INPUT_BYTES = 32 * 1024
+
+
+class ConversationRoute(APIRoute):
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def secure(request: Request):
+            try:
+                response = await handler(request)
+            except HTTPException as error:
+                error.headers = {**(error.headers or {}), **_PRIVATE_HEADERS}
+                raise
+            except RequestValidationError:
+                response = JSONResponse(
+                    {"detail": "conversation request invalid"}, status_code=422
+                )
+            response.headers.update(_PRIVATE_HEADERS)
+            return response
+
+        return secure
 
 
 class ConversationTextBody(BaseModel):
@@ -378,7 +406,6 @@ def _attachment_payload(
         "display_name": record.display_name,
         "detected_mime": record.detected_mime,
         "size_bytes": record.size_bytes,
-        "sha256": record.sha256,
         "state": record.state,
         "created_at": record.created_at.isoformat(),
         "retained_until": record.retained_until.isoformat(),
@@ -625,7 +652,9 @@ def build_conversation_router(
         raise ValueError("Conversation session revalidator required")
     if not isinstance(session_cookie_name, str) or not session_cookie_name:
         raise ValueError("Conversation session cookie name required")
-    router = APIRouter(tags=["agent-brain-conversations"])
+    router = APIRouter(
+        tags=["agent-brain-conversations"], route_class=ConversationRoute
+    )
     commands = command_service or ConversationCommandService(
         repository, v2_enabled=False
     )
