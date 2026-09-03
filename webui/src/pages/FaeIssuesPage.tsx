@@ -7,7 +7,7 @@ import { FaeWorkbenchShell } from "../components/fae-workbench/FaeWorkbenchShell
 import { ReviewWorkspace, type ReviewIssueFilters } from "../components/review/ReviewWorkspace";
 import { useDeploymentContext } from "../deploymentContext";
 import { FaeWorkbenchApiError, faeWorkbenchApi } from "../faeWorkbenchApi";
-import { navigate } from "../router";
+import { issueFilterFromSearch, navigate, safeIssueCollectionParams } from "../router";
 import type { ReviewInboxItem } from "../types";
 import { STATUS_LABELS } from "../components/review/IssueList";
 
@@ -18,74 +18,10 @@ function pathIssueId(): string | null {
 }
 
 const LOCAL_LIFECYCLE_STATUSES = Object.keys(STATUS_LABELS).filter((status) => status !== "unknown");
-const LOCAL_FILTERS = new Set(["open", ...LOCAL_LIFECYCLE_STATUSES]);
-const CLOUD_DISPOSITIONS = ["actionable", "duplicate", "not_actionable", "wont_fix"] as const;
-const CLOUD_FILTERS = new Set<string>(CLOUD_DISPOSITIONS);
-const PRIORITY_FILTERS = new Set(["P0", "P1", "P2", "P3"]);
 const LOCAL_STATUS_OPTIONS = [
   { value: "open", label: "开放事项" },
   ...LOCAL_LIFECYCLE_STATUSES.map((value) => ({ value, label: STATUS_LABELS[value as keyof typeof STATUS_LABELS] })),
 ];
-function issueFilterFromSearch(search: string, cloudReplica: boolean): { value: string; valid: boolean; kind: "status" | "disposition" | "all" } {
-  const query = new URLSearchParams(search);
-  const statuses = query.getAll("status");
-  const dispositions = query.getAll("disposition");
-  if (statuses.length === 0 && dispositions.length === 0) return { value: "open", valid: true, kind: "status" };
-  if (statuses.length === 1 && statuses[0] === "all" && dispositions.length === 0) {
-    return { value: "all", valid: true, kind: "all" };
-  }
-  if (cloudReplica) {
-    if (statuses.length === 1 && LOCAL_FILTERS.has(statuses[0]) && dispositions.length === 0) {
-      return { value: statuses[0], valid: true, kind: "status" };
-    }
-    if (statuses.length === 0 && dispositions.length === 1 && CLOUD_FILTERS.has(dispositions[0])) {
-      return { value: dispositions[0], valid: true, kind: "disposition" };
-    }
-  } else if (statuses.length === 1 && dispositions.length === 0 && LOCAL_FILTERS.has(statuses[0])) {
-    return { value: statuses[0], valid: true, kind: "status" };
-  }
-  return { value: "open", valid: false, kind: "status" };
-}
-
-function singleSafeValue(
-  query: URLSearchParams,
-  key: string,
-  valid: (value: string) => boolean = (value) => value.length > 0,
-): string | null {
-  const values = query.getAll(key);
-  return values.length === 1 && valid(values[0]) ? values[0] : null;
-}
-
-function safeIssueCollectionParams(search: string, cloudReplica: boolean): URLSearchParams {
-  const raw = new URLSearchParams(search);
-  const safe = new URLSearchParams();
-  const status = issueFilterFromSearch(search, cloudReplica);
-  if (status.valid && status.kind === "all") {
-    safe.set("status", "all");
-  } else if (status.valid && status.value) {
-    safe.set(status.kind, status.value);
-  }
-  const priority = singleSafeValue(raw, "priority", (value) => PRIORITY_FILTERS.has(value));
-  const failureLayer = singleSafeValue(
-    raw,
-    "failure_layer",
-    (value) => /^[a-z][a-z0-9_]{0,63}$/.test(value),
-  );
-  const owner = singleSafeValue(raw, "owner", (value) => value.length <= 160 && value.trim() === value && value.length > 0);
-  const text = singleSafeValue(raw, "q", (value) => value.length <= 240 && value.trim() === value && value.length > 0);
-  const createdAfter = singleSafeValue(raw, "created_after", (value) => /^\d{4}-\d{2}-\d{2}T00:00:00\+08:00$/.test(value));
-  if (priority) safe.set("priority", priority);
-  if (failureLayer) safe.set("failure_layer", failureLayer);
-  if (owner) safe.set("owner", owner);
-  if (text) safe.set("q", text);
-  if (createdAfter) safe.set("created_after", createdAfter);
-  const page = singleSafeValue(raw, "page", (value) => /^\d+$/.test(value));
-  if (page) {
-    const parsed = Number(page);
-    if (Number.isSafeInteger(parsed) && parsed > 1) safe.set("page", String(parsed));
-  }
-  return safe;
-}
 
 export function FaeIssuesPage({ account, issueId }: { account: Account; issueId?: string }) {
   const { deployment, resolved: deploymentResolved } = useDeploymentContext();

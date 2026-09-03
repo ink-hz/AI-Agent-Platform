@@ -59,10 +59,52 @@ function accountResponse(): Response {
 
 
 describe("login return path", () => {
+  it("accepts canonical workspace paths and rejects malformed variants", () => {
+    expect(loginReturnPath("?return_path=%2Ffae%2Fconversations%2Fc-1")).toBe("/fae/conversations/c-1");
+    expect(loginReturnPath("?return_path=%2Ffae%2Fmanage%2Freports%2Fr-1")).toBe("/fae/manage/reports/r-1");
+    expect(loginReturnPath("?return_path=%2Fmarketing%2Fvoice%2Fconversations%2Fc-1")).toBe("/marketing/voice/conversations/c-1");
+    expect(loginReturnPath("?return_path=%2Fmarketing%2Funknown")).toBe("/");
+    expect(loginReturnPath("?return_path=%2F%2Fevil.example")).toBe("/");
+  });
+
+  it.each([
+    "/fae/",
+    "/fae/conversations/fae:one",
+    "/fae/manage/sessions",
+    "/fae/manage/sessions/fae:one",
+    "/fae/manage/issues/00000000-0000-4000-8000-000000000001",
+    "/fae/manage/reports/weekly-1",
+    "/voc/records",
+    "/voc/records/VOC-1",
+    "/voc/manage/records",
+    "/voc/manage/records/VOC-1",
+    "/hr/",
+    "/hr/conversations/hr:one",
+    "/marketing/prospecting",
+    "/marketing/intelligence/conversations/mkt:one",
+  ])("accepts canonical workspace login return path %s", (path) => {
+    expect(loginReturnPath(`?${new URLSearchParams({ return_path: path })}`)).toBe(path);
+  });
+
+  it.each([
+    "/fae/conversations/unsafe/path",
+    "/fae/manage/unknown",
+    "/voc/unknown",
+    "/hr/conversations/unsafe/path",
+    "/marketing/unknown",
+    "/marketing/voice/conversations/unsafe/path",
+  ])("rejects malformed workspace login return path %s", (path) => {
+    expect(loginReturnPath(`?${new URLSearchParams({ return_path: path })}`)).toBe("/");
+  });
+
   it.each([
     routePath({ name: "admin-fae-session", sessionKey: "fae:session-1" }),
     routePath({ name: "admin-fae-report", reportId: "weekly:2026-08-31" }),
-  ])("round-trips a canonical encoded FAE detail path through the login query: %s", (path) => {
+    routePath({ name: "hr-conversation", conversationId: "hr:session-1" }),
+    routePath({ name: "marketing-conversation", agentSlug: "voice", conversationId: "mkt:session-1" }),
+    routePath({ name: "fae-manage-session", sessionKey: "fae:session-1" }),
+    routePath({ name: "fae-manage-report", reportId: "weekly:2026-08-31" }),
+  ])("round-trips a canonical encoded detail path through the login query: %s", (path) => {
     const search = `?${new URLSearchParams({ return_path: path })}`;
     expect(loginReturnPath(search)).toBe(path);
   });

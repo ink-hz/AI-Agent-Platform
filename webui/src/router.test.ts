@@ -2,7 +2,14 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { currentLocationPath, navigate, parseRoute, routePath, routeSection } from "./router";
+import {
+  currentLocationPath,
+  navigate,
+  parseRoute,
+  routePath,
+  routeSection,
+  safeLegacyWorkspaceSearch,
+} from "./router";
 
 
 afterEach(() => {
@@ -12,15 +19,32 @@ afterEach(() => {
 
 
 describe("Platform router", () => {
+  it.each([
+    ["/hr", { name: "legacy-redirect", to: "/hr/", navigation: "spa" }],
+    ["/hr/", { name: "hr" }],
+    ["/hr/conversations/c%3A1", { name: "hr-conversation", conversationId: "c:1" }],
+    ["/marketing", { name: "legacy-redirect", to: "/marketing/prospecting", navigation: "spa" }],
+    ["/marketing/", { name: "legacy-redirect", to: "/marketing/prospecting", navigation: "spa" }],
+    ["/marketing/inbound", { name: "marketing", agentSlug: "inbound" }],
+    ["/marketing/gtm/conversations/c-2", { name: "marketing-conversation", agentSlug: "gtm", conversationId: "c-2" }],
+    ["/fae/manage/", { name: "fae-manage-overview" }],
+    ["/fae/manage/sessions/s%3A1", { name: "fae-manage-session", sessionKey: "s:1" }],
+    ["/fae/manage/issues/00000000-0000-4000-8000-000000000001", { name: "fae-manage-issue", issueId: "00000000-0000-4000-8000-000000000001" }],
+    ["/agents/hr-bot", { name: "legacy-redirect", to: "/hr/", navigation: "spa" }],
+    ["/agents/ai-fae-agent", { name: "legacy-redirect", to: "/fae/", navigation: "document" }],
+    ["/admin/fae/reports", { name: "legacy-redirect", to: "/fae/manage/reports", navigation: "spa" }],
+    ["/admin/voc", { name: "legacy-redirect", to: "/voc/manage/", navigation: "document" }],
+  ])("parses %s", (path, expected) => expect(parseRoute(path)).toEqual(expected));
+
   it("parses use, account and unknown routes", () => {
     expect(parseRoute("/")).toEqual({ name: "brain" });
     expect(parseRoute("/agents")).toEqual({ name: "agents" });
-    expect(parseRoute("/agents/ai-fae-agent")).toEqual({ name: "agent", agentId: "ai-fae-agent" });
+    expect(parseRoute("/agents/ai-fae-agent")).toEqual({ name: "legacy-redirect", to: "/fae/", navigation: "document" });
     expect(parseRoute("/agents/voc/workspace")).toEqual({
-      name: "legacy-redirect", to: "/voc/",
+      name: "legacy-redirect", to: "/voc/", navigation: "document",
     });
     expect(parseRoute("/admin/voc")).toEqual({
-      name: "legacy-redirect", to: "/voc/?view=management",
+      name: "legacy-redirect", to: "/voc/manage/", navigation: "document",
     });
     expect(parseRoute("/missions/one")).toEqual({ name: "mission", missionId: "one" });
     expect(parseRoute("/unknown")).toEqual({ name: "not-found" });
@@ -65,6 +89,9 @@ describe("Platform router", () => {
     expect(routePath({ name: "account" })).toBe("/account");
     expect(routePath({ name: "voc-workspace" })).toBe("/agents/voc/workspace");
     expect(routePath({ name: "admin-fae-reports" })).toBe("/admin/fae/reports");
+    expect(routePath({ name: "hr-conversation", conversationId: "c:1" })).toBe("/hr/conversations/c%3A1");
+    expect(routePath({ name: "marketing-conversation", agentSlug: "voice", conversationId: "c:2" })).toBe("/marketing/voice/conversations/c%3A2");
+    expect(routePath({ name: "fae-manage-report", reportId: "weekly:one" })).toBe("/fae/manage/reports/weekly%3Aone");
   });
 
   it("keeps detail pages in their parent navigation section", () => {
@@ -74,18 +101,21 @@ describe("Platform router", () => {
     expect(routeSection({ name: "admin-session", sessionKey: "fae:abc" })).toBe("admin");
     expect(routeSection({ name: "admin-voc" })).toBe("admin");
     expect(routeSection({ name: "admin-fae-overview" })).toBe("admin");
+    expect(routeSection({ name: "hr" })).toBe("agents");
+    expect(routeSection({ name: "marketing", agentSlug: "inbound" })).toBe("agents");
+    expect(routeSection({ name: "fae-manage-overview" })).toBe("admin");
   });
 
-  it("parses FAE workbench collection and detail routes", () => {
-    expect(parseRoute("/admin/fae")).toEqual({ name: "admin-fae-overview" });
+  it("redirects legacy FAE workbench collection and detail routes", () => {
+    expect(parseRoute("/admin/fae")).toEqual({ name: "legacy-redirect", to: "/fae/manage/", navigation: "spa" });
     expect(parseRoute("/admin/fae/sessions/fae%3Asession-1")).toEqual({
-      name: "admin-fae-session", sessionKey: "fae:session-1",
+      name: "legacy-redirect", to: "/fae/manage/sessions/fae%3Asession-1", navigation: "spa",
     });
     expect(parseRoute("/admin/fae/issues/00000000-0000-0000-0000-000000000001")).toEqual({
-      name: "admin-fae-issue", issueId: "00000000-0000-0000-0000-000000000001",
+      name: "legacy-redirect", to: "/fae/manage/issues/00000000-0000-0000-0000-000000000001", navigation: "spa",
     });
     expect(parseRoute("/admin/fae/reports/weekly:2026-08-31")).toEqual({
-      name: "admin-fae-report", reportId: "weekly:2026-08-31",
+      name: "legacy-redirect", to: "/fae/manage/reports/weekly:2026-08-31", navigation: "spa",
     });
     expect(parseRoute("/admin/fae/sessions/%E0%A4%A")).toEqual({ name: "not-found" });
   });
@@ -103,6 +133,39 @@ describe("Platform router", () => {
   });
 
   it("does not assign a legacy redirect to primary navigation", () => {
-    expect(routeSection({ name: "legacy-redirect", to: "/admin" })).toBeNull();
+    expect(routeSection({ name: "legacy-redirect", to: "/admin", navigation: "spa" })).toBeNull();
+  });
+
+  it("preserves only valid FAE Session filters on compatibility redirects", () => {
+    expect(safeLegacyWorkspaceSearch(
+      "/fae/manage/sessions",
+      "?q=timeout&sentiment=negative&date_before=2026-08-31T00%3A00%3A00%2B08%3A00&has_subject=true&page=2&unknown=drop",
+    )).toBe("?q=timeout&sentiment=negative&date_before=2026-08-31T00%3A00%3A00%2B08%3A00&has_subject=true&page=2");
+    expect(safeLegacyWorkspaceSearch(
+      "/fae/manage/sessions/s%3A1",
+      "?q=one&q=two&sentiment=invalid&date_from=2026-02-30T00%3A00%3A00Z&abnormal=1&page=0",
+    )).toBe("");
+  });
+
+  it("preserves validated FAE Issue filters and paired turn links", () => {
+    expect(safeLegacyWorkspaceSearch(
+      "/fae/manage/issues",
+      "?status=fixing&priority=P1&failure_layer=model&owner=corp%3Aone&q=timeout&created_after=2026-08-31T00%3A00%3A00%2B08%3A00&page=2&unknown=drop",
+    )).toBe("?status=fixing&priority=P1&failure_layer=model&owner=corp%3Aone&q=timeout&created_after=2026-08-31T00%3A00%3A00%2B08%3A00&page=2");
+    expect(safeLegacyWorkspaceSearch(
+      "/fae/manage/issues",
+      "?session_key=fae%3Asession-1&turn_key=turn-2",
+    )).toBe("?session_key=fae%3Asession-1&turn_key=turn-2");
+    expect(safeLegacyWorkspaceSearch(
+      "/fae/manage/issues",
+      "?status=fixing&disposition=actionable&session_key=fae%3Asession-1&page=0",
+    )).toBe("");
+  });
+
+  it("preserves a positive report version only on report details", () => {
+    expect(safeLegacyWorkspaceSearch("/fae/manage/reports/weekly%3Aone", "?version=2&unknown=drop")).toBe("?version=2");
+    expect(safeLegacyWorkspaceSearch("/fae/manage/reports", "?version=2")).toBe("");
+    expect(safeLegacyWorkspaceSearch("/fae/manage/reports/weekly%3Aone", "?version=0")).toBe("");
+    expect(safeLegacyWorkspaceSearch("/voc/manage/", "?view=management")).toBe("");
   });
 });

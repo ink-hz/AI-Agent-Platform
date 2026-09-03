@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
 import { AppShell } from "./AppShell";
-import { LoadingState } from "./components/DataState";
 import { routeDocumentTitle, useDocumentTitle } from "./documentTitle";
 import { OverviewPage } from "./pages/OverviewPage";
 import { AgentsPage } from "./pages/AgentsPage";
@@ -14,7 +13,7 @@ import { FaeIssuesPage } from "./pages/FaeIssuesPage";
 import { SessionDetailPage } from "./pages/SessionDetailPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { ReviewPage } from "./pages/ReviewPage";
-import { navigate, useRoute } from "./router";
+import { navigate, safeLegacyWorkspaceSearch, useRoute } from "./router";
 import {
   AuthenticationRequired,
   DirectoryUnavailable,
@@ -40,6 +39,7 @@ import { AiNotesPage } from "./pages/AiNotesPage";
 import { FaeReportsPage } from "./pages/FaeReportsPage";
 import { FaeOverviewPage } from "./pages/FaeOverviewPage";
 import { FaeWorkbenchShell, type FaeSection } from "./components/fae-workbench/FaeWorkbenchShell";
+import { MARKETING_AGENT_ID_BY_SLUG } from "./platform/workspaces";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -60,10 +60,16 @@ function FaeWorkbenchPendingPage({ section }: { section: FaeSection }) {
 }
 
 
-function LegacyRedirect({ to }: { to: string }) {
-  const sourceQuery = to === "/voc/" || to.includes("?") ? "" : window.location.search;
-  useEffect(() => navigate(`${to}${sourceQuery}`, { replace: true }), [to, sourceQuery]);
-  return <LoadingState label="正在打开新的页面地址" />;
+function LegacyRedirect({ to, navigation }: { to: string; navigation: "spa" | "document" }) {
+  const target = `${to}${safeLegacyWorkspaceSearch(to, window.location.search)}`;
+  useEffect(() => {
+    if (navigation === "document") {
+      window.location.replace(platformPath(target));
+      return;
+    }
+    navigate(target, { replace: true });
+  }, [navigation, target]);
+  return <PendingPage title="正在打开工作区" description="正在进入对应的专业 Agent。" />;
 }
 
 
@@ -81,7 +87,7 @@ function AccessState({
 
 
 function viewerRouteAllowed(account: Account, route: ReturnType<typeof useRoute>): boolean {
-  if (["brain", "conversations", "conversation", "missions", "mission", "agents", "agent", "agent-conversation", "voc-workspace", "ai-notes", "ai-note", "account"].includes(route.name)) return true;
+  if (["brain", "conversations", "conversation", "missions", "mission", "agents", "agent", "agent-conversation", "voc-workspace", "hr", "hr-conversation", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account"].includes(route.name)) return true;
   if (route.name === "admin-governance") return true;
   if (route.name === "admin-voc") return true;
   if (route.name === "admin-agent-runtime") return account.observation_agent_ids.includes(route.agentId);
@@ -102,14 +108,18 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "brain": return account
       ? <BrainWorkspacePage account={account} />
       : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
-    case "conversations": return <LegacyRedirect to="/" />;
+    case "conversations": return <LegacyRedirect to="/" navigation="spa" />;
     case "conversation": return account ? <BrainWorkspacePage account={account} conversationId={route.conversationId} /> : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
     case "missions": return <MissionsPage />;
     case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
     case "agents": return <AgentUseDirectoryPage />;
     case "agent": return account ? <AgentUsePage account={account} agentId={route.agentId} key={route.agentId} /> : <PendingPage title="专业 Agent" description="请启用企业身份后使用。" />;
     case "agent-conversation": return account ? <AgentUsePage account={account} agentId={route.agentId} conversationId={route.conversationId} key={route.agentId} /> : <PendingPage title="专业 Agent" description="请启用企业身份后使用。" />;
-    case "voc-workspace": return <LegacyRedirect to="/voc/" />;
+    case "voc-workspace": return <LegacyRedirect to="/voc/" navigation="document" />;
+    case "hr": return account ? <AgentUsePage account={account} agentId="hr-bot" /> : <PendingPage title="HR Agent" description="请启用企业身份后使用。" />;
+    case "hr-conversation": return account ? <AgentUsePage account={account} agentId="hr-bot" conversationId={route.conversationId} key={route.conversationId} /> : <PendingPage title="HR Agent" description="请启用企业身份后使用。" />;
+    case "marketing": return account ? <AgentUsePage account={account} agentId={MARKETING_AGENT_ID_BY_SLUG[route.agentSlug]} key={route.agentSlug} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
+    case "marketing-conversation": return account ? <AgentUsePage account={account} agentId={MARKETING_AGENT_ID_BY_SLUG[route.agentSlug]} conversationId={route.conversationId} key={`${route.agentSlug}:${route.conversationId}`} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
     case "ai-notes": return account ? <AiNotesPage /> : <PendingPage title="AI 工程笔记" description="请启用企业身份后阅读。" />;
     case "ai-note": return account
       ? <AiNotesPage categorySlug={route.categorySlug} articleSlug={route.articleSlug} />
@@ -124,7 +134,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-activity": return <ActivityPage />;
     case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
     case "admin-governance": return <GovernancePage />;
-    case "admin-voc": return <LegacyRedirect to="/voc/?view=management" />;
+    case "admin-voc": return <LegacyRedirect to="/voc/manage/" navigation="document" />;
     case "admin-fae-overview": return <FaeOverviewPage />;
     case "admin-fae-sessions": return <FaeSessionsPage />;
     case "admin-fae-session": return <FaeSessionDetailPage sessionKey={route.sessionKey} />;
@@ -136,7 +146,18 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
       : <FaeWorkbenchPendingPage section="issues" />;
     case "admin-fae-reports": return <FaeReportsPage />;
     case "admin-fae-report": return <FaeReportsPage reportId={route.reportId} />;
-    case "legacy-redirect": return <LegacyRedirect to={route.to} />;
+    case "fae-manage-overview": return <FaeOverviewPage />;
+    case "fae-manage-sessions": return <FaeSessionsPage />;
+    case "fae-manage-session": return <FaeSessionDetailPage sessionKey={route.sessionKey} />;
+    case "fae-manage-issues": return account
+      ? <FaeIssuesPage account={account} />
+      : <FaeWorkbenchPendingPage section="issues" />;
+    case "fae-manage-issue": return account
+      ? <FaeIssuesPage account={account} issueId={route.issueId} />
+      : <FaeWorkbenchPendingPage section="issues" />;
+    case "fae-manage-reports": return <FaeReportsPage />;
+    case "fae-manage-report": return <FaeReportsPage reportId={route.reportId} />;
+    case "legacy-redirect": return <LegacyRedirect to={route.to} navigation={route.navigation} />;
     default: return <PendingPage title="页面不存在" description="请返回 Agent 大脑。" />;
   }
 }
@@ -180,8 +201,9 @@ export default function App() {
   if (failure === "permission") return <AccessState title="无权访问" description="当前账号没有该入口的访问权限。" />;
   if (failure === "directory") return <AccessState title="暂时无法确认企业账号" description="企业通讯录同步可能延迟，请稍后重试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
   if (failure) return <AccessState title="暂时无法进入平台" description="连接服务时遇到短暂问题，请重新尝试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
+  if (route.name === "legacy-redirect") return productPage(route, account ?? undefined);
   if (!legacyMode && account) {
-    const usageRoute = ["brain", "conversations", "conversation", "missions", "mission", "agents", "agent", "agent-conversation", "voc-workspace", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
+    const usageRoute = ["brain", "conversations", "conversation", "missions", "mission", "agents", "agent", "agent-conversation", "voc-workspace", "hr", "hr-conversation", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
     const allowed = usageRoute || account.role === "platform_owner" || account.role === "platform_admin"
       || (account.role === "management_viewer" && viewerRouteAllowed(account, route));
     if (!allowed) {

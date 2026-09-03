@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./AppShell";
 import App from "./App";
 import type { Account } from "./auth";
-import { navigate } from "./router";
+import { navigate, parseRoute } from "./router";
 
 
 let container: HTMLDivElement;
@@ -30,31 +30,25 @@ afterEach(async () => {
 
 
 describe("cloud replica mode", () => {
-  it("redirects legacy VOC routes without carrying their source query", async () => {
-    window.history.replaceState({}, "", "/agents/voc/workspace?view=spoofed");
-
-    await act(async () => root.render(<App />));
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/voc/");
+  it("assigns legacy VOC routes to full document navigation", () => {
+    expect(parseRoute("/agents/voc/workspace")).toEqual({
+      name: "legacy-redirect", to: "/voc/", navigation: "document",
+    });
   });
 
-  it("keeps existing query forwarding for non-VOC legacy routes", async () => {
+  it("drops queries from redirect families without an explicit allowlist", async () => {
     window.history.replaceState({}, "", "/conversations?tab=recent");
 
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/?tab=recent");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/");
   });
 
-  it("redirects legacy VOC management exactly", async () => {
-    window.history.replaceState({}, "", "/admin/voc?view=spoofed");
-
-    await act(async () => root.render(<App />));
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/voc/?view=management");
+  it("assigns legacy VOC management to its canonical external document", () => {
+    expect(parseRoute("/admin/voc")).toEqual({
+      name: "legacy-redirect", to: "/voc/manage/", navigation: "document",
+    });
   });
 
   it("allows a member to open the AI notes product", async () => {

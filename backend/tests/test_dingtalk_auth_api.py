@@ -531,6 +531,9 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
     assert "platform-agent-brain-mode" not in root.text
     for path in (
         "/account", "/agents", "/agents/hr-bot", "/missions", "/conversations",
+        "/hr", "/hr/", "/hr/conversations/hr%3Aone",
+        "/marketing", "/marketing/", "/marketing/voice/conversations/mkt%3Aone",
+        "/fae/manage", "/fae/manage/", "/fae/manage/reports/weekly-1",
         "/ai-notes", "/ai-notes/foundations/handbook",
         "/missions/00000000-0000-0000-0000-000000000001", "/admin",
         "/conversations/00000000-0000-0000-0000-000000000001",
@@ -542,6 +545,8 @@ def test_authenticated_root_and_product_routes_serve_identity_shell(
         assert response.status_code == 200, path
         assert "LOGIN SHELL" in response.text
         assert 'name="platform-identity-mode" content="enabled"' in response.text
+    for path in ("/fae/", "/fae/conversations/fae%3Aone", "/voc/", "/voc/manage/"):
+        assert client.get(path, cookies=cookies).status_code in {403, 404}, path
     assert client.get("/unknown", cookies=cookies).status_code in {403, 404}
 
 

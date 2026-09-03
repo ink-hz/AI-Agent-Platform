@@ -10,6 +10,7 @@ import { UsageChapter } from "../components/fae-reports/UsageChapter";
 import { FaeWorkbenchShell } from "../components/fae-workbench/FaeWorkbenchShell";
 import { FaeReportApiError, faeReportApi } from "../faeReportApi";
 import type { FaeAnalysisReport, FaeReportSummary } from "../faeReportTypes";
+import { selectedReportVersion } from "../router";
 
 function Report({ report, summaries }: { report: FaeAnalysisReport; summaries: FaeReportSummary[] }) {
   if (report.status === "failed") return <section className="fae-workbench__empty" role="alert"><h2>报告发布失败</h2><p>{report.failure?.message ?? "本次分析未通过发布门禁。"}</p></section>;
@@ -21,14 +22,6 @@ function Report({ report, summaries }: { report: FaeAnalysisReport; summaries: F
     <AnswerEffectivenessChapter report={report} />
     <InsightAndImprovementChapter report={report} />
   </article>;
-}
-
-function selectedReportVersion(search: string): number | undefined | null {
-  const values = new URLSearchParams(search).getAll("version");
-  if (values.length === 0) return undefined;
-  if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0])) return null;
-  const version = Number(values[0]);
-  return Number.isSafeInteger(version) ? version : null;
 }
 
 export function FaeReportsPage({ reportId }: { reportId?: string }) {

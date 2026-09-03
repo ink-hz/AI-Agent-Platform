@@ -19,9 +19,11 @@ describe("Agent Brain route boundary", () => {
       missionId: "8c13c965-1b60-472e-b275-199987d1d109",
     });
     expect(parseRoute("/agents")).toEqual({ name: "agents" });
-    expect(parseRoute("/agents/hr-bot")).toEqual({ name: "agent", agentId: "hr-bot" });
+    expect(parseRoute("/agents/hr-bot")).toEqual({
+      name: "legacy-redirect", to: "/hr/", navigation: "spa",
+    });
     expect(parseRoute("/agents/hr-bot/conversations/session-one")).toEqual({
-      name: "agent-conversation", agentId: "hr-bot", conversationId: "session-one",
+      name: "legacy-redirect", to: "/hr/conversations/session-one", navigation: "spa",
     });
     expect(routeSection({ name: "mission", missionId: "one" })).toBe("missions");
     expect(routeSection({ name: "conversation", conversationId: "one" })).toBe("brain");
@@ -41,12 +43,12 @@ describe("Agent Brain route boundary", () => {
     expect(parseRoute("/admin/identity")).toEqual({ name: "admin-identity" });
     expect(parseRoute("/admin/governance")).toEqual({ name: "admin-governance" });
     expect(parseRoute("/admin/voc")).toEqual({
-      name: "legacy-redirect", to: "/voc/?view=management",
+      name: "legacy-redirect", to: "/voc/manage/", navigation: "document",
     });
-    expect(parseRoute("/admin/fae")).toEqual({ name: "admin-fae-overview" });
-    expect(parseRoute("/admin/fae/sessions")).toEqual({ name: "admin-fae-sessions" });
-    expect(parseRoute("/admin/fae/issues")).toEqual({ name: "admin-fae-issues" });
-    expect(parseRoute("/admin/fae/reports")).toEqual({ name: "admin-fae-reports" });
+    expect(parseRoute("/admin/fae")).toEqual({ name: "legacy-redirect", to: "/fae/manage/", navigation: "spa" });
+    expect(parseRoute("/admin/fae/sessions")).toEqual({ name: "legacy-redirect", to: "/fae/manage/sessions", navigation: "spa" });
+    expect(parseRoute("/admin/fae/issues")).toEqual({ name: "legacy-redirect", to: "/fae/manage/issues", navigation: "spa" });
+    expect(parseRoute("/admin/fae/reports")).toEqual({ name: "legacy-redirect", to: "/fae/manage/reports", navigation: "spa" });
   });
 
   it.each([
@@ -60,7 +62,7 @@ describe("Agent Brain route boundary", () => {
     ["/sessions/fae%3Aone", "/admin/sessions/fae%3Aone"],
     ["/agents/hr-bot/runtime", "/admin/agents/hr-bot/runtime"],
   ])("has an explicit permanent client redirect from %s", (legacy, target) => {
-    expect(parseRoute(legacy)).toEqual({ name: "legacy-redirect", to: target });
+    expect(parseRoute(legacy)).toEqual({ name: "legacy-redirect", to: target, navigation: "spa" });
   });
 
   it("generates canonical paths instead of legacy management URLs", () => {

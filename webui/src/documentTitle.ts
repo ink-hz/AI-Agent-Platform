@@ -5,6 +5,14 @@ import type { Route } from "./router";
 
 export const PLATFORM_TITLE = "Orbbec Agent Platform";
 
+const MARKETING_TITLE_BY_SLUG = {
+  prospecting: "Marketing Prospecting",
+  inbound: "Marketing Inbound",
+  voice: "Marketing Voice",
+  intelligence: "Marketing Intelligence",
+  gtm: "Marketing GTM",
+} as const;
+
 
 export function routeDocumentTitle(route: Route): string {
   switch (route.name) {
@@ -16,6 +24,17 @@ export function routeDocumentTitle(route: Route): string {
     case "agents": return `专业 Agent · ${PLATFORM_TITLE}`;
     case "agent": return `专业 Agent · ${PLATFORM_TITLE}`;
     case "voc-workspace": return `VOC 洞察助手 · ${PLATFORM_TITLE}`;
+    case "hr": return `HR Agent · ${PLATFORM_TITLE}`;
+    case "hr-conversation": return `HR Agent · ${PLATFORM_TITLE}`;
+    case "marketing": return `${MARKETING_TITLE_BY_SLUG[route.agentSlug]} · ${PLATFORM_TITLE}`;
+    case "marketing-conversation": return `${MARKETING_TITLE_BY_SLUG[route.agentSlug]} · ${PLATFORM_TITLE}`;
+    case "fae-manage-overview": return `FAE 工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-sessions": return `FAE 工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-session": return `FAE 工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-issues": return `FAE 工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-issue": return `FAE 工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-reports": return `FAE 工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-report": return `FAE 工作台 · ${PLATFORM_TITLE}`;
     case "ai-notes": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
     case "ai-note": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
     case "admin-overview": return `管理中心 · ${PLATFORM_TITLE}`;

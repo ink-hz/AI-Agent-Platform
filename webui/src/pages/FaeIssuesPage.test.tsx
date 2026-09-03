@@ -406,7 +406,7 @@ describe("FaeIssuesPage", () => {
     identityMeta.name = "platform-identity-mode";
     identityMeta.content = "enabled";
     document.head.append(identityMeta);
-    window.history.replaceState({}, "", `/admin/fae/issues?disposition=${disposition}`);
+    window.history.replaceState({}, "", `/fae/manage/issues?disposition=${disposition}`);
     const requests: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const path = String(input);
@@ -455,7 +455,7 @@ describe("FaeIssuesPage", () => {
     expect(container.querySelector(".review-issue-list")?.textContent).toContain(label);
     expect(window.location.search).toBe(`?disposition=${disposition}`);
     await act(async () => container.querySelector<HTMLButtonElement>(".review-issue-list button")!.click());
-    expect(window.location.pathname).toBe(`/admin/fae/issues/${ISSUE_ID}`);
+    expect(window.location.pathname).toBe(`/fae/manage/issues/${ISSUE_ID}`);
     expect(window.location.search).toBe(`?disposition=${disposition}`);
   });
 
@@ -464,7 +464,7 @@ describe("FaeIssuesPage", () => {
     identityMeta.name = "platform-identity-mode";
     identityMeta.content = "enabled";
     document.head.append(identityMeta);
-    window.history.replaceState({}, "", "/admin/fae/issues?status=unknown");
+    window.history.replaceState({}, "", "/fae/manage/issues?status=unknown");
     const requests: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const path = String(input);
@@ -486,7 +486,7 @@ describe("FaeIssuesPage", () => {
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/issues");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/fae/manage/issues");
     expect(requests).toContain("/api/admin/fae/issues?limit=20&status=open");
     expect(requests.every((path) => !path.includes("status=unknown"))).toBe(true);
     expect(container.textContent).toContain("反馈与修复");
@@ -504,7 +504,7 @@ describe("FaeIssuesPage", () => {
     identityMeta.name = "platform-identity-mode";
     identityMeta.content = "enabled";
     document.head.append(identityMeta);
-    window.history.replaceState({}, "", "/admin/fae/issues?status=fixing");
+    window.history.replaceState({}, "", "/fae/manage/issues?status=fixing");
     let resolveDeployment!: (value: Response) => void;
     const deployment = new Promise<Response>((resolve) => { resolveDeployment = resolve; });
     const issueRequests: string[] = [];
@@ -540,7 +540,7 @@ describe("FaeIssuesPage", () => {
 
     expect(issueRequests[0]).toBe("/api/admin/fae/issues?limit=20&status=fixing");
     expect(issueRequests).toHaveLength(1);
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/admin/fae/issues?status=fixing");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/fae/manage/issues?status=fixing");
   });
 
   it.each([
@@ -552,7 +552,7 @@ describe("FaeIssuesPage", () => {
     identityMeta.name = "platform-identity-mode";
     identityMeta.content = "enabled";
     document.head.append(identityMeta);
-    window.history.replaceState({}, "", `/admin/fae/issues${search}`);
+    window.history.replaceState({}, "", `/fae/manage/issues${search}`);
     let resolveDeployment!: (value: Response) => void;
     const deployment = new Promise<Response>((resolve) => { resolveDeployment = resolve; });
     const issueRequests: string[] = [];

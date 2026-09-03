@@ -44,7 +44,14 @@ describe("document titles", () => {
     expect(routeDocumentTitle({ name: "admin-fae-issue", issueId: "00000000-0000-0000-0000-000000000001" })).toBe("FAE 问题 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "admin-fae-reports" })).toBe("FAE Agent 生产成果 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "admin-fae-report", reportId: "weekly:one" })).toBe("FAE Agent 生产成果 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "legacy-redirect", to: "/admin" })).toBe(PLATFORM_TITLE);
+    expect(routeDocumentTitle({ name: "hr" })).toBe("HR Agent · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "hr-conversation", conversationId: "one" })).toBe("HR Agent · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "marketing", agentSlug: "inbound" })).toBe("Marketing Inbound · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "marketing-conversation", agentSlug: "gtm", conversationId: "one" })).toBe("Marketing GTM · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "fae-manage-overview" })).toBe("FAE 工作台 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "fae-manage-session", sessionKey: "fae:one" })).toBe("FAE 工作台 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "fae-manage-report", reportId: "weekly:one" })).toBe("FAE 工作台 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "legacy-redirect", to: "/admin", navigation: "spa" })).toBe(PLATFORM_TITLE);
     expect(routeDocumentTitle({ name: "not-found" })).toBe(PLATFORM_TITLE);
   });
 
