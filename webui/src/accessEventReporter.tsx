@@ -13,6 +13,7 @@ export interface PageAccessEvent {
 export function accessEventForRoute(route: Route): PageAccessEvent | null {
   switch (route.name) {
     case "brain": return { workspace_key: "platform", page_key: "platform.brain" };
+    case "conversations": return { workspace_key: "platform", page_key: "platform.conversations" };
     case "conversation": return { workspace_key: "platform", page_key: "platform.conversation" };
     case "agents": return { workspace_key: "platform", page_key: "platform.agent_directory" };
     case "missions": return { workspace_key: "platform", page_key: "platform.missions" };

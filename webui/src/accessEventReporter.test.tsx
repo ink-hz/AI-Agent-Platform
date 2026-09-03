@@ -32,6 +32,9 @@ describe("page access reporter", () => {
   });
 
   it("maps semantic routes without including resource identifiers", () => {
+    expect(accessEventForRoute({ name: "conversations" })).toEqual({
+      workspace_key: "platform", page_key: "platform.conversations",
+    });
     expect(accessEventForRoute({ name: "conversation", conversationId: "private-conversation" })).toEqual({
       workspace_key: "platform", page_key: "platform.conversation",
     });

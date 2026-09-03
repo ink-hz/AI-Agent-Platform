@@ -13,6 +13,7 @@ insert into platform_control.access_page_catalog(
   workspace_key,page_key,display_name,allows_agent_id
 ) values
   ('platform','platform.brain','Agent 大脑',false),
+  ('platform','platform.conversations','Agent 大脑会话列表',false),
   ('platform','platform.conversation','Agent 大脑会话',false),
   ('platform','platform.agent_directory','专业 Agent',false),
   ('platform','platform.missions','历史任务',false),

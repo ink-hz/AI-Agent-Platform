@@ -33,7 +33,7 @@
 
 数据库目录和各前端映射必须覆盖下列精确集合。动态页面只发送固定 page_key，绝不发送详情 ID。
 
-- Platform：platform.brain、platform.conversation、platform.agent_directory、platform.missions、platform.mission_detail、platform.account、platform.ai_notes、platform.ai_note。
+- Platform：platform.brain、platform.conversations、platform.conversation、platform.agent_directory、platform.missions、platform.mission_detail、platform.account、platform.ai_notes、platform.ai_note。
 - HR：hr.workspace、hr.conversation。
 - Marketing：marketing.workspace、marketing.conversation；agent_id 必须是五个规范 Marketing Agent ID 之一。
 - Office：office.chat、office.services、office.management、office.service_detail、office.feedback、office.my_feedback、office.feedback_admin、office.shuttle、office.shuttle_admin、office.lodging、office.lodging_admin、office.vehicle_registration、office.vehicle_registration_admin、office.notification_admin。

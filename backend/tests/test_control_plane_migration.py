@@ -258,6 +258,7 @@ def test_user_access_history_migration_defines_closed_page_catalog_and_functions
 
     expected_page_keys = {
         "platform.brain",
+        "platform.conversations",
         "platform.conversation",
         "platform.agent_directory",
         "platform.missions",
@@ -327,7 +328,7 @@ def test_user_access_history_database_enforces_catalog_and_role_boundaries(
                 "select page_key from platform_control.access_page_catalog"
             ).fetchall()
         }
-        assert len(page_keys) == 51
+        assert len(page_keys) == 52
         assert {
             "platform.brain",
             "hr.workspace",
