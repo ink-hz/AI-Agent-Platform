@@ -214,6 +214,20 @@ launchctl kickstart -k gui/$(id -u)/com.orbbec.ai-agent-platform
 
 ## 远端每日同步
 
+ADMIN 同步依赖的 observability schema 必须先由 owner 显式迁移。迁移命令只接受
+当前仓库内指定的 `011_admin_session_subject_links.sql`，使用 advisory lock 和
+SHA-256 ledger 防止并发执行与历史 SQL 漂移；owner DSN 文件必须是当前用户拥有的
+绝对路径、普通非链接文件且权限严格为 `0600`：
+
+```bash
+deploy/migrate-observability \
+  /absolute/private/path/flywheel-owner-database-url \
+  "$(pwd)/backend/migrations/011_admin_session_subject_links.sql"
+```
+
+命令成功后还会校验 `platform_identity.session_subject_links` 确实存在。迁移、摘要
+校验或最终关系校验任一步失败都会返回非零；不会自动批量补跑无 ledger 的旧迁移。
+
 手动执行一次 FAE 与 ADMIN 同步：
 
 ```bash

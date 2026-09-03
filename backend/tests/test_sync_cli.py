@@ -46,6 +46,7 @@ def prepare(monkeypatch, review_url):
         lambda _source: ExportBundle("fae", {}, (), 0),
     )
     monkeypatch.setattr(cli, "read_secret_file", lambda *_args: "sync-dsn")
+    monkeypatch.setattr(cli, "required_admin_schema_available", lambda *_args: True)
     monkeypatch.setattr(cli, "resolve_review_database_url", lambda _config: review_url)
     monkeypatch.setattr(cli, "YamlRepository", lambda _path: object())
     monkeypatch.setattr(cli, "HandoffImporter", lambda *_args: object())
@@ -126,3 +127,22 @@ def test_secret_file_failure_is_reported_as_sync_database_unavailable(
 
     assert cli.main(["--source", "fae"]) == 1
     assert "sync_database_unavailable" in capsys.readouterr().err
+
+
+def test_admin_sync_fails_closed_before_export_when_schema_is_missing(
+    monkeypatch, capsys
+):
+    prepare(monkeypatch, "review-dsn")
+    config = cli.load_config()
+    monkeypatch.setattr(
+        cli, "default_sources", lambda *_args: {"admin": object()}
+    )
+    exported = []
+    monkeypatch.setattr(cli, "export_source", lambda source: exported.append(source))
+    monkeypatch.setattr(
+        cli, "required_admin_schema_available", lambda *_args: False
+    )
+
+    assert cli.main(["--source", "admin"]) == 1
+    assert exported == []
+    assert capsys.readouterr().err.strip() == "admin: schema_preflight_failed"

@@ -1,0 +1,172 @@
+#!/bin/bash
+set -Eeuo pipefail
+umask 077
+
+fail() {
+  echo "OBSERVABILITY_MIGRATION_FAILED" >&2
+  exit 1
+}
+
+[[ $# -eq 2 ]] || fail
+owner_dsn_file="$1"
+migration_file="$2"
+repository_root="$(cd "$(dirname "$0")/.." && pwd -P)"
+expected_migration="$repository_root/backend/migrations/011_admin_session_subject_links.sql"
+
+[[ "$owner_dsn_file" == /* ]] || fail
+[[ -f "$owner_dsn_file" && ! -L "$owner_dsn_file" ]] || fail
+dsn_metadata="$(stat -f '%Lp %u' "$owner_dsn_file" 2>/dev/null || stat -c '%a %u' "$owner_dsn_file" 2>/dev/null)" || fail
+[[ "$dsn_metadata" == "600 $(id -u)" ]] || fail
+
+[[ "$migration_file" == "$expected_migration" ]] || fail
+[[ -f "$migration_file" && ! -L "$migration_file" ]] || fail
+[[ "$(basename "$migration_file")" =~ ^[0-9]{3}_[a-z0-9_]+\.sql$ ]] || fail
+command -v psql >/dev/null 2>&1 || fail
+
+version="$(basename "$migration_file")"
+version="${version%%_*}"
+if command -v sha256sum >/dev/null 2>&1; then
+  migration_sha256="$(sha256sum "$migration_file" | awk '{print $1}')"
+else
+  migration_sha256="$(shasum -a 256 "$migration_file" | awk '{print $1}')"
+fi
+[[ "$migration_sha256" =~ ^[0-9a-f]{64}$ ]] || fail
+
+temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/observability-migration.XXXXXXXX")" || fail
+control_sql="$temporary_root/control.sql"
+psql_error="$temporary_root/psql.stderr"
+service_file="$temporary_root/pg_service.conf"
+cleanup() {
+  exit_status=$?
+  trap - EXIT
+  if [[ -f "$control_sql" && ! -L "$control_sql" ]]; then
+    rm -f -- "$control_sql"
+  fi
+  if [[ -f "$psql_error" && ! -L "$psql_error" ]]; then
+    rm -f -- "$psql_error"
+  fi
+  if [[ -f "$service_file" && ! -L "$service_file" ]]; then
+    rm -f -- "$service_file"
+  fi
+  rmdir "$temporary_root"
+  exit "$exit_status"
+}
+trap cleanup EXIT
+
+cat > "$control_sql" <<CONTROL_SQL
+\set ON_ERROR_STOP on
+
+select pg_advisory_lock(1095780177);
+
+create schema if not exists platform_sync;
+create table if not exists platform_sync.schema_migrations (
+  version integer primary key,
+  sha256 text not null check (length(sha256) = 64),
+  applied_at timestamptz not null
+);
+revoke all on platform_sync.schema_migrations from public;
+
+select (
+  not exists (
+    select 1
+      from platform_sync.schema_migrations
+     where version = :'expected_version'::integer
+       and sha256 <> :'expected_sha256'
+  )
+)::int as checksum_ok \gset
+\if :checksum_ok
+\else
+  \quit 4
+\endif
+
+select exists (
+  select 1
+    from platform_sync.schema_migrations
+   where version = :'expected_version'::integer
+     and sha256 = :'expected_sha256'
+)::int as migration_recorded \gset
+\if :migration_recorded
+\else
+  \ir $migration_file
+  insert into platform_sync.schema_migrations(version, sha256, applied_at)
+  values (:'expected_version'::integer, :'expected_sha256', now());
+\endif
+
+select (to_regclass('platform_identity.session_subject_links') is not null)::int
+  as required_relation_ok \gset
+\if :required_relation_ok
+\else
+  \quit 3
+\endif
+
+select pg_advisory_unlock(1095780177);
+CONTROL_SQL
+chmod 600 "$control_sql"
+
+IFS= read -r database_url < "$owner_dsn_file" || fail
+[[ -n "$database_url" ]] || fail
+if ! printf '%s' "$database_url" | python3 -c '
+import os
+import sys
+from urllib.parse import parse_qs, unquote, urlsplit
+
+target = sys.argv[1]
+raw = sys.stdin.read()
+parsed = urlsplit(raw)
+if parsed.scheme not in {"postgres", "postgresql"}:
+    raise SystemExit(1)
+query = (
+    parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
+    if parsed.query else {}
+)
+allowed = {"host", "port", "sslmode", "connect_timeout", "sslrootcert", "sslcert", "sslkey"}
+if not set(query) <= allowed or any(len(values) != 1 for values in query.values()):
+    raise SystemExit(1)
+database = unquote(parsed.path.removeprefix("/"))
+user = unquote(parsed.username or "")
+if not database or not user:
+    raise SystemExit(1)
+fields = {
+    "host": query.get("host", [parsed.hostname or ""])[0],
+    "port": query.get("port", [str(parsed.port or 5432)])[0],
+    "dbname": database,
+    "user": user,
+    "application_name": "platform-observability-migrator",
+}
+if parsed.password is not None:
+    fields["password"] = unquote(parsed.password)
+for key in allowed - {"host", "port"}:
+    if key in query:
+        fields[key] = query[key][0]
+if not fields["host"] or not fields["port"].isdigit():
+    raise SystemExit(1)
+def service_value(value):
+    if (
+        "\n" in value or "\r" in value or "\x00" in value
+        or value != value.strip()
+    ):
+        raise SystemExit(1)
+    return value
+payload = "[observability-migrator]\n" + "".join(
+    f"{key}={service_value(value)}\n" for key, value in fields.items()
+)
+descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+    stream.write(payload)
+' "$service_file" 2>"$psql_error"; then
+  database_url=""
+  fail
+fi
+database_url=""
+if ! {
+  cat "$control_sql"
+} | PGSERVICE="observability-migrator" PGSERVICEFILE="$service_file" \
+  psql -X -v ON_ERROR_STOP=1 \
+  -v "expected_version=$version" \
+  -v "expected_sha256=$migration_sha256" \
+  >/dev/null 2>"$psql_error"; then
+  fail
+fi
+
+printf 'OBSERVABILITY_MIGRATION_OK version=%s sha256=%s\n' \
+  "$version" "$migration_sha256"
