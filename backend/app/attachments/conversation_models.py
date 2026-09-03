@@ -18,7 +18,7 @@ UPLOAD_TTL_SECONDS = 24 * 60 * 60
 @dataclass(frozen=True)
 class BeginUpload:
     conversation_id: UUID | None
-    original_name: str
+    original_name: str = field(repr=False)
     declared_mime: str
     declared_size: int
 
@@ -29,7 +29,7 @@ class UploadRecord:
     attachment_id: UUID
     owner_id: UUID
     conversation_id: UUID | None
-    original_name: str
+    original_name: str = field(repr=False)
     declared_mime: str
     declared_size: int
     expires_at: datetime
@@ -45,6 +45,14 @@ class UploadTarget:
 
 
 @dataclass(frozen=True)
+class WriteAttempt:
+    attempt_id: UUID
+    upload: UploadRecord
+    object_ref: str = field(repr=False)
+    lease_expires_at: datetime
+
+
+@dataclass(frozen=True)
 class ObjectReceipt:
     size_bytes: int
     sha256: bytes = field(repr=False)
@@ -55,7 +63,7 @@ class AttachmentRecord:
     attachment_id: UUID
     owner_id: UUID
     conversation_id: UUID | None
-    original_name: str
+    original_name: str = field(repr=False)
     declared_mime: str
     detected_mime: str | None
     size_bytes: int
@@ -77,3 +85,15 @@ class ConversationAssets:
     @property
     def size_bytes(self) -> int:
         return sum(attachment.size_bytes for attachment in self.attachments)
+
+
+@dataclass(frozen=True)
+class WriteReconciliation:
+    attachment: AttachmentRecord | None
+    cleanup_safe: bool
+
+
+@dataclass(frozen=True)
+class OrphanedWriteAttempt:
+    attempt_id: UUID
+    object_ref: str = field(repr=False)

@@ -27,8 +27,11 @@ from .conversation_models import (
     UPLOAD_TTL_SECONDS,
     AttachmentRecord,
     ConversationAssets,
+    OrphanedWriteAttempt,
     UploadRecord,
     UploadTarget,
+    WriteAttempt,
+    WriteReconciliation,
 )
 
 
@@ -56,8 +59,11 @@ def attachment_name_subject(attachment_id: UUID) -> str:
     return f"attachment:{attachment_id}:original-name"
 
 
-def attachment_object_subject(attachment_id: UUID) -> str:
-    return f"attachment:{attachment_id}:object-ref"
+def attachment_object_subject(
+    attachment_id: UUID, attempt_id: UUID | None = None
+) -> str:
+    suffix = f":attempt:{attempt_id}" if attempt_id is not None else ""
+    return f"attachment:{attachment_id}:object-ref{suffix}"
 
 
 def _require_uuid(value: object) -> UUID:
@@ -286,55 +292,12 @@ class ConversationAttachmentRepository:
             seconds=self._upload_ttl_seconds
         )
         try:
-            with self._connection() as connection, connection.transaction():
-                cursor = connection.cursor()
-                if conversation_id is None:
-                    owner = cursor.execute(
-                        "select 1 from platform_control.internal_users "
-                        "where internal_user_id=%s and status='active'",
-                        (owner_id,),
-                    ).fetchone()
-                else:
-                    owner = cursor.execute(
-                        "select 1 from platform_control.conversations "
-                        "where conversation_id=%s and owner_internal_user_id=%s "
-                        "and status='active' for update",
-                        (conversation_id, owner_id),
-                    ).fetchone()
-                if owner is None:
-                    raise ConversationAttachmentNotFound()
-                if conversation_id is not None:
-                    usage = cursor.execute(
-                        "select count(*),coalesce(sum(attachment.size_bytes),0) "
-                        "from platform_attachments.attachments attachment "
-                        "left join platform_attachments.uploads upload "
-                        "on upload.attachment_id=attachment.attachment_id "
-                        "where attachment.owner_internal_user_id=%s "
-                        "and attachment.conversation_id=%s "
-                        "and attachment.source_kind='user_input' "
-                        "and attachment.state <> 'deleted' "
-                        "and not (attachment.state='uploading' "
-                        "and (upload.expires_at is null or upload.expires_at <= now()))",
-                        (owner_id, conversation_id),
-                    ).fetchone()
-                    if int(usage["count"]) >= self._max_conversation_files:
-                        raise ConversationAttachmentQuotaExceeded(
-                            "conversation attachment files quota exceeded"
-                        )
-                    if (
-                        int(usage["coalesce"]) + declared_size
-                        > self._max_conversation_bytes
-                    ):
-                        raise ConversationAttachmentQuotaExceeded(
-                            "conversation attachment bytes quota exceeded"
-                        )
-                cursor.execute(
-                    "insert into platform_attachments.attachments "
-                    "(attachment_id,owner_internal_user_id,conversation_id,"
-                    "source_kind,original_name_ciphertext,original_name_key_version,"
-                    "object_ref_ciphertext,object_ref_key_version,declared_mime,"
-                    "size_bytes) values (%s,%s,%s,'user_input',%s,%s,%s,%s,%s,%s)",
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select * from platform_attachments.create_upload_v64("
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
+                        upload_id,
                         attachment_id,
                         owner_id,
                         conversation_id,
@@ -344,24 +307,10 @@ class ConversationAttachmentRepository:
                         object_value.key_version,
                         declared_mime,
                         declared_size,
-                    ),
-                )
-                row = cursor.execute(
-                    "insert into platform_attachments.uploads "
-                    "(upload_id,attachment_id,owner_internal_user_id,conversation_id,"
-                    "object_ref_ciphertext,object_ref_key_version,size_bytes,expires_at) "
-                    "values (%s,%s,%s,%s,%s,%s,%s,%s) returning upload_id,"
-                    "attachment_id,owner_internal_user_id,conversation_id,expires_at,"
-                    "state,size_bytes,sha256",
-                    (
-                        upload_id,
-                        attachment_id,
-                        owner_id,
-                        conversation_id,
-                        object_value.ciphertext,
-                        object_value.key_version,
-                        declared_size,
                         expires_at,
+                        self._max_file_bytes,
+                        self._max_conversation_files,
+                        self._max_conversation_bytes,
                     ),
                 ).fetchone()
             return self._upload_from_row(
@@ -378,6 +327,18 @@ class ConversationAttachmentRepository:
             ValueError,
         ):
             raise
+        except psycopg.errors.NoDataFound:
+            raise ConversationAttachmentNotFound() from None
+        except psycopg.errors.ProgramLimitExceeded as error:
+            quota = (
+                "files"
+                if error.diag.message_primary
+                and "files" in error.diag.message_primary
+                else "bytes"
+            )
+            raise ConversationAttachmentQuotaExceeded(
+                f"conversation attachment {quota} quota exceeded"
+            ) from None
         except Exception as error:
             raise ConversationAttachmentRepositoryError() from error
 
@@ -405,7 +366,8 @@ class ConversationAttachmentRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select object_ref_ciphertext,object_ref_key_version "
+                    "select object_ref_ciphertext,object_ref_key_version,"
+                    "write_attempt_id "
                     "from platform_attachments.uploads where upload_id=%s "
                     "and owner_internal_user_id=%s",
                     (upload_id, owner_id),
@@ -413,7 +375,9 @@ class ConversationAttachmentRepository:
             if row is None:
                 raise ConversationAttachmentNotFound()
             value = self._unseal(
-                attachment_object_subject(upload.attachment_id),
+                attachment_object_subject(
+                    upload.attachment_id, row["write_attempt_id"]
+                ),
                 row["object_ref_ciphertext"],
                 row["object_ref_key_version"],
             )
@@ -427,14 +391,65 @@ class ConversationAttachmentRepository:
         except Exception as error:
             raise ConversationAttachmentRepositoryError() from error
 
+    def claim_write(self, owner_id: UUID, upload_id: UUID) -> WriteAttempt:
+        upload = self.upload_for_owner(owner_id, upload_id)
+        if upload.state != "uploading":
+            raise ConversationAttachmentConflict("attachment upload not writable")
+        now = datetime.now(UTC)
+        if upload.expires_at <= now:
+            raise ConversationAttachmentConflict("attachment upload expired")
+        attempt_id = uuid4()
+        object_ref = secrets.token_hex(32)
+        lease_expires_at = min(
+            upload.expires_at, now + timedelta(minutes=5)
+        )
+        object_value = self.content_codec.seal_json(
+            attachment_object_subject(upload.attachment_id, attempt_id),
+            {"object_ref": object_ref},
+        )
+        try:
+            with self._connection() as connection, connection.transaction():
+                row = connection.execute(
+                    "select platform_attachments.claim_upload_write_v64("
+                    "%s,%s,%s,%s,%s,%s) as attachment_id",
+                    (
+                        upload_id,
+                        owner_id,
+                        attempt_id,
+                        object_value.ciphertext,
+                        object_value.key_version,
+                        lease_expires_at,
+                    ),
+                ).fetchone()
+            if row is None or row["attachment_id"] != upload.attachment_id:
+                raise ConversationAttachmentConflict(
+                    "attachment upload write lease unavailable"
+                )
+            return WriteAttempt(
+                attempt_id,
+                upload,
+                object_ref,
+                lease_expires_at,
+            )
+        except ConversationAttachmentRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise ConversationAttachmentConflict(
+                "attachment upload write lease unavailable"
+            ) from None
+        except Exception as error:
+            raise ConversationAttachmentRepositoryError() from error
+
     def complete_upload(
         self,
         owner_id: UUID,
         upload_id: UUID,
+        attempt_id: UUID,
         actual_size: int,
         sha256: bytes,
     ) -> AttachmentRecord:
         upload = self.upload_for_owner(owner_id, upload_id)
+        attempt_id = _require_uuid(attempt_id)
         if (
             isinstance(actual_size, bool)
             or not isinstance(actual_size, int)
@@ -444,12 +459,14 @@ class ConversationAttachmentRepository:
         ):
             raise ValueError("attachment receipt invalid")
         if upload.state != "uploading":
-            completed = self.completed_attachment(owner_id, upload_id)
-            if completed.size_bytes != actual_size or completed.sha256 != sha256:
+            reconciliation = self.reconcile_write(
+                owner_id, upload_id, attempt_id, actual_size, sha256
+            )
+            if reconciliation.attachment is None:
                 raise ConversationAttachmentConflict(
                     "attachment upload receipt conflict"
                 )
-            return completed
+            return reconciliation.attachment
         if upload.expires_at <= datetime.now(UTC):
             raise ConversationAttachmentConflict("attachment upload expired")
         if actual_size != upload.declared_size:
@@ -460,10 +477,11 @@ class ConversationAttachmentRepository:
             with self._connection() as connection, connection.transaction():
                 row = connection.execute(
                     "select platform_attachments.finalize_upload_v64("
-                    "%s,%s,%s,%s,%s) as attachment_id",
+                    "%s,%s,%s,%s,%s,%s) as attachment_id",
                     (
                         upload_id,
                         owner_id,
+                        attempt_id,
                         upload.declared_mime,
                         actual_size,
                         sha256,
@@ -482,10 +500,136 @@ class ConversationAttachmentRepository:
             return self._attachment_from_row(attachment)
         except ConversationAttachmentRepositoryError:
             raise
-        except psycopg.errors.NoDataFound as error:
+        except psycopg.errors.NoDataFound:
+            reconciliation = self.reconcile_write(
+                owner_id, upload_id, attempt_id, actual_size, sha256
+            )
+            if reconciliation.attachment is not None:
+                return reconciliation.attachment
             raise ConversationAttachmentConflict(
-                "attachment upload finalize conflict"
-            ) from error
+                "attachment upload receipt conflict"
+            ) from None
+        except Exception as error:
+            raise ConversationAttachmentRepositoryError() from error
+
+    def reconcile_write(
+        self,
+        owner_id: UUID,
+        upload_id: UUID,
+        attempt_id: UUID,
+        actual_size: int,
+        sha256: bytes,
+    ) -> WriteReconciliation:
+        owner_id = _require_uuid(owner_id)
+        upload_id = _require_uuid(upload_id)
+        attempt_id = _require_uuid(attempt_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select attempt.state as attempt_state,"
+                    "attempt.size_bytes as attempt_size,"
+                    "attempt.sha256 as attempt_sha256,"
+                    "upload.write_attempt_id,upload.state,"
+                    "upload.size_bytes,upload.sha256,attachment.attachment_id,"
+                    "attachment.owner_internal_user_id,attachment.conversation_id,"
+                    "attachment.original_name_ciphertext,"
+                    "attachment.original_name_key_version,attachment.declared_mime,"
+                    "attachment.detected_mime,attachment.size_bytes as attachment_size,"
+                    "attachment.sha256 as attachment_sha256,"
+                    "attachment.state as attachment_state,attachment.created_at,"
+                    "attachment.retained_until "
+                    "from platform_attachments.upload_write_attempts attempt "
+                    "join platform_attachments.uploads upload "
+                    "on upload.upload_id=attempt.upload_id "
+                    "join platform_attachments.attachments attachment "
+                    "on attachment.attachment_id=upload.attachment_id "
+                    "where attempt.attempt_id=%s and attempt.upload_id=%s "
+                    "and attempt.owner_internal_user_id=%s",
+                    (attempt_id, upload_id, owner_id),
+                ).fetchone()
+            if row is None:
+                return WriteReconciliation(None, cleanup_safe=False)
+            if row["attempt_state"] == "superseded":
+                return WriteReconciliation(None, cleanup_safe=True)
+            if (
+                row["attempt_state"] != "canonical"
+                or row["write_attempt_id"] != attempt_id
+                or row["state"] == "uploading"
+            ):
+                return WriteReconciliation(None, cleanup_safe=False)
+            if (
+                row["attempt_size"] is None
+                or int(row["attempt_size"]) != actual_size
+                or row["attempt_sha256"] is None
+                or bytes(row["attempt_sha256"]) != sha256
+                or int(row["size_bytes"]) != actual_size
+                or row["sha256"] is None
+                or bytes(row["sha256"]) != sha256
+                or int(row["attachment_size"]) != actual_size
+                or row["attachment_sha256"] is None
+                or bytes(row["attachment_sha256"]) != sha256
+            ):
+                return WriteReconciliation(None, cleanup_safe=False)
+            attachment_row = {
+                **row,
+                "size_bytes": row["attachment_size"],
+                "sha256": row["attachment_sha256"],
+                "state": row["attachment_state"],
+            }
+            return WriteReconciliation(
+                self._attachment_from_row(attachment_row),
+                cleanup_safe=False,
+            )
+        except ConversationAttachmentRepositoryError:
+            raise
+        except Exception as error:
+            raise ConversationAttachmentRepositoryError() from error
+
+    def list_orphaned_writes(
+        self, *, limit: int = 100
+    ) -> tuple[OrphanedWriteAttempt, ...]:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or limit <= 0
+            or limit > 100
+        ):
+            raise ValueError("orphan reconciliation limit invalid")
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select attempt.attempt_id,attempt.attachment_id,"
+                    "attempt.object_ref_ciphertext,attempt.object_ref_key_version "
+                    "from platform_attachments.upload_write_attempts attempt "
+                    "join platform_attachments.uploads upload "
+                    "on upload.upload_id=attempt.upload_id "
+                    "where attempt.state='superseded' or "
+                    "(attempt.state='claimed' and upload.expires_at <= now()) "
+                    "order by attempt.lease_expires_at,attempt.created_at "
+                    "limit %s",
+                    (limit,),
+                ).fetchall()
+            result = []
+            for row in rows:
+                value = self._unseal(
+                    attachment_object_subject(
+                        row["attachment_id"], row["attempt_id"]
+                    ),
+                    row["object_ref_ciphertext"],
+                    row["object_ref_key_version"],
+                )
+                if set(value) != {"object_ref"} or not isinstance(
+                    value["object_ref"], str
+                ):
+                    raise ConversationAttachmentRepositoryError()
+                result.append(
+                    OrphanedWriteAttempt(
+                        row["attempt_id"], value["object_ref"]
+                    )
+                )
+            return tuple(result)
+        except ConversationAttachmentRepositoryError:
+            raise
         except Exception as error:
             raise ConversationAttachmentRepositoryError() from error
 

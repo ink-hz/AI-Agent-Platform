@@ -150,6 +150,18 @@ def _mode_0600_secret(path: str) -> str:
         raise RuntimeError("attachment secret files must use mode 0600") from error
 
 
+_INLINE_ATTACHMENT_STORAGE_CREDENTIALS = (
+    "PLATFORM_ATTACHMENT_S3_ACCESS_KEY",
+    "PLATFORM_ATTACHMENT_S3_SECRET_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_ACCESS_KEY",
+    "AWS_SECRET_KEY",
+    "AWS_SECURITY_TOKEN",
+)
+
+
 def _validate_attachment_config(config: Config) -> None:
     if not config.attachment_enabled:
         return
@@ -160,6 +172,10 @@ def _validate_attachment_config(config: Config) -> None:
         raise RuntimeError("attachment S3 endpoint must be loopback")
     if config.attachment_s3_bucket != "orbbec-agent-attachments":
         raise RuntimeError("attachment S3 bucket must be orbbec-agent-attachments")
+    if any(name in os.environ for name in _INLINE_ATTACHMENT_STORAGE_CREDENTIALS):
+        raise RuntimeError(
+            "attachment S3 credentials must use mode 0600 secret files"
+        )
     _mode_0600_secret(config.attachment_s3_access_key_file)
     _mode_0600_secret(config.attachment_s3_secret_key_file)
     if os.getenv("PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL"):

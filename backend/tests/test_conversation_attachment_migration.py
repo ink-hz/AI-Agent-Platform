@@ -21,6 +21,7 @@ MIGRATION = (
 TABLES = (
     "attachments",
     "uploads",
+    "upload_write_attempts",
     "bindings",
     "artifacts",
     "artifact_versions",
@@ -455,6 +456,8 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
 ) -> None:
     role_functions = {
         "control_app": {
+            "create_upload_v64",
+            "claim_upload_write_v64",
             "finalize_upload_v64",
             "issue_task_grant_v64",
             "revoke_task_grant_v64",
@@ -532,6 +535,13 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
                 "select bool_and(not has_table_privilege(%s,"
                 "'platform_attachments.' || table_name,'insert,update,delete')) "
                 "from unnest(%s::text[]) table_name",
+                (app_role, ["attachments", "uploads", "upload_write_attempts"]),
+            ).fetchone() == (True,)
+
+            assert connection.execute(
+                "select bool_and(not has_table_privilege(%s,"
+                "'platform_attachments.' || table_name,'insert,update,delete')) "
+                "from unnest(%s::text[]) table_name",
                 (
                     next(
                         role for role in environment["roles"] if "audit_append" in role
@@ -540,6 +550,160 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
                 ),
             ).fetchone() == (True,)
 
+
+@pytest.mark.postgres
+def test_v64_upload_write_attempt_is_leased_and_finalize_keeps_mime_untrusted(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        attachment_id = _insert_attachment(admin, context, state="uploading")
+        upload_id = uuid4()
+        admin.execute(
+            "update platform_attachments.attachments set declared_mime=%s,"
+            "detected_mime=null where attachment_id=%s",
+            ("application/pdf", attachment_id),
+        )
+        admin.execute(
+            "insert into platform_attachments.uploads "
+            "(upload_id,attachment_id,owner_internal_user_id,conversation_id,"
+            "object_ref_ciphertext,object_ref_key_version,declared_mime,size_bytes) "
+            "values (%s,%s,%s,%s,%s,1,%s,7)",
+            (
+                upload_id,
+                attachment_id,
+                context["owner_id"],
+                context["conversation_id"],
+                b"r" * 29,
+                "application/pdf",
+            ),
+        )
+        admin.commit()
+
+    attempt_id = uuid4()
+    app_url = environment["urls"]["platform_control_app"]
+    with psycopg.connect(app_url) as app:
+        assert app.execute(
+            "select platform_attachments.claim_upload_write_v64("
+            "%s,%s,%s,%s,2,now()+interval '5 minutes')",
+            (upload_id, context["owner_id"], attempt_id, b"w" * 29),
+        ).fetchone() == (attachment_id,)
+        app.commit()
+    with psycopg.connect(app_url) as app:
+        assert app.execute(
+            "select platform_attachments.finalize_upload_v64("
+            "%s,%s,%s,%s,%s,%s)",
+            (
+                upload_id,
+                context["owner_id"],
+                attempt_id,
+                "application/pdf",
+                7,
+                b"h" * 32,
+            ),
+        ).fetchone() == (attachment_id,)
+        app.commit()
+
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select declared_mime,detected_mime,state,write_attempt_id "
+            "from platform_attachments.uploads where upload_id=%s",
+            (upload_id,),
+        ).fetchone() == ("application/pdf", None, "validating", attempt_id)
+        assert admin.execute(
+            "select declared_mime,detected_mime,state "
+            "from platform_attachments.attachments where attachment_id=%s",
+            (attachment_id,),
+        ).fetchone() == ("application/pdf", None, "validating")
+        assert admin.execute(
+            "select state,size_bytes,sha256 from "
+            "platform_attachments.upload_write_attempts where attempt_id=%s",
+            (attempt_id,),
+        ).fetchone() == ("canonical", 7, b"h" * 32)
+        admin.execute(
+            "delete from platform_attachments.processing_jobs "
+            "where attachment_id=%s",
+            (attachment_id,),
+        )
+        admin.execute(
+            "delete from platform_attachments.uploads where upload_id=%s",
+            (upload_id,),
+        )
+        admin.execute(
+            "delete from platform_attachments.attachments where attachment_id=%s",
+            (attachment_id,),
+        )
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("max_bytes", "max_files", "max_file_bytes"),
+    [
+        (250 * 1024 * 1024 + 1, 20, 50 * 1024 * 1024),
+        (250 * 1024 * 1024, 21, 50 * 1024 * 1024),
+        (250 * 1024 * 1024, 20, 50 * 1024 * 1024 + 1),
+    ],
+)
+def test_v64_output_grant_rejects_limits_above_product_hard_caps(
+    control_database, max_bytes, max_files, max_file_bytes
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+    with (
+        psycopg.connect(environment["urls"]["platform_control_app"]) as app,
+        pytest.raises(psycopg.errors.CheckViolation, match="grant invalid"),
+    ):
+        app.execute(
+            "select platform_attachments.issue_task_grant_v64("
+            "%s,%s,%s,null,%s,'write_output',%s,0,%s,%s,%s)",
+            (
+                uuid4(),
+                b"q" * 32,
+                context["task_id"],
+                context["agent_id"],
+                datetime.now(UTC) + timedelta(minutes=15),
+                max_bytes,
+                max_files,
+                max_file_bytes,
+            ),
+        )
+
+
+@pytest.mark.postgres
+def test_v64_output_consumer_rejects_oversized_tampered_grant(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as admin:
+        context = _seed_task(admin)
+        token_sha256 = b"z" * 32
+        admin.execute(
+            "insert into platform_attachments.task_grants "
+            "(grant_id,token_sha256,task_id,agent_id,scope,expires_at,"
+            "max_reads,max_bytes,max_files,max_file_bytes) "
+            "values (%s,%s,%s,%s,'write_output',now()+interval '5 minutes',"
+            "0,%s,21,%s)",
+            (
+                uuid4(),
+                token_sha256,
+                context["task_id"],
+                context["agent_id"],
+                251 * 1024 * 1024,
+                51 * 1024 * 1024,
+            ),
+        )
+        admin.commit()
+    with (
+        psycopg.connect(environment["urls"]["platform_brain_worker"]) as brain,
+        pytest.raises(psycopg.errors.InsufficientPrivilege, match="unavailable"),
+    ):
+        brain.execute(
+            "select platform_attachments.consume_output_write_grant_v64("
+            "%s,%s,%s,1)",
+            (token_sha256, context["task_id"], context["agent_id"]),
+        )
 
 @pytest.mark.postgres
 def test_v64_processing_pipeline_advances_retries_and_persists_derivative(
@@ -551,26 +715,40 @@ def test_v64_processing_pipeline_advances_retries_and_persists_derivative(
         attachment_id = _insert_attachment(admin, context, state="uploading")
         upload_id = uuid4()
         admin.execute(
+            "update platform_attachments.attachments set declared_mime=%s "
+            "where attachment_id=%s",
+            ("application/pdf", attachment_id),
+        )
+        admin.execute(
             "insert into platform_attachments.uploads "
             "(upload_id,attachment_id,owner_internal_user_id,conversation_id,"
-            "object_ref_ciphertext,object_ref_key_version,state) "
-            "values (%s,%s,%s,%s,%s,1,'uploading')",
+            "object_ref_ciphertext,object_ref_key_version,declared_mime,state) "
+            "values (%s,%s,%s,%s,%s,1,%s,'uploading')",
             (
                 upload_id,
                 attachment_id,
                 context["owner_id"],
                 context["conversation_id"],
                 b"r" * 29,
+                "application/pdf",
             ),
         )
         admin.commit()
 
     with psycopg.connect(environment["urls"]["platform_control_app"]) as app:
+        attempt_id = uuid4()
         assert app.execute(
-            "select platform_attachments.finalize_upload_v64(%s,%s,%s,%s,%s)",
+            "select platform_attachments.claim_upload_write_v64("
+            "%s,%s,%s,%s,1,now()+interval '5 minutes')",
+            (upload_id, context["owner_id"], attempt_id, b"w" * 29),
+        ).fetchone() == (attachment_id,)
+        assert app.execute(
+            "select platform_attachments.finalize_upload_v64("
+            "%s,%s,%s,%s,%s,%s)",
             (
                 upload_id,
                 context["owner_id"],
+                attempt_id,
                 "application/pdf",
                 128,
                 b"h" * 32,

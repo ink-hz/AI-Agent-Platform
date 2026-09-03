@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Barrier
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -14,6 +16,8 @@ from app.attachments.conversation_models import (
     MAX_FILE_BYTES,
     MAX_MESSAGE_BYTES,
     MAX_MESSAGE_FILES,
+    OrphanedWriteAttempt,
+    WriteReconciliation,
 )
 from app.attachments.conversation_repository import (
     ConversationAttachmentConflict,
@@ -121,13 +125,14 @@ def test_create_upload_uses_random_encrypted_object_and_name_metadata(
     assert first.upload_id != second.upload_id
     assert first.attachment_id != second.attachment_id
     assert first.original_name == original_name
+    assert original_name not in repr(first)
     assert not hasattr(first, "object_ref")
     assert timedelta(hours=23, minutes=59) < (
         first.expires_at - datetime.now(UTC)
     ) <= timedelta(hours=24)
 
-    target_one = repository.upload_target(owner_id, first.upload_id)
-    target_two = repository.upload_target(owner_id, second.upload_id)
+    target_one = repository.claim_write(owner_id, first.upload_id)
+    target_two = repository.claim_write(owner_id, second.upload_id)
     assert target_one.object_ref != target_two.object_ref
     for forbidden in (str(owner_id), str(conversation_id), original_name, "hr-agent"):
         assert forbidden not in target_one.object_ref
@@ -146,9 +151,181 @@ def test_create_upload_uses_random_encrypted_object_and_name_metadata(
         SealedContent(bytes(row[0]), row[1]),
     ) == {"original_name": original_name}
     assert repository.content_codec.unseal_json(
-        attachment_object_subject(first.attachment_id),
+        attachment_object_subject(first.attachment_id, target_one.attempt_id),
         SealedContent(bytes(row[2]), row[3]),
     ) == {"object_ref": target_one.object_ref}
+
+
+@pytest.mark.postgres
+def test_concurrent_quota_reservations_are_serialized(
+    attachment_database,
+) -> None:
+    environment, owner_id, _other_owner_id, conversation_id = attachment_database
+    selected = ConversationAttachmentRepository(
+        environment["urls"]["platform_control_app"],
+        content_codec=_codec(),
+        max_conversation_files=1,
+    )
+
+    def reserve(index):
+        try:
+            return selected.create_upload(
+                owner_id,
+                conversation_id,
+                f"concurrent-{index}.txt",
+                "text/plain",
+                1,
+            )
+        except ConversationAttachmentQuotaExceeded:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(reserve, range(2)))
+
+    assert sum(result is not None for result in results) == 1
+
+
+@pytest.mark.postgres
+def test_concurrent_same_attempt_completion_is_idempotent_and_conflict_safe(
+    attachment_database,
+    repository,
+) -> None:
+    _environment, owner_id, _other_owner_id, conversation_id = attachment_database
+    upload = repository.create_upload(
+        owner_id, conversation_id, "concurrent.pdf", "application/pdf", 7
+    )
+    attempt = repository.claim_write(owner_id, upload.upload_id)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                lambda _index: repository.complete_upload(
+                    owner_id,
+                    upload.upload_id,
+                    attempt.attempt_id,
+                    7,
+                    b"h" * 32,
+                ),
+                range(2),
+            )
+        )
+
+    assert results[0] == results[1]
+    with pytest.raises(ConversationAttachmentConflict, match="receipt"):
+        repository.complete_upload(
+            owner_id,
+            upload.upload_id,
+            attempt.attempt_id,
+            7,
+            b"x" * 32,
+        )
+    reconciliation = repository.reconcile_write(
+        owner_id,
+        upload.upload_id,
+        attempt.attempt_id,
+        7,
+        b"x" * 32,
+    )
+    assert reconciliation == WriteReconciliation(None, cleanup_safe=False)
+
+
+@pytest.mark.postgres
+def test_concurrent_write_claims_allow_exactly_one_active_attempt(
+    attachment_database,
+    repository,
+) -> None:
+    environment, owner_id, _other_owner_id, conversation_id = attachment_database
+    upload = repository.create_upload(
+        owner_id, conversation_id, "concurrent-write.pdf", "application/pdf", 7
+    )
+    start = Barrier(2)
+
+    def claim(_index):
+        start.wait(timeout=5)
+        try:
+            return repository.claim_write(owner_id, upload.upload_id)
+        except ConversationAttachmentConflict:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(claim, range(2)))
+
+    assert sum(result is not None for result in results) == 1
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select count(*) from platform_attachments.upload_write_attempts "
+            "where upload_id=%s and state='claimed'",
+            (upload.upload_id,),
+        ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_expired_lease_retry_uses_fresh_key_and_retains_orphan_for_reconciliation(
+    attachment_database,
+    repository,
+) -> None:
+    environment, owner_id, _other_owner_id, conversation_id = attachment_database
+    upload = repository.create_upload(
+        owner_id, conversation_id, "retry.pdf", "application/pdf", 7
+    )
+    first = repository.claim_write(owner_id, upload.upload_id)
+    with psycopg.connect(environment["admin"]) as admin:
+        admin.execute(
+            "update platform_attachments.uploads set write_lease_expires_at=now() "
+            "where upload_id=%s",
+            (upload.upload_id,),
+        )
+        admin.execute(
+            "update platform_attachments.upload_write_attempts "
+            "set lease_expires_at=now() where attempt_id=%s",
+            (first.attempt_id,),
+        )
+
+    second = repository.claim_write(owner_id, upload.upload_id)
+    orphans = repository.list_orphaned_writes(limit=100)
+
+    assert first.attempt_id != second.attempt_id
+    assert first.object_ref != second.object_ref
+    assert (first.attempt_id, first.object_ref) in {
+        (item.attempt_id, item.object_ref) for item in orphans
+    }
+    assert second.attempt_id not in {item.attempt_id for item in orphans}
+
+
+@pytest.mark.postgres
+def test_orphan_listing_never_exposes_current_attempt_until_upload_expires(
+    attachment_database,
+    repository,
+) -> None:
+    environment, owner_id, _other_owner_id, conversation_id = attachment_database
+    upload = repository.create_upload(
+        owner_id, conversation_id, "still-writing.pdf", "application/pdf", 7
+    )
+    attempt = repository.claim_write(owner_id, upload.upload_id)
+    with psycopg.connect(environment["admin"]) as admin:
+        admin.execute(
+            "update platform_attachments.uploads set write_lease_expires_at=now(),"
+            "expires_at=now()+interval '1 hour' where upload_id=%s",
+            (upload.upload_id,),
+        )
+        admin.execute(
+            "update platform_attachments.upload_write_attempts "
+            "set lease_expires_at=now() where attempt_id=%s",
+            (attempt.attempt_id,),
+        )
+
+    before_expiry = repository.list_orphaned_writes(limit=100)
+    assert attempt.attempt_id not in {item.attempt_id for item in before_expiry}
+
+    with psycopg.connect(environment["admin"]) as admin:
+        admin.execute(
+            "update platform_attachments.uploads set expires_at=now() "
+            "where upload_id=%s",
+            (upload.upload_id,),
+        )
+
+    after_expiry = repository.list_orphaned_writes(limit=100)
+    assert OrphanedWriteAttempt(attempt.attempt_id, attempt.object_ref) in after_expiry
 
 
 @pytest.mark.postgres
@@ -160,11 +337,16 @@ def test_finalize_rejects_size_mismatch_wrong_owner_and_expired_upload(
     upload = repository.create_upload(
         owner_id, conversation_id, "resume.pdf", "application/pdf", 10
     )
+    attempt = repository.claim_write(owner_id, upload.upload_id)
 
     with pytest.raises(ConversationAttachmentNotFound):
-        repository.complete_upload(other_owner_id, upload.upload_id, 10, b"h" * 32)
+        repository.complete_upload(
+            other_owner_id, upload.upload_id, attempt.attempt_id, 10, b"h" * 32
+        )
     with pytest.raises(ConversationAttachmentConflict, match="size"):
-        repository.complete_upload(owner_id, upload.upload_id, 9, b"h" * 32)
+        repository.complete_upload(
+            owner_id, upload.upload_id, attempt.attempt_id, 9, b"h" * 32
+        )
 
     with psycopg.connect(environment["admin"]) as connection:
         connection.execute(
@@ -173,7 +355,9 @@ def test_finalize_rejects_size_mismatch_wrong_owner_and_expired_upload(
             (upload.upload_id,),
         )
     with pytest.raises(ConversationAttachmentConflict, match="expired"):
-        repository.complete_upload(owner_id, upload.upload_id, 10, b"h" * 32)
+        repository.complete_upload(
+            owner_id, upload.upload_id, attempt.attempt_id, 10, b"h" * 32
+        )
 
 
 @pytest.mark.postgres
@@ -185,9 +369,14 @@ def test_complete_is_idempotent_for_the_same_verified_receipt(
     upload = repository.create_upload(
         owner_id, conversation_id, "resume.pdf", "application/pdf", 10
     )
+    attempt = repository.claim_write(owner_id, upload.upload_id)
 
-    first = repository.complete_upload(owner_id, upload.upload_id, 10, b"h" * 32)
-    replay = repository.complete_upload(owner_id, upload.upload_id, 10, b"h" * 32)
+    first = repository.complete_upload(
+        owner_id, upload.upload_id, attempt.attempt_id, 10, b"h" * 32
+    )
+    replay = repository.complete_upload(
+        owner_id, upload.upload_id, attempt.attempt_id, 10, b"h" * 32
+    )
 
     assert first == replay
     assert first.state == "validating"
@@ -317,6 +506,7 @@ def test_list_assets_is_owner_scoped_and_does_not_expose_object_references(
         created.attachment_id
     ]
     assert assets.attachments[0].original_name == "candidate.docx"
+    assert "candidate.docx" not in repr(assets.attachments[0])
     assert not hasattr(assets.attachments[0], "object_ref")
     with pytest.raises(ConversationAttachmentNotFound):
         repository.list_conversation_assets(other_owner_id, conversation_id)

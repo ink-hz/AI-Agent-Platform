@@ -268,6 +268,14 @@ ATTACHMENT_ENV = (
     "PLATFORM_ATTACHMENT_S3_BUCKET",
     "PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE",
     "PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE",
+    "PLATFORM_ATTACHMENT_S3_ACCESS_KEY",
+    "PLATFORM_ATTACHMENT_S3_SECRET_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_ACCESS_KEY",
+    "AWS_SECRET_KEY",
+    "AWS_SECURITY_TOKEN",
     "PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE",
     "PLATFORM_ATTACHMENT_UPLOAD_TTL_SECONDS",
     "PLATFORM_ATTACHMENT_MAX_FILE_BYTES",
@@ -303,6 +311,8 @@ def test_attachment_defaults_are_disabled_and_need_no_secret_files(monkeypatch) 
 
 
 def _enable_attachments(monkeypatch, tmp_path, *, host="127.0.0.1"):
+    for name in ATTACHMENT_ENV:
+        monkeypatch.delenv(name, raising=False)
     access = tmp_path / "s3-access"
     secret = tmp_path / "s3-secret"
     analyst = tmp_path / "flywheel-analyst-database-url"
@@ -405,6 +415,39 @@ def test_enabled_attachments_reject_inline_database_credentials(
     )
 
     with pytest.raises(RuntimeError, match="mode 0600"):
+        load_config()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "PLATFORM_ATTACHMENT_S3_ACCESS_KEY",
+        "PLATFORM_ATTACHMENT_S3_SECRET_KEY",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_ACCESS_KEY",
+        "AWS_SECRET_KEY",
+        "AWS_SECURITY_TOKEN",
+    ],
+)
+def test_enabled_attachments_reject_inline_or_ambient_s3_credentials(
+    monkeypatch, tmp_path, name
+) -> None:
+    _enable_attachments(monkeypatch, tmp_path)
+    monkeypatch.setenv(name, "inline-storage-secret")
+
+    with pytest.raises(RuntimeError, match="secret files"):
+        load_config()
+
+
+def test_enabled_attachments_rejects_declared_empty_ambient_credentials(
+    monkeypatch, tmp_path
+) -> None:
+    _enable_attachments(monkeypatch, tmp_path)
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "")
+
+    with pytest.raises(RuntimeError, match="secret files"):
         load_config()
 
 

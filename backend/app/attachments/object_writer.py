@@ -74,10 +74,10 @@ def _credential(path_value: str) -> str:
         return read_secret_file(str(path))
     except AttachmentObjectWriterError:
         raise
-    except (OSError, SecretFileUnavailable) as error:
+    except (OSError, SecretFileUnavailable):
         raise AttachmentObjectWriterError(
             "attachment object credential unavailable"
-        ) from error
+        ) from None
 
 
 class AttachmentObjectWriter:
@@ -155,18 +155,18 @@ class AttachmentObjectWriter:
         except AttachmentObjectWriterSizeMismatch:
             self._best_effort_delete(object_ref)
             raise
-        except Exception as error:
+        except Exception:  # noqa: BLE001 - sanitize arbitrary stream/client errors
             self._best_effort_delete(object_ref)
             raise AttachmentObjectWriterError(
                 "attachment object write failed"
-            ) from error
+            ) from None
 
     def delete(self, object_ref: str) -> None:
         if not isinstance(object_ref, str) or not object_ref:
             raise ValueError("attachment object reference invalid")
         try:
             self._client.delete_object(Bucket=self._bucket, Key=object_ref)
-        except Exception as error:
+        except Exception:  # noqa: BLE001 - storage clients are injected
             raise AttachmentObjectWriterError(
                 "attachment object delete failed"
-            ) from error
+            ) from None

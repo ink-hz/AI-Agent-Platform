@@ -10,7 +10,6 @@ from .conversation_models import (
     BeginUpload,
     UploadRecord,
 )
-from .conversation_repository import ConversationAttachmentRepositoryError
 from .object_writer import AttachmentObjectWriterError
 
 
@@ -61,8 +60,8 @@ class AttachmentUploadService:
                 request.declared_mime,
                 request.declared_size,
             )
-        except (ConversationAttachmentRepositoryError, ValueError) as error:
-            raise AttachmentUploadConflict("attachment upload rejected") from error
+        except Exception:  # noqa: BLE001 - repository boundary is intentionally opaque
+            raise AttachmentUploadConflict("attachment upload rejected") from None
 
     def write(
         self,
@@ -72,10 +71,9 @@ class AttachmentUploadService:
         content_length: int,
     ) -> UploadRecord:
         try:
-            target = self._repository.upload_target(owner_id, upload_id)
-        except Exception as error:
-            raise AttachmentUploadConflict("attachment upload unavailable") from error
-        upload = target.upload
+            upload = self._repository.upload_for_owner(owner_id, upload_id)
+        except Exception:  # noqa: BLE001 - repository boundary is intentionally opaque
+            raise AttachmentUploadConflict("attachment upload unavailable") from None
         if upload.state != "uploading":
             return upload
         if upload.expires_at <= datetime.now(UTC):
@@ -90,32 +88,72 @@ class AttachmentUploadService:
                 "attachment content length mismatch"
             )
         try:
-            receipt = self._object_writer.put_stream(
-                target.object_ref, body, content_length
-            )
-        except (AttachmentObjectWriterError, ValueError) as error:
-            raise AttachmentUploadConflict("attachment object write failed") from error
-        try:
-            self._repository.complete_upload(
-                owner_id, upload_id, receipt.size_bytes, receipt.sha256
-            )
-        except Exception as error:
-            try:
-                self._object_writer.delete(target.object_ref)
-            except AttachmentObjectWriterError:
-                pass
+            attempt = self._repository.claim_write(owner_id, upload_id)
+        except Exception:  # noqa: BLE001 - repository boundary is intentionally opaque
             raise AttachmentUploadConflict(
-                "attachment upload finalize failed"
-            ) from error
+                "attachment upload write lease unavailable"
+            ) from None
+        try:
+            receipt = self._object_writer.put_stream(
+                attempt.object_ref, body, content_length
+            )
+        except (AttachmentObjectWriterError, ValueError):
+            raise AttachmentUploadConflict("attachment object write failed") from None
+        try:
+            attachment = self._repository.complete_upload(
+                owner_id,
+                upload_id,
+                attempt.attempt_id,
+                receipt.size_bytes,
+                receipt.sha256,
+            )
+        except Exception:  # noqa: BLE001 - reconcile every finalize uncertainty
+            try:
+                reconciliation = self._repository.reconcile_write(
+                    owner_id,
+                    upload_id,
+                    attempt.attempt_id,
+                    receipt.size_bytes,
+                    receipt.sha256,
+                )
+            except Exception:  # noqa: BLE001 - unreadable authority is fail-closed
+                raise AttachmentUploadConflict(
+                    "attachment upload finalize uncertain"
+                ) from None
+            if reconciliation.attachment is not None:
+                attachment = reconciliation.attachment
+            else:
+                if reconciliation.cleanup_safe:
+                    try:
+                        self._object_writer.delete(attempt.object_ref)
+                    except AttachmentObjectWriterError:
+                        pass
+                raise AttachmentUploadConflict(
+                    "attachment upload finalize failed"
+                ) from None
         try:
             return self._repository.upload_for_owner(owner_id, upload_id)
-        except Exception as error:
+        except Exception:  # noqa: BLE001 - receipt already proves completion
+            if attachment.state == "validating":
+                return UploadRecord(
+                    upload_id=upload_id,
+                    attachment_id=attachment.attachment_id,
+                    owner_id=attachment.owner_id,
+                    conversation_id=attachment.conversation_id,
+                    original_name=attachment.original_name,
+                    declared_mime=attachment.declared_mime,
+                    declared_size=attachment.size_bytes,
+                    expires_at=upload.expires_at,
+                    state=attachment.state,
+                    actual_size=attachment.size_bytes,
+                    sha256=attachment.sha256,
+                )
             raise AttachmentUploadConflict(
                 "attachment upload finalize failed"
-            ) from error
+            ) from None
 
     def complete(self, owner_id: UUID, upload_id: UUID) -> AttachmentRecord:
         try:
             return self._repository.completed_attachment(owner_id, upload_id)
-        except Exception as error:
-            raise AttachmentUploadConflict("attachment upload incomplete") from error
+        except Exception:  # noqa: BLE001 - expose only the service exception
+            raise AttachmentUploadConflict("attachment upload incomplete") from None

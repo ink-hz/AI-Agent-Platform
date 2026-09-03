@@ -55,6 +55,7 @@ create table platform_attachments.uploads (
   object_ref_ciphertext bytea not null
     check (octet_length(object_ref_ciphertext) between 29 and 1048576),
   object_ref_key_version integer not null check (object_ref_key_version > 0),
+  declared_mime text,
   detected_mime text,
   size_bytes bigint not null default 0 check (size_bytes >= 0),
   sha256 bytea check (sha256 is null or octet_length(sha256) = 32),
@@ -67,6 +68,9 @@ create table platform_attachments.uploads (
   expires_at timestamptz not null default (now() + interval '24 hours'),
   created_at timestamptz not null default now(),
   finalized_at timestamptz,
+  write_attempt_id uuid,
+  write_lease_expires_at timestamptz,
+  check ((write_attempt_id is null) = (write_lease_expires_at is null)),
   foreign key (attachment_id,owner_internal_user_id)
     references platform_attachments.attachments(
       attachment_id,owner_internal_user_id
@@ -75,6 +79,32 @@ create table platform_attachments.uploads (
     references platform_attachments.attachments(
       attachment_id,owner_internal_user_id,conversation_id
     )
+);
+
+create table platform_attachments.upload_write_attempts (
+  attempt_id uuid primary key,
+  upload_id uuid not null
+    references platform_attachments.uploads(upload_id) on delete cascade,
+  attachment_id uuid not null
+    references platform_attachments.attachments(attachment_id),
+  owner_internal_user_id uuid not null
+    references platform_control.internal_users(internal_user_id),
+  object_ref_ciphertext bytea not null
+    check (octet_length(object_ref_ciphertext) between 29 and 1048576),
+  object_ref_key_version integer not null check (object_ref_key_version > 0),
+  lease_expires_at timestamptz not null,
+  state text not null default 'claimed'
+    check (state in ('claimed','canonical','superseded','cleaned')),
+  size_bytes bigint check (size_bytes is null or size_bytes >= 0),
+  sha256 bytea check (sha256 is null or octet_length(sha256) = 32),
+  created_at timestamptz not null default now(),
+  finalized_at timestamptz,
+  cleaned_at timestamptz,
+  foreign key (attachment_id,owner_internal_user_id)
+    references platform_attachments.attachments(
+      attachment_id,owner_internal_user_id
+    ),
+  unique (upload_id,attempt_id)
 );
 
 create table platform_attachments.bindings (
@@ -358,6 +388,9 @@ create table platform_attachments.conversation_read_state (
 
 create index attachments_owner_created_v64
   on platform_attachments.attachments(owner_internal_user_id,created_at desc);
+create index upload_write_attempts_cleanup_v64
+  on platform_attachments.upload_write_attempts(state,lease_expires_at,created_at)
+  where state in ('claimed','superseded');
 create index bindings_conversation_kind_v64
   on platform_attachments.bindings(conversation_id,kind,created_at);
 create index bindings_attachment_kind_v64
@@ -480,10 +513,170 @@ before insert or update on platform_attachments.artifacts
 for each row execute function
   platform_attachments.enforce_artifact_task_context_v64();
 
+create function platform_attachments.create_upload_v64(
+  selected_upload_id uuid,
+  selected_attachment_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_conversation_id uuid,
+  selected_original_name_ciphertext bytea,
+  selected_original_name_key_version integer,
+  selected_object_ref_ciphertext bytea,
+  selected_object_ref_key_version integer,
+  selected_declared_mime text,
+  selected_size_bytes bigint,
+  selected_expires_at timestamptz,
+  selected_max_file_bytes bigint,
+  selected_max_conversation_files integer,
+  selected_max_conversation_bytes bigint
+) returns platform_attachments.uploads
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare
+  selected_upload platform_attachments.uploads%rowtype;
+  selected_file_count bigint;
+  selected_total_bytes bigint;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Attachment upload creator invalid'; end if;
+  if selected_upload_id is null or selected_attachment_id is null
+     or selected_owner_internal_user_id is null
+     or octet_length(selected_original_name_ciphertext) not between 29 and 1048576
+     or selected_original_name_key_version <= 0
+     or octet_length(selected_object_ref_ciphertext) not between 29 and 1048576
+     or selected_object_ref_key_version <= 0
+     or selected_declared_mime is null or octet_length(selected_declared_mime) not between 1 and 255
+     or selected_size_bytes <= 0 or selected_size_bytes > selected_max_file_bytes
+     or selected_max_file_bytes <= 0 or selected_max_file_bytes > 52428800
+     or selected_max_conversation_files <= 0 or selected_max_conversation_files > 50
+     or selected_max_conversation_bytes <= 0 or selected_max_conversation_bytes > 524288000
+     or selected_expires_at <= now()
+     or selected_expires_at > now() + interval '24 hours'
+  then raise check_violation using message='Attachment upload reservation invalid'; end if;
+  if selected_conversation_id is null then
+    perform 1 from platform_control.internal_users
+    where internal_user_id=selected_owner_internal_user_id and status='active'
+    for key share;
+  else
+    perform 1 from platform_control.conversations
+    where conversation_id=selected_conversation_id
+      and owner_internal_user_id=selected_owner_internal_user_id
+      and status='active'
+    for update;
+  end if;
+  if not found then raise no_data_found using message='Attachment owner unavailable'; end if;
+  if selected_conversation_id is not null then
+    select count(*),coalesce(sum(attachment.size_bytes),0)
+      into selected_file_count,selected_total_bytes
+    from platform_attachments.attachments attachment
+    left join platform_attachments.uploads upload
+      on upload.attachment_id=attachment.attachment_id
+    where attachment.owner_internal_user_id=selected_owner_internal_user_id
+      and attachment.conversation_id=selected_conversation_id
+      and attachment.source_kind='user_input'
+      and attachment.state <> 'deleted'
+      and not (attachment.state='uploading'
+        and (upload.expires_at is null or upload.expires_at <= now()));
+    if selected_file_count >= selected_max_conversation_files
+    then raise program_limit_exceeded using message='Attachment Conversation files quota exceeded'; end if;
+    if selected_total_bytes + selected_size_bytes > selected_max_conversation_bytes
+    then raise program_limit_exceeded using message='Attachment Conversation bytes quota exceeded'; end if;
+  end if;
+  insert into platform_attachments.attachments(
+    attachment_id,owner_internal_user_id,conversation_id,source_kind,
+    original_name_ciphertext,original_name_key_version,
+    object_ref_ciphertext,object_ref_key_version,declared_mime,size_bytes
+  ) values (
+    selected_attachment_id,selected_owner_internal_user_id,
+    selected_conversation_id,'user_input',selected_original_name_ciphertext,
+    selected_original_name_key_version,selected_object_ref_ciphertext,
+    selected_object_ref_key_version,selected_declared_mime,selected_size_bytes
+  );
+  insert into platform_attachments.uploads(
+    upload_id,attachment_id,owner_internal_user_id,conversation_id,
+    object_ref_ciphertext,object_ref_key_version,declared_mime,size_bytes,
+    expires_at
+  ) values (
+    selected_upload_id,selected_attachment_id,selected_owner_internal_user_id,
+    selected_conversation_id,selected_object_ref_ciphertext,
+    selected_object_ref_key_version,selected_declared_mime,selected_size_bytes,
+    selected_expires_at
+  ) returning * into selected_upload;
+  return selected_upload;
+end
+$function$;
+
+create function platform_attachments.claim_upload_write_v64(
+  selected_upload_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_write_attempt_id uuid,
+  selected_object_ref_ciphertext bytea,
+  selected_object_ref_key_version integer,
+  selected_write_lease_expires_at timestamptz
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare
+  selected_attachment_id uuid;
+  previous_write_attempt_id uuid;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Attachment upload writer invalid'; end if;
+  if selected_write_attempt_id is null
+     or octet_length(selected_object_ref_ciphertext) not between 29 and 1048576
+     or selected_object_ref_key_version <= 0
+     or selected_write_lease_expires_at <= now()
+     or selected_write_lease_expires_at > now() + interval '5 minutes'
+  then raise check_violation using message='Attachment upload write lease invalid'; end if;
+  select upload.attachment_id,upload.write_attempt_id
+    into selected_attachment_id,previous_write_attempt_id
+  from platform_attachments.uploads upload
+  join platform_attachments.attachments attachment
+    on attachment.attachment_id=upload.attachment_id
+   and attachment.owner_internal_user_id=upload.owner_internal_user_id
+   and attachment.conversation_id is not distinct from upload.conversation_id
+  where upload.upload_id=selected_upload_id
+    and upload.owner_internal_user_id=selected_owner_internal_user_id
+    and upload.state='uploading' and upload.expires_at > now()
+    and selected_write_lease_expires_at <= upload.expires_at
+    and (upload.write_attempt_id is null or upload.write_lease_expires_at <= now())
+    and attachment.state='uploading'
+  for update;
+  if not found then raise no_data_found using message='Upload write lease unavailable'; end if;
+  update platform_attachments.upload_write_attempts set state='superseded'
+  where attempt_id=previous_write_attempt_id and state='claimed';
+  insert into platform_attachments.upload_write_attempts(
+    attempt_id,upload_id,attachment_id,owner_internal_user_id,
+    object_ref_ciphertext,object_ref_key_version,lease_expires_at
+  ) values (
+    selected_write_attempt_id,selected_upload_id,selected_attachment_id,
+    selected_owner_internal_user_id,selected_object_ref_ciphertext,
+    selected_object_ref_key_version,selected_write_lease_expires_at
+  );
+  update platform_attachments.uploads set
+    object_ref_ciphertext=selected_object_ref_ciphertext,
+    object_ref_key_version=selected_object_ref_key_version,
+    write_attempt_id=selected_write_attempt_id,
+    write_lease_expires_at=selected_write_lease_expires_at
+  where upload_id=selected_upload_id;
+  update platform_attachments.attachments set
+    object_ref_ciphertext=selected_object_ref_ciphertext,
+    object_ref_key_version=selected_object_ref_key_version
+  where attachment_id=selected_attachment_id;
+  return selected_attachment_id;
+end
+$function$;
+
 create function platform_attachments.finalize_upload_v64(
   selected_upload_id uuid,
   selected_owner_internal_user_id uuid,
-  selected_detected_mime text,
+  selected_write_attempt_id uuid,
+  selected_declared_mime text,
   selected_size_bytes bigint,
   selected_sha256 bytea
 ) returns uuid
@@ -496,30 +689,45 @@ begin
      or session_user not in ('platform_control_app','platform_control_app_preview')
      or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
   then raise insufficient_privilege using message='Attachment upload caller invalid'; end if;
-  if selected_detected_mime is null or selected_size_bytes < 0
+  if selected_write_attempt_id is null or selected_declared_mime is null
+     or selected_size_bytes < 0
      or octet_length(selected_sha256) <> 32
   then raise check_violation using message='Attachment upload result invalid'; end if;
   select upload.attachment_id into selected_attachment_id
   from platform_attachments.uploads upload
+  join platform_attachments.upload_write_attempts attempt
+    on attempt.attempt_id=upload.write_attempt_id
+   and attempt.upload_id=upload.upload_id
+   and attempt.attachment_id=upload.attachment_id
+   and attempt.owner_internal_user_id=upload.owner_internal_user_id
+   and attempt.object_ref_ciphertext=upload.object_ref_ciphertext
+   and attempt.object_ref_key_version=upload.object_ref_key_version
+   and attempt.state='claimed'
   join platform_attachments.attachments attachment
     on attachment.attachment_id=upload.attachment_id
    and attachment.owner_internal_user_id=upload.owner_internal_user_id
    and attachment.conversation_id is not distinct from upload.conversation_id
    and attachment.object_ref_ciphertext=upload.object_ref_ciphertext
    and attachment.object_ref_key_version=upload.object_ref_key_version
+   and attachment.declared_mime=upload.declared_mime
   where upload.upload_id=selected_upload_id
     and upload.owner_internal_user_id=selected_owner_internal_user_id
+    and upload.write_attempt_id=selected_write_attempt_id
+    and upload.declared_mime=selected_declared_mime
     and upload.state='uploading' and upload.expires_at > now()
     and attachment.state='uploading'
   for update;
   if not found then raise no_data_found using message='Upload unavailable'; end if;
+  update platform_attachments.upload_write_attempts set
+    state='canonical',size_bytes=selected_size_bytes,sha256=selected_sha256,
+    finalized_at=now()
+  where attempt_id=selected_write_attempt_id;
   update platform_attachments.uploads set
-    detected_mime=selected_detected_mime,size_bytes=selected_size_bytes,
-    sha256=selected_sha256,state='validating',finalized_at=now()
+    size_bytes=selected_size_bytes,sha256=selected_sha256,
+    state='validating',finalized_at=now()
   where upload_id=selected_upload_id;
   update platform_attachments.attachments set
-    detected_mime=selected_detected_mime,size_bytes=selected_size_bytes,
-    sha256=selected_sha256,state='validating'
+    size_bytes=selected_size_bytes,sha256=selected_sha256,state='validating'
   where attachment_id=selected_attachment_id;
   insert into platform_attachments.processing_jobs(
     processing_job_id,attachment_id,job_kind
@@ -757,6 +965,9 @@ begin
        selected_attachment_id is not null or selected_max_reads <> 0
        or selected_max_files <= 0 or selected_max_file_bytes <= 0
        or selected_max_file_bytes > selected_max_bytes
+       or selected_max_files > 20
+       or selected_max_bytes > 262144000
+       or selected_max_file_bytes > 52428800
      ))
   then raise check_violation using message='Attachment grant invalid'; end if;
   select task.status,mission.owner_internal_user_id,mission.conversation_id
@@ -879,8 +1090,13 @@ begin
   where token_sha256=selected_token_sha256 and task_id=selected_task_id
     and attachment_id is null and agent_id=selected_agent_id
     and scope='write_output' and revoked_at is null and expires_at > now()
-    and file_count < max_files and selected_file_size_bytes <= max_file_bytes
+    and max_files <= 20 and max_bytes <= 262144000
+    and max_file_bytes <= 52428800
+    and file_count < max_files and file_count < 20
+    and selected_file_size_bytes <= max_file_bytes
+    and selected_file_size_bytes <= 52428800
     and bytes_read+selected_file_size_bytes <= max_bytes
+    and bytes_read+selected_file_size_bytes <= 262144000
   returning grant_id into selected_grant_id;
   if not found then raise insufficient_privilege using message='Output grant unavailable'; end if;
   return selected_grant_id;
@@ -1266,7 +1482,8 @@ begin
   );
   execute format(
     'grant select on platform_attachments.attachments, '
-    'platform_attachments.uploads,platform_attachments.bindings, '
+    'platform_attachments.uploads,platform_attachments.upload_write_attempts, '
+    'platform_attachments.bindings, '
     'platform_attachments.artifacts,platform_attachments.artifact_versions, '
     'platform_attachments.current_artifact_versions, '
     'platform_attachments.derivatives,platform_attachments.task_grants, '
@@ -1275,8 +1492,7 @@ begin
     'platform_attachments.conversation_read_state to %I',selected_app
   );
   execute format(
-    'grant insert on platform_attachments.attachments, '
-    'platform_attachments.uploads,platform_attachments.bindings, '
+    'grant insert on platform_attachments.bindings, '
     'platform_attachments.artifacts,platform_attachments.erasure_jobs, '
     'platform_attachments.message_citations to %I',selected_app
   );
@@ -1299,8 +1515,13 @@ begin
   );
 
   execute format(
-    'grant execute on function platform_attachments.finalize_upload_v64('
-    'uuid,uuid,text,bigint,bytea), '
+    'grant execute on function platform_attachments.create_upload_v64('
+    'uuid,uuid,uuid,uuid,bytea,integer,bytea,integer,text,bigint,timestamptz,'
+    'bigint,integer,bigint), '
+    'platform_attachments.claim_upload_write_v64('
+    'uuid,uuid,uuid,bytea,integer,timestamptz), '
+    'platform_attachments.finalize_upload_v64('
+    'uuid,uuid,uuid,text,bigint,bytea), '
     'platform_attachments.issue_task_grant_v64('
     'uuid,bytea,uuid,uuid,text,text,timestamptz,integer,bigint,integer,bigint), '
     'platform_attachments.revoke_task_grant_v64(uuid), '
