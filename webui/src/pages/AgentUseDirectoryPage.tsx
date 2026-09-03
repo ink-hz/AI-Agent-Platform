@@ -36,6 +36,7 @@ function AgentCard({ card }: { card: AgentCapabilityCard }) {
   const enterpriseLaunch = card.agent_id === "ai-fae-agent";
   const action = enterpriseLaunch ? "使用企业身份" : external ? "打开工作区" : "进入 Agent";
   const kind = agentKind(card);
+  const launchPath = workspaceLaunchPath(card.agent_id);
   const content = <>
     <header className="agent-use-card-head">
       <span>{card.domain_group}</span>
@@ -50,7 +51,7 @@ function AgentCard({ card }: { card: AgentCapabilityCard }) {
   const footer = <span className="agent-use-card-action">{action}<span aria-hidden="true">→</span></span>;
   if (!card.interaction_modes.includes("external_workspace")) {
     return <PlatformLink aria-label={`进入 ${card.display_name}`} className="agent-use-card"
-      data-agent-kind={kind} href={`/agents/${encodeURIComponent(card.agent_id)}`}>
+      data-agent-kind={kind} href={launchPath ?? `/agents/${encodeURIComponent(card.agent_id)}`}>
       {content}{footer}
     </PlatformLink>;
   }

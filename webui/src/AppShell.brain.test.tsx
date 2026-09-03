@@ -143,4 +143,20 @@ describe("usage navigation", () => {
     expect(container.querySelector('a[aria-current="page"]')?.textContent).toBe("Agent 大脑");
     expect(container.querySelector("footer.site-foot")).toBeNull();
   });
+
+  it("uses the conversation workspace shell for canonical HR and Marketing routes", async () => {
+    const routes: Route[] = [
+      { name: "hr" },
+      { name: "hr-conversation", conversationId: "c-1" },
+      { name: "marketing", agentSlug: "inbound" },
+      { name: "marketing-conversation", agentSlug: "voice", conversationId: "c-2" },
+    ];
+
+    for (const route of routes) {
+      await act(async () => root.render(<AppShell route={route} account={member}><p>专业工作区</p></AppShell>));
+      expect(container.querySelector("main.page.is-brain-workspace")).not.toBeNull();
+      expect(container.querySelector(".app.is-brain-workspace-shell")).not.toBeNull();
+      expect(container.querySelector("footer.site-foot")).toBeNull();
+    }
+  });
 });

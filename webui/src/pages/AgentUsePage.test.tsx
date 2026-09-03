@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Account } from "../auth";
 import type { AgentCapabilityCard } from "../brainTypes";
 import type { ConversationSubmissionResult } from "../conversationTypes";
+import { DirectAgentWorkspace } from "../workspaces/direct/DirectAgentWorkspace";
 import { AgentUseDirectoryPage } from "./AgentUseDirectoryPage";
 import { AgentUsePage } from "./AgentUsePage";
 
@@ -84,28 +85,28 @@ describe("professional Agent use pages", () => {
     expect(container.textContent).toContain(card.mission);
     expect(container.textContent).toContain("梳理岗位需求与候选人画像");
     expect(container.textContent).not.toContain("累计 Session");
-    expect(container.querySelector("a[href='/agents/hr-bot']")).not.toBeNull();
+    expect(container.querySelector("a[href='/hr/']")).not.toBeNull();
     expect(container.querySelectorAll(".agent-use-groups h2")).toHaveLength(0);
     const cards = [...container.querySelectorAll<HTMLElement>(".agent-use-card")];
     expect(cards[0].textContent).toContain("AI FAE Agent");
     expect(cards[cards.length - 1].textContent).toContain("AI 行政 Agent");
     expect(cards.map((node) => node.getAttribute("href"))).toEqual([
       "/agents/ai-fae-agent",
-      "/agents/hr-bot",
+      "/hr/",
       "/voc/",
-      "/agents/marketing-gtm-bot",
+      "/marketing/gtm",
       "/office/?view=services",
     ]);
     expect(container.querySelector("a[href='/office/?view=services']")?.textContent).toContain("AI 行政 Agent");
     expect(container.querySelector("a[href='/agents/ai-fae-agent']")?.textContent).toContain("AI FAE Agent");
     expect(container.querySelector("a[href='/agents/ai-fae-agent']")?.getAttribute("data-agent-kind")).toBe("fae");
-    expect(container.querySelector("a[href='/agents/hr-bot']")?.getAttribute("data-agent-kind")).toBe("hr");
+    expect(container.querySelector("a[href='/hr/']")?.getAttribute("data-agent-kind")).toBe("hr");
     expect(container.querySelector("a[href='/voc/']")?.getAttribute("data-agent-kind")).toBe("voc");
-    expect(container.querySelector("a[href='/agents/marketing-gtm-bot']")?.getAttribute("data-agent-kind")).toBe("marketing");
+    expect(container.querySelector("a[href='/marketing/gtm']")?.getAttribute("data-agent-kind")).toBe("marketing");
     expect(container.querySelector("a[href='/office/?view=services']")?.getAttribute("data-agent-kind")).toBe("admin");
     expect(container.querySelectorAll(".agent-use-card-action")).toHaveLength(5);
     expect(container.querySelectorAll(".agent-use-card-arrow")).toHaveLength(5);
-    expect(container.querySelector("a[href='/agents/hr-bot']")?.getAttribute("aria-label")).toBe("进入 HR Agent");
+    expect(container.querySelector("a[href='/hr/']")?.getAttribute("aria-label")).toBe("进入 HR Agent");
     expect(container.querySelector("a[href='/agents/ai-fae-agent']")?.getAttribute("aria-label")).toBe("进入 AI FAE Agent");
   });
 
@@ -144,9 +145,10 @@ describe("professional Agent use pages", () => {
     const send = vi.fn().mockResolvedValue(result);
     const createSubmission = vi.fn().mockReturnValue({ idempotencyKey: "same", send });
     const onOpenConversation = vi.fn();
-    await act(async () => root.render(<AgentUsePage
+    await act(async () => root.render(<DirectAgentWorkspace
       account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([card])}
       createSubmission={createSubmission} historyClient={historyClient} onOpenConversation={onOpenConversation}
+      conversationPath={(conversationId) => `/hr/conversations/${encodeURIComponent(conversationId)}`}
     />));
     const textarea = container.querySelector("textarea")!;
     await act(async () => {
@@ -157,7 +159,7 @@ describe("professional Agent use pages", () => {
 
     expect(createSubmission).toHaveBeenCalledWith("找视觉人才", "csrf", "hr-bot");
     expect(send).toHaveBeenCalledTimes(1);
-    expect(onOpenConversation).toHaveBeenCalledWith(`/agents/hr-bot/conversations/${result.conversation.conversation_id}`);
+    expect(onOpenConversation).toHaveBeenCalledWith(`/hr/conversations/${result.conversation.conversation_id}`);
     expect(historyClient.list).toHaveBeenCalledWith(expect.any(AbortSignal), undefined, 20, "hr-bot");
   });
 
@@ -165,19 +167,24 @@ describe("professional Agent use pages", () => {
     const loadCatalog = vi.fn().mockResolvedValue([card]);
     const props = { account, loadCatalog, historyClient, createSubmission: vi.fn(), onOpenConversation: vi.fn() };
 
-    await act(async () => root.render(<AgentUsePage {...props} agentId="missing-bot" />));
+    await act(async () => root.render(<DirectAgentWorkspace
+      {...props} agentId="missing-bot" conversationPath={(conversationId) => `/missing/${conversationId}`}
+    />));
     expect(container.textContent).toContain("暂时无法读取");
 
-    await act(async () => root.render(<AgentUsePage {...props} agentId="hr-bot" />));
+    await act(async () => root.render(<DirectAgentWorkspace
+      {...props} agentId="hr-bot" conversationPath={(conversationId) => `/hr/conversations/${conversationId}`}
+    />));
     expect(container.querySelector("h1")?.textContent).toBe("HR Agent");
     expect(container.querySelector("textarea")).not.toBeNull();
   });
 
   it("blocks direct-Agent text over the exact UTF-8 byte limit", async () => {
     const createSubmission = vi.fn();
-    await act(async () => root.render(<AgentUsePage
+    await act(async () => root.render(<DirectAgentWorkspace
       account={account} agentId="hr-bot" loadCatalog={vi.fn().mockResolvedValue([card])}
       createSubmission={createSubmission} historyClient={historyClient} onOpenConversation={vi.fn()}
+      conversationPath={(conversationId) => `/hr/conversations/${conversationId}`}
     />));
     const textarea = container.querySelector("textarea")!;
     await act(async () => {
@@ -190,36 +197,13 @@ describe("professional Agent use pages", () => {
     expect(createSubmission).not.toHaveBeenCalled();
   });
 
-  it("switches among Marketing Agents without rebinding an existing Session", async () => {
-    const marketingCards = [
-      ["marketing-prospecting-bot", "Marketing Prospecting"],
-      ["marketing-inbound-bot", "Marketing Inbound"],
-      ["marketing-voice-bot", "Marketing Voice"],
-      ["marketing-intelligence-bot", "Marketing Intelligence"],
-      ["marketing-gtm-bot", "Marketing GTM"],
-    ].map(([agent_id, display_name]) => ({
-      ...marketingCard,
-      agent_id,
-      display_name,
-      persona_subtitle: `${display_name} · 营销协作`,
-    }));
-    await act(async () => root.render(<AgentUsePage
-      account={account} agentId="marketing-gtm-bot"
-      loadCatalog={vi.fn().mockResolvedValue(marketingCards)}
-      historyClient={historyClient} onOpenConversation={vi.fn()}
-    />));
-
-    expect(container.querySelector("nav[aria-label='Marketing Agent 切换'] a[aria-current='page']")?.textContent).toBe("GTM");
-    expect(container.querySelector("a[href='/agents/marketing-inbound-bot']")?.textContent).toBe("Inbound");
-    expect(container.querySelectorAll("nav[aria-label='Marketing Agent 切换'] a")).toHaveLength(5);
-  });
-
   it("keeps HR free of Marketing controls and offers non-submitting task starters", async () => {
     const createSubmission = vi.fn();
-    await act(async () => root.render(<AgentUsePage
+    await act(async () => root.render(<DirectAgentWorkspace
       account={account} agentId="hr-bot"
       loadCatalog={vi.fn().mockResolvedValue([card, marketingCard])}
       createSubmission={createSubmission} historyClient={historyClient} onOpenConversation={vi.fn()}
+      conversationPath={(conversationId) => `/hr/conversations/${conversationId}`}
     />));
 
     expect(container.querySelector("nav[aria-label='Marketing Agent 切换']")).toBeNull();

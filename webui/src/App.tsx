@@ -39,7 +39,8 @@ import { AiNotesPage } from "./pages/AiNotesPage";
 import { FaeReportsPage } from "./pages/FaeReportsPage";
 import { FaeOverviewPage } from "./pages/FaeOverviewPage";
 import { FaeWorkbenchShell, type FaeSection } from "./components/fae-workbench/FaeWorkbenchShell";
-import { MARKETING_AGENT_ID_BY_SLUG } from "./platform/workspaces";
+import { HrWorkspacePage } from "./workspaces/hr/HrWorkspacePage";
+import { MarketingWorkspacePage } from "./workspaces/marketing/MarketingWorkspacePage";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -126,10 +127,10 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "agent": return account ? <AgentUsePage account={account} agentId={route.agentId} key={route.agentId} /> : <PendingPage title="专业 Agent" description="请启用企业身份后使用。" />;
     case "agent-conversation": return account ? <AgentUsePage account={account} agentId={route.agentId} conversationId={route.conversationId} key={route.agentId} /> : <PendingPage title="专业 Agent" description="请启用企业身份后使用。" />;
     case "voc-workspace": return <LegacyRedirect to="/voc/" navigation="document" />;
-    case "hr": return account ? <AgentUsePage account={account} agentId="hr-bot" /> : <PendingPage title="HR Agent" description="请启用企业身份后使用。" />;
-    case "hr-conversation": return account ? <AgentUsePage account={account} agentId="hr-bot" conversationId={route.conversationId} key={route.conversationId} /> : <PendingPage title="HR Agent" description="请启用企业身份后使用。" />;
-    case "marketing": return account ? <AgentUsePage account={account} agentId={MARKETING_AGENT_ID_BY_SLUG[route.agentSlug]} key={route.agentSlug} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
-    case "marketing-conversation": return account ? <AgentUsePage account={account} agentId={MARKETING_AGENT_ID_BY_SLUG[route.agentSlug]} conversationId={route.conversationId} key={`${route.agentSlug}:${route.conversationId}`} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
+    case "hr": return account ? <HrWorkspacePage account={account} /> : <PendingPage title="HR Agent" description="请启用企业身份后使用。" />;
+    case "hr-conversation": return account ? <HrWorkspacePage account={account} conversationId={route.conversationId} /> : <PendingPage title="HR Agent" description="请启用企业身份后使用。" />;
+    case "marketing": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
+    case "marketing-conversation": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} conversationId={route.conversationId} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
     case "ai-notes": return account ? <AiNotesPage /> : <PendingPage title="AI 工程笔记" description="请启用企业身份后阅读。" />;
     case "ai-note": return account
       ? <AiNotesPage categorySlug={route.categorySlug} articleSlug={route.articleSlug} />
