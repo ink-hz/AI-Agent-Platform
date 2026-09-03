@@ -90,4 +90,13 @@ describe("HrWorkspacePage", () => {
     expect(container.querySelector("h1")?.textContent).toBe("HR Agent");
     expect(container.querySelector('nav[aria-label="Marketing Agent 切换"]')).toBeNull();
   });
+
+  it("opens a new HR conversation at the canonical workspace root with a trailing slash", async () => {
+    window.history.replaceState({}, "", "/hr/conversations/c-1");
+    await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-1" />));
+
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-sidebar-new")?.click());
+
+    expect(window.location.pathname).toBe("/hr/");
+  });
 });

@@ -17,6 +17,7 @@ import {
 } from "../../conversationApi";
 import type { Conversation, ConversationPage } from "../../conversationTypes";
 import { ConversationPage as ConversationThread, type ConversationPageClient } from "../../pages/ConversationPage";
+import { workspaceLaunchPath } from "../../platform/workspaces";
 import { navigate } from "../../router";
 
 
@@ -47,8 +48,8 @@ function mergeConversations(current: Conversation[], incoming: Conversation[]): 
     .sort((left, right) => new Date(right.updated_at).valueOf() - new Date(left.updated_at).valueOf());
 }
 
-function rootPath(conversationPath: (conversationId: string) => string): string {
-  return conversationPath("").replace(/\/conversations\/$/, "");
+function rootPath(agentId: string): string {
+  return workspaceLaunchPath(agentId) ?? `/agents/${encodeURIComponent(agentId)}`;
 }
 
 
@@ -82,7 +83,7 @@ export function DirectAgentWorkspace({
   const controllerRef = useRef<AbortController | null>(null);
   const card = catalog?.find((item) => item.agent_id === agentId) ?? null;
   const inputTooLarge = conversationInputTooLarge(text.trim());
-  const workspacePath = rootPath(conversationPath);
+  const workspacePath = rootPath(agentId);
 
   useEffect(() => {
     const controller = new AbortController();
