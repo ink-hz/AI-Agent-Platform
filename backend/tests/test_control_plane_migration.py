@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import socket
 import subprocess
@@ -81,6 +82,9 @@ VOC_INACTIVE_STAFF_PROJECTION_MIGRATION = (
 )
 VOC_INACTIVE_STAFF_MAPPING_BINDING_MIGRATION = (
     MIGRATIONS / "062_voc_inactive_staff_mapping_binding.sql"
+)
+FAE_WORKBENCH_ACCESS_MIGRATION = (
+    MIGRATIONS / "063_fae_workbench_access.sql"
 )
 DIRECTORY_MEMBER_EMPLOYEE_PROFILE_MIGRATION = (
     MIGRATIONS / "039_directory_member_employee_profile.sql"
@@ -183,6 +187,7 @@ TABLES = {
     "partner_identity_binding_requests",
     "partner_agent_grants",
     "partner_login_attempts",
+    "fae_workbench_grants",
 }
 
 IMMUTABLE_MIGRATION_SHA256 = {
@@ -222,6 +227,33 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
 
     assert len(versions) == len(set(versions))
     assert sorted(versions) == list(range(1, max(versions) + 1))
+    assert max(versions) == 63
+
+
+def migration_sql(filename: str) -> str:
+    return (MIGRATIONS / filename).read_text(encoding="utf-8").lower()
+
+
+def test_fae_workbench_access_migration_is_function_only_for_app_role() -> None:
+    sql = migration_sql("063_fae_workbench_access.sql")
+    assert "create table platform_control.fae_workbench_grants" in sql
+    assert "create unique index one_active_fae_workbench_grant" in sql
+    assert "create function platform_control.grant_fae_workbench_access_v63" in sql
+    assert "create function platform_control.revoke_fae_workbench_access_v63" in sql
+    assert "create function platform_control.has_fae_workbench_access_v63" in sql
+    assert "create function platform_control.read_fae_workbench_grants_v63" in sql
+    assert "create function platform_control.validate_fae_workbench_audit_v63" in sql
+    for action in ("grant", "revoke"):
+        for result in ("requested", "completed", "failed"):
+            assert f"fae_workbench_{action}_{result}" in sql
+    assert (
+        "create or replace function platform_control.validate_audit_event_v2"
+        not in sql
+    )
+    assert "grant execute on function" in sql
+    assert "grant update on platform_control.fae_workbench_grants" not in sql
+    assert "grant insert on platform_control.fae_workbench_grants" not in sql
+    assert "grant delete on platform_control.fae_workbench_grants" not in sql
 
 
 def test_first_control_migration_exists() -> None:
@@ -335,6 +367,10 @@ def test_first_control_migration_exists() -> None:
     assert VOC_INACTIVE_STAFF_MAPPING_BINDING_MIGRATION.is_file(), (
         "missing VOC inactive staff mapping binding migration: "
         f"{VOC_INACTIVE_STAFF_MAPPING_BINDING_MIGRATION}"
+    )
+    assert FAE_WORKBENCH_ACCESS_MIGRATION.is_file(), (
+        "missing FAE workbench access migration: "
+        f"{FAE_WORKBENCH_ACCESS_MIGRATION}"
     )
 
 
@@ -1791,3 +1827,695 @@ def test_audit_is_append_only_and_retention_is_fixed_cutoff(control_database):
                     ([old_event, recent_event],),
                 )
                 assert cursor.fetchall() == [(recent_event,)]
+
+
+def _seed_fae_workbench_directory(
+    database_url: str,
+) -> dict[str, object]:
+    generation_id = uuid.uuid4()
+    unique_member_key = uuid.uuid4()
+    inactive_member_key = uuid.uuid4()
+    duplicate_member_keys = (uuid.uuid4(), uuid.uuid4())
+    mixed_status_duplicate_member_keys = (uuid.uuid4(), uuid.uuid4())
+    unique_name = f"FAE Unique {uuid.uuid4()}"
+    inactive_name = f"FAE Inactive {uuid.uuid4()}"
+    duplicate_name = f"FAE Duplicate {uuid.uuid4()}"
+    mixed_status_duplicate_name = f"FAE Mixed Duplicate {uuid.uuid4()}"
+    members = (
+        (unique_member_key, unique_name, "active", 11),
+        (inactive_member_key, inactive_name, "inactive", 12),
+        (duplicate_member_keys[0], duplicate_name, "active", 13),
+        (duplicate_member_keys[1], duplicate_name, "active", 14),
+        (
+            mixed_status_duplicate_member_keys[0],
+            mixed_status_duplicate_name,
+            "active",
+            15,
+        ),
+        (
+            mixed_status_duplicate_member_keys[1],
+            mixed_status_duplicate_name,
+            "inactive",
+            16,
+        ),
+    )
+    with psycopg.connect(database_url) as connection:
+        connection.execute(
+            "delete from platform_control.management_mutations "
+            "where action in ('grant_fae_workbench','revoke_fae_workbench')"
+        )
+        connection.execute(
+            "delete from platform_control.fae_workbench_grants"
+        )
+        connection.execute(
+            "delete from platform_control.provider_identities"
+        )
+        owner = connection.execute(
+            "select internal_user_id from platform_control.internal_users "
+            "where role = 'platform_owner' limit 1"
+        ).fetchone()
+        if owner is None:
+            owner_id = uuid.uuid4()
+            connection.execute(
+                "insert into platform_control.internal_users ("
+                "internal_user_id,role,display_name,status) values "
+                "(%s,'platform_owner','FAE Boundary Owner','active')",
+                (owner_id,),
+            )
+        else:
+            owner_id = owner[0]
+            connection.execute(
+                "update platform_control.internal_users set status='active', "
+                "locally_invalidated_at=null where internal_user_id=%s",
+                (owner_id,),
+            )
+        connection.execute(
+            "insert into platform_control.provider_identity_key_policies ("
+            "provider,lookup_transition_versions) values "
+            "('dingtalk',array[1]) on conflict (provider) do update set "
+            "lookup_transition_versions=excluded.lookup_transition_versions",
+        )
+        connection.execute(
+            "insert into platform_control.directory_generations ("
+            "generation_id,status,member_count,source_member_count,"
+            "source_schema_version,completed_at) values "
+            "(%s,'complete',%s,%s,3,clock_timestamp())",
+            (generation_id, len(members), len(members)),
+        )
+        for member_key, display_name, status, marker in members:
+            connection.execute(
+                "insert into platform_control.directory_members ("
+                "generation_id,member_key,subject_kind,lookup_hmac,"
+                "lookup_key_version,encrypted_provider_id,"
+                "encryption_key_version,union_lookup_hmac,"
+                "union_lookup_key_version,union_encrypted_provider_id,"
+                "union_encryption_key_version,display_name,status) values "
+                "(%s,%s,'employee',%s,1,%s,1,%s,1,%s,1,%s,%s)",
+                (
+                    generation_id,
+                    member_key,
+                    bytes([marker]) * 32,
+                    bytes([marker + 32]) * 32,
+                    bytes([marker + 64]) * 32,
+                    bytes([marker + 96]) * 32,
+                    display_name,
+                    status,
+                ),
+            )
+        connection.execute(
+            "update platform_control.directory_state set "
+            "active_generation_id=%s,last_complete_at=clock_timestamp(),"
+            "updated_at=clock_timestamp() where singleton",
+            (generation_id,),
+        )
+    return {
+        "owner_id": owner_id,
+        "generation_id": generation_id,
+        "unique_member_key": unique_member_key,
+        "unique_name": unique_name,
+        "inactive_member_key": inactive_member_key,
+        "inactive_name": inactive_name,
+        "duplicate_member_key": duplicate_member_keys[0],
+        "duplicate_name": duplicate_name,
+        "mixed_status_duplicate_member_key": mixed_status_duplicate_member_keys[0],
+        "mixed_status_duplicate_name": mixed_status_duplicate_name,
+    }
+
+
+def _append_fae_workbench_request(
+    audit_url: str,
+    *,
+    event_id: uuid.UUID,
+    operation_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    target_id: uuid.UUID,
+    action: str,
+    metadata: dict[str, object],
+) -> None:
+    reason = (
+        "fae_workbench_access_approved"
+        if action == "grant"
+        else "fae_workbench_access_revoked"
+    )
+    target_type = "directory_member" if action == "grant" else "internal_user"
+    with psycopg.connect(audit_url) as connection:
+        connection.execute(
+            "select platform_control.append_audit_event("
+            "%s,%s,%s,%s,%s,%s,'requested',%s,%s::jsonb)",
+            (
+                event_id,
+                actor_id,
+                f"fae_workbench_{action}_requested",
+                target_type,
+                str(target_id),
+                operation_id,
+                reason,
+                json.dumps(
+                    {
+                        "operation_id": str(operation_id),
+                        "result": "requested",
+                        **metadata,
+                    }
+                ),
+            ),
+        )
+
+
+def _grant_seeded_fae_member(
+    environment: dict[str, object],
+    seeded: dict[str, object],
+) -> dict[str, object]:
+    operation_id = uuid.uuid4()
+    requested_audit_id = uuid.uuid4()
+    new_user_id = uuid.uuid4()
+    parameters = (
+        operation_id,
+        seeded["owner_id"],
+        seeded["unique_name"],
+        seeded["generation_id"],
+        seeded["unique_member_key"],
+        new_user_id,
+        uuid.uuid4(),
+        uuid.uuid4(),
+        requested_audit_id,
+    )
+    _append_fae_workbench_request(
+        environment["urls"]["platform_audit_append"],
+        event_id=requested_audit_id,
+        operation_id=operation_id,
+        actor_id=seeded["owner_id"],
+        target_id=seeded["unique_member_key"],
+        action="grant",
+        metadata={
+            "expected_generation_id": str(seeded["generation_id"]),
+            "expected_member_key": str(seeded["unique_member_key"]),
+        },
+    )
+    with psycopg.connect(
+        environment["urls"]["platform_control_app"]
+    ) as connection:
+        result = connection.execute(
+            "select platform_control.grant_fae_workbench_access_v63("
+            + ",".join(("%s",) * 9)
+            + ")",
+            parameters,
+        ).fetchone()[0]
+    return {
+        "operation_id": operation_id,
+        "requested_audit_id": requested_audit_id,
+        "new_user_id": new_user_id,
+        "parameters": parameters,
+        "result": result,
+    }
+
+
+@pytest.mark.postgres
+def test_fae_workbench_grant_provisions_identity_and_normal_login_reuses_it(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    seeded = _seed_fae_workbench_directory(environment["admin"])
+    app_url = environment["urls"]["platform_control_app"]
+    granted = _grant_seeded_fae_member(environment, seeded)
+    parameters = granted["parameters"]
+    new_user_id = granted["new_user_id"]
+    with psycopg.connect(app_url) as connection:
+        result = granted["result"]
+        replay = connection.execute(
+            "select platform_control.grant_fae_workbench_access_v63("
+            + ",".join(("%s",) * 9)
+            + ")",
+            parameters,
+        ).fetchone()[0]
+        assert replay == result
+        assert result["internal_user_id"] == str(new_user_id)
+        assert result["permission"] == "manager"
+        assert connection.execute(
+            "select platform_control.has_fae_workbench_access_v63(%s)",
+            (new_user_id,),
+        ).fetchone() == (True,)
+        assert connection.execute(
+            "select internal_user_id from "
+            "platform_control.read_fae_workbench_grants_v63()"
+        ).fetchall() == [(new_user_id,)]
+
+        resolved_user_id = connection.execute(
+            "select platform_control.resolve_verified_dingtalk_member("
+            + ",".join(("%s",) * 12)
+            + ")",
+            (
+                uuid.uuid4(),
+                seeded["unique_name"],
+                uuid.uuid4(),
+                bytes([11]) * 32,
+                1,
+                bytes([43]) * 32,
+                1,
+                uuid.uuid4(),
+                bytes([75]) * 32,
+                1,
+                bytes([107]) * 32,
+                1,
+            ),
+        ).fetchone()[0]
+        assert resolved_user_id == new_user_id
+
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select role::text,status,last_confirmed_generation_id from "
+            "platform_control.internal_users where internal_user_id=%s",
+            (new_user_id,),
+        ).fetchone() == ("member", "active", seeded["generation_id"])
+        assert connection.execute(
+            "select count(*) from platform_control.web_sessions "
+            "where internal_user_id=%s",
+            (new_user_id,),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.postgres
+def test_fae_workbench_grant_rejects_stable_directory_and_duplicate_codes(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    seeded_state = _seed_fae_workbench_directory(environment["admin"])
+    app_url = environment["urls"]["platform_control_app"]
+    audit_url = environment["urls"]["platform_audit_append"]
+    seeded = seeded_state["generation_id"]
+    owner_id = seeded_state["owner_id"]
+    cases = (
+        (
+            f"FAE Missing {uuid.uuid4()}",
+            uuid.uuid4(),
+            seeded,
+            "directory_member_not_found",
+        ),
+        (
+            seeded_state["duplicate_name"],
+            seeded_state["duplicate_member_key"],
+            seeded,
+            "directory_name_not_unique",
+        ),
+        (
+            seeded_state["mixed_status_duplicate_name"],
+            seeded_state["mixed_status_duplicate_member_key"],
+            seeded,
+            "directory_name_not_unique",
+        ),
+        (
+            seeded_state["inactive_name"],
+            seeded_state["inactive_member_key"],
+            seeded,
+            "directory_member_inactive",
+        ),
+        (
+            seeded_state["unique_name"],
+            seeded_state["unique_member_key"],
+            uuid.uuid4(),
+            "directory_generation_changed",
+        ),
+    )
+    for display_name, member_key, expected_generation_id, error_code in cases:
+        operation_id = uuid.uuid4()
+        audit_event_id = uuid.uuid4()
+        new_user_id = uuid.uuid4()
+        _append_fae_workbench_request(
+            audit_url,
+            event_id=audit_event_id,
+            operation_id=operation_id,
+            actor_id=owner_id,
+            target_id=member_key,
+            action="grant",
+            metadata={
+                "expected_generation_id": str(expected_generation_id),
+                "expected_member_key": str(member_key),
+            },
+        )
+        with psycopg.connect(app_url) as connection:
+            with pytest.raises(psycopg.errors.CheckViolation, match=error_code):
+                connection.execute(
+                    "select platform_control.grant_fae_workbench_access_v63("
+                    + ",".join(("%s",) * 9)
+                    + ")",
+                    (
+                        operation_id,
+                        owner_id,
+                        display_name,
+                        expected_generation_id,
+                        member_key,
+                        new_user_id,
+                        uuid.uuid4(),
+                        uuid.uuid4(),
+                        audit_event_id,
+                    ),
+                )
+
+
+@pytest.mark.postgres
+def test_fae_workbench_grant_rejects_identity_collision_and_missing_audit(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    seeded = _seed_fae_workbench_directory(environment["admin"])
+    app_url = environment["urls"]["platform_control_app"]
+    audit_url = environment["urls"]["platform_audit_append"]
+    collision_name = f"FAE Collision {uuid.uuid4()}"
+    collision_member_key = uuid.uuid4()
+    collision_user_id = uuid.uuid4()
+    generation_id = seeded["generation_id"]
+    owner_id = seeded["owner_id"]
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.directory_members ("
+            "generation_id,member_key,subject_kind,lookup_hmac,"
+            "lookup_key_version,encrypted_provider_id,encryption_key_version,"
+            "union_lookup_hmac,union_lookup_key_version,"
+            "union_encrypted_provider_id,union_encryption_key_version,"
+            "display_name,status) values "
+            "(%s,%s,'employee',%s,1,%s,1,%s,1,%s,1,%s,'active')",
+            (
+                generation_id,
+                collision_member_key,
+                bytes([20]) * 32,
+                bytes([52]) * 32,
+                bytes([84]) * 32,
+                bytes([116]) * 32,
+                collision_name,
+            ),
+        )
+        connection.execute(
+            "insert into platform_control.internal_users ("
+            "internal_user_id,role,display_name,status) values "
+            "(%s,'member','Collision Holder','active')",
+            (collision_user_id,),
+        )
+        connection.execute(
+            "insert into platform_control.provider_identities ("
+            "provider_identity_id,internal_user_id,subject_kind,lookup_hmac,"
+            "lookup_key_version,encrypted_provider_id,encryption_key_version) "
+            "values (%s,%s,'employee',%s,1,%s,1)",
+            (
+                uuid.uuid4(),
+                collision_user_id,
+                bytes([20]) * 32,
+                bytes([52]) * 32,
+            ),
+        )
+
+    operation_id = uuid.uuid4()
+    audit_event_id = uuid.uuid4()
+    new_user_id = uuid.uuid4()
+    _append_fae_workbench_request(
+        audit_url,
+        event_id=audit_event_id,
+        operation_id=operation_id,
+        actor_id=owner_id,
+        target_id=collision_member_key,
+        action="grant",
+        metadata={
+            "expected_generation_id": str(generation_id),
+            "expected_member_key": str(collision_member_key),
+        },
+    )
+    parameters = (
+        operation_id,
+        owner_id,
+        collision_name,
+        generation_id,
+        collision_member_key,
+        new_user_id,
+        uuid.uuid4(),
+        uuid.uuid4(),
+        audit_event_id,
+    )
+    with psycopg.connect(app_url) as connection, pytest.raises(
+        psycopg.errors.CheckViolation, match="verified_identity_collision"
+    ):
+        connection.execute(
+            "select platform_control.grant_fae_workbench_access_v63("
+            + ",".join(("%s",) * 9)
+            + ")",
+            parameters,
+        )
+
+    missing_audit_parameters = (
+        uuid.uuid4(),
+        owner_id,
+        collision_name,
+        generation_id,
+        collision_member_key,
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+    )
+    with psycopg.connect(app_url) as connection, pytest.raises(
+        psycopg.errors.CheckViolation, match="matching_audit_intent_required"
+    ):
+        connection.execute(
+            "select platform_control.grant_fae_workbench_access_v63("
+            + ",".join(("%s",) * 9)
+            + ")",
+            missing_audit_parameters,
+        )
+
+
+@pytest.mark.postgres
+def test_fae_workbench_grant_only_reuses_member_role_identities(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    seeded = _seed_fae_workbench_directory(environment["admin"])
+    owner_id = seeded["owner_id"]
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.directory_members set internal_user_id=%s "
+            "where generation_id=%s and member_key=%s",
+            (owner_id, seeded["generation_id"], seeded["unique_member_key"]),
+        )
+        connection.execute(
+            "insert into platform_control.provider_identities ("
+            "provider_identity_id,internal_user_id,subject_kind,lookup_hmac,"
+            "lookup_key_version,encrypted_provider_id,encryption_key_version) "
+            "values (%s,%s,'employee',%s,1,%s,1),"
+            "(%s,%s,'employee_union',%s,1,%s,1)",
+            (
+                uuid.uuid4(),
+                owner_id,
+                bytes([11]) * 32,
+                bytes([43]) * 32,
+                uuid.uuid4(),
+                owner_id,
+                bytes([75]) * 32,
+                bytes([107]) * 32,
+            ),
+        )
+
+    operation_id = uuid.uuid4()
+    audit_event_id = uuid.uuid4()
+    _append_fae_workbench_request(
+        environment["urls"]["platform_audit_append"],
+        event_id=audit_event_id,
+        operation_id=operation_id,
+        actor_id=owner_id,
+        target_id=seeded["unique_member_key"],
+        action="grant",
+        metadata={
+            "expected_generation_id": str(seeded["generation_id"]),
+            "expected_member_key": str(seeded["unique_member_key"]),
+        },
+    )
+    with psycopg.connect(
+        environment["urls"]["platform_control_app"]
+    ) as connection, pytest.raises(
+        psycopg.errors.CheckViolation, match="verified_identity_collision"
+    ):
+        connection.execute(
+            "select platform_control.grant_fae_workbench_access_v63("
+            + ",".join(("%s",) * 9)
+            + ")",
+            (
+                operation_id,
+                owner_id,
+                seeded["unique_name"],
+                seeded["generation_id"],
+                seeded["unique_member_key"],
+                uuid.uuid4(),
+                uuid.uuid4(),
+                uuid.uuid4(),
+                audit_event_id,
+            ),
+        )
+
+
+@pytest.mark.postgres
+def test_fae_workbench_grant_and_revoke_are_operation_idempotent_only(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    app_url = environment["urls"]["platform_control_app"]
+    audit_url = environment["urls"]["platform_audit_append"]
+    seeded = _seed_fae_workbench_directory(environment["admin"])
+    granted = _grant_seeded_fae_member(environment, seeded)
+    grant_row = (
+        uuid.UUID(granted["result"]["grant_id"]),
+        granted["new_user_id"],
+        granted["result"]["row_version"],
+    )
+    owner_id = seeded["owner_id"]
+    member = (
+        seeded["generation_id"],
+        seeded["unique_member_key"],
+        seeded["unique_name"],
+    )
+
+    duplicate_operation_id = uuid.uuid4()
+    duplicate_audit_id = uuid.uuid4()
+    duplicate_new_user_id = uuid.uuid4()
+    _append_fae_workbench_request(
+        audit_url,
+        event_id=duplicate_audit_id,
+        operation_id=duplicate_operation_id,
+        actor_id=owner_id,
+        target_id=member[1],
+        action="grant",
+        metadata={
+            "expected_generation_id": str(member[0]),
+            "expected_member_key": str(member[1]),
+        },
+    )
+    with psycopg.connect(app_url) as connection:
+        with pytest.raises(
+            psycopg.errors.CheckViolation, match="fae_workbench_already_granted"
+        ):
+            connection.execute(
+                "select platform_control.grant_fae_workbench_access_v63("
+                + ",".join(("%s",) * 9)
+                + ")",
+                (
+                    duplicate_operation_id,
+                    owner_id,
+                    member[2],
+                    member[0],
+                    member[1],
+                    duplicate_new_user_id,
+                    uuid.uuid4(),
+                    uuid.uuid4(),
+                    duplicate_audit_id,
+                ),
+            )
+
+    revoke_operation_id = uuid.uuid4()
+    revoke_audit_id = uuid.uuid4()
+    _append_fae_workbench_request(
+        audit_url,
+        event_id=revoke_audit_id,
+        operation_id=revoke_operation_id,
+        actor_id=owner_id,
+        target_id=grant_row[1],
+        action="revoke",
+        metadata={"expected_row_version": grant_row[2]},
+    )
+    revoke_parameters = (
+        revoke_operation_id,
+        owner_id,
+        grant_row[1],
+        grant_row[2],
+        revoke_audit_id,
+    )
+    with psycopg.connect(app_url) as connection:
+        revoked = connection.execute(
+            "select platform_control.revoke_fae_workbench_access_v63("
+            "%s,%s,%s,%s,%s)",
+            revoke_parameters,
+        ).fetchone()[0]
+        replay = connection.execute(
+            "select platform_control.revoke_fae_workbench_access_v63("
+            "%s,%s,%s,%s,%s)",
+            revoke_parameters,
+        ).fetchone()[0]
+        assert replay == revoked
+        assert revoked["row_version"] == grant_row[2] + 1
+        assert connection.execute(
+            "select platform_control.has_fae_workbench_access_v63(%s)",
+            (grant_row[1],),
+        ).fetchone() == (False,)
+
+    new_revoke_operation_id = uuid.uuid4()
+    new_revoke_audit_id = uuid.uuid4()
+    _append_fae_workbench_request(
+        audit_url,
+        event_id=new_revoke_audit_id,
+        operation_id=new_revoke_operation_id,
+        actor_id=owner_id,
+        target_id=grant_row[1],
+        action="revoke",
+        metadata={"expected_row_version": revoked["row_version"]},
+    )
+    with psycopg.connect(app_url) as connection:
+        with pytest.raises(
+            psycopg.errors.CheckViolation, match="fae_workbench_not_granted"
+        ):
+            connection.execute(
+                "select platform_control.revoke_fae_workbench_access_v63("
+                "%s,%s,%s,%s,%s)",
+                (
+                    new_revoke_operation_id,
+                    owner_id,
+                    grant_row[1],
+                    revoked["row_version"],
+                    new_revoke_audit_id,
+                ),
+            )
+
+
+@pytest.mark.postgres
+def test_fae_workbench_table_has_no_runtime_direct_mutation_rights(
+    control_database,
+) -> None:
+    for environment in control_database["environments"].values():
+        app_role = environment["roles"][1]
+        with psycopg.connect(environment["admin"]) as connection:
+            for runtime_role in environment["roles"]:
+                assert connection.execute(
+                    "select has_table_privilege(%s,"
+                    "'platform_control.fae_workbench_grants','insert'),"
+                    "has_table_privilege(%s,"
+                    "'platform_control.fae_workbench_grants','update'),"
+                    "has_table_privilege(%s,"
+                    "'platform_control.fae_workbench_grants','delete'),"
+                    "has_table_privilege(%s,"
+                    "'platform_control.fae_workbench_grants','select')",
+                    (runtime_role,) * 4,
+                ).fetchone() == (False, False, False, False)
+                expected_execute = runtime_role == app_role
+                assert connection.execute(
+                    "select has_function_privilege(%s,"
+                    "'platform_control.grant_fae_workbench_access_v63("
+                    "uuid,uuid,text,uuid,uuid,uuid,uuid,uuid,uuid)','execute'),"
+                    "has_function_privilege(%s,"
+                    "'platform_control.revoke_fae_workbench_access_v63("
+                    "uuid,uuid,uuid,bigint,uuid)','execute'),"
+                    "has_function_privilege(%s,"
+                    "'platform_control.has_fae_workbench_access_v63(uuid)',"
+                    "'execute'),has_function_privilege(%s,"
+                    "'platform_control.read_fae_workbench_grants_v63()',"
+                    "'execute')",
+                    (runtime_role,) * 4,
+                ).fetchone() == (expected_execute,) * 4
+        app_url = environment["urls"][app_role]
+        _assert_denied(
+            app_url,
+            "insert into platform_control.fae_workbench_grants ("
+            "grant_id,internal_user_id,permission,created_by_internal_user_id,"
+            "created_audit_event_id) values (gen_random_uuid(),gen_random_uuid(),"
+            "'manager',gen_random_uuid(),gen_random_uuid())",
+        )
+        _assert_denied(
+            app_url,
+            "update platform_control.fae_workbench_grants set row_version=1",
+        )
+        _assert_denied(
+            app_url,
+            "delete from platform_control.fae_workbench_grants",
+        )
