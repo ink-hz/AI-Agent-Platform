@@ -80,8 +80,10 @@ it("searches real loaded positions and offers all draft decisions", async () => 
     search.dispatchEvent(new Event("input", { bubbles: true }));
   });
 
-  expect(container.textContent).toContain("3D 打印高级结构工程师");
-  expect(container.textContent).not.toContain("算法工程师");
+  const positionGridText = [...container.querySelectorAll(".hr-position-grid")]
+    .map((grid) => grid.textContent).join(" ");
+  expect(positionGridText).toContain("3D 打印高级结构工程师");
+  expect(positionGridText).not.toContain("算法工程师");
   expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toEqual(
     expect.arrayContaining(["确认新建", "合并到岗位", "忽略"]),
   );
@@ -118,4 +120,62 @@ it("starts new-position work from a natural-language request", async () => {
     title: "需要一名懂喷嘴与挤出工艺的高级结构工程师",
   }), expect.any(String));
   expect(start).toHaveBeenCalledWith(expect.objectContaining({ draftId: draft.draftId }));
+});
+
+
+it("uses the default API client once instead of refetching after every render", async () => {
+  const fetchMock = vi.fn().mockImplementation((input: string | URL | Request) => {
+    const path = String(input);
+    const body = path.includes("position-drafts")
+      ? { items: [] }
+      : { items: [], next_cursor: null };
+    return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  await act(async () => {
+    root.render(<HrPositionIndex account={account} />);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  });
+
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+
+it("requires an explicit visible target before merging a draft", async () => {
+  const third = {
+    ...manual,
+    positionId: "44444444-4444-4444-8444-444444444444",
+    title: "光学工程师",
+  };
+  const client = api({
+    listPositions: vi.fn().mockResolvedValue({
+      items: [official, manual, third], nextCursor: null,
+    }),
+  });
+  await act(async () => root.render(
+    <HrPositionIndex account={account} api={client as never} />,
+  ));
+
+  const merge = [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "合并到岗位")!;
+  expect(merge.disabled).toBe(true);
+  const select = container.querySelector<HTMLSelectElement>(
+    `select[aria-label="选择 ${draft.title} 的合并目标"]`,
+  )!;
+  expect(select).not.toBeNull();
+  expect(select.textContent).toContain("光学工程师");
+  expect(select.textContent).toContain(third.positionId);
+
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")
+      ?.set?.call(select, third.positionId);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(merge.disabled).toBe(false);
+  await act(async () => merge.click());
+
+  expect(client.mergeDraft).toHaveBeenCalledWith(
+    draft.draftId, third.positionId, draft.rowVersion, expect.any(String),
+  );
 });

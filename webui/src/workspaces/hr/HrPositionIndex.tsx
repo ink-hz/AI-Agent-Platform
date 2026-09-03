@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { Account } from "../../auth";
+import { PlatformLink } from "../../components/PlatformLink";
 import { startConversation } from "../../conversationApi";
 import { createHrApi, type HrApi } from "../../hrApi";
 import type { HrPosition, HrPositionDraft } from "../../hrTypes";
@@ -33,13 +34,17 @@ function officialStatus(status: HrPosition["officialStatus"]): string {
 
 export function HrPositionIndex({
   account,
-  api = createHrApi(account.csrf_token),
+  api: injectedApi,
   startDraftConversation,
 }: {
   account: Account;
   api?: HrApi;
   startDraftConversation?: DraftStarter;
 }) {
+  const api = useMemo(
+    () => injectedApi ?? createHrApi(account.csrf_token),
+    [account.csrf_token, injectedApi],
+  );
   const [positions, setPositions] = useState<HrPosition[]>([]);
   const [drafts, setDrafts] = useState<HrPositionDraft[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -49,6 +54,7 @@ export function HrPositionIndex({
   const [newRequest, setNewRequest] = useState("");
   const [working, setWorking] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [mergeTargets, setMergeTargets] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const controller = new AbortController();
@@ -82,9 +88,9 @@ export function HrPositionIndex({
     try {
       if (action === "confirm") await api.confirmDraft(draft.draftId, draft.rowVersion, requestId());
       if (action === "merge") {
-        const target = positions[0];
-        if (!target) { setNotice("当前没有可合并的正式岗位。"); return; }
-        await api.mergeDraft(draft.draftId, target.positionId, draft.rowVersion, requestId());
+        const targetPositionId = mergeTargets[draft.draftId];
+        if (!targetPositionId) { setNotice("请先明确选择要合并到的正式岗位。"); return; }
+        await api.mergeDraft(draft.draftId, targetPositionId, draft.rowVersion, requestId());
       }
       if (action === "dismiss") await api.dismissDraft(draft.draftId, draft.rowVersion, requestId());
       setDrafts((current) => current.filter((item) => item.draftId !== draft.draftId));
@@ -127,7 +133,7 @@ export function HrPositionIndex({
         <h1>岗位智能工作台</h1>
         <p>把官网岗位、历史招聘对话和新需求放在同一个岗位上下文里。</p>
       </div>
-      <button className="hr-position-primary" type="button" onClick={() => setNewOpen(true)}>用对话新建岗位</button>
+      <button className="hr-position-primary" disabled={account.hard_stale_read_only} type="button" onClick={() => setNewOpen(true)}>用对话新建岗位</button>
     </header>
 
     <section className="hr-position-metrics" aria-label="岗位概览">
@@ -138,8 +144,9 @@ export function HrPositionIndex({
 
     <div className="hr-position-toolbar">
       <label><span>搜索岗位</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="岗位名称、J 编号、部门或地点" /></label>
-      <a href="/hr/chat">自由对话</a>
+      <PlatformLink href="/hr/chat">自由对话</PlatformLink>
     </div>
+    {account.hard_stale_read_only && <p className="hr-position-notice" role="status">账号目录信息已过期，岗位数据暂时只读。</p>}
     {notice && <p className="hr-position-notice" role="status">{notice}</p>}
 
     <PositionSection title="官网岗位" caption="来自官网同步，状态与内部工作状态分开显示。" positions={official} />
@@ -151,9 +158,13 @@ export function HrPositionIndex({
         : <div className="hr-draft-list">{drafts.map((draft) => <article key={draft.draftId} className="hr-draft-card">
           <div><span className="hr-position-chip">{draft.sourceKind === "historical_conversation" ? "历史识别" : "新需求"}</span><h3>{draft.title}</h3><p>规则 {draft.discoveryRuleVersion} · 证据已保留</p></div>
           <div className="hr-draft-actions">
-            <button disabled={working === draft.draftId} type="button" onClick={() => void decide(draft, "confirm")}>确认新建</button>
-            <button disabled={working === draft.draftId || positions.length === 0} type="button" onClick={() => void decide(draft, "merge")}>合并到岗位</button>
-            <button disabled={working === draft.draftId} type="button" onClick={() => void decide(draft, "dismiss")}>忽略</button>
+            <select aria-label={`选择 ${draft.title} 的合并目标`} disabled={account.hard_stale_read_only || working === draft.draftId || positions.length === 0} value={mergeTargets[draft.draftId] ?? ""} onChange={(event) => setMergeTargets((current) => ({ ...current, [draft.draftId]: event.target.value }))}>
+              <option value="">选择合并目标…</option>
+              {positions.map((position) => <option key={position.positionId} value={position.positionId}>{position.title} · {position.officialJobId ?? position.positionId}</option>)}
+            </select>
+            <button disabled={account.hard_stale_read_only || working === draft.draftId} type="button" onClick={() => void decide(draft, "confirm")}>确认新建</button>
+            <button disabled={account.hard_stale_read_only || working === draft.draftId || !mergeTargets[draft.draftId]} type="button" onClick={() => void decide(draft, "merge")}>合并到岗位</button>
+            <button disabled={account.hard_stale_read_only || working === draft.draftId} type="button" onClick={() => void decide(draft, "dismiss")}>忽略</button>
           </div>
         </article>)}</div>}
     </section>
@@ -174,10 +185,10 @@ function PositionSection({ title, caption, positions }: { title: string; caption
   return <section className="hr-position-section">
     <div className="hr-position-section-heading"><div><h2>{title}</h2><p>{caption}</p></div><span>{positions.length}</span></div>
     {positions.length === 0 ? <div className="hr-position-empty">没有匹配的岗位。</div>
-      : <div className="hr-position-grid">{positions.map((position) => <a className="hr-position-card" href={`/hr/positions/${encodeURIComponent(position.positionId)}`} key={position.positionId}>
+      : <div className="hr-position-grid">{positions.map((position) => <PlatformLink className="hr-position-card" href={`/hr/positions/${encodeURIComponent(position.positionId)}`} key={position.positionId}>
         <div><span className={`hr-position-chip hr-position-chip--${position.sourceKind}`}>{sourceLabel(position)}</span>{position.officialStatus && <span className={`hr-position-status hr-position-status--${position.officialStatus}`}>{officialStatus(position.officialStatus)}</span>}</div>
         <h3>{position.title}</h3><p>{[position.department, ...position.locations].filter(Boolean).join(" · ") || "岗位信息待完善"}</p>
         <footer><span>{position.officialJobId ?? "内部岗位"}</span><span>{position.sourceVersion ? `官网版本 ${position.sourceVersion}` : "内部上下文"}</span></footer>
-      </a>)}</div>}
+      </PlatformLink>)}</div>}
   </section>;
 }

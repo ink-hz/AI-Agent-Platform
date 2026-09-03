@@ -8,6 +8,8 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
+from app.control_plane.authorization import AuthorizationService
+from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.control_plane.models import AuthContext, Role
 from app.hr.models import PositionDetail, PositionDraftRecord, PositionRecord
 from app.hr.repository import HrConflict, HrNotFound, HrUnavailable, PositionPage
@@ -127,6 +129,55 @@ def _client(*, stale=False, authorization="allowed"):
     return TestClient(app), service, owner_id
 
 
+class _SecurityAuth:
+    route_prefix = "/"
+    cookie_name = "session"
+    csrf_cookie_name = "csrf"
+    public_base_url = "https://agent.example.test"
+    trusted_proxy_networks = ()
+    rate_limiter = None
+
+    def __init__(self, owner_id, *, stale=False):
+        self.owner_id = owner_id
+        self.stale = stale
+
+    def authenticate(self, token):
+        if token != "valid":
+            return None
+        return (
+            AuthContext(self.owner_id, Role.MEMBER, uuid4(), self.stale),
+            b"csrf-digest",
+        )
+
+    def verify_csrf(self, token, digest):
+        return token == "csrf-token" and digest == b"csrf-digest"
+
+
+def _secured_client(*, stale=False):
+    owner_id = uuid4()
+    service = FakeService(owner_id)
+    app = FastAPI()
+    app.include_router(build_hr_position_router(service, FakeAuthorization()))
+    app.add_middleware(
+        IdentitySecurityMiddleware,
+        auth=_SecurityAuth(owner_id, stale=stale),
+        public_assets=frozenset(),
+        authorization=AuthorizationService(
+            SimpleNamespace(permits=lambda *_: False)
+        ),
+        routes=tuple(app.router.routes),
+    )
+    client = TestClient(app)
+    client.cookies.set("session", "valid")
+    client.cookies.set("csrf", "csrf-token")
+    headers = {
+        "Origin": "https://agent.example.test",
+        "X-CSRF-Token": "csrf-token",
+        "Idempotency-Key": str(uuid4()),
+    }
+    return client, service, headers
+
+
 def test_position_reads_are_private_owner_scoped_and_explicitly_serialized() -> None:
     client, service, owner_id = _client()
 
@@ -228,3 +279,74 @@ def test_repository_failures_have_stable_concealed_http_projection() -> None:
             409: "HR position conflict",
             503: "HR position unavailable",
         }[status]}
+
+
+def test_every_hr_route_passes_the_real_identity_security_middleware() -> None:
+    client, service, headers = _secured_client()
+    position_id = service.position_record.position_id
+    draft_id = service.draft_record.draft_id
+    conversation_id = uuid4()
+    attachment_id = uuid4()
+    proposal = {
+        "source_kind": "new_conversation",
+        "source_key": "conversation:secured",
+        "source_conversation_id": None,
+        "title": "结构工程师",
+        "proposal": {},
+        "evidence": {"message_seq": 1},
+        "discovery_rule_version": "interactive-v1",
+    }
+    version = {"expected_row_version": 1}
+    requests = (
+        client.get("/api/hr/positions"),
+        client.get(f"/api/hr/positions/{position_id}"),
+        client.get("/api/hr/position-drafts"),
+        client.post("/api/hr/position-drafts", json=proposal, headers=headers),
+        client.post(
+            f"/api/hr/position-drafts/{draft_id}/confirm",
+            json=version, headers=headers,
+        ),
+        client.post(
+            f"/api/hr/position-drafts/{draft_id}/merge",
+            json={**version, "target_position_id": str(position_id)},
+            headers=headers,
+        ),
+        client.post(
+            f"/api/hr/position-drafts/{draft_id}/dismiss",
+            json=version, headers=headers,
+        ),
+        client.post(
+            f"/api/hr/positions/{position_id}/conversations/{conversation_id}",
+            json={}, headers=headers,
+        ),
+        client.post(
+            f"/api/hr/positions/{position_id}/materials/{attachment_id}",
+            json={}, headers=headers,
+        ),
+        client.delete(
+            f"/api/hr/positions/{position_id}/materials/{attachment_id}",
+            headers=headers,
+        ),
+    )
+
+    assert [response.status_code for response in requests] == [200] * 10
+
+
+def test_real_security_middleware_blocks_stale_hr_mutation_before_router() -> None:
+    client, service, headers = _secured_client(stale=True)
+    response = client.post(
+        "/api/hr/position-drafts",
+        json={
+            "source_kind": "new_conversation",
+            "source_key": "conversation:stale",
+            "source_conversation_id": None,
+            "title": "结构工程师",
+            "proposal": {},
+            "evidence": {},
+            "discovery_rule_version": "interactive-v1",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 503
+    assert service.calls == []

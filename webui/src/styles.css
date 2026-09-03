@@ -2159,6 +2159,7 @@ body {
 .hr-draft-card h3 { margin: 8px 0 4px; font-size: 15px; }
 .hr-draft-card p { margin: 0; color: #7b715d; font-size: 11.5px; }
 .hr-draft-actions { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+.hr-draft-actions select { min-height: 36px; max-width: 280px; padding: 7px 10px; border: 1px solid #cabd9f; border-radius: 8px; background: #fff; color: #5d533f; font: inherit; font-size: 11.5px; }
 .hr-draft-actions button { min-height: 36px; padding: 7px 11px; border: 1px solid #cabd9f; border-radius: 8px; background: #fff; color: #5d533f; font: inherit; font-size: 11.5px; font-weight: 720; cursor: pointer; }
 .hr-draft-actions button:first-child { border-color: #347f69; background: #347f69; color: #fff; }
 .hr-position-notice { max-width: 1240px; margin: 12px auto 0; padding: 10px 13px; border: 1px solid #dfc98f; border-radius: 9px; background: #fff8e6; color: #715313; font-size: 12px; }
@@ -2189,5 +2190,6 @@ body {
   .hr-position-toolbar > a { text-align: center; }
   .hr-draft-card { align-items: stretch; flex-direction: column; }
   .hr-draft-actions { justify-content: stretch; }
+  .hr-draft-actions select { width: 100%; max-width: none; }
   .hr-draft-actions button { flex: 1; }
 }
