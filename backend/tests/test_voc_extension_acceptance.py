@@ -264,7 +264,8 @@ async def test_management_read_is_middleware_protected_and_uses_minimal_token() 
 
 
 def test_live_registry_exposes_only_the_native_voc_workspace() -> None:
-    voc = YamlRepository("../registry.yaml").get_agent("voc")
+    root = Path(__file__).resolve().parents[2]
+    voc = YamlRepository(root / "registry.yaml").get_agent("voc")
 
     assert voc is not None
     assert voc.name == "VOC 洞察助手"
@@ -286,3 +287,32 @@ def test_voc_extension_runbook_preserves_the_private_service_boundary() -> None:
     assert "orbbec-agent-voc-extension" in runbook
     assert "没有宿主机端口映射" in runbook
     assert "不要把身份令牌" in runbook
+
+
+def test_cloud_acceptance_covers_standalone_voc_without_restarting_other_services() -> None:
+    root = Path(__file__).resolve().parents[2]
+    acceptance = (root / "deploy/cloud/accept.sh").read_text(encoding="utf-8")
+
+    start = acceptance.index("verify_standalone_voc_release()")
+    end = acceptance.index("\n}\n", start)
+    function = acceptance[start:end]
+
+    for route, status in (
+        ("$base/voc/", '== "200"'),
+        ("$base/voc/health", '== "404"'),
+        ("$base/voc/session", '== "401"'),
+        ("$base/voc/api/v1/admin/vocs", '== "403"'),
+        ("$base/office/?view=services", '== "200"'),
+    ):
+        assert route in function
+        assert status in function
+    assert "http://172.29.0.3:18130/health" in function
+    assert "019_bot_interaction_internal_identity.sql" in function
+    assert "bot-ingest" in function
+    assert "bot-interact" in function
+    assert "clamd" in function
+    assert "attachment" in function
+    assert "remote_fae_snapshot" in function
+    assert "systemctl restart" not in function
+    assert "docker restart" not in function
+    assert acceptance.count("verify_standalone_voc_release") >= 2

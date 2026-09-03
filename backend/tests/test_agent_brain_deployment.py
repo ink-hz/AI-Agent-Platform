@@ -460,8 +460,8 @@ def test_formal_nginx_keeps_platform_root_and_proxies_office_safely() -> None:
     assert "location ^~ /office/" in nginx
     assert "location ^~ /assets/" in nginx
     asset_start = nginx.index("location ^~ /assets/")
-    root_start = nginx.index("location / {", asset_start)
-    asset_boundary = nginx[asset_start:root_start]
+    next_location = nginx.index("location = /voc", asset_start)
+    asset_boundary = nginx[asset_start:next_location]
     for directive in (
         "proxy_pass http://127.0.0.1:8080;",
         "proxy_hide_header Set-Cookie;",

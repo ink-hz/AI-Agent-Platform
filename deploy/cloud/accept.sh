@@ -197,6 +197,74 @@ printf '%s\n' \
 REMOTE
 }
 
+verify_standalone_voc_release() {
+  local fae_voc_before status_code voc_asset voc_runtime
+  fae_voc_before="$(remote_fae_snapshot)" || fail
+
+  status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+    -o "$temporary/voc-root.html" -w '%{http_code}' --max-time 15 "$base/voc/")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+    -o /dev/null -w '%{http_code}' --max-time 15 "$base/voc/health")" || fail
+  [[ "$status_code" == "404" ]] || fail
+  status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
+    -o /dev/null -w '%{http_code}' --max-time 15 "$base/voc/session")" || fail
+  [[ "$status_code" == "401" ]] || fail
+  status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' \
+    "$base/voc/api/v1/admin/vocs")" || fail
+  [[ "$status_code" == "403" ]] || fail
+  status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' \
+    "$base/office/?view=services")" || fail
+  [[ "$status_code" == "200" ]] || fail
+
+  "$python" - "$temporary/voc-root.html" > "$temporary/voc-asset-path" <<'PY' || fail
+import pathlib,re,sys
+body=pathlib.Path(sys.argv[1]).read_bytes()
+matches=re.findall(rb'(?:src|href)=["\'](/voc/assets/[^"\'<> ]+-[A-Za-z0-9_-]{8,}\.[^"\'<> ]+)["\']',body)
+if not matches: raise SystemExit(1)
+print(matches[0].decode('ascii'))
+PY
+  voc_asset="$(<"$temporary/voc-asset-path")"
+  [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null \
+    -w '%{http_code}' --max-time 15 "$base$voc_asset")" == "200" ]] || fail
+
+  voc_runtime="$(remote /bin/bash -s <<'REMOTE'
+set -euo pipefail
+root=/opt/orbbec-voc-agent
+release_sha="$(tr -d '\n' < "$root/current-release")"
+[[ "$release_sha" =~ ^[0-9a-f]{40}$ ]]
+release="$root/releases/$release_sha"
+compose="$release/deploy/linux/compose.yaml"
+[[ -f "$compose" && ! -L "$compose" ]]
+cd "$(dirname "$compose")"
+docker compose -f "$compose" config --quiet </dev/null
+docker compose -f "$compose" ps -a --format json </dev/null | python3 -c '
+import json,sys
+expected={"postgres","workspace","bot-ingest","bot-interact"}
+ready=set()
+for line in sys.stdin:
+    if not line.strip(): continue
+    item=json.loads(line); service=item.get("Service",""); state=item.get("State","")
+    health=item.get("Health") or ("active" if state == "running" else state)
+    if service in expected and health in {"healthy","active"}: ready.add(service)
+    if state == "running" and ("clamd" in service.casefold() or "attachment" in service.casefold()): raise SystemExit(1)
+if ready != expected: raise SystemExit(1)
+'
+[[ "$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 8 http://172.29.0.3:18130/health)" == "200" ]]
+postgres="$(docker compose -f "$compose" ps -q postgres </dev/null)"
+[[ -n "$postgres" ]]
+migrations="$(docker exec "$postgres" psql -X -A -t -U postgres -d orbbec_voc -v ON_ERROR_STOP=1 -c 'SELECT name FROM voc_meta.schema_migrations ORDER BY name')"
+[[ "$(grep -Fxc '018_shared_web_bot_identity.sql' <<< "$migrations")" == "1" ]]
+[[ "$(grep -Fxc '019_bot_interaction_internal_identity.sql' <<< "$migrations")" == "1" ]]
+[[ "$(tail -n 1 <<< "$migrations")" == "019_bot_interaction_internal_identity.sql" ]]
+printf 'VOC_RUNTIME_OK release_sha=%s service_count=4 latest_migration_count=1\n' "$release_sha"
+REMOTE
+  )" || fail
+  [[ "$voc_runtime" =~ ^VOC_RUNTIME_OK\ release_sha=[0-9a-f]{40}\ service_count=4\ latest_migration_count=1$ ]] || fail
+  [[ "$(remote_fae_snapshot)" == "$fae_voc_before" ]] || fail
+  echo "STANDALONE_VOC_ACCEPTANCE_OK"
+}
+
 local_runtime_preflight() {
   /usr/bin/nc -z -w 2 127.0.0.1 9110 || fail
   /usr/bin/nc -z -w 2 127.0.0.1 9120 || fail
@@ -1528,6 +1596,7 @@ accept_v2_real() {
   curl_owner=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" --max-time 15)
   curl_viewer=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/viewer.curl" --max-time 15)
   verify_fae_workbench_cloud_contract
+  verify_standalone_voc_release
   fae_before="$(remote_fae_snapshot)" || fail
   partner_gate="$(remote_partner_gate)" || fail
   [[ "$partner_gate" == $'PARTNER_PROVIDER_CONFIG_VALID=true\nPARTNER_LOGIN_EXPECTED=false\nPARTNER_PROVIDER_KIND=none\nPARTNER_RELEASE_REASON=partner_identity_disabled' ]] || fail
