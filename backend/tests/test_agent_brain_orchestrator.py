@@ -434,6 +434,16 @@ def test_direct_agent_persists_v4_answer_citations_and_artifacts_separately(
     checked_artifacts = []
 
     class ResultGrants:
+        def issue_output(self, task_id, agent_id):
+            return OutputWriteGrant(
+                task_id=task_id,
+                agent_id=agent_id,
+                upload_url=f"/api/v1/execution-worker/tasks/{task_id}/artifacts",
+                bearer_token="B" * 43,
+                max_files=8,
+                max_total_bytes=50 * 1024 * 1024,
+            )
+
         def classify_result_artifacts(self, task_id, agent_id, artifacts):
             checked_artifacts.append((task_id, agent_id, artifacts))
             return "ready"
@@ -547,6 +557,16 @@ def test_direct_agent_waits_for_or_rejects_unverified_v4_artifacts(
     service, missions, relay = orchestrator
 
     class ResultGrants:
+        def issue_output(self, task_id, agent_id):
+            return OutputWriteGrant(
+                task_id=task_id,
+                agent_id=agent_id,
+                upload_url=f"/api/v1/execution-worker/tasks/{task_id}/artifacts",
+                bearer_token="B" * 43,
+                max_files=8,
+                max_total_bytes=50 * 1024 * 1024,
+            )
+
         def classify_result_artifacts(self, _task_id, _agent_id, _artifacts):
             return artifact_state
 

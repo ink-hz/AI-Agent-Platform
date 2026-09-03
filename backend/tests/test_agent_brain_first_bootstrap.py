@@ -372,6 +372,10 @@ def test_remote_stage_bootstrap_transaction_executes_in_order_and_fails_closed(
     private.mkdir()
     stage.mkdir()
     environment_path = tmp_path / "release.env"
+    test_data_path = tmp_path / "data" / "orbbec-agent-platform"
+    isolated_block = block.replace(
+        "/data/orbbec-agent-platform", str(test_data_path)
+    ).replace('/bin/chown 999:999 "$postgres_data_path"', ":")
     script = "\n".join(
         (
             "set -eEuo pipefail",
@@ -381,7 +385,7 @@ def test_remote_stage_bootstrap_transaction_executes_in_order_and_fails_closed(
             f"release_path={shlex.quote(str(release))}",
             f"private_path={shlex.quote(str(private))}",
             f"stage_path={shlex.quote(str(stage))}",
-            block.replace("/usr/bin/docker", str(fake_docker)).replace(
+            isolated_block.replace("/usr/bin/docker", str(fake_docker)).replace(
                 '/bin/chown root:root "$environment_path"', ":"
             ),
         )

@@ -189,7 +189,7 @@ def test_remote_stage_requires_mode_0600_and_preserves_feature_state() -> None:
     assert '[[ "$PLATFORM_DIRECT_AGENT_ENABLED" == "1" ]] || fail' in stage
     assert "orbbec-agent-platform-brain-secrets" in stage
     assert (
-        "for service_name in platform-brain platform-loopback platform-api "
+        "for service_name in platform-attachments platform-brain platform-loopback platform-api "
         "platform-directory platform-dingtalk-stream;"
     ) in stage
 
