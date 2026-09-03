@@ -32,6 +32,17 @@ def test_jcs_dependency_has_one_stable_pin_in_each_runtime() -> None:
         assert jcs_dependencies == ["jcs==0.2.1"]
 
 
+def test_attachment_image_decoder_has_one_stable_pin_in_each_runtime() -> None:
+    backend = Path(__file__).resolve().parents[1]
+
+    for filename in ("requirements.txt", "requirements.cloud.txt"):
+        requirements = (backend / filename).read_text(encoding="utf-8").splitlines()
+        pillow_dependencies = [
+            line for line in requirements if line.strip().lower().startswith("pillow")
+        ]
+        assert pillow_dependencies == ["Pillow==11.3.0"]
+
+
 def test_contract_schema_validator_is_pinned_for_tests_only() -> None:
     """The FAE identity contract needs a real draft 2020-12 validator.
 

@@ -552,6 +552,21 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
                 ),
             ).fetchone() == (True,)
 
+            brain_role = next(
+                role for role in environment["roles"] if "brain_worker" in role
+            )
+            assert connection.execute(
+                "select has_table_privilege(%s,"
+                "'platform_attachments.uploads','select')",
+                (brain_role,),
+            ).fetchone() == (True,)
+            assert connection.execute(
+                "select bool_and(not has_table_privilege(%s,"
+                "'platform_attachments.' || table_name,'insert,update,delete')) "
+                "from unnest(%s::text[]) table_name",
+                (brain_role, list(TABLES)),
+            ).fetchone() == (True,)
+
 
 @pytest.mark.postgres
 def test_v64_upload_write_attempt_is_leased_and_finalize_keeps_mime_untrusted(
@@ -996,10 +1011,34 @@ def test_v64_processing_pipeline_advances_retries_and_persists_derivative(
             "claim_attachment_processing_job_v64('worker-1')).processing_job_id"
         ).fetchone()[0]
         assert validate_job_id is not None
+        with (
+            pytest.raises(
+                psycopg.errors.CheckViolation, match="validation result invalid"
+            ),
+            brain.transaction(),
+        ):
+            brain.execute(
+                "select platform_attachments."
+                "record_attachment_processing_result_v64("
+                "%s,'scanning',null,%s,%s::jsonb)",
+                (
+                    validate_job_id,
+                    "application/pdf",
+                    (
+                        '{"coverage":"metadata_only","download":true,'
+                        '"inline_preview":false}'
+                    ),
+                ),
+            )
         brain.execute(
             "select platform_attachments."
-            "record_attachment_processing_result_v64(%s,'scanning',null)",
-            (validate_job_id,),
+            "record_attachment_processing_result_v64("
+            "%s,'scanning',null,%s,%s::jsonb)",
+            (
+                validate_job_id,
+                "application/pdf",
+                ('{"coverage":"first_page","download":true,"inline_preview":true}'),
+            ),
         )
         scan_job_id = brain.execute(
             "select (platform_attachments."
@@ -1026,9 +1065,14 @@ def test_v64_processing_pipeline_advances_retries_and_persists_derivative(
 
     with psycopg.connect(environment["admin"]) as admin:
         assert admin.execute(
-            "select state from platform_attachments.attachments where attachment_id=%s",
+            "select state,detected_mime,coverage_metadata "
+            "from platform_attachments.attachments where attachment_id=%s",
             (attachment_id,),
-        ).fetchone() == ("ready",)
+        ).fetchone() == (
+            "ready",
+            "application/pdf",
+            {"coverage": "first_page", "download": True, "inline_preview": True},
+        )
         assert admin.execute(
             "select state from platform_attachments.derivatives where derivative_id=%s",
             (derivative_id,),
@@ -1080,11 +1124,21 @@ def test_v64_processing_retry_is_bounded_without_worker_table_dml(
             )
             brain.commit()
         with psycopg.connect(environment["admin"]) as admin:
-            assert admin.execute(
-                "select state from platform_attachments.processing_jobs "
+            state, available_in_future = admin.execute(
+                "select state,available_at > now() "
+                "from platform_attachments.processing_jobs "
                 "where processing_job_id=%s",
                 (job_id,),
-            ).fetchone() == (expected_state,)
+            ).fetchone()
+            assert state == expected_state
+            assert available_in_future is (expected_state == "queued")
+            if expected_state == "queued":
+                admin.execute(
+                    "update platform_attachments.processing_jobs "
+                    "set available_at=now() where processing_job_id=%s",
+                    (job_id,),
+                )
+                admin.commit()
 
     with psycopg.connect(environment["admin"]) as admin:
         assert admin.execute(

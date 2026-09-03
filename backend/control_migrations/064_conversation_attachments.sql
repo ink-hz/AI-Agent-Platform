@@ -22,6 +22,12 @@ create table platform_attachments.attachments (
     check (object_ref_key_version > 0),
   declared_mime text,
   detected_mime text,
+  coverage_metadata jsonb check (
+    coverage_metadata is null or (
+      jsonb_typeof(coverage_metadata)='object'
+      and octet_length(coverage_metadata::text) <= 1024
+    )
+  ),
   size_bytes bigint not null default 0 check (size_bytes >= 0),
   sha256 bytea check (sha256 is null or octet_length(sha256) = 32),
   retained_until timestamptz not null
@@ -57,6 +63,12 @@ create table platform_attachments.uploads (
   object_ref_key_version integer not null check (object_ref_key_version > 0),
   declared_mime text,
   detected_mime text,
+  coverage_metadata jsonb check (
+    coverage_metadata is null or (
+      jsonb_typeof(coverage_metadata)='object'
+      and octet_length(coverage_metadata::text) <= 1024
+    )
+  ),
   size_bytes bigint not null default 0 check (size_bytes >= 0),
   sha256 bytea check (sha256 is null or octet_length(sha256) = 32),
   retained_until timestamptz not null
@@ -193,6 +205,12 @@ create table platform_attachments.artifact_versions (
     check (octet_length(object_ref_ciphertext) between 29 and 1048576),
   object_ref_key_version integer not null check (object_ref_key_version > 0),
   detected_mime text,
+  coverage_metadata jsonb check (
+    coverage_metadata is null or (
+      jsonb_typeof(coverage_metadata)='object'
+      and octet_length(coverage_metadata::text) <= 1024
+    )
+  ),
   size_bytes bigint not null default 0 check (size_bytes >= 0),
   sha256 bytea check (sha256 is null or octet_length(sha256) = 32),
   retained_until timestamptz not null
@@ -861,7 +879,9 @@ $function$;
 create function platform_attachments.record_attachment_processing_result_v64(
   selected_processing_job_id uuid,
   selected_attachment_state text,
-  selected_state_reason text
+  selected_state_reason text,
+  selected_detected_mime text default null,
+  selected_coverage_metadata jsonb default null
 ) returns void
 language plpgsql security definer
 set search_path = pg_catalog, platform_attachments
@@ -869,6 +889,7 @@ as $function$
 declare
   selected_job platform_attachments.processing_jobs%rowtype;
   selected_current_state text;
+  selected_current_detected_mime text;
   next_job_kind text;
   next_derivative_kind text;
 begin
@@ -880,7 +901,8 @@ begin
   where processing_job_id=selected_processing_job_id and state='running'
   for update;
   if not found then raise no_data_found using message='Processing job unavailable'; end if;
-  select state into selected_current_state
+  select state,detected_mime
+    into selected_current_state,selected_current_detected_mime
   from platform_attachments.attachments
   where attachment_id=selected_job.attachment_id
   for update;
@@ -888,10 +910,62 @@ begin
     raise check_violation using message='Attachment deleted or unavailable';
   end if;
 
+  if selected_job.job_kind='validate' and selected_attachment_state='scanning' then
+    if selected_detected_mime is null
+       or octet_length(selected_detected_mime) not between 3 and 255
+       or selected_detected_mime <> btrim(selected_detected_mime)
+       or selected_detected_mime ~ '[[:space:]]'
+       or selected_detected_mime !~
+         '^[A-Za-z0-9!#$%&''*+.^_`|~-]+/[A-Za-z0-9!#$%&''*+.^_`|~-]+$'
+       or selected_coverage_metadata is null
+       or jsonb_typeof(selected_coverage_metadata) <> 'object'
+       or octet_length(selected_coverage_metadata::text) > 1024
+    then raise check_violation using message='Attachment validation result invalid'; end if;
+    if not selected_coverage_metadata ?&
+         array['coverage','download','inline_preview']
+       or (select count(*) from jsonb_object_keys(selected_coverage_metadata)) <> 3
+       or selected_coverage_metadata->>'coverage' not in (
+         'safe_thumbnail','first_page','metadata_only'
+       )
+       or jsonb_typeof(selected_coverage_metadata->'download') <> 'boolean'
+       or selected_coverage_metadata->>'download' <> 'true'
+       or jsonb_typeof(selected_coverage_metadata->'inline_preview') <> 'boolean'
+       or (
+         (selected_coverage_metadata->>'coverage'='metadata_only') <>
+         (selected_coverage_metadata->>'inline_preview'='false')
+       )
+       or not (
+         (selected_detected_mime in ('image/png','image/jpeg')
+           and selected_coverage_metadata->>'coverage'='safe_thumbnail')
+         or (selected_detected_mime='application/pdf'
+           and selected_coverage_metadata->>'coverage'='first_page')
+         or (selected_detected_mime in (
+             'text/plain',
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+             'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+           ) and selected_coverage_metadata->>'coverage'='metadata_only')
+       )
+    then raise check_violation using message='Attachment validation result invalid'; end if;
+    update platform_attachments.attachments set
+      detected_mime=selected_detected_mime,
+      coverage_metadata=selected_coverage_metadata
+    where attachment_id=selected_job.attachment_id;
+    update platform_attachments.uploads set
+      detected_mime=selected_detected_mime,
+      coverage_metadata=selected_coverage_metadata
+    where attachment_id=selected_job.attachment_id;
+  elsif selected_detected_mime is not null or selected_coverage_metadata is not null then
+    raise check_violation using message='Attachment processing metadata invalid';
+  end if;
+
   if selected_attachment_state='retry' then
     if selected_job.attempt_count < selected_job.max_attempts then
       update platform_attachments.processing_jobs set
-        state='queued',state_reason=selected_state_reason,available_at=now(),
+        state='queued',state_reason=selected_state_reason,
+        available_at=now() + make_interval(
+          secs => least(300,power(2,selected_job.attempt_count-1)::integer)
+        ),
         claimed_by=null,claimed_at=null,completed_at=null
       where processing_job_id=selected_processing_job_id;
     else
@@ -919,7 +993,11 @@ begin
     next_job_kind := 'scan';
   elsif (selected_job.job_kind='scan' and selected_attachment_state='ready') then
     next_job_kind := 'derive';
-    next_derivative_kind := 'preview';
+    next_derivative_kind := case
+      when selected_current_detected_mime in ('image/png','image/jpeg')
+        then 'thumbnail'
+      else 'preview'
+    end;
   elsif not (
     selected_job.job_kind in ('validate','scan')
     and selected_attachment_state in ('quarantined','rejected')
@@ -946,6 +1024,7 @@ begin
       object_ref_ciphertext=attachment.object_ref_ciphertext,
       object_ref_key_version=attachment.object_ref_key_version,
       detected_mime=attachment.detected_mime,
+      coverage_metadata=attachment.coverage_metadata,
       size_bytes=attachment.size_bytes,
       sha256=attachment.sha256,
       retained_until=attachment.retained_until,
@@ -1290,8 +1369,9 @@ begin
     artifact_version_id,artifact_id,attachment_id,version_no,
     producer_version_id,
     original_name_ciphertext,original_name_key_version,
-    object_ref_ciphertext,object_ref_key_version,detected_mime,size_bytes,
-    sha256,retained_until,state,state_reason,result_status
+    object_ref_ciphertext,object_ref_key_version,detected_mime,
+    coverage_metadata,size_bytes,sha256,retained_until,state,state_reason,
+    result_status
   ) values (
     selected_artifact_version_id,selected_artifact_id,selected_attachment.attachment_id,
     selected_version_no,selected_producer_version_id,
@@ -1299,7 +1379,8 @@ begin
     selected_attachment.original_name_key_version,
     selected_attachment.object_ref_ciphertext,
     selected_attachment.object_ref_key_version,selected_attachment.detected_mime,
-    selected_attachment.size_bytes,selected_attachment.sha256,
+    selected_attachment.coverage_metadata,selected_attachment.size_bytes,
+    selected_attachment.sha256,
     selected_attachment.retained_until,selected_attachment.state,
     selected_attachment.state_reason,
     case when selected_attachment.state='ready' then 'succeeded' else 'pending' end
@@ -1598,6 +1679,7 @@ begin
   );
   execute format(
     'grant select on platform_attachments.attachments, '
+    'platform_attachments.uploads, '
     'platform_attachments.bindings,platform_attachments.artifacts, '
     'platform_attachments.artifact_versions, '
     'platform_attachments.current_artifact_versions, '
@@ -1630,7 +1712,8 @@ begin
     'grant execute on function '
     'platform_attachments.claim_attachment_processing_job_v64(text), '
     'platform_attachments.record_attachment_processing_result_v64('
-    'uuid,text,text),platform_attachments.record_attachment_derivative_v64('
+    'uuid,text,text,text,jsonb),'
+    'platform_attachments.record_attachment_derivative_v64('
     'uuid,uuid,text,bytea,integer,text,bigint,bytea,text), '
     'platform_attachments.consume_task_grant_v64('
     'bytea,uuid,uuid,text,text,bigint), '
