@@ -12,7 +12,6 @@ from app.agent_brain.adapters.metabot_local import MetaBotLocalAdapter
 from app.execution_relay.models import RelayEvent
 from app.execution_relay.repository import ExecutionRelayNotFound, RelayJobState
 
-
 TASK_ID = UUID("00000000-0000-4000-8000-000000000701")
 LOOP_ID = UUID("00000000-0000-4000-8000-000000000702")
 NOW = datetime(2026, 8, 26, 1, 0, tzinfo=timezone.utc)
@@ -191,6 +190,47 @@ def test_v3_result_is_normalized_without_reclassifying_answer_as_thinking() -> N
     assert [event.kind for event in events] == ["message", "result"]
     assert events[1].payload["summary"] == "候选人的视觉项目证据充分。"
     assert all(event.kind != "thinking_summary" for event in events)
+
+
+def test_v4_result_exposes_only_platform_registered_artifact_ids() -> None:
+    relay = Relay()
+    adapter = MetaBotLocalAdapter(relay)
+    adapter.start_session(task(), delivery("initial"))
+    attachment_id = UUID("00000000-0000-4000-8000-000000000799")
+    relay.events_by_run[TASK_ID] = (
+        RelayEvent(
+            run_id=TASK_ID,
+            seq=1,
+            event_type="agent.result",
+            created_at=NOW,
+            payload={
+                "source": "agent_runtime",
+                "sourceRef": f"run:{TASK_ID}",
+                "result": {
+                    "contractVersion": "core_chat_collaboration_v4",
+                    "publicAnswerMarkdown": "已完成候选人评估。",
+                    "citations": [],
+                    "artifacts": [
+                        {
+                            "attachmentId": str(attachment_id),
+                            "artifactKey": "candidate-evaluation",
+                            "producerVersionId": "report-v1",
+                            "displayName": "候选人评估.pdf",
+                            "status": "ready",
+                        }
+                    ],
+                    "completion": "completed",
+                    "recovery": None,
+                },
+            },
+        ),
+    )
+
+    receipt = adapter.reconcile(task(), next_event_seq=1)
+
+    assert receipt.events[0].result is not None
+    assert receipt.events[0].result.summary == "已完成候选人评估。"
+    assert receipt.events[0].result.attachment_refs == (attachment_id,)
 
 
 def test_adapter_never_dispatches_local_brain_or_hides_mac_offline() -> None:
