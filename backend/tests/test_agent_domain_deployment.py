@@ -1,5 +1,9 @@
+import threading
+from http.client import HTTPConnection
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import pytest
 
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
@@ -18,6 +22,117 @@ def _location_block(value: str, selector: str) -> str:
     start = value.index(selector)
     next_location = value.find("\n    location ", start + len(selector))
     return value[start:] if next_location < 0 else value[start:next_location]
+
+
+def _workspace_proxy_for_path(value: str, route: str) -> str:
+    path = route.split("?", 1)[0]
+    if path.startswith("/fae/manage/"):
+        selector = "location ^~ /fae/manage/ {"
+    elif path.startswith("/office/"):
+        selector = "location ^~ /office/ {"
+    elif path.startswith("/fae/"):
+        selector = "location ^~ /fae/ {"
+    elif path.startswith("/voc/"):
+        selector = "location ^~ /voc/ {"
+    elif path.startswith("/admin/"):
+        selector = "location ^~ /admin/ {"
+    else:
+        selector = "location / {"
+        value = value[value.rindex(selector) :]
+    selected = _location_block(value, selector)
+    owners = [
+        line.split()[1].removesuffix(";")
+        for line in selected.splitlines()
+        if line.strip().startswith("proxy_pass ")
+    ]
+    assert len(owners) == 1, route
+    return owners[0]
+
+
+def _http_response(port: int, route: str) -> tuple[int, str, bytes]:
+    connection = HTTPConnection("127.0.0.1", port, timeout=2)
+    try:
+        connection.request("GET", route)
+        response = connection.getresponse()
+        return response.status, response.getheader("Location", ""), response.read()
+    finally:
+        connection.close()
+
+
+def _start_http_server(handler: type[BaseHTTPRequestHandler]):
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(
+        target=lambda: server.serve_forever(poll_interval=0.01), daemon=True
+    )
+    thread.start()
+    return server, thread
+
+
+def _stop_http_server(server: ThreadingHTTPServer, thread: threading.Thread) -> None:
+    server.shutdown()
+    server.server_close()
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+
+
+def _upstream_handler(owner: str) -> type[BaseHTTPRequestHandler]:
+    class UpstreamHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = f"{owner}:ready:{self.path}".encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            return
+
+    return UpstreamHandler
+
+
+def _proxy_handler(
+    nginx_server: str, upstream_ports: dict[str, int]
+) -> type[BaseHTTPRequestHandler]:
+    class ProxyHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            owner = _workspace_proxy_for_path(nginx_server, self.path)
+            upstream = HTTPConnection(
+                "127.0.0.1", upstream_ports[owner], timeout=0.5
+            )
+            try:
+                upstream.request("GET", self.path)
+                response = upstream.getresponse()
+                body = response.read()
+            except OSError:
+                body = f"{owner}:unavailable".encode()
+                self.send_response(502)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            finally:
+                upstream.close()
+            self.send_response(response.status)
+            location = response.getheader("Location")
+            if location is not None:
+                self.send_header("Location", location)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            return
+
+    return ProxyHandler
+
+
+def _assert_no_workspace_failure_fallback(nginx_server: str) -> None:
+    assert "error_page" not in nginx_server
+    assert "recursive_error_pages" not in nginx_server
+    assert "proxy_intercept_errors on" not in nginx_server
 
 
 def test_nginx_entry_authenticates_every_https_path_and_keeps_loopback_upstream():
@@ -280,3 +395,189 @@ def test_formal_nginx_assigns_hardened_non_overlapping_fae_route_owners():
             'add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;',
         ):
             assert directive in block
+
+
+def test_formal_nginx_has_exact_workspace_ownership_and_failure_isolation():
+    value = _text(FORMAL_NGINX).split("# HTTPS_ENTRY_BEGIN", 1)[1]
+    platform_upstream = "proxy_pass http://127.0.0.1:8080;"
+    office_upstream = "proxy_pass http://127.0.0.1:8011;"
+    fae_upstream = "proxy_pass http://127.0.0.1:8000;"
+    voc_upstream = "proxy_pass http://172.29.0.3:18130;"
+
+    owned_blocks = {
+        "platform-admin-root": _location_block(value, "location = /admin {"),
+        "platform-admin": _location_block(value, "location ^~ /admin/ {"),
+        "platform-fae-management": _location_block(
+            value, "location ^~ /fae/manage/ {"
+        ),
+        "office": _location_block(value, "location ^~ /office/ {"),
+        "fae": _location_block(value, "location ^~ /fae/ {"),
+        "voc": _location_block(value, "location ^~ /voc/ {"),
+    }
+    expected_upstreams = {
+        "platform-admin-root": platform_upstream,
+        "platform-admin": platform_upstream,
+        "platform-fae-management": platform_upstream,
+        "office": office_upstream,
+        "fae": fae_upstream,
+        "voc": voc_upstream,
+    }
+    all_upstreams = {
+        platform_upstream,
+        office_upstream,
+        fae_upstream,
+        voc_upstream,
+    }
+
+    for owner, block in owned_blocks.items():
+        expected = expected_upstreams[owner]
+        assert expected in block
+        assert all(other not in block for other in all_upstreams - {expected})
+
+    # HR, Marketing, and every unmatched product path deliberately stay on the
+    # final Platform catch-all; no competing prefix may steal those workspaces.
+    catch_all = value[value.rindex("    location / {") :]
+    assert platform_upstream in catch_all
+    location_lines = tuple(
+        line.strip()
+        for line in value.splitlines()
+        if line.strip().startswith("location ")
+    )
+    assert all(
+        "/hr" not in line and "/marketing" not in line
+        for line in location_lines
+    )
+
+    # An unavailable workspace upstream must surface only from its own block.
+    # In particular, none of the non-Platform owners may fall back or redirect
+    # into the generic management product.
+    isolated_upstreams = {
+        office_upstream: (
+            "location = /office/chat {",
+            "location = /office/service-feedback {",
+            "location ^~ /office/assets/ {",
+            "location ^~ /office/knowledge-assets/ {",
+            "location ^~ /office/ {",
+        ),
+        fae_upstream: (
+            "location = /fae/api/chat {",
+            "location = /fae/api/attachments {",
+            "location ^~ /fae/api/ {",
+            "location ^~ /fae/assets/ {",
+            "location ^~ /fae/ {",
+        ),
+        voc_upstream: (
+            "location ^~ /voc/assets/ {",
+            "location ^~ /voc/ {",
+        ),
+    }
+    for expected, selectors in isolated_upstreams.items():
+        for selector in selectors:
+            block = _location_block(value, selector)
+            assert expected in block
+            assert all(other not in block for other in all_upstreams - {expected})
+            assert "error_page" not in block
+            assert "proxy_intercept_errors on" not in block
+            assert "return 30" not in block
+            assert "/admin" not in block
+
+
+def test_each_stubbed_workspace_upstream_failure_is_isolated_to_its_routes():
+    value = _text(FORMAL_NGINX).split("# HTTPS_ENTRY_BEGIN", 1)[1]
+    _assert_no_workspace_failure_fallback(value)
+    routes = (
+        "/",
+        "/hr/",
+        "/marketing/gtm/conversations/mkt%3Aone",
+        "/admin/sessions",
+        "/fae/manage/issues",
+        "/office/",
+        "/office/?view=services",
+        "/fae/",
+        "/fae/conversations/fae%3Aone",
+        "/voc/",
+        "/voc/records/VOC-20260903-001",
+    )
+    route_owners = {
+        route: _workspace_proxy_for_path(value, route) for route in routes
+    }
+    platform = "http://127.0.0.1:8080"
+    office = "http://127.0.0.1:8011"
+    fae = "http://127.0.0.1:8000"
+    voc = "http://172.29.0.3:18130"
+    assert route_owners == {
+        "/": platform,
+        "/hr/": platform,
+        "/marketing/gtm/conversations/mkt%3Aone": platform,
+        "/admin/sessions": platform,
+        "/fae/manage/issues": platform,
+        "/office/": office,
+        "/office/?view=services": office,
+        "/fae/": fae,
+        "/fae/conversations/fae%3Aone": fae,
+        "/voc/": voc,
+        "/voc/records/VOC-20260903-001": voc,
+    }
+    owners = {
+        platform,
+        office,
+        fae,
+        voc,
+    }
+    expected_failure_routes = {
+        office: {"/office/", "/office/?view=services"},
+        fae: {"/fae/", "/fae/conversations/fae%3Aone"},
+        voc: {"/voc/", "/voc/records/VOC-20260903-001"},
+    }
+    for failed_upstream, expected_changed in expected_failure_routes.items():
+        upstreams = {
+            owner: _start_http_server(_upstream_handler(owner)) for owner in owners
+        }
+        upstream_ports = {
+            owner: server.server_port
+            for owner, (server, _thread) in upstreams.items()
+        }
+        proxy, proxy_thread = _start_http_server(
+            _proxy_handler(value, upstream_ports)
+        )
+        stopped: set[str] = set()
+        try:
+            baseline = {
+                route: _http_response(proxy.server_port, route) for route in routes
+            }
+            assert all(response[0] == 200 for response in baseline.values())
+            server, thread = upstreams[failed_upstream]
+            _stop_http_server(server, thread)
+            stopped.add(failed_upstream)
+            failed = {
+                route: _http_response(proxy.server_port, route) for route in routes
+            }
+            changed = {
+                route for route in routes if failed[route] != baseline[route]
+            }
+            assert changed == expected_changed
+            assert all(failed[route][0] == 502 for route in changed)
+            assert all(failed[route][1] == "" for route in changed)
+            assert all(b"unavailable" in failed[route][2] for route in changed)
+            assert all(
+                failed[route] == baseline[route]
+                for route in routes
+                if route not in changed
+            )
+        finally:
+            _stop_http_server(proxy, proxy_thread)
+            for owner, (server, thread) in upstreams.items():
+                if owner not in stopped:
+                    _stop_http_server(server, thread)
+
+
+def test_failure_isolation_gate_rejects_server_level_admin_fallback():
+    value = _text(FORMAL_NGINX).split("# HTTPS_ENTRY_BEGIN", 1)[1]
+    regressed = value.replace(
+        "    listen 443 ssl;",
+        "    listen 443 ssl;\n    error_page 502 =302 /admin;",
+        1,
+    )
+
+    with pytest.raises(AssertionError):
+        _assert_no_workspace_failure_fallback(regressed)

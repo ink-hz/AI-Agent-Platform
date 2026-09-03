@@ -63,13 +63,18 @@ function bounded(promise, milliseconds, label) {
 }
 
 async function runProbe(socketUrl, cookiePath, requestedUrl, mode, deadlineMs, commandTimeoutMs) {
-  const expected = new URL(requestedUrl);
+  const requested = new URL(requestedUrl);
   const socketAddress = new URL(socketUrl);
-  const expectedHref = mode === "report"
+  const canonicalReport = "https://agent.orbbec.com.cn/fae/manage/reports";
+  const expectedHref = mode === "report" || mode === "compat-report"
+    ? canonicalReport
+    : mode === "viewer-denied" ? "https://agent.orbbec.com.cn/fae/manage/" : "";
+  const requestedHref = mode === "compat-report"
     ? "https://agent.orbbec.com.cn/admin/fae/reports"
-    : mode === "viewer-denied" ? "https://agent.orbbec.com.cn/admin/fae" : "";
-  if (expected.href !== expectedHref ||
-      expected.search !== "" || expected.hash !== "" ||
+    : expectedHref;
+  const expected = new URL(expectedHref);
+  if (requested.href !== requestedHref ||
+      requested.search !== "" || requested.hash !== "" ||
       socketAddress.protocol !== "ws:" ||
       !["127.0.0.1", "localhost"].includes(socketAddress.hostname) ||
       socketAddress.username || socketAddress.password || !socketAddress.port) {
@@ -160,17 +165,23 @@ async function runProbe(socketUrl, cookiePath, requestedUrl, mode, deadlineMs, c
     }
     await command("Page.enable");
     await command("Runtime.enable");
-    await command("Page.navigate", { url: expected.href });
+    await command("Page.navigate", { url: requested.href });
     while (remaining() > 0) {
       const evaluation = await command("Runtime.evaluate", {
         expression: mode === "report"
           ? reportExpression(expected.href)
+          : mode === "compat-report"
+            ? reportExpression(expected.href)
           : viewerDeniedExpression(expected.href),
         returnByValue: true,
       });
       if (evaluation.result?.value === true) {
         process.stdout.write(
-          mode === "report" ? "FAE_REPORTS_READY_OK\n" : "FAE_VIEWER_DENIED_OK\n",
+          mode === "report"
+            ? "FAE_REPORTS_READY_OK\n"
+            : mode === "compat-report"
+              ? "FAE_REPORTS_COMPATIBILITY_OK\n"
+              : "FAE_VIEWER_DENIED_OK\n",
         );
         return;
       }
