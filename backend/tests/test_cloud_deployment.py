@@ -2141,6 +2141,8 @@ cookie_config() {{ : > "$2"; printf '{{}}' > "$3"; }}
 cleanup_fae_report_processes() {{ printf 'process-cleanup\\n' >> {event_log}; }}
 remote_feature() {{ printf 'feature:%s\\n' "$1" >> {event_log}; }}
 release_action_lock() {{ printf 'lock-release\\n' >> {event_log}; }}
+verify_access_history_authorization_contract() {{ :; }}
+verify_access_history_browser_contract() {{ :; }}
 verify_fae_workbench_cloud_contract() {{
   printf '%s' "$temporary" > {tmp_path / 'temporary-path'}
   return 1

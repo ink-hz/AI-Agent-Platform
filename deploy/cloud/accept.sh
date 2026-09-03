@@ -1314,6 +1314,19 @@ verify_fae_viewer_denied() {
     https://agent.orbbec.com.cn/fae/manage/ viewer-denied fae-viewer
 }
 
+verify_access_history_authorization_contract() {
+  local status_code
+  status_code="$("${curl_owner[@]}" -o "$temporary/access-history.json" -w '%{http_code}' \
+    "$base/api/v1/manage/access-events?limit=1")" || fail
+  [[ "$status_code" == "200" ]] || fail
+  status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' \
+    "$base/api/v1/manage/access-events?limit=1")" || fail
+  [[ "$status_code" == "403" ]] || fail
+  status_code="$("${curl_viewer[@]}" -o /dev/null -w '%{http_code}' \
+    "$base/api/v1/manage/access-events?limit=1")" || fail
+  [[ "$status_code" == "403" ]] || fail
+}
+
 verify_access_history_browser_contract() {
   local browser_cookie_file="$1" workspace="$2" status=0 chrome_port page_socket watched_pid result
   local chrome=/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome
@@ -2382,12 +2395,7 @@ accept_v2_real() {
   curl_member=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/member.curl" --max-time 15)
   curl_owner=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/owner.curl" --max-time 15)
   curl_viewer=(/usr/bin/curl --noproxy '*' --silent --show-error --config "$temporary/viewer.curl" --max-time 15)
-  status_code="$("${curl_owner[@]}" -o "$temporary/access-history.json" -w '%{http_code}' "$base/api/v1/manage/access-events?limit=1")" || fail
-  [[ "$status_code" == "200" ]] || fail
-  status_code="$("${curl_member[@]}" -o /dev/null -w '%{http_code}' "$base/api/v1/manage/access-events?limit=1")" || fail
-  [[ "$status_code" == "403" ]] || fail
-  status_code="$("${curl_viewer[@]}" -o /dev/null -w '%{http_code}' "$base/api/v1/manage/access-events?limit=1")" || fail
-  [[ "$status_code" == "403" ]] || fail
+  verify_access_history_authorization_contract
   verify_access_history_browser_contract "$temporary/access-owner.browser.json" "$temporary"
   verify_fae_workbench_cloud_contract
   verify_platform_workspace_history
