@@ -60,7 +60,9 @@ class FakeService:
 
     def position(self, owner_id, position_id):
         self.calls.append(("position", owner_id, position_id))
-        return self._result(PositionDetail(self.position_record, 2, 1, 3))
+        return self._result(PositionDetail(
+            self.position_record, 2, 1, 3, (uuid4(),), (uuid4(),), (uuid4(),)
+        ))
 
     def list_drafts(self, owner_id, *, state=None, limit=100):
         self.calls.append(("drafts", owner_id, state, limit))
@@ -136,6 +138,7 @@ def test_position_reads_are_private_owner_scoped_and_explicitly_serialized() -> 
     assert response.headers["cache-control"] == "private, no-store"
     assert response.json()["items"][0]["official_job_id"] == "J11014"
     assert detail.json()["conversation_count"] == 2
+    assert len(detail.json()["conversation_ids"]) == 1
     assert drafts.json()["items"][0]["evidence"] == {"message_seq": 1}
     assert service.calls[0][1] == owner_id
 

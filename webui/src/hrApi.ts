@@ -57,6 +57,9 @@ function instant(value: unknown): value is string {
 function stringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(text);
 }
+function idList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(id) && value.length === new Set(value).size;
+}
 
 export function parseHrPosition(value: unknown): HrPosition {
   const raw = object(value);
@@ -138,13 +141,17 @@ function parsePage(value: unknown): PositionPage {
 function parseDetail(value: unknown): HrPositionDetail {
   const raw = object(value);
   const counts = [raw.conversation_count, raw.material_count, raw.artifact_count];
-  const base = Object.fromEntries(Object.entries(raw).filter(([key]) => !key.endsWith("_count")));
-  if (Object.keys(raw).length !== POSITION_KEYS.size + 3 || counts.some((count) => !integer(count))) {
+  const detailKeys = new Set(["conversation_count", "material_count", "artifact_count", "conversation_ids", "material_attachment_ids", "artifact_ids"]);
+  const base = Object.fromEntries(Object.entries(raw).filter(([key]) => !detailKeys.has(key)));
+  if (Object.keys(raw).length !== POSITION_KEYS.size + 6 || counts.some((count) => !integer(count))
+    || !idList(raw.conversation_ids) || !idList(raw.material_attachment_ids) || !idList(raw.artifact_ids)) {
     throw new Error("HR position response invalid");
   }
   return {
     ...parseHrPosition(base), conversationCount: Number(raw.conversation_count),
     materialCount: Number(raw.material_count), artifactCount: Number(raw.artifact_count),
+    conversationIds: raw.conversation_ids, materialAttachmentIds: raw.material_attachment_ids,
+    artifactIds: raw.artifact_ids,
   };
 }
 

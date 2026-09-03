@@ -214,6 +214,9 @@ class PositionDetail:
     conversation_count: int
     material_count: int
     artifact_count: int
+    conversation_ids: tuple[UUID, ...] = ()
+    material_attachment_ids: tuple[UUID, ...] = ()
+    artifact_ids: tuple[UUID, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.position, PositionRecord) or any(
@@ -225,6 +228,13 @@ class PositionDetail:
             )
         ):
             raise ValueError("position detail invalid")
+        for values in (
+            self.conversation_ids, self.material_attachment_ids, self.artifact_ids
+        ):
+            if not isinstance(values, tuple) or any(
+                not isinstance(value, UUID) for value in values
+            ) or len(values) != len(set(values)):
+                raise ValueError("position detail identifiers invalid")
 
 
 @dataclass(frozen=True, slots=True)

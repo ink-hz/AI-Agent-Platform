@@ -160,6 +160,8 @@ def test_repository_confirms_draft_and_binds_origin_conversation_atomically(
             (conversation_id,),
         ).fetchone()
     assert binding == (position.position_id, "draft_confirmed")
+    detail = repository.position_for_owner(owner_id, position.position_id)
+    assert detail.conversation_ids == (conversation_id,)
 
 
 @pytest.mark.postgres

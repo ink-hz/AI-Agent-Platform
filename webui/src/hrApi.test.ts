@@ -18,6 +18,10 @@ const position = {
   official_status: "active", internal_status: "active", source_version: "sync-v1",
   row_version: 2, created_at: NOW, updated_at: NOW,
 };
+const positionDetail = {
+  ...position, conversation_count: 1, material_count: 0, artifact_count: 0,
+  conversation_ids: [CONVERSATION_ID], material_attachment_ids: [], artifact_ids: [],
+};
 const draft = {
   draft_id: DRAFT_ID, source_kind: "new_conversation", source_key: "conversation:new",
   source_conversation_id: null, title: "结构工程师", proposal: {},
@@ -46,6 +50,17 @@ it("encodes position filters, credentials, and AbortSignal", async () => {
     "/api/hr/positions?query=%E5%85%89%E5%AD%A6+%2F+%E7%AE%97%E6%B3%95&source=official_site&internal_status=active&cursor=cursor%2B1&limit=40",
   );
   expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: "same-origin", signal });
+});
+
+it("parses position scope identifiers without crossing resource boundaries", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+    JSON.stringify(positionDetail), { status: 200 },
+  )));
+
+  await expect(createHrApi("csrf").position(POSITION_ID)).resolves.toMatchObject({
+    positionId: POSITION_ID, conversationIds: [CONVERSATION_ID],
+    materialAttachmentIds: [], artifactIds: [],
+  });
 });
 
 

@@ -555,7 +555,17 @@ class HrPositionRepository:
                     "as material_count,(select count(*) from "
                     "platform_hr.position_artifacts artifact where "
                     "artifact.position_id=position.position_id)::bigint "
-                    "as artifact_count from platform_hr.positions position "
+                    "as artifact_count,array(select binding.conversation_id from "
+                    "platform_hr.position_conversations binding where "
+                    "binding.position_id=position.position_id order by binding.created_at desc) "
+                    "as conversation_ids,array(select material.attachment_id from "
+                    "platform_hr.position_materials material where "
+                    "material.position_id=position.position_id and material.active "
+                    "order by material.updated_at desc) as material_attachment_ids,"
+                    "array(select artifact.artifact_id from "
+                    "platform_hr.position_artifacts artifact where "
+                    "artifact.position_id=position.position_id order by artifact.created_at desc) "
+                    "as artifact_ids from platform_hr.positions position "
                     "where position.owner_internal_user_id=%s "
                     "and position.position_id=%s",
                     (owner_id, position_id),
@@ -567,6 +577,9 @@ class HrPositionRepository:
                 conversation_count=row["conversation_count"],
                 material_count=row["material_count"],
                 artifact_count=row["artifact_count"],
+                conversation_ids=tuple(row["conversation_ids"]),
+                material_attachment_ids=tuple(row["material_attachment_ids"]),
+                artifact_ids=tuple(row["artifact_ids"]),
             )
         except HrRepositoryError:
             raise

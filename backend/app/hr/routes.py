@@ -238,6 +238,9 @@ def build_hr_position_router(service, agent_use_authorization) -> APIRouter:
             "conversation_count": detail.conversation_count,
             "material_count": detail.material_count,
             "artifact_count": detail.artifact_count,
+            "conversation_ids": [str(value) for value in detail.conversation_ids],
+            "material_attachment_ids": [str(value) for value in detail.material_attachment_ids],
+            "artifact_ids": [str(value) for value in detail.artifact_ids],
         }
 
     @router.get("/api/hr/position-drafts")
