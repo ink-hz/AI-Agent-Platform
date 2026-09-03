@@ -2080,3 +2080,32 @@ body {
   .agent-use-workspace[data-agent-id="hr-bot"] .agent-use-page { padding: 0 14px 30px; }
   .agent-use-workspace[data-agent-id="hr-bot"] .agent-use-profile.is-compact { margin-top: 54px; text-align: left; }
 }
+
+.access-history-page { width: min(1180px, calc(100% - 40px)); margin: 34px auto 72px; }
+.access-history-heading { margin-bottom: 24px; }
+.access-history-heading > p { margin: 0 0 8px; color: #567065; font-size: 12px; font-weight: 800; letter-spacing: .14em; }
+.access-history-heading h1 { margin: 0; font-size: clamp(28px, 4vw, 42px); }
+.access-history-heading span { display: block; max-width: 720px; margin-top: 10px; color: #607068; line-height: 1.65; }
+.access-history-filters { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(160px, .6fr) minmax(150px, .5fr) auto; gap: 12px; align-items: end; margin-bottom: 18px; padding: 16px; border: 1px solid #dce4e0; border-radius: 14px; background: #fbfcfb; }
+.access-history-filters label { display: grid; gap: 6px; color: #47564f; font-size: 13px; font-weight: 700; }
+.access-history-filters input,
+.access-history-filters select { min-height: 42px; padding: 0 12px; border: 1px solid #ccd8d2; border-radius: 9px; background: #fff; color: #17231e; font: inherit; }
+.access-history-filters button,
+.access-history-pagination button { min-height: 42px; padding: 0 18px; border: 1px solid #1f6a55; border-radius: 9px; background: #1f6a55; color: #fff; font-weight: 750; cursor: pointer; }
+.access-history-table-wrap { overflow-x: auto; border: 1px solid #dce4e0; border-radius: 14px; background: #fff; }
+.access-history-table { width: 100%; border-collapse: collapse; }
+.access-history-table th,
+.access-history-table td { padding: 14px 16px; border-bottom: 1px solid #e7ece9; text-align: left; white-space: nowrap; }
+.access-history-table th { color: #5a6a62; background: #f6f9f7; font-size: 12px; letter-spacing: .04em; }
+.access-history-table tr:last-child td { border-bottom: 0; }
+.access-history-table time { color: #56655e; font-variant-numeric: tabular-nums; }
+.access-history-state { padding: 32px; border: 1px dashed #ccd8d2; border-radius: 14px; color: #64716b; text-align: center; }
+.access-history-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 16px; color: #5a6861; }
+.access-history-pagination button { min-height: 36px; padding: 0 14px; background: #fff; color: #1f6a55; }
+.access-history-pagination button:disabled { border-color: #d8dfdc; color: #9aa49f; cursor: default; }
+
+@media screen and (max-width: 720px) {
+  .access-history-page { width: calc(100% - 28px); margin-top: 24px; }
+  .access-history-filters { grid-template-columns: 1fr; }
+  .access-history-filters button { width: 100%; }
+}

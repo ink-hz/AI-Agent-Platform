@@ -25,6 +25,10 @@ const ADMIN_NAVIGATION = [
   { label: "VOC 管理", path: "/admin/voc", section: "admin" },
 ] as const;
 
+const OWNER_ONLY_ADMIN_NAVIGATION = [
+  { label: "访问记录", path: "/admin/access", section: "admin" },
+] as const;
+
 
 interface NavigationItem {
   label: string;
@@ -89,8 +93,9 @@ export function AppShell({ route, children, account }: { route: Route; children:
   const cloudReplica = deployment?.mode === "cloud-replica" && deployment.read_only;
   const roleNavigation = navigationFor(account);
   const navigation = roleNavigation;
+  const baseAdminNavigation = cloudReplica ? ADMIN_NAVIGATION.filter((item) => item.path !== "/admin/review") : [...ADMIN_NAVIGATION];
   const managementNavigation = (!account || account.role === "platform_owner" || account.role === "platform_admin")
-    ? (cloudReplica ? ADMIN_NAVIGATION.filter((item) => item.path !== "/admin/review") : ADMIN_NAVIGATION)
+    ? (account?.role === "platform_owner" ? [...baseAdminNavigation, ...OWNER_ONLY_ADMIN_NAVIGATION] : baseAdminNavigation)
     : account?.role === "management_viewer"
       ? ADMIN_NAVIGATION.filter((item) => item.path === "/admin/voc")
       : [];

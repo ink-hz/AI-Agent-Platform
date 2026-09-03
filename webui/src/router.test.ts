@@ -76,6 +76,7 @@ describe("Platform router", () => {
     ["/agents/ai-fae-agent", { name: "legacy-redirect", to: "/fae/", navigation: "document" }],
     ["/admin/fae/reports", { name: "legacy-redirect", to: "/fae/manage/reports", navigation: "spa" }],
     ["/admin/voc", { name: "legacy-redirect", to: "/voc/manage/", navigation: "document" }],
+    ["/admin/access", { name: "admin-access" }],
   ])("parses %s", (path, expected) => expect(parseRoute(path)).toEqual(expected));
 
   it("parses use, account and unknown routes", () => {
@@ -129,6 +130,7 @@ describe("Platform router", () => {
     expect(routePath({ name: "admin-agent-runtime", agentId: "fae/a" })).toBe("/admin/agents/fae%2Fa/runtime");
     expect(routePath({ name: "admin-review" })).toBe("/admin/review");
     expect(routePath({ name: "admin-voc" })).toBe("/admin/voc");
+    expect(routePath({ name: "admin-access" })).toBe("/admin/access");
     expect(routePath({ name: "account" })).toBe("/account");
     expect(routePath({ name: "voc-workspace" })).toBe("/agents/voc/workspace");
     expect(routePath({ name: "hr-conversation", conversationId: "c:1" })).toBe("/hr/conversations/c%3A1");
@@ -141,6 +143,7 @@ describe("Platform router", () => {
     expect(routeSection({ name: "voc-workspace" })).toBe("agents");
     expect(routeSection({ name: "admin-session", sessionKey: "fae:abc" })).toBe("admin");
     expect(routeSection({ name: "admin-voc" })).toBe("admin");
+    expect(routeSection({ name: "admin-access" })).toBe("admin");
     expect(routeSection({ name: "hr" })).toBe("agents");
     expect(routeSection({ name: "marketing", agentSlug: "inbound" })).toBe("agents");
     expect(routeSection({ name: "fae-manage-overview" })).toBe("fae");

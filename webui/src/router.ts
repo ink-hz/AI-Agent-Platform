@@ -42,6 +42,7 @@ export type Route =
   | { name: "admin-activity" }
   | { name: "admin-identity" }
   | { name: "admin-governance" }
+  | { name: "admin-access" }
   | { name: "admin-voc" }
   | { name: "legacy-redirect"; to: string; navigation: "spa" | "document" }
   | { name: "not-found" };
@@ -307,6 +308,7 @@ export function parseRoute(pathname: string, search = ""): Route {
   if (clean === "/admin/operations") return { name: "legacy-redirect", to: "/admin", navigation: "spa" };
   if (clean === "/admin/identity") return { name: "admin-identity" };
   if (clean === "/admin/governance") return { name: "admin-governance" };
+  if (clean === "/admin/access") return { name: "admin-access" };
   if (clean === "/admin/voc") return { name: "legacy-redirect", to: "/voc/manage/", navigation: "document" };
 
   const faeSession = /^\/admin\/fae\/sessions\/([^/]+)$/.exec(clean);
@@ -410,6 +412,7 @@ export function routePath(route: Route): string {
     case "admin-activity": return "/admin/activity";
     case "admin-identity": return "/admin/identity";
     case "admin-governance": return "/admin/governance";
+    case "admin-access": return "/admin/access";
     case "admin-voc": return "/admin/voc";
     case "legacy-redirect": return route.to;
     default: return "/404";
