@@ -437,6 +437,18 @@ for selector, owner in expected.items():
     proxies = re.findall(r"(?m)^\s*proxy_pass\s+([^;]+);", selected)
     if proxies != [owner]:
         raise SystemExit(1)
+catch_all = block(agent, "location / {")
+catch_all_proxies = re.findall(
+    r"(?m)^\s*proxy_pass\s+([^;]+);", catch_all
+)
+if catch_all_proxies != ["http://127.0.0.1:8080"]:
+    raise SystemExit(1)
+location_selectors = re.findall(
+    r"(?m)^\s*location\s+([^\{]+?)\s*\{", agent
+)
+for namespace in ("/hr", "/marketing"):
+    if any(namespace in selector for selector in location_selectors):
+        raise SystemExit(1)
 PY
   [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/fae)" == "308" ]] || return 1
   [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/fae/health)" == "404" ]] || return 1

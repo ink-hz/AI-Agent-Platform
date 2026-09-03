@@ -136,6 +136,30 @@ def test_ai_notes_reads_are_authenticated_self_service(
     assert decision.reason == "self_service"
 
 
+@pytest.mark.parametrize("role", list(Role))
+@pytest.mark.parametrize(
+    "route",
+    [
+        "/hr",
+        "/hr/",
+        "/hr/{client_path:path}",
+        "/marketing",
+        "/marketing/",
+        "/marketing/{client_path:path}",
+    ],
+)
+def test_hr_and_marketing_shells_are_authenticated_self_service(
+    role: Role, route: str
+) -> None:
+    context = AuthContext(uuid4(), role, uuid4(), False)
+    decision = AuthorizationService(Grants()).decide(
+        context, "GET", route, ()
+    )
+
+    assert decision.allowed is True
+    assert decision.reason == "self_service"
+
+
 @pytest.mark.parametrize(
     "route",
     [

@@ -80,8 +80,11 @@ describe("login return path", () => {
     "/voc/records/VOC-1",
     "/voc/manage/records",
     "/voc/manage/records/VOC-1",
+    "/hr",
     "/hr/",
     "/hr/conversations/hr:one",
+    "/marketing",
+    "/marketing/",
     "/marketing/prospecting",
     "/marketing/intelligence/conversations/mkt:one",
   ])("accepts canonical workspace login return path %s", (path) => {

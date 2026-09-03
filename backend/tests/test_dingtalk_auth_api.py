@@ -570,6 +570,51 @@ def test_exact_public_routes_and_root_redirect(tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
+    "path",
+    [
+        "/hr",
+        "/hr/",
+        "/hr/conversations/hr%3Aone",
+        "/marketing",
+        "/marketing/",
+        "/marketing/prospecting",
+        "/marketing/inbound",
+        "/marketing/voice",
+        "/marketing/intelligence",
+        "/marketing/gtm",
+        "/marketing/voice/conversations/mkt%3Aone",
+    ],
+)
+def test_public_hr_and_marketing_shells_bootstrap_enterprise_login(
+    tmp_path, monkeypatch, path: str
+) -> None:
+    client = TestClient(_app(tmp_path, monkeypatch, FakeAuth()))
+
+    response = client.get(path)
+
+    assert response.status_code == 200
+    assert "LOGIN SHELL" in response.text
+    assert 'name="platform-identity-mode" content="enabled"' in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/hr/unknown/path",
+        "/marketing/unknown",
+        "/marketing/voice/unknown",
+    ],
+)
+def test_nearby_unknown_workspace_shells_remain_protected(
+    tmp_path, monkeypatch, path: str
+) -> None:
+    client = TestClient(_app(tmp_path, monkeypatch, FakeAuth()))
+
+    assert client.get(path).status_code == 401
+
+
+@pytest.mark.parametrize(
     "query",
     (
         "return_path=%2Fvoc%2F&return_path=%2Foffice%2F",

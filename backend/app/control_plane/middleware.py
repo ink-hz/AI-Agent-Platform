@@ -45,6 +45,13 @@ _DIRECT_AGENT_MISSION_RESPONSE = re.compile(
 _DIRECT_AGENT_CONVERSATION_RESPONSE = re.compile(
     r"/api/v1/agents/[^/]+/conversations\Z"
 )
+_PUBLIC_HR_WORKSPACE_SHELL = re.compile(
+    r"/hr(?:/?|/conversations/[A-Za-z0-9:._-]+)\Z"
+)
+_PUBLIC_MARKETING_WORKSPACE_SHELL = re.compile(
+    r"/marketing(?:/?|/(?:prospecting|inbound|voice|intelligence|gtm)"
+    r"(?:/conversations/[A-Za-z0-9:._-]+)?)\Z"
+)
 _AGENT_BINDING_VALIDATION_ROUTE = re.compile(
     r"/api/v1/internal/agent-bindings/"
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/validate\Z"
@@ -196,6 +203,15 @@ def is_public_request(
         ("POST", "/api/v1/auth/dingtalk/in-client/exchange"),
     }
     if (method, local) in exact:
+        return True
+    # These routes return only the shared static application shell. Business
+    # data remains behind authenticated APIs; exposing the shell lets an
+    # expired or missing browser Session enter the existing DingTalk login
+    # flow and preserve its validated workspace return path.
+    if method == "GET" and (
+        _PUBLIC_HR_WORKSPACE_SHELL.fullmatch(local) is not None
+        or _PUBLIC_MARKETING_WORKSPACE_SHELL.fullmatch(local) is not None
+    ):
         return True
     if (
         partner_callback_method is not None

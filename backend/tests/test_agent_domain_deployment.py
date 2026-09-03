@@ -17,6 +17,7 @@ NGINX = CLOUD / "agent-domain.basic-auth.nginx.conf"
 FORMAL_NGINX = CLOUD / "agent-domain.nginx.conf"
 INSTALLER = CLOUD / "install-agent-domain.sh"
 PUBLISHER = CLOUD / "publish-agent-domain.sh"
+ACCEPTANCE = CLOUD / "accept.sh"
 RUNBOOK = ROOT / "docs" / "runbooks" / "cloud-platform.md"
 
 
@@ -538,6 +539,17 @@ def test_formal_nginx_has_exact_workspace_ownership_and_failure_isolation():
             assert "proxy_intercept_errors on" not in block
             assert "return 30" not in block
             assert "/admin" not in block
+
+
+def test_production_route_gate_verifies_hr_and_marketing_catch_all_ownership():
+    value = _text(ACCEPTANCE)
+    start = value.index("verify_canonical_workspace_routes() {")
+    end = value.index("\nremote_fae_snapshot()", start)
+    function = value[start:end]
+
+    assert 'catch_all = block(agent, "location / {")' in function
+    assert 'if catch_all_proxies != ["http://127.0.0.1:8080"]:' in function
+    assert 'for namespace in ("/hr", "/marketing"):' in function
 
 
 def test_each_stubbed_workspace_upstream_failure_is_isolated_by_rendered_nginx(

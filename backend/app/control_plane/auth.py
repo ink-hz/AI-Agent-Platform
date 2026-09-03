@@ -43,7 +43,8 @@ _SAFE_RETURN_EXACT = frozenset(
     {
         "/", "/account", "/missions", "/conversations", "/agents",
         "/agents/voc/workspace", "/ai-notes", "/office/", "/voc/",
-        "/fae/", "/fae/manage/", "/hr/", "/admin", "/admin/",
+        "/fae/", "/fae/manage/", "/hr", "/hr/", "/marketing",
+        "/marketing/", "/admin", "/admin/",
     }
 )
 _SAFE_RETURN_PATTERNS = tuple(
