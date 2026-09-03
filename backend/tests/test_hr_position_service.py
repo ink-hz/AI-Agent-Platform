@@ -74,6 +74,14 @@ class RecordingRepository:
         self.commands.append(command)
         return command
 
+    def promote_material(self, command):
+        self.commands.append(command)
+        return command
+
+    def remove_material(self, *args):
+        self.commands.append(args)
+        return args
+
 
 def test_service_builds_manual_position_command(position_record, draft_record) -> None:
     generated_position = uuid4()

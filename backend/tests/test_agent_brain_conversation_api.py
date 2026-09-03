@@ -46,6 +46,7 @@ def _app(
     agent_use: FakeAgentUse | None = None,
     command_service=None,
     action_service=None,
+    hr_position_scope=None,
     brain_enabled: bool = True,
 ):
     context = AuthContext(owner, role, uuid4(), False)
@@ -59,6 +60,7 @@ def _app(
             agent_use,
             command_service=command_service,
             action_service=action_service,
+            hr_position_scope=hr_position_scope,
             cursor_codec=ConversationCursorCodec(
                 AuthSecrets(b"x" * 32, key_version=1)
             ),

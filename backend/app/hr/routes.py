@@ -161,10 +161,21 @@ def _binding(record) -> dict[str, object]:
     }
 
 
+def _material(record) -> dict[str, object]:
+    return {
+        "position_id": str(record.position_id),
+        "attachment_id": str(record.attachment_id),
+        "active": record.active,
+        "created_at": record.created_at.isoformat(),
+        "updated_at": record.updated_at.isoformat(),
+    }
+
+
 def build_hr_position_router(service, agent_use_authorization) -> APIRouter:
     required_service = (
         "list_positions", "position", "list_drafts", "propose_draft",
         "confirm_draft", "merge_draft", "dismiss_draft", "bind_conversation",
+        "promote_material", "remove_material",
     )
     if any(not callable(getattr(service, name, None)) for name in required_service):
         raise ValueError("HR position service required")
@@ -307,5 +318,33 @@ def build_hr_position_router(service, agent_use_authorization) -> APIRouter:
             _request_id(idempotency_key), binding_kind="created_in_position",
         )
         return _binding(record)
+
+    @router.post("/api/hr/positions/{position_id}/materials/{attachment_id}")
+    async def promote_material(
+        _body: EmptyBody, request: Request,
+        position_id: Annotated[UUID, Path()],
+        attachment_id: Annotated[UUID, Path()],
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ):
+        owner_id = await owner(request, writable=True)
+        record = await call(
+            service.promote_material, owner_id, position_id, attachment_id,
+            _request_id(idempotency_key),
+        )
+        return _material(record)
+
+    @router.delete("/api/hr/positions/{position_id}/materials/{attachment_id}")
+    async def remove_material(
+        request: Request,
+        position_id: Annotated[UUID, Path()],
+        attachment_id: Annotated[UUID, Path()],
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ):
+        owner_id = await owner(request, writable=True)
+        record = await call(
+            service.remove_material, owner_id, position_id, attachment_id,
+            _request_id(idempotency_key),
+        )
+        return _material(record)
 
     return router

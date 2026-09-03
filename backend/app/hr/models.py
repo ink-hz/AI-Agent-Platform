@@ -399,6 +399,28 @@ class PositionConversationBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class PositionMaterialRecord:
+    owner_id: UUID
+    position_id: UUID
+    attachment_id: UUID
+    client_request_id: UUID
+    active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.owner_id, self.position_id, self.attachment_id,
+            self.client_request_id,
+        ):
+            _uuid(value, "material identifiers invalid")
+        if type(self.active) is not bool:
+            raise ValueError("material state invalid")
+        _aware(self.created_at)
+        _aware(self.updated_at)
+
+
+@dataclass(frozen=True, slots=True)
 class BindPositionConversation:
     owner_id: UUID
     position_id: UUID

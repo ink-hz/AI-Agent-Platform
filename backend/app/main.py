@@ -143,6 +143,7 @@ from .agent_brain.repository import MissionRepository
 from .agent_brain.routes import MissionCursorCodec, build_agent_brain_router
 from .agent_catalog.routes import build_agent_catalog_router
 from .hr.repository import HrPositionRepository
+from .hr.context import HrPositionScope
 from .hr.routes import build_hr_position_router
 from .hr.service import HrPositionService
 from .local_secrets import read_secret_file
@@ -720,6 +721,7 @@ def create_app(
     fae_report_service=None,
     hr_position_service=None,
     agent_use_authorization=None,
+    hr_position_scope=None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
@@ -1234,11 +1236,18 @@ def create_app(
         and control_database_url is not None
         and agent_use_authorization is not None
     ):
-        hr_position_service = HrPositionService(
-            HrPositionRepository(control_database_url)
-        )
+        hr_position_repository = HrPositionRepository(control_database_url)
+        hr_position_service = HrPositionService(hr_position_repository)
+        hr_position_scope = HrPositionScope(hr_position_repository)
     app.state.hr_position_service = hr_position_service
+    app.state.hr_position_scope = hr_position_scope
     app.state.agent_use_authorization = agent_use_authorization
+    if (
+        artifact_output_service is not None
+        and hr_position_scope is not None
+        and callable(getattr(artifact_output_service, "set_position_linker", None))
+    ):
+        artifact_output_service.set_position_linker(hr_position_scope)
 
     if not identity_enabled:
         @app.get("/api/health")
@@ -1304,6 +1313,7 @@ def create_app(
                 session_revalidator=identity_auth.authenticate,
                 session_cookie_name=identity_auth.cookie_name,
                 brain_enabled=config.agent_brain_enabled,
+                hr_position_scope=hr_position_scope,
             )
         )
     if (

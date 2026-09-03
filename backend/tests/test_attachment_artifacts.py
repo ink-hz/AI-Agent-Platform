@@ -194,6 +194,40 @@ def test_artifact_write_verifies_declared_digest_before_finalize() -> None:
     assert writer.deleted == []
 
 
+def test_artifact_write_links_output_to_bound_position_scope() -> None:
+    repository = Repository()
+    writer = Writer(ObjectReceipt(len(CONTENT), DIGEST))
+
+    class PositionLinker:
+        def __init__(self):
+            self.calls = []
+
+        def link_artifact(self, owner_id, conversation_id, artifact_id):
+            self.calls.append((owner_id, conversation_id, artifact_id))
+
+    linker = PositionLinker()
+    service = ArtifactOutputService(
+        repository, writer, position_linker=linker
+    )
+
+    result = service.write(
+        "c" * 43, UPLOAD_ID, io.BytesIO(CONTENT), len(CONTENT)
+    )
+
+    assert linker.calls == [
+        (result.owner_id, result.conversation_id, result.artifact_id)
+    ]
+
+    replay = service.write(
+        "c" * 43, UPLOAD_ID, io.BytesIO(CONTENT), len(CONTENT)
+    )
+    assert replay.state == "validating"
+    assert linker.calls == [
+        (result.owner_id, result.conversation_id, result.artifact_id),
+        (replay.owner_id, replay.conversation_id, replay.artifact_id),
+    ]
+
+
 def test_digest_mismatch_abandons_attempt_and_removes_written_object() -> None:
     repository = Repository()
     writer = Writer(ObjectReceipt(len(CONTENT), hashlib.sha256(b"wrong").digest()))

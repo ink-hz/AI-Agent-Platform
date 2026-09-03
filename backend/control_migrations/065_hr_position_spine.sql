@@ -512,6 +512,43 @@ begin
 end
 $function$;
 
+create function platform_hr.attach_conversation_to_draft_v65(
+  selected_owner_internal_user_id uuid,
+  selected_draft_id uuid,
+  selected_conversation_id uuid,
+  client_request_id uuid
+) returns platform_hr.position_drafts
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.position_drafts%rowtype;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected from platform_hr.position_drafts
+  where draft_id=selected_draft_id
+    and owner_internal_user_id=selected_owner_internal_user_id for update;
+  if not found then raise no_data_found; end if;
+  if selected.source_conversation_id=selected_conversation_id then
+    return selected;
+  end if;
+  if selected.state<>'proposed' or selected.source_conversation_id is not null then
+    raise serialization_failure;
+  end if;
+  perform 1 from platform_control.conversations
+  where conversation_id=selected_conversation_id
+    and owner_internal_user_id=selected_owner_internal_user_id
+    and direct_agent_id='hr-bot';
+  if not found then raise no_data_found; end if;
+  update platform_hr.position_drafts set
+    source_conversation_id=selected_conversation_id,
+    row_version=row_version+1,updated_at=now()
+  where draft_id=selected_draft_id returning * into selected;
+  return selected;
+end
+$function$;
+
 create function platform_hr.correct_conversation_binding_v65(
   selected_owner_internal_user_id uuid,
   selected_conversation_id uuid,
@@ -605,6 +642,34 @@ begin
 end
 $function$;
 
+create function platform_hr.remove_material_v65(
+  selected_owner_internal_user_id uuid,
+  selected_position_id uuid,
+  selected_attachment_id uuid,
+  client_request_id uuid
+) returns platform_hr.position_materials
+language plpgsql security definer
+set search_path=pg_catalog,platform_hr
+as $function$
+declare selected platform_hr.position_materials%rowtype;
+begin
+  if session_user not in ('platform_control_app','platform_control_app_preview') then
+    raise insufficient_privilege;
+  end if;
+  select * into selected from platform_hr.position_materials
+  where owner_internal_user_id=selected_owner_internal_user_id
+    and position_id=selected_position_id
+    and attachment_id=selected_attachment_id for update;
+  if not found then raise no_data_found; end if;
+  if not selected.active then return selected; end if;
+  update platform_hr.position_materials set
+    active=false,updated_at=now()
+  where position_id=selected_position_id
+    and attachment_id=selected_attachment_id returning * into selected;
+  return selected;
+end
+$function$;
+
 create function platform_hr.link_artifact_v65(
   selected_owner_internal_user_id uuid,
   selected_position_id uuid,
@@ -658,10 +723,16 @@ revoke all on function platform_hr.dismiss_position_draft_v65(
 revoke all on function platform_hr.bind_conversation_v65(
   uuid,uuid,uuid,uuid,text
 ) from public;
+revoke all on function platform_hr.attach_conversation_to_draft_v65(
+  uuid,uuid,uuid,uuid
+) from public;
 revoke all on function platform_hr.correct_conversation_binding_v65(
   uuid,uuid,uuid,uuid,uuid,text
 ) from public;
 revoke all on function platform_hr.promote_material_v65(
+  uuid,uuid,uuid,uuid
+) from public;
+revoke all on function platform_hr.remove_material_v65(
   uuid,uuid,uuid,uuid
 ) from public;
 revoke all on function platform_hr.link_artifact_v65(
@@ -715,11 +786,19 @@ begin
     'uuid,uuid,uuid,uuid,text) to %I',selected_app
   );
   execute format(
+    'grant execute on function platform_hr.attach_conversation_to_draft_v65('
+    'uuid,uuid,uuid,uuid) to %I',selected_app
+  );
+  execute format(
     'grant execute on function platform_hr.correct_conversation_binding_v65('
     'uuid,uuid,uuid,uuid,uuid,text) to %I',selected_app
   );
   execute format(
     'grant execute on function platform_hr.promote_material_v65('
+    'uuid,uuid,uuid,uuid) to %I',selected_app
+  );
+  execute format(
+    'grant execute on function platform_hr.remove_material_v65('
     'uuid,uuid,uuid,uuid) to %I',selected_app
   );
   execute format(

@@ -90,6 +90,22 @@ class FakeService:
             previous_position_id=None, created_at=datetime.now(UTC),
         ))
 
+    def promote_material(self, owner_id, position_id, attachment_id, request_id):
+        self.calls.append(("promote_material", position_id, attachment_id))
+        now = datetime.now(UTC)
+        return SimpleNamespace(
+            position_id=position_id, attachment_id=attachment_id, active=True,
+            created_at=now, updated_at=now,
+        )
+
+    def remove_material(self, owner_id, position_id, attachment_id, request_id):
+        self.calls.append(("remove_material", position_id, attachment_id))
+        now = datetime.now(UTC)
+        return SimpleNamespace(
+            position_id=position_id, attachment_id=attachment_id, active=False,
+            created_at=now, updated_at=now,
+        )
+
 
 def _client(*, stale=False, authorization="allowed"):
     owner_id = uuid4()
@@ -177,6 +193,23 @@ def test_draft_commands_forward_versions_and_conversation_binding() -> None:
         json={}, headers={"Idempotency-Key": str(uuid4())},
     ).status_code == 200
     assert service.calls[-1][0] == "bind"
+
+
+def test_position_material_promotion_and_removal_are_explicit_mutations() -> None:
+    client, service, _ = _client()
+    position_id, attachment_id = service.position_record.position_id, uuid4()
+    path = f"/api/hr/positions/{position_id}/materials/{attachment_id}"
+    headers = {"Idempotency-Key": str(uuid4())}
+
+    promoted = client.post(path, json={}, headers=headers)
+    removed = client.delete(path, headers={"Idempotency-Key": str(uuid4())})
+
+    assert promoted.status_code == removed.status_code == 200
+    assert promoted.json()["active"] is True
+    assert removed.json()["active"] is False
+    assert [call[0] for call in service.calls] == [
+        "promote_material", "remove_material"
+    ]
 
 
 def test_repository_failures_have_stable_concealed_http_projection() -> None:

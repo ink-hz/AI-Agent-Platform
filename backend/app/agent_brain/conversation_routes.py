@@ -91,8 +91,12 @@ class ConversationTextBody(BaseModel):
     text: str = Field(default="", max_length=32768)
     attachment_ids: tuple[UUID, ...] = Field(default=(), max_length=5)
     active_attachment_ids: tuple[UUID, ...] = Field(default=(), max_length=50)
+    position_id: UUID | None = None
+    position_draft_id: UUID | None = None
 
-    @field_validator("attachment_ids", "active_attachment_ids", mode="before")
+    @field_validator(
+        "attachment_ids", "active_attachment_ids", mode="before"
+    )
     @classmethod
     def _tuple_ids(cls, value):
         if not isinstance(value, (list, tuple)):
@@ -102,8 +106,20 @@ class ConversationTextBody(BaseModel):
         except ValueError:
             return value
 
+    @field_validator("position_id", "position_draft_id", mode="before")
+    @classmethod
+    def _position_scope_ids(cls, value):
+        if isinstance(value, str):
+            try:
+                return UUID(value)
+            except ValueError:
+                return value
+        return value
+
     @model_validator(mode="after")
     def _normalized_submission(self) -> ConversationTextBody:
+        if self.position_id is not None and self.position_draft_id is not None:
+            raise ValueError("Conversation position scope is ambiguous")
         submission = ConversationTurnSubmission(
             self.text, self.attachment_ids, self.active_attachment_ids
         )
@@ -695,6 +711,7 @@ def build_conversation_router(
     max_streams_per_owner: int = 3,
     max_streams_per_conversation: int = 2,
     max_streams_global: int = 200,
+    hr_position_scope=None,
 ) -> APIRouter:
     if type(brain_enabled) is not bool:
         raise ValueError("Conversation Brain flag invalid")
@@ -750,8 +767,20 @@ def build_conversation_router(
         _ensure_writable(context)
         request_id = _parse_idempotency_key(idempotency_key)
         _validate_input_bytes(body.text)
+        if (
+            body.position_id is not None or body.position_draft_id is not None
+        ) and direct_agent_id != "hr-bot":
+            raise HTTPException(422, "conversation request invalid", headers=_NO_STORE)
         if direct_agent_id is not None:
             await require_direct_agent(context.internal_user_id, direct_agent_id)
+        if body.position_id is not None and not callable(
+            getattr(hr_position_scope, "bind_conversation", None)
+        ):
+            raise HTTPException(503, "HR position scope unavailable", headers=_NO_STORE)
+        if body.position_draft_id is not None and not callable(
+            getattr(hr_position_scope, "attach_draft_conversation", None)
+        ):
+            raise HTTPException(503, "HR position draft scope unavailable", headers=_NO_STORE)
         try:
             result = await asyncio.to_thread(
                 commands.start,
@@ -763,6 +792,44 @@ def build_conversation_router(
             )
         except ConversationRepositoryError as error:
             raise _repository_http_error(error) from None
+        if body.position_id is not None:
+            try:
+                await asyncio.to_thread(
+                    hr_position_scope.bind_conversation,
+                    context.internal_user_id,
+                    body.position_id,
+                    result.conversation.conversation_id,
+                    request_id,
+                )
+            except Exception as error:  # HR repository failures stay opaque here.
+                from app.hr.repository import HrConflict, HrNotFound, HrUnavailable
+
+                if isinstance(error, HrNotFound):
+                    raise HTTPException(404, "HR position not found", headers=_NO_STORE) from None
+                if isinstance(error, HrConflict):
+                    raise HTTPException(409, "HR position binding conflict", headers=_NO_STORE) from None
+                if isinstance(error, HrUnavailable):
+                    raise HTTPException(503, "HR position unavailable", headers=_NO_STORE) from None
+                raise
+        if body.position_draft_id is not None:
+            try:
+                await asyncio.to_thread(
+                    hr_position_scope.attach_draft_conversation,
+                    context.internal_user_id,
+                    body.position_draft_id,
+                    result.conversation.conversation_id,
+                    request_id,
+                )
+            except Exception as error:  # HR repository failures stay opaque here.
+                from app.hr.repository import HrConflict, HrNotFound, HrUnavailable
+
+                if isinstance(error, HrNotFound):
+                    raise HTTPException(404, "HR position draft not found", headers=_NO_STORE) from None
+                if isinstance(error, HrConflict):
+                    raise HTTPException(409, "HR position draft conflict", headers=_NO_STORE) from None
+                if isinstance(error, HrUnavailable):
+                    raise HTTPException(503, "HR position unavailable", headers=_NO_STORE) from None
+                raise
         response.status_code = 201 if result.created else 200
         response.headers.update(_NO_STORE)
         return _create_payload(result)

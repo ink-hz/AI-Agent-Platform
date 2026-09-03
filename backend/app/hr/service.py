@@ -12,9 +12,11 @@ from .models import (
     DismissPositionDraft,
     MergePositionDraft,
     PositionConversationBinding,
+    PositionMaterialRecord,
     PositionDraftRecord,
     PositionRecord,
     ProposePositionDraft,
+    PromotePositionMaterial,
 )
 from .repository import PositionPage
 
@@ -50,6 +52,13 @@ class PositionCommandRepository(Protocol):
         self, command: CorrectPositionConversationBinding
     ) -> PositionConversationBinding: ...
 
+    def promote_material(self, command: PromotePositionMaterial) -> PositionMaterialRecord: ...
+
+    def remove_material(
+        self, owner_id: UUID, position_id: UUID, attachment_id: UUID,
+        client_request_id: UUID,
+    ) -> PositionMaterialRecord: ...
+
 
 class HrPositionService:
     def __init__(
@@ -69,6 +78,8 @@ class HrPositionService:
             "dismiss_draft",
             "bind_conversation",
             "correct_conversation_binding",
+            "promote_material",
+            "remove_material",
         ):
             if not callable(getattr(repository, method, None)):
                 raise ValueError("HR position repository invalid")
@@ -224,4 +235,26 @@ class HrPositionService:
                 request_id,
                 reason,
             )
+        )
+
+    def promote_material(
+        self,
+        owner_id: UUID,
+        position_id: UUID,
+        attachment_id: UUID,
+        request_id: UUID,
+    ) -> PositionMaterialRecord:
+        return self._repository.promote_material(PromotePositionMaterial(
+            owner_id, position_id, attachment_id, request_id
+        ))
+
+    def remove_material(
+        self,
+        owner_id: UUID,
+        position_id: UUID,
+        attachment_id: UUID,
+        request_id: UUID,
+    ) -> PositionMaterialRecord:
+        return self._repository.remove_material(
+            owner_id, position_id, attachment_id, request_id
         )

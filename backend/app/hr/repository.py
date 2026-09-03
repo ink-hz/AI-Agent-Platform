@@ -19,6 +19,7 @@ from .models import (
     DismissPositionDraft,
     MergePositionDraft,
     PositionConversationBinding,
+    PositionMaterialRecord,
     PositionDetail,
     PositionDraftRecord,
     PositionRecord,
@@ -100,6 +101,18 @@ def _binding(row: dict[str, Any]) -> PositionConversationBinding:
         binding_kind=row["binding_kind"],
         previous_position_id=row["previous_position_id"],
         created_at=row["created_at"],
+    )
+
+
+def _material(row: dict[str, Any]) -> PositionMaterialRecord:
+    return PositionMaterialRecord(
+        owner_id=row["owner_internal_user_id"],
+        position_id=row["position_id"],
+        attachment_id=row["attachment_id"],
+        client_request_id=row["client_request_id"],
+        active=row["active"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
     )
 
 
@@ -358,6 +371,139 @@ class HrPositionRepository:
             raise HrNotFound("position or HR conversation not found") from None
         except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
             raise HrConflict("position conversation binding conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def position_for_conversation(
+        self, owner_id: UUID, conversation_id: UUID
+    ) -> UUID | None:
+        if not isinstance(owner_id, UUID) or not isinstance(conversation_id, UUID):
+            raise ValueError("position conversation identifiers required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select position_id from platform_hr.position_conversations "
+                    "where owner_internal_user_id=%s and conversation_id=%s",
+                    (owner_id, conversation_id),
+                ).fetchone()
+            return row["position_id"] if row is not None else None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def attach_conversation_to_draft(
+        self,
+        owner_id: UUID,
+        draft_id: UUID,
+        conversation_id: UUID,
+        client_request_id: UUID,
+    ) -> PositionDraftRecord:
+        if any(
+            not isinstance(value, UUID)
+            for value in (owner_id, draft_id, conversation_id, client_request_id)
+        ):
+            raise ValueError("position draft conversation identifiers required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.attach_conversation_to_draft_v65("
+                    "%s,%s,%s,%s)).*",
+                    (owner_id, draft_id, conversation_id, client_request_id),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("position draft conversation unavailable")
+            return _draft(row)
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position draft or HR conversation not found") from None
+        except psycopg.errors.SerializationFailure:
+            raise HrConflict("position draft conversation conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def link_artifact(
+        self,
+        owner_id: UUID,
+        position_id: UUID,
+        artifact_id: UUID,
+        client_request_id: UUID,
+    ) -> None:
+        if any(
+            not isinstance(value, UUID)
+            for value in (owner_id, position_id, artifact_id, client_request_id)
+        ):
+            raise ValueError("position artifact identifiers required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.link_artifact_v65(%s,%s,%s,%s)).*",
+                    (owner_id, position_id, artifact_id, client_request_id),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("position artifact link unavailable")
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position artifact not found") from None
+        except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
+            raise HrConflict("position artifact conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def promote_material(
+        self, command
+    ) -> PositionMaterialRecord:
+        from .models import PromotePositionMaterial
+
+        if not isinstance(command, PromotePositionMaterial):
+            raise ValueError("position material promotion required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.promote_material_v65(%s,%s,%s,%s)).*",
+                    (
+                        command.owner_id, command.position_id,
+                        command.attachment_id, command.client_request_id,
+                    ),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("position material unavailable")
+            return _material(row)
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position material source not found") from None
+        except (psycopg.errors.UniqueViolation, psycopg.errors.SerializationFailure):
+            raise HrConflict("position material conflict") from None
+        except (KeyError, TypeError, ValueError, psycopg.Error):
+            raise HrUnavailable("position repository unavailable") from None
+
+    def remove_material(
+        self,
+        owner_id: UUID,
+        position_id: UUID,
+        attachment_id: UUID,
+        client_request_id: UUID,
+    ) -> PositionMaterialRecord:
+        if any(not isinstance(value, UUID) for value in (
+            owner_id, position_id, attachment_id, client_request_id
+        )):
+            raise ValueError("position material identifiers required")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select (platform_hr.remove_material_v65(%s,%s,%s,%s)).*",
+                    (owner_id, position_id, attachment_id, client_request_id),
+                ).fetchone()
+            if row is None:
+                raise HrUnavailable("position material unavailable")
+            return _material(row)
+        except HrRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise HrNotFound("position material not found") from None
+        except psycopg.errors.SerializationFailure:
+            raise HrConflict("position material conflict") from None
         except (KeyError, TypeError, ValueError, psycopg.Error):
             raise HrUnavailable("position repository unavailable") from None
 

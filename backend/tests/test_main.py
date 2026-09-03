@@ -637,6 +637,7 @@ def test_create_app_registers_injected_hr_position_service(tmp_path):
     methods = (
         "list_positions", "position", "list_drafts", "propose_draft",
         "confirm_draft", "merge_draft", "dismiss_draft", "bind_conversation",
+        "promote_material", "remove_material",
     )
     service = SimpleNamespace(**{name: Mock() for name in methods})
     authorization = SimpleNamespace(
