@@ -148,6 +148,8 @@ class MemoryRepository:
         self.reconcile_unavailable = False
         self.cleanup_safe = True
         self.complete_calls = 0
+        self.abandon_calls = 0
+        self.abandon_unavailable = False
         self.attachment: AttachmentRecord | None = None
 
     def create_upload(self, owner_id, conversation_id, original_name, declared_mime, declared_size):
@@ -210,6 +212,12 @@ class MemoryRepository:
             raise RuntimeError("database unavailable")
         return self.attachment
 
+    def abandon_write(self, owner_id, upload_id, attempt_id):
+        self.upload_for_owner(owner_id, upload_id)
+        self.abandon_calls += 1
+        if self.abandon_unavailable:
+            raise RuntimeError("database unavailable with private token")
+
     def reconcile_write(self, owner_id, upload_id, attempt_id, actual_size, sha256):
         self.upload_for_owner(owner_id, upload_id)
         if self.reconcile_unavailable:
@@ -269,7 +277,28 @@ def test_service_rejects_declared_content_length_mismatch_before_write() -> None
     assert repository.complete_calls == 0
 
 
-def test_finalize_failure_deletes_object_and_same_upload_can_retry() -> None:
+def test_failed_object_write_with_unavailable_release_reports_retry_pending() -> None:
+    repository = MemoryRepository()
+    repository.abandon_unavailable = True
+    s3 = StreamingS3(fail_once=True)
+    service = AttachmentUploadService(
+        repository, AttachmentObjectWriter(s3, "private-attachments")
+    )
+
+    with pytest.raises(AttachmentUploadConflict, match="retry pending") as captured:
+        service.write(
+            repository.owner_id,
+            repository.upload.upload_id,
+            io.BytesIO(b"payload"),
+            7,
+        )
+
+    assert captured.value.__cause__ is None
+    assert "private token" not in str(captured.value)
+    assert repository.abandon_calls == 1
+
+
+def test_authoritatively_superseded_finalize_failure_deletes_only_its_object() -> None:
     repository = MemoryRepository()
     repository.finalize_fail_once = True
     s3 = StreamingS3()
@@ -284,18 +313,8 @@ def test_finalize_failure_deletes_object_and_same_upload_can_retry() -> None:
             io.BytesIO(b"payload"),
             7,
         )
-    result = service.write(
-        repository.owner_id,
-        repository.upload.upload_id,
-        io.BytesIO(b"payload"),
-        7,
-    )
-
-    assert result.state == "validating"
-    assert result.actual_size == 7
     assert s3.deletes == [("private-attachments", "objects/random-0")]
-    assert len(s3.puts) == 2
-    assert s3.puts[0][1] != s3.puts[1][1]
+    assert repository.abandon_calls == 0
 
 
 def test_ambiguous_post_commit_reconciles_without_deleting_canonical_object() -> None:
@@ -315,6 +334,7 @@ def test_ambiguous_post_commit_reconciles_without_deleting_canonical_object() ->
 
     assert result.state == "validating"
     assert s3.deletes == []
+    assert repository.abandon_calls == 0
 
 
 def test_unreadable_reconciliation_never_deletes_possibly_canonical_object() -> None:
@@ -336,6 +356,7 @@ def test_unreadable_reconciliation_never_deletes_possibly_canonical_object() -> 
 
     assert captured.value.__cause__ is None
     assert s3.deletes == []
+    assert repository.abandon_calls == 0
 
 
 def test_concurrent_writers_do_not_share_keys_or_delete_the_winner() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Barrier
@@ -26,6 +27,14 @@ from app.attachments.conversation_repository import (
     ConversationAttachmentRepository,
     attachment_name_subject,
     attachment_object_subject,
+)
+from app.attachments.object_writer import (
+    AttachmentObjectWriter,
+    AttachmentObjectWriterError,
+)
+from app.attachments.upload_service import (
+    AttachmentUploadConflict,
+    AttachmentUploadService,
 )
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec, SealedContent
@@ -257,6 +266,159 @@ def test_concurrent_write_claims_allow_exactly_one_active_attempt(
             "where upload_id=%s and state='claimed'",
             (upload.upload_id,),
         ).fetchone() == (1,)
+
+
+@pytest.mark.postgres
+def test_service_releases_failed_object_write_for_immediate_real_db_retry(
+    attachment_database,
+    repository,
+) -> None:
+    environment, owner_id, _other_owner_id, conversation_id = attachment_database
+    upload = repository.create_upload(
+        owner_id, conversation_id, "retry-now.pdf", "application/pdf", 7
+    )
+
+    class FailOnceS3:
+        def __init__(self) -> None:
+            self.fail_once = True
+            self.keys = []
+            self.deletes = []
+
+        def put_object(self, *, Bucket, Key, Body, ContentLength):
+            self.keys.append(Key)
+            while Body.read(1024 * 1024):
+                if self.fail_once:
+                    self.fail_once = False
+                    raise OSError("definite object write failure")
+            return {"ETag": "opaque"}
+
+        def delete_object(self, *, Bucket, Key):
+            self.deletes.append(Key)
+
+    s3 = FailOnceS3()
+    service = AttachmentUploadService(
+        repository, AttachmentObjectWriter(s3, "private-attachments")
+    )
+
+    with pytest.raises(AttachmentUploadConflict, match="object write failed"):
+        service.write(owner_id, upload.upload_id, io.BytesIO(b"payload"), 7)
+    completed = service.write(
+        owner_id, upload.upload_id, io.BytesIO(b"payload"), 7
+    )
+
+    assert completed.state == "validating"
+    assert len(s3.keys) == 2
+    assert s3.keys[0] != s3.keys[1]
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select state from platform_attachments.upload_write_attempts "
+            "where upload_id=%s order by created_at",
+            (upload.upload_id,),
+        ).fetchall() == [("abandoned",), ("canonical",)]
+
+
+@pytest.mark.postgres
+def test_orphan_cleanup_acknowledgement_pages_and_retries_failed_deletes(
+    attachment_database,
+    repository,
+) -> None:
+    environment, owner_id, _other_owner_id, conversation_id = attachment_database
+    seeded = []
+    with psycopg.connect(environment["admin"]) as admin:
+        admin.execute(
+            "update platform_attachments.upload_write_attempts set state='cleaned',"
+            "cleaned_at=now() where state <> 'canonical'"
+        )
+        for index in range(101):
+            attachment_id = uuid4()
+            upload_id = uuid4()
+            attempt_id = uuid4()
+            name = repository.content_codec.seal_json(
+                attachment_name_subject(attachment_id),
+                {"original_name": f"orphan-{index}.txt"},
+            )
+            object_ref = f"orphan-object-{index}"
+            object_value = repository.content_codec.seal_json(
+                attachment_object_subject(attachment_id, attempt_id),
+                {"object_ref": object_ref},
+            )
+            admin.execute(
+                "insert into platform_attachments.attachments("
+                "attachment_id,owner_internal_user_id,conversation_id,source_kind,"
+                "original_name_ciphertext,original_name_key_version,"
+                "object_ref_ciphertext,object_ref_key_version,declared_mime,size_bytes) "
+                "values (%s,%s,%s,'user_input',%s,%s,%s,%s,'text/plain',1)",
+                (
+                    attachment_id,
+                    owner_id,
+                    conversation_id,
+                    name.ciphertext,
+                    name.key_version,
+                    object_value.ciphertext,
+                    object_value.key_version,
+                ),
+            )
+            admin.execute(
+                "insert into platform_attachments.uploads("
+                "upload_id,attachment_id,owner_internal_user_id,conversation_id,"
+                "object_ref_ciphertext,object_ref_key_version,declared_mime,size_bytes,"
+                "write_attempt_id,write_lease_expires_at) "
+                "values (%s,%s,%s,%s,%s,%s,'text/plain',1,%s,"
+                "now()-interval '1 day'+(%s * interval '1 millisecond'))",
+                (
+                    upload_id,
+                    attachment_id,
+                    owner_id,
+                    conversation_id,
+                    object_value.ciphertext,
+                    object_value.key_version,
+                    attempt_id,
+                    index,
+                ),
+            )
+            admin.execute(
+                "insert into platform_attachments.upload_write_attempts("
+                "attempt_id,upload_id,attachment_id,owner_internal_user_id,"
+                "object_ref_ciphertext,object_ref_key_version,lease_expires_at,state) "
+                "values (%s,%s,%s,%s,%s,%s,"
+                "now()-interval '1 day'+(%s * interval '1 millisecond'),'superseded')",
+                (
+                    attempt_id,
+                    upload_id,
+                    attachment_id,
+                    owner_id,
+                    object_value.ciphertext,
+                    object_value.key_version,
+                    index,
+                ),
+            )
+            seeded.append((attempt_id, object_ref))
+
+    class RetryDeleteWriter:
+        def __init__(self) -> None:
+            self.failed = False
+            self.deleted = []
+
+        def delete(self, object_ref):
+            if object_ref == seeded[0][1] and not self.failed:
+                self.failed = True
+                raise AttachmentObjectWriterError("delete failed")
+            self.deleted.append(object_ref)
+
+    writer = RetryDeleteWriter()
+    service = AttachmentUploadService(repository, writer)
+
+    assert service.cleanup_orphaned_writes(limit=100) == 99
+    assert service.cleanup_orphaned_writes(limit=100) == 2
+    assert service.cleanup_orphaned_writes(limit=100) == 0
+    repository.acknowledge_orphaned_write(seeded[0][0])
+    assert set(writer.deleted) == {object_ref for _attempt_id, object_ref in seeded}
+    with psycopg.connect(environment["admin"]) as admin:
+        assert admin.execute(
+            "select count(*) from platform_attachments.upload_write_attempts "
+            "where attempt_id=any(%s) and state='cleaned' and cleaned_at is not null",
+            ([attempt_id for attempt_id, _object_ref in seeded],),
+        ).fetchone() == (101,)
 
 
 @pytest.mark.postgres

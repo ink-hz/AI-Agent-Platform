@@ -98,6 +98,14 @@ class AttachmentUploadService:
                 attempt.object_ref, body, content_length
             )
         except (AttachmentObjectWriterError, ValueError):
+            try:
+                self._repository.abandon_write(
+                    owner_id, upload_id, attempt.attempt_id
+                )
+            except Exception:  # noqa: BLE001 - keep uncertain attempt protected
+                raise AttachmentUploadConflict(
+                    "attachment object write failed; retry pending"
+                ) from None
             raise AttachmentUploadConflict("attachment object write failed") from None
         try:
             attachment = self._repository.complete_upload(
@@ -157,3 +165,32 @@ class AttachmentUploadService:
             return self._repository.completed_attachment(owner_id, upload_id)
         except Exception:  # noqa: BLE001 - expose only the service exception
             raise AttachmentUploadConflict("attachment upload incomplete") from None
+
+    def cleanup_orphaned_writes(self, *, limit: int = 100) -> int:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or limit <= 0
+            or limit > 100
+        ):
+            raise ValueError("orphan cleanup limit invalid")
+        try:
+            attempts = self._repository.list_orphaned_writes(limit=limit)
+        except Exception:  # noqa: BLE001 - expose only the service exception
+            raise AttachmentUploadConflict(
+                "attachment orphan cleanup unavailable"
+            ) from None
+        cleaned = 0
+        for attempt in attempts:
+            try:
+                self._object_writer.delete(attempt.object_ref)
+            except AttachmentObjectWriterError:
+                continue
+            try:
+                self._repository.acknowledge_orphaned_write(attempt.attempt_id)
+            except Exception:  # noqa: BLE001 - deletion is safe to retry
+                raise AttachmentUploadConflict(
+                    "attachment orphan cleanup acknowledgement unavailable"
+                ) from None
+            cleaned += 1
+        return cleaned

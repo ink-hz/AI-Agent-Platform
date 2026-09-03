@@ -94,7 +94,7 @@ create table platform_attachments.upload_write_attempts (
   object_ref_key_version integer not null check (object_ref_key_version > 0),
   lease_expires_at timestamptz not null,
   state text not null default 'claimed'
-    check (state in ('claimed','canonical','superseded','cleaned')),
+    check (state in ('claimed','canonical','superseded','abandoned','cleaned')),
   size_bytes bigint check (size_bytes is null or size_bytes >= 0),
   sha256 bytea check (sha256 is null or octet_length(sha256) = 32),
   created_at timestamptz not null default now(),
@@ -390,7 +390,7 @@ create index attachments_owner_created_v64
   on platform_attachments.attachments(owner_internal_user_id,created_at desc);
 create index upload_write_attempts_cleanup_v64
   on platform_attachments.upload_write_attempts(state,lease_expires_at,created_at)
-  where state in ('claimed','superseded');
+  where state in ('claimed','superseded','abandoned');
 create index bindings_conversation_kind_v64
   on platform_attachments.bindings(conversation_id,kind,created_at);
 create index bindings_attachment_kind_v64
@@ -543,16 +543,28 @@ begin
   then raise insufficient_privilege using message='Attachment upload creator invalid'; end if;
   if selected_upload_id is null or selected_attachment_id is null
      or selected_owner_internal_user_id is null
+     or selected_original_name_ciphertext is null
      or octet_length(selected_original_name_ciphertext) not between 29 and 1048576
+     or selected_original_name_key_version is null
      or selected_original_name_key_version <= 0
+     or selected_object_ref_ciphertext is null
      or octet_length(selected_object_ref_ciphertext) not between 29 and 1048576
+     or selected_object_ref_key_version is null
      or selected_object_ref_key_version <= 0
-     or selected_declared_mime is null or octet_length(selected_declared_mime) not between 1 and 255
-     or selected_size_bytes <= 0 or selected_size_bytes > selected_max_file_bytes
+     or selected_declared_mime is null
+     or octet_length(selected_declared_mime) not between 1 and 255
+     or selected_declared_mime <> btrim(selected_declared_mime)
+     or selected_declared_mime ~ '[[:space:]]'
+     or selected_declared_mime !~ '^[A-Za-z0-9!#$%&''*+.^_`|~-]+/[A-Za-z0-9!#$%&''*+.^_`|~-]+$'
+     or selected_size_bytes is null or selected_size_bytes <= 0
+     or selected_max_file_bytes is null
+     or selected_size_bytes > selected_max_file_bytes
      or selected_max_file_bytes <= 0 or selected_max_file_bytes > 52428800
+     or selected_max_conversation_files is null
      or selected_max_conversation_files <= 0 or selected_max_conversation_files > 50
+     or selected_max_conversation_bytes is null
      or selected_max_conversation_bytes <= 0 or selected_max_conversation_bytes > 524288000
-     or selected_expires_at <= now()
+     or selected_expires_at is null or selected_expires_at <= now()
      or selected_expires_at > now() + interval '24 hours'
   then raise check_violation using message='Attachment upload reservation invalid'; end if;
   if selected_conversation_id is null then
@@ -672,6 +684,49 @@ begin
 end
 $function$;
 
+create function platform_attachments.abandon_upload_write_v64(
+  selected_upload_id uuid,
+  selected_owner_internal_user_id uuid,
+  selected_write_attempt_id uuid
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare selected_attachment_id uuid;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Attachment upload abandoner invalid'; end if;
+  if selected_upload_id is null or selected_owner_internal_user_id is null
+     or selected_write_attempt_id is null
+  then raise check_violation using message='Attachment upload abandonment invalid'; end if;
+  select upload.attachment_id into selected_attachment_id
+  from platform_attachments.uploads upload
+  join platform_attachments.upload_write_attempts attempt
+    on attempt.attempt_id=upload.write_attempt_id
+   and attempt.upload_id=upload.upload_id
+   and attempt.attachment_id=upload.attachment_id
+   and attempt.owner_internal_user_id=upload.owner_internal_user_id
+   and attempt.object_ref_ciphertext=upload.object_ref_ciphertext
+   and attempt.object_ref_key_version=upload.object_ref_key_version
+   and attempt.state='claimed'
+  where upload.upload_id=selected_upload_id
+    and upload.owner_internal_user_id=selected_owner_internal_user_id
+    and upload.write_attempt_id=selected_write_attempt_id
+    and upload.state='uploading'
+  for update of upload,attempt;
+  if not found then raise no_data_found using message='Upload abandonment unavailable'; end if;
+  update platform_attachments.upload_write_attempts set state='abandoned'
+  where attempt_id=selected_write_attempt_id and state='claimed';
+  update platform_attachments.uploads set
+    write_attempt_id=null,write_lease_expires_at=null
+  where upload_id=selected_upload_id
+    and write_attempt_id=selected_write_attempt_id;
+  return selected_attachment_id;
+end
+$function$;
+
 create function platform_attachments.finalize_upload_v64(
   selected_upload_id uuid,
   selected_owner_internal_user_id uuid,
@@ -689,9 +744,11 @@ begin
      or session_user not in ('platform_control_app','platform_control_app_preview')
      or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
   then raise insufficient_privilege using message='Attachment upload caller invalid'; end if;
-  if selected_write_attempt_id is null or selected_declared_mime is null
-     or selected_size_bytes < 0
-     or octet_length(selected_sha256) <> 32
+  if selected_upload_id is null or selected_owner_internal_user_id is null
+     or selected_write_attempt_id is null or selected_declared_mime is null
+     or selected_size_bytes is null or selected_size_bytes < 0
+     or selected_size_bytes > 52428800
+     or selected_sha256 is null or octet_length(selected_sha256) <> 32
   then raise check_violation using message='Attachment upload result invalid'; end if;
   select upload.attachment_id into selected_attachment_id
   from platform_attachments.uploads upload
@@ -710,10 +767,12 @@ begin
    and attachment.object_ref_ciphertext=upload.object_ref_ciphertext
    and attachment.object_ref_key_version=upload.object_ref_key_version
    and attachment.declared_mime=upload.declared_mime
+   and attachment.size_bytes=upload.size_bytes
   where upload.upload_id=selected_upload_id
     and upload.owner_internal_user_id=selected_owner_internal_user_id
     and upload.write_attempt_id=selected_write_attempt_id
     and upload.declared_mime=selected_declared_mime
+    and upload.size_bytes=selected_size_bytes
     and upload.state='uploading' and upload.expires_at > now()
     and attachment.state='uploading'
   for update;
@@ -733,6 +792,43 @@ begin
     processing_job_id,attachment_id,job_kind
   ) values (gen_random_uuid(),selected_attachment_id,'validate');
   return selected_attachment_id;
+end
+$function$;
+
+create function platform_attachments.acknowledge_upload_write_cleanup_v64(
+  selected_write_attempt_id uuid
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare
+  selected_attempt_state text;
+  selected_upload_state text;
+  selected_upload_expires_at timestamptz;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Attachment cleanup acknowledger invalid'; end if;
+  if selected_write_attempt_id is null
+  then raise check_violation using message='Attachment cleanup acknowledgement invalid'; end if;
+  select attempt.state,upload.state,upload.expires_at
+    into selected_attempt_state,selected_upload_state,selected_upload_expires_at
+  from platform_attachments.upload_write_attempts attempt
+  join platform_attachments.uploads upload on upload.upload_id=attempt.upload_id
+  where attempt.attempt_id=selected_write_attempt_id
+  for update of attempt,upload;
+  if not found then raise no_data_found using message='Attachment cleanup unavailable'; end if;
+  if selected_attempt_state='cleaned' then return selected_write_attempt_id; end if;
+  if selected_attempt_state not in ('superseded','abandoned')
+     and not (selected_attempt_state='claimed'
+       and selected_upload_state='uploading'
+       and selected_upload_expires_at <= now())
+  then raise no_data_found using message='Attachment cleanup unavailable'; end if;
+  update platform_attachments.upload_write_attempts set
+    state='cleaned',cleaned_at=now()
+  where attempt_id=selected_write_attempt_id;
+  return selected_write_attempt_id;
 end
 $function$;
 
@@ -1520,8 +1616,10 @@ begin
     'bigint,integer,bigint), '
     'platform_attachments.claim_upload_write_v64('
     'uuid,uuid,uuid,bytea,integer,timestamptz), '
+    'platform_attachments.abandon_upload_write_v64(uuid,uuid,uuid), '
     'platform_attachments.finalize_upload_v64('
     'uuid,uuid,uuid,text,bigint,bytea), '
+    'platform_attachments.acknowledge_upload_write_cleanup_v64(uuid), '
     'platform_attachments.issue_task_grant_v64('
     'uuid,bytea,uuid,uuid,text,text,timestamptz,integer,bigint,integer,bigint), '
     'platform_attachments.revoke_task_grant_v64(uuid), '

@@ -440,6 +440,32 @@ class ConversationAttachmentRepository:
         except Exception as error:
             raise ConversationAttachmentRepositoryError() from error
 
+    def abandon_write(
+        self, owner_id: UUID, upload_id: UUID, attempt_id: UUID
+    ) -> None:
+        owner_id = _require_uuid(owner_id)
+        upload_id = _require_uuid(upload_id)
+        attempt_id = _require_uuid(attempt_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select platform_attachments.abandon_upload_write_v64("
+                    "%s,%s,%s) as attachment_id",
+                    (upload_id, owner_id, attempt_id),
+                ).fetchone()
+            if row is None or row["attachment_id"] is None:
+                raise ConversationAttachmentConflict(
+                    "attachment upload abandonment unavailable"
+                )
+        except ConversationAttachmentRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise ConversationAttachmentConflict(
+                "attachment upload abandonment unavailable"
+            ) from None
+        except Exception as error:
+            raise ConversationAttachmentRepositoryError() from error
+
     def complete_upload(
         self,
         owner_id: UUID,
@@ -549,7 +575,7 @@ class ConversationAttachmentRepository:
                 ).fetchone()
             if row is None:
                 return WriteReconciliation(None, cleanup_safe=False)
-            if row["attempt_state"] == "superseded":
+            if row["attempt_state"] in ("superseded", "abandoned"):
                 return WriteReconciliation(None, cleanup_safe=True)
             if (
                 row["attempt_state"] != "canonical"
@@ -603,8 +629,9 @@ class ConversationAttachmentRepository:
                     "from platform_attachments.upload_write_attempts attempt "
                     "join platform_attachments.uploads upload "
                     "on upload.upload_id=attempt.upload_id "
-                    "where attempt.state='superseded' or "
-                    "(attempt.state='claimed' and upload.expires_at <= now()) "
+                    "where attempt.state in ('superseded','abandoned') or "
+                    "(attempt.state='claimed' and upload.state='uploading' "
+                    "and upload.expires_at <= now()) "
                     "order by attempt.lease_expires_at,attempt.created_at "
                     "limit %s",
                     (limit,),
@@ -630,6 +657,28 @@ class ConversationAttachmentRepository:
             return tuple(result)
         except ConversationAttachmentRepositoryError:
             raise
+        except Exception as error:
+            raise ConversationAttachmentRepositoryError() from error
+
+    def acknowledge_orphaned_write(self, attempt_id: UUID) -> None:
+        attempt_id = _require_uuid(attempt_id)
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select platform_attachments."
+                    "acknowledge_upload_write_cleanup_v64(%s) as attempt_id",
+                    (attempt_id,),
+                ).fetchone()
+            if row is None or row["attempt_id"] != attempt_id:
+                raise ConversationAttachmentConflict(
+                    "attachment orphan acknowledgement unavailable"
+                )
+        except ConversationAttachmentRepositoryError:
+            raise
+        except psycopg.errors.NoDataFound:
+            raise ConversationAttachmentConflict(
+                "attachment orphan acknowledgement unavailable"
+            ) from None
         except Exception as error:
             raise ConversationAttachmentRepositoryError() from error
 
