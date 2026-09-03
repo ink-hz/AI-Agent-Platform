@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import hashlib
-import json
 from typing import Literal, Protocol
 from uuid import UUID
 
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.agent_brain.models import AgentCapabilityCard, load_capability_cards
-
 
 Availability = Literal["healthy", "degraded", "offline", "unknown", "unavailable"]
 
@@ -48,6 +47,7 @@ class RuntimeAgentSnapshot:
     max_duration_seconds: int
     supports_attachments_in: bool
     supports_attachments_out: bool
+    attachment_limits: dict[str, int] | None
     supports_evidence: bool
     supports_streaming: bool
     supports_cancellation: bool
@@ -284,6 +284,11 @@ class RuntimeAgentRegistry:
             max_duration_seconds=card.max_duration_seconds,
             supports_attachments_in=card.supports_attachments_in,
             supports_attachments_out=card.supports_attachments_out,
+            attachment_limits=(
+                card.attachment_limits.model_dump()
+                if card.attachment_limits is not None
+                else None
+            ),
             supports_evidence=card.supports_evidence,
             supports_streaming=card.supports_streaming,
             supports_cancellation=card.supports_cancellation,

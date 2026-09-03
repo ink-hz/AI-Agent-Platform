@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID, uuid4
 
 import psycopg
 from psycopg.rows import dict_row
 
-from .models import AuthContext, Role
 from .dsn import validate_control_dsn
-
+from .models import AuthContext, Role
 
 _AGENT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 
@@ -45,6 +44,7 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/conversations/{conversation_id}"),
     ("PATCH", "/api/v1/conversations/{conversation_id}"),
     ("GET", "/api/v1/conversations/{conversation_id}/messages"),
+    ("POST", "/api/v1/conversations/{conversation_id}/read-state"),
     ("POST", "/api/v1/conversations/{conversation_id}/messages"),
     ("GET", "/api/v1/conversations/{conversation_id}/events"),
     ("GET", "/api/v1/conversations/{conversation_id}/actions"),
@@ -52,8 +52,19 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("POST", "/api/v1/conversations/{conversation_id}/actions/{action_id}/reject"),
     ("POST", "/api/v1/conversations/{conversation_id}/turns/current/cancel"),
     ("POST", "/api/v1/conversations/{conversation_id}/turns/{turn_id}/retry"),
+    ("POST", "/api/v1/conversations/{conversation_id}/turns/{turn_id}/resume"),
     ("POST", "/api/v1/conversations/{conversation_id}/archive"),
     ("POST", "/api/v1/conversations/{conversation_id}/restore"),
+    ("POST", "/api/v1/attachments/uploads"),
+    ("PUT", "/api/v1/attachments/uploads/{upload_id}/content"),
+    ("POST", "/api/v1/attachments/uploads/{upload_id}/complete"),
+    ("DELETE", "/api/v1/attachments/uploads/{upload_id}"),
+    ("GET", "/api/v1/attachments/{attachment_id}"),
+    ("POST", "/api/v1/attachments/{attachment_id}/ticket"),
+    ("GET", "/api/v1/attachments/content/{ticket}"),
+    ("DELETE", "/api/v1/attachments/{attachment_id}"),
+    ("GET", "/api/v1/conversations/{conversation_id}/attachments"),
+    ("POST", "/api/v1/conversations/{conversation_id}/artifacts/download"),
     ("POST", "/api/v1/agents/{agent_id}/conversations"),
     ("POST", "/api/v1/messages/{message_id}/feedback"),
     ("POST", "/api/v1/extensions/voc/drafts"),
@@ -129,6 +140,15 @@ _PARTNER_OWNER_ROUTES = frozenset({
         "POST",
         "/api/v1/manage/partners/binding-requests/{request_id}/reject",
     ),
+    ("GET", "/api/review/conversation-feedback"),
+    ("PATCH", "/api/review/conversation-feedback/{feedback_id}"),
+    ("GET", "/api/review/conversations/{conversation_id}/attachments"),
+    ("POST", "/api/review/attachments/{attachment_id}/ticket"),
+})
+
+_CONVERSATION_REVIEW_MUTATION_ROUTES = frozenset({
+    ("PATCH", "/api/review/conversation-feedback/{feedback_id}"),
+    ("POST", "/api/review/attachments/{attachment_id}/ticket"),
 })
 
 def _fae_routes(prefix: str) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
@@ -292,6 +312,7 @@ class AuthorizationService:
                 route_template.startswith("/api/review/")
                 or key in _FAE_WORKBENCH_MUTATION_ROUTES
             )
+            and key not in _CONVERSATION_REVIEW_MUTATION_ROUTES
             and selected_method not in {"GET", "HEAD", "OPTIONS"}
         ):
             return self._deny(403, "cloud_review_read_only")

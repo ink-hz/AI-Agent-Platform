@@ -315,7 +315,7 @@ def _runtime(repository, response=None, *, registry=None, model=None):
 
 
 @pytest.mark.postgres
-def test_real_hr_version_two_creates_task(
+def test_real_hr_version_three_creates_task(
     loop_database, loop_repository, seeded_loop
 ) -> None:
     environment, *_unused = loop_database
@@ -323,7 +323,7 @@ def test_real_hr_version_two_creates_task(
 
     assert _runtime(
         loop_repository,
-        _delegate_response(agent_id="hr-bot", capability_version=2),
+        _delegate_response(agent_id="hr-bot", capability_version=3),
         registry=_real_hr_registry(),
     ).advance_one() is True
 
@@ -333,7 +333,7 @@ def test_real_hr_version_two_creates_task(
             "where loop_id=%s",
             (loop_id,),
         ).fetchone()
-    assert task == ("hr-bot", 2)
+    assert task == ("hr-bot", 3)
 
 
 @pytest.mark.postgres
@@ -353,7 +353,7 @@ def test_real_registry_list_agents_returns_public_capability_version(
     agents = result["agents"]
     assert isinstance(agents, list)
     assert agents[0]["agent_id"] == "hr-bot"
-    assert agents[0]["capability_version"] == 2
+    assert agents[0]["capability_version"] == 3
     assert "grant_ids" not in agents[0]
     assert "directory_generation_id" not in agents[0]
     assert "effective_decision_hash" not in agents[0]
@@ -375,7 +375,7 @@ def test_stale_hr_version_returns_capability_changed_without_task(
     assert _tool_results(loop_repository, loop_id)[-1] == {
         "status": "rejected",
         "reason": "capability_changed",
-        "current_capability_version": 2,
+        "current_capability_version": 3,
         "must_call_list_agents": True,
     }
     with psycopg.connect(environment["admin"]) as connection:
@@ -407,7 +407,7 @@ def test_second_capability_mismatch_stops_dispatch_intent(
     assert _tool_results(loop_repository, loop_id)[-1] == {
         "status": "rejected",
         "reason": "capability_version_unstable",
-        "current_capability_version": 2,
+        "current_capability_version": 3,
         "must_call_list_agents": False,
     }
     with psycopg.connect(environment["admin"]) as connection:
@@ -434,13 +434,13 @@ def test_same_batch_second_capability_mismatch_stops_dispatch_intent(
         {
             "status": "rejected",
             "reason": "capability_changed",
-            "current_capability_version": 2,
+            "current_capability_version": 3,
             "must_call_list_agents": True,
         },
         {
             "status": "rejected",
             "reason": "capability_version_unstable",
-            "current_capability_version": 2,
+            "current_capability_version": 3,
             "must_call_list_agents": False,
         },
     ]
@@ -466,14 +466,14 @@ def test_same_batch_success_resets_historical_capability_mismatch(
     ).advance_one() is True
     assert _runtime(
         loop_repository,
-        _hr_delegate_batch_response(2, 1),
+        _hr_delegate_batch_response(3, 1),
         registry=registry,
     ).advance_one() is True
 
     assert _ready_tool_results(loop_repository, environment, loop_id)[-1] == {
         "status": "rejected",
         "reason": "capability_changed",
-        "current_capability_version": 2,
+        "current_capability_version": 3,
         "must_call_list_agents": True,
     }
     with psycopg.connect(environment["admin"]) as connection:
@@ -481,7 +481,7 @@ def test_same_batch_success_resets_historical_capability_mismatch(
             "select agent_id,capability_version from platform_brain.agent_tasks "
             "where loop_id=%s",
             (loop_id,),
-        ).fetchall() == [("hr-bot", 2)]
+        ).fetchall() == [("hr-bot", 3)]
 
 
 @pytest.mark.postgres

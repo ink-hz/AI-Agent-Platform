@@ -48,7 +48,7 @@ class ReconciliationReceipt:
 
 
 class MetaBotLocalAdapter(AgentAdapter):
-    """Reliable Core Chat v3 bridge to local MetaBot professional Agents.
+    """Reliable Core Chat v3/v4 bridge to local MetaBot professional Agents.
 
     Enqueue is idempotent on the Brain task id.  A successful dispatch is not
     a completed task; the cloud reconciler consumes relay events separately.
@@ -61,7 +61,7 @@ class MetaBotLocalAdapter(AgentAdapter):
         supports_progress_events=True,
         supports_thinking_summary=True,
         supports_cancel=True,
-        supports_attachments=False,
+        supports_attachments=True,
         typical_latency_seconds=90,
     )
 
@@ -102,7 +102,6 @@ class MetaBotLocalAdapter(AgentAdapter):
         *,
         task: AdapterTask | None = None,
     ) -> MessageDeliveryReceipt:
-        del task
         try:
             task_id, loop_id, agent_id = self._session_parts(child_session_id)
         except (TypeError, ValueError):
@@ -122,7 +121,9 @@ class MetaBotLocalAdapter(AgentAdapter):
             prompt=message.text,
             max_turns=24,
             job_kind="metabot_local",
-            collaboration_contract="core_chat_collaboration_v3",
+            collaboration_contract=self._contract_for_task(
+                task or self._tasks_by_session.get(child_session_id)
+            ),
             task_session_id=child_session_id,
             message_kind="followup",
             message_seq=message.seq,
@@ -161,7 +162,6 @@ class MetaBotLocalAdapter(AgentAdapter):
         *,
         task: AdapterTask | None = None,
     ) -> StopDeliveryReceipt:
-        del task
         try:
             task_id, loop_id, agent_id = self._session_parts(child_session_id)
         except (TypeError, ValueError):
@@ -176,7 +176,9 @@ class MetaBotLocalAdapter(AgentAdapter):
             prompt=reason,
             max_turns=24,
             job_kind="metabot_local",
-            collaboration_contract="core_chat_collaboration_v3",
+            collaboration_contract=self._contract_for_task(
+                task or self._tasks_by_session.get(child_session_id)
+            ),
             task_session_id=child_session_id,
             message_kind="stop",
             message_seq=1,
@@ -212,10 +214,12 @@ class MetaBotLocalAdapter(AgentAdapter):
             ),
             max_turns=24,
             job_kind="metabot_local",
-            collaboration_contract="core_chat_collaboration_v3",
+            collaboration_contract=self._contract_for_task(task),
             task_session_id=self._session_id(task),
             message_kind="initial",
             message_seq=1,
+            input_attachment_grants=task.input_attachment_grants,
+            output_write_grant=task.output_write_grant,
         )
         self._enqueue(payload)
         return DispatchReceipt(
@@ -228,6 +232,14 @@ class MetaBotLocalAdapter(AgentAdapter):
         return agent_id != "agent-brain-bot" and self._relay.has_active_worker(
             agent_id, freshness_seconds=self._worker_freshness_seconds
         )
+
+    @staticmethod
+    def _contract_for_task(task: AdapterTask | None) -> str:
+        if task is not None and (
+            task.input_attachment_grants or task.output_write_grant is not None
+        ):
+            return "core_chat_collaboration_v4"
+        return "core_chat_collaboration_v3"
 
     def _enqueue(self, payload: RelayJobPayload) -> bool:
         try:
@@ -378,6 +390,13 @@ def _event_summary(payload: dict[str, object], status: str | None) -> str:
     result = payload.get("result")
     if (
         isinstance(result, dict)
+        and result.get("contractVersion") == "core_chat_collaboration_v4"
+    ):
+        public_answer = result.get("publicAnswerMarkdown")
+        if isinstance(public_answer, str) and public_answer.strip():
+            return public_answer[:32768]
+    if (
+        isinstance(result, dict)
         and result.get("contractVersion") == "core_chat_result_v2"
         and result.get("success") is True
     ):
@@ -404,7 +423,19 @@ def _string_items(payload: dict[str, object], key: str) -> tuple[str, ...]:
 
 
 def _attachment_refs(payload: dict[str, object]) -> tuple[UUID, ...]:
-    value = payload.get("attachment_refs")
+    nested = payload.get("result")
+    if (
+        isinstance(nested, dict)
+        and nested.get("contractVersion") == "core_chat_collaboration_v4"
+        and isinstance(nested.get("artifacts"), list)
+    ):
+        value = [
+            item.get("attachmentId")
+            for item in nested["artifacts"][:32]
+            if isinstance(item, dict) and item.get("status") == "ready"
+        ]
+    else:
+        value = payload.get("attachment_refs")
     if not isinstance(value, list):
         return ()
     result: list[UUID] = []

@@ -83,6 +83,15 @@ describe("Executive Operations visual contract", () => {
     }
   });
 
+  it("renders HR as a calm full-height recruiting workspace instead of a card dashboard", () => {
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"]')).toContain("grid-template-columns: 252px minmax(0, 1fr)");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .brain-workspace-main')).toContain("background: #f4f7f5");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-workspace-grid')).toContain("grid-template-columns: minmax(0, 1fr) 296px");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-page')).toContain("max-width: 920px");
+    expect(rule('.agent-use-workspace[data-agent-id="hr-bot"] .conversation-composer')).toContain("bottom: 0");
+    expect(styles).toContain('@media (max-width: 1260px)');
+  });
+
   it("keeps compact FAE workbench navigation in one keyboard-scrollable row", () => {
     const compact = block("@media (max-width: 900px)");
     expect(compact).toContain(".fae-workbench__sidebar nav { display: flex; flex-wrap: nowrap; overflow-x: auto; }");

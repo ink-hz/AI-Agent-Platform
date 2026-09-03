@@ -4,6 +4,7 @@ import json
 import time
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 from app.agent_brain.adapters.base import (
     AdapterDelivery,
@@ -45,6 +46,10 @@ from app.agent_brain.tool_protocol import (
     SubmitAnswerCall,
     ToolLimits,
     parse_tool_batch,
+)
+from app.execution_relay.models import (
+    OutputWriteGrantPayload,
+    TaskAttachmentGrantPayload,
 )
 
 _LEASE_RENEW_INTERVAL_SECONDS = 15.0
@@ -90,6 +95,7 @@ class BrainLoopRuntime:
         lease_seconds: int,
         context_policy: BrainContextPolicy | None = None,
         action_commands: object | None = None,
+        attachment_grants: object | None = None,
     ) -> None:
         self._repository = repository
         self._model = model
@@ -102,6 +108,7 @@ class BrainLoopRuntime:
         self._context_policy = context_policy or BrainContextPolicy()
         self._collaboration = repository.collaboration_repository()
         self._action_commands = action_commands
+        self._attachment_grants = attachment_grants
 
     def expire_actions(self) -> int:
         expire = getattr(self._action_commands, "expire", None)
@@ -131,6 +138,19 @@ class BrainLoopRuntime:
                 return True
         persisted_messages = self._repository.reconstruct_messages(lease.loop_id)
         messages = self._context_policy.build_brain_context(persisted_messages).messages
+        active_attachment_ids = self._repository.active_attachment_ids_for_loop(
+            lease.loop_id
+        )
+        ready_artifact_ids = tuple(
+            getattr(
+                self._repository,
+                "ready_artifact_ids_for_loop",
+                lambda _loop_id: (),
+            )(lease.loop_id)
+        )
+        allowed_attachment_refs = frozenset(
+            (*active_attachment_ids, *ready_artifact_ids)
+        )
         owned_task_ids = self._repository.task_ids_for_loop(lease.loop_id)
         active_task_ids = self._repository.active_session_task_ids(lease.loop_id)
         forced = (
@@ -227,6 +247,7 @@ class BrainLoopRuntime:
                     max_parallel_tasks=max(1, min(4, loop.max_tasks - loop.task_count)),
                     allowed_task_ids=owned_task_ids,
                     active_task_ids=active_task_ids,
+                    allowed_attachment_refs=allowed_attachment_refs,
                 ),
             )
             if forced and batch.kind != "submit_answer":
@@ -271,6 +292,7 @@ class BrainLoopRuntime:
                         ),
                         allowed_task_ids=owned_task_ids,
                         active_task_ids=active_task_ids,
+                        allowed_attachment_refs=allowed_attachment_refs,
                     ),
                 )
             except ProviderRefused:
@@ -420,7 +442,8 @@ class BrainLoopRuntime:
                             "objective": parsed.call.objective,
                             **json.loads(
                                 self._context_policy.build_task_context(
-                                    parsed.call
+                                    parsed.call,
+                                    active_attachment_ids=active_attachment_ids,
                                 ).serialized
                             ),
                         },
@@ -430,6 +453,9 @@ class BrainLoopRuntime:
             call = batch.calls[0].call
             assert isinstance(call, SubmitAnswerCall)
             pending_actions = self._repository.pending_action_ids(lease.loop_id)
+            invalid_artifact_refs = not set(call.attachment_refs).issubset(
+                ready_artifact_ids
+            )
             immediate.append(
                 ImmediateToolResult(
                     0,
@@ -440,6 +466,12 @@ class BrainLoopRuntime:
                             "required_next_action": "await_agent_events",
                         }
                         if pending_actions
+                        else {
+                            "status": "rejected",
+                            "reason": "result_file_not_ready",
+                            "required_next_action": "await_agent_events",
+                        }
+                        if invalid_artifact_refs
                         else {"status": "accepted"}
                     ),
                 )
@@ -550,6 +582,44 @@ class BrainLoopRuntime:
         if lease is None:
             return False
         adapter = self._adapters.require(lease.adapter_kind)
+        input_attachment_grants: tuple[TaskAttachmentGrantPayload, ...] = ()
+        output_write_grant: OutputWriteGrantPayload | None = None
+        if (
+            self._attachment_grants is not None
+            and adapter.capabilities.supports_attachments
+        ):
+            attachment_ids: list[UUID] = []
+            raw_attachment_refs = lease.context.get("attachment_refs", [])
+            if isinstance(raw_attachment_refs, list):
+                for raw_attachment_id in raw_attachment_refs:
+                    try:
+                        attachment_id = UUID(raw_attachment_id)
+                    except (AttributeError, TypeError, ValueError):
+                        continue
+                    if attachment_id not in attachment_ids:
+                        attachment_ids.append(attachment_id)
+            input_attachment_grants = tuple(
+                TaskAttachmentGrantPayload.model_validate(
+                    asdict(
+                        self._attachment_grants.issue_attachment(
+                            lease.task_id,
+                            attachment_id,
+                            lease.agent_id,
+                            expires_at=lease.effective_deadline_at,
+                        )
+                    )
+                )
+                for attachment_id in attachment_ids
+            )
+            output_write_grant = OutputWriteGrantPayload.model_validate(
+                asdict(
+                    self._attachment_grants.issue_output(
+                        lease.task_id,
+                        lease.agent_id,
+                        expires_at=lease.effective_deadline_at,
+                    )
+                )
+            )
         task = AdapterTask(
             task_id=lease.task_id,
             loop_id=lease.loop_id,
@@ -560,6 +630,8 @@ class BrainLoopRuntime:
             context=lease.context,
             effective_deadline_at=lease.effective_deadline_at,
             requester_subject=lease.requester_subject,
+            input_attachment_grants=input_attachment_grants,
+            output_write_grant=output_write_grant,
         )
         delivery = AdapterDelivery(
             delivery_id=lease.delivery_id,
@@ -671,6 +743,40 @@ class BrainLoopRuntime:
                     event_type = "finding"
                 elif event.kind == "error":
                     event_type = "failed"
+                if event_type == "result":
+                    nested_result = event.payload.get("result")
+                    artifact_values = (
+                        nested_result.get("artifacts")
+                        if isinstance(nested_result, dict)
+                        and nested_result.get("contractVersion")
+                        == "core_chat_collaboration_v4"
+                        else None
+                    )
+                    if isinstance(artifact_values, list) and artifact_values:
+                        try:
+                            artifact_state = (
+                                self._attachment_grants.classify_result_artifacts(
+                                    selected.task_id,
+                                    selected.agent_id,
+                                    tuple(
+                                        dict(value)
+                                        for value in artifact_values
+                                        if isinstance(value, dict)
+                                    ),
+                                )
+                                if self._attachment_grants is not None
+                                else "invalid"
+                            )
+                        except Exception:
+                            artifact_state = "invalid"
+                        if artifact_state == "pending":
+                            self._repository.touch_adapter_session(selected.task_id)
+                            return changed
+                        if artifact_state != "ready":
+                            self._repository.fail_agent_task_protocol(
+                                selected.task_id
+                            )
+                            return True
                 outcome = self._collaboration.append_task_event_and_wake(
                     AgentTaskPublicEventInput(
                         task_id=selected.task_id,

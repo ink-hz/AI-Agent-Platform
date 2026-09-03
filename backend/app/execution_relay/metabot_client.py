@@ -106,12 +106,7 @@ def _read_secret_file(path: Path) -> str:
             if size > _OWNER_FILE_LIMIT:
                 raise ValueError
         secret = b"".join(chunks).decode("utf-8").strip()
-        if (
-            not secret
-            or "\x00" in secret
-            or "\r" in secret
-            or "\n" in secret
-        ):
+        if not secret or "\x00" in secret or "\r" in secret or "\n" in secret:
             raise ValueError
     except (OSError, UnicodeError, TypeError, ValueError):
         failed = True
@@ -285,7 +280,12 @@ class MetaBotClient:
                 if payload.message_kind == "stop":
                     raise ValueError
                 with self._client() as client:
-                    self._assert_collaboration_v3(client, port, payload.agent_id)
+                    self._assert_collaboration_contract(
+                        client,
+                        port,
+                        payload.agent_id,
+                        payload.collaboration_contract,
+                    )
                 request_json = {
                     "contractVersion": payload.collaboration_contract,
                     "runId": str(payload.run_id),
@@ -304,6 +304,17 @@ class MetaBotClient:
                     ),
                     "resultMode": payload.result_mode,
                 }
+                if payload.collaboration_contract == "core_chat_collaboration_v4":
+                    request_json["inputAttachmentGrants"] = [
+                        grant.model_dump(mode="json", by_alias=True)
+                        for grant in payload.input_attachment_grants
+                    ]
+                    if payload.output_write_grant is not None:
+                        request_json["outputWriteGrant"] = (
+                            payload.output_write_grant.model_dump(
+                                mode="json", by_alias=True
+                            )
+                        )
             elif payload.requester_subject is not None:
                 request_json["requesterSubject"] = payload.requester_subject.model_dump(
                     mode="json"
@@ -320,9 +331,7 @@ class MetaBotClient:
                     json=request_json,
                 )
             allowed_statuses = (
-                {200, 202}
-                if payload.collaboration_contract is not None
-                else {202}
+                {200, 202} if payload.collaboration_contract is not None else {202}
             )
             if response.status_code not in allowed_statuses:
                 raise ValueError
@@ -344,18 +353,23 @@ class MetaBotClient:
             raise MetaBotClientError(_REQUEST_FAILED) from None
 
     @staticmethod
-    def _assert_collaboration_v3(
-        client: httpx.Client, port: int, agent_id: str
+    def _assert_collaboration_contract(
+        client: httpx.Client,
+        port: int,
+        agent_id: str,
+        contract: str,
     ) -> None:
-        response = client.get(f"http://127.0.0.1:{port}/api/core-chat/capabilities")
+        response = client.get(
+            f"http://127.0.0.1:{port}/api/core-chat/capabilities",
+            params={"contract": contract},
+        )
         if response.status_code != 200:
             raise ValueError
         result = response.json()
         if (
             not isinstance(result, dict)
             or not isinstance(result.get("contracts"), dict)
-            or result["contracts"].get("collaboration")
-            != "core_chat_collaboration_v3"
+            or result["contracts"].get("collaboration") != contract
             or not isinstance(result.get("agents"), list)
         ):
             raise ValueError
@@ -367,11 +381,18 @@ class MetaBotClient:
             ),
             None,
         )
-        capabilities = selected.get("capabilities") if isinstance(selected, dict) else None
+        capabilities = (
+            selected.get("capabilities") if isinstance(selected, dict) else None
+        )
         if (
             not isinstance(capabilities, dict)
-            or capabilities.get("collaboration") != "core_chat_collaboration_v3"
+            or capabilities.get("collaboration") != contract
             or capabilities.get("thinkingSummary") != "provider"
+        ):
+            raise ValueError
+        if contract == "core_chat_collaboration_v4" and any(
+            capabilities.get(name) is not True
+            for name in ("inputAttachments", "outputArtifacts", "citations")
         ):
             raise ValueError
 
@@ -390,8 +411,7 @@ class MetaBotClient:
             if (
                 not isinstance(result, dict)
                 or not isinstance(result.get("contracts"), dict)
-                or result["contracts"].get("coreChatResult")
-                != "core_chat_result_v2"
+                or result["contracts"].get("coreChatResult") != "core_chat_result_v2"
             ):
                 raise ValueError
         except Exception:

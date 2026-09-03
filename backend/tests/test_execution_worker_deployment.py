@@ -3860,9 +3860,10 @@ def _cloud_keyring_installer_environment(tmp_path: Path):
         'PLATFORM_ROOT = Path("/opt/orbbec-agent-platform")',
         f"PLATFORM_ROOT = Path({str(platform)!r})",
     )
+    staging = tmp_path / "data" / "staging" / "orbbec-agent-platform"
     source = source.replace(
         'STAGING_ROOT = Path("/data/staging/orbbec-agent-platform")',
-        f"STAGING_ROOT = Path({str(platform / 'staging')!r})",
+        f"STAGING_ROOT = Path({str(staging)!r})",
     )
     remote = tmp_path / "remote-stage.sh"
     ready = tmp_path / "cutover-ready"
@@ -3918,7 +3919,7 @@ def _cloud_keyring_installer_environment(tmp_path: Path):
         "state": private / "execution-worker-key-rotation-state.json",
         "deploy_state": private / "execution-worker-keyring-deploy-state.json",
         "lock": private / "execution-worker-key-rotation.lock",
-        "staged": platform / "staging" / deployment_id / "execution-worker-public-keyring.json",
+        "staged": staging / deployment_id / "execution-worker-public-keyring.json",
         "ready": ready,
         "release": release,
         "deployment_id": deployment_id,

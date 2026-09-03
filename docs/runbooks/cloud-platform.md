@@ -903,3 +903,9 @@ must pass before real Session data is considered available or current.
 5. 回退时先停止 AI ADMIN 新通知准备，确认没有依赖解析器的可认领发送，再用 base Compose
    配置重建这两个服务，使 feature flag 恢复为 0。保留 migration 058、059 和目录数据，不删除表；
    重新核对两个目标容器与公开页面状态。
+
+# HR conversation attachment boundary
+
+The HR workspace's private upload/download path is operated separately from the legacy Flywheel attachment API. Production keeps `PLATFORM_ATTACHMENT_ENABLED=0` and enables `PLATFORM_CONVERSATION_ATTACHMENT_ENABLED=1`. MinIO, ClamAV, and the attachment worker have no public listener; growing data is bind-mounted below `/data/orbbec-agent-platform`.
+
+Use [conversation-attachments.md](conversation-attachments.md) for credential rotation, 365-day retention, emergency erasure, object/database reconciliation, backup/restore, and feature rollback. This deployment must not change another application's routes or shared edge configuration.

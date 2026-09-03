@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
 from app.agent_brain.conversation_repository import ConversationRepositoryError
+from app.attachments.download_service import DownloadError
+from app.control_plane.models import Role
 
 from .http_models import (
     AddEvidence,
@@ -30,8 +32,15 @@ from .repository import (
 )
 from .service import ReviewUnavailable
 
-
 router = APIRouter(prefix="/api/review", tags=["review"])
+
+
+class ConversationFeedbackTriage(StrictModel):
+    triage_status: Literal["triaged", "dismissed"]
+
+
+class ConversationAttachmentTicket(StrictModel):
+    purpose: Literal["preview", "download"]
 
 
 def review_actor(
@@ -65,6 +74,88 @@ def _conversation_repository(request: Request):
     if repository is None:
         raise HTTPException(503, "conversation feedback unavailable")
     return repository
+
+
+def _platform_owner(request: Request) -> UUID:
+    context = getattr(request.state, "auth_context", None)
+    if context is None:
+        raise HTTPException(401, "authentication required")
+    if context.role is not Role.PLATFORM_OWNER:
+        raise HTTPException(403, "platform owner required")
+    return context.internal_user_id
+
+
+def _conversation_download_service(request: Request):
+    service = getattr(request.app.state, "conversation_attachment_download_service", None)
+    if service is None:
+        raise HTTPException(503, "conversation attachment unavailable")
+    return service
+
+
+def _citation_payload(item) -> dict[str, object]:
+    return {
+        "citation_key": item.citation_key,
+        "title": item.title,
+        "url": item.url,
+        "site": item.site,
+        "retrieved_at": item.retrieved_at.isoformat(),
+        "supports": list(item.supports),
+    }
+
+
+def _feedback_payload(item) -> dict[str, object]:
+    feedback = getattr(item, "feedback", item)
+    payload: dict[str, object] = {
+        "feedback_id": str(feedback.feedback_id),
+        "conversation_id": str(feedback.conversation_id),
+        "message_id": str(feedback.message_id),
+        "turn_id": str(feedback.turn_id),
+        "mission_id": str(feedback.mission_id) if feedback.mission_id else None,
+        "rating": feedback.rating,
+        "reason": feedback.reason,
+        "comment": feedback.comment,
+        "triage_status": getattr(feedback, "triage_status", None),
+        "triaged_by_internal_user_id": (
+            str(feedback.triaged_by_internal_user_id)
+            if getattr(feedback, "triaged_by_internal_user_id", None)
+            else None
+        ),
+        "triaged_at": (
+            feedback.triaged_at.isoformat()
+            if getattr(feedback, "triaged_at", None)
+            else None
+        ),
+        "created_at": feedback.created_at.isoformat(),
+    }
+    if hasattr(item, "question"):
+        payload.update({
+            "agent_id": item.agent_id,
+            "conversation_title": item.conversation_title,
+            "question": item.question,
+            "answer": item.answer,
+            "citations": [_citation_payload(citation) for citation in item.citations],
+        })
+    return payload
+
+
+def _review_attachment_payload(item) -> dict[str, object]:
+    attachment = item.attachment
+    return {
+        "attachment_id": str(attachment.attachment_id),
+        "conversation_id": str(attachment.conversation_id),
+        "source": attachment.source,
+        "display_name": attachment.display_name,
+        "detected_mime": attachment.detected_mime,
+        "size_bytes": attachment.size_bytes,
+        "state": attachment.state,
+        "created_at": attachment.created_at.isoformat(),
+        "retained_until": attachment.retained_until.isoformat(),
+        "processing_coverage": attachment.processing_coverage,
+        "availability_reason": attachment.availability_reason,
+        "artifact_key": item.artifact_key,
+        "version_no": item.version_no,
+        "current": item.current,
+    }
 
 
 async def _invoke(awaitable):
@@ -136,37 +227,82 @@ async def turn_summaries(
 @router.get("/conversation-feedback")
 async def conversation_feedback(
     request: Request,
+    triage_status: Literal["pending_triage", "triaged", "dismissed"] | None = None,
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
+    _platform_owner(request)
     try:
         items, total = await asyncio.to_thread(
-            _conversation_repository(request).list_feedback,
-            limit,
-            offset,
+            _conversation_repository(request).list_feedback_for_review,
+            triage_status=triage_status,
+            limit=limit,
+            offset=offset,
         )
     except HTTPException:
         raise
     except ConversationRepositoryError:
         raise HTTPException(503, "conversation feedback unavailable") from None
     return {
-        "items": [
-            {
-                "feedback_id": str(item.feedback_id),
-                "conversation_id": str(item.conversation_id),
-                "message_id": str(item.message_id),
-                "turn_id": str(item.turn_id),
-                "mission_id": str(item.mission_id) if item.mission_id else None,
-                "rating": item.rating,
-                "reason": item.reason,
-                "comment": item.comment,
-                "created_at": item.created_at.isoformat(),
-            }
-            for item in items
-        ],
+        "items": [_feedback_payload(item) for item in items],
         "total": total,
         "limit": limit,
         "offset": offset,
+    }
+
+
+@router.patch("/conversation-feedback/{feedback_id}")
+async def triage_conversation_feedback(
+    feedback_id: UUID,
+    payload: ConversationFeedbackTriage,
+    request: Request,
+):
+    actor_id = _platform_owner(request)
+    try:
+        item = await asyncio.to_thread(
+            _conversation_repository(request).triage_feedback,
+            actor_id,
+            feedback_id,
+            payload.triage_status,
+        )
+    except ConversationRepositoryError:
+        raise HTTPException(503, "conversation feedback unavailable") from None
+    return _feedback_payload(item)
+
+
+@router.get("/conversations/{conversation_id}/attachments")
+async def review_conversation_attachments(conversation_id: UUID, request: Request):
+    _platform_owner(request)
+    try:
+        items = await asyncio.to_thread(
+            _conversation_repository(request).review_conversation_attachments,
+            conversation_id,
+        )
+    except ConversationRepositoryError:
+        raise HTTPException(503, "conversation attachment unavailable") from None
+    return [_review_attachment_payload(item) for item in items]
+
+
+@router.post("/attachments/{attachment_id}/ticket")
+async def review_attachment_ticket(
+    attachment_id: UUID,
+    payload: ConversationAttachmentTicket,
+    request: Request,
+):
+    actor_id = _platform_owner(request)
+    try:
+        ticket = await asyncio.to_thread(
+            _conversation_download_service(request).issue_review_ticket,
+            actor_id,
+            attachment_id,
+            payload.purpose,
+        )
+    except DownloadError:
+        raise HTTPException(404, "attachment unavailable") from None
+    return {
+        "ticket": ticket.ticket,
+        "expires_at": ticket.expires_at.isoformat(),
+        "content_path": ticket.content_path,
     }
 
 

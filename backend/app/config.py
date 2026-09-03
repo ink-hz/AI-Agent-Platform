@@ -8,6 +8,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from .control_plane.crypto import IdentityCryptoError, IdentityKeyring
+from .control_plane.dsn import validate_control_dsn
 from .control_plane.models import ControlPlaneConfig, IdentityMode
 from .control_plane.partner_provider import (
     partner_provider_registered,
@@ -58,10 +59,20 @@ class Config:
     operations_execution_interval_seconds: float
     operations_lifecycle_interval_seconds: float
     attachment_enabled: bool
+    conversation_attachment_enabled: bool
     attachment_s3_endpoint: str
     attachment_s3_bucket: str
     attachment_s3_access_key_file: str
     attachment_s3_secret_key_file: str
+    attachment_control_database_url_file: str
+    attachment_upload_ttl_seconds: int
+    attachment_max_file_bytes: int
+    attachment_max_message_files: int
+    attachment_max_message_bytes: int
+    attachment_max_conversation_files: int
+    attachment_max_conversation_bytes: int
+    attachment_max_task_output_files: int
+    attachment_max_task_output_bytes: int
     attachment_ticket_seconds: int
     trusted_attachment_proxy: bool
     replica_database_url_file: str
@@ -140,22 +151,57 @@ def _mode_0600_secret(path: str) -> str:
         raise RuntimeError("attachment secret files must use mode 0600") from error
 
 
+_INLINE_ATTACHMENT_STORAGE_CREDENTIALS = (
+    "PLATFORM_ATTACHMENT_S3_ACCESS_KEY",
+    "PLATFORM_ATTACHMENT_S3_SECRET_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_ACCESS_KEY",
+    "AWS_SECRET_KEY",
+    "AWS_SECURITY_TOKEN",
+)
+
+
 def _validate_attachment_config(config: Config) -> None:
-    if not config.attachment_enabled:
+    if not (config.attachment_enabled or config.conversation_attachment_enabled):
         return
     endpoint = urlparse(config.attachment_s3_endpoint)
     if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
         raise RuntimeError("attachment S3 endpoint must be a loopback URL")
-    if not _loopback(endpoint.hostname):
-        raise RuntimeError("attachment S3 endpoint must be loopback")
+    if not _loopback(endpoint.hostname) and endpoint.hostname != "platform-minio":
+        raise RuntimeError("attachment S3 endpoint must be loopback or private storage")
     if config.attachment_s3_bucket != "orbbec-agent-attachments":
         raise RuntimeError("attachment S3 bucket must be orbbec-agent-attachments")
+    if any(name in os.environ for name in _INLINE_ATTACHMENT_STORAGE_CREDENTIALS):
+        raise RuntimeError(
+            "attachment S3 credentials must use mode 0600 secret files"
+        )
     _mode_0600_secret(config.attachment_s3_access_key_file)
     _mode_0600_secret(config.attachment_s3_secret_key_file)
+    if os.getenv("PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL"):
+        raise RuntimeError(
+            "attachment Control DB credentials must use a mode 0600 file"
+        )
+    _validate_private_file(
+        config.attachment_control_database_url_file,
+        "Attachment Control DB DSN",
+    )
+    try:
+        control_database_url = read_secret_file(
+            config.attachment_control_database_url_file
+        )
+        validate_control_dsn(control_database_url, purpose="app")
+    except (SecretFileUnavailable, ValueError) as error:
+        raise RuntimeError(
+            "attachment access requires the platform_control_app DSN"
+        ) from error
     if not config.trusted_attachment_proxy and not _loopback(config.host):
         raise RuntimeError(
             "non-loopback Platform host requires a trusted attachment proxy"
         )
+    if not config.attachment_enabled:
+        return
     if config.flywheel_database_url:
         raise RuntimeError(
             "attachment database credentials must use a mode 0600 file"
@@ -211,6 +257,16 @@ def _positive_environment_int(name: str, default: int) -> int:
         raise ValueError(f"{name} must be an integer") from None
     if value <= 0:
         raise ValueError(f"{name} must be positive")
+    return value
+
+
+def _bounded_attachment_int(name: str, default: int, ceiling: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an integer") from None
+    if value <= 0 or value > ceiling:
+        raise ValueError(f"{name} must be between 1 and {ceiling}")
     return value
 
 
@@ -849,6 +905,9 @@ def load_config() -> Config:
             os.getenv("PLATFORM_OPERATIONS_LIFECYCLE_INTERVAL", "600")
         ),
         attachment_enabled=_enabled("PLATFORM_ATTACHMENT_ENABLED"),
+        conversation_attachment_enabled=_enabled(
+            "PLATFORM_CONVERSATION_ATTACHMENT_ENABLED"
+        ),
         attachment_s3_endpoint=os.getenv(
             "PLATFORM_ATTACHMENT_S3_ENDPOINT", "http://127.0.0.1:9000"
         ),
@@ -862,6 +921,34 @@ def load_config() -> Config:
         attachment_s3_secret_key_file=os.getenv(
             "PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE",
             str(DEFAULT_SECRETS_DIR / "attachment-s3-secret-key"),
+        ),
+        attachment_control_database_url_file=os.getenv(
+            "PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE",
+            str(DEFAULT_SECRETS_DIR / "platform-control-app-database-url"),
+        ),
+        attachment_upload_ttl_seconds=_bounded_attachment_int(
+            "PLATFORM_ATTACHMENT_UPLOAD_TTL_SECONDS", 24 * 60 * 60, 24 * 60 * 60
+        ),
+        attachment_max_file_bytes=_bounded_attachment_int(
+            "PLATFORM_ATTACHMENT_MAX_FILE_BYTES", 50 * 1024 * 1024, 50 * 1024 * 1024
+        ),
+        attachment_max_message_files=_bounded_attachment_int(
+            "PLATFORM_ATTACHMENT_MAX_MESSAGE_FILES", 5, 5
+        ),
+        attachment_max_message_bytes=_bounded_attachment_int(
+            "PLATFORM_ATTACHMENT_MAX_MESSAGE_BYTES", 50 * 1024 * 1024, 50 * 1024 * 1024
+        ),
+        attachment_max_conversation_files=_bounded_attachment_int(
+            "PLATFORM_ATTACHMENT_MAX_CONVERSATION_FILES", 50, 50
+        ),
+        attachment_max_conversation_bytes=_bounded_attachment_int(
+            "PLATFORM_ATTACHMENT_MAX_CONVERSATION_BYTES", 500 * 1024 * 1024, 500 * 1024 * 1024
+        ),
+        attachment_max_task_output_files=_bounded_attachment_int(
+            "PLATFORM_ATTACHMENT_MAX_TASK_OUTPUT_FILES", 20, 20
+        ),
+        attachment_max_task_output_bytes=_bounded_attachment_int(
+            "PLATFORM_ATTACHMENT_MAX_TASK_OUTPUT_BYTES", 250 * 1024 * 1024, 250 * 1024 * 1024
         ),
         attachment_ticket_seconds=int(
             os.getenv("PLATFORM_ATTACHMENT_TICKET_SECONDS", "300")

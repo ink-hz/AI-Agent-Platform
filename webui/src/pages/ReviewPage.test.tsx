@@ -68,7 +68,7 @@ it("shows the original and latest replay answer without force close", async () =
   expect(container.textContent).not.toContain("强制关闭");
   expect([...container.querySelectorAll("button")].some((button) => /关闭事项/.test(button.textContent || ""))).toBe(false);
   const paths = vi.mocked(fetch).mock.calls.map(([path]) => String(path));
-  expect(paths.filter((path) => path.includes("/api/review/")).every((path) => path.includes("agent_id=ai-fae-agent") || path.includes("/issues/issue-1"))).toBe(true);
+  expect(paths.filter((path) => path.includes("/api/review/")).every((path) => path.includes("agent_id=ai-fae-agent") || path.includes("/issues/issue-1") || path.includes("/conversation-feedback"))).toBe(true);
 });
 
 

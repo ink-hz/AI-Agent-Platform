@@ -13,14 +13,24 @@ agents:
     adapter_kind: metabot_local
     execution_pool: metabot_local
     pool_concurrency: 1
+    accepted_input_types: [text, image, pdf, office]
+    output_types: [text, image, pdf, office]
+    supports_attachments_in: true
+    supports_attachments_out: true
+    attachment_limits:
+      max_file_bytes: 52428800
+      max_files_per_message: 5
+      max_bytes_per_message: 52428800
+      max_files_per_conversation: 50
+      max_bytes_per_conversation: 524288000
     supports_persistent_session: true
     supports_followup_message: true
     supports_progress_events: true
     supports_thinking_summary: true
     supports_cancel: true
-    supports_attachments: false
+    supports_attachments: true
     typical_latency_seconds: 90
-    capability_version: 2
+    capability_version: 3
 
   - agent_id: voc
     display_name: VOC 洞察助手

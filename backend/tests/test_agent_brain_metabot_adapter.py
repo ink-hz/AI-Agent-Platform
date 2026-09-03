@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from app.agent_brain.adapters.base import AdapterDelivery, AdapterTask
 from app.agent_brain.adapters.metabot_local import MetaBotLocalAdapter
-from app.execution_relay.models import RelayEvent, RequesterSubject
+from app.execution_relay.models import (
+    OutputWriteGrantPayload,
+    RelayEvent,
+    RequesterSubject,
+    TaskAttachmentGrantPayload,
+)
 from app.execution_relay.repository import ExecutionRelayConflict, RelayJobState
-
 
 TASK_ID = UUID("00000000-0000-4000-8000-000000000701")
 LOOP_ID = UUID("00000000-0000-4000-8000-000000000702")
@@ -41,7 +46,9 @@ class FakeRelay:
             created_at=NOW,
             updated_at=NOW,
             lease_expires_at=None,
-            terminal_at=NOW if self.status in {"completed", "failed", "cancelled", "interrupted"} else None,
+            terminal_at=NOW
+            if self.status in {"completed", "failed", "cancelled", "interrupted"}
+            else None,
             database_now=NOW,
             job_kind="metabot_local",
         )
@@ -74,6 +81,35 @@ def _task() -> AdapterTask:
     )
 
 
+def _task_with_attachment_grants() -> AdapterTask:
+    attachment_id = UUID("00000000-0000-4000-8000-000000000706")
+    return replace(
+        _task(),
+        input_attachment_grants=(
+            TaskAttachmentGrantPayload(
+                attachment_id=attachment_id,
+                display_name="candidate.pdf",
+                detected_mime="application/pdf",
+                size_bytes=1024,
+                sha256_hex="a" * 64,
+                download_url=(
+                    f"/api/v1/execution-worker/attachments/{attachment_id}/content"
+                ),
+                bearer_token="A" * 43,
+                expires_at=NOW + timedelta(minutes=15),
+            ),
+        ),
+        output_write_grant=OutputWriteGrantPayload(
+            task_id=TASK_ID,
+            agent_id="hr-bot",
+            upload_url=(f"/api/v1/execution-worker/tasks/{TASK_ID}/artifacts"),
+            bearer_token="B" * 43,
+            max_files=8,
+            max_total_bytes=50 * 1024 * 1024,
+        ),
+    )
+
+
 def _delivery() -> AdapterDelivery:
     return AdapterDelivery(
         delivery_id=UUID("00000000-0000-4000-8000-000000000704"),
@@ -101,8 +137,23 @@ def test_metabot_adapter_replay_enqueues_one_relay_job() -> None:
     assert "requester_subject" not in relay.payloads[0].prompt
 
 
+def test_metabot_adapter_uses_v4_only_for_task_scoped_attachment_grants() -> None:
+    relay = FakeRelay()
+    adapter = MetaBotLocalAdapter(relay, worker_freshness_seconds=60)
+
+    receipt = adapter.dispatch(_task_with_attachment_grants(), _delivery())
+
+    assert receipt.accepted is True
+    assert relay.payloads[0].collaboration_contract == "core_chat_collaboration_v4"
+    assert len(relay.payloads[0].input_attachment_grants) == 1
+    assert relay.payloads[0].output_write_grant is not None
+    assert "A" * 43 not in repr(relay.payloads[0])
+
+
 def test_metabot_adapter_returns_fast_unavailable_when_worker_is_offline() -> None:
-    adapter = MetaBotLocalAdapter(FakeRelay(available=False), worker_freshness_seconds=60)
+    adapter = MetaBotLocalAdapter(
+        FakeRelay(available=False), worker_freshness_seconds=60
+    )
 
     receipt = adapter.dispatch(_task(), _delivery())
 

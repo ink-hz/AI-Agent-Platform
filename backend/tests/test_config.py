@@ -3,7 +3,6 @@ import json
 import os
 
 import pytest
-
 from app.config import load_config
 from app.control_plane.models import IdentityMode
 
@@ -265,10 +264,28 @@ def test_review_writer_config_defaults(monkeypatch) -> None:
 
 ATTACHMENT_ENV = (
     "PLATFORM_ATTACHMENT_ENABLED",
+    "PLATFORM_CONVERSATION_ATTACHMENT_ENABLED",
     "PLATFORM_ATTACHMENT_S3_ENDPOINT",
     "PLATFORM_ATTACHMENT_S3_BUCKET",
     "PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE",
     "PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE",
+    "PLATFORM_ATTACHMENT_S3_ACCESS_KEY",
+    "PLATFORM_ATTACHMENT_S3_SECRET_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_ACCESS_KEY",
+    "AWS_SECRET_KEY",
+    "AWS_SECURITY_TOKEN",
+    "PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE",
+    "PLATFORM_ATTACHMENT_UPLOAD_TTL_SECONDS",
+    "PLATFORM_ATTACHMENT_MAX_FILE_BYTES",
+    "PLATFORM_ATTACHMENT_MAX_MESSAGE_FILES",
+    "PLATFORM_ATTACHMENT_MAX_MESSAGE_BYTES",
+    "PLATFORM_ATTACHMENT_MAX_CONVERSATION_FILES",
+    "PLATFORM_ATTACHMENT_MAX_CONVERSATION_BYTES",
+    "PLATFORM_ATTACHMENT_MAX_TASK_OUTPUT_FILES",
+    "PLATFORM_ATTACHMENT_MAX_TASK_OUTPUT_BYTES",
     "PLATFORM_ATTACHMENT_TICKET_SECONDS",
     "PLATFORM_TRUSTED_ATTACHMENT_PROXY",
 )
@@ -281,38 +298,55 @@ def test_attachment_defaults_are_disabled_and_need_no_secret_files(monkeypatch) 
     config = load_config()
 
     assert config.attachment_enabled is False
+    assert config.conversation_attachment_enabled is False
     assert config.attachment_s3_bucket == "orbbec-agent-attachments"
     assert config.attachment_ticket_seconds == 300
+    assert config.attachment_upload_ttl_seconds == 24 * 60 * 60
+    assert config.attachment_max_file_bytes == 50 * 1024 * 1024
+    assert config.attachment_max_message_files == 5
+    assert config.attachment_max_message_bytes == 50 * 1024 * 1024
+    assert config.attachment_max_conversation_files == 50
+    assert config.attachment_max_conversation_bytes == 500 * 1024 * 1024
+    assert config.attachment_max_task_output_files == 20
+    assert config.attachment_max_task_output_bytes == 250 * 1024 * 1024
     assert config.trusted_attachment_proxy is False
 
 
 def _enable_attachments(monkeypatch, tmp_path, *, host="127.0.0.1"):
+    for name in ATTACHMENT_ENV:
+        monkeypatch.delenv(name, raising=False)
     access = tmp_path / "s3-access"
     secret = tmp_path / "s3-secret"
     analyst = tmp_path / "flywheel-analyst-database-url"
+    control = tmp_path / "platform-control-app-database-url"
     access.write_text("archive-access", encoding="utf-8")
     secret.write_text("archive-secret", encoding="utf-8")
     analyst.write_text(
         "postgresql://flywheel_analyst:db-secret@127.0.0.1/flywheel",
         encoding="utf-8",
     )
-    for path in (access, secret, analyst):
+    control.write_text(
+        "postgresql://platform_control_app:db-secret@127.0.0.1/agent_platform_control",
+        encoding="utf-8",
+    )
+    for path in (access, secret, analyst, control):
         path.chmod(0o600)
     monkeypatch.setenv("PLATFORM_ATTACHMENT_ENABLED", "1")
     monkeypatch.setenv("PLATFORM_ATTACHMENT_S3_ENDPOINT", "http://127.0.0.1:9000")
     monkeypatch.setenv("PLATFORM_ATTACHMENT_S3_BUCKET", "orbbec-agent-attachments")
     monkeypatch.setenv("PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE", str(access))
     monkeypatch.setenv("PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE", str(secret))
+    monkeypatch.setenv("PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE", str(control))
     monkeypatch.setenv("PLATFORM_FLYWHEEL_DATABASE_URL_FILE", str(analyst))
     monkeypatch.delenv("PLATFORM_FLYWHEEL_DATABASE_URL", raising=False)
     monkeypatch.setenv("PLATFORM_HOST", host)
-    return access, secret, analyst
+    return access, secret, analyst, control
 
 
 def test_enabled_attachment_config_accepts_loopback_and_mode_0600_files(
     monkeypatch, tmp_path
 ) -> None:
-    access, secret, _analyst = _enable_attachments(monkeypatch, tmp_path)
+    access, secret, _analyst, control = _enable_attachments(monkeypatch, tmp_path)
 
     config = load_config()
 
@@ -320,8 +354,27 @@ def test_enabled_attachment_config_accepts_loopback_and_mode_0600_files(
     assert config.attachment_s3_endpoint == "http://127.0.0.1:9000"
     assert config.attachment_s3_access_key_file == str(access)
     assert config.attachment_s3_secret_key_file == str(secret)
+    assert config.attachment_control_database_url_file == str(control)
     assert "archive-access" not in repr(config)
     assert "archive-secret" not in repr(config)
+
+
+def test_conversation_attachment_config_accepts_exact_private_storage_without_flywheel(
+    monkeypatch, tmp_path
+) -> None:
+    access, secret, _analyst, control = _enable_attachments(monkeypatch, tmp_path)
+    monkeypatch.setenv("PLATFORM_ATTACHMENT_ENABLED", "0")
+    monkeypatch.setenv("PLATFORM_CONVERSATION_ATTACHMENT_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_ATTACHMENT_S3_ENDPOINT", "http://platform-minio:9000")
+    monkeypatch.setenv("PLATFORM_FLYWHEEL_DATABASE_URL_FILE", str(tmp_path / "absent"))
+
+    config = load_config()
+
+    assert config.attachment_enabled is False
+    assert config.conversation_attachment_enabled is True
+    assert config.attachment_s3_access_key_file == str(access)
+    assert config.attachment_s3_secret_key_file == str(secret)
+    assert config.attachment_control_database_url_file == str(control)
 
 
 @pytest.mark.parametrize(
@@ -338,6 +391,11 @@ def test_enabled_attachment_config_accepts_loopback_and_mode_0600_files(
         (lambda monkeypatch, paths: paths[2].write_text(
             "postgresql://admin:secret@127.0.0.1/flywheel", encoding="utf-8"
         ), "analyst"),
+        (lambda monkeypatch, paths: os.chmod(paths[3], 0o644), "0600"),
+        (lambda monkeypatch, paths: paths[3].write_text(
+            "postgresql://platform_control_owner:secret@127.0.0.1/agent_platform_control",
+            encoding="utf-8",
+        ), "platform_control_app"),
     ],
 )
 def test_enabled_attachment_config_rejects_unsafe_storage_or_database(
@@ -377,6 +435,68 @@ def test_enabled_attachments_reject_inline_database_credentials(
     )
 
     with pytest.raises(RuntimeError, match="mode 0600"):
+        load_config()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "PLATFORM_ATTACHMENT_S3_ACCESS_KEY",
+        "PLATFORM_ATTACHMENT_S3_SECRET_KEY",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_ACCESS_KEY",
+        "AWS_SECRET_KEY",
+        "AWS_SECURITY_TOKEN",
+    ],
+)
+def test_enabled_attachments_reject_inline_or_ambient_s3_credentials(
+    monkeypatch, tmp_path, name
+) -> None:
+    _enable_attachments(monkeypatch, tmp_path)
+    monkeypatch.setenv(name, "inline-storage-secret")
+
+    with pytest.raises(RuntimeError, match="secret files"):
+        load_config()
+
+
+def test_enabled_attachments_rejects_declared_empty_ambient_credentials(
+    monkeypatch, tmp_path
+) -> None:
+    _enable_attachments(monkeypatch, tmp_path)
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "")
+
+    with pytest.raises(RuntimeError, match="secret files"):
+        load_config()
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("PLATFORM_ATTACHMENT_UPLOAD_TTL_SECONDS", "0"),
+        ("PLATFORM_ATTACHMENT_MAX_FILE_BYTES", str(50 * 1024 * 1024 + 1)),
+        ("PLATFORM_ATTACHMENT_MAX_MESSAGE_FILES", "6"),
+        ("PLATFORM_ATTACHMENT_MAX_MESSAGE_BYTES", str(50 * 1024 * 1024 + 1)),
+        ("PLATFORM_ATTACHMENT_MAX_CONVERSATION_FILES", "51"),
+        (
+            "PLATFORM_ATTACHMENT_MAX_CONVERSATION_BYTES",
+            str(500 * 1024 * 1024 + 1),
+        ),
+        ("PLATFORM_ATTACHMENT_MAX_TASK_OUTPUT_FILES", "21"),
+        (
+            "PLATFORM_ATTACHMENT_MAX_TASK_OUTPUT_BYTES",
+            str(250 * 1024 * 1024 + 1),
+        ),
+    ],
+)
+def test_attachment_limits_fail_closed_above_hard_caps_or_nonpositive(
+    monkeypatch, tmp_path, name, value
+) -> None:
+    _enable_attachments(monkeypatch, tmp_path)
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValueError, match=name):
         load_config()
 
 

@@ -827,3 +827,47 @@ async def test_platform_lifespan_and_health_start_while_operations_baseline_bloc
             await lifespan.__aexit__(None, None, None)
 
     assert baseline_cleaned.is_set()
+
+
+def test_injected_conversation_attachment_services_register_v1_routes(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("PLATFORM_ATTACHMENT_ENABLED", "0")
+    registry = tmp_path / "conversation-registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "conversation-contract.json"
+    contract.write_text('{"bots": []}', encoding="utf-8")
+    uploads, downloads = object(), object()
+    grants, artifacts, citations = object(), object(), object()
+
+    app = create_app(
+        registry_path=str(registry),
+        cluster_contract_path=str(contract),
+        start_poller=False,
+        conversation_attachment_upload_service=uploads,
+        conversation_attachment_download_service=downloads,
+        task_attachment_grant_service=grants,
+        artifact_output_service=artifacts,
+        citation_service=citations,
+    )
+
+    assert app.state.conversation_attachment_upload_service is uploads
+    assert app.state.conversation_attachment_download_service is downloads
+    assert app.state.task_attachment_grant_service is grants
+    assert app.state.artifact_output_service is artifacts
+    assert app.state.citation_service is citations
+    routes = [
+        context
+        for route in app.router.routes
+        for context in (
+            route.effective_route_contexts()
+            if callable(getattr(route, "effective_route_contexts", None))
+            else (route,)
+        )
+    ]
+    assert "/api/v1/attachments/uploads" in {
+        route.path for route in routes if hasattr(route, "path")
+    }
+    assert "/api/v1/execution-worker/tasks/{task_id}/artifacts" in {
+        route.path for route in routes if hasattr(route, "path")
+    }

@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: platform_owner
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres-owner-password
     volumes:
-      - platform-postgres-data:/var/lib/postgresql/data
+      - /data/orbbec-agent-platform/postgres:/var/lib/postgresql/data
       - platform-postgres-secrets:/run/secrets:ro
     networks:
       platform-internal:
@@ -57,6 +57,12 @@ services:
       PLATFORM_FLYWHEEL_ENABLED: "0"
       PLATFORM_REVIEW_ENABLED: "0"
       PLATFORM_ATTACHMENT_ENABLED: "0"
+      PLATFORM_CONVERSATION_ATTACHMENT_ENABLED: "1"
+      PLATFORM_ATTACHMENT_S3_ENDPOINT: http://platform-minio:9000
+      PLATFORM_ATTACHMENT_S3_BUCKET: orbbec-agent-attachments
+      PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE: /run/secrets/attachment-s3-access-key
+      PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE: /run/secrets/attachment-s3-secret-key
+      PLATFORM_ATTACHMENT_CONTROL_DATABASE_URL_FILE: /run/secrets/control-database-url
       PLATFORM_TRUSTED_PROXY_CIDRS: "172.30.0.3/32"
       PLATFORM_IDENTITY_MODE: production
       PLATFORM_PUBLIC_BASE_URL: https://agent.orbbec.com.cn
@@ -111,12 +117,132 @@ services:
     depends_on:
       platform-postgres:
         condition: service_healthy
+      platform-attachment-storage-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=2).read()"]
       interval: 10s
       timeout: 3s
       retries: 12
       start_period: 15s
+
+  platform-minio:
+    image: ${PLATFORM_MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z}
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        export MINIO_ROOT_USER="$$(cat /run/secrets/attachment-s3-access-key)"
+        export MINIO_ROOT_PASSWORD="$$(cat /run/secrets/attachment-s3-secret-key)"
+        exec minio server /data --address :9000 --console-address :9001
+    volumes:
+      - /data/orbbec-agent-platform/attachments:/data
+      - platform-attachment-storage-secrets:/run/secrets:ro
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.8
+
+  platform-attachment-storage-init:
+    image: ${PLATFORM_MINIO_MC_IMAGE:-quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z}
+    restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        ready=0
+        for attempt in $$(seq 1 60); do
+          if mc alias set platform http://platform-minio:9000 "$$(cat /run/secrets/attachment-s3-access-key)" "$$(cat /run/secrets/attachment-s3-secret-key)"; then
+            ready=1
+            break
+          fi
+          sleep 1
+        done
+        test "$$ready" = "1"
+        mc mb --ignore-existing platform/orbbec-agent-attachments
+        mc anonymous set none platform/orbbec-agent-attachments
+        mc version enable platform/orbbec-agent-attachments
+    volumes:
+      - platform-attachment-storage-secrets:/run/secrets:ro
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.11
+    depends_on:
+      platform-minio:
+        condition: service_started
+
+  platform-clamav:
+    image: ${PLATFORM_CLAMAV_IMAGE:-clamav/clamav:1.4.3}
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /data/orbbec-agent-platform/clamav:/var/lib/clamav
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.9
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping=1 --wait=5"]
+      interval: 30s
+      timeout: 8s
+      retries: 6
+      start_period: 120s
+
+  platform-attachments:
+    image: ${PLATFORM_IMAGE}
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001,mode=0700
+    command: ["python", "-m", "app.attachments.worker_runtime", "all"]
+    environment:
+      PLATFORM_ATTACHMENT_WORKER_DATABASE_URL_FILE: /run/secrets/brain-worker-database-url
+      PLATFORM_ATTACHMENT_MAINTENANCE_DATABASE_URL_FILE: /run/secrets/control-maintenance-database-url
+      PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE: /run/secrets/content-encryption-keyring
+      PLATFORM_ATTACHMENT_S3_ENDPOINT: http://platform-minio:9000
+      PLATFORM_ATTACHMENT_S3_BUCKET: orbbec-agent-attachments
+      PLATFORM_ATTACHMENT_S3_ACCESS_KEY_FILE: /run/secrets/attachment-s3-access-key
+      PLATFORM_ATTACHMENT_S3_SECRET_KEY_FILE: /run/secrets/attachment-s3-secret-key
+      PLATFORM_ATTACHMENT_CLAMAV_HOST: platform-clamav
+      PLATFORM_ATTACHMENT_CLAMAV_PORT: "3310"
+    volumes:
+      - platform-attachment-worker-secrets:/run/secrets:ro
+    networks:
+      platform-internal:
+        ipv4_address: 172.30.0.10
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+      platform-attachment-storage-init:
+        condition: service_completed_successfully
+      platform-clamav:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.attachments.worker_runtime", "healthcheck"]
+      interval: 30s
+      timeout: 8s
+      retries: 4
+      start_period: 20s
 
   platform-directory:
     image: ${PLATFORM_IMAGE}
@@ -297,8 +423,6 @@ networks:
           gateway: 172.31.0.1
 
 volumes:
-  platform-postgres-data:
-    name: orbbec-agent-platform-postgres-data
   platform-postgres-secrets:
     name: orbbec-agent-platform-postgres-secrets
     external: true
@@ -313,4 +437,10 @@ volumes:
     external: true
   platform-brain-secrets:
     name: orbbec-agent-platform-brain-secrets
+    external: true
+  platform-attachment-storage-secrets:
+    name: orbbec-agent-platform-attachment-storage-secrets
+    external: true
+  platform-attachment-worker-secrets:
+    name: orbbec-agent-platform-attachment-worker-secrets
     external: true

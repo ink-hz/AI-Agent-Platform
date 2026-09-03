@@ -6,8 +6,10 @@ root_path="/opt/orbbec-agent-platform"
 private_path="$root_path/private"
 releases_path="$root_path/releases"
 data_path="/data/orbbec-agent-platform"
+staging_path="/data/staging/orbbec-agent-platform"
 staging_root="/data/staging/orbbec-agent-platform"
 archive_releases="/data/archive/orbbec-agent-platform/releases"
+release_metadata_root="$data_path/release-metadata"
 environment_path="$private_path/platform.env"
 rotation_lock="$private_path/execution-worker-key-rotation.lock"
 rotation_state="$private_path/execution-worker-key-rotation-state.json"
@@ -30,6 +32,7 @@ expected_digest="$2"
 deployment_id="$3"
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ && "$expected_digest" =~ ^[0-9a-f]{64}$ && "$deployment_id" =~ ^[0-9a-f]{32}$ ]] || fail
 release_path="$releases_path/$release_sha"
+release_metadata_path="$release_metadata_root/$release_sha"
 stage_path="$staging_root/$deployment_id"
 archive_path="$stage_path/release.tar.gz"
 postgres_data="$data_path/postgres"
@@ -47,7 +50,8 @@ cleanup_stage() {
 }
 trap cleanup_stage EXIT
 
-/usr/bin/df -B1 / /data >&2
+disk_before="$(/usr/bin/df -B1 / /data)" || fail
+/usr/bin/printf '%s\n' "$disk_before" >&2
 read -r root_size_before root_used_before root_available_before root_percent_before < <(
   /usr/bin/df -B1 --output=size,used,avail,pcent / | /usr/bin/tail -1 | /usr/bin/tr -d '%'
 )
@@ -88,11 +92,14 @@ ensure_bind_volume() {
 }
 
 retain_release_history() {
-  local previous_sha second_previous second_sha candidate archive_target index mtime now
+  # Release retention: current + two rollback. Older versions are moved to /data.
+  # archive retention: ten releases or thirty days, whichever is stricter.
+  local previous_sha previous_metadata second_previous second_sha candidate archive_target index mtime now metadata_sha
   previous_sha="$(/usr/bin/basename "$previous_release")"
   second_previous=""
-  if [[ -f "$previous_release/PREVIOUS_RELEASE" && ! -L "$previous_release/PREVIOUS_RELEASE" ]]; then
-    second_previous="$(cat "$previous_release/PREVIOUS_RELEASE")"
+  previous_metadata="$release_metadata_root/$previous_sha/PREVIOUS_RELEASE"
+  if [[ -f "$previous_metadata" && ! -L "$previous_metadata" ]]; then
+    second_previous="$(cat "$previous_metadata")"
   fi
   if [[ ! "$second_previous" =~ ^/opt/orbbec-agent-platform/releases/[0-9a-f]{40}$ || ! -d "$second_previous" || -L "$second_previous" ]]; then
     second_previous="$(/usr/bin/find "$releases_path" -mindepth 1 -maxdepth 1 -type d \
@@ -119,6 +126,14 @@ retain_release_history() {
       /usr/bin/find "$candidate" -depth -delete
     fi
   done < <(/usr/bin/find "$archive_releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | /usr/bin/sort -nr)
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    metadata_sha="$(/usr/bin/basename "$candidate")"
+    [[ "$metadata_sha" =~ ^[0-9a-f]{40}$ && -d "$candidate" && ! -L "$candidate" ]] || fail
+    if [[ ! -d "$releases_path/$metadata_sha" && ! -d "$archive_releases/$metadata_sha" ]]; then
+      /usr/bin/find "$candidate" -depth -delete
+    fi
+  done < <(/usr/bin/find "$release_metadata_root" -mindepth 1 -maxdepth 1 -type d -print)
   [[ "$(/usr/bin/find "$releases_path" -mindepth 1 -maxdepth 1 -type d | /usr/bin/wc -l)" -le 3 ]] || fail
   RETAINED_PREVIOUS_SHA="$previous_sha"
   RETAINED_SECOND_SHA="$second_sha"
@@ -176,7 +191,8 @@ if (
     raise SystemExit(1)
 PY
 /usr/bin/install -d -m 700 "$private_path" "$releases_path" "$data_path" \
-  "$staging_root" "$archive_releases" "$postgres_data" "$backup_data" "$stage_path"
+  "$staging_path" "$archive_releases" "$postgres_data" "$backup_data" \
+  "$release_metadata_root" "$release_metadata_path" "$stage_path"
 staged_worker_keyring="$stage_path/execution-worker-public-keyring.json"
 [[ "${PLATFORM_EXECUTION_WORKER_DEPLOY_LOCK_FD:-}" =~ ^[0-9]+$ ]] || fail
 /usr/bin/python3 - "$rotation_lock" "$PLATFORM_EXECUTION_WORKER_DEPLOY_LOCK_FD" <<'PY' || fail
@@ -201,8 +217,7 @@ PY
 [[ ! -e "$rotation_state" && ! -L "$rotation_state" ]] || fail
 [[ -f "$staged_worker_keyring" && ! -L "$staged_worker_keyring" ]] || fail
 [[ "$(/usr/bin/stat -c '%a %U' "$staged_worker_keyring")" == "600 root" ]] || fail
-available_bytes="$(/usr/bin/df -B1 --output=avail "$root_path" | /usr/bin/tail -1 | /usr/bin/tr -d ' ')"
-[[ "$available_bytes" =~ ^[0-9]+$ && "$available_bytes" -ge 10737418240 ]] || fail
+available_bytes="$root_available_before"
 
 fae_container_id="$(/usr/bin/docker inspect --format '{{.Id}}' ai-fae-backend 2>/dev/null || true)"
 fae_image="$(/usr/bin/docker inspect --format '{{.Config.Image}}' ai-fae-backend 2>/dev/null || true)"
@@ -228,6 +243,7 @@ control_secret_consumer_services=(
   platform-dingtalk-stream
   platform-dingtalk-stream-preview
   platform-brain
+  platform-attachments
 )
 previous_control_consumers=()
 previous_release=""
@@ -444,7 +460,14 @@ fi
 actual_digest="$(/usr/bin/sha256sum "$archive_path.part" | /usr/bin/awk '{print $1}')"
 [[ "$actual_digest" == "$expected_digest" ]] || fail
 /bin/mv -f "$archive_path.part" "$archive_path"
+archive_bytes="$(/usr/bin/stat -c '%s' "$archive_path")"
+[[ "$archive_bytes" =~ ^[0-9]+$ ]] || fail
+projected_root_bytes=$((archive_bytes * 8 + 5368709120))
+[[ "$root_available_before" -ge $((projected_root_bytes + 21474836480)) ]] || fail
 if /usr/bin/tar -tzf "$archive_path" | /usr/bin/grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+  fail
+fi
+if /usr/bin/tar -tzf "$archive_path" | /usr/bin/grep -Eq '(^|/)(data|uploads|logs|index|answer_reviews|knowledge|\.venv|node_modules)(/|$)|\.(db|sqlite|sqlite3)$'; then
   fail
 fi
 /usr/bin/install -d -m 700 "$release_path"
@@ -456,46 +479,44 @@ rollback() {
       echo "EXECUTION_WORKER_KEYRING_DEPLOY_ROLLBACK_FAILED" >&2
       exit_status=1
     fi
-  fi
-  if [[ "$rollback_required" -eq 1 ]]; then
     if [[ "$api_stopped" -eq 1 ]]; then
-    if [[ -f "$release_path/deploy/cloud/compose.yaml" && -f "$environment_path" ]]; then
-      candidate_services="$(/usr/bin/docker compose --env-file "$environment_path" \
-        -f "$release_path/deploy/cloud/compose.yaml" config --services 2>/dev/null || true)"
-      candidate_to_stop=()
-      for service_name in platform-brain platform-loopback platform-api platform-directory platform-dingtalk-stream; do
-        if /usr/bin/grep -Fxq "$service_name" <<<"$candidate_services"; then
-          candidate_to_stop+=("$service_name")
-        fi
-      done
-      if [[ "${#candidate_to_stop[@]}" -gt 0 ]]; then
-        for service_name in "${candidate_to_stop[@]}"; do
-          container_id="$(/usr/bin/docker compose --env-file "$environment_path" \
-            -f "$release_path/deploy/cloud/compose.yaml" \
-            ps -a -q "$service_name" 2>/dev/null || true)"
-          if [[ -n "$container_id" ]]; then
-            /usr/bin/docker rm -f "$container_id" >/dev/null 2>&1 || true
+      if [[ -f "$release_path/deploy/cloud/compose.yaml" && -f "$environment_path" ]]; then
+        candidate_services="$(/usr/bin/docker compose --env-file "$environment_path" \
+          -f "$release_path/deploy/cloud/compose.yaml" config --services 2>/dev/null || true)"
+        candidate_to_stop=()
+        for service_name in platform-attachments platform-brain platform-loopback platform-api platform-directory platform-dingtalk-stream; do
+          if /usr/bin/grep -Fxq "$service_name" <<<"$candidate_services"; then
+            candidate_to_stop+=("$service_name")
           fi
         done
+        if [[ "${#candidate_to_stop[@]}" -gt 0 ]]; then
+          for service_name in "${candidate_to_stop[@]}"; do
+            container_id="$(/usr/bin/docker compose --env-file "$environment_path" \
+              -f "$release_path/deploy/cloud/compose.yaml" \
+              ps -a -q "$service_name" 2>/dev/null || true)"
+            if [[ -n "$container_id" ]]; then
+              /usr/bin/docker rm -f "$container_id" >/dev/null 2>&1 || true
+            fi
+          done
+        fi
       fi
-    fi
-    if [[ -n "$previous_release" && -f "$previous_environment" ]]; then
-      /bin/cp -p "$previous_environment" "$environment_path"
-      /bin/ln -sfn "$previous_release" "$root_path/current"
-      if [[ "${#previous_control_consumers[@]}" -gt 0 ]]; then
-        /usr/bin/docker compose --env-file "$environment_path" \
-          -f "$previous_release/deploy/cloud/compose.yaml" \
-          up -d --force-recreate "${previous_control_consumers[@]}" \
-          >/dev/null 2>&1 || true
+      if [[ -n "$previous_release" && -f "$previous_environment" ]]; then
+        /bin/cp -p "$previous_environment" "$environment_path"
+        /bin/ln -sfn "$previous_release" "$root_path/current"
+        if [[ "${#previous_control_consumers[@]}" -gt 0 ]]; then
+          /usr/bin/docker compose --env-file "$environment_path" \
+            -f "$previous_release/deploy/cloud/compose.yaml" \
+            up -d --force-recreate "${previous_control_consumers[@]}" \
+            >/dev/null 2>&1 || true
+        fi
+      else
+        /usr/bin/docker rm -f orbbec-agent-platform-platform-loopback-1 >/dev/null 2>&1 || true
+        /usr/bin/docker rm -f orbbec-agent-platform-platform-api-1 >/dev/null 2>&1 || true
+        /usr/bin/systemctl disable --now orbbec-agent-platform-backup.timer >/dev/null 2>&1 || true
+        if [[ -L "$root_path/current" ]]; then
+          /usr/bin/unlink "$root_path/current" || true
+        fi
       fi
-    else
-      /usr/bin/docker rm -f orbbec-agent-platform-platform-loopback-1 >/dev/null 2>&1 || true
-      /usr/bin/docker rm -f orbbec-agent-platform-platform-api-1 >/dev/null 2>&1 || true
-      /usr/bin/systemctl disable --now orbbec-agent-platform-backup.timer >/dev/null 2>&1 || true
-      if [[ -L "$root_path/current" ]]; then
-        /usr/bin/unlink "$root_path/current" || true
-      fi
-    fi
     fi
     if [[ -d "$release_path" && "$release_path" != "$previous_release" ]]; then
       /bin/mv "$release_path" "$stage_path/failed-release-$BASHPID" >/dev/null 2>&1 || true
@@ -520,6 +541,8 @@ signing_public="$private_path/replica-signing-public-key"
 [[ -f "$signing_public" && ! -L "$signing_public" && "$(/usr/bin/stat -c '%a %U %s' "$signing_public")" == "600 root 32" ]] || fail
 
 postgres_password="$private_path/postgres-owner-password"
+attachment_s3_access_key="$private_path/attachment-s3-access-key"
+attachment_s3_secret_key="$private_path/attachment-s3-secret-key"
 read_password="$private_path/replica-read-password"
 import_password="$private_path/replica-import-password"
 encryption_key="$private_path/replica-encryption-key"
@@ -527,10 +550,17 @@ encryption_key="$private_path/replica-encryption-key"
 [[ -e "$read_password" ]] || /usr/bin/openssl rand -hex 32 > "$read_password"
 [[ -e "$import_password" ]] || /usr/bin/openssl rand -hex 32 > "$import_password"
 [[ -e "$encryption_key" ]] || /usr/bin/openssl rand 32 > "$encryption_key"
+[[ -e "$attachment_s3_access_key" ]] || /usr/bin/openssl rand -hex 16 > "$attachment_s3_access_key"
+[[ -e "$attachment_s3_secret_key" ]] || /usr/bin/openssl rand -hex 32 > "$attachment_s3_secret_key"
 for password_file in "$postgres_password" "$read_password" "$import_password"; do
   [[ "$(/usr/bin/tr -d '\n' < "$password_file")" =~ ^[0-9a-f]{64}$ ]] || fail
   /bin/chown root:root "$password_file"
   /bin/chmod 600 "$password_file"
+done
+for attachment_secret in "$attachment_s3_access_key" "$attachment_s3_secret_key"; do
+  [[ "$(/usr/bin/tr -d '\n' < "$attachment_secret")" =~ ^[0-9a-f]{32,64}$ ]] || fail
+  /bin/chown root:root "$attachment_secret"
+  /bin/chmod 600 "$attachment_secret"
 done
 [[ "$(/usr/bin/stat -c '%s' "$encryption_key")" == "32" ]] || fail
 /bin/chown root:root "$encryption_key"
@@ -556,9 +586,15 @@ for volume_name in \
   orbbec-agent-platform-api-secrets \
   orbbec-agent-platform-migrate-secrets \
   orbbec-agent-platform-import-secrets \
-  orbbec-agent-platform-brain-secrets; do
+  orbbec-agent-platform-brain-secrets \
+  orbbec-agent-platform-attachment-storage-secrets \
+  orbbec-agent-platform-attachment-worker-secrets; do
   /usr/bin/docker volume create "$volume_name" >/dev/null
 done
+/usr/bin/docker run --rm --network none \
+  -v orbbec-agent-platform-attachment-storage-secrets:/target \
+  -v "$private_path:/source:ro" alpine:3.22 \
+  sh -ceu 'cp /source/attachment-s3-access-key /source/attachment-s3-secret-key /target/; chown 0:0 /target/*; chmod 400 /target/attachment-s3-access-key /target/attachment-s3-secret-key'
 /usr/bin/docker run --rm --network none \
   -v orbbec-agent-platform-postgres-secrets:/target \
   -v "$private_path:/source:ro" alpine:3.22 \
@@ -622,6 +658,30 @@ PLATFORM_DIRECT_AGENT_ENABLED="${PLATFORM_DIRECT_AGENT_ENABLED:-1}"
 export PLATFORM_DIRECT_AGENT_ENABLED PLATFORM_AGENT_BRAIN_ENABLED PLATFORM_AGENT_BRAIN_V2_ENABLED
 unset PLATFORM_CLOUD_AUTH_MODE
 compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$release_path/deploy/cloud/compose.yaml")
+
+postgres_data_path=/data/orbbec-agent-platform/postgres
+/usr/bin/install -d -m 700 /data/orbbec-agent-platform "$postgres_data_path" \
+  /data/orbbec-agent-platform/attachments /data/orbbec-agent-platform/clamav
+/bin/chown 999:999 "$postgres_data_path"
+legacy_postgres_volume=orbbec-agent-platform-postgres-data
+if [[ ! -e "$postgres_data_path/PG_VERSION" &&
+      -n "$(/usr/bin/docker volume ls -q --filter name="^${legacy_postgres_volume}$")" ]]; then
+  legacy_mount="$(/usr/bin/docker volume inspect --format '{{.Mountpoint}}' "$legacy_postgres_volume")" || fail
+  [[ "$legacy_mount" == /var/lib/docker/volumes/*/_data && -f "$legacy_mount/PG_VERSION" ]] || fail
+  legacy_postgres_id="$(/usr/bin/docker ps --filter label=com.docker.compose.project=orbbec-agent-platform --filter label=com.docker.compose.service=platform-postgres --format '{{.ID}}' | /usr/bin/head -1)"
+  if [[ -n "$legacy_postgres_id" ]]; then
+    /usr/bin/docker stop "$legacy_postgres_id" >/dev/null || fail
+  fi
+  [[ -z "$(/usr/bin/find "$postgres_data_path" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail
+  /usr/bin/docker run --rm --network none \
+    -v "$legacy_postgres_volume:/source:ro" \
+    -v "$postgres_data_path:/target" alpine:3.22 \
+    sh -ceu 'cp -a /source/. /target/; sync; test -f /target/PG_VERSION' || fail
+  source_file_facts="$(/usr/bin/find "$legacy_mount" -type f -printf '%s\n' | /usr/bin/awk '{count+=1; bytes+=$1} END {print count,bytes}')"
+  target_file_facts="$(/usr/bin/find "$postgres_data_path" -type f -printf '%s\n' | /usr/bin/awk '{count+=1; bytes+=$1} END {print count,bytes}')"
+  [[ "$source_file_facts" == "$target_file_facts" ]] || fail
+fi
+[[ -f "$postgres_data_path/PG_VERSION" || -z "$(/usr/bin/find "$postgres_data_path" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail
 "${compose[@]}" up -d --force-recreate platform-postgres >/dev/null
 for _attempt in $(/usr/bin/seq 1 40); do
   postgres_id="$("${compose[@]}" ps -q platform-postgres)"
@@ -670,6 +730,10 @@ done
   -v orbbec-agent-platform-brain-secrets:/target \
   -v "$private_path:/source:ro" alpine:3.22 \
   sh -ceu 'cp /source/brain-worker-database-url /source/content-encryption-keyring /source/brain-provider-api-key /source/voc-extension-signing-key /target/; chown 10001:10001 /target/*; chmod 600 /target/brain-worker-database-url /target/content-encryption-keyring /target/brain-provider-api-key /target/voc-extension-signing-key'
+/usr/bin/docker run --rm --network none \
+  -v orbbec-agent-platform-attachment-worker-secrets:/target \
+  -v "$private_path:/source:ro" alpine:3.22 \
+  sh -ceu 'cp /source/brain-worker-database-url /source/control-maintenance-database-url /source/content-encryption-keyring /source/attachment-s3-access-key /source/attachment-s3-secret-key /target/; chown 10001:10001 /target/*; chmod 600 /target/*'
 if [[ -e "$worker_keyring" || -L "$worker_keyring" ]]; then
   /usr/bin/install -o root -g root -m 600 "$worker_keyring" "$worker_keyring_previous"
 else
@@ -688,6 +752,10 @@ write_deploy_state keyring_switched
 identity_bootstrap_result="$("$release_path/deploy/cloud/bootstrap-dingtalk-production-secrets.sh" \
   "$private_path")" || fail
 [[ "$identity_bootstrap_result" == "DINGTALK_PRODUCTION_SECRETS_OK" ]] || fail
+/usr/bin/docker run --rm --network none \
+  -v orbbec-agent-platform-api-secrets:/target \
+  -v "$private_path:/source:ro" alpine:3.22 \
+  sh -ceu 'cp /source/attachment-s3-access-key /source/attachment-s3-secret-key /target/; chown 10001:10001 /target/attachment-s3-access-key /target/attachment-s3-secret-key; chmod 600 /target/attachment-s3-access-key /target/attachment-s3-secret-key'
 for protected_secret in \
   control-database-url \
   control-audit-database-url \
@@ -780,14 +848,14 @@ brain_container="$("${compose[@]}" ps -q platform-brain)"
 [[ -n "$brain_container" ]] || fail
 [[ "$(/usr/bin/docker inspect --format '{{.State.Health.Status}}' "$brain_container")" == "healthy" ]] || fail
 if [[ -n "$previous_release" ]]; then
-  /usr/bin/printf '%s\n' "$previous_release" > "$release_path/PREVIOUS_RELEASE"
-  /bin/chown root:root "$release_path/PREVIOUS_RELEASE"
-  /bin/chmod 600 "$release_path/PREVIOUS_RELEASE"
+  /usr/bin/printf '%s\n' "$previous_release" > "$release_metadata_path/PREVIOUS_RELEASE"
+  /bin/chown root:root "$release_metadata_path/PREVIOUS_RELEASE"
+  /bin/chmod 600 "$release_metadata_path/PREVIOUS_RELEASE"
 fi
 if [[ -f "$previous_environment" ]]; then
-  /bin/cp -p "$previous_environment" "$release_path/PREVIOUS_PLATFORM_ENV"
-  /bin/chown root:root "$release_path/PREVIOUS_PLATFORM_ENV"
-  /bin/chmod 600 "$release_path/PREVIOUS_PLATFORM_ENV"
+  /bin/cp -p "$previous_environment" "$release_metadata_path/PREVIOUS_PLATFORM_ENV"
+  /bin/chown root:root "$release_metadata_path/PREVIOUS_PLATFORM_ENV"
+  /bin/chmod 600 "$release_metadata_path/PREVIOUS_PLATFORM_ENV"
 fi
 /bin/ln -sfn "$release_path" "$root_path/current"
 /usr/bin/install -o root -g root -m 644 \
@@ -822,13 +890,15 @@ restore_worker_keyring
 rollback_required=0
 retain_release_history
 retain_platform_images "$RETAINED_PREVIOUS_SHA" "$RETAINED_SECOND_SHA"
-/usr/bin/df -B1 / /data >&2
+disk_after="$(/usr/bin/df -B1 / /data)" || fail
+/usr/bin/printf '%s\n' "$disk_after" >&2
 read -r root_size_after root_used_after root_available_after root_used_percent < <(
   /usr/bin/df -B1 --output=size,used,avail,pcent / | /usr/bin/tail -1 | /usr/bin/tr -d '%'
 )
 read -r data_size_after data_used_after data_available_after data_used_percent < <(
   /usr/bin/df -B1 --output=size,used,avail,pcent /data | /usr/bin/tail -1 | /usr/bin/tr -d '%'
 )
+[[ "$root_available_after" =~ ^[0-9]+$ && "$root_available_after" -ge 21474836480 ]] || fail
 [[ "$root_used_percent" =~ ^[0-9]+$ && "$root_used_percent" -le 75 ]] || fail
 root_growth_bytes=$((root_used_after - root_used_before))
 if [[ "$root_growth_bytes" -gt 1073741824 ]]; then
@@ -838,4 +908,9 @@ fi
   "$root_used_after" "$root_available_after" "$root_used_percent" \
   "$data_used_after" "$data_available_after" "$data_used_percent" "$root_growth_bytes" \
   "$RETAINED_PREVIOUS_SHA" "$RETAINED_SECOND_SHA" >&2
+cleanup_stage || fail
+[[ ! -e "$stage_path" && ! -L "$stage_path" ]] || fail
+/usr/bin/printf 'staging_cleared=%s current_version=%s rollback_1=%s rollback_2=%s shared_nginx_modified=no other_app_modified=no\n' \
+  "$stage_path" "$release_sha" "$RETAINED_PREVIOUS_SHA" "$RETAINED_SECOND_SHA" >&2
+trap - EXIT
 echo "CLOUD_PLATFORM_DEPLOY_OK release=$release_sha mode=dingtalk"

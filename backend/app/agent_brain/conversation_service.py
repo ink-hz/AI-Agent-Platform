@@ -4,7 +4,11 @@ from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
 
-from app.agent_brain.conversation_models import ConversationCreateResult
+from app.agent_brain.conversation_models import (
+    ConversationCreateResult,
+    ConversationTurnSubmission,
+    normalize_turn_submission,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,23 +51,24 @@ class ConversationCommandService:
         self,
         owner: UUID,
         request_id: UUID,
-        text: str,
+        submission: str | ConversationTurnSubmission,
         *,
         mode: Literal["brain", "direct_agent"] = "brain",
         direct_agent_id: str | None = None,
     ) -> ConversationCreateResult:
+        submission = normalize_turn_submission(submission)
         if not self.v2_enabled or mode == "direct_agent":
             return self._repository.start(
                 owner,
                 request_id,
-                text,
+                submission,
                 mode=mode,
                 direct_agent_id=direct_agent_id,
             )
         return self._repository.start_v2(
             owner,
             request_id,
-            text,
+            submission,
             model_config=self._model_config,
             max_steps=self._max_steps,
             max_tasks=self._max_tasks,
@@ -75,25 +80,26 @@ class ConversationCommandService:
         owner: UUID,
         conversation_id: UUID,
         request_id: UUID,
-        text: str,
+        submission: str | ConversationTurnSubmission,
     ) -> ConversationCreateResult:
+        submission = normalize_turn_submission(submission)
         conversation = self._repository.conversation_for_owner(
             owner, conversation_id
         )
         if not self.v2_enabled or conversation.mode == "direct_agent":
             return self._repository.append_turn(
-                owner, conversation_id, request_id, text
+                owner, conversation_id, request_id, submission
             )
         active = self._repository.active_turn_for_owner(owner, conversation_id)
         if active is not None:
             return self.resume_waiting_user(
-                owner, conversation_id, request_id, text
+                owner, conversation_id, request_id, submission
             )
         return self._repository.append_turn_v2(
             owner,
             conversation_id,
             request_id,
-            text,
+            submission,
             model_config=self._model_config,
             max_steps=self._max_steps,
             max_tasks=self._max_tasks,
@@ -120,15 +126,37 @@ class ConversationCommandService:
             max_duration_seconds=self._max_duration_seconds,
         )
 
+    def resume_search(
+        self,
+        owner: UUID,
+        conversation_id: UUID,
+        source_turn_id: UUID,
+        request_id: UUID,
+    ) -> ConversationCreateResult:
+        conversation = self._repository.conversation_for_owner(
+            owner, conversation_id
+        )
+        if conversation.mode != "direct_agent":
+            raise ValueError("Search recovery is only available for direct Agents")
+        return self._repository.resume_search_turn(
+            owner,
+            conversation_id,
+            source_turn_id,
+            request_id,
+        )
+
     def resume_waiting_user(
         self,
         owner: UUID,
         conversation_id: UUID,
         request_id: UUID,
-        text: str,
+        submission: str | ConversationTurnSubmission,
     ) -> ConversationCreateResult:
+        selected = normalize_turn_submission(submission)
+        if selected.attachment_ids or selected.active_attachment_ids:
+            raise ValueError("Waiting-user attachments unsupported")
         return self._repository.resume_waiting_user_v2(
-            owner, conversation_id, request_id, text
+            owner, conversation_id, request_id, selected.text
         )
 
     def request_cancel(

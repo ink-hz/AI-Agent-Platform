@@ -7,5 +7,8 @@ pydantic==2.13.4
 psycopg[binary]==3.3.4
 boto3==1.42.97
 cryptography==50.0.0
+Pillow==11.3.0
+pypdf==6.16.2
+defusedxml==0.7.1
 dingtalk-stream==0.24.3
 jcs==0.2.1

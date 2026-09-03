@@ -23,7 +23,8 @@ const card: AgentCapabilityCard = {
   capabilities: ["梳理岗位需求与候选人画像"], exclusions: ["不代替管理者作出录用决定"],
   example_tasks: ["根据岗位说明梳理候选人能力组合"], required_inputs: ["任务目标"],
   accepted_input_types: ["text"], output_types: ["text"], supports_attachments_in: false,
-  supports_attachments_out: false, supports_evidence: true, supports_streaming: true,
+  supports_attachments_out: false, attachment_limits: null,
+  supports_evidence: true, supports_streaming: true,
   supports_cancellation: true, supports_idempotency: true, max_duration_seconds: 300,
   data_classification: "internal", adapter_id: "metabot-core-chat", capability_version: 1,
   adapter_kind: "metabot_local", adapter_config_version: 1,
@@ -63,6 +64,7 @@ const result: ConversationSubmissionResult = {
     message_id: "message", conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", seq: 1, role: "user",
     content: "找人", turn_id: "turn", delivery_status: "accepted",
     created_at: "2026-08-22T10:00:00Z", completed_at: null,
+    input_attachments: [], output_attachments: [], active_attachment_ids: [],
   },
   turn: {
     turn_id: "turn", conversation_id: "8c13c965-1b60-472e-b275-199987d1d109", user_message_id: "message",

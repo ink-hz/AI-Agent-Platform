@@ -49,6 +49,7 @@ const hrCard: AgentCapabilityCard = {
   output_types: ["text"],
   supports_attachments_in: false,
   supports_attachments_out: false,
+  attachment_limits: null,
   supports_evidence: true,
   supports_streaming: true,
   supports_cancellation: true,
@@ -88,6 +89,9 @@ describe("HrWorkspacePage", () => {
     await act(async () => root.render(<HrWorkspacePage account={account} />));
 
     expect(listConversations).toHaveBeenCalledWith(expect.any(AbortSignal), undefined, 20, "hr-bot");
+    expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).not.toBeNull();
+    expect(container.querySelector(".conversation-sidebar-brand-mark")?.textContent).toBe("HR");
+    expect(container.querySelector(".conversation-sidebar-label")?.textContent).toBe("人才智能工作台");
     expect(container.querySelector("h1")?.textContent).toBe("HR Agent");
     expect(container.querySelector('nav[aria-label="Marketing Agent 切换"]')).toBeNull();
   });

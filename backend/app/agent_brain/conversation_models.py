@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
+from app.agent_brain.recovery import SearchRecoveryState
 from app.agent_brain.repository import MissionRecord
-
 
 ConversationMode = Literal["brain", "direct_agent"]
 ConversationStatus = Literal["active", "archived"]
@@ -24,7 +25,103 @@ TurnStatus = Literal[
     "interrupted",
 ]
 FeedbackRating = Literal["helpful", "unhelpful"]
-FeedbackReason = Literal["inaccurate", "incomplete", "unclear", "unresolved", "other"]
+FeedbackReason = Literal[
+    "inaccurate",
+    "incomplete",
+    "unclear",
+    "unresolved",
+    "file_format",
+    "source_timeliness",
+    "other",
+]
+
+
+def _normalized_text(value: object) -> str:
+    if not isinstance(value, str):
+        raise TypeError("Conversation text invalid")
+    selected = unicodedata.normalize("NFC", value.replace("\r\n", "\n").replace("\r", "\n")).strip()
+    try:
+        if len(selected) > 32768:
+            raise ValueError("Conversation text invalid")
+    except UnicodeError:
+        raise ValueError("Conversation text invalid") from None
+    return selected
+
+
+def _normalized_ids(value: object, *, maximum: int) -> tuple[UUID, ...]:
+    if not isinstance(value, tuple) or any(not isinstance(item, UUID) for item in value):
+        raise ValueError("Conversation attachment IDs invalid")
+    if len(value) > maximum or len(set(value)) != len(value):
+        raise ValueError("Conversation attachment IDs invalid")
+    return tuple(sorted(value, key=str))
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationTurnSubmission:
+    text: str
+    attachment_ids: tuple[UUID, ...] = ()
+    active_attachment_ids: tuple[UUID, ...] = ()
+
+    def __post_init__(self) -> None:
+        text = _normalized_text(self.text)
+        attachment_ids = _normalized_ids(self.attachment_ids, maximum=5)
+        active_attachment_ids = _normalized_ids(
+            self.active_attachment_ids, maximum=50
+        )
+        if not set(attachment_ids).issubset(active_attachment_ids):
+            raise ValueError("New attachments must be active")
+        if not text and not attachment_ids:
+            raise ValueError("Conversation text or attachment required")
+        object.__setattr__(self, "text", text)
+        object.__setattr__(self, "attachment_ids", attachment_ids)
+        object.__setattr__(self, "active_attachment_ids", active_attachment_ids)
+
+
+def normalize_turn_submission(
+    value: str | ConversationTurnSubmission,
+) -> ConversationTurnSubmission:
+    if isinstance(value, ConversationTurnSubmission):
+        return ConversationTurnSubmission(
+            value.text, value.attachment_ids, value.active_attachment_ids
+        )
+    if isinstance(value, str):
+        return ConversationTurnSubmission(value)
+    raise ValueError("Conversation submission invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationAttachmentProjection:
+    attachment_id: UUID
+    conversation_id: UUID
+    source: Literal["user", "agent"]
+    display_name: str = field(repr=False)
+    detected_mime: str | None
+    size_bytes: int
+    state: str
+    created_at: datetime
+    retained_until: datetime
+    processing_coverage: dict[str, object] | None
+    availability_reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationCitationProjection:
+    citation_key: str
+    title: str
+    url: str = field(repr=False)
+    site: str
+    retrieved_at: datetime
+    supports: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationArtifactVersionProjection:
+    artifact_key: str
+    version_no: int
+    producer_version_id: str
+    current: bool
+    status: Literal["processing", "ready", "failed"]
+    attachment: ConversationAttachmentProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -42,6 +139,15 @@ class ConversationRecord:
     archived_at: datetime | None
     summary: str | None = field(repr=False)
     summary_key_version: int | None = field(repr=False)
+    activity_status: str | None = None
+    unread: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationReadStateRecord:
+    conversation_id: UUID
+    last_read_message_seq: int
+    last_read_at: datetime
 
 
 @dataclass(frozen=True)
@@ -56,6 +162,12 @@ class ConversationMessageRecord:
     created_at: datetime
     completed_at: datetime | None
     content: str = field(repr=False)
+    input_attachments: tuple[ConversationAttachmentProjection, ...] = ()
+    output_attachments: tuple[ConversationAttachmentProjection, ...] = ()
+    active_attachment_ids: tuple[UUID, ...] = ()
+    search_recovery: SearchRecoveryState | None = None
+    citations: tuple[ConversationCitationProjection, ...] = ()
+    artifact_versions: tuple[ConversationArtifactVersionProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -113,6 +225,27 @@ class ConversationFeedbackRecord:
     reason: FeedbackReason | None
     created_at: datetime
     comment: str | None = field(default=None, repr=False)
+    triage_status: Literal["pending_triage", "triaged", "dismissed"] | None = None
+    triaged_by_internal_user_id: UUID | None = None
+    triaged_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class ConversationFeedbackReviewRecord:
+    feedback: ConversationFeedbackRecord
+    agent_id: str
+    conversation_title: str
+    question: str = field(repr=False)
+    answer: str = field(repr=False)
+    citations: tuple[ConversationCitationProjection, ...] = ()
+
+
+@dataclass(frozen=True)
+class ConversationReviewAttachmentRecord:
+    attachment: ConversationAttachmentProjection
+    artifact_key: str | None = None
+    version_no: int | None = None
+    current: bool = False
 
 
 @dataclass(frozen=True)

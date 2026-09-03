@@ -430,6 +430,15 @@ class MissionRun:
     output_payload: dict[str, object] | None = field(default=None, repr=False)
 
 
+@dataclass(frozen=True)
+class MissionProjectionDelivery:
+    event_type: str
+    text: str
+    task_id: UUID | None
+    agent_id: str | None
+    output_payload: dict[str, object] | None = field(default=None, repr=False)
+
+
 def _require_uuid(value: object) -> UUID:
     if not isinstance(value, UUID):
         raise ValueError("UUID required")
@@ -1982,6 +1991,7 @@ class MissionRepository:
             "agent.file",
             "agent.log",
             "agent.complete",
+            "agent.result",
             "agent.error",
         }
         try:
@@ -2031,7 +2041,11 @@ class MissionRepository:
                         raise MissionRepositoryError()
                     public_accepted = accepted_row["accepted"]
                 for event in new_events:
-                    if event.event_type in {"agent.complete", "agent.error"}:
+                    if event.event_type in {
+                        "agent.complete",
+                        "agent.result",
+                        "agent.error",
+                    }:
                         continue
                     public_state = public_phase and event.event_type == "agent.state"
                     public_payload = (
@@ -2322,17 +2336,21 @@ class MissionRepository:
 
     def terminal_delivery_for_projection(
         self, cursor: Any, mission_id: UUID
-    ) -> tuple[str, str]:
+    ) -> MissionProjectionDelivery:
         """Read the final public Mission event inside a projection transaction."""
 
         _require_uuid(mission_id)
         try:
             row = cursor.execute(
-                "select event_id,mission_id,event_type,payload_ciphertext,"
-                "encryption_key_version from platform_control.mission_events "
-                "where mission_id=%s and event_type in ("
+                "select event.event_id,event.mission_id,event.event_type,"
+                "event.payload_ciphertext,event.encryption_key_version,"
+                "run.run_id,run.task_id,run.agent_id,run.output_ciphertext,"
+                "run.output_encryption_key_version "
+                "from platform_control.mission_events event "
+                "left join platform_control.mission_runs run on run.run_id=event.run_id "
+                "where event.mission_id=%s and event.event_type in ("
                 "'mission.completed','mission.failed','mission.cancelled',"
-                "'mission.interrupted') order by seq desc limit 1",
+                "'mission.interrupted') order by event.seq desc limit 1",
                 (mission_id,),
             ).fetchone()
             if row is None:
@@ -2350,7 +2368,25 @@ class MissionRepository:
             text = payload.get("text")
             if not isinstance(text, str) or not text.strip():
                 raise MissionRepositoryError()
-            return row["event_type"], text
+            output_payload = None
+            if row["output_ciphertext"] is not None:
+                output_payload = self.content_codec.unseal_json(
+                    _run_subject(row["mission_id"], row["run_id"], "output"),
+                    SealedContent(
+                        bytes(row["output_ciphertext"]),
+                        row["output_encryption_key_version"],
+                    ),
+                )
+                output_payload, _output_canonical = _canonical_payload(
+                    output_payload
+                )
+            return MissionProjectionDelivery(
+                event_type=row["event_type"],
+                text=text,
+                task_id=row["task_id"],
+                agent_id=row["agent_id"],
+                output_payload=output_payload,
+            )
         except MissionRepositoryError:
             raise
         except (

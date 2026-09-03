@@ -33,6 +33,17 @@ def test_child_agent_receives_only_explicit_excerpt_and_allowed_attachments() ->
     assert context.omissions[0].reason == "not_authorized"
 
 
+def test_task_context_intersects_model_refs_with_active_turn_attachments() -> None:
+    active, guessed = uuid4(), uuid4()
+    context = BrainContextPolicy().build_task_context(
+        _call(attachment_refs=(active, guessed)),
+        active_attachment_ids=(active,),
+    )
+
+    assert context.attachment_refs == (active,)
+    assert context.omissions == (type(context.omissions[0])("attachment", "not_active"),)
+
+
 def test_long_brain_context_has_explicit_model_visible_truncation_marker() -> None:
     policy = BrainContextPolicy(max_brain_bytes=1024)
     context = policy.build_brain_context(

@@ -17,6 +17,8 @@ export function HrWorkspacePage(props: { account: Account; conversationId?: stri
       agentId="hr-bot"
       conversationId={props.conversationId}
       conversationPath={hrConversationPath}
+      workspaceLabel="人才智能工作台"
+      workspaceMark="HR"
     />
   </WorkspaceErrorBoundary>;
 }

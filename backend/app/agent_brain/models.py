@@ -5,7 +5,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.agent_catalog import load_agent_catalog
+from app.agent_catalog import (
+    AgentAttachmentLimits,
+    AgentContentType,
+    load_agent_catalog,
+)
 
 CALLABLE_AGENT_IDS = (
     "hr-bot",
@@ -28,10 +32,11 @@ class AgentCapabilityCard(BaseModel):
     exclusions: tuple[str, ...] = Field(min_length=1, max_length=16)
     example_tasks: tuple[str, ...] = Field(min_length=1, max_length=8)
     required_inputs: tuple[str, ...] = Field(min_length=1, max_length=16)
-    accepted_input_types: tuple[Literal["text"], ...] = ("text",)
-    output_types: tuple[Literal["text"], ...] = ("text",)
+    accepted_input_types: tuple[AgentContentType, ...] = ("text",)
+    output_types: tuple[AgentContentType, ...] = ("text",)
     supports_attachments_in: bool = False
     supports_attachments_out: bool = False
+    attachment_limits: AgentAttachmentLimits | None = None
     supports_evidence: bool
     supports_streaming: bool
     supports_cancellation: bool
@@ -83,6 +88,7 @@ def load_capability_cards(
                 output_types=card.output_types,
                 supports_attachments_in=card.supports_attachments_in,
                 supports_attachments_out=card.supports_attachments_out,
+                attachment_limits=card.attachment_limits,
                 supports_evidence=card.supports_evidence,
                 supports_streaming=card.supports_streaming,
                 supports_cancellation=card.supports_cancellation,

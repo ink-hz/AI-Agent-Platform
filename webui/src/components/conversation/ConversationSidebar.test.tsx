@@ -14,7 +14,7 @@ const selected: Conversation = {
 };
 const direct: Conversation = {
   ...selected, conversation_id: "direct", mode: "direct_agent", direct_agent_id: "hr-bot",
-  title: "候选人搜寻", updated_at: "2026-08-24T01:30:00Z",
+  title: "候选人搜寻", updated_at: "2026-08-24T01:30:00Z", activity_status: "completed", unread: true,
 };
 
 describe("ConversationSidebar", () => {
@@ -32,14 +32,18 @@ describe("ConversationSidebar", () => {
       conversations={[selected, direct]} selectedConversationId="selected"
       loading={false} error={false} hasMore loadingMore={false} mobileOpen={false}
       onCloseMobile={vi.fn()} onLoadMore={onLoadMore} onNewConversation={onNewConversation}
-      onRetry={vi.fn()} onSelect={onSelect}
+      onRetry={vi.fn()} onOpenConversation={onSelect}
+      conversationHref={(conversationId) => `/hr/conversations/${encodeURIComponent(conversationId)}`}
     />));
 
     expect(container.querySelector('nav[aria-label="对话列表"]')).not.toBeNull();
     expect(container.querySelector(".conversation-sidebar-head strong")?.textContent).toBe("Agent 大脑");
     expect(container.querySelector('a[aria-current="page"]')?.textContent).toContain("当前会话");
     expect(container.textContent).not.toContain("HR Agent");
-    await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/conversations/direct"]')?.click());
+    expect(container.querySelector('a[href="/hr/conversations/direct"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/hr/conversations/direct"]')?.textContent).toContain("已完成");
+    expect(container.querySelector('a[href="/hr/conversations/direct"] [aria-label="有未读更新"]')).not.toBeNull();
+    await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/hr/conversations/direct"]')?.click());
     expect(onSelect).toHaveBeenCalledWith("direct");
     await act(async () => container.querySelector<HTMLButtonElement>(".conversation-sidebar-new")?.click());
     expect(onNewConversation).toHaveBeenCalledTimes(1);
@@ -60,7 +64,8 @@ describe("ConversationSidebar", () => {
       loading={false} error={false} hasMore={false} loadingMore={false} mobileOpen={false}
       onArchive={onArchive} onCloseMobile={vi.fn()} onLoadArchived={onLoadArchived}
       onLoadMore={vi.fn()} onNewConversation={vi.fn()} onRename={onRename}
-      onRestore={onRestore} onRetry={vi.fn()} onSelect={vi.fn()}
+      onRestore={onRestore} onRetry={vi.fn()} onOpenConversation={vi.fn()}
+      conversationHref={(conversationId) => `/conversations/${conversationId}`}
     />));
 
     const actions = container.querySelector<HTMLButtonElement>("button[aria-label='打开对话操作']");

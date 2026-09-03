@@ -143,6 +143,59 @@ export interface AttachmentTicket {
   content_path: string;
 }
 
+export interface ConversationReviewCitation {
+  citation_key: string;
+  title: string;
+  url: string;
+  site: string;
+  retrieved_at: string;
+  supports: string[];
+}
+
+export interface ConversationReviewFeedback {
+  feedback_id: string;
+  conversation_id: string;
+  message_id: string;
+  turn_id: string;
+  mission_id: string | null;
+  agent_id: string;
+  conversation_title: string;
+  question: string;
+  answer: string;
+  rating: "helpful" | "unhelpful";
+  reason: string | null;
+  comment: string | null;
+  triage_status: "pending_triage" | "triaged" | "dismissed" | null;
+  triaged_by_internal_user_id: string | null;
+  triaged_at: string | null;
+  citations: ConversationReviewCitation[];
+  created_at: string;
+}
+
+export interface ConversationReviewFeedbackPage {
+  items: ConversationReviewFeedback[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ConversationReviewAttachment {
+  attachment_id: string;
+  conversation_id: string;
+  source: "user" | "agent";
+  display_name: string;
+  detected_mime: string | null;
+  size_bytes: number;
+  state: string;
+  created_at: string;
+  retained_until: string;
+  processing_coverage: Record<string, unknown> | null;
+  availability_reason: string | null;
+  artifact_key: string | null;
+  version_no: number | null;
+  current: boolean;
+}
+
 export const createAttachmentTicket = (
   attachmentId: string,
   purpose: "preview" | "download",
@@ -151,6 +204,42 @@ export const createAttachmentTicket = (
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ purpose }),
 });
+
+export const fetchConversationReviewFeedback = (
+  triageStatus: "pending_triage" | "triaged" | "dismissed" = "pending_triage",
+  signal?: AbortSignal,
+) => read<ConversationReviewFeedbackPage>(
+  `/api/review/conversation-feedback?triage_status=${encodeURIComponent(triageStatus)}&limit=100&offset=0`,
+  signal,
+);
+
+export const updateConversationReviewFeedback = (
+  feedbackId: string,
+  triageStatus: "triaged" | "dismissed",
+  actor: string,
+) => writeReview<ConversationReviewFeedback>(
+  `/api/review/conversation-feedback/${encodeURIComponent(feedbackId)}`,
+  actor,
+  { method: "PATCH", body: JSON.stringify({ triage_status: triageStatus }) },
+);
+
+export const fetchReviewConversationAttachments = (
+  conversationId: string,
+  signal?: AbortSignal,
+) => read<ConversationReviewAttachment[]>(
+  `/api/review/conversations/${encodeURIComponent(conversationId)}/attachments`,
+  signal,
+);
+
+export const createReviewConversationAttachmentTicket = (
+  attachmentId: string,
+  purpose: "preview" | "download",
+  actor: string,
+) => writeReview<AttachmentTicket>(
+  `/api/review/attachments/${encodeURIComponent(attachmentId)}/ticket`,
+  actor,
+  { method: "POST", body: JSON.stringify({ purpose }) },
+);
 export const fetchTrace = (turnKey: string, signal?: AbortSignal) =>
   read<TraceDetail>(`/api/turns/${encodeURIComponent(turnKey)}/trace`, signal);
 export const fetchFlywheelOverview = (signal?: AbortSignal) =>

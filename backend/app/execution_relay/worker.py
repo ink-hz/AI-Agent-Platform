@@ -33,11 +33,14 @@ from pydantic import (
 from .acceptance_hooks import WorkerAcceptanceHooks
 from .metabot_client import MetaBotClient, MetaBotRuntimeMap
 from .models import (
+    CollaborationV4Result,
+    OutputWriteGrantPayload,
     RelayEvent,
     RelayJobKind,
     RelayJobPayload,
     RelayLease,
     RequesterSubject,
+    TaskAttachmentGrantPayload,
 )
 from .repository import RelayStopRequest
 from .worker_auth import WorkerRequestSigner
@@ -170,13 +173,44 @@ class _StrictCallbackEvent(BaseModel):
                 raise ValueError("question provenance invalid")
         elif self.type == "result":
             result = value.get("result")
-            if not (
+            legacy_valid = (
                 value.get("source") == "agent_runtime"
                 and isinstance(value.get("sourceRef"), str)
                 and isinstance(result, dict)
                 and result.get("contractVersion") == "core_chat_result_v2"
                 and result.get("success") is True
+                and not {
+                    "citations",
+                    "artifacts",
+                    "attachmentIds",
+                    "attachment_refs",
+                }.intersection(result)
+            )
+            collaboration_v4_valid = False
+            if (
+                value.get("source") == "agent_runtime"
+                and isinstance(value.get("sourceRef"), str)
+                and isinstance(result, dict)
+                and result.get("contractVersion") == "core_chat_collaboration_v4"
             ):
+                try:
+                    CollaborationV4Result.model_validate_json(
+                        json.dumps(
+                            {
+                                key: member
+                                for key, member in result.items()
+                                if key != "contractVersion"
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        strict=True,
+                    )
+                    collaboration_v4_valid = True
+                except (TypeError, ValueError, ValidationError):
+                    collaboration_v4_valid = False
+            if not legacy_valid and not collaboration_v4_valid:
                 raise ValueError("result provenance invalid")
         return self
 
@@ -204,11 +238,17 @@ class _StrictLeasePayload(BaseModel):
     job_kind: Literal["legacy_brain", "direct_agent", "metabot_local"]
     result_mode: Literal["internal", "public_markdown"]
     requester_subject: RequesterSubject | None = None
-    collaboration_contract: Literal["core_chat_collaboration_v3"] | None = None
+    collaboration_contract: (
+        Literal["core_chat_collaboration_v3", "core_chat_collaboration_v4"] | None
+    ) = None
     task_session_id: str | None = Field(default=None, min_length=16, max_length=256)
     message_kind: Literal["initial", "followup", "stop"] = "initial"
     message_seq: int = Field(default=1, ge=1)
     parent_run_id: UUID | None = None
+    input_attachment_grants: tuple[TaskAttachmentGrantPayload, ...] = Field(
+        default=(), max_length=32
+    )
+    output_write_grant: OutputWriteGrantPayload | None = None
 
 
 class _StrictRelayLease(BaseModel):
@@ -381,9 +421,7 @@ class SignedCloudClient:
         response = await self._post(f"{_API_PREFIX}/runs/{run_id}/dispatched", {})
         self._require_accepted(response)
 
-    async def upload_events(
-        self, run_id: UUID, events: Sequence[RelayEvent]
-    ) -> None:
+    async def upload_events(self, run_id: UUID, events: Sequence[RelayEvent]) -> None:
         if not events or any(event.run_id != run_id for event in events):
             raise CloudRelayError()
         response = await self._post(
@@ -550,8 +588,7 @@ class WorkerRuntime:
                 accepted = (
                     row.dispatched_at is not None
                     or row.has_events
-                    or row.state
-                    in {"dispatched", "running", "completed", "failed"}
+                    or row.state in {"dispatched", "running", "completed", "failed"}
                 )
                 if row.state in {"leased", "dispatching"}:
                     await self._store_call("mark_terminal", run_id, "interrupted")
@@ -563,9 +600,7 @@ class WorkerRuntime:
                         metabot_accepted=accepted,
                     )
                 elif row.state in {"dispatched", "running"}:
-                    self.recover_run(
-                        run_id, row.agent_id, cloud_dispatched=False
-                    )
+                    self.recover_run(run_id, row.agent_id, cloud_dispatched=False)
                 elif row.state in _TERMINAL_STATES:
                     self.recover_run(
                         run_id,
@@ -792,9 +827,7 @@ class WorkerRuntime:
             )
             return False
 
-    async def _commit_interrupted(
-        self, run_id: UUID, context: _RunContext
-    ) -> None:
+    async def _commit_interrupted(self, run_id: UUID, context: _RunContext) -> None:
         if context.terminal_status is not None:
             return
         try:
@@ -851,9 +884,7 @@ class WorkerRuntime:
             return False
         for stop_request in cancel_ids:
             if isinstance(stop_request, UUID):
-                stop_request = RelayStopRequest(
-                    run_id=stop_request, status="cancelled"
-                )
+                stop_request = RelayStopRequest(run_id=stop_request, status="cancelled")
             if not isinstance(stop_request, RelayStopRequest):
                 return False
             if stop_request.status not in _FORCED_TERMINAL_STATES:
@@ -861,19 +892,12 @@ class WorkerRuntime:
             run_id = stop_request.run_id
             async with self._state_lock:
                 context = self._runs.get(run_id)
-                inflight = (
-                    self._lease_claim_active
-                    or run_id in self._inflight_leases
-                )
+                inflight = self._lease_claim_active or run_id in self._inflight_leases
             if context is None:
                 try:
-                    has_local_state = await self._store_call(
-                        "has_local_state", run_id
-                    )
+                    has_local_state = await self._store_call("has_local_state", run_id)
                     if not inflight and not has_local_state:
-                        await self.cloud.acknowledge_stop(
-                            run_id, stop_request.status
-                        )
+                        await self.cloud.acknowledge_stop(run_id, stop_request.status)
                         async with self._state_lock:
                             self._pending_stops.pop(run_id, None)
                         continue
@@ -927,9 +951,7 @@ class WorkerRuntime:
         try:
             if not await self._store_call("callback_token_matches", run_id, token):
                 return CallbackResult.UNAUTHORIZED
-            strict_event = _StrictCallbackEvent.model_validate_json(
-                body, strict=True
-            )
+            strict_event = _StrictCallbackEvent.model_validate_json(body, strict=True)
             if strict_event.runId != run_id:
                 return CallbackResult.INVALID
             async with self._state_lock:
@@ -948,9 +970,7 @@ class WorkerRuntime:
                 if terminal is None:
                     await self._store_call("append_event", event)
                 else:
-                    await self._store_call(
-                        "append_terminal_event", event, terminal
-                    )
+                    await self._store_call("append_terminal_event", event, terminal)
                 async with self._state_lock:
                     context = self._runs.get(run_id)
                     if context is None:
@@ -964,9 +984,7 @@ class WorkerRuntime:
             if terminal is None:
                 await self._store_call("append_event", event)
             else:
-                await self._store_call(
-                    "append_terminal_event", event, terminal
-                )
+                await self._store_call("append_terminal_event", event, terminal)
             async with self._state_lock:
                 context.metabot_accepted = True
                 if (
@@ -988,6 +1006,15 @@ class WorkerRuntime:
 
     @staticmethod
     def _terminal_status(event: RelayEvent) -> str | None:
+        if event.event_type == "agent.result":
+            result = event.payload.get("result")
+            if (
+                isinstance(result, dict)
+                and result.get("contractVersion")
+                == "core_chat_collaboration_v4"
+                and result.get("completion") == "failed"
+            ):
+                return "failed"
         return {
             "agent.complete": "completed",
             "agent.result": "completed",
@@ -1128,9 +1155,7 @@ async def _handle_callback_connection(
             headers[key] = value.decode("ascii").strip()
         if "transfer-encoding" in headers:
             raise ValueError
-        content_type = (
-            headers.get("content-type", "").split(";", 1)[0].strip().lower()
-        )
+        content_type = headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if content_type != "application/json":
             raise ValueError
         raw_length = headers.get("content-length")
@@ -1162,9 +1187,7 @@ async def _handle_callback_connection(
 
 async def callback_server(runtime: WorkerRuntime) -> None:
     server = await asyncio.start_server(
-        lambda reader, writer: _handle_callback_connection(
-            runtime, reader, writer
-        ),
+        lambda reader, writer: _handle_callback_connection(runtime, reader, writer),
         host="127.0.0.1",
         port=runtime.callback_port,
         limit=_CALLBACK_HEADER_LIMIT + 4,
@@ -1225,6 +1248,7 @@ async def run_worker(runtime: WorkerRuntime) -> None:
         )
         await asyncio.shield(asyncio.gather(callback_task, *worker_tasks))
     finally:
+
         async def cleanup() -> None:
             runtime.begin_shutdown()
             if ready_task is not None and not ready_task.done():
@@ -1237,9 +1261,7 @@ async def run_worker(runtime: WorkerRuntime) -> None:
             if worker_tasks:
                 await asyncio.gather(*worker_tasks, return_exceptions=True)
             if shutdown_tasks:
-                await asyncio.gather(
-                    *tuple(shutdown_tasks), return_exceptions=True
-                )
+                await asyncio.gather(*tuple(shutdown_tasks), return_exceptions=True)
             await runtime.interrupt_active()
             await runtime.upload_once()
             runtime.stop()

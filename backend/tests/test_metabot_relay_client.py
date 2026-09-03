@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -14,8 +15,12 @@ from app.execution_relay.metabot_client import (
     MetaBotClientError,
     MetaBotRuntimeMap,
 )
-from app.execution_relay.models import RelayJobPayload, RequesterSubject
-
+from app.execution_relay.models import (
+    OutputWriteGrantPayload,
+    RelayJobPayload,
+    RequesterSubject,
+    TaskAttachmentGrantPayload,
+)
 
 RUN_ID = UUID("00000000-0000-4000-8000-000000000101")
 CONVERSATION_ID = UUID("00000000-0000-4000-8000-000000000102")
@@ -40,26 +45,30 @@ EXECUTION_CHAT_ID = "platform-00000000-0000-4000-8000-000000000102-hr-bot"
 
 def _contract(path: Path, *, entries: list[dict[str, object]] | None = None) -> Path:
     bots = entries or [
-        ({
-            "name": name,
-            "platform": "web",
-            "platformOnly": True,
-            "engine": "claude",
-            "model": "claude-opus-5",
-            "backend": "pty",
-            "toolPolicy": "none",
-            "workdir": "/Users/agentops/Developer/work/Orbbec-Agent-Team/bots/agent-brain",
-            "instance": {
-                "pm2Name": "metabot-agent-brain",
-                "apiPort": 9110,
-                "stateDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/state",
-                "configPath": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/bots.json",
-                "logDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/logs",
-            },
-        } if name == "agent-brain-bot" else {
-            "name": name,
-            "instance": {"apiPort": 9200 + index},
-        })
+        (
+            {
+                "name": name,
+                "platform": "web",
+                "platformOnly": True,
+                "engine": "claude",
+                "model": "claude-opus-5",
+                "backend": "pty",
+                "toolPolicy": "none",
+                "workdir": "/Users/agentops/Developer/work/Orbbec-Agent-Team/bots/agent-brain",
+                "instance": {
+                    "pm2Name": "metabot-agent-brain",
+                    "apiPort": 9110,
+                    "stateDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/state",
+                    "configPath": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/bots.json",
+                    "logDir": "/Users/agentops/AgentRuntime/instances/agent-brain-bot/logs",
+                },
+            }
+            if name == "agent-brain-bot"
+            else {
+                "name": name,
+                "instance": {"apiPort": 9200 + index},
+            }
+        )
         for index, name in enumerate(APPROVED_BOTS)
     ]
     path.write_text(
@@ -133,6 +142,43 @@ def _collaboration_payload(
     )
 
 
+def _collaboration_v4_payload() -> RelayJobPayload:
+    attachment_id = UUID("00000000-0000-4000-8000-000000000104")
+    return RelayJobPayload(
+        run_id=RUN_ID,
+        conversation_id=CONVERSATION_ID,
+        trigger_message_id=TRIGGER_MESSAGE_ID,
+        agent_id="hr-bot",
+        prompt="请读取附件并形成候选人判断。",
+        max_turns=24,
+        job_kind="metabot_local",
+        collaboration_contract="core_chat_collaboration_v4",
+        task_session_id="task-session-000000000101",
+        input_attachment_grants=(
+            TaskAttachmentGrantPayload(
+                attachment_id=attachment_id,
+                display_name="candidate.pdf",
+                detected_mime="application/pdf",
+                size_bytes=1024,
+                sha256_hex="a" * 64,
+                download_url=(
+                    f"/api/v1/execution-worker/attachments/{attachment_id}/content"
+                ),
+                bearer_token="A" * 43,
+                expires_at=datetime(2026, 9, 3, 8, 0, tzinfo=timezone.utc),
+            ),
+        ),
+        output_write_grant=OutputWriteGrantPayload(
+            task_id=RUN_ID,
+            agent_id="hr-bot",
+            upload_url=f"/api/v1/execution-worker/tasks/{RUN_ID}/artifacts",
+            bearer_token="B" * 43,
+            max_files=8,
+            max_total_bytes=50 * 1024 * 1024,
+        ),
+    )
+
+
 def test_runtime_map_requires_schema_v2_all_approved_bots_and_unique_ports(
     tmp_path: Path,
 ) -> None:
@@ -146,8 +192,7 @@ def test_runtime_map_requires_schema_v2_all_approved_bots_and_unique_ports(
         {
             "schemaVersion": 2,
             "bots": [
-                {"name": name, "instance": {"apiPort": 9200}}
-                for name in APPROVED_BOTS
+                {"name": name, "instance": {"apiPort": 9200}} for name in APPROVED_BOTS
             ],
         },
     ):
@@ -178,7 +223,9 @@ def test_runtime_map_rejects_any_agent_brain_identity_drift(
     tmp_path: Path, path: tuple[str, ...], value: object
 ) -> None:
     contract = json.loads(_contract(tmp_path / "runtime.json").read_text())
-    brain = next(entry for entry in contract["bots"] if entry["name"] == "agent-brain-bot")
+    brain = next(
+        entry for entry in contract["bots"] if entry["name"] == "agent-brain-bot"
+    )
     target = brain
     for segment in path[:-1]:
         target = target[segment]
@@ -202,7 +249,9 @@ def test_runtime_map_rejects_non_integer_or_out_of_range_ports(
         for index, name in enumerate(APPROVED_BOTS)
     ]
     with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
-        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json", entries=entries))
+        MetaBotRuntimeMap.from_contract(
+            _contract(tmp_path / "runtime.json", entries=entries)
+        )
 
 
 def test_runtime_map_rejects_duplicate_approved_name(tmp_path: Path) -> None:
@@ -212,23 +261,32 @@ def test_runtime_map_rejects_duplicate_approved_name(tmp_path: Path) -> None:
     ]
     entries.append({"name": "hr-bot", "instance": {"apiPort": 9400}})
     with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
-        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json", entries=entries))
+        MetaBotRuntimeMap.from_contract(
+            _contract(tmp_path / "runtime.json", entries=entries)
+        )
 
 
 def test_direct_runtime_map_construction_enforces_and_freezes_invariants() -> None:
-    valid = {
-        name: 9200 + index for index, name in enumerate(APPROVED_BOTS)
-    }
+    valid = {name: 9200 + index for index, name in enumerate(APPROVED_BOTS)}
     runtime_map = MetaBotRuntimeMap(valid)
     valid["hr-bot"] = 65000
     assert runtime_map.port_for("hr-bot") == 9200
 
     invalid_maps = (
         {name: 9200 + index for index, name in enumerate(APPROVED_BOTS[:-1])},
-        {**{name: 9200 + index for index, name in enumerate(APPROVED_BOTS)}, "other": 9400},
+        {
+            **{name: 9200 + index for index, name in enumerate(APPROVED_BOTS)},
+            "other": 9400,
+        },
         {name: 9200 for name in APPROVED_BOTS},
-        {**{name: 9200 + index for index, name in enumerate(APPROVED_BOTS)}, "hr-bot": True},
-        {**{name: 9200 + index for index, name in enumerate(APPROVED_BOTS)}, "hr-bot": 0},
+        {
+            **{name: 9200 + index for index, name in enumerate(APPROVED_BOTS)},
+            "hr-bot": True,
+        },
+        {
+            **{name: 9200 + index for index, name in enumerate(APPROVED_BOTS)},
+            "hr-bot": 0,
+        },
     )
     for ports in invalid_maps:
         with pytest.raises(MetaBotClientError, match="metabot configuration invalid"):
@@ -280,7 +338,9 @@ def test_start_run_forwards_public_result_mode(tmp_path: Path) -> None:
 
     client.start_run(_public_payload(), CALLBACK_URL)
 
-    assert json.loads(route.calls.last.request.content)["resultMode"] == "public_markdown"
+    assert (
+        json.loads(route.calls.last.request.content)["resultMode"] == "public_markdown"
+    )
 
 
 @respx.mock
@@ -308,6 +368,7 @@ def test_collaboration_followup_requires_v3_and_reuses_child_session(
 ) -> None:
     capabilities = respx.get(
         "http://127.0.0.1:9200/api/core-chat/capabilities"
+        "?contract=core_chat_collaboration_v3"
     ).mock(
         return_value=httpx.Response(
             200,
@@ -371,7 +432,10 @@ def test_collaboration_followup_requires_v3_and_reuses_child_session(
 def test_collaboration_send_fails_closed_when_v3_capability_is_missing(
     tmp_path: Path,
 ) -> None:
-    respx.get("http://127.0.0.1:9200/api/core-chat/capabilities").mock(
+    respx.get(
+        "http://127.0.0.1:9200/api/core-chat/capabilities"
+        "?contract=core_chat_collaboration_v3"
+    ).mock(
         return_value=httpx.Response(
             200, json={"contracts": {"coreChatResult": "core_chat_result_v2"}}
         )
@@ -386,6 +450,119 @@ def test_collaboration_send_fails_closed_when_v3_capability_is_missing(
 
     with pytest.raises(MetaBotClientError, match="metabot request failed"):
         client.start_run(_collaboration_payload(), CALLBACK_URL)
+
+    assert route.call_count == 0
+
+
+def _v4_capabilities(**overrides: object) -> dict[str, object]:
+    selected = {
+        "collaboration": "core_chat_collaboration_v4",
+        "thinkingSummary": "provider",
+        "inputAttachments": True,
+        "outputArtifacts": True,
+        "citations": True,
+        **overrides,
+    }
+    return {
+        "contracts": {"collaboration": "core_chat_collaboration_v4"},
+        "agents": [{"name": "hr-bot", "capabilities": selected}],
+    }
+
+
+@respx.mock
+def test_collaboration_v4_requires_explicit_file_and_citation_capabilities(
+    tmp_path: Path,
+) -> None:
+    respx.get(
+        "http://127.0.0.1:9200/api/core-chat/capabilities"
+        "?contract=core_chat_collaboration_v4"
+    ).mock(
+        return_value=httpx.Response(200, json=_v4_capabilities())
+    )
+    route = respx.post("http://127.0.0.1:9200/api/core-chat/runs").mock(
+        return_value=httpx.Response(
+            202,
+            json={
+                "contractVersion": "core_chat_collaboration_v4",
+                "status": "accepted",
+                "runId": str(RUN_ID),
+                "taskSessionId": "task-session-000000000101",
+                "messageSeq": 1,
+                "targetBot": "hr-bot",
+            },
+        )
+    )
+    client = MetaBotClient(
+        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json")),
+        _secret_file(tmp_path),
+    )
+
+    client.start_run(_collaboration_v4_payload(), CALLBACK_URL)
+
+    assert json.loads(route.calls.last.request.content) == {
+        "contractVersion": "core_chat_collaboration_v4",
+        "runId": str(RUN_ID),
+        "conversationId": str(CONVERSATION_ID),
+        "triggerMessageId": str(TRIGGER_MESSAGE_ID),
+        "targetBot": "hr-bot",
+        "prompt": "请读取附件并形成候选人判断。",
+        "eventCallbackUrl": CALLBACK_URL,
+        "taskSessionId": "task-session-000000000101",
+        "messageKind": "initial",
+        "messageSeq": 1,
+        "resultMode": "internal",
+        "inputAttachmentGrants": [
+            {
+                "attachmentId": "00000000-0000-4000-8000-000000000104",
+                "displayName": "candidate.pdf",
+                "detectedMime": "application/pdf",
+                "sizeBytes": 1024,
+                "sha256": "a" * 64,
+                "downloadUrl": (
+                    "/api/v1/execution-worker/attachments/"
+                    "00000000-0000-4000-8000-000000000104/content"
+                ),
+                "bearerToken": "A" * 43,
+                "expiresAt": "2026-09-03T08:00:00Z",
+            }
+        ],
+        "outputWriteGrant": {
+            "taskId": str(RUN_ID),
+            "agentId": "hr-bot",
+            "uploadUrl": f"/api/v1/execution-worker/tasks/{RUN_ID}/artifacts",
+            "bearerToken": "B" * 43,
+            "maxFiles": 8,
+            "maxTotalBytes": 50 * 1024 * 1024,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "missing_capability",
+    ("inputAttachments", "outputArtifacts", "citations"),
+)
+@respx.mock
+def test_collaboration_v4_fails_closed_when_capability_is_missing(
+    tmp_path: Path, missing_capability: str
+) -> None:
+    respx.get(
+        "http://127.0.0.1:9200/api/core-chat/capabilities"
+        "?contract=core_chat_collaboration_v4"
+    ).mock(
+        return_value=httpx.Response(
+            200, json=_v4_capabilities(**{missing_capability: False})
+        )
+    )
+    route = respx.post("http://127.0.0.1:9200/api/core-chat/runs").mock(
+        return_value=httpx.Response(202)
+    )
+    client = MetaBotClient(
+        MetaBotRuntimeMap.from_contract(_contract(tmp_path / "runtime.json")),
+        _secret_file(tmp_path),
+    )
+
+    with pytest.raises(MetaBotClientError, match="metabot request failed"):
+        client.start_run(_collaboration_v4_payload(), CALLBACK_URL)
 
     assert route.call_count == 0
 
@@ -572,9 +749,7 @@ def test_cancel_run_uses_same_agent_port_and_requires_matching_200(
         httpx.Response(202, json={"runId": str(RUN_ID)}),
         httpx.Response(200, json={"runId": str(UUID(int=0))}),
         httpx.Response(200, content=b"not-json"),
-        httpx.Response(
-            302, headers={"Location": "http://127.0.0.1:9400/cancel"}
-        ),
+        httpx.Response(302, headers={"Location": "http://127.0.0.1:9400/cancel"}),
     ],
 )
 @respx.mock
@@ -604,10 +779,25 @@ def test_cancel_run_rejects_every_negative_response_contract(
 @pytest.mark.parametrize(
     "response",
     [
-        httpx.Response(200, json={"status": "accepted", "runId": str(RUN_ID), "targetBot": "hr-bot"}),
-        httpx.Response(202, json={"status": "queued", "runId": str(RUN_ID), "targetBot": "hr-bot"}),
-        httpx.Response(202, json={"status": "accepted", "runId": str(UUID(int=0)), "targetBot": "hr-bot"}),
-        httpx.Response(202, json={"status": "accepted", "runId": str(RUN_ID), "targetBot": "fae-bot"}),
+        httpx.Response(
+            200,
+            json={"status": "accepted", "runId": str(RUN_ID), "targetBot": "hr-bot"},
+        ),
+        httpx.Response(
+            202, json={"status": "queued", "runId": str(RUN_ID), "targetBot": "hr-bot"}
+        ),
+        httpx.Response(
+            202,
+            json={
+                "status": "accepted",
+                "runId": str(UUID(int=0)),
+                "targetBot": "hr-bot",
+            },
+        ),
+        httpx.Response(
+            202,
+            json={"status": "accepted", "runId": str(RUN_ID), "targetBot": "fae-bot"},
+        ),
         httpx.Response(202, content=b"not-json"),
         httpx.Response(302, headers={"Location": "http://example.com/secret"}),
     ],

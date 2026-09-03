@@ -11,6 +11,9 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .attachments import routes as attachment_routes
+from .attachments.artifact_service import ArtifactOutputService, ArtifactRepository
+from .attachments.citation_service import CitationRepository, CitationService
+from .attachments.conversation_routes import build_conversation_attachment_router
 from .ai_notes.repository import AiNotesContentError, AiNotesRepository
 from .ai_notes.routes import (
     AiNotesReader,
@@ -18,9 +21,19 @@ from .ai_notes.routes import (
     build_ai_notes_router,
 )
 from .attachments.logging import install_attachment_ticket_redaction
+from .attachments.conversation_repository import ConversationAttachmentRepository
+from .attachments.download_service import (
+    ConversationAttachmentAccessRepository,
+    ConversationAttachmentDownloadService,
+    S3ImmutableAttachmentStore,
+)
+from .attachments.grant_service import AttachmentGrantService, TaskGrantRepository
+from .attachments.object_writer import AttachmentObjectWriter
+from .attachments.result_projection import ConversationResultProjection
 from .attachments.repository import AttachmentRepository
 from .attachments.service import AttachmentService
 from .attachments.store import AttachmentStore
+from .attachments.upload_service import AttachmentUploadService
 from .cluster import routes as cluster_routes
 from .cluster.monitor import ClusterMonitor, cluster_poll_loop
 from .config import Config, is_cloud_mode, load_config
@@ -405,6 +418,53 @@ def build_attachment_service(config: Config) -> AttachmentService:
     )
 
 
+def build_conversation_attachment_services(config: Config):
+    keyring = IdentityKeyring.from_file(
+        config.content_encryption_keyring_file,
+        expected_purpose="platform-content-encryption",
+        expected_key_length=32,
+    )
+    codec = ContentCodec(keyring)
+    database_url = read_secret_file(config.attachment_control_database_url_file)
+    repository = ConversationAttachmentRepository.from_config(
+        config, content_codec=codec
+    )
+    object_writer = AttachmentObjectWriter.from_config(config)
+    immutable_store = S3ImmutableAttachmentStore.from_config(config)
+    upload_service = AttachmentUploadService(
+        repository,
+        object_writer,
+        max_file_bytes=config.attachment_max_file_bytes,
+    )
+    download_service = ConversationAttachmentDownloadService(
+        ConversationAttachmentAccessRepository(database_url, content_codec=codec),
+        immutable_store,
+        ticket_secret=keyring.active_key,
+        ticket_seconds=config.attachment_ticket_seconds,
+    )
+    grant_service = AttachmentGrantService(
+        TaskGrantRepository(database_url, content_codec=codec), immutable_store
+    )
+    artifact_service = ArtifactOutputService(
+        ArtifactRepository(
+            database_url,
+            content_codec=codec,
+            upload_ttl_seconds=config.attachment_upload_ttl_seconds,
+        ),
+        object_writer,
+    )
+    citation_service = CitationService(
+        CitationRepository(database_url, content_codec=codec)
+    )
+    return (
+        upload_service,
+        download_service,
+        grant_service,
+        artifact_service,
+        citation_service,
+    )
+
+
 def build_review_service(
     config: Config,
     registry: YamlRepository,
@@ -641,6 +701,11 @@ def create_app(
     control_room_service: ControlRoomService | None = None,
     review_service=None,
     attachment_service=None,
+    conversation_attachment_upload_service=None,
+    conversation_attachment_download_service=None,
+    task_attachment_grant_service=None,
+    artifact_output_service=None,
+    citation_service=None,
     identity_auth=None,
     voc_extension_client=None,
     voc_submitter_directory=None,
@@ -755,27 +820,6 @@ def create_app(
         v1_mission_modes.append("direct_agent")
     if config.agent_brain_enabled and not config.agent_brain_v2_enabled:
         v1_mission_modes.append("brain")
-    if v1_mission_modes:
-        if (
-            mission_repository is None
-            or conversation_repository is None
-            or execution_relay_repository is None
-            or agent_use_authorization is None
-        ):
-            raise RuntimeError("Agent Brain unavailable")
-        agent_brain_orchestrator = MissionOrchestrator(
-            mission_repository,
-            execution_relay_repository,
-            capability_provider=agent_use_authorization.permitted_agents_for_user_id,
-            conversation_context_builder=ConversationContextBuilder(
-                conversation_repository
-            ),
-            conversation_projection=ConversationProjection(
-                conversation_repository
-            ),
-            mission_modes=tuple(v1_mission_modes),
-        )
-        agent_brain_orchestrator.check_ready()
     if identity_enabled and identity_auth is None:
         identity_auth = build_identity_auth(config)
     if config.partner_provider_kind and (
@@ -954,7 +998,70 @@ def create_app(
         fae_workbench_service.attach_report_service(fae_report_service)
     if attachment_service is None and config.attachment_enabled and not cloud_mode:
         attachment_service = build_attachment_service(config)
-    if attachment_service is not None:
+    if (
+        identity_enabled
+        and config.conversation_attachment_enabled
+        and all(
+            service is None
+            for service in (
+                conversation_attachment_upload_service,
+                conversation_attachment_download_service,
+                task_attachment_grant_service,
+                artifact_output_service,
+                citation_service,
+            )
+        )
+    ):
+        (
+            conversation_attachment_upload_service,
+            conversation_attachment_download_service,
+            task_attachment_grant_service,
+            artifact_output_service,
+            citation_service,
+        ) = build_conversation_attachment_services(config)
+    attachment_services = (
+        conversation_attachment_upload_service,
+        conversation_attachment_download_service,
+        task_attachment_grant_service,
+        artifact_output_service,
+        citation_service,
+    )
+    if any(service is not None for service in attachment_services) and not all(
+        service is not None for service in attachment_services
+    ):
+        raise RuntimeError("conversation attachment services unavailable")
+    if v1_mission_modes:
+        if (
+            mission_repository is None
+            or conversation_repository is None
+            or execution_relay_repository is None
+            or agent_use_authorization is None
+        ):
+            raise RuntimeError("Agent Brain unavailable")
+        agent_brain_orchestrator = MissionOrchestrator(
+            mission_repository,
+            execution_relay_repository,
+            capability_provider=agent_use_authorization.permitted_agents_for_user_id,
+            conversation_context_builder=ConversationContextBuilder(
+                conversation_repository
+            ),
+            conversation_projection=ConversationProjection(
+                conversation_repository,
+                result_projection=(
+                    ConversationResultProjection(content_codec=content_codec)
+                    if task_attachment_grant_service is not None
+                    and citation_service is not None
+                    else None
+                ),
+            ),
+            mission_modes=tuple(v1_mission_modes),
+            attachment_grants=task_attachment_grant_service,
+        )
+        agent_brain_orchestrator.check_ready()
+    if (
+        attachment_service is not None
+        or conversation_attachment_download_service is not None
+    ):
         install_attachment_ticket_redaction()
     if owns_voc_extension_client:
         voc_extension_client = VocExtensionClient(
@@ -1056,6 +1163,15 @@ def create_app(
     app.state.control_room_service = control_room_service
     app.state.review_service = review_service
     app.state.attachment_service = attachment_service
+    app.state.conversation_attachment_upload_service = (
+        conversation_attachment_upload_service
+    )
+    app.state.conversation_attachment_download_service = (
+        conversation_attachment_download_service
+    )
+    app.state.task_attachment_grant_service = task_attachment_grant_service
+    app.state.artifact_output_service = artifact_output_service
+    app.state.citation_service = citation_service
     app.state.replica_repository = replica_repository
     app.state.identity_auth = identity_auth
     app.state.execution_relay_repository = execution_relay_repository
@@ -1226,6 +1342,14 @@ def create_app(
         )
     if attachment_service is not None:
         app.include_router(attachment_routes.router)
+    if (
+        conversation_attachment_upload_service is not None
+        and conversation_attachment_download_service is not None
+        and task_attachment_grant_service is not None
+        and artifact_output_service is not None
+        and citation_service is not None
+    ):
+        app.include_router(build_conversation_attachment_router())
 
     if os.path.isdir(config.static_dir) and not identity_enabled:
         app.mount("/", SpaStaticFiles(directory=config.static_dir, html=True), name="portal")

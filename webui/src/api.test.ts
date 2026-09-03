@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createReviewConversationAttachmentTicket,
   fetchClusterStatus,
+  fetchConversationReviewFeedback,
   fetchFleetOverview,
   fetchOperationalEvents,
   fetchOperationsBrief,
   fetchReviewIssue,
+  fetchReviewConversationAttachments,
+  updateConversationReviewFeedback,
   updateReviewIssue,
 } from "./api";
 
@@ -183,5 +187,34 @@ describe("Review projected detail availability", () => {
       events: [],
       section_availability: projected.availability,
     });
+  });
+});
+
+
+describe("Conversation feedback review API", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("uses Owner review routes for feedback, files and fresh tickets", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchConversationReviewFeedback("pending_triage");
+    await fetchReviewConversationAttachments("conversation/1");
+    await updateConversationReviewFeedback("feedback/1", "triaged", "corp:owner");
+    await createReviewConversationAttachmentTicket("attachment/1", "download", "corp:owner");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/review/conversation-feedback?triage_status=pending_triage&limit=100&offset=0");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/review/conversations/conversation%2F1/attachments");
+    expect(fetchMock.mock.calls[2]).toEqual([
+      "/api/review/conversation-feedback/feedback%2F1",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ triage_status: "triaged" }) }),
+    ]);
+    expect(fetchMock.mock.calls[3]).toEqual([
+      "/api/review/attachments/attachment%2F1/ticket",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ purpose: "download" }) }),
+    ]);
   });
 });

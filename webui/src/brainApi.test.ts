@@ -77,6 +77,7 @@ describe("Agent Brain API", () => {
       example_tasks: ["分析近期客户反馈"], required_inputs: ["分析目标"],
       accepted_input_types: ["text"], output_types: ["text"],
       supports_attachments_in: false, supports_attachments_out: false,
+      attachment_limits: null,
       supports_evidence: true, supports_streaming: true,
       supports_cancellation: true, supports_idempotency: true,
       supports_persistent_session: true, supports_followup_message: true,
@@ -98,6 +99,48 @@ describe("Agent Brain API", () => {
     )));
 
     await expect(fetchAgentCatalog()).resolves.toEqual([voc]);
+  });
+
+  it("reads HR file capabilities and limits from the Catalog", async () => {
+    const hr = {
+      agent_id: "hr-bot", display_name: "HR Agent", persona_subtitle: "Hannah",
+      domain_group: "HR", mission: "招聘协作",
+      capabilities: ["分析简历"], exclusions: ["不代替录用决定"],
+      example_tasks: ["评估简历"], required_inputs: ["任务目标"],
+      accepted_input_types: ["text", "image", "pdf", "office"],
+      output_types: ["text", "image", "pdf", "office"],
+      supports_attachments_in: true, supports_attachments_out: true,
+      attachment_limits: {
+        max_file_bytes: 52_428_800,
+        max_files_per_message: 5,
+        max_bytes_per_message: 52_428_800,
+        max_files_per_conversation: 50,
+        max_bytes_per_conversation: 524_288_000,
+      },
+      supports_evidence: true, supports_streaming: true,
+      supports_cancellation: true, supports_idempotency: true,
+      supports_persistent_session: true, supports_followup_message: true,
+      supports_progress_events: true, supports_thinking_summary: true,
+      supports_cancel: true, supports_attachments: true,
+      typical_latency_seconds: 90, max_duration_seconds: 300,
+      data_classification: "internal", interaction_modes: ["direct_chat", "brain_delegation"],
+      workspace_url: null, adapter_id: "metabot-core-chat", adapter_kind: "metabot_local",
+      adapter_config_version: 1, execution_pool: "metabot_local", pool_concurrency: 1,
+      output_contract: "normalized_task_result_v1", capability_version: 3,
+      authorization_policy: "agent_grant", dispatchable: true,
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ agents: [hr] }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )));
+
+    await expect(fetchAgentCatalog()).resolves.toEqual([hr]);
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ agents: [{ ...hr, attachment_limits: { ...hr.attachment_limits, extra: 1 } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )));
+    await expect(fetchAgentCatalog()).rejects.toThrow("Agent catalog response invalid");
   });
 
   it("rejects a UTF-8 payload over 32 KiB before any network write", () => {

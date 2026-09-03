@@ -53,6 +53,7 @@ const marketingCards: AgentCapabilityCard[] = [
   mission: "帮助团队完成营销任务。", capabilities: ["营销协作"], exclusions: ["不替代审批"],
   example_tasks: ["准备营销材料"], required_inputs: ["任务目标"], accepted_input_types: ["text"],
   output_types: ["text"], supports_attachments_in: false, supports_attachments_out: false,
+  attachment_limits: null,
   supports_evidence: true, supports_streaming: true, supports_cancellation: true,
   supports_idempotency: true, max_duration_seconds: 300, data_classification: "internal",
   adapter_id: "metabot-core-chat", capability_version: 1, adapter_kind: "metabot_local",
@@ -69,6 +70,7 @@ const inboundResult: ConversationSubmissionResult = {
   message: {
     message_id: "m-1", conversation_id: "c-1", seq: 1, role: "user", content: "draft",
     turn_id: "t-1", delivery_status: "accepted", created_at: "2026-09-03T10:00:00Z", completed_at: null,
+    input_attachments: [], output_attachments: [], active_attachment_ids: [],
   },
   turn: {
     turn_id: "t-1", conversation_id: "c-1", user_message_id: "m-1", assistant_message_id: null,

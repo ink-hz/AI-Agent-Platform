@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import json
+
+# Imported fixture names intentionally become pytest fixtures in this module.
+# ruff: noqa: F401,F811
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-
 from app.agent_brain.conversation_repository import message_subject
 from app.agent_brain.loop_models import NormalizedTaskResult
 from app.agent_brain.loop_repository import (
@@ -20,7 +22,6 @@ from app.agent_brain.tool_protocol import ToolLimits, parse_tool_batch
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
 from test_control_plane_migration import control_database
-
 
 NOW = datetime(2026, 8, 24, 4, 0, tzinfo=timezone.utc)
 
@@ -112,7 +113,31 @@ def _clear_v2(connection) -> None:
         "authorization_snapshots",
     ):
         connection.execute(f"delete from platform_brain.{table}")
+    for table in (
+        "access_events",
+        "task_grants",
+        "derivatives",
+        "artifact_versions",
+        "artifacts",
+        "processing_jobs",
+        "erasure_jobs",
+        "message_citations",
+        "conversation_read_state",
+        "bindings",
+        "upload_write_attempts",
+        "uploads",
+        "attachments",
+    ):
+        connection.execute(f"delete from platform_attachments.{table}")
+    connection.execute("delete from platform_control.conversation_feedback")
     connection.execute("delete from platform_control.conversation_events")
+    connection.execute("delete from platform_control.execution_events")
+    connection.execute("delete from platform_control.execution_jobs")
+    connection.execute("delete from platform_control.mission_events")
+    connection.execute("delete from platform_control.mission_runs")
+    connection.execute("delete from platform_control.mission_tasks")
+    connection.execute("delete from platform_control.mission_messages")
+    connection.execute("delete from platform_control.missions")
     connection.execute("delete from platform_control.conversation_messages")
     connection.execute("delete from platform_control.conversation_turns")
     connection.execute("delete from platform_control.conversations")

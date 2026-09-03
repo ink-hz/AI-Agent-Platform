@@ -31,6 +31,7 @@ from app.agent_brain.runtime_registry import (
     RuntimeAgentRegistry,
 )
 from app.agent_brain.task_identity import SignedTaskTokenIssuer
+from app.attachments.grant_service import AttachmentGrantService, TaskGrantRepository
 from app.control_plane.crypto import IdentityKeyring
 from app.control_plane.dsn import validate_control_dsn
 from app.execution_relay.content_crypto import ContentCodec
@@ -283,6 +284,14 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
         content_codec=codec,
         dsn_purpose="brain",
     )
+    attachment_grants = AttachmentGrantService(
+        TaskGrantRepository(
+            database_url,
+            content_codec=codec,
+            dsn_purpose="brain",
+        ),
+        None,
+    )
     relay = ExecutionRelayRepository(
         database_url, content_codec=codec, dsn_purpose="brain"
     )
@@ -315,6 +324,7 @@ def build_runtime() -> tuple[BrainLoopRuntime, BrainLoopRepository, httpx.Client
             worker_id=_worker_id(),
             lease_seconds=_STEP_LEASE_SECONDS,
             action_commands=action_commands,
+            attachment_grants=attachment_grants,
         ),
         repository,
         client,

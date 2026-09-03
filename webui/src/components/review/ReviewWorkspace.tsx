@@ -13,6 +13,7 @@ import type {
 } from "../../types";
 import { IssueDetail } from "./IssueDetail";
 import { IssueList, STATUS_LABELS, type IssueFilterOption } from "./IssueList";
+import { ConversationFeedbackInbox, type ConversationFeedbackApi } from "./ConversationFeedbackInbox";
 
 
 export interface ReviewApi {
@@ -32,6 +33,7 @@ export interface ReviewApi {
   replay(issueId: string, payload: Record<string, unknown>, actor: string): Promise<ReplayRun>;
   semanticReview(replayId: string, payload: Record<string, unknown>, actor: string): Promise<FeedbackIssueDetail>;
   disposition(issueId: string, payload: Record<string, unknown>, actor: string): Promise<FeedbackIssueDetail>;
+  conversationFeedback?: ConversationFeedbackApi;
 }
 
 export interface ReviewIssueFilters {
@@ -395,6 +397,7 @@ export function ReviewWorkspace({
       : "数据暂不可用";
 
   return <>
+    {api.conversationFeedback && <ConversationFeedbackInbox actor={actor} api={api.conversationFeedback} />}
     <section className={`review-hero${faeGovernance ? " fae-governance-hero" : ""}`}><div>{faeGovernance
       ? <><p>FAE GOVERNANCE</p><h1>反馈与修复</h1><span>从用户反馈到根因、修复、真实复跑和闭环结论</span></>
       : <><p>Feedback Repair Ledger</p><h1>反馈修复闭环</h1><span>状态由合并、部署、逐题真实复跑和独立语义复审证据自动计算。</span></>}

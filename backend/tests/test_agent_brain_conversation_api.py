@@ -1,29 +1,29 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import datetime, timezone
-import json
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 import pytest
-
-from app.agent_brain.conversation_projection import ConversationProjection
-from app.agent_brain.conversation_models import ConversationEventRecord
 from app.agent_brain.action_models import ActionProjection
 from app.agent_brain.action_service import ActionCommandDenied
+from app.agent_brain.conversation_models import ConversationEventRecord
+from app.agent_brain.conversation_projection import ConversationProjection
 from app.agent_brain.conversation_routes import (
     ConversationCursorCodec,
+    ConversationTextBody,
     _event_payload,
     build_conversation_router,
     conversation_event_stream,
 )
 from app.agent_brain.routes import MissionStreamLimiter
-from app.control_plane.authorization import AuthorizationService
 from app.control_plane.auth import AuthSecrets
+from app.control_plane.authorization import AuthorizationService
 from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.control_plane.models import AuthContext, Role
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from test_agent_brain_api import (
     FakeAgentUse,
     FakeAuth,
@@ -126,6 +126,94 @@ def _post(client, auth, path: str, text: str, request_id: UUID | None = None):
     )
 
 
+def test_conversation_body_normalizes_text_and_attachment_sets() -> None:
+    first, second = uuid4(), uuid4()
+
+    body = ConversationTextBody.model_validate(
+        {
+            "text": "  e\u0301\r\nrequest  ",
+            "attachment_ids": [second, first],
+            "active_attachment_ids": [first, second],
+        }
+    )
+
+    assert body.text == "é\nrequest"
+    assert body.attachment_ids == tuple(sorted((first, second), key=str))
+    assert body.active_attachment_ids == tuple(sorted((first, second), key=str))
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"text": ""},
+        {
+            "text": "x",
+            "attachment_ids": [UUID(int=1), UUID(int=1)],
+            "active_attachment_ids": [UUID(int=1)],
+        },
+        {
+            "text": "x",
+            "attachment_ids": [UUID(int=1)],
+            "active_attachment_ids": [],
+        },
+        {
+            "text": "x",
+            "active_attachment_ids": [UUID(int=index + 1) for index in range(51)],
+        },
+    ],
+)
+def test_conversation_body_rejects_invalid_attachment_selection(payload) -> None:
+    with pytest.raises(ValueError):
+        ConversationTextBody.model_validate(payload)
+
+
+def test_conversation_router_marks_and_sanitizes_validation_boundary() -> None:
+    owner = uuid4()
+    app, auth, _agent_use = _app(owner, object())
+    effective_routes = [
+        effective
+        for route in app.router.routes
+        for effective in (
+            route.effective_route_contexts()
+            if callable(getattr(route, "effective_route_contexts", None))
+            else (route,)
+        )
+    ]
+    conversation_routes = [
+        route
+        for route in effective_routes
+        if getattr(route, "path", "").startswith("/api/v1/conversations")
+        or getattr(route, "path", "").startswith("/api/v1/agents/")
+    ]
+
+    assert conversation_routes
+    assert {
+        type(getattr(route, "original_route", route)).__name__
+        for route in conversation_routes
+    } == {
+        "ConversationRoute"
+    }
+    response = TestClient(app).post(
+        "/api/v1/conversations",
+        cookies=_credentials(auth)["cookies"],
+        headers={
+            **_write_credentials(auth)["headers"],
+            "Idempotency-Key": str(uuid4()),
+        },
+        json={
+            "text": "candidate-private-text",
+            "attachment_ids": ["candidate-private-attachment-id"],
+            "active_attachment_ids": ["candidate-private-active-id"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "conversation request invalid"}
+    assert "candidate-private" not in response.text
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
 def _fail_and_project(conversations, owner: UUID, mission_id: UUID) -> None:
     conversations._missions.terminate_mission(
         owner,
@@ -188,6 +276,31 @@ def test_member_event_replaces_internal_agent_id_with_catalog_name() -> None:
         "agent_name": "HR Agent",
         "status": "completed",
     }
+
+
+def test_public_event_drops_untrusted_attachment_and_artifact_references() -> None:
+    record = ConversationEventRecord(
+        event_id=uuid4(),
+        conversation_id=uuid4(),
+        seq=1,
+        turn_id=uuid4(),
+        mission_id=uuid4(),
+        event_type="agent.task_completed",
+        payload={
+            "status": "completed",
+            "attachment_refs": [
+                {"attachment_id": str(uuid4()), "object_ref": "secret-key"}
+            ],
+            "artifact_refs": [
+                {"attachment_id": str(uuid4()), "immutable_locator": "etag:secret"}
+            ],
+        },
+        created_at=datetime.now(timezone.utc),
+    )
+
+    payload = _event_payload(record)
+
+    assert payload["payload"] == {"status": "completed"}
 
 
 @pytest.mark.postgres
@@ -737,3 +850,18 @@ def test_feedback_api_binds_only_the_owned_assistant_message(
         json={"rating": "helpful"},
     )
     assert denied.status_code == 404
+
+
+def test_feedback_detail_accepts_new_reasons_and_counts_unicode_code_points() -> None:
+    from app.agent_brain.conversation_routes import ConversationFeedbackBody
+
+    assert ConversationFeedbackBody(
+        rating="unhelpful", reason="file_format", comment="😀" * 1000
+    ).comment == "😀" * 1000
+    assert ConversationFeedbackBody(
+        rating="unhelpful", reason="source_timeliness"
+    ).reason == "source_timeliness"
+    with pytest.raises(ValueError):
+        ConversationFeedbackBody(
+            rating="unhelpful", reason="other", comment="字" * 1001
+        )

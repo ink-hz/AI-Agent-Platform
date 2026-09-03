@@ -7,12 +7,11 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-
 from app.agent_brain.conversation_repository import (
     ConversationRepository,
     ConversationRepositoryConflict,
-    ConversationRepositoryNotFound,
     ConversationRepositoryError,
+    ConversationRepositoryNotFound,
 )
 from app.agent_brain.repository import MissionRepository
 from app.control_plane.crypto import IdentityKeyring
@@ -32,6 +31,20 @@ def _codec() -> ContentCodec:
 
 def _clear_conversations(connection) -> None:
     connection.execute("set constraints all deferred")
+    for table in (
+        "message_citations",
+        "task_grants",
+        "artifact_versions",
+        "artifacts",
+        "bindings",
+        "derivatives",
+        "processing_jobs",
+        "erasure_jobs",
+        "upload_write_attempts",
+        "uploads",
+        "attachments",
+    ):
+        connection.execute(f"delete from platform_attachments.{table}")
     for table in (
         "agent_action_deliveries",
         "agent_task_actions",
@@ -414,6 +427,30 @@ def test_feedback_resolves_owned_assistant_message_without_copying_content(
     listed, total = repository.list_feedback(limit=20, offset=0)
     assert total == 1
     assert listed == (result.feedback,)
+    review_items, review_total = repository.list_feedback_for_review(
+        triage_status="pending_triage", limit=20, offset=0
+    )
+    assert review_total == 1
+    assert review_items[0].feedback.feedback_id == result.feedback.feedback_id
+    assert review_items[0].question == "给出一份候选人搜索方案"
+    assert review_items[0].answer == "候选人搜索方案"
+    assert review_items[0].agent_id == "agent-brain-bot"
+    assert review_items[0].feedback.triage_status == "pending_triage"
+
+    reviewer_id = uuid4()
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users "
+            "(internal_user_id,role,display_name,status) values "
+            "(%s,'platform_owner','Review Owner','active')",
+            (reviewer_id,),
+        )
+    triaged = repository.triage_feedback(
+        reviewer_id, result.feedback.feedback_id, "triaged"
+    )
+    assert triaged.triage_status == "triaged"
+    assert triaged.triaged_by_internal_user_id == reviewer_id
+    assert triaged.triaged_at is not None
 
 
 @pytest.mark.postgres

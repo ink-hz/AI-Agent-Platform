@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from uuid import UUID, uuid4
 
 import psycopg
 import pytest
 
-from app.agent_brain.conversation_context import ConversationContextBuilder
+from app.agent_brain.conversation_context import (
+    ContextMessage,
+    ConversationContext,
+    ConversationContextBuilder,
+)
 from app.agent_brain.conversation_projection import ConversationProjection
 from app.agent_brain.conversation_repository import ConversationRepository
 from app.agent_brain.models import load_capability_cards
@@ -18,7 +22,13 @@ from app.agent_brain.orchestrator import (
     build_planning_prompt,
     build_synthesis_prompt,
 )
-from app.agent_brain.repository import MissionRepository, MissionRepositoryError
+from app.agent_brain.repository import (
+    MissionRecord,
+    MissionRepository,
+    MissionRepositoryError,
+    MissionRun,
+)
+from app.attachments.grant_service import OutputWriteGrant, TaskAttachmentGrant
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
 from app.execution_relay.models import RelayEvent
@@ -103,13 +113,19 @@ class ScriptedRelay:
             ),
         )
 
-    def terminal_result(self, run_id: UUID, result: dict[str, object]) -> None:
+    def terminal_result(
+        self,
+        run_id: UUID,
+        result: dict[str, object],
+        *,
+        event_type: str = "agent.complete",
+    ) -> None:
         self.states[run_id] = "completed"
         self.run_events[run_id] = (
             RelayEvent(
                 run_id=run_id,
                 seq=1,
-                event_type="agent.complete",
+                event_type=event_type,
                 created_at=datetime.now(timezone.utc),
                 payload={"result": result},
             ),
@@ -260,11 +276,119 @@ def test_direct_agent_completes_without_brain_synthesis(brain_database, orchestr
     assert _mission_row(environment, mission.mission_id)[0] == "completed"
     runs = _phase_runs(environment, mission.mission_id)
     assert [(row[1], row[2]) for row in runs] == [("direct", "hr-bot")]
-    assert [event.event_type for event in missions.events_after(owner_id, mission.mission_id)] == [
+    assert [
+        event.event_type
+        for event in missions.events_after(owner_id, mission.mission_id)
+    ] == [
         "mission.started",
         "task.dispatched",
         "mission.completed",
     ]
+
+
+def test_direct_agent_enqueue_uses_only_active_context_attachment_grants() -> None:
+    attachment_id = uuid4()
+    task_id = uuid4()
+    now = datetime.now(timezone.utc)
+    card = next(
+        card for card in load_capability_cards() if card.agent_id == "hr-bot"
+    ).model_copy(
+        update={
+            "supports_attachments": True,
+            "supports_attachments_in": True,
+            "supports_attachments_out": True,
+        }
+    )
+
+    class Grants:
+        def __init__(self) -> None:
+            self.reads = []
+            self.outputs = []
+
+        def issue_attachment(self, selected_task, selected_attachment, agent_id):
+            self.reads.append((selected_task, selected_attachment, agent_id))
+            return TaskAttachmentGrant(
+                attachment_id=selected_attachment,
+                display_name="candidate.pdf",
+                detected_mime="application/pdf",
+                size_bytes=128,
+                sha256_hex="a" * 64,
+                download_url=(
+                    f"/api/v1/execution-worker/attachments/{selected_attachment}/content"
+                ),
+                bearer_token="A" * 43,
+                expires_at=now + timedelta(minutes=5),
+            )
+
+        def issue_output(self, selected_task, agent_id):
+            self.outputs.append((selected_task, agent_id))
+            return OutputWriteGrant(
+                task_id=selected_task,
+                agent_id=agent_id,
+                upload_url=(
+                    f"/api/v1/execution-worker/tasks/{selected_task}/artifacts"
+                ),
+                bearer_token="B" * 43,
+                max_files=8,
+                max_total_bytes=50 * 1024 * 1024,
+            )
+
+    relay = ScriptedRelay()
+    grants = Grants()
+    service = MissionOrchestrator(
+        object(),
+        relay,
+        capability_provider=lambda _owner_id: (card,),
+        attachment_grants=grants,
+    )
+    context = ConversationContext(
+        summary=None,
+        messages=(ContextMessage(role="user", content="分析候选人材料"),),
+        estimated_utf8_bytes=64,
+        active_attachment_ids=(attachment_id,),
+    )
+    service._request = lambda _mission: context
+    mission_id = uuid4()
+    mission = MissionRecord(
+        mission_id=mission_id,
+        owner_internal_user_id=uuid4(),
+        client_request_id=uuid4(),
+        mode="direct_agent",
+        direct_agent_id="hr-bot",
+        status="delegated",
+        cancel_requested=False,
+        row_version=1,
+        created_at=now,
+        updated_at=now,
+        terminal_at=None,
+        prompt="分析候选人材料",
+    )
+    run = MissionRun(
+        run_id=uuid4(),
+        mission_id=mission_id,
+        task_id=task_id,
+        phase="direct",
+        agent_id="hr-bot",
+        status="queued",
+        created_at=now,
+        updated_at=now,
+        started_at=None,
+        terminal_at=None,
+        relay_event_cursor=0,
+        input_payload={"capability_card": card.model_dump(mode="json")},
+    )
+
+    assert service._enqueue(mission, run, "prompt") is True
+
+    payload = relay.payloads[run.run_id]
+    assert payload.collaboration_contract == "core_chat_collaboration_v4"
+    assert tuple(item.attachment_id for item in payload.input_attachment_grants) == (
+        attachment_id,
+    )
+    assert payload.output_write_grant is not None
+    assert payload.output_write_grant.task_id == task_id
+    assert grants.reads == [(task_id, attachment_id, "hr-bot")]
+    assert grants.outputs == [(task_id, "hr-bot")]
 
 
 @pytest.mark.postgres
@@ -299,6 +423,193 @@ def test_direct_agent_rejects_completion_without_typed_public_answer(
         "text": "专业 Agent 暂未生成可交付的回答，请重试本轮。",
         "reason_code": "public_answer_contract_invalid",
     }
+
+
+@pytest.mark.postgres
+def test_direct_agent_persists_v4_answer_citations_and_artifacts_separately(
+    brain_database, orchestrator
+):
+    _environment, owner_id = brain_database
+    service, missions, relay = orchestrator
+    checked_artifacts = []
+
+    class ResultGrants:
+        def issue_output(self, task_id, agent_id):
+            return OutputWriteGrant(
+                task_id=task_id,
+                agent_id=agent_id,
+                upload_url=f"/api/v1/execution-worker/tasks/{task_id}/artifacts",
+                bearer_token="B" * 43,
+                max_files=8,
+                max_total_bytes=50 * 1024 * 1024,
+            )
+
+        def classify_result_artifacts(self, task_id, agent_id, artifacts):
+            checked_artifacts.append((task_id, agent_id, artifacts))
+            return "ready"
+
+    service._attachment_grants = ResultGrants()
+    mission = missions.create_mission(
+        owner_id,
+        uuid4(),
+        "分析候选人材料",
+        mode="direct_agent",
+        direct_agent_id="hr-bot",
+    )
+
+    service.advance_pending(limit=50)
+    run_id = next(iter(relay.payloads))
+    attachment_id = uuid4()
+    relay.terminal_result(
+        run_id,
+        {
+            "contractVersion": "core_chat_collaboration_v4",
+            "publicAnswerMarkdown": "候选人具备视觉算法经验。",
+            "citations": [
+                {
+                    "citationKey": "candidate-profile",
+                    "title": "候选人公开项目",
+                    "url": "https://example.com/profile",
+                    "site": "example.com",
+                    "retrievedAt": datetime.now(timezone.utc).isoformat(),
+                    "supports": ["视觉算法经验"],
+                }
+            ],
+            "artifacts": [
+                {
+                    "attachmentId": str(attachment_id),
+                    "artifactKey": "candidate-evaluation",
+                    "producerVersionId": "report-v1",
+                    "displayName": "候选人评估.pdf",
+                    "status": "ready",
+                }
+            ],
+            "completion": "partially_completed",
+            "recovery": {
+                "status": "partial",
+                "attemptCount": 1,
+                "lastAttemptAt": datetime.now(timezone.utc).isoformat(),
+                "resumable": True,
+                "coverageNote": "缺少英文沟通证据。",
+            },
+        },
+        event_type="agent.result",
+    )
+
+    service.advance_pending(limit=50)
+
+    run = missions.runs_for_owner(owner_id, mission.mission_id)[0]
+    assert run.status == "completed"
+    assert checked_artifacts[0][0] == run.task_id
+    assert checked_artifacts[0][1] == "hr-bot"
+    assert checked_artifacts[0][2][0]["attachmentId"] == str(attachment_id)
+    assert run.output_payload == {
+        "text": "候选人具备视觉算法经验。",
+        "collaboration": {
+            "contract_version": "core_chat_collaboration_v4",
+            "citations": [
+                {
+                    "citationKey": "candidate-profile",
+                    "title": "候选人公开项目",
+                    "url": "https://example.com/profile",
+                    "site": "example.com",
+                    "retrievedAt": run.output_payload["collaboration"]["citations"][0][
+                        "retrievedAt"
+                    ],
+                    "supports": ["视觉算法经验"],
+                }
+            ],
+            "artifacts": [
+                {
+                    "attachmentId": str(attachment_id),
+                    "artifactKey": "candidate-evaluation",
+                    "producerVersionId": "report-v1",
+                    "displayName": "候选人评估.pdf",
+                    "status": "ready",
+                }
+            ],
+            "completion": "partially_completed",
+            "recovery": {
+                "status": "partial",
+                "attemptCount": 1,
+                "lastAttemptAt": run.output_payload["collaboration"]["recovery"][
+                    "lastAttemptAt"
+                ],
+                "resumable": True,
+                "coverageNote": "缺少英文沟通证据。",
+            },
+        },
+    }
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("artifact_state", "expected_status", "reason_code"),
+    (
+        ("pending", "queued", None),
+        ("invalid", "failed", "result_file_registration_failed"),
+    ),
+)
+def test_direct_agent_waits_for_or_rejects_unverified_v4_artifacts(
+    brain_database, orchestrator, artifact_state, expected_status, reason_code
+):
+    _environment, owner_id = brain_database
+    service, missions, relay = orchestrator
+
+    class ResultGrants:
+        def issue_output(self, task_id, agent_id):
+            return OutputWriteGrant(
+                task_id=task_id,
+                agent_id=agent_id,
+                upload_url=f"/api/v1/execution-worker/tasks/{task_id}/artifacts",
+                bearer_token="B" * 43,
+                max_files=8,
+                max_total_bytes=50 * 1024 * 1024,
+            )
+
+        def classify_result_artifacts(self, _task_id, _agent_id, _artifacts):
+            return artifact_state
+
+    service._attachment_grants = ResultGrants()
+    mission = missions.create_mission(
+        owner_id,
+        uuid4(),
+        "生成候选人报告",
+        mode="direct_agent",
+        direct_agent_id="hr-bot",
+    )
+    service.advance_pending(limit=50)
+    run_id = next(iter(relay.payloads))
+    relay.terminal_result(
+        run_id,
+        {
+            "contractVersion": "core_chat_collaboration_v4",
+            "publicAnswerMarkdown": "报告已生成。",
+            "citations": [],
+            "artifacts": [
+                {
+                    "attachmentId": str(uuid4()),
+                    "artifactKey": "candidate-report",
+                    "producerVersionId": "report-v1",
+                    "displayName": "候选人报告.pdf",
+                    "status": "ready",
+                }
+            ],
+            "completion": "completed",
+            "recovery": None,
+        },
+        event_type="agent.result",
+    )
+
+    service.advance_pending(limit=50)
+
+    run = missions.runs_for_owner(owner_id, mission.mission_id)[0]
+    assert run.status == expected_status
+    if reason_code is not None:
+        terminal = missions.events_after(owner_id, mission.mission_id)[-1]
+        assert terminal.event_type == "mission.failed"
+        assert terminal.payload["reason_code"] == reason_code
+        assert terminal.payload["text"] == "结果文件登记失败，请重试本轮。"
 
 
 @pytest.mark.postgres

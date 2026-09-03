@@ -48,10 +48,12 @@ set -a
 # shellcheck disable=SC1090
 source "$state_path"
 set +a
-[[ "$BACKUP_PATH" == /root/nginx-backups/agent-platform-dingtalk-* ]] || fail
+[[ "$BACKUP_PATH" == /data/archive/orbbec-agent-platform/nginx/agent-platform-dingtalk-* ]] || fail
 [[ "$RELEASE_PATH" == /opt/orbbec-agent-platform/releases/* ]] || fail
 [[ "$PREVIOUS_RELEASE" == /opt/orbbec-agent-platform/releases/* ]] || fail
-[[ "$PREVIOUS_ENVIRONMENT" == "$RELEASE_PATH/PREVIOUS_PLATFORM_ENV" ]] || fail
+release_sha="$(/usr/bin/basename "$RELEASE_PATH")"
+[[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail
+[[ "$PREVIOUS_ENVIRONMENT" == "/data/orbbec-agent-platform/release-metadata/$release_sha/PREVIOUS_PLATFORM_ENV" ]] || fail
 
 agent_available=/etc/nginx/sites-available/agent-domain.conf
 agent_enabled=/etc/nginx/sites-enabled/agent-domain.conf

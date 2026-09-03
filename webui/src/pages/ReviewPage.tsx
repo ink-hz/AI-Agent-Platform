@@ -7,6 +7,9 @@ import {
   fetchReviewIssue,
   fetchReviewIssues,
   fetchReviewOverview,
+  fetchConversationReviewFeedback,
+  fetchReviewConversationAttachments,
+  createReviewConversationAttachmentTicket,
   fetchReviewTurnSummaries,
   linkReviewTurn,
   markFixReady,
@@ -16,6 +19,7 @@ import {
   setIssueDisposition,
   startReplay,
   updateReviewIssue,
+  updateConversationReviewFeedback,
   verifyFixEvidence,
 } from "../api";
 import { ReviewWorkspace, type ReviewApi } from "../components/review/ReviewWorkspace";
@@ -42,6 +46,12 @@ const genericReviewApi = (agentId: string): ReviewApi => ({
   replay: startReplay,
   semanticReview: reviewReplay,
   disposition: setIssueDisposition,
+  conversationFeedback: {
+    feedback: (signal) => fetchConversationReviewFeedback("pending_triage", signal),
+    attachments: fetchReviewConversationAttachments,
+    triage: updateConversationReviewFeedback,
+    ticket: createReviewConversationAttachmentTicket,
+  },
 });
 
 export function ReviewPage() {

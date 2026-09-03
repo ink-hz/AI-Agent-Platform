@@ -104,12 +104,22 @@ root_path=/opt/orbbec-agent-platform
   /usr/bin/python3 -c 'import json,sys; v=json.load(sys.stdin); assert v["mode"]=="cloud-replica" and v["read_only"] is True and v["auth"]=="ssh-tunnel"'
 [[ "$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8080/api/attachments/00000000-0000-0000-0000-000000000000/ticket)" == "404" ]]
 [[ "$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/attachments/00000000-0000-0000-0000-000000000000/content)" == "404" ]]
+upload_status="$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8080/api/v1/attachments/uploads)"
+[[ "$upload_status" == "401" || "$upload_status" == "403" ]]
+download_status="$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/v1/attachments/00000000-0000-0000-0000-000000000000)"
+[[ "$download_status" == "401" || "$download_status" == "403" ]]
 [[ "$(/usr/bin/curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/review/overview)" == "503" ]]
+/usr/bin/docker inspect --format '{{.State.Health.Status}}' orbbec-agent-platform-platform-attachments-1 | /usr/bin/grep -Fxq healthy
+/usr/bin/docker inspect --format '{{.State.Health.Status}}' orbbec-agent-platform-platform-clamav-1 | /usr/bin/grep -Fxq healthy
+/usr/bin/docker exec orbbec-agent-platform-platform-api-1 python -c 'import urllib.error,urllib.request; u="http://platform-minio:9000/orbbec-agent-attachments"; code=0
+try: urllib.request.urlopen(u,timeout=3)
+except urllib.error.HTTPError as error: code=error.code
+raise SystemExit(0 if code==403 else 1)'
 /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Fxq '127.0.0.1:8080'
 ! /usr/bin/ss -H -lnt | /usr/bin/awk '{print $4}' | /usr/bin/grep -Eq '^(0\.0\.0\.0|\[::\]):8080$'
 /usr/bin/systemctl is-active --quiet orbbec-agent-platform-backup.timer
 [[ -f "$root_path/private/last-backup-success" && ! -L "$root_path/private/last-backup-success" ]]
-/usr/bin/docker volume inspect orbbec-agent-platform-backups >/dev/null
+[[ -d /data/orbbec-agent-platform/backups && ! -L /data/orbbec-agent-platform/backups ]]
 echo REMOTE_ACCEPTANCE_OK
 REMOTE
 )" || fail

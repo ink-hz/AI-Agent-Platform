@@ -8,7 +8,11 @@ from typing import Literal
 from uuid import UUID
 
 from app.agent_brain.loop_models import NormalizedTaskResult
-from app.execution_relay.models import RequesterSubject
+from app.execution_relay.models import (
+    OutputWriteGrantPayload,
+    RequesterSubject,
+    TaskAttachmentGrantPayload,
+)
 
 _KIND = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
@@ -28,6 +32,10 @@ class AdapterTask:
     conversation_id: UUID | None = None
     turn_id: UUID | None = None
     capability_version: int | None = None
+    input_attachment_grants: tuple[TaskAttachmentGrantPayload, ...] = field(
+        default=(), repr=False
+    )
+    output_write_grant: OutputWriteGrantPayload | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)

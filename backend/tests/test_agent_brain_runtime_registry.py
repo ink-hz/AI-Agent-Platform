@@ -63,10 +63,10 @@ def owner_id():
     return USER_ID
 
 
-def test_real_hr_version_two_can_authorize(real_registry, owner_id) -> None:
-    decision = real_registry.authorize_task(owner_id, "hr-bot", 2)
+def test_real_hr_version_three_can_authorize(real_registry, owner_id) -> None:
+    decision = real_registry.authorize_task(owner_id, "hr-bot", 3)
     assert decision.allowed is True
-    assert decision.capability_version == 2
+    assert decision.capability_version == 3
 
 
 def test_directory_generation_change_does_not_change_effective_hash() -> None:
@@ -97,9 +97,9 @@ def test_capability_change_rejects_new_task_without_revoking_loop() -> None:
 def test_genuine_allow_to_deny_changes_effective_hash() -> None:
     authorization = FakeAuthorization()
     registry = _registry(authorization=authorization)
-    allowed = registry.authorize_task(USER_ID, "hr-bot", 2)
+    allowed = registry.authorize_task(USER_ID, "hr-bot", 3)
     authorization.allowed.clear()
-    denied = registry.authorize_task(USER_ID, "hr-bot", 2)
+    denied = registry.authorize_task(USER_ID, "hr-bot", 3)
 
     assert allowed.allowed is True
     assert denied.allowed is False
@@ -174,7 +174,17 @@ def test_snapshot_exposes_adapter_and_public_capability_contract() -> None:
 
     assert item.adapter_kind == "metabot_local"
     assert item.adapter_config_version == 1
-    assert item.accepted_input_types == ("text",)
+    assert item.accepted_input_types == ("text", "image", "pdf", "office")
+    assert item.output_types == ("text", "image", "pdf", "office")
+    assert item.supports_attachments_in is True
+    assert item.supports_attachments_out is True
+    assert item.attachment_limits == {
+        "max_file_bytes": 50 * 1024 * 1024,
+        "max_files_per_message": 5,
+        "max_bytes_per_message": 50 * 1024 * 1024,
+        "max_files_per_conversation": 50,
+        "max_bytes_per_conversation": 500 * 1024 * 1024,
+    }
     assert item.output_contract == "normalized_task_result_v1"
     assert item.supports_idempotency is True
     assert item.max_duration_seconds == 300
@@ -183,7 +193,7 @@ def test_snapshot_exposes_adapter_and_public_capability_contract() -> None:
     assert item.supports_progress_events is True
     assert item.supports_thinking_summary is True
     assert item.supports_cancel is True
-    assert item.supports_attachments is False
+    assert item.supports_attachments is True
     assert item.typical_latency_seconds == 90
 
 

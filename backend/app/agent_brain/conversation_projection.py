@@ -59,7 +59,6 @@ PUBLIC_BRAIN_PAYLOAD_KEYS = frozenset(
         "public_reason",
         "status",
         "duration_ms",
-        "attachment_refs",
         "reason_code",
         "task_id",
         "child_session_id",
@@ -68,7 +67,6 @@ PUBLIC_BRAIN_PAYLOAD_KEYS = frozenset(
         "kind",
         "summary",
         "evidence_refs",
-        "artifact_refs",
         "action_id",
         "action_kind",
         "impact",
@@ -110,11 +108,17 @@ _TURN_BY_EVENT = {
 
 
 class ConversationProjection:
-    def __init__(self, repository: ConversationRepository) -> None:
+    def __init__(
+        self,
+        repository: ConversationRepository,
+        *,
+        result_projection: object | None = None,
+    ) -> None:
         if not isinstance(repository, ConversationRepository):
             raise ValueError("Conversation repository required")
         self.repository = repository
         self.missions = repository._missions
+        self._result_projection = result_projection
 
     @staticmethod
     def project(event: PrivateBrainEvent) -> PublicBrainEvent:
@@ -620,7 +624,8 @@ class ConversationProjection:
             with self.repository._connection() as connection, connection.cursor() as cursor:
                 cursor.execute("set constraints all deferred")
                 row = cursor.execute(
-                    "select mission.mission_id,mission.status as mission_status,"
+                    "select mission.mission_id,mission.owner_internal_user_id,"
+                    "mission.status as mission_status,"
                     "mission.conversation_id,mission.turn_id,"
                     "turn.status as turn_status,turn.assistant_message_id "
                     "from platform_control.missions mission "
@@ -640,9 +645,10 @@ class ConversationProjection:
                     or row["turn_status"] not in {"accepted", "running"}
                 ):
                     return False
-                event_type, text = self.missions.terminal_delivery_for_projection(
+                delivery = self.missions.terminal_delivery_for_projection(
                     cursor, mission_id
                 )
+                event_type, text = delivery.event_type, delivery.text
                 turn_status = _TURN_BY_EVENT[event_type]
                 role = "assistant" if event_type == "mission.completed" else "system"
                 delivery_status = (
@@ -676,6 +682,28 @@ class ConversationProjection:
                         delivery_status,
                     ),
                 )
+                collaboration = (
+                    delivery.output_payload.get("collaboration")
+                    if delivery.output_payload is not None
+                    else None
+                )
+                if collaboration is not None:
+                    if (
+                        event_type != "mission.completed"
+                        or delivery.task_id is None
+                        or delivery.agent_id is None
+                        or self._result_projection is None
+                    ):
+                        raise ConversationRepositoryError()
+                    self._result_projection.project_locked(
+                        cursor,
+                        owner_id=row["owner_internal_user_id"],
+                        conversation_id=conversation_id,
+                        message_id=message_id,
+                        task_id=delivery.task_id,
+                        agent_id=delivery.agent_id,
+                        collaboration=collaboration,
+                    )
                 cursor.execute(
                     "update platform_control.conversation_turns set "
                     "assistant_message_id=%s,status=%s,updated_at=now() "
