@@ -83,6 +83,8 @@ create table platform_attachments.uploads (
   ),
   size_bytes bigint not null default 0 check (size_bytes >= 0),
   sha256 bytea check (sha256 is null or octet_length(sha256) = 32),
+  expected_sha256 bytea
+    check (expected_sha256 is null or octet_length(expected_sha256) = 32),
   retained_until timestamptz not null
     default (now() + interval '365 days'),
   state text not null default 'uploading' check (state in (
@@ -390,6 +392,8 @@ create table platform_attachments.message_citations (
     references platform_control.conversations(conversation_id),
   message_id uuid not null,
   ordinal integer not null check (ordinal > 0),
+  citation_key text not null
+    check (citation_key ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'),
   url_ciphertext bytea not null
     check (octet_length(url_ciphertext) between 29 and 1048576),
   url_key_version integer not null check (url_key_version > 0),
@@ -409,7 +413,8 @@ create table platform_attachments.message_citations (
     jsonb_typeof(supported_claim_locations)='array'
     and jsonb_array_length(supported_claim_locations) > 0
   ),
-  unique (message_id,ordinal)
+  unique (message_id,ordinal),
+  unique (message_id,citation_key)
 );
 
 create table platform_attachments.conversation_read_state (
@@ -1488,6 +1493,448 @@ begin
 end
 $function$;
 
+create function platform_attachments.consume_task_grant_gateway_v64(
+  selected_token_sha256 bytea,
+  selected_attachment_id uuid,
+  selected_byte_count bigint
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare selected_grant_id uuid;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Attachment gateway caller invalid'; end if;
+  if selected_token_sha256 is null
+     or octet_length(selected_token_sha256) <> 32
+     or selected_attachment_id is null
+     or selected_byte_count is null or selected_byte_count <= 0
+  then raise check_violation using message='Attachment gateway request invalid'; end if;
+  if exists (
+    select 1
+    from platform_attachments.task_grants grant_row
+    join platform_control.mission_tasks task on task.task_id=grant_row.task_id
+    where grant_row.token_sha256=selected_token_sha256
+      and grant_row.attachment_id=selected_attachment_id
+      and grant_row.scope='read'
+      and task.agent_id=grant_row.agent_id
+      and task.status not in ('queued','running')
+  ) then
+    raise insufficient_privilege using message='Attachment task terminal';
+  end if;
+  update platform_attachments.task_grants grant_row set
+    read_count=grant_row.read_count+1,
+    bytes_read=grant_row.bytes_read+selected_byte_count
+  from platform_attachments.attachments attachment,
+       platform_control.mission_tasks task,
+       platform_control.missions mission
+  where grant_row.token_sha256=selected_token_sha256
+    and grant_row.attachment_id=selected_attachment_id
+    and grant_row.scope='read'
+    and grant_row.revoked_at is null and grant_row.expires_at > now()
+    and grant_row.read_count < grant_row.max_reads
+    and grant_row.bytes_read+selected_byte_count <= grant_row.max_bytes
+    and task.task_id=grant_row.task_id
+    and task.agent_id=grant_row.agent_id
+    and task.status in ('queued','running')
+    and mission.mission_id=task.mission_id
+    and attachment.attachment_id=grant_row.attachment_id
+    and attachment.owner_internal_user_id=mission.owner_internal_user_id
+    and attachment.conversation_id=mission.conversation_id
+    and attachment.state='ready' and attachment.retained_until > now()
+    and selected_byte_count=attachment.size_bytes
+    and exists (
+      select 1 from platform_attachments.bindings binding
+      where binding.attachment_id=attachment.attachment_id
+        and binding.owner_internal_user_id=attachment.owner_internal_user_id
+        and binding.conversation_id=attachment.conversation_id
+        and binding.kind='task_input'
+        and binding.task_id=grant_row.task_id
+        and binding.agent_id=grant_row.agent_id
+    )
+  returning grant_row.grant_id into selected_grant_id;
+  if not found then
+    raise insufficient_privilege using message='Attachment grant unavailable';
+  end if;
+  return selected_grant_id;
+end
+$function$;
+
+create function platform_attachments.create_artifact_upload_v64(
+  selected_token_sha256 bytea,
+  selected_task_id uuid,
+  selected_agent_id text,
+  selected_upload_id uuid,
+  selected_attachment_id uuid,
+  selected_artifact_id uuid,
+  selected_artifact_version_id uuid,
+  selected_artifact_key text,
+  selected_producer_version_id text,
+  selected_original_name_ciphertext bytea,
+  selected_original_name_key_version integer,
+  selected_object_ref_ciphertext bytea,
+  selected_object_ref_key_version integer,
+  selected_declared_mime text,
+  selected_size_bytes bigint,
+  selected_expected_sha256 bytea,
+  selected_expires_at timestamptz
+) returns table(
+  upload_id uuid,
+  attachment_id uuid,
+  artifact_id uuid,
+  artifact_version_id uuid,
+  version_no integer,
+  replayed boolean
+)
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare
+  selected_owner_internal_user_id uuid;
+  selected_conversation_id uuid;
+  selected_grant_id uuid;
+  existing_artifact_id uuid;
+  existing_upload_id uuid;
+  existing_attachment_id uuid;
+  existing_artifact_version_id uuid;
+  existing_version_no integer;
+  existing_agent_id text;
+  existing_declared_mime text;
+  existing_size_bytes bigint;
+  existing_expected_sha256 bytea;
+  next_version_no integer;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Artifact upload creator invalid'; end if;
+  if selected_token_sha256 is null or octet_length(selected_token_sha256) <> 32
+     or selected_task_id is null or selected_agent_id is null
+     or selected_agent_id !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+     or selected_upload_id is null or selected_attachment_id is null
+     or selected_artifact_id is null or selected_artifact_version_id is null
+     or selected_artifact_key is null
+     or selected_artifact_key !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+     or selected_producer_version_id is null
+     or octet_length(selected_producer_version_id) not between 1 and 160
+     or selected_producer_version_id ~ '[[:cntrl:]]'
+     or selected_original_name_ciphertext is null
+     or octet_length(selected_original_name_ciphertext) not between 29 and 1048576
+     or selected_original_name_key_version is null
+     or selected_original_name_key_version <= 0
+     or selected_object_ref_ciphertext is null
+     or octet_length(selected_object_ref_ciphertext) not between 29 and 1048576
+     or selected_object_ref_key_version is null
+     or selected_object_ref_key_version <= 0
+     or selected_declared_mime is null
+     or octet_length(selected_declared_mime) not between 1 and 255
+     or selected_declared_mime <> btrim(selected_declared_mime)
+     or selected_declared_mime ~ '[[:space:]]'
+     or selected_declared_mime !~ '^[A-Za-z0-9!#$%&''*+.^_`|~-]+/[A-Za-z0-9!#$%&''*+.^_`|~-]+$'
+     or selected_size_bytes is null or selected_size_bytes <= 0
+     or selected_size_bytes > 52428800
+     or selected_expected_sha256 is null
+     or octet_length(selected_expected_sha256) <> 32
+     or selected_expires_at is null or selected_expires_at <= now()
+     or selected_expires_at > now() + interval '24 hours'
+  then raise check_violation using message='Artifact upload reservation invalid'; end if;
+
+  select mission.owner_internal_user_id,mission.conversation_id
+    into selected_owner_internal_user_id,selected_conversation_id
+  from platform_control.mission_tasks task
+  join platform_control.missions mission on mission.mission_id=task.mission_id
+  where task.task_id=selected_task_id
+    and task.agent_id=selected_agent_id
+    and task.status in ('queued','running')
+  for update of task;
+  if not found then
+    raise insufficient_privilege using message='Artifact task unavailable';
+  end if;
+
+  select grant_row.grant_id into selected_grant_id
+  from platform_attachments.task_grants grant_row
+  where grant_row.token_sha256=selected_token_sha256
+    and grant_row.task_id=selected_task_id
+    and grant_row.attachment_id is null
+    and grant_row.agent_id=selected_agent_id
+    and grant_row.scope='write_output'
+    and grant_row.revoked_at is null and grant_row.expires_at > now()
+    and grant_row.max_files <= 20 and grant_row.max_bytes <= 262144000
+    and grant_row.max_file_bytes <= 52428800
+  for update;
+  if not found then
+    raise insufficient_privilege using message='Artifact output grant unavailable';
+  end if;
+
+  select artifact.artifact_id into existing_artifact_id
+  from platform_attachments.artifacts artifact
+  where artifact.task_id=selected_task_id
+    and artifact.artifact_key=selected_artifact_key
+  for update;
+
+  if found then
+    select upload.upload_id,attachment.attachment_id,
+           version.artifact_version_id,version.version_no,
+           artifact.agent_id,upload.declared_mime,upload.size_bytes,
+           upload.expected_sha256
+      into existing_upload_id,existing_attachment_id,
+           existing_artifact_version_id,existing_version_no,
+           existing_agent_id,existing_declared_mime,existing_size_bytes,
+           existing_expected_sha256
+    from platform_attachments.artifacts artifact
+    join platform_attachments.artifact_versions version
+      on version.artifact_id=artifact.artifact_id
+    join platform_attachments.attachments attachment
+      on attachment.attachment_id=version.attachment_id
+    join platform_attachments.uploads upload
+      on upload.attachment_id=attachment.attachment_id
+    where artifact.artifact_id=existing_artifact_id
+      and version.producer_version_id=selected_producer_version_id;
+    if found then
+      if existing_agent_id <> selected_agent_id
+         or existing_declared_mime <> selected_declared_mime
+         or existing_size_bytes <> selected_size_bytes
+         or existing_expected_sha256 <> selected_expected_sha256
+      then raise unique_violation using message='Artifact upload replay conflict'; end if;
+      return query select existing_upload_id,existing_attachment_id,
+        existing_artifact_id,existing_artifact_version_id,
+        existing_version_no,true;
+      return;
+    end if;
+  end if;
+
+  update platform_attachments.task_grants grant_row set
+    file_count=grant_row.file_count+1,
+    bytes_read=grant_row.bytes_read+selected_size_bytes
+  where grant_row.grant_id=selected_grant_id
+    and grant_row.token_sha256=selected_token_sha256
+    and grant_row.revoked_at is null and grant_row.expires_at > now()
+    and grant_row.file_count < grant_row.max_files
+    and grant_row.file_count < 20
+    and selected_size_bytes <= grant_row.max_file_bytes
+    and selected_size_bytes <= 52428800
+    and grant_row.bytes_read+selected_size_bytes <= grant_row.max_bytes
+    and grant_row.bytes_read+selected_size_bytes <= 262144000
+  returning grant_row.grant_id into selected_grant_id;
+  if not found then
+    raise insufficient_privilege using message='Artifact output grant unavailable';
+  end if;
+
+  if existing_artifact_id is null then
+    insert into platform_attachments.artifacts(
+      artifact_id,artifact_key,owner_internal_user_id,conversation_id,
+      task_id,agent_id
+    ) values (
+      selected_artifact_id,selected_artifact_key,
+      selected_owner_internal_user_id,selected_conversation_id,
+      selected_task_id,selected_agent_id
+    );
+    existing_artifact_id := selected_artifact_id;
+    next_version_no := 1;
+  else
+    select coalesce(max(version.version_no),0)+1 into next_version_no
+    from platform_attachments.artifact_versions version
+    where version.artifact_id=existing_artifact_id;
+  end if;
+
+  insert into platform_attachments.attachments(
+    attachment_id,owner_internal_user_id,conversation_id,source_kind,
+    original_name_ciphertext,original_name_key_version,
+    object_ref_ciphertext,object_ref_key_version,declared_mime,size_bytes,state
+  ) values (
+    selected_attachment_id,selected_owner_internal_user_id,
+    selected_conversation_id,'agent_output',
+    selected_original_name_ciphertext,selected_original_name_key_version,
+    selected_object_ref_ciphertext,selected_object_ref_key_version,
+    selected_declared_mime,selected_size_bytes,'uploading'
+  );
+  insert into platform_attachments.uploads(
+    upload_id,attachment_id,owner_internal_user_id,conversation_id,
+    object_ref_ciphertext,object_ref_key_version,declared_mime,size_bytes,
+    expected_sha256,expires_at,state
+  ) values (
+    selected_upload_id,selected_attachment_id,
+    selected_owner_internal_user_id,selected_conversation_id,
+    selected_object_ref_ciphertext,selected_object_ref_key_version,
+    selected_declared_mime,selected_size_bytes,selected_expected_sha256,
+    selected_expires_at,'uploading'
+  );
+  insert into platform_attachments.bindings(
+    binding_id,attachment_id,owner_internal_user_id,kind,
+    conversation_id,task_id,agent_id
+  ) values (
+    gen_random_uuid(),selected_attachment_id,selected_owner_internal_user_id,
+    'task_output',selected_conversation_id,selected_task_id,selected_agent_id
+  );
+  insert into platform_attachments.artifact_versions(
+    artifact_version_id,artifact_id,attachment_id,version_no,
+    producer_version_id,original_name_ciphertext,original_name_key_version,
+    object_ref_ciphertext,object_ref_key_version,size_bytes,state,result_status
+  ) values (
+    selected_artifact_version_id,existing_artifact_id,selected_attachment_id,
+    next_version_no,selected_producer_version_id,
+    selected_original_name_ciphertext,selected_original_name_key_version,
+    selected_object_ref_ciphertext,selected_object_ref_key_version,
+    selected_size_bytes,'uploading','pending'
+  );
+  return query select selected_upload_id,selected_attachment_id,
+    existing_artifact_id,selected_artifact_version_id,next_version_no,false;
+end
+$function$;
+
+create function platform_attachments.claim_artifact_upload_write_v64(
+  selected_token_sha256 bytea,
+  selected_upload_id uuid,
+  selected_write_attempt_id uuid,
+  selected_object_ref_ciphertext bytea,
+  selected_object_ref_key_version integer,
+  selected_write_lease_expires_at timestamptz
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare
+  selected_attachment_id uuid;
+  selected_owner_internal_user_id uuid;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Artifact upload writer invalid'; end if;
+  select attachment.attachment_id,attachment.owner_internal_user_id
+    into selected_attachment_id,selected_owner_internal_user_id
+  from platform_attachments.uploads upload
+  join platform_attachments.attachments attachment
+    on attachment.attachment_id=upload.attachment_id
+  join platform_attachments.artifact_versions version
+    on version.attachment_id=attachment.attachment_id
+  join platform_attachments.artifacts artifact
+    on artifact.artifact_id=version.artifact_id
+  join platform_attachments.task_grants grant_row
+    on grant_row.task_id=artifact.task_id and grant_row.agent_id=artifact.agent_id
+  join platform_control.mission_tasks task
+    on task.task_id=artifact.task_id and task.agent_id=artifact.agent_id
+  where upload.upload_id=selected_upload_id
+    and grant_row.token_sha256=selected_token_sha256
+    and grant_row.scope='write_output'
+    and grant_row.revoked_at is null and grant_row.expires_at > now()
+    and task.status in ('queued','running')
+    and attachment.source_kind='agent_output';
+  if not found then
+    raise insufficient_privilege using message='Artifact upload unavailable';
+  end if;
+  perform platform_attachments.claim_upload_write_v64(
+    selected_upload_id,selected_owner_internal_user_id,
+    selected_write_attempt_id,selected_object_ref_ciphertext,
+    selected_object_ref_key_version,selected_write_lease_expires_at
+  );
+  return selected_attachment_id;
+end
+$function$;
+
+create function platform_attachments.abandon_artifact_upload_write_v64(
+  selected_token_sha256 bytea,
+  selected_upload_id uuid,
+  selected_write_attempt_id uuid
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare
+  selected_attachment_id uuid;
+  selected_owner_internal_user_id uuid;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Artifact upload abandoner invalid'; end if;
+  select attachment.attachment_id,attachment.owner_internal_user_id
+    into selected_attachment_id,selected_owner_internal_user_id
+  from platform_attachments.uploads upload
+  join platform_attachments.attachments attachment
+    on attachment.attachment_id=upload.attachment_id
+  join platform_attachments.artifact_versions version
+    on version.attachment_id=attachment.attachment_id
+  join platform_attachments.artifacts artifact
+    on artifact.artifact_id=version.artifact_id
+  join platform_attachments.task_grants grant_row
+    on grant_row.task_id=artifact.task_id and grant_row.agent_id=artifact.agent_id
+  where upload.upload_id=selected_upload_id
+    and grant_row.token_sha256=selected_token_sha256
+    and grant_row.scope='write_output';
+  if not found then
+    raise insufficient_privilege using message='Artifact upload unavailable';
+  end if;
+  perform platform_attachments.abandon_upload_write_v64(
+    selected_upload_id,selected_owner_internal_user_id,selected_write_attempt_id
+  );
+  return selected_attachment_id;
+end
+$function$;
+
+create function platform_attachments.finalize_artifact_upload_v64(
+  selected_token_sha256 bytea,
+  selected_upload_id uuid,
+  selected_write_attempt_id uuid,
+  selected_declared_mime text,
+  selected_size_bytes bigint,
+  selected_sha256 bytea
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, platform_attachments
+as $function$
+declare
+  selected_attachment_id uuid;
+  selected_owner_internal_user_id uuid;
+  expected_sha256 bytea;
+begin
+  if current_user not in ('platform_control_owner','platform_control_owner_preview')
+     or session_user not in ('platform_control_app','platform_control_app_preview')
+     or (current_database()='agent_platform_control') <> (session_user='platform_control_app')
+  then raise insufficient_privilege using message='Artifact upload finalizer invalid'; end if;
+  select attachment.attachment_id,attachment.owner_internal_user_id,
+         upload.expected_sha256
+    into selected_attachment_id,selected_owner_internal_user_id,expected_sha256
+  from platform_attachments.uploads upload
+  join platform_attachments.attachments attachment
+    on attachment.attachment_id=upload.attachment_id
+  join platform_attachments.artifact_versions version
+    on version.attachment_id=attachment.attachment_id
+  join platform_attachments.artifacts artifact
+    on artifact.artifact_id=version.artifact_id
+  join platform_attachments.task_grants grant_row
+    on grant_row.task_id=artifact.task_id and grant_row.agent_id=artifact.agent_id
+  join platform_control.mission_tasks task
+    on task.task_id=artifact.task_id and task.agent_id=artifact.agent_id
+  where upload.upload_id=selected_upload_id
+    and grant_row.token_sha256=selected_token_sha256
+    and grant_row.scope='write_output'
+    and grant_row.revoked_at is null and grant_row.expires_at > now()
+    and task.status in ('queued','running')
+    and attachment.source_kind='agent_output';
+  if not found then
+    raise insufficient_privilege using message='Artifact upload unavailable';
+  end if;
+  if selected_sha256 is null or octet_length(selected_sha256) <> 32
+     or expected_sha256 is null or expected_sha256 <> selected_sha256
+  then raise check_violation using message='Artifact upload digest mismatch'; end if;
+  perform platform_attachments.finalize_upload_v64(
+    selected_upload_id,selected_owner_internal_user_id,
+    selected_write_attempt_id,selected_declared_mime,
+    selected_size_bytes,selected_sha256
+  );
+  update platform_attachments.artifact_versions version set state='validating'
+  where version.attachment_id=selected_attachment_id
+    and version.state='uploading' and version.result_status='pending';
+  if not found then
+    raise check_violation using message='Artifact version unavailable';
+  end if;
+  return selected_attachment_id;
+end
+$function$;
+
 create function platform_attachments.revoke_task_grant_v64(
   selected_grant_id uuid
 ) returns boolean
@@ -2145,6 +2592,15 @@ begin
     'platform_attachments.acknowledge_upload_write_cleanup_v64(uuid), '
     'platform_attachments.issue_task_grant_v64('
     'uuid,bytea,uuid,uuid,text,text,timestamptz,integer,bigint,integer,bigint), '
+    'platform_attachments.consume_task_grant_gateway_v64(bytea,uuid,bigint), '
+    'platform_attachments.create_artifact_upload_v64('
+    'bytea,uuid,text,uuid,uuid,uuid,uuid,text,text,bytea,integer,bytea,integer,'
+    'text,bigint,bytea,timestamptz), '
+    'platform_attachments.claim_artifact_upload_write_v64('
+    'bytea,uuid,uuid,bytea,integer,timestamptz), '
+    'platform_attachments.abandon_artifact_upload_write_v64(bytea,uuid,uuid), '
+    'platform_attachments.finalize_artifact_upload_v64('
+    'bytea,uuid,uuid,text,bigint,bytea), '
     'platform_attachments.revoke_task_grant_v64(uuid), '
     'platform_attachments.upsert_conversation_read_state_v64('
     'uuid,uuid,integer) to %I',selected_app

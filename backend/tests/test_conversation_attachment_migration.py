@@ -1456,10 +1456,10 @@ def test_v64_citation_requires_site_and_supported_claim_locations(
         context = _seed_task(admin)
         admin.execute(
             "insert into platform_attachments.message_citations "
-            "(citation_id,conversation_id,message_id,ordinal,url_ciphertext,"
+            "(citation_id,conversation_id,message_id,ordinal,citation_key,url_ciphertext,"
             "url_key_version,site_ciphertext,site_key_version,"
             "supported_claim_locations,retrieved_at) "
-            "values (%s,%s,%s,1,%s,1,%s,1,%s,now())",
+            "values (%s,%s,%s,1,'source-1',%s,1,%s,1,%s,now())",
             (
                 uuid4(),
                 context["conversation_id"],
@@ -1472,10 +1472,10 @@ def test_v64_citation_requires_site_and_supported_claim_locations(
         with pytest.raises(psycopg.errors.CheckViolation):
             admin.execute(
                 "insert into platform_attachments.message_citations "
-                "(citation_id,conversation_id,message_id,ordinal,url_ciphertext,"
+                "(citation_id,conversation_id,message_id,ordinal,citation_key,url_ciphertext,"
                 "url_key_version,site_ciphertext,site_key_version,"
                 "supported_claim_locations,retrieved_at) "
-                "values (%s,%s,%s,2,%s,1,%s,1,'[]'::jsonb,now())",
+                "values (%s,%s,%s,2,'source-2',%s,1,%s,1,'[]'::jsonb,now())",
                 (
                     uuid4(),
                     context["conversation_id"],

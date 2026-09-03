@@ -11,6 +11,8 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .attachments import routes as attachment_routes
+from .attachments.artifact_service import ArtifactOutputService, ArtifactRepository
+from .attachments.citation_service import CitationRepository, CitationService
 from .attachments.conversation_routes import build_conversation_attachment_router
 from .ai_notes.repository import AiNotesContentError, AiNotesRepository
 from .ai_notes.routes import (
@@ -25,6 +27,7 @@ from .attachments.download_service import (
     ConversationAttachmentDownloadService,
     S3ImmutableAttachmentStore,
 )
+from .attachments.grant_service import AttachmentGrantService, TaskGrantRepository
 from .attachments.object_writer import AttachmentObjectWriter
 from .attachments.repository import AttachmentRepository
 from .attachments.service import AttachmentService
@@ -425,18 +428,40 @@ def build_conversation_attachment_services(config: Config):
     repository = ConversationAttachmentRepository.from_config(
         config, content_codec=codec
     )
+    object_writer = AttachmentObjectWriter.from_config(config)
+    immutable_store = S3ImmutableAttachmentStore.from_config(config)
     upload_service = AttachmentUploadService(
         repository,
-        AttachmentObjectWriter.from_config(config),
+        object_writer,
         max_file_bytes=config.attachment_max_file_bytes,
     )
     download_service = ConversationAttachmentDownloadService(
         ConversationAttachmentAccessRepository(database_url, content_codec=codec),
-        S3ImmutableAttachmentStore.from_config(config),
+        immutable_store,
         ticket_secret=keyring.active_key,
         ticket_seconds=config.attachment_ticket_seconds,
     )
-    return upload_service, download_service
+    grant_service = AttachmentGrantService(
+        TaskGrantRepository(database_url, content_codec=codec), immutable_store
+    )
+    artifact_service = ArtifactOutputService(
+        ArtifactRepository(
+            database_url,
+            content_codec=codec,
+            upload_ttl_seconds=config.attachment_upload_ttl_seconds,
+        ),
+        object_writer,
+    )
+    citation_service = CitationService(
+        CitationRepository(database_url, content_codec=codec)
+    )
+    return (
+        upload_service,
+        download_service,
+        grant_service,
+        artifact_service,
+        citation_service,
+    )
 
 
 def build_review_service(
@@ -677,6 +702,9 @@ def create_app(
     attachment_service=None,
     conversation_attachment_upload_service=None,
     conversation_attachment_download_service=None,
+    task_attachment_grant_service=None,
+    artifact_output_service=None,
+    citation_service=None,
     identity_auth=None,
     voc_extension_client=None,
     voc_submitter_directory=None,
@@ -993,16 +1021,34 @@ def create_app(
     if (
         identity_enabled
         and config.attachment_enabled
-        and conversation_attachment_upload_service is None
-        and conversation_attachment_download_service is None
+        and all(
+            service is None
+            for service in (
+                conversation_attachment_upload_service,
+                conversation_attachment_download_service,
+                task_attachment_grant_service,
+                artifact_output_service,
+                citation_service,
+            )
+        )
         and not cloud_mode
     ):
         (
             conversation_attachment_upload_service,
             conversation_attachment_download_service,
+            task_attachment_grant_service,
+            artifact_output_service,
+            citation_service,
         ) = build_conversation_attachment_services(config)
-    if (conversation_attachment_upload_service is None) != (
-        conversation_attachment_download_service is None
+    attachment_services = (
+        conversation_attachment_upload_service,
+        conversation_attachment_download_service,
+        task_attachment_grant_service,
+        artifact_output_service,
+        citation_service,
+    )
+    if any(service is not None for service in attachment_services) and not all(
+        service is not None for service in attachment_services
     ):
         raise RuntimeError("conversation attachment services unavailable")
     if (
@@ -1116,6 +1162,9 @@ def create_app(
     app.state.conversation_attachment_download_service = (
         conversation_attachment_download_service
     )
+    app.state.task_attachment_grant_service = task_attachment_grant_service
+    app.state.artifact_output_service = artifact_output_service
+    app.state.citation_service = citation_service
     app.state.replica_repository = replica_repository
     app.state.identity_auth = identity_auth
     app.state.execution_relay_repository = execution_relay_repository
@@ -1289,6 +1338,9 @@ def create_app(
     if (
         conversation_attachment_upload_service is not None
         and conversation_attachment_download_service is not None
+        and task_attachment_grant_service is not None
+        and artifact_output_service is not None
+        and citation_service is not None
     ):
         app.include_router(build_conversation_attachment_router())
 

@@ -12,9 +12,9 @@ from starlette.responses import JSONResponse
 from starlette.routing import Match
 
 from app.spa import is_public_build_asset
+
 from .client_address import UntrustedForwardingHeaders, resolve_edge_source
 from .rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limit_response
-
 
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
@@ -37,6 +37,19 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
 _WORKER_RUN_ROUTE = re.compile(
     r"/api/v1/execution-worker/runs/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/"
     r"(?:dispatched|events|terminal|stop-ack)\Z"
+)
+_WORKER_ATTACHMENT_CONTENT_ROUTE = re.compile(
+    r"/api/v1/execution-worker/attachments/"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/content\Z"
+)
+_WORKER_TASK_ARTIFACT_ROUTE = re.compile(
+    r"/api/v1/execution-worker/tasks/"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/artifacts\Z"
+)
+_WORKER_ARTIFACT_UPLOAD_ROUTE = re.compile(
+    r"/api/v1/execution-worker/artifact-uploads/"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/"
+    r"(?P<operation>content|complete)\Z"
 )
 _WORKER_NAMESPACE = "/api/v1/execution-worker"
 _DIRECT_AGENT_MISSION_RESPONSE = re.compile(
@@ -134,13 +147,21 @@ def _is_conversation_attachment_response_path(path: str | None) -> bool:
 
 
 def is_execution_worker_request(method: str, path: str) -> bool:
-    return method == "POST" and (
-        path
-        in {
+    if method == "POST" and (
+        path in {
             "/api/v1/execution-worker/lease",
             "/api/v1/execution-worker/heartbeat",
         }
         or _WORKER_RUN_ROUTE.fullmatch(path) is not None
+        or _WORKER_TASK_ARTIFACT_ROUTE.fullmatch(path) is not None
+    ):
+        return True
+    if method == "GET":
+        return _WORKER_ATTACHMENT_CONTENT_ROUTE.fullmatch(path) is not None
+    match = _WORKER_ARTIFACT_UPLOAD_ROUTE.fullmatch(path)
+    return match is not None and (
+        (method == "PUT" and match.group("operation") == "content")
+        or (method == "POST" and match.group("operation") == "complete")
     )
 
 
@@ -450,7 +471,9 @@ class IdentitySecurityMiddleware:
         if self.auth.route_prefix == "/" and _is_execution_worker_namespace(path):
             if not _has_canonical_ascii_raw_path(
                 scope, path
-            ) or not is_execution_worker_request(method, path):
+            ) or scope.get("query_string", b"") or not is_execution_worker_request(
+                method, path
+            ):
                 await JSONResponse(
                     {"detail": "not found"},
                     status_code=404,
