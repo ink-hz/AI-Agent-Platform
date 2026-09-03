@@ -61,14 +61,10 @@ _ACTIVE_TEXT_PREFIXES = (
     b"<script",
     b"<?php",
 )
-_MARKUP_TAG = re.compile(
-    r"<\s*(/?)\s*([A-Za-z][A-Za-z0-9_.:-]*)([^<>]*?)(/?)>", re.DOTALL
+_DANGEROUS_MARKUP_ATTRIBUTES = frozenset(
+    {"action", "formaction", "href", "src", "srcdoc", "style"}
 )
-_DANGEROUS_MARKUP_ATTRIBUTE = re.compile(
-    r"(?:^|\s)(?:on[A-Za-z0-9_.:-]+|style|src|href|srcdoc|action|formaction)"
-    r"(?=\s*=|\s|/|$)",
-    re.IGNORECASE,
-)
+_MARKUP_WHITESPACE = frozenset(" \t\r\n\f")
 _MARKUP_DECLARATION = re.compile(
     r"<\s*(?:!\s*(?:doctype|entity)\b|\?\s*(?:xml|php)\b)",
     re.IGNORECASE,
@@ -181,6 +177,161 @@ class AttachmentValidationError(RuntimeError):
     def __init__(self, reason: str) -> None:
         self.reason = reason
         super().__init__("attachment validation rejected")
+
+
+@dataclass(frozen=True, repr=False)
+class _MarkupToken:
+    end: int
+    closing: bool
+    self_closing: bool
+    has_attributes: bool
+    dangerous_attribute: bool
+    generic_name: bool
+
+
+def _is_ascii_letter(character: str) -> bool:
+    return "A" <= character <= "Z" or "a" <= character <= "z"
+
+
+def _is_markup_name_character(character: str) -> bool:
+    return (
+        _is_ascii_letter(character)
+        or "0" <= character <= "9"
+        or character in "_.:-"
+    )
+
+
+def _parse_markup_tag(text: str, start: int) -> _MarkupToken | None:
+    cursor = start + 1
+    closing = cursor < len(text) and text[cursor] == "/"
+    if closing:
+        cursor += 1
+    if cursor >= len(text) or not _is_ascii_letter(text[cursor]):
+        return None
+
+    name_start = cursor
+    cursor += 1
+    while cursor < len(text) and _is_markup_name_character(text[cursor]):
+        cursor += 1
+    name = text[name_start:cursor]
+    if cursor >= len(text):
+        raise AttachmentValidationError("active_content")
+
+    if closing:
+        while cursor < len(text) and text[cursor] in _MARKUP_WHITESPACE:
+            cursor += 1
+        if cursor >= len(text) or text[cursor] != ">":
+            raise AttachmentValidationError("active_content")
+        return _MarkupToken(cursor + 1, True, False, False, False, False)
+
+    if text[cursor] not in _MARKUP_WHITESPACE and text[cursor] not in "/>":
+        raise AttachmentValidationError("active_content")
+
+    has_attributes = False
+    dangerous_attribute = False
+    while True:
+        while cursor < len(text) and text[cursor] in _MARKUP_WHITESPACE:
+            cursor += 1
+        if cursor >= len(text):
+            raise AttachmentValidationError("active_content")
+        if text[cursor] == ">":
+            return _MarkupToken(
+                cursor + 1,
+                False,
+                False,
+                has_attributes,
+                dangerous_attribute,
+                len(name) == 1 and name.isupper(),
+            )
+        if text[cursor] == "/":
+            if cursor + 1 >= len(text) or text[cursor + 1] != ">":
+                raise AttachmentValidationError("active_content")
+            return _MarkupToken(
+                cursor + 2,
+                False,
+                True,
+                has_attributes,
+                dangerous_attribute,
+                False,
+            )
+        if text[cursor] in "\"'<=":
+            raise AttachmentValidationError("active_content")
+
+        attribute_start = cursor
+        while (
+            cursor < len(text)
+            and text[cursor] not in _MARKUP_WHITESPACE
+            and text[cursor] not in "=/>"
+        ):
+            if text[cursor] in "\"'<":
+                raise AttachmentValidationError("active_content")
+            cursor += 1
+        if cursor == attribute_start:
+            raise AttachmentValidationError("active_content")
+        attribute = text[attribute_start:cursor].casefold()
+        has_attributes = True
+        dangerous_attribute = dangerous_attribute or (
+            attribute in _DANGEROUS_MARKUP_ATTRIBUTES
+            or (len(attribute) > 2 and attribute.startswith("on"))
+        )
+
+        while cursor < len(text) and text[cursor] in _MARKUP_WHITESPACE:
+            cursor += 1
+        if cursor >= len(text):
+            raise AttachmentValidationError("active_content")
+        if text[cursor] != "=":
+            continue
+
+        cursor += 1
+        while cursor < len(text) and text[cursor] in _MARKUP_WHITESPACE:
+            cursor += 1
+        if cursor >= len(text):
+            raise AttachmentValidationError("active_content")
+        if text[cursor] in "\"'":
+            quote = text[cursor]
+            cursor += 1
+            while cursor < len(text) and text[cursor] != quote:
+                cursor += 1
+            if cursor >= len(text):
+                raise AttachmentValidationError("active_content")
+            cursor += 1
+            continue
+
+        value_start = cursor
+        while (
+            cursor < len(text)
+            and text[cursor] not in _MARKUP_WHITESPACE
+            and text[cursor] != ">"
+        ):
+            if text[cursor] in "\"'<=`":
+                raise AttachmentValidationError("active_content")
+            cursor += 1
+        if cursor == value_start:
+            raise AttachmentValidationError("active_content")
+
+
+def _contains_active_markup(text: str) -> bool:
+    cursor = 0
+    while True:
+        start = text.find("<", cursor)
+        if start < 0:
+            return False
+        token = _parse_markup_tag(text, start)
+        if token is None:
+            cursor = start + 1
+            continue
+        generic_type_parameter = (
+            not token.closing
+            and not token.self_closing
+            and not token.has_attributes
+            and token.generic_name
+            and start > 0
+            and text[start - 1].isascii()
+            and text[start - 1].isalnum()
+        )
+        if token.dangerous_attribute or not generic_type_parameter:
+            return True
+        cursor = token.end
 
 
 @dataclass(repr=False)
@@ -946,26 +1097,8 @@ class AttachmentValidator:
                 raise AttachmentValidationError("active_content")
         if _MARKUP_DECLARATION.search(normalized):
             raise AttachmentValidationError("active_content")
-        for match in _MARKUP_TAG.finditer(normalized):
-            closing, name, attributes, self_closing = match.groups()
-            generic_type_parameter = (
-                not closing
-                and not self_closing
-                and not attributes.strip()
-                and len(name) == 1
-                and name.isascii()
-                and name.isupper()
-                and match.start() > 0
-                and normalized[match.start() - 1].isascii()
-                and normalized[match.start() - 1].isalnum()
-            )
-            if (
-                closing
-                or self_closing
-                or _DANGEROUS_MARKUP_ATTRIBUTE.search(attributes)
-                or not generic_type_parameter
-            ):
-                raise AttachmentValidationError("active_content")
+        if _contains_active_markup(normalized):
+            raise AttachmentValidationError("active_content")
         if "\0" in text or any(
             ord(character) < 32 and character not in "\t\n\r\f" for character in text
         ):

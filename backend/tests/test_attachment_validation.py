@@ -260,6 +260,27 @@ def test_custom_markup_and_dangerous_attributes_are_rejected(probe: str) -> None
     assert captured.value.reason == "active_content"
 
 
+@pytest.mark.parametrize(
+    "probe",
+    (
+        '<x title="<" onclick=alert(1)>',
+        'prefix<img alt="<" src=x onerror=alert(1)>',
+        '<x title="&lt;" onclick=alert(1)>',
+        "<x title='<' onfocus=alert(1)>",
+        "&lt;x title=&quot;&lt;&quot; onclick=alert(1)&gt;",
+        "&amp;lt;x title=&amp;quot;&amp;lt;&amp;quot; onclick=alert(1)&amp;gt;",
+        '<x title="unterminated',
+        '<x title="<" onclick=alert(1)',
+    ),
+)
+def test_quote_aware_markup_detection_rejects_active_or_malformed_tags(
+    probe: str,
+) -> None:
+    with pytest.raises(AttachmentValidationError) as captured:
+        validate_bytes(probe.encode("utf-8"))
+    assert captured.value.reason == "active_content"
+
+
 def test_office_rejects_an_undeclared_gap_before_central_directory() -> None:
     candidate = bytearray((FIXTURES / "valid.docx").read_bytes())
     eocd = candidate.rfind(b"PK\x05\x06")
