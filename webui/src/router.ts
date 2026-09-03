@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { localPathname, platformPath } from "./auth";
 import { STATUS_LABELS } from "./components/review/IssueList";
 import { MARKETING_AGENT_ID_BY_SLUG } from "./platform/workspaces";
-import { normalizeFaeSessionDate, sessionFiltersFromSearch } from "./sessionNavigation";
+import { sessionFiltersFromSearch } from "./sessionNavigation";
 
 
 export type MarketingAgentSlug = keyof typeof MARKETING_AGENT_ID_BY_SLUG;

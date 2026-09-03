@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "./AppShell";
-import App from "./App";
+import App, { LegacyRedirect } from "./App";
 import type { Account } from "./auth";
 import { navigate, parseRoute } from "./router";
 
@@ -30,6 +30,23 @@ afterEach(async () => {
 
 
 describe("cloud replica mode", () => {
+  it("executes a full document replacement for an external FAE compatibility redirect", async () => {
+    const replace = vi.fn();
+    const navigateSpa = vi.fn();
+    window.history.replaceState({}, "", "/agents/ai-fae-agent?unknown=drop");
+
+    await act(async () => root.render(<LegacyRedirect
+      to="/fae/"
+      navigation="document"
+      location={{ replace }}
+      navigateSpa={navigateSpa}
+    />));
+
+    expect(replace).toHaveBeenCalledOnce();
+    expect(replace).toHaveBeenCalledWith("/fae/");
+    expect(navigateSpa).not.toHaveBeenCalled();
+  });
+
   it("assigns legacy VOC routes to full document navigation", () => {
     expect(parseRoute("/agents/voc/workspace")).toEqual({
       name: "legacy-redirect", to: "/voc/", navigation: "document",

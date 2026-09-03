@@ -60,15 +60,25 @@ function FaeWorkbenchPendingPage({ section }: { section: FaeSection }) {
 }
 
 
-function LegacyRedirect({ to, navigation }: { to: string; navigation: "spa" | "document" }) {
+export function LegacyRedirect({
+  to,
+  navigation,
+  location = window.location,
+  navigateSpa = navigate,
+}: {
+  to: string;
+  navigation: "spa" | "document";
+  location?: Pick<Location, "replace">;
+  navigateSpa?: typeof navigate;
+}) {
   const target = `${to}${safeLegacyWorkspaceSearch(to, window.location.search)}`;
   useEffect(() => {
     if (navigation === "document") {
-      window.location.replace(platformPath(target));
+      location.replace(platformPath(target));
       return;
     }
-    navigate(target, { replace: true });
-  }, [navigation, target]);
+    navigateSpa(target, { replace: true });
+  }, [location, navigateSpa, navigation, target]);
   return <PendingPage title="正在打开工作区" description="正在进入对应的专业 Agent。" />;
 }
 
